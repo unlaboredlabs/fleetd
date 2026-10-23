@@ -4,7 +4,7 @@ import type { Fixture, HubErrorJson } from "./fixture.ts";
 import { at, rand, sha, uuid } from "./ids.ts";
 import { clone, isObject, type JsonObject, type JsonValue, asText } from "./json.ts";
 import { fitStrings } from "./schema.ts";
-import { LONG_BRANCH, LONG_CRITERION, LONG_PARAGRAPH, LONG_PATH, LONG_PROMPT_KEY, LONG_TITLES, ofLength } from "./text.ts";
+import { LONG_BRANCH, LONG_CRITERION, LONG_PARAGRAPH, LONG_PROMPT_KEY, LONG_TITLES, ofLength } from "./text.ts";
 
 export const obj = (v: JsonValue | undefined): JsonObject => (isObject(v) ? v : {});
 export const arr = (v: JsonValue | undefined): Array<JsonValue> => (Array.isArray(v) ? v : []);
@@ -207,88 +207,6 @@ export const manyAgents = (f: Fixture, active = 12, done = 14): Fixture => {
   });
   const machines = arr(obj(f.live.findLast((l) => l["full"] === true))["machines"]);
   f.live = [{ at: f.now, full: true, lanes: [...lanes, ...doneLanes].map((l) => obj(l["live"])), text: [], ...(machines.length > 0 ? { machines } : {}) }];
-  return f;
-};
-
-// ---- time ----
-
-const SPAN_KINDS: Array<readonly [string, string]> = [
-  ["model.thinking", "model"],
-  ["model.output", "model"],
-  ["tool.bash", "tools"],
-  ["tool.read", "tools"],
-  ["tool.edit", "tools"],
-  ["git", "tools"],
-  ["queue.slot", "queue"],
-  ["wait.request", "human"],
-  ["change.review", "pipeline"],
-  ["change.ci", "pipeline"],
-  ["ci.check", "pipeline"],
-  ["idle", "idle"],
-];
-
-/** `n` spans over the week before `now`, paged 500 at a time by `afterId` as time_spans pages them. */
-export const timeSpans = (f: Fixture, n = 15_000): Fixture => {
-  const end = Date.parse(f.now);
-  const begin = end - 7 * 24 * 3600_000;
-  const step = (end - begin) / n;
-  const spans = Array.from({ length: n }, (_, i): JsonObject => {
-    const [kind, cat] = SPAN_KINDS[i % SPAN_KINDS.length] ?? ["idle", "idle"];
-    const task = 1 + (i % 40);
-    const startMs = Math.round(begin + i * step);
-    const dur = Math.round(step * (0.4 + rand(`span ${i}`) * 3));
-    return {
-      id: i + 1,
-      kind,
-      cat,
-      lane: i % 9 === 0 ? "lead:devbox" : `task:T${task}`,
-      startMs,
-      endMs: startMs + dur,
-      exclMs: Math.round(dur * 0.7),
-      status: i % 53 === 0 ? "failed" : "ok",
-      machineId: "devbox",
-      taskId: `T${task}`,
-      workstreamId: `W${1 + (task % 12)}`,
-      label: kind === "tool.bash" ? "pnpm test --filter storefront-checkout" : kind === "tool.edit" ? LONG_PATH : kind === "ci.check" ? "ci / test (ubuntu-latest, node 24)" : kind,
-      ...(kind === "wait.request" ? { extra: { key: "stripe.test_key", answeredBy: "you" } } : {}),
-      ...(kind === "tool.bash" ? { exitCode: i % 53 === 0 ? 1 : 0 } : {}),
-    };
-  });
-  for (let page = 0; page * 500 < n; page++) {
-    const chunk = spans.slice(page * 500, (page + 1) * 500);
-    const last = chunk.at(-1)?.["id"];
-    f.answer("time_spans", page === 0 ? {} : { afterId: page * 500 }, {
-      spans: chunk,
-      coverage: { complete: true, gaps: [] },
-      ...(typeof last === "number" && last < n ? { nextAfterId: last } : {}),
-    });
-  }
-  return f;
-};
-
-// ---- conversation ----
-
-/** `lines` lines of a lane's streamed text over the live feed: 4 appends of ~1.9 KB per frame, as the hub caps them. */
-export const streamedLines = (f: Fixture, laneId: string, lines = 20_000): Fixture => {
-  const RUNS = [
-    "ok   storefront-checkout > formats receipt dates for en-GB",
-    "ok   storefront-checkout > prorates a mid-cycle upgrade to the nearest cent",
-    "run  pnpm --filter storefront build",
-    "edit src/checkout/receipt/formatReceiptDate.ts",
-  ];
-  let line = 0;
-  while (line < lines) {
-    const text: Array<JsonObject> = [];
-    for (let k = 0; k < 4 && line < lines; k++) {
-      const chunk: Array<string> = [];
-      while (chunk.join("\n").length < 1800 && line < lines) {
-        line++;
-        chunk.push(line % 25 === 0 ? `## Step ${line / 25}` : `${String(line).padStart(5, " ")}  ${RUNS[line % RUNS.length] ?? ""}`);
-      }
-      text.push({ laneId, messageId: `stream-${Math.floor(line / 400)}`, append: `${chunk.join("\n")}\n` });
-    }
-    f.live.push({ at: f.now, full: false, lanes: [], text });
-  }
   return f;
 };
 

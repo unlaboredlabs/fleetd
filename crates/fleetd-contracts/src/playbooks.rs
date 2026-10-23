@@ -52,26 +52,17 @@ impl PlaybookReviewRules {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct PlaybookValueBar {
-    pub max_review_rounds: Int<1, 10>,
-    /// Every PR needs a `Source:` the train can resolve.
-    pub require_source: bool,
-}
-
 /// The YAML frontmatter of `playbooks/<name>.md`, or of its override in `~/.fleetd/hub/playbooks/`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Playbook {
     pub name: PlaybookName,
-    /// Bumped by hand on changes to gates, checks, tiers or value-bar thresholds; the pin itself is the file's SHA.
+    /// Bumped by hand on changes to gates, checks or tiers; the pin itself is the file's SHA.
     pub version: Int<1, MAX_SAFE_INT>,
     /// Every entry must be met.
     pub required_checks: List<RequiredCheck, 0, 10>,
     pub tier_default: Tier,
     pub review_rules: PlaybookReviewRules,
-    pub value_bar: PlaybookValueBar,
     /// Estimate multiplier until the tier has calibration samples.
     pub estimate_prior: PositiveNumber,
     /// Injected into the lead's intake wake and digest for workstreams on this playbook.
@@ -165,7 +156,6 @@ mod tests {
             "requiredChecks": [{ "anyOf": ["test", "cmd"], "label": "a failing repro check" }],
             "tierDefault": "S",
             "reviewRules": { "S": review(0), "M": review(1), "L": review(2) },
-            "valueBar": { "maxReviewRounds": 2, "requireSource": true },
             "estimatePrior": 5,
             "leadInstructions": "Reproduce first.",
         })

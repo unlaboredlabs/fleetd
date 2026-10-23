@@ -72,7 +72,7 @@ for (const file of fs.readdirSync(RECORDED).filter((x) => x.endsWith(".json"))) 
   problems.push(...findLeaks(fs.readFileSync(path.join(RECORDED, file), "utf8")).map((leak) => `recorded/${file} leaks ${leak}`));
 }
 if (problems.length > 0) {
-  for (const p of problems.slice(0, Number(process.env["FIXTURES_SHOW"] ?? 40))) console.error(p);
+  for (const p of problems.slice(0, 40)) console.error(p);
   console.error(`${problems.length} problems; no fixture written.`);
   process.exit(1);
 }

@@ -3,7 +3,7 @@ use super::ports::Refusal;
 use super::records::ClaimFilter;
 use crate::hub::api::{Caller, Hub, Registry, ToolError, cap, readable, require};
 use crate::hub::incidents::IncidentFilter;
-use crate::hub::valuebar::Caller as LeadCaller;
+use crate::hub::reviews::verdicts::Caller as LeadCaller;
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::ids::{MachineId, Timestamp};
 use fleetd_contracts::lead_calls::{ClaimDoneResult, ReviewVerdictResult};
@@ -155,7 +155,7 @@ pub async fn lead_review_verdict(
     caller: &LeadCaller,
     verdict: ReviewVerdict,
 ) -> Result<ReviewVerdictResult, Refusal> {
-    let recorded = hub.value_bar.record_verdict(caller, verdict).await?;
+    let recorded = hub.verdicts.record(caller, verdict).await?;
     let stop = if recorded.verdict.blocking.get() == 0 {
         "end with your one-paragraph result and stop; this commit will not be reviewed again."
     } else {

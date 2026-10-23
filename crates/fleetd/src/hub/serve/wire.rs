@@ -1,5 +1,5 @@
-//! Cross-area links that belong to no single area: the ledger's lead calls, the human digest's train and retro
-//! feeds, and the leads hooks over usage, the train and GitHub. Run once in `build_on`, after the `Hub` exists.
+//! Cross-area links that belong to no single area: the ledger's lead calls, the human digest's train
+//! feed, and the leads hooks over usage, the train and GitHub. Run once in `build_on`, after the `Hub` exists.
 use std::sync::{Arc, Weak};
 
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef, Timestamp};
@@ -58,7 +58,7 @@ fn stopping() -> McpToolError {
     )
 }
 
-/// The lead calls `claim_done` and `review_verdict`, answered by checks and the value bar.
+/// The lead calls `claim_done` and `review_verdict`, answered by checks and review verdicts.
 struct CheckCalls(Weak<Hub>);
 
 impl LeadCallHandler for CheckCalls {
@@ -67,7 +67,7 @@ impl LeadCallHandler for CheckCalls {
         let hub = self.0.upgrade();
         Box::pin(async move {
             let hub = hub.ok_or_else(stopping)?;
-            let caller = crate::hub::valuebar::Caller {
+            let caller = crate::hub::reviews::verdicts::Caller {
                 project_ref: caller.project_ref,
                 by: caller.by,
             };
@@ -108,9 +108,9 @@ fn register_ledger_calls(hub: &Arc<Hub>) {
     }
 }
 
-/// The human digest's train lines and the suggested lines of the visible proposals.
+/// The human digest's train lines.
 fn feed_digests(hub: &Arc<Hub>) {
-    let (train, retro) = (Arc::downgrade(&hub.train), Arc::downgrade(&hub.retro));
+    let train = Arc::downgrade(&hub.train);
     hub.digests.feed(move |f| {
         f.train_lines = Some(Box::new(move |shown, since_ms| {
             let Some(train) = train.upgrade() else {
@@ -118,22 +118,6 @@ fn feed_digests(hub: &Arc<Hub>) {
             };
             let facts = crate::hub::train::digest::train_facts(train.records(), shown);
             crate::hub::train::digest::human_train_lines(&facts, since_ms)
-        }));
-        f.suggested_lines = Some(Box::new(move |visible| {
-            let Some(retro) = retro.upgrade() else {
-                return Vec::new();
-            };
-            let shown: Vec<_> = retro
-                .proposals(Some("suggested"), 20)
-                .into_iter()
-                .filter(|p| {
-                    p.machines
-                        .iter()
-                        .all(|m| MachineId::try_from(m.clone()).is_ok_and(|m| visible(&m)))
-                })
-                .map(|p| p.proposal)
-                .collect();
-            crate::hub::retro::digest::suggested_lines(&shown)
         }));
     });
 }

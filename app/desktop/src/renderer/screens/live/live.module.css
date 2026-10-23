@@ -1,4 +1,4 @@
-/* The live strip and event lines in the lead's chat: one quiet line folded, a short scrolling box opened, no motion
+/* The live strip in the lead's chat: one quiet line folded, a short scrolling box opened, no motion
    but the chevron turning. */
 
 .strip {
@@ -110,14 +110,6 @@
 }
 .timeLink:hover {
   text-decoration: underline;
-}
-
-.event {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-1-5);
-  min-width: 0;
-  font-size: var(--text-xs);
 }
 
 .quiet {

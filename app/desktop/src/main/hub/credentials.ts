@@ -143,9 +143,6 @@ const writePrivate = (dir: string, name: string, body: Buffer | string): void =>
   renameSync(tmp, join(dir, name));
 };
 
-export const describeStore = (env: CredentialEnv): string =>
-  env.crypto === null ? `in a file only you can read (${join(env.dir, PLAIN)})` : "encrypted with the OS keychain";
-
 /** For scripted runs (the demo recorder, the lab): both set means use them and store nothing. */
 export const fromEnv = (vars: NodeJS.ProcessEnv): Saved | null => {
   const url = vars["FLEETD_HUB_URL"];

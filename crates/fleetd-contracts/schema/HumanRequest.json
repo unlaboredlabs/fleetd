@@ -109,7 +109,7 @@
         },
         "playbook": {
           "$ref": "#/$defs/PlaybookGateChange",
-          "description": "approval of a retro playbook change that relaxes a gate, instead of a gated run or a tool prompt."
+          "description": "approval of a retro playbook change (an older approval only), instead of a gated run or a tool prompt."
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
@@ -150,7 +150,7 @@
       "type": "string"
     },
     "PlaybookGateChange": {
-      "description": "A retro playbook change that relaxes a gate (fewer reviewers, a weaker or removed check, a looser rule): it applies\nonly once a person approves it. Stored with the approval and never changed.",
+      "description": "A retro playbook change that relaxes a gate (fewer reviewers, a weaker or removed check, a looser rule). The retro is\ngone: only an older approval carries one, and the app still shows it.",
       "properties": {
         "diff": {
           "description": "The exact unified diff that applies on approve.",

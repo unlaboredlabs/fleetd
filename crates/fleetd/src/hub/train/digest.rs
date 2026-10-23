@@ -112,12 +112,14 @@ pub fn lead_train_lines(facts: &TrainFacts, since: Option<&str>) -> Vec<String> 
     };
     lines.extend(merged(&facts.changes, since_ms).map(|c| {
         format!(
-            "- {} merged{when}: {}{} (serves {}{})",
+            "- {} merged{when}: {}{}{}",
             c.change_id,
             pr(c),
             short(c.merged_sha.as_deref()),
-            c.serves,
-            by(c)
+            c.task_id
+                .as_ref()
+                .map(|t| format!(" (by {t})"))
+                .unwrap_or_default()
         )
     }));
     lines.extend(

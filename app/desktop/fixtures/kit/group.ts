@@ -9,12 +9,10 @@ export const SHARED = [
   "long-text",
   "many-prompts",
   "many-agents",
-  "conversation",
   "hub-unreachable",
   "pairing-failed",
   "node-too-old",
   "time-heavy",
-  "conversation-20k",
   // The lead chat (lead-chat spec): one project's conversation in each state, and the per-project rows.
   "chat-long",
   "chat-streaming",

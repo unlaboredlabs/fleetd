@@ -1,27 +1,17 @@
-//! The value bar at spawn time (rules.rs), plus review verdicts: `fleetd review verdict` records one per review task,
-//! keyed by its PR and head SHA, which is what later review spawns on that PR are checked against. A judge of a
-//! research workstream reports the metric too, and its numbers become the workstream's computed verdict.
-//! The tasks area calls `check_spawn` before every spawn.
-pub mod pr_heads;
-pub mod rules;
-
+//! Review verdicts: `fleetd review verdict` records one per review task and head SHA, keyed by its PR too. The train's
+//! review gate reads them by task and head, the PR view by PR. A judge of a research workstream reports the metric too, and its numbers become the workstream's
+//! computed verdict.
 use crate::clock::Clock;
 use crate::hub::checks::JudgeVerdicts;
-use crate::hub::checks::ports::{Ports, Refusal, invalid, not_found};
-use crate::hub::incidents::{IncidentInput, Incidents};
-use crate::hub::store::{EventLog, HubDb, NewEvent, StoreError, iso_ms, now_ms};
+use crate::hub::checks::ports::{Ports, Refusal, internal, invalid, not_found};
+use crate::hub::store::{EventLog, HubDb, NewEvent, iso_ms, now_ms};
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::ProjectRef;
-use fleetd_contracts::ledger::Workstream;
 use fleetd_contracts::tasks::TaskKind;
-use fleetd_contracts::verification::{IncidentClass, ReviewVerdict};
-use pr_heads::PrHeads;
-use rules::{PrVerdict, SpawnRequest, pr_key, review_refusal, write_refusal};
+use fleetd_contracts::verification::ReviewVerdict;
 use std::sync::Arc;
 
-pub use pr_heads::GhPrHeads;
-
-/// Who is spawning or recording: the lead's project and its `by` ("lead:<machine>/<project>", "hub:judge", ...).
+/// Who is recording: the lead's project and its `by` ("lead:<machine>/<project>", "hub:judge", ...).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Caller {
     pub project_ref: ProjectRef,
@@ -35,22 +25,6 @@ pub struct RecordedVerdict {
     pub research: Option<String>,
 }
 
-/// A refusal with an optional fix the rules computed.
-fn with_fix_opt(error: Refusal, fix: Option<String>) -> Refusal {
-    match fix {
-        Some(fix) => error.with_fix(fix),
-        None => error,
-    }
-}
-
-fn same_project(a: &ProjectRef, b: &ProjectRef) -> bool {
-    a.machine_id == b.machine_id && a.project_id == b.project_id
-}
-
-fn internal(e: StoreError) -> Refusal {
-    crate::hub::checks::ports::internal(e)
-}
-
 fn kind_name(kind: TaskKind) -> &'static str {
     match kind {
         TaskKind::Write => "write",
@@ -59,23 +33,19 @@ fn kind_name(kind: TaskKind) -> &'static str {
     }
 }
 
-pub struct ValueBar {
+pub struct Verdicts {
     db: Arc<HubDb>,
     events: Arc<EventLog>,
     ports: Arc<dyn Ports>,
-    incidents: Arc<Incidents>,
-    pr_heads: Arc<dyn PrHeads>,
     judges: Arc<JudgeVerdicts>,
     clock: Arc<dyn Clock>,
 }
 
-impl ValueBar {
+impl Verdicts {
     pub fn new(
         db: Arc<HubDb>,
         events: Arc<EventLog>,
         ports: Arc<dyn Ports>,
-        incidents: Arc<Incidents>,
-        pr_heads: Arc<dyn PrHeads>,
         judges: Arc<JudgeVerdicts>,
         clock: Arc<dyn Clock>,
     ) -> Self {
@@ -83,89 +53,22 @@ impl ValueBar {
             db,
             events,
             ports,
-            incidents,
-            pr_heads,
             judges,
             clock,
         }
     }
 
-    /// This PR's verdicts, newest first: enough for both rules (any clean verdict on the head, and the last two).
-    pub fn verdicts_for(&self, pr: &str) -> Result<Vec<PrVerdict>, StoreError> {
-        self.db.with(|conn| {
-            let mut stmt = conn.prepare_cached("SELECT task_id, sha, blocking FROM review_verdicts WHERE pr_key = ? ORDER BY n DESC LIMIT 200")?;
-            let rows = stmt.query_map([pr_key(pr)], |r| Ok(PrVerdict { task_id: r.get(0)?, sha: r.get(1)?, blocking: r.get(2)? }))?;
-            Ok(rows.collect::<Result<_, _>>()?)
-        })
-    }
-
-    /// Refuses a spawn the value bar rules out. A polish loop is also recorded as an incident.
-    pub async fn check_spawn(
-        &self,
-        caller: &Caller,
-        request: &SpawnRequest,
-        workstream: &Workstream,
-    ) -> Result<(), Refusal> {
-        if let Some(write) = write_refusal(request, workstream) {
-            return Err(with_fix_opt(invalid(write.message, None), write.fix));
-        }
-        let pr = if request.kind == TaskKind::Review {
-            request.pr.as_deref()
-        } else {
-            None
-        };
-        let verdicts = match pr {
-            Some(pr) => self.verdicts_for(pr).map_err(internal)?,
-            None => vec![],
-        };
-        // Without GitHub the SHA rule cannot apply; the polish-loop rule still does.
-        let head = match pr {
-            Some(pr) if !verdicts.is_empty() => match self.pr_heads.head_sha(pr).await {
-                Ok(sha) => Some(sha),
-                Err(error) => {
-                    tracing::warn!(pr, error = %error.message, "value bar: PR head unknown");
-                    None
-                }
-            },
-            _ => None,
-        };
-        // The pinned playbook caps review rounds.
-        let max_rounds = workstream
-            .playbook
-            .as_ref()
-            .and_then(|p| self.ports.playbook_limits(p))
-            .map(|l| l.max_review_rounds);
-        let Some(review) =
-            review_refusal(request, &caller.by, head.as_deref(), &verdicts, max_rounds)
-        else {
-            return Ok(());
-        };
-        if let Some(lines) = review.polish_loop {
-            self.incidents
-                .record(IncidentInput {
-                    class: IncidentClass::PolishLoop,
-                    project_ref: caller.project_ref.clone(),
-                    workstream_id: Some(workstream.workstream_id.clone()),
-                    task_id: None,
-                    evidence: lines,
-                })
-                .map_err(internal)?;
-        }
-        Err(with_fix_opt(invalid(review.message, None), review.fix))
-    }
-
-    /// `fleetd review verdict`: stores it against the task's PR, emits `review.verdict` and completes a waiting judge
-    /// check. The judge of a research workstream must report `metricValues`, and gets the computed verdict back as text.
-    pub async fn record_verdict(
+    /// Stores the verdict against its task and head, emits `review.verdict` and completes a waiting judge check. The
+    /// judge of a research workstream must report `metricValues`, and gets the computed verdict back as text.
+    pub async fn record(
         &self,
         caller: &Caller,
         verdict: ReviewVerdict,
     ) -> Result<RecordedVerdict, Refusal> {
-        let Some(task) = self
-            .ports
-            .task(&verdict.task_id)
-            .filter(|t| same_project(&t.project_ref, &caller.project_ref))
-        else {
+        let Some(task) = self.ports.task(&verdict.task_id).filter(|t| {
+            t.project_ref.machine_id == caller.project_ref.machine_id
+                && t.project_ref.project_id == caller.project_ref.project_id
+        }) else {
             return Err(not_found(
                 format!("No task {} in this project.", verdict.task_id),
                 Some("Pass taskId with your own task id."),
@@ -274,5 +177,41 @@ impl ValueBar {
         };
         self.judges.complete(&verdict).await;
         Ok(RecordedVerdict { verdict, research })
+    }
+}
+
+/// One key per PR however its URL is written: host and path, lowercased, `/pulls/` as `/pull/`, no trailing slash.
+pub fn pr_key(url: &str) -> String {
+    let trimmed = url.trim();
+    match url::Url::parse(trimmed) {
+        Ok(u) if u.has_host() => {
+            let host = match u.port() {
+                Some(p) => format!("{}:{p}", u.host_str().unwrap_or_default()),
+                None => u.host_str().unwrap_or_default().to_owned(),
+            };
+            format!("{host}{}", u.path())
+                .to_lowercase()
+                .replacen("/pulls/", "/pull/", 1)
+                .trim_end_matches('/')
+                .to_owned()
+        }
+        _ => trimmed.to_lowercase(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pr_key;
+
+    #[test]
+    fn pr_key_is_one_per_pr() {
+        assert_eq!(
+            pr_key("https://GitHub.com/Acme/Storefront/pull/7/"),
+            "github.com/acme/storefront/pull/7"
+        );
+        assert_eq!(
+            pr_key("https://github.com/acme/storefront/pulls/7?x=1#top"),
+            "github.com/acme/storefront/pull/7"
+        );
     }
 }

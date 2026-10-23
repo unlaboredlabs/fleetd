@@ -55,11 +55,10 @@ impl ProjectRemovals {
             };
             let at = now_iso(&self.ctx);
             let headline = format!("Stopped: {STOPPED_REASON}.");
-            stored.workstream.state = WorkstreamState::Stopped;
-            stored.workstream.headline =
-                Some(fleetd_contracts::ledger::Headline::unchecked(headline));
-            stored.workstream.headline_at = Some(at.clone().into());
-            stored.workstream.updated_at = at.clone().into();
+            stored.state = WorkstreamState::Stopped;
+            stored.headline = Some(fleetd_contracts::ledger::Headline::unchecked(headline));
+            stored.headline_at = Some(at.clone().into());
+            stored.updated_at = at.clone().into();
             self.records.workstream_put(&stored)?;
             self.ctx.events.append(NewEvent {
                 at: at.into(),

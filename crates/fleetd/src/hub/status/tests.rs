@@ -85,7 +85,7 @@ fn merged_change(hub: &Hub, pr: i64) {
     let change = json!({
         "changeId": "X1", "projectRef": { "machineId": "devbox", "projectId": "storefront" }, "repo": "acme/storefront",
         "prNumber": pr, "prUrl": format!("https://github.com/acme/storefront/pull/{pr}"), "branch": "fleetd/T1-x",
-        "workstreamId": "W1", "serves": "done:0", "tier": "M", "headSha": sha, "state": "merged", "reviews": [],
+        "workstreamId": "W1", "tier": "M", "headSha": sha, "state": "merged", "reviews": [],
         "createdAt": AT, "updatedAt": AT,
     });
     hub.db
@@ -414,7 +414,7 @@ async fn recompute_stays_bounded_with_two_thousand_items_and_changes() {
                 let change = json!({
                     "changeId": format!("X{n}"), "projectRef": { "machineId": "devbox", "projectId": "storefront" },
                     "repo": "acme/storefront", "prNumber": n, "prUrl": format!("https://github.com/acme/storefront/pull/{n}"),
-                    "branch": "b", "taskId": format!("T{n}"), "workstreamId": "W1", "serves": "done:0", "tier": "M",
+                    "branch": "b", "taskId": format!("T{n}"), "workstreamId": "W1", "tier": "M",
                     "headSha": sha, "state": "merged", "reviews": [], "createdAt": AT, "updatedAt": AT,
                 });
                 tx.execute(
@@ -526,7 +526,7 @@ fn set_change(hub: &Hub, state: &str, from: Option<&str>) {
     let change = json!({
         "changeId": "X1", "projectRef": { "machineId": "devbox", "projectId": "storefront" }, "repo": "acme/storefront",
         "prNumber": 212, "prUrl": "https://github.com/acme/storefront/pull/212", "branch": "fleetd/T1-x",
-        "workstreamId": "W1", "serves": "done:0", "tier": "M", "headSha": "b".repeat(40), "state": state,
+        "workstreamId": "W1", "tier": "M", "headSha": "b".repeat(40), "state": state,
         "reviews": [], "createdAt": iso_ms_of(T0 as i64), "updatedAt": at,
     });
     hub.db
@@ -842,7 +842,7 @@ async fn a_pr_held_by_the_train_shows_the_real_wait_and_the_fix() {
     let change = json!({
         "changeId": "X1", "projectRef": { "machineId": "devbox", "projectId": "storefront" }, "repo": "acme/storefront",
         "prNumber": 212, "prUrl": "https://github.com/acme/storefront/pull/212", "branch": "fleetd/T1-x",
-        "workstreamId": "W1", "serves": "done:0", "tier": "S", "headSha": "b".repeat(40), "state": "queued",
+        "workstreamId": "W1", "tier": "S", "headSha": "b".repeat(40), "state": "queued",
         "reviews": [], "lastError": error, "createdAt": iso_ms_of(T0 as i64), "updatedAt": iso_ms_of(T0 as i64),
     });
     hub.db
@@ -1097,18 +1097,12 @@ async fn an_update_releases_a_figure_the_old_rule_left_stuck() {
         45,
         "held: nothing since that point explains a fall"
     );
-    // Run the in-flight migration itself: re-opening at an older version would re-run the later ones too, which
-    // can't run twice.
-    use crate::hub::store::migrations::MIGRATIONS;
-    let release = MIGRATIONS
+    // Found by content, not as the last migration, so a later migration doesn't break this test.
+    let update = crate::hub::store::MIGRATIONS
         .iter()
-        .position(|m| m.contains("DELETE FROM status_series"))
-        .expect("the in-flight migration");
-    db.with(|c| {
-        c.execute_batch(MIGRATIONS[release])?;
-        Ok(())
-    })
-    .unwrap();
+        .find(|m| m.contains("DELETE FROM status_series"))
+        .expect("the series restart");
+    db.with(|c| Ok(c.execute_batch(update)?)).unwrap();
     assert_eq!(estimate_after(&hub, &clock, 1).0, 14);
 }
 

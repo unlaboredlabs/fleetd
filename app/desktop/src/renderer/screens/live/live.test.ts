@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { ChatMessage, FleetStatus, LiveFrame, OrderCard } from "../../../shared/contracts";
+import type { FleetStatus, LiveFrame, OrderCard } from "../../../shared/contracts";
 import { applyFrame, ingest, initialState } from "../../src/data/store";
 import type { AgentLane, LaneStatus } from "./contracts";
-import { isEventLine } from "./EventLine";
 import { selectProjectRow } from "../../src/data/selectors";
 import { projectKey } from "./lanes";
 import { selectStrip, stripHeadline, stripOf, stripPrs } from "./strip";
@@ -148,23 +147,5 @@ describe("the opened strip (#232 blocker: one count per PR)", () => {
     ]);
     expect(strip?.prs).toEqual([221, 222]);
     expect(strip?.orders).toEqual(["W1"]);
-  });
-});
-
-describe("event lines", () => {
-  const message = (author: "system" | "lead", text: string): ChatMessage => ({
-    messageId: "m1",
-    projectRef: project,
-    seq: 1,
-    author,
-    text,
-    createdAt: T0,
-    state: "final",
-  });
-
-  it("are fleetd's own messages with text, not the lead's", () => {
-    expect(isEventLine(message("system", "#221 merged"))).toBe(true);
-    expect(isEventLine(message("lead", "#221 merged"))).toBe(false);
-    expect(isEventLine(message("system", "  "))).toBe(false);
   });
 });

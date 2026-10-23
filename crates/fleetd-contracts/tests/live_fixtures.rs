@@ -2,7 +2,6 @@
 //! fixtures and the hub agree on the shapes.
 
 use fleetd_contracts::app::{AppClientMessage, AppServerMessage};
-use fleetd_contracts::events::HubEvent;
 use fleetd_contracts::mcp::*;
 use fleetd_contracts::node_link::NodeToHub;
 use fleetd_contracts::sessions::{SessionCallFrame, SessionReplyFrame, ThreadEventFrame};
@@ -46,7 +45,6 @@ fn every_live_fixture_round_trips() {
     round_trip::<ProjectFilesInput>("project_files.input.json");
     round_trip::<ProjectFilesOutput>("project_files.output.json");
     round_trip::<IntakeSubmitInput>("intake_submit.input.json");
-    round_trip::<HubEvent>("hub_event_workstream_note.json");
     round_trip::<NodeToHub>("node_heartbeat.json");
     round_trip::<ThreadEventFrame>("thread_event_usage.json");
     round_trip::<SessionCallFrame>("session_call_list_files.json");

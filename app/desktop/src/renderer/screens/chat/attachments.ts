@@ -3,7 +3,6 @@
 import type { AttachmentMime } from "../../../shared/contracts";
 
 export const MAX_ATTACHMENTS = 8;
-export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 /** A paste longer than this becomes a `pasted-N.txt` attachment (T3 Code's large-paste rule, under the limit). */
 export const PASTE_AS_FILE = 3500;
 

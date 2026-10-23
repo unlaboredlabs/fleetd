@@ -802,10 +802,10 @@
         },
         "decisionRule": {
           "$ref": "#/$defs/DecisionRule",
-          "description": "Research: frozen with the brief, so the verdict can't move the goalposts."
+          "description": "Research: the rule the verdict is computed from."
         },
         "doneWhen": {
-          "description": "At least one; frozen with the brief.",
+          "description": "At least one.",
           "items": {
             "$ref": "#/$defs/CheckSpec"
           },
@@ -869,10 +869,6 @@
         }
       },
       "type": "object"
-    },
-    "BriefHash": {
-      "pattern": "^[0-9a-f]{64}$",
-      "type": "string"
     },
     "CapSetInput": {
       "properties": {
@@ -1079,9 +1075,6 @@
           },
           "type": "array"
         },
-        "serves": {
-          "$ref": "#/$defs/Serves"
-        },
         "state": {
           "$ref": "#/$defs/ChangeState"
         },
@@ -1108,7 +1101,6 @@
         "prUrl",
         "branch",
         "workstreamId",
-        "serves",
         "tier",
         "headSha",
         "state",
@@ -2114,7 +2106,7 @@
         },
         "playbook": {
           "$ref": "#/$defs/PlaybookGateChange",
-          "description": "A retro playbook change that relaxes a gate: what changes, in plain words, and the exact diff."
+          "description": "A retro playbook change (an older approval only): what changes, in plain words, and the exact diff."
         },
         "requestId": {
           "$ref": "#/$defs/ChatRequestId"
@@ -2548,13 +2540,6 @@
         "decisions"
       ],
       "type": "object"
-    },
-    "Decrease": {
-      "description": "The only metric direction.",
-      "enum": [
-        "decrease"
-      ],
-      "type": "string"
     },
     "DeliveredHow": {
       "description": "How a delivered steer was taken in.",
@@ -3889,7 +3874,7 @@
         },
         {
           "const": "workstream.running",
-          "description": "The brief was frozen; `data.briefHash`.",
+          "description": "The brief was set and the work started.",
           "type": "string"
         },
         {
@@ -3993,11 +3978,6 @@
           "type": "string"
         },
         {
-          "const": "intake.routed",
-          "description": "Where an intent went; `data.workstreamId`, `data.template`, `data.reason`, `data.playbook`.",
-          "type": "string"
-        },
-        {
           "const": "research.verdict",
           "description": "A research workstream's computed verdict; `data.workstreamId`, `data.outcome`, `data.metricValues`.",
           "type": "string"
@@ -4018,33 +3998,8 @@
           "type": "string"
         },
         {
-          "const": "retro.ran",
-          "description": "M12: a retro run ended; `data.run`, `data.trigger`, `data.advise`, `data.proposals`, `data.dropped`, `data.usage` (orchestrator runs).",
-          "type": "string"
-        },
-        {
-          "const": "playbook.changed",
-          "description": "M12: a playbook file changed under a retro proposal; `data.proposalId`, `data.playbook`, `data.ref`, `data.previousRef`, `data.kind`, `data.baseline`, `data.dueAt`.",
-          "type": "string"
-        },
-        {
-          "const": "playbook.reverted",
-          "description": "M12: a wording change missed its metric or regressed a guarded one and was rolled back; `data.proposalId`, `data.reason`.",
-          "type": "string"
-        },
-        {
-          "const": "playbook.kept",
-          "description": "M12: a wording change met its metric; `data.proposalId`, `data.measured`.",
-          "type": "string"
-        },
-        {
           "const": "key.paired",
           "description": "A device redeemed a pairing code from `fleetd pair` and got a human key; `data.keyId`, `data.deviceName`.",
-          "type": "string"
-        },
-        {
-          "const": "workstream.note",
-          "description": "A person added to an order for its lead: `data.workstreamId`, `data.noteId`, `data.urgent`, `data.text` (first\n200 characters).",
           "type": "string"
         },
         {
@@ -4223,7 +4178,7 @@
         },
         "playbook": {
           "$ref": "#/$defs/PlaybookGateChange",
-          "description": "approval of a retro playbook change that relaxes a gate, instead of a gated run or a tool prompt."
+          "description": "approval of a retro playbook change (an older approval only), instead of a gated run or a tool prompt."
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
@@ -4432,7 +4387,7 @@
       "type": "object"
     },
     "IncidentClass": {
-      "description": "`policy_bypass`: a PR on a watched repo was merged by something other than the train. M12: `override`, a human\nreplaced a lead's Decision with another value; `playbook_reverted`, a retro wording change missed its metric and was\nrolled back.",
+      "description": "`policy_bypass`: a PR on a watched repo was merged by something other than the train. M12: `override`, a human\nreplaced a lead's Decision with another value.",
       "oneOf": [
         {
           "enum": [
@@ -4441,8 +4396,7 @@
             "out_of_area",
             "stall",
             "policy_bypass",
-            "override",
-            "playbook_reverted"
+            "override"
           ],
           "type": "string"
         },
@@ -5596,18 +5550,6 @@
         "requests_list.output": {
           "$ref": "#/$defs/RequestsListOutput"
         },
-        "retro_proposals.input": {
-          "$ref": "#/$defs/RetroProposalsInput"
-        },
-        "retro_proposals.output": {
-          "$ref": "#/$defs/RetroProposalsOutput"
-        },
-        "retro_run.input": {
-          "$ref": "#/$defs/RetroRunInput"
-        },
-        "retro_run.output": {
-          "$ref": "#/$defs/RetroRunOutput"
-        },
         "secret_submit.input": {
           "$ref": "#/$defs/SecretSubmitInput"
         },
@@ -5898,10 +5840,6 @@
         "prompts_list.output",
         "requests_list.input",
         "requests_list.output",
-        "retro_proposals.input",
-        "retro_proposals.output",
-        "retro_run.input",
-        "retro_run.output",
         "secret_submit.input",
         "secret_submit.output",
         "session_prompt_get.input",
@@ -6185,51 +6123,6 @@
       ],
       "type": "object"
     },
-    "OrchestratorKind": {
-      "enum": [
-        "orchestrator"
-      ],
-      "type": "string"
-    },
-    "OrchestratorRun": {
-      "description": "A `claude -p` one-shot the hub ran for itself, counted as orchestrator usage.",
-      "properties": {
-        "durationMs": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "error": {
-          "type": "string"
-        },
-        "inputTokens": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "kind": {
-          "$ref": "#/$defs/OrchestratorKind"
-        },
-        "model": {
-          "type": "string"
-        },
-        "ok": {
-          "type": "boolean"
-        },
-        "outputTokens": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "kind",
-        "model",
-        "durationMs",
-        "ok"
-      ],
-      "type": "object"
-    },
     "OrderCard": {
       "description": "One order (workstream) as the board shows it.",
       "properties": {
@@ -6423,7 +6316,7 @@
           "type": "string"
         },
         "noteId": {
-          "description": "\"N\" plus a number; the workstream.note event carries it.",
+          "description": "\"N\" plus a number.",
           "maxLength": 40,
           "minLength": 1,
           "type": "string"
@@ -7061,15 +6954,8 @@
       ],
       "type": "object"
     },
-    "PlaybookChangeKind": {
-      "enum": [
-        "wording",
-        "gate"
-      ],
-      "type": "string"
-    },
     "PlaybookGateChange": {
-      "description": "A retro playbook change that relaxes a gate (fewer reviewers, a weaker or removed check, a looser rule): it applies\nonly once a person approves it. Stored with the approval and never changed.",
+      "description": "A retro playbook change that relaxes a gate (fewer reviewers, a weaker or removed check, a looser rule). The retro is\ngone: only an older approval carries one, and the app still shows it.",
       "properties": {
         "diff": {
           "description": "The exact unified diff that applies on approve.",
@@ -8836,7 +8722,7 @@
           "type": "string"
         },
         "perProject": {
-          "description": "False for playbooks, router and retro: they have the hub-wide level only.",
+          "description": "False for a one-shot: it has the hub-wide level only.",
           "type": "boolean"
         },
         "placeholders": {
@@ -8926,7 +8812,7 @@
         },
         {
           "const": "oneshot",
-          "description": "The input of a tool-less one-shot `claude -p` (the retro).",
+          "description": "The input of a tool-less one-shot `claude -p`. None ships now; kept while the app names its group.",
           "type": "string"
         },
         {
@@ -9361,7 +9247,7 @@
         },
         "rule": {
           "$ref": "#/$defs/DecisionRule",
-          "description": "The brief's frozen rule."
+          "description": "The brief's rule."
         }
       },
       "required": [
@@ -9409,398 +9295,6 @@
         "why"
       ],
       "type": "object"
-    },
-    "RetroMetric": {
-      "properties": {
-        "class": {
-          "$ref": "#/$defs/RetroMetricClass"
-        },
-        "op": {
-          "$ref": "#/$defs/Decrease"
-        },
-        "windowDays": {
-          "description": "Measured over this many days after the change, against the same span before it.",
-          "maximum": 28,
-          "minimum": 1,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "class",
-        "op",
-        "windowDays"
-      ],
-      "type": "object"
-    },
-    "RetroMetricClass": {
-      "description": "The fixed metric list, defined in code: incident counts per class, and agent-minutes per done workstream. A\nproposal names one; the retro cannot add or change them.",
-      "oneOf": [
-        {
-          "enum": [
-            "false_claim",
-            "polish_loop",
-            "misfiled_ask",
-            "out_of_area",
-            "stall",
-            "policy_bypass",
-            "re_ask",
-            "override",
-            "agent_minutes_per_done"
-          ],
-          "type": "string"
-        },
-        {
-          "const": "estimate_miss",
-          "description": "Retired: fleetd no longer scores time estimates. Kept so older proposals still read.",
-          "type": "string"
-        }
-      ]
-    },
-    "RetroProposal": {
-      "properties": {
-        "appliedAt": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "at": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "baseline": {
-          "$ref": "#/$defs/RetroSnapshot",
-          "description": "The window before it applied; `measured` is the window after."
-        },
-        "claimedKind": {
-          "$ref": "#/$defs/PlaybookChangeKind",
-          "description": "What the model said it was."
-        },
-        "decisionKey": {
-          "$ref": "#/$defs/DecisionKey",
-          "description": "A gate change: the global decision a person records to settle it, `playbook.<name>.<hash>` = apply | reject."
-        },
-        "diff": {
-          "maxLength": 8000,
-          "minLength": 1,
-          "type": "string"
-        },
-        "dueAt": {
-          "$ref": "#/$defs/Timestamp",
-          "description": "When a wording change's window ends and its metric is computed."
-        },
-        "expected": {
-          "maxLength": 300,
-          "minLength": 1,
-          "type": "string"
-        },
-        "fields": {
-          "description": "Frontmatter fields the diff changes, plus \"body\".",
-          "items": {
-            "type": "string"
-          },
-          "maxItems": 20,
-          "type": "array"
-        },
-        "fixesIncidents": {
-          "items": {
-            "$ref": "#/$defs/IncidentId"
-          },
-          "maxItems": 20,
-          "minItems": 1,
-          "type": "array"
-        },
-        "kind": {
-          "$ref": "#/$defs/PlaybookChangeKind",
-          "description": "Decided by the hub from the fields the diff touches."
-        },
-        "measured": {
-          "$ref": "#/$defs/RetroSnapshot"
-        },
-        "metric": {
-          "$ref": "#/$defs/RetroMetric"
-        },
-        "note": {
-          "maxLength": 500,
-          "minLength": 1,
-          "type": "string"
-        },
-        "playbook": {
-          "$ref": "#/$defs/PlaybookName"
-        },
-        "previousRef": {
-          "$ref": "#/$defs/PlaybookRef"
-        },
-        "proposalId": {
-          "$ref": "#/$defs/RetroProposalId"
-        },
-        "ref": {
-          "$ref": "#/$defs/PlaybookRef",
-          "description": "The version it applied and the one it replaced."
-        },
-        "run": {
-          "description": "The retro run that proposed it.",
-          "maximum": 9007199254740991,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "state": {
-          "$ref": "#/$defs/RetroProposalState"
-        }
-      },
-      "required": [
-        "proposalId",
-        "run",
-        "at",
-        "playbook",
-        "kind",
-        "claimedKind",
-        "diff",
-        "fields",
-        "fixesIncidents",
-        "metric",
-        "expected",
-        "state"
-      ],
-      "type": "object"
-    },
-    "RetroProposalId": {
-      "pattern": "^R[1-9][0-9]*$",
-      "type": "string"
-    },
-    "RetroProposalState": {
-      "description": "suggested: advise-only, nothing applies. pending: a gate change waiting for a person to record its decision.\nmeasuring: a wording change applied, its window running; then kept or reverted. applied: a gate change a person\napproved. rejected: a person said no. stale: the playbook changed under it, so its diff no longer applies.",
-      "oneOf": [
-        {
-          "enum": [
-            "suggested",
-            "measuring",
-            "kept",
-            "reverted",
-            "applied",
-            "rejected",
-            "stale"
-          ],
-          "type": "string"
-        },
-        {
-          "const": "pending",
-          "description": "\"asked\": rows from before the questions tool went.",
-          "type": "string"
-        }
-      ]
-    },
-    "RetroProposalsInput": {
-      "properties": {
-        "limit": {
-          "default": 20,
-          "maximum": 100,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "state": {
-          "$ref": "#/$defs/RetroProposalState"
-        }
-      },
-      "type": "object"
-    },
-    "RetroProposalsOutput": {
-      "properties": {
-        "apply": {
-          "description": "The global Decision policy.retro.apply is true: wording changes apply on their own and gate changes wait for a person's decision.",
-          "type": "boolean"
-        },
-        "lastRun": {
-          "$ref": "#/$defs/RetroRun"
-        },
-        "next": {
-          "type": "string"
-        },
-        "proposals": {
-          "description": "Newest first.",
-          "items": {
-            "$ref": "#/$defs/RetroProposal"
-          },
-          "maxItems": 100,
-          "type": "array"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "proposals",
-        "apply"
-      ],
-      "type": "object"
-    },
-    "RetroRun": {
-      "properties": {
-        "advise": {
-          "description": "Nothing it proposed applies: `--advise`, or `policy.retro.apply` is not true.",
-          "type": "boolean"
-        },
-        "at": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "dropped": {
-          "items": {
-            "$ref": "#/$defs/RetroRunDropped"
-          },
-          "maxItems": 20,
-          "type": "array"
-        },
-        "incidents": {
-          "description": "Incidents in the window it was given.",
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "proposals": {
-          "items": {
-            "$ref": "#/$defs/RetroProposalId"
-          },
-          "maxItems": 10,
-          "type": "array"
-        },
-        "run": {
-          "maximum": 9007199254740991,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "trigger": {
-          "$ref": "#/$defs/RetroTrigger"
-        },
-        "usage": {
-          "$ref": "#/$defs/OrchestratorRun",
-          "description": "Absent when there was nothing to look at and no turn ran."
-        },
-        "windowDays": {
-          "maximum": 28,
-          "minimum": 1,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "run",
-        "at",
-        "trigger",
-        "advise",
-        "windowDays",
-        "incidents",
-        "proposals",
-        "dropped"
-      ],
-      "type": "object"
-    },
-    "RetroRunDropped": {
-      "description": "A change the hub refused, with why.",
-      "properties": {
-        "index": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "playbook": {
-          "type": "string"
-        },
-        "reason": {
-          "maxLength": 500,
-          "minLength": 1,
-          "type": "string"
-        }
-      },
-      "required": [
-        "index",
-        "reason"
-      ],
-      "type": "object"
-    },
-    "RetroRunInput": {
-      "properties": {
-        "advise": {
-          "description": "Propose only, even when policy.retro.apply is true.",
-          "type": "boolean"
-        },
-        "windowDays": {
-          "default": 14,
-          "maximum": 28,
-          "minimum": 1,
-          "type": "integer"
-        }
-      },
-      "type": "object"
-    },
-    "RetroRunOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "proposals": {
-          "items": {
-            "$ref": "#/$defs/RetroProposal"
-          },
-          "maxItems": 10,
-          "type": "array"
-        },
-        "run": {
-          "$ref": "#/$defs/RetroRun"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "run",
-        "proposals"
-      ],
-      "type": "object"
-    },
-    "RetroSnapshot": {
-      "description": "A metric's values over one window; agent-minutes is null when no workstream finished in it. Its keys are\nsnake_case on the wire.",
-      "properties": {
-        "agent_minutes_per_done": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "false_claim": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "polish_loop": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "target": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [
-        "target",
-        "false_claim",
-        "polish_loop",
-        "agent_minutes_per_done"
-      ],
-      "type": "object"
-    },
-    "RetroTrigger": {
-      "enum": [
-        "weekly",
-        "threshold",
-        "manual"
-      ],
-      "type": "string"
     },
     "ReviewState": {
       "description": "Its reviews, rolled up.",
@@ -11995,10 +11489,6 @@
         "result": {
           "$ref": "#/$defs/TaskResult"
         },
-        "serves": {
-          "$ref": "#/$defs/Serves",
-          "description": "Required at spawn for write tasks; optional here for tasks stored before M6."
-        },
         "startedAt": {
           "$ref": "#/$defs/Timestamp"
         },
@@ -13842,9 +13332,6 @@
           "$ref": "#/$defs/Brief",
           "description": "Absent while draft."
         },
-        "briefHash": {
-          "$ref": "#/$defs/BriefHash"
-        },
         "createdAt": {
           "$ref": "#/$defs/Timestamp"
         },
@@ -13870,7 +13357,7 @@
         },
         "playbook": {
           "$ref": "#/$defs/PlaybookRef",
-          "description": "Pinned at creation; the brief freeze validates against this version. Absent on workstreams from before M9."
+          "description": "Pinned at creation; the brief validates against this version. Absent on workstreams from before M9."
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"

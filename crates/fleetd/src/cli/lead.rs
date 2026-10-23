@@ -14,12 +14,9 @@ use super::args::{self, Kind, Spec};
 
 /// Under the fleetd dir.
 pub const NODE_SOCKET_PATH: &str = "node/node.sock";
-const SERVES_FIX: &str =
-    "say what this serves: --serves done:<n> | issue:<ref> | defect:<text> | decision:<key>";
 
-pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>' | --file <path>) [--amend <decision key>]
-             freeze the brief of a draft workstream and start it; --amend changes a frozen brief once the
-             human said yes in chat and you logged it with decide
+pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>' | --file <path>)
+             set the brief of a draft workstream and start it, or edit it
   request secret --key <k> --sink env:<machine>:<path>|file:<machine>:<path> [--env-name <N>]
       --text <t> [--workstream <W>]
              the human enters it in a masked field in the project's chat, sealed to that machine; an env:
@@ -37,10 +34,8 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
   status set "<one line>" [--workstream <W>]
   decisions search "<query>"
   task spawn --workstream <W> --title <t> --prompt <p> [--kind write|read|review] [--areas a,b]
-      [--profile high|medium] [--tier S|M|L]
-      [--serves done:<n>|issue:<ref>|defect:<text>|decision:<key>] [--pr <url>] [--qa] [--item P<n>]
-             delegate work to a subagent; writers need --areas and --serves and get their own
-             branch; a review task needs --pr, and --qa marks it a QA run; --item links it to
+      [--profile high|medium] [--tier S|M|L] [--pr <url>] [--qa] [--item P<n>]
+             delegate work to a subagent; writers need --areas and get their own branch; a review task needs --pr, and --qa marks it a QA run; --item links it to
              that plan item
   task list [--state <s>] [--workstream <W>]
   task status <T>
@@ -55,11 +50,9 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
       [--baseline <n> --candidate <n>]
              the last step of a review task; a research judge also reports its metric for the
              baseline and the candidate, and fleetd computes GO, STOP or INCONCLUSIVE
-  change enqueue --pr <url> [--task <T>] [--workstream <W>] [--serves <s>] [--tier S|M|L]
-      [--item P<n>]
-             put a PR on its repo's merge train (a write task's PR goes on by itself); its body
-             needs a 'Source: <serves>' line. Only the train merges. --item links the PR to
-             that plan item
+  change enqueue --pr <url> [--task <T>] [--workstream <W>] [--tier S|M|L] [--item P<n>]
+             put a PR on its repo's merge train (a write task's PR goes on by itself). Only the
+             train merges. --item links the PR to that plan item
   change status <X>
   plan milestone "<title>" [--position <n>]
   plan add "<title>" --milestone M<n> [--workstream <W>] [--must|--polish] [--size s|m|l]
@@ -78,7 +71,7 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
   inventory  the project's open work ranked: failing checks, open issues (gh), open requests and
              TODO/FIXME markers; with nothing left that has a value source and no open child, the
              project's finish-all workstream goes idle
-  workstream open --text "<intent>" [--template bugfix|feature|research|finish-all] [--serves <s>]
+  workstream open --text "<intent>" [--template bugfix|feature|research|finish-all]
              open a workstream for work taken from the chat: a draft to brief
   workstream spawn --text "<intent>" --serves issue:<#n|url>|defect:<text>|done:<n>
       [--template bugfix|feature|research]
@@ -120,7 +113,6 @@ const OPTIONS: &[(&str, Kind)] = &[
     ("workstream", Kind::Str),
     ("json", Kind::Str),
     ("file", Kind::Str),
-    ("amend", Kind::Str),
     ("kind", Kind::Str),
     ("key", Kind::Str),
     ("class", Kind::Str),
@@ -272,7 +264,7 @@ pub fn parse_lead_args(
                     "expected fleetd brief create --workstream <W> --json '<Brief>'".into(),
                 );
             }
-            only(&["workstream", "json", "file", "amend"])?;
+            only(&["workstream", "json", "file"])?;
             required(&["workstream"])?;
             if v.str("json").is_none() == v.str("file").is_none() {
                 return Err("give the brief with exactly one of --json and --file".into());
@@ -296,7 +288,6 @@ pub fn parse_lead_args(
                 ("op", s(Some("brief_create"))),
                 ("workstreamId", s(v.str("workstream"))),
                 ("brief", Some(brief)),
-                ("amend", s(v.str("amend"))),
             ])
         }
         Some("request") => match sub {
@@ -380,16 +371,11 @@ pub fn parse_lead_args(
                     "areas",
                     "profile",
                     "tier",
-                    "serves",
                     "pr",
                     "qa",
                     "item",
                 ])?;
                 required(&["workstream", "title", "prompt"])?;
-                // The contract refuses it too, but this says it in one plain line.
-                if v.str("kind").unwrap_or("write") == "write" && v.str("serves").is_none() {
-                    return Err(format!("a write task needs --serves: {SERVES_FIX}"));
-                }
                 defined(vec![
                     ("op", s(Some("task_spawn"))),
                     ("workstreamId", s(v.str("workstream"))),
@@ -399,7 +385,6 @@ pub fn parse_lead_args(
                     ("areas", v.str("areas").map(|a| Value::Array(split_list(a)))),
                     ("profile", s(v.str("profile"))),
                     ("tier", s(v.str("tier"))),
-                    ("serves", s(v.str("serves"))),
                     ("pr", s(v.str("pr"))),
                     ("qa", v.flag("qa").then_some(Value::Bool(true))),
                     ("item", s(v.str("item"))),
@@ -519,7 +504,7 @@ pub fn parse_lead_args(
         }
         Some("change") => match sub {
             Some("enqueue") => {
-                only(&["pr", "task", "workstream", "serves", "tier", "item"])?;
+                only(&["pr", "task", "workstream", "tier", "item"])?;
                 if rest.len() > 1 || (rest.len() == 1 && v.str("pr").is_some()) {
                     return Err("expected fleetd change enqueue --pr <url>".into());
                 }
@@ -531,7 +516,6 @@ pub fn parse_lead_args(
                     ("prUrl", s(Some(pr_url))),
                     ("taskId", s(v.str("task"))),
                     ("workstreamId", s(v.str("workstream"))),
-                    ("serves", s(v.str("serves"))),
                     ("tier", s(v.str("tier"))),
                     ("item", s(v.str("item"))),
                 ])
@@ -601,12 +585,11 @@ pub fn parse_lead_args(
             ])
         }
         Some("workstream") if sub == Some("open") && rest.is_empty() => {
-            only(&["text", "serves", "template"])?;
+            only(&["text", "template"])?;
             required(&["text"])?;
             defined(vec![
                 ("op", s(Some("workstream_open"))),
                 ("text", s(v.str("text"))),
-                ("serves", s(v.str("serves"))),
                 ("template", s(v.str("template"))),
             ])
         }
@@ -1065,11 +1048,8 @@ fn task_detail(task: &Value) -> Vec<String> {
     let mut lines = vec![
         task_line(task),
         format!(
-            "  workstream {}{}{}, attempt {}",
+            "  workstream {}{}, attempt {}",
             st(task, "workstreamId"),
-            opt(task, "serves")
-                .map(|s| format!(", serves {}", js(Some(s))))
-                .unwrap_or_default(),
             opt(task, "pr")
                 .map(|pr| format!(
                     ", reviews {}{}",
@@ -1118,14 +1098,13 @@ fn change_lines(change: &Value) -> Vec<String> {
     };
     let mut lines = vec![
         format!(
-            "{} {}#{} {}{} (tier {}, serves {}{})",
+            "{} {}#{} {}{} (tier {}{})",
             st(change, "changeId"),
             st(change, "repo"),
             js(opt(change, "prNumber")),
             st(change, "state"),
             where_,
             st(change, "tier"),
-            st(change, "serves"),
             opt(change, "taskId")
                 .map(|t| format!(", by {}", js(Some(t))))
                 .unwrap_or_default()
@@ -1167,12 +1146,11 @@ pub fn format_result(result: &Value) -> String {
     match st(result, "op") {
         "brief_create" => {
             lines.push(format!(
-                "Brief for {} frozen (hash {}); the workstream is {}.",
+                "Brief for {} saved; the workstream is {}.",
                 st(result, "workstreamId"),
-                short(st(result, "briefHash")),
                 st(result, "state")
             ));
-            next = "carry on with the workstream. Changing this brief later needs the human's yes in chat, logged with decide, and --amend <its key>.".into();
+            next = "carry on with the workstream.".into();
         }
         "request_secret" => {
             lines.push(format!(
@@ -1343,7 +1321,7 @@ pub fn format_result(result: &Value) -> String {
         "workstream_open" => {
             lines.push(format!("Opened {}.", st(result, "workstreamId")));
             next = format!(
-                "freeze its brief with fleetd brief create --workstream {}.",
+                "brief it with fleetd brief create --workstream {}.",
                 st(result, "workstreamId")
             );
         }
@@ -1731,21 +1709,6 @@ mod tests {
             (
                 &["decisions", "search", "x", "--workstream", "W1"],
                 "--workstream does not apply to fleetd decisions search",
-            ),
-            (
-                &[
-                    "task",
-                    "spawn",
-                    "--workstream",
-                    "W1",
-                    "--title",
-                    "x",
-                    "--areas",
-                    "docs",
-                    "--prompt",
-                    "y",
-                ],
-                "a write task needs --serves: say what this serves: --serves done:<n> | issue:<ref> | defect:<text> | decision:<key>",
             ),
             (
                 &["task", "run"],

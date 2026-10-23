@@ -41,7 +41,7 @@ use crate::hub::store::{
     EventLog, HubDb, HubStore, NewEvent, StoreError, WaitInput, iso_ms, now_ms,
 };
 use fleetd_contracts::mcp::ErrorCode;
-use hooks::{ResultReceipts, SpawnCheck, UsageGate};
+use hooks::{ResultReceipts, UsageGate};
 use ports::{LaunchRequest, PortError, TaskError, TaskPorts, WakeKind, Worktree};
 use render::{branch_for, find_pr_url, render_task_prompt, tail_of};
 use resolve::resolve_profile;
@@ -225,7 +225,7 @@ pub struct Tasks {
     /// task is never paused, and a paused one that asks isn't continued until the answer is in its resume. Not kept
     /// across a hub restart: then the answer still reaches the task, only maybe after its resume.
     asking: Mutex<HashSet<TaskId>>,
-    /// Set once in `hub/serve` (`wire::wire`) to usage, the value bar and receipts; unset passes through.
+    /// Set once in `hub/serve` (`wire::wire`) to usage and receipts; unset passes through.
     pub hooks: TaskHooks,
     cursor: i64,
     /// The last thread event applied, by the follower or by a retry catching up (read and written under `lock`).
@@ -235,7 +235,6 @@ pub struct Tasks {
 #[derive(Default)]
 pub struct TaskHooks {
     pub usage: OnceLock<Arc<dyn UsageGate>>,
-    pub spawn_check: OnceLock<Arc<dyn SpawnCheck>>,
     pub receipts: OnceLock<Arc<dyn ResultReceipts>>,
 }
 
@@ -1070,15 +1069,6 @@ impl Tasks {
         input: SpawnInput,
     ) -> Result<Task, TaskError> {
         let r = &caller.project_ref;
-        // M6 value bar: serves, done workstreams and review rounds. Outside the lock, since it may ask GitHub for a
-        // PR head, and before the closed-state check, so a done workstream gets its own refusal.
-        if let Some(check) = self.hooks.spawn_check.get()
-            && let Some(ws) = self
-                .workstream(&input.workstream_id)
-                .filter(|w| same_project(&w.project_ref, r))
-        {
-            check.check_spawn(caller, &input, &ws).await?;
-        }
         let _guard = self.lock.lock().await;
         let ws = match self.workstream(&input.workstream_id) {
             Some(ws) if same_project(&ws.project_ref, r) => ws,
@@ -1160,7 +1150,6 @@ impl Tasks {
             profile,
             tier: input.tier,
             estimate_minutes: input.estimate_minutes,
-            serves: input.serves.clone(),
             qa: input.qa,
             pr: input.pr.clone(),
             item_id: input.item.clone(),

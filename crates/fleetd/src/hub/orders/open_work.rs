@@ -2,8 +2,7 @@
 //! their way in. An order never closes over it unless the lead says so on purpose. A claim refuses or holds while
 //! some is open (`checks::claims`), and the done sweep keeps it (`idle::on_done`). On a live hub, an order's fix task,
 //! spawned from its PR's review while the order verified, was cancelled as a leftover the moment the order's checks
-//! passed, and the fix never shipped. Which `serves` a fix was spawned with, or whether the review blocked, does not
-//! matter: write work is what ships.
+//! passed, and the fix never shipped. Whether the review blocked does not matter: write work is what ships.
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::tasks::{Task, TaskId, TaskKind, TaskState};

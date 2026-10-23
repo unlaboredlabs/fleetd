@@ -186,29 +186,6 @@ pub fn register(tools: &mut Registry) {
 /// The ledger's lead-side calls (`decide`, `decisions_search`) for a caller already attributed to `project_ref` by its
 /// cwd, with `by` = `lead:<machineId>/<projectId>`. The link area's `LeadCalls` registry routes those ops here and maps a refusal onto `LeadCallRefused` (`code.as_str()`,
 /// `message`, `fix`).
-/// A playbook gate change is hub-wide. A lead may log only one that tightens, and only as the human's answer: the
-/// project's chat must have a human message since the change was proposed. A relaxing one is the human's approve.
-fn gate_answered_in_chat(hub: &Hub, r: &ProjectRef, key: &str) -> Result<(), LedgerError> {
-    let proposed = hub.retro.gate_waiting_on_chat(key).map_err(|why| {
-        LedgerError::invalid_fix(
-            why,
-            "Don't log it: a settled change needs no decision, and a relaxing one is the human's approve in chat.",
-        )
-    })?;
-    let replied = hub
-        .chat
-        .last_human_ms(r)
-        .map_err(|e| LedgerError::invalid(e.to_string()))?
-        .is_some_and(|at| at > proposed);
-    if !replied {
-        return Err(LedgerError::invalid_fix(
-            format!("The human has not answered {key} in this project's chat yet."),
-            "Ask in chat first: put the change to the human as a numbered item with your recommendation, then log their answer.",
-        ));
-    }
-    Ok(())
-}
-
 pub fn lead_call(
     hub: &Hub,
     project_ref: &ProjectRef,
@@ -218,13 +195,6 @@ pub fn lead_call(
     let r = project_ref.clone();
     match call {
         LeadCall::Decide(call) => {
-            if call
-                .key
-                .as_str()
-                .starts_with(crate::hub::retro::types::PLAYBOOK_KEY_PREFIX)
-            {
-                gate_answered_in_chat(hub, &r, call.key.as_str())?;
-            }
             let scope = if call.scope == DecideScope::Project {
                 DecisionScope::Project {
                     project_ref: r.clone(),

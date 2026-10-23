@@ -85,7 +85,6 @@ On a new hub with no projects yet, the output starts like this:
 |---|---|
 | `fleetd status`, `fleetd time` | Nothing on the hub machine. Elsewhere, `--hub <url> --key-file <file>`. |
 | `fleetd steer`, `fleetd steers` | Always `--key-file` with a [human key](/docs/glossary#human-key). `--hub <url>` off the hub machine. |
-| `fleetd retro` | Always `--hub <url>` and `--key-file <file>`. |
 
 To make a human key file on the hub:
 

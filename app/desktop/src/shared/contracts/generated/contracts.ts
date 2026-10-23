@@ -332,9 +332,9 @@ export type Brief = {
   baseline?: string;
   budget?: BriefBudget;
   constraints: string[];
-  /** Research: frozen with the brief, so the verdict can't move the goalposts. */
+  /** Research: the rule the verdict is computed from. */
   decisionRule?: DecisionRule;
-  /** At least one; frozen with the brief. */
+  /** At least one. */
   doneWhen: CheckSpec[];
   estimate?: Estimate;
   goal: string;
@@ -351,8 +351,6 @@ export type BriefBudget = {
   /** How big a research spend the lead allows, relative like plan sizes; never a time guess. */
   size?: Tier;
 };
-
-export type BriefHash = string;
 
 export type CapSetInput = {
   /** The fleet cap on running turns, leads' included. Needs an admin key. */
@@ -415,7 +413,6 @@ export type Change = {
   projectRef: ProjectRef;
   repo: GitHubRepo;
   reviews: ChangeReview[];
-  serves: Serves;
   state: ChangeState;
   /** The write task that opened it; absent when the lead enqueued a PR no task wrote. */
   taskId?: TaskId;
@@ -790,7 +787,7 @@ export type CommandApprovalItem = {
   outputTail?: string;
   /** A session's permission prompt: the tool and what it would do. */
   permission?: ToolPermission;
-  /** A retro playbook change that relaxes a gate: what changes, in plain words, and the exact diff. */
+  /** A retro playbook change (an older approval only): what changes, in plain words, and the exact diff. */
   playbook?: PlaybookGateChange;
   requestId: ChatRequestId;
   state: CommandApprovalState;
@@ -916,9 +913,6 @@ export type DecisionsSearchOutput = {
   next?: string;
   truncated?: boolean;
 };
-
-/** The only metric direction. */
-export type Decrease = "decrease";
 
 /** How a delivered steer was taken in. */
 export type DeliveredHow = "turn" | "boundary" | "stopped" | "joined";
@@ -1368,17 +1362,11 @@ export type KnownHubEventType =
   | "train.resumed"
   | "train.blocked"
   | "change.refused"
-  | "intake.routed"
   | "research.verdict"
   | "usage.breaker"
   | "usage.resumed"
   | "doctor.changed"
-  | "retro.ran"
-  | "playbook.changed"
-  | "playbook.reverted"
-  | "playbook.kept"
   | "key.paired"
-  | "workstream.note"
   | "prompt.changed"
   | "prompt.default_changed"
   | "steer.queued"
@@ -1440,7 +1428,7 @@ export type HumanRequest = {
   outputTail?: string;
   /** approval of a session's tool prompt, instead of a gated run. */
   permission?: ToolPermission;
-  /** approval of a retro playbook change that relaxes a gate, instead of a gated run or a tool prompt. */
+  /** approval of a retro playbook change (an older approval only), instead of a gated run or a tool prompt. */
   playbook?: PlaybookGateChange;
   projectRef: ProjectRef;
   requestId: ChatRequestId;
@@ -1506,8 +1494,7 @@ export type Incident = {
 
 /**
  * `policy_bypass`: a PR on a watched repo was merged by something other than the train. M12: `override`, a human
- * replaced a lead's Decision with another value; `playbook_reverted`, a retro wording change missed its metric and was
- * rolled back.
+ * replaced a lead's Decision with another value.
  */
 export type IncidentClass =
   | "false_claim"
@@ -1516,7 +1503,6 @@ export type IncidentClass =
   | "stall"
   | "policy_bypass"
   | "override"
-  | "playbook_reverted"
   | "estimate_miss"
   | "misfiled_ask"
   | "re_ask";
@@ -1976,19 +1962,6 @@ export type NodeLoad = {
   memUsedPct?: number;
 };
 
-export type OrchestratorKind = "orchestrator";
-
-/** A `claude -p` one-shot the hub ran for itself, counted as orchestrator usage. */
-export type OrchestratorRun = {
-  durationMs: number;
-  error?: string;
-  inputTokens?: number;
-  kind: OrchestratorKind;
-  model: string;
-  ok: boolean;
-  outputTokens?: number;
-};
-
 /** One order (workstream) as the board shows it. */
 export type OrderCard = {
   createdAt: Timestamp;
@@ -2042,7 +2015,7 @@ export type OrderNoteInput = {
 
 export type OrderNoteOutput = {
   next?: string;
-  /** "N" plus a number; the workstream.note event carries it. */
+  /** "N" plus a number. */
   noteId: string;
   /** The steer the note was sent as; its receipts arrive as `steer.*` events. */
   steerId?: SteerId;
@@ -2246,11 +2219,9 @@ export type PlanningState = {
   since: Timestamp;
 };
 
-export type PlaybookChangeKind = "wording" | "gate";
-
 /**
- * A retro playbook change that relaxes a gate (fewer reviewers, a weaker or removed check, a looser rule): it applies
- * only once a person approves it. Stored with the approval and never changed.
+ * A retro playbook change that relaxes a gate (fewer reviewers, a weaker or removed check, a looser rule). The retro is
+ * gone: only an older approval carries one, and the app still shows it.
  */
 export type PlaybookGateChange = {
   /** The exact unified diff that applies on approve. */
@@ -2872,7 +2843,7 @@ export type PromptGetOutput = {
   id: PromptId;
   kind: PromptKind;
   next?: string;
-  /** False for playbooks, router and retro: they have the hub-wide level only. */
+  /** False for a one-shot: it has the hub-wide level only. */
   perProject: boolean;
   placeholders: Placeholder[];
   project?: PromptOverride;
@@ -3058,7 +3029,7 @@ export type ResearchVerdict = {
   computedAt: Timestamp;
   metricValues: MetricValues;
   outcome: ResearchOutcome;
-  /** The brief's frozen rule. */
+  /** The brief's rule. */
   rule: DecisionRule;
 };
 
@@ -3079,132 +3050,6 @@ export type RetiredPromptOverride = {
   /** What replaced it, in one line. */
   why: string;
 };
-
-export type RetroMetric = {
-  class: RetroMetricClass;
-  op: Decrease;
-  /** Measured over this many days after the change, against the same span before it. */
-  windowDays: number;
-};
-
-/**
- * The fixed metric list, defined in code: incident counts per class, and agent-minutes per done workstream. A
- * proposal names one; the retro cannot add or change them.
- */
-export type RetroMetricClass =
-  | "false_claim"
-  | "polish_loop"
-  | "misfiled_ask"
-  | "out_of_area"
-  | "stall"
-  | "policy_bypass"
-  | "re_ask"
-  | "override"
-  | "agent_minutes_per_done"
-  | "estimate_miss";
-
-export type RetroProposal = {
-  appliedAt?: Timestamp;
-  at: Timestamp;
-  /** The window before it applied; `measured` is the window after. */
-  baseline?: RetroSnapshot;
-  /** What the model said it was. */
-  claimedKind: PlaybookChangeKind;
-  /** A gate change: the global decision a person records to settle it, `playbook.<name>.<hash>` = apply | reject. */
-  decisionKey?: DecisionKey;
-  diff: string;
-  /** When a wording change's window ends and its metric is computed. */
-  dueAt?: Timestamp;
-  expected: string;
-  /** Frontmatter fields the diff changes, plus "body". */
-  fields: string[];
-  fixesIncidents: IncidentId[];
-  /** Decided by the hub from the fields the diff touches. */
-  kind: PlaybookChangeKind;
-  measured?: RetroSnapshot;
-  metric: RetroMetric;
-  note?: string;
-  playbook: PlaybookName;
-  previousRef?: PlaybookRef;
-  proposalId: RetroProposalId;
-  /** The version it applied and the one it replaced. */
-  ref?: PlaybookRef;
-  /** The retro run that proposed it. */
-  run: number;
-  state: RetroProposalState;
-};
-
-export type RetroProposalId = string;
-
-/**
- * suggested: advise-only, nothing applies. pending: a gate change waiting for a person to record its decision.
- * measuring: a wording change applied, its window running; then kept or reverted. applied: a gate change a person
- * approved. rejected: a person said no. stale: the playbook changed under it, so its diff no longer applies.
- */
-export type RetroProposalState = "suggested" | "measuring" | "kept" | "reverted" | "applied" | "rejected" | "stale" | "pending";
-
-export type RetroProposalsInput = {
-  limit?: number;
-  state?: RetroProposalState;
-};
-
-export type RetroProposalsOutput = {
-  /** The global Decision policy.retro.apply is true: wording changes apply on their own and gate changes wait for a person's decision. */
-  apply: boolean;
-  lastRun?: RetroRun;
-  next?: string;
-  /** Newest first. */
-  proposals: RetroProposal[];
-  truncated?: boolean;
-};
-
-export type RetroRun = {
-  /** Nothing it proposed applies: `--advise`, or `policy.retro.apply` is not true. */
-  advise: boolean;
-  at: Timestamp;
-  dropped: RetroRunDropped[];
-  /** Incidents in the window it was given. */
-  incidents: number;
-  proposals: RetroProposalId[];
-  run: number;
-  trigger: RetroTrigger;
-  /** Absent when there was nothing to look at and no turn ran. */
-  usage?: OrchestratorRun;
-  windowDays: number;
-};
-
-/** A change the hub refused, with why. */
-export type RetroRunDropped = {
-  index: number;
-  playbook?: string;
-  reason: string;
-};
-
-export type RetroRunInput = {
-  /** Propose only, even when policy.retro.apply is true. */
-  advise?: boolean;
-  windowDays?: number;
-};
-
-export type RetroRunOutput = {
-  next?: string;
-  proposals: RetroProposal[];
-  run: RetroRun;
-  truncated?: boolean;
-};
-
-/**
- * A metric's values over one window; agent-minutes is null when no workstream finished in it. Its keys are
- * snake_case on the wire.
- */
-export type RetroSnapshot = {
-  agent_minutes_per_done: number | null;
-  false_claim: number;
-  polish_loop: number;
-  target: number | null;
-};
-
-export type RetroTrigger = "weekly" | "threshold" | "manual";
 
 /** Its reviews, rolled up. */
 export type KnownReviewState = "approved" | "changes_requested" | "none" | "pending";
@@ -3951,8 +3796,6 @@ export type Task = {
   /** Why it is queued, e.g. "lease: docs held by T1" or "fleet cap: 40 of 40 running". */
   queuedReason?: string;
   result?: TaskResult;
-  /** Required at spawn for write tasks; optional here for tasks stored before M6. */
-  serves?: Serves;
   startedAt?: Timestamp;
   state: TaskState;
   taskId: TaskId;
@@ -4576,7 +4419,6 @@ export type WorkStep = WorkMessage & {
 export type Workstream = {
   /** Absent while draft. */
   brief?: Brief;
-  briefHash?: BriefHash;
   createdAt: Timestamp;
   /** Hub-filled, outside the frozen brief. Set when it starts running with a raw estimate. */
   estimateActual?: WorkstreamEstimateActual;
@@ -4586,7 +4428,7 @@ export type Workstream = {
   outcome?: ResearchOutcome;
   /** M9 finish-all: the finish-all workstream that spawned this one, and the value source it was spawned for. */
   parent?: WorkstreamParent;
-  /** Pinned at creation; the brief freeze validates against this version. Absent on workstreams from before M9. */
+  /** Pinned at creation; the brief validates against this version. Absent on workstreams from before M9. */
   playbook?: PlaybookRef;
   projectRef: ProjectRef;
   source: WorkstreamSource;
@@ -4606,8 +4448,8 @@ export type WorkstreamEstimateActual = {
 
 /** `workstream.created`, `workstream.running`, `workstream.state`, `workstream.done`. */
 export type WorkstreamEventData = {
-  /** workstream.running: the frozen brief. */
-  briefHash?: BriefHash;
+  /** workstream.state: the brief was set or edited. */
+  briefEdited?: boolean;
   by?: string;
   /** workstream.state (verifying) and workstream.done: the claim that moved it. */
   claimId?: ClaimId;
@@ -4650,17 +4492,6 @@ export type WorkstreamListOutput = {
   truncated?: boolean;
   /** Newest first. */
   workstreams: Workstream[];
-};
-
-/** `workstream.note`. */
-export type WorkstreamNoteData = {
-  clientRequestId?: string;
-  /** The steer the note became. */
-  steerId?: SteerId;
-  /** The first 200 characters. */
-  text?: string;
-  urgent?: boolean;
-  workstreamId: WorkstreamId;
 };
 
 export type WorkstreamParent = {
@@ -4748,8 +4579,6 @@ export interface ToolMap {
   prompt_set: { input: PromptSetInput; output: PromptSetOutput };
   prompts_list: { input: PromptsListInput; output: PromptsListOutput };
   requests_list: { input: RequestsListInput; output: RequestsListOutput };
-  retro_proposals: { input: RetroProposalsInput; output: RetroProposalsOutput };
-  retro_run: { input: RetroRunInput; output: RetroRunOutput };
   secret_submit: { input: SecretSubmitInput; output: SecretSubmitOutput };
   session_prompt_get: { input: SessionPromptGetInput; output: SessionPromptGetOutput };
   status_get: { input: StatusGetInput; output: StatusGetOutput };
@@ -4837,7 +4666,6 @@ export interface HubEventDataMap {
   "usage.resumed": UsageEventData;
   "workstream.created": WorkstreamEventData;
   "workstream.done": WorkstreamEventData;
-  "workstream.note": WorkstreamNoteData;
   "workstream.running": WorkstreamEventData;
   "workstream.state": WorkstreamEventData;
 }

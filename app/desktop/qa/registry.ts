@@ -39,7 +39,6 @@ export const fixtures = [
   "long-text",
   "many-prompts",
   "many-agents",
-  "conversation",
   "hub-unreachable",
   "pairing-failed",
   "node-too-old",
@@ -91,7 +90,6 @@ export const fixtures = [
   "status-paused",
   // E3b's shared stress fixture; the time inspector fills it with a ~15k-span order (fixtures/time).
   "time-heavy",
-  "conversation-20k",
   // The lead chat (fixtures/chat, E3b): a long conversation with migrated order history, a reply streaming in,
   // attachments, the two inline items (secret entry, gated command), the lead waiting on you, a first message.
   "chat-long",
@@ -182,8 +180,6 @@ export interface Screen {
   // Brings up a screen that has no route of its own; runs after the route has loaded. `app` reaches the main process,
   // for what only it decides (whether the system shows notifications).
   open?: (page: Page, app: ElectronApplication) => Promise<void>;
-  // Registered ahead of its PR: skipped, with this reason, until the owner deletes the field.
-  pending?: string;
   // Tells apart two entries for one screen on the same fixture (say, a strip folded and opened): it joins the id in
   // the test title and the file names.
   variant?: string;
@@ -438,8 +434,7 @@ export const screens: readonly Screen[] = [
     },
     variant: "strip-scrolled",
   },
-  // The lead chat (lead-chat-spec.md), registered ahead of its slices, each pending until its writer lands it and
-  // deletes `pending` (check the id, route and open step then).
+  // The lead chat (lead-chat-spec.md).
   // A1 (F1): the sidebar's needs-you dot and running indicator around the remembered project's chat, and on Status
   // with status-rows (eight projects mixing both marks, neither, and a ~120-character name; only some have chats, so
   // it is shot beside Status rather than a chat).
@@ -1114,9 +1109,3 @@ export const screens: readonly Screen[] = [
     open: (page) => page.getByRole("tab", { name: "Insights" }).click(),
   },
 ];
-
-// Platform checks that need a screen writer's work before they can pass; the owner turns theirs on when it lands.
-export const platformChecks: Record<"appMenu", boolean> = {
-  // F1: the macOS app menu, with an Edit menu wired to the text actions.
-  appMenu: true,
-};

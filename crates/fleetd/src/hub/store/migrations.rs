@@ -474,4 +474,36 @@ pub(crate) const MIGRATIONS: &[&str] = &[
   UPDATE time_spans SET profile = 'medium'
     WHERE task_id IN (SELECT 'T' || n FROM tasks WHERE json_extract(data, '$.profile') = 'medium');
   "#,
+    // The order router went: nothing emits intake.routed, and a stored one would no longer decode.
+    r#"
+  DELETE FROM events WHERE type = 'intake.routed';
+  "#,
+    // The retro went: its runs and proposals, its events and its incident class. A playbook change still waiting on a
+    // person is denied, since nothing would apply it.
+    r#"
+  DROP TABLE retro_runs;
+  DROP TABLE retro_proposals;
+  DELETE FROM events WHERE type IN ('retro.ran', 'playbook.changed', 'playbook.reverted', 'playbook.kept');
+  DELETE FROM incidents WHERE class = 'playbook_reverted';
+  UPDATE requests SET state = 'denied', data = json_set(data, '$.state', 'denied')
+    WHERE state = 'open' AND json_valid(data) AND json_extract(data, '$.playbook') IS NOT NULL;
+  "#,
+    // The router's retry memo, the ETA anchor and the generated headlines: nothing reads or writes them, and nothing
+    // emits these two event types any more.
+    r#"
+  DROP TABLE intake_routes;
+  DROP TABLE status_eta;
+  DROP TABLE status_headlines;
+  DELETE FROM events WHERE type IN ('intake.routed', 'workstream.note');
+  "#,
+    // A brief is a plain record: no freeze hash, no amends.
+    r#"
+  ALTER TABLE workstreams DROP COLUMN amends;
+  UPDATE workstreams SET data = json_remove(data, '$.briefHash') WHERE json_valid(data);
+  "#,
+    // No value bar: tasks and changes no longer say what they serve.
+    r#"
+  UPDATE tasks SET data = json_remove(data, '$.serves') WHERE json_valid(data);
+  UPDATE changes SET data = json_remove(data, '$.serves') WHERE json_valid(data);
+  "#,
 ];

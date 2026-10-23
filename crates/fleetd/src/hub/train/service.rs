@@ -11,15 +11,15 @@ use tokio::sync::Notify;
 
 use super::contract::{
     Change, ChangeEnqueueCall, ChangeId, ChangeReview, ChangeState, CommitSha, Count, GitHubPrUrl,
-    GitHubRepo, NonEmpty, Positive, ProjectRef, Serves, Timestamp, TrainState, last_error,
-    parse_pr_url, state_str, tier_str,
+    GitHubRepo, NonEmpty, Positive, ProjectRef, Timestamp, TrainState, last_error, parse_pr_url,
+    state_str, tier_str,
 };
 use super::git::{BLOCKED, GitError, REFUSED_HERE, Rebase, TrainGit, default_worktree};
 use super::github::{CheckRun, GhError, GhRunner, MergeOutcome, Pull, TRAIN_CONTEXT, TrainGitHub};
 use super::host::{BoxFut, IncidentInput, TrainHost};
 use super::main_ci::{DriftCounts, GithubSync, MainCi, ci_state};
 use super::records::{ChangeRecords, Db, HEAD_STATES, ListFilter, QUEUED_STATES};
-use super::rules::{Refusal, check_source, check_tier, freeze_key, is_frozen_value};
+use super::rules::{Refusal, check_tier, freeze_key, is_frozen_value};
 use super::time::{iso, millis, parse_iso};
 use super::triggers;
 use crate::clock::Clock;
@@ -719,7 +719,6 @@ impl Train {
             pr_url: merged.pr_url.as_str(),
             sha: &as_sha,
             tier: tier_str(merged.tier),
-            serves: merged.serves.as_str(),
             by: merged.task_id.as_ref().map(|t| t.as_str()),
         }
         .render();
@@ -1858,7 +1857,7 @@ impl Train {
         )
     }
 
-    /// Validates the PR (`Source:`, tier) and puts it on its repo's train; the same open PR returns its Change.
+    /// Validates the PR (its tier) and puts it on its repo's train; the same open PR returns its Change.
     pub async fn enqueue(
         &self,
         project_ref: &ProjectRef,
@@ -1928,25 +1927,8 @@ impl Train {
             )
         })?;
         self.guard_base(&repo, &pull.base.ref_);
-        let expected = input
-            .serves
-            .as_ref()
-            .map(|s| s.to_string())
-            .or_else(|| task.as_ref().and_then(|t| t.serves.clone()));
-        let require_source = workstream
-            .playbook
-            .as_deref()
-            .and_then(|pin| self.host.playbook(pin))
-            .is_none_or(|p| p.require_source);
-        let source = check_source(
-            pull.body.as_deref(),
-            expected.as_deref(),
-            &workstream_id,
-            brief.done_when,
-            require_source,
-        );
         let now = self.now_iso();
-        let row_of = |serves: &str| Change {
+        let row = Change {
             change_id: ChangeId::unchecked("X0"),
             project_ref: project_ref.clone(),
             repo: GitHubRepo::unchecked(repo.clone()),
@@ -1955,7 +1937,6 @@ impl Train {
             branch: NonEmpty::unchecked(pull.head.ref_.clone()),
             task_id: input.task_id.clone(),
             workstream_id: workstream_id.clone(),
-            serves: Serves::unchecked(serves),
             tier: brief.tier,
             head_sha: CommitSha::unchecked(pull.head.sha.to_lowercase()),
             patch_id: None,
@@ -1967,15 +1948,6 @@ impl Train {
             created_at: now.clone(),
             updated_at: now.clone(),
         };
-        // With no serves to record, a refusal writes no row; with one, the refused Change is kept for the record.
-        let serves = match source {
-            Ok(serves) => serves,
-            Err(refusal) => {
-                let row = expected.as_deref().map(row_of);
-                return Err(self.refuse(project_ref, &pr_url, refusal, row).await);
-            }
-        };
-        let row = row_of(&serves);
         if pull.merged || pull.state != "open" {
             let what = if pull.merged {
                 "already merged".to_string()
@@ -2029,7 +2001,7 @@ impl Train {
             project_ref,
             "change.queued",
             format!(
-                "{} queued: {repo}#{} (tier {}, {serves})",
+                "{} queued: {repo}#{} (tier {})",
                 change.change_id,
                 change.pr_number,
                 tier_str(change.tier)
@@ -2123,7 +2095,6 @@ impl Train {
             task_id: Some(task.task_id.clone()),
             pr_url: GitHubPrUrl::unchecked(pr_url.clone()),
             workstream_id: None,
-            serves: None,
             tier: None,
             item: None,
         };

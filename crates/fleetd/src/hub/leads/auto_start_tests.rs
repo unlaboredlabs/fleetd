@@ -1,5 +1,5 @@
 //! An order for a project without a lead: the lead starts and gets it, or the order waits with the reason, and the
-//! lead starts once the machine comes online with a usable runner.
+//! lead starts once the machine comes online with a usable runner. `hub()` is shared with the prompt tests.
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -10,10 +10,11 @@ use fleetd_contracts::ledger::{Decision, HumanRequest, IntakeChannel, Workstream
 use fleetd_contracts::mcp::{ErrorCode, ThreadLaunchInput};
 use fleetd_contracts::model::{ProjectSummary, ThreadCounts};
 
-use super::SubmitInput;
 use crate::hub::leads::hooks::{BoxFuture, PolicyHook};
+use crate::hub::leads::lead::AutoStart;
 use crate::hub::leads::ports::{CmdOutcome, LeadPorts};
 use crate::hub::leads::wakes::WAKE_DEBOUNCE;
+use crate::hub::leads::workstreams::IntakeInput;
 use crate::hub::leads::{Area, AreaOptions, Ctx, LeadError};
 use crate::hub::store::test_clock::ManualClock;
 use crate::hub::store::{EventLog, HubDb, HubStore, NewEvent, iso_ms};
@@ -156,26 +157,23 @@ pub(crate) fn hub(runner_usable: bool, auto_start: bool) -> Hub {
 }
 
 impl Hub {
-    pub(crate) async fn order(&self, text: &str) -> (WorkstreamId, String, Option<String>) {
-        let placed = self
+    /// A new order in the project, then its lead, as a person's message starts it.
+    pub(crate) async fn order(&self, text: &str) -> (WorkstreamId, AutoStart) {
+        let created = self
             .area
-            .intake
-            .submit(SubmitInput {
+            .workstreams
+            .intake(IntakeInput {
+                project_ref: self.project.clone(),
                 text: text.into(),
-                template: None,
-                project_ref: Some(self.project.clone()),
                 client_request_id: text.into(),
                 channel: IntakeChannel::Mcp,
                 by: "human".into(),
-                allows: Box::new(|_| true),
+                template: None,
+                parent: None,
             })
-            .await
             .unwrap();
-        (
-            placed.workstream_id,
-            placed.next.unwrap(),
-            placed.lead_waiting,
-        )
+        let lead = self.area.leads.auto_start(&self.project).await;
+        (created.workstream_id, lead)
     }
 
     pub(crate) fn launched_prompts(&self) -> Vec<String> {
@@ -223,9 +221,8 @@ async fn settle() {
 #[tokio::test(flavor = "current_thread")]
 async fn an_order_for_a_project_without_a_lead_starts_it_and_the_lead_gets_the_order() {
     let hub = hub(true, true);
-    let (w1, next, waiting) = hub.order("add a /health endpoint").await;
-    assert_eq!(waiting, None);
-    assert!(next.contains("is starting and picks it up"), "{next}");
+    let (w1, lead) = hub.order("add a /health endpoint").await;
+    assert!(matches!(lead, AutoStart::Started(_)));
     let prompts = hub.launched_prompts();
     assert_eq!(prompts.len(), 1);
     assert!(
@@ -237,8 +234,8 @@ async fn an_order_for_a_project_without_a_lead_starts_it_and_the_lead_gets_the_o
     assert_eq!(hub.events_of(HubEventType::LeadStarted), 1);
 
     // The next order goes to the running lead as a wake; the first one is not said twice.
-    let (w2, _, waiting) = hub.order("add a /ready endpoint").await;
-    assert_eq!(waiting, None);
+    let (w2, lead) = hub.order("add a /ready endpoint").await;
+    assert!(matches!(lead, AutoStart::Running(_)));
     hub.after_debounce().await;
     let sends = hub.node.sends.lock().unwrap().clone();
     assert_eq!(sends.len(), 1);
@@ -260,14 +257,13 @@ async fn an_unusable_runner_holds_the_order_with_its_reason_until_the_machine_is
     let hub = hub(false, true);
     let waiting_loop = tokio::spawn(hub.area.leads.clone().run_waiting());
     settle().await;
-    let (w1, next, waiting) = hub.order("add a /health endpoint").await;
+    let (w1, lead) = hub.order("add a /health endpoint").await;
+    let AutoStart::Held(e) = lead else {
+        panic!("a logged-out runner starts no lead");
+    };
     assert_eq!(
-        waiting.as_deref(),
-        Some(format!("{NOT_LOGGED_IN} {LOGIN_FIX}").as_str())
-    );
-    assert!(
-        next.contains(NOT_LOGGED_IN) && next.contains(LOGIN_FIX),
-        "{next}"
+        (e.message.as_str(), e.fix.as_deref()),
+        (NOT_LOGGED_IN, Some(LOGIN_FIX))
     );
     assert!(hub.area.leads.get(&hub.project).unwrap().is_none());
     assert_eq!(hub.events_of(HubEventType::LeadStarted), 0);
@@ -296,18 +292,12 @@ async fn an_unusable_runner_holds_the_order_with_its_reason_until_the_machine_is
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn a_policy_that_turns_auto_start_off_keeps_the_order_a_draft_and_says_so() {
+async fn a_policy_that_turns_auto_start_off_keeps_the_order_a_draft() {
     let hub = hub(true, false);
     let waiting_loop = tokio::spawn(hub.area.leads.clone().run_waiting());
     settle().await;
-    let (_, next, waiting) = hub.order("add a /health endpoint").await;
-    assert!(
-        waiting
-            .as_deref()
-            .is_some_and(|w| w.contains("lead.autoStart: false") && w.contains("lead_start")),
-        "{waiting:?}"
-    );
-    assert!(next.contains("waiting for its lead"), "{next}");
+    let (_, lead) = hub.order("add a /health endpoint").await;
+    assert!(matches!(lead, AutoStart::Off));
     hub.machine_online();
     settle().await;
     assert!(hub.launched_prompts().is_empty());
