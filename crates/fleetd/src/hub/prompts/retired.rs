@@ -19,6 +19,8 @@ const CHAT: &str = "the lead hears the human in its chat now";
 const DENIED: &str = "a denied tool call gets one fixed line with its reason now";
 const FIX_PR: &str = "one fixed \"fix your PR\" message replaces it";
 const FIXED: &str = "fixed text now, the same for every project";
+const STALL: &str =
+    "a stalled run fails and its lead decides whether to continue it; nothing nudges it";
 const ROUTER: &str = "one lead per project: an order goes to its project's lead, no router";
 const HEADLINE: &str = "the status view has no generated headline";
 const PLAYBOOK: &str = "the playbooks are sections of the lead prompt now; this file's rules still apply, its instructions don't";
@@ -290,7 +292,7 @@ pub const RETIRED: &[Retired] = &[
         FIXED,
         None,
     ),
-    r("watchdog.nudge", "Stall nudge", FIXED, None),
+    r("watchdog.nudge", "Stall nudge", STALL, None),
     r(
         "usage.continue",
         "Continue after a usage limit",

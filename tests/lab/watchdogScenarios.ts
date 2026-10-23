@@ -1,8 +1,8 @@
-// M2 lab scenarios 2 (stall, nudge, fail) and 6 (missed completion while the hub is down), against the
+// M2 lab scenarios 2 (stall) and 6 (missed completion while the hub is down), against the
 // disposable lab only. Run by the lab harness (`npm run lab -- stall missed`).
-// Costs: scenario 2 two or three tiny mechanics turns, scenario 6 one.
+// Costs: one tiny mechanics turn each.
 import { randomUUID } from "node:crypto";
-import { MECHANICS, NUDGE, sessionText, sleep } from "./harness.ts";
+import { MECHANICS, sessionText, sleep } from "./harness.ts";
 
 type Body = Record<string, any>;
 
@@ -17,13 +17,8 @@ export interface LabContext {
   readonly log: (line: string) => void;
 }
 
-/** Short watchdog thresholds for scenario 2: 20 s outside a tool, tool timeout (10 s) + 20 s inside. */
-export const STALL_HUB_ENV = {
-  FLEETD_STALL_OUTSIDE_SEC: "20",
-  FLEETD_STALL_TOOL_TIMEOUT_SEC: "10",
-  FLEETD_STALL_INSIDE_GRACE_SEC: "20",
-  FLEETD_WATCHDOG_EVERY_SEC: "2",
-} as const;
+/** A short stall threshold for scenario 2: 20 s outside a tool, 20 s + 20 s inside one that states no timeout. */
+export const STALL_HUB_ENV = { FLEETD_STALL_SEC: "20" } as const;
 
 const check = (cond: unknown, what: string): void => {
   if (!cond) throw new Error(`check failed: ${what}`);
@@ -81,11 +76,10 @@ const launch = async (ctx: LabContext, machineId: string, projectId: string, tit
 };
 
 /**
- * Scenario 2. A thread runs `sleep 900` inside a tool under short thresholds. The watchdog emits
- * thread.stalled (inside a tool), interrupts, sends one "continue"; the continuation sleeps again and
- * stalls, and the watchdog emits thread.failed{reason:"stalled"} with no second nudge.
+ * Scenario 2. A thread runs `sleep 900` inside a tool under a short threshold. The watchdog emits
+ * thread.failed{reason:"stalled"} (inside a tool) and interrupts the run, once: the run ends and no other starts.
  */
-export async function stallNudgeFail(ctx: LabContext, machineId = "lab-a") {
+export async function stallFails(ctx: LabContext, machineId = "lab-a") {
   await ctx.startHub(STALL_HUB_ENV);
   const { projectId, cursor } = await ready(ctx, machineId);
   const events = eventsFrom(ctx, cursor);
@@ -94,32 +88,31 @@ export async function stallNudgeFail(ctx: LabContext, machineId = "lab-a") {
     machineId,
     projectId,
     "fleetd test:lab stall",
-    // Unset, so the watchdog holds the call to FLEETD_STALL_TOOL_TIMEOUT_SEC; a stated timeout (claude likes 600000 for a
-    // long sleep) would be honoured, and the stall would take ten minutes.
+    // Unset, so the watchdog holds the call to FLEETD_STALL_SEC; a stated timeout (claude likes 600000 for a long
+    // sleep) would be honoured, and the stall would take ten minutes.
     "Use the Bash tool to run exactly `sleep 900` in the foreground (not in the background), leaving the tool's timeout " +
-      "parameter unset, and wait for it. " +
-      "If you are interrupted or asked to continue, run `sleep 900` in the foreground again. Do nothing else.",
+      "parameter unset, and wait for it. Do nothing else.",
   );
   ctx.log(`ok  thread_launch ${machineId} -> ${threadId} (sleep 900)`);
   const mine = (e: Body) => e.threadId === threadId;
 
-  const stalled = await events.next("thread.stalled", 180_000, (e) => mine(e) && e.type === "thread.stalled");
-  check(stalled.data?.inTool === true, `the stall was seen inside the tool: ${JSON.stringify(stalled.data)}`);
-  ctx.log(`ok  thread.stalled seq=${stalled.seq} "${stalled.summary}"`);
-
-  const failed = await events.next("thread.failed{reason:stalled}", 240_000, (e) => {
-    check(!(mine(e) && e.type === "thread.stalled"), `no second thread.stalled: ${JSON.stringify(e)}`);
-    return mine(e) && e.type === "thread.failed";
-  });
+  const failed = await events.next("thread.failed{reason:stalled}", 240_000, (e) => mine(e) && e.type === "thread.failed");
   check(failed.data?.reason === "stalled", `failed for stalling: ${JSON.stringify(failed.data)}`);
-  check(failed.data?.runId !== stalled.data?.runId, "the second stall was on the continuation run");
+  check(failed.data?.inTool === true, `the stall was seen inside the tool: ${JSON.stringify(failed.data)}`);
   ctx.log(`ok  thread.failed seq=${failed.seq} reason=${failed.data.reason} "${failed.summary}"`);
 
-  const tail = (await ctx.callTool("thread_tail", { machineId, threadId, n: 50, kinds: ["message"] })).body;
-  // The hub's nudge is a fixed asset file now, so it arrives with the file's trailing newline; the words are exact.
-  const nudges = (tail.items as Array<Body>).filter((i) => i.role === "user" && String(i.text).trimEnd() === NUDGE);
-  check(nudges.length === 1, `exactly one nudge in the thread: ${nudges.length}`);
-  ctx.log(`ok  thread_tail: one "continue" nudge`);
+  const ended = await events.next("the stalled run ends", 60_000, (e) => mine(e) && e.type === "thread.interrupted");
+  ctx.log(`ok  thread.interrupted seq=${ended.seq}`);
+  // Nothing continues it: the lead decides. Two thresholds is long enough for a nudge to have gone out.
+  const quiet = Date.now() + 40_000;
+  let at = ended.seq as number;
+  while (Date.now() < quiet) {
+    const page = (await ctx.callTool("events_wait", { cursor: at, timeoutSec: 10 })).body;
+    const next = (page.events as Array<Body>).find((e) => mine(e) && e.type === "thread.started");
+    check(next === undefined, `no run after the stall: ${JSON.stringify(next)}`);
+    at = page.cursor;
+  }
+  ctx.log("ok  no run after the stall");
 }
 
 /**

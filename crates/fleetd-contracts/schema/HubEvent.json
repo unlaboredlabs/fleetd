@@ -117,11 +117,6 @@
           "type": "string"
         },
         {
-          "const": "thread.stalled",
-          "description": "No progress past the stall threshold; the hub interrupts and nudges once.",
-          "type": "string"
-        },
-        {
           "const": "wake.missed",
           "description": "A wake missed while the hub was down, with catchUp \"skip\".",
           "type": "string"

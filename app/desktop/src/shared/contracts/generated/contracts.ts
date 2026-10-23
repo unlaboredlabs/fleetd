@@ -1321,7 +1321,6 @@ export type KnownHubEventType =
   | "project.clone_progress"
   | "project.add_failed"
   | "thread.waiting"
-  | "thread.stalled"
   | "wake.missed"
   | "write.delivered"
   | "write.expired"
@@ -4764,7 +4763,6 @@ export interface HubEventDataMap {
   "thread.completed": ThreadEventData;
   "thread.failed": ThreadEventData;
   "thread.interrupted": ThreadEventData;
-  "thread.stalled": ThreadEventData;
   "thread.started": ThreadEventData;
   "thread.usage_limited": UsageEventData;
   "thread.waiting": ThreadEventData;

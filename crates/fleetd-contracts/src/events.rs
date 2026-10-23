@@ -56,9 +56,6 @@ pub enum HubEventType {
     ThreadWaiting,
     #[serde(rename = "thread.usage_limited")]
     ThreadUsageLimited,
-    /// No progress past the stall threshold; the hub interrupts and nudges once.
-    #[serde(rename = "thread.stalled")]
-    ThreadStalled,
     #[serde(rename = "wake.fired")]
     WakeFired,
     /// A wake missed while the hub was down, with catchUp "skip".
@@ -268,7 +265,6 @@ impl HubEventType {
             Self::ThreadInterrupted => "thread.interrupted",
             Self::ThreadWaiting => "thread.waiting",
             Self::ThreadUsageLimited => "thread.usage_limited",
-            Self::ThreadStalled => "thread.stalled",
             Self::WakeFired => "wake.fired",
             Self::WakeMissed => "wake.missed",
             Self::WriteDelivered => "write.delivered",

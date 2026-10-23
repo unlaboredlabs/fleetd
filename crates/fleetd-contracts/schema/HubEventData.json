@@ -888,9 +888,6 @@
         "thread.interrupted": {
           "$ref": "#/$defs/ThreadEventData"
         },
-        "thread.stalled": {
-          "$ref": "#/$defs/ThreadEventData"
-        },
         "thread.started": {
           "$ref": "#/$defs/ThreadEventData"
         },
@@ -973,7 +970,6 @@
         "thread.completed",
         "thread.failed",
         "thread.interrupted",
-        "thread.stalled",
         "thread.started",
         "thread.usage_limited",
         "thread.waiting",

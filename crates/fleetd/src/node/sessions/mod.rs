@@ -3,9 +3,9 @@
 //! streams.
 //!
 //! Everything durable is in [`NodeStore`], written before it is sent, so a node restart or crash loses no session:
-//! on start, runs that were active are closed as interrupted (the hub's watchdog decides whether to continue them)
-//! and the next `send` resumes the claude session in the same cwd and config dir. Idle processes are reaped and
-//! respawned on demand. Permission prompts are answered from policy or held as a pending approval for the hub.
+//! on start, runs that were active are closed as interrupted (its lead decides whether to continue one) and the next
+//! `send` resumes the claude session in the same cwd and config dir. Idle processes are reaped and respawned on
+//! demand. Permission prompts are answered from policy or held as a pending approval for the hub.
 pub mod files;
 mod health;
 mod proc;
