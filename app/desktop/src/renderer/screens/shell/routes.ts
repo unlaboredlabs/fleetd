@@ -21,6 +21,7 @@ export type PanelView = { readonly tab: "agents"; readonly agent: string | null 
 
 export const SETTINGS_TABS = ["general", "notifications", "agents", "prompts", "instructions"] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
+export type SettingsView = "edit" | "compare" | "update";
 
 export type Screen =
   /** `#/`: the last project opened, else the first; the frame resolves it once the projects have loaded. */
@@ -35,7 +36,8 @@ export type Screen =
   /** The time inspector, for one order or (null) the fleet. */
   | { readonly id: "time"; readonly orderId: string | null }
   | { readonly id: "projects.add" }
-  | { readonly id: "settings"; readonly tab: SettingsTab }
+  /** A tab; `prompt`, `for` ("<machine>/<project>") and `view` link one prompt, a project's texts or a prompt's update. */
+  | { readonly id: "settings"; readonly tab: SettingsTab; readonly prompt?: string; readonly for?: string; readonly view?: SettingsView }
   /** A fleetd://pair link prefills the hub and code; the screen still asks before it pairs. */
   | { readonly id: "onboarding"; readonly hub: string | null; readonly code: string | null };
 
@@ -90,8 +92,16 @@ const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): Screen 
       return { id: head };
     case "projects":
       return a === "add" ? { id: "projects.add" } : HOME;
-    case "settings":
-      return { id: "settings", tab: isSettingsTab(a) ? a : "general" };
+    case "settings": {
+      const [prompt, project, view] = [query.get("prompt"), query.get("for"), query.get("view")];
+      return {
+        id: "settings",
+        tab: isSettingsTab(a) ? a : "general",
+        ...(prompt ? { prompt } : {}),
+        ...(project ? { for: project } : {}),
+        ...(view === "compare" || view === "update" ? { view } : {}),
+      };
+    }
     case "onboarding":
       return { id: "onboarding", hub: query.get("hub") || null, code: query.get("code") || null };
     default:
@@ -148,7 +158,13 @@ export const toHash = (screen: Screen): string => {
     if (screen.hub !== null) query.set("hub", screen.hub);
     if (screen.code !== null) query.set("code", screen.code);
   }
-  const q = query.toString();
+  if (screen.id === "settings") {
+    if (screen.prompt !== undefined) query.set("prompt", screen.prompt);
+    if (screen.for !== undefined) query.set("for", screen.for);
+    if (screen.view !== undefined && screen.view !== "edit") query.set("view", screen.view);
+  }
+  // A project's "<machine>/<project>" reads as one in a copied link.
+  const q = query.toString().replaceAll("%2F", "/");
   return `#/${path(screen).map(encodeURIComponent).join("/")}${q === "" ? "" : `?${q}`}`;
 };
 

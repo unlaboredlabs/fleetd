@@ -1,11 +1,11 @@
 // Settings → Agents at #/settings/agents?for=<machine>/<project> (the palette's "Max agents" on a project): that
 // project's slider scrolls into view with focus, so the arrow keys change its own limit at once.
 import { useEffect } from "react";
-import { parseRoute, useHash } from "./route";
+import { useSettingsRoute } from "./route";
 
 /** Call from the Agents page; `ready` once the sliders are drawn. */
 export function useFocusProjectSlider(ready: boolean) {
-  const target = parseRoute(useHash()).for;
+  const target = useSettingsRoute().for;
   useEffect(() => {
     if (!ready || target === null) return;
     const at = target.indexOf("/");

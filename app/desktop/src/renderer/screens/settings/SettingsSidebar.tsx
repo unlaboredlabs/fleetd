@@ -6,8 +6,9 @@ import { Input, Sidebar, SidebarItem, SidebarSection, Text } from "../../ui";
 import { sections } from "./catalog";
 import type { PromptSummary } from "./contracts";
 import { parseScope, projectRefOf, type Scope } from "./editor";
-import { useLive, useRead } from "./hub";
-import { parseRoute, promptHref, tabHref, useHash, type Tab } from "./route";
+import { useToolQuery } from "../../src/data/react";
+import { errorText, useLive } from "./hub";
+import { promptHref, tabHref, useSettingsRoute, type Tab } from "./route";
 import { openOption, PAGE_LABEL, searchSettings } from "./search";
 import s from "./settings.module.css";
 
@@ -24,7 +25,7 @@ const go = (hash: string) => {
 };
 
 export function SettingsSidebar({ onBack }: { onBack: () => void }) {
-  const route = parseRoute(useHash());
+  const route = useSettingsRoute();
   const [query, setQuery] = useState("");
   const results = searchSettings(query);
   const searching = query.trim() !== "";
@@ -102,21 +103,21 @@ function PromptNav({ selected, scope }: { selected: string | null; scope: Scope 
   const live = useLive();
   const projectRef = projectRefOf(scope);
   // The same read as the page's list: one query, shared.
-  const [list, retry] = useRead("prompt_get", projectRef ? { projectRef } : {}, live);
+  const list = useToolQuery("prompt_get", projectRef ? { projectRef } : {}, { enabled: live });
   if (!live) return null;
-  if (list.state !== "ready") {
+  if (list.data === undefined) {
     return (
       <div className={s.navNested}>
-        {list.state === "loading" ? (
+        {!list.isError ? (
           <Text size="xs" tone="quiet">
             Loading prompts…
           </Text>
         ) : (
           <>
             <Text size="xs" tone="danger">
-              {list.message}
+              {errorText(list.error)}
             </Text>
-            <SidebarItem label="Try again" indent onClick={retry} />
+            <SidebarItem label="Try again" indent onClick={() => void list.refetch()} />
           </>
         )}
       </div>
@@ -124,7 +125,7 @@ function PromptNav({ selected, scope }: { selected: string | null; scope: Scope 
   }
   return (
     <div role="group" aria-label="Prompts">
-      {sections(list.value.prompts ?? []).map(({ group, rows }) => (
+      {sections(list.data.prompts ?? []).map(({ group, rows }) => (
         <div key={group.key}>
           <div className={s.navNested}>
             <Text size="xs" tone="quiet">
