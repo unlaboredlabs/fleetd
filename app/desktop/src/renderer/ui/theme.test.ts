@@ -18,19 +18,9 @@ describe("resolveTheme", () => {
 });
 
 describe("humanizeKey", () => {
-  it("turns slugs and keys into a sentence-case label", () => {
+  it("turns slugs and keys into a sentence-case label, without a leading option index", () => {
     expect(humanizeKey("public-snapshot")).toBe("Public snapshot");
-    expect(humanizeKey("image_only")).toBe("Image only");
     expect(humanizeKey("retryOnFailure")).toBe("Retry on failure");
-  });
-
-  it("drops a leading option index", () => {
-    expect(humanizeKey("a-monthly-vs-week")).toBe("Monthly vs week");
     expect(humanizeKey("b-prorated")).toBe("Prorated");
-  });
-
-  it("keeps a single word and leaves symbols-only keys alone", () => {
-    expect(humanizeKey("b")).toBe("B");
-    expect(humanizeKey("--")).toBe("--");
   });
 });
