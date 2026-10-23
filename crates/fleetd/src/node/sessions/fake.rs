@@ -1,29 +1,30 @@
-//! A [`Runner`] for tests that replays a recorded claude transcript (`runner/fixtures`): each `Send` plays the next
-//! user turn of the file with the run id swapped in, a permission prompt waits for its `Answer`, and `Shutdown`
-//! ends the process. Its stream-json → event mapping covers only what the session service reacts to; the real
-//! mapper is the Claude adapter's.
+//! A [`Runner`] for tests that plays claude from a recorded transcript (`runner/fixtures`) through the real
+//! [`StreamMapper`], so the session service sees the events production maps. Each user message plays the next
+//! recorded user turn with its uuid swapped for the run id. The fake answers the mapper's stdin lines as claude
+//! does: a permission prompt waits for its answer, an interrupt or a `now` message cuts the turn, a withdraw cancels
+//! a queued message, and `Shutdown` ends the process.
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use fleetd_contracts::ids::Timestamp;
-use fleetd_contracts::prim::{NonEmpty, Text};
-use fleetd_contracts::sessions::{
-    FailureClass, ItemKind, ItemStatus, LoginStatus, RunFailure, RunnerInfo, RunnerKind, SendMode,
-    SendNow, ThreadItem,
-};
-use serde_json::Value;
+use fleetd_contracts::sessions::{LoginStatus, RunnerInfo, RunnerKind};
+use serde_json::{Value, json};
 use tokio::sync::mpsc;
 
-use crate::node::runner::conformance::agent_like;
+use crate::node::runner::claude::mapper::{Now, StreamMapper};
+use crate::node::runner::claude::protocol::{Input, Line};
 use crate::node::runner::{
-    BoxFut, ExitInfo, RunOutcome, Runner, RunnerError, RunnerEvent, SessionCommand, SessionHandle,
-    SessionSpec,
+    BoxFut, ExitInfo, Runner, RunnerError, RunnerEvent, SessionCommand, SessionHandle, SessionSpec,
+    failure,
 };
 
-/// One stdout line and its offset from the turn's start.
-type Turn = Vec<(u64, Value)>;
+/// One recorded user turn: its message's uuid, and each stdout line with its offset from the turn's start.
+#[derive(Clone)]
+struct Turn {
+    uuid: Option<String>,
+    lines: Vec<(u64, Value)>,
+}
 
 pub struct FakeRunner {
     turns: Vec<Turn>,
@@ -56,12 +57,16 @@ impl FakeRunner {
             let ms = rec["ms"].as_u64().unwrap_or(0);
             match rec["dir"].as_str() {
                 Some("in") if rec["msg"]["type"] == "user" => {
-                    turns.push(Vec::new());
+                    turns.push(Turn {
+                        uuid: rec["msg"]["uuid"].as_str().map(str::to_owned),
+                        lines: Vec::new(),
+                    });
                     start = ms;
                 }
                 Some("out") => {
                     if let Some(turn) = turns.last_mut() {
-                        turn.push((ms.saturating_sub(start), rec["msg"].clone()));
+                        turn.lines
+                            .push((ms.saturating_sub(start), rec["msg"].clone()));
                     }
                 }
                 _ => {}
@@ -116,6 +121,8 @@ impl Runner for FakeRunner {
     }
 
     fn spawn(&self, spec: SessionSpec) -> Result<SessionHandle, RunnerError> {
+        let refusal = self.refuse_next.lock().unwrap().take();
+        let mapper = StreamMapper::new(spec.session_id.clone(), Arc::new(failure::classify));
         let denied = spec.disallowed_tools.clone();
         let index = {
             let mut spawns = self.spawns.lock().unwrap();
@@ -125,8 +132,7 @@ impl Runner for FakeRunner {
         let (cmd_tx, cmd_rx) = mpsc::channel(16);
         let (ev_tx, ev_rx) = mpsc::channel(256);
         let process = Process {
-            refusal: self.refuse_next.lock().unwrap().take(),
-            denied,
+            refusal,
             index,
             turns: self.turns.clone(),
             next_turn: self.next_turn.clone(),
@@ -135,7 +141,14 @@ impl Runner for FakeRunner {
             commands: self.commands.clone(),
             rx: cmd_rx,
             tx: ev_tx,
-            backlog: VecDeque::new(),
+            mapper,
+            denied,
+            queue: VecDeque::new(),
+            playing: false,
+            cut: false,
+            asking: false,
+            exit: None,
+            out: Vec::new(),
         };
         tokio::spawn(process.run());
         Ok(SessionHandle {
@@ -146,10 +159,10 @@ impl Runner for FakeRunner {
     }
 }
 
+/// One fake claude process: the session task's side (commands through the mapper) and claude's (its stdin lines).
 struct Process {
+    /// claude's startup refusal, on stderr when its first send makes it exit.
     refusal: Option<String>,
-    /// The spawn's `--disallowedTools`.
-    denied: Vec<String>,
     index: usize,
     turns: Vec<Turn>,
     next_turn: Arc<AtomicUsize>,
@@ -158,372 +171,224 @@ struct Process {
     commands: Arc<Mutex<Vec<(usize, SessionCommand)>>>,
     rx: mpsc::Receiver<SessionCommand>,
     tx: mpsc::Sender<RunnerEvent>,
-    /// Sends that arrived mid-turn and wait in claude's queue. A plain send waits for the turn's end here (claude
-    /// takes it in at the next tool boundary); a steer (`boundary`, `now`) ends the turn as superseded and plays next.
-    backlog: VecDeque<(String, String)>,
-}
-
-enum Stop {
-    /// The turn ended (normally or by interrupt).
-    TurnOver,
-    Exit(ExitInfo),
+    mapper: StreamMapper,
+    /// The spawn's `--disallowedTools`.
+    denied: Vec<String>,
+    /// User messages claude holds, by uuid, in the order it takes them.
+    queue: VecDeque<String>,
+    playing: bool,
+    /// The playing turn ends now, aborted.
+    cut: bool,
+    /// A permission prompt waits for its answer.
+    asking: bool,
+    exit: Option<i32>,
+    /// Mapped events not yet sent.
+    out: Vec<RunnerEvent>,
 }
 
 impl Process {
-    async fn next_command(&mut self) -> Option<SessionCommand> {
-        let command = self.rx.recv().await?;
+    fn record(&self, command: &SessionCommand) {
         self.commands
             .lock()
             .unwrap()
             .push((self.index, command.clone()));
-        Some(command)
     }
 
-    async fn run(mut self) {
-        let exit = loop {
-            let (run_id, _text) = match self.backlog.pop_front() {
-                Some(send) => send,
-                None => match self.next_command().await {
-                    None => break clean_exit(),
-                    Some(SessionCommand::Send { run_id, text, .. }) => (run_id, text),
-                    Some(SessionCommand::Withdraw { run_id }) => {
-                        let withdrawn = RunnerEvent::Withdrawn {
-                            run_id,
-                            cancelled: false,
-                            by_stop: false,
-                        };
-                        let _ = self.tx.send(withdrawn).await;
-                        continue;
-                    }
-                    Some(SessionCommand::Shutdown { .. }) => break clean_exit(),
-                    Some(_) => continue,
-                },
-            };
-            if let Some(stderr) = self.refusal.take() {
-                break self.refuse(run_id, stderr).await;
-            }
-            match self.play(&run_id).await {
-                Stop::TurnOver => {}
-                Stop::Exit(exit) => break exit,
-            }
-        };
-        let _ = self.tx.send(RunnerEvent::Exited(exit)).await;
+    async fn take_command(&mut self) {
+        let command = self.rx.recv().await;
+        self.handle(command).await;
     }
 
-    /// Handles a command that arrives while a turn plays.
-    fn during_turn(&mut self, command: SessionCommand, run_id: &str) -> Option<Stop> {
+    /// A closed channel is claude's stdin closing.
+    async fn handle(&mut self, command: Option<SessionCommand>) {
         match command {
-            SessionCommand::Send {
-                run_id: next,
-                text,
-                mode: SendMode::Plain,
-            } => {
-                self.backlog.push_back((next, text));
-                None
+            Some(command) => {
+                self.record(&command);
+                self.command(command);
             }
-            SessionCommand::Send {
-                run_id: steer,
-                text,
-                mode,
-            } => {
-                if mode == SendMode::Now {
-                    let _ = self.tx.try_send(RunnerEvent::SendNow {
-                        run_id: steer.clone(),
-                        outcome: SendNow::Stopped,
-                        stopped_tool: None,
-                    });
-                }
-                let _ = self.tx.try_send(RunnerEvent::RunEnded {
-                    run_id: run_id.to_owned(),
-                    outcome: RunOutcome::Superseded { by: steer.clone() },
-                    usage: None,
-                });
-                self.backlog.push_front((steer, text));
-                Some(Stop::TurnOver)
-            }
-            SessionCommand::Withdraw { run_id: queued } => {
-                let found = self.backlog.iter().position(|(r, _)| *r == queued);
-                if let Some(at) = found {
-                    self.backlog.remove(at);
-                }
-                let _ = self.tx.try_send(RunnerEvent::Withdrawn {
-                    run_id: queued.clone(),
-                    cancelled: found.is_some(),
-                    by_stop: false,
-                });
-                if found.is_some() {
-                    let _ = self.tx.try_send(RunnerEvent::RunEnded {
-                        run_id: queued,
-                        outcome: RunOutcome::Interrupted,
-                        usage: None,
-                    });
-                }
-                None
-            }
-            SessionCommand::Interrupt if self.honour_interrupt => {
-                let _ = self.tx.try_send(RunnerEvent::RunEnded {
-                    run_id: run_id.to_owned(),
-                    outcome: RunOutcome::Interrupted,
-                    usage: None,
-                });
-                Some(Stop::TurnOver)
-            }
-            SessionCommand::Shutdown { .. } => Some(Stop::Exit(ExitInfo {
-                code: Some(143),
-                signal: None,
-                stderr_tail: String::new(),
-            })),
-            _ => None,
+            None => self.exit = self.exit.or(Some(0)),
+        }
+        self.flush().await;
+    }
+
+    async fn flush(&mut self) {
+        for event in std::mem::take(&mut self.out) {
+            let _ = self.tx.send(event).await;
         }
     }
 
-    /// The send's run fails as the real classifier reads claude's exit.
-    async fn refuse(&self, run_id: String, stderr: String) -> ExitInfo {
-        let exit = ExitInfo {
-            code: Some(1),
-            signal: None,
-            stderr_tail: stderr,
-        };
-        let evidence = crate::node::runner::failure::FailureEvidence {
-            exit: Some(exit.clone()),
-            ..Default::default()
-        };
-        let failure = crate::node::runner::failure::classify(&evidence).unwrap();
-        let _ = self
-            .tx
-            .send(RunnerEvent::RunEnded {
-                run_id,
-                outcome: RunOutcome::Failed(failure),
-                usage: None,
-            })
-            .await;
-        exit
+    fn stopped(&self) -> bool {
+        self.cut || self.exit.is_some()
     }
 
-    async fn play(&mut self, run_id: &str) -> Stop {
+    async fn run(mut self) {
+        while self.exit.is_none() {
+            match self.queue.pop_front() {
+                Some(_) if self.refusal.is_some() => self.exit = Some(1),
+                Some(uuid) => self.play(&uuid).await,
+                None => self.take_command().await,
+            }
+        }
+        let exit = ExitInfo {
+            code: self.exit,
+            signal: None,
+            stderr_tail: self.refusal.take().unwrap_or_default(),
+        };
+        self.out.extend(self.mapper.exited(exit, &Now::system()));
+        self.flush().await;
+    }
+
+    /// As the session task does: the command through the mapper, and its stdin lines to claude.
+    fn command(&mut self, command: SessionCommand) {
+        let inputs = match command {
+            SessionCommand::Send { run_id, text, mode } => self.mapper.send(&run_id, &text, mode),
+            SessionCommand::Withdraw { run_id } => match self.mapper.withdraw(&run_id) {
+                Some(input) => vec![input],
+                None => {
+                    self.out.push(RunnerEvent::Withdrawn {
+                        run_id,
+                        cancelled: false,
+                        by_stop: false,
+                    });
+                    vec![]
+                }
+            },
+            SessionCommand::Interrupt => self.mapper.stop(),
+            SessionCommand::Answer {
+                request_id,
+                decision,
+                by,
+            } => self
+                .mapper
+                .answer(&request_id, &decision, by, &Now::system())
+                .into_iter()
+                .collect(),
+            SessionCommand::Shutdown { .. } => {
+                self.mapper.stopping();
+                // Mid-turn the kill ladder ends it with SIGTERM's 143; idle, claude exits once stdin closes.
+                self.exit = Some(if self.mapper.has_open_run() { 143 } else { 0 });
+                vec![]
+            }
+        };
+        for input in inputs {
+            self.claude(input);
+        }
+    }
+
+    /// claude reading one stdin line.
+    fn claude(&mut self, input: Input) {
+        match input {
+            Input::User { uuid, priority, .. } => {
+                if priority.is_some() && self.playing {
+                    self.cut = true;
+                    self.queue.push_front(uuid);
+                } else {
+                    self.queue.push_back(uuid);
+                }
+            }
+            Input::ControlRequest {
+                request_id,
+                request,
+            } => match request["subtype"].as_str() {
+                Some("interrupt") if self.honour_interrupt => {
+                    self.respond(&request_id, json!({}));
+                    self.cut |= self.playing;
+                }
+                Some("cancel_async_message") => {
+                    let uuid = request["message_uuid"].as_str().unwrap_or_default();
+                    let held = self.queue.iter().position(|q| q == uuid);
+                    if let Some(at) = held {
+                        self.queue.remove(at);
+                        self.feed(json!({"type": "command_lifecycle", "command_uuid": uuid, "state": "cancelled"}));
+                    }
+                    self.respond(&request_id, json!({"cancelled": held.is_some()}));
+                }
+                _ => {}
+            },
+            Input::ControlResponse { .. } => self.asking = false,
+        }
+    }
+
+    fn respond(&mut self, request_id: &str, response: Value) {
+        self.feed(json!({
+            "type": "control_response",
+            "response": {"subtype": "success", "request_id": request_id, "response": response},
+        }));
+    }
+
+    /// One stdout line through the mapper; the replies it writes go back to claude.
+    fn feed(&mut self, mut msg: Value) {
+        if msg["type"] == "system" && msg["subtype"] == "init" {
+            // As claude applies the spawn's deny list (the fixtures were recorded without one).
+            if let Some(tools) = msg["tools"].as_array_mut() {
+                tools.retain(|t| !self.denied.iter().any(|d| t.as_str() == Some(d)));
+            }
+        }
+        let line: Line = serde_json::from_value(msg).expect("a stream-json line");
+        let mapped = self.mapper.feed(line, &Now::system());
+        self.asking |= mapped
+            .events
+            .iter()
+            .any(|e| matches!(e, RunnerEvent::PermissionRequest { .. }));
+        self.out.extend(mapped.events);
+        for reply in mapped.replies {
+            self.claude(reply);
+        }
+    }
+
+    async fn play(&mut self, uuid: &str) {
         let n = self.next_turn.fetch_add(1, Ordering::Relaxed);
         let turn = self.turns[n % self.turns.len()].clone();
-        let mut message_id = String::new();
-        let mut api_error: Option<(String, Option<u16>)> = None;
+        self.playing = true;
         let mut clock = 0;
-        for (ms, msg) in turn {
+        for (ms, mut msg) in turn.lines {
             if self.timed && ms > clock {
                 let wait = tokio::time::sleep(Duration::from_millis(ms - clock));
                 tokio::pin!(wait);
-                loop {
-                    tokio::select! {
+                while !self.stopped() {
+                    let command = tokio::select! {
                         () = &mut wait => break,
-                        command = self.next_command() => match command {
-                            None => return Stop::Exit(clean_exit()),
-                            Some(command) => if let Some(stop) = self.during_turn(command, run_id) { return stop },
-                        },
-                    }
+                        command = self.rx.recv() => command,
+                    };
+                    self.handle(command).await;
                 }
                 clock = ms;
             }
             while let Ok(command) = self.rx.try_recv() {
-                self.commands
-                    .lock()
-                    .unwrap()
-                    .push((self.index, command.clone()));
-                if let Some(stop) = self.during_turn(command, run_id) {
-                    return stop;
-                }
+                self.record(&command);
+                self.command(command);
             }
-            for event in map_line(&msg, run_id, &self.denied, &mut message_id, &mut api_error) {
-                let asks = matches!(event, RunnerEvent::PermissionRequest { .. });
-                let _ = self.tx.send(event).await;
-                if asks {
-                    loop {
-                        match self.next_command().await {
-                            None => return Stop::Exit(clean_exit()),
-                            Some(SessionCommand::Answer { .. }) => break,
-                            Some(command) => {
-                                if let Some(stop) = self.during_turn(command, run_id) {
-                                    return stop;
-                                }
-                            }
-                        }
-                    }
-                }
+            if self.stopped() {
+                break;
+            }
+            if let Some(recorded) = &turn.uuid {
+                swap(&mut msg, recorded, uuid);
+            }
+            self.feed(msg);
+            self.flush().await;
+            while self.asking && !self.stopped() {
+                self.take_command().await;
             }
         }
-        Stop::TurnOver
+        if self.cut && self.exit.is_none() {
+            self.feed(json!({
+                "type": "result",
+                "subtype": "error_during_execution",
+                "is_error": true,
+                "terminal_reason": "aborted_tools",
+            }));
+        }
+        (self.playing, self.cut, self.asking) = (false, false, false);
+        self.flush().await;
     }
 }
 
-fn clean_exit() -> ExitInfo {
-    ExitInfo {
-        code: Some(0),
-        signal: None,
-        stderr_tail: String::new(),
-    }
-}
-
-fn at() -> Timestamp {
-    Timestamp::from("2026-10-18T00:00:00.000Z")
-}
-
-fn map_line(
-    msg: &Value,
-    run_id: &str,
-    denied: &[String],
-    message_id: &mut String,
-    api_error: &mut Option<(String, Option<u16>)>,
-) -> Vec<RunnerEvent> {
-    let s = |v: &Value| v.as_str().unwrap_or_default().to_owned();
-    match msg["type"].as_str().unwrap_or_default() {
-        "system" if msg["subtype"] == "init" => vec![RunnerEvent::Init {
-            version: s(&msg["claude_code_version"]),
-            model: s(&msg["model"]),
-            cwd: s(&msg["cwd"]),
-            // As claude applies the spawn's deny list (the fixtures were recorded without one).
-            agent_tools: msg["tools"].as_array().map(|tools| {
-                tools
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .filter(|t| agent_like(t) && !denied.iter().any(|d| d == t))
-                    .map(str::to_owned)
-                    .collect()
-            }),
-        }],
-        "command_lifecycle" if msg["state"] == "started" => vec![RunnerEvent::RunStarted {
-            run_id: run_id.to_owned(),
-        }],
-        "stream_event" => {
-            let event = &msg["event"];
-            match event["type"].as_str() {
-                Some("message_start") => {
-                    *message_id = s(&event["message"]["id"]);
-                    vec![]
-                }
-                Some("content_block_delta") if event["delta"]["type"] == "text_delta" => {
-                    vec![RunnerEvent::Delta {
-                        message_id: message_id.clone(),
-                        append: s(&event["delta"]["text"]),
-                    }]
-                }
-                _ => vec![],
-            }
-        }
-        "assistant" => {
-            if let Some(error) = msg["error"].as_str() {
-                *api_error = Some((
-                    error.to_owned(),
-                    msg["api_error_status"].as_u64().map(|n| n as u16),
-                ));
-            }
-            let id = s(&msg["message"]["id"]);
-            let blocks = msg["message"]["content"]
-                .as_array()
-                .cloned()
-                .unwrap_or_default();
-            blocks
-                .iter()
-                .filter_map(|block| match block["type"].as_str() {
-                    Some("text") => Some(RunnerEvent::AssistantText {
-                        message_id: id.clone(),
-                        text: s(&block["text"]),
-                    }),
-                    Some("tool_use") => Some(RunnerEvent::Item(tool_item(
-                        &s(&block["id"]),
-                        run_id,
-                        &s(&block["name"]),
-                        &block["input"],
-                        ItemStatus::Running,
-                        None,
-                    ))),
-                    _ => None,
-                })
-                .collect()
-        }
-        "user" => {
-            let blocks = msg["message"]["content"]
-                .as_array()
-                .cloned()
-                .unwrap_or_default();
-            blocks
-                .iter()
-                .filter(|b| b["type"] == "tool_result")
-                .map(|b| {
-                    let status = if b["is_error"] == true {
-                        ItemStatus::Failed
-                    } else {
-                        ItemStatus::Completed
-                    };
-                    RunnerEvent::Item(tool_item(
-                        &s(&b["tool_use_id"]),
-                        run_id,
-                        "Bash",
-                        &Value::Null,
-                        status,
-                        Some(s(&b["content"])),
-                    ))
-                })
-                .collect()
-        }
-        "control_request" if msg["request"]["subtype"] == "can_use_tool" => {
-            let request = &msg["request"];
-            vec![RunnerEvent::PermissionRequest {
-                request_id: s(&msg["request_id"]),
-                tool_use_id: s(&request["tool_use_id"]),
-                tool_name: s(&request["tool_name"]),
-                input: request["input"].clone(),
-                summary: s(&request["input"]["command"]),
-            }]
-        }
-        "result" => {
-            let text = s(&msg["result"]);
-            let outcome = match (msg["is_error"] == true, api_error.take()) {
-                (false, _) => RunOutcome::Completed { text },
-                (true, error) => {
-                    let class = match error.as_ref().map(|(e, _)| e.as_str()) {
-                        Some("overloaded" | "server_error") => FailureClass::Overloaded,
-                        Some("authentication_failed") => FailureClass::Auth,
-                        _ => FailureClass::Other,
-                    };
-                    RunOutcome::Failed(RunFailure {
-                        class,
-                        message: Text::new(text.clone())
-                            .unwrap_or_else(|_| Text::unchecked("failed")),
-                        api_status: error.and_then(|(_, status)| status),
-                        reset_at: None,
-                        retries: 0,
-                    })
-                }
-            };
-            vec![RunnerEvent::RunEnded {
-                run_id: run_id.to_owned(),
-                outcome,
-                usage: None,
-            }]
-        }
-        _ => vec![],
-    }
-}
-
-fn tool_item(
-    id: &str,
-    run_id: &str,
-    name: &str,
-    input: &Value,
-    status: ItemStatus,
-    output: Option<String>,
-) -> ThreadItem {
-    ThreadItem {
-        id: NonEmpty::unchecked(id),
-        run_id: Some(NonEmpty::unchecked(run_id)),
-        status,
-        title: name.to_owned(),
-        started_at: at(),
-        completed_at: None,
-        updated_at: at(),
-        kind: ItemKind::Command {
-            command: input["command"].as_str().unwrap_or_default().to_owned(),
-            timeout_ms: None,
-            output,
-            output_omitted: false,
-            exit_code: None,
-        },
+/// Every string `from` in `value` becomes `to`.
+fn swap(value: &mut Value, from: &str, to: &str) {
+    match value {
+        Value::String(s) if s == from => *s = to.to_owned(),
+        Value::Array(items) => items.iter_mut().for_each(|v| swap(v, from, to)),
+        Value::Object(fields) => fields.values_mut().for_each(|v| swap(v, from, to)),
+        _ => {}
     }
 }

@@ -663,14 +663,14 @@ async fn an_interrupt_during_a_retry_wait_ends_the_run_for_good() {
 async fn a_session_whose_init_offers_an_agent_tool_stops_and_later_ones_deny_it() {
     // A claude with an agent tool fleetd's deny list doesn't name yet; the first turn would run for a minute.
     let lines = r#"
-{"dir":"in","ms":0,"msg":{"type":"user"}}
-{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","state":"started"}}
+{"dir":"in","ms":0,"msg":{"type":"user","uuid":"u1"}}
+{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","command_uuid":"u1","state":"started"}}
 {"dir":"out","ms":0,"msg":{"type":"system","subtype":"init","tools":["Bash","Task","SwarmSpawn"]}}
-{"dir":"out","ms":60000,"msg":{"type":"result","is_error":false,"result":"too late"}}
-{"dir":"in","ms":0,"msg":{"type":"user"}}
-{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","state":"started"}}
+{"dir":"out","ms":60000,"msg":{"type":"result","subtype":"success","is_error":false,"result":"too late"}}
+{"dir":"in","ms":0,"msg":{"type":"user","uuid":"u2"}}
+{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","command_uuid":"u2","state":"started"}}
 {"dir":"out","ms":0,"msg":{"type":"system","subtype":"init","tools":["Bash","Task","SwarmSpawn"]}}
-{"dir":"out","ms":5,"msg":{"type":"result","is_error":false,"result":"done"}}
+{"dir":"out","ms":5,"msg":{"type":"result","subtype":"success","is_error":false,"result":"done"}}
 "#;
     let dir = tempfile::tempdir().unwrap();
     let mut runner = FakeRunner::from_lines(lines);
@@ -733,12 +733,12 @@ async fn a_session_whose_init_offers_an_agent_tool_stops_and_later_ones_deny_it(
 async fn a_run_silent_since_the_machine_woke_is_resumed_as_a_network_retry() {
     // The first turn's stream never comes back (its result is hours away); the retry's turn completes.
     let lines = r#"
-{"dir":"in","ms":0,"msg":{"type":"user"}}
-{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","state":"started"}}
-{"dir":"out","ms":7200000,"msg":{"type":"result","is_error":false,"result":"too late"}}
-{"dir":"in","ms":0,"msg":{"type":"user"}}
-{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","state":"started"}}
-{"dir":"out","ms":5,"msg":{"type":"result","is_error":false,"result":"done"}}
+{"dir":"in","ms":0,"msg":{"type":"user","uuid":"u1"}}
+{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","command_uuid":"u1","state":"started"}}
+{"dir":"out","ms":7200000,"msg":{"type":"result","subtype":"success","is_error":false,"result":"too late"}}
+{"dir":"in","ms":0,"msg":{"type":"user","uuid":"u2"}}
+{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","command_uuid":"u2","state":"started"}}
+{"dir":"out","ms":5,"msg":{"type":"result","subtype":"success","is_error":false,"result":"done"}}
 "#;
     let dir = tempfile::tempdir().unwrap();
     let mut runner = FakeRunner::from_lines(lines);
@@ -802,11 +802,11 @@ async fn a_run_silent_since_the_machine_woke_is_resumed_as_a_network_retry() {
 #[tokio::test(start_paused = true)]
 async fn deltas_reach_followers_coalesced_and_stop_at_their_message() {
     let lines = r#"
-{"dir":"in","ms":0,"msg":{"type":"user"}}
-{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","state":"started"}}
-{"dir":"out","ms":5,"msg":{"type":"result","is_error":false,"result":""}}
-{"dir":"in","ms":0,"msg":{"type":"user"}}
-{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","state":"started"}}
+{"dir":"in","ms":0,"msg":{"type":"user","uuid":"u3"}}
+{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","command_uuid":"u3","state":"started"}}
+{"dir":"out","ms":5,"msg":{"type":"result","subtype":"success","is_error":false,"result":""}}
+{"dir":"in","ms":0,"msg":{"type":"user","uuid":"u4"}}
+{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","command_uuid":"u4","state":"started"}}
 {"dir":"out","ms":0,"msg":{"type":"stream_event","event":{"type":"message_start","message":{"id":"m2"}}}}
 {"dir":"out","ms":0,"msg":{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"a"}}}}
 {"dir":"out","ms":30,"msg":{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"b"}}}}
@@ -815,7 +815,7 @@ async fn deltas_reach_followers_coalesced_and_stop_at_their_message() {
 {"dir":"out","ms":130,"msg":{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"e"}}}}
 {"dir":"out","ms":250,"msg":{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"f"}}}}
 {"dir":"out","ms":260,"msg":{"type":"assistant","message":{"id":"m2","content":[{"type":"text","text":"abcdef"}]}}}
-{"dir":"out","ms":270,"msg":{"type":"result","is_error":false,"result":"abcdef"}}
+{"dir":"out","ms":270,"msg":{"type":"result","subtype":"success","is_error":false,"result":"abcdef"}}
 "#;
     let dir = tempfile::tempdir().unwrap();
     let mut runner = FakeRunner::from_lines(lines);
@@ -960,12 +960,12 @@ async fn a_first_start_that_claude_already_knows_resumes_instead() {
 async fn a_retry_of_a_message_claude_never_took_in_sends_the_message_again() {
     // The first turn fails before claude says `started`; the retry's turn completes.
     let lines = r#"
-{"dir":"in","ms":0,"msg":{"type":"user"}}
+{"dir":"in","ms":0,"msg":{"type":"user","uuid":"u1"}}
 {"dir":"out","ms":0,"msg":{"type":"assistant","error":"overloaded","message":{"id":"m1","content":[]}}}
-{"dir":"out","ms":0,"msg":{"type":"result","is_error":true,"result":"API Error: 529 Overloaded"}}
-{"dir":"in","ms":0,"msg":{"type":"user"}}
-{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","state":"started"}}
-{"dir":"out","ms":0,"msg":{"type":"result","is_error":false,"result":"OK"}}
+{"dir":"out","ms":0,"msg":{"type":"result","subtype":"error_during_execution","is_error":true,"result":"API Error: 529 Overloaded"}}
+{"dir":"in","ms":0,"msg":{"type":"user","uuid":"u2"}}
+{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","command_uuid":"u2","state":"started"}}
+{"dir":"out","ms":0,"msg":{"type":"result","subtype":"success","is_error":false,"result":"OK"}}
 "#;
     let dir = tempfile::tempdir().unwrap();
     let config = SessionConfig {
@@ -1080,17 +1080,17 @@ fn a_machine_given_a_config_dir_keeps_it_in_its_node_config() {
 }
 
 /// Three turns: a 30 s Bash call, then a reply naming S1, then a plain reply.
-const STEER_TURNS: &str = r#"{"dir":"in","ms":0,"msg":{"type":"user"}}
-{"dir":"out","ms":1,"msg":{"type":"command_lifecycle","command_uuid":"x","state":"started"}}
+const STEER_TURNS: &str = r#"{"dir":"in","ms":0,"msg":{"type":"user","uuid":"s1"}}
+{"dir":"out","ms":1,"msg":{"type":"command_lifecycle","command_uuid":"s1","state":"started"}}
 {"dir":"out","ms":5,"msg":{"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"tu1","name":"Bash","input":{"command":"sleep 30"}}]}}}
 {"dir":"out","ms":30000,"msg":{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tu1","content":"","is_error":false}]}}}
 {"dir":"out","ms":30010,"msg":{"type":"result","subtype":"success","is_error":false,"result":"slept"}}
-{"dir":"in","ms":0,"msg":{"type":"user"}}
-{"dir":"out","ms":1,"msg":{"type":"command_lifecycle","command_uuid":"x","state":"started"}}
+{"dir":"in","ms":0,"msg":{"type":"user","uuid":"s2"}}
+{"dir":"out","ms":1,"msg":{"type":"command_lifecycle","command_uuid":"s2","state":"started"}}
 {"dir":"out","ms":5,"msg":{"type":"assistant","message":{"id":"m2","content":[{"type":"text","text":"S1: dropping the docs page"}]}}}
 {"dir":"out","ms":6,"msg":{"type":"result","subtype":"success","is_error":false,"result":"S1: dropping the docs page"}}
-{"dir":"in","ms":0,"msg":{"type":"user"}}
-{"dir":"out","ms":1,"msg":{"type":"command_lifecycle","command_uuid":"x","state":"started"}}
+{"dir":"in","ms":0,"msg":{"type":"user","uuid":"s3"}}
+{"dir":"out","ms":1,"msg":{"type":"command_lifecycle","command_uuid":"s3","state":"started"}}
 {"dir":"out","ms":5,"msg":{"type":"assistant","message":{"id":"m3","content":[{"type":"text","text":"OK"}]}}}
 {"dir":"out","ms":6,"msg":{"type":"result","subtype":"success","is_error":false,"result":"OK"}}
 "#;
