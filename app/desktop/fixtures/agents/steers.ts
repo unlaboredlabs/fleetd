@@ -9,6 +9,8 @@ import { AGENT } from "./route.ts";
 export const STEER_WORDS = {
   agent: "Keep the old date helper exported until the email templates move.",
   leadNow: "Stop the public link work; ship the card first.",
+  /** composer-steers: acknowledged, between the lead's question and your answer. */
+  leadLink: "Make the public link expire after seven days.",
 } as const;
 
 export const steer = (now: string, n: number, target: JsonObject, stage: string, text: string, agoS: number, more: JsonObject = {}): JsonObject => ({

@@ -1,4 +1,4 @@
-/* The steer box under an agent's live work, and the receipts above it (or above the lead's composer). Static. */
+/* The steer box under an agent's live work, and the receipts above it. Static. */
 .steer {
   display: flex;
   flex-direction: column;

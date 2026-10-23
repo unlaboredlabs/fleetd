@@ -1,9 +1,9 @@
-// Steering mid-run from the app: the box under an agent's live work, and the receipts any steer shows (that box's,
-// and the lead composer's ⌘Enter). Sent with the app's paired key, as chat is: the hub takes it as the person's
-// (steer_send refuses an agent key). Receipts are the order's steers in order_get, the read the live strip shares,
-// which every steer.* event naming the order reads again (effects.ts).
+// Steering mid-run from the app: the box under an agent's live work, with its receipts, and the sends the lead
+// composer's ⌘Enter shares (its steers show in the chat, chat/ChatList.tsx). Sent with the app's paired key, as chat
+// is: the hub takes it as the person's (steer_send refuses an agent key). Receipts are the order's steers in
+// order_get, the read the live strip shares, which every steer.* event naming the order reads again (effects.ts).
 import { ArrowUp } from "lucide-react";
-import { useState, type KeyboardEvent } from "react";
+import { useCallback, useState, type KeyboardEvent } from "react";
 import type { AttachmentId, Steer, SteerMode, SteerTarget } from "../../../shared/contracts";
 import { useDataLayer, useToolQuery } from "../../src/data/react";
 import { Button, cx, IdChip, Text, Tooltip, Truncate } from "../../ui";
@@ -13,33 +13,41 @@ import s from "./steer.module.css";
 /** ⌘Enter, as this platform writes it. */
 export const nowKeys = (): string => (window.fleetd.platform === "darwin" ? "⌘↩" : "Ctrl+↩");
 
-/** The steers this view sent, kept as the hub answered until its order lists them. */
+/**
+ * The steers this view sent, kept as the hub answered until its order lists them. `send` and `withdraw` keep their
+ * identity, so the chat's memoized rows can hold them.
+ */
 export function useSteerSends() {
   const { call } = useDataLayer();
   const [sent, setSent] = useState<readonly Steer[]>([]);
-  const keep = (steer: Steer) => setSent((all) => [steer, ...all.filter((x) => x.id !== steer.id)]);
-  const send = async (target: SteerTarget, text: string, mode: SteerMode, attachments?: readonly AttachmentId[]): Promise<string | undefined> => {
-    const out = await call("steer_send", { target, text, mode, clientRequestId: crypto.randomUUID(), ...(attachments?.length ? { attachments: [...attachments] } : {}) });
-    if (!out.ok) return steerFailed(out.error.code);
-    keep(out.output);
-    return undefined;
-  };
-  const withdraw = async (steerId: string): Promise<boolean> => {
-    const out = await call("steer_withdraw", { steerId });
-    if (out.ok) keep(out.output);
-    return out.ok;
-  };
+  const keep = useCallback((steer: Steer) => setSent((all) => [steer, ...all.filter((x) => x.id !== steer.id)]), []);
+  const send = useCallback(
+    async (target: SteerTarget, text: string, mode: SteerMode, attachments?: readonly AttachmentId[]): Promise<string | undefined> => {
+      const out = await call("steer_send", { target, text, mode, clientRequestId: crypto.randomUUID(), ...(attachments?.length ? { attachments: [...attachments] } : {}) });
+      if (!out.ok) return steerFailed(out.error.code);
+      keep(out.output);
+      return undefined;
+    },
+    [call, keep],
+  );
+  const withdraw = useCallback(
+    async (steerId: string): Promise<boolean> => {
+      const out = await call("steer_withdraw", { steerId });
+      if (out.ok) keep(out.output);
+      return out.ok;
+    },
+    [call, keep],
+  );
   return { sent, send, withdraw };
 }
 
-/**
- * The steers of order `workstreamId`, or of its task `taskId`. `onlySent`: only what this view sent (the lead
- * composer's); else the person's recent steers to it too.
- */
-export function SteerReceipts({ workstreamId, taskId, steers, onlySent = false }: { workstreamId: string; taskId?: string; steers: ReturnType<typeof useSteerSends>; onlySent?: boolean }) {
-  const order = useToolQuery("order_get", { workstreamId }, { enabled: !onlySent || steers.sent.length > 0 });
+export type SteerSends = ReturnType<typeof useSteerSends>;
+
+/** Under an agent's box: the person's steers to task `taskId` of order `workstreamId`, newest first. */
+function SteerReceipts({ workstreamId, taskId, steers }: { workstreamId: string; taskId: string; steers: SteerSends }) {
+  const order = useToolQuery("order_get", { workstreamId });
   const [unwithdrawn, setUnwithdrawn] = useState<string>();
-  const shown = receiptsToShow(steersFor(order.data?.steers, taskId), steers.sent, onlySent);
+  const shown = receiptsToShow(steersFor(order.data?.steers, taskId), steers.sent);
   if (shown.length === 0) return null;
   return (
     <ul className={s.receipts} aria-label="Your steers">

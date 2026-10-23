@@ -75,16 +75,14 @@ describe("steer receipts", () => {
 
   it("keeps a sent steer as the hub answered until the list has it, then the list's; never the lead's own", () => {
     const sent = [steer(7, "queued")];
-    expect(receiptsToShow(undefined, sent, true).map((x) => x.stage)).toEqual(["queued"]);
+    expect(receiptsToShow(undefined, sent).map((x) => x.stage)).toEqual(["queued"]);
     const listed = [steer(7, "delivered"), steer(6, "acknowledged"), steer(5, "acknowledged", { by: { kind: "lead" } })];
-    expect(receiptsToShow(listed, sent, true).map((x) => `${x.id} ${x.stage}`)).toEqual(["S7 delivered"]);
-    expect(receiptsToShow(listed, sent, false).map((x) => `${x.id} ${x.stage}`)).toEqual(["S7 delivered", "S6 acknowledged"]);
+    expect(receiptsToShow(listed, sent).map((x) => `${x.id} ${x.stage}`)).toEqual(["S7 delivered", "S6 acknowledged"]);
   });
 
-  it("shows an agent only its own steers from its order's, and the lead all of them", () => {
+  it("shows an agent only its own steers from its order's", () => {
     const order = [steer(3, "queued", { target: { workstreamId: "W1" } }), steer(2, "queued", { target: { taskId: "T2" } }), steer(1, "queued")];
     expect(steersFor(order, "T1")?.map((x) => x.id)).toEqual(["S1"]);
-    expect(steersFor(order, undefined)?.map((x) => x.id)).toEqual(["S3", "S2", "S1"]);
   });
 });
 

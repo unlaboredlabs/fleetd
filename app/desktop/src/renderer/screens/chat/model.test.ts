@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import type { Steer, Workstream } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
-import { authorLabel, chatRows, dayLabel, heldLabel, rowIndexOf, systemHeadline } from "./model";
+import { leadSteers, steerReceipt } from "../live/steerModel";
+import { authorLabel, chatRows, dayLabel, heldLabel, ordersInView, rowIndexOf, systemHeadline, type Row } from "./model";
 
 const at = (d: number, h: number, m = 0) => new Date(Date.UTC(2026, 9, d, h, m)).toISOString();
 const NOW = Date.parse(at(19, 18));
@@ -151,5 +153,63 @@ describe("the chat's rows", () => {
     expect(systemHeadline("# project storefront (devbox/storefront), 09:12\n\n## Events\n- PR #214 merged")).toBe("Woken: PR #214 merged");
     expect(systemHeadline("# project storefront (devbox/storefront), 09:12\n\nNothing new.")).toBe("fleetd's digest of the project");
     expect(systemHeadline("You seem stalled; continue the task.")).toBe("You seem stalled; continue the task.");
+  });
+});
+
+describe("your steers to the lead", () => {
+  const steer = (n: number, time: string, stage: Steer["stage"], over: Partial<Steer> = {}): Steer => ({
+    id: `S${String(n)}`,
+    target: { workstreamId: "W1" },
+    workstreamId: "W1",
+    thread: { machineId: "devbox", threadId: "lead" },
+    runId: `r${String(n)}`,
+    by: { kind: "human", keyName: "laptop" },
+    mode: "now",
+    text: `steer ${String(n)}`,
+    stage,
+    queuedAt: time,
+    ...over,
+  });
+  const shown = (r: readonly Row[]) =>
+    r.flatMap((x) =>
+      x.kind === "steer" ? [`steer:${x.steer.id}:${steerReceipt(x.steer).line}`] : x.kind === "message" ? [`message:${x.item.id}`] : x.kind === "activity" ? ["activity"] : [],
+    );
+
+  it("show in the chat at their time with their receipt; a steer to one of its agents, or the lead's own, never", () => {
+    // order_get lists them newest first, across the project's orders; this window's send waits for the list.
+    const listed = [
+      steer(4, at(19, 9, 20), "withdrawn"),
+      steer(3, at(19, 9, 15), "queued", { target: { taskId: "T1" } }),
+      steer(2, at(19, 9, 10), "acknowledged", { ackExcerpt: "Shipping the card first." }),
+      steer(1, at(19, 9, 12), "delivered", { by: { kind: "lead" } }),
+    ];
+    const sent = [steer(5, at(19, 9, 40), "queued")];
+    const items = [item("a", "human", at(19, 9)), item("b", "lead", at(19, 9, 5)), item("c", "lead", at(19, 9, 30))];
+    expect(shown(rows(items, { steers: leadSteers(listed, sent), activity: true }))).toEqual([
+      "message:a",
+      "message:b",
+      "steer:S2:Acknowledged",
+      "steer:S4:Withdrawn: it never saw this",
+      "message:c",
+      "steer:S5:Stopping its current step…",
+      "activity",
+    ]);
+    // The hub's answer replaces what the window kept from its send.
+    expect(leadSteers([steer(5, at(19, 9, 40), "delivered", { how: "stopped" })], sent).map((x) => x.stage)).toEqual(["delivered"]);
+  });
+
+  it("wait for their page, and aren't shown twice beside the chat's history from before it existed", () => {
+    const items = [item("b", "lead", at(19, 9, 5)), item("c", "lead", at(19, 9, 30))];
+    const steers = [steer(1, at(19, 9), "acknowledged"), steer(2, at(19, 9, 10), "delivered"), steer(3, at(19, 9, 40), "delivered")];
+    expect(shown(rows(items, { steers, hasOlder: true, hasNewer: true }))).toEqual(["message:b", "steer:S2:Delivered", "message:c"]);
+    const copy = item("h", "human", at(19, 9, 10), { kind: "event", text: "steer 2", message: { messageId: "h", projectRef: { machineId: "devbox", projectId: "app" }, seq: 1, author: "human", text: "steer 2", createdAt: at(19, 9, 10), state: "final", history: "steer" } });
+    expect(shown(rows([copy, ...items], { steers: [steers[1] as Steer] })).filter((x) => x.startsWith("steer"))).toEqual([]);
+  });
+
+  it("are read from the open orders, and from those that ended within the pages", () => {
+    const w = (id: string, created: string, updated: string, state: Workstream["state"]) => ({ workstreamId: id, createdAt: created, updatedAt: updated, state }) as Workstream;
+    const listed = [w("W4", at(19, 12), at(19, 13), "done"), w("W3", at(19, 8), at(19, 10), "done"), w("W2", at(18, 8), at(18, 9), "stopped"), w("W1", at(17, 8), at(17, 9), "running")];
+    expect(ordersInView(["W9"], listed, undefined, undefined)).toEqual(["W1", "W2", "W3", "W4", "W9"]);
+    expect(ordersInView(["W9"], listed, at(19, 9), at(19, 11))).toEqual(["W1", "W3", "W9"]);
   });
 });
