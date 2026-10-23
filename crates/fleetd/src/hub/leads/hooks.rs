@@ -5,6 +5,7 @@ use std::pin::Pin;
 use std::sync::{Arc, OnceLock};
 
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef, Timestamp};
+use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::tasks::TaskId;
 use fleetd_contracts::usage::UsageParked;
 
@@ -47,6 +48,8 @@ pub trait TrainHook: Send + Sync {
         project_ref: &ProjectRef,
         since: Option<&Timestamp>,
     ) -> Option<Vec<String>>;
+    /// The workstream's PRs on the train that are not merged or abandoned, as `#<n> <state>`.
+    fn unlanded(&self, project_ref: &ProjectRef, workstream_id: &WorkstreamId) -> Vec<String>;
 }
 
 /// GitHub through `gh api`.

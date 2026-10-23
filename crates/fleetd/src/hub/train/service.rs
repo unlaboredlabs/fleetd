@@ -563,47 +563,29 @@ impl Train {
         Ok(())
     }
 
-    /// When an order's done-when passed, its PRs that are not merged and not already on their way in are left
-    /// over: each leaves the train and is closed on GitHub with `why`. The design's rule is that done-when alone
-    /// decides done, so an orphan PR must not stay open looking like work in progress. Returns the ones closed.
-    pub async fn close_leftovers(
+    /// When an order is stopped, its PRs that are not merged and not already on their way in leave the train with
+    /// `why`, so none can merge or wait on a reviewer. They stay open on GitHub: closing them is the person's call.
+    /// Returns the ones taken off.
+    pub fn take_leftovers(
         &self,
         project_ref: &ProjectRef,
         workstream_id: &WorkstreamId,
         why: &str,
-        keep: &[ChangeId],
     ) -> Vec<Change> {
-        let changes = self.list(&ListFilter {
-            project_ref: Some(project_ref.clone()),
-            limit: 500,
-            ..Default::default()
-        });
-        let mut closed = Vec::new();
-        for change in leftovers(&changes, workstream_id)
+        let changes = self.records.unlanded(project_ref, workstream_id.as_str());
+        leftovers(&changes, workstream_id)
             .into_iter()
-            .filter(|c| !keep.contains(&c.change_id))
-        {
-            let Some(left) = self.update(&change.change_id, Some(&[change.state]), |mut c| {
-                c.state = ChangeState::Abandoned;
-                c.last_error = Some(last_error(why));
-                c
-            }) else {
-                continue;
-            };
-            let comment = format!("Closed by fleetd: {why}");
-            if let Err(error) = self
-                .github
-                .close(&left.repo, left.pr_number.get(), &comment)
-                .await
-            {
-                tracing::warn!(change = %left.change_id, ?error, "train: leftover PR not closed on GitHub");
-            }
-            closed.push(left);
-        }
-        closed
+            .filter_map(|change| {
+                self.update(&change.change_id, Some(&[change.state]), |mut c| {
+                    c.state = ChangeState::Abandoned;
+                    c.last_error = Some(last_error(why));
+                    c
+                })
+            })
+            .collect()
     }
 
-    pub(super) async fn abandon(&self, change: &Change, why: &str) {
+    pub(crate) async fn abandon(&self, change: &Change, why: &str) {
         let done = self.update(&change.change_id, Some(&[change.state]), |mut c| {
             c.state = ChangeState::Abandoned;
             c.last_error = Some(last_error(why));

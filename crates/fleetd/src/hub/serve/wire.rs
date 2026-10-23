@@ -4,6 +4,7 @@ use std::sync::{Arc, Weak};
 
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef, Timestamp};
 use fleetd_contracts::lead_calls::LeadCall;
+use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::mcp::McpToolError;
 use fleetd_contracts::usage::UsageParked;
 
@@ -142,6 +143,24 @@ impl TrainHook for TrainForLeads {
             &facts,
             since.map(|s| s.0.as_str()),
         ))
+    }
+
+    fn unlanded(&self, project_ref: &ProjectRef, workstream_id: &WorkstreamId) -> Vec<String> {
+        let Some(hub) = self.0.upgrade() else {
+            return Vec::new();
+        };
+        hub.train
+            .records()
+            .unlanded(project_ref, workstream_id.as_str())
+            .iter()
+            .map(|c| {
+                format!(
+                    "#{} {}",
+                    c.pr_number.get(),
+                    crate::hub::train::contract::state_str(c.state)
+                )
+            })
+            .collect()
     }
 }
 

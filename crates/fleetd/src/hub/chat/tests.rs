@@ -1259,6 +1259,62 @@ async fn stop_all_stops_the_lead_and_its_agents_and_says_so() {
         fleetd_contracts::sessions::SessionCall::Interrupt { session_id, run_id: None, .. } if session_id.as_str() == "lead-thread")));
 }
 
+/// A stop takes the order's waiting PRs off the train, so none merges or waits for a reviewer, and leaves them open
+/// on GitHub; the line names them. A PR already in CI is on its way in and keeps going.
+#[tokio::test]
+async fn a_stop_takes_the_orders_prs_off_the_train_and_says_which() {
+    use crate::hub::train::contract::{Change, ChangeState};
+    let (hub, _home) = hub();
+    let (w, _) = hub
+        .leads
+        .records
+        .workstream_create(NewWorkstream {
+            project_ref: project(),
+            title: "Dark mode".into(),
+            text: "add dark mode".into(),
+            channel: IntakeChannel::App,
+            by: "human".into(),
+            at: AT.into(),
+            client_request_id: None,
+        })
+        .unwrap();
+    let records = hub.train.records();
+    let change = |number: i64, state: &str| -> Change {
+        serde_json::from_value(json!({
+            "changeId": "X1", "projectRef": { "machineId": "devbox", "projectId": "app" }, "repo": "o/app",
+            "prNumber": number, "prUrl": format!("https://github.com/o/app/pull/{number}"),
+            "branch": format!("fleetd/pr-{number}"), "workstreamId": w.workstream_id, "headSha": "b".repeat(40),
+            "state": state, "reviews": [], "createdAt": AT, "updatedAt": AT,
+        }))
+        .unwrap()
+    };
+    let [reviewing, ready, in_ci] = [(6, "reviewing"), (7, "ready"), (8, "ci")]
+        .map(|(n, state)| records.create(change(n, state)));
+    let stop = crate::hub::api::registry()
+        .call(
+            &hub,
+            &person(),
+            "project_stop",
+            json!({ "projectRef": { "machineId": "devbox", "projectId": "app" } }),
+        )
+        .await
+        .unwrap();
+    let text = stop["message"]["text"].as_str().unwrap();
+    assert!(
+        text.ends_with(" Left open, off the train: #6, #7."),
+        "{text}"
+    );
+    let state = |c: &Change| records.get(&c.change_id).unwrap().state;
+    assert_eq!(
+        [state(&reviewing), state(&ready), state(&in_ci)],
+        [
+            ChangeState::Abandoned,
+            ChangeState::Abandoned,
+            ChangeState::Ci
+        ]
+    );
+}
+
 /// With the machine away nothing can be stopped, and the line says what still runs instead of "nothing was running".
 #[tokio::test]
 async fn stop_all_says_what_it_could_not_stop() {

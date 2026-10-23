@@ -579,6 +579,8 @@ struct FakeHost {
     /// Reviewers the real review gate asked for, and the refusal the spawn path answers with, if any.
     review_spawns: Mutex<Vec<ReviewSpawn>>,
     spawn_refusal: Mutex<Option<String>>,
+    /// The workstream is done or stopped.
+    ws_closed: Mutex<bool>,
     /// Running write tasks' branches, by task id.
     branches: Mutex<HashMap<String, String>>,
 }
@@ -697,6 +699,7 @@ impl TrainHost for FakeHost {
             workstream_id: ws(),
             project_ref: project(),
             has_brief: true,
+            open: !*self.ws_closed.lock().unwrap(),
         })
     }
     fn append_event(&self, _: &ProjectRef, event_type: &'static str, _: String, data: Value) {
@@ -874,6 +877,7 @@ impl Kit {
             wakes: Mutex::default(),
             review_spawns: Mutex::default(),
             spawn_refusal: Mutex::default(),
+            ws_closed: Mutex::default(),
             branches: Mutex::default(),
         });
         let gate = Arc::new(FakeGate::default());
@@ -2180,6 +2184,29 @@ async fn a_ready_slice_gets_the_orders_reviewer_and_a_refused_spawn_never_lets_i
     assert_eq!(kit.host.review_spawns.lock().unwrap().len(), 1);
 }
 
+/// A closed workstream never gets a reviewer: its Change leaves the train instead of waiting in reviewing, and the
+/// lead hears why.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_refused_reviewer_for_a_closed_workstream_sends_the_change_to_the_lead() {
+    let kit = Kit::with_reviews();
+    *kit.host.ws_closed.lock().unwrap() = true;
+    *kit.host.spawn_refusal.lock().unwrap() =
+        Some("Workstream W1 is done; tasks run only for open workstreams.".into());
+    let change = kit
+        .enqueue(kit.open_pr(7, "late", &[add("l.txt", "l\n")]))
+        .await;
+    let left = kit.get(&change.change_id);
+    assert_eq!(left.state, ChangeState::Abandoned);
+    let wakes = kit.host.wakes.lock().unwrap().clone();
+    assert!(
+        wakes
+            .iter()
+            .any(|w| w
+                .contains("left the train: could not spawn the reviewer: Workstream W1 is done")),
+        "{wakes:?}"
+    );
+}
+
 /// The hub's own gate: one fresh reviewer per patch. Nothing merges before a clean verdict on the current patch;
 /// blocking findings go to the author, and its new head is reviewed again by a new reviewer, from the delta.
 #[tokio::test(flavor = "multi_thread")]
@@ -2444,34 +2471,30 @@ async fn racing_enqueues_of_one_pr_make_one_change_and_one_review_round() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_done_order_closes_its_leftover_prs_but_keeps_the_review_fixes_it_is_told_to() {
+async fn a_stopped_order_takes_its_prs_off_the_train_and_leaves_them_open() {
     let kit = Kit::new();
-    // Both wait for reviews, so both are leftovers when the order is done.
-    let leftover = kit
+    // Both wait for reviews, so both are leftovers when the order is stopped.
+    let first = kit
         .enqueue_held(kit.open_pr(7, "left", &[add("l.txt", "l\n")]))
         .await;
-    let fix = kit
+    let second = kit
         .enqueue_held(kit.open_pr(8, "fix", &[add("f.txt", "f\n")]))
         .await;
 
-    let closed = kit
+    let taken = kit
         .train
-        .close_leftovers(
-            &project(),
-            &ws(),
-            "W1 is done",
-            std::slice::from_ref(&fix.change_id),
-        )
-        .await;
-    assert_eq!(
-        closed.iter().map(|c| c.pr_number.get()).collect::<Vec<_>>(),
-        [7]
-    );
-    assert_eq!(kit.get(&leftover.change_id).state, ChangeState::Abandoned);
-    assert_eq!(kit.get(&fix.change_id).state, ChangeState::Reviewing);
+        .take_leftovers(&project(), &ws(), "W1 was stopped");
+    let mut numbers: Vec<_> = taken.iter().map(|c| c.pr_number.get()).collect();
+    numbers.sort();
+    assert_eq!(numbers, [7, 8]);
+    for change in [&first, &second] {
+        assert_eq!(kit.get(&change.change_id).state, ChangeState::Abandoned);
+    }
+    let log = kit.gh.log.lock().unwrap();
+    assert!(!log.iter().any(|l| l.starts_with("close")), "{log:?}");
     let pulls = kit.gh.pulls.lock().unwrap();
     assert_eq!(
         (pulls[&7].state.as_str(), pulls[&8].state.as_str()),
-        ("closed", "open")
+        ("open", "open")
     );
 }

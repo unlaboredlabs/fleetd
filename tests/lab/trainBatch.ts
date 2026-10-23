@@ -1,7 +1,7 @@
 // The merge train's batches on lab-a, in this slot's namespace of the lab repo, with PRs the harness pushes and
 // enqueues itself (no writer agents; the lead only answers wakes). Each PR opens with the `hold` label, so the train
 // waits until the part's PRs are reviewed (one hub reviewer each) and green on their own heads; then the harness takes
-// the labels off:
+// the labels off. Part 2's PRs are enqueued before part 1 is released, so the order is never done between the parts:
 // 1. three ready PRs merge as one batch, built on GitHub: one batch PR, one CI run on its head, one squash, and
 //    each member closed with a link;
 // 2. a red batch sends each member alone: a, b and c are green alone, but c's ci.yml (a PR runs its own workflow)
@@ -151,6 +151,12 @@ export async function trainBatch(lab: Lab) {
     for (const pr of one) oneIds.push(await enqueue(pr));
     for (const pr of one) await ownCi(pr);
     for (const id of oneIds) await reviewed(id);
+    // Part 2's PRs are on the train, held, before part 1 lands: the order's done-when reads as met once part 1 merges,
+    // and the hub refuses to close it as done while these are still in the train.
+    const a = pushPr("two-a", { [`${DIR}/two-a.md`]: "a\n" });
+    const b = pushPr("two-b", { [PAIR]: "b\n" });
+    const c = pushPr("two-c", { ".github/workflows/ci.yml": STRICT_CI });
+    const [aId, bId, cId] = [await enqueue(a), await enqueue(b), await enqueue(c)];
     let cursor = await lab.cursor();
     release(one);
     const oneMerged = await Promise.all(oneIds.map((id) => merged(cursor, id)));
@@ -169,10 +175,6 @@ export async function trainBatch(lab: Lab) {
     ok(`1. #${one.map((p) => p.number).join(", #")} merged as batch #${batch1!.number} (${[...shas][0]!.slice(0, 12)}) after one CI run; each closed with a link`);
 
     // 2. A red batch: each member goes alone.
-    const a = pushPr("two-a", { [`${DIR}/two-a.md`]: "a\n" });
-    const b = pushPr("two-b", { [PAIR]: "b\n" });
-    const c = pushPr("two-c", { ".github/workflows/ci.yml": STRICT_CI });
-    const [aId, bId, cId] = [await enqueue(a), await enqueue(b), await enqueue(c)];
     for (const pr of [a, b, c]) await ownCi(pr);
     for (const id of [aId!, bId!, cId!]) await reviewed(id);
     cursor = await lab.cursor();

@@ -977,6 +977,68 @@ async fn a_lead_closes_its_work_with_why_and_nothing_is_stopped() {
     );
 }
 
+/// `close` is refused while the workstream still has PRs in the train, and the refusal lists them; once they merged
+/// (or were abandoned) it closes.
+#[tokio::test]
+async fn a_lead_cannot_close_its_work_while_its_prs_are_in_the_train() {
+    use crate::hub::link::lead_calls::CallerAgent;
+    use crate::hub::train::contract::{Change, ChangeState};
+    use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
+    use fleetd_contracts::ledger::WorkstreamState;
+    let lab = lab();
+    let records = lab.hub.train.records();
+    let change = |number: i64, state: &str| -> Change {
+        let sha = "b".repeat(40);
+        serde_json::from_value(json!({
+            "changeId": "X1", "projectRef": { "machineId": "lab-a", "projectId": "p1" }, "repo": "o/testbed",
+            "prNumber": number, "prUrl": format!("https://github.com/o/testbed/pull/{number}"),
+            "branch": format!("fleetd/pr-{number}"), "workstreamId": "W1", "headSha": sha, "state": state,
+            "reviews": [], "createdAt": AT, "updatedAt": AT,
+        }))
+        .unwrap()
+    };
+    records.create(change(4, "abandoned"));
+    records.create(change(5, "merged"));
+    let reviewing = records.create(change(6, "reviewing"));
+    let ready = records.create(change(7, "ready"));
+    let close = || {
+        let call: LeadCall = serde_json::from_value(
+            json!({ "op": "close", "workstreamId": "W1", "why": "every batched PR is merged" }),
+        )
+        .unwrap();
+        let caller = crate::hub::link::LeadCaller {
+            project_ref: ProjectRef {
+                machine_id: MachineId::unchecked("lab-a"),
+                project_id: fleetd_contracts::ids::ProjectId::unchecked("p1"),
+            },
+            by: "lead:lab-a/p1".into(),
+            agent: CallerAgent::Lead,
+        };
+        let handler = lab.hub.lead_calls.handler("close").unwrap();
+        futures_util::FutureExt::now_or_never(handler.handle(caller, call)).unwrap()
+    };
+    let refused = close().unwrap_err();
+    assert_eq!(refused.code, fleetd_contracts::mcp::ErrorCode::Invalid);
+    assert_eq!(
+        refused.message,
+        "W1 still has PRs in the train: #6 reviewing, #7 ready."
+    );
+    let w1 = WorkstreamId::unchecked("W1");
+    let stored = lab.hub.leads.records.workstream_get(&w1).unwrap().unwrap();
+    assert_eq!(stored.state, WorkstreamState::Open);
+
+    for (c, state) in [
+        (reviewing, ChangeState::Merged),
+        (ready, ChangeState::Abandoned),
+    ] {
+        records.put(&Change { state, ..c });
+    }
+    let Ok(LeadCallResult::Close(closed)) = close() else {
+        panic!("close was refused once every PR landed or left")
+    };
+    assert_eq!(closed.state, WorkstreamState::Done);
+}
+
 /// A writer's session works in a worktree under the node's home, outside every workspace: its calls act on its own
 /// project, known by the session. Without a session such a cwd is still refused, and a session never reaches a
 /// project its machine doesn't have.

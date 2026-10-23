@@ -31,6 +31,8 @@ pub struct WorkstreamView {
     pub workstream_id: WorkstreamId,
     pub project_ref: ProjectRef,
     pub has_brief: bool,
+    /// Neither done nor stopped: tasks, reviewers included, run only for an open workstream.
+    pub open: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]

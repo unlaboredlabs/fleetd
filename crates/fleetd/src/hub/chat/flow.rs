@@ -558,7 +558,7 @@ struct Stopped {
 }
 
 /// The one stop behind the chat's Stop and `project_stop`: the lead's turn is interrupted, every open order of the
-/// project stops (its agents cancelled, what waits on a person withdrawn), any other agent of the project is
+/// project stops (its PRs off the train, its agents cancelled, what waits on a person withdrawn), any other agent of the project is
 /// cancelled, and the line says what stopped and what still runs.
 async fn stop_all(
     hub: &Arc<Hub>,
@@ -583,13 +583,14 @@ async fn stop_all(
             limit: 200,
         })
         .map_err(store_error)?;
-    let (mut orders, mut cancelled) = (0, 0);
+    let (mut orders, mut cancelled, mut off_train) = (0, 0, Vec::new());
     for w in &open {
         let why = reason.as_ref().map(|r| r.as_str());
         match crate::hub::orders::notes::stop(hub, caller, w.workstream_id.as_str(), why).await {
-            Ok(n) => {
+            Ok((n, prs)) => {
                 orders += 1;
                 cancelled += n;
+                off_train.extend(prs);
             }
             Err(e) => {
                 tracing::warn!(workstream = %w.workstream_id, error = %e.message, "stop: order not stopped")
@@ -640,6 +641,10 @@ async fn stop_all(
         n => text.push_str(&format!(
             " {n} agents could not be stopped and are still working."
         )),
+    }
+    if !off_train.is_empty() {
+        let prs: Vec<_> = off_train.iter().map(|n| format!("#{n}")).collect();
+        text.push_str(&format!(" Left open, off the train: {}.", prs.join(", ")));
     }
     Ok(Stopped {
         orders,

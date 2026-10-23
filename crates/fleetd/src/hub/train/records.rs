@@ -190,6 +190,31 @@ impl ChangeRecords {
         self.latest(repo, pr_number, false)
     }
 
+    /// The workstream's Changes that are not merged, refused or abandoned, oldest first.
+    pub fn unlanded(&self, project_ref: &ProjectRef, workstream_id: &str) -> Vec<Change> {
+        sql(&self.db, |conn| {
+            let mut stmt = conn
+                .prepare_cached(
+                    "SELECT data, state FROM changes WHERE machine_id = ?1 AND project_id = ?2
+                       AND json_extract(data, '$.workstreamId') = ?3 ORDER BY n",
+                )
+                .expect("prepare");
+            stmt.query_map(
+                params![
+                    project_ref.machine_id.as_str(),
+                    project_ref.project_id.as_str(),
+                    workstream_id
+                ],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+            )
+            .expect("query")
+            .map(|r| r.expect("row"))
+            .filter(|(_, state)| parse_state(state).is_some_and(|s| !TERMINAL_STATES.contains(&s)))
+            .map(|(data, _)| decode(&data))
+            .collect()
+        })
+    }
+
     /// The repo's Changes in these states, in train order.
     pub fn in_train(&self, repo: &str, states: &[ChangeState]) -> Vec<Change> {
         sql(&self.db, |conn| {
