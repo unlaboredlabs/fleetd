@@ -87,10 +87,17 @@ export async function trainBatch(lab: Lab) {
     check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
     const leadThread = started.body.threadId as string;
     await lab.waitEvent("lead start turn", TURN_MS, { cursor: scenarioStart, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });
-    const w = openWorkstream(check, lead, "PRs through the train's batches. The harness pushes and enqueues every PR itself.", {
-      goal: "PRs through the train's batches",
+    // Reviewers see only the goal and done-when, so they say what each fixture PR is for: without it, the reviewer
+    // blocks two-c as a CI step aimed at two-b's file, and the lead "fixes" the clash the scenario is about.
+    const goal =
+      "Exercise the merge train's batches with fixture PRs the harness pushes and enqueues. Judge each PR on its own. " +
+      `two-b adds the marker file ${PAIR}; two-c adds a CI step that fails while that marker exists. Each is green alone ` +
+      "and red together on purpose, so the train must split the batch: two-a and two-b merge alone, two-c stays open " +
+      "red. That clash is the test, not a defect: don't edit, rename or close any of these PRs.";
+    const w = openWorkstream(check, lead, goal, {
+      goal,
       why: "the train batch lab scenario",
-      doneWhen: ["every batched PR is merged"],
+      doneWhen: ["the one-* PRs merge as one batch", "two-a and two-b merge alone after the red batch; two-c stays open"],
     });
 
     gh("label", "create", "hold", "-R", REPO, "--force", "--description", "fleetd's train holds this PR");
