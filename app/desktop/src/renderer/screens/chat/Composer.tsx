@@ -320,6 +320,7 @@ export function MessageReceipt({ project, item, latest = false }: { project: Pro
       error: item.error,
       delivery: item.delivery,
       leadWaiting: item.leadWaiting,
+      client: item.message?.client,
     },
     latest,
   );

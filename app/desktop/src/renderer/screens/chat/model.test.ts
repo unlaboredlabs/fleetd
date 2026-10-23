@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Steer, Workstream } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
 import { leadSteers, steerReceipt } from "../live/steerModel";
-import { authorLabel, chatRows, dayLabel, heldLabel, ordersInView, rowIndexOf, systemHeadline, type Row } from "./model";
+import { authorLabel, chatRows, dayLabel, heldLabel, latestLabel, newestKey, ordersInView, rowIndexOf, type Row } from "./model";
 
 const at = (d: number, h: number, m = 0) => new Date(Date.UTC(2026, 9, d, h, m)).toISOString();
 const NOW = Date.parse(at(19, 18));
@@ -20,12 +20,12 @@ const rows = (items: ChatItem[], over: Partial<Parameters<typeof chatRows>[0]> =
   chatRows({ items, hasOlder: false, loadingOlder: false, strip: false, nowMs: NOW, timeZone: "UTC", ...over });
 
 describe("the chat's rows", () => {
-  it("divide days, show an author once per run and fold fleetd's own messages", () => {
+  it("divide days, show an author once per run and fleetd's own messages as one-liners", () => {
     const r = rows([
-      item("a", "human", at(18, 9)),
+      item("a", "lead", at(18, 9)),
       item("b", "lead", at(19, 9)),
       item("c", "lead", at(19, 9, 3)),
-      item("d", "system", at(19, 9, 4), { text: "## Why you are woken\n- The human sent a message." }),
+      item("d", "system", at(19, 9, 4), { kind: "event", text: "Woken: the human sent a message." }),
       item("e", "lead", at(19, 9, 5)),
       item("f", "lead", at(19, 9, 30)),
     ]);
@@ -36,7 +36,7 @@ describe("the chat's rows", () => {
       "day:Today",
       "message:b:head",
       "message:c:-",
-      "system",
+      "event",
       "message:e:head",
       "message:f:head",
     ]);
@@ -64,8 +64,47 @@ describe("the chat's rows", () => {
       item("d", "agent", at(19, 9, 3), { message: hub("agent", { by: "scout" }) }),
       item("e", "agent", at(19, 9, 4), { message: hub("agent", { by: "scout" }) }),
     ]);
-    const shown = r.flatMap((x) => (x.kind === "message" ? [`${x.item.id}:${x.head ? authorLabel(x.item) : "-"}`] : []));
-    expect(shown).toEqual(["a:You · app", "b:You · cli", "c:Agent · nightly-ci", "d:Agent · scout", "e:-"]);
+    const shown = r.flatMap((x) => (x.kind === "message" ? [`${x.item.id}:${x.head ? authorLabel(x.item) : "-"}:${x.run ? "run" : "-"}`] : []));
+    // Yours have no header (where you wrote shows on the receipt), but still start a run apart from the lead's.
+    expect(shown).toEqual(["a:-:run", "b:-:-", "c:Agent · nightly-ci:run", "d:Agent · scout:run", "e:-:-"]);
+  });
+
+  it("mark where you stopped reading, at the first message from someone else since", () => {
+    const seq = (id: string, author: ChatItem["author"], n: number, m = n, over: Partial<ChatItem> = {}) =>
+      item(id, author, at(19, 9, m), { ...over, message: { seq: n } as ChatItem["message"] });
+    const items = [seq("a", "lead", 1), seq("b", "human", 2), seq("c", "human", 3), seq("d", "system", 4, 4, { kind: "event" }), seq("e", "lead", 5)];
+    const kinds = (r: readonly Row[]) => r.flatMap((x) => (x.kind === "new" ? ["new"] : "item" in x ? [x.item.id] : []));
+    // Your own messages since aren't news; the event after them is.
+    expect(kinds(rows(items, { seenSeq: 1 }))).toEqual(["a", "b", "c", "new", "d", "e"]);
+    expect(kinds(rows(items, { seenSeq: 4 }))).toEqual(["a", "b", "c", "d", "new", "e"]);
+    // The first new message shows who wrote it, even in a run.
+    const run = [seq("x", "lead", 1), seq("y", "lead", 2)];
+    expect(rows(run, { seenSeq: 1 }).find((x) => x.kind === "message" && x.item.id === "y")).toMatchObject({ head: true });
+    expect(rows(run).find((x) => x.kind === "message" && x.item.id === "y")).toMatchObject({ head: false });
+    expect(kinds(rows(items, {})).includes("new")).toBe(false);
+    // The pages loaded don't reach back to what you saw: no divider until they do.
+    expect(kinds(rows(items.slice(2), { seenSeq: 1, hasOlder: true })).includes("new")).toBe(false);
+    expect(kinds(rows(items.slice(1), { seenSeq: 1, hasOlder: false }))).toEqual(["b", "c", "new", "d", "e"]);
+  });
+
+  it("offer the way back to the newest message only while scrolled up, counting what arrived below", () => {
+    const before = rows([item("a", "human", at(19, 9)), item("b", "lead", at(19, 9, 1))], { activity: true });
+    const from = newestKey(before);
+    expect(from).toBe("b");
+    expect(latestLabel(before, undefined)).toBeUndefined();
+    expect(latestLabel(before, from)).toBe("Latest");
+    // Two from the lead and an event arrive, and yours, which you know about; an older page loads above.
+    const after = rows([
+      item("o", "lead", at(19, 8)),
+      item("a", "human", at(19, 9)),
+      item("b", "lead", at(19, 9, 1)),
+      item("c", "lead", at(19, 9, 2)),
+      item("d", "human", at(19, 9, 3)),
+      item("e", "system", at(19, 9, 4), { kind: "event" }),
+      item("f", "lead", at(19, 9, 5), { state: "streaming" }),
+    ]);
+    expect(latestLabel(after, from)).toBe("3 new");
+    expect(latestLabel(rows([]), newestKey(rows([])))).toBe("Latest");
   });
 
   it("put the live strip under the lead's newest message and after the field that answers it, never between them", () => {
@@ -142,13 +181,6 @@ describe("the chat's rows", () => {
     expect(dayLabel(at(18, 1), NOW, "UTC")).toBe("Yesterday");
     expect(dayLabel(at(12, 1), NOW, "UTC")).toBe("Mon 12 Oct");
     expect(dayLabel(new Date(Date.UTC(2025, 2, 3)).toISOString(), NOW, "UTC")).toBe("Mon 3 Mar 2025");
-  });
-
-  it("say why fleetd woke the lead in one line", () => {
-    expect(systemHeadline("# digest\n\n## Why you are woken\n- T3 finished: the receipt dates. Judge it.\n- A PR merged")).toBe("Woken: T3 finished: the receipt dates (+1 more)");
-    expect(systemHeadline("# project storefront (devbox/storefront), 09:12\n\n## Events\n- PR #214 merged")).toBe("Woken: PR #214 merged");
-    expect(systemHeadline("# project storefront (devbox/storefront), 09:12\n\nNothing new.")).toBe("fleetd's digest of the project");
-    expect(systemHeadline("You seem stalled; continue the task.")).toBe("You seem stalled; continue the task.");
   });
 });
 

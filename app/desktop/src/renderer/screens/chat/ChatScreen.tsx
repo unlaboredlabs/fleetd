@@ -2,7 +2,7 @@
 // fleet activity quietly inside it (the live strip under the lead's newest message, PR and merge one-liners), the
 // two inline items chat can't carry (a secret, a gated command), and the composer, which has the cursor as soon as
 // the chat opens. Your steers to the lead show at their time, from its orders. Above the box, a line says what the
-// lead waits on you for; an empty chat asks what to do.
+// lead waits on you for; an empty chat asks what to do. It opens where you stopped reading, under a "New" divider.
 // "What the writer was told" opens from the strip's rows.
 import { useCallback, useMemo, useState } from "react";
 import type { AgentLane, ThreadRef } from "../../../shared/contracts";
@@ -11,6 +11,7 @@ import { STATE_WORDS } from "../status/rows";
 import type { ProjectStateWord } from "../../src/data/selectors";
 import { useData } from "../../src/data/react";
 import { selectNeedsYou } from "../../src/data/selectors";
+import { seenOf } from "../../src/data/seen";
 import { projectKey } from "../../src/data/store";
 import { LiveStrip } from "../live";
 import { useSteerSends } from "../live/Steer";
@@ -48,6 +49,13 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const workedSince = data.leadWorking !== true && turnOver ? turnSince : undefined;
   const steerSends = useSteerSends();
   const steers = useLeadSteers(project, view, steerSends.sent);
+  // What you had seen when the chat opened, read before the sidebar marks it seen (a key per project remounts this),
+  // and its newest seq once known: only messages already there then are new, never those arriving while it's open.
+  const key = projectKey(project);
+  const lastSeq = useData((d) => d.chatStates[key]?.lastSeq);
+  const [opened, setOpened] = useState(() => ({ seen: seenOf(key), last: lastSeq }));
+  if (opened.last === undefined && lastSeq !== undefined) setOpened({ ...opened, last: lastSeq });
+  const seenSeq = opened.seen !== undefined && opened.last !== undefined && opened.last > opened.seen ? opened.seen : undefined;
   const rows = useMemo(
     () =>
       view === undefined
@@ -62,11 +70,12 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
             activity: data.leadWorking === true,
             workedSince,
             steers,
+            seenSeq,
             // "Today" is read against the clock when the chat changes; nothing ticks while it's idle.
             // eslint-disable-next-line react-hooks/purity
             nowMs: Date.now(),
           }),
-    [view, strip, data.leadWorking, workedSince, steers],
+    [view, strip, data.leadWorking, workedSince, steers, seenSeq],
   );
   const items = view?.items;
   const waiting = useMemo(
@@ -76,8 +85,10 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
     [needsYou, items],
   );
   const recall = useMemo(() => items?.findLast((i) => i.author === "human" && i.text.trim() !== "")?.text, [items]);
-  const target = shown?.id ?? message;
-  const openAt = target === undefined || rows === undefined ? undefined : rowIndexOf(rows, target);
+  // Once you send, the chat follows the newest message instead.
+  const target = shown?.id ?? (sent === 0 ? message : undefined);
+  const newAt = sent === 0 ? rows?.findIndex((r) => r.kind === "new") : undefined;
+  const openAt = rows === undefined ? undefined : target !== undefined ? rowIndexOf(rows, target) : newAt === -1 ? undefined : newAt;
   const empty = view !== undefined && view.items.length === 0 && !view.hasOlder && steers.length === 0;
   const state = data.state;
   const title = data.title ?? "";
