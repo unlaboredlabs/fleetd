@@ -23,7 +23,7 @@ export async function usageLimit(lab: Lab) {
     const projectId = await projectOf(lab, MACHINE);
     const from = await lab.cursor();
     const launchedAt = Date.now();
-    const started = await lab.callTool("lead_start", { machineId: MACHINE, projectId, ...MECHANICS });
+    const started = await lab.callTool("lead_start", { machineId: MACHINE, projectId, profile: MECHANICS });
     check(!started.isError, `lead_start on ${MACHINE}: ${JSON.stringify(started.body)}`);
     const threadId = started.body.threadId as string;
 

@@ -10,9 +10,9 @@ use serde_json::Value;
 
 use super::patch_ids;
 use super::rules::{
-    FindingsVerdict, Gate, ReviewProvider, ReviewRole, RoleReview, codex_instance,
-    findings_message, gate, has_receipts, missing_reviews, needs_no_review, one_line, other_codex,
-    review_plan, review_prompt, rule_for,
+    FindingsVerdict, Gate, ReviewRole, RoleReview, codex_instance, findings_message, gate,
+    has_receipts, missing_reviews, needs_no_review, one_line, other_codex, review_plan,
+    review_prompt, rule_for,
 };
 use crate::hub::train::contract::{
     Change, ChangeId, ChangeReview, ChangeState, CommitSha, Count, PatchId, ReviewRule, TaskId,
@@ -325,7 +325,6 @@ impl Reviews {
                 },
             );
         }
-        let codex_model = codex.and_then(|i| i.default_model.clone());
         // The newest head an earlier round of this Change reviewed: a re-push is reviewed from its delta.
         let reviewed: Option<String> = sql(&self.db, |conn| {
             conn.query_row(
@@ -363,11 +362,6 @@ impl Reviews {
                 serves: change.serves.to_string(),
                 pr: change.pr_url.to_string(),
                 tier: change.tier,
-                model: if planned.provider == ReviewProvider::Codex {
-                    codex_model.clone()
-                } else {
-                    None
-                },
             };
             let role = planned.role.as_str();
             let task = match self.host.spawn_review(spawn).await {

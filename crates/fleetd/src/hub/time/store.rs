@@ -25,6 +25,8 @@ pub struct Ids {
     pub run_id: Option<String>,
     /// `AgentRole` as stored: lead, implementer, reviewer, ...
     pub role: Option<String>,
+    /// A task's profile ("high", "medium"); "high" for a lead.
+    pub profile: Option<String>,
 }
 
 /// A span on its way into the store. `end_ms` absent opens it; a later write with the same key and an end closes it.
@@ -226,7 +228,7 @@ pub fn write(conn: &Connection, span: &NewSpan, shares: &[Share]) -> Result<Wrot
                 "UPDATE time_spans SET end_ms = ?2, excl_ms = ?3, status = ?4,
                    extra = COALESCE(?5, extra), label_id = COALESCE(?6, label_id),
                    exit_code = COALESCE(?7, exit_code), workstream_id = COALESCE(workstream_id, ?8),
-                   task_id = COALESCE(task_id, ?9)
+                   task_id = COALESCE(task_id, ?9), profile = COALESCE(profile, ?10)
                  WHERE id = ?1",
                 params![
                     id,
@@ -237,7 +239,8 @@ pub fn write(conn: &Connection, span: &NewSpan, shares: &[Share]) -> Result<Wrot
                     label,
                     span.exit_code,
                     span.ids.workstream_id,
-                    span.ids.task_id
+                    span.ids.task_id,
+                    span.ids.profile
                 ],
             )?;
             id
@@ -247,8 +250,9 @@ pub fn write(conn: &Connection, span: &NewSpan, shares: &[Share]) -> Result<Wrot
             conn.execute(
                 "INSERT INTO time_spans (src, src_key, kind, cat, start_ms, end_ms, excl_ms, machine_id, project_id,
                    workstream_id, task_id, thread_id, run_id, role, lane, parent_id, label_id, exit_code, out_bytes,
-                   status, extra)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
+                   status, extra, profile)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21,
+                   ?22)",
                 params![
                     span.src,
                     span.src_key,
@@ -270,7 +274,8 @@ pub fn write(conn: &Connection, span: &NewSpan, shares: &[Share]) -> Result<Wrot
                     span.exit_code,
                     span.out_bytes,
                     span.status.code(),
-                    extra
+                    extra,
+                    i.profile
                 ],
             )?;
             let id = conn.last_insert_rowid();
@@ -450,7 +455,7 @@ pub fn read_meta(
     let mut sql = format!(
         "SELECT s.id, s.kind, s.start_ms, s.end_ms, s.excl_ms, s.lane, s.parent_id, s.label_id, l.text, l.family,
            s.exit_code, s.out_bytes, s.status, s.machine_id, s.project_id, s.workstream_id, s.task_id, s.thread_id,
-           s.extra, s.src_key, s.role, s.run_id
+           s.extra, s.src_key, s.role, s.run_id, s.profile
          FROM {from} s LEFT JOIN time_labels l ON l.id = s.label_id
          WHERE s.start_ms < ?1 AND COALESCE(s.end_ms, ?1) >= ?2"
     );
@@ -555,6 +560,7 @@ pub fn read_meta(
                 task_id: r.get(16)?,
                 thread_id: r.get(17)?,
                 role: role.clone(),
+                profile: r.get(22)?,
                 extra: extra
                     .and_then(|e| serde_json::from_str(&e).ok())
                     .unwrap_or_default(),

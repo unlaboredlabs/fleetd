@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use chrono_tz::Tz;
 use fleetd_contracts::chat::ChatRequestId;
+use fleetd_contracts::effort::TaskProfile;
 use fleetd_contracts::ids::{MachineId, Timestamp};
 use fleetd_contracts::ledger::{HumanRequest, Tier, Workstream, WorkstreamId, WorkstreamState};
 use fleetd_contracts::live::OrderCard;
@@ -811,6 +812,7 @@ pub fn render(
             workstream_id: WorkstreamId::unchecked("W0"),
             title: line("—"),
             task_ids: List::default(),
+            medium_task_ids: None,
             change_ids: List::default(),
             gate: None,
             eta: None,
@@ -1185,6 +1187,23 @@ pub fn render(
         }
     }
     done.sort_by_key(|(t, _)| std::cmp::Reverse(*t));
+    // Which of a row's agents run on medium, from their lanes; the rest run high.
+    let medium: HashSet<&str> = w
+        .cards
+        .values()
+        .flat_map(|card| card.lanes.iter())
+        .filter(|l| l.profile == Some(TaskProfile::Medium))
+        .filter_map(|l| l.task_id.as_ref().map(|t| t.as_str()))
+        .collect();
+    for row in &mut in_progress {
+        let ids: Vec<TaskId> = row
+            .task_ids
+            .iter()
+            .filter(|t| medium.contains(t.as_str()))
+            .cloned()
+            .collect();
+        row.medium_task_ids = (!ids.is_empty()).then(|| List::unchecked(ids));
+    }
     // Each order's latest steers, on its first in-progress row.
     let mut steered: HashSet<String> = HashSet::new();
     for row in &mut in_progress {

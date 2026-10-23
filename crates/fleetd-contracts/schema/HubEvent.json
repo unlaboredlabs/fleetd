@@ -112,6 +112,11 @@
           "type": "string"
         },
         {
+          "const": "project.settings",
+          "description": "A project's settings changed (`project_set`): `data.mediumAllowed`.",
+          "type": "string"
+        },
+        {
           "const": "thread.waiting",
           "description": "Needs approval or user input.",
           "type": "string"

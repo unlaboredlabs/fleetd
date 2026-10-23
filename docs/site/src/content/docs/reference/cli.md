@@ -164,6 +164,14 @@ fleetd project set --fleet-cap <n> [--home <dir>] [--hub <url>]
 
 the most agents the project runs at once (its lead not counted), or the fleet's cap on running turns (admin key); more wait queued and start as slots free. Lowering stops nothing; `--pause-extras` has the newest agents above the new max push their work and wait
 
+### fleetd project set {#project-set-medium}
+
+```text
+fleetd project set <machine>/<project> --medium on|off [--home <dir>] [--hub <url>]
+```
+
+whether the lead may run mechanical tasks on the medium profile (on by default); off runs every task on high
+
 
 ## Running by hand {#running-by-hand}
 
@@ -174,10 +182,10 @@ Run `fleetd init --no-service` before `fleetd hub start`: it writes the setup th
 ### fleetd hub start {#hub-start}
 
 ```text
-fleetd hub start [--home <dir>] [--listen <host:port>] [--queue-ttl <seconds>] [--retro-model <model>]
+fleetd hub start [--home <dir>] [--listen <host:port>] [--queue-ttl <seconds>]
 ```
 
-run the hub (default home `~/.fleetd/hub`, listen 127.0.0.1:4790, writes to an offline machine wait 24 h, intents without a project are routed by the claude CLI with claude-haiku-5-5)
+run the hub (default home `~/.fleetd/hub`, listen 127.0.0.1:4790, writes to an offline machine wait 24 h)
 
 ### fleetd hub key create {#hub-key-create}
 
@@ -405,7 +413,7 @@ fleetd decisions search "<query>"
 
 ```text
 fleetd task spawn --workstream <W> --title <t> --prompt <p> [--kind write|read|review] [--areas a,b]
-    [--model <m>] [--effort low|medium|high|max] [--tier S|M|L]
+    [--profile high|medium] [--tier S|M|L]
     [--serves done:<n>|issue:<ref>|defect:<text>|decision:<key>] [--pr <url>] [--qa] [--item P<n>]
 ```
 
