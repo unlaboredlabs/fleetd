@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fixtureNames, fixtureOrder } from "./fixture";
 import { NO_NAMES, categoryKinds, clockMs, tickLabel } from "./format";
-import { CAT_CODE, bars, barsFor, buildModel, hit, ticks, type Model } from "./model";
+import { CAT_CODE, bars, barsFor, buildModel, hit, ranOn, ticks, type Model } from "./model";
 import type { Category, Coverage, Span, SpanKind } from "./types";
 import { KIND_CATEGORY } from "./types";
 
@@ -146,9 +146,9 @@ describe("buildModel", () => {
     expect(kinds.indexOf("change")).toBeLessThan(kinds.indexOf("check"));
     expect(kinds.lastIndexOf("check")).toBeLessThan(kinds.indexOf("requests"));
     expect(m.rows.filter((r) => r.kind === "check").map((r) => r.name)).toEqual(["lint", "build", "e2e (webkit)"]);
-    // An agent goes by what it worked on and its model, never its task number; its tokens are its messages' output.
+    // An agent goes by what it worked on and its profile, never its task number; its tokens are its messages' output.
     const agent = m.rows.find((r) => r.kind === "agent");
-    expect(agent).toMatchObject({ name: "about page", role: "implementer", model: "claude-haiku-5-5" });
+    expect(agent).toMatchObject({ name: "about page", role: "implementer", model: "claude-opus-5-5", profile: "high" });
     expect(agent?.outputTokens).toBeGreaterThan(0);
     expect(m.rows.some((r) => /\bT\d+\b/u.test(r.name))).toBe(false);
     // Parallel calls are drawn as their group; envelopes and message parents are not drawn.
@@ -213,5 +213,13 @@ describe("what is lit is what is listed", () => {
     expect(categoryKinds("pipeline")).toContain("ci.check");
     expect(categoryKinds("tools")).not.toContain("tools.parallel");
     expect(categoryKinds("model")).not.toContain("model.message");
+  });
+});
+
+describe("ranOn", () => {
+  it("names a lane by its task profile, and by its model only on a hub from before profiles", () => {
+    expect(ranOn({ model: "claude-opus-5-5", profile: "medium" })).toBe("medium");
+    expect(ranOn({ model: "claude-opus-5-5" })).toBe("opus");
+    expect(ranOn({})).toBeUndefined();
   });
 });

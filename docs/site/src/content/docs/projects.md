@@ -158,7 +158,7 @@ view splits agent time and output tokens by profile, so you can see what medium 
 
 | To change | Do |
 |---|---|
-| Whether the lead may use medium | `fleetd project set <machine>/<project> --medium off` runs every new task on high; `--medium on` allows medium again (the default). |
+| Whether the lead may use medium | Settings → Agents → the project's Medium allowed switch, or `fleetd project set <machine>/<project> --medium off`: every new task runs on high. `--medium on` allows medium again (the default). |
 | When the lead picks medium | Edit the **Task profiles** prompt (`lead.profiles`) like any [prompt](/docs/what-agents-are-told). It takes effect at the lead's next start. |
 
 There is no other model or effort: no setting, flag or policy key picks one. An older policy file's `defaults.model`

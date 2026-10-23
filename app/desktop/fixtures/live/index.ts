@@ -43,7 +43,8 @@ const fromBase = (base: Fixture, agents: number): Fixture => {
     taskId: id,
     threadRef: { machineId: projectRef.machineId, threadId: `s-${id}` },
     title,
-    model: "claude-haiku-5-5",
+    model: "claude-opus-5-5",
+    profile: id === "T90" ? "medium" : "high",
     status: "done",
     startedAt: iso(now - ago - 140_000),
     endedAt: iso(now - ago),
@@ -65,7 +66,9 @@ const fromBase = (base: Fixture, agents: number): Fixture => {
       taskId: id,
       threadRef: { machineId: projectRef.machineId, threadId: `s-${id}` },
       title: role === "implementer" ? `write part ${i + 1} of the rounding change` : `${role === "reviewer" ? "review" : "verify"} #${i % 2 === 0 ? 221 : 222}`,
-      model: "claude-haiku-5-5",
+      model: "claude-opus-5-5",
+      // The first writer does the mechanical part on medium; the rest, reviews included, run high.
+      profile: i === 0 ? "medium" : "high",
       status,
       ...(status === "waiting"
         ? { statusReason: "approve npm install" }

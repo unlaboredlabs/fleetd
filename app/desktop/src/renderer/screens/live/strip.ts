@@ -99,6 +99,7 @@ const agentRow = (l: AgentLane, indent: boolean): AgentRow => {
       status: l.status,
       ...(l.taskId === undefined ? {} : { taskId: l.taskId }),
       ...(l.threadRef === undefined ? {} : { threadRef: l.threadRef }),
+      ...(l.profile === undefined ? {} : { profile: l.profile }),
     },
     roleWord: ROLE_WORD[l.role],
     words: line.words,

@@ -6,6 +6,9 @@
 // current zoom merge into one bar per pixel column coloured by the category with the most time in it. A 15k-span
 // order paints a few hundred rects per visible row at most, and only visible rows are painted.
 import { CAT_LABEL, KIND_WORD, agentName, fmtDur, laneName, ordinal, type Names } from "./format";
+import type { TaskProfile } from "../../../shared/contracts";
+import { PROFILE_WORD } from "../../ui/primitives/profiles";
+import { shortModel } from "../live/format";
 import { CATEGORIES, type AgentRole, type Category, type Coverage, type CriticalPath, type GapWhy, type Span, type SpanKind } from "./types";
 
 export type RowKind = "lead" | "agent" | "change" | "check" | "requests" | "other";
@@ -16,6 +19,7 @@ export interface Row {
   readonly role?: AgentRole;
   /** The agent's model ("claude-sonnet-…") and the lane id its live frames carry, when the store knows the lane. */
   readonly model?: string;
+  readonly profile?: TaskProfile;
   readonly laneId?: string;
   /** Output tokens its model messages report, summed: what it measured, for a lane that is no longer live. */
   readonly outputTokens: number;
@@ -242,6 +246,7 @@ export const buildModel = (
       outputTokens: tokens.get(key) ?? 0,
       ...(role === undefined ? {} : { role }),
       ...(lane?.model === undefined ? {} : { model: lane.model }),
+      ...(lane?.profile === undefined ? {} : { profile: lane.profile }),
       ...(lane?.laneId === undefined ? {} : { laneId: lane.laneId }),
     });
   }
@@ -260,7 +265,7 @@ export const buildModel = (
       agentMs: 0,
       gaps: g,
       outputTokens: 0,
-      ...(known === undefined ? {} : { role: known.role, ...(known.model === undefined ? {} : { model: known.model }) }),
+      ...(known === undefined ? {} : { role: known.role, ...(known.model === undefined ? {} : { model: known.model }), ...(known.profile === undefined ? {} : { profile: known.profile }) }),
     });
   }
 
@@ -495,3 +500,7 @@ export const barsFor = (m: Model, ids: Iterable<number>): Set<number> => {
   }
   return out;
 };
+
+/** What an agent ran on, in a word: its task profile ("medium"), else its model ("opus") from an older hub. */
+export const ranOn = (r: { readonly model?: string | undefined; readonly profile?: TaskProfile | undefined }): string | undefined =>
+  r.profile !== undefined ? PROFILE_WORD[r.profile] : r.model === undefined ? undefined : shortModel(r.model);

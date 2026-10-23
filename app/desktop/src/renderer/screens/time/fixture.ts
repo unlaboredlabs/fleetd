@@ -4,6 +4,7 @@
 // agree with the bars; they are fixture data, not the hub's rules. Ported from the GPUI app's time/fixture.rs.
 // Value imports carry ".ts": `pnpm fixtures` runs this file under plain Node (fixtures/time/index.ts).
 import { NO_NAMES, KIND_WORD, SHOWN, categoryKinds, fmtDur, type Lane as NamedLane, type Names } from "./format.ts";
+import type { TaskProfile } from "../../../shared/contracts";
 import {
   KIND_CATEGORY,
   type AgentRole,
@@ -28,6 +29,9 @@ export const FIXTURE_ORDER = "W8";
 export const FIXTURE_NOW = Date.parse("2026-10-18T10:30:00.000Z");
 const MIN = 60_000;
 const PAGES = ["about", "pricing", "contact"] as const;
+
+/** The fixtures' task profiles: the contact page's writers do mechanical work on medium; everything else runs high. */
+export const fixtureProfile = (role: AgentRole, title: string): TaskProfile => (role === "implementer" && title.startsWith("contact") ? "medium" : "high");
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 type Draft = Mutable<Span> & { extra?: SpanExtra };
@@ -378,6 +382,8 @@ interface Data {
   paths: CriticalPath[];
   wall: number;
   gaps: Gap[];
+  /** Who each thread is, for the split by profile. */
+  roles?: Map<string, { role: AgentRole; title: string }>;
 }
 
 const breakdownOf = (d: Data): TimeBreakdownOutput => {
@@ -460,10 +466,28 @@ const breakdownOf = (d: Data): TimeBreakdownOutput => {
     .sort((a, b) => b.totalMs - a.totalMs);
   const waits = d.spans.filter((s) => s.kind === "wait.request");
   const longest = waits.reduce<Span | undefined>((best, s) => (best === undefined || dur(s) > dur(best) ? s : best), undefined);
+  // Each span's agent by its thread; the lead's spans count under high, as the hub counts them.
+  const profiles = new Map<TaskProfile, { agentMs: number; modelMs: number; outputTokens: number }>();
+  for (const s of d.spans) {
+    const who = s.threadId === undefined ? undefined : d.roles?.get(s.threadId);
+    if (who === undefined) continue;
+    const p = profiles.get(fixtureProfile(who.role, who.title)) ?? { agentMs: 0, modelMs: 0, outputTokens: 0 };
+    profiles.set(fixtureProfile(who.role, who.title), p);
+    if (s.exclMs !== undefined && s.kind !== "idle") {
+      p.agentMs += s.exclMs;
+      if (s.cat === "model") p.modelMs += s.exclMs;
+    }
+    p.outputTokens += s.extra?.outputTokens ?? 0;
+  }
+  const byProfile = (["high", "medium"] as const).flatMap((profile) => {
+    const p = profiles.get(profile);
+    return p === undefined || p.agentMs === 0 ? [] : [{ profile, ...p }];
+  });
   return {
     wallMs: d.wall,
     agentMs: byCategory.reduce((n, c) => n + c.ms, 0),
     byCategory,
+    ...(byProfile.length === 0 ? {} : { byProfile }),
     topCommands,
     repeated: repeated.slice(0, 5),
     ciChecks,
@@ -625,7 +649,7 @@ export const fixtureNames = (): Names => {
   const specs = week();
   const d = collect(specs, undefined, 1);
   const threads = new Map<string, NamedLane>();
-  for (const [id, r] of d.roles) threads.set(id, { role: r.role, title: r.title, model: "claude-haiku-5-5", ...(r.task === undefined ? {} : { laneId: r.task }) });
+  for (const [id, r] of d.roles) threads.set(id, { role: r.role, title: r.title, model: "claude-opus-5-5", profile: fixtureProfile(r.role, r.title), ...(r.task === undefined ? {} : { laneId: r.task }) });
   return {
     ...NO_NAMES,
     threads,

@@ -17,8 +17,8 @@ import {
   type Names,
 } from "./format";
 import { humanizeKey } from "../../ui";
-import { fmtTokens, shortModel } from "../live/format";
-import { bucketShares, catLabel, type Bar, type Model } from "./model";
+import { fmtTokens } from "../live/format";
+import { bucketShares, catLabel, ranOn, type Bar, type Model } from "./model";
 
 export interface Card {
   readonly title: string;
@@ -124,7 +124,7 @@ export const laneCard = (m: Model, row: number, tokens: number): Card => {
   if (r === undefined) return { title: "", mono: false, lines: [], hint: "" };
   const title = r.kind === "lead" ? "The project's lead" : r.role !== undefined && r.kind !== "other" ? `${ROLE_WORD[r.role]}: ${r.name}` : r.name;
   const lines = [`${r.to - r.from} spans · ${fmtDur(r.agentMs)} of agent time`];
-  const who = [r.model === undefined ? undefined : shortModel(r.model), tokens > 0 ? `${fmtTokens(tokens)} output tokens` : undefined].filter((x) => x !== undefined);
+  const who = [ranOn(r), tokens > 0 ? `${fmtTokens(tokens)} output tokens` : undefined].filter((x) => x !== undefined);
   if (who.length > 0) lines.push(who.join(" · "));
   if (r.summary !== "") lines.push(r.summary);
   const warnings = r.gaps.slice(0, 4).map(([a, b, why]) => `${gapWord(why)} ${rangeText(a, b)}`);

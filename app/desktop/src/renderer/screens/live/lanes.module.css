@@ -105,6 +105,13 @@
   font-family: var(--font-mono);
   font-size: var(--text-sm);
 }
+/* The agent's task profile, before its clock: a word as wide as "medium", so the clocks stay in a column. */
+.profile {
+  flex: none;
+  width: 6ch;
+  text-align: right;
+  font-size: var(--text-xs);
+}
 .clock {
   flex: none;
   width: 44px;

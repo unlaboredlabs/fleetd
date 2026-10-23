@@ -6,7 +6,8 @@
 import { defineGroup } from "../kit/group.ts";
 import type { Fixture } from "../kit/fixture.ts";
 import { clone, type JsonObject, type JsonValue } from "../kit/json.ts";
-import { FIXTURE_ORDER, fixtureOrderLanes, timeCalls, type FixtureOptions } from "../../src/renderer/screens/time/fixture.ts";
+import { FIXTURE_ORDER, fixtureOrderLanes, fixtureProfile, timeCalls, type FixtureOptions } from "../../src/renderer/screens/time/fixture.ts";
+import type { AgentRole } from "../../src/renderer/screens/time/types.ts";
 
 const isObject = (v: JsonValue | undefined): v is JsonObject => typeof v === "object" && v !== null && !Array.isArray(v);
 const list = (v: JsonValue | undefined): JsonValue[] => (Array.isArray(v) ? v : []);
@@ -42,6 +43,8 @@ const addOrder = (f: Fixture, opts: FixtureOptions) => {
       role,
       status: "done",
       title,
+      model: "claude-opus-5-5",
+      profile: fixtureProfile(role as AgentRole, title),
       threadRef: { machineId: "devbox", threadId },
       ...(taskId === undefined ? {} : { taskId }),
     };

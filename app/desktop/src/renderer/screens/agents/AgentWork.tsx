@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import type { WorkStep } from "../../../shared/contracts";
 import { useAgentWork, useData } from "../../src/data/react";
 import { selectLiveAgent, selectLiveAgents } from "../../src/data/selectors";
-import { Button, cx, EmptyState, Markdown, RoleTag, Text, Truncate, VirtualList } from "../../ui";
+import { Button, cx, EmptyState, Markdown, PROFILE_LINE, RoleTag, Text, Truncate, VirtualList } from "../../ui";
 import { ActivityLine, MiddleCut } from "../live/parts";
 import { describe, isRunning } from "../live/words";
 import { navigate } from "../shell/navigation";
@@ -48,6 +48,11 @@ export function AgentWork({ id }: { id: string }) {
           <Text size="xs" tone="quiet">
             {row.projectTitle}
           </Text>
+          {row.profile === undefined ? null : (
+            <Text size="xs" tone="quiet">
+              {PROFILE_LINE[row.profile]}
+            </Text>
+          )}
           {pr !== undefined ? (
             <Button variant="quiet" size="sm" onClick={() => navigate({ id: "prs", project: chat.project, pr: { repo: pr.repo, number: pr.number } })}>
               {`PR #${String(pr.number)}`}

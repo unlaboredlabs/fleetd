@@ -5,7 +5,7 @@
 import { memo, useMemo } from "react";
 import { useData, useToolQuery } from "../../src/data/react";
 import { selectLiveAgents, type LiveAgent } from "../../src/data/selectors";
-import { Button, cx, Dot, EmptyState, FrameTitle, RoleTag, Text, Truncate, VirtualList } from "../../ui";
+import { Button, cx, Dot, EmptyState, FrameTitle, PROFILE_WORD, RoleTag, Text, Truncate, VirtualList } from "../../ui";
 import { ActivityLine } from "../live/parts";
 import { describe, isRunning } from "../live/words";
 import { fmtElapsed, parseMs } from "../live/format";
@@ -102,6 +102,11 @@ export const AgentRowLink = memo(function AgentRowLink({ agent, current }: { age
             {row.title}
           </Truncate>
         </span>
+        {row.profile === undefined ? null : (
+          <Text size="xs" tone="quiet">
+            {PROFILE_WORD[row.profile]}
+          </Text>
+        )}
         <Elapsed startedAt={row.startedAt} running={isRunning(row.status)} />
       </span>
       <span className={s.doing}>
