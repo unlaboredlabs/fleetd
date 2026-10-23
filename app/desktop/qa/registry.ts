@@ -974,7 +974,7 @@ export const screens: readonly Screen[] = [
     variant: "told",
     open: async (page) => {
       await page.getByRole("button", { name: "What it was told" }).click();
-      await expect(page.getByRole("dialog", { name: "What the writer was told" }).getByText("First message")).toBeVisible();
+      await expect(page.getByRole("dialog", { name: "What the writer was told" }).getByText("First message", { exact: true })).toBeVisible();
     },
   },
   { id: "agents.work", route: AGENT_ROUTE, fixtures: ["agents-work"], variant: "narrow", sizes: ["narrow"] },

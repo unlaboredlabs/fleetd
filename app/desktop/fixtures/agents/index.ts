@@ -124,6 +124,7 @@ const work = (base: Fixture): Fixture => {
       refs: [
         { id: "task.brief.write", ref: "task.brief.write@1f2e3d4c5b", scope: "project" },
         { id: "steer.message", ref: "steer.message@6a7b8c9d0e", scope: "default" },
+        { id: "retro", ref: "retro@5d4c3b2a19", scope: "default" },
         { id: "instructions", ref: "instructions@0e9d8c7b6a", scope: "default" },
       ],
       disallowedTools: ["Task", "Workflow", "AskUserQuestion", "EnterPlanMode", "ExitPlanMode", "EnterWorktree", "ExitWorktree"],
