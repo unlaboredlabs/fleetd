@@ -266,20 +266,12 @@ fn two_turns_in_one_process() {
         version: "2.1.302".into(),
         model: "claude-haiku-5-5".into(),
         cwd: "/work/project".into(),
-        // Recorded before fleetd turned auto memory off, and without its deny list.
-        auto_memory: true,
-        subagent_leaks: [
-            "Task",
-            "ListAgents",
-            "SendMessage",
-            "TaskStop",
-            "Workflow",
-            "agent claude",
-            "agent Explore",
-            "agent Plan",
-        ]
-        .map(String::from)
-        .into(),
+        // Recorded without fleetd's deny list.
+        agent_tools: Some(
+            ["Task", "ListAgents", "SendMessage", "TaskStop", "Workflow"]
+                .map(String::from)
+                .into(),
+        ),
     };
     let (r1, m1) = (
         "e8d52832-5cea-4aac-ba3b-f1e6763315a8",

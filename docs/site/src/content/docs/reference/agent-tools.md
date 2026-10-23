@@ -740,7 +740,7 @@ A project's policy file can deny more with `tools.deny`. In a run started approv
 | `CronCreate`, `CronDelete`, `CronList`, `ScheduleWakeup` | fleetd schedules work (tasks, wakes), never inside one claude process the node may restart. |
 | `EnterWorktree`, `ExitWorktree` | fleetd owns worktrees, one per writer. A session that moves its own folder can't be resumed. |
 
-fleetd also blocks any tool like these that a newer Claude Code adds: it reads the installed claude's tool list when it checks the machine, and a session that still offers one fails the check.
+fleetd also blocks any tool like these that a newer Claude Code adds: a session whose tool list still offers one is stopped, and every later session on that machine blocks it.
 
 ## Settings fleetd forces
 
@@ -754,7 +754,7 @@ Set in the claude process's environment. "In settings" marks the ones also in fl
 | `CLAUDE_CODE_DISABLE_AGENT_VIEW` | `1` | Every claude fleetd starts | yes | Removes the built-in claude agent: fleetd manages agents. |
 | `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` | removed | Every claude fleetd starts | yes | Agent teams: fleetd manages agents. |
 | `CLAUDE_CODE_COORDINATOR_MODE` | removed | Every claude fleetd starts | yes | Coordinator mode turns a session into one that only delegates (its tools become Task, ListAgents, SendMessage, TaskStop, Workflow). |
-| `CLAUDE_CODE_DISABLE_AUTO_MEMORY` | `1`, and `autoMemoryEnabled: false` | Every claude fleetd starts | yes | fleetd owns an agent's context (briefs, decisions, instructions). Notes claude keeps per folder would carry stale, unreviewed text from one agent's worktree to the next. A project opts back in with claude.autoMemory: true in its policy file. |
+| `CLAUDE_CODE_DISABLE_AUTO_MEMORY` | `1`, and `autoMemoryEnabled: false` | Every claude fleetd starts | yes | fleetd owns an agent's context (briefs, decisions, instructions). Notes claude keeps per folder would carry stale, unreviewed text from one agent's worktree to the next. |
 | `DISABLE_AUTOUPDATER` | `1` | Sessions | yes | Keeps the claude fleetd checked. An update mid-run would swap the binary under a live session. |
 | `CLAUDE_CODE_STARTUP_FAILURE_RESULTS` | `1` | Sessions | no | A refusal at startup arrives as a result fleetd can read, not only as stderr. |
 | `CLAUDECODE`, `CLAUDE_CODE_ENTRYPOINT`, `CLAUDE_CODE_SSE_PORT` | removed | Sessions | no | claude sets it for its own children and treats a process that has it as nested inside another session. |
@@ -771,7 +771,7 @@ fleetd starts sessions with your own Claude Code setup underneath. The retro is 
 | Your own agents (`~/.claude/agents`) | Listed, but nothing can start them: the Agent tool is blocked. |
 | Env in your settings | Applied, except the switches above, which fleetd sets last. |
 
-A project's policy file can add rules for its sessions: `tools.allow` and `tools.deny` (Claude Code rule syntax), and `claude.autoMemory: true`.
+A project's policy file can add rules for its sessions: `tools.allow` and `tools.deny` (Claude Code rule syntax).
 
 ### See it in a session
 

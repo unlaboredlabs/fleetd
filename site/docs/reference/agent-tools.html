@@ -1519,7 +1519,7 @@
 </tr>
 </tbody>
 </table>
-<p>fleetd also blocks any tool like these that a newer Claude Code adds: it reads the installed claude’s tool list when it checks the machine, and a session that still offers one fails the check.</p>
+<p>fleetd also blocks any tool like these that a newer Claude Code adds: a session whose tool list still offers one is stopped, and every later session on that machine blocks it.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="settings-fleetd-forces">Settings fleetd forces</h2><a class="sl-anchor-link" href="#settings-fleetd-forces"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Settings fleetd forces”</span></a></div>
 <p>Set in the claude process’s environment. “In settings” marks the ones also in fleetd’s settings file for a session, which outranks the <code dir="auto">env</code> in your own settings.</p>
 <table>
@@ -1580,7 +1580,7 @@
 <td><code dir="auto">1</code>, and <code dir="auto">autoMemoryEnabled: false</code></td>
 <td>Every claude fleetd starts</td>
 <td>yes</td>
-<td>fleetd owns an agent’s context (briefs, decisions, instructions). Notes claude keeps per folder would carry stale, unreviewed text from one agent’s worktree to the next. A project opts back in with claude.autoMemory: true in its policy file.</td>
+<td>fleetd owns an agent’s context (briefs, decisions, instructions). Notes claude keeps per folder would carry stale, unreviewed text from one agent’s worktree to the next.</td>
 </tr>
 <tr>
 <td><code dir="auto">DISABLE_AUTOUPDATER</code></td>
@@ -1637,7 +1637,7 @@
 </tr>
 </tbody>
 </table>
-<p>A project’s policy file can add rules for its sessions: <code dir="auto">tools.allow</code> and <code dir="auto">tools.deny</code> (Claude Code rule syntax), and <code dir="auto">claude.autoMemory: true</code>.</p>
+<p>A project’s policy file can add rules for its sessions: <code dir="auto">tools.allow</code> and <code dir="auto">tools.deny</code> (Claude Code rule syntax).</p>
 <div class="sl-heading-wrapper level-h3"><h3 id="see-it-in-a-session">See it in a session</h3><a class="sl-anchor-link" href="#see-it-in-a-session"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “See it in a session”</span></a></div>
 <table>
 <thead>

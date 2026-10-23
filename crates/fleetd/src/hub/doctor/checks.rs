@@ -12,8 +12,7 @@ use crate::cli::setup::machine_plan::CLAUDE_INSTALL;
 use crate::node::runner::claude_setup::ClaudeSetup;
 use crate::node::runner::failure::login_fix;
 use crate::node::runner::version::{self, TESTED as CLAUDE_TESTED, VersionVerdict};
-use fleetd_contracts::model::{SleptSpan, duration_text};
-use fleetd_contracts::node_link::{IdleSleep, NodeDisk};
+use fleetd_contracts::node_link::NodeDisk;
 use fleetd_contracts::sessions::{LoginStatus, RunnerInfo};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -385,22 +384,14 @@ pub struct MachineView {
     pub last_seen_at: String,
     #[serde(default)]
     pub degraded_reason: Option<String>,
-    #[serde(default)]
-    pub last_slept: Option<SleptSpan>,
 }
 
-/// The one fix for a machine whose runner is unusable, from the cause its probe reports: claude missing, out of the
-/// supported range, a protocol break, logged out. Two causes at once become one ordered sentence (an update first,
-/// since a login on a claude that can't run proves nothing). None when the runner reports no cause.
+/// The one fix for a machine whose runner is unusable, from the cause its probe reports: claude missing, a protocol
+/// break, logged out. Two causes at once become one ordered sentence (the install first, since a login on a claude
+/// that can't run proves nothing). None when the runner reports no cause.
 pub fn runner_fix(machine_id: &str, info: &RunnerInfo) -> Option<DoctorFix> {
     let claude = match &info.version {
         None => Some(("Install Claude Code", CLAUDE_INSTALL.to_owned())),
-        Some(found) if !info.version_ok => Some((
-            "Put a supported claude",
-            version::check(found)
-                .fix()
-                .unwrap_or_else(|| "claude update".to_owned()),
-        )),
         Some(_) if info.conformance_ok == Some(false) => Some((
             "Put the tested claude",
             format!("claude install {CLAUDE_TESTED}"),
@@ -572,80 +563,10 @@ pub fn runner_checks(machine_id: &str, info: &RunnerInfo) -> Vec<Entry> {
             None,
         ),
     };
-    let mut out = vec![version, login, conformance];
-    out.extend(auto_memory_check(machine_id, info));
-    out.extend(subagents_check(machine_id, info));
-    out
+    vec![version, login, conformance]
 }
 
-/// Claude Code's own subagents are off in fleetd sessions: the probe's init and the latest session's offered no agent
-/// tool and no built-in agent fleetd's knobs remove. No line from a node that predates the check.
-fn subagents_check(machine_id: &str, info: &RunnerInfo) -> Option<Entry> {
-    let leaks = info.subagent_leaks.as_ref()?;
-    Some(if leaks.is_empty() {
-        machine_entry(
-            machine_id,
-            "claude_subagents",
-            Pass,
-            "Claude subagents off (fleetd manages agents)",
-            None,
-        )
-    } else {
-        machine_entry(
-            machine_id,
-            "claude_subagents",
-            Fail,
-            &format!(
-                "claude on {machine_id} still offers its own subagents in fleetd sessions ({}): they would run \
-                 outside fleetd's slots, so no new session starts there.",
-                leaks.join(", ")
-            ),
-            Some(manual(
-                "Install the claude version fleetd was tested with",
-                Some(format!(
-                    "claude install {}",
-                    crate::node::runner::version::TESTED
-                )),
-            )),
-        )
-    })
-}
-
-/// What the latest session's `system/init` showed of claude's auto memory, which fleetd keeps off. No line until a
-/// session has run there, nor from a node that predates the check.
-fn auto_memory_check(machine_id: &str, info: &RunnerInfo) -> Option<Entry> {
-    Some(match info.auto_memory? {
-        false => machine_entry(
-            machine_id,
-            "claude_auto_memory",
-            Pass,
-            "claude auto memory off.",
-            None,
-        ),
-        true => {
-            let dir = info.config_dir.as_deref().unwrap_or("~/.claude");
-            machine_entry(
-                machine_id,
-                "claude_auto_memory",
-                Warn,
-                &format!(
-                    "claude on {machine_id} kept its auto memory on despite CLAUDE_CODE_DISABLE_AUTO_MEMORY and \
-                     autoMemoryEnabled: its agents may carry notes from one worktree to the next."
-                ),
-                Some(manual(
-                    &format!(
-                        "On {machine_id}, set \"autoMemoryEnabled\": false in {dir}/settings.json, and run \
-                         fleetd update"
-                    ),
-                    None,
-                )),
-            )
-        }
-    })
-}
-
-/// The version verdict as a check: a warning outside the tested versions that still run (older, or newer within the
-/// minor), a failure where sessions are refused.
+/// The version verdict as a check: a warning outside the tested versions, which still run.
 fn version_entry(
     found: &str,
     entry: impl Fn(DoctorStatus, &str, Option<DoctorFix>) -> Entry,
@@ -661,26 +582,7 @@ fn version_entry(
             &format!("claude {} is supported.", found.trim()),
             None,
         ),
-        VersionVerdict::UntestedNewer | VersionVerdict::UntestedOlder => entry(Warn, &problem, fix),
-        _ => entry(Fail, &problem, fix),
-    }
-}
-
-/// The hub's own claude (the retro runs it): version and protocol, from the probe.
-pub fn hub_claude_version(info: &RunnerInfo) -> Entry {
-    match &info.version {
-        None => hub_entry(
-            "claude_version",
-            Fail,
-            "Claude Code (claude) is not on the hub's PATH; the retro can't run.",
-            Some(manual(
-                "Install Claude Code on the hub machine, then log in",
-                Some(CLAUDE_INSTALL.into()),
-            )),
-        ),
-        Some(found) => version_entry(found, |status, message, fix| {
-            hub_entry("claude_version", status, message, fix)
-        }),
+        _ => entry(Warn, &problem, fix),
     }
 }
 
@@ -723,79 +625,6 @@ pub struct HostProbe {
     /// "env": the node's service environment (GIT_AUTHOR_EMAIL), which setup writes; else git's global config.
     #[serde(default)]
     pub git_email_from: Option<String>,
-    /// Absent from nodes older than the sleep check.
-    #[serde(default)]
-    pub idle_sleep: Option<Vec<IdleSleep>>,
-}
-
-fn minutes(sec: u64) -> String {
-    match sec {
-        0..60 => format!("{sec} s"),
-        60..7200 => format!("{} min", sec / 60),
-        _ => format!("{} h", sec / 3600),
-    }
-}
-
-/// Whether the machine puts itself to sleep when idle on AC, and its latest sleep while recent. The inhibitor keeps
-/// it awake while agents run; between orders it still sleeps, and asleep it is unreachable.
-pub fn idle_sleep(
-    machine_id: &str,
-    probe: Result<&HostProbe, &str>,
-    last_slept: Option<&SleptSpan>,
-    now_ms: i64,
-) -> Entry {
-    let entry =
-        |status, message: &str, fix| machine_entry(machine_id, "sleep", status, message, fix);
-    let probe = match probe {
-        Err(why) => return entry(Unknown, why, None),
-        Ok(p) => p,
-    };
-    let Some(found) = &probe.idle_sleep else {
-        return entry(
-            Unknown,
-            &format!("{machine_id}'s node is too old to read its sleep settings."),
-            Some(manual("Update fleetd", Some("fleetd update".into()))),
-        );
-    };
-    let recent = last_slept.and_then(|s| {
-        let text = s.recent_text(now_ms)?;
-        let ago = duration_text(now_ms - s.to_ms.get());
-        Some(format!("It {text} (woke {ago} ago)."))
-    });
-    // The status follows the settings only, so a sleep does not flap the check (and log doctor.changed) for an hour.
-    let Some(first) = found.first() else {
-        let how = recent
-            .map(|r| format!(" {r} A lid, its power button or a suspend command put it to sleep."))
-            .unwrap_or_default();
-        return entry(
-            Pass,
-            &format!("{machine_id} does not sleep when idle on AC power.{how}"),
-            None,
-        );
-    };
-    let after = first
-        .after_sec
-        .map(|s| format!(" after {} idle", minutes(s.get().max(0) as u64)))
-        .unwrap_or_else(|| " when idle".into());
-    let also: Vec<&str> = found[1..].iter().map(|s| s.source.as_str()).collect();
-    let also = if also.is_empty() {
-        String::new()
-    } else {
-        format!(" ({} too)", also.join(", "))
-    };
-    entry(
-        Warn,
-        &format!(
-            "{machine_id} {}{after} on AC power ({}){also}. fleetd keeps it awake while agents run, but it still sleeps between orders, and asleep it is unreachable: queued work and wakes wait until someone wakes it.{}",
-            first.action,
-            first.source,
-            recent.map(|r| format!(" {r}")).unwrap_or_default()
-        ),
-        Some(manual(
-            &format!("Stop {machine_id} sleeping when idle on AC"),
-            Some(first.fix.to_string()),
-        )),
-    )
 }
 
 static NOREPLY: LazyLock<Regex> =
@@ -1082,68 +911,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn warns_when_a_machine_sleeps_idle_on_ac() {
-        let probe = |idle_sleep: Option<serde_json::Value>| -> HostProbe {
-            serde_json::from_value(serde_json::json!({
-                "idleSleep": idle_sleep,
-            }))
-            .unwrap()
-        };
-        let kde = serde_json::json!([
-            { "source": "KDE power management", "action": "sleeps", "afterSec": 900,
-              "fix": "System Settings > Power Management > On AC Power > When inactive: Do nothing" },
-            { "source": "logind IdleAction", "action": "sleeps", "afterSec": 1800, "fix": "edit logind.conf" },
-        ]);
-        let woke_at = 1_760_000_646_000;
-        let slept = SleptSpan::new(woke_at - 646_000, woke_at).unwrap();
-        let now = woke_at + 3 * 60_000;
-
-        let warn = idle_sleep("devbox", Ok(&probe(Some(kde))), Some(&slept), now).check;
-        assert_eq!(warn.status, Warn);
-        assert_eq!(
-            warn.message,
-            "devbox sleeps after 15 min idle on AC power (KDE power management) (logind IdleAction too). fleetd keeps \
-             it awake while agents run, but it still sleeps between orders, and asleep it is unreachable: queued work \
-             and wakes wait until someone wakes it. It slept 10m46s (woke 3m00s ago)."
-        );
-        assert_eq!(
-            warn.fix.and_then(|f| f.command).as_deref(),
-            Some("System Settings > Power Management > On AC Power > When inactive: Do nothing")
-        );
-
-        // No idle sleep: a pass whatever the last sleep was, so a sleep never flaps the check.
-        let quiet = idle_sleep(
-            "devbox",
-            Ok(&probe(Some(serde_json::json!([])))),
-            Some(&slept),
-            now,
-        )
-        .check;
-        assert_eq!(quiet.status, Pass);
-        assert!(
-            quiet.message.contains("It slept 10m46s"),
-            "{}",
-            quiet.message
-        );
-        let long_ago = idle_sleep(
-            "devbox",
-            Ok(&probe(Some(serde_json::json!([])))),
-            Some(&slept),
-            now + 3_600_000,
-        );
-        assert_eq!(
-            long_ago.check.message,
-            "devbox does not sleep when idle on AC power."
-        );
-
-        let old_node = idle_sleep("devbox", Ok(&probe(None)), None, now).check;
-        assert_eq!(
-            (old_node.status, old_node.fix.and_then(|f| f.command)),
-            (Unknown, Some("fleetd update".into()))
-        );
-    }
-
     /// A degraded machine's finding has exactly one fix, and it is the one for the cause.
     #[test]
     fn a_degraded_machine_gets_the_one_fix_for_its_cause() {
@@ -1152,13 +919,12 @@ mod tests {
             status: "degraded".into(),
             last_seen_at: "now".into(),
             degraded_reason: Some("claude is not logged in. Fix: claude auth login".into()),
-            last_slept: None,
         };
-        let runner = |version: Option<&str>, version_ok, login, proxy: Option<&str>| RunnerInfo {
+        let runner = |version: Option<&str>, login, proxy: Option<&str>| RunnerInfo {
             runner: fleetd_contracts::sessions::RunnerKind::Claude,
             version: version.map(str::to_owned),
             supported: ">=2.1.300, <2.2.0".into(),
-            version_ok,
+            version_ok: true,
             login,
             login_kind: None,
             conformance_ok: Some(true),
@@ -1167,9 +933,6 @@ mod tests {
             proxy: proxy.map(str::to_owned),
             proxy_source: None,
             config_dir: None,
-            auto_memory: None,
-            agent_tools: None,
-            subagent_leaks: None,
         };
         let fix = |info: Option<RunnerInfo>| {
             let entry = machine_online(&degraded, None, info.as_ref());
@@ -1182,7 +945,7 @@ mod tests {
         };
         let ok = Some("2.1.302 (Claude Code)");
         assert_eq!(
-            fix(Some(runner(ok, true, LoginStatus::LoggedOut, None))),
+            fix(Some(runner(ok, LoginStatus::LoggedOut, None))),
             (
                 "Log claude in on mac".into(),
                 Some("claude auth login".into())
@@ -1190,7 +953,6 @@ mod tests {
         );
         let (label, command) = fix(Some(runner(
             ok,
-            true,
             LoginStatus::LoggedOut,
             Some("http://127.0.0.1:8317"),
         )));
@@ -1199,32 +961,27 @@ mod tests {
             label.contains("log in with your proxy") && label.contains("8317"),
             "{label}"
         );
+        // A version outside the tested range is never the cause.
         assert_eq!(
-            fix(Some(runner(
-                Some("2.0.1"),
-                false,
-                LoginStatus::LoggedIn,
-                None
-            )))
-            .1
-            .as_deref(),
-            Some("claude update")
+            fix(Some(runner(Some("2.0.1"), LoginStatus::LoggedOut, None))).1,
+            Some("claude auth login".into())
         );
         assert_eq!(
-            fix(Some(runner(None, false, LoginStatus::Unknown, None)))
+            fix(Some(runner(None, LoginStatus::Unknown, None)))
                 .1
                 .as_deref(),
             Some(CLAUDE_INSTALL)
         );
-        // Two causes: one ordered sentence, the update first.
-        let (label, command) = fix(Some(runner(
-            Some("2.0.1"),
-            false,
-            LoginStatus::LoggedOut,
-            None,
-        )));
+        // Two causes: one ordered sentence, the install first.
+        let (label, command) = fix(Some(RunnerInfo {
+            conformance_ok: Some(false),
+            ..runner(ok, LoginStatus::LoggedOut, None)
+        }));
         assert_eq!(command, None);
-        assert_eq!(label, "On mac: claude update, then claude auth login");
+        assert_eq!(
+            label,
+            "On mac: claude install 2.1.302, then claude auth login"
+        );
         // No runner report: the node's own fix, never a restart for a login problem.
         assert_eq!(fix(None).1.as_deref(), Some("claude auth login"));
         // No runner cause at all: the node itself is the problem.
@@ -1232,11 +989,7 @@ mod tests {
             degraded_reason: Some("its node's runner is unavailable".into()),
             ..degraded.clone()
         };
-        let entry = machine_online(
-            &down,
-            None,
-            Some(&runner(ok, true, LoginStatus::LoggedIn, None)),
-        );
+        let entry = machine_online(&down, None, Some(&runner(ok, LoginStatus::LoggedIn, None)));
         assert_eq!(
             entry.check.fix.and_then(|f| f.command).as_deref(),
             Some("systemctl --user restart fleetd-node.service")
@@ -1258,9 +1011,6 @@ mod tests {
             proxy: None,
             proxy_source: None,
             config_dir: None,
-            auto_memory: None,
-            agent_tools: None,
-            subagent_leaks: None,
         };
         let statuses = |i: &RunnerInfo| {
             runner_checks("mac", i)
@@ -1280,68 +1030,15 @@ mod tests {
                 ("mac/runner_conformance".to_owned(), Pass)
             ]
         );
-        // Auto memory: a line once a session has shown it, a warning with the fix when claude kept it on.
-        let memory = |on| {
-            runner_checks(
-                "mac",
-                &RunnerInfo {
-                    auto_memory: Some(on),
-                    ..info(Some("2.1.302"), LoginStatus::LoggedIn, Some(true))
-                },
-            )
-            .pop()
-            .unwrap()
-            .check
-        };
-        assert_eq!(
-            (memory(false).status, memory(false).message.as_str()),
-            (Pass, "claude auto memory off.")
-        );
-        let kept = memory(true);
-        assert_eq!(kept.status, Warn);
-        // Subagents: a pass once a probe found none on, a failure naming them with the reinstall otherwise.
-        let subagents = |leaks: Vec<String>| {
-            runner_checks(
-                "mac",
-                &RunnerInfo {
-                    subagent_leaks: Some(leaks),
-                    ..info(Some("2.1.302"), LoginStatus::LoggedIn, Some(true))
-                },
-            )
-            .pop()
-            .unwrap()
-            .check
-        };
-        let off = subagents(vec![]);
-        assert_eq!(
-            (off.status, off.message.as_str()),
-            (Pass, "Claude subagents off (fleetd manages agents)")
-        );
-        let on = subagents(vec!["Agent".into(), "agent Explore".into()]);
-        assert_eq!(on.status, Fail);
-        assert!(
-            on.message.contains("(Agent, agent Explore)"),
-            "{}",
-            on.message
-        );
-        assert_eq!(
-            on.fix.and_then(|f| f.command).as_deref(),
-            Some("claude install 2.1.302")
-        );
-        assert!(
-            kept.fix
-                .unwrap()
-                .label
-                .contains("set \"autoMemoryEnabled\": false in ~/.claude/settings.json")
-        );
         let bad = runner_checks(
             "mac",
             &info(Some("2.2.1"), LoginStatus::LoggedOut, Some(false)),
         );
-        assert_eq!(bad[0].check.status, Fail);
+        // Past the tested range: a warning with the tested version, never a refusal.
+        assert_eq!(bad[0].check.status, Warn);
         assert_eq!(
             bad[0].check.fix.as_ref().and_then(|f| f.command.as_deref()),
-            Some("claude install 2.1.302, or fleetd update")
+            Some("claude install 2.1.302")
         );
         // Older than tested: a warning with the update, never a refusal on the version alone.
         let older = runner_checks(
@@ -1405,7 +1102,7 @@ mod tests {
             "mac",
             &info(Some("2.1.399"), LoginStatus::LoggedIn, Some(true)),
         );
-        assert_eq!(newer[0].check.status, Warn);
+        assert_eq!(newer[0].check.status, Pass);
         let missing = runner_checks("mac", &info(None, LoginStatus::Unknown, None));
         assert_eq!(
             missing[0]

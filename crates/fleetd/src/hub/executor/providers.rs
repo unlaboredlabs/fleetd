@@ -11,7 +11,7 @@ pub const CLAUDE_DRIVER: &str = "claude";
 pub struct ProviderInstance {
     pub instance_id: String,
     pub driver: String,
-    /// The runner is installed in a supported version and logged in.
+    /// The runner is installed and logged in.
     pub usable: bool,
     /// Model slugs and their aliases.
     pub models: Vec<String>,
@@ -23,41 +23,35 @@ pub fn to_instance(info: &RunnerInfo) -> ProviderInstance {
     ProviderInstance {
         instance_id: FLEETD_INSTANCE.into(),
         driver: CLAUDE_DRIVER.into(),
-        usable: info.version_ok && info.login == LoginStatus::LoggedIn,
+        usable: info.login == LoginStatus::LoggedIn,
         models: vec![],
         default_model: None,
     }
 }
 
-/// Why the machine's runner can't take sessions, or None when it can (a supported version, logged in).
+/// Why the machine's runner can't take sessions, or None when it can (logged in). Its version never decides.
 pub fn runner_problem(info: &RunnerInfo) -> Option<String> {
-    if info.version_ok && info.login == LoginStatus::LoggedIn {
+    if info.login == LoginStatus::LoggedIn {
         return None;
     }
-    Some(info.problem.clone().unwrap_or_else(|| {
-        if info.version_ok {
-            "claude is not logged in on this machine".into()
-        } else {
-            format!(
-                "claude {} is outside the supported range {}",
-                info.version.as_deref().unwrap_or("(missing)"),
-                info.supported
-            )
-        }
-    }))
+    Some(
+        info.problem
+            .clone()
+            .unwrap_or_else(|| "claude is not logged in on this machine".into()),
+    )
 }
 
-/// What to run on the machine for a runner problem: a login, or an update into the supported range.
+/// What to run on the machine for a runner problem: a login, or (claude missing or unreadable) the tested claude.
 pub fn runner_fix(info: &RunnerInfo, machine_id: &str) -> String {
-    if info.version_ok {
+    if info.login == LoginStatus::LoggedOut {
         format!(
             "On {machine_id}: {}.",
             crate::node::runner::failure::login_fix(info.proxy.is_some())
         )
     } else {
         format!(
-            "On {machine_id}: claude update, so its version is in {}.",
-            info.supported
+            "On {machine_id}: curl -fsSL https://claude.ai/install.sh | bash -s {}.",
+            crate::node::runner::version::TESTED
         )
     }
 }

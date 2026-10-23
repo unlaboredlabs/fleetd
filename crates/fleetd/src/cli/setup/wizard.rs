@@ -736,11 +736,7 @@ async fn hub_claude(ui: &Ui, list: &mut Checklist) -> Result<Option<ClaudeSetup>
             let why = verdict.problem(&printed).unwrap_or_default();
             let why = why.trim_end_matches('.');
             let why = why.strip_prefix("claude ").unwrap_or(why);
-            if verdict.runs() {
-                list.warn("claude version", why, Some(&fix));
-            } else {
-                list.failed("claude version", why, &fix);
-            }
+            list.warn("claude version", why, Some(&fix));
             if !updated
                 && verdict != VersionVerdict::UntestedNewer
                 && ui.offer_to_run(list, &format!("Update claude now? ({fix})"))?
@@ -785,7 +781,6 @@ async fn hub_claude(ui: &Ui, list: &mut Checklist) -> Result<Option<ClaudeSetup>
         if let Some(problem) = setup
             .problem
             .as_deref()
-            .filter(|_| verdict.runs())
             .filter(|p| !p.contains("not logged in"))
         {
             let (why, fix) = split_fix(problem);
@@ -796,7 +791,7 @@ async fn hub_claude(ui: &Ui, list: &mut Checklist) -> Result<Option<ClaudeSetup>
             );
             return Ok(None);
         }
-        return Ok(verdict.runs().then_some(setup));
+        return Ok(Some(setup));
     }
 }
 

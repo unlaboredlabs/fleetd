@@ -83,7 +83,6 @@ fn launch(id: &str, mode: RuntimeMode, workspace: SessionWorkspace) -> SessionCa
         run_id: NonEmpty::unchecked("r1"),
         allowed_tools: vec!["Bash(npm test:*)".into()],
         disallowed_tools: vec!["WebFetch".into()],
-        auto_memory: false,
         role: fleetd_contracts::sessions::SessionRole::Worker,
     })
 }
@@ -193,54 +192,6 @@ fn sessions_share_one_compile_cache_when_sccache_is_installed() {
 }
 
 #[tokio::test]
-async fn a_project_that_opts_into_auto_memory_gets_neither_knob() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().join("project");
-    std::fs::create_dir_all(&root).unwrap();
-    std::fs::write(
-        dir.path().join("claude.env"),
-        "CLAUDE_CODE_DISABLE_AUTO_MEMORY=0\n",
-    )
-    .unwrap();
-    let mut hub = hub(
-        dir.path(),
-        NodeStore::open_memory(10_000).unwrap(),
-        FakeRunner::fixture("init-partial-two-turns"),
-    )
-    .await;
-    hub.project(&root).await;
-    let SessionCall::Launch(mut opted_in) =
-        launch("s1", RuntimeMode::FullAccess, SessionWorkspace::Root)
-    else {
-        unreachable!()
-    };
-    opted_in.auto_memory = true;
-    hub.ok(SessionCall::Launch(opted_in)).await;
-    hub.settled("r1").await;
-    let spec = &hub.runner.spawned()[0];
-    let overlay: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(spec.settings.as_ref().unwrap()).unwrap())
-            .unwrap();
-    assert_eq!(overlay.get("autoMemoryEnabled"), None);
-    assert_eq!(overlay["env"].get("CLAUDE_CODE_DISABLE_AUTO_MEMORY"), None);
-    // The user's own value passes through untouched.
-    let ours: Vec<_> = spec
-        .env
-        .iter()
-        .filter(|(k, _)| k == "CLAUDE_CODE_DISABLE_AUTO_MEMORY")
-        .collect();
-    assert_eq!(
-        ours,
-        [&("CLAUDE_CODE_DISABLE_AUTO_MEMORY".to_owned(), "0".to_owned())]
-    );
-    // Its memory dir is the project's choice, not a broken knob.
-    let SessionOutput::RunnerInfo(info) = hub.ok(SessionCall::RunnerInfo).await else {
-        panic!("no runner info")
-    };
-    assert_eq!(info.auto_memory, None);
-}
-
-#[tokio::test]
 async fn a_launch_runs_its_turn_streams_it_and_later_sends_continue_the_session() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("project");
@@ -334,11 +285,6 @@ async fn a_launch_runs_its_turn_streams_it_and_later_sends_continue_the_session(
     assert_eq!(overlay["autoMemoryEnabled"], false);
     assert_eq!(overlay["env"]["CLAUDE_CODE_DISABLE_AUTO_MEMORY"], "1");
     assert_eq!(last("CLAUDE_CODE_DISABLE_AUTO_MEMORY"), Some("1"));
-    // The fixture was recorded with auto memory on: its init names a memory dir, and runner_info says so.
-    let SessionOutput::RunnerInfo(info) = hub.ok(SessionCall::RunnerInfo).await else {
-        panic!("no runner info")
-    };
-    assert_eq!(info.auto_memory, Some(true));
 
     // A retried launch returns the same session without a second process.
     let again = hub
@@ -711,6 +657,76 @@ async fn an_interrupt_during_a_retry_wait_ends_the_run_for_good() {
     let runs = hub.service.store().runs("s1").unwrap();
     assert_eq!(runs[0].status, RunStatus::Interrupted);
     assert_eq!(*hub.service.running().borrow(), 0);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_session_whose_init_offers_an_agent_tool_stops_and_later_ones_deny_it() {
+    // A claude with an agent tool fleetd's deny list doesn't name yet; the first turn would run for a minute.
+    let lines = r#"
+{"dir":"in","ms":0,"msg":{"type":"user"}}
+{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","state":"started"}}
+{"dir":"out","ms":0,"msg":{"type":"system","subtype":"init","tools":["Bash","Task","SwarmSpawn"]}}
+{"dir":"out","ms":60000,"msg":{"type":"result","is_error":false,"result":"too late"}}
+{"dir":"in","ms":0,"msg":{"type":"user"}}
+{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","state":"started"}}
+{"dir":"out","ms":0,"msg":{"type":"system","subtype":"init","tools":["Bash","Task","SwarmSpawn"]}}
+{"dir":"out","ms":5,"msg":{"type":"result","is_error":false,"result":"done"}}
+"#;
+    let dir = tempfile::tempdir().unwrap();
+    let mut runner = FakeRunner::from_lines(lines);
+    runner.timed = true;
+    let mut hub = hub(dir.path(), NodeStore::open_memory(10_000).unwrap(), runner).await;
+    hub.project(dir.path()).await;
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    let stopped = hub.settled("r1").await;
+    assert_eq!(stopped.latest_run.unwrap().status, RunStatus::Interrupted);
+    let said = hub
+        .service
+        .store()
+        .item("s1", "agent-tools-r1")
+        .unwrap()
+        .unwrap();
+    let ItemKind::Error { failure } = said.kind else {
+        panic!("{said:?}")
+    };
+    assert!(
+        failure.message.as_str().contains("(SwarmSpawn)"),
+        "{failure:?}"
+    );
+    assert!(
+        hub.runner
+            .received()
+            .iter()
+            .any(|c| matches!(c, SessionCommand::Shutdown { grace } if grace.is_zero()))
+    );
+
+    // The next start denies it, so its init offers none and the run completes.
+    hub.ok(send("s1", "r2")).await;
+    let done = hub.settled("r2").await;
+    assert_eq!(done.latest_run.unwrap().status, RunStatus::Completed);
+    let spawned = hub.runner.spawned();
+    assert_eq!(spawned.len(), 2);
+    assert!(
+        !spawned[0]
+            .disallowed_tools
+            .iter()
+            .any(|t| t == "SwarmSpawn")
+    );
+    assert!(
+        spawned[1]
+            .disallowed_tools
+            .iter()
+            .any(|t| t == "SwarmSpawn")
+    );
+    assert_eq!(
+        hub.service.store().item("s1", "agent-tools-r2").unwrap(),
+        None
+    );
 }
 
 #[tokio::test(start_paused = true)]

@@ -129,8 +129,6 @@ tools:
   deny: ["Bash(git push:*)"]
 lead:
   autoStart: false
-claude:
-  autoMemory: true
 branchPrefix: team-a/
 ```
 
@@ -142,7 +140,6 @@ branchPrefix: team-a/
 | `finishAll.maxChildren` | `5` | The most pieces of work one finish-all run starts at once, 1 to 50. |
 | `tools.allow`, `tools.deny` | none | Claude permission rules for every session. Deny wins. |
 | `lead.autoStart` | `true` | `false`: your messages wait for `lead_start` instead of starting the lead. |
-| `claude.autoMemory` | `false` | `true`: sessions keep claude's own auto memory. |
 | `branchPrefix` | `fleetd/` | What writer and train branches start with. Must end in `/`. |
 
 ### Inferred areas {#inferred-areas}

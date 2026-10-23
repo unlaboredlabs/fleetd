@@ -193,11 +193,11 @@ impl Doctor {
             .clone()
             .filter(|u| u.starts_with("https://") && problem.is_none());
         let env: Vec<(String, String)> = router_env().into_iter().collect();
-        let (reachable, gh, claude, runner, https) = tokio::join!(
+        let proxy = crate::node::runner::claude_setup::proxy_of(&env).map(|(url, _)| url);
+        let (reachable, gh, claude, https) = tokio::join!(
             self.health(&own),
             run_cmd("gh", &["auth", "status"], None),
             run_cmd("claude", &["auth", "status", "--json"], Some(router_env())),
-            crate::node::runner::conformance::probe(std::path::Path::new("claude"), &env),
             async {
                 match &public {
                     Some(u) => Some(self.health(u.trim_end_matches('/')).await),
@@ -223,8 +223,7 @@ impl Doctor {
                 restart_command("hub", Some(&hub_setup)),
             ),
             checks::gh_auth(&gh),
-            checks::hub_claude_login(&claude, runner.proxy.as_deref()),
-            checks::hub_claude_version(&runner),
+            checks::hub_claude_login(&claude, proxy.as_deref()),
             checks::https_reachable(
                 &config,
                 problem.as_deref(),
@@ -287,12 +286,6 @@ impl Doctor {
             !online,
             disk.as_ref(),
             paused.as_deref(),
-        ));
-        out.push(checks::idle_sleep(
-            id,
-            probe.as_ref().map_err(String::as_str),
-            machine.last_slept.as_ref(),
-            self.now_ms(),
         ));
         out.push(checks::usage_breaker(id, &usage.breaker));
         if let Some(refused) = refused {
