@@ -1368,7 +1368,6 @@ export type KnownHubEventType =
   | "usage.resumed"
   | "doctor.changed"
   | "key.paired"
-  | "workstream.note"
   | "prompt.changed"
   | "prompt.default_changed"
   | "steer.queued"
@@ -2015,7 +2014,7 @@ export type OrderNoteInput = {
 
 export type OrderNoteOutput = {
   next?: string;
-  /** "N" plus a number; the workstream.note event carries it. */
+  /** "N" plus a number. */
   noteId: string;
   /** The steer the note was sent as; its receipts arrive as `steer.*` events. */
   steerId?: SteerId;
@@ -4497,17 +4496,6 @@ export type WorkstreamListOutput = {
   workstreams: Workstream[];
 };
 
-/** `workstream.note`. */
-export type WorkstreamNoteData = {
-  clientRequestId?: string;
-  /** The steer the note became. */
-  steerId?: SteerId;
-  /** The first 200 characters. */
-  text?: string;
-  urgent?: boolean;
-  workstreamId: WorkstreamId;
-};
-
 export type WorkstreamParent = {
   serves: Serves;
   workstreamId: WorkstreamId;
@@ -4680,7 +4668,6 @@ export interface HubEventDataMap {
   "usage.resumed": UsageEventData;
   "workstream.created": WorkstreamEventData;
   "workstream.done": WorkstreamEventData;
-  "workstream.note": WorkstreamNoteData;
   "workstream.running": WorkstreamEventData;
   "workstream.state": WorkstreamEventData;
 }

@@ -444,7 +444,7 @@ input!(OrderNoteInput {
     client_request_id: RequestId,
 });
 output!(OrderNoteOutput {
-    /// "N" plus a number; the workstream.note event carries it.
+    /// "N" plus a number.
     note_id: Text<1, 40>,
     /// The lead's wake that will carry it: now for urgent notes, else after the wake debounce.
     wakes_at: Timestamp,

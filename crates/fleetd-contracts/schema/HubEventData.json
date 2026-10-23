@@ -921,9 +921,6 @@
         "workstream.done": {
           "$ref": "#/$defs/WorkstreamEventData"
         },
-        "workstream.note": {
-          "$ref": "#/$defs/WorkstreamNoteData"
-        },
         "workstream.running": {
           "$ref": "#/$defs/WorkstreamEventData"
         },
@@ -984,7 +981,6 @@
         "usage.resumed",
         "workstream.created",
         "workstream.done",
-        "workstream.note",
         "workstream.running",
         "workstream.state"
       ],
@@ -2066,32 +2062,6 @@
     "WorkstreamId": {
       "pattern": "^W[1-9][0-9]*$",
       "type": "string"
-    },
-    "WorkstreamNoteData": {
-      "description": "`workstream.note`.",
-      "properties": {
-        "clientRequestId": {
-          "type": "string"
-        },
-        "steerId": {
-          "$ref": "#/$defs/SteerId",
-          "description": "The steer the note became."
-        },
-        "text": {
-          "description": "The first 200 characters.",
-          "type": "string"
-        },
-        "urgent": {
-          "type": "boolean"
-        },
-        "workstreamId": {
-          "$ref": "#/$defs/WorkstreamId"
-        }
-      },
-      "required": [
-        "workstreamId"
-      ],
-      "type": "object"
     },
     "WorkstreamState": {
       "enum": [

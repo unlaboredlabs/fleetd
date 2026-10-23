@@ -488,4 +488,12 @@ pub(crate) const MIGRATIONS: &[&str] = &[
   UPDATE requests SET state = 'denied', data = json_set(data, '$.state', 'denied')
     WHERE state = 'open' AND json_valid(data) AND json_extract(data, '$.playbook') IS NOT NULL;
   "#,
+    // The router's retry memo, the ETA anchor and the generated headlines: nothing reads or writes them, and nothing
+    // emits these two event types any more.
+    r#"
+  DROP TABLE intake_routes;
+  DROP TABLE status_eta;
+  DROP TABLE status_headlines;
+  DELETE FROM events WHERE type IN ('intake.routed', 'workstream.note');
+  "#,
 ];

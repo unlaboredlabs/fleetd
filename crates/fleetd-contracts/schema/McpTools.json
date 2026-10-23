@@ -4007,11 +4007,6 @@
           "type": "string"
         },
         {
-          "const": "workstream.note",
-          "description": "A person added to an order for its lead: `data.workstreamId`, `data.noteId`, `data.urgent`, `data.text` (first\n200 characters).",
-          "type": "string"
-        },
-        {
           "const": "prompt.changed",
           "description": "A prompt override was saved or reset: `data.id`, `data.scope`, `data.projectRef`, `data.ref` (absent on reset),\n`data.warnings` (their codes). The text is not in the event; prompt_get reads it.",
           "type": "string"
@@ -6321,7 +6316,7 @@
           "type": "string"
         },
         "noteId": {
-          "description": "\"N\" plus a number; the workstream.note event carries it.",
+          "description": "\"N\" plus a number.",
           "maxLength": 40,
           "minLength": 1,
           "type": "string"
