@@ -112,7 +112,7 @@ export class Boundary extends Component<Props, State> {
 
 // The QA build's way to show a card (qa/registry.ts): a "fleetd:qa-crash" event naming a part makes it throw. Release
 // builds leave it out.
-const QA_PROBE = import.meta.env.VITE_FLEETD_GALLERY === "1";
+const QA_PROBE = import.meta.env.VITE_FLEETD_QA === "1";
 
 function Probe({ part }: { part: string }) {
   const [crash, setCrash] = useState(false);

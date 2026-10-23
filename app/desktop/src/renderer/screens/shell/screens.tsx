@@ -1,7 +1,5 @@
-// The screen host: which component each route shows. Each screen writer swaps their placeholder for their
-// component here (one import, one line), so the router stays the one place routes meet screens.
+// The screen host: which component each route shows, so the router stays the one place routes meet screens.
 import { lazy, Suspense, type ReactNode } from "react";
-import { EmptyState, GalleryScreen } from "../../ui";
 import type { Screen } from "./routes";
 import { ChatScreen } from "../chat";
 
@@ -18,15 +16,6 @@ const TimeScreen = lazy(() => import("../time/TimeScreen").then((m) => ({ defaul
 
 /** Holds a screen's place, busy (which the QA gate waits out), while its chunk loads. */
 const Loading = ({ children }: { children: ReactNode }) => <Suspense fallback={<div aria-busy="true" />}>{children}</Suspense>;
-
-/** A screen that hasn't landed yet. It carries the screen's id, so the route table is testable end to end now. */
-function Pending({ id, title }: { id: string; title: string }) {
-  return (
-    <div data-screen={id} style={{ display: "contents" }}>
-      <EmptyState title={title}>This screen is on its way.</EmptyState>
-    </div>
-  );
-}
 
 /** A screen in words, for its error card and the log, and its identity: a new key opens it afresh. */
 export const screenPart = (screen: Screen): { key: string; words: string } => {
@@ -50,8 +39,7 @@ export const screenPart = (screen: Screen): { key: string; words: string } => {
     case "onboarding":
       return { key: "onboarding", words: "the connect screen" };
     case "home":
-    case "gallery":
-      return { key: screen.id, words: screen.id === "home" ? "the home screen" : "the gallery" };
+      return { key: "home", words: "the home screen" };
   }
 };
 
@@ -88,12 +76,5 @@ function screenFor(screen: Screen): ReactNode {
       return <SettingsScreen />;
     case "onboarding":
       return <OnboardingScreen hub={screen.hub ?? undefined} code={screen.code ?? undefined} />;
-    case "gallery":
-      // Only dev builds and the screenshot suite's build carry the gallery.
-      return GalleryScreen === null ? (
-        <Pending id="gallery" title="Gallery" />
-      ) : (
-        <GalleryScreen />
-      );
   }
 }

@@ -105,8 +105,8 @@ export function Shell() {
   // onboarding screen has the window to itself.
   const blocked = hub !== null && needsOnboarding(hub);
   const onboarding = blocked || screen.id === "onboarding";
-  const shown: Screen = blocked && screen.id !== "gallery" && screen.id !== "onboarding" ? { id: "onboarding", hub: null, code: null } : screen;
-  const chrome = !onboarding && shown.id !== "gallery";
+  const shown: Screen = blocked && screen.id !== "onboarding" ? { id: "onboarding", hub: null, code: null } : screen;
+  const chrome = !onboarding;
 
   const go = (next: Screen) => navigate(next);
   const step = (by: 1 | -1) => {
