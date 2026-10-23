@@ -609,4 +609,9 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     '$.brief.metric', '$.brief.decisionRule') WHERE json_valid(data);
   DELETE FROM events WHERE type = 'research.verdict';
   "#,
+    // The train runs no git of its own any more, so nothing can block its worktree: its event goes, as no reader decodes
+    // it.
+    r#"
+  DELETE FROM events WHERE type = 'train.blocked';
+  "#,
 ];

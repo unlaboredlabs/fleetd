@@ -114,7 +114,7 @@ pub enum HubEventType {
     /// A clean review is bound to its current patch id. `data.changeId`.
     #[serde(rename = "change.ready")]
     ChangeReady,
-    /// The rebase conflicted; `data.changeId`, `data.paths`.
+    /// The PR conflicts with its base, or with the PRs ahead of it in a batch; `data.changeId`.
     #[serde(rename = "change.needs_rebase")]
     ChangeNeedsRebase,
     /// `data.changeId`, `data.checks` (failing check names), `data.logUrl`.
@@ -128,10 +128,6 @@ pub enum HubEventType {
     /// `data.mergedSha`, and `data.changeId` when it had been enqueued.
     #[serde(rename = "pr.merged_outside")]
     PrMergedOutside,
-    /// Something that is not the train's sits where its worktree goes, and a person has to move it; `data.changeId`,
-    /// `data.repo`, `data.error` (what to move).
-    #[serde(rename = "train.blocked")]
-    TrainBlocked,
     /// Refused at enqueue; `data.prUrl`, `data.fix`.
     #[serde(rename = "change.refused")]
     ChangeRefused,
@@ -249,7 +245,6 @@ impl HubEventType {
             Self::ChangeCiFailed => "change.ci_failed",
             Self::PrMerged => "pr.merged",
             Self::PrMergedOutside => "pr.merged_outside",
-            Self::TrainBlocked => "train.blocked",
             Self::ChangeRefused => "change.refused",
             Self::UsageBreaker => "usage.breaker",
             Self::UsageResumed => "usage.resumed",
@@ -355,7 +350,7 @@ pub struct RequestEventData {
 }
 
 /// The merge train's events: `change.queued`, `change.ready`, `change.needs_rebase`, `change.ci_failed`,
-/// `change.refused`, `pr.merged`, `pr.merged_outside`, `train.blocked`. Which fields each carries is in
+/// `change.refused`, `pr.merged`, `pr.merged_outside`. Which fields each carries is in
 /// `HubEventType`'s docs.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -371,15 +366,11 @@ pub struct TrainEventData {
     pub merged_sha: Option<String>,
     /// pr.merged on a repo with no CI: what fleetd checked instead.
     pub ci: Option<String>,
-    /// change.needs_rebase: the conflicting paths.
-    pub paths: Option<Vec<String>>,
     /// change.ci_failed: the failing check names.
     pub checks: Option<Vec<String>>,
     pub log_url: Option<String>,
     pub reason: Option<String>,
     pub fix: Option<String>,
-    /// train.blocked: what a person has to move.
-    pub error: Option<String>,
 }
 
 /// `prompt.changed`.

@@ -96,7 +96,7 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   // A freed slot offers the next approved item; a slice gets its reviewer before the next slice. Restarts lab-a's lead
   // and adds the lab repo project for its run, so only when named.
   { name: "eff", run: efficiency, only: true },
-  // Batches on the lab repo: a batch of three in one CI run, a red batch bisected. Only when named.
+  // Batches on the lab repo: a batch of three in one CI run, a red batch's members alone. Only when named.
   { name: "batch", run: trainBatch, only: true },
   // The app demo: one order fanned out to writers and reviewers on the lab repo. Only when named.
   { name: "demo", run: demoFanout, only: true },

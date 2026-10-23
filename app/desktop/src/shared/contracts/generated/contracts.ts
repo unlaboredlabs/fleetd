@@ -1080,7 +1080,6 @@ export type KnownHubEventType =
   | "change.ci_failed"
   | "pr.merged"
   | "pr.merged_outside"
-  | "train.blocked"
   | "change.refused"
   | "usage.breaker"
   | "usage.resumed"
@@ -3280,7 +3279,7 @@ export type ToolPermission = {
 
 /**
  * The merge train's events: `change.queued`, `change.ready`, `change.needs_rebase`, `change.ci_failed`,
- * `change.refused`, `pr.merged`, `pr.merged_outside`, `train.blocked`. Which fields each carries is in
+ * `change.refused`, `pr.merged`, `pr.merged_outside`. Which fields each carries is in
  * `HubEventType`'s docs.
  */
 export type TrainEventData = {
@@ -3289,13 +3288,9 @@ export type TrainEventData = {
   checks?: string[];
   /** pr.merged on a repo with no CI: what fleetd checked instead. */
   ci?: string;
-  /** train.blocked: what a person has to move. */
-  error?: string;
   fix?: string;
   logUrl?: string;
   mergedSha?: string;
-  /** change.needs_rebase: the conflicting paths. */
-  paths?: string[];
   prNumber?: number;
   prUrl?: string;
   reason?: string;
@@ -3665,7 +3660,6 @@ export interface HubEventDataMap {
   "thread.started": ThreadEventData;
   "thread.usage_limited": UsageEventData;
   "thread.waiting": ThreadEventData;
-  "train.blocked": TrainEventData;
   "usage.breaker": UsageEventData;
   "usage.resumed": UsageEventData;
   "workstream.created": WorkstreamEventData;

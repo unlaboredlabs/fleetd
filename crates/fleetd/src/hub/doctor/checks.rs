@@ -637,35 +637,6 @@ fn gb(bytes: f64) -> String {
     format!("{:.1} GB", bytes / 1e9)
 }
 
-/// Projects whose checkout the machine's node won't run commands in (outside its cmdRoots): `(path, why)`. Their
-/// PRs could never merge, since the train's git runs there too.
-pub fn cmd_roots(machine_id: &str, refused: &[(String, String)]) -> Entry {
-    if refused.is_empty() {
-        return machine_entry(
-            machine_id,
-            "cmd-roots",
-            Pass,
-            "Every project's checkout is inside the node's cmdRoots.",
-            None,
-        );
-    }
-    let paths: Vec<&str> = refused.iter().map(|(path, _)| path.as_str()).collect();
-    machine_entry(
-        machine_id,
-        "cmd-roots",
-        Fail,
-        &format!(
-            "The node on {machine_id} won't run commands in {} (outside its cmdRoots), so the merge train can't merge {} PRs.",
-            paths.join(", "),
-            if paths.len() == 1 { "its" } else { "their" }
-        ),
-        Some(manual(
-            &crate::node::cmd::outside_roots_fix(machine_id),
-            None,
-        )),
-    )
-}
-
 /// Free space where the node's worktrees live, from its heartbeat, and whether the guard holds new agents there.
 pub fn disk_space(
     machine_id: &str,
@@ -728,32 +699,6 @@ mod tests {
         assert_eq!(
             held.fix.map(|f| f.label),
             Some("Add a GitHub Actions workflow that runs on pull requests to acme/app".into())
-        );
-    }
-
-    #[test]
-    fn a_project_outside_cmd_roots_fails_with_the_fix() {
-        let ok = cmd_roots("fe7", &[]).check;
-        assert_eq!((ok.id.as_str(), ok.status), ("fe7/cmd-roots", Pass));
-        let refused = cmd_roots(
-            "fe7",
-            &[(
-                "/tmp/work/lab".into(),
-                "/tmp/work/lab is outside cmdRoots".into(),
-            )],
-        )
-        .check;
-        assert_eq!(refused.status, Fail);
-        assert!(
-            refused.message.contains("/tmp/work/lab"),
-            "{}",
-            refused.message
-        );
-        let fix = refused.fix.unwrap();
-        assert!(
-            fix.label.contains("\"cmdRoots\" in node.json on fe7"),
-            "{}",
-            fix.label
         );
     }
 

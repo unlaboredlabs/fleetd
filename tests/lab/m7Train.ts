@@ -311,9 +311,9 @@ export async function m7Train(lab: Lab) {
     }
     ok(`1. pr.merged ${first!.changeId} (#${m1.data.prNumber} as ${m1.data.mergedSha.slice(0, 12)}) then ${second!.changeId} (#${m2.data.prNumber}); ${batched ? "merged together as one batch" : `${second!.changeId} rebased to ${merged2.headSha.slice(0, 12)} on top of ${m1.data.mergedSha.slice(0, 12)}`}`);
 
-    // 2. The conflict goes back to its author with the paths; the train moves on.
+    // 2. The conflict goes back to its author; the train moves on.
     const conflict = await lab.waitEvent(`change.needs_rebase for ${cc.changeId}`, CI_MS, { cursor, types: ["change.needs_rebase"], match: (e) => e.data?.changeId === cc.changeId });
-    check((conflict.event.data.paths as Array<string>).includes(ALPHA), `needs_rebase names ${ALPHA}: ${JSON.stringify(conflict.event)}`);
+    check(String(conflict.event.summary).includes(`conflicts with ${BASE}`), `needs_rebase says it conflicts with ${BASE}: ${JSON.stringify(conflict.event)}`);
     ok(`2. ${conflict.event.type}: ${conflict.event.summary}`);
     // 3. Red CI goes back to its author with the check name; never merged.
     const red = await lab.waitEvent(`change.ci_failed for ${cd.changeId}`, CI_MS, { cursor, types: ["change.ci_failed"], match: (e) => e.data?.changeId === cd.changeId });
@@ -329,8 +329,8 @@ export async function m7Train(lab: Lab) {
       });
     };
     // The one "fix your PR" message (the pr.fix prompt), with the reason and what to do.
-    await told(c, ["Fix your PR", "the merge train could not rebase it", ALPHA, "rebase onto the latest base"]);
-    ok(`2. ${c} got the task message naming ${ALPHA}`);
+    await told(c, ["Fix your PR", "the merge train could not rebase it", `conflicts with ${BASE}`, "rebase onto the latest base"]);
+    ok(`2. ${c} got the task message: it conflicts with ${BASE}`);
     await told(d, ["Fix your PR", "the merge train did not merge it", "ci (failure)"]);
     ok(`3. ${d} was woken with the failing check name: ci (failure)`);
 
