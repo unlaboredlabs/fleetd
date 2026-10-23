@@ -59,7 +59,7 @@ pub struct NodeHello {
     pub pub_key: NonEmpty,
     /// Signature over the hub's challenge nonce (its UTF-8 bytes), base64.
     pub sig: NonEmpty,
-    /// One-time token from `fleetd hub token create`; sent only until the hub has registered `pub_key`.
+    /// One-time token from `fleetd pair --worker` or `machine add`; sent only until the hub has registered `pub_key`.
     pub enroll_token: Option<NonEmpty>,
     /// M8: the X25519 key the desktop app seals this machine's secrets to. Absent on nodes from before M8.
     pub box_pub_key: Option<BoxPublicKey>,
