@@ -69,18 +69,6 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "Interrupt a thread's running turn. Refused with machine_offline when the machine is offline.",
     ),
     (
-        "subscription_set",
-        "Push hub events to an http(s) URL as signed Standard Webhooks POSTs (body: the HubEvent JSON), in seq order, retried until a 2xx. Filter by types and machines (default all). Returns the signing secret once.",
-    ),
-    (
-        "subscription_list",
-        "This key's webhook subscriptions (all of them for an admin key) with their delivery cursor and failing state. Secrets are never returned.",
-    ),
-    (
-        "subscription_delete",
-        "Delete a webhook subscription; delivery stops at once.",
-    ),
-    (
         "wake_set",
         "Have the hub send a message to a thread later: at an ISO time (no offset means wall-clock time in tz), every N seconds (>= 60), or on a 5-field cron in an IANA tz. once defaults to true. A run missed while the hub was down fires once, marked late, unless catchUp is skip. Offline machines get it queued. Emits wake.fired.",
     ),

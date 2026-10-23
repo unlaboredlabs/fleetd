@@ -125,7 +125,6 @@ pub struct Hub {
     pub sweep: Arc<crate::hub::sweep::Sweep>,
     pub queue: Arc<crate::hub::queue::WriteQueue>,
     pub wakes: Arc<crate::hub::wakes::Wakes>,
-    pub webhooks: Arc<crate::hub::webhooks::Webhooks>,
     pub incidents: Arc<crate::hub::incidents::Incidents>,
     pub estimates: Arc<crate::hub::estimates::Estimates>,
     pub receipts: Arc<crate::hub::receipts::Receipts>,
@@ -158,7 +157,6 @@ pub fn registry() -> Registry {
     crate::hub::ledger::register(&mut tools);
     crate::hub::executor::register(&mut tools);
     crate::hub::wakes::tools::register(&mut tools);
-    crate::hub::webhooks::tools::register(&mut tools);
     crate::hub::checks::tools::register(&mut tools);
     crate::hub::usage::tools::register(&mut tools);
     crate::hub::doctor::tools::register(&mut tools);

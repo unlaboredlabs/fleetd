@@ -275,13 +275,6 @@ pub fn build_on(
         ops.usage.clone(),
         clock.clone(),
     );
-    let webhooks = crate::hub::webhooks::Webhooks::for_home(
-        &config.home,
-        db.clone(),
-        events.clone(),
-        auth.clone(),
-        clock.clone(),
-    )?;
     let fresh = Arc::new(crate::hub::status::fresh::Fresh::default());
     let checks = crate::hub::checks::build(&db, &events, &clock);
     let train_host =
@@ -372,7 +365,6 @@ pub fn build_on(
         sweep,
         queue,
         wakes,
-        webhooks,
         incidents: checks.incidents,
         estimates: checks.estimates,
         receipts: checks.receipts,

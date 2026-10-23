@@ -2,10 +2,14 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
-use crate::brand;
 use crate::ids::{MachineId, Timestamp};
 use crate::prim::NonEmpty;
-use crate::subscriptions::Star;
+use crate::{brand, literal};
+
+literal!(
+    /// `"*"`: every machine.
+    Star = "*"
+);
 
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,

@@ -132,11 +132,6 @@
           "type": "string"
         },
         {
-          "const": "webhook.failing",
-          "description": "A webhook subscription has been failing for over an hour.",
-          "type": "string"
-        },
-        {
           "const": "workstream.running",
           "description": "The brief was frozen; `data.briefHash`.",
           "type": "string"

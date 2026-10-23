@@ -441,4 +441,15 @@ pub(crate) const MIGRATIONS: &[&str] = &[
   -- The ask batching and info spans: nothing records them any more, and their kinds no longer exist.
   DELETE FROM time_spans WHERE kind IN (42, 43);
   "#,
+    // Outbound webhooks went: external clients long-poll events_wait.
+    r#"
+  DROP TABLE subscriptions;
+  DELETE FROM events WHERE type = 'webhook.failing';
+  "#,
+    // In-stage progress counts only while work is in flight. A figure stored under the old rule, which credited every
+    // minute in a stage, can only fall with an observed cause, so it would stay held at the old height: every scope's
+    // series restarts at its next render.
+    r#"
+  DELETE FROM status_series;
+  "#,
 ];
