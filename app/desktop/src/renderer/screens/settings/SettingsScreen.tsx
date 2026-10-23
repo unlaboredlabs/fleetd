@@ -6,13 +6,13 @@ import { General } from "./General";
 import { Instructions } from "./Instructions";
 import { Notifications } from "./Notifications";
 import { Prompts } from "./Prompts";
-import { parseRoute, useHash } from "./route";
+import { useSettingsRoute } from "./route";
 import s from "./settings.module.css";
 
 export { SettingsSidebar } from "./SettingsSidebar";
 
 export function SettingsScreen() {
-  const route = parseRoute(useHash());
+  const route = useSettingsRoute();
   return (
     <div className={s.frame}>
       {route.tab === "general" ? (

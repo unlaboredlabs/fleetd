@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
-import { Button, Dialog, Dot, InlineCode, Radio, RadioGroup, Select, Separator, Text, THEME_MODES, Truncate, textClass, useTheme } from "../../ui";
+import { Button, Dialog, Dot, Radio, RadioGroup, Separator, Text, THEME_MODES, Truncate, useTheme } from "../../ui";
 import type { LinkHandlerStatus } from "../../../shared/app";
 import type { HubState } from "../../../shared/hub";
 import { useData } from "../../src/data/react";
-import { errorText, useHubCall, useLive, useRead, useRefetch } from "./hub";
-import { MOTION_PREFS, parseMotion, setMotion, useMotion } from "./prefs";
+import { errorText } from "./hub";
 import { PageHead, Setting } from "./parts";
 import s from "./settings.module.css";
 import { keyStoreLine } from "../../../shared/pairing";
@@ -12,11 +11,8 @@ import { useKeyStore } from "../onboarding";
 import { sentence } from "../onboarding/form";
 import { Prose } from "../onboarding/Prose";
 
-const RETENTION = [7, 30, 90, 365] as const;
-
 export function General() {
   const { mode, setMode } = useTheme();
-  const motion = useMotion();
   return (
     <div className={s.scroll} data-screen="settings.general">
       <div className={s.column}>
@@ -31,32 +27,9 @@ export function General() {
             ))}
           </RadioGroup>
         </Setting>
-        <Setting reveal="general.motion" label="Motion" help="Reduced turns off movement.">
-          <RadioGroup className={s.radios} value={motion} onValueChange={(v) => setMotion(parseMotion(v))} aria-label="Motion">
-            {MOTION_PREFS.map((m) => (
-              <Radio key={m.value} value={m.value} label={m.label} />
-            ))}
-          </RadioGroup>
-        </Setting>
         <Separator />
         <HubSetting />
         <LinkHandlerSetting />
-        <Separator />
-        <RetentionSetting />
-        <Separator />
-        <Setting
-          reveal="general.memory"
-          label="Claude auto memory"
-          help="Claude's own notes between runs."
-        >
-          <div className={s.stack}>
-            <Text>Off for every agent fleetd starts.</Text>
-            <Text size="xs" tone="quiet">
-              Agents learn from their brief, your decisions and your instructions, never from notes another agent left in a worktree.{" "}
-              <InlineCode>fleetd doctor</InlineCode> warns if a machine's claude keeps it on anyway.
-            </Text>
-          </div>
-        </Setting>
       </div>
     </div>
   );
@@ -206,92 +179,6 @@ function LinkHandlerSetting() {
           </Text>
         </>
       )}
-    </Setting>
-  );
-}
-
-export function formatBytes(b: number): string {
-  const n = Math.max(0, b);
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 ** 2) return `${Math.round(n / 1024)} KB`;
-  if (n < 10 * 1024 ** 2) return `${(n / 1024 ** 2).toFixed(1)} MB`;
-  if (n < 1024 ** 3) return `${Math.round(n / 1024 ** 2)} MB`;
-  return `${(n / 1024 ** 3).toFixed(1)} GB`;
-}
-
-const daysLabel = (d: number) => (d === 365 ? "1 year" : d === 1 ? "1 day" : `${d} days`);
-
-function RetentionSetting() {
-  const live = useLive();
-  // The retention and the stored size come with any breakdown; the fleet's last hour (from when the page opened)
-  // is the cheapest one.
-  const [since] = useState(() => new Date(Date.now() - 3_600_000).toISOString());
-  const [store, reload] = useRead("time_breakdown", { scope: { kind: "fleet" }, since }, live);
-  const hubCall = useHubCall();
-  const refetch = useRefetch();
-  const [saving, setSaving] = useState<number | null>(null);
-  const [echo, setEcho] = useState<{ ok: boolean; text: string } | null>(null);
-  const help = "How long the hub keeps Time's detail.";
-  if (!live) {
-    return (
-      <Setting reveal="general.retention" label="Time data" help={help}>
-        <Text tone="quiet">Connect to a hub to see and change this.</Text>
-      </Setting>
-    );
-  }
-  if (store.state !== "ready") {
-    return (
-      <Setting reveal="general.retention" label="Time data" help={help}>
-        {store.state === "loading" ? (
-          <Text tone="quiet">Asking the hub…</Text>
-        ) : (
-          <div className={s.inline}>
-            <Text tone="danger">{store.message}</Text>
-            <Button onClick={reload}>Try again</Button>
-          </div>
-        )}
-      </Setting>
-    );
-  }
-  const days = saving ?? store.value.retentionDays;
-  const options = (RETENTION as ReadonlyArray<number>).includes(days) ? RETENTION : [...RETENTION, days].sort((a, b) => a - b);
-  return (
-    <Setting reveal="general.retention" label="Time data" help={help}>
-      <div className={s.inline}>
-        <label htmlFor="retention" className={textClass({})}>
-          Keep spans for
-        </label>
-        <Select
-          id="retention"
-          value={String(days)}
-          disabled={saving !== null}
-          options={options.map((d) => ({ value: String(d), label: daysLabel(d) }))}
-          onValueChange={(v) => {
-            const d = Number(v);
-            setSaving(d);
-            setEcho(null);
-            hubCall("time_retention_set", { retentionDays: d }).then(
-              (o) => {
-                setSaving(null);
-                setEcho({ ok: true, text: `Saved: ${daysLabel(o.retentionDays)}. Older spans go at the next hourly prune.` });
-                refetch(["time_breakdown"]);
-              },
-              (e: unknown) => {
-                setSaving(null);
-                setEcho({ ok: false, text: errorText(e) });
-              },
-            );
-          }}
-        />
-      </div>
-      <Text size="xs" tone="quiet">
-        Stored now: {formatBytes(store.value.storedBytes)}, about 20 MB a day of work. Daily totals stay 400 days. Changing it needs an admin key.
-      </Text>
-      {echo ? (
-        <Text size="xs" tone={echo.ok ? "quiet" : "danger"}>
-          {echo.text}
-        </Text>
-      ) : null}
     </Setting>
   );
 }

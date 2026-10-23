@@ -3,6 +3,7 @@
 // hub's dry run as you type and never block a save. A running session keeps the text it started with.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Dialog, Dot, IdChip, Tab, TabList, TabPanel, Tabs, Text, Textarea, copyText, textClass } from "../../ui";
+import { useToolQuery } from "../../src/data/react";
 import { describe } from "./catalog";
 import {
   type ProjectRef,
@@ -36,7 +37,7 @@ import {
   type Filled,
   type Scope,
 } from "./editor";
-import { errorText, useHubCall, useLive, useRead, useRefetch } from "./hub";
+import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { ConfirmDiscard, PageHead, ScopeSelect, scopeName, useProjects } from "./parts";
 import { oldPromptName, orphanAdvice, orphanHeadline, targetName, whyLine } from "./orphans";
 import { replaceRoute, type SettingsRoute, type View } from "./route";
@@ -66,8 +67,8 @@ export function Prompts({ route }: { route: SettingsRoute }) {
   const projectRef = projectRefOf(scope);
 
   const scoped = projectRef ? { projectRef } : {};
-  const [list] = useRead("prompt_get", scoped, live);
-  const [detail] = useRead("prompt_get", { id: selected ?? "", ...scoped }, live && selected !== null);
+  const list = useToolQuery("prompt_get", scoped, { enabled: live });
+  const detail = useToolQuery("prompt_get", { id: selected ?? "", ...scoped }, { enabled: live && selected !== null });
 
   const [editor, setEditor] = useState(() => kept?.text ?? "");
   const [filled, setFilled] = useState<Filled | null>(() => kept?.filled ?? null);
@@ -84,7 +85,7 @@ export function Prompts({ route }: { route: SettingsRoute }) {
 
   // Fill the editors from what the hub sent for the prompt and scope on screen (see `synced`), during render so the
   // first paint of a new prompt already shows its text.
-  const d = detail.state === "ready" ? (detail.value.prompt ?? null) : null;
+  const d = detail.data?.prompt ?? null;
   if (d && d !== seen) {
     setSeen(d);
     const next = synced(filled, d, sk, editor);
@@ -240,8 +241,8 @@ export function Prompts({ route }: { route: SettingsRoute }) {
   const here = scopeName(scope, projects);
   const pendingWhy =
     pending && pending.id !== selected ? "Opening another prompt drops them." : `Showing ${pending ? scopeName(pending.scope, projects) : here} drops them.`;
-  const listed = list.state === "ready" ? list.value.prompts?.find((p) => p.id === selected) : undefined;
-  const orphans = list.state === "ready" ? (list.value.orphans ?? []) : [];
+  const listed = list.data?.prompts?.find((p) => p.id === selected);
+  const orphans = list.data?.orphans ?? [];
   const name = d ? describe(d).name : listed ? describe(listed).name : "this prompt";
   const resetScope = d && confirmReset ? (confirmReset === "update" ? updateTarget(d, scope).scope : editScope(d, scope)) : null;
 
@@ -287,8 +288,8 @@ export function Prompts({ route }: { route: SettingsRoute }) {
               </Button>
             </div>
           </div>
-        ) : detail.state === "failed" ? (
-          <Text tone="danger">{detail.message}</Text>
+        ) : detail.isLoadingError ? (
+          <Text tone="danger">{errorText(detail.error)}</Text>
         ) : !d || !onScreen ? (
           <Text tone="quiet">Loading…</Text>
         ) : (

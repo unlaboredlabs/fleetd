@@ -1,5 +1,5 @@
 // Settings' fixture data. The shared fixtures get what Settings asks beyond the recorded traffic (the projects for
-// the pickers, the dry run, retention, a prompt whose default changed), and `settings-prompts` is the whole real
+// the pickers, the dry run, a prompt whose default changed), and `settings-prompts` is the whole real
 // registry from the fake prompt hub: every prompt's real text, a hub-wide edit made against an older default (the
 // 3-way Update view), a project's own edit, and the instructions at both levels.
 import fs from "node:fs";
@@ -43,10 +43,6 @@ function projectSettings(f: Fixture, off: ReadonlySet<string> = new Set()) {
 function basics(f: Fixture) {
   projectSettings(f);
   if (f.output("project_get") === undefined) f.answer("project_get", undefined, { projects: PROJECTS.map(projectSummary) });
-  f.answer("time_retention_set", undefined, { retentionDays: 30 });
-  // Settings reads the retention and stored size from a breakdown of the fleet's last hour, at whatever time it is.
-  const fleet = f.answers("time_breakdown").find((a) => isObject(a.input?.["scope"]) && a.input["scope"]["kind"] === "fleet");
-  if (fleet && !f.output("time_breakdown", { scope: { kind: "fleet" } })) f.answer("time_breakdown", { scope: { kind: "fleet" } }, clone(fleet.output));
   // The dry run, for any text: a fixture cannot know what will be typed, so it answers with no warnings.
   f.answer("prompt_set", { dryRun: true }, { ref: "lead.start@5e771ed000", warnings: [] });
 }

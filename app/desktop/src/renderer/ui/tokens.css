@@ -162,13 +162,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :root:not([data-motion="full"]) {
+  :root {
     --dur-fast: 0ms;
     --dur-base: 0ms;
   }
-}
-
-[data-motion="reduce"] {
-  --dur-fast: 0ms;
-  --dur-base: 0ms;
 }

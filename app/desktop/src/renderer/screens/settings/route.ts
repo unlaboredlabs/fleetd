@@ -1,12 +1,11 @@
-// Settings' part of the route table (notes/electron-routes.md):
-// #/settings[/<tab>][?prompt=<id>&for=<machine>/<project>&view=compare|update]. They make a prompt, a project's texts
-// and a prompt's update linkable, from the palette, a "default changed" notice or the screenshot suite.
-import { useSyncExternalStore } from "react";
+// Settings' links ride on the shell's route (shell/routes.ts): #/settings[/<tab>][?prompt=<id>&for=<machine>/<project>
+// &view=compare|update]. They make a prompt, a project's texts and a prompt's update linkable, from the palette, a
+// "default changed" notice or the screenshot suite.
+import { useRoute } from "../shell/navigation";
+import { parseHash, toHash, type Screen, type SettingsTab, type SettingsView } from "../shell/routes";
 
-export type Tab = "general" | "notifications" | "agents" | "prompts" | "instructions";
-export const TABS: ReadonlyArray<Tab> = ["general", "notifications", "agents", "prompts", "instructions"];
-
-export type View = "edit" | "compare" | "update";
+export type Tab = SettingsTab;
+export type View = SettingsView;
 
 export interface SettingsRoute {
   readonly tab: Tab;
@@ -15,38 +14,17 @@ export interface SettingsRoute {
   readonly view: View;
 }
 
-export function parseRoute(hash: string): SettingsRoute {
-  const [path = "", query = ""] = hash.replace(/^#/u, "").split("?", 2);
-  const seg = path.split("/").filter(Boolean)[1];
-  const tab = TABS.find((t) => t === seg) ?? "general";
-  const q = new URLSearchParams(query);
-  const view = q.get("view");
-  return { tab, prompt: q.get("prompt"), for: q.get("for"), view: view === "compare" || view === "update" ? view : "edit" };
-}
+const settingsOf = (s: Screen): SettingsRoute =>
+  s.id === "settings" ? { tab: s.tab, prompt: s.prompt ?? null, for: s.for ?? null, view: s.view ?? "edit" } : { tab: "general", prompt: null, for: null, view: "edit" };
+
+export const parseRoute = (hash: string): SettingsRoute => settingsOf(parseHash(hash));
+
+export const useSettingsRoute = (): SettingsRoute => settingsOf(useRoute());
 
 type RouteParts = { tab: Tab; prompt?: string | null; for?: string | null; view?: View };
 
-export function formatRoute(r: RouteParts): string {
-  const q = new URLSearchParams();
-  if (r.prompt) q.set("prompt", r.prompt);
-  if (r.for) q.set("for", r.for);
-  if (r.view && r.view !== "edit") q.set("view", r.view);
-  const qs = q.toString();
-  return `#/settings/${r.tab}${qs ? `?${qs.replaceAll("%2F", "/")}` : ""}`;
-}
-
-// replaceRoute changes the hash without a hashchange; its own listeners hear it, so the sidebar follows the page.
-const replaced = new Set<() => void>();
-const subscribe = (l: () => void) => {
-  window.addEventListener("hashchange", l);
-  replaced.add(l);
-  return () => {
-    window.removeEventListener("hashchange", l);
-    replaced.delete(l);
-  };
-};
-
-export const useHash = () => useSyncExternalStore(subscribe, () => window.location.hash);
+export const formatRoute = (r: RouteParts): string =>
+  toHash({ id: "settings", tab: r.tab, ...(r.prompt ? { prompt: r.prompt } : {}), ...(r.for ? { for: r.for } : {}), ...(r.view ? { view: r.view } : {}) });
 
 const last = new Map<Tab, string>();
 
@@ -56,11 +34,14 @@ export const tabHref = (tab: Tab): string => last.get(tab) ?? formatRoute({ tab 
 /** A link to one prompt, in the scope the Prompts page was last showing. */
 export const promptHref = (id: string): string => formatRoute({ tab: "prompts", prompt: id, for: parseRoute(tabHref("prompts")).for });
 
-/** Records where the page is without a history entry or a hashchange: a reload or a copied link lands here again. */
+/**
+ * Records where the page is without a history entry: a reload or a copied link lands here again. replaceState fires no
+ * hashchange, so it sends one for the route's readers (the sidebar follows the page).
+ */
 export function replaceRoute(r: RouteParts) {
   const next = formatRoute(r);
   last.set(r.tab, next);
   if (window.location.hash === next) return;
   window.history.replaceState(window.history.state, "", next);
-  for (const l of replaced) l();
+  window.dispatchEvent(new Event("hashchange"));
 }

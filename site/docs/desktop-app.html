@@ -107,19 +107,24 @@ when it opens. On another computer:</p>
 <tbody>
 <tr>
 <td>Sidebar</td>
-<td>Your projects, each saying why it wants you: “reply”, “approve”, “secret” or “blocked”. Otherwise it says how many agents are working. A project in bold has a new message from its lead. Below them: Agents, Pull requests (of the project you’re in), Status, Time, Machines and Settings.</td>
+<td>Your projects, each saying why it wants you: “reply”, “approve”, “secret” or “blocked”. Otherwise it says how many agents are working. A project in bold has a new message from its lead. Below them: Status, Time, Machines and Settings.</td>
 </tr>
 <tr>
 <td>The top row</td>
-<td>The page’s title and its controls, then Commands. In a chat: the project’s name, its state word and its <a href="/docs/projects#max-agents">Max agents</a> control.</td>
+<td>The page’s title and its controls, then Commands. In a chat: the project’s name, its state word and its <a href="/docs/projects#max-agents">Max agents</a> control, and the agents and PRs toggle.</td>
 </tr>
 <tr>
 <td>The chat</td>
 <td>The selected project’s conversation with its lead.</td>
 </tr>
+<tr>
+<td>Agents and PRs</td>
+<td>Beside a chat, on the right: the project’s <a href="#agents">agents</a> and its <a href="/docs/chat#prs">pull requests</a>. Open it with the toggle at the top right or ⌥⌘B.</td>
+</tr>
 </tbody>
 </table>
-<p>In a window narrower than about 1000 px the sidebar hides itself; ⌘B shows it again. On macOS the Dock icon shows how
+<p>In a window narrower than about 1000 px the sidebar and the agents and PRs panel hide themselves; ⌘B and ⌥⌘B show them
+again. The app remembers whether you left the panel open. On macOS the Dock icon shows how
 many projects need you.</p>
 <p>Click a project to open its chat. ⌥⌘A jumps to the next project that wants you. To add a project, click “Add” next to Projects, then paste a GitHub URL or
 <code dir="auto">owner/repo</code>. You can also drop a folder or a GitHub link anywhere on the window, a chat included. Other files dropped
@@ -178,10 +183,10 @@ Approvals, secrets and Stop wait until the hub is back.</p>
 Retry. “Disconnect and forget key” in Settings clears what the app kept for that hub, queued messages included.</p>
 <p>How to work with the lead: <a href="/docs/chat">Chat with the lead</a>.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="agents">Agents</h2><a class="sl-anchor-link" href="#agents"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Agents”</span></a></div>
-<p>Agents lists every agent working now, across all your projects: its role, its task, what it’s doing and for how long.
-Click one to watch its work as it happens: what it was told, the commands it ran, the files it edited and what it’s
-writing. Watching doesn’t interrupt it. To change what it does, tell its lead in the chat. Its PR number opens
-<a href="/docs/chat#prs">the PR</a>.</p>
+<p>The Agents tab of the panel beside a chat (⌥⌘B) lists the project’s agents at work, those waiting on you first: each
+one’s role, its task, what it’s doing and for how long. Click one to watch its work as it happens: what it was told,
+the commands it ran, the files it edited and what it’s writing. Watching doesn’t interrupt it. To change what it does,
+tell the lead in the chat. Its PR number opens <a href="/docs/chat#prs">the PR</a>; <strong>All agents</strong> or Esc goes back to the list.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="status">Status</h2><a class="sl-anchor-link" href="#status"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Status”</span></a></div>
 <p><img src="/docs/img/status.png" alt="Status with one row per project: billing waiting on you at 64%, checkout blocked at 31%, storefront working at 78% with five agents, each with its last merge."></p>
 <p>Status shows one row per project: a state word (waiting on you, blocked, working or idle), its two-tone progress bar,
@@ -227,7 +232,7 @@ an option or a prompt by name, and press Enter to open the first match.</p>
 <tbody>
 <tr>
 <td>General</td>
-<td>Appearance (light, dark, match system), motion, the hub connection, whether <code dir="auto">fleetd://</code> pairing links open in this app, Claude auto memory, and how long time data is kept.</td>
+<td>Appearance (light, dark, match system), the hub connection, and whether <code dir="auto">fleetd://</code> pairing links open in this app.</td>
 </tr>
 <tr>
 <td>Notifications</td>
@@ -273,6 +278,10 @@ an option or a prompt by name, and press Enter to open the first match.</p>
 <tr>
 <td>⌘B</td>
 <td>Toggle the sidebar</td>
+</tr>
+<tr>
+<td>⌥⌘B</td>
+<td>Toggle the agents and PRs panel</td>
 </tr>
 <tr>
 <td>⌘1 to ⌘9</td>
