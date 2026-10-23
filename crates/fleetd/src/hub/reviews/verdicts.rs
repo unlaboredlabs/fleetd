@@ -1,6 +1,5 @@
 //! Review verdicts: `fleetd review verdict` records one per review task and head SHA, keyed by its PR too. The train's
-//! review gate reads them by task and head, the PR view by PR. A judge of a research workstream reports the metric
-//! too, and its numbers become the workstream's computed verdict.
+//! review gate reads them by task and head, the PR view by PR.
 use crate::clock::Clock;
 use crate::hub::checks::ports::{Ports, Refusal, internal, invalid, not_found};
 use crate::hub::store::{EventLog, HubDb, NewEvent, iso_ms, now_ms};
@@ -17,13 +16,6 @@ pub struct Caller {
     pub project_ref: ProjectRef,
     pub by: String,
     pub task: Option<TaskId>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct RecordedVerdict {
-    pub verdict: ReviewVerdict,
-    /// The computed research verdict's text, for a research judge.
-    pub research: Option<String>,
 }
 
 fn kind_name(kind: TaskKind) -> &'static str {
@@ -57,13 +49,12 @@ impl Verdicts {
     }
 
     /// Stores the verdict against its task and head and emits `review.verdict`. A task's session records its own
-    /// verdict, and the head it reviewed is filled in when left out. The judge of a research workstream must report
-    /// `metricValues`, and gets the computed verdict back as text.
+    /// verdict, and the head it reviewed is filled in when left out.
     pub async fn record(
         &self,
         caller: &Caller,
         mut verdict: ReviewVerdict,
-    ) -> Result<RecordedVerdict, Refusal> {
+    ) -> Result<ReviewVerdict, Refusal> {
         let task_id = match (&caller.task, verdict.task_id.take()) {
             (Some(own), Some(named)) if *own != named => {
                 return Err(invalid(
@@ -98,41 +89,6 @@ impl Verdicts {
                     kind_name(task.kind)
                 ),
                 None,
-            ));
-        }
-        // Hub-spawned judges review criteria, not a PR, so they are the review tasks without one.
-        let judged = if task.pr.is_none() {
-            self.ports.workstream(&task.workstream_id)
-        } else {
-            None
-        };
-        let is_research = judged
-            .as_ref()
-            .and_then(|w| w.playbook.as_ref())
-            .is_some_and(|p| p.as_str().starts_with("research@"));
-        if verdict.metric_values.is_some() && !is_research {
-            return Err(invalid(
-                format!(
-                    "{} is not the judge of a research workstream; only those report --baseline and --candidate.",
-                    task.task_id
-                ),
-                Some("Leave out --baseline and --candidate."),
-            ));
-        }
-        if is_research && verdict.metric_values.is_none() {
-            let metric = judged
-                .as_ref()
-                .and_then(|w| w.brief.as_ref())
-                .and_then(|b| b.metric.as_ref())
-                .map_or_else(|| "the brief's metric".to_owned(), |m| format!("\"{m}\""));
-            return Err(invalid(
-                format!(
-                    "{} judges research workstream {}, so its verdict must carry the measured numbers.",
-                    task.task_id, task.workstream_id
-                ),
-                Some(&format!(
-                    "Rerun with --baseline <n> --candidate <n>: {metric} measured for the baseline and for the candidate."
-                )),
             ));
         }
         if verdict.pr_head_sha.is_none() {
@@ -185,15 +141,7 @@ impl Verdicts {
                 attention: None,
             })
             .map_err(internal)?;
-        let research = match (is_research, verdict.metric_values.clone()) {
-            (true, Some(values)) => Some(
-                self.ports
-                    .research_verdict(&task.workstream_id, values)
-                    .await?,
-            ),
-            _ => None,
-        };
-        Ok(RecordedVerdict { verdict, research })
+        Ok(verdict)
     }
 }
 
@@ -234,9 +182,8 @@ mod tests {
 
     use super::{Caller, Verdicts};
     use crate::clock::{Clock, SystemClock};
-    use crate::hub::checks::ports::{BoxFuture, Ports, Refusal, invalid};
+    use crate::hub::checks::ports::{BoxFuture, Ports};
     use crate::hub::store::{EventLog, HubDb};
-    use fleetd_contracts::ledger::{MetricValues, Workstream, WorkstreamId};
     use fleetd_contracts::tasks::{Task, TaskId};
     use fleetd_contracts::verification::{CommitSha, ReviewVerdict};
     use serde_json::json;
@@ -251,16 +198,6 @@ mod tests {
     }
 
     impl Ports for Fake {
-        fn workstream(&self, _: &WorkstreamId) -> Option<Workstream> {
-            None
-        }
-        fn research_verdict<'a>(
-            &'a self,
-            _: &'a WorkstreamId,
-            _: MetricValues,
-        ) -> BoxFuture<'a, Result<String, Refusal>> {
-            Box::pin(async { Err(invalid("no research here", None)) })
-        }
         fn task(&self, id: &TaskId) -> Option<Task> {
             self.tasks.lock().unwrap().get(id).cloned()
         }
@@ -313,7 +250,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            (recorded.verdict.task_id, recorded.verdict.pr_head_sha),
+            (recorded.task_id, recorded.pr_head_sha),
             (Some(TaskId::unchecked("T4")), Some(head))
         );
         let other = verdicts

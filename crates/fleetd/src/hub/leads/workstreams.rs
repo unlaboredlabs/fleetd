@@ -15,7 +15,6 @@ use super::records::{LeadRecords, NewWorkstream, WorkstreamFilter, is_closed};
 use super::wakes::{LeadWakes, Trigger};
 use super::{Ctx, now_iso};
 use crate::hub::playbooks::Playbooks;
-use crate::hub::playbooks::floor::floor_refusal;
 use crate::hub::store::NewEvent;
 
 pub struct IntakeInput {
@@ -181,20 +180,6 @@ impl Workstreams {
     ) -> Result<BriefCreateResult, LeadError> {
         let w = &self.own(caller, workstream_id)?;
         let id = &w.workstream_id;
-        // M9: checked against the version pinned at intake, whatever the playbook file says now.
-        let playbook = w
-            .playbook
-            .as_ref()
-            .map(|r| self.playbooks.by_ref(r))
-            .transpose()?
-            .flatten()
-            .map(|p| p.playbook);
-        if let Some(short) = playbook.as_ref().and_then(|p| floor_refusal(p, &brief)) {
-            return Err(LeadError::invalid(
-                short,
-                format!("Add what is missing to the brief and call `brief` for {id} again."),
-            ));
-        }
         if is_closed(w.state) {
             return Err(LeadError::bare(
                 ErrorCode::Invalid,

@@ -180,18 +180,9 @@ Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen lines
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `brief` | object | yes |  |
-| `brief.baseline` | string | no | Research: what the candidate is compared against, and how both are measured. At most 1000 characters. |
-| `brief.budget` | object | no |  |
-| `brief.budget.agentHours` | number | no | Older briefs only; a lead now gives `size`. |
-| `brief.budget.size` | string | no | How big a research spend the lead allows, relative like plan sizes; never a time guess. One of `S`, `M`, `L`. |
 | `brief.constraints` | string[] | yes | At most 20 items. |
-| `brief.decisionRule` | object | no | Research: the rule the verdict is computed from. |
-| `brief.decisionRule.better` | string | yes | One of `higher`, `lower`. |
-| `brief.decisionRule.goAtLeast` | number | yes |  |
-| `brief.decisionRule.stopBelow` | number | yes |  |
 | `brief.doneWhen` | string[] | yes | At least one. At most 20 items. |
 | `brief.goal` | string | yes | At most 1000 characters. |
-| `brief.metric` | string | no | Research: the one number the judge reports for baseline and candidate, e.g. "p50 cold start in ms". At most 200 characters. |
 | `brief.pointers` | string[] | yes | At most 20 items. |
 | `brief.why` | string | yes | At most 2000 characters. |
 | `workstreamId` | string | yes | `W<n>`, e.g. `W1`. |
@@ -546,9 +537,6 @@ Record your review verdict once, before your final message: the number of blocki
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `blocking` | integer | yes |  |
-| `metricValues` | object | no | A research workstream's judge reports its metric for the baseline and the candidate; the hub computes the verdict. |
-| `metricValues.baseline` | number | yes |  |
-| `metricValues.candidate` | number | yes |  |
 | `nonBlocking` | integer | yes |  |
 | `summary` | string | yes | At most 1000 characters. |
 

@@ -33,7 +33,7 @@ A message that starts "An agent (…) writes in your chat" comes from an agent o
 Name one as `template` on `workstream_open`.
 - bugfix: a done-when that names a repro failing on main today. Fix only that bug.
 - feature: the smallest thing that meets the done-when.
-- research: freeze a baseline, one metric and a decision rule first; have both measured, and the rule says GO, STOP or INCONCLUSIVE. Never move the rule. A plain question is one read agent and an answer in the chat.
+- research: a question; read agents find the answer and its evidence, and you close with the answer.
 
 ## Examples
 Human: can we add dark mode?

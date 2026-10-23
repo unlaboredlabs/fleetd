@@ -45,9 +45,7 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
   close --workstream <W> --why "<why>"
              the workstream is done, and why; it stops nothing
   review verdict --task <T> --sha <full head SHA> --blocking <n> --non-blocking <n> --summary "<s>"
-      [--baseline <n> --candidate <n>]
-             the last step of a review task; a research judge also reports its metric for the
-             baseline and the candidate, and fleetd computes GO, STOP or INCONCLUSIVE
+             the last step of a review task
   change enqueue --pr <url> [--task <T>] [--workstream <W>] [--item P<n>]
              put a PR on its repo's merge train (a write task's PR goes on by itself). Only the
              train merges. --item links the PR to that plan item
@@ -124,8 +122,6 @@ const OPTIONS: &[(&str, Kind)] = &[
     ("cwd", Kind::Str),
     ("secret-env", Kind::Multi),
     ("timeout", Kind::Str),
-    ("baseline", Kind::Str),
-    ("candidate", Kind::Str),
     ("template", Kind::Str),
     ("item", Kind::Str),
     ("milestone", Kind::Str),
@@ -173,22 +169,6 @@ fn s(value: Option<&str>) -> Option<Value> {
 
 fn all_digits(text: &str) -> bool {
     !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit())
-}
-
-/// `/^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i`
-fn is_decimal(text: &str) -> bool {
-    let text = text.strip_prefix(['+', '-']).unwrap_or(text);
-    let (mantissa, exponent) = match text.find(['e', 'E']) {
-        Some(at) => (&text[..at], Some(&text[at + 1..])),
-        None => (text, None),
-    };
-    let mantissa_ok = match mantissa.split_once('.') {
-        Some(("", frac)) => all_digits(frac),
-        Some((whole, frac)) => all_digits(whole) && (frac.is_empty() || all_digits(frac)),
-        None => all_digits(mantissa),
-    };
-    let exponent_ok = exponent.is_none_or(|e| all_digits(e.strip_prefix(['+', '-']).unwrap_or(e)));
-    mantissa_ok && exponent_ok
 }
 
 fn is_sha(text: &str) -> bool {
@@ -419,21 +399,7 @@ pub fn parse_lead_args(
                 "blocking",
                 "non-blocking",
                 "summary",
-                "baseline",
-                "candidate",
             ])?;
-            if v.str("baseline").is_none() != v.str("candidate").is_none() {
-                return Err(
-                    "give --baseline and --candidate together: the metric measured for each".into(),
-                );
-            }
-            for flag in ["baseline", "candidate"] {
-                if let Some(value) = v.str(flag)
-                    && !is_decimal(value.trim())
-                {
-                    return Err(format!("--{flag} is a number, got '{value}'"));
-                }
-            }
             required(&["task", "sha", "blocking", "non-blocking", "summary"])?;
             let given = v.str("sha").unwrap_or_default();
             let sha = given.trim().to_lowercase();
@@ -448,19 +414,14 @@ pub fn parse_lead_args(
                     return Err(format!("--{flag} is a count of findings, got '{value}'"));
                 }
             }
-            let mut call = json!({
+            json!({
                 "op": "review_verdict",
                 "taskId": v.str("task"),
                 "prHeadSha": sha,
                 "blocking": number(v.str("blocking").unwrap_or_default()),
                 "nonBlocking": number(v.str("non-blocking").unwrap_or_default()),
                 "summary": v.str("summary"),
-            });
-            if let (Some(baseline), Some(candidate)) = (v.str("baseline"), v.str("candidate")) {
-                call["metricValues"] =
-                    json!({ "baseline": number(baseline), "candidate": number(candidate) });
-            }
-            call
+            })
         }
         Some("change") => match sub {
             Some("enqueue") => {
@@ -1130,17 +1091,8 @@ pub fn format_result(result: &Value) -> String {
         }
         "review_verdict" => {
             let v = &result["verdict"];
-            let metric = opt(v, "metricValues")
-                .map(|m| {
-                    format!(
-                        " Metric: baseline {}, candidate {}.",
-                        js(opt(m, "baseline")),
-                        js(opt(m, "candidate"))
-                    )
-                })
-                .unwrap_or_default();
             lines.push(format!(
-                "Recorded the verdict of {} at {}: {} blocking, {} non-blocking.{metric}",
+                "Recorded the verdict of {} at {}: {} blocking, {} non-blocking.",
                 st(v, "taskId"),
                 short(st(v, "prHeadSha")),
                 js(opt(v, "blocking")),
@@ -1658,7 +1610,7 @@ mod tests {
     }
 
     #[test]
-    fn review_verdict_takes_full_shas_counts_and_metrics() {
+    fn review_verdict_takes_full_shas_and_counts() {
         const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
         let verdict = [
             "review",
@@ -1673,36 +1625,12 @@ mod tests {
             "ok",
         ];
         let with = |extra: &[&str]| parse(&[&verdict[..], extra].concat());
-        let call = with(&[
-            "--sha",
-            &SHA.to_uppercase(),
-            "--baseline",
-            "0.5",
-            "--candidate=-1.2e-3",
-        ])
-        .unwrap();
+        let call = with(&["--sha", &SHA.to_uppercase()]).unwrap();
         assert_eq!(call["prHeadSha"], SHA);
-        assert_eq!(
-            call["metricValues"],
-            json!({ "baseline": 0.5, "candidate": -0.0012 })
-        );
         assert!(
             with(&["--sha", "0123abc"])
                 .unwrap_err()
                 .starts_with("--sha must be the full commit SHA")
-        );
-        assert_eq!(
-            with(&["--sha", SHA, "--baseline", "0.5"]).unwrap_err(),
-            "give --baseline and --candidate together: the metric measured for each"
-        );
-        assert_eq!(
-            with(&["--sha", SHA, "--baseline", "half", "--candidate", "1"]).unwrap_err(),
-            "--baseline is a number, got 'half'"
-        );
-        assert!(
-            with(&["--sha", SHA, "--candidate", "-1", "--baseline", "1"])
-                .unwrap_err()
-                .contains("argument is ambiguous")
         );
     }
 

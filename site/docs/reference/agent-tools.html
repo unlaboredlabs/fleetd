@@ -461,58 +461,10 @@
 <td></td>
 </tr>
 <tr>
-<td><code dir="auto">brief.baseline</code></td>
-<td>string</td>
-<td>no</td>
-<td>Research: what the candidate is compared against, and how both are measured. At most 1000 characters.</td>
-</tr>
-<tr>
-<td><code dir="auto">brief.budget</code></td>
-<td>object</td>
-<td>no</td>
-<td></td>
-</tr>
-<tr>
-<td><code dir="auto">brief.budget.agentHours</code></td>
-<td>number</td>
-<td>no</td>
-<td>Older briefs only; a lead now gives <code dir="auto">size</code>.</td>
-</tr>
-<tr>
-<td><code dir="auto">brief.budget.size</code></td>
-<td>string</td>
-<td>no</td>
-<td>How big a research spend the lead allows, relative like plan sizes; never a time guess. One of <code dir="auto">S</code>, <code dir="auto">M</code>, <code dir="auto">L</code>.</td>
-</tr>
-<tr>
 <td><code dir="auto">brief.constraints</code></td>
 <td>string[]</td>
 <td>yes</td>
 <td>At most 20 items.</td>
-</tr>
-<tr>
-<td><code dir="auto">brief.decisionRule</code></td>
-<td>object</td>
-<td>no</td>
-<td>Research: the rule the verdict is computed from.</td>
-</tr>
-<tr>
-<td><code dir="auto">brief.decisionRule.better</code></td>
-<td>string</td>
-<td>yes</td>
-<td>One of <code dir="auto">higher</code>, <code dir="auto">lower</code>.</td>
-</tr>
-<tr>
-<td><code dir="auto">brief.decisionRule.goAtLeast</code></td>
-<td>number</td>
-<td>yes</td>
-<td></td>
-</tr>
-<tr>
-<td><code dir="auto">brief.decisionRule.stopBelow</code></td>
-<td>number</td>
-<td>yes</td>
-<td></td>
 </tr>
 <tr>
 <td><code dir="auto">brief.doneWhen</code></td>
@@ -525,12 +477,6 @@
 <td>string</td>
 <td>yes</td>
 <td>At most 1000 characters.</td>
-</tr>
-<tr>
-<td><code dir="auto">brief.metric</code></td>
-<td>string</td>
-<td>no</td>
-<td>Research: the one number the judge reports for baseline and candidate, e.g. “p50 cold start in ms”. At most 200 characters.</td>
 </tr>
 <tr>
 <td><code dir="auto">brief.pointers</code></td>
@@ -1136,24 +1082,6 @@
 <tr>
 <td><code dir="auto">blocking</code></td>
 <td>integer</td>
-<td>yes</td>
-<td></td>
-</tr>
-<tr>
-<td><code dir="auto">metricValues</code></td>
-<td>object</td>
-<td>no</td>
-<td>A research workstream’s judge reports its metric for the baseline and the candidate; the hub computes the verdict.</td>
-</tr>
-<tr>
-<td><code dir="auto">metricValues.baseline</code></td>
-<td>number</td>
-<td>yes</td>
-<td></td>
-</tr>
-<tr>
-<td><code dir="auto">metricValues.candidate</code></td>
-<td>number</td>
 <td>yes</td>
 <td></td>
 </tr>

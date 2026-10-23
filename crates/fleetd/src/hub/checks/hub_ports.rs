@@ -1,9 +1,8 @@
 //! The hub's `Ports`: this slice's view of the other areas, forwarding to their services on the
 //! `Hub`. Built before the `Hub` exists (the services that hold it go into the `Hub`), so it is bound right after.
 //! Before `bind` (or after the hub is dropped) each answers as if there were nothing.
-use super::ports::{BoxFuture, Ports, Refusal, invalid};
+use super::ports::{BoxFuture, Ports};
 use crate::hub::api::Hub;
-use fleetd_contracts::ledger::{MetricValues, Workstream, WorkstreamId};
 use fleetd_contracts::tasks::{Task, TaskId};
 use fleetd_contracts::verification::CommitSha;
 use std::sync::{Arc, OnceLock, Weak};
@@ -29,30 +28,6 @@ impl HubPorts {
 }
 
 impl Ports for HubPorts {
-    fn workstream(&self, id: &WorkstreamId) -> Option<Workstream> {
-        let stored = self.hub()?.leads.records.workstream_get(id);
-        logged(stored, "reading a workstream").flatten()
-    }
-    fn research_verdict<'a>(
-        &'a self,
-        workstream: &'a WorkstreamId,
-        values: MetricValues,
-    ) -> BoxFuture<'a, Result<String, Refusal>> {
-        Box::pin(async move {
-            let Some(hub) = self.hub() else {
-                return Err(invalid(
-                    format!("{workstream} has no research verdict to record."),
-                    None,
-                ));
-            };
-            let (_, text) = hub
-                .leads
-                .research
-                .record_verdict(workstream, values)
-                .await?;
-            Ok(text)
-        })
-    }
     fn task(&self, id: &TaskId) -> Option<Task> {
         logged(self.hub()?.tasks.get(id), "reading a task").flatten()
     }

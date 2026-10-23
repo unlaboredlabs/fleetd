@@ -603,4 +603,10 @@ pub(crate) const MIGRATIONS: &[&str] = &[
   DELETE FROM time_spans WHERE kind = 18;
   DELETE FROM time_rollups WHERE kind = 18;
   "#,
+    // Research has no pre-registered rule, computed verdict or turn budget: the lead closes it with the answer.
+    r#"
+  UPDATE workstreams SET data = json_remove(data, '$.outcome', '$.verdict', '$.brief.budget', '$.brief.baseline',
+    '$.brief.metric', '$.brief.decisionRule') WHERE json_valid(data);
+  DELETE FROM events WHERE type = 'research.verdict';
+  "#,
 ];

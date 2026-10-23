@@ -102,8 +102,7 @@ pub enum HubEventType {
     /// A project's max agents or the fleet cap changed; `data` is `tasks::AgentsCapData`, `summary` the chat's line.
     #[serde(rename = "agents.cap")]
     AgentsCap,
-    /// The lead closed it, or its research verdict came in. `data.workstreamId`, and `data.reason` (why) and
-    /// `data.by` when the lead closed it.
+    /// The lead closed it. `data.workstreamId`, `data.reason` (why) and `data.by`.
     #[serde(rename = "workstream.done")]
     WorkstreamDone,
     /// `data.taskId`, `data.prHeadSha`, `data.blocking`.
@@ -136,9 +135,6 @@ pub enum HubEventType {
     /// Refused at enqueue; `data.prUrl`, `data.fix`.
     #[serde(rename = "change.refused")]
     ChangeRefused,
-    /// A research workstream's computed verdict; `data.workstreamId`, `data.outcome`, `data.metricValues`.
-    #[serde(rename = "research.verdict")]
-    ResearchVerdict,
     /// M4: a machine's login hit the same limit on several threads, or its proxy has no account; dispatch there pauses.
     #[serde(rename = "usage.breaker")]
     UsageBreaker,
@@ -255,7 +251,6 @@ impl HubEventType {
             Self::PrMergedOutside => "pr.merged_outside",
             Self::TrainBlocked => "train.blocked",
             Self::ChangeRefused => "change.refused",
-            Self::ResearchVerdict => "research.verdict",
             Self::UsageBreaker => "usage.breaker",
             Self::UsageResumed => "usage.resumed",
             Self::DoctorChanged => "doctor.changed",

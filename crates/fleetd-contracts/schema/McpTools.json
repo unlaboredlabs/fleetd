@@ -769,15 +769,6 @@
     },
     "Brief": {
       "properties": {
-        "baseline": {
-          "description": "Research: what the candidate is compared against, and how both are measured.",
-          "maxLength": 1000,
-          "minLength": 1,
-          "type": "string"
-        },
-        "budget": {
-          "$ref": "#/$defs/BriefBudget"
-        },
         "constraints": {
           "items": {
             "maxLength": 500,
@@ -786,10 +777,6 @@
           },
           "maxItems": 20,
           "type": "array"
-        },
-        "decisionRule": {
-          "$ref": "#/$defs/DecisionRule",
-          "description": "Research: the rule the verdict is computed from."
         },
         "doneWhen": {
           "description": "At least one.",
@@ -805,13 +792,6 @@
         "goal": {
           "maxLength": 1000,
           "minLength": 1,
-          "type": "string"
-        },
-        "metric": {
-          "description": "Research: the one number the judge reports for baseline and candidate, e.g. \"p50 cold start in ms\".",
-          "maxLength": 200,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
           "type": "string"
         },
         "pointers": {
@@ -837,29 +817,6 @@
         "doneWhen"
       ],
       "type": "object"
-    },
-    "BriefBudget": {
-      "properties": {
-        "agentHours": {
-          "description": "Older briefs only; a lead now gives `size`.",
-          "exclusiveMinimum": 0,
-          "type": "number"
-        },
-        "size": {
-          "$ref": "#/$defs/BudgetSize",
-          "description": "How big a research spend the lead allows, relative like plan sizes; never a time guess."
-        }
-      },
-      "type": "object"
-    },
-    "BudgetSize": {
-      "description": "How big a research spend is, relative like plan sizes.",
-      "enum": [
-        "S",
-        "M",
-        "L"
-      ],
-      "type": "string"
     },
     "CapSetInput": {
       "properties": {
@@ -2045,33 +2002,6 @@
       "pattern": "^[a-z0-9]+(\\.[a-z0-9_-]+)*$",
       "type": "string"
     },
-    "DecisionRule": {
-      "description": "Applied to the improvement: candidate − baseline, negated when lower is better. GO when it is at least\n`goAtLeast`, STOP when it is below `stopBelow`, INCONCLUSIVE in between.",
-      "properties": {
-        "better": {
-          "$ref": "#/$defs/DecisionRuleBetter"
-        },
-        "goAtLeast": {
-          "type": "number"
-        },
-        "stopBelow": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "better",
-        "goAtLeast",
-        "stopBelow"
-      ],
-      "type": "object"
-    },
-    "DecisionRuleBetter": {
-      "enum": [
-        "higher",
-        "lower"
-      ],
-      "type": "string"
-    },
     "DecisionScope": {
       "oneOf": [
         {
@@ -3081,7 +3011,7 @@
         },
         {
           "const": "workstream.done",
-          "description": "The lead closed it, or its research verdict came in. `data.workstreamId`, and `data.reason` (why) and\n`data.by` when the lead closed it.",
+          "description": "The lead closed it. `data.workstreamId`, `data.reason` (why) and `data.by`.",
           "type": "string"
         },
         {
@@ -3127,11 +3057,6 @@
         {
           "const": "change.refused",
           "description": "Refused at enqueue; `data.prUrl`, `data.fix`.",
-          "type": "string"
-        },
-        {
-          "const": "research.verdict",
-          "description": "A research workstream's computed verdict; `data.workstreamId`, `data.outcome`, `data.metricValues`.",
           "type": "string"
         },
         {
@@ -4456,22 +4381,6 @@
       "required": [
         "protected",
         "rulesets"
-      ],
-      "type": "object"
-    },
-    "MetricValues": {
-      "description": "The judge's reported numbers for the brief's metric.",
-      "properties": {
-        "baseline": {
-          "type": "number"
-        },
-        "candidate": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "baseline",
-        "candidate"
       ],
       "type": "object"
     },
@@ -7383,40 +7292,6 @@
       },
       "required": [
         "requests"
-      ],
-      "type": "object"
-    },
-    "ResearchOutcome": {
-      "description": "STOP is a success: the question was answered.",
-      "enum": [
-        "go",
-        "stop",
-        "inconclusive"
-      ],
-      "type": "string"
-    },
-    "ResearchVerdict": {
-      "description": "Computed by the hub, never reported by an agent; `outcome` always follows from `rule` and `metricValues`.",
-      "properties": {
-        "computedAt": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "metricValues": {
-          "$ref": "#/$defs/MetricValues"
-        },
-        "outcome": {
-          "$ref": "#/$defs/ResearchOutcome"
-        },
-        "rule": {
-          "$ref": "#/$defs/DecisionRule",
-          "description": "The brief's rule."
-        }
-      },
-      "required": [
-        "outcome",
-        "metricValues",
-        "rule",
-        "computedAt"
       ],
       "type": "object"
     },
@@ -10556,13 +10431,9 @@
         "headlineAt": {
           "$ref": "#/$defs/Timestamp"
         },
-        "outcome": {
-          "$ref": "#/$defs/ResearchOutcome",
-          "description": "Research workstreams, once the verdict is computed; set together with `verdict`. A STOP is done, not failed."
-        },
         "playbook": {
           "$ref": "#/$defs/PlaybookRef",
-          "description": "Pinned at creation; the brief validates against this version. Absent on workstreams from before M9."
+          "description": "Pinned at creation. Absent on workstreams from before M9."
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
@@ -10579,9 +10450,6 @@
         },
         "updatedAt": {
           "$ref": "#/$defs/Timestamp"
-        },
-        "verdict": {
-          "$ref": "#/$defs/ResearchVerdict"
         },
         "workstreamId": {
           "$ref": "#/$defs/WorkstreamId"
