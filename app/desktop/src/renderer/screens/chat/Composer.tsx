@@ -20,7 +20,7 @@ import { projectKey as keyOf } from "../../src/data/store";
 import { selectCanStop, selectHeldLeadWorking, selectLeadWorking } from "../../src/data/selectors";
 import { Button, cx, IdChip, Text, Tooltip, Truncate } from "../../ui";
 import { useCommands } from "../palette";
-import { NOW_KEYS, SteerReceipts, useSteerSends } from "../live/Steer";
+import { nowKeys, SteerReceipts, useSteerSends } from "../live/Steer";
 import { composerSendOn, leadOrder, steerTooLong } from "../live/steerModel";
 import { fmtBytes, PASTE_AS_FILE, pastedName } from "./attachments";
 import { ACT_LABEL, checkMessage, placeholder, receiptFor, recallsOn, stopFailed, type Act } from "./composerModel";
@@ -271,7 +271,7 @@ export function ChatComposer({ project, onSent, autoFocus, recall }: ChatCompose
           />
           {canSteerNow ? (
             <Text size="xs" tone="faint">
-              {`${NOW_KEYS} stops its step and sends now`}
+              {`${nowKeys()} stops its step and sends now`}
             </Text>
           ) : null}
           <span className={c.spacer} />

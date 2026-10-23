@@ -11,7 +11,7 @@ import { receiptsToShow, steerFailed, steerModeOn, steerReceipt, steersFor, stee
 import s from "./steer.module.css";
 
 /** ⌘Enter, as this platform writes it. */
-export const NOW_KEYS = window.fleetd.platform === "darwin" ? "⌘↩" : "Ctrl+↩";
+export const nowKeys = (): string => (window.fleetd.platform === "darwin" ? "⌘↩" : "Ctrl+↩");
 
 /** The steers this view sent, kept as the hub answered until its order lists them. */
 export function useSteerSends() {
@@ -150,7 +150,7 @@ export function SteerBox({ workstreamId, taskId }: { workstreamId: string; taskI
           </Text>
         ) : (
           <Text size="xs" tone="faint">
-            {`Goes straight to this agent, and its lead is told. ${NOW_KEYS} stops its current step.`}
+            {`Goes straight to this agent, and its lead is told. ${nowKeys()} stops its current step.`}
           </Text>
         )}
       </div>
