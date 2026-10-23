@@ -190,6 +190,7 @@ impl TrainHost for HubHost {
             workstream_id: w.workstream_id.clone(),
             project_ref: w.project_ref.clone(),
             has_brief: w.brief.is_some(),
+            open: !crate::hub::leads::records::is_closed(w.state),
         })
     }
 

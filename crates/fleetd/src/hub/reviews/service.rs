@@ -211,10 +211,20 @@ impl Reviews {
         let task = match self.host.spawn_review(spawn).await {
             Ok(task) => task,
             Err(e) => {
-                self.note(
-                    &change.change_id,
-                    &format!("could not spawn the reviewer: {e}"),
-                );
+                let why = format!("could not spawn the reviewer: {e}");
+                // A closed workstream never gets a reviewer, so waiting in reviewing would stall unseen: the Change
+                // leaves the train and the lead hears why.
+                let closed = self
+                    .host
+                    .workstream(&change.workstream_id)
+                    .is_some_and(|w| !w.open);
+                match self.train().filter(|_| closed) {
+                    Some(train) => {
+                        let why = format!("{why} Enqueue it for an open workstream to land it.");
+                        train.abandon(change, &why).await;
+                    }
+                    None => self.note(&change.change_id, &why),
+                }
                 return;
             }
         };

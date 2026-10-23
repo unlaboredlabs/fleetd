@@ -209,7 +209,8 @@ impl Workstreams {
     }
 
     /// `close` from the lead of `caller`: the workstream is done, with why. It stops nothing; what still runs keeps
-    /// running, and the status shows it.
+    /// running, and the status shows it. Refused while any of its PRs is still in the train: done would lie, and a
+    /// closed workstream's PRs can't get a reviewer.
     pub fn close(
         &self,
         caller: &ProjectRef,
@@ -223,6 +224,19 @@ impl Workstreams {
             return Err(LeadError::invalid(
                 format!("{id} is already {}.", state_text(w.state)),
                 "Open a new workstream if there is more to do.",
+            ));
+        }
+        let unlanded = self
+            .ctx
+            .hooks
+            .train
+            .get()
+            .map(|t| t.unlanded(caller, id))
+            .unwrap_or_default();
+        if !unlanded.is_empty() {
+            return Err(LeadError::invalid(
+                format!("{id} still has PRs in the train: {}.", unlanded.join(", ")),
+                "Close it once they merge. To drop one, close the PR on GitHub and the train lets it go.",
             ));
         }
         let done = Workstream {

@@ -563,15 +563,14 @@ impl Train {
         Ok(())
     }
 
-    /// When an order's done-when passed, its PRs that are not merged and not already on their way in are left
-    /// over: each leaves the train and is closed on GitHub with `why`. The design's rule is that done-when alone
-    /// decides done, so an orphan PR must not stay open looking like work in progress. Returns the ones closed.
+    /// When an order is stopped, its PRs that are not merged and not already on their way in are left over: each
+    /// leaves the train and is closed on GitHub with `why`, so an orphan PR never stays open looking like work in
+    /// progress. Returns the ones closed.
     pub async fn close_leftovers(
         &self,
         project_ref: &ProjectRef,
         workstream_id: &WorkstreamId,
         why: &str,
-        keep: &[ChangeId],
     ) -> Vec<Change> {
         let changes = self.list(&ListFilter {
             project_ref: Some(project_ref.clone()),
@@ -579,10 +578,7 @@ impl Train {
             ..Default::default()
         });
         let mut closed = Vec::new();
-        for change in leftovers(&changes, workstream_id)
-            .into_iter()
-            .filter(|c| !keep.contains(&c.change_id))
-        {
+        for change in leftovers(&changes, workstream_id) {
             let Some(left) = self.update(&change.change_id, Some(&[change.state]), |mut c| {
                 c.state = ChangeState::Abandoned;
                 c.last_error = Some(last_error(why));
@@ -603,7 +599,7 @@ impl Train {
         closed
     }
 
-    pub(super) async fn abandon(&self, change: &Change, why: &str) {
+    pub(crate) async fn abandon(&self, change: &Change, why: &str) {
         let done = self.update(&change.change_id, Some(&[change.state]), |mut c| {
             c.state = ChangeState::Abandoned;
             c.last_error = Some(last_error(why));

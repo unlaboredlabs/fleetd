@@ -1,5 +1,6 @@
-//! Stopping an order, the part of project_stop that stops one: its agents cancelled, what waits on a person
-//! withdrawn, and one wake line for the lead. References are rendered here for the steers that carry them.
+//! Stopping an order, the part of project_stop that stops one: its PRs off the train, its agents cancelled, what
+//! waits on a person withdrawn, and one wake line for the lead. References are rendered here for the steers that
+//! carry them.
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ledger::{Headline, Workstream, WorkstreamState};
@@ -130,6 +131,11 @@ pub async fn stop(
         project_ref: r.clone(),
         by: by.clone(),
     };
+    // Its PRs not already on their way in leave the train and close on GitHub, so none waits in review for a
+    // reviewer the stop cancels.
+    hub.train
+        .close_leftovers(&r, &id, &format!("{id} was stopped: {why}"))
+        .await;
     let mut cancelled = 0;
     for task in super::order_tasks(hub, &id) {
         if !matches!(
