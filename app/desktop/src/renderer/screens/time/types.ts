@@ -74,7 +74,6 @@ export const KIND_CATEGORY = {
   "run.queued": "queue",
   "wake.debounce": "queue",
   "park.usage": "queue",
-  "slots.full": "queue",
   "wait.permission": "human",
   "wait.request": "human",
   "change.review": "pipeline",

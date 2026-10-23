@@ -270,7 +270,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "time_insights",
-        "Deterministic findings over a scope's time since a time (no model): repeated full test suites, failing repeats, slow commands, CI checks on the critical path, full slots, waits on your answers, approval prompts a rule would answer, usage parks, retries, review share, train line, rebase loops, slow first tokens and starts, offline waits, missing data, and serial waits behind free capacity (queue waits, shared-resource contention, idle leads with ready plan items, ready items left side by side), each with its fix. Each carries its numbers and span ids; compare gives both periods.",
+        "Deterministic findings over a scope's time since a time (no model): repeated full test suites, commands rerun with nothing edited between, and the slowest commands. Each carries its numbers and span ids; compare gives both periods.",
     ),
     (
         "time_retention_set",

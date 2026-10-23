@@ -297,10 +297,10 @@ your custom instructions, appended to every lead and task
 ### fleetd time {#time}
 
 ```text
-fleetd time [<order>|<project>] [--since 7d] [--spans <rule>] [--json] [--hub <url> --key-file <path> | --home <dir>]
+fleetd time [<order>|<project>] [--since 7d] [--json] [--hub <url> --key-file <path> | --home <dir>]
 ```
 
-where agents' time went: an order's critical path, agent time by category, the slowest commands and the findings; a project by id or title (\<machine\>/\<project\> when two machines have one), the whole fleet with neither. `--since` takes 1h to 400d, a date or an ISO time; `--spans` \<rule\> lists the spans a finding points at. On the hub machine it needs no `--hub` or `--key-file`
+where agents' time went: an order's critical path, agent time by category, the slowest commands and the findings; a project by id or title (\<machine\>/\<project\> when two machines have one), the whole fleet with neither. `--since` takes 1h to 400d, a date or an ISO time. On the hub machine it needs no `--hub` or `--key-file`
 
 ### fleetd time {#time-retention}
 

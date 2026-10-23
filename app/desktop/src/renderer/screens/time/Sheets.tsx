@@ -1,5 +1,5 @@
 // The two side sheets: a span's transcript (the items around it, that one marked) and the spans a finding or a
-// row links to, one per line as `fleetd time --spans` prints them.
+// row links to, one per line.
 import { Button, Sheet, Text, Truncate, VirtualList, cx, humanizeKey } from "../../ui";
 import type { Answer } from "./data";
 import { clockMs, inexact, laneName, markedDur, spanTitle, type Names } from "./format";

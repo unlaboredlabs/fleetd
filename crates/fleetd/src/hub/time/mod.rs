@@ -1,5 +1,5 @@
 //! The agent time inspector's hub area: spans from the nodes (their outboxes, acked after commit) and from the hub's
-//! own choke points (the train, CI, slots, checks, intake) through one [`TimeSink`], plus spans the projector folds
+//! own choke points (the train, CI, checks, intake) through one [`TimeSink`], plus spans the projector folds
 //! out of the event log. One writer task commits them in batches with their labels, roll-ups and cursors; reads
 //! give breakdowns, critical paths and insights. No polling: the writer and the projector wake on channels.
 pub mod ingest;
@@ -7,7 +7,6 @@ pub mod model;
 pub mod path;
 pub mod project;
 pub mod rules;
-pub mod serial;
 pub mod store;
 pub mod tools;
 

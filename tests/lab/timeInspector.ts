@@ -220,7 +220,7 @@ export async function timeInspector(lab: Lab) {
     // And each lane as a whole: on session, change and task lanes nothing is counted twice, so the lane's exclusive
     // time is the length of the time it covers. Detail spans carry no exclusive time and are left out; asks and
     // checks lanes are not tiled by design (two open asks both count).
-    const DETAIL = ["ci.check", "ci.queue", "slots.full", "ask.info", "gap"];
+    const DETAIL = ["ci.check", "ci.queue", "ask.info", "gap"];
     const lanes = new Map<string, Array<Body>>();
     for (const s of spans.filter((s) => /^(thread|change|task):/u.test(s.lane) && !s.lane.endsWith("/ci") && !DETAIL.includes(s.kind))) {
       lanes.set(s.lane, [...(lanes.get(s.lane) ?? []), s]);

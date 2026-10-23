@@ -456,4 +456,9 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     r#"
   ALTER TABLE status_series ADD COLUMN paused TEXT;
   "#,
+    // The slots' saturation spans went with the serial-wait findings that read them.
+    r#"
+  DELETE FROM time_spans WHERE kind = 37;
+  DELETE FROM time_rollups WHERE kind = 37;
+  "#,
 ];

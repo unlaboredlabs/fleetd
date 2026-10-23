@@ -18,7 +18,7 @@ use fleetd_contracts::time::{
 };
 use rusqlite::{Connection, OptionalExtension, params};
 
-use super::model::{Batching, PathInput, Row, RuleInput, is_detail};
+use super::model::{PathInput, Row, RuleInput, is_detail};
 use super::store::{self, Filter, Meta};
 use super::{parse_ms, path, rules};
 use crate::hub::api::{Caller, Hub, Registry, ToolError, allows, allows_everywhere, require};
@@ -965,18 +965,7 @@ fn readable(caller: &Caller, l: Loaded) -> Loaded {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn rule_input(
-    c: &Connection,
-    scope: &TimeScope,
-    l: &Loaded,
-    since: i64,
-    until: i64,
-    now: i64,
-    cap: i64,
-    batching: &Batching,
-    cache: &PathCache,
-) -> Result<RuleInput, StoreError> {
+fn rule_input(c: &Connection, l: &Loaded, since: i64, until: i64) -> Result<RuleInput, StoreError> {
     let mut titles = HashMap::new();
     let mut ids: Vec<&str> = l.rows.iter().filter_map(|r| r.task_id.as_deref()).collect();
     ids.sort_unstable();
@@ -995,50 +984,14 @@ fn rule_input(
         }
     }
     Ok(RuleInput {
-        since_ms: since,
-        until_ms: until,
         rows: l
             .rows
             .iter()
             .filter(|r| r.start_ms >= since && r.start_ms < until)
             .cloned()
             .collect(),
-        paths: paths(c, scope, since, until, now, cache)?,
         task_titles: titles,
-        slot_cap: cap,
-        serial: super::serial::load(c, scope, since, until, batching.clone())?,
     })
-}
-
-fn batching(hub: &Hub) -> Batching {
-    let (max, off) = hub.train.batching();
-    Batching {
-        max: max as i64,
-        off,
-    }
-}
-
-/// The rules' input for `scope` over `[since, until)`, read the way `time_insights` reads it: for offline replays.
-pub fn read_rule_input(
-    c: &Connection,
-    scope: &TimeScope,
-    since: i64,
-    until: i64,
-    cap: i64,
-    batching: &Batching,
-) -> Result<RuleInput, StoreError> {
-    let l = load(c, scope, since, until, None)?;
-    rule_input(
-        c,
-        scope,
-        &l,
-        since,
-        until,
-        until,
-        cap,
-        batching,
-        &PathCache::default(),
-    )
 }
 
 async fn time_spans(
@@ -1049,8 +1002,6 @@ async fn time_spans(
     let now = hub.time.now_ms();
     let (since, until) = period(&input.since, input.until.as_ref(), now)?;
     let limit = input.limit.get() as usize;
-    let cap = hub.slots.state().cap.get();
-    let batching = batching(&hub);
     let (rows, coverage) = hub.db.with(|c| {
         if let Err(e) = check(c, &caller, &input.scope) {
             return Ok(Err(e));
@@ -1061,17 +1012,7 @@ async fn time_spans(
         let mut rows: Vec<(Row, Meta)> = match input.rule {
             Some(rule) => {
                 let l = readable(&caller, load(c, &input.scope, since, until, None)?);
-                let ri = rule_input(
-                    c,
-                    &input.scope,
-                    &l,
-                    since,
-                    until,
-                    now,
-                    cap,
-                    &batching,
-                    &hub.time.paths,
-                )?;
+                let ri = rule_input(c, &l, since, until)?;
                 let after = f.after_id.unwrap_or(0);
                 let wanted: std::collections::HashSet<i64> = rules::rule_spans(&ri, rule)
                     .into_iter()
@@ -1237,38 +1178,16 @@ async fn time_insights(
         .as_ref()
         .map(|p| period(&p.since, Some(&p.until), now))
         .transpose()?;
-    let cap = hub.slots.state().cap.get();
-    let batching = batching(&hub);
     let insights = hub.db.with(|c| {
         if let Err(e) = check(c, &caller, &input.scope) {
             return Ok(Err(e));
         }
         let l = readable(&caller, load(c, &input.scope, since, until, None)?);
-        let cur = rule_input(
-            c,
-            &input.scope,
-            &l,
-            since,
-            until,
-            now,
-            cap,
-            &batching,
-            &hub.time.paths,
-        )?;
+        let cur = rule_input(c, &l, since, until)?;
         Ok(Ok(match compare {
             Some((s, u)) => {
                 let lp = readable(&caller, load(c, &input.scope, s, u, None)?);
-                let prev = rule_input(
-                    c,
-                    &input.scope,
-                    &lp,
-                    s,
-                    u,
-                    now,
-                    cap,
-                    &batching,
-                    &hub.time.paths,
-                )?;
+                let prev = rule_input(c, &lp, s, u)?;
                 rules::compare(&cur, &prev)
             }
             None => rules::insights(&cur),

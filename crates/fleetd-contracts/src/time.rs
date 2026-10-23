@@ -138,8 +138,6 @@ span_kinds! {
     RunQueued = 34, "run.queued", Queue;
     WakeDebounce = 35, "wake.debounce", Queue;
     ParkUsage = 36, "park.usage", Queue;
-    /// The fleet's slots were all held. On the fleet lane.
-    SlotsFull = 37, "slots.full", Queue;
     /// A permission prompt, inside its tool span; `extra.decidedBy` says who answered.
     WaitPermission = 40, "wait.permission", Human;
     /// A secret or approval request, opened to settled.
@@ -229,9 +227,6 @@ pub struct SpanExtra {
     pub duration_api_ms: Option<Count>,
     /// The node's own start stamp, kept when the clock offset was above 100 ms.
     pub node_start_ms: Option<Count>,
-    /// `slots.full`: the peak count of tasks queued for a slot, and the cap.
-    pub peak_queued: Option<Count>,
-    pub cap: Option<Count>,
     /// `gap`: how many spans were lost.
     pub count: Option<Count>,
     /// `wait.permission`: the node's request id, joined to the hub's approval request.
@@ -520,31 +515,7 @@ pub struct PeriodBreakdown {
 pub enum InsightRule {
     FullSuiteRepeat,
     RepeatNoChange,
-    FailingRepeat,
     SlowCommands,
-    CiCheckCritical,
-    CiReaction,
-    SlotsFull,
-    HumanWait,
-    ApprovalRule,
-    UsageParks,
-    Retries,
-    ReviewShare,
-    TrainLine,
-    RebaseLoops,
-    FirstToken,
-    Startup,
-    Offline,
-    Coverage,
-    /// Serial waits: work that waited while capacity existed. A task queued for a slot while the fleet had free
-    /// ones (a project's max agents, the lead band), or a PR that waited out another PR's train cycle.
-    QueueWait,
-    /// Tasks serialized on one shared resource: an area lease, or one machine's usage limit.
-    Contention,
-    /// A lead was idle while its running order had a plan item ready to start and slots were free.
-    IdleLead,
-    /// Two or more ready plan items of a project waited side by side for a start while slots were free.
-    SlotsUnderused,
     /// A rule this build doesn't know (a newer hub). Never sent.
     #[serde(other)]
     #[schemars(skip)]
@@ -604,7 +575,8 @@ mod tests {
     fn a_rule_from_a_newer_hub_degrades_instead_of_failing_the_insights() {
         let rule: InsightRule = serde_json::from_value(serde_json::json!("brand_new")).unwrap();
         assert_eq!(rule, InsightRule::Unknown);
-        let known: InsightRule = serde_json::from_value(serde_json::json!("idle_lead")).unwrap();
-        assert_eq!(known, InsightRule::IdleLead);
+        let known: InsightRule =
+            serde_json::from_value(serde_json::json!("slow_commands")).unwrap();
+        assert_eq!(known, InsightRule::SlowCommands);
     }
 }

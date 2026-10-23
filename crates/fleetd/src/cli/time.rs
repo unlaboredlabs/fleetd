@@ -1,26 +1,24 @@
-//! `fleetd time`: where agents' time went, over the hub's MCP endpoint (time_breakdown, time_insights, time_spans,
-//! time_retention_set). It only lays out what the hub computed: the numbers, the critical path and the findings are
-//! the ones the desktop app shows.
+//! `fleetd time`: where agents' time went, over the hub's MCP endpoint (time_breakdown, time_insights,
+//! time_retention_set). It only lays out what the hub computed as plain tables; `--json` prints it as the hub sent it.
 
 use std::time::Duration;
 
 use chrono::{DateTime, SecondsFormat, TimeZone, Utc};
 use chrono_tz::Tz;
 use fleetd_contracts::ledger::WorkstreamId;
-use fleetd_contracts::mcp::{TimeBreakdownOutput, TimeInsightsOutput, TimeSpansOutput};
-use fleetd_contracts::time::{Category, Span, SpanKind};
+use fleetd_contracts::mcp::{TimeBreakdownOutput, TimeInsightsOutput};
+use fleetd_contracts::time::{Category, SpanKind};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
 use super::args::{self, Kind, Spec};
 use super::mcp_client::{McpClient, McpError};
 
-pub const TIME_USAGE: &str = r#"  time [<order>|<project>] [--since 7d] [--spans <rule>] [--json] [--hub <url> --key-file <path> | --home <dir>]
+pub const TIME_USAGE: &str = r#"  time [<order>|<project>] [--since 7d] [--json] [--hub <url> --key-file <path> | --home <dir>]
              where agents' time went: an order's critical path, agent time by category, the
              slowest commands and the findings; a project by id or title (<machine>/<project>
              when two machines have one), the whole fleet with neither. --since takes 1h to
-             400d, a date or an ISO time; --spans <rule> lists the spans a finding points at. On the
-             hub machine it needs no --hub or --key-file
+             400d, a date or an ISO time. On the hub machine it needs no --hub or --key-file
   time --retention <days> [--hub <url> --key-file <path> | --home <dir>]
              keep 1-365 days of timelines (admin key); daily totals are kept 400 days
 "#;
@@ -34,7 +32,6 @@ pub struct TimeArgs {
     /// The order id or project as given; empty for the fleet.
     pub target: String,
     pub since: String,
-    pub spans: Option<String>,
     pub json: bool,
     pub retention: Option<u32>,
 }
@@ -86,7 +83,6 @@ pub fn parse_time_args(argv: &[String], now: DateTime<Utc>, zone: Tz) -> Result<
         ("key-file", Kind::Str),
         ("home", Kind::Str),
         ("since", Kind::Str),
-        ("spans", Kind::Str),
         ("json", Kind::Bool),
         ("retention", Kind::Str),
     ];
@@ -126,7 +122,6 @@ pub fn parse_time_args(argv: &[String], now: DateTime<Utc>, zone: Tz) -> Result<
         home: v.string("home").filter(|s| !s.is_empty()),
         target: v.positionals.first().cloned().unwrap_or_default(),
         since: parse_since(v.str("since").unwrap_or("7d"), now, zone)?,
-        spans: v.string("spans").filter(|s| !s.is_empty()),
         json: v.flag("json"),
         retention,
     })
@@ -213,48 +208,9 @@ fn category_word(cat: Category) -> &'static str {
     }
 }
 
-/// A kind's short name inside its category's line.
-fn kind_word(kind: SpanKind) -> &'static str {
-    use SpanKind as K;
-    match kind {
-        K::ModelFirstToken => "first token",
-        K::ModelThinking => "thinking",
-        K::ModelOutput => "output",
-        K::ModelMessage => "model",
-        K::ToolBash => "Bash",
-        K::ToolRead => "Read",
-        K::ToolEdit => "Edit",
-        K::ToolWeb => "Web",
-        K::ToolMcp => "MCP",
-        K::ToolOther => "other tools",
-        K::CheckClaim => "checks",
-        K::WaitRetryApi | K::WaitRetryNode => "retries",
-        K::RunStartup => "startup",
-        K::ClaudeOther => "claude overhead",
-        K::WaitOffline | K::QueueOffline => "offline",
-        K::QueueSlot | K::SlotsFull => "slots",
-        K::QueueLease => "leases",
-        K::QueueUsage | K::ParkUsage => "usage limits",
-        K::RunQueued => "behind a run",
-        K::WakeDebounce => "debounce",
-        K::WaitPermission => "approvals",
-        K::WaitRequest => "requests",
-        K::ChangeReview => "review",
-        K::ChangeQueue => "train line",
-        K::ChangeRebase => "rebase",
-        K::ChangeCi | K::CiCheck => "CI",
-        K::CiQueue => "CI queue",
-        K::ChangeMerge => "merge",
-        K::ChangeBlocked => "blocked",
-        K::IntakeRoute => "routing",
-        other => other.as_str(),
-    }
-}
-
 /// The critical path's rows: pipeline splits into ci, review and train, as people talk about it.
-fn path_group(kind: SpanKind, cat: Category, gap: bool) -> &'static str {
+fn path_group(kind: SpanKind, cat: Category) -> &'static str {
     match (kind, cat) {
-        _ if gap => "nothing running",
         (SpanKind::ChangeCi | SpanKind::CiCheck | SpanKind::CiQueue, _) => "ci",
         (SpanKind::ChangeReview, _) => "review",
         (_, Category::Pipeline) => "train",
@@ -262,7 +218,7 @@ fn path_group(kind: SpanKind, cat: Category, gap: bool) -> &'static str {
     }
 }
 
-/// Columns padded to their widest cell: the first left-aligned, numbers right-aligned, the last one free text.
+/// Columns padded to their widest cell: the first left-aligned, the numbers right-aligned.
 fn table(rows: &[Vec<String>]) -> Vec<String> {
     let columns = rows.iter().map(Vec::len).max().unwrap_or(0);
     let widths: Vec<usize> = (0..columns)
@@ -281,7 +237,6 @@ fn table(rows: &[Vec<String>]) -> Vec<String> {
                 .enumerate()
                 .map(|(c, cell)| match c {
                     0 => format!("{cell:<w$}", w = widths[c]),
-                    _ if c + 1 == columns => cell.clone(),
                     _ => format!("{cell:>w$}", w = widths[c]),
                 })
                 .collect();
@@ -353,8 +308,7 @@ pub fn render(
 
     if let Some(p) = path {
         let path_ms = p.end_ms.get() - p.start_ms.get();
-        // The rows come from the hub's totals, which cover the whole path; the segments, which the hub cuts to its
-        // longest 400, only name what each row was.
+        // From the hub's totals, which cover the whole path even when its segments were cut.
         let mut groups: Vec<(&str, i64)> = Vec::new();
         let mut add = |group: &'static str, ms: i64| match groups.iter_mut().find(|g| g.0 == group)
         {
@@ -365,7 +319,7 @@ pub fn render(
             match (t.cat, &t.kinds) {
                 (Category::Pipeline, Some(kinds)) => {
                     for k in kinds.iter() {
-                        add(path_group(k.kind, t.cat, false), k.ms.get());
+                        add(path_group(k.kind, t.cat), k.ms.get());
                     }
                 }
                 (Category::Idle, _) => add("nothing running", t.ms.get()),
@@ -374,47 +328,12 @@ pub fn render(
         }
         groups.retain(|g| g.1 > 0);
         groups.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
-        let mut labels: Vec<(&str, &str, i64)> = Vec::new();
-        for s in p.segments.iter() {
-            let group = path_group(s.kind, s.cat, s.span_id.is_none());
-            let label = s.label.as_deref().unwrap_or("");
-            if label.is_empty() || matches!(group, "model" | "nothing running") {
-                continue;
-            }
-            let d = s.end_ms.get() - s.start_ms.get();
-            match labels
-                .iter_mut()
-                .find(|(g, l, _)| *g == group && *l == label)
-            {
-                Some(l) => l.2 += d,
-                None => labels.push((group, label, d)),
-            }
-        }
-        labels.sort_by(|a, b| b.2.cmp(&a.2).then(a.1.cmp(b.1)));
         let mut rows = vec![vec!["critical path".to_owned(), dur(path_ms)]];
         for (group, total) in groups {
-            let detail = labels
-                .iter()
-                .filter(|(g, _, _)| *g == group)
-                .take(2)
-                .map(|(_, l, d)| format!("{} {}", one_line(l, 40), dur(*d)))
-                .collect::<Vec<_>>()
-                .join(", ");
-            rows.push(vec![
-                format!("  {group}"),
-                dur(total),
-                pct(total, path_ms),
-                detail,
-            ]);
+            rows.push(vec![format!("  {group}"), dur(total), pct(total, path_ms)]);
         }
         out.push(String::new());
         out.extend(table(&rows));
-        if p.segments_truncated {
-            out.push(format!(
-                "  (the path has more than {} steps: the rows cover all of it, the names only the longest)",
-                p.segments.len()
-            ));
-        }
     }
 
     let mut rows = vec![vec!["agent time".to_owned(), dur(agent)]];
@@ -425,30 +344,10 @@ pub fn render(
         .collect();
     categories.sort_by_key(|c| -c.ms.get());
     for c in categories {
-        let mut kinds: Vec<_> = c.kinds.iter().filter(|k| k.ms.get() > 0).collect();
-        kinds.sort_by_key(|k| -k.ms.get());
-        let detail = if kinds.len() < 2 && c.cat != Category::Tools {
-            String::new()
-        } else {
-            kinds
-                .iter()
-                .take(4)
-                .map(|k| {
-                    let n = if k.kind == SpanKind::ToolBash {
-                        format!(" ({})", k.n.get())
-                    } else {
-                        String::new()
-                    };
-                    format!("{} {}{n}", kind_word(k.kind), dur(k.ms.get()))
-                })
-                .collect::<Vec<_>>()
-                .join("  ")
-        };
         rows.push(vec![
             format!("  {}", category_word(c.cat)),
             dur(c.ms.get()),
             pct(c.ms.get(), agent),
-            detail,
         ]);
     }
     out.push(String::new());
@@ -480,18 +379,8 @@ pub fn render(
         out.push("findings: none".into());
     } else {
         out.push("findings".into());
-        let target = if args.target.is_empty() {
-            String::new()
-        } else {
-            format!("{} ", args.target)
-        };
         for (i, f) in insights.insights.iter().take(5).enumerate() {
-            let rule = serde_json::to_value(f.rule).unwrap_or_default();
             out.push(format!("  {}. {}", i + 1, f.message.as_str()));
-            out.push(format!(
-                "     fleetd time {target}--spans {}",
-                rule.as_str().unwrap_or("")
-            ));
         }
         if insights.insights.len() > 5 {
             out.push(format!(
@@ -507,36 +396,6 @@ fn local(iso: &str, zone: Tz) -> String {
     DateTime::parse_from_rfc3339(iso)
         .map(|at| at.with_timezone(&zone).format("%Y-%m-%d %H:%M").to_string())
         .unwrap_or_else(|_| iso.to_owned())
-}
-
-/// `10:21:04  2m10s  exit 101  48 KB  thread:lab-a/t1  cargo test --workspace`.
-pub fn span_line(span: &Span, zone: Tz) -> String {
-    let start = span.start_ms.get();
-    let mut parts = vec![
-        zone.timestamp_millis_opt(start)
-            .single()
-            .map(|t| t.format("%H:%M:%S").to_string())
-            .unwrap_or_default(),
-        span.end_ms
-            .map(|end| dur(end.get() - start))
-            .unwrap_or_else(|| "open".into()),
-    ];
-    if let Some(code) = span.exit_code {
-        parts.push(format!("exit {}", code.get()));
-    }
-    if let Some(bytes) = span.out_bytes.map(|b| b.get()) {
-        parts.push(if bytes >= 1024 {
-            format!("{} KB", bytes / 1024)
-        } else {
-            format!("{bytes} B")
-        });
-    }
-    parts.push(span.lane.as_str().to_owned());
-    parts.push(match span.label.as_deref() {
-        Some(label) if !label.is_empty() => label.to_owned(),
-        _ => kind_word(span.kind).to_owned(),
-    });
-    parts.join("  ")
 }
 
 fn unreachable(error: McpError) -> u8 {
@@ -658,34 +517,6 @@ async fn run(hub: &mut Hub, args: &TimeArgs) -> Result<(), u8> {
     };
     let range = json!({ "scope": scope, "since": args.since });
     let zone = crate::hub::attention::hub_zone();
-
-    if let Some(rule) = &args.spans {
-        let mut spans = Vec::new();
-        let mut after = None;
-        loop {
-            let mut input =
-                json!({ "scope": scope, "since": args.since, "rule": rule, "limit": 500 });
-            if let Some(after) = after {
-                input["afterId"] = json!(after);
-            }
-            let page: TimeSpansOutput = hub.typed("time_spans", input).await?;
-            after = page.next_after_id.map(|n| n.get());
-            spans.extend(page.spans.into_inner());
-            if after.is_none() {
-                break;
-            }
-        }
-        if args.json {
-            println!("{}", serde_json::to_string(&spans).unwrap_or_default());
-        } else if spans.is_empty() {
-            println!("no spans for {rule} since {}", local(&args.since, zone));
-        } else {
-            for span in &spans {
-                println!("{}", span_line(span, zone));
-            }
-        }
-        return Ok(());
-    }
 
     if args.json {
         let breakdown = hub.call("time_breakdown", range.clone()).await?;
@@ -828,7 +659,7 @@ mod tests {
     }
 
     #[test]
-    fn an_order_prints_its_path_from_the_totals_even_when_cut() {
+    fn an_order_prints_its_path_from_the_totals() {
         let args = parse_time_args(
             &argv(&["W41", "--hub", "h", "--key-file", "k"]),
             now(),
@@ -836,11 +667,6 @@ mod tests {
         )
         .unwrap();
         let min = 60_000;
-        let seg =
-            |id: Option<u64>, cat: &str, kind: &str, label: Option<&str>, start: i64, end: i64| {
-                json!({ "spanId": id, "lane": "x", "cat": cat, "kind": kind, "label": label,
-                    "startMs": start * min, "endMs": end * min })
-            };
         let breakdown: TimeBreakdownOutput = serde_json::from_value(json!({
             "wallMs": 60 * min, "agentMs": 90 * min,
             "criticalPath": {
@@ -852,13 +678,7 @@ mod tests {
                     { "cat": "pipeline", "ms": 20 * min, "kinds": [
                         { "kind": "change.ci", "ms": 15 * min, "n": 1 }, { "kind": "change.merge", "ms": 5 * min, "n": 1 } ] },
                 ],
-                "nothingRunningMs": min, "offPathMs": 30 * min,
-                "segments": [
-                    seg(Some(1), "model", "model.output", None, 0, 9),
-                    seg(None, "idle", "gap", None, 9, 10),
-                    seg(Some(2), "human", "wait.request", Some("deploy.region"), 10, 40),
-                    seg(Some(4), "pipeline", "change.merge", None, 55, 60),
-                ],
+                "nothingRunningMs": min, "offPathMs": 30 * min, "segments": [],
             },
             "byCategory": [
                 { "cat": "tools", "ms": 30 * min, "n": 52, "kinds": [
@@ -875,7 +695,8 @@ mod tests {
         }))
         .unwrap();
         let insights: TimeInsightsOutput = serde_json::from_value(json!({ "insights": [{
-            "rule": "human_wait", "message": "waited 30m on you (1 request)", "numbers": [], "spanIds": [2] }] }))
+            "rule": "slow_commands", "message": "`cargo test --workspace`: 3×, 6m30s, median 2m10s", "numbers": [],
+            "spanIds": [2] }] }))
         .unwrap();
         let order = json!({ "title": "Add three short pages", "state": "done" });
         let text = render(Some(&order), &args, &breakdown, &insights, Tz::UTC);
@@ -884,23 +705,21 @@ W41 Add three short pages  done
 wall 1h00m  critical path 1h00m  agent time 1h30m  parallelism 1.5x  coverage incomplete (1 gap; newest spans only; commands and findings from 2026-10-17 00:00)
 
 critical path      1h00m
-  you                30m  50%  deploy.region 30m
+  you                30m  50%
   ci                 15m  25%
   model               9m  15%
   train               5m   8%
   nothing running     1m   2%
-  (the path has more than 4 steps: the rows cover all of it, the names only the longest)
 
 agent time  1h30m
-  tools       30m  33%  Bash 25m (12)  Read 5m
+  tools       30m  33%
   you         30m  33%
 
 slowest commands          n  total  median  failed
-  cargo test --workspace  3  6m30s   2m10s  1
+  cargo test --workspace  3  6m30s   2m10s       1
 
 findings
-  1. waited 30m on you (1 request)
-     fleetd time W41 --spans human_wait";
+  1. `cargo test --workspace`: 3×, 6m30s, median 2m10s";
         assert_eq!(text, expected);
     }
 }
