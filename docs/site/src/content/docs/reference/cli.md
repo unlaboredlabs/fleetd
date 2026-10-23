@@ -209,14 +209,6 @@ fleetd hub key revoke <keyId> [--home <dir>]
 
 takes effect at once, also on a running hub
 
-### fleetd hub token create {#hub-token-create}
-
-```text
-fleetd hub token create --machine <id> [--home <dir>]
-```
-
-print a one-time enrollment token (15 min) for `fleetd node join`
-
 ### fleetd hub github-webhook {#hub-github-webhook}
 
 ```text

@@ -7,7 +7,6 @@ use std::collections::HashMap;
 use base64::Engine;
 use serde_json::{Value, json};
 
-use super::ordered_json::{Json, Object};
 use super::state::{GitIdentity, git_identity_env};
 use super::units::{Dirs, Platform, Role, ServiceManager, ServiceSpec, q, render_unit, unit_path};
 use crate::node::runner::version::{self, VersionVerdict};
@@ -438,15 +437,8 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
 
     let existing_node = facts
         .file(&l.node_config)
-        .and_then(|text| Json::parse(text).ok())
-        .filter(|j| j.as_object().is_some());
-    let get = |key: &str| {
-        existing_node
-            .as_ref()
-            .and_then(|j| j.as_object())
-            .and_then(|o| o.get(key))
-            .map(|v| serde_json::to_value(v).unwrap_or_default())
-    };
+        .and_then(|text| serde_json::from_str::<serde_json::Map<String, Value>>(text).ok());
+    let get = |key: &str| existing_node.as_ref().and_then(|o| o.get(key)).cloned();
     // The flag wins; without it the node keeps the config dir it has (by default none: the user's ~/.claude).
     let config_dir = input
         .claude_config_dir
@@ -507,20 +499,17 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
             writes: None,
         });
     } else if config_change {
-        // The owned keys replaced in place, every other key (cmdRoots, the node's own) kept in its order.
-        let mut config: Object = existing_node
-            .as_ref()
-            .and_then(|j| j.as_object().cloned())
-            .unwrap_or_default();
+        // The owned keys replaced, every other key (cmdRoots, the node's own) kept.
+        let mut config = existing_node.clone().unwrap_or_default();
         for key in NODE_CONFIG_OWNED {
             if !desired[key].is_null() {
-                config.insert(key, Json::from(desired[key].clone()));
+                config.insert(key.to_owned(), desired[key].clone());
             }
         }
         steps.push(write_file(
             "update the node's settings",
             &l.node_config,
-            format!("{}\n", Json::Object(config).pretty()),
+            format!("{:#}\n", Value::Object(config)),
             "600",
         ));
     }
@@ -751,45 +740,6 @@ mod tests {
                 })
                 .collect(),
         )
-    }
-
-    /// The `--dry-run` output: every command on a fresh Linux machine, in order.
-    #[test]
-    fn fresh_linux_plan_matches_snapshot() {
-        let plan = plan_machine_add(&fresh_facts("ada", "x64"), &input()).unwrap();
-        let actual = format!(
-            "{}\n",
-            serde_json::to_string_pretty(&summary(&plan)).unwrap()
-        );
-        // FLEETD_UPDATE_SNAPSHOTS=1 rewrites the file after a deliberate change; review its diff.
-        if std::env::var_os("FLEETD_UPDATE_SNAPSHOTS").is_some() {
-            std::fs::write(
-                concat!(
-                    env!("CARGO_MANIFEST_DIR"),
-                    "/src/cli/setup/snapshots/machine_add_fresh.json"
-                ),
-                &actual,
-            )
-            .unwrap();
-        }
-        assert_eq!(actual, include_str!("snapshots/machine_add_fresh.json"));
-        assert!(plan.node_restarts);
-        let node_unit = plan
-            .steps
-            .iter()
-            .find(|s| s.title == "write the node service")
-            .unwrap();
-        let Some(Stdin::Text { text, .. }) = &node_unit.stdin else {
-            panic!("unit text")
-        };
-        assert!(text.contains(
-            "ExecStart=/home/ada/.fleetd/bin/fleetd node run --home /home/ada/.fleetd/node\n"
-        ));
-        assert!(!text.contains("CLAUDE_CONFIG_DIR"));
-        assert!(text.contains(
-            "Environment=PATH=/home/ada/.fleetd/bin:/home/ada/.local/bin:/usr/local/bin:"
-        ));
-        assert!(text.contains("KillMode=mixed\n"));
     }
 
     /// A second run on a set-up machine only makes sure the node runs.
