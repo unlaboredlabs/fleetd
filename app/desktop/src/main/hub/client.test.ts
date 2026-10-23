@@ -74,7 +74,7 @@ describe("HubClient", () => {
     hub.open();
     expect(hub.sent).toEqual([{ t: "auth", key: "k1" }]);
     hub.frame({ t: "ready", protocol: 1 });
-    expect(hub.sent.at(-1)).toEqual({ t: "snapshot" });
+    expect(hub.sent.slice(1)).toEqual([{ t: "snapshot" }, { t: "live", board: true }]);
     hub.frame({ t: "snapshot", cursor: 41, machines: [] });
     expect(hub.sent.at(-1)).toEqual({ t: "events", cursor: 41 });
     hub.frame({ t: "event", seq: 42, type: "task.started" });
@@ -83,6 +83,20 @@ describe("HubClient", () => {
       { t: "snapshot", snapshot: { cursor: 41, machines: [] } },
       { t: "event", event: { seq: 42, type: "task.started" } },
     ]);
+  });
+
+  it("says the hub's version from each ready frame, so a restarted hub's new version shows", () => {
+    const { hub, frames, client } = setup();
+    const lives = () => frames.flatMap((f) => (f.t === "state" && f.state.phase === "live" ? [f.state] : []));
+    client.start();
+    hub.open();
+    hub.frame({ t: "ready", protocol: 1, version: "0.0.0-nightly.202610221107+333368c" });
+    expect(lives().at(-1)).toEqual({ phase: "live", hub: "http://devbox:4790", protocol: 1, version: "0.0.0-nightly.202610221107+333368c" });
+    hub.close(1012);
+    vi.advanceTimersByTime(60_000);
+    hub.open();
+    hub.frame({ t: "ready", protocol: 1 });
+    expect(lives().at(-1)).toEqual({ phase: "live", hub: "http://devbox:4790", protocol: 1 });
   });
 
   it("drops events it already applied", () => {
@@ -147,7 +161,7 @@ describe("HubClient", () => {
     vi.advanceTimersByTime(1000);
     hub.open();
     hub.frame({ t: "ready", protocol: 1 });
-    expect(hub.sent).toEqual([{ t: "auth", key: "k1" }, { t: "snapshot" }]);
+    expect(hub.sent).toEqual([{ t: "auth", key: "k1" }, { t: "snapshot" }, { t: "live", board: true }]);
     expect(states()).toEqual(["connecting", "retrying", "connecting", "retrying", "connecting", "live"]);
   });
 
@@ -228,18 +242,17 @@ describe("HubClient", () => {
     expect(hub.urls).toHaveLength(1);
   });
 
-  it("keeps the live subscription across reconnects and re-sends it on focus", () => {
+  it("subscribes to live on every ready, keeps the focus across reconnects and re-sends it on window focus", () => {
     const { hub, client } = setup();
     client.start();
-    client.live({ board: true, focus: "ws-1" });
+    client.focus("ws-1");
     hub.ready();
     expect(hub.sent).toContainEqual({ t: "live", board: true, focus: "ws-1" });
     hub.sent = [];
     client.refreshLive();
     expect(hub.sent).toEqual([{ t: "live", board: true, focus: "ws-1" }]);
-    client.live(null);
-    expect(hub.sent.at(-1)).toEqual({ t: "live", board: false });
-    client.live({ board: true });
+    client.focus(null);
+    expect(hub.sent.at(-1)).toEqual({ t: "live", board: true });
     hub.close(1006);
     vi.advanceTimersByTime(500);
     hub.open();
@@ -261,7 +274,7 @@ describe("HubClient", () => {
     vi.advanceTimersByTime(500);
     hub.open();
     hub.frame({ t: "ready", protocol: 1 });
-    expect(hub.sent).toEqual([{ t: "auth", key: "k1" }, { t: "snapshot" }, { t: "chat", project }]);
+    expect(hub.sent).toEqual([{ t: "auth", key: "k1" }, { t: "snapshot" }, { t: "live", board: true }, { t: "chat", project }]);
     client.chat(null);
     expect(hub.sent.at(-1)).toEqual({ t: "chat" });
   });

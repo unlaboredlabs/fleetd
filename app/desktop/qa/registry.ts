@@ -15,8 +15,20 @@
 // Run it locally: `pnpm fixtures && pnpm qa:build && pnpm qa` (QA_SCREENS=<id>,<id> to limit), then open
 // qa-results/index.html.
 
-import { expect, type Page } from "@playwright/test";
+import { type ElectronApplication, expect, type Locator, type Page } from "@playwright/test";
+import { AGENT_ROUTE } from "../fixtures/agents/route.ts";
 import { CHAT_SENDS } from "../fixtures/composer/sends.ts";
+import { OFFLINE_SENDS } from "../fixtures/offline/sends.ts";
+
+/**
+ * What the system answers when the app posts a notification: shown, or not supported. Nothing reaches the screen of
+ * the machine running QA either way.
+ */
+const systemNotifications = (app: ElectronApplication, supported: boolean) =>
+  app.evaluate(({ Notification }, ok) => {
+    Notification.isSupported = () => ok;
+    Notification.prototype.show = () => undefined;
+  }, supported);
 
 /** A 1×1 PNG, for the composer's attach step. */
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64");
@@ -27,13 +39,14 @@ export const fixtures = [
   "long-text",
   "many-prompts",
   "many-agents",
-  "conversation",
   "hub-unreachable",
   "pairing-failed",
   "node-too-old",
   // F9: the whole real prompt registry, with edits, a project's own texts and a default changed under an edit.
   "settings-prompts",
   "settings-agents",
+  // ...with storefront's medium switch off (fixtures/settings).
+  "settings-medium-off",
   // F2: the lead chat's live strip with 0, 3 and 20 agents at work (fixtures/live).
   "live-0",
   "live-3",
@@ -41,13 +54,19 @@ export const fixtures = [
   // F4: the chat composer's sends (fixtures/composer).
   "composer-sends",
   "composer-waiting",
-  // The lead mid-turn: the quiet line under its reply says what it does now and what the turn did (fixtures/lead).
+  // The lead mid-turn: the quiet line under its reply counts up and says what it does now and what the turn did; and
+  // once it's over, how long it worked (fixtures/lead).
   "lead-planning",
   "lead-long",
+  "lead-counting",
+  "lead-worked",
   // Group fixtures (fixtures/<group>/index.ts), named <group>-<what>.
   "projects-cloning",
   // F10: the connect screen's states (fixtures/onboarding).
   "onboarding-first-run",
+  "onboarding-code-refused",
+  "onboarding-setup-terminal",
+  "onboarding-first-chat",
   "onboarding-local-hub",
   "onboarding-link",
   "onboarding-app-pair",
@@ -67,9 +86,10 @@ export const fixtures = [
   "status-stale",
   "status-planning",
   "status-skeleton",
+  // The bar's hover on a figure that holds while its work is paused (fixtures/status).
+  "status-paused",
   // E3b's shared stress fixture; the time inspector fills it with a ~15k-span order (fixtures/time).
   "time-heavy",
-  "conversation-20k",
   // The lead chat (fixtures/chat, E3b): a long conversation with migrated order history, a reply streaming in,
   // attachments, the two inline items (secret entry, gated command), the lead waiting on you, a first message.
   "chat-long",
@@ -79,13 +99,57 @@ export const fixtures = [
   "chat-gated",
   "chat-waiting",
   "chat-empty",
-  // F5 (A5): a chat with every state of the two inline items (fixtures/inline).
+  // UX-1 [23]: a long lead reply streaming in, in small deltas (fixtures/stream).
+  "stream-long",
+  // F5 (A5): a chat with every state of the two inline items (fixtures/inline), with every answer failing, and with
+  // two approvals the hub reopens after Approve.
   "inline-items",
+  "inline-failures",
+  "inline-reopened",
+  // UX-1 A3: the PR list and PR view (fixtures/prs): no PRs, the reads on their way, GitHub out of reach, GitHub's
+  // rate limit reached, a PR that fails to load, and a PR of 240 files with a 3,000-line file.
+  "prs-none",
+  "prs-loading",
+  "prs-no-github",
+  "prs-rate-limited",
+  "prs-error",
+  "prs-heavy",
+  // UX-1: the sidebar's reasons and a new reply (fixtures/sidebar); one agent's live work (fixtures/agents).
+  "sidebar-reasons",
+  "agents-work",
+  // UX [7]: no hub, and the last launch's disk cache on screen with a message queued; back online with that chat not
+  // read again yet, and with that read failed (fixtures/offline).
+  "offline-held",
+  "offline-reread",
+  "offline-reread-failed",
+  // ...and the inline items' chat from the cache, with no hub (fixtures/inline).
+  "inline-offline",
   // The sequences that blanked the window (fixtures/resilience): a hub restart mid-chat, a burst of plan items with
   // a new reply streaming, and the link dropping mid-reply.
   "resilience-burst",
   "resilience-hub-restart",
   "resilience-reconnect-streaming",
+  // C1: the app's own update and the hub's (fixtures/updates).
+  "updates-idle",
+  "updates-checking",
+  "updates-unsupported",
+  "updates-current",
+  "updates-available",
+  "updates-downloading",
+  "updates-ready",
+  "updates-deb",
+  "updates-failed",
+  "updates-download-failed",
+  "updates-hub-current",
+  "updates-hub-unknown",
+  "updates-hub-available",
+  "updates-hub-behind",
+  "updates-hub-behind-local",
+  "updates-hub-behind-local-channel",
+  "updates-hub-info-failed",
+  "updates-terminal-not-local",
+  "updates-terminal-not-found",
+  "updates-terminal-no-terminal",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -93,8 +157,15 @@ export const sizes = {
   small: { width: 1024, height: 700 },
   medium: { width: 1400, height: 900 },
   large: { width: 1920, height: 1200 },
+  // The smallest window (main/index.ts): the sidebar has hidden itself. Shot only where an entry asks for it.
+  narrow: { width: 900, height: 600 },
+  // The macOS window shot: wide enough to keep the sidebar, short enough for the smallest runner's screen once the
+  // menu bar and the Dock are off it (1024×768 leaves 680 px).
+  window: { width: 1024, height: 640 },
 } as const;
 export type SizeName = keyof typeof sizes;
+/** What an entry without `sizes` is shot at. */
+export const defaultSizes: readonly SizeName[] = ["small", "medium", "large"];
 
 export const themes = ["light", "dark"] as const;
 export type Theme = (typeof themes)[number];
@@ -106,10 +177,9 @@ export interface Screen {
   fixtures: readonly FixtureName[];
   // Defaults to every size.
   sizes?: readonly SizeName[];
-  // Brings up a screen that has no route of its own; runs after the route has loaded.
-  open?: (page: Page) => Promise<void>;
-  // Registered ahead of its PR: skipped, with this reason, until the owner deletes the field.
-  pending?: string;
+  // Brings up a screen that has no route of its own; runs after the route has loaded. `app` reaches the main process,
+  // for what only it decides (whether the system shows notifications).
+  open?: (page: Page, app: ElectronApplication) => Promise<void>;
   // Tells apart two entries for one screen on the same fixture (say, a strip folded and opened): it joins the id in
   // the test title and the file names.
   variant?: string;
@@ -125,21 +195,6 @@ export interface Screen {
   realClock?: true;
 }
 
-const gallerySections = [
-  "tokens",
-  "text",
-  "buttons",
-  "fields",
-  "choices",
-  "overlays",
-  "tabs",
-  "status",
-  "markdown",
-  "code",
-  "list",
-  "layout",
-] as const;
-
 // The fixtures' storefront project, a real hub project from the sanitized recording, so its id is a UUID; it shows
 // only in the route, never as text.
 const CHAT = "#/project/devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22";
@@ -147,6 +202,31 @@ const CHAT = "#/project/devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22";
 /** Makes a part throw while rendering, in the QA build (src/renderer/src/Boundary.tsx), so its error card shows. */
 const crash = (part: string) => async (page: Page) => {
   await page.evaluate((p) => window.dispatchEvent(new CustomEvent("fleetd:qa-crash", { detail: p })), part);
+};
+
+/** The updates sheet, as the palette's "Check for updates" opens it (the app menu runs the same command). */
+const openUpdates = async (page: Page) => {
+  await page.keyboard.press("ControlOrMeta+K");
+  await page.getByRole("combobox", { name: "Search" }).fill("Check for updates");
+  await page.keyboard.press("Enter");
+};
+
+// storefront's PRs (fixtures/prs): the list alone, and #11 (in review, its reviewers at work), #10 (checks failed), #8
+// (merged), #14 (a person's, review asked for) and #13 (240 files) open.
+const PRS = CHAT.replace("#/project/", "#/prs/");
+const PR = (n: number) => `${PRS}/acme/storefront/${String(n)}`;
+const openChanges = (page: Page) => page.getByRole("tab", { name: /^Changes/u }).click();
+/**
+ * The PR reads still on their way (prs-loading never answers them). The gate waits out busy regions before it
+ * shoots, so the entry reaches the screen from a settled one, waits for the placeholder and then lifts its busy flag:
+ * the shot is what you see while the hub answers.
+ */
+const whileLoading = (go: (page: Page) => Promise<void>, shown: (page: Page) => Locator) => async (page: Page) => {
+  await go(page);
+  await shown(page).first().waitFor({ timeout: 10_000 });
+  await page.evaluate(() => {
+    for (const el of document.querySelectorAll("[aria-busy='true']")) el.removeAttribute("aria-busy");
+  });
 };
 
 /** An entry's name in test titles, shot files and the contact sheet. */
@@ -162,7 +242,7 @@ export const screens: readonly Screen[] = [
   },
   // F4 (A3): the composer under storefront's chat while the lead works. Sent from the box: refused (Resend, Edit,
   // Dismiss), cut off by the link, unanswered (Resend, Dismiss), and one still sending; then a message that found no
-  // hub, back in the box with the reason, and a file attached beside it. composer-waiting: the hub stored the
+  // hub, queued to go when the link is back, and a file attached beside it. composer-waiting: the hub stored the
   // message, but the lead can't take it yet, and says why.
   { id: "chat", route: CHAT, fixtures: ["composer-sends"] },
   {
@@ -181,7 +261,7 @@ export const screens: readonly Screen[] = [
       await expect(page.locator('[data-receipt="unanswered"]')).toHaveCount(1);
       await box.fill(CHAT_SENDS.offline);
       await box.press("Enter");
-      await expect(page.getByText("Not connected to the hub, so this wasn’t sent.")).toBeVisible();
+      await expect(page.locator('[data-receipt="queued"]')).toHaveCount(1);
       await page.locator('[data-composer] input[type="file"]').setInputFiles({ name: "checkout-error.png", mimeType: "image/png", buffer: PNG });
       await expect(page.getByText(/checkout-error\.png · \d+ B/)).toBeVisible();
     },
@@ -198,32 +278,176 @@ export const screens: readonly Screen[] = [
       await expect(page.getByText(/the lead doesn’t have it yet/)).toBeVisible();
     },
   },
-  // The lead at work: under its reply, what it is doing now and what its turn did so far; lead-long wraps.
-  { id: "chat", route: CHAT, fixtures: ["lead-planning", "lead-long"], variant: "activity" },
-  // ...and opened to its lanes.
+  // Stop beside Send while the lead works, pressed: the hub's answer is still on its way.
+  {
+    id: "chat.composer",
+    route: CHAT,
+    fixtures: ["composer-sends"],
+    variant: "stopping",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await page.getByRole("button", { name: "Stop the lead and its agents" }).click();
+      await expect(page.getByRole("button", { name: "Stopping the lead and its agents" })).toBeDisabled();
+      await expect(page.getByText("Stopping the lead and its agents…")).toBeVisible();
+    },
+  },
+  // ↑ in the empty box brings back your last message.
+  {
+    id: "chat.composer",
+    route: CHAT,
+    fixtures: ["composer-sends"],
+    variant: "recall",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      const box = page.getByRole("textbox", { name: "Message the lead" });
+      await expect(box).toBeFocused();
+      await box.press("ArrowUp");
+      await expect(box).toHaveValue("1 yes, 2 literal");
+    },
+  },
+  // The lead at work: under its reply, how long it has worked, what it is doing now and what its turn did so far;
+  // lead-long wraps, lead-counting only counts; lead-worked: the turn is over, and the line says how long it took.
+  { id: "chat", route: CHAT, fixtures: ["lead-planning", "lead-long", "lead-counting", "lead-worked"], variant: "activity" },
+  // The line above the box says what the lead waits on, and Show brings the open approval into view.
   {
     id: "chat",
     route: CHAT,
-    // The expand control is the strip's header button, named by its headline ("18 agents working · 1 needs you ·
-    // 1 queued"); scoped to the strip, since the sidebar's project button also says "3 agents working". long-text has
+    fixtures: ["chat-gated"],
+    variant: "show-waiting",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await expect(page.getByText("1 command to approve")).toBeVisible();
+      await page.locator("[data-attention]").getByRole("button", { name: "Show" }).click();
+      await expect(page.getByRole("button", { name: "Approve", exact: true })).toBeInViewport();
+    },
+  },
+  // An empty chat's starter fills the box (never sends) and gives it the cursor.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["chat-empty"],
+    variant: "starter",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await page.getByRole("button", { name: "Explain how this project is put together." }).click();
+      const box = page.getByRole("textbox", { name: "Message the lead" });
+      await expect(box).toHaveValue("Explain how this project is put together.");
+      await expect(box).toBeFocused();
+    },
+  },
+  // UX [7]: offline, the chat and the project list from the disk cache, marked offline as of the cache's time, with
+  // the banner's Retry now; then a message typed offline joins the one already queued, each with Edit and Dismiss.
+  { id: "chat", route: CHAT, fixtures: ["offline-held"], variant: "offline" },
+  {
+    id: "chat.composer",
+    route: CHAT,
+    fixtures: ["offline-held"],
+    variant: "offline-queued",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await expect(page.locator('[data-receipt="queued"]')).toHaveCount(1);
+      const box = page.getByRole("textbox", { name: "Message the lead" });
+      await box.fill(OFFLINE_SENDS.typed);
+      await box.press("Enter");
+      await expect(box).toHaveValue("");
+      await expect(page.locator('[data-receipt="queued"]')).toHaveCount(2);
+    },
+  },
+  // ...and Retry now pressed: an attempt runs ("Reconnecting…", Retry now disabled) and the chat stays marked offline.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["offline-held"],
+    variant: "reconnecting",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await page.getByRole("button", { name: "Retry now" }).click();
+      await expect(page.getByText(/Reconnecting…/u)).toBeVisible();
+      await expect(page.getByRole("button", { name: "Retry now" })).toBeDisabled();
+      await expect(page.locator("header").getByText(/^Offline, as of/u)).toBeVisible();
+    },
+  },
+  // Back online before the chat is read again: marked as last known, never as current; and when that read failed,
+  // why, with Retry.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["offline-reread"],
+    variant: "reread",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await expect(page.locator("header").getByText(/^Last known, as of/u)).toBeVisible();
+      await expect(page.getByText("Earlier messages load once you’re connected.")).toHaveCount(0);
+    },
+  },
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["offline-reread-failed"],
+    variant: "reread-failed",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await expect(page.getByText("Couldn’t load the newest messages.")).toBeVisible();
+      await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+      await expect(page.locator("header").getByText(/^Last known, as of/u)).toBeVisible();
+    },
+  },
+  // The agents strip, opened to its rows.
+  {
+    id: "chat",
+    route: CHAT,
+    // The expand control is the strip's header button, named by its headline ("17 agents working · 1 needs you ·
+    // 1 on hold · 1 queued"); scoped to the strip, since the sidebar's project button also says "3 agents working". long-text has
     // no agent at work in this project, so it has no strip; live-20 carries the long commands and paths.
     fixtures: ["live-3", "live-20"],
     open: (page) =>
       page.getByRole("region", { name: /agents? working/u }).getByRole("button", { name: /agents? working/u, expanded: false }).click(),
     variant: "strip-open",
   },
-  // The lead chat (lead-chat-spec.md), registered ahead of its slices, each pending until its writer lands it and
-  // deletes `pending` (check the id, route and open step then).
-  // A1 (F1): the sidebar's needs-you dot and running indicator around the remembered project's chat, and on Status
-  // with status-rows (eight projects mixing both marks, neither, and a ~120-character name; only some have chats, so
-  // it is shot beside Status rather than a chat).
+  // ...and scrolled to its last agent: twenty fill more than the third of the window the opened strip may take, so
+  // its box scrolls and draws only the rows in view.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["live-20"],
+    open: async (page) => {
+      const strip = page.getByRole("region", { name: /agents? working/u });
+      await strip.getByRole("button", { name: /agents? working/u, expanded: false }).click();
+      const list = strip.getByRole("list", { name: "Agents" });
+      await list.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+      await expect(strip.getByText(/^queued · waiting for a free slot/u)).toBeVisible();
+    },
+    variant: "strip-scrolled",
+  },
+  // The lead chat (lead-chat-spec.md).
+  // UX-1 [5]: each row says why it wants you (reply, approve · 2, secret, blocked), and docs' reply that arrives
+  // after the app opened is bold.
+  { id: "shell", route: "#/status", fixtures: ["sidebar-reasons"], variant: "sidebar" },
+  // Hidden with its toggle in a wide window: the top row runs the full width, after the traffic lights.
   {
     id: "shell",
     route: "#/",
-    fixtures: ["chat-waiting", "live-20", "chat-empty"],
-    variant: "chat",
+    fixtures: ["chat-waiting"],
+    variant: "sidebar-hidden",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Hide the sidebar" }).click();
+      await page.getByRole("navigation", { name: "Sidebar" }).waitFor({ state: "detached" });
+    },
   },
-  { id: "shell", route: "#/status", fixtures: ["status-rows"], variant: "sidebar" },
+  // The smallest window: the sidebar has hidden itself, its toggle and the chat's title share the top row.
+  { id: "shell", route: "#/", fixtures: ["chat-waiting", "long-text"], variant: "narrow", sizes: ["narrow"] },
+  // ...and shown again with the toggle at that width, the chat beside it.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["chat-waiting", "long-text"],
+    variant: "narrow-open",
+    sizes: ["narrow"],
+    open: async (page) => {
+      await page.getByRole("button", { name: "Show the sidebar" }).click();
+      await page.getByRole("navigation", { name: "Sidebar" }).waitFor();
+    },
+  },
   // A2/A3 (F3, F4): the conversation and its composer: Markdown, paging through a long history with the migrated
   // orders, a reply streaming in, attachments, the lead waiting on you, a first message, and the link down.
   {
@@ -251,6 +475,10 @@ export const screens: readonly Screen[] = [
       await page.getByText("From before this chat").waitFor({ timeout: 10_000 });
     },
   },
+  // UX-1 [23]: a long reply streams in with the chat open, block by block; checked after its last delta.
+  { id: "chat", route: CHAT, fixtures: ["stream-long"], variant: "stream", replay: true },
+  // UX-1 [10]: just set up, no chat has a message yet: the empty chat shows the checklist on its last step.
+  { id: "chat", route: CHAT, fixtures: ["onboarding-first-chat"], variant: "first-chat" },
   // Sequences that once blanked the window, replayed to the end: the chat must still be up, with no error card.
   {
     id: "chat",
@@ -282,9 +510,83 @@ export const screens: readonly Screen[] = [
   },
   // A link to a project the hub doesn't have (here, a hub with none): says so, rather than loading forever.
   { id: "chat", route: CHAT, fixtures: ["empty"], variant: "missing", expect: "error" },
-  // A5 (F5): the two inline items, every state: the masked secret field (and saved, withdrawn), the exact command
-  // with Approve / Deny (and ran, failed, open again after the node was offline, a denied tool permission, running).
+  // A5 (F5): the two inline items, every state: the masked secret field, the exact command with Approve / Deny, open
+  // again after the node was offline; answered ones folded to one line (saved, not needed, ran, ran with an error,
+  // not run, denied, running).
   { id: "chat", route: CHAT, fixtures: ["inline-items"], variant: "inline" },
+  // The same chat offline from the disk cache: an open item says it can't be answered now, and a secret never claims
+  // the hub doesn't know its machine.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["inline-offline"],
+    variant: "inline-offline",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await expect(page.getByText("Offline: approve once the hub is back.").first()).toBeAttached();
+      await expect(page.getByText("Offline: save it once the hub is back.").first()).toBeAttached();
+      await expect(page.getByText(/doesn't know the machine/u)).toHaveCount(0);
+    },
+  },
+  // Approve on a command that can't be undone asks once more, in the card.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["inline-items"],
+    variant: "inline-confirm",
+    open: async (page) => {
+      const card = page.getByRole("region", { name: "Command to approve" }).filter({ hasText: "database migration" });
+      await card.getByRole("button", { name: "Approve", exact: true }).click();
+      await card.getByText("It can't be undone.").waitFor();
+    },
+  },
+  // A folded answer opened back up to its whole card.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["inline-items"],
+    variant: "inline-opened",
+    open: async (page) => {
+      const fold = page.getByRole("button", { name: /^Approved, ran in 12s/u });
+      await fold.click();
+      await page.getByText("purged 412 objects").waitFor();
+    },
+  },
+  // Every answer fails: one plain line with Retry, and the typed secret stays in its field.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["inline-failures"],
+    variant: "inline-failed",
+    open: async (page) => {
+      await page.getByRole("textbox", { name: "Secret value" }).fill("sk_test_51Hx");
+      await page.getByRole("button", { name: "Save secret" }).click();
+      await page.getByText("Not saved: no answer in time.").waitFor();
+      const card = page.getByRole("region", { name: "Command to approve" }).filter({ hasText: "reviewers 1" });
+      await card.getByRole("button", { name: "Approve", exact: true }).click();
+      await page.getByText("Not approved: something went wrong.").waitFor();
+    },
+  },
+  // Approved, then reopened by the hub (the node is offline): both cards are open again with why, never "Approved,
+  // running…". One gains its evidence; the other says what it said before, its approval and reopen in one refetch.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["inline-reopened"],
+    variant: "inline-reopened",
+    open: async (page) => {
+      const card = (text: string) => page.getByRole("region", { name: "Command to approve" }).filter({ hasText: text });
+      // Each answer disables the card until it lands, then the card folds until the reopen's refetch: an enabled
+      // Approve again is the card open again.
+      const again = (c: ReturnType<typeof card>) => c.getByRole("button", { name: "Approve again", exact: true }).and(page.locator(":enabled"));
+      for (const text of ["database migration", "release tag"]) {
+        const c = card(text);
+        await c.getByRole("button", { name: /^Approve( again)?$/u }).click();
+        await c.getByRole("button", { name: "Yes, run it" }).click();
+        await again(c).waitFor();
+      }
+    },
+  },
   // ...and E3b's own chat fixtures with an item in a longer conversation.
   {
     id: "chat",
@@ -301,14 +603,170 @@ export const screens: readonly Screen[] = [
     open: (page) => page.getByRole("button", { name: /^Max agents: \d+ running of \d+/u }).click(),
     variant: "max-agents",
   },
+  // C1: updates. The sidebar's line above the connection for each state that has one, and the sheet the palette's
+  // "Check for updates" opens, for every state of this app (not checked yet, checking, a build that doesn't update,
+  // up to date, found, downloading to restart, ready, the deb's command, a failed check, a failed download) and of the
+  // hub (up to date, version unknown, a newer build on the channel, older than this app, there or on this computer).
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["updates-available", "updates-downloading", "updates-ready", "updates-hub-behind"],
+    variant: "updates",
+  },
+  {
+    id: "updates",
+    route: "#/",
+    fixtures: [
+      "updates-idle",
+      "updates-checking",
+      "updates-unsupported",
+      "updates-current",
+      "updates-available",
+      "updates-downloading",
+      "updates-ready",
+      "updates-deb",
+      "updates-failed",
+      "updates-download-failed",
+      "updates-hub-current",
+      "updates-hub-unknown",
+      "updates-hub-available",
+      "updates-hub-behind",
+      "updates-hub-behind-local",
+    ],
+    open: openUpdates,
+  },
+  // Update the hub on devbox: what runs there (hub_info) and the command, saying when it restarts the hub. And on this
+  // computer when the command needs --channel, which Run in Terminal can't run: Copy only.
+  {
+    id: "updates",
+    route: "#/",
+    fixtures: ["updates-hub-behind", "updates-hub-behind-local-channel"],
+    variant: "update-the-hub",
+    open: async (page) => {
+      await openUpdates(page);
+      await page.getByRole("button", { name: "Update the hub" }).click();
+      await page.getByText("Running on the hub now, so it waits for these:").waitFor();
+    },
+  },
+  // Update the hub on this computer, idle: Run in Terminal opens fleetd update (a fixture opens nothing).
+  {
+    id: "updates",
+    route: "#/",
+    fixtures: ["updates-hub-behind-local"],
+    variant: "run-in-terminal",
+    open: async (page) => {
+      await openUpdates(page);
+      await page.getByRole("button", { name: "Update the hub" }).click();
+      await page.getByRole("button", { name: "Run in Terminal" }).click();
+      await page.getByText("fleetd update is running in Terminal.").waitFor();
+    },
+  },
+  // Update the hub when the hub can't say what runs on it.
+  {
+    id: "updates",
+    route: "#/",
+    fixtures: ["updates-hub-info-failed"],
+    variant: "update-the-hub",
+    open: async (page) => {
+      await openUpdates(page);
+      await page.getByRole("button", { name: "Update the hub" }).click();
+      await page.getByText(/^The hub couldn't say what's running/u).waitFor();
+    },
+  },
+  // Run in Terminal's failures: the hub isn't here, no fleetd command, no terminal; each with the command instead.
+  {
+    id: "updates",
+    route: "#/",
+    fixtures: ["updates-terminal-not-local", "updates-terminal-not-found", "updates-terminal-no-terminal"],
+    variant: "run-in-terminal",
+    open: async (page) => {
+      await openUpdates(page);
+      await page.getByRole("button", { name: "Update the hub" }).click();
+      await page.getByRole("button", { name: "Run in Terminal" }).click();
+      await page.getByRole("alert").waitFor();
+    },
+  },
+  // UX-1 A3: a project's PRs. The list (open first, then merged or closed lately), with nothing picked; none at all;
+  // GitHub out of reach; and a link to a project the hub doesn't have.
+  { id: "prs", route: PRS, fixtures: ["typical", "long-text", "many-agents", "prs-none", "prs-no-github", "prs-rate-limited", "hub-unreachable"] },
+  { id: "prs", route: PRS, fixtures: ["empty"], variant: "missing", expect: "error" },
+  {
+    id: "prs",
+    route: CHAT,
+    fixtures: ["prs-loading"],
+    variant: "loading",
+    open: whileLoading(
+      (page) => page.getByRole("button", { name: "Pull requests" }).click({ timeout: 10_000 }),
+      (page) => page.getByLabel("Loading the pull requests"),
+    ),
+  },
+  // One PR beside the list: its facts, description, checks, reviews with their findings, and its way to main so far.
+  // #10's checks failed after its approval and an outdated review; a chat line's link names only the number.
+  { id: "prs.detail", route: PR(11), fixtures: ["typical", "long-text", "prs-no-github", "prs-rate-limited"] },
+  { id: "prs.detail", route: PR(10), fixtures: ["typical"], variant: "failed" },
+  { id: "prs.detail", route: PR(8), fixtures: ["typical"], variant: "merged" },
+  { id: "prs.detail", route: PR(14), fixtures: ["typical"], variant: "review-requested" },
+  {
+    id: "prs.detail",
+    route: CHAT,
+    fixtures: ["prs-loading"],
+    variant: "loading",
+    open: whileLoading(async (page) => {
+      await page.evaluate((r) => {
+        window.location.hash = r;
+      }, PR(11));
+    }, (page) => page.getByText(/^Loading #11/u)),
+  },
+  { id: "prs.detail", route: `${PRS}/11`, fixtures: ["typical"], variant: "by-number", sizes: ["small"] },
+  { id: "prs.detail", route: PR(11), fixtures: ["prs-error"], expect: "error" },
+  // Its changes: the files beside a diff drawn a screen at a time, one column or side by side, and a PR too big to
+  // load at once.
+  { id: "prs.detail", route: PR(11), fixtures: ["typical", "long-text", "prs-no-github"], variant: "changes", open: openChanges },
+  {
+    id: "prs.detail",
+    route: PR(11),
+    fixtures: ["typical"],
+    variant: "split",
+    open: async (page) => {
+      await openChanges(page);
+      await page.getByRole("button", { name: "Show side by side" }).click();
+    },
+  },
+  { id: "prs.detail", route: PR(13), fixtures: ["prs-heavy"], variant: "changes", open: openChanges },
+  // ...lowered from the header, applied once the keys rest, with Undo.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["settings-agents"],
+    variant: "max-agents-applied",
+    open: async (page) => {
+      await page.getByRole("button", { name: /^Max agents: \d+ running of \d+/u }).click();
+      await page.getByRole("slider").focus();
+      for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowLeft");
+      await page.getByRole("button", { name: "Undo" }).waitFor();
+    },
+  },
   // F1: the frame (top bar, sidebar of projects) around #/, which opens the last project's chat (the first one on a
   // fresh install), and the connection states it shows. With no projects, #/ offers to add one (home.empty).
   {
     id: "shell",
     route: "#/",
-    fixtures: ["empty", "typical", "many-agents", "long-text", "hub-unreachable", "pairing-failed", "node-too-old"],
+    fixtures: ["empty", "typical", "many-agents", "long-text", "hub-unreachable", "pairing-failed", "node-too-old", "offline-held"],
   },
   { id: "home.empty", route: "#/", fixtures: ["empty"] },
+  // Settings opened from the sidebar takes its place; Back returns, with focus on the control that opened it.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["typical"],
+    variant: "settings-back",
+    open: async (page) => {
+      await page.getByRole("navigation", { name: "Sidebar" }).getByRole("button", { name: /^Settings/u }).click();
+      await page.getByRole("searchbox", { name: "Search settings" }).waitFor();
+      await page.getByRole("button", { name: "Back" }).click();
+      await expect(page.getByRole("navigation", { name: "Sidebar" }).getByRole("button", { name: /^Settings/u })).toBeFocused();
+    },
+  },
   // F10: connecting to a hub, one fixture per state (fixtures/onboarding). The form: no hub here, a hub found, a
   // refused key, app-pair.json used up / expired / untrusted, a rate limit, an unreadable saved key and a key that
   // would be kept in a file. #/onboarding?key opens on the key path; a fleetd://pair link lands with ?hub=&code=.
@@ -327,6 +785,37 @@ export const screens: readonly Screen[] = [
       "onboarding-file-store",
     ],
   },
+  // UX-1 [22]: a code typed in lower case with no dash shows as ABCD-2345, and pressing Connect moves nothing above
+  // the hub's answer: the field and the button stay where they were.
+  {
+    id: "onboarding",
+    route: "#/onboarding",
+    fixtures: ["onboarding-code-refused"],
+    variant: "refused",
+    open: async (page) => {
+      await page.getByRole("textbox", { name: "Hub address" }).fill("http://buildbox:4790");
+      const code = page.getByRole("textbox", { name: "Pairing code" });
+      await code.fill("wxyz6789");
+      await expect(code).toHaveValue("WXYZ-6789");
+      const connect = page.getByRole("button", { name: "Connect", exact: true });
+      const before = await connect.boundingBox();
+      await code.press("Enter");
+      await page.getByRole("alert").getByText("unknown or was already used").waitFor({ timeout: 10_000 });
+      expect(await connect.boundingBox()).toEqual(before);
+    },
+  },
+  // UX-1 [10]: "Set up fleetd on this Mac" opens `fleetd init` in a terminal, or, where none opens, shows the command
+  // with Copy. Under a fixture main never runs anything; the fixture says which answer it gives.
+  {
+    id: "onboarding",
+    route: "#/onboarding",
+    fixtures: ["onboarding-setup-terminal", "onboarding-first-run"],
+    variant: "setup",
+    open: async (page) => {
+      await page.getByRole("button", { name: /^Set up fleetd on this/u }).click();
+      await page.getByText(/^Opened Terminal with|^Couldn't open a terminal/u).waitFor({ timeout: 10_000 });
+    },
+  },
   { id: "onboarding.key", route: "#/onboarding?key", fixtures: ["pairing-failed", "onboarding-file-store"] },
   {
     id: "onboarding",
@@ -339,9 +828,6 @@ export const screens: readonly Screen[] = [
   { id: "onboarding.connecting", route: "#/onboarding", fixtures: ["hub-unreachable", "onboarding-not-found"] },
   // A hub on another protocol, either way round.
   { id: "onboarding.mismatch", route: "#/onboarding", fixtures: ["onboarding-app-too-old", "onboarding-hub-too-old"] },
-  // E2: every design-system primitive with short, long and empty content, one section per entry, so the primitives
-  // pass before any screen uses them. Needs a build with the gallery in it: `pnpm qa:build`.
-  ...gallerySections.map((s) => ({ id: `gallery.${s}`, route: `#/gallery?section=${s}`, fixtures: ["long-text"] as const })),
   // F8: Add project (the pick list, its empty and loading states, gh and machine problems) and Machines.
   { id: "projects.add", route: "#/projects/add", fixtures: ["typical", "empty", "long-text", "node-too-old", "hub-unreachable"] },
   // Opened from Machines, which subscribed first: the sheet must still find the live connection and list repos.
@@ -388,9 +874,19 @@ export const screens: readonly Screen[] = [
       await page.keyboard.press("Enter");
     },
   },
+  // UX-1 A2: every agent across the projects, by project (none, many, long titles and commands, the link down), and
+  // one agent's live work beside the list: told, ran, edited, a failed command, a message streaming in. An agent
+  // that isn't running any more says so.
+  {
+    id: "agents",
+    route: "#/agents",
+    fixtures: ["typical", "many-agents", "long-text", "empty", "hub-unreachable", "live-20", "agents-work"],
+  },
+  { id: "agents.work", route: AGENT_ROUTE, fixtures: ["agents-work"] },
+  { id: "agents.work", route: "#/agents/devbox/storefront/T99", fixtures: ["typical"], variant: "finished" },
   { id: "machines", route: "#/machines", fixtures: ["typical", "empty", "long-text", "many-agents", "hub-unreachable", "projects-machines"] },
-  // F11: the command palette (projects first, then go-tos), a typed search, and the shortcuts sheet. status-rows
-  // has eight projects, one with a ~120-character name.
+  // F11: the command palette (opening on the project on screen, then go-tos), a typed search, and the shortcuts
+  // sheet. status-rows has eight projects, one with a ~120-character name.
   {
     id: "palette",
     route: "#/",
@@ -406,12 +902,133 @@ export const screens: readonly Screen[] = [
       await page.getByRole("combobox", { name: "Search" }).fill("st");
     },
   },
+  // Opened over a chat that isn't the first project: the selection starts on that project.
+  { id: "palette", variant: "on-project", route: CHAT, fixtures: ["typical"], open: (page) => page.keyboard.press("ControlOrMeta+K") },
+  // Settings by their own names, and the theme switch "dark" offers; matched letters are highlighted.
+  {
+    id: "palette.search",
+    variant: "setting",
+    route: "#/",
+    fixtures: ["typical"],
+    open: async (page) => {
+      await page.keyboard.press("ControlOrMeta+K");
+      await page.getByRole("combobox", { name: "Search" }).fill("max agents");
+    },
+  },
+  {
+    id: "palette.search",
+    variant: "theme",
+    route: "#/",
+    fixtures: ["typical"],
+    open: async (page) => {
+      await page.keyboard.press("ControlOrMeta+K");
+      await page.getByRole("combobox", { name: "Search" }).fill("dark");
+    },
+  },
+  // ⌘K inside the palette: the actions of the selected row, here the project on screen.
+  {
+    id: "palette.actions",
+    route: "#/",
+    fixtures: ["typical", "long-text", "status-rows"],
+    open: async (page) => {
+      await page.keyboard.press("ControlOrMeta+K");
+      await page.keyboard.press("ControlOrMeta+K");
+    },
+  },
   { id: "shortcuts", route: "#/", fixtures: ["typical"], open: (page) => page.keyboard.press("ControlOrMeta+Slash") },
   // F9: Settings. Prompts opens on the lead's first message, the longest text; many-prompts lists 72 with long
   // keys and titles; settings-prompts is the real registry with edits. Compare and Update are deep links.
   // Max agents: the fleet cap and each project's slider.
   { id: "settings.agents", route: "#/settings/agents", fixtures: ["settings-agents", "long-text", "empty", "hub-unreachable"] },
+  // The two task profiles, and each project's medium switch: storefront's off in settings-medium-off.
+  {
+    id: "settings.agents",
+    route: "#/settings/agents",
+    fixtures: ["settings-agents", "settings-medium-off"],
+    variant: "profiles",
+    open: async (page) => {
+      const profiles = page.getByRole("region", { name: "Task profiles" });
+      await profiles.scrollIntoViewIfNeeded();
+      await profiles.getByText("Medium: Opus 5.5, medium effort, for mechanical work").waitFor();
+      await page.getByRole("region", { name: "storefront" }).getByRole("switch", { name: /Medium allowed/u }).waitFor();
+    },
+  },
+  // The palette's "Max agents for this project": that project's slider scrolled to and focused.
+  {
+    id: "settings.agents",
+    variant: "for-project",
+    route: "#/settings/agents?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["settings-agents"],
+    open: (page) => expect(page.getByRole("slider", { name: "storefront" })).toBeFocused(),
+  },
+  // A slider applies when you let go (keys: once they rest): a project lowered under its running agents, with the
+  // pause and Undo; and the whole fleet moved below a project's own max, which warns.
+  {
+    id: "settings.agents",
+    route: "#/settings/agents",
+    fixtures: ["settings-agents"],
+    variant: "applied",
+    open: async (page) => {
+      // storefront: 6 running under a max of 12, lowered to 4.
+      await page.getByRole("slider", { name: "storefront" }).focus();
+      for (let i = 0; i < 8; i++) await page.keyboard.press("ArrowLeft");
+      await page.getByRole("button", { name: "Undo" }).waitFor();
+    },
+  },
+  {
+    id: "settings.agents",
+    route: "#/settings/agents",
+    fixtures: ["settings-agents"],
+    variant: "fleet-below",
+    open: async (page) => {
+      await page.getByRole("slider").first().focus();
+      for (let i = 0; i < 8; i++) await page.keyboard.press("ArrowLeft");
+      await page.getByRole("button", { name: "Undo" }).waitFor();
+    },
+  },
+  // Settings search: an option found by its name, and by nothing.
+  {
+    id: "settings.general",
+    route: "#/settings/general",
+    fixtures: ["typical"],
+    variant: "search",
+    open: (page) => page.getByRole("searchbox", { name: "Search settings" }).fill("max agents"),
+  },
+  {
+    id: "settings.general",
+    route: "#/settings/general",
+    fixtures: ["typical"],
+    variant: "search-none",
+    open: (page) => page.getByRole("searchbox", { name: "Search settings" }).fill("zebra"),
+  },
+  // Prompts before one is picked.
+  { id: "settings.prompts", route: "#/settings/prompts", fixtures: ["settings-prompts"], variant: "none" },
   { id: "settings.general", route: "#/settings/general", fixtures: ["typical", "empty", "hub-unreachable"] },
+  // Notifications: the kinds, sound, the Dock badge, then the test's two answers: sent (with where to allow fleetd
+  // if nothing showed) and a system that shows none.
+  { id: "settings.notifications", route: "#/settings/notifications", fixtures: ["typical"] },
+  {
+    id: "settings.notifications",
+    route: "#/settings/notifications",
+    fixtures: ["typical"],
+    variant: "test-sent",
+    open: async (page, app) => {
+      await systemNotifications(app, true);
+      await page.getByRole("button", { name: "Send a test notification" }).click();
+      await page.getByRole("status").filter({ hasText: /^Sent\./u }).waitFor();
+    },
+  },
+  {
+    id: "settings.notifications",
+    route: "#/settings/notifications",
+    fixtures: ["typical"],
+    variant: "test-unsupported",
+    open: async (page, app) => {
+      await systemNotifications(app, false);
+      await page.getByRole("button", { name: "Send a test notification" }).click();
+      await page.getByRole("status").filter({ hasText: "doesn’t show notifications" }).waitFor();
+    },
+  },
   {
     id: "settings.prompts",
     route: "#/settings/prompts?prompt=lead.start",
@@ -430,6 +1047,18 @@ export const screens: readonly Screen[] = [
     id: "status.fleet",
     route: "#/status",
     fixtures: ["typical", "status-rows", "long-text", "empty", "many-agents", "hub-unreachable", "status-stale", "status-planning", "status-skeleton"],
+  },
+  // A held figure: the bar's hover marks it, with why, above the drop that came before it. Nothing moves.
+  {
+    id: "status.fleet",
+    route: "#/status",
+    fixtures: ["status-paused"],
+    variant: "paused",
+    open: async (page) => {
+      await page.getByRole("img", { name: /^78% done/u }).hover();
+      await page.getByText("Held at 78% (paused: an agent hit a usage limit)").waitFor();
+      await page.getByText("↓ 61% → 55%: CI failed on #212").waitFor();
+    },
   },
   // F7: the time inspector (fixtures/time): an order's timeline, ~15k spans in time-heavy; the fleet's breakdown;
   // its insights. Each tab's root carries its own id, so the three are shot apart.
@@ -453,9 +1082,3 @@ export const screens: readonly Screen[] = [
     open: (page) => page.getByRole("tab", { name: "Insights" }).click(),
   },
 ];
-
-// Platform checks that need a screen writer's work before they can pass; the owner turns theirs on when it lands.
-export const platformChecks: Record<"appMenu", boolean> = {
-  // F1: the macOS app menu, with an Edit menu wired to the text actions.
-  appMenu: true,
-};

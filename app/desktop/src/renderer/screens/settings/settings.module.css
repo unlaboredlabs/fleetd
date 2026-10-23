@@ -5,49 +5,11 @@
  */
 
 .frame {
-  container: settings / inline-size;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   height: 100%;
   min-height: 0;
   min-width: 0;
-}
-
-.nav {
-  width: 200px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-3) var(--space-2);
-  border-right: 1px solid var(--hairline);
-  background: var(--sidebar);
-  overflow-y: auto;
-  min-height: 0;
-}
-.navTitle {
-  padding: 0 var(--space-2) var(--space-2);
-}
-.navItem {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: var(--space-1-5) var(--space-2);
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  text-decoration: none;
-}
-.navItem:hover {
-  background: var(--hover);
-}
-.navItem[aria-current="page"] {
-  background: var(--selected);
-}
-
-.page {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
 }
 
 /* ---- General and Instructions: one readable column ---- */
@@ -103,15 +65,14 @@
   gap: var(--space-2);
   min-width: 0;
 }
-
-/* ---- Prompts ---- */
-.scopeBar {
+/* A page's description, and its page-wide control beside it. */
+.pageIntro {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-1) var(--space-3);
-  padding: var(--space-2) var(--space-4);
-  border-bottom: 1px solid var(--hairline);
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  min-width: 0;
 }
 .scopePick {
   display: flex;
@@ -123,94 +84,6 @@
 .scopeSelect {
   width: 280px;
   max-width: 100%;
-}
-.scopeHint {
-  flex: 1 1 280px;
-  min-width: 0;
-}
-
-.split {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
-}
-
-.listPane {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  min-width: 0;
-  border-right: 1px solid var(--hairline);
-}
-.list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 0 var(--space-2) var(--space-4);
-  scrollbar-gutter: stable;
-}
-.group {
-  display: flex;
-  flex-direction: column;
-  padding-top: var(--space-2);
-}
-.groupRows {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: 2px 0 var(--space-1);
-}
-
-.row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 2px var(--space-2);
-  /* Sizes to its wrapped text; never shrinks below it (flex: none in a column). */
-  flex: none;
-  width: 100%;
-  padding: var(--space-1-5) var(--space-2) var(--space-1-5) calc(var(--space-2) + 20px);
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  text-align: left;
-}
-.row:hover {
-  background: var(--hover);
-}
-.row[aria-current="true"] {
-  background: var(--selected);
-}
-.rowText {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-
-.badge {
-  flex: none;
-  padding: 0 var(--space-1-5);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
-  color: var(--text);
-  white-space: nowrap;
-}
-.badgeUpdate {
-  border-color: var(--warning);
-  color: var(--warning);
-}
-
-.detailPane {
-  min-width: 0;
-  min-height: 0;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
 }
 .detail {
   display: flex;
@@ -362,14 +235,6 @@
   color: var(--text);
 }
 
-.empty {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  max-width: 420px;
-  padding: var(--space-8) var(--space-6);
-}
-
 .srOnly {
   position: absolute;
   width: 1px;
@@ -378,49 +243,10 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
-h1.navTitle {
-  margin: 0;
-  font: inherit;
-}
-
-/* Beside the app's sidebar on a small window: narrower side columns, so the editor keeps a readable measure. */
-@container settings (max-width: 880px) {
-  .nav {
-    width: 164px;
-  }
-  .split {
-    grid-template-columns: minmax(200px, 236px) minmax(0, 1fr);
-  }
-  .detail {
-    padding-inline: var(--space-4);
-  }
-}
-
-/* ---- Trimmed prompt list ---- */
-.groupTitle {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-2);
-  padding: var(--space-1) var(--space-2);
-}
-.eventsNote {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  margin-top: var(--space-4);
-  padding: var(--space-3) var(--space-2) 0;
-  border-top: 1px solid var(--hairline);
-}
 .orphans {
-  flex: none;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  max-height: 40%;
-  overflow-y: auto;
-  padding: var(--space-2) var(--space-4);
-  border-bottom: 1px solid var(--hairline);
 }
 .orphan {
   flex: none;
@@ -464,6 +290,16 @@ h1.navTitle {
 }
 .agentsRow {
   max-width: 520px;
+}
+.alertLine {
+  margin: 0;
+}
+.profiles {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: var(--space-4);
 }
 .agentsHead,
 .agentsScale {
@@ -510,6 +346,39 @@ h1.navTitle {
 .slider[data-disabled] .sliderRange {
   background: var(--faint);
 }
-.capField {
-  width: 96px;
+
+/* ---- Page heads ---- */
+
+/* ---- The settings sidebar ---- */
+.search {
+  padding: var(--space-2) 0;
+}
+.navGroup {
+  display: flex;
+  flex-direction: column;
+}
+/* A group title among the prompts, lined up with their labels. */
+.navNested {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-2) 2px var(--space-6);
+}
+.sidebarNote {
+  padding: 0 var(--space-2);
+}
+
+/* ---- Max agents: what a change did, with Undo ---- */
+.result {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1-5);
+  min-width: 0;
+}
+.agentsList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
 }

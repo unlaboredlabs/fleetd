@@ -1,50 +1,25 @@
-// The board's small pieces: the lane row, its activity bars, the PR track, the status mark.
+// The strip's small pieces: an agent's row, its machine text cut in the middle, and the status mark.
 import { useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
-import { RoleTag, Tooltip, Truncate, cx, roleTint } from "../../ui";
-import { bars } from "./bars";
-import type { AgentLane, ChangeState, Spark } from "./contracts";
-import { fmtElapsed, fmtTokens, middleEllipsis, parseMs, shortModel } from "./format";
-import { type Line, type Tone, ROLE_WORD, describe, isFinal, isWorking, trackFill } from "./words";
+import { PROFILE_WORD, RoleTag, Tooltip, Truncate, cx, roleTint } from "../../ui";
+import { fmtElapsed, middleEllipsis, parseMs } from "./format";
+import type { AgentRow } from "./strip";
+import { type Tone, isWorking } from "./words";
 import s from "./lanes.module.css";
 
 const TONE_CLASS: Partial<Record<Tone, string | undefined>> = {
+  loud: s.loud,
   warning: s.warning,
   danger: s.danger,
   success: s.success,
 };
 
-/** A check drawn as a path, so it is the same in every font. */
-export function Check({ className }: { className?: string }) {
-  return (
-    <svg className={cx(s.check, className)} viewBox="0 0 10 10" aria-label="done" role="img">
-      <path d="M1.2 5.2 4 8 9 2" />
-    </svg>
-  );
-}
-
-/** The lane's mark: a check once done; nothing while it works (its edge says so); else a dot in the status colour. */
-function Mark({ lane }: { lane: AgentLane }) {
-  if (lane.status === "done") return <span className={s.mark}><Check /></span>;
-  if (isWorking(lane.status)) return <span className={s.mark} />;
-  const tone = lane.status === "waiting" ? s.warning : lane.status === "failed" ? s.danger : s.faintDot;
+/** Nothing while it works (its solid edge says so); amber while it needs you or is stuck; faint while it waits its turn. */
+function Mark({ status }: { status: AgentRow["lane"]["status"] }) {
+  if (isWorking(status)) return <span className={s.mark} />;
+  const tone = status === "waiting" || status === "stalled" ? s.warning : s.faintDot;
   return (
     <span className={s.mark}>
       <span className={cx(s.dot, tone)} />
-    </span>
-  );
-}
-
-/**
- * The activity line: words in the UI voice, then machine text in mono that ends in an ellipsis when the column is
- * short (with the full text on hover). Tool work reads loud; waiting on the model reads quiet with its time.
- */
-export function ActivityLine({ line, working, step, stale }: { line: Line; working: boolean; step?: string | undefined; stale?: boolean | undefined }) {
-  const loud = working && !line.thinking && line.tone !== "warning" && line.tone !== "danger";
-  return (
-    <span className={cx(s.activity, loud ? s.loud : s.quietText, TONE_CLASS[line.tone], stale && s.stale)}>
-      <span className={s.words}>{line.words}</span>
-      {line.machine !== undefined ? <MiddleCut text={line.machine} /> : null}
-      {step !== undefined ? <span className={s.step}>{step}</span> : null}
     </span>
   );
 }
@@ -92,114 +67,76 @@ export function MiddleCut({ text }: { text: string }) {
 }
 
 /**
- * Bars for the last minute of real work. A new bucket slides the bars left one slot, once, keyed by the bucket it
- * shows; under reduce-motion they jump. A lane with no spark yet draws nothing rather than a baseline that would
- * claim it is idle.
+ * What an agent is doing now: words in the UI voice, then machine text in mono cut in the middle to the room it has.
+ * The strip's rows and the agents view share it.
  */
-export function ActivityBars({ spark, startedMs, role, now }: { spark: Spark | undefined; startedMs: number | undefined; role: AgentLane["role"]; now: number }) {
-  if (!spark) return <span className={s.bars} />;
-  const b = bars(spark, startedMs);
-  const fresh = now - (parseMs(spark.endAt) ?? 0) < 2_200;
-  const last = b.heights.length - 1;
+export function ActivityLine({ line, stale }: { line: { readonly words: string; readonly machine?: string | undefined; readonly tone: Tone }; stale?: boolean | undefined }) {
   return (
-    <span className={s.bars} style={{ "--tint": roleTint(role), "--slots": b.slots } as CSSProperties} aria-hidden>
-      <span key={fresh ? spark.endAt : "still"} className={cx(s.plot, fresh && s.shift)}>
-        {b.heights.map((h, i) =>
-          h < 0 ? (
-            <span key={i} className={s.slot} />
-          ) : (
-            <span key={i} className={s.slot}>
-              <span
-                className={cx(s.bar, h === 0 ? s.baseline : i === last ? s.newest : undefined)}
-                style={h > 0 ? { height: `${Math.max(8, Math.round(h * 100))}%` } : undefined}
-              />
-            </span>
-          ),
-        )}
-      </span>
-    </span>
-  );
-}
-
-/** A PR's progress as three short segments (review, CI, merged), filled as the words beside it say. */
-export function Track({ state, review }: { state: ChangeState; review: number }) {
-  const fill = trackFill(state, review);
-  if (!fill) return null;
-  return (
-    <span className={cx(s.track, state === "merged" && s.merged)} aria-hidden>
-      {fill.map((f, i) => (
-        <span key={i} className={s.segment}>
-          <span className={s.fill} style={{ transform: `scaleX(${f})` }} />
+    <span className={cx(s.activity, TONE_CLASS[line.tone] ?? s.quietText, stale && s.stale)}>
+      {line.machine !== undefined ? (
+        <>
+          <span className={s.words}>{line.words}</span>
+          <MiddleCut text={line.machine} />
+        </>
+      ) : (
+        // Words alone can be long (a queued or usage-limit reason): they take the room and end in an ellipsis.
+        <span className={s.wordsFill}>
+          <Truncate expand="none" size="xs" tone="inherit">
+            {line.words}
+          </Truncate>
         </span>
-      ))}
+      )}
     </span>
   );
 }
 
-export type Density = "stage" | "card";
-
-export interface LaneRowProps {
-  readonly lane: AgentLane;
-  readonly density: Density;
+export interface AgentLineProps {
+  readonly row: AgentRow;
   /** Hub time, ms. */
   readonly now: number;
   readonly stale?: boolean | undefined;
-  readonly onOpen?: ((lane: AgentLane) => void) | undefined;
+  readonly onOpen?: (() => void) | undefined;
 }
 
 /**
- * One agent: its role's tint on the edge (solid while it works), the role, what it is for, what it is doing now,
- * how long it has run, its activity bars and its tokens. Every row is one line at one height, so nothing jumps.
+ * One agent: its role's tint on the edge (solid while it works), the role, what it is doing now, and how long it
+ * has run. One line at one height, so nothing jumps.
  */
-export function LaneRow({ lane, density, now, stale, onOpen }: LaneRowProps) {
-  const line = describe(lane);
-  const working = isWorking(lane.status);
-  const started = lane.status === "queued" ? undefined : parseMs(lane.startedAt);
-  const ended = parseMs(lane.endedAt);
-  const clock = started === undefined ? "" : fmtElapsed((ended ?? now) - started);
-  const since = parseMs(lane.live?.activity?.since);
-  // How long the current step has run: waiting on the model shows it from the first second ("thinking 0:12"), the
-  // quiet state; a tool step once it has taken a while.
-  const stepMs = working && since !== undefined ? now - since : undefined;
-  const step = stepMs !== undefined && (line.thinking || stepMs >= 2000) ? fmtElapsed(stepMs) : undefined;
-  const tokens = lane.live?.tokens;
-  const solid = working || lane.status === "waiting";
-  const running = !isFinal(lane.status) && lane.status !== "queued";
+export function AgentLine({ row, now, stale, onOpen }: AgentLineProps) {
+  const { status, role } = row.lane;
+  const started = parseMs(row.startedAt);
+  const clock = started === undefined ? "" : fmtElapsed(now - started);
+  const solid = isWorking(status) || status === "waiting";
   return (
     <div
-      className={cx(s.lane, density === "stage" ? s.stageLane : s.cardLane, onOpen && s.clickable)}
-      style={{ "--tint": roleTint(lane.role) } as CSSProperties}
-      data-lane={lane.laneId}
-      data-status={lane.status}
+      className={cx(s.lane, row.indent && s.indent, onOpen && s.clickable)}
+      style={{ "--tint": roleTint(role) } as CSSProperties}
+      data-lane={row.lane.laneId}
+      data-status={status}
       {...(onOpen
         ? {
             role: "button",
             tabIndex: 0,
-            onClick: () => onOpen(lane),
+            onClick: onOpen,
             onKeyDown: (e: KeyboardEvent) => {
-              if (e.key === "Enter") onOpen(lane);
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onOpen();
+              }
             },
           }
         : {})}
     >
       <span className={cx(s.edge, solid && s.edgeSolid)} />
-      <Mark lane={lane} />
-      <RoleTag role={lane.role} width={84}>
-        {ROLE_WORD[lane.role]}
+      <Mark status={status} />
+      <RoleTag role={role} width={84}>
+        {row.roleWord}
       </RoleTag>
-      {density === "stage" ? (
-        <Truncate expand="none" size="sm" tone="quiet" className={cx(s.laneTitle)}>
-          {lane.title}
-        </Truncate>
-      ) : (
-        <Truncate expand="none" size="xs" tone="quiet" className={cx(s.model)}>
-          {lane.model ? shortModel(lane.model) : ""}
-        </Truncate>
-      )}
-      <ActivityLine line={line} working={working} step={step} stale={stale} />
-      <span className={cx(s.clock, working ? s.loud : s.quietText)}>{clock}</span>
-      {running ? <ActivityBars spark={lane.live?.spark} startedMs={started} role={lane.role} now={now} /> : <span className={s.bars} />}
-      <span className={s.tokens}>{tokens ? fmtTokens(tokens.input + tokens.output) : ""}</span>
+      <ActivityLine line={row} stale={stale} />
+      {row.lane.profile === undefined ? null : <span className={cx(s.profile, s.quietText)}>{PROFILE_WORD[row.lane.profile]}</span>}
+      <span className={cx(s.clock, isWorking(status) ? s.loud : s.quietText)} aria-label={clock === "" ? undefined : `for ${clock}`}>
+        {clock}
+      </span>
     </div>
   );
 }

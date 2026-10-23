@@ -18,7 +18,9 @@ export const sendsOn = (e: KeyLike): boolean => e.key === "Enter" && !e.shiftKey
 export const placeholder = (working: boolean | undefined): string =>
   working === true ? "Message the lead. It reads this at its next step." : "Message the lead";
 
-export const KEY_HINT = "Enter send · ⇧Enter new line";
+/** ↑ with nothing in the box (no words, no files) brings back your last message, as in a shell. */
+export const recallsOn = (e: KeyLike & { readonly metaKey: boolean; readonly ctrlKey: boolean }, box: { readonly text: string; readonly attached: readonly unknown[] }): boolean =>
+  e.key === "ArrowUp" && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey && !e.isComposing && box.text === "" && box.attached.length === 0;
 
 /** chat_send's limit on a message's text (ChatSendInput.text, JSON string length); more goes in as a file. */
 export const MAX_CHARS = 20_000;
@@ -33,7 +35,7 @@ export function checkMessage(text: string, attachments: number): { ok: true; tex
 
 /** What a sent message's line says, quietly: where it is, or why it isn't there. */
 export type Receipt =
-  | { readonly kind: "quiet"; readonly line: string }
+  | { readonly kind: "quiet"; readonly line: string; readonly acts?: readonly Act[] }
   | { readonly kind: "warn"; readonly line: string; readonly acts: readonly Act[] }
   | { readonly kind: "bad"; readonly line: string; readonly detail?: string; readonly acts: readonly Act[] };
 
@@ -43,8 +45,8 @@ export const ACT_LABEL: Readonly<Record<Act, string>> = { resend: "Resend", edit
 
 /** A message of yours as the layer holds it (selectChat's item). */
 export interface Sendable {
-  readonly state: "sent" | "streaming" | "pending" | "reconnecting" | "unanswered" | "failed";
-  readonly error?: (HubError & { readonly offline?: boolean }) | undefined;
+  readonly state: "sent" | "streaming" | "pending" | "queued" | "reconnecting" | "unanswered" | "failed";
+  readonly error?: HubError | undefined;
   /** How it reached the lead (ChatMessage.delivery): it started a turn, joined the running one, or waits for one. */
   readonly delivery?: ChatDelivery | undefined;
   /** chat_send's word on why the lead doesn't have it yet, with the fix. */
@@ -59,15 +61,16 @@ export function receiptFor(m: Sendable, latest: boolean): Receipt | undefined {
   switch (m.state) {
     case "pending":
       return { kind: "quiet", line: "sending…" };
+    case "queued":
+      // Written offline: it goes by itself, under its own id, when the link is back. Until then it can be taken back.
+      return { kind: "quiet", line: "queued; sends when the connection is back", acts: ["edit", "dismiss"] };
     case "reconnecting":
       return { kind: "quiet", line: "sending… the link to the hub dropped; it goes again when the link is back" };
     case "unanswered":
       // Safe to send again: the hub keeps one message per id.
       return { kind: "warn", line: "no answer from the hub yet; it may have it", acts: ["resend", "dismiss"] };
     case "failed":
-      return m.error?.offline === true
-        ? { kind: "bad", line: "not sent: not connected to the hub", acts: ["resend", "edit", "dismiss"] }
-        : { kind: "bad", line: "not sent: the hub refused it", ...(m.error ? { detail: m.error.message } : {}), acts: ["resend", "edit", "dismiss"] };
+      return { kind: "bad", line: "not sent: the hub refused it", ...(m.error ? { detail: m.error.message } : {}), acts: ["resend", "edit", "dismiss"] };
     case "sent":
     case "streaming":
       if (m.leadWaiting !== undefined && latest) return { kind: "warn", line: `sent; the lead doesn’t have it yet: ${m.leadWaiting}`, acts: [] };
@@ -82,5 +85,20 @@ export function receiptFor(m: Sendable, latest: boolean): Receipt | undefined {
         default:
           return { kind: "quiet", line: "sent" };
       }
+  }
+}
+
+/** Why Stop didn't stop the lead and its agents, in one plain sentence; never the hub's own words. */
+export function stopFailed(code: string): string {
+  switch (code) {
+    case "forbidden":
+      return "This computer’s key can’t stop this project’s work.";
+    case "offline":
+    case "disconnected":
+      return "Not connected to the hub, so nothing was stopped.";
+    case "timeout":
+      return "The hub didn’t answer, so the lead and its agents may still be working. Try Stop again.";
+    default:
+      return "Couldn’t stop the lead and its agents. Try Stop again.";
   }
 }

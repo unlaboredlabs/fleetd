@@ -1,6 +1,6 @@
 // The design system's public surface. Screens import from "../ui" (or "@/ui"), never from the files inside.
 export { UiProvider } from "./UiProvider";
-export { applyTheme, resolveTheme, isThemeMode, useTheme, THEME_MODES, type ThemeMode, type ResolvedTheme } from "./theme";
+export { applyTheme, resolveTheme, isThemeMode, storedMode, useTheme, THEME_MODES, type ThemeMode, type ResolvedTheme } from "./theme";
 export { cx } from "./lib/cx";
 export { copyText } from "./lib/clipboard";
 
@@ -29,15 +29,18 @@ export { Tooltip, type TooltipProps } from "./primitives/Tooltip";
 export { Popover, PopoverTrigger, PopoverContent } from "./primitives/Popover";
 export { Tabs, TabList, Tab, TabPanel } from "./primitives/Tabs";
 export { toast, type ToastInput, type ToastTone } from "./primitives/Toast";
-export { Dot, StatusChip, RoleTag, roleTint, Separator, type StatusTone, type AgentRole } from "./primitives/Chips";
+export { Dot, StatusChip, RoleTag, roleTint, Separator, type StatusTone } from "./primitives/Chips";
+export { ROLE_WORD, type AgentRole } from "./primitives/roles";
+export { PROFILE_LINE, PROFILE_WORD } from "./primitives/profiles";
 
-export { Code, InlineCode, type CodeProps } from "./markdown/Code";
-export { resolveLang, langForPath, type CodeLang } from "./markdown/highlighter";
+export { Code, InlineCode, renderTokens, type CodeProps } from "./markdown/Code";
+export { resolveLang, langForPath, highlight, type CodeLang, type Tokens } from "./markdown/highlighter";
 export { Markdown, type MarkdownProps } from "./markdown/Markdown";
 export { VirtualList, type VirtualListProps } from "./list/VirtualList";
 export {
   AppFrame,
   TopBar,
+  FrameTitle,
   Breadcrumb,
   Sidebar,
   SidebarSection,
@@ -50,4 +53,3 @@ export {
   type Crumb,
   type SidebarItemProps,
 } from "./layout/Layout";
-export { GalleryScreen } from "./gallery";

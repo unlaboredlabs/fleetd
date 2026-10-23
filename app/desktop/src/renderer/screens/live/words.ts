@@ -2,6 +2,7 @@
 // you", danger only on failure words, and everything that is just working stays quiet.
 import type { AgentLane, AgentRole, ChangeState, LaneStatus } from "./contracts";
 import { fmtElapsed, parseMs } from "./format";
+import { ROLE_WORD } from "../../ui";
 
 export type Tone = "quiet" | "loud" | "warning" | "danger" | "success";
 
@@ -15,31 +16,7 @@ export const isWorking = (s: LaneStatus): boolean => s === "starting" || s === "
 
 export const isChecker = (role: AgentRole): boolean => role === "reviewer" || role === "verifier" || role === "qa";
 
-export const ROLE_WORD: Record<AgentRole, string> = {
-  lead: "lead",
-  implementer: "implementer",
-  reader: "reader",
-  reviewer: "reviewer",
-  verifier: "verifier",
-  qa: "qa",
-};
-
-/** The tint family: writers (implementers, readers), reviewers, verifiers (and QA), the lead. */
-export type Tint = "writer" | "reviewer" | "verifier" | "lead";
-export const roleTint = (role: AgentRole): Tint => {
-  switch (role) {
-    case "implementer":
-    case "reader":
-      return "writer";
-    case "reviewer":
-      return "reviewer";
-    case "verifier":
-    case "qa":
-      return "verifier";
-    case "lead":
-      return "lead";
-  }
-};
+export { ROLE_WORD };
 
 /**
  * One activity line: words in the UI voice, then machine text (a command, path or pattern) in mono. `thinking`
@@ -124,27 +101,3 @@ export const STAGE_WORD: Record<ChangeState, string> = {
 
 export const stageTone = (s: ChangeState): Tone =>
   s === "needs_rebase" ? "warning" : s === "ci_failed" || s === "refused" ? "danger" : s === "merged" ? "success" : "quiet";
-
-/**
- * How full each of the track's three segments is, 0..1: review (checks done of needed), CI (half while it runs,
- * full once it passed), merged. Undefined for states off the main line, which say so in words instead.
- */
-export const trackFill = (state: ChangeState, review: number): readonly [number, number, number] | undefined => {
-  const r = Math.min(1, Math.max(0, review));
-  switch (state) {
-    case "queued":
-    case "reviewing":
-      return [r, 0, 0];
-    case "ready":
-      return [1, 0, 0];
-    case "rebasing":
-    case "ci":
-      return [1, 0.5, 0];
-    case "merging":
-      return [1, 1, 0];
-    case "merged":
-      return [1, 1, 1];
-    default:
-      return undefined;
-  }
-};

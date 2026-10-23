@@ -1,9 +1,10 @@
 // The data layer in React: one layer per window, read through selectors.
-import { QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { createContext, useContext, useEffect, type ReactNode } from "react";
+import { hashKey, QueryClientProvider, useInfiniteQuery, useQueries, useQuery } from "@tanstack/react-query";
+import { createContext, useCallback, useContext, useEffect, useSyncExternalStore, type ReactNode } from "react";
 import { useStore } from "zustand";
-import type { ToolInput, ToolName } from "../../../shared/contracts";
-import type { DataLayer } from "./queries";
+import type { ToolInput, ToolName, ToolOutput } from "../../../shared/contracts";
+import { callKey, type DataLayer } from "./queries";
+import { selectLiveText, type LiveAgent } from "./selectors";
 import type { DataState } from "./store";
 
 const DataContext = createContext<DataLayer | undefined>(undefined);
@@ -45,4 +46,72 @@ export const useToolQuery = <T extends ToolName>(tool: T, input: ToolInput<T>, o
   const layer = useDataLayer();
   const fresh = useStore(layer.store, (s) => s.fresh);
   return useQuery({ ...layer.toolQuery(tool, input), enabled: fresh && (options?.enabled ?? true) });
+};
+
+/**
+ * `tool(input)` a page at a time, for reads too long for one answer (a PR's files): `next` gives the input fields
+ * that ask for the page after `page` (its offset or cursor), undefined after the last. Pages load on
+ * `fetchNextPage`, never by themselves.
+ */
+export const useToolPages = <T extends ToolName>(
+  tool: T,
+  input: ToolInput<T>,
+  next: (page: ToolOutput<T>) => Partial<ToolInput<T>> | undefined,
+  options?: { enabled?: boolean },
+) => {
+  const layer = useDataLayer();
+  const fresh = useStore(layer.store, (s) => s.fresh);
+  return useInfiniteQuery({
+    queryKey: layer.toolQuery(tool, input).queryKey,
+    queryFn: ({ pageParam }) => layer.toolQuery(tool, { ...(input as object), ...(pageParam as object) } as ToolInput<T>).queryFn(),
+    initialPageParam: {} as Partial<ToolInput<T>>,
+    getNextPageParam: next,
+    enabled: fresh && (options?.enabled ?? true),
+  });
+};
+
+/** `tool` for each of `inputs`, as one query each: a list whose length changes (the pages of a diff in view). */
+export const useToolQueries = <T extends ToolName>(tool: T, inputs: readonly ToolInput<T>[]) => {
+  const layer = useDataLayer();
+  const fresh = useStore(layer.store, (s) => s.fresh);
+  return useQueries({ queries: inputs.map((input) => ({ ...layer.toolQuery(tool, input), enabled: fresh })) });
+};
+
+const NO_THREAD = { machineId: "", threadId: "", limit: 40 } as const;
+
+/**
+ * One agent's work, read-only: its newest steps (agent_work, read again on its thread's events) and the message it
+ * is writing now, which the live feed streams while this is mounted. Undefined steps while the first read is out.
+ */
+export const useAgentWork = (agent: LiveAgent | undefined) => {
+  const layer = useDataLayer();
+  const thread = agent?.row.threadRef;
+  const input = thread === undefined ? NO_THREAD : { machineId: thread.machineId, threadId: thread.threadId, limit: 40 };
+  const query = useToolQuery("agent_work", input, { enabled: thread !== undefined });
+  const workstreamId = agent?.row.workstreamId;
+  useEffect(() => {
+    if (workstreamId === undefined) return;
+    layer.focus(workstreamId);
+    return () => layer.focus(null);
+  }, [layer, workstreamId]);
+  const streaming = useData(selectLiveText(agent?.row.laneId ?? ""));
+  return { steps: query.data?.steps, running: query.data?.running, streaming, error: query.error, hasThread: thread !== undefined };
+};
+
+/**
+ * The number of the read whose answer the cache holds for `tool(input)` (DataLayer.readOf), or undefined while it
+ * holds none. It changes on every answer, even one that says the same, which a query's own result doesn't signal.
+ */
+export const useReadOf = <T extends ToolName>(tool: T, input: ToolInput<T>): number | undefined => {
+  const { queryClient, readOf } = useDataLayer();
+  const key = callKey(tool, input);
+  const hash = hashKey(key);
+  const subscribe = useCallback(
+    (onChange: () => void) =>
+      queryClient.getQueryCache().subscribe((e) => {
+        if (e.type === "updated" && e.query.queryHash === hash) onChange();
+      }),
+    [queryClient, hash],
+  );
+  return useSyncExternalStore(subscribe, () => (queryClient.getQueryData(key) === undefined ? undefined : readOf(tool, input)));
 };

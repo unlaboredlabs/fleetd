@@ -1,14 +1,17 @@
 import type { LinkHandlerClaim, LinkHandlerStatus, NotifyRequest, OpenTarget } from "../shared/app";
 import type { MenuCommand } from "../shared/menu";
-import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, HubState, OpenOutcome, SecretOutcome } from "../shared/hub";
-import type { ChatScope, ErrorReport, LiveScope, SecretRequest } from "../shared/ipc";
-import type { KeyStore, PairOutcome, PairRequest, PairStart, Probe } from "../shared/pairing";
+import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
+import type { ChatScope, ErrorReport, OrderFocus, SecretRequest } from "../shared/ipc";
+import type { KeyStore, PairOutcome, PairRequest, PairStart, Probe, SetupOutcome } from "../shared/pairing";
+import type { UpdatesState } from "../shared/updates";
 
 /** `window.fleetd`: everything the renderer can ask of main. There is no other bridge. */
 export interface FleetdApi {
   readonly platform: "darwin" | "linux" | "win32" | "other";
   /** The fixture standing in for the hub (FLEETD_FIXTURE), or null. The shell shows a banner while it's set. */
   readonly fixture: string | null;
+  /** The window draws a translucent sidebar (macOS vibrancy): the page leaves the sidebar's background clear. */
+  readonly vibrancy: boolean;
   /** The app's version, for an error card's Copy details. */
   readonly version: string;
   /** Writes text to the clipboard (the page has no clipboard permission of its own). */
@@ -23,7 +26,6 @@ export interface FleetdApi {
    */
   openExternal(url: string): Promise<OpenOutcome>;
   readonly hub: {
-    state(): Promise<HubState>;
     /**
      * Frames start with the current state; when connected, a fresh snapshot follows, then events and live frames.
      * Returns the unsubscribe.
@@ -31,11 +33,21 @@ export interface FleetdApi {
     subscribe(listener: (frame: HubFrame) => void): () => void;
     /** Any MCP tool, with the saved key. Never rejects: failures come back as `{ ok: false, error }`. */
     call(tool: string, input: unknown, options?: { timeoutMs?: number }): Promise<CallOutcome>;
-    /** The live subscription, or null to stop it. */
-    live(scope: LiveScope | null): Promise<void>;
     /** The chat whose streamed text arrives as `chat_delta` frames, or null to stop. Kept across reconnects. */
     chat(project: ChatScope | null): Promise<void>;
+    /** The order whose lanes stream their text in live frames, or null for none. Kept across reconnects. */
+    focus(workstreamId: OrderFocus | null): Promise<void>;
     resync(): Promise<void>;
+    /** Dials the hub now instead of at the next retry (Retry now while offline). */
+    retryNow(): Promise<void>;
+    /**
+     * The last hub data the app saw, as the renderer wrote it (src/renderer/src/data/cache.ts). Main keeps it in
+     * userData for the paired hub only; reading gives null for any other hub, and Forget deletes it.
+     */
+    readonly cache: {
+      read(): Promise<string | null>;
+      write(text: string): Promise<void>;
+    };
     connect(url: string, key: string): Promise<ConnectOutcome>;
     forget(): Promise<void>;
   };
@@ -50,6 +62,8 @@ export interface FleetdApi {
     auto(): Promise<PairOutcome>;
     /** Where the hub key is kept: encrypted by the OS, or a private file (and why, and how to change that). */
     store(): Promise<KeyStore>;
+    /** Opens `fleetd init` in the system terminal, or says why not and what to run. Never rejects; takes nothing. */
+    setup(): Promise<SetupOutcome>;
   };
   readonly system: {
     /** This computer's host name (without .local). */
@@ -61,6 +75,20 @@ export interface FleetdApi {
     /** What a dropped folder or link file holds for Add project; `other` for anything else (or a File with no path). */
     readDrop(file: File): Promise<DropInfo>;
   };
+  /** The app's own update. */
+  readonly updates: {
+    state(): Promise<UpdatesState>;
+    /** Every change after the first `state()`. Returns the unsubscribe. */
+    subscribe(listener: (state: UpdatesState) => void): () => void;
+    /** Checks now; "Checking…", then the answer, arrive through `subscribe`. */
+    check(): Promise<void>;
+    /** Restarts into the downloaded update, or once it's downloaded; the deb opens its download. */
+    install(): Promise<void>;
+    /** Takes back an `install()` whose download still runs. */
+    keep(): Promise<void>;
+    /** Opens `fleetd update` in the system terminal, for a hub on this computer; or why not, with the command. */
+    hubTerminal(): Promise<SetupOutcome>;
+  };
   readonly app: {
     /** Command ids clicked in the app menu (an accelerator runs in the renderer's keymap instead). Returns the unsubscribe. */
     onMenuCommand(listener: (id: string) => void): () => void;
@@ -69,7 +97,12 @@ export interface FleetdApi {
      * launched the app) are delivered to it. Returns the unsubscribe.
      */
     onOpen(listener: (target: OpenTarget) => void): () => void;
-    notify(request: NotifyRequest): Promise<void>;
+    /** False when this system shows no notifications. */
+    notify(request: NotifyRequest): Promise<boolean>;
+    /** The Dock (or launcher) badge count; 0 clears it. */
+    setBadge(count: number): Promise<void>;
+    /** Mirrors the app's light/dark choice to the window, so its translucent sidebar matches. */
+    setTheme(mode: "system" | "light" | "dark"): Promise<void>;
     /**
      * Whether this app opens fleetd:// links. With a claim ("user" from Settings, "pair-failed" from onboarding),
      * main makes it the handler first when it should; a dev build never does.

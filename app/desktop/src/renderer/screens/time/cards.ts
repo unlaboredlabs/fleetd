@@ -11,12 +11,14 @@ import {
   gapWord,
   inexact,
   markedDur,
+  rangeText,
   spanTitle,
   titleIsMachineText,
   type Names,
 } from "./format";
 import { humanizeKey } from "../../ui";
-import { bucketShares, catLabel, type Bar, type Model } from "./model";
+import { fmtTokens } from "../live/format";
+import { bucketShares, catLabel, ranOn, type Bar, type Model } from "./model";
 
 export interface Card {
   readonly title: string;
@@ -60,8 +62,7 @@ export const barCard = (m: Model, row: number, bar: Bar, names: Names, nowMs: nu
   const parallel = m.parallel.has(span.id);
   const end = span.endMs;
   const mark = inexact(span, names, parallel);
-  const who = r.taskId !== undefined ? `${r.name} (${r.taskId})` : r.name;
-  const facts = [who, markedDur((end ?? nowMs) - span.startMs, mark?.mark)];
+  const facts = [r.name, markedDur((end ?? nowMs) - span.startMs, mark?.mark)];
   if (span.exitCode !== undefined) facts.push(`exit ${span.exitCode}`);
   if (span.outBytes !== undefined) facts.push(`${fmtBytes(span.outBytes)} output`);
   if (span.status === "failed" && span.exitCode === undefined) facts.push("failed");
@@ -117,14 +118,16 @@ export const barCard = (m: Model, row: number, bar: Bar, names: Names, nowMs: nu
   };
 };
 
-export const laneCard = (m: Model, row: number): Card => {
+/** `tokens`: the lane's output tokens, live while it runs, else measured (`Row.outputTokens`). */
+export const laneCard = (m: Model, row: number, tokens: number): Card => {
   const r = m.rows[row];
   if (r === undefined) return { title: "", mono: false, lines: [], hint: "" };
-  const title =
-    r.kind === "lead" ? "The project's lead" : r.role !== undefined && r.taskId !== undefined ? `${ROLE_WORD[r.role]} ${r.taskId}: ${r.name}` : r.name;
+  const title = r.kind === "lead" ? "The project's lead" : r.role !== undefined && r.kind !== "other" ? `${ROLE_WORD[r.role]}: ${r.name}` : r.name;
   const lines = [`${r.to - r.from} spans · ${fmtDur(r.agentMs)} of agent time`];
+  const who = [ranOn(r), tokens > 0 ? `${fmtTokens(tokens)} output tokens` : undefined].filter((x) => x !== undefined);
+  if (who.length > 0) lines.push(who.join(" · "));
   if (r.summary !== "") lines.push(r.summary);
-  const warnings = r.gaps.slice(0, 4).map(([a, b, why]) => `${gapWord(why)} ${clockMs(a)} to ${clockMs(b)}`);
+  const warnings = r.gaps.slice(0, 4).map(([a, b, why]) => `${gapWord(why)} ${rangeText(a, b)}`);
   return {
     title,
     mono: r.kind === "check",
@@ -150,7 +153,7 @@ export const pathCard = (m: Model, seg: number): Card => {
     };
   }
   const row = s.row === undefined ? undefined : m.rows[s.row];
-  const who = row === undefined ? "" : `${row.taskId ?? row.name} · `;
+  const who = row === undefined ? "" : `${row.name} · `;
   return {
     title: s.label ?? KIND_WORD[s.kind],
     mono: s.label !== undefined,

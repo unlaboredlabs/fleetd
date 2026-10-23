@@ -5,7 +5,7 @@ import { MoreHorizontal } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useData } from "../../src/data/react";
 import { selectMachines, selectProjects } from "../../src/data/selectors";
-import { Button, Dot, IdChip, Menu, MenuContent, MenuItem, MenuTrigger, Text, Truncate } from "../../ui";
+import { Button, Dot, FrameTitle, IdChip, Menu, MenuContent, MenuItem, MenuTrigger, Text, Truncate } from "../../ui";
 import type { Machine, ProjectSummary } from "./contracts";
 import { machineOrder, machineParts, slotsText, type Tone } from "./machineText";
 import { RemoveProjectDialog, type RemoveTarget } from "./RemoveProjectDialog";
@@ -44,18 +44,10 @@ export function MachinesScreen() {
   return (
     // The frame doesn't scroll its screens; this one scrolls itself once the checks make it taller than the window.
     <div className={s.scroller} data-screen="machines">
-      <div className={s.page}>
-      <div className={s.pageHead} {...(state ? { "data-screen": state } : {})}>
-        <Text as="h1" size="xl" strong className={s.pageTitle ?? ""}>
-          Machines
-        </Text>
-        {slots ? (
-          <Text size="sm" tone="quiet" tabular>
-            {slotsText(slots)}
-          </Text>
-        ) : null}
+      <div className={s.page} {...(state ? { "data-screen": state } : {})}>
+      <FrameTitle title="Machines" detail={slots ? slotsText(slots) : undefined}>
         <Button onClick={() => openAddProject()}>Add project…</Button>
-      </div>
+      </FrameTitle>
       {machines === undefined ? (
         <Text tone="quiet">
           {live ? "Loading machines…" : "Waiting for the hub. Machines show once it's connected."}
@@ -111,7 +103,7 @@ function MachineCard(props: {
           ))}
         </span>
         <Text size="xs" tone="faint">
-          {`node ${m.nodeVersion}${m.tags.length > 0 ? ` · ${m.tags.join(", ")}` : ""}`}
+          {`fleetd ${m.nodeVersion}${m.tags.length > 0 ? ` · ${m.tags.join(", ")}` : ""}`}
         </Text>
       </div>
       {m.status === "degraded" && m.degradedReason ? (

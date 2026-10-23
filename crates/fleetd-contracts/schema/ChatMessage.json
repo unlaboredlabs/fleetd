@@ -289,6 +289,10 @@
           "format": "int64",
           "type": "integer"
         },
+        "finishedAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "Once it ran or failed: when the result came back."
+        },
         "gated": {
           "$ref": "#/$defs/GatedRunSpec",
           "description": "A gated command: exactly what runs once approved."

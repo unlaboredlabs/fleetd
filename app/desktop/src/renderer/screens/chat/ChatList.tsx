@@ -9,14 +9,14 @@ import type { AgentLane, AttachmentRef } from "../../../shared/contracts";
 import { Button, cx, Text, Truncate, VirtualList } from "../../ui";
 import { useData, useToolQuery } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
-import { leadActivity } from "./activity";
+import { leadActivity, leadTurnSince, leadTurnUntil, turnLine } from "./activity";
 import { fmtBytes } from "./attachments";
 import type { ChatItem } from "../../src/data/chat";
 
 import { shortClock } from "./format";
-import { authorLabel, systemHeadline, type Row } from "./model";
+import { authorLabel, systemHeadline, type Row, type TopState } from "./model";
 import { MessageReceipt } from "./Composer";
-import { LiveStrip } from "../live";
+import { LiveStrip, useNow, useOnScreen } from "../live";
 import { Boundary } from "../../src/Boundary";
 import type { ChatItem as InlineItem } from "../../../shared/contracts";
 import { InlineChatItem } from "../inline";
@@ -64,7 +64,7 @@ function Attachment({ project, file }: { project: ProjectRef; file: AttachmentRe
   return file.mime.startsWith("image/") ? <ImageAttachment project={project} file={file} /> : <FileChip file={file} />;
 }
 
-function Top({ state, onLoadOlder }: { state: "more" | "loading" | "start"; onLoadOlder: () => void }) {
+function Top({ state, onLoadOlder }: { state: TopState; onLoadOlder: () => void }) {
   // Reaching the top of what is loaded asks for the page before it.
   useEffect(() => {
     if (state === "more") onLoadOlder();
@@ -79,6 +79,14 @@ function Top({ state, onLoadOlder }: { state: "more" | "loading" | "start"; onLo
         <Button variant="ghost" onClick={onLoadOlder}>
           Load earlier messages
         </Button>
+      ) : state === "held" ? (
+        <Text size="xs" tone="quiet">
+          Earlier messages load once you’re connected.
+        </Text>
+      ) : state === "reread" ? (
+        <Text size="xs" tone="quiet">
+          Earlier messages load once the newest are read.
+        </Text>
       ) : (
         <Text size="xs" tone="quiet">
           This is the start of the conversation.
@@ -141,9 +149,13 @@ function Inline({ item }: { item: ChatItem }) {
 /** The lead's activity changes with its frames; the line takes a new value at most once a second. */
 const ACTIVITY_EVERY_MS = 1000;
 
+/** The quiet line after the lead's reply: how long its turn has run (counting up, once a second) and what it does. */
 function LeadActivity({ project }: { project: ProjectRef }) {
   const key = projectKey(project);
   const now = useData((st) => leadActivity(st, key));
+  const since = useData((st) => leadTurnSince(st, key));
+  const until = useData((st) => leadTurnUntil(st, key));
+  const skew = useData((st) => st.live.skewMs ?? 0);
   const [shown, setShown] = useState(now);
   const at = useRef(0);
   useEffect(() => {
@@ -157,10 +169,22 @@ function LeadActivity({ project }: { project: ProjectRef }) {
     );
     return () => clearTimeout(timer);
   }, [now, shown]);
-  if (shown === undefined) return null;
+  const box = useRef<HTMLDivElement>(null);
+  // The count stops while the line is out of view or the window hidden (useNow).
+  const onScreen = useOnScreen(box);
+  const clock = useNow(shown !== undefined && since !== undefined && until === undefined && onScreen) + skew;
+  const line = turnLine({ since, until }, shown, clock);
+  if (line === undefined) return null;
   return (
-    <div className={s.quietRow} data-entry="activity" role="status">
-      <InlineText size="xs" tone="quiet" text={shown} />
+    <div ref={box} className={s.quietRow} data-entry="activity" role="status">
+      {line.count !== undefined ? (
+        <span aria-hidden>
+          <Text size="xs" tone="quiet" tabular>
+            {line.words === undefined ? line.count : `${line.count} · `}
+          </Text>
+        </span>
+      ) : null}
+      {line.words !== undefined ? <InlineText size="xs" tone="quiet" text={line.words} /> : null}
     </div>
   );
 }
@@ -271,27 +295,40 @@ export function ChatList(props: {
   onTold: (lane: AgentLane) => void;
   /** A message to open at (a notification's link): scrolled to once it is loaded. */
   openAt?: number | undefined;
+  /** Bumped to scroll to `openAt` again (Show, pressed twice). */
+  openSeq?: number | undefined;
   /** Bumped when the reader sends: back to the end. */
   sent?: number;
 }) {
-  const { rows, openAt, sent } = props;
+  const { rows, openAt, openSeq, sent } = props;
   const virtualizer = useRef<Virtualizer<HTMLDivElement, Element> | null>(null);
   const mineLatest = useMemo(() => rows.findLast((r) => r.kind === "message" && r.item.author === "human")?.key, [rows]);
 
-  // Open at the newest row and keep the end in view as rows measure and stream, until the reader scrolls or a
-  // link opens the chat at a message.
-  const jumping = openAt !== undefined;
+  // Open at the newest row and keep the end in view as rows measure and stream, until the reader scrolls. A link
+  // (a notification's, or Show) opens the chat at a message instead, and keeps that message in view the same way:
+  // through rows measuring and the window resizing, until the reader scrolls. Keyed by the message, not its index,
+  // so older pages loading above it don't pin it again.
+  const openKey = openAt === undefined ? undefined : rows[openAt]?.key;
+  const openIndex = useRef(openAt);
   useEffect(() => {
-    const el = virtualizer.current?.scrollElement;
+    openIndex.current = openAt;
+  });
+  useEffect(() => {
+    const v = virtualizer.current;
+    const el = v?.scrollElement;
     const inner = el?.firstElementChild;
-    if (jumping || !el || !inner) return;
+    if (!v || !el || !inner) return;
     let pinned = true;
     const release = () => {
       pinned = false;
     };
     const pin = () => {
-      if (pinned) el.scrollTop = el.scrollHeight;
+      if (!pinned) return;
+      const at = openIndex.current;
+      if (openKey === undefined || at === undefined) el.scrollTop = el.scrollHeight;
+      else v.scrollToIndex(at, { align: "center" });
     };
+    if (openKey !== undefined) pin();
     el.addEventListener("wheel", release, { passive: true });
     el.addEventListener("pointerdown", release);
     el.addEventListener("keydown", release);
@@ -304,11 +341,7 @@ export function ChatList(props: {
       el.removeEventListener("pointerdown", release);
       el.removeEventListener("keydown", release);
     };
-  }, [jumping]);
-
-  useEffect(() => {
-    if (openAt !== undefined) virtualizer.current?.scrollToIndex(openAt, { align: "center" });
-  }, [openAt]);
+  }, [openKey, openSeq]);
 
   useEffect(() => {
     const v = virtualizer.current;
@@ -326,6 +359,7 @@ export function ChatList(props: {
         estimateSize={56}
         followOutput
         startAtEnd
+        className={s.scroller}
         virtualizerRef={virtualizer}
         aria-label="Conversation with the lead"
         renderItem={(r) => (

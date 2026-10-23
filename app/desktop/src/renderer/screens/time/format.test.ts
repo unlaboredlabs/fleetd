@@ -1,9 +1,43 @@
-import { describe, expect, it } from "vitest";
-import { NO_NAMES, clockMs, delta, fmtBytes, fmtDur, inexact, markedDur, missing, pct, spanTitle } from "./format";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { NO_NAMES, agentName, clockMs, delta, numberCollisions, ordinal, rangeText, tickLabel, fmtBytes, fmtDur, inexact, markedDur, missing, pct, spanTitle } from "./format";
 import { compareLine, pieces } from "./insightText";
 import type { Coverage, Span } from "./types";
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 describe("figures", () => {
+  it("read times on the viewer's clock, and a range says its day", () => {
+    // A half-hour zone: anything still reading UTC would be off by 5h30.
+    vi.stubEnv("TZ", "Asia/Kolkata");
+    expect(clockMs(Date.parse("2026-10-18T10:21:04.500Z"))).toBe("15:51:04");
+    expect(rangeText(Date.parse("2026-10-16T10:20:00.000Z"), Date.parse("2026-10-16T12:02:00.000Z"))).toBe("Oct 16, 15:50 to 17:32");
+    expect(rangeText(Date.parse("2026-10-16T18:00:00.000Z"), Date.parse("2026-10-16T19:00:00.000Z"))).toBe("Oct 16, 23:30 to Oct 17, 00:30");
+    expect(tickLabel(Date.parse("2026-10-17T18:30:00.000Z"), 0, 86_400_000)).toBe("Oct 18");
+    expect(tickLabel(Date.parse("2026-10-17T19:30:00.000Z"), 0, 86_400_000)).toBe("01:00");
+  });
+
+  it("tell agents doing the same work apart by their order of start", () => {
+    expect(ordinal(1)).toBe("1st");
+    expect(ordinal(2)).toBe("2nd");
+    expect(ordinal(3)).toBe("3rd");
+    expect(ordinal(11)).toBe("11th");
+    expect(ordinal(22)).toBe("22nd");
+    const lanes = numberCollisions(
+      new Map([
+        ["late", { role: "reviewer" as const, title: "review #113", laneId: "T9", startedAt: "2026-10-18T09:40:00.000Z" }],
+        ["early", { role: "reviewer" as const, title: "review #113", laneId: "T8", startedAt: "2026-10-18T09:14:00.000Z" }],
+        ["own", { role: "implementer" as const, title: "about page", laneId: "T1" }],
+      ]),
+    );
+    const name = (id: string) => {
+      const l = lanes.get(id);
+      return l === undefined ? "" : agentName(l);
+    };
+    expect([name("early"), name("late"), name("own")]).toEqual(["review #113 · 1st", "review #113 · 2nd", "about page"]);
+  });
+
   it("read durations like the CLI", () => {
     expect(fmtDur(840)).toBe("840 ms");
     expect(fmtDur(3_240)).toBe("3.2s");
@@ -22,7 +56,6 @@ describe("figures", () => {
     expect(fmtBytes(48 * 1024 + 100)).toBe("48 KB");
     expect(fmtBytes(1_258_291)).toBe("1.2 MB");
     expect(fmtBytes(118 * 1024 * 1024)).toBe("118 MB");
-    expect(clockMs(Date.parse("2026-10-18T10:21:04.500Z"))).toBe("10:21:04");
     expect(pct(39, 100)).toBe("39%");
     expect(pct(1, 1000)).toBe("<1%");
     expect(pct(0, 100)).toBe("0%");
@@ -65,7 +98,7 @@ describe("what isn't exact", () => {
   it("says missing data only where it applies", () => {
     const cut: Coverage = { complete: false, gaps: [], detailSince: "2026-09-18T10:00:00.000Z" };
     expect(missing(cut, Date.parse("2026-10-18T08:10:00.000Z"))).toEqual({ gaps: 0, capped: false });
-    expect(missing(cut, Date.parse("2026-09-01T08:00:00.000Z")).detailSince).toBe("2026-09-18");
+    expect(missing(cut, Date.parse("2026-09-01T08:00:00.000Z")).detailSince).toBe("Sep 18");
     expect(missing(cut, undefined).detailSince).toBeUndefined();
     const gaps: Coverage = {
       complete: false,

@@ -23,6 +23,10 @@ const STATUS_PREFIXES = ["machine.", "usage."];
 // the spans it moves arrive with the task and change events that close them.
 const TIME_PREFIXES = ["task.", "change.", "request.", "workstream."];
 const TIME_TYPES = new Set(["lead.woken", "pr.merged"]);
+// What moves a PR as the PR screens show it (the hub's list in crates/fleetd-contracts/src/prs.rs): its merge-queue
+// state, a review, a merge, its writer's task. Only a new head changes its files and diff, and only the queue sees one.
+const PR_PREFIXES = ["change.", "pr.", "review.", "train.", "task."];
+const PR_DIFF_PREFIXES = ["change.", "pr."];
 
 /** The orders an event is about: `data.workstreamId`, plus `data.workstreamIds` (a lead woken for several). */
 export const ordersNamed = (event: HubEvent): readonly string[] => {
@@ -32,6 +36,9 @@ export const ordersNamed = (event: HubEvent): readonly string[] => {
   const ids = Array.isArray(many) ? many.filter((w): w is string => typeof w === "string") : [];
   return [...new Set(one === undefined ? ids : [one, ...ids])];
 };
+
+const AGENT_PREFIXES = ["task.", "lead.", "change."];
+const AGENT_TYPES = new Set(["pr.merged", "project.added", "project.removed"]);
 
 const startsWithAny = (type: string, prefixes: readonly string[]): boolean => prefixes.some((p) => type.startsWith(p));
 
@@ -54,6 +61,9 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
       if (type.startsWith("workstream.") || type.startsWith("claim.")) out.push({ tool: "workstream_get", where: { workstreamId: id } });
     }
   }
+  // Only the PR screen on view has these reads mounted, so this refetches one list, one PR and its visible pages.
+  if (startsWithAny(type, PR_PREFIXES)) out.push({ tool: "pr_list" }, { tool: "pr_get" });
+  if (startsWithAny(type, PR_DIFF_PREFIXES)) out.push({ tool: "pr_files" }, { tool: "pr_diff" });
   if (type.startsWith("steer.")) {
     out.push(workstreamId === undefined ? { tool: "steers_list" } : { tool: "steers_list", where: { workstreamId } });
   }
@@ -68,9 +78,11 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
     }
   }
   if (type.startsWith("thread.") && event.threadId !== undefined) {
-    out.push({ tool: "thread_tail", where: { threadId: event.threadId } });
+    out.push({ tool: "thread_tail", where: { threadId: event.threadId } }, { tool: "agent_work", where: { threadId: event.threadId } });
   }
-  const projectScoped = startsWithAny(type, ["workstream.", "lead.", "thread."]);
+  // The agents view's list: who runs, and what for. Their live status and activity come with the live feed instead.
+  if (startsWithAny(type, AGENT_PREFIXES) || AGENT_TYPES.has(type)) out.push({ tool: "agents_list" });
+  const projectScoped = startsWithAny(type, ["workstream.", "lead.", "thread."]) || type === "project.settings";
   if (projectScoped && event.machineId !== undefined && event.projectId !== undefined) {
     out.push({ tool: "project_get", where: { machineId: event.machineId, projectId: event.projectId } });
   }

@@ -1,8 +1,9 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from "electron";
 import type { LinkHandlerStatus, OpenTarget } from "../shared/app";
 import { IPC } from "../shared/channels";
-import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, HubState, OpenOutcome, SecretOutcome } from "../shared/hub";
-import type { KeyStore, PairOutcome, PairStart, Probe } from "../shared/pairing";
+import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
+import type { KeyStore, PairOutcome, PairStart, Probe, SetupOutcome } from "../shared/pairing";
+import type { UpdatesState } from "../shared/updates";
 import type { FleetdApi } from "./api";
 
 const listeners = new Set<(frame: HubFrame) => void>();
@@ -22,11 +23,18 @@ ipcRenderer.on(IPC.menuCommand, (_event: IpcRendererEvent, id: string) => {
 ipcRenderer.on(IPC.appOpen, (_event: IpcRendererEvent, target: OpenTarget) => {
   for (const listener of openListeners) listener(target);
 });
+const updateListeners = new Set<(state: UpdatesState) => void>();
+ipcRenderer.on(IPC.updatesChanged, (_event: IpcRendererEvent, state: UpdatesState) => {
+  for (const listener of updateListeners) listener(state);
+});
+
 const arg = (name: string): string | null => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? null;
 const fixture = arg("fleetd-fixture");
+const vibrancy = process.argv.includes("--fleetd-vibrancy");
 
 const api: FleetdApi = {
   fixture,
+  vibrancy,
   version: arg("fleetd-version") ?? "unknown",
   platform: process.platform === "darwin" || process.platform === "linux" || process.platform === "win32" ? process.platform : "other",
   copy: (text) => ipcRenderer.invoke(IPC.copy, text) as Promise<void>,
@@ -35,7 +43,6 @@ const api: FleetdApi = {
   },
   openExternal: (url) => ipcRenderer.invoke(IPC.openExternal, url) as Promise<OpenOutcome>,
   hub: {
-    state: () => ipcRenderer.invoke(IPC.hubState) as Promise<HubState>,
     subscribe: (listener) => {
       listeners.add(listener);
       // Every subscriber starts from a state and (when live) a fresh snapshot; earlier ones just see a resync.
@@ -46,9 +53,14 @@ const api: FleetdApi = {
     },
     call: (tool, input, options) =>
       ipcRenderer.invoke(IPC.hubCall, { tool, input, ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }) }) as Promise<CallOutcome>,
-    live: (scope) => ipcRenderer.invoke(IPC.hubLive, scope) as Promise<void>,
     chat: (project) => ipcRenderer.invoke(IPC.hubChat, project) as Promise<void>,
+    focus: (workstreamId) => ipcRenderer.invoke(IPC.hubFocus, workstreamId) as Promise<void>,
     resync: () => ipcRenderer.invoke(IPC.hubResync) as Promise<void>,
+    retryNow: () => ipcRenderer.invoke(IPC.hubRetryNow) as Promise<void>,
+    cache: {
+      read: () => ipcRenderer.invoke(IPC.hubCacheRead) as Promise<string | null>,
+      write: (text) => ipcRenderer.invoke(IPC.hubCacheWrite, text) as Promise<void>,
+    },
     connect: (url, key) => ipcRenderer.invoke(IPC.hubConnect, { url, key }) as Promise<ConnectOutcome>,
     forget: () => ipcRenderer.invoke(IPC.hubForget) as Promise<void>,
   },
@@ -58,6 +70,7 @@ const api: FleetdApi = {
     redeem: (request) => ipcRenderer.invoke(IPC.pairRedeem, request) as Promise<PairOutcome>,
     auto: () => ipcRenderer.invoke(IPC.pairAuto) as Promise<PairOutcome>,
     store: () => ipcRenderer.invoke(IPC.pairStore) as Promise<KeyStore>,
+    setup: () => ipcRenderer.invoke(IPC.pairSetup) as Promise<SetupOutcome>,
   },
   system: {
     hostName: () => ipcRenderer.invoke(IPC.systemHostName) as Promise<string>,
@@ -70,6 +83,17 @@ const api: FleetdApi = {
       const path = webUtils.getPathForFile(file);
       return path === "" ? Promise.resolve<DropInfo>({ kind: "other" }) : (ipcRenderer.invoke(IPC.projectsReadDrop, path) as Promise<DropInfo>);
     },
+  },
+  updates: {
+    state: () => ipcRenderer.invoke(IPC.updatesState) as Promise<UpdatesState>,
+    subscribe: (listener) => {
+      updateListeners.add(listener);
+      return () => updateListeners.delete(listener);
+    },
+    check: () => ipcRenderer.invoke(IPC.updatesCheck) as Promise<void>,
+    install: () => ipcRenderer.invoke(IPC.updatesInstall) as Promise<void>,
+    keep: () => ipcRenderer.invoke(IPC.updatesKeep) as Promise<void>,
+    hubTerminal: () => ipcRenderer.invoke(IPC.updatesHubTerminal) as Promise<SetupOutcome>,
   },
   app: {
     onMenuCommand: (listener) => {
@@ -85,7 +109,9 @@ const api: FleetdApi = {
       }
       return () => openListeners.delete(listener);
     },
-    notify: (request) => ipcRenderer.invoke(IPC.appNotify, request) as Promise<void>,
+    notify: (request) => ipcRenderer.invoke(IPC.appNotify, request) as Promise<boolean>,
+    setBadge: (count) => ipcRenderer.invoke(IPC.appBadge, count) as Promise<void>,
+    setTheme: (mode) => ipcRenderer.invoke(IPC.appTheme, mode) as Promise<void>,
     linkHandler: (claim) => ipcRenderer.invoke(IPC.appLinkHandler, claim) as Promise<LinkHandlerStatus>,
     setMenuState: (enabled) => ipcRenderer.invoke(IPC.appMenuState, enabled) as Promise<void>,
     logError: (report) => (ipcRenderer.invoke(IPC.appLog, report) as Promise<void>).catch(() => undefined),

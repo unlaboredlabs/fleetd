@@ -2,10 +2,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { HubFrame } from "../../../shared/hub";
 import { AT, live, snapshot } from "../../src/data/fixtures.test-util";
 import { applyFrame, initialState } from "../../src/data/store";
-import { chatRoute, statusToggleTarget } from "./defaults";
-import { projectItems } from "./projects";
+import { chatRoute, statusToggleTarget, themeCommands } from "./defaults";
+import { currentProjectItem, projectItems } from "./projects";
 import { dispatchable } from "./keymap";
-import { pushRecent, rank, score } from "./rank";
+import { boost, frecency, match, noteUse, rank, score } from "./rank";
+import { buildRows } from "./Palette";
 import { bindLatest, commandFor, registerCommands, registerSource, runCommand, snapshotItems, type Command } from "./registry";
 
 const item = (id: string, title: string, group: Command["group"], extra: Partial<Command> = {}): Command => ({
@@ -33,30 +34,101 @@ describe("rank", () => {
     item("status.toggle", "Status", "go-to"),
   ];
 
-  it("with nothing typed, lists recents first, then groups, and hides search-only items", () => {
-    const ranked = rank("", items, ["project:devbox/fleetd", "gone"]);
-    expect(ranked.recent.map((i) => i.id)).toEqual(["project:devbox/fleetd"]);
-    expect(ranked.matches.map((i) => i.id)).toEqual(["project:devbox/storefront", "status.toggle", "settings.open"]);
+  const used = (entries: Record<string, number>) => new Map(Object.entries(entries));
+
+  it("with nothing typed, suggests the most used first, then groups, and hides search-only items", () => {
+    const ranked = rank("", items, used({ "status.toggle": 1, "project:devbox/fleetd": 3, gone: 9 }));
+    expect(ranked.suggested.map((i) => i.id)).toEqual(["project:devbox/fleetd", "status.toggle"]);
+    expect(ranked.matches.map((i) => i.id)).toEqual(["project:devbox/storefront", "settings.open"]);
   });
 
   it("finds by keyword, ranks the exact name first and ignores scattered letters", () => {
-    expect(rank("w14", items, []).matches.map((i) => i.id)).toEqual(["project:devbox/storefront"]);
-    const fleetd = rank("fleetd", items, []).matches.map((i) => i.id);
+    expect(rank("w14", items).matches.map((i) => i.id)).toEqual(["project:devbox/storefront"]);
+    const fleetd = rank("fleetd", items).matches.map((i) => i.id);
     expect(fleetd[0]).toBe("project:devbox/fleetd");
     expect(fleetd).toContain("go:settings.prompts");
     expect(fleetd).not.toContain("settings.open");
-    expect(rank("dn", items, []).matches).toEqual([]);
+    expect(rank("dn", items).matches).toEqual([]);
   });
 
-  it("searches keywords, and breaks ties by what was run lately", () => {
+  it("finds a word in a detail, but not letters scattered through it", () => {
+    const list = [item("j", "Research judge", "prompts", { detail: "Decides whether a research claim's check passed." }), item("s", "Status", "go-to", { detail: "Every project: working, waiting on you" })];
+    expect(rank("dark", list).matches).toEqual([]);
+    expect(rank("waiting", list).matches.map((i) => i.id)).toEqual(["s"]);
+  });
+
+  it("lets what you use most rise among close matches, never over a clearly better one", () => {
     const list = [item("a", "Board", "go-to"), item("b", "Board", "go-to"), item("c", "Settings", "settings", { keywords: ["preferences"] })];
-    expect(rank("board", list, ["b"]).matches.map((i) => i.id)).toEqual(["b", "a"]);
-    expect(rank("prefs", list, []).matches.map((i) => i.id)).toEqual(["c"]);
+    expect(rank("board", list, used({ b: 1 })).matches.map((i) => i.id)).toEqual(["b", "a"]);
+    expect(rank("prefs", list).matches.map((i) => i.id)).toEqual(["c"]);
+    const close = [item("x", "storefront", "projects"), item("y", "Status", "go-to")];
+    // Equal matches: projects come first, until Status is the one you use.
+    expect(rank("st", close).matches[0]?.id).toBe("x");
+    expect(rank("st", close, used({ y: 2 })).matches[0]?.id).toBe("y");
+    // Heavy use of a scattered match doesn't beat a name that starts with the query.
+    const far = [item("p", "Prompts for fleetd", "prompts"), item("f", "fleetd", "projects")];
+    expect(rank("fleetd", far, used({ p: 1000 })).matches[0]?.id).toBe("f");
+    expect(boost(1000)).toBe(8);
   });
 
-  it("keeps five recents, newest first, without repeats", () => {
-    expect(pushRecent(["a", "b", "c", "d", "e"], "c")).toEqual(["c", "a", "b", "d", "e"]);
-    expect(pushRecent(["a", "b", "c", "d", "e"], "f")).toEqual(["f", "a", "b", "c", "d"]);
+  it("shows each group once, in the order of its best match", () => {
+    const mixed = [
+      item("p1", "Status report", "prompts"),
+      item("s1", "Status", "go-to"),
+      item("p2", "Stash", "prompts"),
+      item("x1", "Settings · status bar", "settings"),
+    ];
+    const rows = buildRows("st", mixed, new Map());
+    const labels = rows.flatMap((r) => (r.label === undefined ? [] : [r.label]));
+    expect(labels).toEqual([...new Set(labels)]);
+    expect(rows[0]?.item.id).toBe("s1");
+    expect(rows.map((r) => r.item.group)).toEqual(["go-to", "prompts", "prompts", "settings"]);
+  });
+});
+
+describe("frecency", () => {
+  const DAY = 86_400_000;
+  it("counts runs, and counts old runs for less", () => {
+    expect(frecency({ count: 4, last: 0 }, DAY / 2)).toBe(4);
+    expect(frecency({ count: 4, last: 0 }, 3 * DAY)).toBeLessThan(4);
+    expect(frecency({ count: 4, last: 0 }, 60 * DAY)).toBeLessThan(frecency({ count: 4, last: 0 }, 10 * DAY));
+  });
+
+  it("records runs and forgets the least used past fifty", () => {
+    let uses = noteUse({}, "a", 0);
+    uses = noteUse(uses, "a", 1);
+    expect(uses["a"]).toEqual({ count: 2, last: 1 });
+    for (let i = 0; i < 60; i += 1) uses = noteUse(uses, `x${String(i)}`, 2);
+    expect(Object.keys(uses)).toHaveLength(50);
+    expect(uses["a"]?.count).toBe(2);
+  });
+
+  it("never drops the item just run, even once fifty more used ones fill the list", () => {
+    let uses: Record<string, { count: number; last: number }> = {};
+    for (let i = 0; i < 50; i += 1) uses = { ...uses, [`old${String(i)}`]: { count: 9, last: 0 } };
+    uses = noteUse(uses, "new", 1);
+    expect(uses["new"]).toEqual({ count: 1, last: 1 });
+    expect(Object.keys(uses)).toHaveLength(50);
+  });
+});
+
+describe("match highlighting", () => {
+  it("marks the word the query names, not the first letter that happens to match", () => {
+    expect(match("fleetd", "Prompts for fleetd")?.at).toEqual([12, 13, 14, 15, 16, 17]);
+    expect(match("max agents", "Max agents")?.at).toEqual([0, 1, 2, 4, 5, 6, 7, 8, 9]);
+    expect(match("xyz", "Max agents")).toBeUndefined();
+  });
+});
+
+describe("settings by their names", () => {
+  it("offers a theme switch for \"dark\", hidden while it is already dark", () => {
+    const set: string[] = [];
+    const light = themeCommands("light", (m) => set.push(m));
+    const found = rank("dark", light.filter((c) => c.enabled?.() ?? true)).matches;
+    expect(found[0]?.title).toBe("Switch to dark theme");
+    found[0]?.run();
+    expect(set).toEqual(["dark"]);
+    expect(themeCommands("dark", () => undefined).find((c) => c.id === "theme:dark")?.enabled?.()).toBe(false);
   });
 });
 
@@ -158,7 +230,7 @@ describe("keys while the palette is open", () => {
   });
   const ctrl = (k: string, code: string) => ({ key: k, code, metaKey: false, ctrlKey: true, shiftKey: false, altKey: false, repeat: false, isComposing: false });
 
-  it("holds back only the palette's own Ctrl+N/P off macOS; other shortcuts still run", () => {
+  it("holds back only the palette's own Ctrl+N/P (off macOS) and ⌘K; other shortcuts still run", () => {
     offs.push(
       registerCommands([
         item("palette.toggle", "Palette", "actions"),
@@ -167,7 +239,9 @@ describe("keys while the palette is open", () => {
       ]),
     );
     expect(dispatchable(ctrl("n", "KeyN"), "linux", true)).toBeUndefined();
-    expect(dispatchable(ctrl("k", "KeyK"), "linux", true)).toBe("palette.toggle");
+    // ⌘K is the palette's own while it is open: it lists the selected item's actions, or closes.
+    expect(dispatchable(ctrl("k", "KeyK"), "linux", true)).toBeUndefined();
+    expect(dispatchable(ctrl("k", "KeyK"), "linux", false)).toBe("palette.toggle");
     expect(dispatchable(ctrl("1", "Digit1"), "linux", true)).toBe("project.open.1");
     // The footer's "All shortcuts" key works from inside the palette.
     expect(dispatchable(ctrl("/", "Slash"), "linux", true)).toBe("shortcuts.show");
@@ -201,8 +275,28 @@ describe("projects", () => {
 
   it("is found fuzzily and listed before the go-tos when nothing is typed", () => {
     const items = [...projectItems(state([live(), snapshot(1)]), () => undefined), item("status.toggle", "Status", "go-to")];
-    expect(rank("stfr", items, []).matches.map((i) => i.title)).toEqual(["storefront"]);
-    expect(rank("", items, []).matches.map((i) => i.group)).toEqual(["projects", "go-to"]);
+    expect(rank("stfr", items).matches.map((i) => i.title)).toEqual(["storefront"]);
+    expect(rank("", items).matches.map((i) => i.group)).toEqual(["projects", "go-to"]);
+  });
+
+  it("offers the project's other pages as actions, scoped to it", () => {
+    const opened: string[] = [];
+    const [project] = projectItems(state([live(), snapshot(1)]), (hash) => opened.push(hash));
+    expect(project?.actions?.map((a) => a.title)).toEqual(["Pull requests in this project", "Instructions for this project", "Prompts for this project", "Max agents for this project"]);
+    for (const action of project?.actions ?? []) action.run();
+    expect(opened).toEqual([
+      "#/prs/devbox/storefront",
+      "#/settings/instructions?for=devbox/storefront",
+      "#/settings/prompts?for=devbox/storefront",
+      "#/settings/agents?for=devbox/storefront",
+    ]);
+  });
+
+  it("knows the project on screen, so the palette opens on it", () => {
+    expect(currentProjectItem("#/project/devbox/storefront")).toBe("project:devbox/storefront");
+    expect(currentProjectItem("#/project/dev%20box/a%2Fb?message=m1")).toBe("project:dev box/a/b");
+    expect(currentProjectItem("#/prs/devbox/storefront/acme/storefront/11")).toBe("project:devbox/storefront");
+    expect(currentProjectItem("#/status")).toBeUndefined();
   });
 
   it("lists nothing until the hub's snapshot arrives", () => {

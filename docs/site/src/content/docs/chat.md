@@ -14,17 +14,21 @@ Lead:  Fixed in "Align the checkout button on Safari", merged.
 
 Each project has one lead and one ongoing chat. Click the project in the sidebar to open it.
 
-![The storefront project's chat: you asked to round the cart totals once, the lead replied that writers are splitting the change into three PRs, and under its message the strip shows three agents working. In the sidebar, billing has the needs-you dot.](/docs/img/chat.png)
+![The storefront project's chat: you asked to round the cart totals once, the lead replied that writers are splitting the change into three PRs, and under its message the strip shows three agents working. In the sidebar, billing says reply and checkout says blocked.](/docs/img/chat.png)
 
 ## Send a message {#send}
 
-Type in the box at the bottom of the chat and press Enter. Shift+Enter adds a new line.
+Type in the box at the bottom of the chat and press Enter. Shift+Enter adds a new line. The box has the cursor
+as soon as a chat opens. A new chat asks what the lead should do, with a few starters that fill the box for you to edit.
 
 | You can | How |
 |---|---|
 | Describe work | In your own words. The lead turns it into tasks itself. |
 | Attach files | Paste, drop, or attach images, text or PDF. The lead gets them with your message. |
 | Paste a screenshot | Paste it into the box. |
+| Send it again | Press ↑ in the empty box to bring back your last message. |
+
+Words you haven't sent stay in each project's box, even after you quit the app.
 
 The lead keeps its own plan and bookkeeping. You never file tasks or orders yourself.
 
@@ -74,8 +78,11 @@ Reply in plain words, or tersely:
 | `nvm` | Drop it. |
 | `2: keep it for two releases` | Answer an item in your own words. |
 
-The lead logs each answer as a [decision](/docs/glossary#decision), so it never asks the same thing twice. A project
-shows a dot in the sidebar while the lead's last message waits for your reply, or a secret or approval item is open.
+The lead logs each answer as a [decision](/docs/glossary#decision), so it never asks the same thing twice. In the
+sidebar, a project says "reply" while the lead's last message waits for your answer, "secret" or "approve" while an
+item is open, and "blocked" when something outside the work holds it up. ⌥⌘A jumps to the next one. In the chat, a
+line above the box says what it waits on, such as "2 questions, asked at 09:02" or "1 command to approve". Click Show
+to scroll to it.
 
 ## Steer while it works {#steer}
 
@@ -87,6 +94,10 @@ A message reaches the lead at once. How depends on what the lead is doing:
 | Working | Is a steer: it reads it at its next step, after the tool it is running. The box says so while you type. |
 | Starting, or its machine is away | Is held, and goes in as soon as it can. The chat says why it waits. |
 
+To stop the work, click Stop beside Send (or "Stop the lead and its agents" in the command palette). The lead's turn
+and every agent of the project stop now, and a line in the chat says what stopped. Then tell the lead what to do
+instead.
+
 A message is never lost: if it can't be delivered, it stays held, the chat says why, and fleetd keeps trying.
 
 A small receipt under your message shows when it was taken in. See [Steering](/docs/steering).
@@ -97,11 +108,29 @@ Everything shows up in the chat, quietly:
 
 | In the chat | Shows |
 |---|---|
-| The agents strip, under the lead's message | How many agents are working, one line each. Expand it for their lanes and where time went. |
+| The agents strip, under the lead's message | One line: how many agents are working, and on which PRs. Expand it to see each agent's role, what it's doing and for how long. Click an agent waiting on you to jump to what it needs. |
+| A quiet line under the lead's reply | While the lead works: how long it has been working, what it's doing now, and the orders and agents it started. When it's done: how long it worked, such as "Worked for 3m 40s". |
 | One-line events | A pull request opened, merged, or sent back. |
 
 For a project's progress at a glance, see [Status](/docs/status). For where the time went, see
 [Where time went](/docs/time-inspector).
+
+## Read a pull request {#prs}
+
+Choose **Pull requests** in the sidebar, or click a PR's number in the agents strip or in [Agents](/docs/desktop-app#agents),
+to read the project's PRs in the app: open ones first, then those merged or closed in the last week. The sidebar opens
+the PRs of the project you're in. For another project's, open the command palette (⌘K), select the project, press ⌘K
+again and choose **Pull requests in this project**.
+
+If GitHub can't be reached or its rate limit is reached, the list says so: you see the PRs fleetd made, or GitHub's last
+answer, and **Retry** asks again.
+
+| A PR shows | |
+|---|---|
+| Overview | Where it is on its way to main, its checks, its reviews with their findings, the agent that wrote it, the agents at work on it now, and its description. |
+| Changes | The changed files and their diff, in one column or side by side. Click a file to jump to it. |
+
+**Open on GitHub** is always there, for anything the app doesn't show.
 
 ## Earlier work {#history}
 
@@ -133,9 +162,10 @@ Two things never go through plain chat text:
 | Item | What you see | What you do |
 |---|---|---|
 | A secret the lead needs | A masked field naming the machine and where the value goes | Paste or type the value and click "Save secret". It never enters the chat. |
-| A risky command | The exact command, why, and where it runs | Approve or Deny. |
+| A risky command | The exact command, why, and where it runs | Approve or Deny. One that can't be undone asks once more. |
 
-See [Secrets & approvals](/docs/approvals-and-secrets).
+Once answered, each folds to one line that opens back up on a click. See
+[Secrets & approvals](/docs/approvals-and-secrets).
 
 ## Done, checked {#done}
 

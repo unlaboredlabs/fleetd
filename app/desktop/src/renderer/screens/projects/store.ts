@@ -164,11 +164,6 @@ export const setText = (text: string): void => {
   set({ ...rest, text });
 };
 
-export const setNote = (note: Note | undefined): void => {
-  const rest = omit(ui, "note");
-  set(note ? { ...rest, note } : rest);
-};
-
 export const pickMachine = (machine: string): void => set({ ...ui, machine });
 
 export const startAdd = (request: Request, path: string): void => dispatch({ t: "start", request, path });

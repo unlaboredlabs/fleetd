@@ -85,9 +85,9 @@ describe("the ready state", () => {
       repo: "acme/mailer",
       defaultBranch: "main",
       merge: { protected: false, rulesets: [], squashAllowed: true },
-      leadNeeds: "no CI found: the merge train will only use local checks",
+      leadNeeds: "no CI found: the merge train holds its PRs until the repo has CI",
     }));
-    expect(none.leadLine).toBe("No CI found: the merge train will only use local checks.");
+    expect(none.leadLine).toBe("No CI found: the merge train holds its PRs until the repo has CI.");
     expect(none.leadOk).toBe(false);
     expect(none.facts).toEqual([
       ["Repo", "acme/mailer"],

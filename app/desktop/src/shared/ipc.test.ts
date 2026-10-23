@@ -77,12 +77,12 @@ describe("parseRequest", () => {
     expect(parseRequest(IPC.hubCall, [{ tool: "x", input: {}, timeoutMs: 1.5 }]).ok).toBe(false);
   });
 
-  it("takes a live scope or null, and nothing else", () => {
-    expect(parseRequest(IPC.hubLive, [null]).ok).toBe(true);
-    expect(parseRequest(IPC.hubLive, [{ board: true, focus: "ws-1" }]).ok).toBe(true);
-    expect(parseRequest(IPC.hubLive, [{ board: "yes" }]).ok).toBe(false);
-    expect(parseRequest(IPC.hubLive, [{ board: true, focus: "" }]).ok).toBe(false);
-    expect(parseRequest(IPC.hubLive, []).ok).toBe(false);
+  it("takes an order to focus or null, and nothing else", () => {
+    expect(parseRequest(IPC.hubFocus, [null]).ok).toBe(true);
+    expect(parseRequest(IPC.hubFocus, ["ws-1"]).ok).toBe(true);
+    expect(parseRequest(IPC.hubFocus, [""]).ok).toBe(false);
+    expect(parseRequest(IPC.hubFocus, [{ board: true }]).ok).toBe(false);
+    expect(parseRequest(IPC.hubFocus, []).ok).toBe(false);
   });
 
   it("trims a pasted URL and key, and refuses blank ones", () => {
@@ -100,8 +100,8 @@ describe("parseRequest", () => {
   });
 
   it("gives argument-less channels no arguments", () => {
-    expect(parseRequest(IPC.hubState, []).ok).toBe(true);
-    expect(parseRequest(IPC.hubState, [1]).ok).toBe(false);
+    expect(parseRequest(IPC.hubResync, []).ok).toBe(true);
+    expect(parseRequest(IPC.hubResync, [1]).ok).toBe(false);
   });
 
   it("reads a drop only at an absolute path, and the folder picker takes nothing", () => {

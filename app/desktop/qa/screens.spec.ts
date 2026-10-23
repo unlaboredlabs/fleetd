@@ -2,7 +2,7 @@
 
 import { expect, test } from "@playwright/test";
 import { assertAlive, assertExpectedState, describeFindings, launch, reservedRegions, type Shot, setView, settle, shoot, show } from "./harness.ts";
-import { label, screens, sizes, themes } from "./registry.ts";
+import { defaultSizes, label, screens, themes } from "./registry.ts";
 
 test.describe.configure({ mode: "parallel" });
 
@@ -12,16 +12,19 @@ for (const screen of screens) {
   if (only && !only.includes(screen.id)) continue;
   for (const fixture of screen.fixtures) {
     test(`${label(screen)} · ${fixture}`, async () => {
-      test.fixme(screen.pending !== undefined, screen.pending);
-      const { app, page, settled, replay, errors, close } = await launch(fixture, undefined, undefined, { realClock: screen.realClock === true });
+      const { app, page, settled, replay, errors, close } = await launch(fixture, undefined, { realClock: screen.realClock === true });
       try {
         const reserved = await reservedRegions(app);
         const shots: Shot[] = [];
-        // Shown once, then resized: a screen opened by an interaction stays open, as it would for a user.
+        const shotSizes = screen.sizes ?? defaultSizes;
+        // Shown once, at the first size it is shot at (the sidebar hides itself in a narrow window), then resized: a
+        // screen opened by an interaction stays open, as it would for a user.
         await settled();
+        await setView(app, page, shotSizes[0] ?? "small", themes[0]);
+        const { open } = screen;
         // A blank window never shows the screen, so say that rather than time out waiting for it.
         const up = async () => {
-          await show(page, screen.id, screen.route, screen.open).catch(async (error: unknown) => {
+          await show(page, screen.id, screen.route, open && ((p) => open(p, app))).catch(async (error: unknown) => {
             await assertAlive(page, screen, errors);
             throw error;
           });
@@ -33,7 +36,7 @@ for (const screen of screens) {
           await up();
         }
         await assertExpectedState(page, screen);
-        for (const size of screen.sizes ?? (Object.keys(sizes) as (keyof typeof sizes)[])) {
+        for (const size of shotSizes) {
           for (const theme of themes) {
             await setView(app, page, size, theme);
             await settle(page);

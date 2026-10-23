@@ -1,10 +1,11 @@
-/* The frame: top bar across, sidebar left, content right. Content keeps the QA gate's edge inset. */
+/* The frame: the sidebar down the left from the top of the window, the top row and the content beside it. Content
+   keeps the QA gate's edge inset. */
 .frame {
   display: grid;
   grid-template-rows: var(--top-bar-height) minmax(0, 1fr);
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
   grid-template-areas:
-    "top top"
+    "side top"
     "side main";
   height: 100%;
   min-height: 0;
@@ -19,9 +20,6 @@
 .frame > .topBar {
   grid-area: top;
 }
-.frame > .sidebar {
-  grid-area: side;
-}
 .main {
   grid-area: main;
   min-width: 0;
@@ -29,6 +27,36 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background: var(--bg);
+}
+
+.side {
+  grid-area: side;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--sidebar);
+}
+/* The sidebar's first row: the traffic lights on macOS, then its own controls. Part of the drag region. */
+.sideTop {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-1);
+  height: var(--top-bar-height);
+  padding-inline: max(var(--space-3), var(--traffic-lights-inset)) var(--space-2);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+/* The window's own frame on macOS: the sidebar is the window's vibrancy (main/index.ts), so nothing here paints
+   over it. The page and the top row stay opaque. Static: the window server composites it, the page never repaints
+   for it. Everywhere else (Linux, Reduce transparency) the sidebar is the plain --sidebar tone. */
+:root[data-vibrancy] .translucent,
+:root[data-vibrancy] .translucent > .side {
+  background: transparent;
 }
 
 .topBar {
@@ -37,11 +65,15 @@
   gap: var(--space-2);
   min-width: 0;
   height: var(--top-bar-height);
-  padding-inline: max(var(--space-3), var(--traffic-lights-inset)) var(--space-3);
+  padding-inline: var(--space-4) var(--space-3);
   border-bottom: 1px solid var(--hairline);
-  background: var(--sidebar);
+  background: var(--bg);
   -webkit-app-region: drag;
   user-select: none;
+}
+/* With the sidebar hidden, the top row starts after the traffic lights. */
+.noSidebar > .topBar {
+  padding-inline-start: max(var(--space-3), var(--traffic-lights-inset));
 }
 .topLeading,
 .topTrailing {
@@ -55,6 +87,24 @@
   align-items: center;
   gap: var(--space-2);
   flex: 1;
+  min-width: 0;
+}
+/* FrameTitle: the title has the room first, then its detail; the page's controls after them keep their size. */
+.frameTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1 1 0;
+  min-width: 0;
+}
+.frameHeading {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--text-md);
+}
+.frameDetail {
+  flex: 0 1000 auto;
   min-width: 0;
 }
 
@@ -104,11 +154,17 @@
 .sidebar {
   display: flex;
   flex-direction: column;
+  flex: 1;
   min-width: 0;
   min-height: 0;
-  background: var(--sidebar);
+}
+.sidebarBody {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: var(--space-2) var(--space-2) var(--space-3);
+  padding: 0 var(--space-2) var(--space-3);
 }
 .sidebarSection + .sidebarSection {
   margin-top: var(--space-3);

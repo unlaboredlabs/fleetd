@@ -4,9 +4,9 @@
 // is driven over the DevTools protocol through window.fleetd, exactly as the renderer uses it:
 // 1. auth + snapshot: the state goes live and a snapshot with both lab machines arrives;
 // 2. call: fleetd_status answers, an unknown tool comes back as not_found, a malformed request is refused in main;
-// 3. live: a board subscription gets a full frame;
+// 3. live: the board subscription main sends on every ready gets a full frame;
 // 4. events: stopping and starting lab-b's node streams machine.offline and machine.online;
-// 5. liveness: with live frames off, a quiet link stays live for 50 s (the client pings; the hub answers);
+// 5. liveness: an idle link stays live for 50 s (the client pings; the hub answers);
 // 6. reconnect: a hub restart shows retrying, then live with a fresh snapshot, and events and live flow again;
 // 7. pairing through window.fleetd.hub.connect: a refused key (close 4401) stops at the refused state; the right key
 //    goes live, is saved (0600, never in the page), and a relaunch connects from the saved key.
@@ -22,7 +22,7 @@ const MAIN = path.join(DESKTOP, "out/main/index.js");
 const DEVTOOLS = [4788, 4789] as const;
 const MACHINE = "lab-b";
 
-interface Page {
+export interface Page {
   readonly eval: <A>(expression: string) => Promise<A>;
   /** Resolves once the app (when launched here) has exited. */
   readonly close: () => Promise<void>;
@@ -59,7 +59,7 @@ const connectPage = async (port: number): Promise<Page> => {
 };
 
 /** Launches the built app, with the hub and key for this run only or (null) its saved ones; stopped by its PID. */
-const launch = async (lab: Lab, name: string, port: number, hub: { url: string; key: string } | null, fresh = true): Promise<Page> => {
+export const launch = async (lab: Lab, name: string, port: number, hub: { url: string; key: string } | null, fresh = true): Promise<Page> => {
   // Electron fetches its binary on first use and prints its progress to stdout, so the path comes after a marker.
   const out = execFileSync(process.execPath, ["-e", "process.stdout.write('\\n@electron=' + require('electron') + '\\n')"], { cwd: DESKTOP, encoding: "utf8" });
   const electron = /^@electron=(.+)$/mu.exec(out)?.[1];
@@ -137,8 +137,7 @@ export async function desktopShell(lab: Lab) {
   check(invalid.includes("invalid request"), `main refuses a malformed request: ${invalid}`);
   ok(`call: fleetd_status ok (${status.output.machines.length} machines); unknown tool -> ${unknown.error.code}; malformed request refused in main`);
 
-  // 3. live
-  await app.eval(`window.fleetd.hub.live({ board: true })`);
+  // 3. live: main subscribes on every ready
   const live = await until("a full live frame", 15_000, async () => (await frames()).find((f) => f.t === "live" && f.frame.full === true)?.frame);
   ok(`live: full frame with ${(live.lanes as Array<unknown>).length} lanes, ${(live.machines as Array<unknown> | undefined)?.length ?? 0} machines`);
 
@@ -157,13 +156,11 @@ export async function desktopShell(lab: Lab) {
   ok(`events: machine.offline #${offline.seq}, machine.online #${online.seq}, ${seqs.length} events in order after cursor ${snapshot.cursor}`);
 
   // 5. liveness
-  await app.eval(`window.fleetd.hub.live(null)`);
-  const quietFrom = (await frames()).length;
+  const idleFrom = (await frames()).length;
   await new Promise((r) => setTimeout(r, 50_000));
-  const quiet = (await frames()).slice(quietFrom);
-  check(!quiet.some((f) => f.t === "state"), `a quiet link stays live: ${JSON.stringify(quiet.filter((f) => f.t === "state"))}`);
-  await app.eval(`window.fleetd.hub.live({ board: true })`);
-  ok(`liveness: 50 s with ${quiet.length} frames and no state change`);
+  const idle = (await frames()).slice(idleFrom);
+  check(!idle.some((f) => f.t === "state"), `an idle link stays live: ${JSON.stringify(idle.filter((f) => f.t === "state"))}`);
+  ok(`liveness: 50 s with ${idle.length} frames and no state change`);
 
   // 6. reconnect
   const snapshotsBefore = await count("snapshot");
@@ -189,7 +186,9 @@ export async function desktopShell(lab: Lab) {
   // 7. pairing
   const pairPort = slotPort(DEVTOOLS[1]);
   let pairing = await launch(lab, "pairing", pairPort, null);
-  const phase = async () => (await pairing.eval<Body>("window.fleetd.hub.state()")).phase as string;
+  // Every subscriber starts from the current state, and main pushes each change.
+  const lastState = async () => (await pairing.eval<Array<Body>>("window.__frames")).findLast((f) => f.t === "state")?.state as Body;
+  const phase = async () => (await lastState()).phase as string;
   check((await phase()) === "unpaired", "a fresh home starts unpaired");
   const unpairedCall = await pairing.eval<Body>(`window.fleetd.hub.call("fleetd_status", {})`);
   check(unpairedCall.ok === false && unpairedCall.error.code === "offline", `a call while unpaired: ${JSON.stringify(unpairedCall)}`);
@@ -197,7 +196,7 @@ export async function desktopShell(lab: Lab) {
   check(badUrl.ok === false, `a bad URL is refused before anything is saved: ${JSON.stringify(badUrl)}`);
   await pairing.eval(`window.fleetd.hub.connect(${JSON.stringify(lab.hubUrl)}, "fld_${"a".repeat(26)}")`);
   const refused = await until("the refused state", 30_000, async () => {
-    const state = await pairing.eval<Body>("window.fleetd.hub.state()");
+    const state = await lastState();
     return state.phase === "refused" ? state : undefined;
   });
   ok(`refused key: "${refused.message}"`);

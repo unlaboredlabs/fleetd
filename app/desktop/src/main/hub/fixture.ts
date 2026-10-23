@@ -13,7 +13,7 @@ const hubError = z.object({ code: z.string(), message: z.string(), fix: z.string
 const State = z.discriminatedUnion("phase", [
   z.object({ phase: z.literal("unpaired"), note: z.string().optional() }),
   z.object({ phase: z.literal("connecting"), hub: z.string(), attempt: z.int().min(0) }),
-  z.object({ phase: z.literal("live"), hub: z.string(), protocol: z.int() }),
+  z.object({ phase: z.literal("live"), hub: z.string(), protocol: z.int(), version: z.string().optional() }),
   z.object({ phase: z.literal("retrying"), hub: z.string(), reason: z.string(), fix: z.string().optional(), retryAt: z.number() }),
   z.object({ phase: z.literal("refused"), hub: z.string(), message: z.string() }),
 ]);
@@ -64,15 +64,14 @@ const FixtureFile = z.object({
     }),
   ),
   connect: z.union([z.object({ ok: z.literal(true) }), z.object({ ok: z.literal(false), message: z.string() })]).optional(),
+  /** The renderer's disk cache as an earlier launch left it (src/renderer/src/data/cache.ts); never written over. */
+  cache: z.json().optional(),
 });
 export type FixtureFile = z.infer<typeof FixtureFile>;
 
-/** Set alongside FLEETD_FIXTURE to use a fixture in a release build (a QA run of what ships). */
-export const ALLOW_PACKAGED = "FLEETD_DEV_FIXTURES";
-
 /**
- * Which fixture, if any, replaces the hub. A release build ignores a stray FLEETD_FIXTURE (fake data must never pass
- * for a real hub) unless FLEETD_DEV_FIXTURES=1 is set too.
+ * Which fixture, if any, replaces the hub. A release build ignores FLEETD_FIXTURE: fake data must never pass for a real
+ * hub. QA and the packaged smoke run the test build.
  */
 export const fixtureRequest = (
   vars: NodeJS.ProcessEnv,
@@ -80,9 +79,7 @@ export const fixtureRequest = (
 ): { kind: "none" } | { kind: "ignored"; reason: string } | { kind: "fixture"; name: string } => {
   const name = vars["FLEETD_FIXTURE"];
   if (name === undefined || name === "") return { kind: "none" };
-  if (release && vars[ALLOW_PACKAGED] !== "1") {
-    return { kind: "ignored", reason: `FLEETD_FIXTURE is ignored in a release build unless ${ALLOW_PACKAGED}=1 is set too.` };
-  }
+  if (release) return { kind: "ignored", reason: "FLEETD_FIXTURE is ignored in a release build." };
   return { kind: "fixture", name };
 };
 
@@ -209,13 +206,19 @@ export class FixtureSource implements HubSource {
     return { ok: true, output };
   }
 
-  live(): void {}
-
   chat(): void {}
+
+  focus(): void {}
 
   refreshLive(): void {}
 
-  reconnectNow(): void {}
+  // Retry now while waiting out a retry: the attempt starts and, with no hub behind a fixture, keeps running.
+  reconnectNow(): void {
+    const s = this.#state;
+    if (s.phase !== "retrying") return;
+    this.#state = { phase: "connecting", hub: s.hub, attempt: 1 };
+    this.#emit({ t: "state", state: this.#state });
+  }
 
   #cancelReplay(): void {
     for (const timer of this.#replay) clearTimeout(timer);

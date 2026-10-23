@@ -11,6 +11,7 @@ import { fixtureRequest, loadFixture } from "./hub/fixture";
 import { fromEnv } from "./hub/credentials";
 import { osCredentialEnv } from "./hub/os";
 import type { KeyStore } from "../shared/pairing";
+import { HubCacheFile } from "./hub/cache";
 import { HubService, type HubMode } from "./hub/service";
 import { webSocketTransport } from "./hub/transport";
 import { instrument } from "./instrument";
@@ -31,7 +32,9 @@ import { restorePlacement, trackPlacement } from "./windowState";
 const TOP_BAR = 44;
 const TRAFFIC_LIGHT = 16;
 
-const LIMITS = { width: 1400, height: 900, minWidth: 1024, minHeight: 700 };
+// Below 1000 px wide the sidebar hides itself (renderer/screens/shell/Shell.tsx), so a 900 px window still gives the
+// chat its full width.
+const LIMITS = { width: 1400, height: 900, minWidth: 900, minHeight: 600 };
 
 /**
  * The fleetd dir, shared with the CLI (app-pair.json) and the GPUI app (hub.json): `<appData>/fleetd`, i.e.
@@ -107,7 +110,13 @@ const hubMode = (): { mode: HubMode; fixtureFile: string | null; keyStore: KeySt
   if (request.kind !== "fixture") {
     const credentials = osCredentialEnv(FLEETD_DIR, fleetdHome !== undefined);
     return {
-      mode: { kind: "hub", credentials, vars: process.env, transport: webSocketTransport },
+      mode: {
+        kind: "hub",
+        credentials,
+        vars: process.env,
+        transport: webSocketTransport,
+        cache: new HubCacheFile(join(app.getPath("userData"), "hub-cache.json")),
+      },
       fixtureFile: null,
       keyStore: fromEnv(process.env) === null ? credentials.store : { kind: "env" },
     };
@@ -128,9 +137,19 @@ const createWindow = (mode: HubMode): BrowserWindow => {
     minHeight: LIMITS.minHeight,
     show: false,
     title: "fleetd",
-    // Painted before the page is, so a dark system never flashes white.
-    backgroundColor: nativeTheme.shouldUseDarkColors ? "#111214" : "#ffffff",
-    ...(mac ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 16, y: (TOP_BAR - TRAFFIC_LIGHT) / 2 } } : {}),
+    // Painted before the page is, so a dark system never flashes white. On macOS the window's own material shows
+    // instead: the page paints everything but the sidebar, which stays clear over it.
+    backgroundColor: mac ? "#00000000" : nativeTheme.shouldUseDarkColors ? "#111214" : "#ffffff",
+    ...(mac
+      ? {
+          titleBarStyle: "hiddenInset" as const,
+          trafficLightPosition: { x: 16, y: (TOP_BAR - TRAFFIC_LIGHT) / 2 },
+          // The translucent sidebar: an NSVisualEffectView the window server composites behind the page. It is
+          // static (nothing in the page repaints for it) and goes opaque on its own with Reduce transparency.
+          vibrancy: "sidebar" as const,
+          visualEffectState: "followWindow" as const,
+        }
+      : {}),
     webPreferences: {
       preload: join(import.meta.dirname, "../preload/index.cjs"),
       contextIsolation: true,
@@ -138,9 +157,13 @@ const createWindow = (mode: HubMode): BrowserWindow => {
       nodeIntegration: false,
       webSecurity: true,
       spellcheck: false,
-      // The page shows a "sample data" banner for as long as a fixture stands in for the hub, and the version in an
-      // error card's Copy details.
-      additionalArguments: [`--fleetd-version=${app.getVersion()}`, ...(mode.kind === "fixture" ? [`--fleetd-fixture=${mode.fixture.name}`] : [])],
+      additionalArguments: [
+        // The version, for an error card's Copy details.
+        `--fleetd-version=${app.getVersion()}`,
+        // The page shows a "sample data" banner for as long as a fixture stands in for the hub.
+        ...(mode.kind === "fixture" ? [`--fleetd-fixture=${mode.fixture.name}`] : []),
+        ...(mac ? ["--fleetd-vibrancy"] : []),
+      ],
     },
   });
   win.once("ready-to-show", () => {
@@ -148,6 +171,8 @@ const createWindow = (mode: HubMode): BrowserWindow => {
     if (placement.fullScreen) win.setFullScreen(true);
     win.show();
   });
+  // With no window the page can't keep the count current; a stale one would lie.
+  win.once("closed", () => app.setBadgeCount(0));
   trackPlacement(win);
   guardWindow(win, {
     log: appLog,
@@ -183,8 +208,10 @@ void app.whenReady().then(() => {
   let mode: HubMode;
   let pairing: PairingService;
   let hub: HubService;
+  let fixtureFile: string | null;
   try {
     const chosen = hubMode();
+    fixtureFile = chosen.fixtureFile;
     mode = chosen.mode;
     const service = new HubService(mode);
     hub = service;
@@ -202,9 +229,9 @@ void app.whenReady().then(() => {
     app.exit(2);
     return;
   }
-  registerIpc(hub, { opener, notifier: new Notifier(opener), log: appLog }, pairing);
-  const updater = updates();
-  installMenu(opener, updater?.checkNow ?? null, help);
+  const updater = updates(fixtureFile);
+  registerIpc(hub, { opener, notifier: new Notifier(opener), log: appLog, updates: updater }, pairing);
+  installMenu(opener, help);
   claimOnFirstRun();
   app.on("browser-window-focus", () => hub.windowFocused());
   powerMonitor.on("resume", () => hub.systemResumed());
@@ -216,7 +243,7 @@ void app.whenReady().then(() => {
     },
   });
   createWindow(mode);
-  updater?.start();
+  updater.start();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow(mode);
   });

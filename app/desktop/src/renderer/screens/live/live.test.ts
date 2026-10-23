@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { ChatMessage, FleetStatus, LiveFrame, OrderCard } from "../../../shared/contracts";
+import type { FleetStatus, LiveFrame, OrderCard } from "../../../shared/contracts";
 import { applyFrame, ingest, initialState } from "../../src/data/store";
 import type { AgentLane, LaneStatus } from "./contracts";
-import { isEventLine } from "./EventLine";
-import { groupLabel } from "./fleet";
-import { selectBoardData } from "../../src/data/selectors";
-import { FOLDED_LINES, projectFleet, selectStrip, stripHeadline, stripOf } from "./strip";
+import { selectProjectRow } from "../../src/data/selectors";
+import { projectKey } from "./lanes";
+import { selectStrip, stripHeadline, stripOf, stripPrs } from "./strip";
 
 const T0 = "2026-10-18T10:00:00.000Z";
 const project = { machineId: "devbox", projectId: "storefront" } as const;
@@ -55,25 +54,47 @@ describe("the live strip", () => {
   it("draws nothing until the board loaded, and nothing when no agent is at work", () => {
     expect(selectStrip(project)(state(undefined))).toBeUndefined();
     const idle = selectStrip(project)(state([card("W1", [lane("T1", "done"), lane("L", "working", { role: "lead" })])]));
-    expect(idle?.lines).toEqual([]);
+    expect(idle?.rows).toEqual([]);
     expect(idle && stripHeadline(idle)).toBe("");
   });
 
-  it("counts agents at work, waiting on you and queued apart, and says what each is doing", () => {
+  it("counts agents at work, waiting on you, on hold and queued apart, and says what each is doing", () => {
     const s = stripOf([
       lane("T1", "working", { live: { laneId: "T1", status: "working", activity: { activity: { kind: "edit", path: "src/a.ts" }, since: T0 } } }),
       lane("T2", "waiting", { role: "reviewer", statusReason: "approve npm install" }),
-      lane("T3", "queued", { role: "verifier" }),
+      lane("T4", "parked", { statusReason: "usage limit until 14:00" }),
+      lane("T3", "queued", { role: "qa" }),
     ]);
-    expect(stripHeadline(s)).toBe("1 agent working · 1 needs you · 1 queued");
-    expect(s.lines.map((l) => [l.roleWord, l.words, l.machine])).toEqual([
-      ["implementer", "editing", "src/a.ts"],
+    expect(stripHeadline(s)).toBe("1 agent working · 1 needs you · 1 on hold · 1 queued");
+    expect(s.rows.map((r) => (r.kind === "agent" ? [r.roleWord, r.words, r.machine] : r.kind))).toEqual([
+      ["writer", "editing", "src/a.ts"],
       ["reviewer", "waiting on you: approve npm install", undefined],
-      ["verifier", "queued", undefined],
+      ["writer", "usage limit until 14:00", undefined],
+      ["QA", "queued", undefined],
     ]);
   });
 
-  it("keeps the same object while only a lane's tokens and bars change, so the chat doesn't redraw", () => {
+  // The lab saw the strip say one more agent than max agents allows for a moment: a finished agent's session stops
+  // (its slot frees and the next agent starts) a beat before its task books the result.
+  it("counts an agent as working until its session stops, as max agents does, never one too many", () => {
+    const at = (s: number) => new Date(Date.parse(T0) + s * 1000).toISOString();
+    const base = state(
+      [card("W1", [lane("T1", "working"), lane("T2", "queued")])],
+      [{ at: at(1), full: true, lanes: [{ laneId: "T1", status: "working" }] }],
+    );
+    // T1's session stopped (its task still running, so the hub says idle) and T2 took the freed slot.
+    const [next] = applyFrame(
+      base,
+      { t: "live", frame: { at: at(2), full: false, lanes: [{ laneId: "T1", status: "idle" }, { laneId: "T2", status: "starting" }] } },
+      Date.parse(at(2)),
+    );
+    const s = selectStrip(project)(next);
+    expect(s && stripHeadline(s)).toBe("1 agent working");
+    expect(s?.rows.map((r) => r.key)).toEqual(["T2"]);
+    expect(s?.working).toBe(selectProjectRow(projectKey(project))(next)?.running);
+  });
+
+  it("keeps the same object while only a lane's tokens change, so the chat doesn't redraw", () => {
     const at = (s: number) => new Date(Date.parse(T0) + s * 1000).toISOString();
     const base = state([card("W1", [lane("T1", "working")])], [{ at: at(1), full: true, lanes: [{ laneId: "T1", status: "working" }] }]);
     const sel = selectStrip(project);
@@ -86,55 +107,44 @@ describe("the live strip", () => {
     expect(sel(next)).toBe(first);
   });
 
-  it("folds past a handful of lines", () => {
-    const many = stripOf(Array.from({ length: 20 }, (_, i) => lane(`T${i}`, "working")));
-    expect(many.lines).toHaveLength(20);
-    expect(FOLDED_LINES).toBeLessThan(20);
-    expect(stripHeadline(many)).toBe("20 agents working");
+  it("names the PRs folded: a few in full, then how many more", () => {
+    expect(stripPrs([])).toBe("");
+    expect(stripPrs([221])).toBe("on #221");
+    expect(stripPrs([9, 10, 11])).toBe("on #9, #10 and #11");
+    expect(stripPrs([9, 10, 11, 12])).toBe("on #9, #10, #11 and #12");
+    expect(stripPrs([9, 10, 11, 12, 13])).toBe("on #9, #10, #11 and 2 more");
   });
 });
 
-describe("review counts (#232 blocker)", () => {
-  it("are the same folded and unfolded: the PR's needed reviews, done counted from the hub and the finished reviewers", () => {
-    const pr = (n: number, done: number) => ({
-      changeId: `X${n}`,
-      repo: "acme/storefront",
-      number: n,
-      url: `https://github.com/acme/storefront/pull/${n}`,
-      state: "reviewing" as const,
-      reviewsDone: done,
-      reviewsNeeded: 3,
-    });
-    const on = (id: string, role: AgentLane["role"], n: number, status: LaneStatus = "working") =>
-      lane(id, status, { role, pr: pr(n, 1) });
-    const lanes = [on("R1", "reviewer", 221), on("R2", "reviewer", 221), on("V1", "verifier", 221), on("V2", "verifier", 221), on("R3", "reviewer", 222)];
+describe("the opened strip (#232 blocker: one count per PR)", () => {
+  const pr = (n: number, done: number) => ({
+    changeId: `X${n}`,
+    repo: "acme/storefront",
+    number: n,
+    url: `https://github.com/acme/storefront/pull/${n}`,
+    state: "reviewing" as const,
+    reviewsDone: done,
+    reviewsNeeded: 1,
+  });
+  const on = (id: string, role: AgentLane["role"], n: number, status: LaneStatus = "working") => lane(id, status, { role, pr: pr(n, 1) });
+
+  it("draws one line per PR with the agents on it, the PR's needed reviews, done counted from the hub and the finished reviewers", () => {
+    const lanes = [lane("W", "working"), on("R1", "reviewer", 221), on("Q1", "qa", 221), on("I2", "implementer", 222), on("R3", "reviewer", 222)];
     const order = { ...card("W1", lanes), prs: [pr(221, 1), pr(222, 0)] };
     let s = state([order]);
-    // One reviewer of #222 already finished: only the order's detail still lists it.
+    // #222's review already finished (a new push asked for another): only the order's detail still lists it.
     s = ingest(s, { tool: "order_get", input: { workstreamId: "W1" }, output: { order, doneLanes: [on("R0", "reviewer", 222, "done")], requests: [] } });
-    const folded = new Map((selectStrip(project)(s)?.lines ?? []).flatMap((l) => (l.pr ? [[l.pr.number, l.pr.label] as const] : [])));
-    const unfolded = new Map(projectFleet(selectBoardData(s), project).fleet.groups.map((g) => [g.pr.number, groupLabel(g)] as const));
-    expect(folded).toEqual(unfolded);
-    // Needed is the PR's 3 reviews, never the number of checker lanes drawn under it.
-    expect(unfolded.get(221)).toBe("review 1/3");
-    expect(unfolded.get(222)).toBe("review 1/3");
-  });
-});
-
-describe("event lines", () => {
-  const message = (author: "system" | "lead", text: string): ChatMessage => ({
-    messageId: "m1",
-    projectRef: project,
-    seq: 1,
-    author,
-    text,
-    createdAt: T0,
-    state: "final",
-  });
-
-  it("are fleetd's own messages with text, not the lead's", () => {
-    expect(isEventLine(message("system", "#221 merged"))).toBe(true);
-    expect(isEventLine(message("lead", "#221 merged"))).toBe(false);
-    expect(isEventLine(message("system", "  "))).toBe(false);
+    const strip = selectStrip(project)(s);
+    expect(strip?.rows.map((r) => (r.kind === "pr" ? `#${r.number} ${r.label}` : `${r.indent ? "  " : ""}${r.key}`))).toEqual([
+      "W",
+      "#221 review 1/1",
+      "  R1",
+      "  Q1",
+      "#222 review 1/1",
+      "  I2",
+      "  R3",
+    ]);
+    expect(strip?.prs).toEqual([221, 222]);
+    expect(strip?.orders).toEqual(["W1"]);
   });
 });

@@ -26,8 +26,22 @@ const projectSummary = (p: (typeof PROJECTS)[number]): JsonObject => ({
   lastActivityAt: "2026-10-19T10:21:00.000Z",
 });
 
+/**
+ * Each project's "medium allowed" switch as project_get reads it (on, unless named in `off`), and project_set's
+ * answer either way.
+ */
+function projectSettings(f: Fixture, off: ReadonlySet<string> = new Set()) {
+  const projects = isObject(f.snapshot) && Array.isArray(f.snapshot["projects"]) ? f.snapshot["projects"].filter(isObject) : [];
+  for (const p of projects) {
+    const ref = { machineId: asText(p["machineId"]), projectId: asText(p["projectId"]) };
+    f.answer("project_get", ref, { asOf: f.now, project: clone(p), stale: false, threads: [], mediumAllowed: !off.has(ref.projectId) });
+    for (const on of [true, false]) f.answer("project_set", { ...ref, mediumAllowed: on }, { mediumAllowed: on });
+  }
+}
+
 /** What Settings calls besides the prompt reads. */
 function basics(f: Fixture) {
+  projectSettings(f);
   if (f.answers("projects_list").length === 0) f.answer("projects_list", undefined, { projects: PROJECTS.map(projectSummary) });
   f.answer("time_retention_set", undefined, { retentionDays: 30 });
   // Settings reads the retention and stored size from a breakdown of the fleet's last hour, at whatever time it is.
@@ -57,13 +71,20 @@ function agents(from: Fixture): Fixture {
   const slots: JsonObject = { cap: 16, used: 9, queued: 2, perProject: rows };
   if (f.snapshot) f.snapshot["slots"] = clone(slots);
   for (const frame of f.live) if (frame["slots"] !== undefined) frame["slots"] = clone(slots);
-  // A save answers with the slot state it asked for, as the hub does: every max each project can take, and every
-  // fleet cap a person might type, so the shots show the saved value read back.
-  for (const row of rows) {
-    const projectRef = row["projectRef"] as JsonObject;
+  // A change answers with the slot state it asked for, as the hub does: every max each project can take (and the
+  // pause of the agents over it, which Undo's neighbour offers), and every fleet cap the slider reaches.
+  for (const p of projects) {
+    const projectRef = ref(p);
+    const row = rows.find((r) => r["projectRef"] && asText((r["projectRef"] as JsonObject)["projectId"]) === projectRef["projectId"]);
+    const running = typeof row?.["running"] === "number" ? row["running"] : 0;
     for (let n = 1; n <= 16; n++) {
-      const perProject = rows.map((r) => (r === row ? { ...clone(r), maxAgents: n } : clone(r)));
-      f.answer("cap_set", { project: { projectRef: clone(projectRef), maxAgents: n } }, { slots: { ...clone(slots), perProject } });
+      const own = { projectRef: clone(projectRef), maxAgents: n, running, queued: row?.["queued"] ?? 0 };
+      const perProject = [...rows.filter((r) => r !== row).map(clone), own];
+      const out = { slots: { ...clone(slots), perProject } };
+      f.answer("cap_set", { project: { projectRef: clone(projectRef), maxAgents: n } }, out);
+      const over = Math.max(0, running - n);
+      const paused = Array.from({ length: over }, (_, i) => `T${String(90 + i)}`);
+      f.answer("cap_set", { project: { projectRef: clone(projectRef), maxAgents: n, pauseExtras: true } }, { ...out, paused });
     }
   }
   for (let n = 1; n <= 64; n++) f.answer("cap_set", { cap: n }, { slots: { ...clone(slots), cap: n } });
@@ -104,6 +125,11 @@ export default defineGroup({
         if (got.ok) f.answer("prompt_get", { id, ...scope }, json(got.output));
       }
     }
-    return [f, agents(base("typical"))];
+    const withAgents = agents(base("typical"));
+    // storefront's medium switch off: every one of its tasks runs high.
+    const off = Fixture.from(withAgents, "settings-medium-off", "Max agents as in settings-agents, with storefront's medium switch off");
+    const storefront = isObject(off.snapshot) && Array.isArray(off.snapshot["projects"]) ? off.snapshot["projects"].filter(isObject)[0] : undefined;
+    projectSettings(off, new Set(storefront === undefined ? [] : [asText(storefront["projectId"])]));
+    return [f, withAgents, off];
   },
 });

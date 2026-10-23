@@ -9,7 +9,8 @@ export type Snapshot = FleetStatus;
 export type HubState =
   | { readonly phase: "unpaired"; readonly note?: string | undefined }
   | { readonly phase: "connecting"; readonly hub: string; readonly attempt: number }
-  | { readonly phase: "live"; readonly hub: string; readonly protocol: number }
+  /** `version`: the hub's fleetd version from its ready frame, absent from hubs before it; fresh on each connection. */
+  | { readonly phase: "live"; readonly hub: string; readonly protocol: number; readonly version?: string | undefined }
   /** `retryAt` is epoch ms. */
   /** `reason`: what went wrong, one sentence without a final period; `fix`: what to do about it. `retryAt` is epoch ms. */
   | { readonly phase: "retrying"; readonly hub: string; readonly reason: string; readonly fix?: string | undefined; readonly retryAt: number }

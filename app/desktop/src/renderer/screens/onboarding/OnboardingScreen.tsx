@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useReducer, useRef, useSyncExternalStore, type ReactNode, type SyntheticEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, useSyncExternalStore, type ReactNode, type SyntheticEvent } from "react";
 import type { HubState } from "../../../shared/hub";
-import { keyStoreLine, protocolFit, type PairFailure, type PairOutcome } from "../../../shared/pairing";
+import { keyStoreLine, LOCAL_HUB, protocolFit, type PairFailure, type PairOutcome, type SetupOutcome } from "../../../shared/pairing";
 import { Button, Field, Input, Text } from "../../ui";
-import { initialForm, KEY_CREATE, mismatchFailure, reduce, type Reaching } from "./form";
+import { formatCodeAt, initialForm, KEY_CREATE, mismatchFailure, reduce, type Reaching } from "./form";
 import { useHubState, useKeyStore, useReaching, useSecondsUntil } from "./hooks";
 import { CommandLine, Failure, Prose } from "./Prose";
+import { TAGLINE } from "./setup";
+import { SetupChecklist } from "./SetupChecklist";
 import s from "./onboarding.module.css";
 
 export interface OnboardingProps {
@@ -63,18 +65,94 @@ function Page({ id, title, children }: { id: string; title: string; children: Re
   );
 }
 
+/** First run: what fleetd is, where you are in setting it up, and the two ways in (set it up here, or pair). */
+function Welcome({ id, children }: { id: string; children: ReactNode }) {
+  return (
+    <div className={s.screen} data-screen={id}>
+      <div className={s.column}>
+        <div className={s.welcome}>
+          <Mark />
+          <Text as="h1" size="xl" strong>
+            Welcome to fleetd
+          </Text>
+          <Text as="p" tone="quiet">
+            {TAGLINE}
+          </Text>
+        </div>
+        <SetupChecklist />
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** The app's icon in the theme's colours, drawn here so the welcome has the product's face without loading an image. */
+function Mark() {
+  return (
+    <svg className={s.mark} viewBox="100 100 824 824" aria-hidden>
+      <rect className={s.markTile} x="100" y="100" width="824" height="824" rx="185" />
+      <g className={s.markChevrons} fill="none" strokeWidth="72" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M255 362 405 512 255 662" opacity=".4" />
+        <path d="M437 362 587 512 437 662" opacity=".7" />
+        <path d="M619 362 769 512 619 662" />
+      </g>
+    </svg>
+  );
+}
+
+/**
+ * "Set up fleetd on this Mac" opens `fleetd init` in the system terminal: the wizard asks for logins and installs a
+ * background service, so it runs where the person can answer it. When it has paired this app's code, the form picks
+ * that up the next time the window is focused. Where no terminal opens, the command is there to copy.
+ */
+function SetupHere() {
+  const mac = window.fleetd.platform === "darwin";
+  const [outcome, setOutcome] = useState<SetupOutcome | "opening" | null>(null);
+  const open = () => {
+    setOutcome("opening");
+    void window.fleetd.pair.setup().then(setOutcome);
+  };
+  return (
+    <section className={s.section} aria-label="Set up fleetd here">
+      <Text as="p" tone="quiet">
+        New to fleetd? Setup runs in a terminal and asks a few questions, then this window connects by itself.
+      </Text>
+      <div className={s.actions}>
+        <Button variant="primary" size="md" disabled={outcome === "opening"} onClick={open}>
+          {outcome === "opening" ? "Opening a terminal…" : `Set up fleetd on ${mac ? "this Mac" : "this computer"}`}
+        </Button>
+      </div>
+      {outcome === null || outcome === "opening" ? null : outcome.ok ? (
+        <Prose text={`Opened ${outcome.terminal} with \`fleetd init\`. Finish setup there; this window connects when it's done.`} tone="quiet" />
+      ) : (
+        <div className={s.hint} role="status">
+          <Text tone="quiet">{outcome.message}</Text>
+          <CommandLine command={outcome.command} />
+        </div>
+      )}
+    </section>
+  );
+}
+
 function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }) {
   const [form, dispatch] = useReducer(reduce, undefined, () => initialForm(state, link));
   const codeField = useRef<HTMLInputElement>(null);
   const keyField = useRef<HTMLInputElement>(null);
+  // Formatting a code mid-edit would send the caret to the end; it goes back after the same characters.
+  const caret = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (caret.current === null) return;
+    codeField.current?.setSelectionRange(caret.current, caret.current);
+    caret.current = null;
+  });
 
   const done = () => {
     // Drop a link's code from the route, so the screen follows the connection from here.
     window.location.hash = "#/onboarding";
   };
 
-  const pair = useCallback(async (hub: string, request: () => Promise<PairOutcome>) => {
-    dispatch({ type: "submitting", hub });
+  const pair = useCallback(async (request: () => Promise<PairOutcome>) => {
+    dispatch({ type: "submitting" });
     const outcome = await request();
     if (outcome.ok) {
       dispatch({ type: "paired", hubName: outcome.hubName });
@@ -86,20 +164,26 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
     return outcome.ok;
   }, []);
 
+  // Asked again each time the window comes back to the front: on first run that is usually from the terminal
+  // where `fleetd init` just finished, and the code it left pairs with no typing.
   useEffect(() => {
     let current = true;
-    void window.fleetd.pair.start().then((start) => {
-      if (current) dispatch({ type: "started", start });
-    });
+    const look = () =>
+      void window.fleetd.pair.start().then((start) => {
+        if (current) dispatch({ type: "started", start });
+      });
+    look();
+    window.addEventListener("focus", look);
     return () => {
       current = false;
+      window.removeEventListener("focus", look);
     };
   }, []);
 
   // app-pair.json: main reads the code and pairs; this page only asked.
   useEffect(() => {
-    if (form.autoPending) void pair(form.hub, () => window.fleetd.pair.auto());
-  }, [form.autoPending, form.hub, pair]);
+    if (form.autoPending) void pair(() => window.fleetd.pair.auto());
+  }, [form.autoPending, pair]);
 
   const fail = (failure: PairFailure, field: HTMLInputElement | null) => {
     dispatch({ type: "failed", failure });
@@ -113,7 +197,7 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
       const request = { hub: form.hub, code: form.code };
       const fromLink = form.linkCode !== null && form.linkCode === form.code;
       const before = fromLink ? await window.fleetd.app.linkHandler(null) : null;
-      const ok = await pair(form.hub, () => window.fleetd.pair.redeem(request));
+      const ok = await pair(() => window.fleetd.pair.redeem(request));
       // The link may have been meant for another install that holds fleetd://; main claims it back when it should.
       if (!ok && before !== null) dispatch({ type: "linkChecked", before, after: await window.fleetd.app.linkHandler("pair-failed") });
       return;
@@ -125,7 +209,7 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
         keyField.current,
       );
     }
-    dispatch({ type: "submitting", hub: form.hub });
+    dispatch({ type: "submitting" });
     const outcome = await window.fleetd.hub.connect(form.hub.trim(), key);
     if (outcome.ok) {
       dispatch({ type: "paired", hubName: form.hub.trim() });
@@ -135,8 +219,9 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
     }
   };
 
-  return (
-    <Page id={form.useKey ? "onboarding.key" : "onboarding"} title="Connect to your fleetd hub">
+  const welcome = form.firstRun && link.code === undefined;
+  const connect = (
+    <>
       {form.notice === null ? null : <Prose text={form.notice} />}
       {form.status === null ? null : <Prose text={form.status} tone="quiet" />}
       <form className={s.fields} onSubmit={(e) => void submit(e)} noValidate>
@@ -145,7 +230,7 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
             mono
             value={form.hub}
             onChange={(e) => dispatch({ type: "edit", field: "hub", value: e.target.value })}
-            placeholder="http://127.0.0.1:4790"
+            placeholder={form.setupHere ? "http://your-hub:4790" : LOCAL_HUB}
             autoComplete="off"
           />
         </Field>
@@ -168,15 +253,21 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
               ref={codeField}
               mono
               value={form.code}
-              onChange={(e) => dispatch({ type: "edit", field: "code", value: e.target.value })}
+              onChange={(e) => {
+                const next = formatCodeAt(e.target.value, e.target.selectionStart ?? e.target.value.length);
+                caret.current = next.caret;
+                dispatch({ type: "edit", field: "code", value: next.value });
+              }}
               placeholder="ABCD-2345"
               autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
               autoFocus
             />
           </Field>
         )}
         <div className={s.actions}>
-          <Button type="submit" variant="primary" size="md" disabled={form.busy}>
+          <Button type="submit" variant={form.setupHere ? "secondary" : "primary"} size="md" disabled={form.busy}>
             {form.busy ? "Connecting…" : form.useKey ? "Connect with key" : "Connect"}
           </Button>
         </div>
@@ -184,11 +275,7 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
       {form.error === null ? null : <Failure failure={form.error} />}
       {form.linkNote === null ? null : <Prose text={form.linkNote} />}
       <div className={s.hint}>
-        <Text tone="quiet">
-          {form.useKey
-            ? "On the hub, create a key for this device, so your answers are recorded as yours:"
-            : "No code yet? On the hub, run this and type the code it prints:"}
-        </Text>
+        <Text tone="quiet">{form.useKey ? "On the hub, create a key for this device:" : "No code yet? On the hub, run this and type the code it prints:"}</Text>
         <CommandLine command={form.useKey ? KEY_CREATE : "fleetd pair"} />
       </div>
       <div className={s.toggle}>
@@ -197,11 +284,29 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
         </Button>
       </div>
       <KeyStoreLine />
-    </Page>
+    </>
+  );
+  const id = form.useKey ? "onboarding.key" : "onboarding";
+  if (!welcome) {
+    return (
+      <Page id={id} title="Connect to your fleetd hub">
+        {connect}
+      </Page>
+    );
+  }
+  return (
+    <Welcome id={id}>
+      {form.setupHere ? <SetupHere /> : null}
+      <section className={s.section} aria-labelledby="connect-here">
+        <Text as="h2" id="connect-here" size="md" strong>
+          {form.setupHere ? "Or connect to a hub on another computer" : "Pair with your hub"}
+        </Text>
+        {connect}
+      </section>
+    </Welcome>
   );
 }
 
-/** One layout for every attempt: only the countdown line changes, so a fast-failing hub doesn't flash. */
 /** Where the key is kept, as it really is: encrypted by the OS, or a private file and how to change that. */
 function KeyStoreLine() {
   const store = useKeyStore();
@@ -243,7 +348,7 @@ function Mismatch({ failure }: { failure: PairFailure }) {
 
 function Connected({ hub }: { hub: string }) {
   useEffect(() => {
-    window.location.hash = "#/board";
+    window.location.hash = "#/";
   }, []);
   return (
     <Page id="onboarding.connected" title="Connected to your hub">

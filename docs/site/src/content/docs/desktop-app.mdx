@@ -7,12 +7,18 @@ You'll pair the desktop app with your [hub](/docs/glossary#hub) and use it to ch
 [lead](/docs/glossary#lead).
 
 The app is installed with fleetd on any machine with a display. To add it on Linux without a display, see
-[Install](/docs/install#options). It updates itself; `fleetd update` updates it too. Shortcuts below use ⌘; on Linux,
+[Install](/docs/install#options). It updates itself ([updating](/docs/updating-and-uninstall#app)); `fleetd update` updates it too. Shortcuts below use ⌘; on Linux,
 use Ctrl.
 
 ## Pair it with the hub {#pair}
 
-On the hub machine, the app pairs by itself when it opens. On another computer:
+The first time it opens, the app says what fleetd is and shows three steps that tick themselves as you go: connect to
+your hub, add a project, say hi to its lead.
+
+With no hub on this computer yet, click "Set up fleetd on this Mac": it opens `fleetd init` in Terminal (on Linux, your
+terminal). When setup finishes, come back to the app and it pairs by itself. If no terminal opens, the app shows the
+command to copy. On the hub machine, the app pairs by itself
+when it opens. On another computer:
 
 1. On the hub, print a pairing code:
 
@@ -26,9 +32,10 @@ On the hub machine, the app pairs by itself when it opens. On another computer:
    app and enter the code and hub address above, or open the link there.
    ```
 
-2. In the app, on "Connect to your fleetd hub", enter the hub address and the code. Or open the `fleetd://pair` link.
+2. In the app, under "Or connect to a hub on another computer", enter the hub address and the code. Or open the
+   `fleetd://pair` link.
 
-The code works once, for 15 minutes. To connect with a key instead, click "Use a key instead".
+The code works once, for 15 minutes. Capitals and the dash are optional: `abcd2345` works as `ABCD-2345`. To connect with a key instead, click "Use a key instead".
 
 To change hubs, open Settings (⌘,) → General → Hub.
 
@@ -36,10 +43,14 @@ To change hubs, open Settings (⌘,) → General → Hub.
 
 | Part | Shows |
 |---|---|
-| Sidebar | Your projects. A dot means the lead is waiting for your reply; a count means agents are at work. Below them: Status, Time, Machines and Settings. |
+| Sidebar | Your projects, each saying why it wants you: "reply", "approve", "secret" or "blocked". Otherwise it says how many agents are working. A project in bold has a new message from its lead. Below them: Agents, Pull requests (of the project you're in), Status, Time, Machines and Settings. |
+| The top row | The page's title and its controls, then Commands. In a chat: the project's name, its state word and its [Max agents](/docs/projects#max-agents) control. |
 | The chat | The selected project's conversation with its lead. |
 
-Click a project to open its chat. To add a project, click "Add" next to Projects, then paste a GitHub URL or
+In a window narrower than about 1000 px the sidebar hides itself; ⌘B shows it again. On macOS the Dock icon shows how
+many projects need you.
+
+Click a project to open its chat. ⌥⌘A jumps to the next project that wants you. To add a project, click "Add" next to Projects, then paste a GitHub URL or
 `owner/repo`. You can also drop a folder or a GitHub link anywhere on the window, a chat included. Other files dropped
 on a chat attach to your message. See [Add a project](/docs/projects#add-a-project).
 
@@ -50,22 +61,42 @@ on a chat attach to your message. See [Add a project](/docs/projects#add-a-proje
 | Part | Does |
 |---|---|
 | Messages | The conversation, with Markdown, attachments and pasted images. Older history loads as you scroll up, including work from before the chat existed. |
-| The box at the bottom | Your message ("Message the lead"). Enter sends; Shift+Enter adds a line; ⌘⇧A attaches a file. While the lead works, a message steers it: the box says it reads this at its next step. |
-| The agents strip | Under the lead's message: how many agents are working, one line each. Expand it for lanes and time, and "What T88 was told" for each agent. |
+| The box at the bottom | Your message ("Message the lead"), ready to type as soon as a chat opens. Enter sends; Shift+Enter adds a line; ↑ in an empty box brings back your last message; the clip or ⌘⇧A attaches a file. While the lead works, a message steers it, and Stop beside Send ends its turn now. Unsent words stay, even after you quit. |
+| The line above the box | While the lead waits on you, what for ("2 questions, asked at 09:02", "1 command to approve"). Show scrolls to it. |
+| An empty chat | Asks what the lead should do, with a few starters that fill the box for you to edit. |
+| The agents strip | Under the lead's message, after any approval or secret it asks for: how many agents are working, and on which PRs. Expand it to see each agent, and click one to read what it was told. "Where the time went" opens [Time](#time), with each agent's model, tokens and activity. |
 | One-line events | Pull requests opened, merged or sent back. |
 | Secret and approval items | A masked field with "Save secret", or a command (or a tool's permission request) with Approve and Deny. See [Secrets & approvals](/docs/approvals-and-secrets). |
-| The header | The project, its state word (as in [Status](#status)), and its [Max agents](/docs/projects#max-agents) control ("agents 6 / 12"). |
+| The top row | The project, its state word (as in [Status](#status)), and its [Max agents](/docs/projects#max-agents) control ("agents 6 / 12"). |
 
-![The storefront project's chat: you asked to round the cart totals once, the lead replied that writers are splitting the change into three PRs, and under its message the strip shows three agents working. In the sidebar, billing has the needs-you dot.](/docs/img/chat.png)
+![The storefront project's chat: you asked to round the cart totals once, the lead replied that writers are splitting the change into three PRs, and under its message the strip shows three agents working. In the sidebar, billing says reply and checkout says blocked.](/docs/img/chat.png)
+
+### When the hub is out of reach {#offline}
+
+Your projects and recent chats stay on screen, marked "Offline, as of 09:02". You can keep writing: each message shows
+"queued" and sends by itself when the app reconnects, once, even if you quit in between. Edit or Dismiss takes a queued
+message back. The banner says why the hub doesn't answer and when the app tries again; Retry now tries at once.
+Approvals, secrets and Stop wait until the hub is back.
+
+Once you're connected again, a chat says "Last known" until its newest messages load; if they can't, it says so, with
+Retry. "Disconnect and forget key" in Settings clears what the app kept for that hub, queued messages included.
 
 How to work with the lead: [Chat with the lead](/docs/chat).
+
+## Agents {#agents}
+
+Agents lists every agent working now, across all your projects: its role, its task, what it's doing and for how long.
+Click one to watch its work as it happens: what it was told, the commands it ran, the files it edited and what it's
+writing. Watching doesn't interrupt it. To change what it does, tell its lead in the chat. Its PR number opens
+[the PR](/docs/chat#prs).
 
 ## Status {#status}
 
 ![Status with one row per project: billing waiting on you at 64%, checkout blocked at 31%, storefront working at 78% with five agents, each with its last merge.](/docs/img/status.png)
 
 Status shows one row per project: a state word (waiting on you, blocked, working or idle), its two-tone progress bar,
-the agents running, and what merged last. Click a row to open that project's chat; hover it for detail.
+the agents running, and when the last pull request merged. Click a row to open that project's chat, or PRs for its
+pull requests; hover it for detail.
 See [Status](/docs/status).
 
 ## Where time went {#time}
@@ -74,28 +105,32 @@ Open Time from the sidebar, the agents strip in a chat, or the command palette. 
 
 | Tab | Shows |
 |---|---|
-| Timeline | One piece of work: a lane per agent, PR and CI check, and the waits on you, with the [critical path](/docs/glossary#critical-path) marked. Hover a bar for the command, its duration and exit code; a transcript's "Open the chat" goes to the project's chat. |
+| Timeline | One piece of work: a lane per agent, PR and CI check, and the waits on you, with the [critical path](/docs/glossary#critical-path) marked. Each agent's lane shows its model and output tokens. Hover a bar for the command, its duration and exit code; a transcript's "Open the chat" goes to the project's chat. |
 | Breakdown | Agent time by group, with the slowest commands and CI checks. |
 | Insights | Findings, each with the spans behind it. |
 
 ![Where a piece of work's time went: a lane per agent, PR and CI check, the waits on you, the critical path underlined, and the legend.](/docs/img/time.png)
 
-How to read it: [Where time went](/docs/time-inspector).
+Times are in your own time zone. How to read it: [Where time went](/docs/time-inspector).
 
 ## Settings {#settings}
 
-Open Settings with ⌘,.
+Open Settings with ⌘,. It takes the sidebar's place; Back returns to where you were. Type in "Search settings" to find
+an option or a prompt by name, and press Enter to open the first match.
 
 | Section | Has |
 |---|---|
 | General | Appearance (light, dark, match system), motion, the hub connection, whether `fleetd://` pairing links open in this app, Claude auto memory, and how long time data is kept. |
-| Prompts | The prompts fleetd sends agents, to read and edit, and any of your edits that no longer apply. See [What agents are told](/docs/what-agents-are-told). |
-| Agents | [Max agents](/docs/projects#max-agents) for each project, and the cap for the whole fleet. |
+| Notifications | Which alerts show (the lead asks you something, a command or secret waits, the lead finishes what you asked, a machine problem, anything else), whether they play a sound, the Dock badge, and a test. There is never an alert for the chat in front of you, and in quiet hours only urgent ones show. Clicking one opens what it's about. |
+| Agents | [Max agents](/docs/projects#max-agents) for each project, and the cap for the whole fleet. Each slider applies when you let go, with Undo. Below them, the two [task profiles](/docs/projects#models) and each project's Medium allowed switch. |
 | Instructions | Your own text, added to every agent's first message. |
+| Prompts | The prompts fleetd sends agents, listed under Prompts in the sidebar, to read and edit, and any of your edits that no longer apply. See [What agents are told](/docs/what-agents-are-told). |
 
 ## Shortcuts {#shortcuts}
 
 ⌘/ shows every shortcut in the app, and ⌘K finds any command by name. ⌘ is Ctrl on Linux.
+
+The command palette (⌘K) opens on the project you're in. Type a setting's own name ("max agents", "dark") to find it. What you open most rises to the top. Press ⌘K again to see the other actions for the selected item, such as a project's instructions.
 
 | Keys | Does |
 |---|---|
@@ -105,8 +140,10 @@ Open Settings with ⌘,.
 | ⌘B | Toggle the sidebar |
 | ⌘1 to ⌘9 | Open that project in the sidebar |
 | ⌘[ / ⌘] | Previous / next project |
+| ⌥⌘A | Next project that wants you |
 | ⌘. | Status |
 | ⌘, | Settings |
 | ⌘⇧A | Attach a file |
 | Enter / Shift+Enter | Send the message / new line |
+| ↑ (empty box) | Bring back your last message |
 | Esc | Close the menu, panel or sheet |

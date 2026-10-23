@@ -97,3 +97,47 @@ export const syncAgents = (f: Fixture): void => {
       }),
   }));
 };
+
+/**
+ * The agents view's list (agents_list), from the same lanes: every lane on the board's cards that hasn't finished,
+ * with its project, and each project's lead, working when its chat says so. The hub's contract for it is still on its
+ * branch, so its answers are marked pending until the generated schema has it.
+ */
+/** Every lane on the boards says its task profile, as a hub with profiles does: high unless a fixture chose. */
+export const syncProfiles = (f: Fixture): void => {
+  const mark = (out: JsonValue): JsonValue => {
+    for (const card of [...arr(obj(out)["orders"]), obj(out)["order"]].filter(isObject)) {
+      for (const lane of arr(card["lanes"]).filter(isObject)) if (lane["profile"] === undefined) lane["profile"] = "high";
+    }
+    return out;
+  };
+  f.update("orders_board", mark);
+  f.update("order_get", mark);
+};
+
+export const syncAgentsList = (f: Fixture): void => {
+  if (f.snapshot === undefined) return;
+  const titles = new Map(arr(f.snapshot["projects"]).filter(isObject).map((p) => [keyOf(p), asText(p["title"])]));
+  const chats = new Map(arr(f.snapshot["chats"]).filter(isObject).map((c) => [keyOf(c["projectRef"]), c]));
+  const live = laneStatuses(f);
+  const board = f.output("orders_board", {}) ?? f.answers("orders_board")[0]?.output;
+  const seen = new Set<string>();
+  const agents: JsonObject[] = [];
+  for (const p of arr(f.snapshot["projects"]).filter(isObject)) {
+    const ref = { machineId: asText(p["machineId"]), projectId: asText(p["projectId"]) };
+    const working = chats.get(keyOf(ref))?.["leadWorking"] === true;
+    agents.push({ laneId: `lead:${keyOf(ref)}`, role: "lead", title: "Lead", status: working ? "working" : "idle", projectRef: ref, projectTitle: titles.get(keyOf(ref)) ?? "" });
+  }
+  for (const card of arr(obj(board)["orders"]).filter(isObject)) {
+    for (const lane of arr(card["lanes"]).filter(isObject)) {
+      const id = asText(lane["laneId"]);
+      const status = live.get(id) ?? asText(lane["status"]);
+      if (lane["role"] === "lead" || seen.has(id) || status === "done" || status === "failed" || status === "cancelled") continue;
+      seen.add(id);
+      const ref = obj(card["projectRef"]);
+      const workstreamId = card["workstreamId"];
+      agents.push({ ...lane, projectRef: ref, projectTitle: titles.get(keyOf(ref)) ?? "", ...(typeof workstreamId === "string" ? { workstreamId } : {}) });
+    }
+  }
+  f.answer("agents_list", {}, { agents: agents.slice(0, 100), at: f.now });
+};

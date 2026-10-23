@@ -4,13 +4,37 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type PointerEvent, type RefObject } from "react";
 import { Button, RoleTag, Text, Truncate, cx } from "../../ui";
 import { barCard, laneCard, pathCard, type Card } from "./cards";
-import { CAT_LABEL, SHOWN, clockMs, fmtDur, type Names } from "./format";
-import { hit, padded, rowRange, ticks, type Bar, type Model } from "./model";
+import { CAT_LABEL, SHOWN, clockMs, fmtDur, tickLabel, type Names } from "./format";
+import { hit, padded, ranOn, rowRange, ticks, type Bar, type Model, type Row } from "./model";
+import { useData } from "../../src/data/react";
+import { fmtTokens } from "../live/format";
 import { ROW_H, documentTheme, paintPath, paintRows, paletteCache, readPalette, watchDocumentTheme } from "./paint";
 import type { Span } from "./types";
 import s from "./Time.module.css";
 
-const LABEL_W = 240;
+const LABEL_W = 300;
+
+/**
+ * A lane's output tokens, one measure whether it runs or not: the live frame's count while it has one, else what its
+ * model messages measured. One number from the store, so a label repaints only when it changes.
+ */
+const useLaneTokens = (row: Row | undefined): number => {
+  const laneId = row?.laneId;
+  const live = useData((st) => (laneId === undefined ? undefined : st.live.lanes[laneId]?.tokens?.output));
+  return live ?? row?.outputTokens ?? 0;
+};
+
+/** "medium · 41k out": what the lane ran on and its output tokens, beside its name. */
+function LaneMeta({ row }: { row: Row }) {
+  const tokens = useLaneTokens(row);
+  const parts = [ranOn(row), tokens > 0 ? `${fmtTokens(tokens)} out` : undefined].filter((x) => x !== undefined);
+  if (parts.length === 0) return null;
+  return (
+    <Text size="xs" tone="quiet" tabular className={cx(s.laneMeta)}>
+      {parts.join(" · ")}
+    </Text>
+  );
+}
 const MIN_VIEW_MS = 1_000;
 
 type Hover =
@@ -245,13 +269,14 @@ export function Timeline({ model: m, names, nowMs, view, onView, lit, onSpan }: 
     return m.path.findIndex((seg) => seg.start <= at && at < seg.end);
   };
 
+  const hoverTokens = useLaneTokens(hover?.kind === "lane" ? m.rows[hover.row] : undefined);
   const card: Card | undefined =
     hover === undefined
       ? undefined
       : hover.kind === "bar"
         ? barCard(m, hover.row, hover.bar, names, nowMs)
         : hover.kind === "lane"
-          ? laneCard(m, hover.row)
+          ? laneCard(m, hover.row, hoverTokens)
           : pathCard(m, hover.seg);
 
   const total = m.endMs - m.startMs;
@@ -264,7 +289,7 @@ export function Timeline({ model: m, names, nowMs, view, onView, lit, onSpan }: 
         <div className={cx(s.axisTicks)}>
           {tickList.map((t) => (
             <span key={t} className={cx(s.tick)} style={{ left: ((t - v0) / (v1 - v0)) * size.width }}>
-              {v1 - v0 < 10 * 60_000 ? clockMs(t) : clockMs(t).slice(0, 5)}
+              {tickLabel(t, v0, v1)}
             </span>
           ))}
         </div>
@@ -294,14 +319,10 @@ export function Timeline({ model: m, names, nowMs, view, onView, lit, onSpan }: 
                         ci
                       </Text>
                     ) : null}
-                    {row.taskId !== undefined ? (
-                      <Text size="sm" mono tone="quiet" className={cx(s.noShrink)}>
-                        {row.taskId}
-                      </Text>
-                    ) : null}
                     <Truncate expand="none" size={row.kind === "check" ? "sm" : "xs"} mono={row.kind === "check"} tone={row.to > row.from ? "default" : "quiet"}>
                       {row.kind === "lead" ? "split across its work" : row.name}
                     </Truncate>
+                    <LaneMeta row={row} />
                   </button>
                 );
               })}

@@ -2,12 +2,11 @@
 // recording's clip, then types the order into the composer at a person's pace and sends it with Enter. The keys go
 // through Chromium's input pipeline (sendInputEvent), as a person's would, so the composer needs no demo code.
 //
-// The contract with the composer: it carries data-composer="ready" once it can send, i.e. once it knows the projects
-// an @mention names, and Enter sends.
+// The contract with the composer: its input is the textarea under [data-composer], and Enter sends.
 import type { BrowserWindow } from "electron";
 import { keyDelayMs } from "./recordConfig";
 
-const COMPOSER = '[data-composer="ready"]';
+const COMPOSER = "[data-composer] textarea";
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Focuses the ready composer; false while there is none. */

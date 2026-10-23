@@ -22,25 +22,28 @@ Everything else the lead needs from you is a plain question in the chat. See
 When a lead needs an irreversible step, one that costs money, or one that uses a credential, it files the exact
 command as a [gated command](/docs/glossary#gated-command).
 
-![An approval item in storefront's chat: the lead says the command writes to the production database; the Command card, marked "Can't be undone", shows the migration command on devbox with the secret it gets, and Approve and Deny. Above it, an earlier run that exited 0 and a denied permission request.](/docs/img/chat-command.png)
+![An approval item in storefront's chat: the lead says the command writes to the production database; the Command card, marked "Can't be undone", shows the migration command on devbox with the secret it gets, and Approve and Deny. Above it, an earlier run and a denied permission request, each folded to one line.](/docs/img/chat-command.png)
 
 1. The item shows the command, the reason and the machine.
-2. Click Approve to run it, or Deny to refuse. A denial can carry a note for the lead.
+2. Click Approve to run it, or Deny to refuse. A command marked "Can't be undone" asks once more: click "Yes, run
+   it". With the item focused, Enter approves and Esc denies.
 3. The node runs exactly the stored command, in the project's workspace.
-4. The exit code and output go back to the lead, and the item shows them.
+4. The exit code and output go back to the lead. The item folds to one line, such as "Approved, ran in 12s"; click
+   it to see the command and its output again.
 
 If the machine was offline when you approved, the item opens again and says why. Click "Approve again" once it is
-back.
+back. If an answer doesn't go through, the item says why in one line; click Retry.
 
 ## Enter a secret {#secrets}
 
 When a lead needs an API key or a password, it asks with `request_secret`, and the item names the machine and where
 the value goes: a line in an env file, or a file.
 
-![A secret item in storefront's chat: the lead needs the Stripe test key, which goes to devbox only. The card names where it is saved, with a masked field and Save secret. Above it, a secret already saved, and the agents at work.](/docs/img/chat-secret.png)
+![A secret item in storefront's chat: the lead needs the Stripe test key, which goes to devbox only. The card names where it is saved, with a masked field and Save secret. Above it, a secret already saved, folded to one line; below it, one line for the agents at work.](/docs/img/chat-secret.png)
 
 1. Type the value in the masked field.
-2. The app seals it to that machine's key (a libsodium sealed box) and wipes what you typed.
+2. The app seals it to that machine's key (a libsodium sealed box). The field clears once the value is saved; if
+   saving fails, what you typed stays so you can click Retry.
 3. The hub passes the sealed value on without storing it.
 4. The node writes it with mode `0600`.
 5. The lead sees only its fingerprint, never the value. The value never enters the chat.

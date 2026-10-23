@@ -1,4 +1,4 @@
-// Settings in the command palette: its three pages, and every prompt by its plain name (typed, not listed: there
+// Settings in the command palette: its pages, each setting by its own name, and every prompt by its plain name (typed, not listed: there
 // are 60 of them), each opening in Settings → Prompts. main.tsx registers them once, with the app's data layer.
 import { registerCommands, registerSource, type Command } from "../palette";
 import { GROUPS, describe, groupOf } from "./catalog";
@@ -6,6 +6,7 @@ import { hashKey } from "@tanstack/react-query";
 import type { DataLayer } from "../../src/data/queries";
 import type { PromptSummary } from "./contracts";
 import { promptHref, tabHref } from "./route";
+import { BADGE } from "./search";
 
 const go = (hash: string) => {
   window.location.hash = hash;
@@ -17,8 +18,16 @@ const pages: Command[] = [
     title: "Settings",
     detail: "Appearance, motion, the hub, data",
     group: "settings",
-    keywords: ["preferences", "dark mode", "theme", "retention", "digest", "disconnect"],
+    keywords: ["preferences"],
     run: () => go(tabHref("general")),
+  },
+  {
+    id: "go:settings.notifications",
+    title: "Notifications",
+    detail: "What alerts you, sound, the badge",
+    group: "settings",
+    keywords: ["alerts", "sound", "badge", "dock", "mute"],
+    run: () => go(tabHref("notifications")),
   },
   {
     id: "go:settings.prompts",
@@ -36,6 +45,31 @@ const pages: Command[] = [
     keywords: ["custom instructions", "rules"],
     run: () => go(tabHref("instructions")),
   },
+  // Each setting by its own name, typed rather than listed, so "max agents" or "dark mode" finds it.
+  ...(
+    [
+      ["Max agents", "How many agents run at once, per project and in all", "agents", ["agents", "limit", "at once", "whole fleet", "cap", "concurrency"]],
+      ["Appearance", "Light, dark or match system", "general", ["theme", "dark mode", "light mode"]],
+      ["Motion", "Keep motion or reduce it", "general", ["animation", "reduce motion"]],
+      ["Hub", "The connection, and this app's key", "general", ["connection", "disconnect", "key"]],
+      ["Pairing links", "Open fleetd:// links in this app", "general", ["links", "default app"]],
+      ["Time data", "How long the time inspector keeps history", "general", ["retention", "history", "days"]],
+      ["Claude auto memory", "Off for every agent unless a project turns it on", "general", ["memory"]],
+      ["Notify me when", "Which kinds of notification show", "notifications", ["notifications", "alerts", "mute"]],
+      ["Sound", "Notifications play a sound or not", "notifications", ["notifications", "mute", "silent"]],
+      [BADGE, "How many projects need you, on the app icon", "notifications", ["badge", "dock", "count", "app icon"]],
+    ] as const
+  ).map(
+    ([title, detail, tab, keywords]): Command => ({
+      id: `setting:${title}`,
+      title,
+      detail,
+      group: "settings",
+      keywords,
+      searchOnly: true,
+      run: () => go(tabHref(tab)),
+    }),
+  ),
 ];
 
 const groupTitle = (p: PromptSummary) => GROUPS.find((g) => g.key === groupOf(p))?.title ?? "";

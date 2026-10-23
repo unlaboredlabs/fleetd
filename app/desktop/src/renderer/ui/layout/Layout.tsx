@@ -1,32 +1,89 @@
 import { ChevronRight } from "lucide-react";
-import { Fragment, type ComponentProps, type ReactNode } from "react";
+import { createContext, Fragment, useContext, useState, type ComponentProps, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { cx } from "../lib/cx";
 import { Text } from "../text/Text";
 import { Truncate } from "../text/Truncate";
 import s from "./layout.module.css";
 
-/** The window: a top bar across, an optional sidebar, and the main area (which owns its own scrolling). */
-export function AppFrame(props: { topBar: ReactNode; sidebar?: ReactNode; children: ReactNode; className?: string }) {
+// The top row's middle, where the screen on show puts its title (FrameTitle): one header row, not two.
+const TitleSlot = createContext<HTMLElement | null>(null);
+const SetTitleSlot = createContext<(el: HTMLElement | null) => void>(() => undefined);
+
+/**
+ * The window: a sidebar down the left, from the very top (the macOS traffic lights sit in it), and beside it the
+ * top row over the main area (which owns its own scrolling). `sidebarTop` is the sidebar's first row, beside the
+ * traffic lights; without a sidebar the top row runs the full width and starts after them.
+ */
+export function AppFrame(props: {
+  topBar: ReactNode;
+  sidebar?: ReactNode;
+  sidebarTop?: ReactNode;
+  /** The window's own frame: its sidebar shows the window's translucent material where there is one (macOS). */
+  translucent?: boolean;
+  children: ReactNode;
+  className?: string;
+}) {
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
   return (
-    <div className={cx(s.frame, !props.sidebar && s.noSidebar, props.className)}>
-      {props.topBar}
-      {props.sidebar}
-      <main className={s.main}>{props.children}</main>
-    </div>
+    <SetTitleSlot.Provider value={setSlot}>
+      <TitleSlot.Provider value={slot}>
+        <div className={cx(s.frame, !props.sidebar && s.noSidebar, props.translucent && s.translucent, props.className)}>
+          {props.sidebar ? (
+            <div className={s.side}>
+              <div className={s.sideTop}>{props.sidebarTop}</div>
+              {props.sidebar}
+            </div>
+          ) : null}
+          {props.topBar}
+          <main className={s.main}>{props.children}</main>
+        </div>
+      </TitleSlot.Provider>
+    </SetTitleSlot.Provider>
   );
 }
 
 /**
- * The window's top bar and drag region. On macOS it starts after the traffic lights (--traffic-lights-inset);
+ * The top row over the main area, and the window's drag region. Its middle holds the current screen's FrameTitle;
  * buttons and fields inside stay clickable.
  */
-export function TopBar(props: { leading?: ReactNode; children?: ReactNode; trailing?: ReactNode; className?: string }) {
+export function TopBar(props: { leading?: ReactNode; trailing?: ReactNode; className?: string }) {
+  const setSlot = useContext(SetTitleSlot);
   return (
     <header className={cx(s.topBar, props.className)}>
       {props.leading ? <div className={s.topLeading}>{props.leading}</div> : null}
-      <div className={s.topCenter}>{props.children}</div>
+      <div ref={setSlot} className={s.topCenter} />
       {props.trailing ? <div className={s.topTrailing}>{props.trailing}</div> : null}
     </header>
+  );
+}
+
+/**
+ * A screen's header, in the frame's top row rather than a header bar of the screen's own: every page's one header
+ * style. `title` is the page's name (its heading), `detail` a quiet line beside it, `lead` what comes before it (a
+ * way back), and `children` the page's controls and state, at the end.
+ */
+export function FrameTitle(props: { title?: string | undefined; detail?: string | undefined; lead?: ReactNode; children?: ReactNode }) {
+  const slot = useContext(TitleSlot);
+  if (slot === null) return null;
+  return createPortal(
+    <>
+      <span className={s.frameTitle}>
+        {props.lead}
+        {props.title === undefined ? null : (
+          <Truncate as="h1" strong className={s.frameHeading}>
+            {props.title}
+          </Truncate>
+        )}
+        {props.detail === undefined ? null : (
+          <Truncate size="xs" tone="quiet" className={s.frameDetail}>
+            {props.detail}
+          </Truncate>
+        )}
+      </span>
+      {props.children}
+    </>,
+    slot,
   );
 }
 
@@ -61,10 +118,22 @@ export function Breadcrumb({ items, className }: { items: ReadonlyArray<Crumb>; 
   );
 }
 
-export function Sidebar({ children, className, "aria-label": label }: { children: ReactNode; className?: string | undefined; "aria-label"?: string }) {
+/** The sidebar's rows, which scroll; `footer` stays at the bottom, outside the scroll. */
+export function Sidebar({
+  children,
+  footer,
+  className,
+  "aria-label": label,
+}: {
+  children: ReactNode;
+  footer?: ReactNode;
+  className?: string | undefined;
+  "aria-label"?: string;
+}) {
   return (
     <nav className={cx(s.sidebar, className)} aria-label={label ?? "Sidebar"}>
-      {children}
+      <div className={s.sidebarBody}>{children}</div>
+      {footer}
     </nav>
   );
 }
@@ -93,10 +162,12 @@ export interface SidebarItemProps extends Omit<ComponentProps<"button">, "childr
   current?: boolean;
   /** Nested under the row above (a project's orders). */
   indent?: boolean;
+  /** Something new since you last looked: the label in full weight. */
+  emphasis?: boolean;
 }
 
 /** One sidebar row, 28 px tall: icon, a label that truncates with a tooltip, and trailing detail. */
-export function SidebarItem({ label, icon, trailing, current, indent, className, ...rest }: SidebarItemProps) {
+export function SidebarItem({ label, icon, trailing, current, indent, emphasis, className, ...rest }: SidebarItemProps) {
   return (
     <button
       type="button"
@@ -106,7 +177,7 @@ export function SidebarItem({ label, icon, trailing, current, indent, className,
     >
       {icon}
       <span className={s.sidebarLabel}>
-        <Truncate expand="none" tone="inherit">
+        <Truncate expand="none" tone="inherit" strong={emphasis === true}>
           {label}
         </Truncate>
       </span>

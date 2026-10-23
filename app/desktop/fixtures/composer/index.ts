@@ -1,7 +1,7 @@
 // The chat composer's fixture (A3): storefront's lead chat, the lead mid-turn, and chat_send answers that leave a
 // message refused, cut off by the link, unanswered, sent to a lead that can't take it yet, still sending, or unsent
-// for want of a hub. QA types each (qa/registry.ts, CHAT_SENDS). The chat has a reply written from `fleetd chat` and
-// a message from an agent's own key, so both labels are shot.
+// for want of a hub. QA types each (qa/registry.ts, CHAT_SENDS). The hub can stop the lead and its agents (chat_stop).
+// The chat has a reply written from `fleetd chat` and a message from an agent's own key, so both labels are shot.
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import { at } from "../kit/ids.ts";
@@ -53,6 +53,10 @@ function composerSends(f: Fixture): void {
   f.answer("attachment_put", undefined, { attachmentId: "F1", bytes: 68, sha256: "0".repeat(64) });
   // Still on its way when the shot is taken; the screen doesn't wait for it.
   f.answer("chat_send", { text: CHAT_SENDS.sending }, { message: sent(7, CHAT_SENDS.sending) }, 600_000);
+  // This hub can stop a lead: the app's empty-input check is refused as invalid. A real stop is still on its way
+  // when the shot is taken, so Stop shows pressed.
+  f.fail("chat_stop", undefined, { code: "invalid", message: "chat_stop: missing field `projectRef`." });
+  f.answer("chat_stop", { projectRef: STOREFRONT }, { stopped: true, message: msg(8, "lead", "Stopped the lead and 2 agents.", 0, { author: "system" }) }, 600_000);
   f.settleAt(f.settleMs ?? 0);
 }
 

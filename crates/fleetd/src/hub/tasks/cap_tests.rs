@@ -371,6 +371,37 @@ async fn pausing_the_extras_parks_the_newest_and_continues_them_in_their_thread(
     assert_eq!(resumed.await.unwrap().state, TaskState::Running);
 }
 
+/// The app lowers the max when you let go of the slider, then offers the pause: at the same max, the extras are
+/// paused and the chat gets one line for it.
+#[tokio::test]
+async fn pausing_the_extras_after_the_max_was_lowered() {
+    let (hub, _home) = hub();
+    let mut node = Node::link(&hub).await;
+    for n in 1..=3 {
+        running(&hub, n);
+    }
+    hub.tasks.set_caps(set(1, false)).await.unwrap();
+    let tasks = hub.tasks.clone();
+    let change = tokio::spawn(async move { tasks.set_caps(set(1, true)).await.unwrap() });
+    node.sent(&hub).await;
+    node.sent(&hub).await;
+    let outcome = change.await.unwrap();
+    assert_eq!(outcome.paused.len(), 2);
+    assert_eq!(
+        outcome.next,
+        "Max agents 1: 2 agents push their work and wait; 1 keeps running."
+    );
+    let (line, data) = cap_events(&hub).pop().unwrap();
+    assert_eq!(line, outcome.next);
+    assert_eq!((data.from.get(), data.to.get()), (1, 1));
+    assert_eq!(data.paused.map(|p| p.len()), Some(2));
+
+    // Nothing over the max any more: asking again changes nothing and says nothing.
+    let again = hub.tasks.set_caps(set(1, true)).await.unwrap();
+    assert!(again.paused.is_empty());
+    assert_eq!(again.next, "Nothing changed.");
+}
+
 /// An agent waiting on its lead's answer is never paused, and one that asks while paused continues only with the
 /// answer in hand, so a question is never left behind by a pause.
 #[tokio::test]
@@ -458,6 +489,11 @@ fn a_pause_line_counts_in_good_grammar() {
     assert_eq!(
         paused_line(2, 0, 2, 0),
         "Max agents 2 → 0: 2 agents push their work and wait; 0 keep running."
+    );
+    // The pause the app offers after a lower, at the max it already set.
+    assert_eq!(
+        paused_line(2, 2, 1, 2),
+        "Max agents 2: 1 agent pushes its work and waits; 2 keep running."
     );
 }
 

@@ -1,10 +1,11 @@
 // The live strip's fixtures: the typical lab hub with one order in its first project, and 0, 3 or 20 agents at work
-// on it (writers, then reviewers and verifiers on two PRs), with their live activity.
+// on it (writers, then one reviewer per PR and QA on two PRs), with their live activity. Twenty fill more than a third
+// of the window, so the opened strip scrolls.
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import type { JsonObject, JsonValue } from "../kit/json.ts";
 
-type Role = "implementer" | "reviewer" | "verifier";
+type Role = "implementer" | "reviewer" | "qa";
 
 const ACTIVITIES: readonly JsonObject[] = [
   { kind: "edit", path: "src/cart/total.ts" },
@@ -30,8 +31,8 @@ const fromBase = (base: Fixture, agents: number): Fixture => {
     number: n,
     url: `https://github.com/acme/storefront/pull/${n}`,
     state,
-    reviewsDone: 1,
-    reviewsNeeded: 3,
+    reviewsDone: 0,
+    reviewsNeeded: 1,
     taskId,
   });
   // Each PR's writer finished before the reviews began: the cards leave them out; the order's detail lists them.
@@ -42,7 +43,8 @@ const fromBase = (base: Fixture, agents: number): Fixture => {
     taskId: id,
     threadRef: { machineId: projectRef.machineId, threadId: `s-${id}` },
     title,
-    model: "claude-haiku-5-5",
+    model: "claude-opus-5-5",
+    profile: id === "T90" ? "medium" : "high",
     status: "done",
     startedAt: iso(now - ago - 140_000),
     endedAt: iso(now - ago),
@@ -53,18 +55,30 @@ const fromBase = (base: Fixture, agents: number): Fixture => {
   const live: JsonObject[] = [];
   for (let i = 0; i < agents; i++) {
     const id = `T${i + 1}`;
-    const role: Role = i < Math.ceil(agents / 3) ? "implementer" : i % 2 === 0 ? "reviewer" : "verifier";
+    // One review per PR: the first checker on each of the two PRs reviews it, the rest test it (QA).
+    const writers = Math.ceil(agents / 3);
+    const role: Role = i < writers ? "implementer" : i - writers < 2 ? "reviewer" : "qa";
     const onPr = role === "implementer" ? undefined : prs[i % 2];
-    const status = i === 4 ? "waiting" : i === agents - 1 && agents > 3 ? "queued" : "working";
+    // At 20: one waits on you, one is paused at a usage limit (on hold), and the last waits for a free slot (a long
+    // reason, cut with an ellipsis).
+    const status = i === 4 ? "waiting" : i === 5 && agents > 3 ? "parked" : i === agents - 1 && agents > 3 ? "queued" : "working";
     lanes.push({
       laneId: id,
       role,
       taskId: id,
       threadRef: { machineId: projectRef.machineId, threadId: `s-${id}` },
-      title: role === "implementer" ? `write part ${i + 1} of the rounding change` : `${role === "reviewer" ? "review" : "verify"} #${i % 2 === 0 ? 221 : 222}`,
-      model: "claude-haiku-5-5",
+      title: role === "implementer" ? `write part ${i + 1} of the rounding change` : `${role === "reviewer" ? "review" : "test"} #${i % 2 === 0 ? 221 : 222}`,
+      model: "claude-opus-5-5",
+      // The first writer does the mechanical part on medium; the rest, reviews included, run high.
+      profile: i === 0 ? "medium" : "high",
       status,
-      ...(status === "waiting" ? { statusReason: "approve npm install" } : {}),
+      ...(status === "waiting"
+        ? { statusReason: "approve npm install" }
+        : status === "parked"
+          ? { statusReason: "usage limit: resumes 14:05" }
+          : status === "queued"
+            ? { statusReason: "waiting for a free slot: every one is held by work on #221 and #222, so this starts as soon as one of their reviews finishes" }
+            : {}),
       startedAt: iso(now - (20 + i * 7) * 1000),
       ...(onPr ? { pr: onPr } : {}),
     });
@@ -72,7 +86,7 @@ const fromBase = (base: Fixture, agents: number): Fixture => {
     live.push({
       laneId: id,
       status,
-      activity: { activity: ACTIVITIES[i % ACTIVITIES.length] ?? { kind: "thinking" }, since: iso(now - 4000) },
+      ...(status === "parked" ? {} : { activity: { activity: ACTIVITIES[i % ACTIVITIES.length] ?? { kind: "thinking" }, since: iso(now - 4000) } }),
       tokens: { input: 3000 + i * 211, output: 900 + i * 37, cacheRead: 0, live: true },
       spark: { endAt: iso(now - (now % 2000)), samples: Array.from({ length: 12 }, (_, k) => ((k * 7 + i * 13) % 50) + 4) },
     });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChatItem } from "../../src/data/chat";
-import { authorLabel, chatRows, dayLabel, rowIndexOf, systemHeadline } from "./model";
+import { authorLabel, chatRows, dayLabel, heldLabel, rowIndexOf, systemHeadline } from "./model";
 
 const at = (d: number, h: number, m = 0) => new Date(Date.UTC(2026, 9, d, h, m)).toISOString();
 const NOW = Date.parse(at(19, 18));
@@ -43,6 +43,15 @@ describe("the chat's rows", () => {
     expect(rows([], { hasOlder: true, loadingOlder: true })[0]).toMatchObject({ state: "loading" });
   });
 
+  it("never show a held chat as current: offline, or connected before it is read again", () => {
+    expect(rows([], { hasOlder: true, held: true, offline: true })[0]).toMatchObject({ state: "held" });
+    // Connected, not read yet (or the read failed): never "once you're connected" while connected.
+    expect(rows([], { hasOlder: true, held: true, offline: false })[0]).toMatchObject({ state: "reread" });
+    expect(heldLabel(true, "as of 09:02")).toBe("Offline, as of 09:02");
+    expect(heldLabel(false, "as of 09:02")).toBe("Last known, as of 09:02");
+    expect(heldLabel(false, undefined)).toBe("Last known");
+  });
+
   it("name who wrote each message from its key, and start a new run when that changes", () => {
     const hub = (author: "human" | "agent", over: Record<string, string>) =>
       ({ messageId: "m", projectRef: { machineId: "devbox", projectId: "app" }, seq: 1, author, text: "", createdAt: at(19, 9), state: "final", ...over }) as const;
@@ -57,7 +66,7 @@ describe("the chat's rows", () => {
     expect(shown).toEqual(["a:You · app", "b:You · cli", "c:Agent · nightly-ci", "d:Agent · scout", "e:-"]);
   });
 
-  it("put the live strip under the lead's newest message, and events and inline items in their place", () => {
+  it("put the live strip under the lead's newest message and after the field that answers it, never between them", () => {
     const r = rows(
       [
         item("a", "lead", at(19, 9)),
@@ -68,9 +77,15 @@ describe("the chat's rows", () => {
       ],
       { strip: true },
     );
-    expect(r.map((x) => x.kind)).toEqual(["top", "day", "message", "message", "message", "strip", "event", "inline"]);
+    expect(r.map((x) => x.kind)).toEqual(["top", "day", "message", "message", "message", "event", "inline", "strip"]);
     expect(rows([item("a", "human", at(19, 9))], { strip: true }).at(-1)?.kind).toBe("strip");
-    expect(rowIndexOf(r, "d")).toBe(6);
+    expect(rowIndexOf(r, "d")).toBe(5);
+    // A reply after the field: the strip stays under the lead's message, before the reply.
+    const replied = rows(
+      [item("a", "lead", at(19, 9)), item("b", "lead", at(19, 9, 1), { kind: "gated" }), item("c", "human", at(19, 9, 2)), item("d", "lead", at(19, 9, 3), { kind: "secret" })],
+      { strip: true },
+    );
+    expect(replied.map((x) => x.kind)).toEqual(["top", "day", "message", "inline", "strip", "message", "inline"]);
     // The lead's activity goes after the newest item: under its reply, ahead of the strip there.
     const lead = [item("a", "human", at(19, 9)), item("b", "lead", at(19, 9, 1))];
     expect(rows(lead, { strip: true, activity: true }).slice(-3).map((x) => x.kind)).toEqual(["message", "activity", "strip"]);
@@ -82,6 +97,18 @@ describe("the chat's rows", () => {
     const streaming = [item("a", "human", at(19, 9)), item("b", "lead", at(19, 9, 1), { state: "streaming" })];
     expect(rows(streaming, { activity: true }).some((x) => x.kind === "activity")).toBe(false);
     expect(rowIndexOf(r, "nope")).toBeUndefined();
+  });
+
+  it("put how long the lead worked under the reply its turn ended with", () => {
+    const turn = Date.parse(at(19, 9));
+    const lead = [item("a", "human", at(19, 9)), item("b", "lead", at(19, 9, 3)), item("c", "system", at(19, 9, 4), { kind: "event" })];
+    const kinds = (r: ReturnType<typeof rows>) => r.map((x) => (x.kind === "message" ? `message:${x.item.id}` : x.kind));
+    expect(kinds(rows(lead, { strip: true, workedSince: turn })).slice(-4)).toEqual(["message:b", "activity", "strip", "event"]);
+    // A person's message after it, waiting for the next turn: the line stays with the reply.
+    expect(kinds(rows([...lead, item("d", "human", at(19, 9, 5))], { workedSince: turn })).slice(3)).toEqual(["message:b", "activity", "event", "message:d"]);
+    // The lead's newest reply is older than the turn: it didn't write in it, so no line claims it.
+    expect(rows(lead, { workedSince: turn + 600_000 }).some((x) => x.kind === "activity")).toBe(false);
+    expect(rows(lead, { workedSince: turn, hasNewer: true }).some((x) => x.kind === "activity")).toBe(false);
   });
 
   it("place a row whose time doesn't parse under today, rather than throwing", () => {

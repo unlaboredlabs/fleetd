@@ -1,10 +1,11 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { Button, Dialog, Dot, InlineCode, Radio, RadioGroup, Select, Separator, Text, THEME_MODES, Truncate, textClass, useTheme } from "../../ui";
 import type { LinkHandlerStatus } from "../../../shared/app";
 import type { HubState } from "../../../shared/hub";
 import { useData } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRead, useRefetch } from "./hub";
 import { MOTION_PREFS, parseMotion, setMotion, useMotion } from "./prefs";
+import { PageHead, Setting } from "./parts";
 import s from "./settings.module.css";
 import { keyStoreLine } from "../../../shared/pairing";
 import { useKeyStore } from "../onboarding";
@@ -19,7 +20,8 @@ export function General() {
   return (
     <div className={s.scroll} data-screen="settings.general">
       <div className={s.column}>
-        <Setting label="Appearance" help="Match system follows the OS as it changes.">
+        <PageHead title="General" />
+        <Setting reveal="general.appearance" label="Appearance" help="Match system follows the OS as it changes.">
           <RadioGroup className={s.radios} value={mode} onValueChange={(v) => {
               const m = THEME_MODES.find((x) => x.value === v);
               if (m) setMode(m.value);
@@ -29,7 +31,7 @@ export function General() {
             ))}
           </RadioGroup>
         </Setting>
-        <Setting label="Motion" help="Cards, lanes and panels move briefly when they change. Reduced turns that off; Match system follows the OS's reduce motion setting.">
+        <Setting reveal="general.motion" label="Motion" help="Reduced turns off movement.">
           <RadioGroup className={s.radios} value={motion} onValueChange={(v) => setMotion(parseMotion(v))} aria-label="Motion">
             {MOTION_PREFS.map((m) => (
               <Radio key={m.value} value={m.value} label={m.label} />
@@ -43,12 +45,13 @@ export function General() {
         <RetentionSetting />
         <Separator />
         <Setting
+          reveal="general.memory"
           label="Claude auto memory"
-          help="Claude's own notes, kept per folder between sessions."
+          help="Claude's own notes between runs."
         >
           <div className={s.stack}>
             <Text>Off for every agent fleetd starts.</Text>
-            <Text tone="quiet">
+            <Text size="xs" tone="quiet">
               Agents learn from their brief, your decisions and your instructions, never from notes another agent left in a worktree.{" "}
               <InlineCode>fleetd doctor</InlineCode> warns if a machine's claude keeps it on anyway.
             </Text>
@@ -56,20 +59,6 @@ export function General() {
         </Setting>
       </div>
     </div>
-  );
-}
-
-function Setting(props: { label: string; help: string; children: ReactNode }) {
-  return (
-    <section className={s.setting} aria-label={props.label}>
-      <div className={s.settingLabel}>
-        <Text strong>{props.label}</Text>
-        <Text size="xs" tone="quiet">
-          {props.help}
-        </Text>
-      </div>
-      <div className={s.stack}>{props.children}</div>
-    </section>
   );
 }
 
@@ -97,7 +86,7 @@ function HubSetting() {
   const hub = state.phase === "unpaired" ? null : state.hub;
   const line = phaseLine(state);
   return (
-    <Setting label="Hub" help={`This app acts as you on this hub. ${store === null ? "" : keyStoreLine(store).replaceAll("`", "")}`}>
+    <Setting reveal="general.hub" label="Hub" help="This app acts as you on this hub.">
       {hub ? (
         <Truncate mono size="sm">
           {hub}
@@ -108,6 +97,7 @@ function HubSetting() {
         {/* The hub's fix may name a command in backticks: shown as code. */}
         <Prose tone="quiet" text={line.text} />
       </div>
+      {store === null ? null : <Prose size="xs" tone="quiet" text={keyStoreLine(store)} />}
       <div className={s.inline}>
         <Button
           variant={hub ? "secondary" : "primary"}
@@ -127,7 +117,7 @@ function HubSetting() {
         open={confirm}
         onOpenChange={setConfirm}
         title="Disconnect and forget the key?"
-        description="This app stops showing the hub's work until you pair it again with a code from fleetd pair. Agents keep running."
+        description="This app stops showing the hub's work until you pair it again with a code from fleetd pair, and drops messages still waiting to send. Agents keep running."
         footer={
           <>
             <Button onClick={() => setConfirm(false)}>Cancel</Button>
@@ -185,7 +175,7 @@ function LinkHandlerSetting() {
     );
   };
   return (
-    <Setting label="Pairing links" help="Open fleetd:// links (pairing links) in this app.">
+    <Setting reveal="general.links" label="Pairing links" help="Open pairing links in this app.">
       {failed ? (
         <div className={s.stack}>
           <Text tone="danger">{failed.text}</Text>
@@ -241,17 +231,17 @@ function RetentionSetting() {
   const refetch = useRefetch();
   const [saving, setSaving] = useState<number | null>(null);
   const [echo, setEcho] = useState<{ ok: boolean; text: string } | null>(null);
-  const help = "How long the hub keeps the time inspector's detailed spans. Daily totals and critical paths stay 400 days.";
+  const help = "How long the hub keeps Time's detail.";
   if (!live) {
     return (
-      <Setting label="Time data" help={help}>
+      <Setting reveal="general.retention" label="Time data" help={help}>
         <Text tone="quiet">Connect to a hub to see and change this.</Text>
       </Setting>
     );
   }
   if (store.state !== "ready") {
     return (
-      <Setting label="Time data" help={help}>
+      <Setting reveal="general.retention" label="Time data" help={help}>
         {store.state === "loading" ? (
           <Text tone="quiet">Asking the hub…</Text>
         ) : (
@@ -266,7 +256,7 @@ function RetentionSetting() {
   const days = saving ?? store.value.retentionDays;
   const options = (RETENTION as ReadonlyArray<number>).includes(days) ? RETENTION : [...RETENTION, days].sort((a, b) => a - b);
   return (
-    <Setting label="Time data" help={help}>
+    <Setting reveal="general.retention" label="Time data" help={help}>
       <div className={s.inline}>
         <label htmlFor="retention" className={textClass({})}>
           Keep spans for
@@ -295,8 +285,7 @@ function RetentionSetting() {
         />
       </div>
       <Text size="xs" tone="quiet">
-        Stored now: {formatBytes(store.value.storedBytes)} on the hub, about 20 MB a day of work. Only an admin key can change this; the CLI's{" "}
-        <InlineCode>fleetd time --retention &lt;days&gt;</InlineCode> does the same.
+        Stored now: {formatBytes(store.value.storedBytes)}, about 20 MB a day of work. Daily totals stay 400 days. Changing it needs an admin key.
       </Text>
       {echo ? (
         <Text size="xs" tone={echo.ok ? "quiet" : "danger"}>

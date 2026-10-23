@@ -39,7 +39,7 @@ fn plural(n: i64, one: &str, many: &str) -> String {
     format!("{n} {}", if n == 1 { one } else { many })
 }
 
-/// The chat line for a lowered project cap that paused the extras.
+/// The chat line for a project cap that paused the extras: lowered, or kept where it was.
 pub fn paused_line(from: i64, to: i64, paused: i64, running: i64) -> String {
     let (push, keep) = (
         if paused == 1 {
@@ -49,8 +49,14 @@ pub fn paused_line(from: i64, to: i64, paused: i64, running: i64) -> String {
         },
         if running == 1 { "keeps" } else { "keep" },
     );
+    // The app lowers the max first and offers the pause after it, at the same max.
+    let change = if to < from {
+        format!("{from} → {to}")
+    } else {
+        to.to_string()
+    };
     format!(
-        "Max agents {from} → {to}: {} {push}; {running} {keep} running.",
+        "Max agents {change}: {} {push}; {running} {keep} running.",
         plural(paused, "agent", "agents")
     )
 }
@@ -128,14 +134,15 @@ impl Tasks {
         if let (Some(p), Some(before)) = (&change.project, before) {
             let r = &p.project_ref;
             let (from, to) = (before.max_agents, p.max_agents);
-            if to < from && p.pause_extras {
+            // At the same max too: the app applies a lower max first and offers the pause after it.
+            if to <= from && p.pause_extras {
                 paused = self.pause_extras(r, to).await;
             }
             let after = slots.agents(r);
             let free = slots.room(r);
             let line = if to > from {
                 raised_line(from, to, (after.running - before.running).max(0), free)
-            } else if to < from && !paused.is_empty() {
+            } else if !paused.is_empty() {
                 paused_line(
                     from,
                     to,
@@ -155,7 +162,7 @@ impl Tasks {
             } else {
                 format!("Max agents {from} → {to}.")
             };
-            if to != from {
+            if to != from || !paused.is_empty() {
                 self.cap_event(
                     Some(r),
                     from,

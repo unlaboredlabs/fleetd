@@ -12,6 +12,7 @@ import { chatCli } from "./chatCli.ts";
 import { chatLead } from "./chatLead.ts";
 import { degradedMachine } from "./degradedMachine.ts";
 import { demoFanout } from "./demoFanout.ts";
+import { desktopOffline } from "./desktopOffline.ts";
 import { desktopShell } from "./desktopShell.ts";
 import { efficiency } from "./efficiency.ts";
 import { FAILURE_SCENARIOS } from "./failure/index.ts";
@@ -102,6 +103,9 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   // The app demo: one order fanned out to writers and reviewers on the lab repo. Only when named.
   { name: "demo", run: demoFanout, only: true },
   { name: "desktop", run: desktopShell, only: true },
+  // The app offline: a chat kept through a hub stop, a quit and a restart; a message queued offline sent once. One
+  // haiku turn. Only when named.
+  { name: "desktop-offline", run: desktopOffline, only: true },
   // The per-project lead chat end to end (and the max agents cap): on the lab repo in this slot's namespace and a
   // local repo on lab-b. Only when named, so it gets a hub of its own; FLEETD_LAB_CHAT_PARTS picks parts.
   { name: "chat", run: chatLead, only: true },

@@ -1,4 +1,4 @@
-// The four budgets (docs/build/electron-app-spec.md: measured on an M-series Mac, which `--strict` gates) and the
+// The four budgets (docs/build/electron-app-spec.md: measured on an M-series Mac, scripts/perf-mac.sh) and the
 // regression rules the Linux CI job applies against perf/baseline-linux.json. CI runners are not the budget machine
 // and differ from each other, so CI gates regressions only, and first paint there only relative to a bare Electron
 // window launched in the same job.
@@ -17,7 +17,7 @@ export interface Results {
   readonly idleMemoryMb: number;
   /** Summed RSS of the same processes, MB. For information only, never gated: it counts the shared Electron pages once per process. */
   readonly idleRssMb: number;
-  /** Frames per second while wheel-scrolling the 20k-line log. */
+  /** Frames per second while wheel-scrolling back through the chat-long fixture's chat. */
   readonly scrollFps: number;
   /** p95, ms from a key press (its OS timestamp) to the presentation of the frame that shows it: Chromium's EventLatency. */
   readonly keyP95Ms: number;
@@ -30,7 +30,7 @@ interface Rule {
   readonly unit: string;
   /** Whether bigger is better. */
   readonly higher: boolean;
-  /** The budget, gated by --strict (the Mac run). */
+  /** The budget, which the Mac run marks ok or MISS. */
   readonly limit?: number;
   /** Regressed (CI) when worse than the baseline by more than the larger of ratio × baseline and slack. */
   readonly regress?: { readonly ratio: number; readonly slack: number };
@@ -43,7 +43,7 @@ export const RULES: Record<Metric, Rule> = {
   idleMemoryMb: { label: "idle memory", unit: "MB", higher: false, limit: 300, regress: { ratio: 0.15, slack: 25 } },
   idleRssMb: { label: "(summed RSS)", unit: "MB", higher: false },
   // 60 fps, allowing 5% of frames to rAF jitter: below 57 means frames were dropped.
-  scrollFps: { label: "log scroll", unit: "fps", higher: true, limit: 57, regress: { ratio: 0.1, slack: 3 } },
+  scrollFps: { label: "chat scroll", unit: "fps", higher: true, limit: 57, regress: { ratio: 0.1, slack: 3 } },
   // A p95 over ~160 keys still moves with a few slow ones on a shared runner, hence the wide slack.
   keyP95Ms: { label: "keypress to screen", unit: "ms", higher: false, limit: 16, regress: { ratio: 0.5, slack: 8 } },
 };

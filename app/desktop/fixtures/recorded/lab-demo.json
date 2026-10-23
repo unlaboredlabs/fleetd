@@ -6849,83 +6849,6 @@
      "doneLanes": [
       {
        "effort": "low",
-       "endedAt": "2026-10-19T09:02:51.452Z",
-       "laneId": "T6",
-       "live": {
-        "laneId": "T6",
-        "spark": {
-         "endAt": "2026-10-19T09:02:50.000Z",
-         "samples": [
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          50,
-          32,
-          66,
-          0,
-          86
-         ]
-        },
-        "status": "done",
-        "tokens": {
-         "cacheRead": 87426,
-         "input": 10,
-         "live": false,
-         "output": 1351
-        }
-       },
-       "model": "claude-haiku-5-5",
-       "pr": {
-        "changeId": "X1",
-        "number": 9,
-        "position": 0,
-        "repo": "acme/storefront",
-        "reviewsDone": 3,
-        "reviewsNeeded": 3,
-        "state": "ready",
-        "taskId": "T1",
-        "url": "https://github.com/acme/storefront/pull/9"
-       },
-       "receipts": {
-        "commands": 4,
-        "commandsFailed": 0,
-        "filesChanged": 0,
-        "toolCalls": 2
-       },
-       "role": "verifier",
-       "startedAt": "2026-10-19T09:02:37.883Z",
-       "status": "done",
-       "taskId": "T6",
-       "threadRef": {
-        "machineId": "devbox",
-        "threadId": "e79673be-694f-4e94-96bf-6f6555db22e3"
-       },
-       "title": "verify #9"
-      },
-      {
-       "effort": "low",
        "endedAt": "2026-10-19T09:02:51.304Z",
        "laneId": "T8",
        "live": {
@@ -6980,7 +6903,7 @@
         "position": 1,
         "repo": "acme/storefront",
         "reviewsDone": 0,
-        "reviewsNeeded": 3,
+        "reviewsNeeded": 1,
         "state": "reviewing",
         "taskId": "T2",
         "url": "https://github.com/acme/storefront/pull/10"
@@ -7056,8 +6979,8 @@
         "number": 9,
         "position": 0,
         "repo": "acme/storefront",
-        "reviewsDone": 3,
-        "reviewsNeeded": 3,
+        "reviewsDone": 1,
+        "reviewsNeeded": 1,
         "state": "ready",
         "taskId": "T1",
         "url": "https://github.com/acme/storefront/pull/9"
@@ -7077,83 +7000,6 @@
         "threadId": "f3d46e38-7eb8-4147-bcd1-006625348c26"
        },
        "title": "review #9"
-      },
-      {
-       "effort": "low",
-       "endedAt": "2026-10-19T09:02:50.089Z",
-       "laneId": "T7",
-       "live": {
-        "laneId": "T7",
-        "spark": {
-         "endAt": "2026-10-19T09:02:50.000Z",
-         "samples": [
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          40,
-          0,
-          0,
-          110,
-          19
-         ]
-        },
-        "status": "done",
-        "tokens": {
-         "cacheRead": 49359,
-         "input": 6,
-         "live": false,
-         "output": 1110
-        }
-       },
-       "model": "claude-haiku-5-5",
-       "pr": {
-        "changeId": "X2",
-        "number": 10,
-        "position": 1,
-        "repo": "acme/storefront",
-        "reviewsDone": 0,
-        "reviewsNeeded": 3,
-        "state": "reviewing",
-        "taskId": "T2",
-        "url": "https://github.com/acme/storefront/pull/10"
-       },
-       "receipts": {
-        "commands": 2,
-        "commandsFailed": 0,
-        "filesChanged": 0,
-        "toolCalls": 1
-       },
-       "role": "reviewer",
-       "startedAt": "2026-10-19T09:02:38.926Z",
-       "status": "done",
-       "taskId": "T7",
-       "threadRef": {
-        "machineId": "devbox",
-        "threadId": "9443ee92-2444-4f9e-9796-f2226a2d729b"
-       },
-       "title": "review #10"
       },
       {
        "branch": "fleetd/T3-write-gamma-md",
@@ -7212,7 +7058,7 @@
         "position": 2,
         "repo": "acme/storefront",
         "reviewsDone": 0,
-        "reviewsNeeded": 3,
+        "reviewsNeeded": 1,
         "state": "reviewing",
         "taskId": "T3",
         "url": "https://github.com/acme/storefront/pull/11"
@@ -7290,7 +7136,7 @@
         "position": 1,
         "repo": "acme/storefront",
         "reviewsDone": 0,
-        "reviewsNeeded": 3,
+        "reviewsNeeded": 1,
         "state": "reviewing",
         "taskId": "T2",
         "url": "https://github.com/acme/storefront/pull/10"
@@ -7367,8 +7213,8 @@
         "number": 9,
         "position": 0,
         "repo": "acme/storefront",
-        "reviewsDone": 3,
-        "reviewsNeeded": 3,
+        "reviewsDone": 1,
+        "reviewsNeeded": 1,
         "state": "ready",
         "taskId": "T1",
         "url": "https://github.com/acme/storefront/pull/9"
@@ -7454,82 +7300,6 @@
       "lanes": [
        {
         "effort": "low",
-        "laneId": "T12",
-        "live": {
-         "activity": {
-          "activity": {
-           "kind": "writing"
-          },
-          "since": "2026-10-19T09:02:50.920Z"
-         },
-         "laneId": "T12",
-         "spark": {
-          "endAt": "2026-10-19T09:02:50.000Z",
-          "samples": [
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           38,
-           42,
-           0,
-           75
-          ]
-         },
-         "status": "working",
-         "tokens": {
-          "cacheRead": 67267,
-          "input": 8,
-          "live": true,
-          "output": 1139
-         }
-        },
-        "model": "claude-haiku-5-5",
-        "pr": {
-         "changeId": "X3",
-         "number": 11,
-         "position": 2,
-         "repo": "acme/storefront",
-         "reviewsDone": 0,
-         "reviewsNeeded": 3,
-         "state": "reviewing",
-         "taskId": "T3",
-         "url": "https://github.com/acme/storefront/pull/11"
-        },
-        "role": "verifier",
-        "startedAt": "2026-10-19T09:02:41.585Z",
-        "status": "working",
-        "taskId": "T12",
-        "threadRef": {
-         "machineId": "devbox",
-         "threadId": "46cfb985-1db1-4257-968a-233075d19dab"
-        },
-        "title": "verify #11"
-       },
-       {
-        "effort": "low",
         "laneId": "T11",
         "live": {
          "activity": {
@@ -7589,7 +7359,7 @@
          "position": 2,
          "repo": "acme/storefront",
          "reviewsDone": 0,
-         "reviewsNeeded": 3,
+         "reviewsNeeded": 1,
          "state": "reviewing",
          "taskId": "T3",
          "url": "https://github.com/acme/storefront/pull/11"
@@ -7603,158 +7373,6 @@
          "threadId": "55f413bf-0d81-4d8c-9970-438d9c1af2c5"
         },
         "title": "review #11"
-       },
-       {
-        "effort": "low",
-        "laneId": "T10",
-        "live": {
-         "activity": {
-          "activity": {
-           "kind": "thinking"
-          },
-          "since": "2026-10-19T09:02:46.333Z"
-         },
-         "laneId": "T10",
-         "spark": {
-          "endAt": "2026-10-19T09:02:50.000Z",
-          "samples": [
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           92,
-           0,
-           0
-          ]
-         },
-         "status": "working",
-         "tokens": {
-          "cacheRead": 31112,
-          "input": 4,
-          "live": true,
-          "output": 357
-         }
-        },
-        "model": "claude-haiku-5-5",
-        "pr": {
-         "changeId": "X3",
-         "number": 11,
-         "position": 2,
-         "repo": "acme/storefront",
-         "reviewsDone": 0,
-         "reviewsNeeded": 3,
-         "state": "reviewing",
-         "taskId": "T3",
-         "url": "https://github.com/acme/storefront/pull/11"
-        },
-        "role": "reviewer",
-        "startedAt": "2026-10-19T09:02:41.496Z",
-        "status": "working",
-        "taskId": "T10",
-        "threadRef": {
-         "machineId": "devbox",
-         "threadId": "af5938fa-9bbb-4567-b9ab-45830457578d"
-        },
-        "title": "review #11"
-       },
-       {
-        "effort": "low",
-        "laneId": "T9",
-        "live": {
-         "activity": {
-          "activity": {
-           "kind": "writing"
-          },
-          "since": "2026-10-19T09:02:49.202Z"
-         },
-         "laneId": "T9",
-         "spark": {
-          "endAt": "2026-10-19T09:02:50.000Z",
-          "samples": [
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           0,
-           52,
-           18,
-           17,
-           67
-          ]
-         },
-         "status": "working",
-         "tokens": {
-          "cacheRead": 68062,
-          "input": 8,
-          "live": true,
-          "output": 753
-         }
-        },
-        "model": "claude-haiku-5-5",
-        "pr": {
-         "changeId": "X2",
-         "number": 10,
-         "position": 1,
-         "repo": "acme/storefront",
-         "reviewsDone": 0,
-         "reviewsNeeded": 3,
-         "state": "reviewing",
-         "taskId": "T2",
-         "url": "https://github.com/acme/storefront/pull/10"
-        },
-        "role": "verifier",
-        "startedAt": "2026-10-19T09:02:39.016Z",
-        "status": "working",
-        "taskId": "T9",
-        "threadRef": {
-         "machineId": "devbox",
-         "threadId": "7d9a2a4b-663b-4f8e-8edb-a9d34e6dc27d"
-        },
-        "title": "verify #10"
        },
        {
         "effort": "low",
@@ -7816,8 +7434,8 @@
          "number": 9,
          "position": 0,
          "repo": "acme/storefront",
-         "reviewsDone": 3,
-         "reviewsNeeded": 3,
+         "reviewsDone": 1,
+         "reviewsNeeded": 1,
          "state": "ready",
          "taskId": "T1",
          "url": "https://github.com/acme/storefront/pull/9"
@@ -7848,7 +7466,7 @@
         "position": 2,
         "repo": "acme/storefront",
         "reviewsDone": 0,
-        "reviewsNeeded": 3,
+        "reviewsNeeded": 1,
         "state": "reviewing",
         "taskId": "T3",
         "url": "https://github.com/acme/storefront/pull/11"
@@ -7859,7 +7477,7 @@
         "position": 1,
         "repo": "acme/storefront",
         "reviewsDone": 0,
-        "reviewsNeeded": 3,
+        "reviewsNeeded": 1,
         "state": "reviewing",
         "taskId": "T2",
         "url": "https://github.com/acme/storefront/pull/10"
@@ -7869,8 +7487,8 @@
         "number": 9,
         "position": 0,
         "repo": "acme/storefront",
-        "reviewsDone": 3,
-        "reviewsNeeded": 3,
+        "reviewsDone": 1,
+        "reviewsNeeded": 1,
         "state": "ready",
         "taskId": "T1",
         "url": "https://github.com/acme/storefront/pull/9"
@@ -7946,82 +7564,6 @@
        "lanes": [
         {
          "effort": "low",
-         "laneId": "T12",
-         "live": {
-          "activity": {
-           "activity": {
-            "kind": "writing"
-           },
-           "since": "2026-10-19T09:02:50.920Z"
-          },
-          "laneId": "T12",
-          "spark": {
-           "endAt": "2026-10-19T09:02:50.000Z",
-           "samples": [
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            38,
-            42,
-            0,
-            75
-           ]
-          },
-          "status": "working",
-          "tokens": {
-           "cacheRead": 67267,
-           "input": 8,
-           "live": true,
-           "output": 1139
-          }
-         },
-         "model": "claude-haiku-5-5",
-         "pr": {
-          "changeId": "X3",
-          "number": 11,
-          "position": 2,
-          "repo": "acme/storefront",
-          "reviewsDone": 0,
-          "reviewsNeeded": 3,
-          "state": "reviewing",
-          "taskId": "T3",
-          "url": "https://github.com/acme/storefront/pull/11"
-         },
-         "role": "verifier",
-         "startedAt": "2026-10-19T09:02:41.585Z",
-         "status": "working",
-         "taskId": "T12",
-         "threadRef": {
-          "machineId": "devbox",
-          "threadId": "46cfb985-1db1-4257-968a-233075d19dab"
-         },
-         "title": "verify #11"
-        },
-        {
-         "effort": "low",
          "laneId": "T11",
          "live": {
           "activity": {
@@ -8081,7 +7623,7 @@
           "position": 2,
           "repo": "acme/storefront",
           "reviewsDone": 0,
-          "reviewsNeeded": 3,
+          "reviewsNeeded": 1,
           "state": "reviewing",
           "taskId": "T3",
           "url": "https://github.com/acme/storefront/pull/11"
@@ -8095,158 +7637,6 @@
           "threadId": "55f413bf-0d81-4d8c-9970-438d9c1af2c5"
          },
          "title": "review #11"
-        },
-        {
-         "effort": "low",
-         "laneId": "T10",
-         "live": {
-          "activity": {
-           "activity": {
-            "kind": "thinking"
-           },
-           "since": "2026-10-19T09:02:46.333Z"
-          },
-          "laneId": "T10",
-          "spark": {
-           "endAt": "2026-10-19T09:02:50.000Z",
-           "samples": [
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            92,
-            0,
-            0
-           ]
-          },
-          "status": "working",
-          "tokens": {
-           "cacheRead": 31112,
-           "input": 4,
-           "live": true,
-           "output": 357
-          }
-         },
-         "model": "claude-haiku-5-5",
-         "pr": {
-          "changeId": "X3",
-          "number": 11,
-          "position": 2,
-          "repo": "acme/storefront",
-          "reviewsDone": 0,
-          "reviewsNeeded": 3,
-          "state": "reviewing",
-          "taskId": "T3",
-          "url": "https://github.com/acme/storefront/pull/11"
-         },
-         "role": "reviewer",
-         "startedAt": "2026-10-19T09:02:41.496Z",
-         "status": "working",
-         "taskId": "T10",
-         "threadRef": {
-          "machineId": "devbox",
-          "threadId": "af5938fa-9bbb-4567-b9ab-45830457578d"
-         },
-         "title": "review #11"
-        },
-        {
-         "effort": "low",
-         "laneId": "T9",
-         "live": {
-          "activity": {
-           "activity": {
-            "kind": "writing"
-           },
-           "since": "2026-10-19T09:02:49.202Z"
-          },
-          "laneId": "T9",
-          "spark": {
-           "endAt": "2026-10-19T09:02:50.000Z",
-           "samples": [
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            52,
-            18,
-            17,
-            67
-           ]
-          },
-          "status": "working",
-          "tokens": {
-           "cacheRead": 68062,
-           "input": 8,
-           "live": true,
-           "output": 753
-          }
-         },
-         "model": "claude-haiku-5-5",
-         "pr": {
-          "changeId": "X2",
-          "number": 10,
-          "position": 1,
-          "repo": "acme/storefront",
-          "reviewsDone": 0,
-          "reviewsNeeded": 3,
-          "state": "reviewing",
-          "taskId": "T2",
-          "url": "https://github.com/acme/storefront/pull/10"
-         },
-         "role": "verifier",
-         "startedAt": "2026-10-19T09:02:39.016Z",
-         "status": "working",
-         "taskId": "T9",
-         "threadRef": {
-          "machineId": "devbox",
-          "threadId": "7d9a2a4b-663b-4f8e-8edb-a9d34e6dc27d"
-         },
-         "title": "verify #10"
         },
         {
          "effort": "low",
@@ -8308,8 +7698,8 @@
           "number": 9,
           "position": 0,
           "repo": "acme/storefront",
-          "reviewsDone": 3,
-          "reviewsNeeded": 3,
+          "reviewsDone": 1,
+          "reviewsNeeded": 1,
           "state": "ready",
           "taskId": "T1",
           "url": "https://github.com/acme/storefront/pull/9"
@@ -8340,7 +7730,7 @@
          "position": 2,
          "repo": "acme/storefront",
          "reviewsDone": 0,
-         "reviewsNeeded": 3,
+         "reviewsNeeded": 1,
          "state": "reviewing",
          "taskId": "T3",
          "url": "https://github.com/acme/storefront/pull/11"
@@ -8351,7 +7741,7 @@
          "position": 1,
          "repo": "acme/storefront",
          "reviewsDone": 0,
-         "reviewsNeeded": 3,
+         "reviewsNeeded": 1,
          "state": "reviewing",
          "taskId": "T2",
          "url": "https://github.com/acme/storefront/pull/10"
@@ -8361,8 +7751,8 @@
          "number": 9,
          "position": 0,
          "repo": "acme/storefront",
-         "reviewsDone": 3,
-         "reviewsNeeded": 3,
+         "reviewsDone": 1,
+         "reviewsNeeded": 1,
          "state": "ready",
          "taskId": "T1",
          "url": "https://github.com/acme/storefront/pull/9"
@@ -8426,82 +7816,6 @@
        "lanes": [
         {
          "effort": "low",
-         "laneId": "T12",
-         "live": {
-          "activity": {
-           "activity": {
-            "kind": "writing"
-           },
-           "since": "2026-10-19T09:02:50.920Z"
-          },
-          "laneId": "T12",
-          "spark": {
-           "endAt": "2026-10-19T09:02:50.000Z",
-           "samples": [
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            38,
-            42,
-            0,
-            75
-           ]
-          },
-          "status": "working",
-          "tokens": {
-           "cacheRead": 67267,
-           "input": 8,
-           "live": true,
-           "output": 1139
-          }
-         },
-         "model": "claude-haiku-5-5",
-         "pr": {
-          "changeId": "X3",
-          "number": 11,
-          "position": 2,
-          "repo": "acme/storefront",
-          "reviewsDone": 0,
-          "reviewsNeeded": 3,
-          "state": "reviewing",
-          "taskId": "T3",
-          "url": "https://github.com/acme/storefront/pull/11"
-         },
-         "role": "verifier",
-         "startedAt": "2026-10-19T09:02:41.585Z",
-         "status": "working",
-         "taskId": "T12",
-         "threadRef": {
-          "machineId": "devbox",
-          "threadId": "46cfb985-1db1-4257-968a-233075d19dab"
-         },
-         "title": "verify #11"
-        },
-        {
-         "effort": "low",
          "laneId": "T11",
          "live": {
           "activity": {
@@ -8561,7 +7875,7 @@
           "position": 2,
           "repo": "acme/storefront",
           "reviewsDone": 0,
-          "reviewsNeeded": 3,
+          "reviewsNeeded": 1,
           "state": "reviewing",
           "taskId": "T3",
           "url": "https://github.com/acme/storefront/pull/11"
@@ -8575,158 +7889,6 @@
           "threadId": "55f413bf-0d81-4d8c-9970-438d9c1af2c5"
          },
          "title": "review #11"
-        },
-        {
-         "effort": "low",
-         "laneId": "T10",
-         "live": {
-          "activity": {
-           "activity": {
-            "kind": "thinking"
-           },
-           "since": "2026-10-19T09:02:46.333Z"
-          },
-          "laneId": "T10",
-          "spark": {
-           "endAt": "2026-10-19T09:02:50.000Z",
-           "samples": [
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            92,
-            0,
-            0
-           ]
-          },
-          "status": "working",
-          "tokens": {
-           "cacheRead": 31112,
-           "input": 4,
-           "live": true,
-           "output": 357
-          }
-         },
-         "model": "claude-haiku-5-5",
-         "pr": {
-          "changeId": "X3",
-          "number": 11,
-          "position": 2,
-          "repo": "acme/storefront",
-          "reviewsDone": 0,
-          "reviewsNeeded": 3,
-          "state": "reviewing",
-          "taskId": "T3",
-          "url": "https://github.com/acme/storefront/pull/11"
-         },
-         "role": "reviewer",
-         "startedAt": "2026-10-19T09:02:41.496Z",
-         "status": "working",
-         "taskId": "T10",
-         "threadRef": {
-          "machineId": "devbox",
-          "threadId": "af5938fa-9bbb-4567-b9ab-45830457578d"
-         },
-         "title": "review #11"
-        },
-        {
-         "effort": "low",
-         "laneId": "T9",
-         "live": {
-          "activity": {
-           "activity": {
-            "kind": "writing"
-           },
-           "since": "2026-10-19T09:02:49.202Z"
-          },
-          "laneId": "T9",
-          "spark": {
-           "endAt": "2026-10-19T09:02:50.000Z",
-           "samples": [
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            52,
-            18,
-            17,
-            67
-           ]
-          },
-          "status": "working",
-          "tokens": {
-           "cacheRead": 68062,
-           "input": 8,
-           "live": true,
-           "output": 753
-          }
-         },
-         "model": "claude-haiku-5-5",
-         "pr": {
-          "changeId": "X2",
-          "number": 10,
-          "position": 1,
-          "repo": "acme/storefront",
-          "reviewsDone": 0,
-          "reviewsNeeded": 3,
-          "state": "reviewing",
-          "taskId": "T2",
-          "url": "https://github.com/acme/storefront/pull/10"
-         },
-         "role": "verifier",
-         "startedAt": "2026-10-19T09:02:39.016Z",
-         "status": "working",
-         "taskId": "T9",
-         "threadRef": {
-          "machineId": "devbox",
-          "threadId": "7d9a2a4b-663b-4f8e-8edb-a9d34e6dc27d"
-         },
-         "title": "verify #10"
         },
         {
          "effort": "low",
@@ -8788,8 +7950,8 @@
           "number": 9,
           "position": 0,
           "repo": "acme/storefront",
-          "reviewsDone": 3,
-          "reviewsNeeded": 3,
+          "reviewsDone": 1,
+          "reviewsNeeded": 1,
           "state": "ready",
           "taskId": "T1",
           "url": "https://github.com/acme/storefront/pull/9"
@@ -8820,7 +7982,7 @@
          "position": 2,
          "repo": "acme/storefront",
          "reviewsDone": 0,
-         "reviewsNeeded": 3,
+         "reviewsNeeded": 1,
          "state": "reviewing",
          "taskId": "T3",
          "url": "https://github.com/acme/storefront/pull/11"
@@ -8831,7 +7993,7 @@
          "position": 1,
          "repo": "acme/storefront",
          "reviewsDone": 0,
-         "reviewsNeeded": 3,
+         "reviewsNeeded": 1,
          "state": "reviewing",
          "taskId": "T2",
          "url": "https://github.com/acme/storefront/pull/10"
@@ -8841,8 +8003,8 @@
          "number": 9,
          "position": 0,
          "repo": "acme/storefront",
-         "reviewsDone": 3,
-         "reviewsNeeded": 3,
+         "reviewsDone": 1,
+         "reviewsNeeded": 1,
          "state": "ready",
          "taskId": "T1",
          "url": "https://github.com/acme/storefront/pull/9"

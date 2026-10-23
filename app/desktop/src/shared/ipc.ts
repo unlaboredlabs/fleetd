@@ -2,6 +2,7 @@
 // argument list here before any handler runs, and refuses anything else.
 import { z } from "zod";
 import { LinkHandlerClaim, NotifyRequest } from "./app";
+import { HUB_CACHE_MAX_BYTES } from "./cache";
 import { MENU_COMMANDS } from "./menu";
 import { IPC, type InvokeChannel } from "./channels";
 
@@ -82,11 +83,9 @@ export const ChatScope = z.strictObject({
 });
 export type ChatScope = z.infer<typeof ChatScope>;
 
-export const LiveScope = z.strictObject({
-  board: z.boolean(),
-  focus: z.string().min(1).max(64).optional(),
-});
-export type LiveScope = z.infer<typeof LiveScope>;
+/** The order whose lanes stream their text (a WorkstreamId). */
+export const OrderFocus = z.string().min(1).max(64);
+export type OrderFocus = z.infer<typeof OrderFocus>;
 
 export const ConnectRequest = z.strictObject({
   url: z.string().trim().min(1).max(2048),
@@ -131,13 +130,17 @@ const none = z.tuple([]);
 
 /** The argument list each invoke channel accepts. */
 export const REQUESTS = {
-  [IPC.hubState]: none,
   [IPC.hubSubscribe]: none,
   [IPC.hubUnsubscribe]: none,
   [IPC.hubCall]: z.tuple([CallRequest]),
-  [IPC.hubLive]: z.tuple([LiveScope.nullable()]),
   [IPC.hubChat]: z.tuple([ChatScope.nullable()]),
+  [IPC.hubFocus]: z.tuple([OrderFocus.nullable()]),
   [IPC.hubResync]: none,
+  [IPC.hubRetryNow]: none,
+  [IPC.hubCacheRead]: none,
+  // A string's UTF-16 length never exceeds its UTF-8 size, so this is a loose bound; main checks the bytes and the
+  // envelope (main/hub/cache.ts).
+  [IPC.hubCacheWrite]: z.tuple([z.string().max(HUB_CACHE_MAX_BYTES)]),
   [IPC.hubConnect]: z.tuple([ConnectRequest]),
   [IPC.hubForget]: none,
   [IPC.pairStart]: none,
@@ -145,6 +148,7 @@ export const REQUESTS = {
   [IPC.pairRedeem]: z.tuple([PairRequest]),
   [IPC.pairAuto]: none,
   [IPC.pairStore]: none,
+  [IPC.pairSetup]: none,
   [IPC.secretSubmit]: z.tuple([SecretRequest]),
   [IPC.systemHostName]: none,
   [IPC.projectsPickFolder]: none,
@@ -152,9 +156,16 @@ export const REQUESTS = {
   [IPC.copy]: z.tuple([z.string().max(1_000_000)]),
   [IPC.appReady]: none,
   [IPC.appNotify]: z.tuple([NotifyRequest]),
+  [IPC.appBadge]: z.tuple([z.number().int().min(0).max(9999)]),
+  [IPC.appTheme]: z.tuple([z.enum(["system", "light", "dark"])]),
   [IPC.appMenuState]: z.tuple([MenuState]),
   [IPC.appLinkHandler]: z.tuple([LinkHandlerClaim.nullable()]),
   [IPC.appLog]: z.tuple([ErrorReport]),
+  [IPC.updatesState]: none,
+  [IPC.updatesCheck]: none,
+  [IPC.updatesInstall]: none,
+  [IPC.updatesKeep]: none,
+  [IPC.updatesHubTerminal]: none,
   // The URL rules live in main (main/external.ts), which answers with the reason; this only bounds the size.
   [IPC.openExternal]: z.tuple([z.string().max(8192)]),
 } as const satisfies Record<InvokeChannel, z.ZodType>;

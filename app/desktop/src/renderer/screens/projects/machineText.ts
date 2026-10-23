@@ -1,6 +1,7 @@
 // How a machine reads on the Machines screen, as the GPUI strip said it (live/strips.rs, model.rs SleptSpan):
 // only what it reports, a sleep for an hour after it woke, an offline machine with how long.
 
+import { SLEPT_SHOWN_MS } from "../../../shared/contracts";
 import type { LoginLimit, Machine, MachineLive, SleptSpan, SlotState } from "./contracts";
 
 export type Tone = "quiet" | "warning" | "danger";
@@ -8,9 +9,6 @@ export interface Part {
   readonly text: string;
   readonly tone: Tone;
 }
-
-/** Status views show a sleep for this long after the machine woke. */
-export const SLEPT_SHOWN_MS = 60 * 60 * 1000;
 
 /** "46s", "10m46s", "2h05m". */
 export const durationText = (ms: number): string => {
@@ -69,8 +67,8 @@ export const machineParts = (m: Machine, live: MachineLive | undefined, nowMs: n
   return out;
 };
 
-/** "slots 8/40 · 1 queued". */
-export const slotsText = (s: SlotState): string => `slots ${s.used}/${s.cap}${s.queued > 0 ? ` · ${s.queued} queued` : ""}`;
+/** "agents 8 / 40 · 1 queued", the words the chat header's Max agents control uses. */
+export const slotsText = (s: SlotState): string => `agents ${s.used} / ${s.cap}${s.queued > 0 ? ` · ${s.queued} queued` : ""}`;
 
 /** Offline last, then by name. */
 export const machineOrder = (a: Machine, b: Machine): number =>

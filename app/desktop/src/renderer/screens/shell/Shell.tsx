@@ -1,28 +1,34 @@
-// The app frame: the top bar (the window's drag region, the traffic lights inset on macOS), the sidebar of projects,
-// and the screen the route names: a project's lead chat, or Status, Time or Settings. Navigation is the hash
-// (routes.ts); `#/` opens the project you last had open.
+// The app frame: the sidebar of projects down the left (the macOS traffic lights sit in its top row, over the window's
+// translucent material), the top row beside it (the window's drag region, where a chat puts its title), and the
+// screen the route names: a project's lead chat, or Status, Time or Settings. Navigation is the hash (routes.ts);
+// `#/` opens the project you last had open.
 import { PanelLeft, Search } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef } from "react";
 import { display } from "../../../shared/shortcuts";
-import { AppFrame, Button, EmptyState, TopBar } from "../../ui";
+import { AppFrame, Button, TopBar } from "../../ui";
 import { openPalette, PaletteHost, useCommands, type Command } from "../palette";
 import { ProjectsHost } from "../projects";
-import { useMainProcess, useMenuState, useModHeld, useNotifications } from "./effects";
+import { useDockBadge, useMainProcess, useMenuState, useModHeld, useNotifications } from "./effects";
 import { useHubState } from "./hubFeed";
 import { useDataLayer } from "../../src/data/react";
-import { homeProject, projectId, stepProject } from "./model";
-import { useMachinesDown, useSidebarProjects } from "./data";
+import { homeProject, nextWanting, projectId, stepProject } from "./model";
+import { useAgentsWorking, useMachinesDown, useSidebarProjects } from "./data";
 import { navigate, useRoute } from "./navigation";
-import type { Screen } from "./routes";
-import { ConnectionBanner, needsOnboarding } from "../onboarding";
+import { HOME, type Screen } from "./routes";
+import { ConnectionBanner, GetStarted, needsOnboarding } from "../onboarding";
+import { UpdatesHost } from "../updates";
 import { Boundary } from "../../src/Boundary";
 import { ScreenHost, screenPart } from "./screens";
 import { Sidebar } from "./Sidebar";
+import { useSidebar } from "./sidebarState";
 import s from "./shell.module.css";
 
 const platform = window.fleetd.platform;
 
 const JUMPS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
+
+// Settings' own sidebar takes the projects' place while Settings is open; it ships in Settings' chunk.
+const SettingsSidebar = lazy(() => import("../settings/SettingsScreen").then((m) => ({ default: m.SettingsSidebar })));
 
 /** The project `#/` opens, kept across launches: the app opens where you left it. */
 const LAST_PROJECT = "fleetd.lastProject";
@@ -36,21 +42,19 @@ const readLast = (): string | null => {
 
 export function Shell() {
   const route = useRoute();
-  // The live feed: the board's lanes, which the chat's agent strip reads. The layer is the only caller of hub.live
-  // and sends only changes.
   const layer = useDataLayer();
-  useEffect(() => {
-    layer.setLive({ board: true });
-  }, [layer]);
   const hub = useHubState();
-  const projects = useSidebarProjects();
+  // The route's project, not the resolved home: `#/` becomes a project's own route at once.
+  const projects = useSidebarProjects(route.id === "project" ? route.project : null);
+  const agentsWorking = useAgentsWorking();
   const machinesDown = useMachinesDown();
-  const [sidebarHidden, setSidebarHidden] = useState(false);
+  const sidebar = useSidebar();
   const modHeld = useModHeld();
 
   useMainProcess();
   useMenuState();
   useNotifications(hub?.phase === "live");
+  useDockBadge();
 
   // `#/` is the last project once the projects are known: shown as that project at once, and the URL follows (replace,
   // so Back doesn't return to the bare `#/`). It is shown from `home`, not from the replaced URL: a hash set back to
@@ -61,7 +65,18 @@ export function Shell() {
     if (home !== null) navigate({ id: "project", project: home, message: null }, { replace: true });
   }, [home]);
 
+  // Where Settings' Back returns: the last screen before Settings.
+  const away = useRef<Screen>(HOME);
+  useEffect(() => {
+    if (screen.id !== "settings" && screen.id !== "onboarding") away.current = screen;
+  }, [screen]);
+  const back = useSettingsBack(screen.id === "settings");
+
   const open = screen.id === "project" ? screen.project : null;
+  // The project on screen, its chat or its PRs.
+  const here = screen.id === "project" || screen.id === "prs" ? screen.project : null;
+  // The sidebar's and the palette's Pull requests: the project on screen, else the one `#/` opens.
+  const prsProject = here ?? (projects === undefined ? null : homeProject(projects, readLast()));
   // One chat streams at a time: the one on screen.
   const openKey = open === null ? null : projectId(open);
   useEffect(() => {
@@ -85,8 +100,8 @@ export function Shell() {
   // onboarding screen has the window to itself.
   const blocked = hub !== null && needsOnboarding(hub);
   const onboarding = blocked || screen.id === "onboarding";
-  const shown: Screen = blocked && screen.id !== "gallery" && screen.id !== "onboarding" ? { id: "onboarding", hub: null, code: null } : screen;
-  const chrome = !onboarding && shown.id !== "gallery";
+  const shown: Screen = blocked && screen.id !== "onboarding" ? { id: "onboarding", hub: null, code: null } : screen;
+  const chrome = !onboarding;
 
   const go = (next: Screen) => navigate(next);
   const step = (by: 1 | -1) => {
@@ -96,9 +111,40 @@ export function Shell() {
 
   useCommands(
     [
-      { id: "sidebar.toggle", title: "Toggle sidebar", group: "actions", enabled: () => chrome, run: () => setSidebarHidden((h) => !h) },
+      { id: "sidebar.toggle", title: "Toggle sidebar", group: "actions", enabled: () => chrome, run: sidebar.toggle },
       { id: "project.previous", title: "Previous project", group: "projects", searchOnly: true, enabled: () => chrome && (projects?.length ?? 0) > 0, run: () => step(-1) },
       { id: "project.next", title: "Next project", group: "projects", searchOnly: true, enabled: () => chrome && (projects?.length ?? 0) > 0, run: () => step(1) },
+      {
+        id: "project.nextNeedsYou",
+        title: "Next project that needs you",
+        group: "projects",
+        keywords: ["waiting", "reply", "approve", "secret", "blocked"],
+        enabled: () => chrome && projects !== undefined && nextWanting(projects, open) !== null,
+        run: () => {
+          const next = projects === undefined ? null : nextWanting(projects, open);
+          if (next !== null) go({ id: "project", project: next, message: null });
+        },
+      },
+      {
+        id: "go:agents",
+        title: "Agents",
+        detail: "Every agent working now",
+        group: "go-to",
+        keywords: ["live", "work", "running"],
+        enabled: () => chrome,
+        run: () => go({ id: "agents", agent: null }),
+      },
+      {
+        id: "go:prs",
+        title: "Pull requests",
+        detail: "A project’s PRs: checks, reviews and changes",
+        group: "go-to",
+        keywords: ["pr", "prs", "pull", "diff", "changes", "review"],
+        enabled: () => chrome && prsProject !== null,
+        run: () => {
+          if (prsProject !== null) go({ id: "prs", project: prsProject, pr: null });
+        },
+      },
       ...JUMPS.map(
         (n): Command => ({
           id: `project.open.${String(n)}`,
@@ -116,22 +162,25 @@ export function Shell() {
     [],
   );
 
+  const toggle = (
+    <Button
+      variant="quiet"
+      iconOnly
+      aria-label={sidebar.hidden ? "Show the sidebar" : "Hide the sidebar"}
+      title={`${sidebar.hidden ? "Show" : "Hide"} the sidebar (${display("sidebar.toggle", platform)})`}
+      aria-pressed={!sidebar.hidden}
+      onClick={sidebar.toggle}
+    >
+      <PanelLeft />
+    </Button>
+  );
+  // Settings' pages are in its sidebar, so it shows whatever the toggle says.
+  const settings = shown.id === "settings";
+  const showSidebar = chrome && (settings || !sidebar.hidden);
+
   const top = (
     <TopBar
-      leading={
-        chrome ? (
-          <Button
-            variant="quiet"
-            iconOnly
-            aria-label={sidebarHidden ? "Show the sidebar" : "Hide the sidebar"}
-            title={`${sidebarHidden ? "Show" : "Hide"} the sidebar (${display("sidebar.toggle", platform)})`}
-            aria-pressed={!sidebarHidden}
-            onClick={() => setSidebarHidden((h) => !h)}
-          >
-            <PanelLeft />
-          </Button>
-        ) : undefined
-      }
+      leading={chrome && !showSidebar ? toggle : undefined}
       trailing={
         chrome ? (
           <Button variant="quiet" icon={<Search />} shortcut={display("palette.toggle", platform)} onClick={() => openPalette()}>
@@ -145,11 +194,24 @@ export function Shell() {
   return (
     <div className={s.root} data-screen="shell">
       <AppFrame
+        translucent
         topBar={top}
+        sidebarTop={settings ? undefined : toggle}
         sidebar={
-          chrome && !sidebarHidden ? (
-            <Boundary part="the sidebar">
-              <Sidebar projects={projects} machinesDown={machinesDown} screen={screen} hub={hub} jumpHints={modHeld} go={go} />
+          !chrome ? undefined : settings ? (
+            <Boundary key="settings" part="the sidebar">
+              <Suspense fallback={null}>
+                <SettingsSidebar
+                  onBack={() => {
+                    back();
+                    go(away.current);
+                  }}
+                />
+              </Suspense>
+            </Boundary>
+          ) : showSidebar ? (
+            <Boundary key="sidebar" part="the sidebar">
+              <Sidebar projects={projects} agentsWorking={agentsWorking} prsProject={prsProject} machinesDown={machinesDown} screen={screen} hub={hub} jumpHints={modHeld} go={go} />
             </Boundary>
           ) : undefined
         }
@@ -165,16 +227,7 @@ export function Shell() {
           <div className={s.screen}>
             {shown.id === "home" && projects !== undefined && projects.length === 0 ? (
               <div data-screen="home.empty" style={{ display: "contents" }}>
-                <EmptyState
-                  title="Add a project to chat with its lead"
-                  actions={
-                    <Button variant="primary" onClick={() => go({ id: "projects.add" })}>
-                      Add a project
-                    </Button>
-                  }
-                >
-                  Each project has a lead. Tell it what you want; it runs the agents and asks you only what it needs.
-                </EmptyState>
+                <GetStarted onAddProject={() => go({ id: "projects.add" })} />
               </div>
             ) : (
               // Keyed by the screen, so going elsewhere after an error opens that screen, not the card.
@@ -187,6 +240,47 @@ export function Shell() {
       </AppFrame>
       <PaletteHost />
       <ProjectsHost />
+      <UpdatesHost />
     </div>
   );
 }
+
+/**
+ * Focus after Settings' Back: the sidebar control that opened Settings, if that is how it was opened; else the page
+ * title, unless the screen gave focus to something itself (the chat's message box). Returns what Back calls first.
+ */
+function useSettingsBack(inSettings: boolean): () => void {
+  // The last element that had focus: by the time Settings shows, its opener has left the DOM.
+  const last = useRef<Element | null>(null);
+  useEffect(() => {
+    const on = (e: FocusEvent) => {
+      last.current = e.target instanceof Element ? e.target : null;
+    };
+    document.addEventListener("focusin", on);
+    return () => document.removeEventListener("focusin", on);
+  }, []);
+  const fromSidebar = useRef(false);
+  const returning = useRef(false);
+  useEffect(() => {
+    if (inSettings) {
+      fromSidebar.current = last.current?.closest('[data-opens="settings"]') != null;
+      return;
+    }
+    if (!returning.current) return;
+    returning.current = false;
+    const frame = requestAnimationFrame(() => {
+      const opener = fromSidebar.current ? document.querySelector<HTMLElement>('[data-opens="settings"]') : null;
+      if (opener) return opener.focus();
+      if (document.activeElement !== null && document.activeElement !== document.body) return;
+      const title = document.querySelector<HTMLElement>("main h1, main h2");
+      if (title === null) return;
+      title.tabIndex = -1;
+      title.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [inSettings]);
+  return () => {
+    returning.current = true;
+  };
+}
+

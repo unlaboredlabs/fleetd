@@ -218,10 +218,11 @@ both; the lead plans to them.</p>
 </tr>
 </tbody>
 </table>
-<p>The header shows “· 2 waiting” when agents are queued. Before you save, the slider says what the change will do.</p>
+<p>The header shows “· 2 queued” when agents wait their turn. While you move the slider it says what the change will do; it
+applies when you let go, with Undo. A fleet cap below a project’s own max gets a warning.</p>
 <p>Writers in a project run side by side, each in its own worktree and branch. The lead gives them slices that touch
 separate files; if two PRs still conflict, the <a href="/docs/merge-train">merge train</a> sends the later one back to its writer.</p>
-<p><img src="/docs/img/max-agents.png" alt="The Max agents control open in storefront’s chat header: a slider set to 12, from 1 up to 16 (the fleet’s limit), with “6 agents running now” and Save."></p>
+<p><img src="/docs/img/max-agents.png" alt="The Max agents control open in storefront’s chat header: a slider set to 12, from 1 up to 16 (the fleet’s limit), with “6 agents running now”."></p>
 <p>From a terminal:</p>
 <div class="expressive-code"><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="sh"><code><div class="ec-line"><div class="code"><span style="--0:#B392F0;--1:#6F42C1">fleetd</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">project</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">set</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">devbox/storefront</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#79B8FF;--1:#005CC5">--max-agents</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#79B8FF;--1:#005CC5">3</span></div></div><div class="ec-line"><div class="code"><span style="--0:#B392F0;--1:#6F42C1">fleetd</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">project</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">set</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">devbox/storefront</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#79B8FF;--1:#005CC5">--max-agents</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#79B8FF;--1:#005CC5">2</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#79B8FF;--1:#005CC5">--pause-extras</span></div></div><div class="ec-line"><div class="code"><span style="--0:#B392F0;--1:#6F42C1">fleetd</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">project</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">set</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#79B8FF;--1:#005CC5">--fleet-cap</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#79B8FF;--1:#005CC5">20</span><span style="--0:#E1E4E8;--1:#24292E">        </span><span style="--0:#99A0A6;--1:#616972"># needs an admin key</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="fleetd project set devbox/storefront --max-agents 3fleetd project set devbox/storefront --max-agents 2 --pause-extrasfleetd project set --fleet-cap 20        # needs an admin key"><div></div></button></div></figure></div>
 <p>From an <a href="/docs/mcp-clients">MCP client</a>: <code dir="auto">cap_set {project: {projectRef, maxAgents, pauseExtras?}}</code> with an operate
@@ -250,9 +251,9 @@ the merge train.</li>
 <td>Max agents 6 → 3: 6 running finish their work; new agents wait.</td>
 </tr>
 <tr>
-<td>Lower it and tick “Pause the 3 extras now” (“Pause the extra one now” for one)</td>
+<td>Lower it, then click “Pause the 3 extras now” (“Pause the extra one now” for one)</td>
 <td>Agents over the cap push their work in progress and wait. Each resumes when a slot frees.</td>
-<td>Max agents 6 → 3: 3 agents push their work and wait; 3 keep running.</td>
+<td>Two lines: Max agents 6 → 3: 6 running finish their work; new agents wait. Then: Max agents 3: 3 agents push their work and wait; 3 keep running.</td>
 </tr>
 <tr>
 <td>Raise the cap</td>
@@ -300,7 +301,7 @@ view splits agent time and output tokens by profile, so you can see what medium 
 <tbody>
 <tr>
 <td>Whether the lead may use medium</td>
-<td><code dir="auto">fleetd project set &lt;machine&gt;/&lt;project&gt; --medium off</code> runs every new task on high; <code dir="auto">--medium on</code> allows medium again (the default).</td>
+<td>Settings → Agents → the project’s Medium allowed switch, or <code dir="auto">fleetd project set &lt;machine&gt;/&lt;project&gt; --medium off</code>: every new task runs on high. <code dir="auto">--medium on</code> allows medium again (the default).</td>
 </tr>
 <tr>
 <td>When the lead picks medium</td>

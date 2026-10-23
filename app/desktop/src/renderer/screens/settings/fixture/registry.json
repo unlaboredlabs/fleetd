@@ -73,6 +73,36 @@
    "perProject": true
   },
   {
+   "id": "lead.profiles",
+   "kind": "start",
+   "group": "lead",
+   "title": "Task profiles",
+   "sentWhen": "after lead.start while the project allows medium (project_set)",
+   "placeholders": [],
+   "rules": [
+    {
+     "id": "mechanical-only",
+     "label": "medium only for mechanical work, never for design or anything subtle",
+     "needle": "only for mechanical work",
+     "enforced": "prompt"
+    },
+    {
+     "id": "reviews-high",
+     "label": "reviews always run high",
+     "needle": "Reviews always run high",
+     "enforced": "code"
+    },
+    {
+     "id": "redo-on-high",
+     "label": "a medium task whose review finds blockers twice is redone on high",
+     "needle": "redone on high",
+     "enforced": "prompt"
+    }
+   ],
+   "text": "## Task profiles\nEvery agent runs on Opus 5.5 with one of two profiles. `high` is the default: leave `profile` out for it. Set `profile: \"medium\"` on `spawn_agent` only for mechanical work: dead-code deletions, renames, test removals, doc fixes, moving files, plain wiring, screenshot recaptures, cleanup.\n- Never medium for design or architecture, or for anything subtle: concurrency, the runner, auth and secrets, approvals, the merge train, status math. When in doubt, high.\n- Reviews always run high, whatever you set.\n- A medium task whose review finds blockers twice is redone on high: spawn the redo without `profile`.\n",
+   "perProject": true
+  },
+  {
    "id": "steer.message",
    "kind": "msg",
    "group": "messages",
@@ -255,62 +285,6 @@
     }
    ],
    "text": "Review pull request {{prUrl}} at head {{headSha}} (tier {{tier}}); it serves {{serves}}. You are an independent reviewer: judge the diff (`gh pr diff {{prNumber}} --repo {{repo}}`) against the goal and done-when, and do not read the PR description or comments.\nBlocking means wrong, unsafe, or failing what it serves; other done-when checks are other PRs' work, and style and nice-to-haves are non-blocking. Report everything in this one round. Do not change, commit or push anything.\nFinish with the `report` tool: the blocking and non-blocking counts and a summary naming each blocking finding as path:line.\n",
-   "perProject": true
-  },
-  {
-   "id": "review.verifier",
-   "kind": "start",
-   "group": "reviews_and_checks",
-   "title": "Verifier",
-   "sentWhen": "tier L, per PR head",
-   "placeholders": [
-    {
-     "name": "prUrl",
-     "required": true,
-     "description": "the PR"
-    },
-    {
-     "name": "repo",
-     "required": false,
-     "description": "owner/name"
-    },
-    {
-     "name": "prNumber",
-     "required": true,
-     "description": "its number"
-    },
-    {
-     "name": "tier",
-     "required": false,
-     "description": "S, M or L"
-    },
-    {
-     "name": "headSha",
-     "required": true,
-     "description": "the head verified"
-    }
-   ],
-   "rules": [
-    {
-     "id": "independent-review",
-     "label": "does not read the PR description or comments",
-     "needle": "do not read the PR description",
-     "enforced": "prompt"
-    },
-    {
-     "id": "read-only",
-     "label": "changes no files",
-     "needle": "do not change, commit or push",
-     "enforced": "prompt"
-    },
-    {
-     "id": "one-verdict",
-     "label": "ends with one review verdict (the `report` tool)",
-     "needle": "`report` tool",
-     "enforced": "code"
-    }
-   ],
-   "text": "Verify pull request {{prUrl}} by running the repo's tests on exactly {{headSha}} (`git fetch origin pull/{{prNumber}}/head`), in a temporary worktree (`git worktree add --detach`), never in the project's checkout; remove it afterwards. The repo's docs, scripts or CI say how to test. Do not read the PR description or comments; do not change, commit or push anything.\nFinish with the `report` tool: blocking is the number of failed test commands (0 when all pass), and the summary lists the commands and their exit codes.\n",
    "perProject": true
   },
   {

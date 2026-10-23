@@ -786,6 +786,8 @@ export type CommandApprovalItem = {
   /** The key name of the person who answered. */
   by?: string;
   exitCode?: number;
+  /** Once it ran or failed: when the result came back. */
+  finishedAt?: Timestamp;
   /** A gated command: exactly what runs once approved. */
   gated?: GatedRunSpec;
   /** Where it runs, or the machine of the session that asks. */
@@ -1358,6 +1360,8 @@ export type HumanRequest = {
    * with every injected secret value scrubbed.
    */
   exitCode?: number;
+  /** An approved command: when its result came back (ran or failed), so a client can say how long it took. */
+  finishedAt?: Timestamp;
   /** approval of a gated run: exactly the bytes the node runs. */
   gated?: GatedRunSpec;
   kind: RequestKind;

@@ -88,6 +88,10 @@
           "format": "int64",
           "type": "integer"
         },
+        "finishedAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "An approved command: when its result came back (ran or failed), so a client can say how long it took."
+        },
         "gated": {
           "$ref": "#/$defs/GatedRunSpec",
           "description": "approval of a gated run: exactly the bytes the node runs."

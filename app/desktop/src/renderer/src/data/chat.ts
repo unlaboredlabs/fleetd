@@ -7,7 +7,11 @@
 //
 // The person's sends keep the steer rules (screens/order/sending.ts): one clientRequestId per composed message,
 // reused on every resend, so the hub (which dedupes on it) never stores it twice. A call cut off by the link may
-// have reached the hub: it waits and goes again on reconnect, and is never called "not sent".
+// have reached the hub: it waits and goes again on reconnect, and is never called "not sent". A message written
+// with no hub to send it to is queued under its id and goes when the link is back.
+//
+// A chat outlives its connection: after a drop or a reconnect it is `cached`, still shown, until this connection's
+// latest page replaces it (or, at launch, it came from the disk cache, cache.ts).
 import type { HubError } from "../../../shared/hub";
 import type { AttachmentRef, ChatDelta, ChatHistoryOutput, ChatMessage, KnownChatAuthor } from "./chat-contract";
 
@@ -45,6 +49,8 @@ export interface Chat {
   readonly gap?: boolean | undefined;
   /** Messages an event named but didn't carry (over its 2 KB): read one by one, by seq. */
   readonly missing: readonly number[];
+  /** From an earlier connection or the disk: shown as it was until this connection's latest page replaces it. */
+  readonly cached?: boolean | undefined;
 }
 
 export const emptyChat: Chat = {
@@ -59,6 +65,15 @@ export const emptyChat: Chat = {
   loaded: false,
   missing: [],
 };
+
+/**
+ * A chat kept past its connection (a drop, then a new snapshot): what it showed, with nothing in flight. The next
+ * latest page starts it over. Undefined when it never showed anything.
+ */
+export const heldChat = (chat: Chat): Chat | undefined =>
+  chat.loaded || chat.cached === true
+    ? { ...chat, loaded: false, cached: true, loadingOlder: false, loadingNewer: false, error: undefined, gap: false, missing: [] }
+    : undefined;
 
 const streaming = (m: ChatMessage): boolean => m.state === "streaming";
 const stamp = (m: ChatMessage): string => m.updatedAt ?? m.createdAt;
@@ -110,13 +125,22 @@ const HELD_MAX = 500;
 
 /**
  * A live message: folded in, or, while the window is paged above the latest and doesn't hold it, kept aside until
- * the window gets back there (a history page read before it happened won't have it).
+ * the window gets back there (a history page read before it happened won't have it). A held chat (kept past its
+ * connection, or from the disk cache) keeps every live message aside: the latest page starts it over, and they join
+ * that page, newer copy winning, so a reply finished while the page was out isn't lost to the page's older copy.
  */
 export const mergeLive = (chat: Chat, message: ChatMessage): Chat => {
-  if (!chat.hasNewer || chat.messages.some((m) => m.messageId === message.messageId)) return mergeMessages(chat, [message]);
+  if (chat.cached !== true && (!chat.hasNewer || chat.messages.some((m) => m.messageId === message.messageId))) return mergeMessages(chat, [message]);
   const held = [...chat.held.filter((m) => m.messageId !== message.messageId || !newer(message, m)), message];
   return { ...chat, held: held.length > HELD_MAX ? held.slice(held.length - HELD_MAX) : held };
 };
+
+/**
+ * The person's own line (a send, a Stop): a held chat shows it at once, so their words never vanish into a chat that
+ * can't place them, and keeps it aside too, for the latest page that starts the chat over.
+ */
+export const mergeOwn = (chat: Chat, message: ChatMessage): Chat =>
+  chat.cached === true ? mergeMessages(mergeLive(chat, message), [message]) : mergeLive(chat, message);
 
 /** Back at the latest: the held live messages go in. */
 const foldHeld = (chat: Chat): Chat =>
@@ -127,7 +151,11 @@ const foldHeld = (chat: Chat): Chat =>
  * a window paged above it starts the window over there, so the chat never holds two runs with a hole between.
  */
 export const applyHistory = (chat: Chat, page: ChatHistoryOutput, direction: "latest" | "older" | "newer"): Chat => {
-  const base = direction === "latest" && chat.hasNewer ? { ...chat, messages: [], streams: {}, hasNewer: false } : chat;
+  // A cached chat starts over too: the page is the truth now, and what it held may not join up with it.
+  const base =
+    direction === "latest" && (chat.hasNewer || chat.cached === true)
+      ? { ...chat, messages: [], streams: {}, hasNewer: false, hasOlder: false, cached: false }
+      : chat;
   const merged = mergeMessages(base, page.messages, direction === "older" ? "newest" : "oldest");
   const fresh = !chat.loaded || base !== chat;
   return foldHeld({
@@ -164,12 +192,14 @@ export const applyDelta = (chat: Chat, d: ChatDelta, hubNowMs: number): Chat => 
 
 export type SendState =
   | { readonly t: "sending" }
+  /** Written with no hub to send it to: it goes, under its own id, when the link is back. */
+  | { readonly t: "queued" }
   /** The link dropped with it in flight: resent with the same id when it is back. */
   | { readonly t: "reconnecting" }
   /** The call timed out twice: the hub may have it. Resent on the next reconnect, or by hand. */
   | { readonly t: "unanswered" }
-  /** The hub never stored it: it refused it, or (a resend) there was no hub to ask. */
-  | { readonly t: "failed"; readonly error: HubError; readonly offline?: boolean };
+  /** The hub refused it. */
+  | { readonly t: "failed"; readonly error: HubError };
 
 export interface ChatSend {
   readonly clientRequestId: string;
@@ -183,15 +213,19 @@ export interface ChatSend {
 
 export type CallResult = { readonly ok: true; readonly message: ChatMessage } | { readonly ok: false; readonly error: HubError };
 
-/** What a chat_send answer does to its row: the hub's message removes it, a cut-off keeps it for a resend. */
+/**
+ * What a chat_send answer does to its row: the hub's message removes it, a cut-off keeps it for a resend, and no
+ * hub at all queues it.
+ */
 export const afterCall = (row: ChatSend, r: CallResult): ChatSend | undefined => {
   if (r.ok) return undefined;
   const code = r.error.code;
   if (code === "disconnected" || (code === "offline" && row.reached === true)) {
     return { ...row, state: { t: "reconnecting" }, reached: true };
   }
+  if (code === "offline") return { ...row, state: { t: "queued" } };
   if (code === "timeout") return { ...row, state: { t: "unanswered" }, reached: true };
-  return { ...row, state: { t: "failed", error: r.error, ...(code === "offline" ? { offline: true } : {}) } };
+  return { ...row, state: { t: "failed", error: r.error } };
 };
 
 /** Upsert by clientRequestId: a resend is the same row, in its place, and remembers an earlier cut-off. */
@@ -204,7 +238,10 @@ export const upsertSend = (rows: readonly ChatSend[], row: ChatSend): readonly C
 
 /** Rows to send again, under their own ids, once the link is back after it was really lost. */
 export const toResend = (rows: readonly ChatSend[]): readonly ChatSend[] =>
-  rows.filter((r) => r.state.t === "reconnecting" || r.state.t === "unanswered");
+  rows.filter((r) => r.state.t === "queued" || r.state.t === "reconnecting" || r.state.t === "unanswered");
+
+/** Rows that go as soon as there is a connection, whether or not one was lost first. */
+export const queued = (rows: readonly ChatSend[]): readonly ChatSend[] => rows.filter((r) => r.state.t === "queued");
 
 /** A message the hub now has settles its row (echo or answer, whichever comes first); a failed row stays. */
 export const settleSends = (rows: readonly ChatSend[], messages: readonly ChatMessage[]): readonly ChatSend[] => {
@@ -216,7 +253,7 @@ export const settleSends = (rows: readonly ChatSend[], messages: readonly ChatMe
 
 // What the chat view lists.
 
-export type ChatItemState = "sent" | "streaming" | "pending" | "reconnecting" | "unanswered" | "failed";
+export type ChatItemState = "sent" | "streaming" | "pending" | "queued" | "reconnecting" | "unanswered" | "failed";
 /** A message; a PR / merge one-liner, system line or migrated history line; or one of the two inline items. */
 export type ChatItemKind = "message" | "event" | "secret" | "gated";
 
@@ -233,8 +270,6 @@ export interface ChatItem {
   readonly attachments: readonly AttachmentRef[];
   readonly state: ChatItemState;
   readonly error?: HubError | undefined;
-  /** Failed for want of a hub, not refused by one. */
-  readonly offline?: boolean | undefined;
   readonly clientRequestId?: string | undefined;
   /** How a human message reached the lead (turn, steer, queued). */
   readonly delivery?: ChatMessage["delivery"] | undefined;
@@ -278,7 +313,6 @@ const sendItem = (r: ChatSend): ChatItem => ({
   attachments: r.attachments,
   state: r.state.t === "sending" ? "pending" : r.state.t,
   error: r.state.t === "failed" ? r.state.error : undefined,
-  offline: r.state.t === "failed" ? r.state.offline : undefined,
   clientRequestId: r.clientRequestId,
 });
 

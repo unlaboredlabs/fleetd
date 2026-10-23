@@ -25,30 +25,37 @@
   padding: var(--space-1) var(--space-2);
 }
 
-.strong {
-  font-weight: var(--weight-strong);
+/* A project's mark: why it wants you, a new message, or its agents at work. */
+.mark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
 }
-
 .jump {
   min-width: 1ch;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
 }
 
-/* The connection line sits at the bottom of the sidebar, and stays there while the projects scroll. */
+/* The sidebar's footer, below the rows that scroll: the update line (screens/updates), if any, then the connection.
+   No background of its own, so the translucent sidebar shows through it too. */
+.footer {
+  flex: none;
+  margin: 0 var(--space-2) var(--space-2);
+  display: flex;
+  flex-direction: column;
+}
+
 .conn {
-  position: sticky;
-  bottom: 0;
   display: flex;
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
   min-height: var(--row);
-  margin-top: auto;
   padding: var(--space-1) var(--space-2);
   border: none;
   border-top: 1px solid var(--hairline);
-  background: var(--sidebar);
+  background: none;
   color: var(--quiet);
   text-align: left;
 }
@@ -87,11 +94,4 @@
 }
 .sidebarSkeleton > span:nth-child(3) {
   width: 55%;
-}
-
-/* The lead is working: a still mark beside the project, sized like the counts. */
-.working {
-  width: 12px;
-  height: 12px;
-  color: var(--quiet);
 }

@@ -3,11 +3,13 @@
 // cached when it was fetched.
 //
 // Every selector of hub data is undefined while the connection is not fresh (a skeleton, never the last connection's
-// data shown as live) and until the reads it depends on loaded.
+// data shown as live) and until the reads it depends on loaded. The exceptions are the sidebar's projects and the
+// chats (selectShownProjects, selectChat): they keep what was last seen on screen, and say since when.
 //
 // Selectors are memoized on the slices they read, so a component re-renders only when its inputs changed, and
 // useSyncExternalStore sees a stable value between changes.
 import type { AgentLane, LiveLane, Machine, MachineLive, OrderCard, ProjectSummary, TrainLive } from "../../../shared/contracts";
+import type { AgentRow } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
 import { chatItems, type ChatItem, type ChatSend } from "./chat";
 import { orderPhase, PHASE_RANK, settled, type Phase } from "./phase";
@@ -85,7 +87,7 @@ export const leadLaneId = (r: { readonly machineId: string; readonly projectId: 
  * A lane with its live values merged in. A finished lane keeps its own; the feed says no more about it. `endedAt`:
  * when the feed said it finished, its end time until the hub's own arrives.
  */
-export const mergeLane = (lane: AgentLane, live: LiveLane | undefined, endedAt?: string): AgentLane => {
+export const mergeLane = <L extends AgentLane>(lane: L, live: LiveLane | undefined, endedAt?: string): L => {
   if (live === undefined || settled(lane.status)) return lane;
   const spark = live.spark ?? lane.live?.spark;
   const ended = settled(live.status) && lane.endedAt === undefined && endedAt !== undefined ? { endedAt } : {};
@@ -281,8 +283,11 @@ const selectAgentsByProject = memo(
   (fresh, orders, liveLanes, ended): Readonly<Record<ProjectKey, readonly AgentLane[]>> | undefined => {
     if (!fresh || orders === undefined) return undefined;
     const out: Record<ProjectKey, AgentLane[]> = {};
+    // A lane two cards list is one agent, counted once.
+    const seen = new Set<string>();
     for (const card of Object.values(orders)) {
-      const lanes = card.lanes.map((l) => mergeLane(l, liveLanes[l.laneId], ended[l.laneId]));
+      const lanes = card.lanes.filter((l) => !seen.has(l.laneId)).map((l) => mergeLane(l, liveLanes[l.laneId], ended[l.laneId]));
+      for (const l of lanes) seen.add(l.laneId);
       (out[projectKey(card.projectRef)] ??= []).push(...lanes);
     }
     for (const lanes of Object.values(out)) lanes.sort(byActiveFirst);
@@ -324,6 +329,8 @@ export interface ProjectRow {
   readonly working: boolean;
   /** Agents at work, the lead not counted. */
   readonly running: number;
+  /** The chat's newest message seq, when the hub has its chat state: the sidebar's unread mark. */
+  readonly lastSeq?: number | undefined;
 }
 
 const leadActive = (lanes: DataState["live"]["lanes"], key: ProjectKey): boolean => {
@@ -334,11 +341,13 @@ const leadActive = (lanes: DataState["live"]["lanes"], key: ProjectKey): boolean
 
 /** The sidebar's and status's projects, by title; undefined until loaded. */
 const sameRow = (a: ProjectRow, b: ProjectRow): boolean =>
-  a.project === b.project && a.needsYou === b.needsYou && a.running === b.running && a.working === b.working && a.state === b.state;
+  a.project === b.project && a.needsYou === b.needsYou && a.running === b.running && a.working === b.working && a.state === b.state && a.lastSeq === b.lastSeq;
 
 // The rows last handed out: a lane frame (4 Hz on the strip) that changes no row's fields hands back the same rows
 // and the same list, so the sidebar and the chat header don't re-render for it.
 let lastRows: readonly ProjectRow[] | undefined;
+/** The last rows of a fresh connection, for the moment after a reconnect before the board is read again. */
+let lastLive: ReadonlyMap<ProjectKey, ProjectRow> = new Map();
 
 export const selectProjectList = memo(
   (s) => [s.fresh, s.projects, s.chatStates, selectAgentsByProject(s), s.live.lanes],
@@ -352,17 +361,47 @@ export const selectProjectList = memo(
         const leadWorking = chat?.leadWorking ?? leadActive(liveLanes, key);
         const needsYou = chat?.needsYou === true;
         const working = running > 0 || leadWorking;
-        const row = { key, project, needsYou, running, working, state: projectStateWord(needsYou, working) };
+        const row = { key, project, needsYou, running, working, state: projectStateWord(needsYou, working), lastSeq: chat?.lastSeq };
         const prior = before.get(key);
         return prior !== undefined && sameRow(prior, row) ? prior : row;
       })
       // A stable order (by title): rows must not move under the pointer, and ⌘1–9 keep their targets.
       .sort((a, b) => a.project.title.localeCompare(b.project.title) || a.key.localeCompare(b.key));
     const unchanged = lastRows?.length === rows.length && rows.every((r, i) => r === lastRows?.[i]);
-    if (!unchanged) lastRows = rows;
+    if (!unchanged) {
+      lastRows = rows;
+      lastLive = new Map(rows.map((r) => [r.key, r]));
+    }
     return lastRows;
   },
 );
+
+/**
+ * The sidebar's projects: the live rows, else the projects held from before (a drop, a reconnect not yet read
+ * back, or the disk cache at launch). Held rows keep whether the lead waits on you and its newest message (for
+ * unread); whether agents work they keep only while connected, since offline nobody knows. Undefined while nothing
+ * is held.
+ */
+export const selectShownProjects = memo(
+  (s) => [selectProjectList(s), s.fresh, s.projects, s.chatStates],
+  (live, fresh, projects, chats): readonly ProjectRow[] | undefined => {
+    if (live !== undefined) return live;
+    const held = Object.entries(projects);
+    if (held.length === 0) return undefined;
+    return held
+      .map(([key, project]): ProjectRow => {
+        const needsYou = chats[key]?.needsYou === true;
+        const before = fresh ? lastLive.get(key) : undefined;
+        const running = before?.running ?? 0;
+        const working = before?.working ?? false;
+        return { key, project, needsYou, running, working, state: projectStateWord(needsYou, working), lastSeq: chats[key]?.lastSeq };
+      })
+      .sort((a, b) => a.project.title.localeCompare(b.project.title) || a.key.localeCompare(b.key));
+  },
+);
+
+/** When what is held was last current, while there is no fresh connection; undefined when live or nothing is held. */
+export const selectOfflineAsOf = (s: DataState): number | undefined => (s.fresh ? undefined : s.asOf);
 
 /** One project's row: what the sidebar dot, the chat header and the Status row read. */
 export const selectProjectRow = perKey((key) =>
@@ -387,6 +426,12 @@ export const selectLeadWorking = perKey((key) => (s: DataState): boolean | undef
   s.fresh ? (s.chatStates[key]?.leadWorking ?? leadActive(s.live.lanes, key)) : undefined,
 );
 
+/** Offline, the lead was working when last known: Stop shows, disabled, with why. */
+export const selectHeldLeadWorking = perKey((key) => (s: DataState): boolean => !s.fresh && s.chatStates[key]?.leadWorking === true);
+
+/** The hub can stop a lead mid-turn: false until it said so on this connection. */
+export const selectCanStop = (s: DataState): boolean => s.fresh && s.chatStop === true;
+
 export interface ChatView {
   /** Oldest first. The lead's streaming message is the last hub item; the person's unsettled sends follow it. */
   readonly items: readonly ChatItem[];
@@ -396,16 +441,29 @@ export interface ChatView {
   readonly hasNewer: boolean;
   readonly loadingNewer: boolean;
   readonly error?: HubError | undefined;
+  /**
+   * Shown from before this connection (a drop, a reconnect not yet read back, the disk cache): nothing pages, and it
+   * is never shown as current, even once connected, until this connection's latest page lands.
+   */
+  readonly held: boolean;
+  /** No fresh connection: nothing can be sent or answered now. */
+  readonly offline: boolean;
+  /** While held: when what is shown was last current. */
+  readonly asOf?: number | undefined;
 }
 
 const noSends: readonly ChatSend[] = [];
 
-/** A project's chat for the message list; undefined until its latest page loaded on this connection. */
+/**
+ * A project's chat for the message list: this connection's once its latest page loaded, else what it last showed
+ * (held). Undefined while there is neither.
+ */
 export const selectChat = perKey((key) =>
   memo(
-    (s) => [s.fresh, s.chats[key], s.chatSends[key] ?? noSends],
-    (fresh, chat, sends): ChatView | undefined => {
-      if (!fresh || chat?.loaded !== true) return undefined;
+    (s) => [s.fresh, s.chats[key], s.chatSends[key] ?? noSends, s.asOf],
+    (fresh, chat, sends, asOf): ChatView | undefined => {
+      if (chat === undefined || (!chat.loaded && chat.cached !== true)) return undefined;
+      const held = !fresh || !chat.loaded;
       return {
         items: chatItems(chat, sends),
         hasOlder: chat.hasOlder,
@@ -413,7 +471,79 @@ export const selectChat = perKey((key) =>
         hasNewer: chat.hasNewer,
         loadingNewer: chat.loadingNewer,
         error: chat.error,
+        held,
+        offline: !fresh,
+        asOf: held ? asOf : undefined,
       };
     },
+  ),
+);
+
+// The live agents view (A2): the hub's agents_list, each row merged with the live feed (the board subscription carries
+// every lane, the leads' included), and one agent's work (agent_work).
+
+export interface LiveAgent {
+  /** "machineId/projectId/laneId": the agent's route key. */
+  readonly id: string;
+  readonly project: ProjectKey;
+  /** Live-merged. */
+  readonly row: AgentRow;
+}
+
+const FINAL: ReadonlySet<AgentLane["status"]> = new Set(["done", "failed", "cancelled"]);
+
+/** The fields an agent's row shows; a frame that changes none of them keeps the row's object. */
+const sameAgent = (a: AgentRow, b: AgentRow): boolean =>
+  a.projectTitle === b.projectTitle &&
+  a.status === b.status &&
+  a.statusReason === b.statusReason &&
+  a.title === b.title &&
+  a.startedAt === b.startedAt &&
+  a.pr?.number === b.pr?.number &&
+  JSON.stringify(a.live?.activity) === JSON.stringify(b.live?.activity);
+
+const leadFirst = (a: AgentRow, b: AgentRow): number => Number(b.role === "lead") - Number(a.role === "lead");
+
+let lastAgents: readonly LiveAgent[] | undefined;
+
+/**
+ * Every agent at work or waiting, across all projects; a lead only while it works or waits. Undefined until
+ * agents_list answered on this connection. By project, its lead first, then oldest first: an agent never moves as
+ * others start, change or finish, so the row under the pointer stays put. A lane frame that changes no row's fields
+ * hands back the same list.
+ */
+export const selectLiveAgents = memo(
+  (s) => [s.fresh, s.agents, s.live.lanes, s.live.ended],
+  (fresh, agents, liveLanes, ended): readonly LiveAgent[] | undefined => {
+    if (!fresh || agents === undefined) return (lastAgents = undefined);
+    const before = new Map((lastAgents ?? []).map((a) => [a.id, a]));
+    const out: LiveAgent[] = [];
+    for (const r of agents) {
+      const row = mergeLane(r, liveLanes[r.laneId], ended[r.laneId]);
+      if (FINAL.has(row.status) || (row.role === "lead" && row.status === "idle")) continue;
+      const project = projectKey(row.projectRef);
+      const id = `${project}/${row.laneId}`;
+      const prior = before.get(id);
+      out.push(prior !== undefined && sameAgent(prior.row, row) ? prior : { id, project, row });
+    }
+    out.sort(
+      (a, b) =>
+        a.row.projectTitle.localeCompare(b.row.projectTitle) ||
+        a.project.localeCompare(b.project) ||
+        leadFirst(a.row, b.row) ||
+        (a.row.startedAt ?? "\uffff").localeCompare(b.row.startedAt ?? "\uffff") ||
+        a.row.laneId.localeCompare(b.row.laneId),
+    );
+    const unchanged = lastAgents?.length === out.length && out.every((a, i) => a === lastAgents?.[i]);
+    if (!unchanged) lastAgents = out;
+    return lastAgents;
+  },
+);
+
+/** One agent by its route key; undefined while loading or once it finished. */
+export const selectLiveAgent = perKey((id) =>
+  memo(
+    (s) => [selectLiveAgents(s)],
+    (agents): LiveAgent | undefined => agents?.find((a) => a.id === id),
   ),
 );

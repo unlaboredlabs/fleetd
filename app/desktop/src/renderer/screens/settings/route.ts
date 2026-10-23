@@ -3,8 +3,8 @@
 // and a prompt's update linkable, from the palette, a "default changed" notice or the screenshot suite.
 import { useSyncExternalStore } from "react";
 
-export type Tab = "general" | "agents" | "prompts" | "instructions";
-export const TABS: ReadonlyArray<Tab> = ["general", "agents", "prompts", "instructions"];
+export type Tab = "general" | "notifications" | "agents" | "prompts" | "instructions";
+export const TABS: ReadonlyArray<Tab> = ["general", "notifications", "agents", "prompts", "instructions"];
 
 export type View = "edit" | "compare" | "update";
 
@@ -35,9 +35,15 @@ export function formatRoute(r: RouteParts): string {
   return `#/settings/${r.tab}${qs ? `?${qs.replaceAll("%2F", "/")}` : ""}`;
 }
 
+// replaceRoute changes the hash without a hashchange; its own listeners hear it, so the sidebar follows the page.
+const replaced = new Set<() => void>();
 const subscribe = (l: () => void) => {
   window.addEventListener("hashchange", l);
-  return () => window.removeEventListener("hashchange", l);
+  replaced.add(l);
+  return () => {
+    window.removeEventListener("hashchange", l);
+    replaced.delete(l);
+  };
 };
 
 export const useHash = () => useSyncExternalStore(subscribe, () => window.location.hash);
@@ -54,5 +60,7 @@ export const promptHref = (id: string): string => formatRoute({ tab: "prompts", 
 export function replaceRoute(r: RouteParts) {
   const next = formatRoute(r);
   last.set(r.tab, next);
-  if (window.location.hash !== next) window.history.replaceState(window.history.state, "", next);
+  if (window.location.hash === next) return;
+  window.history.replaceState(window.history.state, "", next);
+  for (const l of replaced) l();
 }

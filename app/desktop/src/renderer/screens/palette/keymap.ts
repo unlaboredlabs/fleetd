@@ -14,7 +14,7 @@ const paletteKey = (event: KeyInput, platform: Platform): boolean =>
 
 /**
  * The command id a key press should run, or undefined to leave the key alone. While the palette is open only the
- * keys it uses itself are held back; every other shortcut runs (the host closes the palette first).
+ * keys it uses itself (Ctrl+N/P, ⌘K) are held back; every other shortcut runs (the host closes the palette first).
  */
 export const dispatchable = (
   event: KeyInput & { readonly repeat: boolean; readonly isComposing: boolean },
@@ -24,7 +24,8 @@ export const dispatchable = (
   if (event.isComposing) return undefined;
   const id = shortcutFor(event, platform);
   if (id === undefined || (event.repeat && !REPEATS.has(id))) return undefined;
-  if (paletteOpen && paletteKey(event, platform)) return undefined;
+  // ⌘K inside the palette lists the selected item's actions; the palette decides, and closes when there are none.
+  if (paletteOpen && (paletteKey(event, platform) || id === "palette.toggle")) return undefined;
   return commandFor(id) ? id : undefined;
 };
 

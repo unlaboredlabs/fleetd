@@ -10,7 +10,6 @@ const fakeHub = () => {
   const calls: string[] = [];
   const inputs: unknown[] = [];
   const resyncs = vi.fn(() => Promise.resolve());
-  const lives = vi.fn((_scope: unknown) => Promise.resolve());
   const hub: HubApi = {
     call: (tool, input) => {
       calls.push(tool);
@@ -19,10 +18,10 @@ const fakeHub = () => {
     },
     subscribe: (l) => ((listener = l), () => undefined),
     resync: resyncs,
-    live: lives,
     chat: () => Promise.resolve(),
+    focus: () => Promise.resolve(),
   };
-  return { hub, send: (f: HubFrame) => listener(f), answers, calls, inputs, resyncs, lives };
+  return { hub, send: (f: HubFrame) => listener(f), answers, calls, inputs, resyncs };
 };
 
 const board = { at: "2026-10-19T10:00:00.000Z", orders: [card("W1")], trains: [] };
@@ -136,6 +135,33 @@ describe("data layer", () => {
   });
 });
 
+describe("read numbers", () => {
+  it("say which read the cache holds, and a read that went out before a reset never wins over a newer one", async () => {
+    const fake = fakeHub();
+    const layer = createDataLayer(fake.hub);
+    layer.start();
+    fake.send(live());
+    fake.send(snapshot(1));
+    const input = { limit: 100 } as const;
+    const first = layer.queryClient.query(layer.toolQuery("requests_list", input));
+    const mark = layer.readsStarted();
+    fake.answers[0]?.({ requests: [] });
+    await first;
+    expect(layer.readOf("requests_list", input)).toBe(mark);
+
+    // Two reads out at once (one a reset made moot): the newer answers first, then the older lands.
+    void layer.queryClient.query({ ...layer.toolQuery("requests_list", input), staleTime: 0 }).catch(() => undefined);
+    await layer.queryClient.resetQueries();
+    const newer = layer.queryClient.query({ ...layer.toolQuery("requests_list", input), staleTime: 0 });
+    expect(layer.readsStarted()).toBe(mark + 2);
+    fake.answers[2]?.({ requests: [] });
+    await newer;
+    fake.answers[1]?.({ requests: [] });
+    await Promise.resolve();
+    expect(layer.readOf("requests_list", input)).toBe(mark + 2);
+  });
+});
+
 describe("writes", () => {
   const connected = () => {
     const fake = fakeHub();
@@ -158,25 +184,6 @@ describe("writes", () => {
     expect(layer.store.getState().live.slots?.perProject[0]?.maxAgents).toBe(4);
     expect(layer.store.getState().slots?.perProject[0]?.maxAgents).toBe(4);
   });});
-
-describe("live scope", () => {
-  it("sends only changes, and stops when nothing wants live values", () => {
-    const fake = fakeHub();
-    const layer = createDataLayer(fake.hub);
-    layer.setLive({ board: true });
-    layer.setLive({ board: true });
-    layer.setLive({ board: true, focus: "W1" });
-    layer.setLive({ focus: "W1" });
-    layer.setLive({});
-    layer.setLive({ board: false });
-    expect(fake.lives.mock.calls.map(([scope]) => scope)).toEqual([
-      { board: true },
-      { board: true, focus: "W1" },
-      { board: false, focus: "W1" },
-      null,
-    ]);
-  });
-});
 
 describe("board hold", () => {
   const at = (iso: string) => Date.parse(iso);

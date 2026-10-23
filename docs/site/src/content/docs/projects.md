@@ -104,12 +104,13 @@ both; the lead plans to them.
 | Per project: Max agents | The project's agents: writers, readers, reviewers. Not the lead. | The fleet cap | Click "agents 6 / 12" in the project's chat header, or use Settings → Agents. From 1 up to the fleet cap. |
 | Fleet-wide | Every project's agents together. Not the leads. | | Settings → Agents → Whole fleet. Needs an admin key. |
 
-The header shows "· 2 waiting" when agents are queued. Before you save, the slider says what the change will do.
+The header shows "· 2 queued" when agents wait their turn. While you move the slider it says what the change will do; it
+applies when you let go, with Undo. A fleet cap below a project's own max gets a warning.
 
 Writers in a project run side by side, each in its own worktree and branch. The lead gives them slices that touch
 separate files; if two PRs still conflict, the [merge train](/docs/merge-train) sends the later one back to its writer.
 
-![The Max agents control open in storefront's chat header: a slider set to 12, from 1 up to 16 (the fleet's limit), with "6 agents running now" and Save.](/docs/img/max-agents.png)
+![The Max agents control open in storefront's chat header: a slider set to 12, from 1 up to 16 (the fleet's limit), with "6 agents running now".](/docs/img/max-agents.png)
 
 From a terminal:
 
@@ -135,7 +136,7 @@ Changing it while work runs:
 | You | What happens | The line in the chat |
 |---|---|---|
 | Lower the cap | Running agents finish their current work; new ones wait. Nothing is killed. | Max agents 6 → 3: 6 running finish their work; new agents wait. |
-| Lower it and tick "Pause the 3 extras now" ("Pause the extra one now" for one) | Agents over the cap push their work in progress and wait. Each resumes when a slot frees. | Max agents 6 → 3: 3 agents push their work and wait; 3 keep running. |
+| Lower it, then click "Pause the 3 extras now" ("Pause the extra one now" for one) | Agents over the cap push their work in progress and wait. Each resumes when a slot frees. | Two lines: Max agents 6 → 3: 6 running finish their work; new agents wait. Then: Max agents 3: 3 agents push their work and wait; 3 keep running. |
 | Raise the cap | Queued agents start at once, and the lead is told how many slots are free. | Max agents 3 → 6: 2 queued agents start now, 1 slot free. |
 
 The lead plans to the cap: at most that many slices at once, the rest queued by value, each slot filled as it frees.
@@ -157,7 +158,7 @@ view splits agent time and output tokens by profile, so you can see what medium 
 
 | To change | Do |
 |---|---|
-| Whether the lead may use medium | `fleetd project set <machine>/<project> --medium off` runs every new task on high; `--medium on` allows medium again (the default). |
+| Whether the lead may use medium | Settings → Agents → the project's Medium allowed switch, or `fleetd project set <machine>/<project> --medium off`: every new task runs on high. `--medium on` allows medium again (the default). |
 | When the lead picks medium | Edit the **Task profiles** prompt (`lead.profiles`) like any [prompt](/docs/what-agents-are-told). It takes effect at the lead's next start. |
 
 There is no other model or effort: no setting, flag or policy key picks one. An older policy file's `defaults.model`

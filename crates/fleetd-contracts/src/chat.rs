@@ -183,6 +183,8 @@ pub struct CommandApprovalItem {
     pub answered_at: Option<Timestamp>,
     /// The key name of the person who answered.
     pub by: Option<Line<1, 120>>,
+    /// Once it ran or failed: when the result came back.
+    pub finished_at: Option<Timestamp>,
 }
 
 /// The two things a chat can't carry as plain text, shown inline in place of the message text.

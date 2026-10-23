@@ -1,10 +1,14 @@
 // The chat as rows: day dividers, messages grouped by author (a run from one author within a few minutes shows its
 // name and time once), fleetd's own messages folded to one quiet line, event one-liners, inline items, the live
-// strip under the lead's newest message, and the top of the history (older pages, or its start).
+// strip under the lead's newest message (and the field that answers it), and the top of the history.
 import type { ChatItem } from "../../src/data/chat";
 
 export type Row =
-  | { readonly kind: "top"; readonly key: "top"; readonly state: "more" | "loading" | "start" }
+  /**
+   * `held`: older messages exist, but the chat shown is from before this connection, so none load yet: offline, or
+   * `reread` once connected, until this connection's latest page lands.
+   */
+  | { readonly kind: "top"; readonly key: "top"; readonly state: TopState }
   | { readonly kind: "day"; readonly key: string; readonly label: string }
   /** `history`: written before the chat existed (an old order, a note, a steer), shown as the conversation it was. */
   | { readonly kind: "message"; readonly key: string; readonly item: ChatItem; readonly head: boolean; readonly history: boolean }
@@ -14,10 +18,21 @@ export type Row =
   | { readonly kind: "event"; readonly key: string; readonly item: ChatItem }
   | { readonly kind: "inline"; readonly key: string; readonly item: ChatItem }
   | { readonly kind: "strip"; readonly key: "strip" }
-  /** What the lead is doing while its turn runs: under its reply, or at the end when it hasn't replied yet. */
+  /**
+   * What the lead is doing while its turn runs (under the newest item), and once it is over how long it worked
+   * (under the reply it ended with).
+   */
   | { readonly kind: "activity"; readonly key: "activity" }
   /** Paged above the newest messages: more below, and the way back to the latest. */
   | { readonly kind: "bottom"; readonly key: "bottom"; readonly state: "more" | "loading" };
+
+export type TopState = "more" | "loading" | "start" | "held" | "reread";
+
+/** The header's chip on a held chat: it is never shown as current, connected or not. */
+export const heldLabel = (offline: boolean, asOf: string | undefined): string => {
+  const state = offline ? "Offline" : "Last known";
+  return asOf === undefined ? state : `${state}, ${asOf}`;
+};
 
 /** Messages from one author this close together read as one turn: the name and time show once. */
 const GROUP_MS = 5 * 60_000;
@@ -67,10 +82,19 @@ export interface RowsInput {
   readonly loadingOlder: boolean;
   readonly hasNewer?: boolean;
   readonly loadingNewer?: boolean;
+  /** The chat is held from before this connection (ChatView.held). */
+  readonly held?: boolean;
+  /** No fresh connection (ChatView.offline). */
+  readonly offline?: boolean;
   /** Show the live strip (the project has agents at work, or the strip has something to say). */
   readonly strip: boolean;
   /** The lead's turn runs: its activity line shows after the newest item. */
   readonly activity?: boolean;
+  /**
+   * The lead's last turn is over and began at this time (epoch ms): "Worked for" shows after its reply, the lead's
+   * newest message when it was written during that turn.
+   */
+  readonly workedSince?: number | undefined;
   readonly nowMs: number;
   readonly timeZone?: string;
 }
@@ -79,18 +103,34 @@ export interface RowsInput {
 const isHistory = (item: ChatItem): boolean => item.message?.history !== undefined;
 
 export function chatRows(i: RowsInput): Row[] {
-  const out: Row[] = [{ kind: "top", key: "top", state: i.loadingOlder ? "loading" : i.hasOlder ? "more" : "start" }];
+  const top: TopState = i.loadingOlder ? "loading" : !i.hasOlder ? "start" : i.held !== true ? "more" : i.offline === false ? "reread" : "held";
+  const out: Row[] = [{ kind: "top", key: "top", state: top }];
   let lastDay: string | undefined;
   let prev: ChatItem | undefined;
-  // The strip goes under the lead's newest message, or at the end when the lead hasn't said anything yet.
+  // The strip goes under the lead's newest message, or at the end when the lead hasn't said anything yet. A secret
+  // or command field right after that message answers it, so the strip goes after the field, never between them.
   let leadLast = -1;
   i.items.forEach((item, n) => {
     if (item.author === "lead" && item.kind === "message") leadLast = n;
   });
+  for (let n = leadLast + 1; leadLast !== -1 && n < i.items.length; n++) {
+    const kind = i.items[n]?.kind;
+    if (kind === "secret" || kind === "gated") leadLast = n;
+    else if (kind !== "event") break;
+  }
   let inHistory = false;
   // Not on a window paged above the latest (the turn happens below it), nor under a reply still streaming, which
   // says "Still writing" itself.
   const activity = i.activity === true && i.hasNewer !== true && i.items.at(-1)?.state !== "streaming";
+  const reply = i.items.findLastIndex((item) => item.author === "lead" && item.kind === "message");
+  const replyAt = i.items[reply];
+  const worked =
+    i.activity !== true &&
+    i.workedSince !== undefined &&
+    i.hasNewer !== true &&
+    replyAt !== undefined &&
+    replyAt.state !== "streaming" &&
+    Date.parse(replyAt.at) >= i.workedSince;
   i.items.forEach((item, n) => {
     const history = isHistory(item);
     if (history && !inHistory) out.push({ kind: "history", key: `history:${item.id}` });
@@ -113,7 +153,7 @@ export function chatRows(i: RowsInput): Row[] {
       out.push({ kind: "message", key: item.id, item, head, history: false });
     }
     prev = item;
-    if (activity && n === i.items.length - 1) out.push({ kind: "activity", key: "activity" });
+    if ((activity && n === i.items.length - 1) || (worked && n === reply)) out.push({ kind: "activity", key: "activity" });
     if (i.strip && n === leadLast) out.push({ kind: "strip", key: "strip" });
   });
   if (activity && i.items.length === 0) out.push({ kind: "activity", key: "activity" });

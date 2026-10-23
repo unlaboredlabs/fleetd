@@ -1,7 +1,5 @@
-// The screen host: which component each route shows. Each screen writer swaps their placeholder for their
-// component here (one import, one line), so the router stays the one place routes meet screens.
+// The screen host: which component each route shows, so the router stays the one place routes meet screens.
 import { lazy, Suspense, type ReactNode } from "react";
-import { EmptyState, GalleryScreen } from "../../ui";
 import type { Screen } from "./routes";
 import { ChatScreen } from "../chat";
 
@@ -11,20 +9,13 @@ const OnboardingScreen = lazy(() => import("../onboarding/OnboardingScreen").the
 const SettingsScreen = lazy(() => import("../settings/SettingsScreen").then((m) => ({ default: m.SettingsScreen })));
 const AddProjectScreen = lazy(() => import("../projects/AddProjectScreen").then((m) => ({ default: m.AddProjectScreen })));
 const MachinesScreen = lazy(() => import("../projects/MachinesScreen").then((m) => ({ default: m.MachinesScreen })));
+const AgentsScreen = lazy(() => import("../agents/AgentsScreen").then((m) => ({ default: m.AgentsScreen })));
 const StatusScreen = lazy(() => import("../status/StatusScreen").then((m) => ({ default: m.StatusScreen })));
+const PrsScreen = lazy(() => import("../prs/PrsScreen").then((m) => ({ default: m.PrsScreen })));
 const TimeScreen = lazy(() => import("../time/TimeScreen").then((m) => ({ default: m.TimeScreen })));
 
 /** Holds a screen's place, busy (which the QA gate waits out), while its chunk loads. */
 const Loading = ({ children }: { children: ReactNode }) => <Suspense fallback={<div aria-busy="true" />}>{children}</Suspense>;
-
-/** A screen that hasn't landed yet. It carries the screen's id, so the route table is testable end to end now. */
-function Pending({ id, title }: { id: string; title: string }) {
-  return (
-    <div data-screen={id} style={{ display: "contents" }}>
-      <EmptyState title={title}>This screen is on its way.</EmptyState>
-    </div>
-  );
-}
 
 /** A screen in words, for its error card and the log, and its identity: a new key opens it afresh. */
 export const screenPart = (screen: Screen): { key: string; words: string } => {
@@ -33,6 +24,10 @@ export const screenPart = (screen: Screen): { key: string; words: string } => {
       return { key: `project:${screen.project.machineId}/${screen.project.projectId}`, words: "the chat" };
     case "status":
       return { key: "status", words: "Status" };
+    case "agents":
+      return { key: "agents", words: "Agents" };
+    case "prs":
+      return { key: `prs:${screen.project.machineId}/${screen.project.projectId}`, words: "Pull requests" };
     case "time":
       return { key: "time", words: "Time" };
     case "settings":
@@ -44,8 +39,7 @@ export const screenPart = (screen: Screen): { key: string; words: string } => {
     case "onboarding":
       return { key: "onboarding", words: "the connect screen" };
     case "home":
-    case "gallery":
-      return { key: screen.id, words: screen.id === "home" ? "the home screen" : "the gallery" };
+      return { key: "home", words: "the home screen" };
   }
 };
 
@@ -66,8 +60,12 @@ function screenFor(screen: Screen): ReactNode {
           {...(screen.message !== null ? { message: screen.message } : {})}
         />
       );
+    case "prs":
+      return <PrsScreen key={`${screen.project.machineId}/${screen.project.projectId}`} project={screen.project} pr={screen.pr} />;
     case "status":
       return <StatusScreen />;
+    case "agents":
+      return <AgentsScreen agent={screen.agent} />;
     case "machines":
       return <MachinesScreen />;
     case "time":
@@ -78,12 +76,5 @@ function screenFor(screen: Screen): ReactNode {
       return <SettingsScreen />;
     case "onboarding":
       return <OnboardingScreen hub={screen.hub ?? undefined} code={screen.code ?? undefined} />;
-    case "gallery":
-      // Only dev builds and the screenshot suite's build carry the gallery.
-      return GalleryScreen === null ? (
-        <Pending id="gallery" title="Gallery" />
-      ) : (
-        <GalleryScreen />
-      );
   }
 }

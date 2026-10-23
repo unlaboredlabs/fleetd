@@ -439,6 +439,13 @@ async fn approve_runs_the_stored_command_and_wakes_the_lead_with_its_outcome() {
         ran.output_tail.as_ref().map(|t| t.as_str()),
         Some("migrated 3 tables")
     );
+    // When the result came back, so the app can say how long it ran; never before it was approved.
+    let finished = ran
+        .finished_at
+        .as_ref()
+        .expect("a ran command records when it finished");
+    assert!(finished.0 >= approved.answered_at.as_ref().unwrap().0);
+    assert!(approved.finished_at.is_none());
     assert_eq!(fake.woken.lock().unwrap().as_slice(), ["Q1 ran"]);
     let again = a.answer(&person(), "Q1", true, None).await.unwrap_err();
     assert_eq!(
