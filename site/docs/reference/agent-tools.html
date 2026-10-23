@@ -153,11 +153,11 @@
 </tr>
 <tr>
 <td>Agents running at once, per project</td>
-<td>The project’s max agents, which a person sets (<code dir="auto">cap_set</code>, the chat’s Max agents); unset, the fleet cap. A spawn over it queues and starts by itself. The lead’s own turns don’t count.</td>
+<td>The project’s max agents, which a person sets (<code dir="auto">cap_set</code>, the chat’s Max agents); unset, the fleet cap. A spawn over it queues and starts by itself; a review goes ahead of queued writers. The lead is not an agent and doesn’t count.</td>
 </tr>
 <tr>
 <td>Agents running at once, fleet-wide</td>
-<td>The fleet cap, 40 by default. 4 slots of it are kept for lead turns.</td>
+<td>The fleet cap, 40 by default.</td>
 </tr>
 <tr>
 <td>Calls a task’s agent may make</td>

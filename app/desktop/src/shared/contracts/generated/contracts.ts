@@ -349,7 +349,7 @@ export type BriefBudget = {
 };
 
 export type CapSetInput = {
-  /** The fleet cap on running turns, leads' included. Needs an admin key. */
+  /** The fleet cap: agents running at once across every project. Needs an admin key. */
   cap?: number;
   project?: CapSetProject;
 };

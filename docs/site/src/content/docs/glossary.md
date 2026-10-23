@@ -129,7 +129,7 @@ One `claude` process doing one job, such as a lead, a writer or a reviewer.
 
 ## Slot {#slot}
 
-Room for one running session. The hub caps how many sessions run at once.
+Room for one running agent. The hub caps how many agents run at once, per project and fleet-wide.
 
 ## Steer {#steer}
 

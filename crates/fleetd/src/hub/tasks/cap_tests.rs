@@ -185,7 +185,7 @@ async fn max_agents_stays_within_the_fleet_cap() {
     let fleet = &cap_events(&hub)[0];
     assert_eq!(
         fleet.0,
-        "Fleet cap 40 → 60: queued turns start as slots allow."
+        "Fleet cap 40 → 60: queued agents start as slots allow."
     );
     assert!(fleet.1.project_ref.is_none());
 }

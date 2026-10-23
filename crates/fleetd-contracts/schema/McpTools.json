@@ -865,7 +865,7 @@
     "CapSetInput": {
       "properties": {
         "cap": {
-          "description": "The fleet cap on running turns, leads' included. Needs an admin key.",
+          "description": "The fleet cap: agents running at once across every project. Needs an admin key.",
           "maximum": 1000,
           "minimum": 1,
           "type": "integer"

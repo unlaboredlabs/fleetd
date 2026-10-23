@@ -138,7 +138,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "cap_set",
-        "Admin: set the global cap on running turns (1-1000) and/or one project's share of it (0-1000). Applies at once; queued tasks start as soon as they fit. Returns the slot board.",
+        "Set the fleet cap on running agents (1-1000, admin key) and/or one project's max agents (1 up to the fleet cap). Applies at once; queued agents start as soon as they fit. Returns the slot board.",
     ),
     (
         "usage_status",
