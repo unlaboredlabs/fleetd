@@ -11,7 +11,7 @@ use fleetd_contracts::mcp::ErrorCode;
 use fleetd_contracts::model::{ProjectSummary, ThreadCounts};
 
 use crate::hub::executor::LaunchInput;
-use crate::hub::leads::hooks::{BoxFuture, PolicyHook};
+use crate::hub::leads::hooks::BoxFuture;
 use crate::hub::leads::lead::AutoStart;
 use crate::hub::leads::ports::{CmdOutcome, LeadPorts};
 use crate::hub::leads::wakes::WAKE_DEBOUNCE;
@@ -79,23 +79,6 @@ impl LeadPorts for Ports {
     }
 }
 
-/// `lead.autoStart` from the project's policy file. Reading it goes through the node, which takes a few ms.
-struct Policy {
-    auto_start: bool,
-    clock: Arc<ManualClock>,
-}
-
-impl PolicyHook for Policy {
-    fn max_children(&self, _: &ProjectRef) -> BoxFuture<Result<Option<u32>, LeadError>> {
-        Box::pin(async { Ok(None) })
-    }
-    fn auto_start(&self, _: &ProjectRef) -> BoxFuture<Result<bool, LeadError>> {
-        self.clock.advance(Duration::from_millis(5));
-        let on = self.auto_start;
-        Box::pin(async move { Ok(on) })
-    }
-}
-
 pub(crate) struct Hub {
     pub(crate) area: Arc<Area>,
     pub(crate) node: Arc<Node>,
@@ -106,7 +89,7 @@ pub(crate) struct Hub {
 }
 
 /// A hub home in a temporary directory, so prompt overrides have somewhere to live.
-pub(crate) fn hub(runner_usable: bool, auto_start: bool) -> Hub {
+pub(crate) fn hub(runner_usable: bool) -> Hub {
     let home = tempfile::tempdir().unwrap();
     let db = HubDb::open(home.path()).unwrap();
     let clock = ManualClock::at(T0_MS);
@@ -139,10 +122,6 @@ pub(crate) fn hub(runner_usable: bool, auto_start: bool) -> Hub {
         ..Default::default()
     });
     area.ctx.set_ports(Arc::new(Ports(node.clone())));
-    let _ = area.ctx.hooks.policy.set(Arc::new(Policy {
-        auto_start,
-        clock: clock.clone(),
-    }));
     Hub {
         area,
         node,
@@ -217,7 +196,7 @@ async fn settle() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn an_order_for_a_project_without_a_lead_starts_it_and_the_lead_gets_the_order() {
-    let hub = hub(true, true);
+    let hub = hub(true);
     let (w1, lead) = hub.order("add a /health endpoint").await;
     assert!(matches!(lead, AutoStart::Started(_)));
     let prompts = hub.launched_prompts();
@@ -230,28 +209,23 @@ async fn an_order_for_a_project_without_a_lead_starts_it_and_the_lead_gets_the_o
     assert!(hub.area.leads.get(&hub.project).unwrap().is_some());
     assert_eq!(hub.events_of(HubEventType::LeadStarted), 1);
 
-    // The next order goes to the running lead as a wake; the first one is not said twice.
+    // The next order, a moment later, goes to the running lead as a wake. The first was made in the millisecond the
+    // lead started, so it may have missed the first message's digest and is said once more (`LeadWakes::flush`).
+    hub.clock.advance(Duration::from_millis(5));
     let (w2, lead) = hub.order("add a /ready endpoint").await;
     assert!(matches!(lead, AutoStart::Running(_)));
     hub.after_debounce().await;
     let sends = hub.node.sends.lock().unwrap().clone();
     assert_eq!(sends.len(), 1);
-    assert!(
-        sends[0].contains(&format!("new order {w2}")),
-        "{}",
-        sends[0]
-    );
-    assert!(
-        !sends[0].contains(&format!("new order {w1}")),
-        "{}",
-        sends[0]
-    );
+    for w in [&w1, &w2] {
+        assert!(sends[0].contains(&format!("new order {w}")), "{}", sends[0]);
+    }
     assert_eq!(hub.launched_prompts().len(), 1);
 }
 
 #[tokio::test(flavor = "current_thread")]
 async fn an_unusable_runner_holds_the_order_with_its_reason_until_the_machine_is_online() {
-    let hub = hub(false, true);
+    let hub = hub(false);
     let waiting_loop = tokio::spawn(hub.area.leads.clone().run_waiting());
     settle().await;
     let (w1, lead) = hub.order("add a /health endpoint").await;
@@ -285,19 +259,5 @@ async fn an_unusable_runner_holds_the_order_with_its_reason_until_the_machine_is
     hub.machine_online();
     settle().await;
     assert_eq!(hub.launched_prompts().len(), 1);
-    waiting_loop.abort();
-}
-
-#[tokio::test(flavor = "current_thread")]
-async fn a_policy_that_turns_auto_start_off_keeps_the_order_a_draft() {
-    let hub = hub(true, false);
-    let waiting_loop = tokio::spawn(hub.area.leads.clone().run_waiting());
-    settle().await;
-    let (_, lead) = hub.order("add a /health endpoint").await;
-    assert!(matches!(lead, AutoStart::Off));
-    hub.machine_online();
-    settle().await;
-    assert!(hub.launched_prompts().is_empty());
-    assert!(hub.area.leads.get(&hub.project).unwrap().is_none());
     waiting_loop.abort();
 }

@@ -525,4 +525,9 @@ pub(crate) const MIGRATIONS: &[&str] = &[
   DELETE FROM time_spans WHERE kind = 37;
   DELETE FROM time_rollups WHERE kind = 37;
   "#,
+    // Area leases went: writers share a repo. Their events go too, as no reader decodes them.
+    r#"
+  DROP TABLE IF EXISTS leases;
+  DELETE FROM events WHERE type IN ('lease.stale', 'task.out_of_area');
+  "#,
 ];

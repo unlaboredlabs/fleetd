@@ -48,7 +48,6 @@
           "enum": [
             "false_claim",
             "polish_loop",
-            "out_of_area",
             "stall",
             "policy_bypass",
             "override"
@@ -58,6 +57,11 @@
         {
           "const": "misfiled_ask",
           "description": "Retired with the questions tool. Kept so older incidents still read.",
+          "type": "string"
+        },
+        {
+          "const": "out_of_area",
+          "description": "Retired with area leases. Kept so older incidents still read.",
           "type": "string"
         },
         {

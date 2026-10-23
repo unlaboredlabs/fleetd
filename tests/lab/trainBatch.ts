@@ -19,8 +19,7 @@ const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
 const FREEZE_KEY = `policy.freeze.${REPO.replace("/", ".")}`;
 const DIR = `lab/${new Date().toISOString().slice(0, 19).replace(/\D/gu, "")}`;
 const PAIR = `${DIR}/pair`;
-const POLICY = `areas:
-  lab: ["${DIR}/**"]
+const POLICY = `
 `;
 // The seed's workflow plus one step that fails on the file b adds: c is green alone and red next to b.
 const STRICT_CI = `name: ci

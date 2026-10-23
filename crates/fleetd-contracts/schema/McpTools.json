@@ -574,11 +574,6 @@
       ],
       "type": "string"
     },
-    "AreaName": {
-      "description": "Lowercase slug, [a-z0-9][a-z0-9_-]*, at most 40",
-      "pattern": "^[a-z0-9][a-z0-9_-]*$",
-      "type": "string"
-    },
     "AttachmentGetInput": {
       "properties": {
         "attachmentId": {
@@ -3787,18 +3782,8 @@
           "type": "string"
         },
         {
-          "const": "task.out_of_area",
-          "description": "A write task's diff touched files outside its leased areas; `data.paths`.",
-          "type": "string"
-        },
-        {
           "const": "agents.cap",
           "description": "A project's max agents or the fleet cap changed; `data` is `tasks::AgentsCapData`, `summary` the chat's line.",
-          "type": "string"
-        },
-        {
-          "const": "lease.stale",
-          "description": "A lease held for over 4 h; flagged once, never released by the hub. `data.taskId`, `data.area`.",
           "type": "string"
         },
         {
@@ -4268,7 +4253,6 @@
           "enum": [
             "false_claim",
             "polish_loop",
-            "out_of_area",
             "stall",
             "policy_bypass",
             "override"
@@ -4278,6 +4262,11 @@
         {
           "const": "misfiled_ask",
           "description": "Retired with the questions tool. Kept so older incidents still read.",
+          "type": "string"
+        },
+        {
+          "const": "out_of_area",
+          "description": "Retired with area leases. Kept so older incidents still read.",
           "type": "string"
         },
         {
@@ -7919,17 +7908,6 @@
     "ProjectInspect": {
       "description": "What `project_inspect` found: the default branch, CI and merge rules, and one line on what the lead will need.",
       "properties": {
-        "areas": {
-          "description": "The areas writers lease: the policy file's, else inferred from the repo's layout. Empty when unknown.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "areasInferred": {
-          "description": "true: `areas` were inferred from the repo, not set in .fleetd/policy.yaml.",
-          "type": "boolean"
-        },
         "ci": {
           "$ref": "#/$defs/CiInfo"
         },
@@ -7986,17 +7964,6 @@
     "ProjectInspectOutput": {
       "description": "What `project_inspect` found: the default branch, CI and merge rules, and one line on what the lead will need.",
       "properties": {
-        "areas": {
-          "description": "The areas writers lease: the policy file's, else inferred from the repo's layout. Empty when unknown.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "areasInferred": {
-          "description": "true: `areas` were inferred from the repo, not set in .fleetd/policy.yaml.",
-          "type": "boolean"
-        },
         "ci": {
           "$ref": "#/$defs/CiInfo"
         },
@@ -9964,7 +9931,6 @@
             "run.startup",
             "compaction",
             "queue.slot",
-            "queue.lease",
             "queue.usage",
             "queue.offline",
             "wake.debounce",
@@ -10020,6 +9986,11 @@
         {
           "const": "wait.offline",
           "description": "A write waiting in the hub's queue for an offline machine.",
+          "type": "string"
+        },
+        {
+          "const": "queue.lease",
+          "description": "Older hubs only: a writer waiting for an area lease. Kept so their spans still read.",
           "type": "string"
         },
         {
@@ -11112,14 +11083,6 @@
     },
     "Task": {
       "properties": {
-        "areas": {
-          "items": {
-            "$ref": "#/$defs/AreaName"
-          },
-          "maxItems": 20,
-          "type": "array",
-          "uniqueItems": true
-        },
         "attempt": {
           "description": "1 for the first launch.",
           "maximum": 9007199254740991,
@@ -11170,7 +11133,7 @@
           "type": "boolean"
         },
         "queuedReason": {
-          "description": "Why it is queued, e.g. \"lease: docs held by T1\" or \"fleet cap: 40 of 40 running\".",
+          "description": "Why it is queued, e.g. \"fleet cap: 40 of 40 running\".",
           "maxLength": 200,
           "minLength": 1,
           "type": "string"
@@ -11214,7 +11177,6 @@
         "title",
         "kind",
         "prompt",
-        "areas",
         "state",
         "attempt",
         "createdAt"
@@ -11298,7 +11260,7 @@
       "type": "string"
     },
     "TaskKind": {
-      "description": "Only write tasks get a worktree and leases.",
+      "description": "Only write tasks get a worktree.",
       "enum": [
         "write",
         "read",

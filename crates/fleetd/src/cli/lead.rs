@@ -33,9 +33,9 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
              log a decision you made yourself
   status set "<one line>" [--workstream <W>]
   decisions search "<query>"
-  task spawn --workstream <W> --title <t> --prompt <p> [--kind write|read|review] [--areas a,b]
+  task spawn --workstream <W> --title <t> --prompt <p> [--kind write|read|review]
       [--profile high|medium] [--tier S|M|L] [--pr <url>] [--qa] [--item P<n>]
-             delegate work to a subagent; writers need --areas and get their own branch; a review task needs --pr, and --qa marks it a QA run; --item links it to
+             delegate work to a subagent; writers get their own branch; a review task needs --pr, and --qa marks it a QA run; --item links it to
              that plan item
   task list [--state <s>] [--workstream <W>]
   task status <T>
@@ -122,7 +122,6 @@ const OPTIONS: &[(&str, Kind)] = &[
     ("scope", Kind::Str),
     ("title", Kind::Str),
     ("prompt", Kind::Str),
-    ("areas", Kind::Str),
     ("profile", Kind::Str),
     ("tier", Kind::Str),
     ("serves", Kind::Str),
@@ -368,7 +367,6 @@ pub fn parse_lead_args(
                     "title",
                     "prompt",
                     "kind",
-                    "areas",
                     "profile",
                     "tier",
                     "pr",
@@ -382,7 +380,6 @@ pub fn parse_lead_args(
                     ("title", s(v.str("title"))),
                     ("prompt", s(v.str("prompt"))),
                     ("kind", s(v.str("kind"))),
-                    ("areas", v.str("areas").map(|a| Value::Array(split_list(a)))),
                     ("profile", s(v.str("profile"))),
                     ("tier", s(v.str("tier"))),
                     ("pr", s(v.str("pr"))),
@@ -956,29 +953,16 @@ fn decision_line(decision: &Value) -> String {
 }
 
 fn task_line(task: &Value) -> String {
-    let where_ = if st(task, "kind") == "write" {
-        format!(
-            ", {}",
-            arr(task, "areas")
-                .iter()
-                .filter_map(Value::as_str)
-                .collect::<Vec<_>>()
-                .join(",")
-        )
-    } else {
-        String::new()
-    };
     let why = match opt(task, "queuedReason") {
         Some(reason) if st(task, "state") == "queued" => format!(" ({})", js(Some(reason))),
         _ => String::new(),
     };
     format!(
-        "{} {}{} [{}{}, {}] {}{}",
+        "{} {}{} [{}, {}] {}{}",
         st(task, "taskId"),
         st(task, "state"),
         why,
         st(task, "kind"),
-        where_,
         st(task, "profile"),
         st(task, "title"),
         opt(task, "branch")
@@ -1244,7 +1228,7 @@ pub fn format_result(result: &Value) -> String {
         }
         "task_cancel" => {
             lines.push(format!(
-                "{} cancelled; its slot and areas are free.",
+                "{} cancelled; its slot is free.",
                 st(&result["task"], "taskId")
             ));
             next = task_next(&result["task"]);

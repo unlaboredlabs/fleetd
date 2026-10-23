@@ -171,7 +171,6 @@ impl TrainHost for HubHost {
                 "title": spawn.title,
                 "kind": "review",
                 "prompt": spawn.prompt,
-                "areas": [],
                 "pr": spawn.pr,
                 "tier": spawn.tier,
             });

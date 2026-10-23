@@ -16,10 +16,9 @@
 // - cap1:    at max agents 1, the review that gates a merge gets the slot before a queued agent; the train merges.
 // - tools:   no session (lead, writer, reviewer, reader) has an ask tool, and the hub has no inbox tools.
 // - plain:   the lead's chat messages carry no internal ids.
-// Off the lab repo, no CI (areas on a local repo on lab-b with packages/a and packages/b and no `areas`; cap on its own):
+// Off the lab repo, no CI (cap on a local repo on lab-b):
 // - history: an order placed through a pre-chat build shows up as history in the project's chat once the
 //            build under test opens that hub's home (FLEETD_LAB_PRECHAT_BIN; its own small hub, no node).
-// - areas:   bug (c): areas are inferred from the workspace, and two writers in them run at the same time.
 // - cap:     max agents 2 with six agents never runs more than 2 and all finish; 12 → 3 mid-run kills nothing and new
 //            spawns wait; 3 → 12 starts the queue at once, says so in one chat line, and tells the lead.
 // - stop:    an agent key can't stop; a terminal steers only with a human key file (`hub key create --human --out`),
@@ -46,17 +45,14 @@ const TASK_ENDS = ["task.completed", "task.failed", "task.cancelled"];
 const STAMP = new Date().toISOString().slice(0, 19).replace(/\D/gu, "");
 const DIR = `lab/chat-${STAMP}`;
 const DEFAULTS = ``;
-// The lab repo names its one area, so its parts don't hang on inference; the local repo has no `areas` (bug (c)).
-const LAB_REPO_POLICY = `areas:\n  all: ["**"]\n${DEFAULTS}`;
-const LOCAL_REPO = path.join(LAB, "repo-chat");
-/** The cap part's repo: its own project, with its one area named, so the cap is all it tests. */
+/** The cap part's repo: its own project, so the cap is all it tests. */
 const CAP_REPO = path.join(LAB, "repo-cap");
 const STOP_REPO = path.join(LAB, "repo-stop");
 /** The history part's own hub; 4782 differs mod 20 from the other lab ports (harness.ts SLOT). */
 const HISTORY_PORT = slotPort(4782);
 /** For a lead the harness keeps out of the way. */
 const QUIET = "Lab run: the harness does everything for this order. Reply to each wake about it with one short line; run no commands and start no agents for it.";
-const PARTS = ["work", "terse", "secret", "gated", "build", "fixes", "cap1", "tools", "plain", "history", "areas", "cap", "stop"] as const;
+const PARTS = ["work", "terse", "secret", "gated", "build", "fixes", "cap1", "tools", "plain", "history", "cap", "stop"] as const;
 type Part = (typeof PARTS)[number];
 const LAB_REPO_PARTS: ReadonlyArray<Part> = ["work", "terse", "secret", "gated", "build", "fixes", "cap1", "tools", "plain"];
 
@@ -124,19 +120,15 @@ const git = (cwd: string, ...args: Array<string>) =>
     env: { ...scrubbedEnv(), GIT_AUTHOR_NAME: "lab", GIT_AUTHOR_EMAIL: "lab@localhost", GIT_COMMITTER_NAME: "lab", GIT_COMMITTER_EMAIL: "lab@localhost" },
   });
 
-/** A fresh local repo with two workspace packages and `policy`. */
+/** A fresh local repo with a README and `policy`. */
 const seedLocalRepo = (dir: string, policy: string) => {
   fs.rmSync(dir, { recursive: true, force: true });
-  for (const p of ["a", "b"]) {
-    fs.mkdirSync(path.join(dir, "packages", p), { recursive: true });
-    fs.writeFileSync(path.join(dir, "packages", p, "README.md"), `# package ${p}\n`);
-  }
-  fs.writeFileSync(path.join(dir, "package.json"), `${JSON.stringify({ name: path.basename(dir), private: true, workspaces: ["packages/*"] }, null, 2)}\n`);
   fs.mkdirSync(path.join(dir, ".fleetd"), { recursive: true });
+  fs.writeFileSync(path.join(dir, "README.md"), `# ${path.basename(dir)}\n`);
   fs.writeFileSync(path.join(dir, ".fleetd/policy.yaml"), policy);
   git(dir, "init", "-q", "-b", "main");
   git(dir, "add", ".");
-  git(dir, "commit", "-q", "-m", "chat lab: two workspace packages");
+  git(dir, "commit", "-q", "-m", "chat lab: a local repo");
 };
 
 /** Every event since `cursor` (optionally of `types`), paged to the end. */
@@ -368,8 +360,8 @@ export async function chatLead(lab: Lab) {
       check(NAMESPACE.startsWith("slot/"), `chat needs CI: run it in a slot/<n> namespace, not ${NAMESPACE}`);
       checkClone(check);
       resetNamespace();
-      prepareCheckout(LAB_REPO_POLICY);
-      ok(`${CLONE} at origin/${BASE}; untracked policy (area all); ${NAMESPACE}/ on ${REPO} reset to the seed`);
+      prepareCheckout(DEFAULTS);
+      ok(`${CLONE} at origin/${BASE}; untracked policy; ${NAMESPACE}/ on ${REPO} reset to the seed`);
       const thaw = await callTool("train_freeze", { repo: REPO, frozen: false });
       log(`train_freeze false: ${thaw.isError ? JSON.stringify(thaw.body) : "ok"}`);
       const projectId = await lab.addProject(LEAD_MACHINE, CLONE, "fleetd-lab");
@@ -403,19 +395,14 @@ export async function chatLead(lab: Lab) {
       });
     }
     await part("history", () => historyPart(lab));
-    if (on("areas")) {
-      seedLocalRepo(LOCAL_REPO, DEFAULTS);
-      const projectId = await lab.addProject(WORK_MACHINE, LOCAL_REPO, "repo-chat");
-      await part("areas", () => areasPart(lab, { machineId: WORK_MACHINE, projectId }));
-    }
     if (on("cap")) {
-      seedLocalRepo(CAP_REPO, LAB_REPO_POLICY);
+      seedLocalRepo(CAP_REPO, DEFAULTS);
       const projectId = await lab.addProject(WORK_MACHINE, CAP_REPO, "repo-cap");
       const ref = { machineId: WORK_MACHINE, projectId };
       await part("cap", () => capPart(lab, chatOf(lab, lab.humanCall, ref, need), ref, need));
     }
     if (on("stop")) {
-      seedLocalRepo(STOP_REPO, LAB_REPO_POLICY);
+      seedLocalRepo(STOP_REPO, DEFAULTS);
       const projectId = await lab.addProject(WORK_MACHINE, STOP_REPO, "repo-stop");
       const ref = { machineId: WORK_MACHINE, projectId };
       await part("stop", () => stopPart(lab, chatOf(lab, lab.humanCall, ref, need), ref, need));
@@ -643,7 +630,7 @@ async function fixesPart(lab: Lab, chat: Chat, ref: Ref, fleetd: Shell) {
     spawned(
       lab,
       fleetd(
-        "task", "spawn", "--workstream", w, "--title", title, "--kind", "write", "--areas", "all", "--profile", MECHANICS,
+        "task", "spawn", "--workstream", w, "--title", title, "--kind", "write", "--profile", MECHANICS,
         "--prompt", "Your first tool call must be your Bash tool running exactly `sleep 90`; wait the full 90 seconds for it to finish. Then reply with the single word OK. Change no files.",
       ),
       `spawn the fix "${title}"`,
@@ -729,7 +716,7 @@ async function cap1Part(lab: Lab, ref: Ref, fleetd: Shell, need: (t: string) => 
   // Tier M: its PR needs a review before the train merges it, so the review is what gates the merge.
   const onMain = { type: "cmd", machineId: ref.machineId, argv: ["gh", "api", onBase(file), "--silent"], expectExit: 0 };
   const w = await quietOrder(lab, ref, fleetd, `chat lab: add ${file} at max agents 1`, [onMain], "M");
-  // Earlier parts' agents (the lead's own work) finish first, so nothing but this part's agents holds a slot or a lease.
+  // Earlier parts' agents (the lead's own work) finish first, so nothing but this part's agents holds a slot.
   await lab.until("the project's earlier agents finish", TURN_MS * 3, async () =>
     (await tasksOf(lab, ref)).some((t) => ["queued", "running"].includes(t.state)) ? (await new Promise((r) => setTimeout(r, 2_000)), undefined) : true,
   );
@@ -739,7 +726,7 @@ async function cap1Part(lab: Lab, ref: Ref, fleetd: Shell, need: (t: string) => 
     const writer = spawned(
       lab,
       fleetd(
-        "task", "spawn", "--workstream", w, "--title", "add cap1.md", "--areas", "all", "--profile", MECHANICS,
+        "task", "spawn", "--workstream", w, "--title", "add cap1.md", "--profile", MECHANICS,
         "--prompt",
         `Do these steps in order. 1. Create the file ${file} (from the repo root) containing exactly one line: cap one. Commit it with the message "add ${file}". ` +
           `2. Push your branch and open the pull request as your rules say, with the title "add ${file}" and the body exactly "Adds the file.". ` +
@@ -881,45 +868,6 @@ async function historyPart(lab: Lab) {
     check(again.length === history.length, `a second read adds nothing (${history.length} then ${again.length})`);
     ok(`chat_history on the migrated home: the order as history (seq ${order!.seq}), no ids, stable on a second read`);
   });
-}
-
-// ---- areas: bug (c), inferred areas let two writers run at once ----
-async function areasPart(lab: Lab, ref: Ref) {
-  const { check, ok } = lab;
-  // project_add of the same directory answers with its project and the inspect the add read.
-  const added = await lab.callTool("project_add", { machineId: ref.machineId, path: LOCAL_REPO });
-  check(!added.isError && added.body.projectId === ref.projectId, `project_add again: ${JSON.stringify(added.body)}`);
-  const inspect = (added.body.inspect ?? {}) as Body;
-  const areas = (inspect.areas as Array<string> | undefined) ?? [];
-  check(inspect.areasInferred === true && ["a", "b", "all"].every((a) => areas.includes(a)), `areas inferred from the workspace: ${JSON.stringify({ areas, areasInferred: inspect.areasInferred })}`);
-  ok(`inferred areas: ${areas.join(", ")}`);
-
-  const fleetd = shellIn(ref.machineId, LOCAL_REPO);
-  const w = openWorkstream(check, fleetd, "Two packages at once.");
-  const from = await lab.cursor();
-  const writer = (area: string) =>
-    spawned(
-      lab,
-      fleetd(
-        "task", "spawn", "--workstream", w, "--title", `note in ${area}`, "--areas", area, "--profile", MECHANICS,
-        "--prompt", `Run \`sleep 10\`, then append the line "chat lab" to packages/${area}/README.md and commit it with the message "chat lab: ${area}". Reply with the commit hash.`,
-      ),
-      `task spawn --areas ${area}`,
-    );
-  const [ta, tb] = [writer("a"), writer("b")];
-  const ends = new Map<string, number>();
-  for (const t of [ta, tb]) {
-    const e = await lab.waitEvent(`${t} ends`, TURN_MS, { cursor: from, types: TASK_ENDS, match: (e) => e.data?.taskId === t });
-    check(e.event.type === "task.completed", `${t} completed: ${e.event.summary}`);
-    ends.set(t, e.event.seq as number);
-  }
-  const seen = await eventsSince(lab, from, ["task.queued", "task.started"]);
-  const leaseWaits = seen.filter((e) => e.type === "task.queued" && /lease/u.test(String(e.data?.queuedReason)));
-  check(leaseWaits.length === 0, `no writer waited on an area lease: ${JSON.stringify(leaseWaits.map((e) => e.summary))}`);
-  const start = (t: string) => seen.find((e) => e.type === "task.started" && e.data?.taskId === t)?.seq as number | undefined;
-  const firstEnd = Math.min(...ends.values());
-  check((start(ta) ?? Infinity) < firstEnd && (start(tb) ?? Infinity) < firstEnd, `both started before either ended (starts ${start(ta)}, ${start(tb)}; first end ${firstEnd})`);
-  ok(`${ta} (area a) and ${tb} (area b) ran at the same time`);
 }
 
 // ---- cap: the Max agents cap ----

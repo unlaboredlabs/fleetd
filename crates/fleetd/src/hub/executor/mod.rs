@@ -174,14 +174,13 @@ pub struct SessionRules {
 pub type ToolRulesFuture<'a> =
     Pin<Box<dyn Future<Output = Result<SessionRules, McpToolError>> + Send + 'a>>;
 
-/// A project's session rules (`tools.allow` and `tools.deny` in its policy file), read at every
-/// launch. The leases area's cached policy reader implements it; a file that does not decode refuses the launch
-/// rather than drop its denies.
+/// A project's session rules (`tools.allow` and `tools.deny` in its policy file), read at every launch. The cached
+/// policy reader implements it; a file that does not decode refuses the launch rather than drop its denies.
 pub trait ToolPolicy: Send + Sync + 'static {
     fn tools<'a>(&'a self, project: &'a ProjectRef) -> ToolRulesFuture<'a>;
 }
 
-impl ToolPolicy for crate::hub::leases::Policies {
+impl ToolPolicy for crate::hub::policy::Policies {
     fn tools<'a>(&'a self, project: &'a ProjectRef) -> ToolRulesFuture<'a> {
         Box::pin(async move {
             let policy = self.get(project).await?;

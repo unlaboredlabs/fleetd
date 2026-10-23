@@ -16,8 +16,7 @@ const CI_MS = 600_000;
 const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
 const APPROVAL_WAIT_MS = 15_000;
 const FILE = `lab/${new Date().toISOString().slice(0, 19).replace(/\D/gu, "")}/time.md`;
-const POLICY = `areas:
-  time: ["${FILE}"]
+const POLICY = `
 `;
 /** The spec's tolerance for a run's spans against its own start and end. */
 const tiles = (sum: number, wall: number) => Math.abs(sum - wall) <= Math.max(250, wall / 100);
@@ -105,7 +104,7 @@ export async function timeInspector(lab: Lab) {
     // One writer: its PR goes on the train by itself.
     let cursor = await lab.cursor();
     const spawned = fleetd(
-      "task", "spawn", "--workstream", w, "--title", "add time.md", "--areas", "time", "--profile", MECHANICS,
+      "task", "spawn", "--workstream", w, "--title", "add time.md", "--profile", MECHANICS,
       "--prompt",
       `Create the file ${FILE} (from the repo root) containing exactly one line: time. Commit it with the message "add ${FILE}". Then push your branch and open the pull request as your rules say, with the title "add ${FILE}" and the body exactly "Adds the file.". Reply with the PR URL.`,
     );

@@ -8,7 +8,6 @@ import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { areasParallel } from "./areasParallel.ts";
 import { chatCli } from "./chatCli.ts";
 import { chatLead } from "./chatLead.ts";
 import { degradedMachine } from "./degradedMachine.ts";
@@ -101,8 +100,6 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   { name: "eff", run: efficiency, only: true },
   // One PR through the train into a base CI never runs for. Only when named, with FLEETD_LAB_NAMESPACE=noci/<n>.
   { name: "noci", run: noCiTrain, only: true },
-  // Two writers in two inferred areas at once (the seed's packages/alpha and packages/beta). Only when named.
-  { name: "areas", run: areasParallel, only: true },
   // Batches and stacks on the lab repo: a batch of three in one CI run, a red batch bisected, a stacked PR green on
   // its parent before it lands. Only when named.
   { name: "batch", run: trainBatch, only: true },

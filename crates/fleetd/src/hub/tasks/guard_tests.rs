@@ -21,7 +21,7 @@ fn lab_a() -> MachineId {
 fn insert(hub: &Hub, task: serde_json::Value) -> Task {
     let mut base = json!({
         "projectRef": { "machineId": "lab-a", "projectId": "p1" }, "workstreamId": "W1", "prompt": "do it",
-        "areas": [], "kind": "read", "model": "claude-haiku-5-5", "effort": "low", "attempt": 1, "createdAt": AT,
+        "kind": "read", "model": "claude-haiku-5-5", "effort": "low", "attempt": 1, "createdAt": AT,
     });
     base.as_object_mut()
         .unwrap()
@@ -130,7 +130,7 @@ async fn a_merged_writer_has_the_node_remove_its_worktree() {
     // The store numbers tasks itself: this one is T1.
     let task = insert(
         &hub,
-        json!({ "taskId": "T3", "title": "fix", "kind": "write", "areas": ["all"], "state": "done",
+        json!({ "taskId": "T3", "title": "fix", "kind": "write", "state": "done",
             "threadRef": { "machineId": "lab-a", "threadId": "t3" }, "branch": "fleetd/T3-fix", "startedAt": AT,
             "endedAt": AT }),
     );

@@ -201,7 +201,7 @@ pub fn live_lane(lane_id: &str, status: LaneStatus, parts: Option<&LiveParts>) -
     }
 }
 
-/// A queued task's reason in the app's words: the slot board's and the leases' terms stay out of what a person reads.
+/// A queued task's reason in the app's words: the slot board's terms stay out of what a person reads.
 pub fn plain_reason(reason: &str) -> String {
     let counts = |rest: &str| -> Option<(String, String)> {
         let (used, rest) = rest.split_once('/')?;
@@ -217,15 +217,6 @@ pub fn plain_reason(reason: &str) -> String {
         && let Some((_, max)) = counts(rest)
     {
         return format!("at this project's max of {max} agents");
-    }
-    if let Some(rest) = reason.strip_prefix("lease: ") {
-        let areas: Vec<&str> = rest
-            .split(", ")
-            .filter_map(|held| held.split_once(" held by ").map(|(area, _)| area))
-            .collect();
-        if !areas.is_empty() {
-            return format!("waiting for another agent working in {}", areas.join(", "));
-        }
     }
     reason.to_owned()
 }

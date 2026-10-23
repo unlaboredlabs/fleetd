@@ -329,8 +329,7 @@ fn limits(lead: &[&Tool], task: &[&Tool]) -> Result<String, String> {
         code_list(worker_calls.iter().copied())
     ));
     md.push_str(&format!(
-        "| Finish-all children open at once | {DEFAULT_MAX_CHILDREN} by default; the policy file's \
-         `finishAll.maxChildren` changes it. |\n"
+        "| Finish-all children open at once | {DEFAULT_MAX_CHILDREN}. |\n"
     ));
     md.push_str(&format!(
         "| What a child workstream may serve | {}. Never invented work. |\n",
@@ -628,7 +627,6 @@ fn example(role: Role, tool: &str) -> Option<Value> {
             "kind": "write",
             "title": "Rate-limit the upload API",
             "prompt": "Limit uploads to 10 a minute per API key. Over the limit, answer 429 with Retry-After.",
-            "areas": ["api"],
         }),
         (Role::Lead, "message_agent") => json!({
             "taskId": "T7",

@@ -100,15 +100,9 @@ pub enum HubEventType {
     TaskFailed,
     #[serde(rename = "task.cancelled")]
     TaskCancelled,
-    /// A write task's diff touched files outside its leased areas; `data.paths`.
-    #[serde(rename = "task.out_of_area")]
-    TaskOutOfArea,
     /// A project's max agents or the fleet cap changed; `data` is `tasks::AgentsCapData`, `summary` the chat's line.
     #[serde(rename = "agents.cap")]
     AgentsCap,
-    /// A lease held for over 4 h; flagged once, never released by the hub. `data.taskId`, `data.area`.
-    #[serde(rename = "lease.stale")]
-    LeaseStale,
     /// A claim had a failing check; the workstream stays verifying. `data.claimId`, `data.workstreamId`.
     #[serde(rename = "claim.failed")]
     ClaimFailed,
@@ -263,9 +257,7 @@ impl HubEventType {
             Self::TaskCompleted => "task.completed",
             Self::TaskFailed => "task.failed",
             Self::TaskCancelled => "task.cancelled",
-            Self::TaskOutOfArea => "task.out_of_area",
             Self::AgentsCap => "agents.cap",
-            Self::LeaseStale => "lease.stale",
             Self::ClaimFailed => "claim.failed",
             Self::ClaimPassed => "claim.passed",
             Self::WorkstreamDone => "workstream.done",

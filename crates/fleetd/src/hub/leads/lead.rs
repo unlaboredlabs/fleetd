@@ -25,10 +25,8 @@ pub enum AutoStart {
     Running(Lead),
     /// The lead was just started; its first message lists the order.
     Started(Lead),
-    /// `lead.autoStart: false` in the project's policy file: the order waits for lead_start.
-    Off,
-    /// The lead could not start now (the runner is logged out or out of range, the machine is offline, the policy
-    /// file is broken): why, and the fix. The order waits; the lead starts once the machine is online again.
+    /// The lead could not start now (the runner is logged out or out of range, the machine is offline): why, and
+    /// the fix. The order waits; the lead starts once the machine is online again.
     Held(LeadError),
 }
 
@@ -73,20 +71,13 @@ impl Leads {
         self.launch(r, &project, 0).await
     }
 
-    /// Starts the project's lead for its waiting orders, unless its policy turns that off. The lead's first message
-    /// carries the digest, which lists every draft, so the orders reach it with the start.
+    /// Starts the project's lead for its waiting orders. The lead's first message carries the digest, which lists
+    /// every draft, so the orders reach it with the start.
     pub async fn auto_start(&self, r: &ProjectRef) -> AutoStart {
         match self.get(r) {
             Ok(Some(lead)) => return AutoStart::Running(lead),
             Ok(None) => {}
             Err(e) => return AutoStart::Held(e),
-        }
-        if let Some(policy) = self.ctx.hooks.policy.get() {
-            match policy.auto_start(r).await {
-                Ok(true) => {}
-                Ok(false) => return AutoStart::Off,
-                Err(e) => return AutoStart::Held(e),
-            }
         }
         match self.start(r).await {
             Ok(lead) => AutoStart::Started(lead),
@@ -117,7 +108,7 @@ impl Leads {
                 AutoStart::Held(e) => {
                     tracing::info!(project = %project.title, reason = %e.message, "waiting orders: lead still not started")
                 }
-                AutoStart::Off | AutoStart::Running(_) | AutoStart::Started(_) => {}
+                AutoStart::Running(_) | AutoStart::Started(_) => {}
             }
         }
         Ok(())
@@ -268,16 +259,11 @@ impl Leads {
         // Taken before the digest is read: every intent made before it is in the first message (`LeadWakes::flush`).
         let at = now_iso(&self.ctx);
         let set = self.ctx.db.prompts().current(Some(r));
-        let areas = match self.ctx.hooks.policy.get() {
-            Some(policy) => policy.areas(r).await,
-            None => None,
-        };
         let medium = self.records.medium_allowed(r)?;
         let prompt = render_lead_start(
             &set,
             r,
             &project.title,
-            areas,
             medium,
             &self.wakes.digest(r).await?,
         );

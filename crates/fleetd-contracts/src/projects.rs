@@ -173,11 +173,6 @@ pub struct ProjectInspect {
     pub lead_needs: Text<1, 300>,
     /// What could not be read, e.g. "branch rules need admin access on acme/storefront".
     pub notes: Vec<String>,
-    /// The areas writers lease: the policy file's, else inferred from the repo's layout. Empty when unknown.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub areas: Vec<String>,
-    /// true: `areas` were inferred from the repo, not set in .fleetd/policy.yaml.
-    pub areas_inferred: Option<bool>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]

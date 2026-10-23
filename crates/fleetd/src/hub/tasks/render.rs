@@ -127,8 +127,6 @@ pub struct PromptInput<'a> {
     pub brief: Option<&'a Brief>,
     /// The brief's done-when checks as text (leads' doneWhenText with max 200).
     pub done_when: Option<String>,
-    /// The globs of each leased area, in the task's area order.
-    pub area_globs: &'a [(String, Vec<String>)],
     /// Write tasks: their branch and the branch it starts from.
     pub branch: Option<&'a str>,
     pub base_branch: Option<&'a str>,
@@ -153,7 +151,7 @@ fn state_str(state: TaskState) -> &'static str {
     }
 }
 
-/// The task's first message: the lead's text with the brief, the areas and the rules around it, then the human's
+/// The task's first message: the lead's text with the brief and the rules around it, then the human's
 /// custom instructions.
 pub fn render_task_prompt(set: &PromptSet, input: &PromptInput<'_>) -> String {
     let task = input.task;
@@ -170,20 +168,6 @@ pub fn render_task_prompt(set: &PromptSet, input: &PromptInput<'_>) -> String {
     } else {
         format!("\n\n## Workstream\n{}", context.join("\n"))
     };
-    let areas = task
-        .areas
-        .iter()
-        .map(|a| {
-            let globs = input
-                .area_globs
-                .iter()
-                .find(|(n, _)| n == a.as_str())
-                .map(|(_, g)| g.join(", "))
-                .unwrap_or_default();
-            format!("{} ({globs})", a.as_str())
-        })
-        .collect::<Vec<_>>()
-        .join("; ");
     let vars: &[(&str, &dyn std::fmt::Display)] = &[
         ("taskId", &task.task_id),
         ("kind", &kind_str(task.kind)),
@@ -192,7 +176,6 @@ pub fn render_task_prompt(set: &PromptSet, input: &PromptInput<'_>) -> String {
         ("title", &task.title),
         ("task", &task.prompt.as_str().trim()),
         ("workstream", &workstream),
-        ("areas", &areas),
         ("branch", &input.branch.unwrap_or("<your branch>")),
         (
             "baseBranch",

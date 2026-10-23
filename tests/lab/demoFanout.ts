@@ -36,8 +36,7 @@ const DIR = `lab/${new Date().toISOString().slice(0, 19).replace(/\D/gu, "")}`;
 const PAGES = ["alpha", "beta", "gamma"] as const;
 /** How long the full capture runs on after the last merge, past the clip's end. */
 const APP_HOLD_MS = 6_000;
-const POLICY = `areas:
-${PAGES.map((p) => `  ${p}: ["${DIR}/${p}.md"]`).join("\n")}
+const POLICY = `
 `;
 export const ORDER = `Tier L. Add three short pages, ${DIR}/alpha.md, beta.md and gamma.md, each one paragraph on what fleetd's merge train does. One writer per page, all three in parallel. Give each page its own done-when check and its own PR.`;
 
@@ -196,7 +195,7 @@ export async function demoFanout(lab: Lab) {
   checkClone(check);
   reclaim(lab);
   prepareCheckout(POLICY);
-  ok(`${CLONE} at origin/${BASE} ${git("rev-parse", "--short", "HEAD")}; untracked policy with areas ${PAGES.join(", ")} under ${DIR}`);
+  ok(`${CLONE} at origin/${BASE} ${git("rev-parse", "--short", "HEAD")}; untracked policy under ${DIR}`);
   fs.rmSync(lab.dir, { recursive: true, force: true });
   fs.mkdirSync(lab.dir, { recursive: true });
   const timeline = path.join(lab.dir, "timeline.jsonl");
@@ -275,7 +274,7 @@ export async function demoFanout(lab: Lab) {
       if (task.kind !== "write") continue;
       writers.set(task.taskId as string, task);
       startedAt.set(task.taskId as string, Date.parse(next.event.at as string));
-      mark(`writer ${writers.size} started`, { taskId: task.taskId, title: task.title, areas: task.areas });
+      mark(`writer ${writers.size} started`, { taskId: task.taskId, title: task.title });
     }
 
     const verdict = await lab.waitEvent("the first review verdict", TURN_MS * 3, { cursor: orderCursor, types: ["review.verdict"] });

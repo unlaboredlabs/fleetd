@@ -259,9 +259,6 @@ export type ApprovalAnswerOutput = {
 /** The human's answer to a `command_approval`. */
 export type ApprovalDecision = "approve" | "deny";
 
-/** Lowercase slug, [a-z0-9][a-z0-9_-]*, at most 40 */
-export type AreaName = string;
-
 export type AttachmentGetInput = {
   attachmentId: AttachmentId;
   projectRef: ProjectRef;
@@ -1321,9 +1318,7 @@ export type KnownHubEventType =
   | "request.opened"
   | "request.updated"
   | "task.queued"
-  | "task.out_of_area"
   | "agents.cap"
-  | "lease.stale"
   | "claim.failed"
   | "workstream.done"
   | "review.verdict"
@@ -1468,11 +1463,11 @@ export type Incident = {
 export type IncidentClass =
   | "false_claim"
   | "polish_loop"
-  | "out_of_area"
   | "stall"
   | "policy_bypass"
   | "override"
   | "misfiled_ask"
+  | "out_of_area"
   | "re_ask";
 
 export type IncidentCount = {
@@ -2582,10 +2577,6 @@ export type ProjectId = string;
 
 /** What `project_inspect` found: the default branch, CI and merge rules, and one line on what the lead will need. */
 export type ProjectInspect = {
-  /** The areas writers lease: the policy file's, else inferred from the repo's layout. Empty when unknown. */
-  areas?: string[];
-  /** true: `areas` were inferred from the repo, not set in .fleetd/policy.yaml. */
-  areasInferred?: boolean;
   ci: CiInfo;
   defaultBranch?: string;
   /** One line for a person, e.g. "no CI found: the merge train will only use local checks". */
@@ -2606,10 +2597,6 @@ export type ProjectInspectInput = {
 
 /** What `project_inspect` found: the default branch, CI and merge rules, and one line on what the lead will need. */
 export type ProjectInspectOutput = {
-  /** The areas writers lease: the policy file's, else inferred from the repo's layout. Empty when unknown. */
-  areas?: string[];
-  /** true: `areas` were inferred from the repo, not set in .fleetd/policy.yaml. */
-  areasInferred?: boolean;
   ci: CiInfo;
   /** With `url` and a machine (given, or the best one): where `project_add` would clone it. */
   clone?: CloneTarget;
@@ -3317,7 +3304,6 @@ export type SpanKind =
   | "run.startup"
   | "compaction"
   | "queue.slot"
-  | "queue.lease"
   | "queue.usage"
   | "queue.offline"
   | "wake.debounce"
@@ -3336,6 +3322,7 @@ export type SpanKind =
   | "git"
   | "claude.other"
   | "wait.offline"
+  | "queue.lease"
   | "run.queued"
   | "wait.permission"
   | "wait.request"
@@ -3679,7 +3666,6 @@ export type TailMessage = {
 export type TailRole = "user" | "assistant" | "system";
 
 export type Task = {
-  areas: AreaName[];
   /** 1 for the first launch. */
   attempt: number;
   /** `fleetd/<taskId>-<slug>`; write tasks only. */
@@ -3699,7 +3685,7 @@ export type Task = {
   prompt: string;
   /** A review task spawned with `--qa`. */
   qa?: boolean;
-  /** Why it is queued, e.g. "lease: docs held by T1" or "fleet cap: 40 of 40 running". */
+  /** Why it is queued, e.g. "fleet cap: 40 of 40 running". */
   queuedReason?: string;
   result?: TaskResult;
   startedAt?: Timestamp;
@@ -3727,8 +3713,6 @@ export type TaskEventData = {
   branch?: string;
   /** When the task was spawned: a `task.started` for a task spawned before a turn is not that turn's start. */
   createdAt?: Timestamp;
-  /** task.out_of_area: the first 20 paths outside the leased globs. */
-  paths?: string[];
   queuedReason?: string;
   taskId: TaskId;
   workstreamId?: WorkstreamId;
@@ -3746,7 +3730,7 @@ export type TaskGetOutput = {
 
 export type TaskId = string;
 
-/** Only write tasks get a worktree and leases. */
+/** Only write tasks get a worktree. */
 export type TaskKind = "write" | "read" | "review";
 
 /**
@@ -4474,7 +4458,6 @@ export interface HubEventDataMap {
   "task.cancelled": TaskEventData;
   "task.completed": TaskEventData;
   "task.failed": TaskEventData;
-  "task.out_of_area": TaskEventData;
   "task.queued": TaskEventData;
   "task.started": TaskEventData;
   "thread.completed": ThreadEventData;

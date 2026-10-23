@@ -44,15 +44,13 @@ export function General() {
         <Separator />
         <Setting
           label="Claude auto memory"
-          help="Claude's own notes, kept per folder between sessions. Read-only here: a project's repository decides."
+          help="Claude's own notes, kept per folder between sessions."
         >
           <div className={s.stack}>
-            <Text>Off for every agent fleetd starts, unless a project turns it back on.</Text>
+            <Text>Off for every agent fleetd starts.</Text>
             <Text tone="quiet">
-              Agents learn from their brief, your decisions and your instructions, never from notes another agent left in a worktree. To turn it on
-              for one project, add <InlineCode>claude: {"{ autoMemory: true }"}</InlineCode> to <InlineCode>.fleetd/policy.yaml</InlineCode> in its
-              repository and commit it; new sessions pick it up. <InlineCode>fleetd doctor</InlineCode> warns if a machine's claude keeps it on
-              anyway.
+              Agents learn from their brief, your decisions and your instructions, never from notes another agent left in a worktree.{" "}
+              <InlineCode>fleetd doctor</InlineCode> warns if a machine's claude keeps it on anyway.
             </Text>
           </div>
         </Setting>

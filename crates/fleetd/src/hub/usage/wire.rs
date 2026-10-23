@@ -250,33 +250,6 @@ impl DoctorFleet for OpsPorts {
         let link = &self.hub().link;
         (link.load(&m).and_then(|l| l.disk), link.paused(&m))
     }
-    fn project_areas(
-        &self,
-        machine_id: &str,
-    ) -> BoxFut<'_, Vec<crate::hub::doctor::service::ProjectAreas>> {
-        let m = machine(machine_id);
-        Box::pin(async move {
-            let Some(m) = m else { return Vec::new() };
-            let hub = self.hub();
-            let projects = hub.store.projects_list(Some(&m), None).unwrap_or_default();
-            let mut out = Vec::new();
-            for p in projects {
-                let r = fleetd_contracts::ids::ProjectRef {
-                    machine_id: p.machine_id,
-                    project_id: p.project_id,
-                };
-                if let Ok(resolved) = hub.policies.resolve(&r).await {
-                    out.push(crate::hub::doctor::service::ProjectAreas {
-                        title: p.title,
-                        areas: resolved.policy.areas.into_keys().collect(),
-                        inferred: resolved.inferred,
-                        ignored_defaults: resolved.ignored_defaults,
-                    });
-                }
-            }
-            out
-        })
-    }
     /// One `true` in each project's checkout: the node answers a refusal without running anything.
     fn refused_projects(&self, machine_id: &str) -> BoxFut<'_, Vec<(String, String)>> {
         let m = machine(machine_id);

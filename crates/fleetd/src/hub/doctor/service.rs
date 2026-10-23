@@ -40,16 +40,6 @@ pub struct ActionOutcome {
     pub probe: Option<HostProbe>,
 }
 
-/// A project's writer areas, for the doctor's areas check.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ProjectAreas {
-    pub title: String,
-    pub areas: Vec<String>,
-    pub inferred: bool,
-    /// Its policy file still has `defaults` (model, effort), which fleetd ignores.
-    pub ignored_defaults: bool,
-}
-
 /// The hub services the checks read.
 pub trait DoctorFleet: Send + Sync {
     fn machines(&self) -> BoxFut<'_, Vec<MachineView>>;
@@ -70,10 +60,6 @@ pub trait DoctorFleet: Send + Sync {
     /// holds new agents there, if it does.
     fn guard(&self, _machine_id: &str) -> (Option<NodeDisk>, Option<String>) {
         (None, None)
-    }
-    /// Each of the machine's projects whose policy reads: its title, area names, and whether they were inferred.
-    fn project_areas(&self, _machine_id: &str) -> BoxFut<'_, Vec<ProjectAreas>> {
-        Box::pin(async { Vec::new() })
     }
 }
 
@@ -252,11 +238,6 @@ impl Doctor {
                 }
             }
         );
-        let areas = if online {
-            fleet.project_areas(id).await
-        } else {
-            Vec::new()
-        };
         let mut out = vec![checks::machine_online(machine, setup, runner.as_ref())];
         if let Some(info) = &runner {
             out.extend(checks::runner_checks(id, info));
@@ -276,9 +257,6 @@ impl Doctor {
         out.push(checks::usage_breaker(id, &usage.breaker));
         if let Some(refused) = refused {
             out.push(checks::cmd_roots(id, &refused));
-        }
-        if !areas.is_empty() {
-            out.push(checks::areas(id, &areas));
         }
         out
     }

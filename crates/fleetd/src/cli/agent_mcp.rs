@@ -84,10 +84,10 @@ static TOOLS: &[Tool] = &[
     lead(
         "spawn_agent",
         "task_spawn",
-        "Start a fleetd agent (a task) with its own session, slot and lane. kind write|read|review; a writer needs \
-         areas from the project's policy and gets its own worktree and branch; a review task needs pr. profile is high \
-         by default; medium is for mechanical work only, and reviews always run high. A busy area or a full slot board \
-         queues it and it starts by itself. Its result arrives in a later wake: end your turn instead of waiting.",
+        "Start a fleetd agent (a task) with its own session, slot and lane. kind write|read|review; a writer \
+         gets its own worktree and branch; a review task needs pr. profile is high by default; medium is for mechanical \
+         work only, and reviews always run high. A full slot board queues it and it starts by itself. The result names \
+         the other writers running in the project. Its result arrives in a later wake: end your turn instead of waiting.",
         inline_schema::<TaskSpawnCall>,
     ),
     lead(
@@ -112,7 +112,7 @@ static TOOLS: &[Tool] = &[
     lead(
         "stop_agent",
         "task_cancel",
-        "Stop a task: interrupts its thread and releases its slot and leases.",
+        "Stop a task: interrupts its thread and releases its slot.",
         inline_schema::<TaskCancelCall>,
     ),
     lead(
@@ -488,7 +488,7 @@ mod tests {
         let spawn = call_of(
             Role::Lead,
             "spawn_agent",
-            json!({ "workstreamId": "W1", "title": "t", "prompt": "p", "areas": ["docs"] }),
+            json!({ "workstreamId": "W1", "title": "t", "prompt": "p" }),
         )
         .unwrap();
         assert_eq!(spawn["op"], "task_spawn");

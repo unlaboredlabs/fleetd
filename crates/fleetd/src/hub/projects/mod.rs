@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::events::HubEventType;
-use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
+use fleetd_contracts::ids::{MachineId, ProjectId};
 use fleetd_contracts::mcp::{
     ErrorCode, ProjectAddInput, ProjectAddOutput, ProjectDiscoverInput, ProjectDiscoverOutput,
     ProjectInspectInput, ProjectInspectOutput,
@@ -245,21 +245,6 @@ async fn read_github(
         answers.rulesets = sets.ok();
     }
     Ok(inspect::build(Some(repo), &answers, local, notes, gh_ok))
-}
-
-/// The inspect with the project's areas: its policy file's, else the ones inferred from its layout. The node reads
-/// files by project, so this runs once the project is registered with it.
-async fn with_areas(
-    hub: &Hub,
-    project_ref: &ProjectRef,
-    root: &str,
-    mut inspect: ProjectInspect,
-) -> ProjectInspect {
-    if let Ok(resolved) = hub.policies.resolve_new(project_ref, root).await {
-        inspect.areas = resolved.policy.areas.into_keys().collect();
-        inspect.areas_inferred = Some(resolved.inferred);
-    }
-    inspect
 }
 
 /// A checkout's inspect: GitHub's view when its remote is on GitHub, else what the checkout itself shows.
@@ -592,7 +577,7 @@ pub async fn inspect(
 }
 
 /// Registers `path` on `m` (the same directory again is the same project; a title renames it) and emits
-/// `project.added` with the inspect and the project's areas. Returns the inspect it emitted.
+/// `project.added` with the inspect. Returns the inspect it emitted.
 async fn register(
     hub: &Hub,
     m: &MachineId,
@@ -614,11 +599,6 @@ async fn register(
             .await
             .map_err(crate::hub::executor::tools::from_executor)?;
     }
-    let project_ref = ProjectRef {
-        machine_id: m.clone(),
-        project_id: project_id.clone(),
-    };
-    let inspect = with_areas(hub, &project_ref, path, inspect).await;
     let summary = format!("{title} added on {m}: {}", inspect.lead_needs);
     // The event log keeps at most 2 KB of data; project_inspect has the whole inspect.
     let data = inspect::fit_added(ProjectAddedData {

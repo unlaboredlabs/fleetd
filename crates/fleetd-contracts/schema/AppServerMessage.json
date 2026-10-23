@@ -561,18 +561,8 @@
           "type": "string"
         },
         {
-          "const": "task.out_of_area",
-          "description": "A write task's diff touched files outside its leased areas; `data.paths`.",
-          "type": "string"
-        },
-        {
           "const": "agents.cap",
           "description": "A project's max agents or the fleet cap changed; `data` is `tasks::AgentsCapData`, `summary` the chat's line.",
-          "type": "string"
-        },
-        {
-          "const": "lease.stale",
-          "description": "A lease held for over 4 h; flagged once, never released by the hub. `data.taskId`, `data.area`.",
           "type": "string"
         },
         {

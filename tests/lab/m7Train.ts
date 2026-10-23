@@ -1,7 +1,7 @@
 // M7 "done when" 1-5 on lab-a against the public lab repo unlaboredlabs/fleetd-lab, in this slot's namespace (CI fails
 // iff a file FAIL exists; slot/<n>/main requires the `ci` check and the `fleetd/train` status). The lab clone becomes a
 // second project on lab-a, with its policy file kept untracked, so nothing but the train ever lands on the base. With the train frozen by a
-// Decision, two M-tier writers (areas alpha, beta, files under this run's lab/<time>/) open PRs and get one reviewer each; then two S-tier writers open a
+// Decision, two M-tier writers (files under this run's lab/<time>/) open PRs and get one reviewer each; then two S-tier writers open a
 // PR that conflicts with alpha's and one that adds FAIL. Thawed
 // with train_freeze, the train merges alpha and beta in order (the second rebased onto the first's merge), sends the
 // conflict back to its author, who resolves it and gets merged, and sends red CI back to its author, never merging
@@ -33,12 +33,8 @@ const DIR = `lab/${new Date().toISOString().slice(0, 19).replace(/\D/gu, "")}`;
 const ALPHA = `${DIR}/alpha.md`;
 const BETA = `${DIR}/beta.md`;
 // Kept untracked (.git/info/exclude): the hub reads it from the checkout, and nothing but the train lands on main.
-// gamma overlaps alpha on purpose, so its writer runs at the same time and conflicts with it. CI looks for FAIL at the root.
-const POLICY = `areas:
-  alpha: ["${ALPHA}"]
-  beta: ["${BETA}"]
-  gamma: ["${ALPHA}"]
-  ci: ["FAIL"]
+// gamma writes alpha's file on purpose, so it conflicts with alpha. CI looks for FAIL at the root.
+const POLICY = `
 `;
 
 const run = (cmd: string, args: ReadonlyArray<string>, cwd = CLONE) =>
@@ -177,7 +173,7 @@ export async function m7Train(lab: Lab) {
   checkClone(check);
   resetNamespace();
   prepareCheckout();
-  ok(`${CLONE} at origin/${BASE} ${git("rev-parse", "--short", "HEAD")} (the seed); untracked .fleetd/policy.yaml (alpha, beta, gamma, ci; branches under ${BRANCH_PREFIX}); nothing else in ${NAMESPACE}/ on ${REPO}`);
+  ok(`${CLONE} at origin/${BASE} ${git("rev-parse", "--short", "HEAD")} (the seed); untracked .fleetd/policy.yaml (branches under ${BRANCH_PREFIX}); nothing else in ${NAMESPACE}/ on ${REPO}`);
 
   const scenarioStart = await lab.cursor();
   try {
@@ -235,11 +231,11 @@ export async function m7Train(lab: Lab) {
     check(!freeze.isError, `decisions_record: ${JSON.stringify(freeze.body)}`);
     ok(`5. ${freeze.body.decision.decisionId} ${FREEZE_KEY} = true`);
 
-    const spawn = (w: string, area: string, title: string, prompt: string) => {
-      const out = fleetd("task", "spawn", "--workstream", w, "--title", title, "--areas", area, "--profile", MECHANICS, "--prompt", prompt);
+    const spawn = (w: string, title: string, prompt: string) => {
+      const out = fleetd("task", "spawn", "--workstream", w, "--title", title, "--profile", MECHANICS, "--prompt", prompt);
       const taskId = /^Spawned (T\d+)/mu.exec(out.stdout)?.[1];
       check(out.code === 0 && taskId, `task spawn ${title}: ${JSON.stringify(out)}`);
-      lab.log(`spawned ${taskId} (${title}, area ${area})`);
+      lab.log(`spawned ${taskId} (${title})`);
       return taskId!;
     };
     const writer = (file: string, line: string, after = "") =>
@@ -255,10 +251,10 @@ export async function m7Train(lab: Lab) {
       return { taskId, prUrl: prUrl!, changeId: q.event.data.changeId as string };
     };
 
-    // 1. Two M-tier writers in different areas.
+    // 1. Two M-tier writers.
     let cursor = await lab.cursor();
-    const a = spawn(wm, "alpha", "add alpha", writer(ALPHA, "alpha"));
-    const b = spawn(wm, "beta", "add beta", writer(BETA, "beta"));
+    const a = spawn(wm, "add alpha", writer(ALPHA, "alpha"));
+    const b = spawn(wm, "add beta", writer(BETA, "beta"));
     const ca = await queued(a, cursor);
     const cb = await queued(b, cursor);
     ok(`1. ${a} opened ${ca.prUrl} (${ca.changeId}) and ${b} opened ${cb.prUrl} (${cb.changeId}), each auto-enqueued`);
@@ -267,12 +263,12 @@ export async function m7Train(lab: Lab) {
 
     // 2 and 3. After both, so they come later in train order: a PR conflicting with alpha.md, and one that adds FAIL.
     cursor = await lab.cursor();
-    const c = spawn(ws, "gamma", "add gamma line", writer(
+    const c = spawn(ws, "add gamma line", writer(
       ALPHA,
       "gamma",
       ` If you are later told this PR conflicts: run \`git fetch origin\` and \`git rebase origin/${BASE}\`; make ${ALPHA} exactly two lines, \`alpha\` then \`gamma\`; \`git add ${ALPHA}\`; \`GIT_EDITOR=true git rebase --continue\`; \`git push --force-with-lease\`; then reply with one word: resolved.`,
     ));
-    const d = spawn(ws, "ci", "add FAIL", writer("FAIL", "red", " This PR is meant to fail CI. When a later message says CI failed, that is expected: change nothing, push nothing, and reply with exactly one word: acknowledged."));
+    const d = spawn(ws, "add FAIL", writer("FAIL", "red", " This PR is meant to fail CI. When a later message says CI failed, that is expected: change nothing, push nothing, and reply with exactly one word: acknowledged."));
     const cc = await queued(c, cursor);
     const cd = await queued(d, cursor);
     ok(`${c} opened ${cc.prUrl} (${cc.changeId}, conflicts with ${ALPHA}) and ${d} opened ${cd.prUrl} (${cd.changeId}, adds FAIL)`);

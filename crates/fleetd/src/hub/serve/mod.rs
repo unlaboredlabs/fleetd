@@ -288,13 +288,10 @@ pub fn build_on(
         Arc::new(move |m, t| lead_ports.lead_of(m, t)),
         crate::hub::slots::SlotsOptions::default(),
     )?;
-    let leases = crate::hub::leases::Leases::new(db.clone(), events.clone(), clock.clone());
-    let source = crate::hub::leases::policy::NodePolicySource {
-        store: store.clone(),
+    let source = crate::hub::policy::NodePolicySource {
         executors: executors.clone(),
-        ports: task_ports.clone(),
     };
-    let policies = crate::hub::leases::Policies::new(Arc::new(source), clock.clone());
+    let policies = crate::hub::policy::Policies::new(Arc::new(source), clock.clone());
     executors.set_tool_policy(policies.clone());
     let tasks = crate::hub::tasks::Tasks::new(crate::hub::tasks::TaskDeps {
         db: db.clone(),
@@ -303,7 +300,6 @@ pub fn build_on(
         clock: clock.clone(),
         ports: task_ports,
         slots: slots.clone(),
-        leases: leases.clone(),
         policies: policies.clone(),
     });
     let leads = crate::hub::leads::Area::new(
@@ -361,7 +357,6 @@ pub fn build_on(
         train,
         reviews,
         slots,
-        leases,
         policies,
         tasks,
         leads,

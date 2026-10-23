@@ -34,7 +34,7 @@ The hub checks these on every fleetd call a session makes, through its MCP tools
 | Agents running at once, per project | The project's max agents, which a person sets (`cap_set`, the chat's Max agents); unset, the fleet cap. A spawn over it queues and starts by itself. The lead's own turns don't count. |
 | Agents running at once, fleet-wide | The fleet cap, 40 by default. 4 slots of it are kept for lead turns. |
 | Calls a task's agent may make | `report`, `ask_lead`, `claim_done`. Every other call is refused. |
-| Finish-all children open at once | 5 by default; the policy file's `finishAll.maxChildren` changes it. |
+| Finish-all children open at once | 5. |
 | What a child workstream may serve | `issue`, `defect`, `done`. Never invented work. |
 | Gated commands (`gated_run`) | Classes `irreversible`, `money`, `credential`. Run only after a human approves; at most 1800 s. |
 
@@ -50,7 +50,7 @@ Every lead gets these, the finish-all lead included.
 | [`message_agent`](#message_agent) | Steer a task: a running one takes the message at its next tool boundary (now: true stops its current step first), a waiting one gets it as its answer, and an ended one continues in its own thread. | No |
 | [`agent_status`](#agent_status) | One task as stored: state, queued reason, thread, result. | No |
 | [`list_agents`](#list_agents) | The project's tasks, newest first, optionally by state or workstream. | No |
-| [`stop_agent`](#stop_agent) | Stop a task: interrupts its thread and releases its slot and leases. | No |
+| [`stop_agent`](#stop_agent) | Stop a task: interrupts its thread and releases its slot. | No |
 | [`brief`](#brief) | Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier) and start it, or edit it later. | No |
 | [`request_secret`](#request_secret) | Ask the human for a secret (a key, a token, a password). | The human enters the value in chat; you see only its fingerprint. |
 | [`request_withdraw`](#request_withdraw) | Take back a secret request or a command approval you no longer need (the human said so in chat). | No |
@@ -72,13 +72,12 @@ Every lead gets these, the finish-all lead included.
 
 ### spawn_agent
 
-Start a fleetd agent (a task) with its own session, slot and lane. kind write|read|review; a writer needs areas from the project's policy and gets its own worktree and branch; a review task needs pr. profile is high by default; medium is for mechanical work only, and reviews always run high. A busy area or a full slot board queues it and it starts by itself. Its result arrives in a later wake: end your turn instead of waiting.
+Start a fleetd agent (a task) with its own session, slot and lane. kind write|read|review; a writer gets its own worktree and branch; a review task needs pr. profile is high by default; medium is for mechanical work only, and reviews always run high. A full slot board queues it and it starts by itself. The result names the other writers running in the project. Its result arrives in a later wake: end your turn instead of waiting.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `areas` | string[] | no | At most 20 items. |
 | `item` | string | no | The plan item this task works on; refused when it belongs to another order. |
-| `kind` | string | no | Only write tasks get a worktree and leases. One of `write`, `read`, `review`. Default `"write"`. |
+| `kind` | string | no | Only write tasks get a worktree. One of `write`, `read`, `review`. Default `"write"`. |
 | `pr` | string | no |  |
 | `profile` | string | no | What an agent runs on. There are exactly two, both claude-opus-5-5: `high` (effort high) is the default and what the lead, every reviewer and every helper call run; `medium` (effort medium) is for mechanical tasks the lead picks. One of `high`, `medium`. |
 | `prompt` | string | yes | At most 8000 characters. |
@@ -93,9 +92,6 @@ Start a fleetd agent (a task) with its own session, slot and lane. kind write|re
 {
   "name": "spawn_agent",
   "arguments": {
-    "areas": [
-      "api"
-    ],
     "kind": "write",
     "prompt": "Limit uploads to 10 a minute per API key. Over the limit, answer 429 with Retry-After.",
     "title": "Rate-limit the upload API",
@@ -167,7 +163,7 @@ The project's tasks, newest first, optionally by state or workstream.
 
 ### stop_agent
 
-Stop a task: interrupts its thread and releases its slot and leases.
+Stop a task: interrupts its thread and releases its slot.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|

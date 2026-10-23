@@ -1,25 +1,21 @@
-//! M5 objects: fleetd-owned tasks, area leases, slots and the repo policy file.
-
-use std::collections::BTreeMap;
+//! M5 objects: fleetd-owned tasks, slots and the repo policy file.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::brand;
 use crate::effort::TaskProfile;
 use crate::ids::{ProjectRef, ThreadRef, Timestamp};
 use crate::ledger::{Tier, WorkstreamId};
-use crate::prim::{
-    Count, Int, Line, List, NonEmpty, Positive, Text, UniqueList, is_http_url, js_len,
-};
+use crate::prim::{Count, Line, List, NonEmpty, Positive, Text, is_http_url, js_len};
 use crate::usage::UsageParked;
-use crate::{brand, checked};
 
 brand!(
     /// "T" plus a positive integer, unique per hub, e.g. "T7".
     TaskId, name = "TaskId", pattern = r"^T[1-9][0-9]*$"
 );
 
-/// Only write tasks get a worktree and leases.
+/// Only write tasks get a worktree.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskKind {
@@ -39,32 +35,9 @@ pub enum TaskState {
     Cancelled,
 }
 
-brand!(
-    /// A policy area name such as "docs" or "hub-tasks".
-    AreaName,
-    name = "AreaName",
-    check = |s| {
-        static RE: std::sync::LazyLock<regex::Regex> =
-            std::sync::LazyLock::new(|| regex::Regex::new(r"^[a-z0-9][a-z0-9_-]*$").unwrap());
-        js_len(s) <= 40 && RE.is_match(s)
-    },
-    expected = "a lowercase slug, [a-z0-9][a-z0-9_-]*, at most 40",
-    pattern = r"^[a-z0-9][a-z0-9_-]*$",
-    description = "Lowercase slug, [a-z0-9][a-z0-9_-]*, at most 40"
-);
-
 /// It also becomes the branch slug, so one line.
 pub type TaskTitle = Line<1, 80>;
 pub type TaskPrompt = Text<1, 8000>;
-pub type TaskAreas = UniqueList<AreaName, 0, 20>;
-
-/// A write task needs at least one area to lease.
-pub fn task_areas_rule(kind: TaskKind, areas_len: usize) -> Result<(), String> {
-    if kind == TaskKind::Write && areas_len == 0 {
-        return Err("a write task needs at least one area".into());
-    }
-    Ok(())
-}
 
 /// A review task names its PR; only review tasks may be QA runs.
 pub fn task_spawn_rule(kind: TaskKind, qa: Option<bool>, pr: bool) -> Result<(), String> {
@@ -124,7 +97,7 @@ pub struct TaskResult {
 
 #[serde_with::skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(remote = "Self", rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 pub struct Task {
     pub task_id: TaskId,
     pub project_ref: ProjectRef,
@@ -132,7 +105,6 @@ pub struct Task {
     pub title: TaskTitle,
     pub kind: TaskKind,
     pub prompt: TaskPrompt,
-    pub areas: TaskAreas,
     /// Resolved at spawn. Rows stored with a model and effort read as `high` (the hub migrates its own).
     #[serde(default)]
     pub profile: TaskProfile,
@@ -145,7 +117,7 @@ pub struct Task {
     #[serde(default)]
     pub item_id: Option<crate::plan::PlanItemId>,
     pub state: TaskState,
-    /// Why it is queued, e.g. "lease: docs held by T1" or "fleet cap: 40 of 40 running".
+    /// Why it is queued, e.g. "fleet cap: 40 of 40 running".
     pub queued_reason: Option<Text<1, 200>>,
     pub thread_ref: Option<ThreadRef>,
     /// `fleetd/<taskId>-<slug>`; write tasks only.
@@ -159,17 +131,6 @@ pub struct Task {
     pub created_at: Timestamp,
     pub started_at: Option<Timestamp>,
     pub ended_at: Option<Timestamp>,
-}
-checked!(Task, |task| task_areas_rule(task.kind, task.areas.len()));
-
-/// One writer per area within a project, held from spawn until the task ends.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct Lease {
-    pub project_ref: ProjectRef,
-    pub area: AreaName,
-    pub task_id: TaskId,
-    pub since: Timestamp,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -210,8 +171,6 @@ pub struct TaskEventData {
     pub created_at: Option<Timestamp>,
     pub queued_reason: Option<String>,
     pub branch: Option<String>,
-    /// task.out_of_area: the first 20 paths outside the leased globs.
-    pub paths: Option<List<String, 0, 20>>,
 }
 
 /// `agents.cap` data: a project's max agents or the fleet cap changed. The event's summary is the one quiet line its
@@ -233,13 +192,6 @@ pub struct AgentsCapData {
 
 /// Repo-relative.
 pub const POLICY_FILE_PATH: &str = ".fleetd/policy.yaml";
-
-brand!(
-    /// A repo-relative glob such as "docs/**".
-    AreaGlob,
-    check = |s| (1..=200).contains(&js_len(s)) && !s.starts_with('/'),
-    expected = "a repo-relative glob, not an absolute path"
-);
 
 /// What every branch fleetd names starts with, by default.
 pub const DEFAULT_BRANCH_PREFIX: &str = "fleetd/";
@@ -271,21 +223,6 @@ brand!(
     expected = "a branch prefix ending in /, such as fleetd/ (letters, digits, . _ - between the slashes)"
 );
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct PolicyFileFinishAll {
-    /// Most child workstreams one finish-all run spawns.
-    pub max_children: Int<1, 50>,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct PolicyFileLead {
-    /// false: an order for the project waits as a draft until someone calls lead_start, instead of starting the
-    /// lead itself.
-    pub auto_start: bool,
-}
-
 /// Tool permission rules in claude's own syntax (`Bash(npm test:*)`, `Read`, `mcp__github`). They become the
 /// session's `--allowedTools` / `--disallowedTools`, and the hub answers a prompt that one of them matches itself.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -297,45 +234,15 @@ pub struct PolicyFileTools {
     pub deny: List<Text<1, 200>, 0, 100>,
 }
 
-/// The repo policy file, as decoded from YAML.
+/// The repo policy file, as decoded from YAML. Keys it doesn't know are ignored.
 #[serde_with::skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(remote = "Self", rename_all = "camelCase")]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct PolicyFile {
-    // A map keyed by AreaName would silently drop misnamed areas; checking the names refuses them instead.
     // An older file's `defaults` (model, effort) is ignored: the lead picks a TaskProfile per task.
-    pub areas: BTreeMap<String, List<AreaGlob, 1, 50>>,
-    pub finish_all: Option<PolicyFileFinishAll>,
     pub tools: Option<PolicyFileTools>,
-    pub lead: Option<PolicyFileLead>,
     /// What the branches fleetd names start with (default `fleetd/`), for several fleets sharing one repo.
     pub branch_prefix: Option<BranchPrefix>,
-}
-checked!(PolicyFile, |policy| {
-    match policy
-        .areas
-        .keys()
-        .find(|name| AreaName::new(name.as_str()).is_err())
-    {
-        Some(name) => Err(format!(
-            "areas: {name:?} is not a lowercase slug, [a-z0-9][a-z0-9_-]*, at most 40"
-        )),
-        None => Ok(()),
-    }
-});
-
-/// What a project without a policy file gets.
-pub fn default_policy() -> PolicyFile {
-    PolicyFile {
-        areas: BTreeMap::from([(
-            "all".to_owned(),
-            List::unchecked(vec![AreaGlob::unchecked("**")]),
-        )]),
-        finish_all: None,
-        tools: None,
-        lead: None,
-        branch_prefix: None,
-    }
 }
 
 #[cfg(test)]
@@ -364,8 +271,6 @@ mod tests {
 
     #[test]
     fn spawn_rules() {
-        assert!(task_areas_rule(TaskKind::Write, 0).is_err());
-        assert!(task_areas_rule(TaskKind::Read, 0).is_ok());
         assert!(task_spawn_rule(TaskKind::Write, None, false).is_ok());
         assert!(task_spawn_rule(TaskKind::Review, Some(true), true).is_ok());
         assert!(task_spawn_rule(TaskKind::Review, None, false).is_err());
@@ -373,18 +278,7 @@ mod tests {
     }
 
     #[test]
-    fn area_names_are_distinct_slugs() {
-        for area in ["docs", "hub-tasks", "a_b", &"x".repeat(40)] {
-            assert!(AreaName::new(area).is_ok(), "{area}");
-        }
-        for area in ["Docs", "-docs", "apps/hub", "a b", "", &"x".repeat(41)] {
-            assert!(AreaName::new(area).is_err(), "{area}");
-        }
-        assert!(!accepts::<TaskAreas>(json!(["docs", "docs"])));
-    }
-
-    #[test]
-    fn task_holds_the_area_rule_and_caps_the_result_tail() {
+    fn task_caps_the_result_tail() {
         let at = "2026-10-17T10:00:00.000Z";
         let task = json!({
             "taskId": "T1",
@@ -393,7 +287,6 @@ mod tests {
             "title": "add file",
             "kind": "write",
             "prompt": "create docs/x.md",
-            "areas": ["docs"],
             "profile": "medium",
             "state": "done",
             "attempt": 1,
@@ -401,11 +294,11 @@ mod tests {
             "createdAt": at,
         });
         assert!(accepts::<Task>(task.clone()));
-        assert!(!accepts::<Task>(with(task.clone(), "areas", json!([]))));
+        // Tasks stored while writers leased areas still read.
         assert!(accepts::<Task>(with(
-            with(task.clone(), "kind", json!("review")),
+            task.clone(),
             "areas",
-            json!([])
+            json!(["docs"])
         )));
         let mut long_tail = task.clone();
         long_tail["result"]["tail"] = json!("x".repeat(2001));
@@ -419,31 +312,13 @@ mod tests {
     }
 
     #[test]
-    fn policy_file_maps_area_names_to_repo_relative_globs() {
+    fn policy_file_ignores_keys_it_does_not_know() {
+        // An older file's areas and defaults are ignored, whatever they say.
         let decoded: PolicyFile = serde_json::from_value(
-            json!({ "areas": { "docs": ["docs/**", "*.md"] }, "defaults": { "effort": "high" } }),
+            json!({ "areas": { "docs": ["docs/**"] }, "defaults": { "effort": "medium-ish" } }),
         )
         .unwrap();
-        assert_eq!(
-            serde_json::to_value(&decoded.areas).unwrap(),
-            json!({ "docs": ["docs/**", "*.md"] })
-        );
-        assert_eq!(
-            serde_json::to_value(default_policy()).unwrap(),
-            json!({ "areas": { "all": ["**"] } })
-        );
-
-        assert!(!accepts::<PolicyFile>(
-            json!({ "areas": { "Bad Name": ["x/**"] } })
-        ));
-        assert!(!accepts::<PolicyFile>(json!({ "areas": { "docs": [] } })));
-        assert!(!accepts::<PolicyFile>(
-            json!({ "areas": { "docs": ["/etc/**"] } })
-        ));
-        // An older file's defaults are ignored, whatever they say.
-        assert!(accepts::<PolicyFile>(
-            json!({ "areas": { "docs": ["docs/**"] }, "defaults": { "effort": "medium-ish" } })
-        ));
+        assert_eq!(serde_json::to_value(&decoded).unwrap(), json!({}));
     }
 
     #[test]
@@ -459,11 +334,7 @@ mod tests {
             assert!(BranchPrefix::new(prefix).is_err(), "{prefix}");
         }
         assert!(BranchPrefix::new(format!("{}/", "x".repeat(100))).is_err());
-        assert!(accepts::<PolicyFile>(
-            json!({ "areas": { "all": ["**"] }, "branchPrefix": "slot/3/" })
-        ));
-        assert!(!accepts::<PolicyFile>(
-            json!({ "areas": { "all": ["**"] }, "branchPrefix": "slot 3" })
-        ));
+        assert!(accepts::<PolicyFile>(json!({ "branchPrefix": "slot/3/" })));
+        assert!(!accepts::<PolicyFile>(json!({ "branchPrefix": "slot 3" })));
     }
 }
