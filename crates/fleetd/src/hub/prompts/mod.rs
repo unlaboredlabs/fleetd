@@ -1,6 +1,5 @@
 //! Every prompt fleetd sends a model, visible and editable: the registry of shipped texts, the overrides in the hub
 //! home, the per-session pins, and the tools over them.
-pub mod fixed;
 pub mod registry;
 pub mod render;
 pub mod retired;

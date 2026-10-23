@@ -4,7 +4,6 @@
 //! that stays open is raised again as attention, so an approval-required run never waits silently.
 use super::store::{NewRequest, RequestFilter};
 use super::{Approvals, contract_project, project_of};
-use crate::hub::prompts::fixed::{DenyReason, denied};
 use crate::hub::usage::ports::{NewEvent, ProjectRef, WaitInput};
 use crate::hub::usage::time::{clip, iso, parse_ms, system_ms};
 use fleetd_contracts::chat::ChatRequestId;
@@ -16,6 +15,37 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+/// Why fleetd refused a tool call: the `tool.denied` prompt's reason.
+enum DenyReason<'a> {
+    /// A `tools.deny` rule in the project's policy file.
+    Policy { rule: &'a str, file: &'a str },
+    /// A person said no; `said` is what they wrote, if anything.
+    Human {
+        by: &'a str,
+        request: &'a str,
+        said: Option<&'a str>,
+    },
+    /// The approval was withdrawn before anyone answered it.
+    Withdrawn { by: &'a str, request: &'a str },
+}
+
+impl std::fmt::Display for DenyReason<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DenyReason::Policy { rule, file } => {
+                write!(f, "the tools.deny rule `{rule}` in {file}")
+            }
+            DenyReason::Human { by, request, said } => {
+                write!(f, "{by} said no ({request})")?;
+                said.map_or(Ok(()), |s| write!(f, ": {s}"))
+            }
+            DenyReason::Withdrawn { by, request } => {
+                write!(f, "{by} withdrew {request} before anyone answered it")
+            }
+        }
+    }
+}
 
 /// A prompt still open this long after its request was filed is raised again as attention, then every REMIND_EVERY_MS.
 pub const REMIND_AFTER_MS: i64 = 10 * 60_000;
@@ -306,6 +336,23 @@ fn decided_by(by: &str) -> Option<fleetd_contracts::time::DecidedBy> {
 }
 
 impl Approvals {
+    /// The `tool.denied` prompt, rendered from the thread's own texts.
+    fn deny(
+        &self,
+        machine_id: &str,
+        thread_id: &str,
+        reason: &DenyReason<'_>,
+    ) -> PermissionDecision {
+        let text = self
+            .deps
+            .hub
+            .prompts(machine_id, thread_id)
+            .render("tool.denied", &[("reason", reason)]);
+        PermissionDecision::Deny {
+            message: fleetd_contracts::prim::Text::unchecked(clip(&text, 2000)),
+        }
+    }
+
     fn prompt_requests(&self, states: Vec<RequestState>) -> Vec<HumanRequest> {
         self.deps
             .requests
@@ -429,15 +476,14 @@ impl Approvals {
                 Verdict::Allow(_) => Some(PermissionDecision::Allow {
                     updated_input: None,
                 }),
-                Verdict::Deny(rule) => Some(PermissionDecision::Deny {
-                    message: fleetd_contracts::prim::Text::unchecked(clip(
-                        &denied(&DenyReason::Policy {
-                            rule,
-                            file: POLICY_FILE_PATH,
-                        }),
-                        2000,
-                    )),
-                }),
+                Verdict::Deny(rule) => Some(self.deny(
+                    &project.machine_id,
+                    thread_id,
+                    &DenyReason::Policy {
+                        rule,
+                        file: POLICY_FILE_PATH,
+                    },
+                )),
                 Verdict::Ask => None,
             },
             // A broken or unreadable policy never answers for a person.
@@ -681,9 +727,7 @@ impl Approvals {
                     said,
                 }
             };
-            PermissionDecision::Deny {
-                message: fleetd_contracts::prim::Text::unchecked(clip(&denied(&reason), 2000)),
-            }
+            self.deny(machine, &open.thread_id, &reason)
         };
         let sent = self
             .deps

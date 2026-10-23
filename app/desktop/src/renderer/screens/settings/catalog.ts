@@ -1,4 +1,4 @@
-// How the Prompts list presents the hub's editable prompts (8; event lines are a fixed format, not prompts):
+// How the Prompts list presents the hub's editable prompts (event lines are facts the hub fills in, not prompts):
 // a few groups by what a person is looking for, a plain name, and one line on what it is for. The hub's own title
 // and `sentWhen` stay the fallback, so a prompt a newer hub adds still shows up, in "Other", with the hub's words.
 import type { PromptSummary } from "./contracts";

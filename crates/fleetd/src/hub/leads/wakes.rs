@@ -12,11 +12,12 @@ use fleetd_contracts::ledger::WorkstreamId;
 
 use super::digest::{DigestInput, WorkstreamFacts, render_lead_digest};
 use super::error::LeadError;
-use super::events::{Event, frame};
+use super::events::Event;
 use super::hooks::BoxFuture;
 use super::records::{LeadRecords, WorkstreamFilter};
 use super::{Ctx, now_iso};
 use crate::clock::Clock;
+use crate::hub::prompts::PromptSet;
 use crate::hub::store::{NewEvent, now_ms};
 
 pub const WAKE_DEBOUNCE: Duration = Duration::from_secs(10);
@@ -107,8 +108,14 @@ pub fn trigger_lines(triggers: &[Trigger]) -> Vec<String> {
         .collect()
 }
 
-pub fn render_wake(digest: &str, triggers: &[Trigger]) -> String {
-    frame(digest, &trigger_lines(triggers))
+pub fn render_wake(set: &PromptSet, digest: &str, triggers: &[Trigger]) -> String {
+    set.render(
+        "lead.wake",
+        &[
+            ("state", &digest),
+            ("events", &trigger_lines(triggers).join("\n")),
+        ],
+    )
 }
 
 /// Coalesces items per key: a key flushes once no new item arrived for `debounce`, or `max_wait` after its first
@@ -414,7 +421,12 @@ impl LeadWakes {
             });
             return Ok(());
         }
-        let message = render_wake(&self.digest(r).await?, &triggers);
+        let set = self
+            .ctx
+            .db
+            .prompts()
+            .for_thread(&r.machine_id, lead.thread_id.as_str());
+        let message = render_wake(&set, &self.digest(r).await?, &triggers);
         let at = now_iso(&self.ctx);
         let crid = format!("fleetd-wake:{}:{}:{at}", key_of(r), lead.session_generation);
         // Through the offline write queue, so a wake to an offline machine waits for it instead of being dropped.

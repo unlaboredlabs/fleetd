@@ -24,7 +24,7 @@ use super::rules::Refusal;
 use super::time::{iso, millis, parse_iso};
 use crate::clock::Clock;
 use crate::hub::leads::events::Event;
-use crate::hub::prompts::fixed::{FixPr, fix_your_pr};
+use crate::hub::prompts::PromptSet;
 use crate::hub::status::fresh::{self, Fresh};
 use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::prim::Text;
@@ -503,7 +503,14 @@ impl Train {
     }
 
     /// The author task gets it as a task message; without one, or if that fails, the lead gets it.
-    pub(super) async fn tell_author(&self, change: &Change, text: String) {
+    /// The `pr.fix` prompt with `problem` to the task that wrote the PR, else to the lead as an event line.
+    pub(super) async fn tell_author(&self, change: &Change, problem: &str) {
+        let prompts = self.records.db().prompts();
+        let set = match &change.task_id {
+            Some(task_id) => prompts.for_task(&change.project_ref, task_id.as_str()),
+            None => prompts.current(Some(&change.project_ref)),
+        };
+        let text = fix_your_pr(&set, change, problem, "");
         if let Some(task_id) = &change.task_id {
             match self
                 .host
@@ -736,13 +743,11 @@ impl Train {
             format!("{} needs a rebase: {why}", change.change_id),
             json!({ "changeId": change.change_id, "workstreamId": change.workstream_id, "paths": paths.iter().take(50).collect::<Vec<_>>() }),
         );
-        let text = fix_your_pr(
-            change.pr_url.as_str(),
-            Some(change.change_id.as_str()),
-            change.branch.as_str(),
-            &FixPr::Rebase { why: &why, base },
-        );
-        self.tell_author(&parked, text).await;
+        self.tell_author(
+            &parked,
+            &format!("the merge train could not rebase it: it {why}"),
+        )
+        .await;
     }
 
     /// `timed_out` carries the GitHub read error that kept the train from deciding, when there was one.
@@ -792,13 +797,8 @@ impl Train {
             format!("{} {why}", change.change_id),
             data,
         );
-        let text = fix_your_pr(
-            change.pr_url.as_str(),
-            Some(change.change_id.as_str()),
-            change.branch.as_str(),
-            &FixPr::Ci { why: &why },
-        );
-        self.tell_author(&parked, text).await;
+        self.tell_author(&parked, &format!("the merge train did not merge it: {why}"))
+            .await;
     }
 
     /// Polls the check runs of `sha` until all are done, one is red, or the timeout passes. A head with no checks is
@@ -1895,4 +1895,21 @@ fn change_ids(change: &Change) -> crate::hub::time::Ids {
         task_id: change.task_id.as_ref().map(|t| t.to_string()),
         ..Default::default()
     }
+}
+
+/// The one message that sends a PR back to its author: what is wrong (`problem`), a review's `findings` if any.
+pub fn fix_your_pr(set: &PromptSet, change: &Change, problem: &str, findings: &str) -> String {
+    let findings = match findings.trim() {
+        "" => String::new(),
+        f => format!("\n\n{f}\n"),
+    };
+    set.render(
+        "pr.fix",
+        &[
+            ("pr", &format!("{} ({})", change.pr_url, change.change_id)),
+            ("problem", &problem),
+            ("findings", &findings),
+            ("branch", &change.branch),
+        ],
+    )
 }

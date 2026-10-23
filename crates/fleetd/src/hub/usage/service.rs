@@ -14,8 +14,6 @@ use serde::Serialize;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-pub use super::state::CONTINUE_MESSAGE;
-
 const REPLAYED: &[&str] = &[
     "thread.usage_limited",
     "thread.started",
@@ -32,12 +30,12 @@ pub trait UsageOwners: Send + Sync {
     fn still_parked(&self, parked: &ParkedThread) -> BoxFut<'_, bool>;
 }
 
-/// The write queue's `send`: delivered once per `client_message_id`.
+/// The write queue's `send` of the `usage.continue` prompt, rendered from the thread's own texts: delivered once per
+/// `client_message_id`.
 pub trait UsageQueue: Send + Sync {
-    fn send(
+    fn send_continue(
         &self,
         thread: &ThreadRef,
-        message: &str,
         client_message_id: &str,
     ) -> BoxFut<'_, Result<(), String>>;
 }
@@ -225,13 +223,7 @@ impl Usage {
                 p.thread.thread_id,
                 parse_ms(&p.parked.since).unwrap_or(0)
             );
-            if let Err(reason) = self
-                .inner
-                .deps
-                .queue
-                .send(&p.thread, CONTINUE_MESSAGE, &id)
-                .await
-            {
+            if let Err(reason) = self.inner.deps.queue.send_continue(&p.thread, &id).await {
                 tracing::warn!(thread = %format!("{}/{}", p.thread.machine_id, p.thread.thread_id), %reason, "usage: continue not delivered");
                 continue;
             }

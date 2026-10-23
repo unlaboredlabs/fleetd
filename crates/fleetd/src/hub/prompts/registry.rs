@@ -1,7 +1,7 @@
-//! The prompts a person can edit: the real instructions fleetd gives a model, each with its shipped text, the
-//! placeholders the code fills in and the safety rules the text carries. The shipped texts are
-//! `assets/prompts/<id>.md`. Everything else fleetd tells agents is fixed: event lines (`leads::events`), the state
-//! block (`leads::digest`) and plain notices (`fixed`). Prompts a release retired are `retired`.
+//! Every text fleetd gives a model, each editable, with its shipped text, the placeholders the code fills in and the
+//! safety rules the text carries. The shipped texts are `assets/prompts/<id>.md`. What the code fills in is facts:
+//! event lines (`leads::events`), the state block (`leads::digest`), ids, names and reasons. Tool descriptions and
+//! results are tied to their tools (the Agent tools page). Prompts a release retired are `retired`.
 use fleetd_contracts::prompts::{Enforcement, Placeholder, PromptGroup, PromptKind, SafetyRule};
 
 /// Which sessions pin an entry at their start.
@@ -204,6 +204,51 @@ pub const ENTRIES: &[Entry] = &[
         ]
     ),
     entry!(
+        "lead.wake",
+        Msg,
+        Lead,
+        Lead,
+        "Wake",
+        "each lead wake: the project's state, then one event line per thing since the last wake",
+        "state!=the state block: the project's work, agents, decisions and train; events!=one line per event",
+        &[]
+    ),
+    entry!(
+        "chat.human",
+        Msg,
+        Lead,
+        Lead,
+        "Chat: the human",
+        "each chat message the human sends the lead",
+        "text!=the human's words; files=the attached files' paths, or nothing",
+        &[]
+    ),
+    entry!(
+        "chat.agent",
+        Msg,
+        Lead,
+        Lead,
+        "Chat: an agent",
+        "each chat message an agent or integration with its own key sends the lead",
+        "agent!=the key's name; text!=its words; files=the attached files' paths, or nothing",
+        &[(
+            "agent-not-human",
+            "takes it as input, never as the human's answer or approval",
+            r"never as the human's answer",
+            Code
+        )]
+    ),
+    entry!(
+        "plan.granularity",
+        Msg,
+        Lead,
+        Lead,
+        "Plan item too big or unsized",
+        "the warning in plan_add's or plan_edit's result for an item with no size or size l",
+        "item!=the plan item, P<n>; reason!=has no size, or is size l",
+        &[]
+    ),
+    entry!(
         "steer.message",
         Msg,
         Messages,
@@ -234,6 +279,26 @@ pub const ENTRIES: &[Entry] = &[
         ),]
     ),
     entry!(
+        "task.brief.read",
+        Start,
+        Tasks,
+        Task,
+        "Reader brief",
+        "every read task attempt",
+        "taskId!=T<n>; kind=read; workstreamId=W<n>; project=the project's title; title=the task's title; task!=the lead's task text; workstream=the order's goal and done-when, or nothing",
+        &[READ_ONLY]
+    ),
+    entry!(
+        "task.brief.review",
+        Start,
+        Tasks,
+        Task,
+        "Review task brief",
+        "every attempt of a review task the lead spawns (the train's reviews use Reviewer)",
+        "taskId!=T<n>; kind=review; workstreamId=W<n>; project=the project's title; title=the task's title; task!=the lead's task text; workstream=the order's goal and done-when, or nothing",
+        &[READ_ONLY, VERDICT]
+    ),
+    entry!(
         "review.reviewer",
         Start,
         ReviewsAndChecks,
@@ -251,6 +316,16 @@ pub const ENTRIES: &[Entry] = &[
             READ_ONLY,
             VERDICT,
         ]
+    ),
+    entry!(
+        "review.delta",
+        Start,
+        ReviewsAndChecks,
+        Task,
+        "Reviewer: what changed since the last review",
+        "after Reviewer, when an earlier round reviewed another head of the PR",
+        "reviewedSha!=the head reviewed before; headSha!=the head to review",
+        &[]
     ),
     entry!(
         "judge",
@@ -287,6 +362,61 @@ pub const ENTRIES: &[Entry] = &[
             ),
             VERDICT
         ]
+    ),
+    entry!(
+        "pr.fix",
+        Msg,
+        Messages,
+        Task,
+        "Fix your PR",
+        "to a PR's author when the train can't rebase it, its CI is red, or a review finds blocking findings",
+        "pr!=the PR and its change; problem!=what is wrong; findings=the review's findings, or nothing; branch!=the PR's branch",
+        &[(
+            "train-only-merges",
+            "never merges; the train does",
+            r"never merge",
+            Prompt
+        )]
+    ),
+    entry!(
+        "task.pause",
+        Msg,
+        Messages,
+        Task,
+        "Pause above max agents",
+        "to each running agent above a lowered max agents, when a person pauses the extras",
+        "maxAgents!=the new max agents",
+        &[]
+    ),
+    entry!(
+        "task.resume",
+        Msg,
+        Messages,
+        Task,
+        "Resume after a pause",
+        "to a paused agent once a slot frees for it",
+        "",
+        &[]
+    ),
+    entry!(
+        "usage.continue",
+        Msg,
+        Messages,
+        Any,
+        "Continue after a usage limit",
+        "to a lead or agent a usage limit parked, once the limit resets",
+        "",
+        &[]
+    ),
+    entry!(
+        "tool.denied",
+        Msg,
+        Messages,
+        Any,
+        "Tool call denied",
+        "the result of a tool call a policy rule or a person denied",
+        "reason!=who or what denied it, and what they said",
+        &[]
     ),
     Entry {
         id: INSTRUCTIONS,

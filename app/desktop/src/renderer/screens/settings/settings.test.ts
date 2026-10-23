@@ -39,8 +39,8 @@ const all = registry.prompts.map((p) => summary(p.id, { title: p.title, sentWhen
 
 group("the prompt catalog", () => {
   it("names, describes and groups every editable prompt this fleetd ships", () => {
-    // Eight editable prompts; the instructions have their own page.
-    expect(all.length).toBe(7);
+    // Twenty editable prompts; the instructions have their own page.
+    expect(all.length).toBe(20);
     const unknown = all.filter((p) => groupOf(p) === "other").map((p) => p.id);
     expect(unknown).toEqual([]);
     for (const p of all) {

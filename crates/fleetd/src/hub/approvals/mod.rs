@@ -188,6 +188,8 @@ pub trait ApprovalHub: Send + Sync {
     fn wake_request(&self, request: &HumanRequest) -> BoxFut<'_, ()>;
     /// The project policy's `tools` rules (empty without a policy file); the error says why it could not be read.
     fn tool_rules(&self, project: &ProjectRef) -> BoxFut<'_, Result<ToolRules, String>>;
+    /// The texts a message to this thread renders from.
+    fn prompts(&self, machine_id: &str, thread_id: &str) -> crate::hub::prompts::PromptSet;
 }
 
 pub struct ApprovalsDeps {

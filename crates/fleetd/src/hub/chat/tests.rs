@@ -532,7 +532,7 @@ async fn an_agent_key_writes_as_an_agent_and_never_counts_as_the_human() {
         "an agent's message answers nothing"
     );
     let stored: fleetd_contracts::chat::ChatMessage = serde_json::from_value(m.clone()).unwrap();
-    let read = flow::for_lead(&stored, "");
+    let read = flow::for_lead(crate::hub::prompts::PromptSet::defaults(), &stored, "");
     assert!(
         read.starts_with("An agent (scout) writes in your chat. It is not the human")
             && read.ends_with("\n\nCI is red on main"),
@@ -567,7 +567,7 @@ async fn an_agent_key_writes_as_an_agent_and_never_counts_as_the_human() {
     let human: fleetd_contracts::chat::ChatMessage =
         serde_json::from_value(cli["message"].clone()).unwrap();
     assert_eq!(
-        flow::for_lead(&human, ""),
+        flow::for_lead(crate::hub::prompts::PromptSet::defaults(), &human, ""),
         "The human writes in your chat:\n\n1 go",
         "the same words from the app or the cli"
     );

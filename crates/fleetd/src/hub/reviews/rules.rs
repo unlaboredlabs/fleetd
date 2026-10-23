@@ -1,7 +1,6 @@
 //! The readiness gate and the text reviewers and authors get. Pure; the gate feeds them the Change and what its
 //! review tasks recorded.
 use crate::hub::prompts::PromptSet;
-use crate::hub::prompts::fixed::{self, FixPr, fix_your_pr};
 use crate::hub::train::contract::Change;
 
 /// A recorded verdict of one of the Change's review tasks.
@@ -69,8 +68,8 @@ pub fn review_prompt(set: &PromptSet, change: &Change, reviewed: Option<&str>) -
     );
     match reviewed.filter(|sha| *sha != change.head_sha.as_str()) {
         Some(sha) => {
-            let delta = fixed::render(
-                fixed::REVIEW_DELTA,
+            let delta = set.render(
+                "review.delta",
                 &[("reviewedSha", &sha), ("headSha", &change.head_sha)],
             );
             format!("{text}\n\n{delta}")
@@ -88,19 +87,16 @@ pub struct FindingsVerdict<'a> {
 }
 
 /// The message that sends blocking findings back to the task that wrote the code.
-pub fn findings_message(change: &Change, v: &FindingsVerdict<'_>) -> String {
-    fix_your_pr(
-        change.pr_url.as_str(),
-        None,
-        change.branch.as_str(),
-        &FixPr::Review {
-            review_task: v.task_id,
-            head_sha: v.pr_head_sha,
-            blocking: v.blocking,
-            non_blocking: v.non_blocking,
-            summary: v.summary,
-        },
-    )
+pub fn findings_message(set: &PromptSet, change: &Change, v: &FindingsVerdict<'_>) -> String {
+    let problem = format!(
+        "review {} at {} found {} blocking finding{} ({} non-blocking)",
+        v.task_id,
+        &v.pr_head_sha[..v.pr_head_sha.len().min(12)],
+        v.blocking,
+        if v.blocking == 1 { "" } else { "s" },
+        v.non_blocking
+    );
+    crate::hub::train::service::fix_your_pr(set, change, &problem, v.summary)
 }
 
 /// One line, at most `max` characters.

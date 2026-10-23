@@ -10,9 +10,9 @@ fleetd prompts list
 fleetd prompts show lead.start
 ```
 
-The prompts fleetd sends a model are listed in `fleetd prompts list`, in the app's Settings → Prompts, and in the
-[table at the end of this page](#prompts). You can edit each one. Everything else, such as the event lines a lead is
-woken with, is fixed text: see [Not editable](#not-editable).
+Every text fleetd sends a model is a prompt: listed in `fleetd prompts list`, in the app's Settings → Prompts, and in
+the [table at the end of this page](#prompts). You can edit each one. What fleetd fills into them, such as the event
+lines a lead is woken with, is facts: see [Filled in by fleetd](#not-editable).
 
 ## How a session gets its instructions {#how}
 
@@ -21,7 +21,7 @@ There is no hidden system prompt. fleetd's text reaches a model in one of two wa
 | Way | Used for |
 |---|---|
 | The first message of a session | Leads, tasks, reviewers, judges. |
-| A later message into a session | Wakes, review findings, train news, nudges, [steers](/docs/steering). |
+| A later message into a session | Wakes, chat messages, review findings, train news, pauses, [steers](/docs/steering). |
 
 Your own claude setup still applies underneath. See [Config & files](/docs/config-and-files#claude).
 
@@ -168,8 +168,8 @@ Your version stays in use.
 
 ## When fleetd retires a prompt you edited {#retired}
 
-A release can fold a prompt into another one or replace it with fixed text. Your edit to it then stops applying, but
-fleetd keeps it and never moves it for you.
+A release can fold a prompt into another one or drop it. Your edit to it then stops applying, but fleetd keeps it and
+never moves it for you.
 
 1. Open Settings → Prompts. Under "Edits that no longer apply", each one says, for example, "Your edit to Wake: task
    finished (hub-wide) no longer applies", why, and which prompt to copy it into.
@@ -202,11 +202,12 @@ fleetd prompts show --session <machine>/<thread>
 
 `session_prompt_get` returns the same to an MCP client.
 
-## Not editable {#not-editable}
+## Filled in by fleetd {#not-editable}
 
 ### Wake events {#wake-events}
 
-A lead is woken with its project's state, then one line per thing that happened since its last wake:
+A lead is woken with the `lead.wake` prompt: its project's state, then one line per thing that happened since its last
+wake.
 
 ```
 # project lab (devbox/lab), 2026-10-19T14:02:11.000Z
@@ -226,15 +227,8 @@ agents: 3 running of 6, 1 queued
 ```
 
 Each event is `- <subject> <what>: <detail>`, sometimes followed by `  > ` lines quoting an agent. The ids (W2, T5,
-C4) are for the lead's tools; the lead doesn't repeat them to you. The format is fixed in code, so it is the same in
-every project.
-
-### Fixed messages {#fixed}
-
-These are short notices, the same everywhere: the brief of a read-only or review task, a reviewer's note on what
-changed since its last review, "fix your PR" (a rebase, red CI or blocking review findings), a denied tool call with
-its reason, the plan's sizing warning, the pause and resume an agent gets when the max agents drops below it, and the
-note after a usage limit resets.
+C4) are for the lead's tools; the lead doesn't repeat them to you. The state and the event lines are facts in a format
+fixed in code, the same in every project; the words around them are `lead.wake`.
 
 ### Tool texts {#tool-texts}
 
@@ -254,12 +248,18 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 |---|---|---|
 | `lead.start` | lead start and every lead\_restart, followed by the state block | the lead never writes code (prompt only); asks the human only for product, money or irreversible calls (prompt only); asks as numbered items, each with a recommendation (prompt only); never estimates time (prompt only); secrets only through \`request\_secret\`; prod writes, spends and deletes only through \`gated\_run\`; only the merge train merges (prompt only); done only through \`claim\_done\`; takes an agent's chat message as input, never as the human's answer or approval |
 | `lead.profiles` | after lead.start while the project allows medium (project\_set) | medium only for mechanical work, never for design or anything subtle (prompt only); reviews always run high; a medium task whose review finds blockers twice is redone on high (prompt only) |
+| `lead.wake` | each lead wake: the project's state, then one event line per thing since the last wake |  |
+| `chat.human` | each chat message the human sends the lead |  |
+| `chat.agent` | each chat message an agent or integration with its own key sends the lead | takes it as input, never as the human's answer or approval |
+| `plan.granularity` | the warning in plan\_add's or plan\_edit's result for an item with no size or size l |  |
 
 ### Tasks
 
 | Id | Sent | Safety rules |
 |---|---|---|
-| `task.brief.write` | every write task attempt | never merges; the train does (prompt only) |
+| `task.brief.write` | every write task attempt | changes only its areas; never merges; the train does (prompt only) |
+| `task.brief.read` | every read task attempt | changes no files (prompt only) |
+| `task.brief.review` | every attempt of a review task the lead spawns (the train's reviews use Reviewer) | changes no files (prompt only); ends with one review verdict (the \`report\` tool) |
 
 ### Reviews and checks
 
@@ -274,5 +274,10 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 | Id | Sent | Safety rules |
 |---|---|---|
 | `steer.message` | per steer (steer\_send, task message), straight to the agent, at its next tool boundary or now | asks the agent to name the steer first, so its receipt can say it was acknowledged (prompt only) |
+| `pr.fix` | to a PR's author when the train can't rebase it, its CI is red, or a review finds blocking findings | never merges; the train does (prompt only) |
+| `task.pause` | to each running agent above a lowered max agents, when a person pauses the extras |  |
+| `task.resume` | to a paused agent once a slot frees for it |  |
+| `usage.continue` | to a lead or agent a usage limit parked, once the limit resets |  |
+| `tool.denied` | the result of a tool call a policy rule or a person denied |  |
 
 <!-- /prompt-table -->

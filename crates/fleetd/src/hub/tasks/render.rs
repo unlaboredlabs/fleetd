@@ -9,7 +9,7 @@ use fleetd_contracts::tasks::{
 use regex::Regex;
 
 use crate::hub::leads::events::{Ended, Event};
-use crate::hub::prompts::{PromptSet, fixed};
+use crate::hub::prompts::PromptSet;
 use unicode_normalization::UnicodeNormalization;
 use unicode_normalization::char::is_combining_mark;
 
@@ -182,11 +182,12 @@ pub fn render_task_prompt(set: &PromptSet, input: &PromptInput<'_>) -> String {
             &input.base_branch.unwrap_or("<default branch>"),
         ),
     ];
-    let text = match task.kind {
-        TaskKind::Write => set.render("task.brief.write", vars),
-        TaskKind::Read => fixed::render(fixed::TASK_BRIEF_READ, vars),
-        TaskKind::Review => fixed::render(fixed::TASK_BRIEF_REVIEW, vars),
+    let id = match task.kind {
+        TaskKind::Write => "task.brief.write",
+        TaskKind::Read => "task.brief.read",
+        TaskKind::Review => "task.brief.review",
     };
+    let text = set.render(id, vars);
     set.with_instructions(text)
 }
 

@@ -1,6 +1,6 @@
-//! What a lead is told at a wake: the state block (the digest), then one line per event since its last wake. A fixed
-//! format rendered here, not a prompt: no one edits it, the lead prompt says how to read it, and "What agents are
-//! told" (#wake-events) describes it for people.
+//! The event lines of a lead's wake: one per event since its last wake, after the state block (the digest), framed by
+//! the `lead.wake` prompt. Facts in a fixed format: the lead prompt says how to read them, and "What agents are told"
+//! (#wake-events) describes them for people.
 //!
 //! An event is `- <subject> <what>[: <detail>]`, and may carry a few `  > ` body lines: an agent's final message, its
 //! question, a failed check's evidence. Ids (W3, T4, C2) stay because the lead passes them to its tools; the lead
@@ -365,11 +365,6 @@ impl Event<'_> {
     }
 }
 
-/// A whole wake: the state block, then the events in the order they came.
-pub fn frame(state: &str, events: &[String]) -> String {
-    format!("{state}\n\n## Events\n{}", events.join("\n"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -615,14 +610,6 @@ mod tests {
                 free: 9
             }),
             "- cap raised to 12: 9 slots free; queued agents already started"
-        );
-    }
-
-    #[test]
-    fn a_wake_is_the_state_then_the_events() {
-        assert_eq!(
-            frame("project lab", &["- a".into(), "- b".into()]),
-            "project lab\n\n## Events\n- a\n- b"
         );
     }
 }

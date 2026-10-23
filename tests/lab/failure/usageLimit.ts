@@ -9,7 +9,7 @@ import { type Body, type Lab, MECHANICS, userMessages } from "../harness.ts";
 import { installShim, MACHINE, projectOf, runEnd, withNode } from "./kit.ts";
 
 const RESETS_IN_SEC = 90;
-/** `hub/usage/state.rs` CONTINUE_MESSAGE. */
+/** The shipped `usage.continue` prompt (`crates/fleetd/assets/prompts/usage.continue.md`). */
 const CONTINUE_MESSAGE = "Continue where you left off; the usage limit has reset.";
 
 export async function usageLimit(lab: Lab) {

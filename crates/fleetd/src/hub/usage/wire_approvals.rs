@@ -198,6 +198,13 @@ impl ApprovalHub for OpsPorts {
             })
         })
     }
+
+    fn prompts(&self, m: &str, t: &str) -> crate::hub::prompts::PromptSet {
+        self.hub()
+            .db
+            .prompts()
+            .for_thread(&fleetd_contracts::ids::MachineId::unchecked(m), t)
+    }
 }
 
 /// What a request was and what became of it, in the lead's words for its wake.

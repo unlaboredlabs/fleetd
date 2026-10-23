@@ -41,17 +41,16 @@ async fn a_running_lead_keeps_its_texts_and_an_edit_reaches_the_next_session() {
             .any(|w| w.code == PromptWarningCode::SafetyRuleMissing
                 && w.rule.as_deref() == Some("secrets-via-request"))
     );
-    prompts
-        .set(
-            entry("steer.message").unwrap(),
-            PromptScope::Global,
-            None,
-            "EDITED steer {{id}}",
-            None,
-        )
-        .unwrap();
+    for (id, text) in [
+        ("steer.message", "EDITED steer {{id}}"),
+        ("lead.wake", "EDITED wake {{state}} {{events}}"),
+    ] {
+        prompts
+            .set(entry(id).unwrap(), PromptScope::Global, None, text, None)
+            .unwrap();
+    }
 
-    // 3. A new order wakes the running lead (an event line, no prompt), and what it was told is unchanged.
+    // 3. A new order wakes the running lead (an event line in its pinned wake text), and what it was told is unchanged.
     let (w2, _) = hub.order("add a /ready endpoint").await;
     hub.after_debounce().await;
     let sends = hub.node.sends.lock().unwrap().clone();
@@ -80,10 +79,9 @@ async fn a_running_lead_keeps_its_texts_and_an_edit_reaches_the_next_session() {
         pinned("lead.start"),
         ref_of("lead.start", lead_start.default)
     );
-    assert_eq!(
-        pinned("steer.message"),
-        ref_of("steer.message", entry("steer.message").unwrap().default)
-    );
+    for id in ["steer.message", "lead.wake"] {
+        assert_eq!(pinned(id), ref_of(id, entry(id).unwrap().default));
+    }
 
     // 4. A restarted lead is a new session: it starts with the edit, and its pins name the override.
     let restarted = hub.area.leads.restart(&hub.project).await.unwrap();
@@ -105,6 +103,31 @@ async fn a_running_lead_keeps_its_texts_and_an_edit_reaches_the_next_session() {
         (lead_ref.r#ref.as_str(), lead_ref.scope),
         (edited_ref.as_str(), PromptScope::Global)
     );
+}
+
+/// Every shipped text fills only the placeholders its entry declares, and uses each required one: an edit is warned
+/// against the same list, so a text moved into the registry can't silently lose or invent a value.
+#[test]
+fn every_shipped_text_uses_what_its_entry_declares() {
+    for e in super::registry::ENTRIES {
+        let declared = e.placeholders();
+        let used = super::render::placeholders_in(e.default);
+        for p in &declared {
+            assert!(
+                !p.required || used.contains(&p.name),
+                "{} declares {{{{{}}}}} required and doesn't use it",
+                e.id,
+                p.name
+            );
+        }
+        for name in &used {
+            assert!(
+                declared.iter().any(|p| &p.name == name),
+                "{} uses {{{{{name}}}}}, which it doesn't declare",
+                e.id
+            );
+        }
+    }
 }
 
 /// A project id is whatever a node reports; as a path it must not reach the hub-wide overrides or leave the home.
@@ -187,10 +210,7 @@ fn a_reflowed_default_is_not_a_changed_default() {
 /// A long line that stops mid-sentence and goes on in the next line is a hard wrap.
 #[test]
 fn shipped_texts_are_not_hard_wrapped() {
-    let texts = super::registry::ENTRIES
-        .iter()
-        .map(|e| (e.id, e.default))
-        .chain(super::fixed::ALL);
+    let texts = super::registry::ENTRIES.iter().map(|e| (e.id, e.default));
     let playbooks = crate::hub::playbooks::load::BUNDLED
         .iter()
         .map(|(n, t)| (n.as_str(), *t));
@@ -223,11 +243,7 @@ fn agent_facing_texts_name_tools_not_fleetd_commands() {
     let flag = regex::Regex::new(r#""[^"]*--(workstream|proceeded|item|steer|milestone|rec|why|context|option|sink|env-name|class|scope|task)\b"#).unwrap();
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut found = Vec::new();
-    let texts = super::registry::ENTRIES
-        .iter()
-        .map(|e| (e.id, e.default))
-        .chain(super::fixed::ALL);
-    for (id, text) in texts {
+    for (id, text) in super::registry::ENTRIES.iter().map(|e| (e.id, e.default)) {
         if let Some(m) = command.find(text) {
             found.push(format!("prompt {id}: {}", m.as_str()));
         }
@@ -351,7 +367,10 @@ fn edits_to_retired_prompts_are_listed_until_reset() {
             "No: {{said}}"
         )
     );
-    assert_eq!(mine.suggested_target, None);
+    assert_eq!(
+        mine.suggested_target.as_ref().map(|t| t.as_str()),
+        Some("tool.denied")
+    );
     assert_eq!(prompts.all_orphans().len(), 3);
     // Nothing retired reaches a session: the live prompts are untouched.
     assert_eq!(

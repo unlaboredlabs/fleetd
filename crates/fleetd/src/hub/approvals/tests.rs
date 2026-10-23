@@ -277,6 +277,9 @@ impl ApprovalHub for Fake {
         let r = self.rules.lock().unwrap().clone();
         Box::pin(async move { r })
     }
+    fn prompts(&self, _: &str, _: &str) -> crate::hub::prompts::PromptSet {
+        crate::hub::prompts::PromptSet::defaults().clone()
+    }
 }
 
 impl EventLog for Fake {
@@ -704,7 +707,7 @@ async fn deny_gives_the_run_the_persons_words_and_an_undelivered_approve_goes_ba
         decision,
         PermissionDecision::Deny {
             message: fleetd_contracts::prim::Text::unchecked(
-                "Denied: human:desk said no (Q1): use make clean instead."
+                "Denied: human:desk said no (Q1): use make clean instead. Don't retry this call; ask for another way."
             )
         }
     );
@@ -772,7 +775,7 @@ async fn rules_answer_without_a_request_and_a_broken_policy_asks_a_person() {
         answers[1].3,
         PermissionDecision::Deny {
             message: fleetd_contracts::prim::Text::unchecked(
-                "Denied: the tools.deny rule `Bash(rm:*)` in .fleetd/policy.yaml."
+                "Denied: the tools.deny rule `Bash(rm:*)` in .fleetd/policy.yaml. Don't retry this call; ask for another way."
             )
         }
     );
