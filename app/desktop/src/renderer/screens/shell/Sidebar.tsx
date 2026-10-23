@@ -8,7 +8,7 @@ import type { ReactNode } from "react";
 import { display, type ShortcutId } from "../../../shared/shortcuts";
 import { Button, Dot, Kbd, Sidebar as Frame, SidebarItem, SidebarSection, Text, Tooltip, Truncate } from "../../ui";
 import { UpdatesLine } from "../updates";
-import { connLine, type SidebarProject } from "./model";
+import { connLine, routeOf, type SidebarProject } from "./model";
 import { useOfflineAsOf } from "./offline";
 import { sameProject, type ProjectKey, type Screen } from "./routes";
 import s from "./shell.module.css";
@@ -116,7 +116,7 @@ export function Sidebar({ projects, agentsWorking, prsProject, machinesDown, scr
         {projects === undefined ? (
           // Loading (startup, or a resync after the link dropped): never the "no projects" sentence, never old rows.
           // Busy only while something is on its way, not while the hub is unreachable.
-          <div className={s.sidebarSkeleton} aria-busy={hub?.phase === "live" || hub?.phase === "connecting"} aria-label="Loading projects">
+          <div className={s.sidebarSkeleton} aria-busy={hub.phase === "live" || hub.phase === "connecting"} aria-label="Loading projects">
             <span />
             <span />
             <span />
@@ -128,12 +128,12 @@ export function Sidebar({ projects, agentsWorking, prsProject, machinesDown, scr
         ) : (
           projects.map((p, i) => (
             <SidebarItem
-              key={`${p.key.machineId}/${p.key.projectId}`}
-              label={p.title}
-              current={sameProject(open, p.key)}
+              key={p.key}
+              label={p.project.title}
+              current={sameProject(open, p.project)}
               emphasis={p.unread}
               trailing={trailing(p, jumpHints && i < 9 ? i + 1 : null, asOf)}
-              onClick={() => go({ id: "project", project: p.key, message: null })}
+              onClick={() => go({ id: "project", project: routeOf(p), message: null })}
             />
           ))
         )}

@@ -1,6 +1,6 @@
 // The chat's data, from E1's layer (one source of hub data): the chat view, the project's state word, whether the
-// live strip has agents to show, and the actions that open the chat and page back through its history.
-import { useCallback, useEffect } from "react";
+// live strip has agents to show, and the actions that page through its history. The shell opens the chat on screen.
+import { useCallback } from "react";
 import type { HubError } from "../../../shared/hub";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import {
@@ -50,10 +50,6 @@ export function useChatData(project: ProjectRef): ChatData {
   const status = useToolQuery("status_projects", ALL);
   const row = status.data?.rows.find((r) => r.projectRef.machineId === project.machineId && r.projectRef.projectId === project.projectId);
   const state = projectRow === undefined ? undefined : projectStateWord(projectRow.needsYou, projectRow.working, row?.state);
-  // Idempotent: loads the newest page once per connection.
-  useEffect(() => {
-    layer.chat.open(key);
-  }, [layer, key]);
   const loadOlder = useCallback(() => layer.chat.loadOlder(key), [layer, key]);
   const loadNewer = useCallback(() => layer.chat.loadNewer(key), [layer, key]);
   const jumpToLatest = useCallback(() => layer.chat.jumpToLatest(key), [layer, key]);

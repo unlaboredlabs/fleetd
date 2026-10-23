@@ -39,7 +39,6 @@ export function OnboardingScreen(props: OnboardingProps) {
   const hub = props.hub ?? query.get("hub") ?? undefined;
   const code = props.code ?? query.get("code") ?? undefined;
   const useKey = props.useKey ?? query.has("key");
-  if (state === null) return <div className={s.screen} data-screen="onboarding" />;
   // A link to pair with a hub shows the form whatever the connection is doing.
   if (code === undefined) {
     if (state.phase === "live") {
