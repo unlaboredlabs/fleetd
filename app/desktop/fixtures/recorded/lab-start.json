@@ -79,19 +79,51 @@
  ],
  "calls": [
   {
-   "tool": "attention_policy",
+   "tool": "fleetd_status",
    "input": {},
    "outcome": {
     "ok": true,
     "output": {
-     "coalesceSec": 1200,
-     "next": "Inside a quiet window only attention \"urgent\" events notify; hold \"loud\" ones until it ends. Call again after the last window ends or on decision.recorded.",
-     "quiet": [
+     "attention": [],
+     "cursor": 0,
+     "machines": [
       {
-       "from": "2026-10-19T23:00:00.000Z",
-       "to": "2026-10-20T08:00:00.000Z"
+       "boxPubKey": "AtO6MOfiJVPvYWW8keG24A===",
+       "degradedReason": "checking the node's claude runner",
+       "lastSeenAt": "2026-10-19T08:42:35.804Z",
+       "machineId": "devbox",
+       "name": "devbox",
+       "nodeVersion": "0.0.0",
+       "status": "degraded",
+       "tags": []
+      },
+      {
+       "boxPubKey": "pSQ9MR+tmHYz0AksOjebsA===",
+       "degradedReason": "checking the node's claude runner",
+       "lastSeenAt": "2026-10-19T08:42:35.819Z",
+       "machineId": "buildbox",
+       "name": "buildbox",
+       "nodeVersion": "0.0.0",
+       "status": "degraded",
+       "tags": []
       }
-     ]
+     ],
+     "projects": [],
+     "slots": {
+      "cap": 40,
+      "perProject": [],
+      "queued": 0,
+      "used": 0
+     },
+     "notify": {
+      "coalesceSec": 1200,
+      "quiet": [
+       {
+        "from": "2026-10-19T23:00:00.000Z",
+        "to": "2026-10-20T08:00:00.000Z"
+       }
+      ]
+     }
     }
    }
   },
@@ -157,7 +189,7 @@
    }
   },
   {
-   "tool": "prompts_list",
+   "tool": "prompt_get",
    "input": {},
    "outcome": {
     "ok": true,

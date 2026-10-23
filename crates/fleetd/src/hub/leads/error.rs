@@ -57,7 +57,7 @@ impl LeadError {
     pub fn no_project(r: &fleetd_contracts::ids::ProjectRef) -> Self {
         Self::not_found(
             format!("No project {} on machine {}.", r.project_id, r.machine_id),
-            "Call projects_list for the known projects.",
+            "Call project_get without a projectId for the known projects.",
         )
     }
 }

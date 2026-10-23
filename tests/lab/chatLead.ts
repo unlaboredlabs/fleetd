@@ -694,7 +694,7 @@ async function toolsPart(lab: Lab, chat: Chat, hubTools: ReadonlySet<string>) {
   const lead = await chat.leadThread();
   if (lead !== undefined) sessions.push({ what: "lead", machineId: LEAD_MACHINE, threadId: lead });
   for (const machineId of [LEAD_MACHINE, WORK_MACHINE]) {
-    for (const p of ((await lab.callTool("projects_list", { machineId })).body.projects as Array<Body>) ?? []) {
+    for (const p of ((await lab.callTool("project_get", { machineId })).body.projects as Array<Body>) ?? []) {
       for (const t of await tasksOf(lab, { machineId, projectId: p.projectId as string })) {
         if (t.threadRef?.threadId) sessions.push({ what: `${t.kind} agent`, machineId, threadId: t.threadRef.threadId as string });
       }

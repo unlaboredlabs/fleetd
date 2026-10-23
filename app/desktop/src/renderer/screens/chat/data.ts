@@ -47,8 +47,8 @@ export function useChatData(project: ProjectRef): ChatData {
   const title = useData((s) => s.projects[key]?.title);
   const missing = useData((s) => s.fresh && !(key in s.projects));
   const loadError = useData((s) => (s.chats[key]?.loaded === true ? undefined : s.chats[key]?.error));
-  const status = useToolQuery("status_projects", ALL);
-  const row = status.data?.rows.find((r) => r.projectRef.machineId === project.machineId && r.projectRef.projectId === project.projectId);
+  const status = useToolQuery("status_get", ALL);
+  const row = status.data?.rows?.find((r) => r.projectRef.machineId === project.machineId && r.projectRef.projectId === project.projectId);
   const state = projectRow === undefined ? undefined : projectStateWord(projectRow.needsYou, projectRow.working, row?.state);
   const loadOlder = useCallback(() => layer.chat.loadOlder(key), [layer, key]);
   const loadNewer = useCallback(() => layer.chat.loadNewer(key), [layer, key]);

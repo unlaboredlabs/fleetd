@@ -24,6 +24,8 @@
 //! route with a stand-in that closes the socket; the link area replaces that one line.
 mod grants;
 mod m1;
+#[cfg(test)]
+mod reads_tests;
 mod registry;
 
 pub use grants::*;
@@ -156,7 +158,6 @@ pub fn registry() -> Registry {
     crate::hub::tasks::tools::register(&mut tools);
     crate::hub::steer::tools::register(&mut tools);
     crate::hub::leads::tools::register(&mut tools);
-    crate::hub::attention::register(&mut tools);
     crate::hub::orders::tools::register(&mut tools);
     crate::hub::prompts::tools::register(&mut tools);
     crate::hub::time::tools::register(&mut tools);

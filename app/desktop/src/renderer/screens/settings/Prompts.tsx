@@ -54,7 +54,7 @@ export function Prompts({ route }: { route: SettingsRoute }) {
   const live = useLive();
   const hubCall = useHubCall();
   const refetch = useRefetch();
-  const refetchPrompts = () => refetch(["prompts_list", "prompt_get"]);
+  const refetchPrompts = () => refetch(["prompt_get"]);
   const projects = useProjects();
 
   // A kept draft for another prompt or scope opens first, and the route waits behind the discard confirm.
@@ -66,7 +66,7 @@ export function Prompts({ route }: { route: SettingsRoute }) {
   const projectRef = projectRefOf(scope);
 
   const scoped = projectRef ? { projectRef } : {};
-  const [list] = useRead("prompts_list", scoped, live);
+  const [list] = useRead("prompt_get", scoped, live);
   const [detail] = useRead("prompt_get", { id: selected ?? "", ...scoped }, live && selected !== null);
 
   const [editor, setEditor] = useState(() => kept?.text ?? "");
@@ -84,7 +84,7 @@ export function Prompts({ route }: { route: SettingsRoute }) {
 
   // Fill the editors from what the hub sent for the prompt and scope on screen (see `synced`), during render so the
   // first paint of a new prompt already shows its text.
-  const d = detail.state === "ready" ? detail.value : null;
+  const d = detail.state === "ready" ? (detail.value.prompt ?? null) : null;
   if (d && d !== seen) {
     setSeen(d);
     const next = synced(filled, d, sk, editor);
@@ -205,10 +205,11 @@ export function Prompts({ route }: { route: SettingsRoute }) {
     const target = which === "update" ? updateTarget(d, scope) : { scope: editScope(d, scope), projectRef };
     setBusy(true);
     setEcho(null);
-    hubCall("prompt_reset", {
+    hubCall("prompt_set", {
       id: d.id,
       scope: target.scope,
       ...(target.scope === "project" && target.projectRef ? { projectRef: target.projectRef } : {}),
+      reset: true,
     }).then(
       () => {
         setBusy(false);
@@ -239,8 +240,8 @@ export function Prompts({ route }: { route: SettingsRoute }) {
   const here = scopeName(scope, projects);
   const pendingWhy =
     pending && pending.id !== selected ? "Opening another prompt drops them." : `Showing ${pending ? scopeName(pending.scope, projects) : here} drops them.`;
-  const listed = list.state === "ready" ? list.value.prompts.find((p) => p.id === selected) : undefined;
-  const orphans = list.state === "ready" ? list.value.orphans : [];
+  const listed = list.state === "ready" ? list.value.prompts?.find((p) => p.id === selected) : undefined;
+  const orphans = list.state === "ready" ? (list.value.orphans ?? []) : [];
   const name = d ? describe(d).name : listed ? describe(listed).name : "this prompt";
   const resetScope = d && confirmReset ? (confirmReset === "update" ? updateTarget(d, scope).scope : editScope(d, scope)) : null;
 
@@ -371,7 +372,7 @@ function Orphans(props: {
   const key = (o: RetiredPromptOverride) => `${o.id}|${o.scope}|${o.projectRef?.machineId ?? ""}/${o.projectRef?.projectId ?? ""}`;
   const remove = (o: RetiredPromptOverride) => {
     setEcho(null);
-    hubCall("prompt_reset", { id: o.id, scope: o.scope, ...(o.scope === "project" && o.projectRef ? { projectRef: o.projectRef } : {}) }).then(
+    hubCall("prompt_set", { id: o.id, scope: o.scope, ...(o.scope === "project" && o.projectRef ? { projectRef: o.projectRef } : {}), reset: true }).then(
       () => {
         setEcho({ ok: true, text: `Deleted your edit to ${oldPromptName(o)}.` });
         props.onDeleted();

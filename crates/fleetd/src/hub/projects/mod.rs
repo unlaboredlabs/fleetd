@@ -12,7 +12,6 @@ use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectId};
 use fleetd_contracts::mcp::{
     ErrorCode, ProjectAddInput, ProjectAddOutput, ProjectDiscoverInput, ProjectDiscoverOutput,
-    ProjectInspectInput, ProjectInspectOutput,
 };
 use fleetd_contracts::model::MachineStatus;
 use fleetd_contracts::prim::Text;
@@ -462,7 +461,7 @@ pub async fn discover(
         machines: scans,
         github,
         best,
-        next: Some("Add one with project_add (path on a machine, or url to clone); project_inspect shows its CI and merge rules first.".into()),
+        next: Some("Add one with project_add (path on a machine, or url to clone); project_add with dryRun shows its CI and merge rules first.".into()),
         truncated: None,
     })
 }
@@ -536,46 +535,6 @@ async fn gh_list(hub: &Hub, fallback: Option<MachineId>, scans: &[MachineRepos])
     }
 }
 
-pub async fn inspect(
-    hub: &Hub,
-    caller: &Caller,
-    input: ProjectInspectInput,
-) -> Result<ProjectInspectOutput, ToolError> {
-    let (inspect, clone) = if let Some(url) = &input.url {
-        let repo = repo_of(url.as_str())?;
-        let inspect = read_github(&repo, None).await?;
-        let m = input.machine_id.clone().or_else(|| best_worker(hub));
-        let clone = match m {
-            Some(m) if hub.executors.is_connected(&m) && allows(caller, Role::Read, Some(&m)) => {
-                clone_target(hub, &m, &repo, None).await.ok()
-            }
-            _ => None,
-        };
-        (inspect, clone)
-    } else {
-        let (Some(m), Some(path)) = (&input.machine_id, &input.path) else {
-            unreachable!("checked on decode")
-        };
-        require(caller, Role::Read, Some(m))?;
-        let m = target_machine(hub, Some(m))?;
-        let facts = checkout(hub, &m, path.as_str()).await?;
-        (inspect_checkout(&facts).await?, None)
-    };
-    Ok(ProjectInspectOutput {
-        next: Some(match &clone {
-            Some(c) if c.same_remote => format!(
-                "{} already has it at {}: project_add with useExisting adds that checkout.",
-                c.machine_id, c.path
-            ),
-            Some(c) => format!("project_add clones it to {} on {}.", c.path, c.machine_id),
-            None => "Add it with project_add.".into(),
-        }),
-        inspect,
-        clone,
-        truncated: None,
-    })
-}
-
 /// Registers `path` on `m` (the same directory again is the same project; a title renames it) and emits
 /// `project.added` with the inspect. Returns the inspect it emitted.
 async fn register(
@@ -600,7 +559,7 @@ async fn register(
             .map_err(crate::hub::executor::tools::from_executor)?;
     }
     let summary = format!("{title} added on {m}: {}", inspect.lead_needs);
-    // The event log keeps at most 2 KB of data; project_inspect has the whole inspect.
+    // The event log keeps at most 2 KB of data; a dry-run project_add has the whole inspect.
     let data = inspect::fit_added(ProjectAddedData {
         add_id,
         title,
@@ -632,10 +591,14 @@ pub async fn add(
     let m = target_machine(&hub, input.machine_id.as_ref())?;
     require(caller, Role::Operate, Some(&m))?;
     let title = input.title.as_ref().map(|t| t.as_str().to_owned());
+    let dry_run = input.dry_run == Some(true);
     if let Some(path) = &input.path {
         let path = path.as_str().strip_suffix('/').unwrap_or(path.as_str());
         let facts = checkout(&hub, &m, path).await?;
         let inspect = inspect_checkout(&facts).await?;
+        if dry_run {
+            return Ok(dry(m, path.to_owned(), inspect, None));
+        }
         let (project_id, created, inspect) =
             register(&hub, &m, path, title.as_deref(), inspect, None).await?;
         return Ok(ProjectAddOutput {
@@ -649,14 +612,18 @@ pub async fn add(
             created,
             add_id: None,
             inspect: Some(inspect),
+            clone: None,
             truncated: None,
         });
     }
     let url = input.url.as_ref().expect("checked on decode");
     let repo = repo_of(url.as_str())?;
     // Before cloning: does gh see it, and is the destination free?
-    read_github(&repo, None).await?;
+    let github = read_github(&repo, None).await?;
     let target = clone_target(&hub, &m, &repo, input.dest.as_ref().map(|d| d.as_str())).await?;
+    if dry_run {
+        return Ok(dry(m, target.path.clone(), github, Some(target)));
+    }
     if target.exists {
         if target.same_remote && input.use_existing == Some(true) {
             let facts = checkout(&hub, &m, &target.path).await?;
@@ -671,6 +638,7 @@ pub async fn add(
                 created,
                 add_id: None,
                 inspect: Some(inspect),
+                clone: None,
                 truncated: None,
             });
         }
@@ -713,8 +681,37 @@ pub async fn add(
         created: true,
         add_id: Some(add_id),
         inspect: None,
+        clone: None,
         truncated: None,
     })
+}
+
+/// `project_add` with `dryRun`: what it would add, and for a url where it would clone; nothing is added.
+fn dry(
+    m: MachineId,
+    path: String,
+    inspect: ProjectInspect,
+    clone: Option<CloneTarget>,
+) -> ProjectAddOutput {
+    let next = match &clone {
+        Some(c) if c.same_remote => format!(
+            "{} already has it at {}: project_add with useExisting adds that checkout.",
+            c.machine_id, c.path
+        ),
+        Some(c) => format!("project_add clones it to {} on {}.", c.path, c.machine_id),
+        None => "Add it with project_add.".into(),
+    };
+    ProjectAddOutput {
+        next: Some(next),
+        machine_id: m,
+        path,
+        project_id: None,
+        created: false,
+        add_id: None,
+        inspect: Some(inspect),
+        clone,
+        truncated: None,
+    }
 }
 
 /// Clones whose progress is in the event log with no `project.added` or `project.add_failed` after it: running now, or

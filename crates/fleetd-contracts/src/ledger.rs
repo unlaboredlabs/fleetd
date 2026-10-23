@@ -61,7 +61,7 @@ pub struct Lead {
     pub state: LeadState,
     pub started_at: Timestamp,
     pub last_wake_at: Option<Timestamp>,
-    /// Bumped by each lead_restart.
+    /// Bumped by each `lead_start {fresh}`.
     pub session_generation: Count,
     /// M4: the lead thread hit a usage limit; derived from the usage layer when read.
     pub parked: Option<UsageParked>,

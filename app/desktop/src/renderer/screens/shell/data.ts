@@ -17,7 +17,7 @@ export const useSidebarProjects = (open: ProjectKey | null): ReadonlyArray<Sideb
   // Held rows count the requests as last read; a live row waits for this connection's own read.
   const held = useData((s) => (s.fresh ? undefined : s.openRequests));
   const requests = read ?? held;
-  const status = useToolQuery("status_projects", ALL).data?.rows;
+  const status = useToolQuery("status_get", ALL).data?.rows;
   const seen = useSeen();
   const blocked = useMemo(
     () => (status === undefined ? undefined : new Map(status.filter((r) => r.state === "blocked").map((r) => [projectId(r.projectRef), r.blockedReason]))),

@@ -134,7 +134,7 @@ fn client_commands_take_home() {
     for args in [
         vec!["status", "--home", hub_arg],
         vec!["time", "--home", hub_arg],
-        vec!["steers", "--key-file", key_arg, "--home", hub_arg],
+        vec!["steers", "W1", "--key-file", key_arg, "--home", hub_arg],
     ] {
         let out = m.fleetd(&args, None);
         let said = String::from_utf8_lossy(&out.stderr);

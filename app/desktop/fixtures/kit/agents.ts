@@ -84,7 +84,7 @@ export const syncAgents = (f: Fixture): void => {
 
   // Status: the same counts, and a state word that never says working with nothing at work.
   const chats = new Map(arr(f.snapshot["chats"]).filter(isObject).map((c) => [keyOf(c["projectRef"]), c]));
-  f.update("status_projects", (out) => ({
+  f.update("status_get", (out, input) => input?.["projectRef"] !== undefined ? out : ({
     ...obj(out),
     rows: arr(obj(out)["rows"])
       .filter(isObject)

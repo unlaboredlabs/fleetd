@@ -102,7 +102,7 @@ function PromptNav({ selected, scope }: { selected: string | null; scope: Scope 
   const live = useLive();
   const projectRef = projectRefOf(scope);
   // The same read as the page's list: one query, shared.
-  const [list, retry] = useRead("prompts_list", projectRef ? { projectRef } : {}, live);
+  const [list, retry] = useRead("prompt_get", projectRef ? { projectRef } : {}, live);
   if (!live) return null;
   if (list.state !== "ready") {
     return (
@@ -124,7 +124,7 @@ function PromptNav({ selected, scope }: { selected: string | null; scope: Scope 
   }
   return (
     <div role="group" aria-label="Prompts">
-      {sections(list.value.prompts).map(({ group, rows }) => (
+      {sections(list.value.prompts ?? []).map(({ group, rows }) => (
         <div key={group.key}>
           <div className={s.navNested}>
             <Text size="xs" tone="quiet">

@@ -42,7 +42,7 @@ const set = (next: AddUi) => {
   for (const l of listeners) l();
 };
 
-/** project_add and project_inspect may take a while: inspect runs gh on the hub. */
+/** project_add may take a while, its dry run too: both run gh on the hub. */
 const CALL_MS = 120_000;
 
 // The data layer (E1) is the one source of hub data; the add flow reads its store and never subscribes to main.
@@ -65,12 +65,7 @@ const run = (c: Call) => {
   const data = layer;
   if (data === undefined) return;
   const options = { timeoutMs: CALL_MS };
-  const answer =
-    c.tool === "project_add"
-      ? data.call("project_add", c.input, options)
-      : c.tool === "project_inspect"
-        ? data.call("project_inspect", c.input, options)
-        : data.call("events_wait", c.input, options);
+  const answer = c.tool === "project_add" ? data.call("project_add", c.input, options) : data.call("events_wait", c.input, options);
   void answer.then((outcome) => dispatch({ t: "answer", call: c, outcome }));
 };
 

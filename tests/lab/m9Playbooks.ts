@@ -47,14 +47,14 @@ export async function m9Playbooks(lab: Lab) {
 
   // (a) A fix opened with the bugfix playbook, from the shell as the lead would.
   const wa = openWorkstream(check, fleetd, "fix: the repo-a README has a typo.", "bugfix");
-  const pinnedA = (await callTool("workstream_get", { workstreamId: wa })).body.workstream.playbook as string;
+  const pinnedA = (await callTool("order_get", { workstreamId: wa })).body.workstream.playbook as string;
   check(/^bugfix@[0-9a-f]{40}$/u.test(pinnedA), `${wa} pins bugfix: ${pinnedA}`);
   ok(`(a) ${wa} in ${MACHINE}/${projectId}; playbook ${pinnedA.slice(0, 19)}…`);
 
   // (b) A research workstream: the brief pre-registers baseline, metric and rule.
   const briefBase = { pointers: [], constraints: [] };
   const wr = openWorkstream(check, fleetd, "research: would a shorter README read faster?", "research");
-  const pinnedR = (await callTool("workstream_get", { workstreamId: wr })).body.workstream.playbook as string;
+  const pinnedR = (await callTool("order_get", { workstreamId: wr })).body.workstream.playbook as string;
   check(/^research@[0-9a-f]{40}$/u.test(pinnedR), `${wr} pins research: ${pinnedR}`);
   const research = {
     ...briefBase,

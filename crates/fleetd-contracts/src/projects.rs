@@ -1,4 +1,4 @@
-//! Adding a project: what `project_discover`, `project_inspect` and `project_add` return, and the data of the
+//! Adding a project: what `project_discover` and `project_add` (or its `dryRun`) return, and the data of the
 //! `project.clone_progress`, `project.added` and `project.add_failed` events.
 //!
 //! The hub owns the flow; the node on the target machine does the filesystem and git work (scan, clone, local
@@ -159,7 +159,7 @@ pub struct MergeRules {
     pub strict: Option<bool>,
 }
 
-/// What `project_inspect` found: the default branch, CI and merge rules, and one line on what the lead will need.
+/// What a project's checkout or repository says: the default branch, CI and merge rules, and one line on what the lead will need.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -218,7 +218,7 @@ pub struct ProjectAddedData {
     pub path: String,
     /// False when the directory was already a project.
     pub created: bool,
-    /// Long lists are cut so the event fits the log's 2 KB of data; `project_inspect` returns them whole.
+    /// Long lists are cut so the event fits the log's 2 KB of data; `project_add` with `dryRun` returns them whole.
     pub inspect: ProjectInspect,
 }
 

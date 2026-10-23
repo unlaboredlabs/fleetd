@@ -1,4 +1,4 @@
-// The Status view's answers (F6): status_projects, one row per project the fixture's hub has, in every state the
+// The Status view's answers (F6): status_get, one row per project the fixture's hub has, in every state the
 // view draws. Added to the shared fixtures, plus the states only Status has: rows whose source went quiet, a figure
 // that holds on paused work, and the skeleton before the first answer.
 import { Fixture } from "../kit/fixture.ts";
@@ -6,7 +6,7 @@ import { defineGroup } from "../kit/group.ts";
 import { at } from "../kit/ids.ts";
 import { isObject, type JsonObject, type JsonValue } from "../kit/json.ts";
 
-/** The transport's longest delay: a status_projects still unanswered when the screenshot is taken (the skeleton). */
+/** The transport's longest delay: a status_get list still unanswered when the screenshot is taken (the skeleton). */
 const HOLD_MS = 600_000;
 const MIN = 60_000;
 /** A stamp this long before the fixture's clock: the app reads ages and day words against it. */
@@ -18,12 +18,12 @@ interface Project {
   readonly title: string;
 }
 
-/** The fixture hub's projects: its snapshot's (what the app's sidebar shows), else its projects_list answers. */
+/** The fixture hub's projects: its snapshot's (what the app's sidebar shows), else its project_get list answers. */
 const projectsOf = (f: Fixture): Project[] => {
   const snapshot = f.snapshot?.["projects"];
   const lists: JsonValue[] = Array.isArray(snapshot)
     ? [snapshot]
-    : f.answers("projects_list").map((a) => (isObject(a.output) ? (a.output["projects"] ?? []) : []));
+    : f.answers("project_get").map((a) => (isObject(a.output) ? (a.output["projects"] ?? []) : []));
   const seen = new Map<string, Project>();
   for (const list of lists) {
     if (!Array.isArray(list)) continue;
@@ -61,7 +61,7 @@ const rowsFor = (f: Fixture, variant: Variant): JsonObject[] =>
   });
 
 const answer = (f: Fixture, variant: Variant, delayMs?: number): void => {
-  f.answer("status_projects", {}, { rows: rowsFor(f, variant) }, delayMs);
+  f.answer("status_get", {}, { rows: rowsFor(f, variant) }, delayMs);
 };
 
 const own = (what: string, note: string, base: Fixture, variant: Variant, delayMs?: number): Fixture => {

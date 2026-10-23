@@ -107,7 +107,10 @@ pub fn unknown_project(r: &ProjectRef) -> ToolError {
     error(
         ErrorCode::NotFound,
         format!("No project {} on {}.", r.project_id, r.machine_id),
-        format!("Call projects_list with machineId {}.", r.machine_id),
+        format!(
+            "Call project_get with machineId {} and no projectId.",
+            r.machine_id
+        ),
     )
 }
 

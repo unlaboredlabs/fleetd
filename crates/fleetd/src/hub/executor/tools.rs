@@ -1,4 +1,4 @@
-//! The M1 MCP tools over the executor and the caches it fills: fleetd_status, projects_list, project_get,
+//! The M1 MCP tools over the executor and the caches it fills: fleetd_status, project_get,
 //! thread_tail and actions_list. Later areas add to fleetd_status and project_get through `ToolHooks` (slots, lead,
 //! workstreams, tasks, trains).
 use std::collections::HashSet;
@@ -10,8 +10,7 @@ use fleetd_contracts::auth::Role;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
 use fleetd_contracts::mcp::{
-    ActionsListInput, ErrorCode, FleetdStatusInput, ProjectGetInput, ProjectsListInput, TailKind,
-    ThreadTailInput,
+    ActionsListInput, ErrorCode, FleetdStatusInput, ProjectGetInput, TailKind, ThreadTailInput,
 };
 use fleetd_contracts::model::{Machine, MachineStatus};
 use serde_json::{Map, Value, json};
@@ -71,7 +70,6 @@ const ATTENTION_LOOKBACK: i64 = 1000;
 
 pub fn register(tools: &mut Registry) {
     tools.add("fleetd_status", fleetd_status);
-    tools.add("projects_list", projects_list);
     tools.add("project_get", project_get);
     tools.add("thread_tail", thread_tail);
     tools.add("actions_list", actions_list);
@@ -179,6 +177,7 @@ async fn fleetd_status(
         "projects": shown.items,
         "attention": attention(&hub, &caller, cursor)?,
         "cursor": cursor,
+        "notify": crate::hub::attention::notify_policy(&hub),
         "next": format!("Call events_wait with cursor {cursor} to wait for changes, or project_get for one project's outcome."),
     });
     let hooks: Vec<StatusHook> = hub.executors.hooks.status.read().unwrap().clone();
@@ -191,19 +190,20 @@ async fn fleetd_status(
     Ok(out)
 }
 
-async fn projects_list(
-    hub: Arc<Hub>,
-    caller: Caller,
-    input: ProjectsListInput,
+fn projects_list(
+    hub: &Hub,
+    caller: &Caller,
+    machine_id: Option<&MachineId>,
+    query: Option<&str>,
 ) -> Result<Value, ToolError> {
-    if let Some(machine_id) = &input.machine_id {
-        require(&caller, Role::Read, Some(machine_id))?;
+    if let Some(machine_id) = machine_id {
+        require(caller, Role::Read, Some(machine_id))?;
     }
     let projects: Vec<_> = hub
         .store
-        .projects_list(input.machine_id.as_ref(), input.query.as_deref())?
+        .projects_list(machine_id, query)?
         .into_iter()
-        .filter(|p| readable(&caller, &p.machine_id))
+        .filter(|p| readable(caller, &p.machine_id))
         .collect();
     let shown = cap(projects, limits::PROJECTS);
     let mut out = json!({ "projects": shown.items });
@@ -219,11 +219,19 @@ async fn project_get(
     caller: Caller,
     input: ProjectGetInput,
 ) -> Result<Value, ToolError> {
-    require(&caller, Role::Read, Some(&input.machine_id))?;
-    let (_, stale, as_of) = freshness(&hub, &input.machine_id)?;
+    let (Some(machine_id), Some(project_id)) = (&input.machine_id, &input.project_id) else {
+        return projects_list(
+            &hub,
+            &caller,
+            input.machine_id.as_ref(),
+            input.query.as_deref(),
+        );
+    };
+    require(&caller, Role::Read, Some(machine_id))?;
+    let (_, stale, as_of) = freshness(&hub, machine_id)?;
     let r = ProjectRef {
-        machine_id: input.machine_id.clone(),
-        project_id: input.project_id.clone(),
+        machine_id: machine_id.clone(),
+        project_id: project_id.clone(),
     };
     let project = hub
         .store
@@ -245,7 +253,7 @@ async fn project_get(
         .collect();
     let threads = cap(own, limits::OUTCOME_THREADS);
     let next = if stale {
-        format!("Cached as of {as_of}: {} is offline.", input.machine_id)
+        format!("Cached as of {as_of}: {machine_id} is offline.")
     } else {
         "Call thread_tail for a thread's latest messages and actions.".to_owned()
     };

@@ -124,22 +124,13 @@ pub fn put(
 }
 
 /// Newest first.
-pub fn list(
-    db: &HubDb,
-    workstream_id: Option<&str>,
-    task_id: Option<&str>,
-    after_n: i64,
-    limit: usize,
-) -> Result<Vec<Steer>, StoreError> {
+pub fn list(db: &HubDb, workstream_id: &str, limit: usize) -> Result<Vec<Steer>, StoreError> {
     db.with(|conn| {
-        let mut stmt = conn.prepare(
-            "SELECT data FROM steers WHERE (?1 IS NULL OR workstream_id = ?1) AND (?2 IS NULL OR task_id = ?2)
-             AND n > ?3 ORDER BY n DESC LIMIT ?4",
-        )?;
-        let rows = stmt.query_map(
-            params![workstream_id, task_id, after_n, limit as i64],
-            |r| r.get::<_, String>(0),
-        )?;
+        let mut stmt = conn
+            .prepare("SELECT data FROM steers WHERE workstream_id = ?1 ORDER BY n DESC LIMIT ?2")?;
+        let rows = stmt.query_map(params![workstream_id, limit as i64], |r| {
+            r.get::<_, String>(0)
+        })?;
         rows.map(|r| decode(r?)).collect()
     })
 }

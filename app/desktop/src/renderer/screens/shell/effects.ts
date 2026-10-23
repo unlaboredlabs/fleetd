@@ -128,11 +128,10 @@ export const useNotifications = (live: boolean): void => {
   useHubEvents(onEvent);
 
   // Fetched once the connection is fresh, and again whenever an event says it changed.
-  const policyQuery = useToolQuery("attention_policy", {});
-  const { data: policyOutput, refetch } = policyQuery;
+  const { data: status, refetch } = useToolQuery("fleetd_status", {});
   useEffect(() => {
-    policy = policyFrom(policyOutput) ?? FALLBACK_POLICY;
-  }, [policyOutput]);
+    policy = policyFrom(status?.notify) ?? FALLBACK_POLICY;
+  }, [status]);
 
   useEffect(() => {
     if (!live) return;

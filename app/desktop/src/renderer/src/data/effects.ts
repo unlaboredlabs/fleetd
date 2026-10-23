@@ -60,8 +60,7 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   if (startsWithAny(type, PR_PREFIXES)) out.push({ tool: "pr_list" }, { tool: "pr_get" });
   if (startsWithAny(type, PR_DIFF_PREFIXES)) out.push({ tool: "pr_files" }, { tool: "pr_diff" });
   // Status's per-project rows read the same facts as the status doc.
-  if (shapesOrders || STATUS_TYPES.has(type)) out.push({ tool: "status_get" }, { tool: "status_projects" });
-  else if (startsWithAny(type, STATUS_PREFIXES)) out.push({ tool: "status_get" }, { tool: "status_projects" });
+  if (shapesOrders || STATUS_TYPES.has(type) || startsWithAny(type, STATUS_PREFIXES)) out.push({ tool: "status_get" });
   // Only the open order's time reads: they are scoped `{ kind: "order", workstreamId }`, matched inside `scope`.
   // time_spans is paged; its view fetches new pages itself, so it is not refetched whole here.
   if (startsWithAny(type, TIME_PREFIXES) || TIME_TYPES.has(type)) {
@@ -77,10 +76,10 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
     out.push({ tool: "project_get", where: { machineId: event.machineId, projectId: event.projectId } });
   }
   if (type === "prompt.changed" || type === "prompt.default_changed") {
-    out.push({ tool: "prompts_list" }, { tool: "prompt_get" }, { tool: "session_prompt_get" });
+    out.push({ tool: "prompt_get" }, { tool: "session_prompt_get" });
   }
   if (type === "doctor.changed") out.push({ tool: "doctor_list" });
-  if (type === "decision.recorded") out.push({ tool: "attention_policy" });
+  if (type === "decision.recorded") out.push({ tool: "fleetd_status" });
 
   const newMachine = type.startsWith("machine.") && (event.machineId === undefined || !(event.machineId in machines));
   const resync = newMachine || type === "project.added" || type === "project.removed";

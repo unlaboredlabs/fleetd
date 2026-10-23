@@ -14,7 +14,6 @@ import {
   type ProjectAddInput,
   type ProjectAddOutput,
   type ProjectAddedData,
-  type ProjectInspectOutput,
 } from "./contracts";
 import { progress, ready, existingFolderAction, type Failure, type ProjectKey, type Ready, type Request, type Step } from "./discovery";
 import { baseName, omit } from "./source";
@@ -48,7 +47,7 @@ export interface AddState {
   readonly since?: number;
   /** The connection dropped while the add ran; look it up once the snapshot is back. */
   readonly lost: boolean;
-  /** A clone's failure, held while project_inspect says whether its folder can be added instead. */
+  /** A clone's failure, held while a dry run says whether its folder can be added instead. */
   readonly held?: Failure;
   /** Bumped by each start, so an answer to an earlier add is ignored. */
   readonly gen: number;
@@ -62,7 +61,6 @@ export type Purpose = "add" | "inspect" | "recover";
 /** A step's call, typed against the contracts so it goes through the data layer's typed `call`. */
 export type Call = { readonly purpose: Purpose; readonly gen: number } & (
   | { readonly tool: "project_add"; readonly input: ToolInput<"project_add"> }
-  | { readonly tool: "project_inspect"; readonly input: ToolInput<"project_inspect"> }
   | { readonly tool: "events_wait"; readonly input: ToolInput<"events_wait"> }
 );
 
@@ -132,12 +130,12 @@ const owns = (s: AddState, e: HubEvent): boolean => {
 const addInput = (r: Request): ProjectAddInput =>
   r.kind === "clone" ? { machineId: r.machineId, url: r.repo, ...(r.useExisting ? { useExisting: true } : {}) } : { machineId: r.machineId, path: r.path };
 
-/** A clone refused because its folder exists: ask project_inspect whether that folder is this repo first. */
+/** A clone refused because its folder exists: ask a dry-run project_add whether that folder is this repo first. */
 const holdAndInspect = (s: AddState, f: Failure): Step_ => {
   const r = s.request;
   if (r?.kind === "clone" && !r.useExisting && s.live) {
     const held = { ...s, held: f };
-    return [held, [{ purpose: "inspect", gen: held.gen, tool: "project_inspect", input: { machineId: r.machineId, url: r.repo } }]];
+    return [held, [{ purpose: "inspect", gen: held.gen, tool: "project_add", input: { machineId: r.machineId, url: r.repo, dryRun: true } }]];
   }
   return [fail(s, f), []];
 };
@@ -267,7 +265,7 @@ const answer = (s: AddState, c: Call, outcome: Outcome, names: Names): Step_ => 
     case "inspect": {
       const held = s.held ?? { message: "The folder for the clone already exists." };
       const rest = omit(s, "held");
-      const target = outcome.ok ? (outcome.output as ProjectInspectOutput).clone : undefined;
+      const target = outcome.ok ? (outcome.output as ProjectAddOutput).clone : undefined;
       const action = target ? existingFolderAction(target, s.request) : undefined;
       return [fail(rest, action ? { ...held, action } : held), []];
     }

@@ -1,4 +1,4 @@
-//! `fleetd status`: the same rows as the app's Status screen, read from the hub (status_projects), with why each bar
+//! `fleetd status`: the same rows as the app's Status screen, read from the hub (status_get), with why each bar
 //! last fell (status_get). With `--watch` it reads them again after each event that can change one (events_wait), and
 //! after a quiet wait while a project works, as its in-flight credit moves with time. It never shows a time estimate,
 //! and every time printed is absolute, so a block left on screen never reads as fresher than it is.
@@ -10,7 +10,7 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 use fleetd_contracts::ids::Timestamp;
-use fleetd_contracts::mcp::{StatusGetOutput, StatusProjectsOutput};
+use fleetd_contracts::mcp::StatusGetOutput;
 use fleetd_contracts::status::{ProgressPoint, ProjectRowState, ProjectStatusRow};
 use serde_json::{Value, json};
 
@@ -328,15 +328,10 @@ type Rows = Vec<(ProjectStatusRow, Vec<ProgressPoint>)>;
 
 /// The rows (only `only`'s when given), each with its series when it has a bar.
 async fn read(client: &mut McpClient, only: Option<&Value>) -> Result<Rows, CallError> {
-    let listed: StatusProjectsOutput = call(
-        client,
-        "status_projects",
-        json!({}),
-        Duration::from_secs(30),
-    )
-    .await?;
+    let listed: StatusGetOutput =
+        call(client, "status_get", json!({}), Duration::from_secs(30)).await?;
     let mut out = Vec::new();
-    for row in listed.rows.iter() {
+    for row in listed.rows.iter().flat_map(|rows| rows.iter()) {
         let r = serde_json::to_value(&row.project_ref).unwrap_or_default();
         if only.is_some_and(|o| *o != r) {
             continue;
@@ -349,7 +344,7 @@ async fn read(client: &mut McpClient, only: Option<&Value>) -> Result<Rows, Call
                 Duration::from_secs(30),
             )
             .await?;
-            got.series.to_vec()
+            got.series.map(|s| s.to_vec()).unwrap_or_default()
         } else {
             vec![]
         };
@@ -434,7 +429,7 @@ pub async fn status_command(argv: &[String]) -> u8 {
     } else {
         let listed: Value = match call(
             &mut client,
-            "projects_list",
+            "project_get",
             json!({}),
             Duration::from_secs(30),
         )

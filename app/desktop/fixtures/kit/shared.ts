@@ -193,8 +193,9 @@ export const buildShared = (): Map<SharedName, Fixture> => {
       const old = (m: JsonObject) => (m["machineId"] === "buildbox" ? { ...m, status: "degraded", nodeVersion: "0.3.1", degradedReason: "node 0.3.1 is older than this hub needs (0.4.0)" } : m);
       if (f.snapshot !== undefined) f.snapshot["machines"] = arr(f.snapshot["machines"]).map((m) => (isObject(m) ? old(m) : m));
       for (const frame of f.live) if (Array.isArray(frame["machines"])) frame["machines"] = frame["machines"].map((m) => (isObject(m) ? (m["machineId"] === "buildbox" ? { ...m, status: "degraded" } : m) : m));
-      f.drop("project_discover").drop("project_inspect");
-      f.fail("project_discover", undefined, NODE_TOO_OLD).fail("project_inspect", undefined, NODE_TOO_OLD);
+      f.drop("project_discover");
+      for (const a of f.answers("project_add")) if (a.input?.["dryRun"] === true) f.drop("project_add", a.input);
+      f.fail("project_discover", undefined, NODE_TOO_OLD).fail("project_add", { dryRun: true }, NODE_TOO_OLD);
       return f;
     })(),
     copy("time-heavy", "The time inspector's stress case: fixtures/time fills it with an order of about 15,000 spans, paged 500 at a time."),

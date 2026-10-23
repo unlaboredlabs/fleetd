@@ -26,27 +26,19 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "fleetd_status",
-        "Every machine (online/offline), the 50 most recently active projects, the latest failed/waiting/usage-limited events and PRs the merge train sent back (needs_rebase, ci_failed), the slot board (cap, used, queued, per-project shares) and the events cursor. Start here.",
-    ),
-    (
-        "projects_list",
-        "Projects across machines, optionally filtered by machineId or a title/path query.",
+        "Every machine (online/offline), the 50 most recently active projects, the latest failed/waiting/usage-limited events and PRs the merge train sent back (needs_rebase, ci_failed), the slot board (cap, used, queued, per-project shares), the events cursor, and when to interrupt the human (notify: events carry attention \"loud\" or \"urgent\" when only a person can unblock them; coalesceSec is the notification window, and inside the quiet windows under way and next, from policy.quiet_hours in policy.tz, only urgent events notify). Start here.",
     ),
     (
         "project_get",
-        "One project's outcome in one call: its summary, up to 20 threads (newest activity first) with status, headline and latest message, its lead and open workstreams, task counts with the 20 newest tasks (task threads are not in the thread list), and the merge trains of its repos. Marked stale when the machine is offline.",
+        "Without projectId: the projects across machines (projects), optionally filtered by machineId or a title/path query. With machineId and projectId, one project's outcome in one call: its summary, up to 20 threads (newest activity first) with status, headline and latest message, its lead and open workstreams, task counts with the 20 newest tasks (task threads are not in the thread list), and the merge trains of its repos. Marked stale when the machine is offline.",
     ),
     (
         "project_discover",
         "Repos to add as projects: git checkouts on each machine (under ~/src, ~/code, ~/projects, ~/dev and similar, two levels down; already-added ones carry projectId), each machine's clone root, and `gh repo list` for the user and their orgs (ghOn says where gh ran: the hub, else a worker). best is the machine a clone goes to by default.",
     ),
     (
-        "project_inspect",
-        "A repo's default branch, CI (active workflows, required checks) and merge rules (protection, rulesets, squash allowed, required reviews), with leadNeeds: one line on what the lead and merge train will need. Give url (a GitHub repo, before cloning; also returns where the clone would go and whether that directory already holds it) or machineId and path (a checkout).",
-    ),
-    (
         "project_add",
-        "Add a project. path: a git checkout on the machine, added at once with its inspect. url: a GitHub repo cloned onto the machine (machineId defaults to the best worker, dest to <cloneRoot>/<name>); answers with addId, then events project.clone_progress and project.added (or project.add_failed with a fix) carry data.addId. When the destination already holds the same repo, pass useExisting. The same directory again returns its project; title renames it.",
+        "Add a project. path: a git checkout on the machine, added at once with its inspect. url: a GitHub repo cloned onto the machine (machineId defaults to the best worker, dest to <cloneRoot>/<name>); answers with addId, then events project.clone_progress and project.added (or project.add_failed with a fix) carry data.addId. When the destination already holds the same repo, pass useExisting. The same directory again returns its project; title renames it. dryRun adds nothing: it answers the inspect (default branch, CI with active workflows and required checks, merge rules with protection, rulesets, squash allowed and required reviews, and leadNeeds: one line on what the lead and merge train will need) and, for a url, clone: where it would go and whether that directory already holds the repo.",
     ),
     (
         "project_remove",
@@ -78,11 +70,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "lead_start",
-        "Start the project's lead: one thread that turns intents into briefs, asks the human in chat only about product, money, credential and irreversible calls, and never writes code. Returns the existing lead if there is one. A project's first order starts its lead by itself; call this to start it earlier. The lead always runs on the high profile (Opus 5.5, effort high).",
-    ),
-    (
-        "lead_restart",
-        "Start a fresh lead thread for the project from the current digest (sessionGeneration goes up); use it when a lead is stuck or its context is full. The old thread stays on the node.",
+        "Start the project's lead: one thread that turns intents into briefs, asks the human in chat only about product, money, credential and irreversible calls, and never writes code. Returns the existing lead if there is one; with fresh, starts a new lead thread from the current digest instead (sessionGeneration goes up), for a lead that is stuck or whose context is full, and the old thread stays on the node. A project's first order starts its lead by itself; call this to start it earlier. The lead always runs on the high profile (Opus 5.5, effort high).",
     ),
     (
         "project_set",
@@ -91,10 +79,6 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     (
         "workstream_list",
         "Workstreams newest first, filtered by machineId, projectId and state (limit defaults to 50).",
-    ),
-    (
-        "workstream_get",
-        "One workstream with its frozen brief and headline (the lead's own words), its open secret and approval requests, and the decisions scoped to it. Its lead closes it with why once it is done.",
     ),
     (
         "secret_submit",
@@ -145,10 +129,6 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "The doctor: every setup check with status (ok, warn, fail, unknown), a plain message and its fix. Hub: reachable, gh logged in, claude login, HTTPS. Each machine: online/degraded/offline, claude in the supported version range, claude logged in, the runner's conformance, commit identity, at least 5 GB free, usage breaker. Results are from the last run (every 15 min); rerun: true runs them now.",
     ),
     (
-        "attention_policy",
-        "When to interrupt the human: events carry attention \"loud\" or \"urgent\" when only a person can unblock them. Returns the notification coalescing window (coalesceSec) and the quiet windows under way and next (absolute times from policy.quiet_hours in policy.tz), inside which only urgent events notify.",
-    ),
-    (
         "doctor_fix",
         "Run a check's automatic fix, then the check again. Manual fixes are refused with the exact command to run. Admin keys, or a person's device (a human key).",
     ),
@@ -158,7 +138,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "order_get",
-        "One order as orders_board shows it, plus its project's lead, its finished agents and its open requests.",
+        "One order as orders_board shows it, plus its record (the brief and its done-when), its project's lead, its finished agents, its open requests, the decisions scoped to it, and its 20 newest steers with their receipts (queued, delivered and how, acknowledged with the reply's first words, unacknowledged, withdrawn, failed). Its lead closes it with why once it is done.",
     ),
     (
         "steer_send",
@@ -169,10 +149,6 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "Withdraw a steer that is still queued. Refused once it was delivered: the next steer says what changed. The sender's key only.",
     ),
     (
-        "steers_list",
-        "Steers with their receipts (queued, delivered and how, acknowledged with the reply's first words, unacknowledged, withdrawn, failed), newest first. Filter by workstreamId or taskId; afterN pages.",
-    ),
-    (
         "attachment_put",
         "Upload one file (png, jpeg, webp, gif, text or PDF; at most 5 MiB, base64) for a later chat_send. Unused uploads are deleted after 24 h.",
     ),
@@ -181,20 +157,12 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "A project's files (tracked and untracked, not ignored) best matching a fuzzy query, for @-mentions. limit defaults to 20, max 50.",
     ),
     (
-        "prompts_list",
-        "Every prompt and message fleetd sends a model (lead, tasks, reviewers, playbooks, custom instructions): id, kind, when it is sent, which text is in effect (default, global or project override) and whether a release changed the default of one you edited. projectRef: the texts in effect for that project.",
-    ),
-    (
         "prompt_get",
-        "One prompt: its shipped default, the global and project overrides with their refs, the text in effect, its placeholders, its safety rules (and whether the text still says each), warnings, and, when fleetd changed the default you edited, the old default, the new one, yours and a 3-way merge.",
+        "Without an id: every prompt and message fleetd sends a model (lead, tasks, reviewers, playbooks, custom instructions): id, kind, when it is sent, which text is in effect (default, global or project override) and whether a release changed the default of one you edited, plus your edits to prompts a release retired (orphans). projectRef: the texts in effect for that project. With an id, that prompt: its shipped default, the global and project overrides with their refs, the text in effect, its placeholders, its safety rules (and whether the text still says each), warnings, and, when fleetd changed the default you edited, the old default, the new one, yours and a 3-way merge.",
     ),
     (
         "prompt_set",
-        "Save a prompt override, hub-wide (scope global) or for one project (scope project, with projectRef); id instructions holds the custom instructions appended to every lead and task. Warns (never refuses) when the text drops a placeholder or a safety rule; dryRun returns the warnings only. New sessions get it at once; running ones keep the text they started with. Admin keys, or a person's device.",
-    ),
-    (
-        "prompt_reset",
-        "Remove a prompt override at one scope; the next one down (project, global, shipped default) is in effect again. Admin keys, or a person's device.",
+        "Save a prompt override, hub-wide (scope global) or for one project (scope project, with projectRef); id instructions holds the custom instructions appended to every lead and task. Warns (never refuses) when the text drops a placeholder or a safety rule; dryRun returns the warnings only (with reset, the ref that would be in effect) and never writes. reset true (without text) removes the override at that scope, so the next one down (project, global, shipped default) is in effect again, or deletes an edit to a retired prompt; a call with neither text nor reset is refused. New sessions get it at once; running ones keep the text they started with. Admin keys, or a person's device.",
     ),
     (
         "session_prompt_get",
@@ -209,12 +177,8 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "Where a scope's time went since a time: wall time, agent time (exclusive, adds up over parallel agents), totals per category and kind, slowest commands, repeated runs, CI checks, waits on a person and, for an order, its critical path. compare gives a second period; filters narrow by project, machine or role. Also the retention and stored size.",
     ),
     (
-        "status_projects",
-        "One row per project you can read, by title: a state word (working, waiting_on_you, blocked with a one-line reason, idle), the two-tone progress (verified and in flight, no ETA), agents running now and the last merge. Marked stale when its machine, GitHub or its merge train went quiet.",
-    ),
-    (
         "status_get",
-        "One project's Status row (status_projects) and the series behind its bar, oldest first: each point's verified and in-flight figure, why it fell (a scope change, a failed review or CI, work that stopped, a reopened item) and when it held on paused work. Never an ETA.",
+        "Without projectRef: one row per project you can read, by title (rows): a state word (working, waiting_on_you, blocked with a one-line reason, idle), the two-tone progress (verified and in flight, no ETA), agents running now and the last merge, marked stale when its machine, GitHub or its merge train went quiet. With projectRef: that project's row and the series behind its bar, oldest first: each point's verified and in-flight figure, why it fell (a scope change, a failed review or CI, work that stopped, a reopened item) and when it held on paused work. Never an ETA.",
     ),
     (
         "time_insights",

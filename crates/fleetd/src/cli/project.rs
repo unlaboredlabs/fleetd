@@ -1,4 +1,4 @@
-//! `fleetd project add|list|stop|remove|set`: the hub's add-a-project service (project_discover, project_inspect,
+//! `fleetd project add|list|stop|remove|set`: the hub's add-a-project service (project_discover and
 //! project_add) from a terminal, one question at a time like `fleetd init`, or flags only without one.
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -279,7 +279,7 @@ pub async fn project_command(argv: &[String]) -> u8 {
 async fn list(client: &mut McpClient, v: &args::Parsed) -> Result<(), Stop> {
     let body = call(
         client,
-        "projects_list",
+        "project_get",
         json!({ "machineId": v.str("machine") }),
     )
     .await?;
@@ -347,7 +347,7 @@ async fn find(client: &mut McpClient, v: &args::Parsed) -> Result<(String, Value
             None,
         ));
     };
-    let body = call(client, "projects_list", json!({ "machineId": machine })).await?;
+    let body = call(client, "project_get", json!({ "machineId": machine })).await?;
     let projects = body
         .get("projects")
         .and_then(Value::as_array)
@@ -632,12 +632,9 @@ async fn add(client: &mut McpClient, out: &Out, v: &args::Parsed, home: &Path) -
             if let Some(m) = &given_machine {
                 input["machineId"] = json!(m);
             }
-            let preview = call(
-                client,
-                "project_inspect",
-                json!({ "url": url, "machineId": given_machine }),
-            )
-            .await?;
+            let mut dry = input.clone();
+            dry["dryRun"] = json!(true);
+            let preview = call(client, "project_add", dry).await?;
             let target = preview.get("clone").cloned().unwrap_or_default();
             let (machine, dest) = (
                 s(&target, "/machineId").to_owned(),
@@ -647,7 +644,7 @@ async fn add(client: &mut McpClient, out: &Out, v: &args::Parsed, home: &Path) -
                 input["machineId"] = json!(machine);
             }
             if out.tty {
-                out.info(&describe(&preview));
+                out.info(&describe(preview.get("inspect").unwrap_or(&Value::Null)));
             }
             let same = target.get("sameRemote") == Some(&Value::Bool(true));
             if v.flag("use-existing") {

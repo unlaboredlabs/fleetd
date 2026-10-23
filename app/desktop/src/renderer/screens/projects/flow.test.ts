@@ -118,12 +118,12 @@ describe("the add flow", () => {
     expect(s.phase).toMatchObject({ kind: "failed", failure: { action: { kind: "retry", request: cloneReq } } });
   });
 
-  it("offers the existing folder only when inspect says it is the same repo", () => {
+  it("offers the existing folder only when a dry run says it is the same repo", () => {
     const target = (sameRemote: boolean, projectId?: string) => ({
-      ci: { workflows: [], requiredChecks: [] },
-      merge: { protected: false, rulesets: [] },
-      leadNeeds: "ok",
-      notes: [],
+      machineId: "devbox",
+      path: "/p",
+      created: false,
+      inspect: { ci: { workflows: [], requiredChecks: [] }, merge: { protected: false, rulesets: [] }, leadNeeds: "ok", notes: [] },
       clone: { machineId: "devbox", path: "/p", exists: true, sameRemote, ...(projectId ? { projectId } : {}) },
     });
     const cases = [
@@ -134,8 +134,8 @@ describe("the add flow", () => {
     for (const c of cases) {
       let [s, calls] = run(live(), start());
       [s, calls] = run(s, err(only(calls, "project_add"), "invalid", "devbox already has a checkout at /p"));
-      const inspect = only(calls, "project_inspect");
-      expect(inspect.input).toEqual({ machineId: "devbox", url: "acme/ledger" });
+      const inspect = only(calls, "project_add");
+      expect(inspect).toMatchObject({ purpose: "inspect", input: { machineId: "devbox", url: "acme/ledger", dryRun: true } });
       expect(s.phase.kind).toBe("working");
       [s] = run(s, ok(inspect, target(c.same, c.project)));
       expect(s.phase.kind).toBe("failed");
@@ -147,7 +147,7 @@ describe("the add flow", () => {
     let [s, calls] = run(live(), start());
     [s] = run(s, ok(only(calls, "project_add"), { machineId: "devbox", path: "/p", created: true, addId: "a1" }));
     [, calls] = run(s, event(11, "project.add_failed", { addId: "a1", path: "/p", code: "dest_exists", message: "exists" }));
-    only(calls, "project_inspect");
+    expect(only(calls, "project_add").purpose).toBe("inspect");
     // A folder add that fails needs no inspect.
     [s, calls] = run(live(), start({ kind: "folder", machineId: "devbox", path: "/srv/x" }));
     [s, calls] = run(s, err(only(calls, "project_add"), "invalid", "not a git repo"));

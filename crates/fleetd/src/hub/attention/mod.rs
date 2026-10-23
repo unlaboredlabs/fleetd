@@ -1,5 +1,5 @@
 //! What needs the human now, and when a client may interrupt them. The hub stamps `attention` on the events it emits;
-//! clients (the desktop app's notifications) follow the field and the attention_policy tool rather than repeating
+//! clients (the desktop app's notifications) follow the field and `fleetd_status.notify` rather than repeating
 //! these rules. Pure, apart from reading the hub's time zone.
 use chrono::{TimeZone, Timelike};
 use chrono_tz::Tz;
@@ -112,34 +112,20 @@ pub fn quiet_windows(now_ms: i64, tz: Tz, quiet: Option<QuietHours>) -> Vec<Quie
     windows
 }
 
-/// `attention_policy`: the coalesce window and the quiet windows from now, as absolute times.
-pub fn register(tools: &mut crate::hub::api::Registry) {
-    tools.add(
-        "attention_policy",
-        |hub: std::sync::Arc<crate::hub::api::Hub>,
-         _caller: crate::hub::api::Caller,
-         _input: fleetd_contracts::mcp::AttentionPolicyInput| async move {
-            let (tz, quiet) =
-                quiet_policy(|k| hub.decisions.global_value(k).ok().flatten());
-            let windows = quiet_windows(crate::hub::store::now_ms(hub.clock.as_ref()), tz, quiet);
-            let next = if windows.is_empty() {
-                "Quiet hours are off (policy.quiet_hours). Notify on events with attention, at most once per coalesceSec."
-            } else {
-                "Inside a quiet window only attention \"urgent\" events notify; hold \"loud\" ones until it ends. Call again after the last window ends or on decision.recorded."
-            };
-            Ok::<_, crate::hub::api::ToolError>(serde_json::json!({
-                "coalesceSec": COALESCE_MS / 1000,
-                "quiet": windows
-                    .iter()
-                    .map(|w| serde_json::json!({
-                        "from": crate::hub::store::iso_ms(w.from_ms),
-                        "to": crate::hub::store::iso_ms(w.to_ms),
-                    }))
-                    .collect::<Vec<_>>(),
-                "next": next,
+/// `fleetd_status.notify`: the coalesce window and the quiet windows from now, as absolute times.
+pub fn notify_policy(hub: &crate::hub::api::Hub) -> serde_json::Value {
+    let (tz, quiet) = quiet_policy(|k| hub.decisions.global_value(k).ok().flatten());
+    let windows = quiet_windows(crate::hub::store::now_ms(hub.clock.as_ref()), tz, quiet);
+    serde_json::json!({
+        "coalesceSec": COALESCE_MS / 1000,
+        "quiet": windows
+            .iter()
+            .map(|w| serde_json::json!({
+                "from": crate::hub::store::iso_ms(w.from_ms),
+                "to": crate::hub::store::iso_ms(w.to_ms),
             }))
-        },
-    );
+            .collect::<Vec<_>>(),
+    })
 }
 
 /// An IANA zone name fleetd can use.

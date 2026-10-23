@@ -1,7 +1,7 @@
 //! Prompts a release retired: merged into another, replaced by facts the code fills in, or made obsolete by the lead
-//! chat or a feature that went. An override of one is never applied and never deleted by fleetd: `prompts_list`
+//! chat or a feature that went. An override of one is never applied and never deleted by fleetd: `prompt_get`
 //! returns it under `orphans`, so the human can copy what they wrote into the prompt that holds it now, and
-//! `prompt_reset` on its id deletes it.
+//! `prompt_set` with `reset: true` on its id deletes it.
 //!
 //! None is migrated by itself: its words now sit in another prompt, where pasting them in blind would be wrong more
 //! often than right.

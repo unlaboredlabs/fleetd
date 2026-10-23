@@ -1,23 +1,19 @@
-//! steer_send, steer_withdraw and steers_list.
+//! steer_send and steer_withdraw; order_get lists an order's steers.
 use std::sync::Arc;
 
-use fleetd_contracts::auth::Role;
 use fleetd_contracts::mcp::{
-    SteerSendInput, SteerSendOutput, SteerWithdrawInput, SteerWithdrawOutput, SteersListInput,
-    SteersListOutput,
+    SteerSendInput, SteerSendOutput, SteerWithdrawInput, SteerWithdrawOutput,
 };
-use fleetd_contracts::prim::List;
 use fleetd_contracts::steer::{SteerStage, SteerTarget};
 
 use super::{By, SteerRequest};
-use crate::hub::api::{Caller, Hub, Registry, ToolError, allows};
+use crate::hub::api::{Caller, Hub, Registry, ToolError};
 use crate::hub::intake::attachments;
 use crate::hub::orders::notes::{render_refs, require_human};
 
 pub fn register(tools: &mut Registry) {
     tools.add("steer_send", steer_send);
     tools.add("steer_withdraw", steer_withdraw);
-    tools.add("steers_list", steers_list);
 }
 
 fn next(stage: SteerStage) -> Option<String> {
@@ -103,29 +99,5 @@ async fn steer_withdraw(
         steer,
         next: None,
         truncated: None,
-    })
-}
-
-async fn steers_list(
-    hub: Arc<Hub>,
-    caller: Caller,
-    input: SteersListInput,
-) -> Result<SteersListOutput, ToolError> {
-    let limit = input.limit.get() as usize;
-    let steers: Vec<_> = super::store::list(
-        &hub.db,
-        input.workstream_id.as_ref().map(|w| w.as_str()),
-        input.task_id.as_ref().map(|t| t.as_str()),
-        input.after_n.map_or(0, |n| n.get()),
-        limit,
-    )?
-    .into_iter()
-    .filter(|s| allows(&caller, Role::Read, Some(&s.thread.machine_id)))
-    .collect();
-    let truncated = (steers.len() == limit).then_some(true);
-    Ok(SteersListOutput {
-        steers: List::unchecked(steers),
-        next: None,
-        truncated,
     })
 }
