@@ -54,6 +54,7 @@ after you change it.
 | `cmdRoots` | Folders the node may run commands in, and below. Absent: your home directory. |
 | `claudeConfigDir` | A dedicated claude profile for this machine's sessions. See [below](#claude-profile). |
 | `minFreeGb` | New agents wait while the disk holding the worktrees has less than this many GB free. Absent: 10% of the disk or 20 GB, whichever is larger. `0` turns it off. Read with every heartbeat, no restart needed. See [Disk and load](/docs/machines#guard). |
+| `promptCacheTtl` | The prompt cache TTL per kind of session, `"5m"` or `"1h"`: `lead`, `worker` (a task's agent) and `plain` (a thread you start), e.g. `{"worker": "1h"}`. Absent: an hour for leads and your threads, which sit idle between turns, and 5 minutes for task agents, which work in one burst. Read at each session start. See [Settings fleetd forces](/docs/reference/agent-tools#settings-fleetd-forces). |
 
 ## The Claude login {#claude}
 

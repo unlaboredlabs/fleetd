@@ -1013,25 +1013,32 @@
 <td>A refusal at startup arrives as a result fleetd can read, not only as stderr.</td>
 </tr>
 <tr>
-<td><code dir="auto">CLAUDE_CODE_PROMPT_CACHE_TTL</code></td>
-<td><code dir="auto">1h</code> unless your environment or <code dir="auto">claude.env</code> sets it</td>
-<td>Every claude fleetd starts</td>
-<td>no</td>
-<td>An agent idle more than 5 minutes otherwise rewrites its whole context to the prompt cache.</td>
-</tr>
-<tr>
-<td><code dir="auto">CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL</code></td>
-<td><code dir="auto">1h</code> unless your environment or <code dir="auto">claude.env</code> sets it</td>
-<td>Every claude fleetd starts</td>
-<td>no</td>
-<td>An agent idle more than 5 minutes otherwise rewrites its whole context to the prompt cache.</td>
-</tr>
-<tr>
 <td><code dir="auto">ENABLE_TOOL_SEARCH</code></td>
 <td><code dir="auto">true</code> unless your environment or <code dir="auto">claude.env</code> sets it</td>
 <td>Every claude fleetd starts</td>
 <td>no</td>
 <td>Tool schemas load when a tool is used, not on every request. fleetd’s own tools always load at start.</td>
+</tr>
+<tr>
+<td><code dir="auto">CLAUDE_CODE_PROMPT_CACHE_TTL</code>, <code dir="auto">CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL</code></td>
+<td><code dir="auto">1h</code> unless <code dir="auto">promptCacheTtl.lead</code> in node.json, your environment or <code dir="auto">claude.env</code> sets it</td>
+<td>Leads</td>
+<td>yes</td>
+<td>A lead idles between wakes, often more than 5 minutes while reviews and CI run, and would otherwise rewrite its whole context to the prompt cache on those wakes.</td>
+</tr>
+<tr>
+<td><code dir="auto">CLAUDE_CODE_PROMPT_CACHE_TTL</code>, <code dir="auto">CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL</code></td>
+<td><code dir="auto">1h</code> unless <code dir="auto">promptCacheTtl.plain</code> in node.json, your environment or <code dir="auto">claude.env</code> sets it</td>
+<td>Threads you start</td>
+<td>yes</td>
+<td>A person’s thread idles while they read and reply.</td>
+</tr>
+<tr>
+<td><code dir="auto">CLAUDE_CODE_PROMPT_CACHE_TTL</code>, <code dir="auto">CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL</code></td>
+<td><code dir="auto">5m</code> unless <code dir="auto">promptCacheTtl.worker</code> in node.json, your environment or <code dir="auto">claude.env</code> sets it</td>
+<td>Task agents</td>
+<td>yes</td>
+<td>A task’s agent (writer, reader, reviewer, CI fix) works in one burst and ends, so a 1-hour write pays for an hour it never uses.</td>
 </tr>
 <tr>
 <td><code dir="auto">CLAUDECODE</code>, <code dir="auto">CLAUDE_CODE_ENTRYPOINT</code>, <code dir="auto">CLAUDE_CODE_SSE_PORT</code></td>

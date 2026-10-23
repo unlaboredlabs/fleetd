@@ -15,8 +15,8 @@ use fleetd::hub::tasks::policy::{
 };
 use fleetd::node::runner::claude::{
     AUTO_MEMORY_OFF_ENV, AUTO_MEMORY_OFF_WHY, DEFAULT_ENV_WHY, DISALLOWED_WHY, HELPER_MODEL_ENV,
-    HELPER_MODEL_WHY, NESTING_VARS_WHY, SESSION_ENV_WHY, SUBAGENTS_OFF_ENV_WHY,
-    SUBAGENTS_ON_ENV_WHY,
+    HELPER_MODEL_WHY, NESTING_VARS_WHY, PROMPT_CACHE_TTL_VARS, PROMPT_CACHE_TTL_WHY,
+    SESSION_ENV_WHY, SUBAGENTS_OFF_ENV_WHY, SUBAGENTS_ON_ENV_WHY,
 };
 use fleetd::node::runner::{conformance, version::TESTED};
 use fleetd_contracts::lead_calls::GatedRunCall;
@@ -770,7 +770,11 @@ fn builtins(root: &Path) -> Result<String, String> {
 
 fn switches() -> Result<String, String> {
     let all = "Every claude fleetd starts";
-    let overlay: Value = serde_json::from_str(&fleetd::node::sessions::settings_overlay())
+    let cache: Vec<(String, String)> = PROMPT_CACHE_TTL_VARS
+        .iter()
+        .map(|v| ((*v).to_owned(), String::new()))
+        .collect();
+    let overlay: Value = serde_json::from_str(&fleetd::node::sessions::settings_overlay(&cache))
         .map_err(|e| format!("agent tools: the settings overlay: {e}"))?;
     let mut md = String::from(
         "## Settings fleetd forces\n\nSet in the claude process's environment. \"In settings\" marks the ones also \
@@ -825,6 +829,26 @@ fn switches() -> Result<String, String> {
             all,
         );
     }
+    for ((role, ttl), why) in PROMPT_CACHE_TTL_WHY {
+        let who = match role {
+            SessionRole::Lead => "Leads",
+            SessionRole::Worker => "Task agents",
+            SessionRole::Plain => "Threads you start",
+        };
+        let key = serde_json::to_value(role).unwrap_or_default();
+        rows(
+            PROMPT_CACHE_TTL_VARS
+                .iter()
+                .map(|n| (format!("`{n}`"), *why))
+                .collect(),
+            &format!(
+                "`{}` unless `promptCacheTtl.{}` in node.json, your environment or `claude.env` sets it",
+                ttl.as_str(),
+                key.as_str().unwrap_or_default()
+            ),
+            who,
+        );
+    }
     rows(named(NESTING_VARS_WHY), "removed", "Sessions");
     md.push('\n');
     Ok(md)
@@ -864,6 +888,11 @@ mod tests {
         {
             assert!(page.contains(&format!("| `{name}` |")), "{name}");
         }
+        let [own, helpers] = PROMPT_CACHE_TTL_VARS;
+        assert_eq!(
+            page.matches(&format!("| `{own}`, `{helpers}` |")).count(),
+            PROMPT_CACHE_TTL_WHY.len()
+        );
         // Allowed and blocked never overlap.
         let allowed = page
             .split("**Allowed:**")

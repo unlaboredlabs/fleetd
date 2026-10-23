@@ -488,9 +488,10 @@ Set in the claude process's environment. "In settings" marks the ones also in fl
 | `ANTHROPIC_DEFAULT_HAIKU_MODEL` | `claude-opus-5-5` | Every claude fleetd starts | yes | claude's background helper calls (session titles and the like) run on Opus 5.5 like everything else fleetd starts, not on the haiku model claude picks by default. |
 | `DISABLE_AUTOUPDATER` | `1` | Sessions | yes | Keeps the claude fleetd checked. An update mid-run would swap the binary under a live session. |
 | `CLAUDE_CODE_STARTUP_FAILURE_RESULTS` | `1` | Sessions | no | A refusal at startup arrives as a result fleetd can read, not only as stderr. |
-| `CLAUDE_CODE_PROMPT_CACHE_TTL` | `1h` unless your environment or `claude.env` sets it | Every claude fleetd starts | no | An agent idle more than 5 minutes otherwise rewrites its whole context to the prompt cache. |
-| `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL` | `1h` unless your environment or `claude.env` sets it | Every claude fleetd starts | no | An agent idle more than 5 minutes otherwise rewrites its whole context to the prompt cache. |
 | `ENABLE_TOOL_SEARCH` | `true` unless your environment or `claude.env` sets it | Every claude fleetd starts | no | Tool schemas load when a tool is used, not on every request. fleetd's own tools always load at start. |
+| `CLAUDE_CODE_PROMPT_CACHE_TTL`, `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL` | `1h` unless `promptCacheTtl.lead` in node.json, your environment or `claude.env` sets it | Leads | yes | A lead idles between wakes, often more than 5 minutes while reviews and CI run, and would otherwise rewrite its whole context to the prompt cache on those wakes. |
+| `CLAUDE_CODE_PROMPT_CACHE_TTL`, `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL` | `1h` unless `promptCacheTtl.plain` in node.json, your environment or `claude.env` sets it | Threads you start | yes | A person's thread idles while they read and reply. |
+| `CLAUDE_CODE_PROMPT_CACHE_TTL`, `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL` | `5m` unless `promptCacheTtl.worker` in node.json, your environment or `claude.env` sets it | Task agents | yes | A task's agent (writer, reader, reviewer, CI fix) works in one burst and ends, so a 1-hour write pays for an hour it never uses. |
 | `CLAUDECODE`, `CLAUDE_CODE_ENTRYPOINT`, `CLAUDE_CODE_SSE_PORT` | removed | Sessions | no | claude sets it for its own children and treats a process that has it as nested inside another session. |
 
 ## What your own setup adds
