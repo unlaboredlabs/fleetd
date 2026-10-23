@@ -55,7 +55,6 @@ use state::EndCause;
 pub const CONTINUE_PROMPT: &str = "Continue where you left off.";
 /// fleetd's own MCP servers (none yet: leads and agents call the `fleetd` CLI). The user's own servers load too.
 const SNAPSHOT_WINDOW: usize = 200;
-const TRANSCRIPT_CAP: u64 = 20 * 1024 * 1024;
 const DELTA_EVERY: Duration = Duration::from_millis(100);
 /// A project's file list is reused this long.
 const FILES_FOR: Duration = Duration::from_secs(30);
@@ -1374,8 +1373,8 @@ impl SessionService {
         Ok(handle.commands)
     }
 
-    /// The process spec, after writing the session's MCP config and settings overlay and keeping its transcript (fleetd's
-    /// own copy; claude keeps its session in the config dir) under its cap.
+    /// The process spec, after writing the session's MCP config and settings overlay. The transcript is fleetd's own
+    /// copy (claude keeps its session in the config dir); its writer keeps it under its cap.
     fn spec(&self, row: &SessionRow, resume: bool) -> std::io::Result<SessionSpec> {
         let config = &self.inner.config;
         let id = row.summary.session_id.as_str();
@@ -1389,7 +1388,6 @@ impl SessionService {
         let transcripts = config.home.join("transcripts");
         super::config::mkdir_private(&transcripts)?;
         let transcript = transcripts.join(format!("{id}.jsonl"));
-        state::cap_transcript(&transcript, TRANSCRIPT_CAP)?;
 
         let mut env = config.runner_env();
         env.extend([
@@ -1829,9 +1827,13 @@ impl SessionService {
             retries = attempt - 1;
         }
         self.st().retries.remove(run_id);
-        if let Some(live) = self.st().live.get_mut(id) {
-            live.ending = None;
-        }
+        // Why someone ended it (an interrupt, a stop, a removed project): claude's own end of the run says only that
+        // it was cut.
+        let asked = self
+            .st()
+            .live
+            .get_mut(id)
+            .and_then(|live| live.ending.take());
         match &outcome {
             RunOutcome::Failed(failure) if failure.class == FailureClass::Auth => {
                 self.health_changed(|h| h.auth_failed(&failure.message, Instant::now()));
@@ -1849,7 +1851,7 @@ impl SessionService {
             if let Some(run) = index.map(|i| &mut c.runs[i]) {
                 (run.status, run.failure) = match outcome {
                     RunOutcome::Completed { .. } => (RunStatus::Completed, None),
-                    RunOutcome::Interrupted => (RunStatus::Interrupted, None),
+                    RunOutcome::Interrupted => (RunStatus::Interrupted, asked.map(state::ended_by)),
                     RunOutcome::Superseded { by } => {
                         run.superseded_by = NonEmpty::new(by).ok();
                         (RunStatus::Interrupted, None)
