@@ -433,14 +433,13 @@ export const screens: readonly Screen[] = [
       await page.getByRole("navigation", { name: "Sidebar" }).waitFor({ state: "detached" });
     },
   },
-  // The panel beside the chat, opened with its toggle on the tab it had (agents, on a first launch), and closed again.
+  // The panel beside the chat, open on a first launch on its Agents tab, and closed with its toggle.
   {
     id: "shell",
     route: "#/",
     fixtures: ["chat-waiting", "agents-work"],
     variant: "panel",
     open: async (page) => {
-      await page.getByRole("button", { name: "Show agents and PRs" }).click();
       await page.getByRole("complementary", { name: "Agents and pull requests" }).waitFor();
     },
   },
@@ -450,7 +449,6 @@ export const screens: readonly Screen[] = [
     fixtures: ["chat-waiting"],
     variant: "panel-closed",
     open: async (page) => {
-      await page.getByRole("button", { name: "Show agents and PRs" }).click();
       await page.getByRole("button", { name: "Hide agents and PRs" }).click();
       await page.getByRole("complementary", { name: "Agents and pull requests" }).waitFor({ state: "detached" });
     },
@@ -730,10 +728,10 @@ export const screens: readonly Screen[] = [
     route: CHAT,
     fixtures: ["prs-loading"],
     variant: "loading",
-    open: whileLoading(async (page) => {
-      await page.getByRole("button", { name: "Show agents and PRs" }).click({ timeout: 10_000 });
-      await page.getByRole("tab", { name: /^Pull requests/u }).click();
-    }, (page) => page.getByLabel("Loading the pull requests")),
+    open: whileLoading(
+      (page) => page.getByRole("tab", { name: /^Pull requests/u }).click({ timeout: 10_000 }),
+      (page) => page.getByLabel("Loading the pull requests"),
+    ),
   },
   // One PR in the list's place: its facts, description, checks, reviews with their findings, and its way to main so far.
   // #10's checks failed after its approval and an outdated review; a chat line's link names only the number.

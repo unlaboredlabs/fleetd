@@ -70,12 +70,12 @@ const readPanel = (): SavedPanel => {
       return { open: v.open === true, tab: v.tab === "prs" ? "prs" : "agents" };
     }
   } catch {
-    // Unreadable: it starts closed, as on a first launch.
+    // Unreadable: it starts open, as on a first launch.
   }
-  return { open: false, tab: "agents" };
+  return { open: true, tab: "agents" };
 };
 
-/** The panel beside the chat: closed on a first launch, then as you left it in a wide window, kept across launches. */
+/** The panel beside the chat: open on a first launch, then as you left it in a wide window, kept across launches. */
 export function usePanel(): PanelState {
   const [saved] = useState(readPanel);
   const [state, setState] = useSideState(!saved.open);
@@ -84,7 +84,7 @@ export function usePanel(): PanelState {
     try {
       window.localStorage.setItem(PANEL, JSON.stringify({ open: !state.hiddenWide, tab } satisfies SavedPanel));
     } catch {
-      // Without storage it opens closed next launch; nothing else depends on it.
+      // Without storage it opens as on a first launch; nothing else depends on it.
     }
   }, [state.hiddenWide, tab]);
   const toggle = useCallback(() => setState((s) => toggled(now(s))), [setState]);

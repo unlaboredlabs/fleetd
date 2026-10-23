@@ -142,22 +142,22 @@ const resize = async (width: number) => {
   await settle();
 };
 
-it("opens and closes with its toggle, as the window left it last launch", async () => {
+it("is open on a first launch, and opens and closes with its toggle as the window left it last launch", async () => {
   await mount();
-  expect(panel()).toBeNull();
-  await click("Show agents and PRs");
   expect(panel()).not.toBeNull();
   expect(button("Hide agents and PRs")?.getAttribute("aria-pressed")).toBe("true");
-
-  unmount();
-  await mount();
-  expect(panel()).not.toBeNull();
   await click("Hide agents and PRs");
   expect(panel()).toBeNull();
 
   unmount();
   await mount();
   expect(panel()).toBeNull();
+  await click("Show agents and PRs");
+  expect(panel()).not.toBeNull();
+
+  unmount();
+  await mount();
+  expect(panel()).not.toBeNull();
 });
 
 it("opens on a PR a link names, goes back to the list, and Esc steps back out", async () => {
@@ -188,7 +188,7 @@ it("opens on a PR a link names, goes back to the list, and Esc steps back out", 
 
 it("hides itself in a narrow window, shows there with its toggle, and widening restores the wide choice", async () => {
   await mount();
-  await click("Show agents and PRs");
+  expect(panel()).not.toBeNull();
   await resize(900);
   expect(panel()).toBeNull();
   await click("Show agents and PRs");
