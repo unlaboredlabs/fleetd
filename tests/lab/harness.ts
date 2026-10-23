@@ -458,10 +458,10 @@ export const stopAll = async () => {
   for (const name of [...new Set(started.map((s) => s.name))].toReversed()) await stopCli(name);
 };
 
-/** `node join` for a machine on `hubHome`'s hub: an enrollment token, the machine's HOME, then the node itself. */
+/** `node join` for a machine on `hubHome`'s hub: an enrollment code from `pair --worker`, the machine's HOME, then the node itself. */
 const joinArgs = (hubUrl: string, hubHome: string, id: string, opts: MachineHomeOptions) => {
   prepareMachineHome(id, opts);
-  const token = /^\S{16,}$/mu.exec(cli("hub", "token", "create", "--home", hubHome, "--machine", id))?.[0];
+  const token = /--code (\S+)/u.exec(cli("pair", "--worker", id, "--home", hubHome))?.[1];
   if (token === undefined) throw new Error(`no enrollment token for ${id}`);
   return ["node", "join", "--hub", hubUrl, "--token", token, "--machine", id, "--home", nodeHome(id)];
 };
