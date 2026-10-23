@@ -19,7 +19,6 @@ The app shows each agent's role on its lane. The role decides the fleetd tools; 
 | Implementer | `spawn_agent` with kind `write`. Gets its own worktree and branch | [Task tools](#task-tools) | No |
 | Reader | `spawn_agent` with kind `read` | [Task tools](#task-tools) | No |
 | Reviewer | `spawn_agent` with kind `review` | [Task tools](#task-tools) | No |
-| Verifier | A review task the review gate starts as the verifier | [Task tools](#task-tools) | No |
 | QA | `spawn_agent` with kind `review` and `qa: true` | [Task tools](#task-tools) | No |
 
 ## Hub limits
@@ -51,7 +50,7 @@ Every lead gets these, the finish-all lead included.
 | [`agent_status`](#agent_status) | One task as stored: state, queued reason, thread, result. | No |
 | [`list_agents`](#list_agents) | The project's tasks, newest first, optionally by state or workstream. | No |
 | [`stop_agent`](#stop_agent) | Stop a task: interrupts its thread and releases its slot. | No |
-| [`brief`](#brief) | Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier) and start it, or edit it later. | No |
+| [`brief`](#brief) | Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks) and start it, or edit it later. | No |
 | [`request_secret`](#request_secret) | Ask the human for a secret (a key, a token, a password). | The human enters the value in chat; you see only its fingerprint. |
 | [`request_withdraw`](#request_withdraw) | Take back a secret request or a command approval you no longer need (the human said so in chat). | No |
 | [`decide`](#decide) | Log a decision: one you made yourself, or the human's answer to a question you asked in chat (so you never ask it twice). | No |
@@ -80,7 +79,6 @@ Start a fleetd agent (a task) with its own session, slot and lane. kind write|re
 | `profile` | string | no | What an agent runs on. There are exactly two, both claude-opus-5-5: `high` (effort high) is the default and what the lead, every reviewer and every helper call run; `medium` (effort medium) is for mechanical tasks the lead picks. One of `high`, `medium`. |
 | `prompt` | string | yes | At most 8000 characters. |
 | `qa` | boolean | no |  |
-| `tier` | string | no | One of `S`, `M`, `L`. |
 | `title` | string | yes | One line. At most 80 characters. |
 | `workstreamId` | string | yes | `W<n>`, e.g. `W1`. |
 
@@ -182,25 +180,24 @@ Stop a task: interrupts its thread and releases its slot.
 
 ### brief
 
-Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks, tier) and start it, or edit it later.
+Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen checks) and start it, or edit it later.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `brief` | object | yes | A `Brief` whose `tier` may be left out, as `fleetd brief create` takes it; the playbook's `tierDefault` fills it. |
-| `brief.baseline` | string | no | At most 1000 characters. |
+| `brief` | object | yes |  |
+| `brief.baseline` | string | no | Research: what the candidate is compared against, and how both are measured. At most 1000 characters. |
 | `brief.budget` | object | no |  |
 | `brief.budget.agentHours` | number | no | Older briefs only; a lead now gives `size`. |
 | `brief.budget.size` | string | no | How big a research spend the lead allows, relative like plan sizes; never a time guess. One of `S`, `M`, `L`. |
 | `brief.constraints` | string[] | yes | At most 20 items. |
-| `brief.decisionRule` | object | no | Applied to the improvement: candidate − baseline, negated when lower is better. GO when it is at least `goAtLeast`, STOP when it is below `stopBelow`, INCONCLUSIVE in between. |
+| `brief.decisionRule` | object | no | Research: the rule the verdict is computed from. |
 | `brief.decisionRule.better` | string | yes | One of `higher`, `lower`. |
 | `brief.decisionRule.goAtLeast` | number | yes |  |
 | `brief.decisionRule.stopBelow` | number | yes |  |
-| `brief.doneWhen` | object[] | yes | At most 20 items. |
+| `brief.doneWhen` | object[] | yes | At least one. At most 20 items. |
 | `brief.goal` | string | yes | At most 1000 characters. |
-| `brief.metric` | string | no | One line. At most 200 characters. |
+| `brief.metric` | string | no | Research: the one number the judge reports for baseline and candidate, e.g. "p50 cold start in ms". At most 200 characters. |
 | `brief.pointers` | string[] | yes | At most 20 items. |
-| `brief.tier` | string | no | One of `S`, `M`, `L`. |
 | `brief.why` | string | yes | At most 2000 characters. |
 | `workstreamId` | string | yes | `W<n>`, e.g. `W1`. |
 
@@ -224,7 +221,6 @@ Set a draft workstream's brief (goal, why, pointers, constraints, doneWhen check
       "pointers": [
         "api/src/upload.rs"
       ],
-      "tier": "S",
       "why": "One client's retry loop took the upload service down."
     },
     "workstreamId": "W3"
@@ -509,7 +505,6 @@ Put a PR no task's result put there on its repo's merge train; only the train me
 | `item` | string | no | Stores the PR as a link of that plan item (for a PR no task of the item wrote). |
 | `prUrl` | string | yes | Like `https://github.com/<owner>/<name>/pull/<n>`. |
 | `taskId` | string | no | `T<n>`, e.g. `T1`. |
-| `tier` | string | no | One of `S`, `M`, `L`. |
 | `workstreamId` | string | no | `W<n>`, e.g. `W1`. |
 
 **Who may call:** a lead, checked by the hub. **Needs a human:** no.
@@ -584,7 +579,7 @@ No parameters.
 
 ## Task tools
 
-Every task's agent gets these: implementers, readers, reviewers, verifiers and QA.
+Every task's agent gets these: implementers, readers, reviewers and QA.
 
 | Tool | What it does | Needs a human |
 |---|---|---|
