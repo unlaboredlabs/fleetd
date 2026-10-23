@@ -82,7 +82,7 @@ const groupTitle = (p: PromptSummary) => GROUPS.find((g) => g.key === groupOf(p)
 export function registerSettingsCommands(layer: DataLayer): () => void {
   const read = layer.toolQuery("prompt_get", {});
   const prompts = (): ReadonlyArray<PromptSummary> => layer.queryClient.getQueryData<{ prompts: PromptSummary[] }>(read.queryKey)?.prompts ?? [];
-  const offPages = registerCommands(pages, "default");
+  const offPages = registerCommands(pages);
   const offSource = registerSource({
     id: "prompts",
     items: () => {

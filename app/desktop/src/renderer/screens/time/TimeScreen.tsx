@@ -9,7 +9,6 @@ import { useData } from "../../src/data/react";
 import { useCommands } from "../palette";
 import { toHash } from "../shell/routes";
 import { Breakdown } from "./Breakdown";
-import "./commands";
 import { FilterBar } from "./FilterBar";
 import { Insights } from "./Insights";
 import { LinkedSheet, TranscriptSheet } from "./Sheets";
