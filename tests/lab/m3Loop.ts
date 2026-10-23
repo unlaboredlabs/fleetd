@@ -48,12 +48,10 @@ export async function m3Loop(lab: Lab) {
   );
   ok(`lead.started ${promptRef}, first message ${textSha?.slice(0, 12)}… kept (session_prompt_get)`);
   cursor = await turnDone(threadId, cursor, "start");
-  // thread_tail keeps a long message's end: the prompt's last tool line, then the digest.
+  // thread_tail keeps a long message's end: the digest. Its text is checked above (session_prompt_get).
   const firstTail = (await callTool("thread_tail", { machineId: MACHINE, threadId, n: 10, kinds: ["message"] })).body;
   check(
-    (firstTail.items as Array<Body> | undefined)?.some(
-      (i) => i.role === "user" && i.text.includes("`decisions_search`") && i.text.includes("# project "),
-    ),
+    (firstTail.items as Array<Body> | undefined)?.some((i) => i.role === "user" && i.text.includes("# project ")),
     `the lead's first message is the lead.start prompt plus the digest: ${JSON.stringify(firstTail).slice(0, 500)}`,
   );
   const outcome = (await callTool("project_get", ref)).body;

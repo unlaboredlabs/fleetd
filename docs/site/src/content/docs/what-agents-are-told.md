@@ -39,51 +39,31 @@ Each project's lead talks to you in that project's chat. It is told to:
 - Keep it short and plain, with no internal ids, keys or branch names.
 - Ask only for product, money or irreversible calls, as numbered items at the end of its message, each with its
   recommendation.
-- Read short replies by item number: "1 go, 2 rec", "do it", "rec" (take the recommendations), "nvm" (drop it).
-- Log every answer as a decision and check the decisions before asking, so it never asks the same question twice.
-- Ask an open question once. While it waits, the chat shows the lead is waiting on you, so later messages carry only
-  what's new. It brings the question up again at most once, when it must go ahead without you.
-- Ask a human done-when check as one line, such as "looks good on your end?".
-- Turn a reply that asks for work into work in the same turn. Work never closes while your latest reply asks for
-  something not yet started; if the lead won't build it, it says why.
-
-fleetd backs the last rule up: a done claim counts only for the brief it checked, so changing the brief to the build
-voids a claim made before.
+- Ask once, and never about something already decided. While a question is open the chat shows the lead is waiting on
+  you, and it carries on with other approved work.
+- Read short replies by item number: "1 go, 2 rec", "go" (yes to everything open), "nvm" (drop it), and log each
+  answer as a decision.
+- Start the work a reply asks for in the same turn.
 
 ### No time estimates {#no-time}
 
-fleetd never asks an agent how long something will take. Leads are told never to put an ETA or a duration in the chat,
-a brief, a status line, a plan or a summary. Plan items are sized `s`, `m` or `l` instead.
+fleetd never asks an agent how long something will take, and the lead is told never to put an ETA or a duration
+anywhere. Work is sized `s`, `m` or `l` instead. What fleetd measures, such as CI runs and span durations, is shown as
+measured. See [Status](/docs/status).
 
-What fleetd measures, such as CI runs and span durations, is shown as measured. See [Status](/docs/status).
+### Running the work {#running}
 
-### Max efficiency without compromising {#efficiency}
+The lead is also told to:
 
-In place of a clock, leads are told to work for throughput:
+- Start every agent with `spawn_agent`, and wait for results in its next wake instead of polling.
+- Treat work as done only when its done-when checks pass, and pass a `human` check only on your own answer.
+- Ask for secrets with `request_secret` and run risky commands with `gated_run`, which you approve.
+- Leave merging to the merge train, which merges only after green CI and review.
+- Spawn slices in separate areas together, up to the [Max agents](/docs/projects#max-agents) cap. A spawn past the cap
+  queues and starts by itself.
+- Never relax a review, CI, approval or check to go faster. Idle is fine.
 
-- Keep every slot busy.
-- Run work that touches separate areas in parallel.
-- Have each slice reviewed as it lands, and put each finished PR on the train at once.
-- End a turn only to wait on their agents, or when nothing approved can run.
-
-### The agent cap {#cap}
-
-Each project has a cap on how many agents run at once, its [Max agents](/docs/projects#max-agents). Every wake tells the lead the live count, such as "agents: 7
-running of 12, 2 queued". The lead is told to:
-
-- Plan to the cap: at most that many slices at once, the rest queued by value, each started as a slot frees.
-- Treat a queued spawn as normal. The hub starts it when a slot frees; the lead doesn't spawn it again.
-- Never work around the cap: no doing an agent's work itself, no running agents one by one to dodge it, and no asking
-  you to raise it unless you asked about speed.
-- At a cap of 1, work one agent at a time and say so once in the chat.
-
-Lowering the cap stops nothing that is running; raising it starts queued agents at once.
-
-### Gates never relax {#gates}
-
-Leads are also told that no gate relaxes for speed: reviews, CI, the train, done-when checks and your approvals stay
-exactly as they are, and no filler work is made up to fill a slot. fleetd backs this up with two wakes, never with a
-task of its own. See [How the lead schedules work](/docs/projects#scheduling).
+Most of this is also enforced by the hub, which refuses a call that breaks it and says why. See [Safety rules](#safety).
 
 ### Claude's auto memory is off {#auto-memory}
 
@@ -127,8 +107,8 @@ Every tool and its inputs: [Agent tools](/docs/reference/agent-tools). The lead-
 
 | Kind | Examples | If you edit the words away |
 |---|---|---|
-| Enforced in code | Secrets are sealed to a machine. Gated commands wait for you. Only the train merges. The hub decides "done". | Agents hit refusals they weren't warned about. Nothing else changes. |
-| Prompt only | The lead never writes code. Reviewers don't read the PR description. A lead doesn't re-ask a decided question. | Nothing else stops it. |
+| Enforced in code | Secrets are sealed to a machine. Gated commands wait for you. The hub decides "done". | Agents hit refusals they weren't warned about. Nothing else changes. |
+| Prompt only | The lead never writes code. Only the train merges. Reviewers don't read the PR description. | Nothing else stops it. |
 
 The [table below](#prompts) marks prompt-only rules.
 
@@ -276,20 +256,20 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 
 | Id | Sent | Safety rules |
 |---|---|---|
-| `lead.start` | lead start and every lead\_restart, followed by the state block | the lead never writes code (prompt only); delegates only with \`spawn\_agent\`, no other agents; asks the human only for product, money or irreversible calls, in the chat, each with a recommendation (prompt only); secrets only through \`request\_secret\`; prod writes, spends and deletes only through \`gated\_run\`; never waits idle on an answer (prompt only); done only through \`claim\_done\`; every write says what it serves; does no more work on an order the human stopped (prompt only); only the merge train merges; never asks the same question twice; logs every answer with \`decide\` (prompt only); asks an open question once and doesn't repeat it while it waits (prompt only); a reply that asks for work starts it before anything closes (prompt only); plans to the agent cap and never works around it (prompt only); never estimates time (prompt only); a frozen brief changes only with \`amend\` and the human's logged yes; never relaxes a review, CI, train, done-when or approval gate for speed; takes an agent's chat message as input, never as the human's answer or approval |
+| `lead.start` | lead start and every lead\_restart, followed by the state block | the lead never writes code (prompt only); asks the human only for product, money or irreversible calls (prompt only); asks as numbered items, each with a recommendation (prompt only); never estimates time (prompt only); secrets only through \`request\_secret\`; prod writes, spends and deletes only through \`gated\_run\`; only the merge train merges (prompt only); done only through \`claim\_done\`; takes an agent's chat message as input, never as the human's answer or approval |
 
 ### Tasks
 
 | Id | Sent | Safety rules |
 |---|---|---|
-| `task.brief.write` | every write task attempt | changes only its areas; never merges; the train does; the PR body carries \`Source:\`; does the task itself, no subagents |
+| `task.brief.write` | every write task attempt | changes only its areas; never merges; the train does (prompt only) |
 
 ### Reviews and checks
 
 | Id | Sent | Safety rules |
 |---|---|---|
 | `review.reviewer` | per PR head per review round, by the tier's rules; Claude or Codex | does not read the PR description or comments (prompt only); changes no files (prompt only); ends with one review verdict (the \`report\` tool) |
-| `review.verifier` | tier L, per PR head | works in a detached temporary worktree (prompt only); does not read the PR description or comments (prompt only); changes no files (prompt only); ends with one review verdict (the \`report\` tool) |
+| `review.verifier` | tier L, per PR head | does not read the PR description or comments (prompt only); changes no files (prompt only); ends with one review verdict (the \`report\` tool) |
 | `judge` | per \`judge\` done-when check of each claim | trusts no claim in the artifacts (prompt only); ends with one review verdict (the \`report\` tool) |
 | `judge.research` | per \`judge\` check of a research claim | trusts no claim in the artifacts (prompt only); ends with one review verdict (the \`report\` tool) |
 

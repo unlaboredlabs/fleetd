@@ -100,14 +100,6 @@ const VERDICT: (&str, &str, &str, Enforcement) = (
     r"`report` tool",
     Code,
 );
-const NO_SUBAGENTS: (&str, &str, &str, Enforcement) = (
-    "no-subagents",
-    "does the task itself, no subagents",
-    r"subagents",
-    // Every session's claude runs with Claude Code's own subagent tools denied and its built-in agents off: see
-    // ALWAYS_DISALLOWED and SUBAGENTS_OFF_ENV. A task's agent can't start fleetd agents either (hub/tasks/policy.rs).
-    Code,
-);
 const READ_ONLY: (&str, &str, &str, Enforcement) = (
     "read-only",
     "changes no files",
@@ -115,6 +107,7 @@ const READ_ONLY: (&str, &str, &str, Enforcement) = (
     Prompt,
 );
 
+// `train-only-merges` is a prompt rule: the hub only sees a merge outside the train after the fact (`policy_bypass`).
 pub const ENTRIES: &[Entry] = &[
     entry!(
         "lead.start",
@@ -132,15 +125,21 @@ pub const ENTRIES: &[Entry] = &[
                 Prompt
             ),
             (
-                "tasks-only",
-                "delegates only with `spawn_agent`, no other agents",
-                r"spawn_agent",
-                Code
+                "ask-big-calls",
+                "asks the human only for product, money or irreversible calls",
+                r"product, money or irreversible calls",
+                Prompt
             ),
             (
-                "ask-big-calls",
-                "asks the human only for product, money or irreversible calls, in the chat, each with a recommendation",
-                r"product, money or irreversible calls",
+                "numbered-with-rec",
+                "asks as numbered items, each with a recommendation",
+                r"Rec|recommend",
+                Prompt
+            ),
+            (
+                "no-time",
+                "never estimates time",
+                r"Never estimate time",
                 Prompt
             ),
             (
@@ -156,75 +155,15 @@ pub const ENTRIES: &[Entry] = &[
                 Code
             ),
             (
-                "never-block",
-                "never waits idle on an answer",
-                r"Never wait idle on an answer",
+                "train-only-merges",
+                "only the merge train merges",
+                r"never merge",
                 Prompt
             ),
             (
                 "claim-done",
                 "done only through `claim_done`",
                 r"claim_done",
-                Code
-            ),
-            (
-                "serves",
-                "every write says what it serves",
-                r"`serves`",
-                Code
-            ),
-            (
-                "stop-work",
-                "does no more work on an order the human stopped",
-                r"Work the human stopped stays stopped",
-                Prompt
-            ),
-            (
-                "train-only-merges",
-                "only the merge train merges",
-                r"never merge",
-                Code
-            ),
-            (
-                "no-re-ask",
-                "never asks the same question twice; logs every answer with `decide`",
-                r"Never ask the same question twice",
-                Prompt
-            ),
-            (
-                "ask-once",
-                "asks an open question once and doesn't repeat it while it waits",
-                r"Ask once, then let it be",
-                Prompt
-            ),
-            (
-                "reply-becomes-work",
-                "a reply that asks for work starts it before anything closes",
-                r"A reply that asks for work becomes work",
-                Prompt
-            ),
-            (
-                "agent-cap",
-                "plans to the agent cap and never works around it",
-                r"Never work around the cap",
-                Prompt
-            ),
-            (
-                "no-time",
-                "never estimates time",
-                r"Never estimate time",
-                Prompt
-            ),
-            (
-                "amend",
-                "a frozen brief changes only with `amend` and the human's logged yes",
-                r"`amend`",
-                Code
-            ),
-            (
-                "gates-never-relax",
-                "never relaxes a review, CI, train, done-when or approval gate for speed",
-                r"Gates never relax",
                 Code
             ),
             (
@@ -269,15 +208,8 @@ pub const ENTRIES: &[Entry] = &[
                 "train-only-merges",
                 "never merges; the train does",
                 r"never merge",
-                Code
+                Prompt
             ),
-            (
-                "source-line",
-                "the PR body carries `Source:`",
-                r"Source:",
-                Code
-            ),
-            NO_SUBAGENTS,
         ]
     ),
     entry!(
@@ -308,12 +240,6 @@ pub const ENTRIES: &[Entry] = &[
         "tier L, per PR head",
         "prUrl!=the PR; repo=owner/name; prNumber!=its number; tier=S, M or L; headSha!=the head verified",
         &[
-            (
-                "detached-worktree",
-                "works in a detached temporary worktree",
-                r"--detach",
-                Prompt
-            ),
             (
                 "independent-review",
                 "does not read the PR description or comments",
