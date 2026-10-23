@@ -34,9 +34,7 @@ export interface FixtureGroup {
    */
   readonly extend?: Partial<Record<SharedName, (f: Fixture) => void>>;
   /**
-   * The group's own fixtures, each named "<group>-<what>". `base(name)` is a fresh copy of a shared fixture; for
-   * other real traffic, `recorded("lab-train")` (kit/shared.ts) is a lab hub after the merge train, steering, an
-   * approval and the status and time scenarios: stopped and idle orders, acknowledged steers, real time spans.
+   * The group's own fixtures, each named "<group>-<what>". `base(name)` is a fresh copy of a shared fixture.
    */
   readonly fixtures?: (base: (name: SharedName) => Fixture) => ReadonlyArray<Fixture>;
 }

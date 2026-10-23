@@ -5,7 +5,6 @@ pub mod detect;
 pub mod doctor;
 pub mod machine;
 pub mod machine_plan;
-pub mod ordered_json;
 pub mod ssh;
 pub mod state;
 pub mod units;

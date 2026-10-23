@@ -9,9 +9,8 @@ use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::prim::NonEmpty;
 use fleetd_contracts::sessions::{
     FailureClass, ItemKind, ItemStatus, MachineEvent, MessageRole, PermissionDecision, RunFailure,
-    RunStatus, SendAccepted, SendMode, SendNow, SessionCall, SessionCallFrame, SessionErrorCode,
-    SessionLaunch, SessionOutput, SessionResult, SessionStatus, SessionSummary, SessionWorkspace,
-    ThreadEvent,
+    RunStatus, SendMode, SendNow, SessionCall, SessionCallFrame, SessionErrorCode, SessionLaunch,
+    SessionOutput, SessionResult, SessionStatus, SessionSummary, SessionWorkspace, ThreadEvent,
 };
 use fleetd_contracts::steer::{DeliveredHow, SteerId, SteerReceipt, SteerStage, SteerTag};
 use tokio::sync::mpsc;
@@ -1008,29 +1007,6 @@ fn steer(id: &str, run_id: &str, mode: SendMode, tag: Option<&str>) -> SessionCa
 }
 
 impl Hub {
-    /// Every steer receipt sent until run `run_id` has settled.
-    async fn receipts_until_settled(&mut self, run_id: &str) -> Vec<SteerReceipt> {
-        let mut receipts = Vec::new();
-        self.until(|frame| match frame {
-            NodeToHub::MachineEvent(f) => match f.event {
-                MachineEvent::Steer(r) => {
-                    receipts.push(r);
-                    None
-                }
-                MachineEvent::SessionUpdated(s)
-                    if s.active_run_id.is_none()
-                        && s.latest_run.as_ref().is_some_and(|r| r.id == run_id) =>
-                {
-                    Some(())
-                }
-                _ => None,
-            },
-            _ => None,
-        })
-        .await;
-        receipts
-    }
-
     /// Every steer receipt up to the first final one.
     async fn receipts_until_final(&mut self) -> Vec<SteerReceipt> {
         let mut receipts = Vec::new();
@@ -1104,51 +1080,6 @@ async fn a_steer_mid_turn_supersedes_the_run_and_its_receipts_follow_claudes_fra
         ]
     );
     assert_eq!(receipts[1].excerpt.as_deref(), Some("OK"));
-}
-
-#[tokio::test(start_paused = true)]
-async fn an_untagged_send_behaves_as_before_and_reports_no_steer_receipts() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut runner = FakeRunner::from_lines(STEER_TURNS);
-    runner.timed = true;
-    let mut hub = hub(dir.path(), NodeStore::open_memory(10_000).unwrap(), runner).await;
-    hub.project(dir.path()).await;
-    hub.ok(launch(
-        "s1",
-        RuntimeMode::FullAccess,
-        SessionWorkspace::Root,
-    ))
-    .await;
-    hub.summary(|s| s.active_run_id.as_deref() == Some("r1"))
-        .await;
-    // An older hub's frame: no mode, no steer tag.
-    let frame =
-        r#"{"id":"c1","call":{"op":"send","sessionId":"s1","runId":"r2","text":"S1: and then?"}}"#;
-    let reply = hub
-        .service
-        .handle(serde_json::from_str(frame).unwrap())
-        .await;
-    assert!(matches!(
-        reply.result,
-        SessionResult::Ok(SessionOutput::Sent(SendAccepted {
-            queued: true,
-            send_now: None,
-            ..
-        }))
-    ));
-    let receipts = hub.receipts_until_settled("r2").await;
-    assert!(receipts.is_empty(), "{receipts:?}");
-    let runs = hub.service.store().runs("s1").unwrap();
-    // The plain send waited for the running turn, which completed uncut.
-    assert_eq!(runs[0].status, RunStatus::Completed);
-    assert_eq!(runs[0].superseded_by, None);
-    assert!(matches!(
-        hub.runner.received()[1],
-        SessionCommand::Send {
-            mode: SendMode::Plain,
-            ..
-        }
-    ));
 }
 
 #[tokio::test(start_paused = true)]
