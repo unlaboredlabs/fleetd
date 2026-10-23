@@ -83,7 +83,7 @@
    "kind": "start",
    "group": "lead",
    "title": "Task profiles",
-   "sentWhen": "after lead.start while the project allows medium (project_set)",
+   "sentWhen": "after the lead prompt, while the project allows medium (project_set)",
    "placeholders": [],
    "rules": [
     {
@@ -112,8 +112,8 @@
    "id": "lead.wake",
    "kind": "msg",
    "group": "lead",
-   "title": "Wake",
-   "sentWhen": "each lead wake: the project's state, then one event line per thing since the last wake",
+   "title": "Project updates",
+   "sentWhen": "each time fleetd brings the lead up to date: the project's state, then one line per event since the last time",
    "placeholders": [
     {
      "name": "state",
@@ -135,7 +135,7 @@
    "kind": "msg",
    "group": "lead",
    "title": "Chat: the human",
-   "sentWhen": "each chat message the human sends the lead",
+   "sentWhen": "with each chat message the human sends the lead",
    "placeholders": [
     {
      "name": "text",
@@ -157,7 +157,7 @@
    "kind": "msg",
    "group": "lead",
    "title": "Chat: an agent",
-   "sentWhen": "each chat message an agent or integration with its own key sends the lead",
+   "sentWhen": "with each chat message an agent or integration with its own key sends the lead",
    "placeholders": [
     {
      "name": "agent",
@@ -191,7 +191,7 @@
    "kind": "msg",
    "group": "lead",
    "title": "Plan item too big or unsized",
-   "sentWhen": "the warning in plan_add's or plan_edit's result for an item with no size or size l",
+   "sentWhen": "with plan_add's or plan_edit's result, for an item with no size or size l",
    "placeholders": [
     {
      "name": "item",
@@ -768,7 +768,7 @@
    "kind": "msg",
    "group": "messages",
    "title": "Tool call denied",
-   "sentWhen": "the result of a tool call a policy rule or a person denied",
+   "sentWhen": "as the result of a tool call a policy rule or a person denied",
    "placeholders": [
     {
      "name": "reason",

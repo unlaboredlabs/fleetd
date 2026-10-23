@@ -180,7 +180,7 @@ pub const ENTRIES: &[Entry] = &[
         Lead,
         Lead,
         "Task profiles",
-        "after lead.start while the project allows medium (project_set)",
+        "after the lead prompt, while the project allows medium (project_set)",
         "",
         &[
             (
@@ -208,8 +208,8 @@ pub const ENTRIES: &[Entry] = &[
         Msg,
         Lead,
         Lead,
-        "Wake",
-        "each lead wake: the project's state, then one event line per thing since the last wake",
+        "Project updates",
+        "each time fleetd brings the lead up to date: the project's state, then one line per event since the last time",
         "state!=the state block: the project's work, agents, decisions and train; events!=one line per event",
         &[]
     ),
@@ -219,7 +219,7 @@ pub const ENTRIES: &[Entry] = &[
         Lead,
         Lead,
         "Chat: the human",
-        "each chat message the human sends the lead",
+        "with each chat message the human sends the lead",
         "text!=the human's words; files=the attached files' paths, or nothing",
         &[]
     ),
@@ -229,7 +229,7 @@ pub const ENTRIES: &[Entry] = &[
         Lead,
         Lead,
         "Chat: an agent",
-        "each chat message an agent or integration with its own key sends the lead",
+        "with each chat message an agent or integration with its own key sends the lead",
         "agent!=the key's name; text!=its words; files=the attached files' paths, or nothing",
         &[(
             "agent-not-human",
@@ -244,7 +244,7 @@ pub const ENTRIES: &[Entry] = &[
         Lead,
         Lead,
         "Plan item too big or unsized",
-        "the warning in plan_add's or plan_edit's result for an item with no size or size l",
+        "with plan_add's or plan_edit's result, for an item with no size or size l",
         "item!=the plan item, P<n>; reason!=has no size, or is size l",
         &[]
     ),
@@ -414,7 +414,7 @@ pub const ENTRIES: &[Entry] = &[
         Messages,
         Any,
         "Tool call denied",
-        "the result of a tool call a policy rule or a person denied",
+        "as the result of a tool call a policy rule or a person denied",
         "reason!=who or what denied it, and what they said",
         &[]
     ),
