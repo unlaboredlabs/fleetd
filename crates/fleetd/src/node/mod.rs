@@ -216,7 +216,7 @@ async fn run_node(
             machine_id: config.machine_id.clone(),
             name: config.name.clone(),
             tags: config.tags.clone(),
-            node_version: env!("CARGO_PKG_VERSION").to_owned(),
+            node_version: crate::version().to_owned(),
         },
         identity,
         enroll_token,

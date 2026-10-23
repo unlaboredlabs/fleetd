@@ -179,7 +179,7 @@ impl Session {
             return match self.hub.auth.verify(key.as_str()) {
                 Ok(info) => {
                     self.caller = Some((key.as_str().to_owned(), info));
-                    self.send(json!({ "t": "ready", "protocol": PROTOCOL_VERSION }));
+                    self.send(json!({ "t": "ready", "protocol": PROTOCOL_VERSION, "version": crate::version() }));
                     After::Continue
                 }
                 Err(error) => {

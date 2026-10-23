@@ -367,7 +367,7 @@ pub fn handle(role: Role, message: &Value, deps: &LeadDeps) -> Option<Value> {
         "initialize" => json!({
             "protocolVersion": message["params"]["protocolVersion"].as_str().unwrap_or(PROTOCOL_VERSION),
             "capabilities": { "tools": {} },
-            "serverInfo": { "name": "fleetd", "version": env!("CARGO_PKG_VERSION") },
+            "serverInfo": { "name": "fleetd", "version": crate::version() },
             "instructions": "fleetd's own tools: every agent is a fleetd task, started, steered and stopped here.",
         }),
         "ping" => json!({}),

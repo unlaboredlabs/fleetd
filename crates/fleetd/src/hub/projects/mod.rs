@@ -737,13 +737,11 @@ pub async fn add(
     })
 }
 
-/// Clones a previous hub process started and never finished: their progress is in the event log but no
-/// `project.added` or `project.add_failed` follows. Each gets its `project.add_failed`, so nothing reads as running
-/// forever. Run once at startup, before any new clone starts.
-pub fn fail_interrupted(
+/// Clones whose progress is in the event log with no `project.added` or `project.add_failed` after it: running now, or
+/// cut off by a hub restart before `fail_interrupted` ran.
+pub fn open_clones(
     events: &crate::hub::store::EventLog,
-    at: fleetd_contracts::ids::Timestamp,
-) -> Result<usize, crate::hub::store::StoreError> {
+) -> Result<Vec<(Option<MachineId>, CloneProgressData)>, crate::hub::store::StoreError> {
     use std::collections::BTreeMap;
     let types = [
         HubEventType::ProjectCloneProgress,
@@ -780,8 +778,19 @@ pub fn fail_interrupted(
         }
         after = page.cursor;
     }
+    Ok(open.into_values().collect())
+}
+
+/// Clones a previous hub process started and never finished: their progress is in the event log but no
+/// `project.added` or `project.add_failed` follows. Each gets its `project.add_failed`, so nothing reads as running
+/// forever. Run once at startup, before any new clone starts.
+pub fn fail_interrupted(
+    events: &crate::hub::store::EventLog,
+    at: fleetd_contracts::ids::Timestamp,
+) -> Result<usize, crate::hub::store::StoreError> {
+    let open = open_clones(events)?;
     let n = open.len();
-    for (_, (machine_id, d)) in open {
+    for (machine_id, d) in open {
         let what = d
             .repo
             .as_ref()

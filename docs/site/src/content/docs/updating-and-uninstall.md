@@ -25,12 +25,27 @@ Keep fleetd up to date, or remove it.
    fleetd update
    ```
 
-   It replaces the CLI, and the desktop app when the installer put it in its usual place. Then it restarts the hub and
-   node services that run this binary. Every file is checked against the release's `SHA256SUMS`.
+   It replaces the CLI, and the desktop app when the installer put it in its usual place. Every file is checked
+   against the release's `SHA256SUMS`. Then it restarts the hub and node services that run this binary, but only when
+   nothing runs on them.
+
+   While a lead or agents are working, or a merge the hub is doing, an approved command or a clone is under way, it
+   doesn't restart. It lists what runs, and the hub and node keep the version they run until their next restart. To
+   restart them anyway, or to finish the update later, run:
+
+   ```sh
+   fleetd update --restart-now
+   ```
+
+   An install from before this check still restarts the hub and node unconditionally when it updates, because its
+   own `fleetd update` does the restart. Run that one update while nothing runs.
 
 3. Update each worker. Workers don't update themselves. Either:
-   - run `fleetd update` on the worker, or
+   - run `fleetd update` on the worker, then `fleetd update --restart-now` once its agents are done (a worker can't
+     ask the hub what runs on it), or
    - run `fleetd machine add <ssh-host>` on the hub, which copies the hub's binary over.
+
+`fleetd status` and `fleetd doctor` say when the CLI, the hub and the nodes run different versions.
 
 ### The desktop app {#app}
 

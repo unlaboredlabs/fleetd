@@ -48,7 +48,7 @@ pub fn router(hub: Arc<Hub>, tools: Arc<Registry>) -> Router {
 }
 
 async fn healthz() -> Response {
-    axum::Json(serde_json::json!({ "ok": true, "version": env!("CARGO_PKG_VERSION"), "protocol": PROTOCOL_VERSION }))
+    axum::Json(serde_json::json!({ "ok": true, "version": crate::version(), "protocol": PROTOCOL_VERSION }))
         .into_response()
 }
 
