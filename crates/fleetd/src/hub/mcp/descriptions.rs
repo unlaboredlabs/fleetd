@@ -66,7 +66,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "thread_launch",
-        "Start a new thread in a project with an explicit model and effort. runtimeMode defaults to full-access. Refused with machine_offline when the machine is offline.",
+        "Start a new thread in a project on Opus 5.5 with the high profile, or medium when profile says so. runtimeMode defaults to full-access. Refused with machine_offline when the machine is offline.",
     ),
     (
         "thread_send",
@@ -90,11 +90,15 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "lead_start",
-        "Start the project's lead: one thread that turns intents into briefs, asks the human in chat only about product, money, credential and irreversible calls, and never writes code. Returns the existing lead if there is one. A project's first order starts its lead by itself; call this to start it earlier or with another model. model and effort, when given, are saved for the project (default claude-opus-5-5, high).",
+        "Start the project's lead: one thread that turns intents into briefs, asks the human in chat only about product, money, credential and irreversible calls, and never writes code. Returns the existing lead if there is one. A project's first order starts its lead by itself; call this to start it earlier. The lead always runs on the high profile (Opus 5.5, effort high).",
     ),
     (
         "lead_restart",
-        "Start a fresh lead thread for the project from the current digest (sessionGeneration goes up); use it when a lead is stuck or its context is full. The old thread stays on the node. Takes model and effort like lead_start.",
+        "Start a fresh lead thread for the project from the current digest (sessionGeneration goes up); use it when a lead is stuck or its context is full. The old thread stays on the node.",
+    ),
+    (
+        "project_set",
+        "Turn a project's medium profile on or off (mediumAllowed, on by default). On: its lead may run mechanical tasks on medium (Opus 5.5, effort medium). Off: every new task runs high. The lead, reviewers and helper calls always run high.",
     ),
     (
         "intake_submit",
@@ -146,7 +150,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "task_get",
-        "One task: its model and effort, areas, branch, thread, queued reason or result (status, last 2000 characters of its final message, branch, PR).",
+        "One task: its profile (high or medium), areas, branch, thread, queued reason or result (status, last 2000 characters of its final message, branch, PR).",
     ),
     (
         "cap_set",

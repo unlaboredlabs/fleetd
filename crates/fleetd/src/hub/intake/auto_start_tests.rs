@@ -133,10 +133,7 @@ pub(crate) fn hub(runner_usable: bool, auto_start: bool) -> Hub {
         .unwrap();
     let area = Area::new(
         Ctx::new(db, store, events.clone(), clock.clone()),
-        AreaOptions {
-            home: home.path(),
-            leads: Default::default(),
-        },
+        AreaOptions { home: home.path() },
     )
     .unwrap();
     let node = Arc::new(Node {

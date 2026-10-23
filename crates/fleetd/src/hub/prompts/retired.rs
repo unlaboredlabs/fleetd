@@ -376,8 +376,8 @@ mod tests {
         }
         assert_eq!(
             ENTRIES.len() + RETIRED.len(),
-            69,
-            "the 69 prompts of the last release"
+            70,
+            "the 69 prompts of the last release, and lead.profiles"
         );
     }
 }

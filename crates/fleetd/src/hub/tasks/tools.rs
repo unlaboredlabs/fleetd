@@ -3,10 +3,11 @@
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
+use fleetd_contracts::effort::TaskProfile;
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult, TaskListResult, TaskResultFrame};
 use fleetd_contracts::mcp::{CapSetInput, ErrorCode, TaskGetInput, TasksListInput};
 use fleetd_contracts::prim::List;
-use fleetd_contracts::tasks::Task;
+use fleetd_contracts::tasks::{Task, TaskKind};
 use serde_json::{Value, json};
 
 use super::cap::{CapChange, ProjectCap};
@@ -143,8 +144,20 @@ pub async fn lead_call(
     let r = &caller.project_ref;
     match call {
         LeadCall::TaskSpawn(input) => {
+            let asked = input.profile;
             let task = tasks.spawn(caller, input).await?;
-            let next = tasks.queued_next(&task);
+            let mut next = tasks.queued_next(&task);
+            if asked == Some(TaskProfile::Medium) && task.profile == TaskProfile::High {
+                let why = if task.kind == TaskKind::Review {
+                    "It runs high: reviews always do."
+                } else {
+                    "It runs high: medium is off in this project."
+                };
+                next = Some(match next {
+                    Some(n) => format!("{why} {n}"),
+                    None => why.to_owned(),
+                });
+            }
             Ok(LeadCallResult::TaskSpawn(TaskResultFrame {
                 next,
                 ..frame(task)

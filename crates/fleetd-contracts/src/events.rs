@@ -43,6 +43,9 @@ pub enum HubEventType {
     /// A clone `project_add` accepted failed: `data` is `ProjectAddFailedData`, with the fix.
     #[serde(rename = "project.add_failed")]
     ProjectAddFailed,
+    /// A project's settings changed (`project_set`): `data.mediumAllowed`.
+    #[serde(rename = "project.settings")]
+    ProjectSettings,
     #[serde(rename = "thread.started")]
     ThreadStarted,
     #[serde(rename = "thread.completed")]
@@ -262,6 +265,7 @@ impl HubEventType {
             Self::ProjectAdded => "project.added",
             Self::ProjectCloneProgress => "project.clone_progress",
             Self::ProjectAddFailed => "project.add_failed",
+            Self::ProjectSettings => "project.settings",
             Self::ThreadStarted => "thread.started",
             Self::ThreadCompleted => "thread.completed",
             Self::ThreadFailed => "thread.failed",

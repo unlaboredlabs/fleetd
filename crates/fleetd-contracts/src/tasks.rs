@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::effort::Effort;
+use crate::effort::TaskProfile;
 use crate::ids::{ProjectRef, ThreadRef, Timestamp};
 use crate::ledger::{SERVES_FIX, Serves, Tier, WorkstreamId};
 use crate::prim::{
@@ -141,9 +141,9 @@ pub struct Task {
     pub kind: TaskKind,
     pub prompt: TaskPrompt,
     pub areas: TaskAreas,
-    pub model: NonEmpty,
-    /// Always explicit; resolved at spawn.
-    pub effort: Effort,
+    /// Resolved at spawn. Rows stored with a model and effort read as `high` (the hub migrates its own).
+    #[serde(default)]
+    pub profile: TaskProfile,
     pub tier: Option<Tier>,
     pub estimate_minutes: Option<NonNegative>,
     /// Required at spawn for write tasks; optional here for tasks stored before M6.
@@ -282,14 +282,6 @@ brand!(
     expected = "a branch prefix ending in /, such as fleetd/ (letters, digits, . _ - between the slashes)"
 );
 
-#[serde_with::skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct PolicyFileDefaults {
-    pub model: Option<NonEmpty>,
-    pub effort: Option<Effort>,
-}
-
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PolicyFileFinishAll {
@@ -332,8 +324,8 @@ pub struct PolicyFileTools {
 #[serde(remote = "Self", rename_all = "camelCase")]
 pub struct PolicyFile {
     // A map keyed by AreaName would silently drop misnamed areas; checking the names refuses them instead.
+    // An older file's `defaults` (model, effort) is ignored: the lead picks a TaskProfile per task.
     pub areas: BTreeMap<String, List<AreaGlob, 1, 50>>,
-    pub defaults: Option<PolicyFileDefaults>,
     pub finish_all: Option<PolicyFileFinishAll>,
     pub tools: Option<PolicyFileTools>,
     pub lead: Option<PolicyFileLead>,
@@ -361,7 +353,6 @@ pub fn default_policy() -> PolicyFile {
             "all".to_owned(),
             List::unchecked(vec![AreaGlob::unchecked("**")]),
         )]),
-        defaults: None,
         finish_all: None,
         tools: None,
         lead: None,
@@ -429,8 +420,7 @@ mod tests {
             "kind": "write",
             "prompt": "create docs/x.md",
             "areas": ["docs"],
-            "model": "claude-opus-5-5",
-            "effort": "high",
+            "profile": "medium",
             "state": "done",
             "attempt": 1,
             "result": { "status": "done", "tail": "x".repeat(2000), "branch": "fleetd/T1-add-file", "at": at },
@@ -476,7 +466,8 @@ mod tests {
         assert!(!accepts::<PolicyFile>(
             json!({ "areas": { "docs": ["/etc/**"] } })
         ));
-        assert!(!accepts::<PolicyFile>(
+        // An older file's defaults are ignored, whatever they say.
+        assert!(accepts::<PolicyFile>(
             json!({ "areas": { "docs": ["docs/**"] }, "defaults": { "effort": "medium-ish" } })
         ));
     }

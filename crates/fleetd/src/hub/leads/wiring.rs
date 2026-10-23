@@ -74,11 +74,12 @@ impl LeadPorts for HubPorts {
         let executors = Arc::clone(&self.executors);
         let machine_id = machine_id.clone();
         Box::pin(async move {
+            let profile = input.profile.unwrap_or_default();
             let launch = LaunchInput {
                 project_id: input.project_id,
                 prompt: input.prompt.to_string(),
-                model: input.model.to_string(),
-                effort: input.effort,
+                model: profile.model().into(),
+                effort: profile.effort(),
                 runtime_mode: input.runtime_mode,
                 title: input.title,
                 client_request_id: input.client_request_id.to_string(),
@@ -278,7 +279,7 @@ const OUTCOME_WORKSTREAMS: usize = 20;
 
 /// Called once in `serve::build_on`, after the areas below leads are built.
 pub fn wire_area(area: &Arc<Area>, links: Links<'_>) {
-    // project_get shows the project's lead and its open workstreams.
+    // project_get shows the project's lead, whether its tasks may run medium, and its open workstreams.
     let outcome = Arc::clone(area);
     links
         .executors
@@ -294,6 +295,8 @@ pub fn wire_area(area: &Arc<Area>, links: Links<'_>) {
                         serde_json::to_value(lead).unwrap_or_default(),
                     );
                 }
+                let medium = area.leads.medium_allowed(&project_ref).map_err(internal)?;
+                extra.fields.insert("mediumAllowed".into(), medium.into());
                 let mut open = area
                     .workstreams
                     .list(&WorkstreamFilter {

@@ -167,7 +167,7 @@ impl TrainHost for HubHost {
     fn spawn_review(&self, spawn: ReviewSpawn) -> BoxFut<'_, Result<TaskView, String>> {
         Box::pin(async move {
             let hub = self.hub().ok_or_else(not_bound)?;
-            let mut call = json!({
+            let call = json!({
                 "workstreamId": spawn.workstream_id,
                 "title": spawn.title,
                 "kind": "review",
@@ -177,9 +177,6 @@ impl TrainHost for HubHost {
                 "pr": spawn.pr,
                 "tier": spawn.tier,
             });
-            if let Some(model) = spawn.model {
-                call["model"] = json!(model);
-            }
             let input = serde_json::from_value(call).map_err(|e| e.to_string())?;
             let caller = TaskCaller {
                 project_ref: spawn.project_ref,

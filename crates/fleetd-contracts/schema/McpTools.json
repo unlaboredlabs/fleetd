@@ -298,6 +298,10 @@
         "pr": {
           "$ref": "#/$defs/PrRef"
         },
+        "profile": {
+          "$ref": "#/$defs/TaskProfile",
+          "description": "What it runs on: a task's own profile; a lead is always high. Absent from older hubs."
+        },
         "receipts": {
           "$ref": "#/$defs/Receipts",
           "description": "Counted from the thread's items when it ended."
@@ -375,6 +379,10 @@
         },
         "pr": {
           "$ref": "#/$defs/PrRef"
+        },
+        "profile": {
+          "$ref": "#/$defs/TaskProfile",
+          "description": "What it runs on: a task's own profile; a lead is always high. Absent from older hubs."
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
@@ -2896,6 +2904,7 @@
       "x-open": true
     },
     "Effort": {
+      "description": "The `--effort` claude runs at. Only [`TaskProfile`] picks one; nothing takes an effort as input.",
       "enum": [
         "low",
         "medium",
@@ -3878,6 +3887,11 @@
           "type": "string"
         },
         {
+          "const": "project.settings",
+          "description": "A project's settings changed (`project_set`): `data.mediumAllowed`.",
+          "type": "string"
+        },
+        {
           "const": "thread.waiting",
           "description": "Needs approval or user input.",
           "type": "string"
@@ -4330,6 +4344,14 @@
         },
         "itemId": {
           "$ref": "#/$defs/PlanItemId"
+        },
+        "mediumTaskIds": {
+          "description": "Those of `taskIds` that run on the medium profile; the rest run high. Absent when none does.",
+          "items": {
+            "$ref": "#/$defs/TaskId"
+          },
+          "maxItems": 10,
+          "type": "array"
         },
         "overdueMinutes": {
           "description": "Retired with the ETA: always absent.",
@@ -5035,16 +5057,8 @@
     },
     "LeadStartInput": {
       "properties": {
-        "effort": {
-          "$ref": "#/$defs/Effort"
-        },
         "machineId": {
           "$ref": "#/$defs/MachineId"
-        },
-        "model": {
-          "description": "Saved as the project's lead model and effort for this and later (re)starts; absent keeps the saved or hub\ndefault.",
-          "minLength": 1,
-          "type": "string"
         },
         "projectId": {
           "$ref": "#/$defs/ProjectId"
@@ -5559,6 +5573,12 @@
         "project_remove.output": {
           "$ref": "#/$defs/ProjectRemoveOutput"
         },
+        "project_set.input": {
+          "$ref": "#/$defs/ProjectSetInput"
+        },
+        "project_set.output": {
+          "$ref": "#/$defs/ProjectSetOutput"
+        },
         "project_stop.input": {
           "$ref": "#/$defs/ProjectStopInput"
         },
@@ -5887,6 +5907,8 @@
         "project_inspect.output",
         "project_remove.input",
         "project_remove.output",
+        "project_set.input",
+        "project_set.output",
         "project_stop.input",
         "project_stop.output",
         "projects_list.input",
@@ -7836,6 +7858,39 @@
       "type": "string",
       "x-open": true
     },
+    "ProfileTotal": {
+      "description": "One task profile's part of a scope's agent time and usage, from the spans kept (`coverage.detailSince` on): the\ntasks that ran on it, and the lead's spans under high.",
+      "properties": {
+        "agentMs": {
+          "description": "Exclusive agent time.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "modelMs": {
+          "description": "The model's part of it.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "outputTokens": {
+          "description": "What claude reported for its messages.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "profile": {
+          "$ref": "#/$defs/TaskProfile"
+        }
+      },
+      "required": [
+        "profile",
+        "agentMs",
+        "modelMs",
+        "outputTokens"
+      ],
+      "type": "object"
+    },
     "Progress": {
       "description": "A figure. `pct` counts verified must items by size only; polish shows beside it.",
       "properties": {
@@ -8356,6 +8411,10 @@
           "$ref": "#/$defs/Lead",
           "description": "Absent until lead_start."
         },
+        "mediumAllowed": {
+          "description": "Whether the lead may run a task on the medium profile (`project_set`); absent from older hubs, where it is on.",
+          "type": "boolean"
+        },
         "next": {
           "description": "Hint for the next call.",
           "type": "string"
@@ -8564,6 +8623,42 @@
         }
       ],
       "x-open": true
+    },
+    "ProjectSetInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "mediumAllowed": {
+          "type": "boolean"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId",
+        "mediumAllowed"
+      ],
+      "type": "object"
+    },
+    "ProjectSetOutput": {
+      "properties": {
+        "mediumAllowed": {
+          "type": "boolean"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "mediumAllowed"
+      ],
+      "type": "object"
     },
     "ProjectStatusRow": {
       "description": "One project on the Status screen: a state word, the two-tone bar, agents running and the last merge. No ETA.",
@@ -11877,10 +11972,6 @@
         "createdAt": {
           "$ref": "#/$defs/Timestamp"
         },
-        "effort": {
-          "$ref": "#/$defs/Effort",
-          "description": "Always explicit; resolved at spawn."
-        },
         "endedAt": {
           "$ref": "#/$defs/Timestamp"
         },
@@ -11895,10 +11986,6 @@
         "kind": {
           "$ref": "#/$defs/TaskKind"
         },
-        "model": {
-          "minLength": 1,
-          "type": "string"
-        },
         "parked": {
           "$ref": "#/$defs/UsageParked",
           "description": "M4: its thread hit a usage limit; the task is idle until fleetd sends \"continue\" at `resumeAt`."
@@ -11906,6 +11993,11 @@
         "pr": {
           "description": "The PR a review task reviews. Required at spawn for review; absent on hub-spawned judge tasks and older rows.",
           "type": "string"
+        },
+        "profile": {
+          "$ref": "#/$defs/TaskProfile",
+          "default": "high",
+          "description": "Resolved at spawn. Rows stored with a model and effort read as `high` (the hub migrates its own)."
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
@@ -11969,8 +12061,6 @@
         "kind",
         "prompt",
         "areas",
-        "model",
-        "effort",
         "state",
         "attempt",
         "createdAt"
@@ -12059,6 +12149,14 @@
         "write",
         "read",
         "review"
+      ],
+      "type": "string"
+    },
+    "TaskProfile": {
+      "description": "What an agent runs on. There are exactly two, both claude-opus-5-5: `high` (effort high) is the default and what\nthe lead, every reviewer and every helper call run; `medium` (effort medium) is for mechanical tasks the lead picks.",
+      "enum": [
+        "high",
+        "medium"
       ],
       "type": "string"
     },
@@ -12307,15 +12405,12 @@
           "minLength": 1,
           "type": "string"
         },
-        "effort": {
-          "$ref": "#/$defs/Effort"
-        },
         "machineId": {
           "$ref": "#/$defs/MachineId"
         },
-        "model": {
-          "minLength": 1,
-          "type": "string"
+        "profile": {
+          "$ref": "#/$defs/TaskProfile",
+          "description": "Absent: high."
         },
         "projectId": {
           "$ref": "#/$defs/ProjectId"
@@ -12336,8 +12431,6 @@
         "machineId",
         "projectId",
         "prompt",
-        "model",
-        "effort",
         "clientRequestId"
       ],
       "type": "object"
@@ -12657,6 +12750,14 @@
             "$ref": "#/$defs/CategoryTotal"
           },
           "maxItems": 8,
+          "type": "array"
+        },
+        "byProfile": {
+          "description": "High first; absent when no task or lead span is in the period.",
+          "items": {
+            "$ref": "#/$defs/ProfileTotal"
+          },
+          "maxItems": 2,
           "type": "array"
         },
         "ciChecks": {

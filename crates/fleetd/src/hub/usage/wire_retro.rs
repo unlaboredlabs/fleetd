@@ -76,7 +76,7 @@ impl UsageOwners for OpsPorts {
 }
 
 impl OpsPorts {
-    /// The router's runner (login, environment allowlist, model) with RUN_TIMEOUT_MS.
+    /// The router's runner (login, environment allowlist) with RUN_TIMEOUT_MS.
     fn retro_runner(&self) -> Result<&OneShot, String> {
         if let Some(runner) = self.retro_runner.get() {
             return Ok(runner);
@@ -85,7 +85,6 @@ impl OpsPorts {
         let env = std::env::vars().collect();
         let runner = OneShot::new(
             &hub.config.home,
-            hub.config.retro_model.clone(),
             &env,
             Some(Duration::from_millis(RUN_TIMEOUT_MS)),
         )
@@ -100,15 +99,9 @@ impl RetroRunner for OpsPorts {
             let runner = match self.retro_runner() {
                 Ok(runner) => runner,
                 Err(error) => {
-                    let model = self
-                        .hub()
-                        .config
-                        .retro_model
-                        .clone()
-                        .unwrap_or_else(|| "claude-haiku-5-5".into());
                     let run = OrchestratorRun {
                         kind: "orchestrator".into(),
-                        model,
+                        model: fleetd_contracts::effort::MODEL.into(),
                         duration_ms: 0,
                         ok: false,
                         input_tokens: None,

@@ -70,7 +70,7 @@ export const killSurvivors = (procs: ReadonlyArray<ProcInfo>) => {
 
 /** Launches a thread with `prompt` on the tiny model and returns its id. */
 export const launch = async (lab: Pick<Lab, "callTool" | "check">, machineId: string, projectId: string, title: string, prompt: string) => {
-  const launched = await lab.callTool("thread_launch", { machineId, projectId, prompt, ...MECHANICS, title, clientRequestId: randomUUID() });
+  const launched = await lab.callTool("thread_launch", { machineId, projectId, prompt, profile: MECHANICS, title, clientRequestId: randomUUID() });
   lab.check(!launched.isError, `thread_launch on ${machineId}: ${JSON.stringify(launched.body)}`);
   return launched.body.threadId as string;
 };

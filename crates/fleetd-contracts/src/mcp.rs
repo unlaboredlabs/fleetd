@@ -8,7 +8,7 @@ use serde_with::skip_serializing_none;
 use crate::auth::Role;
 use crate::chat::ChatRequestId;
 use crate::doctor::{DoctorCheck, DoctorCheckId};
-use crate::effort::Effort;
+use crate::effort::TaskProfile;
 use crate::events::{HubEvent, HubEventType};
 use crate::hello::ProtocolVersion;
 use crate::ids::{EventSeq, MachineId, ProjectId, ProjectRef, ThreadId, Timestamp};
@@ -39,7 +39,8 @@ use crate::steer::{Steer, SteerId, SteerMode, SteerTarget};
 use crate::tasks::{SlotState, Task, TaskId, TaskState};
 use crate::time::{
     CategoryTotal, CiCheckStat, CommandStat, Coverage, CriticalPath, HumanWait, Insight,
-    InsightRule, Period, PeriodBreakdown, RepeatStat, Span, SpanKind, TimeFilters, TimeScope,
+    InsightRule, Period, PeriodBreakdown, ProfileTotal, RepeatStat, Span, SpanKind, TimeFilters,
+    TimeScope,
 };
 use crate::train::{Change, ChangeState, GitHubPrUrl, GitHubRepo, TrainState};
 use crate::usage::UsageStatus;
@@ -193,8 +194,8 @@ input!(ThreadLaunchInput {
     machine_id: MachineId,
     project_id: ProjectId,
     prompt: NonEmpty,
-    model: NonEmpty,
-    effort: Effort,
+    /// Absent: high.
+    profile: Option<TaskProfile>,
     #[serde(default)]
     runtime_mode: RuntimeMode,
     title: Option<String>,
@@ -259,10 +260,6 @@ output!(WakeCancelOutput { ok: True });
 input!(LeadStartInput {
     machine_id: MachineId,
     project_id: ProjectId,
-    /// Saved as the project's lead model and effort for this and later (re)starts; absent keeps the saved or hub
-    /// default.
-    model: Option<NonEmpty>,
-    effort: Option<Effort>,
 });
 output!(LeadStartOutput {
     #[serde(flatten)]
@@ -270,6 +267,17 @@ output!(LeadStartOutput {
 });
 pub type LeadRestartInput = LeadStartInput;
 pub type LeadRestartOutput = LeadStartOutput;
+
+// project_set: a project's settings. `mediumAllowed` (default on): whether its lead may run a task on the medium
+// profile; off runs every task on high.
+input!(ProjectSetInput {
+    machine_id: MachineId,
+    project_id: ProjectId,
+    medium_allowed: bool,
+});
+output!(ProjectSetOutput {
+    medium_allowed: bool
+});
 
 brand!(
     /// "F" plus a positive integer, unique per hub: a file uploaded with attachment_put.
@@ -550,6 +558,8 @@ output!(TimeBreakdownOutput {
     wall_ms: Count,
     agent_ms: Count,
     by_category: List<CategoryTotal, 0, 8>,
+    /// High first; absent when no task or lead span is in the period.
+    by_profile: Option<List<ProfileTotal, 0, 2>>,
     top_commands: List<CommandStat, 0, 20>,
     repeated: List<RepeatStat, 0, 10>,
     ci_checks: List<CiCheckStat, 0, 20>,
@@ -1432,6 +1442,7 @@ tools! {
     wake_cancel => WakeCancel, Operate, WakeCancelInput, WakeCancelOutput;
     lead_start => LeadStart, Operate, LeadStartInput, LeadStartOutput;
     lead_restart => LeadRestart, Operate, LeadRestartInput, LeadRestartOutput;
+    project_set => ProjectSet, Operate, ProjectSetInput, ProjectSetOutput;
     intake_submit => IntakeSubmit, Operate, IntakeSubmitInput, IntakeSubmitOutput;
     workstream_list => WorkstreamList, Read, WorkstreamListInput, WorkstreamListOutput;
     workstream_get => WorkstreamGet, Read, WorkstreamGetInput, WorkstreamGetOutput;
@@ -1577,7 +1588,7 @@ mod tests {
                 .get(),
             50
         );
-        let launch = json!({ "machineId": "devbox", "projectId": "p1", "prompt": "hi", "model": "claude-haiku-5-5", "effort": "low", "clientRequestId": "r1" });
+        let launch = json!({ "machineId": "devbox", "projectId": "p1", "prompt": "hi", "clientRequestId": "r1" });
         assert_eq!(
             decode::<ThreadLaunchInput>(launch).unwrap().runtime_mode,
             RuntimeMode::FullAccess

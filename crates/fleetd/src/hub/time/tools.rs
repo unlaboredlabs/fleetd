@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
+use fleetd_contracts::effort::TaskProfile;
 use fleetd_contracts::ids::{MachineId, ThreadRef, Timestamp};
 use fleetd_contracts::mcp::{
     ErrorCode, ThreadWindowInput, ThreadWindowOutput, TimeBreakdownInput, TimeBreakdownOutput,
@@ -13,8 +14,8 @@ use fleetd_contracts::mcp::{
 use fleetd_contracts::prim::{Count, Int, List, Text};
 use fleetd_contracts::time::{
     Category, CategoryTotal, CiCheckStat, CommandStat, Coverage, CriticalPath, DecidedBy, Gap,
-    GapWhy, HumanWait, KindTotal, LongestWait, PeriodBreakdown, RepeatStat, Span, SpanKind,
-    TimeScope,
+    GapWhy, HumanWait, KindTotal, LongestWait, PeriodBreakdown, ProfileTotal, RepeatStat, Span,
+    SpanKind, TimeScope,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -395,6 +396,46 @@ fn p50(v: &mut [i64]) -> i64 {
     }
     v.sort_unstable();
     v[(v.len() - 1) / 2]
+}
+
+/// Each profile's agent time, model time and output tokens over the period's spans, high first; spans of no task
+/// or lead are left out.
+fn by_profile(l: &Loaded, since: i64, until: i64) -> Vec<ProfileTotal> {
+    let mut sums = [(0.0_f64, 0.0_f64, 0_i64); 2];
+    let mut seen = [false; 2];
+    for (r, w) in l.rows.iter().zip(&l.weights) {
+        if r.start_ms < since || r.start_ms >= until {
+            continue;
+        }
+        let k = match r.profile.as_deref() {
+            Some("high") => 0,
+            Some("medium") => 1,
+            _ => continue,
+        };
+        seen[k] = true;
+        let tokens = r.extra.output_tokens.as_ref().map_or(0, |t| t.get());
+        sums[k].2 += (tokens as f64 * w).round() as i64;
+        if is_detail(r.kind) {
+            continue;
+        }
+        let ms = r.excl_ms as f64 * w;
+        sums[k].0 += ms;
+        if r.cat() == Category::Model {
+            sums[k].1 += ms;
+        }
+    }
+    [TaskProfile::High, TaskProfile::Medium]
+        .into_iter()
+        .zip(sums)
+        .zip(seen)
+        .filter(|(_, seen)| *seen)
+        .map(|((profile, (agent, model, tokens)), _)| ProfileTotal {
+            profile,
+            agent_ms: count(agent.round() as i64),
+            model_ms: count(model.round() as i64),
+            output_tokens: count(tokens),
+        })
+        .collect()
 }
 
 fn top_commands(rows: &[Row]) -> Vec<CommandStat> {
@@ -1194,6 +1235,9 @@ async fn time_breakdown(
             wall_ms: count(wall_ms),
             agent_ms: count(agent_ms),
             by_category: List::unchecked(by_category),
+            by_profile: Some(by_profile(&l, since, until))
+                .filter(|p| !p.is_empty())
+                .map(List::unchecked),
             top_commands: List::unchecked(top_commands(&in_period)),
             repeated: List::unchecked(repeated(&in_period)),
             ci_checks: List::unchecked(ci_checks(&in_period, &ps)),
@@ -1389,6 +1433,99 @@ mod tests {
             assert_eq!(cov.detail_since.map(|t| t.0), Some(iso_ms(now - 30 * day)));
             let recent = coverage(c, &TimeScope::Fleet, &l, None, now - day, now)?;
             assert!(recent.complete && recent.detail_since.is_none());
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    /// A medium task's time and output tokens add up apart from the high ones, the lead's under high; a span of
+    /// neither (the train's git) is in no profile.
+    #[test]
+    fn time_and_usage_split_by_profile() {
+        let db = HubDb::open_memory().unwrap();
+        let on =
+            |key: &str, kind: SpanKind, start: i64, ms: i64, profile: Option<&str>, tokens: i64| {
+                NewSpan {
+                    kind,
+                    ids: Ids {
+                        machine_id: Some("devbox".into()),
+                        profile: profile.map(str::to_owned),
+                        ..Ids::default()
+                    },
+                    extra: (tokens > 0).then(|| fleetd_contracts::time::SpanExtra {
+                        output_tokens: Some(count(tokens)),
+                        ..Default::default()
+                    }),
+                    // A message is an envelope: its phases hold the time.
+                    excl_ms: (kind == SpanKind::ModelMessage).then_some(0),
+                    ..span(key, start, ms)
+                }
+            };
+        db.transaction(|c| {
+            write(
+                c,
+                &on("m-out", SpanKind::ModelOutput, 0, 4_000, Some("medium"), 0),
+                &[],
+            )?;
+            write(
+                c,
+                &on(
+                    "m-msg",
+                    SpanKind::ModelMessage,
+                    0,
+                    4_000,
+                    Some("medium"),
+                    300,
+                ),
+                &[],
+            )?;
+            write(
+                c,
+                &on(
+                    "m-bash",
+                    SpanKind::ToolBash,
+                    4_000,
+                    1_000,
+                    Some("medium"),
+                    0,
+                ),
+                &[],
+            )?;
+            write(
+                c,
+                &on("h-out", SpanKind::ModelOutput, 0, 9_000, Some("high"), 0),
+                &[],
+            )?;
+            write(
+                c,
+                &on("h-msg", SpanKind::ModelMessage, 0, 9_000, Some("high"), 900),
+                &[],
+            )?;
+            write(
+                c,
+                &on("lead", SpanKind::ToolRead, 9_000, 2_000, Some("high"), 0),
+                &[],
+            )?;
+            write(c, &on("git", SpanKind::Git, 0, 5_000, None, 0), &[])?;
+            let l = load(c, &TimeScope::Fleet, 0, 60_000, None)?;
+            let got: Vec<_> = by_profile(&l, 0, 60_000)
+                .into_iter()
+                .map(|p| {
+                    (
+                        p.profile,
+                        p.agent_ms.get(),
+                        p.model_ms.get(),
+                        p.output_tokens.get(),
+                    )
+                })
+                .collect();
+            assert_eq!(
+                got,
+                [
+                    (TaskProfile::High, 11_000, 9_000, 900),
+                    (TaskProfile::Medium, 5_000, 4_000, 300),
+                ]
+            );
             Ok(())
         })
         .unwrap();

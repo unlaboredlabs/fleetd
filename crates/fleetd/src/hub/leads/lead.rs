@@ -1,7 +1,7 @@
 //! One lead per project: a thread on the project's machine, started with the lead prompt plus the digest.
 use std::sync::Arc;
 
-use fleetd_contracts::effort::Effort;
+use fleetd_contracts::effort::TaskProfile;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef, Timestamp};
 use fleetd_contracts::ledger::{Lead, LeadState, WorkstreamState};
@@ -11,21 +11,11 @@ use tokio::sync::Mutex;
 
 use super::error::LeadError;
 use super::prompt::render_lead_start;
-use super::records::{LeadRecords, LeadSettings, StoredLead, WorkstreamFilter};
+use super::records::{LeadRecords, StoredLead, WorkstreamFilter};
 use super::wakes::LeadWakes;
 use super::{Ctx, now_iso};
 use crate::hub::prompts::Audience;
 use crate::hub::store::{NewEvent, WaitInput, now_ms};
-
-pub const DEFAULT_LEAD_MODEL: &str = "claude-opus-5-5";
-pub const DEFAULT_LEAD_EFFORT: Effort = Effort::High;
-
-#[derive(Debug, Clone, Default)]
-pub struct LeadsOptions {
-    /// Hub-wide default model and effort; per-project settings override them.
-    pub model: Option<String>,
-    pub effort: Option<Effort>,
-}
 
 /// What an order for a project without a lead did about the lead.
 #[derive(Debug, Clone)]
@@ -58,23 +48,16 @@ pub struct Leads {
     ctx: Arc<Ctx>,
     records: Arc<LeadRecords>,
     wakes: Arc<LeadWakes>,
-    options: LeadsOptions,
     /// Serializes start and restart, so two concurrent calls for one project launch one thread.
     lock: Mutex<()>,
 }
 
 impl Leads {
-    pub fn new(
-        ctx: Arc<Ctx>,
-        records: Arc<LeadRecords>,
-        wakes: Arc<LeadWakes>,
-        options: LeadsOptions,
-    ) -> Arc<Self> {
+    pub fn new(ctx: Arc<Ctx>, records: Arc<LeadRecords>, wakes: Arc<LeadWakes>) -> Arc<Self> {
         Arc::new(Self {
             ctx,
             records,
             wakes,
-            options,
             lock: Mutex::new(()),
         })
     }
@@ -198,9 +181,35 @@ impl Leads {
             .transpose()
     }
 
-    /// Per-project model and effort for the next start or restart.
-    pub fn configure(&self, r: &ProjectRef, settings: &LeadSettings) -> Result<(), LeadError> {
-        Ok(self.records.settings_set(r, settings)?)
+    /// Whether the project's tasks may run on medium. Read at each spawn, so a change applies to the next one.
+    pub fn medium_allowed(&self, r: &ProjectRef) -> Result<bool, LeadError> {
+        Ok(self.records.medium_allowed(r)?)
+    }
+
+    /// `project_set`: saves the switch and tells the clients (`project.settings`).
+    pub fn set_medium_allowed(
+        &self,
+        r: &ProjectRef,
+        title: &str,
+        allowed: bool,
+    ) -> Result<(), LeadError> {
+        self.records.medium_allowed_set(r, allowed)?;
+        let summary = if allowed {
+            format!("{title}: mechanical tasks may run on medium")
+        } else {
+            format!("{title}: every task runs on high (medium off)")
+        };
+        self.ctx.events.append(NewEvent {
+            at: now_iso(&self.ctx).into(),
+            r#type: HubEventType::ProjectSettings,
+            machine_id: Some(r.machine_id.clone()),
+            project_id: Some(r.project_id.clone()),
+            thread_id: None,
+            summary,
+            data: Some(serde_json::json!({ "mediumAllowed": allowed })),
+            attention: None,
+        })?;
+        Ok(())
     }
 
     fn with_state(&self, lead: StoredLead) -> Result<Lead, LeadError> {
@@ -255,15 +264,6 @@ impl Leads {
                 "Wait for the reset, or run usage_resume once the login has capacity again.",
             ));
         }
-        let settings = self.records.settings_get(r)?;
-        let model = settings
-            .model
-            .or_else(|| self.options.model.clone())
-            .unwrap_or_else(|| DEFAULT_LEAD_MODEL.into());
-        let effort = settings
-            .effort
-            .or(self.options.effort)
-            .unwrap_or(DEFAULT_LEAD_EFFORT);
         // Taken before the digest is read: every intent made before it is in the first message (`LeadWakes::flush`).
         let at = now_iso(&self.ctx);
         let set = self.ctx.db.prompts().current(Some(r));
@@ -271,8 +271,15 @@ impl Leads {
             Some(policy) => policy.areas(r).await,
             None => None,
         };
-        let prompt =
-            render_lead_start(&set, r, &project.title, areas, &self.wakes.digest(r).await?);
+        let medium = self.records.medium_allowed(r)?;
+        let prompt = render_lead_start(
+            &set,
+            r,
+            &project.title,
+            areas,
+            medium,
+            &self.wakes.digest(r).await?,
+        );
         let launched_ms = now_ms(self.ctx.clock.as_ref());
         let title: String = format!("fleetd lead: {}", project.title)
             .chars()
@@ -282,8 +289,8 @@ impl Leads {
             "machineId": r.machine_id,
             "projectId": r.project_id,
             "prompt": prompt,
-            "model": model,
-            "effort": effort,
+            // The lead always runs high.
+            "profile": TaskProfile::High,
             "runtimeMode": "full-access",
             "title": title,
             // The node's launch is idempotent on the id, so the id names this launch: a hub started on a fresh
@@ -319,7 +326,7 @@ impl Leads {
             project_id: Some(r.project_id.clone()),
             thread_id: Some(thread_id),
             summary: format!("Lead of {} started (session {session_generation})", project.title),
-            data: Some(serde_json::json!({ "sessionGeneration": session_generation, "model": model, "effort": effort, "promptRef": set.get("lead.start").r#ref, "textSha": text_sha })),
+            data: Some(serde_json::json!({ "sessionGeneration": session_generation, "profile": TaskProfile::High, "promptRef": set.get("lead.start").r#ref, "textSha": text_sha })),
             attention: None,
         })?;
         self.with_state(lead)

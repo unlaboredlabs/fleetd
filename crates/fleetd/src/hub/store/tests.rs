@@ -313,3 +313,87 @@ fn drops_events_older_than_30_days_without_reusing_their_seq_even_across_a_resta
         5
     );
 }
+
+/// A hub from before task profiles: a task stored on claude-opus-5-5 at medium runs medium and every other one high,
+/// the lead's saved model and effort go, and agent spans take their session's profile.
+#[test]
+fn stored_models_and_efforts_become_the_two_profiles() {
+    use super::migrations::MIGRATIONS;
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    // Found by content, not as the last migration, so later migrations don't break this test.
+    let profiles_at = MIGRATIONS
+        .iter()
+        .position(|m| m.contains("CREATE TABLE project_settings"))
+        .expect("the profiles migration");
+    for m in &MIGRATIONS[..profiles_at] {
+        conn.execute_batch(m).unwrap();
+    }
+    let tasks = [
+        (1, "claude-opus-5-5", "medium"),
+        (2, "claude-opus-5-5", "high"),
+        (3, "claude-haiku-5-5", "low"),
+        (4, "claude-opus-5-5", "max"),
+        (5, "claude-sonnet-5-5", "medium"),
+    ];
+    for (n, model, effort) in tasks {
+        conn.execute(
+            "INSERT INTO tasks (n, machine_id, project_id, workstream_id, state, data) VALUES (?1, 'lab-a', 'p1', 'W1', 'done', ?2)",
+            rusqlite::params![n, format!(r#"{{"taskId":"T{n}","model":"{model}","effort":"{effort}"}}"#)],
+        )
+        .unwrap();
+    }
+    conn.execute_batch(
+        "INSERT INTO lead_settings VALUES ('lab-a', 'p1', 'claude-haiku-5-5', 'low');
+         INSERT INTO time_spans (src, src_key, kind, cat, start_ms, task_id, role, lane, status)
+           VALUES ('n', 'a', 2, 0, 0, 'T1', 'implementer', 'x', 0), ('n', 'b', 2, 0, 0, 'T3', 'implementer', 'x', 0),
+                  ('n', 'c', 2, 0, 0, NULL, 'lead', 'x', 0), ('h', 'd', 30, 4, 0, NULL, NULL, 'x', 0);",
+    )
+    .unwrap();
+    conn.execute_batch(MIGRATIONS[profiles_at]).unwrap();
+
+    let profiles: Vec<(String, Option<String>, Option<String>)> = conn
+        .prepare("SELECT json_extract(data, '$.profile'), json_extract(data, '$.model'), json_extract(data, '$.effort') FROM tasks ORDER BY n")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let only = |p: &str| (p.to_owned(), None, None);
+    assert_eq!(
+        profiles,
+        [
+            only("medium"),
+            only("high"),
+            only("high"),
+            only("high"),
+            only("high")
+        ]
+    );
+    let spans: Vec<Option<String>> = conn
+        .prepare("SELECT profile FROM time_spans ORDER BY id")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(
+        spans,
+        [
+            Some("medium".into()),
+            Some("high".into()),
+            Some("high".into()),
+            None
+        ],
+        "agent spans take their task's profile, the lead's high; a hub span has none"
+    );
+    let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
+    assert_eq!(
+        count("SELECT count(*) FROM sqlite_master WHERE name = 'lead_settings'"),
+        0
+    );
+    assert_eq!(
+        count("SELECT count(*) FROM project_settings"),
+        0,
+        "medium stays on"
+    );
+}

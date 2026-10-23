@@ -1,8 +1,7 @@
-// Steering mid-run (`steer`): a lead on lab-a, on the shipped model (SHIPPED), is redirected while a 25 s Bash call
-// runs. ⌘Enter (`now`) stops that call and the lead's next action is the redirect; Enter (`queue`) waits for the call
-// to return and lands at that boundary, not at the turn's end. Each steer's receipt must reach acknowledged, and the
-// CLI's `fleetd steer --wait` must too. Prints the latency of each mode from the steer's send. About six tiny lead
-// turns.
+// Steering mid-run (`steer`): a lead on lab-a is redirected while a 25 s Bash call runs. ⌘Enter (`now`) stops
+// that call and the lead's next action is the redirect; Enter (`queue`) waits for the call to return and lands at
+// that boundary, not at the turn's end. Each steer's receipt must reach acknowledged, and the CLI's `fleetd steer
+// --wait` must too. Prints the latency of each mode from the steer's send. About six tiny lead turns.
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -10,7 +9,7 @@ import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { type Body, callToolWith, chatOrder, cli, fleetdCommand, HUB_URL, type Lab, nodeHome, scrubbedEnv, SHIPPED } from "./harness.ts";
+import { type Body, callToolWith, chatOrder, cli, fleetdCommand, HUB_URL, type Lab, nodeHome, scrubbedEnv } from "./harness.ts";
 
 const MACHINE = "lab-a";
 const TURN_MS = 240_000;
@@ -129,7 +128,7 @@ export async function steerMidTurn(lab: Lab) {
 
   // 1. A lead with one running order and nothing else to do.
   let cursor = await lab.cursor();
-  const started = await callTool("lead_start", { ...ref, ...SHIPPED });
+  const started = await callTool("lead_start", ref);
   check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
   const threadId = started.body.threadId as string;
   const tail = new Tail(path.join(nodeHome(MACHINE), "transcripts", `${threadId}.jsonl`));
