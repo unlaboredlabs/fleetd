@@ -54,11 +54,17 @@ interface PrDetailProps {
 
 export function PrDetail({ repo, number, row, nowMs, tab, onTab, githubSaid }: PrDetailProps) {
   const query = useToolQuery("pr_get", { repo, number });
+  const fresh = useData((st) => st.fresh);
   const data = query.data;
   const pr = data?.pr ?? row;
 
   if (pr === undefined) {
-    return query.isError ? (
+    // Nothing held and no hub to ask: "Loading" would never finish.
+    return !fresh ? (
+      <div className={s.paneNote} data-screen="prs.detail.offline">
+        <Text tone="quiet">#{number} shows once you’re connected.</Text>
+      </div>
+    ) : query.isError ? (
       <div className={s.paneNote} data-screen="prs.detail.error" role="alert">
         <Text tone="quiet">Couldn’t load #{number}.</Text>
         <Button onClick={() => void query.refetch()}>Retry</Button>
@@ -121,7 +127,11 @@ export function PrDetail({ repo, number, row, nowMs, tab, onTab, githubSaid }: P
       </div>
       <TabPanel value="overview" className={s.overview}>
         {data === undefined ? (
-          query.isError ? (
+          !fresh ? (
+            <div className={s.paneNote}>
+              <Text tone="quiet">The rest of #{number} shows once you’re connected.</Text>
+            </div>
+          ) : query.isError ? (
             <div className={s.paneNote} role="alert">
               <Text tone="quiet">Couldn’t load the rest of #{number}.</Text>
               <Button onClick={() => void query.refetch()}>Retry</Button>

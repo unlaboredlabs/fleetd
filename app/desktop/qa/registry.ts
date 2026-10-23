@@ -789,6 +789,14 @@ export const screens: readonly Screen[] = [
   // One PR in the list's place: its facts, description, checks, reviews with their findings, and its way to main so far.
   // #10's checks failed after its approval and an outdated review; a chat line's link names only the number.
   { id: "prs.detail", route: PR(11), fixtures: ["typical", "long-text", "prs-no-github", "prs-rate-limited"] },
+  // ...and offline with nothing held: it says it shows once you're connected, never "Loading".
+  {
+    id: "prs.detail",
+    route: PR(11),
+    fixtures: ["offline-held"],
+    variant: "offline",
+    open: (page) => expect(page.getByText("#11 shows once you’re connected.")).toBeVisible(),
+  },
   { id: "prs.detail", route: PR(10), fixtures: ["typical"], variant: "failed" },
   { id: "prs.detail", route: PR(8), fixtures: ["typical"], variant: "merged" },
   { id: "prs.detail", route: PR(14), fixtures: ["typical"], variant: "review-requested" },
@@ -978,6 +986,14 @@ export const screens: readonly Screen[] = [
   },
   // Under its work, your steers to it with their receipts, in every stage, and the box that steers it directly.
   { id: "agents.work", route: AGENT_ROUTE, fixtures: ["agents-work", "agents-steers"] },
+  // ...and offline with nothing held: it says it shows once you're connected, never a blank loading pane.
+  {
+    id: "agents.work",
+    route: AGENT_ROUTE,
+    fixtures: ["offline-held"],
+    variant: "offline",
+    open: (page) => expect(page.getByText("This agent shows once you’re connected.")).toBeVisible(),
+  },
   {
     id: "agents.work",
     route: AGENT_ROUTE,

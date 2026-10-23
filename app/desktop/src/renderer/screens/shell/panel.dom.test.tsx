@@ -205,7 +205,7 @@ it("hides itself in a narrow window, shows there with its toggle, and widening r
   expect(panel()).not.toBeNull();
 });
 
-it("says the agents and PRs show once you're connected while it has none to show, never loading bars", async () => {
+it("says the agents and PRs show once you're connected while it has none to show, never loading", async () => {
   await mount({ online: false });
   const text = () => panel()?.textContent ?? "";
   const bars = () => panel()?.querySelector("[aria-label='Loading agents'], [aria-label='Loading the pull requests']") ?? null;
@@ -217,6 +217,13 @@ it("says the agents and PRs show once you're connected while it has none to show
   expect(bars()).toBeNull();
   await go(`${CHAT}/prs/11`);
   expect(text()).toContain("#11 shows once you’re connected.");
+  await go(`${CHAT}/prs/acme/storefront/11`);
+  expect(text()).toContain("#11 shows once you’re connected.");
+  expect(text()).not.toContain("Loading");
+  await go(`${CHAT}/agents/T1`);
+  expect(text()).toContain("This agent shows once you’re connected.");
+  expect(panel()?.querySelector("[aria-busy='true']")).toBeNull();
+  await go(`${CHAT}/prs/11`);
 
   // Connected: the PR it named opens.
   connect();
