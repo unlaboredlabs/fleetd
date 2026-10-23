@@ -124,7 +124,7 @@ describe("HubClient", () => {
     hub.ready();
     const ok = client.call({ tool: "fleetd_status", input: {} });
     const refused = client.call({ tool: "task_cancel", input: { taskId: "t1" } });
-    const slow = client.call({ tool: "status_wait", input: {}, timeoutMs: 1000 });
+    const slow = client.call({ tool: "events_wait", input: {}, timeoutMs: 1000 });
     const calls = hub.sent.filter((m) => m["t"] === "call");
     expect(calls.map((c) => c["id"])).toEqual(["c1", "c2", "c3"]);
     hub.frame({ t: "result", id: "c1", output: { cursor: 3 } });

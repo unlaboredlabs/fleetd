@@ -71,7 +71,7 @@ export const CallRequest = z.strictObject({
   input: z.custom<z.core.util.JSONType>(isBoundedJson, {
     message: `Input must be plain JSON, at most ${MAX_CALL_INPUT_BYTES} bytes and ${MAX_CALL_INPUT_DEPTH} levels deep.`,
   }),
-  /** Defaults to 30 s. Long-polls such as status_wait pass their own. */
+  /** Defaults to 30 s. Long-polls such as events_wait pass their own. */
   timeoutMs: z.int().min(100).max(300_000).optional(),
 });
 export type CallRequest = z.infer<typeof CallRequest>;

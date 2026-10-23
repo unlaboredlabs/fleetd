@@ -76,7 +76,7 @@ FLEETD_HUB=http://hub.your-tailnet.ts.net:4790 FLEETD_KEY_FILE=~/.fleetd/agent.k
 On a new hub with no projects yet, the output starts like this:
 
 ```text
-{"id":1,"jsonrpc":"2.0","result":{"content":[{"text":"{\"next\":\"status_get with a project scope for the detail behind a row\",\"rows\":[]}", …
+{"id":1,"jsonrpc":"2.0","result":{"content":[{"text":"{\"next\":\"status_get with a row's projectRef for the series behind its bar\",\"rows\":[]}", …
 ```
 
 ## Use a key from the CLI {#key-file}

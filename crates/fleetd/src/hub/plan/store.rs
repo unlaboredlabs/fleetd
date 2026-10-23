@@ -339,12 +339,3 @@ pub fn changes_of(c: &Connection, pkey: &str, limit: i64) -> rusqlite::Result<Ve
     .query_map(params![pkey, limit], change_of)?
     .collect()
 }
-
-/// Newest first, across every project.
-pub fn changes_all(c: &Connection, limit: i64) -> rusqlite::Result<Vec<ChangeRow>> {
-    c.prepare_cached(&format!(
-        "SELECT {CHANGE_COLS} FROM plan_changes ORDER BY n DESC LIMIT ?"
-    ))?
-    .query_map([limit], change_of)?
-    .collect()
-}

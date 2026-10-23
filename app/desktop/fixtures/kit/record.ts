@@ -64,7 +64,6 @@ const sweepCalls = (since: string): Array<readonly [string, JsonObject]> => {
     ["prompts_list", {}],
     ["doctor_list", {}],
     ["attention_policy", {}],
-    ["status_get", { scope: { kind: "fleet" } }],
   ];
   for (const { machineId, projectId } of seen.projects.values()) {
     const projectRef = { machineId, projectId };
@@ -72,11 +71,11 @@ const sweepCalls = (since: string): Array<readonly [string, JsonObject]> => {
       ["chat_history", { projectRef }],
       ["orders_board", { projectRef, includeDoneSince: since }],
       ["prompts_list", { projectRef }],
-      ["status_get", { scope: { kind: "project", projectRef } }],
+      ["status_get", { projectRef }],
     );
   }
   for (const workstreamId of seen.orders) {
-    calls.push(["order_get", { workstreamId }], ["status_get", { scope: { kind: "order", workstreamId } }]);
+    calls.push(["order_get", { workstreamId }]);
   }
   // thread_tail feeds only the conversation fixtures (kit/shared.ts withConversation).
   for (const { machineId, threadId } of seen.threads.values()) {

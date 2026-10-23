@@ -28,7 +28,7 @@ export const projectHref = (ref: ProjectStatusRow["projectRef"]): string =>
 /** A project's PR list: its chat's route plus /prs (the PR screen's route table). */
 export const prsHref = (ref: ProjectStatusRow["projectRef"]): string => `${projectHref(ref)}/prs`;
 
-/** One phrase wherever there is no bar yet: still planning, or nothing to count. */
+/** One phrase wherever there is no bar yet: nothing to count. */
 const NO_PROGRESS = "no progress yet";
 
 export function StatusScreen() {
@@ -86,7 +86,7 @@ export function StatusScreen() {
 const TONE = { waiting_on_you: "warning", blocked: "danger", working: "default", idle: "quiet" } as const;
 
 function Row({ row, state, now }: { row: ProjectStatusRow; state: StateWord; now: number }) {
-  const { bar, planning } = barOf(row);
+  const bar = barOf(row);
   const merged = row.lastMerged;
   const mergedAt = merged === undefined ? "" : when(merged.at, now);
   const label = [
@@ -137,14 +137,6 @@ function Row({ row, state, now }: { row: ProjectStatusRow; state: StateWord; now
               <Text size="sm" tabular>{`${bar.pct}%`}</Text>
             </span>
           </Tooltip>
-        ) : planning ? (
-          <Tooltip content="The lead is still planning the work.">
-            <span className={cx(s.progress)} tabIndex={0}>
-              <Text size="xs" tone="quiet">
-                {NO_PROGRESS}
-              </Text>
-            </span>
-          </Tooltip>
         ) : (
           <span className={cx(s.progress)}>
             <Text size="xs" tone="quiet">
@@ -179,11 +171,10 @@ function Row({ row, state, now }: { row: ProjectStatusRow; state: StateWord; now
 }
 
 /** The bar's hover: verified and in flight, whether it holds while work is paused, then why it last fell. These are
- * in the project's own status doc, read only while this hover is open. */
+ * in the project's series (status_get), read only while this hover is open. */
 function Drops({ row, pct }: { row: ProjectStatusRow; pct: { pct: number; verifiedPct: number; inFlightPct: number } }) {
-  const query = useToolQuery("status_get", { scope: { kind: "project", projectRef: row.projectRef } });
-  const doc = query.data === undefined ? undefined : asGetOutput(query.data)?.doc;
-  const series = doc?.progress.estimate?.series ?? [];
+  const query = useToolQuery("status_get", { projectRef: row.projectRef });
+  const series = (query.data === undefined ? undefined : asGetOutput(query.data))?.series ?? [];
   const lines = dropLines(series);
   const held = heldLine(series);
   return (

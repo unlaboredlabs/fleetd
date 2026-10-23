@@ -53,14 +53,12 @@ describe("status rows", () => {
     expect(orderRows([row("x", "paused_for_lunch")], undefined)[0]?.word).toBe("idle");
   });
 
-  it("draw the two-tone bar only when something is counted: planning and nothing-to-count show no number", () => {
-    const estimate = { pct: 78, verifiedPct: 58, inFlightPct: 20, weights: "project" as const };
-    expect(barOf(row("a", "working", { progress: estimate }))).toEqual({ bar: { pct: 78, verifiedPct: 58, inFlightPct: 20 }, planning: false });
-    expect(barOf(row("b", "idle"))).toEqual({ bar: null, planning: false });
-    const planning = { ...estimate, pct: 0, verifiedPct: 0, inFlightPct: 0, planning: { active: true, pct: 55, sharePct: 8, since: "2026-10-19T09:59:00.000Z" } };
-    expect(barOf(row("c", "working", { progress: planning }))).toEqual({ bar: null, planning: true });
+  it("draw the two-tone bar only when something is counted: nothing to count shows no number", () => {
+    const estimate = { pct: 78, verifiedPct: 58, inFlightPct: 20 };
+    expect(barOf(row("a", "working", { progress: estimate }))).toEqual({ pct: 78, verifiedPct: 58, inFlightPct: 20 });
+    expect(barOf(row("b", "idle"))).toBeNull();
     // The lighter part never claims past 100, whatever rounding did.
-    expect(barOf(row("d", "working", { progress: { ...estimate, pct: 100, verifiedPct: 97, inFlightPct: 5 } })).bar?.inFlightPct).toBe(3);
+    expect(barOf(row("d", "working", { progress: { ...estimate, pct: 100, verifiedPct: 97, inFlightPct: 5 } }))?.inFlightPct).toBe(3);
   });
 });
 

@@ -130,7 +130,7 @@ fn answer(
             LeadCallResult::PlanDrop(acknowledge(hub, r, steer, out))
         }
         LeadCall::PlanShow(c) => {
-            let plan = hub.status.plan_view(hub, r, c.workstream_id.as_ref())?;
+            let plan = hub.plans.view(r, c.workstream_id.as_ref())?;
             let text = super::plan_text(&plan);
             LeadCallResult::PlanShow(PlanShowResult {
                 plan,

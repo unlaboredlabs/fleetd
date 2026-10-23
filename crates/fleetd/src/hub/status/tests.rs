@@ -1,16 +1,17 @@
-//! The status view over a real in-memory hub: plan calls and their markers, the done rule from train merges and
-//! claim results, and the docs the tools serve.
+//! Status over a real in-memory hub: plan calls and their markers, the done rule from train merges and claim
+//! results, and the project rows and series the tools serve.
 use std::sync::Arc;
 use std::time::Duration;
 
 use fleetd_contracts::auth::KeyKind;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
-use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::mcp::ErrorCode;
 use fleetd_contracts::plan::{
     PlanAddCall, PlanChangeKind, PlanDropCall, PlanItemState, PlanMilestoneCall,
 };
-use fleetd_contracts::status::{HeadlineSource, StatusScope};
+use fleetd_contracts::status::{
+    DropReason, ProgressDrop, ProgressPoint, ProjectRowState, ProjectStatusRow,
+};
 use rusqlite::params;
 use serde_json::json;
 
@@ -42,6 +43,18 @@ fn hub_on(db: Arc<HubDb>, clock: Arc<ManualClock>) -> (Arc<Hub>, tempfile::TempD
         queue_ttl_sec: None,
     };
     let hub = build_on(db, config, clock).unwrap();
+    hub.store
+        .projects_upsert_many(
+            &MachineId::unchecked("devbox"),
+            &[serde_json::from_value(json!({
+                "machineId": "devbox", "projectId": "storefront", "title": "storefront",
+                "workspaceRoot": "/work/storefront",
+                "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 },
+                "lastActivityAt": AT,
+            }))
+            .unwrap()],
+        )
+        .unwrap();
     hub.db
         .with(|c| {
             let w = json!({
@@ -70,6 +83,24 @@ fn person() -> Caller {
         ..c
     })
     .unwrap()
+}
+
+/// The project's row and series as status_get serves them, `secs` later.
+fn row_after(hub: &Hub, clock: &ManualClock, secs: u64) -> (ProjectStatusRow, Vec<ProgressPoint>) {
+    clock.advance(Duration::from_secs(secs));
+    hub.status
+        .project(hub, &person(), &project())
+        .unwrap()
+        .expect("the project's row")
+}
+
+/// The project's bar `secs` later: (pct, the last point's drop).
+fn bar_after(hub: &Hub, clock: &ManualClock, secs: u64) -> (i64, Option<ProgressDrop>) {
+    let (row, series) = row_after(hub, clock, secs);
+    (
+        row.progress.expect("something to count").pct.get(),
+        series.last().unwrap().drop.clone(),
+    )
 }
 
 fn add(title: &str, extra: serde_json::Value) -> PlanAddCall {
@@ -178,7 +209,7 @@ async fn a_scope_change_after_the_planning_window_needs_a_reason_and_writes_a_ma
 }
 
 #[tokio::test]
-async fn an_item_is_done_only_from_a_train_merge_and_its_latest_check_and_the_doc_shows_it() {
+async fn an_item_is_done_only_from_a_train_merge_and_its_latest_check_and_the_row_shows_it() {
     let clock = ManualClock::at(T0);
     let (hub, _home) = hub(clock.clone());
     let (r, by) = (project(), "lead:devbox/storefront");
@@ -219,30 +250,12 @@ async fn an_item_is_done_only_from_a_train_merge_and_its_latest_check_and_the_do
         "polish never holds the number back"
     );
 
-    let scope = StatusScope::Order {
-        workstream_id: WorkstreamId::unchecked("W1"),
-    };
-    let doc = hub.status.get(&hub, &person(), &scope, None).unwrap();
-    assert_eq!(doc.progress.pct.get(), 100);
+    let (row, _) = row_after(&hub, &clock, 1);
+    let bar = row.progress.unwrap();
     assert_eq!(
-        doc.done[0].evidence.as_str(),
-        "#212 merged by the train · check 2 passed C1"
-    );
-    assert_eq!(
-        doc.headline.source,
-        HeadlineSource::Template,
-        "nothing generated yet"
-    );
-    assert!(doc.version.get() > 0);
-    let (unchanged, version) = hub
-        .status
-        .wait(&hub, &person(), &scope, None, Some(doc.version.get()), 0)
-        .await;
-    assert!(unchanged.is_none());
-    assert_eq!(
-        version,
-        doc.version.get(),
-        "a re-render with the same content keeps the version"
+        (bar.pct.get(), bar.verified_pct.get()),
+        (100, 100),
+        "the row's bar counts it verified"
     );
 
     claim(&hub, 2, false);
@@ -258,9 +271,13 @@ async fn an_item_is_done_only_from_a_train_merge_and_its_latest_check_and_the_do
             .iter()
             .any(|m| m.kind == PlanChangeKind::Reopened)
     );
-    let doc = hub.status.get(&hub, &person(), &scope, None).unwrap();
-    assert_eq!(doc.progress.pct.get(), 0);
-    assert!(doc.version.get() > version);
+    let (row, series) = row_after(&hub, &clock, 1);
+    assert!(row.progress.unwrap().verified_pct.get() < 100);
+    assert_eq!(
+        series.last().unwrap().drop.as_ref().map(|d| d.reason),
+        Some(DropReason::Reopened),
+        "it falls with the reopened marker, never silently"
+    );
 
     hub.plans
         .close_order("W1", fleetd_contracts::ledger::WorkstreamState::Done);
@@ -275,13 +292,6 @@ async fn an_item_is_done_only_from_a_train_merge_and_its_latest_check_and_the_do
         PlanItemState::Open,
         "linked items stay to be verified"
     );
-
-    let fleet = hub
-        .status
-        .get(&hub, &person(), &StatusScope::Fleet, None)
-        .unwrap();
-    assert_eq!(fleet.title.as_str(), "Fleet");
-    assert!(serde_json::to_vec(&fleet).unwrap().len() <= 16 * 1024);
 }
 
 fn set_order_state(hub: &Hub, state: &str) {
@@ -310,39 +320,20 @@ fn markers(hub: &Hub) -> Vec<String> {
 async fn an_unplanned_order_enters_and_leaves_the_figure_only_with_markers() {
     let clock = ManualClock::at(T0);
     let (hub, _home) = hub(clock.clone());
-    let fleet = |hub: &Hub| {
-        hub.status
-            .get(hub, &person(), &StatusScope::Fleet, None)
-            .unwrap()
-    };
     assert!(hub.plans.placeholder_enter("W1", false));
     assert!(!hub.plans.placeholder_enter("W1", false), "once");
     assert_eq!(
         markers(&hub),
         vec!["+1 item: W1 Checkout redesign (no plan yet)"]
     );
-    let doc = fleet(&hub);
-    assert_eq!(
-        (
-            doc.progress.done.get(),
-            doc.progress.total.get(),
-            doc.progress.pct.get()
-        ),
-        (0, 1, 0)
-    );
-    assert_eq!(
-        doc.markers[0].text.as_str(),
-        "+1 item: W1 Checkout redesign (no plan yet)"
-    );
+    assert_eq!(bar_after(&hub, &clock, 0).0, 0, "it counts, unstarted");
 
     set_order_state(&hub, "done");
     hub.plans
         .placeholder_order_ended("W1", fleetd_contracts::ledger::WorkstreamState::Done);
-    clock.advance(Duration::from_secs(1));
-    let doc = fleet(&hub);
     assert_eq!(
-        (doc.progress.done.get(), doc.progress.total.get()),
-        (1, 1),
+        bar_after(&hub, &clock, 1).0,
+        100,
         "done stays in the figure"
     );
     assert_eq!(markers(&hub).len(), 1, "done changes no denominator");
@@ -356,8 +347,11 @@ async fn an_unplanned_order_enters_and_leaves_the_figure_only_with_markers() {
     clock.advance(Duration::from_secs(12 * 3600));
     assert_eq!(hub.plans.placeholder_roll_off(), None);
     assert_eq!(markers(&hub)[1], "W1 done a day ago, leaves the figure");
-    let doc = fleet(&hub);
-    assert_eq!(doc.progress.total.get(), 0);
+    assert_eq!(
+        row_after(&hub, &clock, 1).0.progress,
+        None,
+        "nothing left to count"
+    );
 }
 
 #[tokio::test]
@@ -379,12 +373,6 @@ async fn a_planned_or_stopped_order_s_placeholder_leaves_with_a_marker() {
         markers(&hub)[1],
         "−1 item: W1's placeholder gives way to its plan"
     );
-    let doc = hub
-        .status
-        .get(&hub, &person(), &StatusScope::Fleet, None)
-        .unwrap();
-    assert_eq!(doc.progress.total.get(), 1, "the real item, not both");
-
     let clock2 = ManualClock::at(T0);
     let (hub2, _home2) = self::hub(clock2);
     hub2.plans.placeholder_enter("W1", false);
@@ -393,8 +381,8 @@ async fn a_planned_or_stopped_order_s_placeholder_leaves_with_a_marker() {
     assert_eq!(markers(&hub2)[1], "−1: W1 stopped");
 }
 
-/// Spec §13: a plan re-check per event is index lookups and stays within milliseconds, and a full render within
-/// 200 ms (timed in release builds), however much history the project has.
+/// A plan re-check per event is index lookups and stays within milliseconds, and a read of the rows within 200 ms
+/// (timed in release builds), however much history the project has.
 #[tokio::test]
 async fn recompute_stays_bounded_with_two_thousand_items_and_changes() {
     let clock = ManualClock::at(T0);
@@ -456,16 +444,16 @@ async fn recompute_stays_bounded_with_two_thousand_items_and_changes() {
     hub.plans.verify("W1");
     let again = started.elapsed();
     let started = std::time::Instant::now();
-    let doc = hub
-        .status
-        .get(&hub, &person(), &StatusScope::Fleet, None)
-        .unwrap();
-    let render = started.elapsed();
+    let (row, _) = row_after(&hub, &clock, 1);
+    let read = started.elapsed();
     if !cfg!(debug_assertions) {
         assert!(again.as_millis() <= 2, "re-check took {again:?}");
-        assert!(render.as_millis() <= 200, "full render took {render:?}");
+        assert!(read.as_millis() <= 200, "reading the rows took {read:?}");
     }
-    assert!(serde_json::to_vec(&doc).unwrap().len() <= super::render::MAX_DOC_BYTES);
+    assert_eq!(
+        row.progress, None,
+        "every item merged, so the milestone finished and left the figure"
+    );
 }
 
 #[tokio::test]
@@ -564,9 +552,7 @@ fn iso_ms_of(ms: i64) -> String {
 }
 
 #[tokio::test]
-async fn the_estimate_rises_with_observed_stages_and_falls_only_with_an_explained_marker() {
-    use fleetd_contracts::plan::ItemStage;
-    use fleetd_contracts::status::{DropReason, RiskRule};
+async fn the_bar_rises_with_observed_stages_and_falls_only_with_an_explained_marker() {
     let clock = ManualClock::at(T0);
     let (hub, _home) = hub(clock.clone());
     let (r, by) = (project(), "lead:devbox/storefront");
@@ -586,141 +572,83 @@ async fn the_estimate_rises_with_observed_stages_and_falls_only_with_an_explaine
             ),
         )
         .unwrap();
-    let scope = StatusScope::Order {
-        workstream_id: WorkstreamId::unchecked("W1"),
-    };
-    let step = |secs: u64| {
-        clock.advance(Duration::from_secs(secs));
-        hub.status.get(&hub, &person(), &scope, None).unwrap()
-    };
-    let d = step(1);
-    let e0 = d.progress.estimate.clone().unwrap();
-    let planning = e0.planning.clone().unwrap();
-    assert!(
-        !planning.active,
-        "the plan exists, so planning's share is fixed"
+    assert_eq!(
+        bar_after(&hub, &clock, 1),
+        (0, None),
+        "planned, nothing observed"
     );
-    assert!(e0.pct.get() > 0, "planning counts: not 0%");
-    assert_eq!(e0.verified_pct.get(), 0);
-    assert_eq!(d.progress.pct.get(), 0, "the size-only figure is unchanged");
-
     set_change(&hub, "reviewing", None);
-    hub.db
-        .with(|c| {
-            c.execute("UPDATE plan_items SET started_ms = ?", [T0 as i64])?;
-            Ok(())
-        })
-        .unwrap();
-    let d = step(1);
-    let e1 = d.progress.estimate.clone().unwrap();
-    assert!(
-        e1.pct > e0.pct,
-        "a PR opened: {} > {}",
-        e1.pct.get(),
-        e0.pct.get()
-    );
-    assert_eq!(d.in_progress[0].stage, Some(ItemStage::PrOpen));
-
+    assert_eq!(bar_after(&hub, &clock, 1).0, 50, "a PR opened");
     set_change(&hub, "ready", Some("reviewing"));
-    let e2 = step(1).progress.estimate.unwrap();
-    assert!(e2.pct > e1.pct, "review passed");
-    assert!(e2.pct.get() < 100 && e2.in_flight_pct.get() == e2.pct.get());
+    let (row, _) = row_after(&hub, &clock, 1);
+    let bar = row.progress.unwrap();
+    assert_eq!(
+        (
+            bar.pct.get(),
+            bar.verified_pct.get(),
+            bar.in_flight_pct.get()
+        ),
+        (70, 0, 70),
+        "review passed, all of it in flight"
+    );
 
     set_change(&hub, "ci_failed", Some("ci"));
-    let d = step(1);
-    let e3 = d.progress.estimate.clone().unwrap();
-    assert!(e3.pct < e2.pct, "CI failed: the item fell back a stage");
-    let series = e3.series.clone().unwrap();
-    let drop = series
-        .last()
-        .unwrap()
-        .drop
-        .clone()
-        .expect("the drop is explained");
-    assert_eq!(drop.reason, DropReason::CiFailed);
-    assert_eq!(drop.from_pct, e2.pct);
-    assert_eq!(drop.text.as_str(), "CI failed on #212");
+    let (pct, drop) = bar_after(&hub, &clock, 1);
+    assert_eq!(pct, 50, "CI failed: back to PR open");
+    let drop = drop.expect("the drop is explained");
+    assert_eq!(
+        (drop.reason, drop.from_pct.get(), drop.text.as_str()),
+        (DropReason::CiFailed, 70, "CI failed on #212")
+    );
 
     set_change(&hub, "ready", None);
-    step(1);
+    bar_after(&hub, &clock, 1);
     hub.db
         .with(|c| {
             c.execute("DELETE FROM changes", [])?;
             Ok(())
         })
         .unwrap();
-    let e4 = step(1).progress.estimate.unwrap();
-    let held = e4.series.unwrap();
+    let (row, series) = row_after(&hub, &clock, 1);
+    assert_eq!(row.progress.unwrap().pct.get(), 70, "no cause: it holds");
     assert!(
-        held.windows(2)
+        series
+            .windows(2)
             .all(|w| w[1].pct >= w[0].pct || w[1].drop.is_some()),
-        "never a silent drop: {held:?}"
+        "never a silent drop: {series:?}"
     );
-
-    // Review usually takes 20 minutes here, measured on 5 items: ten hours in review is slower than usual.
-    use crate::hub::status::model::{Calibration, DurationRow, Params, StageDurations, UnitKind};
-    let mut durations = StageDurations::spread(
-        20 * 60_000,
-        &crate::hub::status::model::StageWeights::default(),
-    );
-    durations.p50[ItemStage::PrOpen.index()] = 20 * 60_000;
-    durations.samples = 5;
-    durations.stage_samples = [5; 8];
-    let mut cal = Calibration::default();
-    cal.projects.insert(
-        "devbox/storefront".into(),
-        Params {
-            durations: vec![DurationRow {
-                kind: UnitKind::Item,
-                size: fleetd_contracts::plan::Size::M,
-                durations,
-            }],
-            ..Params::default()
-        },
-    );
-    hub.status.set_calibration(Arc::new(cal));
-    set_change(&hub, "reviewing", None);
-    let d = step(10 * 3600);
-    assert_eq!(d.in_progress[0].slower_than_usual, Some(true));
-    assert!(
-        d.risks.iter().any(|r| r.rule == RiskRule::SlowerThanUsual
-            && r.message.as_str().contains("slower than usual")),
-        "{:?}",
-        d.risks
-    );
-    let row = &d.in_progress[0];
-    assert_eq!(
-        row.critical,
-        Some(true),
-        "the only open item is the critical path"
-    );
-    let steps: Vec<&str> = row
-        .waiting_on
-        .iter()
-        .flatten()
-        .map(|s| s.as_str())
-        .collect();
-    assert_eq!(
-        steps,
-        ["review of #212", "CI on #212", "merge", "done-when checks"]
-    );
-    let text = serde_json::to_string(&d).unwrap();
-    assert!(!text.contains("p50") && !text.contains("\"eta"));
 }
 
-/// Needs you counts open requests; every event that opens or settles one must mark the status doc dirty, or a live
-/// view keeps a settled request listed.
-#[test]
-fn every_event_that_opens_or_settles_a_request_is_followed() {
-    use fleetd_contracts::events::HubEventType as E;
-    for t in [E::RequestOpened, E::RequestUpdated] {
-        assert!(super::FOLLOWED.contains(&t), "{}", t.as_str());
+/// What Status serves names no time to come: no ETA, no usual or remaining duration, no "slower than usual".
+#[tokio::test]
+async fn nothing_status_serves_is_a_time_estimate() {
+    let clock = ManualClock::at(T0);
+    let (hub, _home) = one_item(&clock);
+    set_writer(&hub, "T1", "running");
+    set_change(&hub, "ready", Some("reviewing"));
+    let rows = hub.status.project_rows(&hub, &person()).unwrap();
+    let (row, series) = row_after(&hub, &clock, 30 * 60);
+    let text = serde_json::to_string(&(rows, row, series))
+        .unwrap()
+        .to_lowercase();
+    for word in [
+        "eta",
+        "estimate",
+        "p50",
+        "p90",
+        "usual",
+        "remaining",
+        "left",
+        "slower",
+        "duration",
+        "minutes",
+    ] {
+        assert!(!text.contains(word), "{word:?} in {text}");
     }
 }
 
 #[tokio::test]
-async fn a_finished_milestone_lowers_the_project_and_its_fleet_bar_only_with_a_marker() {
-    use fleetd_contracts::status::DropReason;
+async fn a_finished_milestone_lowers_the_bar_only_with_a_marker() {
     let clock = ManualClock::at(T0);
     let (hub, _home) = hub(clock.clone());
     let (r, by) = (project(), "lead:devbox/storefront");
@@ -749,164 +677,120 @@ async fn a_finished_milestone_lowers_the_project_and_its_fleet_bar_only_with_a_m
             add("search box", json!({ "milestoneId": "M2", "size": "m" })),
         )
         .unwrap();
-    let scope = StatusScope::Project {
-        project_ref: r.clone(),
-    };
-    let step = |scope: &StatusScope| {
-        clock.advance(Duration::from_secs(1));
-        hub.status.get(&hub, &person(), scope, None).unwrap()
-    };
-    let part_pct = |d: &fleetd_contracts::status::StatusDoc| {
-        d.parts[0].progress.estimate.as_ref().unwrap().pct.get()
-    };
-    step(&scope);
-    step(&StatusScope::Fleet);
+    bar_after(&hub, &clock, 1);
     set_change(&hub, "merged", None);
-    let before = step(&scope).progress.estimate.unwrap();
-    let fleet = step(&StatusScope::Fleet);
-    assert!(
-        before.pct.get() >= 40,
-        "a merged m of two: {}",
-        before.pct.get()
-    );
-    assert_eq!(
-        part_pct(&fleet),
-        before.pct.get(),
-        "the fleet's bar is the project's figure"
-    );
-
+    assert_eq!(bar_after(&hub, &clock, 1).0, 45, "a merged m of two");
     assert!(
         hub.plans.verify("W1"),
         "M1 finishes and leaves the project's figure"
     );
-    let after = step(&scope).progress.estimate.unwrap();
-    assert!(
-        after.pct < before.pct,
-        "only the search box is left: {}",
-        after.pct.get()
-    );
-    let last = after.series.as_ref().unwrap().last().unwrap().clone();
-    let drop = last.drop.expect("the drop is explained");
+    let (pct, drop) = bar_after(&hub, &clock, 1);
+    assert_eq!(pct, 0, "only the search box is left");
+    let drop = drop.expect("the drop is explained");
     assert_eq!(drop.reason, DropReason::ScopeChange);
     assert!(drop.text.as_str().contains("M1"), "{}", drop.text.as_str());
-    let fleet = step(&StatusScope::Fleet);
-    assert_eq!(
-        part_pct(&fleet),
-        after.pct.get(),
-        "the fleet's bar falls with the same marker, never silently"
-    );
-    assert!(
-        fleet.parts[0]
-            .progress
-            .estimate
-            .as_ref()
-            .unwrap()
-            .series
-            .is_none()
-    );
 }
 
-/// A tier-S PR waits on no review, and the train's error holding it is a risk that says what to do.
+/// The rows are read again after any event, so a row is never older than the last thing that happened; and a row
+/// whose machine, GitHub or merge train went quiet says so, with why and since when.
 #[tokio::test]
-async fn a_pr_held_by_the_train_shows_the_real_wait_and_the_fix() {
-    use fleetd_contracts::status::{RiskLevel, RiskRule};
+async fn a_row_follows_events_and_says_when_a_source_went_quiet() {
     let clock = ManualClock::at(T0);
     let (hub, _home) = hub(clock.clone());
-    let (r, by) = (project(), "lead:devbox/storefront");
-    hub.plans
-        .milestone(
-            &r,
-            serde_json::from_value::<PlanMilestoneCall>(json!({ "title": "Checkout" })).unwrap(),
-        )
-        .unwrap();
-    hub.plans
-        .add(
-            &r,
-            by,
-            add(
-                "cart page",
-                json!({ "workstreamId": "W1", "pr": "https://github.com/acme/storefront/pull/212", "size": "s" }),
-            ),
-        )
-        .unwrap();
-    let error = format!(
-        "git: {}/srv/work/storefront is outside cmdRoots, the directories this node runs commands in (/home/ada) on devbox. Fix: …",
-        crate::hub::train::git::REFUSED_HERE
+    let row = |hub: &Hub| hub.status.project_rows(hub, &person()).unwrap().remove(0);
+    let first = row(&hub);
+    assert_eq!(
+        (
+            first.state,
+            first.last_merged.is_none(),
+            first.stale.is_none()
+        ),
+        (ProjectRowState::Idle, true, true)
     );
-    let change = json!({
-        "changeId": "X1", "projectRef": { "machineId": "devbox", "projectId": "storefront" }, "repo": "acme/storefront",
-        "prNumber": 212, "prUrl": "https://github.com/acme/storefront/pull/212", "branch": "fleetd/T1-x",
-        "workstreamId": "W1", "headSha": "b".repeat(40), "state": "queued",
-        "reviews": [], "lastError": error, "createdAt": iso_ms_of(T0 as i64), "updatedAt": iso_ms_of(T0 as i64),
-    });
+    // In the same millisecond: the event alone makes the next read new.
+    merged_change(&hub, 212);
+    hub.events
+        .append(crate::hub::store::NewEvent {
+            at: fleetd_contracts::ids::Timestamp(AT.into()),
+            r#type: fleetd_contracts::events::HubEventType::PrMerged,
+            machine_id: Some(MachineId::unchecked("devbox")),
+            project_id: Some(ProjectId::unchecked("storefront")),
+            thread_id: None,
+            summary: "#212 merged".into(),
+            data: Some(json!({ "changeId": "X1", "prNumber": 212 })),
+            attention: None,
+        })
+        .unwrap();
+    let merged = row(&hub).last_merged.expect("the merge shows at once");
+    assert_eq!(
+        (merged.title.as_str(), merged.pr_number.map(|n| n.get())),
+        ("Checkout redesign", Some(212))
+    );
+
+    // GitHub for its repo has not answered since the hub started.
     hub.db
         .with(|c| {
             c.execute(
-                "INSERT INTO changes (repo, pr_number, state, machine_id, project_id, train_order, data)
-                 VALUES ('acme/storefront', 212, 'queued', 'devbox', 'storefront', 0, ?)",
-                [change.to_string()],
+                "INSERT INTO trains (repo, machine_id, project_id, watch_since_ms) VALUES ('acme/storefront', 'devbox', 'storefront', 0)",
+                [],
             )?;
-            c.execute("UPDATE plan_items SET started_ms = ?", [T0 as i64])?;
             Ok(())
         })
         .unwrap();
-    clock.advance(Duration::from_secs(1));
-    let scope = StatusScope::Order {
-        workstream_id: WorkstreamId::unchecked("W1"),
-    };
-    let d = hub.status.get(&hub, &person(), &scope, None).unwrap();
-    let steps: Vec<&str> = d.in_progress[0]
-        .waiting_on
-        .iter()
-        .flatten()
-        .map(|s| s.as_str())
-        .collect();
-    assert_eq!(
-        steps,
-        ["review of #212", "CI on #212", "merge", "done-when checks"]
+    hub.status.fresh.expect(
+        "github:acme/storefront",
+        super::fresh::GITHUB_STALE_MS,
+        T0 as i64,
     );
-    let stuck: Vec<_> = d
-        .risks
-        .iter()
-        .filter(|r| r.rule == RiskRule::TrainStuck)
-        .collect();
-    assert_eq!(stuck.len(), 1, "{:?}", d.risks);
-    assert_eq!(stuck[0].level, RiskLevel::Danger);
+    clock.advance(Duration::from_secs(1));
+    let quiet = row(&hub).stale.expect("GitHub went quiet");
+    assert_eq!(quiet.reason.as_str(), "not checked since the hub started");
+    hub.status.fresh.touch(
+        "github:acme/storefront",
+        crate::hub::store::now_ms(hub.clock.as_ref()),
+    );
+    clock.advance(Duration::from_secs(1));
+    assert_eq!(row(&hub).stale, None, "live again once it answers");
+
+    // Its machine stops sending heartbeats: blocked, and stale since the last one.
+    let machine = json!({
+        "machineId": "devbox", "name": "devbox", "tags": [], "status": "offline",
+        "lastSeenAt": iso_ms_of(T0 as i64), "nodeVersion": "0.0.0",
+    });
+    hub.store
+        .machine_upsert(&serde_json::from_value(machine).unwrap(), None)
+        .unwrap();
+    clock.advance(Duration::from_secs(1));
+    let offline = row(&hub);
+    assert_eq!(offline.state, ProjectRowState::Blocked);
+    let mark = offline.stale.expect("its machine went quiet");
+    assert_eq!(mark.since.as_str(), iso_ms_of(T0 as i64));
     assert!(
-        stuck[0]
-            .message
+        mark.reason
             .as_str()
-            .contains("\"cmdRoots\" in node.json on devbox"),
+            .starts_with("no heartbeat from devbox since"),
         "{}",
-        stuck[0].message.as_str()
+        mark.reason.as_str()
     );
 }
 
-/// An order just sent has no doc until its brief exists: it says so instead of "nothing to show".
 #[tokio::test]
-async fn a_draft_order_is_waiting_for_its_brief() {
+async fn status_get_answers_only_for_a_project_there_is() {
     let clock = ManualClock::at(T0);
-    let (hub, _home) = hub(clock.clone());
-    set_order_state(&hub, "draft");
-    let scope = StatusScope::Order {
-        workstream_id: WorkstreamId::unchecked("W1"),
+    let (hub, _home) = one_item(&clock);
+    let (row, series) = row_after(&hub, &clock, 1);
+    assert_eq!(row.title.as_str(), "storefront");
+    assert_eq!(series.len(), 1, "the first point");
+    let missing = ProjectRef {
+        machine_id: MachineId::unchecked("devbox"),
+        project_id: ProjectId::unchecked("nope"),
     };
-    assert!(hub.status.get(&hub, &person(), &scope, None).is_none());
-    let refused = super::tools::not_found(&hub, &scope);
-    assert_eq!(
-        (refused.code, refused.message.as_str()),
-        (
-            ErrorCode::NotFound,
-            "W1 is a draft: waiting for the lead's brief."
-        )
+    assert!(
+        hub.status
+            .project(&hub, &person(), &missing)
+            .unwrap()
+            .is_none()
     );
-    let missing = super::tools::not_found(
-        &hub,
-        &StatusScope::Order {
-            workstream_id: WorkstreamId::unchecked("W9"),
-        },
-    );
-    assert!(missing.message.starts_with("Nothing to show"));
 }
 
 /// Puts `task`, a writer linked to the item, in `state`, and appends its `task.*` event as the hub does.
@@ -982,54 +866,37 @@ fn one_item_on(db: Arc<HubDb>, clock: &Arc<ManualClock>) -> (Arc<Hub>, tempfile:
     (hub, home)
 }
 
-/// The order's estimate `secs` later: (pct, the last point's drop).
-fn estimate_after(
-    hub: &Hub,
-    clock: &ManualClock,
-    secs: u64,
-) -> (i64, Option<fleetd_contracts::status::ProgressDrop>) {
-    clock.advance(Duration::from_secs(secs));
-    let scope = StatusScope::Order {
-        workstream_id: WorkstreamId::unchecked("W1"),
-    };
-    let e = hub
-        .status
-        .get(hub, &person(), &scope, None)
-        .unwrap()
-        .progress
-        .estimate
-        .unwrap();
-    (e.pct.get(), e.series.unwrap().last().unwrap().drop.clone())
-}
-
-/// The bug: an item whose writer had ended still earned in-stage credit for every minute since it started, so the bar
-/// sat near half its share with nothing being built. In-stage credit is for work in flight only.
+/// The bug #261 fixed: an item whose writer had ended still earned in-stage credit for every minute since it started,
+/// so the bar sat near the cap with nothing being built. In-stage credit is for work in flight only.
 #[tokio::test]
 async fn an_item_with_nothing_in_flight_holds_its_stage_credit() {
     let clock = ManualClock::at(T0);
     let (hub, _home) = one_item(&clock);
     // Its writer finished without a PR (a research item, say): nothing else will happen until the lead acts.
     set_writer(&hub, "T1", "done");
-    let (pct, _) = estimate_after(&hub, &clock, 2 * 3600);
     assert_eq!(
-        pct, 14,
-        "two hours on: planning plus the \"being written\" stage, no time in it (45 before the fix)"
+        bar_after(&hub, &clock, 2 * 3600).0,
+        0,
+        "two hours on: no time in the stage counts (45 before the fix)"
     );
 }
 
 #[tokio::test]
 async fn in_stage_credit_moves_while_its_writer_runs_and_is_taken_back_with_a_marker_when_it_stops()
 {
-    use fleetd_contracts::status::DropReason;
     let clock = ManualClock::at(T0);
     let (hub, _home) = one_item(&clock);
     set_writer(&hub, "T1", "running");
-    let (running, _) = estimate_after(&hub, &clock, 1);
-    let (later, _) = estimate_after(&hub, &clock, 30 * 60);
-    assert!(later > running, "in flight: {later} > {running}");
+    let (running, _) = bar_after(&hub, &clock, 3 * 60);
+    let (later, _) = bar_after(&hub, &clock, 30 * 60);
+    assert_eq!(
+        (running, later),
+        (15, 45),
+        "in flight: three minutes of a ten-minute step, then the 0.9 cap"
+    );
     set_writer(&hub, "T1", "failed");
-    let (stopped, drop) = estimate_after(&hub, &clock, 1);
-    assert_eq!(stopped, 14, "the in-stage credit is taken back");
+    let (stopped, drop) = bar_after(&hub, &clock, 1);
+    assert_eq!(stopped, 0, "the in-stage credit is taken back");
     let drop = drop.expect("never a silent drop");
     assert_eq!(
         (drop.reason, drop.from_pct.get(), drop.text.as_str()),
@@ -1040,7 +907,7 @@ async fn in_stage_credit_moves_while_its_writer_runs_and_is_taken_back_with_a_ma
         )
     );
     assert_eq!(
-        estimate_after(&hub, &clock, 3 * 3600).0,
+        bar_after(&hub, &clock, 3 * 3600).0,
         stopped,
         "and it doesn't creep back"
     );
@@ -1052,55 +919,122 @@ async fn a_new_writer_after_a_gap_earns_from_its_own_start_not_from_the_stage_st
     let clock = ManualClock::at(T0);
     let (hub, _home) = one_item(&clock);
     set_writer(&hub, "T1", "running");
-    let (ran, _) = estimate_after(&hub, &clock, 30 * 60);
+    let (ran, _) = bar_after(&hub, &clock, 30 * 60);
     set_writer(&hub, "T1", "failed");
-    assert_eq!(estimate_after(&hub, &clock, 1).0, 14);
+    assert_eq!(bar_after(&hub, &clock, 1).0, 0);
     clock.advance(Duration::from_secs(3 * 3600));
     // The lead starts a new writer for the same item three hours later.
     set_writer(&hub, "T2", "running");
     assert_eq!(
-        estimate_after(&hub, &clock, 1).0,
-        14,
+        bar_after(&hub, &clock, 1).0,
+        0,
         "three idle hours earn nothing at its start ({ran} counted from the stage's start)"
     );
-    let (three_min, _) = estimate_after(&hub, &clock, 3 * 60);
+    let (three_min, _) = bar_after(&hub, &clock, 3 * 60);
     assert!(
-        14 < three_min && three_min < ran,
-        "it moves with the new writer's own minutes: 14 < {three_min} < {ran}"
+        0 < three_min && three_min < ran,
+        "it moves with the new writer's own minutes: 0 < {three_min} < {ran}"
     );
-    assert_eq!(estimate_after(&hub, &clock, 30 * 60).0, ran);
+    assert_eq!(bar_after(&hub, &clock, 30 * 60).0, ran);
 }
 
-/// The live bug's leftover: a figure an older hub stored while it credited every minute in a stage. The drop rule
-/// holds a stored figure until an observed event explains a fall, so the update restarts each series.
+/// A PR the train holds on an error, or one in review with no reviewer running, is not work in flight: its unit
+/// keeps the stage's credit and earns nothing more while it sits.
 #[tokio::test]
-async fn an_update_releases_a_figure_the_old_rule_left_stuck() {
+async fn a_pr_the_train_holds_earns_no_in_stage_credit() {
+    let clock = ManualClock::at(T0);
+    let (hub, _home) = one_item(&clock);
+    let held = |error: Option<&str>| {
+        let change = json!({
+            "changeId": "X1", "projectRef": { "machineId": "devbox", "projectId": "storefront" },
+            "repo": "acme/storefront", "prNumber": 212, "prUrl": "https://github.com/acme/storefront/pull/212",
+            "branch": "fleetd/T1-x", "taskId": "T9", "workstreamId": "W1", "headSha": "b".repeat(40),
+            "state": "ready", "reviews": [], "lastError": error,
+            "createdAt": iso_ms_of(T0 as i64),
+            "updatedAt": iso_ms_of(crate::hub::store::now_ms(hub.clock.as_ref())),
+        });
+        hub.db
+            .with(|c| {
+                c.execute("DELETE FROM changes", [])?;
+                c.execute(
+                    "INSERT INTO changes (repo, pr_number, state, machine_id, project_id, train_order, data)
+                     VALUES ('acme/storefront', 212, 'ready', 'devbox', 'storefront', 0, ?)",
+                    [change.to_string()],
+                )?;
+                c.execute(
+                    "UPDATE plan_items SET data = json_set(data, '$.links.tasks', json('[\"T9\"]'))",
+                    [],
+                )?;
+                Ok(())
+            })
+            .unwrap();
+    };
+    held(Some("git: the node refused the checkout"));
+    assert_eq!(bar_after(&hub, &clock, 1).0, 70);
+    assert_eq!(
+        bar_after(&hub, &clock, 3600).0,
+        70,
+        "held an hour: review passed, nothing more"
+    );
+    held(None);
+    bar_after(&hub, &clock, 0);
+    assert!(
+        bar_after(&hub, &clock, 60).0 > 70,
+        "moving on the train again, it earns in-stage credit"
+    );
+}
+
+/// The stuck figure an update leaves behind: a point stored under the old credits. The drop rule holds a stored
+/// figure until an observed event explains a fall, so the update restarts each series.
+#[tokio::test]
+async fn the_update_drops_the_old_status_tables_and_restarts_every_series() {
     let clock = ManualClock::at(T0);
     let home = tempfile::tempdir().unwrap();
     let db = HubDb::open(home.path()).unwrap();
     let (hub, _home) = one_item_on(db.clone(), &clock);
     set_writer(&hub, "T1", "done");
-    // The old rule kept rising after the writer ended and stored 45 an hour later.
+    // The old model stored 45 an hour later.
     db.with(|c| {
         c.execute(
-            "INSERT INTO status_series (scope, at_ms, pct, verified) VALUES ('order:W1', ?, 45, 0)",
+            "INSERT INTO status_series (scope, at_ms, pct, verified) VALUES ('devbox/storefront', ?, 45, 0)",
             [T0 as i64 + 3_600_000],
         )?;
         Ok(())
     })
     .unwrap();
     assert_eq!(
-        estimate_after(&hub, &clock, 2 * 3600).0,
+        bar_after(&hub, &clock, 2 * 3600).0,
         45,
         "held: nothing since that point explains a fall"
     );
     // Found by content, not as the last migration, so a later migration doesn't break this test.
     let update = crate::hub::store::MIGRATIONS
         .iter()
-        .find(|m| m.contains("DELETE FROM status_series"))
-        .expect("the series restart");
-    db.with(|c| Ok(c.execute_batch(update)?)).unwrap();
-    assert_eq!(estimate_after(&hub, &clock, 1).0, 14);
+        .find(|m| m.contains("DROP TABLE progress_calibration"))
+        .expect("the status rows update");
+    let tables = |c: &rusqlite::Connection| -> rusqlite::Result<Vec<String>> {
+        c.prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'table'
+               AND name IN ('status_seen', 'status_planning', 'progress_calibration', 'status_series') ORDER BY name",
+        )?
+        .query_map([], |r| r.get(0))?
+        .collect()
+    };
+    // The update ran when the hub opened the database; run it again on a copy of the tables it drops.
+    db.with(|c| {
+        c.execute_batch(
+            "CREATE TABLE status_seen (x); CREATE TABLE status_planning (x); CREATE TABLE progress_calibration (x);",
+        )?;
+        c.execute_batch(update)?;
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(
+        db.with(|c| Ok(tables(c)?)).unwrap(),
+        vec!["status_series"],
+        "only the series stays"
+    );
+    assert_eq!(bar_after(&hub, &clock, 1).0, 0);
 }
 
 /// Appends a `thread.*` event for `thread` on the test machine, as the node link does.
@@ -1135,24 +1069,9 @@ fn set_record(hub: &Hub, task: &str, state: &str, parked: Option<serde_json::Val
         .unwrap();
 }
 
-/// The order's last point `secs` later.
-fn point_after(
-    hub: &Hub,
-    clock: &ManualClock,
-    secs: u64,
-) -> fleetd_contracts::status::ProgressPoint {
-    clock.advance(Duration::from_secs(secs));
-    let scope = StatusScope::Order {
-        workstream_id: WorkstreamId::unchecked("W1"),
-    };
-    let e = hub
-        .status
-        .get(hub, &person(), &scope, None)
-        .unwrap()
-        .progress
-        .estimate
-        .unwrap();
-    e.series.unwrap().last().unwrap().clone()
+/// The project's last point `secs` later.
+fn point_after(hub: &Hub, clock: &ManualClock, secs: u64) -> ProgressPoint {
+    row_after(hub, clock, secs).1.last().unwrap().clone()
 }
 
 /// A writer running since now, with nothing else happening: what the same minutes of work earn.
@@ -1164,20 +1083,17 @@ fn twin() -> (Arc<ManualClock>, Arc<Hub>, tempfile::TempDir) {
     (clock, hub, home)
 }
 
-/// The gap #261 left: a task parked on a usage limit (or waiting for an answer) still earned in-stage credit up to
-/// the cap while nobody worked. Parked, it holds what it earned with a marker; resumed, it goes on from there, so
+/// The gap #261 left (#302): a task parked on a usage limit (or waiting for an answer) still earned in-stage credit up
+/// to the cap while nobody worked. Parked, it holds what it earned with a marker; resumed, it goes on from there, so
 /// its figure is always what the minutes it worked earn.
 #[tokio::test]
 async fn a_task_parked_on_a_usage_limit_holds_its_figure_and_goes_on_from_it() {
     use fleetd_contracts::events::HubEventType;
     let (clock, hub, _home) = twin();
     let (tclock, twin, _thome) = twin();
-    let (start, _) = estimate_after(&hub, &clock, 0);
-    let (ran, _) = estimate_after(&hub, &clock, 3 * 60);
-    assert!(
-        start == 14 && ran > 14,
-        "it rises while it runs: 14 to {ran}"
-    );
+    let (start, _) = bar_after(&hub, &clock, 0);
+    let (ran, _) = bar_after(&hub, &clock, 3 * 60);
+    assert_eq!((start, ran), (0, 15), "it rises while it runs");
 
     thread_event(&hub, HubEventType::ThreadUsageLimited, "th-1");
     // Before the task area parks the record: the event alone pauses it.
@@ -1210,13 +1126,12 @@ async fn a_task_parked_on_a_usage_limit_holds_its_figure_and_goes_on_from_it() {
         "no jump: the two parked hours count for nothing, and the marker goes"
     );
     set_record(&hub, "T1", "running", None);
-    let (four_min, _) = estimate_after(&hub, &clock, 60);
+    let (four_min, _) = bar_after(&hub, &clock, 60);
     assert_eq!(
-        (four_min, estimate_after(&twin, &tclock, 4 * 60).0),
-        (four_min, four_min),
+        (four_min, bar_after(&twin, &tclock, 4 * 60).0),
+        (20, 20),
         "it goes on from {ran}: three minutes before and one after earn what four unbroken minutes do"
     );
-    assert!(four_min > ran);
 }
 
 /// A wait for an answer holds it the same way, and the lead's answer (which continues the task) goes on from there.
@@ -1225,7 +1140,7 @@ async fn a_task_waiting_for_an_answer_holds_until_the_answer_continues_it() {
     use fleetd_contracts::events::HubEventType;
     let (clock, hub, _home) = twin();
     let (tclock, twin, _thome) = twin();
-    let (ran, _) = estimate_after(&hub, &clock, 3 * 60);
+    let (ran, _) = bar_after(&hub, &clock, 3 * 60);
     thread_event(&hub, HubEventType::ThreadWaiting, "th-1");
     set_record(&hub, "T1", "idle", None);
     let held = point_after(&hub, &clock, 2 * 3600);
@@ -1244,10 +1159,10 @@ async fn a_task_waiting_for_an_answer_holds_until_the_answer_continues_it() {
     // `message_agent` continues it: task.started.
     set_writer(&hub, "T1", "running");
     set_record(&hub, "T1", "running", None);
-    assert_eq!(estimate_after(&hub, &clock, 0), (ran, None));
+    assert_eq!(bar_after(&hub, &clock, 0), (ran, None));
     assert_eq!(
-        estimate_after(&hub, &clock, 3 * 60).0,
-        estimate_after(&twin, &tclock, 6 * 60).0
+        bar_after(&hub, &clock, 3 * 60).0,
+        bar_after(&twin, &tclock, 6 * 60).0
     );
 }
 
@@ -1258,7 +1173,7 @@ async fn another_threads_limit_or_a_new_turn_never_pauses_a_running_task() {
     use fleetd_contracts::events::HubEventType;
     let (clock, hub, _home) = twin();
     let (tclock, twin, _thome) = twin();
-    estimate_after(&hub, &clock, 60);
+    bar_after(&hub, &clock, 60);
     thread_event(&hub, HubEventType::ThreadUsageLimited, "lead-th");
     hub.events
         .append(crate::hub::store::NewEvent {
@@ -1278,7 +1193,7 @@ async fn another_threads_limit_or_a_new_turn_never_pauses_a_running_task() {
     let p = point_after(&hub, &clock, 2 * 60);
     assert_eq!(
         (p.pct.get(), p.drop, p.paused),
-        (estimate_after(&twin, &tclock, 3 * 60).0, None, None),
+        (bar_after(&twin, &tclock, 3 * 60).0, None, None),
         "the same three minutes as with no thread event at all"
     );
     let later = point_after(&hub, &clock, 2 * 3600);

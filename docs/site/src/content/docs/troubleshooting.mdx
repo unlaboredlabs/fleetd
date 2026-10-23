@@ -147,22 +147,19 @@ systemctl --user restart fleetd-node.service    # a node, on that machine
 
 ## Work is stuck {#stuck}
 
-Ask the lead in the chat what it is waiting on. For the full view, run `fleetd status` with the project or the
-work's id:
+Ask the lead in the chat what it is waiting on. `fleetd status` with the project shows its state, why it is blocked
+and why its bar last fell:
 
 ```sh
-fleetd status W41
+fleetd status storefront
 ```
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| "W41 is a draft: waiting for the lead's brief" | The lead hasn't written the work's [brief](/docs/glossary#brief) yet. | `fleetd status W41 --watch` shows it once the brief exists. If the lead never starts, see [Its lead](/docs/projects#its-lead). |
-| A pull request stays queued on the [merge train](/docs/glossary#merge-train) | The train can't work in the checkout, or CI or a review is pending. | `fleetd status` lists a PR the train can't move under risks, with the train's error. For more, run `fleetd change status X<n>` in the project's checkout on its worker. The change id `X<n>` is listed by the `train_get` tool. |
-| A risk says "#212 can't merge: its checkout on laptop is outside the node's cmdRoots" | The checkout is outside the node's `cmdRoots` (default: your home directory). | Add its folder to `cmdRoots` in [`node.json`](/docs/config-and-files#node-json) and restart the node. |
+| A pull request stays queued on the [merge train](/docs/glossary#merge-train) | The train can't work in the checkout, or CI or a review is pending. | Run `fleetd change status X<n>` in the project's checkout on its worker: it shows the train's error. The change id `X<n>` is listed by the `train_get` tool. |
+| The train's error says "#212 can't merge: its checkout on laptop is outside the node's cmdRoots" | The checkout is outside the node's `cmdRoots` (default: your home directory). | Add its folder to `cmdRoots` in [`node.json`](/docs/config-and-files#node-json) and restart the node. |
 | An agent's activity says "node retry 1/3 in 57 s: overloaded" | Claude's API was overloaded or the network failed, after claude's own retries. | Nothing. The node continues the same run after about 1, 4 and 15 minutes, then fails it with claude's words. |
 | Your message waits and the chat says why | The lead can't start: `claude` logged out, out of range, or the worker offline. | See [Claude](#claude) and [Machines](#machines). |
-
-"Waiting on" lists the stages left for the item in fleetd's pipeline, in order. See [What it waits on](/docs/status#waits).
 
 `fleetd change status` is a lead-side command: run it inside the project's checkout on the worker. If that node uses
 a non-default home, set `FLEETD_HOME` as it has, or `FLEETD_NODE_SOCK=<node home>/node.sock`.

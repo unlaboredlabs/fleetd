@@ -198,8 +198,6 @@ pub fn progress_of(f: &Figure, as_of_ms: i64, marker: Option<Marker>) -> Progres
         polish_total: Count::unchecked(f.polish_total),
         as_of: Timestamp(iso_ms(as_of_ms)),
         marker,
-        stale: None,
-        estimate: None,
     }
 }
 

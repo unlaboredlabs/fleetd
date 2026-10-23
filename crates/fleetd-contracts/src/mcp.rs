@@ -27,7 +27,7 @@ use crate::prompts::{
     RetiredPromptOverride, SessionPrompt,
 };
 use crate::secrets::{SealedSecret, SecretFingerprint};
-use crate::status::{ProjectStatusRow, StatusDoc, StatusScope};
+use crate::status::{ProgressPoint, ProjectStatusRow};
 use crate::steer::{Steer, SteerId, SteerMode, SteerTarget};
 use crate::tasks::{SlotState, Task, TaskId, TaskState};
 use crate::time::{
@@ -849,42 +849,20 @@ output!(SessionPromptGetOutput {
     session: SessionPrompt
 });
 
-// status_get, status_wait, status_seen: the status view of the fleet, a project or an order.
-input!(StatusGetInput {
-    scope: StatusScope,
-    /// Count "since" from this seq instead of the key's status_seen mark (a client that keeps its own mark).
-    since_seq: Option<EventSeq>,
-});
-// Not flattened: the doc's own `next` (Next-up rows) would clash with the output's `next` hint.
-output!(StatusGetOutput { doc: StatusDoc });
-input!(StatusWaitInput {
-    scope: StatusScope,
-    /// As in status_get.
-    since_seq: Option<EventSeq>,
-    /// The version the caller has; absent waits for none (answers at once).
-    after: Option<Count>,
-    #[serde(default)]
-    timeout_sec: IntOr<0, 50, 50>,
-});
-// `doc` once its version is past `after`; otherwise `unchanged` with the current version.
-output!(StatusWaitOutput {
-    doc: Option<StatusDoc>,
-    unchanged: Option<bool>,
-    version: Count,
-});
 // status_projects: one row per project the key reads, for the Status screen.
 input!(StatusProjectsInput {});
 output!(StatusProjectsOutput {
     /// By title.
     rows: List<ProjectStatusRow, 0, 200>,
 });
-input!(StatusSeenInput {
-    scope: StatusScope,
-    seq: EventSeq
+// status_get: one project's row and the series behind its bar.
+input!(StatusGetInput {
+    project_ref: ProjectRef
 });
-output!(StatusSeenOutput {
-    /// False for agent keys: only a person's look moves the mark.
-    recorded: bool,
+output!(StatusGetOutput {
+    row: ProjectStatusRow,
+    /// The bar over time, oldest first: why it fell (`drop`) and when it held on paused work (`paused`).
+    series: List<ProgressPoint, 0, 48>,
 });
 
 // plan_get: one project's plan, or one order's items.
@@ -1228,8 +1206,6 @@ tools! {
     time_retention_set => TimeRetentionSet, Admin, TimeRetentionSetInput, TimeRetentionSetOutput;
     thread_window => ThreadWindow, Read, ThreadWindowInput, ThreadWindowOutput;
     status_get => StatusGet, Read, StatusGetInput, StatusGetOutput;
-    status_wait => StatusWait, Read, StatusWaitInput, StatusWaitOutput;
-    status_seen => StatusSeen, Read, StatusSeenInput, StatusSeenOutput;
     status_projects => StatusProjects, Read, StatusProjectsInput, StatusProjectsOutput;
     plan_get => PlanGet, Read, PlanGetInput, PlanGetOutput;
     // Human keys only (the handler checks); the lead steers its tasks with `fleetd task message`.

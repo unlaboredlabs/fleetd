@@ -35,10 +35,7 @@ async fn plan_get(
         }
     };
     require(&caller, Role::Read, Some(&project_ref.machine_id))?;
-    let plan = hub
-        .status
-        .plan_view(&hub, &project_ref, ws.as_ref())
-        .map_err(|e| e.0)?;
+    let plan = hub.plans.view(&project_ref, ws.as_ref()).map_err(|e| e.0)?;
     Ok(PlanGetOutput {
         plan,
         next: None,

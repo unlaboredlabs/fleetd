@@ -1,6 +1,6 @@
 // The Status view's answers (F6): status_projects, one row per project the fixture's hub has, in every state the
-// view draws. Added to the shared fixtures, plus the states only Status has: rows whose source went quiet, every
-// project still planning or with nothing to count, and the skeleton before the first answer.
+// view draws. Added to the shared fixtures, plus the states only Status has: rows whose source went quiet, a figure
+// that holds on paused work, and the skeleton before the first answer.
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import { at } from "../kit/ids.ts";
@@ -35,7 +35,7 @@ const projectsOf = (f: Fixture): Project[] => {
   return [...seen.values()];
 };
 
-const estimate = (pct: number, verifiedPct: number, inFlightPct: number): JsonObject => ({ pct, verifiedPct, inFlightPct, weights: "project" });
+const estimate = (pct: number, verifiedPct: number, inFlightPct: number): JsonObject => ({ pct, verifiedPct, inFlightPct });
 
 /** One row per project, cycling through the states the view draws, so every fixture shows them all. */
 const ROWS: readonly ((f: Fixture) => JsonObject)[] = [
@@ -45,7 +45,7 @@ const ROWS: readonly ((f: Fixture) => JsonObject)[] = [
   () => ({ state: "idle", agentsRunning: 0 }),
 ];
 
-type Variant = "typical" | "stale" | "planning";
+type Variant = "typical" | "stale";
 
 const rowsFor = (f: Fixture, variant: Variant): JsonObject[] =>
   projectsOf(f).map((p, i) => {
@@ -53,10 +53,6 @@ const rowsFor = (f: Fixture, variant: Variant): JsonObject[] =>
     // The hub cuts a row's title at 120 characters, as it does any title in a list.
     const title = p.title.length > 120 ? `${p.title.slice(0, 119)}…` : p.title;
     const row: JsonObject = { projectRef: { machineId: p.machineId, projectId: p.projectId }, title, asOf: f.now, ...base };
-    if (variant === "planning") {
-      row["progress"] = { ...estimate(0, 0, 0), planning: { active: true, pct: 55, sharePct: 8, since: ago(f, 8 * MIN) } };
-      row["state"] = "working";
-    }
     if (variant === "stale" && i % 2 === 0) {
       const since = ago(f, 11 * MIN);
       row["stale"] = { since, reason: `no heartbeat from ${p.machineId} since ${since.slice(11, 16)}` };
@@ -77,7 +73,7 @@ const own = (what: string, note: string, base: Fixture, variant: Variant, delayM
 };
 
 /**
- * The first row's project (storefront, working at 78%) with its estimate's series in its status doc: it climbed, fell
+ * The first row's project (storefront, working at 78%) with the series behind its bar (status_get): it climbed, fell
  * once when CI failed, and now holds because its agent hit a usage limit. The bar's hover shows the held marker.
  */
 const paused = (base: Fixture): Fixture => {
@@ -92,14 +88,9 @@ const paused = (base: Fixture): Fixture => {
     point(30, 78, 58),
     point(12, 78, 58, { paused: "paused: an agent hit a usage limit" }),
   ];
-  f.update("status_get", (out, input) => {
-    const scope = isObject(input) && isObject(input["scope"]) ? input["scope"] : undefined;
-    const ref = scope !== undefined && isObject(scope["projectRef"]) ? scope["projectRef"] : undefined;
-    const doc = isObject(out) ? out["doc"] : undefined;
-    const progress = isObject(doc) ? doc["progress"] : undefined;
-    if (ref?.["projectId"] !== first.projectId || !isObject(out) || !isObject(doc) || !isObject(progress)) return out;
-    return { ...out, doc: { ...doc, progress: { ...progress, estimate: { ...estimate(78, 58, 20), series } } } };
-  });
+  const row = rowsFor(f, "typical")[0];
+  if (row === undefined) throw new Error("status-paused: no row");
+  f.answer("status_get", { projectRef: { machineId: first.machineId, projectId: first.projectId } }, { row, series });
   return f;
 };
 
@@ -112,7 +103,6 @@ export default defineGroup({
   },
   fixtures: (base) => [
     own("stale", "Status: half the projects' machines went quiet.", base("typical"), "stale"),
-    own("planning", "Status: every lead is still planning: no numbers, a planning word.", base("typical"), "planning"),
     paused(base("typical")),
     own("skeleton", "Status: the hub is live but hasn't answered yet: row outlines, no words or numbers.", base("typical"), "typical", HOLD_MS),
   ],

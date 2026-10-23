@@ -32,13 +32,12 @@ export interface Bar {
 
 const clamp = (n: number): number => Math.min(100, Math.max(0, Math.round(n)));
 
-export const barOf = (row: ProjectStatusRow): { bar: Bar | null; planning: boolean } => {
+export const barOf = (row: ProjectStatusRow): Bar | null => {
   const p = row.progress;
-  if (p === undefined) return { bar: null, planning: false };
-  if (p.planning?.active === true) return { bar: null, planning: true };
+  if (p === undefined) return null;
   const verifiedPct = clamp(p.verifiedPct);
   // The lighter part never claims past 100, whatever rounding did.
-  return { bar: { pct: clamp(p.pct), verifiedPct, inFlightPct: Math.min(clamp(p.inFlightPct), 100 - verifiedPct) }, planning: false };
+  return { pct: clamp(p.pct), verifiedPct, inFlightPct: Math.min(clamp(p.inFlightPct), 100 - verifiedPct) };
 };
 
 export interface WordedRow {

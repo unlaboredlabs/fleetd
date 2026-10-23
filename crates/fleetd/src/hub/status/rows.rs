@@ -1,17 +1,101 @@
-//! The Status screen's rows: one per project, a state word, the two-tone bar, agents running and the last merge.
-//! Read from the same world a status doc renders from; measured or observed only, never an ETA.
+//! Status: one row per project, a state word, the two-tone bar, agents running and the last merge. Measured or
+//! observed only, never an ETA.
 use std::collections::HashMap;
 
-use fleetd_contracts::ids::ProjectRef;
-use fleetd_contracts::model::MachineStatus;
-use fleetd_contracts::prim::{Count, Text};
+use chrono_tz::Tz;
+use fleetd_contracts::events::HubEventType;
+use fleetd_contracts::ids::{ProjectRef, Timestamp};
+use fleetd_contracts::model::{Machine, MachineStatus};
+use fleetd_contracts::prim::{Count, Line, Text};
 use fleetd_contracts::status::{CiState, LastMerged, ProjectRowState, ProjectStatusRow, StaleMark};
 use rusqlite::Connection;
 use serde_json::Value;
 
-use super::render::{World, line, machine_stale, project_progress, ts};
+use super::credit;
+use super::fresh::{self, Fresh};
 use crate::hub::api::Hub;
-use crate::hub::plan;
+use crate::hub::plan::{self, clip, parse_ms};
+use crate::hub::store::iso_ms;
+
+/// Event types that can change a row or its series: `fleetd status --watch` reads the rows again after one.
+pub const CHANGES_A_ROW: &[HubEventType] = &[
+    HubEventType::MachineOnline,
+    HubEventType::MachineOffline,
+    HubEventType::MachineDegraded,
+    HubEventType::MachineGuard,
+    HubEventType::ProjectAdded,
+    HubEventType::ProjectRemoved,
+    HubEventType::ChatMessage,
+    HubEventType::ChatWaiting,
+    HubEventType::LeadStarted,
+    HubEventType::WorkstreamCreated,
+    HubEventType::WorkstreamRunning,
+    HubEventType::WorkstreamState,
+    HubEventType::WorkstreamDone,
+    HubEventType::TaskQueued,
+    HubEventType::TaskStarted,
+    HubEventType::TaskCompleted,
+    HubEventType::TaskFailed,
+    HubEventType::TaskCancelled,
+    HubEventType::ThreadWaiting,
+    HubEventType::ThreadUsageLimited,
+    HubEventType::ThreadStarted,
+    HubEventType::ReviewVerdict,
+    HubEventType::ChangeQueued,
+    HubEventType::ChangeReady,
+    HubEventType::ChangeNeedsRebase,
+    HubEventType::ChangeCiFailed,
+    HubEventType::ChangeRefused,
+    HubEventType::ChangeState,
+    HubEventType::PrMerged,
+    HubEventType::PlanChanged,
+    HubEventType::PlanVerified,
+    HubEventType::UsageBreaker,
+    HubEventType::UsageResumed,
+    HubEventType::CiMain,
+    HubEventType::SourceStale,
+    HubEventType::SourceFresh,
+];
+
+fn ts(ms: i64) -> Timestamp {
+    Timestamp(iso_ms(ms))
+}
+
+fn line<const N: usize>(s: &str) -> Line<1, N> {
+    let s = clip(s, N);
+    Line::unchecked(if s.is_empty() { "—".to_owned() } else { s })
+}
+
+/// "14:02" today, "Thu 14:00" within a week, else "Oct 21 14:00", in the hub's zone.
+pub fn clock(ms: i64, now: i64, tz: Tz) -> String {
+    let Some(t) = chrono::DateTime::from_timestamp_millis(ms).map(|d| d.with_timezone(&tz)) else {
+        return iso_ms(ms);
+    };
+    let n = chrono::DateTime::from_timestamp_millis(now).map(|d| d.with_timezone(&tz));
+    if n.is_some_and(|n| n.date_naive() == t.date_naive()) {
+        t.format("%H:%M").to_string()
+    } else if (ms - now).abs() < 6 * credit::DAY_MS {
+        t.format("%a %H:%M").to_string()
+    } else {
+        t.format("%b %-d %H:%M").to_string()
+    }
+}
+
+/// An offline machine's mark: since its last heartbeat.
+fn machine_stale(m: &Machine, now: i64, tz: Tz) -> Option<StaleMark> {
+    if m.status != MachineStatus::Offline {
+        return None;
+    }
+    let seen = parse_ms(m.last_seen_at.as_str()).unwrap_or(now);
+    Some(StaleMark {
+        since: ts(seen),
+        reason: line(&format!(
+            "no heartbeat from {} since {}",
+            m.machine_id,
+            clock(seen, now, tz)
+        )),
+    })
+}
 
 /// A project's latest merge.
 #[derive(Clone, Debug, PartialEq)]
@@ -104,10 +188,11 @@ pub fn read_changes(
     Ok((merges, in_flight))
 }
 
-/// The rows read at `at` with the log at `read_head` still answer at `now` with the log at `head`: until an event,
-/// and then for up to [`REREAD_MS`] more, so a burst of events costs one read.
+/// The rows read at `at` with the log at `read_head` still answer at `now` with the log at `head` only with no event
+/// since and for [`REREAD_MS`]: a read after an event always sees it, and in-flight credit, which moves with time,
+/// is never older than that.
 pub fn reusable(read_head: i64, at: i64, head: i64, now: i64) -> bool {
-    read_head == head || now - at < REREAD_MS
+    read_head == head && now - at < REREAD_MS
 }
 
 pub const REREAD_MS: i64 = 250;
@@ -139,35 +224,42 @@ pub fn state_of(f: &Facts) -> ProjectRowState {
     }
 }
 
-/// Per project: its latest merge, and its PRs in review, CI or the train. Read only for the rows, never on a doc's
-/// render.
-pub struct Changes {
-    pub merges: HashMap<String, Merged>,
-    pub in_flight: HashMap<String, i64>,
-}
-
-/// Every project, by title.
-pub fn rows(hub: &Hub, w: &World, changes: &Changes) -> Vec<ProjectStatusRow> {
-    let mut projects: Vec<(&String, &String)> = w.titles.iter().collect();
+/// Every project's row, by title, read at `now`. Each read moves the project's series on under the drop rule.
+pub fn read(hub: &Hub, fresh: &Fresh, now: i64) -> anyhow::Result<Vec<ProjectStatusRow>> {
+    let tz = crate::hub::attention::hub_zone();
+    let data = hub.db.with(|c| Ok(credit::Data::read(c, now)?))?;
+    let (merges, in_flight) = hub.db.with(|c| Ok(read_changes(c)?))?;
+    let machines = hub.store.machines_list()?;
+    let mut projects: Vec<(String, String)> = hub
+        .store
+        .projects_list(None, None)?
+        .into_iter()
+        .map(|p| (format!("{}/{}", p.machine_id, p.project_id), p.title))
+        .collect();
     projects.sort_by(|a, b| {
         a.1.to_lowercase()
             .cmp(&b.1.to_lowercase())
-            .then(a.0.cmp(b.0))
+            .then(a.0.cmp(&b.0))
     });
+    let repos: Vec<(String, String)> = hub
+        .train
+        .repos()
+        .into_iter()
+        .map(|(r, p)| (r.to_lowercase(), plan::store::pkey(&p)))
+        .collect();
     let mut out = Vec::new();
-    for (pk, title) in projects {
+    for (pk, title) in &projects {
         let r: ProjectRef = plan::store::project_ref(pk);
-        let machine = w.machines.iter().find(|m| m.machine_id == r.machine_id);
+        let machine = machines.iter().find(|m| m.machine_id == r.machine_id);
         let mname = machine.map_or(r.machine_id.as_str(), |m| m.name.as_str());
-        let repos: Vec<&String> = w
-            .repos
+        let repos: Vec<&String> = repos
             .iter()
             .filter(|(_, p)| p == pk)
             .map(|(repo, _)| repo)
             .collect();
-        let usage_hit = w
-            .loads
-            .get(r.machine_id.as_str())
+        let usage_hit = hub
+            .link
+            .load(&r.machine_id)
             .is_some_and(|l| l.limits.iter().any(|x| x.status.as_str() == "rejected"));
         let red = repos.iter().find(|repo| {
             hub.train
@@ -196,28 +288,43 @@ pub fn rows(hub: &Hub, w: &World, changes: &Changes) -> Vec<ProjectStatusRow> {
             blocked,
             // The agents the chat header and the max-agents cap count: the lead's own turn is not one.
             agents: hub.slots.agents(&r).running,
-            in_flight: changes.in_flight.get(pk).copied().unwrap_or(0),
+            in_flight: in_flight.get(pk).copied().unwrap_or(0),
             lead_working: chat.as_ref().is_some_and(|c| c.lead_working),
         };
-        let stale: Option<StaleMark> = machine.and_then(|m| machine_stale(m, w.now, w.tz));
+        // Its machine first, then GitHub and the merge train of its repos.
+        let stale = machine.and_then(|m| machine_stale(m, now, tz)).or_else(|| {
+            repos.iter().find_map(|repo| {
+                [fresh::github(repo), fresh::train(repo)]
+                    .iter()
+                    .find_map(|source| fresh.view(source, now)?.stale)
+                    .map(|st| StaleMark {
+                        since: ts(st.since_ms),
+                        reason: line(&st.reason),
+                    })
+            })
+        });
+        let progress = match credit::bar(&data, pk) {
+            Some(bar) => Some(hub.db.with(|c| Ok(credit::advance(c, pk, &bar, now)?))?),
+            None => None,
+        };
         out.push(ProjectStatusRow {
             project_ref: r,
             title: line(title),
             state: state_of(&facts),
             blocked_reason: facts.blocked.as_deref().map(line),
-            progress: project_progress(hub, w, pk).and_then(|(_, p)| p.estimate),
+            progress: progress.as_ref().map(credit::estimate_of),
             agents_running: Count::unchecked(facts.agents.max(0)),
-            last_merged: changes.merges.get(pk).map(|m| LastMerged {
+            last_merged: merges.get(pk).map(|m| LastMerged {
                 title: line(&m.title),
                 pr_number: (m.pr_number > 0).then(|| Count::unchecked(m.pr_number)),
                 pr_url: m.pr_url.as_deref().and_then(|u| Text::new(u).ok()),
                 at: ts(m.at_ms),
             }),
-            as_of: ts(w.now),
+            as_of: ts(now),
             stale,
         });
     }
-    out
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -259,20 +366,17 @@ mod tests {
         );
     }
 
-    /// Unchanged until an event; after one, a read within 250 ms of the last still answers.
+    /// Reused only within 250 ms and with no event since: an event or the time passing reads them again.
     #[test]
-    fn rows_are_read_again_after_an_event_at_most_every_250_ms() {
+    fn rows_are_read_again_after_an_event_or_250_ms() {
+        assert!(reusable(7, 1_000, 7, 1_249), "a burst of reads costs one");
         assert!(
-            reusable(7, 0, 7, 60_000),
-            "no event: still current a minute on"
+            !reusable(7, 1_000, 8, 1_000),
+            "an event, even in the same millisecond: read again"
         );
         assert!(
-            reusable(7, 1_000, 8, 1_249),
-            "an event within the window waits for it"
-        );
-        assert!(
-            !reusable(7, 1_000, 8, 1_250),
-            "an event and the window passed: read again"
+            !reusable(7, 1_000, 7, 1_250),
+            "no event, but in-flight credit moved with time: read again"
         );
     }
 
@@ -314,12 +418,9 @@ mod tests {
     }
 
     fn row_of(hub: &Hub) -> ProjectStatusRow {
-        let world = World::read(hub, 1_792_000_000_000, None, Default::default()).unwrap();
-        let changes = Changes {
-            merges: HashMap::new(),
-            in_flight: HashMap::new(),
-        };
-        rows(hub, &world, &changes).remove(0)
+        read(hub, &Fresh::default(), 1_792_000_000_000)
+            .unwrap()
+            .remove(0)
     }
 
     /// The chat header's count: task agents holding a slot.
