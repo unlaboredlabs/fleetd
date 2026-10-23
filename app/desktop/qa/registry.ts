@@ -39,7 +39,6 @@ export const fixtures = [
   "long-text",
   "many-prompts",
   "many-agents",
-  "conversation",
   "hub-unreachable",
   "pairing-failed",
   "node-too-old",
@@ -87,7 +86,6 @@ export const fixtures = [
   "status-skeleton",
   // E3b's shared stress fixture; the time inspector fills it with a ~15k-span order (fixtures/time).
   "time-heavy",
-  "conversation-20k",
   // The lead chat (fixtures/chat, E3b): a long conversation with migrated order history, a reply streaming in,
   // attachments, the two inline items (secret entry, gated command), the lead waiting on you, a first message.
   "chat-long",
