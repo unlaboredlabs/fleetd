@@ -427,27 +427,16 @@ pub fn next_run(
     })
 }
 
-/// `new Date(ms).toISOString()`.
-pub fn iso(ms: i64) -> String {
-    utc(ms).format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()
-}
-
-/// `Date.parse` of an ISO timestamp the hub wrote.
-pub fn parse_iso(text: &str) -> Option<i64> {
-    DateTime::parse_from_rfc3339(text)
-        .ok()
-        .map(|t| t.timestamp_millis())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hub::store::{iso_ms, parse_ms};
 
     const NY: &str = "America/New_York";
     const LONDON: &str = "Europe/London";
 
     fn at(s: &str) -> i64 {
-        parse_iso(s).unwrap()
+        parse_ms(s).unwrap()
     }
     fn tz(s: &str) -> Tz {
         s.parse().unwrap()
@@ -470,7 +459,7 @@ mod tests {
         let mut t = at(from);
         for _ in 0..count {
             let next = next_cron(&parsed, t, tz(zone));
-            out.push(next.map(iso));
+            out.push(next.map(iso_ms));
             match next {
                 Some(n) => t = n,
                 None => break,
@@ -489,11 +478,11 @@ mod tests {
         assert_eq!(offset_ms(at("2026-07-15T12:00:00Z"), tz(NY)), -4 * hour);
         // In the spring-forward gap: moved forward by the gap. Repeated in autumn: the first one.
         assert_eq!(
-            iso(zoned_to_utc(lt(2026, 3, 8, 2, 30), tz(NY))),
+            iso_ms(zoned_to_utc(lt(2026, 3, 8, 2, 30), tz(NY))),
             "2026-03-08T07:30:00.000Z"
         );
         assert_eq!(
-            iso(zoned_to_utc(lt(2026, 11, 1, 1, 30), tz(NY))),
+            iso_ms(zoned_to_utc(lt(2026, 11, 1, 1, 30), tz(NY))),
             "2026-11-01T05:30:00.000Z"
         );
     }
@@ -501,19 +490,19 @@ mod tests {
     #[test]
     fn parse_at_absolute_and_wall_clock() {
         assert_eq!(
-            iso(parse_at("2026-10-18T09:00:00Z", NY).unwrap()),
+            iso_ms(parse_at("2026-10-18T09:00:00Z", NY).unwrap()),
             "2026-10-18T09:00:00.000Z"
         );
         assert_eq!(
-            iso(parse_at("2026-10-18T09:00:00+02:00", NY).unwrap()),
+            iso_ms(parse_at("2026-10-18T09:00:00+02:00", NY).unwrap()),
             "2026-10-18T07:00:00.000Z"
         );
         assert_eq!(
-            iso(parse_at("2026-10-18T09:00", LONDON).unwrap()),
+            iso_ms(parse_at("2026-10-18T09:00", LONDON).unwrap()),
             "2026-10-18T08:00:00.000Z"
         );
         assert_eq!(
-            iso(parse_at("2026-12-18T09:00", LONDON).unwrap()),
+            iso_ms(parse_at("2026-12-18T09:00", LONDON).unwrap()),
             "2026-12-18T09:00:00.000Z"
         );
         assert!(parse_at("tomorrow 9am", NY).is_err());
@@ -660,7 +649,7 @@ mod tests {
         assert_eq!(
             next_run(&s, at("2026-10-17T10:00:00Z"), None)
                 .unwrap()
-                .map(iso)
+                .map(iso_ms)
                 .as_deref(),
             Some("2026-10-17T10:01:00.000Z")
         );
@@ -678,7 +667,7 @@ mod tests {
         assert_eq!(
             next_run(&s, at("2026-10-17T10:00:00Z"), None)
                 .unwrap()
-                .map(iso)
+                .map(iso_ms)
                 .as_deref(),
             Some("2026-10-17T11:00:00.000Z")
         );
@@ -689,7 +678,7 @@ mod tests {
                 Some(at("2026-10-17T11:00:00Z"))
             )
             .unwrap()
-            .map(iso)
+            .map(iso_ms)
             .as_deref(),
             Some("2026-10-17T14:00:00.000Z")
         );

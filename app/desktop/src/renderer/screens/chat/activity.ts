@@ -16,9 +16,7 @@ const FLEETD_WORDS: readonly (readonly [string, string])[] = [
   ["decisions_search", "looking up decisions"],
   ["task_message", "messaging an agent"],
   ["steer_send", "messaging an agent"],
-  ["status_set", "updating the status"],
   ["change_", "moving a PR along"],
-  ["slice_ready", "moving a PR along"],
 ];
 
 /** A file's name, in backticks: the line sets it as code, the voice of machine text. */

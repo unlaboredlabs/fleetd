@@ -52,7 +52,7 @@ fn stopping() -> McpToolError {
     )
 }
 
-/// The lead calls `claim_done` and `review_verdict`, answered by checks and review verdicts.
+/// The lead call `review_verdict`, answered by review verdicts.
 struct CheckCalls(Weak<Hub>);
 
 impl LeadCallHandler for CheckCalls {
@@ -64,16 +64,12 @@ impl LeadCallHandler for CheckCalls {
             let caller = crate::hub::reviews::verdicts::Caller {
                 project_ref: caller.project_ref,
                 by: caller.by,
+                task: match caller.agent {
+                    crate::hub::link::lead_calls::CallerAgent::Task(task) => Some(task),
+                    _ => None,
+                },
             };
             match call {
-                LeadCall::ClaimDone(c) => crate::hub::checks::tools::lead_claim_done(
-                    &hub,
-                    &caller,
-                    &c.workstream_id,
-                    c.close_over.as_ref().map(|w| w.as_str()),
-                )
-                .await
-                .map(LeadCallResult::ClaimDone),
                 LeadCall::ReviewVerdict(v) => {
                     crate::hub::checks::tools::lead_review_verdict(&hub, &caller, v)
                         .await
@@ -82,7 +78,7 @@ impl LeadCallHandler for CheckCalls {
                 other => Err(McpToolError::new(
                     fleetd_contracts::mcp::ErrorCode::Invalid,
                     format!(
-                        "{} is not a checks call",
+                        "{} is not a review call",
                         crate::hub::link::lead_calls::op_of(&other)
                     ),
                 )),
@@ -97,9 +93,7 @@ fn register_ledger_calls(hub: &Arc<Hub>) {
         hub.lead_calls.register(op, Arc::clone(&calls));
     }
     let checks: Arc<dyn LeadCallHandler> = Arc::new(CheckCalls(Arc::downgrade(hub)));
-    for op in ["claim_done", "review_verdict"] {
-        hub.lead_calls.register(op, Arc::clone(&checks));
-    }
+    hub.lead_calls.register("review_verdict", checks);
 }
 
 struct UsageForLeads(Weak<Hub>);

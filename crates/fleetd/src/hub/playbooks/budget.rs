@@ -109,7 +109,7 @@ mod tests {
             "workstreamId": format!("W{n}"), "projectRef": { "machineId": "devbox", "projectId": "p" },
             "title": "t", "source": { "text": "t", "channel": "app", "by": "human", "at": "2026-10-19T08:00:00.000Z" },
             "brief": { "goal": "g", "why": "w", "pointers": [], "constraints": [],
-                "doneWhen": [{ "type": "http", "url": "http://localhost:3000/health", "status": 200 }], "budget": { "size": size } },
+                "doneWhen": ["the health page answers 200"], "budget": { "size": size } },
             "playbook": playbook, "state": state,
             "createdAt": "2026-10-19T08:00:00.000Z", "updatedAt": "2026-10-19T09:00:00.000Z",
         });

@@ -1,6 +1,6 @@
-//! What a lead is told at a wake: the state block (the digest), then one line per event since its last wake. A fixed
-//! format rendered here, not a prompt: no one edits it, the lead prompt says how to read it, and "What agents are
-//! told" (#wake-events) describes it for people.
+//! The event lines of a lead's wake: one per event since its last wake, after the state block (the digest), framed by
+//! the `lead.wake` prompt. Facts in a fixed format: the lead prompt says how to read them, and "What agents are told"
+//! (#wake-events) describes them for people.
 //!
 //! An event is `- <subject> <what>[: <detail>]`, and may carry a few `  > ` body lines: an agent's final message, its
 //! question, a failed check's evidence. Ids (W3, T4, C2) stay because the lead passes them to its tools; the lead
@@ -40,23 +40,19 @@ impl Display for AgentsLine {
 #[derive(Debug, Clone)]
 pub enum Event<'a> {
     /// A new order from the human.
-    Order {
-        workstream: &'a str,
-        text: &'a str,
-    },
+    Order { workstream: &'a str, text: &'a str },
     OrderStopped {
         workstream: &'a str,
         title: &'a str,
         why: &'a str,
         cancelled: i64,
     },
-    /// A task ended. `place` is its branch and PR; `receipts` the hub's count line; `result` its final message.
+    /// A task ended. `place` is its branch and PR; `result` its final message.
     AgentEnded {
         task: &'a str,
         ended: Ended,
         title: &'a str,
         place: &'a str,
-        receipts: Option<&'a str>,
         result: &'a str,
     },
     AgentWaiting {
@@ -70,29 +66,6 @@ pub enum Event<'a> {
         kind: &'a str,
         steer: &'a str,
         text: &'a str,
-    },
-    /// `failures` are the failed checks' lines, already indented.
-    ClaimFailed {
-        claim: &'a str,
-        workstream: &'a str,
-        failures: &'a [String],
-    },
-    ClaimPassed {
-        claim: &'a str,
-        workstream: &'a str,
-    },
-    /// The checks passed, but write work of the order has not landed, so it stays open. `ids` are for tools only.
-    ClaimHeld {
-        claim: &'a str,
-        workstream: &'a str,
-        work: &'a str,
-        ids: &'a str,
-    },
-    /// The order became done some other way while write work of it had not landed; that work keeps going.
-    OrderDoneWorkKept {
-        workstream: &'a str,
-        work: &'a str,
-        ids: &'a str,
     },
     PrMerged {
         change: &'a str,
@@ -140,10 +113,7 @@ pub enum Event<'a> {
         tail: Option<&'a str>,
     },
     /// A person raised the project's max agents; queued agents have already started.
-    CapRaised {
-        max_agents: i64,
-        free: i64,
-    },
+    CapRaised { max_agents: i64, free: i64 },
 }
 
 fn quote(text: &str) -> String {
@@ -194,7 +164,6 @@ impl Event<'_> {
                 ended,
                 title,
                 place,
-                receipts,
                 result,
             } => {
                 let verb = match ended {
@@ -202,12 +171,9 @@ impl Event<'_> {
                     Ended::Failed => "failed",
                     Ended::Cancelled => "was cancelled",
                 };
-                let mut rest: Vec<String> =
-                    receipts.map(|r| format!("  {r}")).into_iter().collect();
-                rest.extend(body(result));
                 (
                     format!("- {task} {verb}: {}{place}", one_line(title, 80)),
-                    rest,
+                    body(result),
                 )
             }
             Event::AgentWaiting {
@@ -227,39 +193,6 @@ impl Event<'_> {
                 format!(
                     "- the human steered {task} ({kind}) directly ({steer}): {}",
                     quote(text)
-                ),
-                vec![],
-            ),
-            Event::ClaimFailed {
-                claim,
-                workstream,
-                failures,
-            } => (
-                format!("- claim {claim} on {workstream} failed: {workstream} stays verifying"),
-                failures.to_vec(),
-            ),
-            Event::ClaimPassed { claim, workstream } => (
-                format!("- claim {claim} on {workstream} passed: {workstream} is done"),
-                vec![],
-            ),
-            Event::ClaimHeld {
-                claim,
-                workstream,
-                work,
-                ids,
-            } => (
-                format!(
-                    "- claim {claim} on {workstream} passed, but write work that hasn't landed is still open: {work} (ids: {ids}); {workstream} stays open"
-                ),
-                vec![],
-            ),
-            Event::OrderDoneWorkKept {
-                workstream,
-                work,
-                ids,
-            } => (
-                format!(
-                    "- {workstream} is done; its write work that hadn't landed keeps going: {work} (ids: {ids})"
                 ),
                 vec![],
             ),
@@ -365,11 +298,6 @@ impl Event<'_> {
     }
 }
 
-/// A whole wake: the state block, then the events in the order they came.
-pub fn frame(state: &str, events: &[String]) -> String {
-    format!("{state}\n\n## Events\n{}", events.join("\n"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -416,10 +344,9 @@ mod tests {
                 ended: Ended::Done,
                 title: "fix login",
                 place: " (branch fix/login, PR https://github.com/o/r/pull/12)",
-                receipts: Some("receipts: 3 commits"),
                 result: "Fixed it.\nTests pass."
             }),
-            "- T4 finished: fix login (branch fix/login, PR https://github.com/o/r/pull/12)\n  receipts: 3 commits\n  > Fixed it.\n  > Tests pass."
+            "- T4 finished: fix login (branch fix/login, PR https://github.com/o/r/pull/12)\n  > Fixed it.\n  > Tests pass."
         );
         assert_eq!(
             r(Event::AgentEnded {
@@ -427,7 +354,6 @@ mod tests {
                 ended: Ended::Failed,
                 title: "port",
                 place: "",
-                receipts: None,
                 result: ""
             }),
             "- T5 failed: port\n  > (no final message)"
@@ -438,7 +364,6 @@ mod tests {
                 ended: Ended::Cancelled,
                 title: "port",
                 place: "",
-                receipts: None,
                 result: "stopped"
             }),
             "- T6 was cancelled: port\n  > stopped"
@@ -459,46 +384,6 @@ mod tests {
                 text: "keep the old API"
             }),
             "- the human steered T4 (write) directly (S2): \"keep the old API\""
-        );
-    }
-
-    #[test]
-    fn claim_events() {
-        let failures = vec![
-            "  done:1 (CI green on o/r): fail".to_owned(),
-            "    > red".to_owned(),
-        ];
-        assert_eq!(
-            r(Event::ClaimFailed {
-                claim: "C2",
-                workstream: "W3",
-                failures: &failures
-            }),
-            "- claim C2 on W3 failed: W3 stays verifying\n  done:1 (CI green on o/r): fail\n    > red"
-        );
-        assert_eq!(
-            r(Event::ClaimPassed {
-                claim: "C2",
-                workstream: "W3"
-            }),
-            "- claim C2 on W3 passed: W3 is done"
-        );
-        assert_eq!(
-            r(Event::ClaimHeld {
-                claim: "C2",
-                workstream: "W3",
-                work: "the review's fixes",
-                ids: "T7"
-            }),
-            "- claim C2 on W3 passed, but write work that hasn't landed is still open: the review's fixes (ids: T7); W3 stays open"
-        );
-        assert_eq!(
-            r(Event::OrderDoneWorkKept {
-                workstream: "W3",
-                work: "the review's fixes",
-                ids: "T7"
-            }),
-            "- W3 is done; its write work that hadn't landed keeps going: the review's fixes (ids: T7)"
         );
     }
 
@@ -615,14 +500,6 @@ mod tests {
                 free: 9
             }),
             "- cap raised to 12: 9 slots free; queued agents already started"
-        );
-    }
-
-    #[test]
-    fn a_wake_is_the_state_then_the_events() {
-        assert_eq!(
-            frame("project lab", &["- a".into(), "- b".into()]),
-            "project lab\n\n## Events\n- a\n- b"
         );
     }
 }

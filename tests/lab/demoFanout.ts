@@ -38,7 +38,7 @@ const PAGES = ["alpha", "beta", "gamma"] as const;
 const APP_HOLD_MS = 6_000;
 const POLICY = `
 `;
-export const ORDER = `Add three short pages, ${DIR}/alpha.md, beta.md and gamma.md, each one paragraph on what fleetd's merge train does. One writer per page, all three in parallel. Give each page its own done-when check and its own PR.`;
+export const ORDER = `Add three short pages, ${DIR}/alpha.md, beta.md and gamma.md, each one paragraph on what fleetd's merge train does. One writer per page, all three in parallel. Give each page its own done-when line and its own PR.`;
 
 /** One /app session: auth, calls, and the live frames it receives. */
 const appSession = async (key: string) => {
@@ -281,8 +281,8 @@ export async function demoFanout(lab: Lab) {
     check(roles.has("implementer") && roles.has("reviewer"), `order_get shows implementer and reviewer lanes: ${[...roles].join(", ")}`);
     mark("order_get", { phase: order.order.phase, detail: order.order.phaseDetail, roles: [...roles], prs: (order.order.prs as Array<Body>).map((p) => `#${p.number} ${p.state} ${p.reviewsDone}/${p.reviewsNeeded}`) });
 
-    // Until three PRs merged or the order is done (a lead may claim done once its doneWhen passes, with a PR still
-    // in review): either way the train moved.
+    // Until three PRs merged or the order is done (a lead may close it with a PR still in review): either way the
+    // train moved.
     const merged = new Set<number>();
     cursor = orderCursor;
     for (let done = false; merged.size < 3 && !done; ) {

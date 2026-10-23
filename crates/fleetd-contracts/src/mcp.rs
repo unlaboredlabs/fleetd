@@ -37,7 +37,6 @@ use crate::time::{
 };
 use crate::train::{Change, ChangeState, GitHubPrUrl, GitHubRepo};
 use crate::usage::UsageStatus;
-use crate::verification::{Claim, ClaimOutcome};
 use crate::wakes::{Wake, WakeCatchUp, WakeMessage, WakeSchedule, WakeState, WakeTarget};
 use crate::{brand, checked};
 
@@ -335,7 +334,7 @@ output!(OrdersBoardOutput {
     at: Timestamp,
 });
 
-// order_get: one order with its finished agents, open requests and claims.
+// order_get: one order with its finished agents and open requests.
 input!(OrderGetInput {
     workstream_id: WorkstreamId
 });
@@ -347,8 +346,6 @@ output!(OrderGetOutput {
     done_lanes: List<AgentLane, 0, 30>,
     /// Its open secret and approval requests.
     requests: List<HumanRequest, 0, 20>,
-    /// Newest first.
-    claims: Option<List<Claim, 0, 20>>,
 });
 
 // steer_send: a person steers an order's lead or one task. `queue` (Enter) lands at the agent's next tool boundary;
@@ -516,8 +513,6 @@ output!(WorkstreamGetOutput {
     requests: List<HumanRequest, 0, 50>,
     /// Active decisions scoped to it.
     decisions: List<Decision, 0, 50>,
-    /// Its claims, newest first.
-    claims: Option<List<Claim, 0, 20>>,
 });
 
 // requests_list: secret and approval requests, newest first.
@@ -592,19 +587,6 @@ output!(CapSetOutput {
     slots: SlotState,
     /// The agents `pauseExtras` paused.
     paused: Option<List<TaskId, 0, 1000>>,
-});
-
-// claims_list
-input!(ClaimsListInput {
-    workstream_id: Option<WorkstreamId>,
-    project_ref: Option<ProjectRef>,
-    outcome: Option<ClaimOutcome>,
-    #[serde(default)]
-    limit: IntOr<1, 100, 20>,
-});
-output!(ClaimsListOutput {
-    /// Newest first.
-    claims: List<Claim, 0, 100>,
 });
 
 // changes_list
@@ -1179,7 +1161,6 @@ tools! {
     cap_set => CapSet, Operate, CapSetInput, CapSetOutput;
     usage_status => UsageStatus, Read, UsageStatusInput, UsageStatusOutput;
     usage_resume => UsageResume, Operate, UsageResumeInput, UsageResumeOutput;
-    claims_list => ClaimsList, Read, ClaimsListInput, ClaimsListOutput;
     changes_list => ChangesList, Read, ChangesListInput, ChangesListOutput;
     secret_submit => SecretSubmit, Operate, SecretSubmitInput, SecretSubmitOutput;
     // Human keys only (the handler checks).

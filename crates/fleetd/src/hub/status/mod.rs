@@ -24,8 +24,6 @@ const VERIFY_ON: &[HubEventType] = &[
     HubEventType::WorkstreamRunning,
     HubEventType::PrMerged,
     HubEventType::ChangeState,
-    HubEventType::ClaimPassed,
-    HubEventType::ClaimFailed,
     HubEventType::TaskStarted,
     HubEventType::WorkstreamDone,
     HubEventType::WorkstreamState,

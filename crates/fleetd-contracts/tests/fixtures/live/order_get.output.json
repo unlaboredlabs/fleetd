@@ -279,48 +279,8 @@
         "state": "merged",
         "reviewsDone": 2,
         "reviewsNeeded": 2
-      },
-      "receipts": {
-        "commands": 14,
-        "commandsFailed": 1,
-        "filesChanged": 4,
-        "toolCalls": 22
       }
     }
   ],
-  "requests": [],
-  "claims": [
-    {
-      "claimId": "C4",
-      "workstreamId": "W14",
-      "by": "lead:devbox/storefront",
-      "at": "2026-10-18T10:06:30.000Z",
-      "results": [
-        {
-          "checkIndex": 0,
-          "spec": {
-            "type": "pr_merged",
-            "repo": "acme/storefront"
-          },
-          "result": "fail",
-          "evidence": "#212 is reviewing",
-          "ranBy": "hub",
-          "at": "2026-10-18T10:06:30.000Z"
-        },
-        {
-          "checkIndex": 1,
-          "spec": {
-            "type": "http",
-            "url": "https://storefront.example/healthz",
-            "status": 200
-          },
-          "result": "pass",
-          "evidence": "200 OK",
-          "ranBy": "hub",
-          "at": "2026-10-18T10:06:30.000Z"
-        }
-      ],
-      "outcome": "fail"
-    }
-  ]
+  "requests": []
 }

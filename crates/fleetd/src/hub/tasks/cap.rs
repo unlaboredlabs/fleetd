@@ -12,7 +12,6 @@ use fleetd_contracts::tasks::{AgentsCapData, SlotState, TaskId, TaskState};
 
 use super::ports::{TaskError, WakeKind};
 use super::{StoredTask, TaskRecords, Tasks, lead_error, request_id, store_error};
-use crate::hub::prompts::fixed;
 use crate::hub::slots::CapInput;
 use crate::hub::store::NewEvent;
 
@@ -252,7 +251,12 @@ impl Tasks {
             if self.asking.lock().unwrap().contains(&task.task_id) {
                 continue;
             }
-            let pause = fixed::render(fixed::TASK_PAUSE, &[("maxAgents", &max_agents)]);
+            let set = self
+                .d
+                .db
+                .prompts()
+                .for_thread(&thread.machine_id, thread.thread_id.as_str());
+            let pause = set.render("task.pause", &[("maxAgents", &max_agents)]);
             let id = request_id(task, &["pause", &task.attempt.get().to_string()]);
             if let Err(error) = self.d.ports.send(thread, &pause, &id).await {
                 tracing::warn!(task_id = %holder, ?error, "pause not delivered; the agent keeps running");
@@ -262,7 +266,7 @@ impl Tasks {
             next.attempt = Int::unchecked(next.attempt.get() + 1);
             let queued = StoredTask {
                 task: next,
-                pending_message: Some(fixed::render(fixed::TASK_RESUME, &[])),
+                pending_message: Some(set.render("task.resume", &[])),
             };
             match self.queue(&queued, "paused", &paused_reason(max_agents)) {
                 Ok(_) => paused.push(task.task_id.clone()),

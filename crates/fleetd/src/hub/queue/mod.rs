@@ -15,9 +15,9 @@ use tokio::task::JoinHandle;
 
 use crate::clock::Clock;
 use crate::hub::api::{Hub, HubConfig};
+use crate::hub::store::iso_ms;
 use crate::hub::store::{EventLog, HubDb, NewEvent};
 use crate::hub::sweep::{SweepCheck, WAKE_OVERDUE_MS};
-use crate::hub::wakes::schedule::iso;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ThreadId, ThreadRef};
 use fleetd_contracts::sessions::SendMode;
@@ -307,7 +307,7 @@ impl WriteQueue {
         SendResult {
             run_id: None,
             queued: true,
-            queued_until: Some(iso(expires_ms)),
+            queued_until: Some(iso_ms(expires_ms)),
             behind_run: false,
         }
     }
@@ -401,7 +401,7 @@ impl WriteQueue {
     fn fields(row: &Row) -> serde_json::Map<String, serde_json::Value> {
         let mut m = serde_json::Map::new();
         m.insert("clientRequestId".into(), json!(row.client_request_id));
-        m.insert("queuedAt".into(), json!(iso(row.queued_ms)));
+        m.insert("queuedAt".into(), json!(iso_ms(row.queued_ms)));
         if let Some(w) = &row.wake_id {
             m.insert("wakeId".into(), json!(w));
         }
@@ -420,7 +420,7 @@ impl WriteQueue {
         emit(
             &self.events,
             NewEvent {
-                at: iso(now).into(),
+                at: iso_ms(now).into(),
                 r#type: HubEventType::WriteDelivered,
                 machine_id: Some(row.target.machine_id.clone()),
                 project_id: None,
@@ -468,7 +468,7 @@ impl WriteQueue {
         emit(
             &self.events,
             NewEvent {
-                at: iso(now).into(),
+                at: iso_ms(now).into(),
                 r#type: HubEventType::WriteExpired,
                 machine_id: Some(m.clone()),
                 project_id: None,
@@ -656,7 +656,7 @@ mod tests {
             SendResult {
                 run_id: None,
                 queued: true,
-                queued_until: Some(iso(NOW + 86_400_000)),
+                queued_until: Some(iso_ms(NOW + 86_400_000)),
                 behind_run: false
             }
         );
@@ -699,7 +699,7 @@ mod tests {
             delivered[0].summary.as_str(),
             "Queued message to thread t1 on lab-a delivered after 10 min"
         );
-        assert_eq!(delivered[0].data.as_ref().unwrap()["queuedAt"], iso(NOW));
+        assert_eq!(delivered[0].data.as_ref().unwrap()["queuedAt"], iso_ms(NOW));
         assert_eq!(delivered[0].data.as_ref().unwrap()["runId"], "run-1");
         assert_eq!(delivered[2].data.as_ref().unwrap()["wakeId"], "wk_x");
         assert_eq!(delivered[2].seq.get(), 3);
@@ -741,7 +741,7 @@ mod tests {
         let expired = &all[0];
         assert_eq!(
             (expired.r#type, expired.at.as_str()),
-            (HubEventType::WriteExpired, iso(NOW + 40_000).as_str())
+            (HubEventType::WriteExpired, iso_ms(NOW + 40_000).as_str())
         );
         assert_eq!(
             expired.summary.as_str(),

@@ -8,7 +8,6 @@ use crate::ledger::{RequestKind, RequestState, WorkstreamId, WorkstreamState};
 use crate::prim::{Count, Text};
 use crate::prompts::PromptScope;
 use crate::train::{ChangeId, GitHubRepo};
-use crate::verification::ClaimId;
 
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
@@ -103,12 +102,8 @@ pub enum HubEventType {
     /// A project's max agents or the fleet cap changed; `data` is `tasks::AgentsCapData`, `summary` the chat's line.
     #[serde(rename = "agents.cap")]
     AgentsCap,
-    /// A claim had a failing check; the workstream stays verifying. `data.claimId`, `data.workstreamId`.
-    #[serde(rename = "claim.failed")]
-    ClaimFailed,
-    #[serde(rename = "claim.passed")]
-    ClaimPassed,
-    /// Every done-when check passed. `data.workstreamId`.
+    /// The lead closed it, or its research verdict came in. `data.workstreamId`, and `data.reason` (why) and
+    /// `data.by` when the lead closed it.
     #[serde(rename = "workstream.done")]
     WorkstreamDone,
     /// `data.taskId`, `data.prHeadSha`, `data.blocking`.
@@ -250,8 +245,6 @@ impl HubEventType {
             Self::TaskFailed => "task.failed",
             Self::TaskCancelled => "task.cancelled",
             Self::AgentsCap => "agents.cap",
-            Self::ClaimFailed => "claim.failed",
-            Self::ClaimPassed => "claim.passed",
             Self::WorkstreamDone => "workstream.done",
             Self::ReviewVerdict => "review.verdict",
             Self::ChangeQueued => "change.queued",
@@ -347,9 +340,7 @@ pub struct WorkstreamEventData {
     pub state: Option<WorkstreamState>,
     /// workstream.state: the brief was set or edited.
     pub brief_edited: Option<bool>,
-    /// workstream.state (verifying) and workstream.done: the claim that moved it.
-    pub claim_id: Option<ClaimId>,
-    /// workstream.state (stopped): why, and who.
+    /// workstream.state (stopped) and workstream.done: why, and who.
     pub reason: Option<String>,
     pub by: Option<String>,
 }
@@ -366,17 +357,6 @@ pub struct RequestEventData {
     pub workstream_id: Option<WorkstreamId>,
     /// Who answered it ("human:<device>"), once someone did.
     pub by: Option<String>,
-}
-
-/// `claim.passed`, `claim.failed`.
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ClaimEventData {
-    pub claim_id: ClaimId,
-    pub workstream_id: WorkstreamId,
-    /// claim.failed: the done-when indexes that did not pass.
-    pub failing: Option<Vec<Count>>,
 }
 
 /// The merge train's events: `change.queued`, `change.ready`, `change.needs_rebase`, `change.ci_failed`,

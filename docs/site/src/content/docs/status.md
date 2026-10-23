@@ -64,8 +64,8 @@ The number is **verified** work plus credit for work **in flight**, as a share o
 | ▒ shaded | In flight: partial credit for stages fleetd saw happen. |
 | ░ empty | Not started. |
 
-- **Verified** means the item's PRs were merged by the merge train, and its done-when checks passed. A PR merged by
-  hand doesn't count. A lead saying "done" moves nothing.
+- **Verified** means the item's PRs were merged by the merge train. A PR merged by hand doesn't count. A lead saying
+  "done" moves nothing.
 - **In flight** credit comes from stages fleetd observed itself: PR open (half the item), review passed, CI green,
   merged. Time spent inside a stage adds a little more, but only while an agent or the merge train is working on it,
   and never the next stage's credit. While an agent waits for an answer or for a usage limit to reset, the number holds

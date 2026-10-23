@@ -167,15 +167,8 @@ Two things never go through plain chat text:
 Once answered, each folds to one line that opens back up on a click. See
 [Secrets & approvals](/docs/approvals-and-secrets).
 
-## Done, checked {#done}
+## Done {#done}
 
-The lead can't just say "done". When it claims the work is finished, the hub runs the work's
-[done-when checks](/docs/glossary#done-when-check) itself, and only all of them passing makes it done. A check that
-needs you is one line in the chat, such as "looks good on your end?".
-
-Work never closes over something that hasn't landed: a writer still at work or failed (a review's fix, say), or a pull
-request not merged yet. The lead says so in the chat and claims again once it lands. If some of it is truly not
-needed, the lead closes over it on purpose and tells you why; the record keeps what was dropped and why.
-
-When work is done, its pull requests still waiting are closed on GitHub with a comment saying why, and its leftover
-agents stop, except writers whose work hasn't landed, which keep going.
+When the work is done, the lead closes it and tells you why in the chat. Closing stops nothing: an agent still
+working, or a pull request still on its way in, keeps going, and the status shows it. Ask the lead to stop what you
+don't want.

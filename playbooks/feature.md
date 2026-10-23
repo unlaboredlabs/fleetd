@@ -1,9 +1,8 @@
 ---
 name: feature
-version: 2
-requiredChecks: []
+version: 3
 ---
 
 # Feature
 
-New behaviour someone asked for. The brief's done-when checks are the whole scope.
+New behaviour someone asked for. The brief's done-when lines are the whole scope.

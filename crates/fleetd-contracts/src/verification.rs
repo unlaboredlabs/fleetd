@@ -1,15 +1,13 @@
-//! M6 objects: claims and their check results, and review verdicts.
+//! M6 objects: review verdicts.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::brand;
-use crate::ids::Timestamp;
-use crate::ledger::{CheckSpec, MetricValues, WorkstreamId};
-use crate::prim::{Count, List, Text};
+use crate::ledger::MetricValues;
+use crate::prim::{Count, Text};
 use crate::tasks::TaskId;
 
-brand!(ClaimId, name = "ClaimId", pattern = r"^C[1-9][0-9]*$");
 brand!(
     /// A full lowercase commit SHA (SHA-1 or SHA-256), so the same head always compares equal.
     CommitSha,
@@ -18,68 +16,16 @@ brand!(
     description = "Full lowercase hex commit SHA, 40 or 64 characters"
 );
 
-/// `error` (the check could not run) counts as not passing.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum CheckOutcome {
-    Pass,
-    Fail,
-    Error,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum CheckResultRanBy {
-    Hub,
-    Node,
-    Judge,
-    Human,
-}
-
-#[serde_with::skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct CheckResult {
-    /// 0-based index into the brief's doneWhen.
-    pub check_index: Count,
-    pub spec: CheckSpec,
-    pub result: CheckOutcome,
-    /// Output tail, HTTP status and body excerpt, verdict summary, or the fix when `error`.
-    pub evidence: Text<0, 2000>,
-    /// Only for `cmd` checks, which the node runs.
-    pub exit_code: Option<i64>,
-    pub ran_by: CheckResultRanBy,
-    pub at: Timestamp,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum ClaimOutcome {
-    Pass,
-    Fail,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct Claim {
-    pub claim_id: ClaimId,
-    pub workstream_id: WorkstreamId,
-    /// "lead:<machineId>/<projectId>", an agent keyId or "human".
-    pub by: String,
-    pub at: Timestamp,
-    /// In check index order.
-    pub results: List<CheckResult, 0, 20>,
-    /// `pass` only when every check passed.
-    pub outcome: ClaimOutcome,
-}
-
-/// `fleetd review verdict`, the last step of every review task.
+/// A review task's verdict (`report`, `fleetd review verdict`), the last step of every review task.
 #[serde_with::skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewVerdict {
-    pub task_id: TaskId,
-    pub pr_head_sha: CommitSha,
+    /// The review task. From a task's session the hub fills it in: it is the session's own task.
+    pub task_id: Option<TaskId>,
+    /// The head reviewed. The hub fills it in when left out: the head a train review round was given, else the PR's
+    /// head now; none for a judge, which reviews criteria rather than a PR.
+    pub pr_head_sha: Option<CommitSha>,
     pub blocking: Count,
     pub non_blocking: Count,
     pub summary: Text<1, 1000>,

@@ -13,7 +13,6 @@ use super::records::WorkstreamFilter;
 use crate::hub::api::{Caller, Hub, Registry, ToolError, allows, require, unknown_project};
 
 const WORKSTREAM_ASKS: usize = 50;
-const WORKSTREAM_CLAIMS: usize = 20;
 
 pub fn register(tools: &mut Registry) {
     tools.add::<LeadStartInput, LeadStartOutput, _, _>("lead_start", |hub: Arc<Hub>, caller, input| async move {
@@ -185,17 +184,10 @@ impl Area {
         let truncated = requests.len() > WORKSTREAM_ASKS || decisions.len() > WORKSTREAM_ASKS;
         requests.truncate(WORKSTREAM_ASKS);
         decisions.truncate(WORKSTREAM_ASKS);
-        let claims = self
-            .ctx
-            .hooks
-            .claims
-            .get()
-            .map(|c| c.list(id, WORKSTREAM_CLAIMS))
-            .filter(|c| !c.is_empty());
         let next = match workstream.state {
             WorkstreamState::Draft => "The lead has not registered its brief yet; wait for workstream.running with events_wait.".to_string(),
             WorkstreamState::Done => {
-                format!("Done: its latest claim passed every done-when check (claims_list with workstreamId {}).", workstream.workstream_id)
+                "Done: its lead closed it; workstream.done says why.".into()
             }
             _ => "Its open requests (a secret to enter, a command to approve) are answered in the project's chat.".into(),
         };
@@ -203,7 +195,6 @@ impl Area {
             workstream,
             requests: List::unchecked(requests),
             decisions: List::unchecked(decisions),
-            claims: claims.map(List::unchecked),
             next: Some(next),
             truncated: truncated.then_some(true),
         })

@@ -1,62 +1,13 @@
-//! What the checks, receipts and review verdicts areas need from other hub areas, as one trait.
-//! The hub's implementation (`HubPorts`, wired once those areas land) forwards to their services; tests use fakes.
-//! Keeping it to this one seam means the claim flow and review verdicts run their real logic under test.
-use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
+//! What the review verdicts area needs from other hub areas, as one trait. The hub's implementation (`HubPorts`)
+//! forwards to their services; tests use fakes.
 use fleetd_contracts::ledger::{MetricValues, Workstream, WorkstreamId};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
-use fleetd_contracts::model::ActionItem;
 use fleetd_contracts::tasks::{Task, TaskId};
-use fleetd_contracts::verification::{CheckResult, ClaimId};
+use fleetd_contracts::verification::CommitSha;
 use std::future::Future;
 use std::pin::Pin;
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
-
-/// The lead wakes a claim causes; the leads area renders them with `checks::render`.
-#[derive(Debug, Clone, PartialEq)]
-pub enum ClaimWake {
-    Failed {
-        claim_id: ClaimId,
-        workstream_id: WorkstreamId,
-        failures: Vec<CheckResult>,
-    },
-    Passed {
-        claim_id: ClaimId,
-        workstream_id: WorkstreamId,
-    },
-    /// Every check passed, but write work of it has not landed, so the workstream stays open.
-    Held {
-        claim_id: ClaimId,
-        workstream_id: WorkstreamId,
-        work: Vec<crate::hub::orders::open_work::OpenWork>,
-    },
-}
-
-/// The human's answer to a `human` check, as the lead logged it after asking in chat: the active `done.<n>`
-/// decision in the workstream's own scope.
-#[derive(Debug, Clone, PartialEq)]
-pub struct HumanConfirmation {
-    pub value: String,
-    pub decision_id: String,
-    pub at_ms: i64,
-}
-
-/// A review task the hub spawns for a `judge` check (by = "hub:judge").
-#[derive(Debug, Clone, PartialEq)]
-pub struct JudgeSpawn {
-    pub project_ref: ProjectRef,
-    pub workstream_id: WorkstreamId,
-    pub title: String,
-    pub prompt: String,
-}
-
-/// A `cmd_result` from the node: `exit_code` None when the process did not exit on its own.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CommandRun {
-    pub exit_code: Option<i64>,
-    pub output_tail: String,
-    pub timed_out: bool,
-}
 
 /// A refusal at the wire: `{code, message, fix?}`, with the texts older hubs sent.
 pub type Refusal = McpToolError;
@@ -84,21 +35,6 @@ pub fn internal(error: crate::hub::store::StoreError) -> Refusal {
 pub trait Ports: Send + Sync + 'static {
     // leads: LeadRecords.workstreams
     fn workstream(&self, id: &WorkstreamId) -> Option<Workstream>;
-    /// Replaces the stored workstream.
-    fn put_workstream(&self, workstream: &Workstream);
-    /// `put_workstream` only while the stored one still has `expect`'s state and brief; false when it changed.
-    fn put_workstream_if(&self, workstream: &Workstream, expect: &Workstream) -> bool;
-    // leads: LeadWakes.trigger
-    fn wake(&self, project: &ProjectRef, wake: ClaimWake);
-    // link: NodeCommands.run (default 120 s timeout); the error is NodeCommandError's message.
-    fn run_command(
-        &self,
-        machine: &MachineId,
-        cwd: String,
-        argv: Vec<String>,
-    ) -> BoxFuture<'_, Result<CommandRun, String>>;
-    // store: HubStore.projects
-    fn workspace_root(&self, project: &ProjectRef) -> Option<String>;
     /// Research.recordVerdict: stores the computed research verdict and returns its text.
     fn research_verdict<'a>(
         &'a self,
@@ -107,21 +43,9 @@ pub trait Ports: Send + Sync + 'static {
     ) -> BoxFuture<'a, Result<String, Refusal>>;
     // tasks
     fn task(&self, id: &TaskId) -> Option<Task>;
-    /// The workstream's tasks, newest first.
-    fn tasks_of(&self, project: &ProjectRef, workstream: &WorkstreamId, limit: usize) -> Vec<Task>;
-    /// Its write work that has not landed (`orders::open_work`): a workstream never closes over it by accident.
-    fn open_work(&self, workstream: &Workstream) -> Vec<crate::hub::orders::open_work::OpenWork>;
-    fn spawn_judge(&self, spawn: JudgeSpawn) -> BoxFuture<'_, Result<Task, Refusal>>;
-    // ledger: the decision a `human` check reads, and when the brief it checks was last set
-    fn human_confirmation(&self, workstream: &WorkstreamId, key: &str)
-    -> Option<HumanConfirmation>;
-    /// When the workstream's brief was last set or edited (its latest `workstream.running`, or a `workstream.state`
-    /// that edited it).
-    fn brief_set_ms(&self, workstream: &WorkstreamId) -> Option<i64>;
-    // executor
-    fn thread_actions<'a>(
-        &'a self,
-        thread: &'a ThreadRef,
-        max: usize,
-    ) -> BoxFuture<'a, Result<Vec<ActionItem>, String>>;
+    /// The head a review task reviewed when it didn't say: its train round's head, else its PR's head now. None for a
+    /// task with no PR or a head the hub can't read.
+    fn reviewed_head<'a>(&'a self, _task: &'a Task) -> BoxFuture<'a, Option<CommitSha>> {
+        Box::pin(async { None })
+    }
 }

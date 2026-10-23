@@ -568,16 +568,16 @@ impl TrainHost for FakeHost {
     fn task(&self, task_id: &TaskId) -> Option<TaskView> {
         self.tasks.lock().unwrap().get(task_id.as_str()).cloned()
     }
-    fn running_writers(&self, _: &ProjectRef) -> Vec<(TaskId, String)> {
+    fn writers(&self, _: &ProjectRef) -> Vec<(TaskId, String)> {
         let tasks = self.tasks.lock().unwrap();
         self.branches
             .lock()
             .unwrap()
             .iter()
             .filter(|(id, _)| {
-                tasks
-                    .get(*id)
-                    .is_some_and(|t| t.state == "running" && t.kind == "write")
+                tasks.get(*id).is_some_and(|t| {
+                    ["running", "idle", "done"].contains(&t.state.as_str()) && t.kind == "write"
+                })
             })
             .map(|(id, b)| (TaskId::unchecked(id), b.clone()))
             .collect()
@@ -2195,30 +2195,26 @@ impl Kit {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_writers_ready_slice_is_reviewed_at_once_once_per_head_and_never_past_the_gates() {
     use super::calls::slice_ready;
-    use fleetd_contracts::lead_calls::SliceReadyCall;
     let kit = Kit::new();
     kit.gate.held.lock().unwrap().extend([7, 8]);
     let writer = kit.running_task("T1", "write");
-    let slice = |pr: &str| SliceReadyCall {
-        pr_url: GitHubPrUrl::unchecked(pr),
-    };
+    let slice = |pr: &str| GitHubPrUrl::unchecked(pr);
 
     let first = kit.open_pr(7, "slice-1", &[add("a1.txt", "a\n")]);
-    let (change, next) = slice_ready(&kit.train, &project(), &writer, slice(&first))
+    let change = slice_ready(&kit.train, &project(), &writer, slice(&first))
         .await
         .unwrap();
     assert_eq!(
         (change.state, change.task_id.as_ref()),
         (ChangeState::Reviewing, Some(&writer))
     );
-    assert!(next.starts_with("go on with your next slice"), "{next}");
     assert_eq!(
         kit.gate.reviewed.lock().unwrap().len(),
         1,
         "reviewed at once"
     );
     // The writer reports the same head again: the same Change, no second round.
-    let (again, _) = slice_ready(&kit.train, &project(), &writer, slice(&first))
+    let again = slice_ready(&kit.train, &project(), &writer, slice(&first))
         .await
         .unwrap();
     assert_eq!(again.change_id, change.change_id);
@@ -2228,7 +2224,7 @@ async fn a_writers_ready_slice_is_reviewed_at_once_once_per_head_and_never_past_
 
     // The next slice gets its own review while the first still waits on its own.
     let second = kit.open_pr(8, "slice-2", &[add("a2.txt", "b\n")]);
-    let (other, _) = slice_ready(&kit.train, &project(), &writer, slice(&second))
+    let other = slice_ready(&kit.train, &project(), &writer, slice(&second))
         .await
         .unwrap();
     assert_ne!(other.change_id, change.change_id);
@@ -2252,14 +2248,11 @@ async fn a_writers_ready_slice_is_reviewed_at_once_once_per_head_and_never_past_
 #[tokio::test(flavor = "multi_thread")]
 async fn a_ready_slice_gets_the_orders_reviewer_and_a_refused_spawn_never_lets_it_through() {
     use super::calls::slice_ready;
-    use fleetd_contracts::lead_calls::SliceReadyCall;
     let kit = Kit::with_reviews();
     let writer = kit.running_task("T1", "write");
-    let slice = |pr: &str| SliceReadyCall {
-        pr_url: GitHubPrUrl::unchecked(pr),
-    };
+    let slice = |pr: &str| GitHubPrUrl::unchecked(pr);
     let first = kit.open_pr(7, "slice-1", &[add("a1.txt", "a\n")]);
-    let (change, _) = slice_ready(&kit.train, &project(), &writer, slice(&first))
+    let change = slice_ready(&kit.train, &project(), &writer, slice(&first))
         .await
         .unwrap();
     let spawned: Vec<(String, &str)> = kit
@@ -2285,7 +2278,7 @@ async fn a_ready_slice_gets_the_orders_reviewer_and_a_refused_spawn_never_lets_i
         "This project already has 32 open tasks, the most one lead may have at once (32).".into(),
     );
     let second = kit.open_pr(8, "slice-2", &[add("a2.txt", "b\n")]);
-    let (held, _) = slice_ready(&kit.train, &project(), &writer, slice(&second))
+    let held = slice_ready(&kit.train, &project(), &writer, slice(&second))
         .await
         .unwrap();
     let held = kit.get(&held.change_id);
@@ -2393,10 +2386,11 @@ async fn a_ready_change_without_a_review_goes_back_to_review() {
     assert!(merged_prs(&kit).is_empty());
 }
 
-/// A running writer's draft PR marked ready is a ready slice, found on the train's own pass (no webhook): it goes to
-/// the review gate once per head. A PR that was never a draft waits for the writer's result as before.
+/// A writer's ready PR, from its branch or one named after it, is a ready slice found on the train's own pass (no
+/// webhook, nothing from the writer): it goes to the review gate once per head. A draft waits, and so does a PR from a
+/// branch that is no writer's.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_writers_draft_marked_ready_is_reviewed_on_the_trains_pass_once_per_head() {
+async fn a_writers_ready_pr_is_reviewed_on_the_trains_pass_once_per_head() {
     let kit = Kit::new();
     let writer = kit.running_task("T1", "write");
     kit.host
@@ -2404,27 +2398,30 @@ async fn a_writers_draft_marked_ready_is_reviewed_on_the_trains_pass_once_per_he
         .lock()
         .unwrap()
         .insert("T1".into(), "fleetd/T1-slice".into());
-    let pr = kit.open_pr(7, "fleetd/T1-slice", &[add("a1.txt", "a\n")]);
-    kit.gate.held.lock().unwrap().insert(7);
+    let own = kit.open_pr(7, "fleetd/T1-slice", &[add("a1.txt", "a\n")]);
+    kit.gate.held.lock().unwrap().extend([7, 8, 9]);
+    kit.open_pr(8, "fleetd/T1-slice-2", &[add("a2.txt", "b\n")]);
+    kit.open_pr(9, "fleetd/T1-slicer", &[add("a3.txt", "c\n")]);
     // A second train change keeps the repo's train (and its pass) alive.
     let other = kit.open_pr(3, "other", &[add("o.txt", "o\n")]);
     kit.enqueue(other).await;
-    kit.gh.pulls.lock().unwrap().get_mut(&7).unwrap().draft = true;
-    let reviewed = || {
+    kit.gh.pulls.lock().unwrap().get_mut(&8).unwrap().draft = true;
+    let reviewed = |n: i64| {
         kit.gate
             .reviewed
             .lock()
             .unwrap()
             .iter()
-            .filter(|c| c.pr_number.get() == 7)
+            .filter(|c| c.pr_number.get() == n)
             .count()
     };
 
     kit.train.step(REPO).await;
-    assert_eq!(reviewed(), 0, "a draft is not a slice yet");
-    kit.gh.pulls.lock().unwrap().get_mut(&7).unwrap().draft = false;
-    kit.train.step(REPO).await;
-    assert_eq!(reviewed(), 1, "marked ready: reviewed at once");
+    assert_eq!(
+        (reviewed(7), reviewed(8), reviewed(9)),
+        (1, 0, 0),
+        "its branch at once; a draft waits; another branch is not its"
+    );
     let change = kit
         .train
         .list(&ListFilter {
@@ -2432,45 +2429,29 @@ async fn a_writers_draft_marked_ready_is_reviewed_on_the_trains_pass_once_per_he
             ..Default::default()
         })
         .into_iter()
-        .find(|c| c.pr_url.as_str() == pr)
+        .find(|c| c.pr_url.as_str() == own)
         .unwrap();
     assert_eq!(
         (change.state, change.task_id.as_ref()),
         (ChangeState::Reviewing, Some(&writer))
     );
+    kit.gh.pulls.lock().unwrap().get_mut(&8).unwrap().draft = false;
     kit.train.step(REPO).await;
-    assert_eq!(reviewed(), 1, "once per head");
-
-    // Opened ready, never seen as a draft: left for the writer's result.
-    kit.host
-        .branches
-        .lock()
-        .unwrap()
-        .insert("T1".into(), "fleetd/T1-later".into());
-    kit.open_pr(8, "fleetd/T1-later", &[add("a2.txt", "b\n")]);
-    kit.train.step(REPO).await;
-    assert!(
-        kit.train
-            .list(&ListFilter {
-                limit: 10,
-                ..Default::default()
-            })
-            .iter()
-            .all(|c| c.pr_number.get() != 8)
+    assert_eq!(
+        (reviewed(7), reviewed(8)),
+        (1, 1),
+        "marked ready: a slice; once per head"
     );
 }
 
-/// A writer's report, its result and the draft-ready pass may enqueue one PR at once: one Change, one review round.
+/// The ready pass and a writer's result may enqueue one PR at once: one Change, one review round.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn racing_enqueues_of_one_pr_make_one_change_and_one_review_round() {
     use super::calls::slice_ready;
-    use fleetd_contracts::lead_calls::SliceReadyCall;
     let kit = Kit::with_reviews();
     let writer = kit.running_task("T1", "write");
     let pr = kit.open_pr(7, "slice-1", &[add("a1.txt", "a\n")]);
-    let call = || SliceReadyCall {
-        pr_url: GitHubPrUrl::unchecked(pr.clone()),
-    };
+    let call = || GitHubPrUrl::unchecked(pr.clone());
     let input = || ChangeEnqueueCall {
         task_id: Some(writer.clone()),
         ..enqueue_call(pr.clone())
@@ -2483,8 +2464,8 @@ async fn racing_enqueues_of_one_pr_make_one_change_and_one_review_round() {
         kit.train.enqueue(&r, input()),
     );
     let ids: std::collections::HashSet<String> = [
-        a.unwrap().0.change_id,
-        b.unwrap().0.change_id,
+        a.unwrap().change_id,
+        b.unwrap().change_id,
         c.unwrap().change_id,
         d.unwrap().change_id,
     ]

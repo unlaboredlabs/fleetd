@@ -351,6 +351,10 @@ impl Reviews {
             };
             self.note(&change_id, &format!("{waiting}; sent to {author}"));
             let text = findings_message(
+                &self
+                    .db
+                    .prompts()
+                    .for_task(&change.project_ref, author.as_str()),
                 &change,
                 &FindingsVerdict {
                     task_id: &task_id,

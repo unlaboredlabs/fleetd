@@ -6908,12 +6908,6 @@
         "taskId": "T2",
         "url": "https://github.com/acme/storefront/pull/10"
        },
-       "receipts": {
-        "commands": 4,
-        "commandsFailed": 0,
-        "filesChanged": 0,
-        "toolCalls": 3
-       },
        "role": "reviewer",
        "startedAt": "2026-10-19T09:02:38.971Z",
        "status": "done",
@@ -6984,12 +6978,6 @@
         "state": "ready",
         "taskId": "T1",
         "url": "https://github.com/acme/storefront/pull/9"
-       },
-       "receipts": {
-        "commands": 3,
-        "commandsFailed": 0,
-        "filesChanged": 0,
-        "toolCalls": 2
        },
        "role": "reviewer",
        "startedAt": "2026-10-19T09:02:37.792Z",
@@ -7063,12 +7051,6 @@
         "taskId": "T3",
         "url": "https://github.com/acme/storefront/pull/11"
        },
-       "receipts": {
-        "commands": 4,
-        "commandsFailed": 0,
-        "filesChanged": 0,
-        "toolCalls": 2
-       },
        "role": "implementer",
        "startedAt": "2026-10-19T09:02:17.509Z",
        "status": "done",
@@ -7141,12 +7123,6 @@
         "taskId": "T2",
         "url": "https://github.com/acme/storefront/pull/10"
        },
-       "receipts": {
-        "commands": 3,
-        "commandsFailed": 0,
-        "filesChanged": 0,
-        "toolCalls": 1
-       },
        "role": "implementer",
        "startedAt": "2026-10-19T09:02:17.458Z",
        "status": "done",
@@ -7218,12 +7194,6 @@
         "state": "ready",
         "taskId": "T1",
         "url": "https://github.com/acme/storefront/pull/9"
-       },
-       "receipts": {
-        "commands": 3,
-        "commandsFailed": 0,
-        "filesChanged": 0,
-        "toolCalls": 1
        },
        "role": "implementer",
        "startedAt": "2026-10-19T09:02:17.408Z",

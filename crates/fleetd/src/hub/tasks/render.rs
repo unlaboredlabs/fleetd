@@ -9,7 +9,7 @@ use fleetd_contracts::tasks::{
 use regex::Regex;
 
 use crate::hub::leads::events::{Ended, Event};
-use crate::hub::prompts::{PromptSet, fixed};
+use crate::hub::prompts::PromptSet;
 use unicode_normalization::UnicodeNormalization;
 use unicode_normalization::char::is_combining_mark;
 
@@ -125,7 +125,7 @@ pub struct PromptInput<'a> {
     pub project_title: &'a str,
     /// Absent while the workstream is a draft.
     pub brief: Option<&'a Brief>,
-    /// The brief's done-when checks as text (leads' doneWhenText with max 200).
+    /// The brief's done-when lines as text (leads' `done_when_text` with max 200).
     pub done_when: Option<String>,
     /// Write tasks: their branch and the branch it starts from.
     pub branch: Option<&'a str>,
@@ -182,22 +182,17 @@ pub fn render_task_prompt(set: &PromptSet, input: &PromptInput<'_>) -> String {
             &input.base_branch.unwrap_or("<default branch>"),
         ),
     ];
-    let text = match task.kind {
-        TaskKind::Write => set.render("task.brief.write", vars),
-        TaskKind::Read => fixed::render(fixed::TASK_BRIEF_READ, vars),
-        TaskKind::Review => fixed::render(fixed::TASK_BRIEF_REVIEW, vars),
+    let id = match task.kind {
+        TaskKind::Write => "task.brief.write",
+        TaskKind::Read => "task.brief.read",
+        TaskKind::Review => "task.brief.review",
     };
+    let text = set.render(id, vars);
     set.with_instructions(text)
 }
 
 /// The lead's event line for a finished task: its whole result tail, inline.
-/// `receipts` is the receipts area's line for this result.
-pub fn task_result_lines(
-    task_id: &str,
-    title: &str,
-    result: &TaskResult,
-    receipts: Option<&str>,
-) -> String {
+pub fn task_result_lines(task_id: &str, title: &str, result: &TaskResult) -> String {
     let mut place = Vec::new();
     if let Some(b) = &result.branch {
         place.push(format!("branch {}", b.as_str()));
@@ -219,8 +214,6 @@ pub fn task_result_lines(
         },
         title,
         place: &place,
-        // M6 receipts, counted by the hub; absent on results stored before them.
-        receipts,
         result: result.tail.as_str(),
     }
     .render()

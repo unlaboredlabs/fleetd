@@ -60,7 +60,6 @@ export const KIND_CATEGORY = {
   "tool.other": "tools",
   "tools.parallel": "tools",
   git: "tools",
-  "check.claim": "tools",
   "wait.retry.api": "machine",
   "wait.retry.node": "machine",
   "run.startup": "machine",

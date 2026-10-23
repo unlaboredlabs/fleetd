@@ -14,7 +14,7 @@ export interface EventEffects {
   readonly resync: boolean;
 }
 
-const ORDER_PREFIXES = ["workstream.", "task.", "change.", "claim.", "request.", "steer.", "train.", "plan."];
+const ORDER_PREFIXES = ["workstream.", "task.", "change.", "request.", "steer.", "train.", "plan."];
 const ORDER_TYPES = new Set(["pr.merged", "review.verdict", "lead.started", "lead.woken"]);
 const STATUS_TYPES = new Set(["ci.main", "source.stale", "source.fresh"]);
 /** Status's health strip shows machines (online, slept, last seen) and claude usage too. */

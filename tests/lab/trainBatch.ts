@@ -99,8 +99,7 @@ export async function trainBatch(lab: Lab) {
       why: "the train batch lab scenario",
       pointers: [],
       constraints: [],
-      // Never passes: a lead that claims the order done would close the PRs still on the train as leftovers.
-      doneWhen: [{ type: "cmd", machineId: MACHINE, argv: ["false"], expectExit: 0 }],
+      doneWhen: ["every batched PR is merged"],
     };
     const briefed = fleetd("brief", "create", "--workstream", w, "--json", JSON.stringify(brief));
     check(briefed.code === 0, `brief create ${w}: ${JSON.stringify(briefed)}`);

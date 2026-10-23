@@ -83,7 +83,7 @@ pub enum SessionRole {
     Plain,
     /// A project's lead: spawns, steers and stops agents, asks, decides, plans.
     Lead,
-    /// A task's agent: reports, asks its lead, claims done.
+    /// A task's agent: reports and asks its lead.
     Worker,
 }
 

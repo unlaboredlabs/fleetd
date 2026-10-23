@@ -405,12 +405,6 @@ fleetd decide --key <k> --value <v> [--why <w>] [--scope project|workstream] [--
 
 log a decision you made yourself
 
-### fleetd status set {#status-set}
-
-```text
-fleetd status set "<one line>" [--workstream <W>]
-```
-
 ### fleetd decisions search {#decisions-search}
 
 ```text
@@ -452,13 +446,13 @@ steer a running task (at its next step; `--now` stops its current step), answer 
 fleetd task cancel <T> [--reason <r>]
 ```
 
-### fleetd claim done {#claim-done}
+### fleetd close {#close}
 
 ```text
-fleetd claim done --workstream <W> [--close-over "<why>"]
+fleetd close --workstream <W> --why "<why>"
 ```
 
-fleetd runs the workstream's done-when checks itself; only all of them passing makes it done (exit 1 when a check did not pass)
+the workstream is done, and why; it stops nothing
 
 ### fleetd review verdict {#review-verdict}
 
@@ -477,12 +471,6 @@ fleetd change enqueue --pr <url> [--task <T>] [--workstream <W>] [--item P<n>]
 
 put a PR on its repo's merge train (a write task's PR goes on by itself). Only the train merges. `--item` links the PR to that plan item
 
-### fleetd change status {#change-status}
-
-```text
-fleetd change status <X>
-```
-
 ### fleetd plan milestone {#plan-milestone}
 
 ```text
@@ -493,15 +481,15 @@ fleetd plan milestone "<title>" [--position <n>]
 
 ```text
 fleetd plan add "<title>" --milestone M<n> [--workstream <W>] [--must|--polish] [--size s|m|l]
-    [--after P1,P2] [--pr <url>] [--check <n>] [--why "<note>"] [--steer S<n>]
+    [--after P1,P2] [--pr <url>] [--why "<note>"] [--steer S<n>]
 ```
 
 ### fleetd plan edit {#plan-edit}
 
 ```text
 fleetd plan edit P<n> [--title <t>] [--size s|m|l] [--must|--polish] [--milestone M<n>]
-    [--workstream <W>] [--after P1,P2] [--pr +<url>|--pr=-<url>] [--check +<n>|--check=-<n>]
-    [--position <n>] [--why "<note>"] [--steer S<n>]
+    [--workstream <W>] [--after P1,P2] [--pr +<url>|--pr=-<url>] [--position <n>]
+    [--why "<note>"] [--steer S<n>]
 ```
 
 ### fleetd plan drop {#plan-drop}
@@ -516,7 +504,7 @@ fleetd plan drop P<n> (--why "<reason>" | --steer S<n>)
 fleetd plan show [--workstream <W>]
 ```
 
-keep the project's plan: milestones of must or polish items sized s, m or l (relative size, never hours). Link work with `--item`; only fleetd marks an item done, once its PRs merged through the train and its done-when checks passed. Changing scope after a milestone's first 10 minutes needs `--why`, and the status view shows it as a marker. `--steer` S\<n\> says the human's steer asked for it: it stands in for `--why` and acknowledges the steer
+keep the project's plan: milestones of must or polish items sized s, m or l (relative size, never hours). Link work with `--item`; only fleetd marks an item done, once its PRs merged through the train. Changing scope after a milestone's first 10 minutes needs `--why`, and the status view shows it as a marker. `--steer` S\<n\> says the human's steer asked for it: it stands in for `--why` and acknowledges the steer
 
 ### fleetd workstream open {#workstream-open}
 
@@ -527,5 +515,5 @@ fleetd workstream open --text "<intent>" [--template bugfix|feature|research]
 open a workstream for work taken from the chat: a draft to brief
 
 :::note
-lead-side commands reach the hub through the local node (FLEETD\_NODE\_SOCK, default `~/.fleetd/node/node.sock`); exit 0 ok, 1 checks failed, 2 usage, 3 refused, 4 hub unreachable
+lead-side commands reach the hub through the local node (FLEETD\_NODE\_SOCK, default `~/.fleetd/node/node.sock`); exit 0 ok, 2 usage, 3 refused, 4 hub unreachable
 :::

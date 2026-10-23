@@ -1,5 +1,5 @@
-// Settings → Instructions: your own text, appended to every lead's and task's first message (workers, reviewers
-// and judges too) under "Custom instructions from the human": the hub-wide text, then the project's. Saved with
+// Settings → Instructions: your own text, appended to every lead's and task's first message (workers and reviewers
+// too) under "Custom instructions from the human": the hub-wide text, then the project's. Saved with
 // prompt_set on the registry id `instructions`, and pinned per session like every prompt.
 import { useEffect, useState } from "react";
 import { Button, Field, Separator, Text, Textarea } from "../../ui";

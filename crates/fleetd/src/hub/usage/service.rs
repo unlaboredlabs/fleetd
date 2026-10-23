@@ -7,14 +7,12 @@ use super::classify::{UsageClass, UsageParked, limit_of_event};
 use super::ports::{BoxFut, EventLog, NewEvent, ThreadRef, WaitInput};
 use super::source::{LoginKind, UsageReading};
 use super::state::{Owner, ParkedCounts, ParkedThread, Resumed, UsageState, resumed_event};
-use super::time::{iso, parse_ms, system_ms};
 use crate::clock::Clock;
+use crate::hub::store::{iso_ms, parse_ms, system_ms};
 use fleetd_contracts::events::{HubEvent, HubEventType};
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-
-pub use super::state::CONTINUE_MESSAGE;
 
 const REPLAYED: &[&str] = &[
     "thread.usage_limited",
@@ -32,12 +30,12 @@ pub trait UsageOwners: Send + Sync {
     fn still_parked(&self, parked: &ParkedThread) -> BoxFut<'_, bool>;
 }
 
-/// The write queue's `send`: delivered once per `client_message_id`.
+/// The write queue's `send` of the `usage.continue` prompt, rendered from the thread's own texts: delivered once per
+/// `client_message_id`.
 pub trait UsageQueue: Send + Sync {
-    fn send(
+    fn send_continue(
         &self,
         thread: &ThreadRef,
-        message: &str,
         client_message_id: &str,
     ) -> BoxFut<'_, Result<(), String>>;
 }
@@ -225,13 +223,7 @@ impl Usage {
                 p.thread.thread_id,
                 parse_ms(&p.parked.since).unwrap_or(0)
             );
-            if let Err(reason) = self
-                .inner
-                .deps
-                .queue
-                .send(&p.thread, CONTINUE_MESSAGE, &id)
-                .await
-            {
+            if let Err(reason) = self.inner.deps.queue.send_continue(&p.thread, &id).await {
                 tracing::warn!(thread = %format!("{}/{}", p.thread.machine_id, p.thread.thread_id), %reason, "usage: continue not delivered");
                 continue;
             }
@@ -241,9 +233,13 @@ impl Usage {
                 task_id: p.task_id.clone(),
             });
         }
-        if let Some(event) =
-            resumed_event(machine_id, &iso(self.now_ms()), &sent, breaker_cleared, by)
-        {
+        if let Some(event) = resumed_event(
+            machine_id,
+            &iso_ms(self.now_ms()),
+            &sent,
+            breaker_cleared,
+            by,
+        ) {
             self.emit(event).await;
         }
         sent.len()
@@ -263,7 +259,7 @@ impl Usage {
             .state
             .lock()
             .unwrap()
-            .trip(machine_id, &iso(self.now_ms()));
+            .trip(machine_id, &iso_ms(self.now_ms()));
         if let Some((breaker, until)) = trip {
             self.emit(breaker).await;
             if let Some(u) = until {

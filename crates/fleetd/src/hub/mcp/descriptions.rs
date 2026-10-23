@@ -94,7 +94,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "workstream_get",
-        "One workstream with its frozen brief and headline (the lead's own words), its open secret and approval requests, the decisions scoped to it, and its last 20 claims with each check's result. Only a claim whose checks all passed makes it done.",
+        "One workstream with its frozen brief and headline (the lead's own words), its open secret and approval requests, and the decisions scoped to it. Its lead closes it with why once it is done.",
     ),
     (
         "secret_submit",
@@ -137,10 +137,6 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "Close a machine's usage breaker and send \"continue\" to every lead and task parked there (lead, then reviews, then writers); queued tasks start as slots allow. Use it after fixing your proxy or once the login has capacity.",
     ),
     (
-        "claims_list",
-        "Claims (a lead's `claim_done`), newest first: each done-when check fleetd ran itself, with pass/fail/error, evidence and exit codes. Filter by workstreamId, projectRef or outcome.",
-    ),
-    (
         "changes_list",
         "PRs on the merge train (Changes), newest first: state (queued, reviewing, ready, rebasing, ci, merging, merged, needs_rebase, ci_failed, refused, abandoned), reviews bound to the patch id, queue position and why it is parked. Filter by projectRef, repo or state.",
     ),
@@ -162,7 +158,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "order_get",
-        "One order as orders_board shows it, plus its project's lead, its finished agents with their receipts, its open requests and its claims.",
+        "One order as orders_board shows it, plus its project's lead, its finished agents and its open requests.",
     ),
     (
         "steer_send",
@@ -186,7 +182,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "prompts_list",
-        "Every prompt and message fleetd sends a model (lead, tasks, reviewers, judges, playbooks, custom instructions): id, kind, when it is sent, which text is in effect (default, global or project override) and whether a release changed the default of one you edited. projectRef: the texts in effect for that project.",
+        "Every prompt and message fleetd sends a model (lead, tasks, reviewers, playbooks, custom instructions): id, kind, when it is sent, which text is in effect (default, global or project override) and whether a release changed the default of one you edited. projectRef: the texts in effect for that project.",
     ),
     (
         "prompt_get",
@@ -202,7 +198,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "session_prompt_get",
-        "Exactly what one session fleetd started (a lead, task, reviewer or judge) was told: its first message byte for byte, its SHA, the ref and scope of every prompt it is pinned to, and the tools it never gets.",
+        "Exactly what one session fleetd started (a lead, task or reviewer) was told: its first message byte for byte, its SHA, the ref and scope of every prompt it is pinned to, and the tools it never gets.",
     ),
     (
         "time_spans",

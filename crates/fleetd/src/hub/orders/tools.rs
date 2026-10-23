@@ -15,7 +15,6 @@ use crate::hub::api::{Caller, Hub, Registry, ToolError, allows, require};
 use crate::hub::store::{iso_ms, now_ms};
 
 const ORDER_ASKS: usize = 20;
-const ORDER_CLAIMS: usize = 20;
 /// The hub trims lanes, then PRs, so a board answer stays under this.
 const BOARD_MAX_BYTES: usize = 64 * 1024;
 
@@ -101,14 +100,6 @@ async fn order_get(
     let joined = super::join(&hub, &w, &changes, requests.len());
     let mut truncated = joined.truncated || requests.len() > ORDER_ASKS;
     requests.truncate(ORDER_ASKS);
-    let claims = hub
-        .leads
-        .ctx
-        .hooks
-        .claims
-        .get()
-        .map(|c| c.list(id, ORDER_CLAIMS))
-        .filter(|c| !c.is_empty());
     let title = hub
         .store
         .project_get(&w.project_ref)?
@@ -128,7 +119,6 @@ async fn order_get(
         lead,
         done_lanes: List::unchecked(joined.done),
         requests: List::unchecked(requests),
-        claims: claims.map(List::unchecked),
         next: Some(
             "Talk to its lead with chat_send; stop the project's work with project_stop.".into(),
         ),

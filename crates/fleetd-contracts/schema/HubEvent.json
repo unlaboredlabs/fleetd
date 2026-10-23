@@ -76,7 +76,6 @@
             "task.completed",
             "task.failed",
             "task.cancelled",
-            "claim.passed",
             "steer.withdrawn"
           ],
           "type": "string"
@@ -162,13 +161,8 @@
           "type": "string"
         },
         {
-          "const": "claim.failed",
-          "description": "A claim had a failing check; the workstream stays verifying. `data.claimId`, `data.workstreamId`.",
-          "type": "string"
-        },
-        {
           "const": "workstream.done",
-          "description": "Every done-when check passed. `data.workstreamId`.",
+          "description": "The lead closed it, or its research verdict came in. `data.workstreamId`, and `data.reason` (why) and\n`data.by` when the lead closed it.",
           "type": "string"
         },
         {

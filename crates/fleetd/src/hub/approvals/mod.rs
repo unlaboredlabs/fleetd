@@ -15,8 +15,9 @@ pub mod tools;
 mod tests;
 
 use crate::clock::Clock;
+use crate::hub::store::{iso_ms, system_ms};
 use crate::hub::usage::ports::{BoxFut, EventLog, NewEvent, ProjectRef, WaitInput};
-use crate::hub::usage::time::{clip, iso, system_ms};
+use crate::hub::usage::time::clip;
 use fleetd_contracts::chat::{
     ChatItem, ChatRequestId, CommandApprovalItem, CommandApprovalState, SecretRequestItem,
     SecretRequestState,
@@ -188,6 +189,8 @@ pub trait ApprovalHub: Send + Sync {
     fn wake_request(&self, request: &HumanRequest) -> BoxFut<'_, ()>;
     /// The project policy's `tools` rules (empty without a policy file); the error says why it could not be read.
     fn tool_rules(&self, project: &ProjectRef) -> BoxFut<'_, Result<ToolRules, String>>;
+    /// The texts a message to this thread renders from.
+    fn prompts(&self, machine_id: &str, thread_id: &str) -> crate::hub::prompts::PromptSet;
 }
 
 pub struct ApprovalsDeps {
@@ -358,7 +361,7 @@ impl Approvals {
     }
 
     fn now(&self) -> String {
-        iso(system_ms(self.deps.clock.now()))
+        iso_ms(system_ms(self.deps.clock.now()))
     }
 
     pub fn get(&self, id: &str) -> Option<HumanRequest> {
@@ -502,7 +505,7 @@ impl Approvals {
             }),
             gated: None,
             permission: None,
-            at: fleetd_contracts::ids::Timestamp(iso(now)),
+            at: fleetd_contracts::ids::Timestamp(iso_ms(now)),
             at_ms: now,
         })
         .await
@@ -677,7 +680,7 @@ impl Approvals {
             secret: None,
             gated: Some(gated),
             permission: None,
-            at: fleetd_contracts::ids::Timestamp(iso(now)),
+            at: fleetd_contracts::ids::Timestamp(iso_ms(now)),
             at_ms: now,
         })
         .await

@@ -69,7 +69,6 @@ const addOrder = (f: Fixture, opts: FixtureOptions) => {
     ...clone(template),
     order: card,
     requests: [],
-    claims: [],
     doneLanes,
     ...(lead === undefined ? {} : { lead: lane(lead.threadId, "lead", "lead") }),
   });

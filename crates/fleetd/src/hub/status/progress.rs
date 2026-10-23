@@ -1,6 +1,4 @@
 //! The figure (verified must points over must points) and the done rule. Pure: callers load the rows.
-use std::collections::HashMap;
-
 use fleetd_contracts::plan::{PlanItemState, Size, Weight};
 use fleetd_contracts::train::ChangeState;
 
@@ -81,57 +79,26 @@ pub struct LinkedChange {
     pub state: ChangeState,
 }
 
-/// One check index's result in the order's latest claim that ran it.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CheckPass {
-    pub pass: bool,
-    pub claim_id: String,
-}
-
-/// The done rule (§1): `Some(evidence)` when the item is verified. An item needs a link. Every linked Change that
-/// is not abandoned or refused must be merged by the train (only `finish_merged` sets Merged, so a bypass merge
-/// never counts), and every listed check must pass in the latest claim that ran it. An item that links only checks
-/// is done when they pass.
-pub fn verified(
-    linked_tasks_or_prs: bool,
-    changes: &[LinkedChange],
-    checks: &[i64],
-    latest: &HashMap<i64, CheckPass>,
-) -> Option<String> {
-    if !linked_tasks_or_prs && checks.is_empty() {
+/// The done rule (§1): `Some(evidence)` when the item is verified. An item needs a link, and every linked Change that
+/// is not abandoned or refused must be merged by the train (only `finish_merged` sets Merged, so a bypass merge never
+/// counts).
+pub fn verified(linked: bool, changes: &[LinkedChange]) -> Option<String> {
+    if !linked {
         return None;
     }
     let live: Vec<&LinkedChange> = changes
         .iter()
         .filter(|c| !matches!(c.state, ChangeState::Abandoned | ChangeState::Refused))
         .collect();
-    if linked_tasks_or_prs
-        && (live.is_empty() || live.iter().any(|c| c.state != ChangeState::Merged))
-    {
+    if live.is_empty() || live.iter().any(|c| c.state != ChangeState::Merged) {
         return None;
     }
-    let mut passed = Vec::new();
-    for i in checks {
-        let r = latest.get(i)?;
-        if !r.pass {
-            return None;
-        }
-        passed.push(format!("check {i} passed {}", r.claim_id));
-    }
-    let mut parts: Vec<String> = live
-        .iter()
-        .map(|c| format!("#{} merged by the train", c.pr_number))
-        .collect();
-    parts.extend(passed);
-    Some(parts.join(" · "))
-}
-
-/// Whether a done item reopens: one of its checks failed in a later claim.
-pub fn reopened(checks: &[i64], latest: &HashMap<i64, CheckPass>) -> Option<i64> {
-    checks
-        .iter()
-        .copied()
-        .find(|i| latest.get(i).is_some_and(|r| !r.pass))
+    Some(
+        live.iter()
+            .map(|c| format!("#{} merged by the train", c.pr_number))
+            .collect::<Vec<_>>()
+            .join(" · "),
+    )
 }
 
 /// Edits within this long of a milestone's first item shape the plan and carry no marker.
@@ -204,36 +171,24 @@ mod tests {
     }
 
     #[test]
-    fn done_needs_a_train_merge_and_the_latest_check_passes() {
+    fn done_needs_every_live_change_merged_by_the_train() {
         let merged = |n| LinkedChange {
             change_id: format!("X{n}"),
             pr_number: n,
             state: ChangeState::Merged,
         };
-        let mut latest = HashMap::new();
-        latest.insert(
-            2,
-            CheckPass {
-                pass: true,
-                claim_id: "C9".into(),
-            },
-        );
-        assert_eq!(verified(false, &[], &[], &latest), None, "no link");
+        assert_eq!(verified(false, &[]), None, "no link");
+        assert_eq!(verified(true, &[]), None, "a task without a Change");
         assert_eq!(
-            verified(true, &[], &[], &latest),
-            None,
-            "a task without a Change"
-        );
-        assert_eq!(
-            verified(true, &[merged(212)], &[2], &latest).as_deref(),
-            Some("#212 merged by the train · check 2 passed C9")
+            verified(true, &[merged(212)]).as_deref(),
+            Some("#212 merged by the train")
         );
         let ci = LinkedChange {
             state: ChangeState::Ci,
             ..merged(213)
         };
         assert_eq!(
-            verified(true, &[merged(212), ci], &[], &latest),
+            verified(true, &[merged(212), ci]),
             None,
             "every live Change merged"
         );
@@ -241,21 +196,7 @@ mod tests {
             state: ChangeState::Abandoned,
             ..merged(214)
         };
-        assert!(verified(true, &[merged(212), abandoned], &[], &latest).is_some());
-        assert_eq!(
-            verified(true, &[merged(212)], &[3], &latest),
-            None,
-            "check 3 never ran"
-        );
-        latest.insert(
-            2,
-            CheckPass {
-                pass: false,
-                claim_id: "C10".into(),
-            },
-        );
-        assert_eq!(verified(true, &[merged(212)], &[2], &latest), None);
-        assert_eq!(reopened(&[2], &latest), Some(2));
+        assert!(verified(true, &[merged(212), abandoned]).is_some());
     }
 
     #[test]

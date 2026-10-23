@@ -13,7 +13,6 @@ pub mod main_ci;
 pub mod records;
 pub mod rules;
 pub mod service;
-pub mod time;
 pub mod tools;
 
 #[cfg(test)]

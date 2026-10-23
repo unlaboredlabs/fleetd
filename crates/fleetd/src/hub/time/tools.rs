@@ -441,10 +441,7 @@ fn by_profile(l: &Loaded, since: i64, until: i64) -> Vec<ProfileTotal> {
 fn top_commands(rows: &[Row]) -> Vec<CommandStat> {
     let mut by: HashMap<&str, (String, Vec<i64>, i64)> = HashMap::new();
     for r in rows {
-        if !matches!(
-            r.kind,
-            SpanKind::ToolBash | SpanKind::Git | SpanKind::CheckClaim
-        ) {
+        if !matches!(r.kind, SpanKind::ToolBash | SpanKind::Git) {
             continue;
         }
         let Some(label) = r.label.as_deref() else {

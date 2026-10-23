@@ -12,11 +12,12 @@ use fleetd_contracts::ledger::WorkstreamId;
 
 use super::digest::{DigestInput, WorkstreamFacts, render_lead_digest};
 use super::error::LeadError;
-use super::events::{Event, frame};
+use super::events::Event;
 use super::hooks::BoxFuture;
 use super::records::{LeadRecords, WorkstreamFilter};
 use super::{Ctx, now_iso};
 use crate::clock::Clock;
+use crate::hub::prompts::PromptSet;
 use crate::hub::store::{NewEvent, now_ms};
 
 pub const WAKE_DEBOUNCE: Duration = Duration::from_secs(10);
@@ -26,8 +27,6 @@ pub const WAKE_MAX_WAIT: Duration = Duration::from_secs(60);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LineKind {
     TaskResult,
-    ClaimFailed,
-    ClaimPassed,
     TaskWaiting,
     Train,
     ResearchVerdict,
@@ -49,7 +48,7 @@ pub enum Trigger {
         workstream_id: WorkstreamId,
         text: String,
     },
-    /// A task ended, a claim failed or passed late, a task waits on input, a train event, a research verdict: the area
+    /// A task ended, a task waits on input, a train event, a research verdict: the area
     /// that raises it renders its own "why" line(s).
     Line { kind: LineKind, text: String },
 }
@@ -76,8 +75,6 @@ impl Trigger {
             Trigger::Intent { .. } => "intent",
             Trigger::Line { kind, .. } => match kind {
                 LineKind::TaskResult => "task_result",
-                LineKind::ClaimFailed => "claim_failed",
-                LineKind::ClaimPassed => "claim_passed",
                 LineKind::TaskWaiting => "task_waiting",
                 LineKind::Train => "train",
                 LineKind::ResearchVerdict => "research_verdict",
@@ -107,8 +104,14 @@ pub fn trigger_lines(triggers: &[Trigger]) -> Vec<String> {
         .collect()
 }
 
-pub fn render_wake(digest: &str, triggers: &[Trigger]) -> String {
-    frame(digest, &trigger_lines(triggers))
+pub fn render_wake(set: &PromptSet, digest: &str, triggers: &[Trigger]) -> String {
+    set.render(
+        "lead.wake",
+        &[
+            ("state", &digest),
+            ("events", &trigger_lines(triggers).join("\n")),
+        ],
+    )
 }
 
 /// Coalesces items per key: a key flushes once no new item arrived for `debounce`, or `max_wait` after its first
@@ -304,27 +307,13 @@ impl LeadWakes {
         }))
     }
 
-    /// Per workstream with a brief: the checks its latest finished claim passed.
+    /// Per workstream with a brief: its steers and plan figure.
     pub fn workstream_facts(
         &self,
         workstreams: &[fleetd_contracts::ledger::Workstream],
     ) -> HashMap<WorkstreamId, WorkstreamFacts> {
-        let hooks = &self.ctx.hooks;
         let mut facts = HashMap::new();
         for w in workstreams.iter().filter(|w| w.brief.is_some()) {
-            let passed = hooks
-                .claims
-                .get()
-                .and_then(|c| c.latest(&w.workstream_id))
-                .map(|claim| {
-                    claim
-                        .results
-                        .iter()
-                        .filter(|r| r.result == fleetd_contracts::verification::CheckOutcome::Pass)
-                        .map(|r| r.check_index.get() as usize)
-                        .collect()
-                })
-                .unwrap_or_default();
             let steers = crate::hub::steer::digest_line(&self.ctx.db, &w.workstream_id);
             let plan = self
                 .ctx
@@ -341,14 +330,7 @@ impl LeadWakes {
                     let f = crate::hub::plan::figure_of(&items);
                     format!("plan: {}/{} items, {}%", f.must_done, f.must_total, f.pct())
                 });
-            facts.insert(
-                w.workstream_id.clone(),
-                WorkstreamFacts {
-                    passed,
-                    plan,
-                    steers,
-                },
-            );
+            facts.insert(w.workstream_id.clone(), WorkstreamFacts { plan, steers });
         }
         facts
     }
@@ -414,7 +396,12 @@ impl LeadWakes {
             });
             return Ok(());
         }
-        let message = render_wake(&self.digest(r).await?, &triggers);
+        let set = self
+            .ctx
+            .db
+            .prompts()
+            .for_thread(&r.machine_id, lead.thread_id.as_str());
+        let message = render_wake(&set, &self.digest(r).await?, &triggers);
         let at = now_iso(&self.ctx);
         let crid = format!("fleetd-wake:{}:{}:{at}", key_of(r), lead.session_generation);
         // Through the offline write queue, so a wake to an offline machine waits for it instead of being dropped.

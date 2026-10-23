@@ -10,9 +10,9 @@ pub const MAX_DEPTH: u32 = 1;
 /// this caps what a runaway lead can queue.
 pub const MAX_OPEN_TASKS: usize = 32;
 
-/// The calls a task's agent makes: its review verdict or a ready slice (`report`), a question for its lead, and a done
-/// claim.
-pub const WORKER_OPS: &[&str] = &["review_verdict", "slice_ready", "ask_lead", "claim_done"];
+/// The calls a task's agent makes: its review verdict (`report`) and a question for its lead. Only a lead closes
+/// work.
+pub const WORKER_OPS: &[&str] = &["review_verdict", "ask_lead"];
 /// The calls that start an agent.
 pub const SPAWN_OPS: &[&str] = &["task_spawn"];
 
@@ -60,8 +60,8 @@ pub fn check(agent: &CallerAgent, op: &str) -> Result<(), McpToolError> {
                     format!("{op} is a lead's call, and {task} is a task."),
                 )
                 .with_fix(
-                    "A task reports its review verdict or a ready slice (report), asks its lead (ask_lead) and \
-                     claims done (claim_done). Put anything else in your result or ask your lead.",
+                    "A task reports its review verdict (report) and asks its lead (ask_lead). Put anything else in \
+                     your result or ask your lead.",
                 ));
             }
             Ok(())
@@ -71,11 +71,6 @@ pub fn check(agent: &CallerAgent, op: &str) -> Result<(), McpToolError> {
             "ask_lead is a task's question for its lead, and this call comes from no task.",
         )
         .with_fix("A lead asks the human with ask.")),
-        CallerAgent::Person | CallerAgent::Lead if op == "slice_ready" => Err(McpToolError::new(
-            ErrorCode::Invalid,
-            "A ready slice is reported by the writer that pushed it, and this call comes from no task.",
-        )
-        .with_fix("Put a PR on the train with change_enqueue.")),
         CallerAgent::Person | CallerAgent::Lead => Ok(()),
     }
 }
@@ -105,7 +100,7 @@ mod tests {
     }
 
     #[test]
-    fn a_task_can_report_ask_its_lead_and_claim_done_but_never_start_or_steer_agents() {
+    fn a_task_can_report_and_ask_its_lead_but_never_start_steer_or_close() {
         for op in WORKER_OPS {
             assert_eq!(check(&task(), op), Ok(()), "{op}");
         }
@@ -126,7 +121,9 @@ mod tests {
             "ask",
             "decide",
             "brief_create",
+            "close",
             "gated_run",
+            "claim_done",
         ] {
             let refused = check(&task(), op).unwrap_err();
             assert_eq!(
@@ -139,16 +136,13 @@ mod tests {
     #[test]
     fn a_lead_and_a_person_make_every_call_but_a_tasks_own() {
         for agent in [CallerAgent::Lead, CallerAgent::Person] {
-            for op in ["task_spawn", "task_message", "claim_done", "gated_run"] {
+            for op in ["task_spawn", "task_message", "close", "gated_run"] {
                 assert_eq!(check(&agent, op), Ok(()), "{op}");
             }
-            for op in ["ask_lead", "slice_ready"] {
-                assert_eq!(
-                    check(&agent, op).unwrap_err().code,
-                    ErrorCode::Invalid,
-                    "{op}"
-                );
-            }
+            assert_eq!(
+                check(&agent, "ask_lead").unwrap_err().code,
+                ErrorCode::Invalid
+            );
         }
     }
 

@@ -50,16 +50,6 @@ pub fn task_spawn_rule(kind: TaskKind, qa: Option<bool>, pr: bool) -> Result<(),
     Ok(())
 }
 
-/// Counted by the hub from the task's thread items, never from its prose.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct Receipts {
-    pub commands: Count,
-    pub commands_failed: Count,
-    pub files_changed: Count,
-    pub tool_calls: Count,
-}
-
 brand!(
     PrUrl,
     check = is_http_url,
@@ -88,10 +78,6 @@ pub struct TaskResult {
     pub tail: Text<0, 2000>,
     pub branch: Option<NonEmpty>,
     pub pr_url: Option<PrUrl>,
-    /// Absent on results stored before M6.
-    pub receipts: Option<Receipts>,
-    /// The tail claims success ("tests pass", "fixed", ...) while `receipts.commands` is 0. Absent before M6.
-    pub claims_unverified: Option<bool>,
     pub at: Timestamp,
 }
 
@@ -110,7 +96,7 @@ pub struct Task {
     pub profile: TaskProfile,
     /// A review task spawned with `--qa`.
     pub qa: Option<bool>,
-    /// The PR a review task reviews. Required at spawn for review; absent on hub-spawned judge tasks and older rows.
+    /// The PR a review task reviews. Required at spawn for review; absent on older rows (hub-spawned judges).
     pub pr: Option<PrUrl>,
     /// The plan item it was spawned for (`--item`).
     #[serde(default)]
@@ -295,6 +281,13 @@ mod tests {
             "areas",
             json!(["docs"])
         )));
+        // Results stored with receipts still read, and drop them on the next write.
+        let mut with_receipts = task.clone();
+        with_receipts["result"]["receipts"] =
+            json!({ "commands": 0, "commandsFailed": 0, "filesChanged": 1, "toolCalls": 2 });
+        with_receipts["result"]["claimsUnverified"] = json!(true);
+        let decoded: Task = serde_json::from_value(with_receipts).unwrap();
+        assert_eq!(serde_json::to_value(&decoded).unwrap(), task);
         let mut long_tail = task.clone();
         long_tail["result"]["tail"] = json!("x".repeat(2001));
         assert!(!accepts::<Task>(long_tail));
