@@ -5,8 +5,9 @@
 // The lab writes the handoff ({hubUrl, key}, a human key) when run with FLEETD_LAB_APP_HANDOFF=<file>
 // (tests/lab/testLab.ts). The recorder waits for it, then holds one /app session for the whole run: the snapshot, every
 // event from cursor 0, the live feed (board, focused on the newest order), and repeated sweeps of every read call the
-// app's screens make over every machine, project, order, task and thread it has seen. It reconnects when the lab
-// restarts the hub. A call's result is written only when it differs from that call's last one, so an hour stays small.
+// app's screens make over every machine, project, order and thread it has seen (Time's answers are fixtures/time's, so
+// it records none). It reconnects when the lab restarts the hub. A call's result is written only when it differs from
+// that call's last one, so an hour stays small.
 // The raw file holds real lab paths and ids; only sanitize.ts output goes into the repo.
 import { createHash } from "node:crypto";
 import fs from "node:fs";
@@ -33,7 +34,6 @@ const seen = {
   machines: new Set<string>(),
   projects: new Map<string, { machineId: string; projectId: string }>(),
   orders: new Set<string>(),
-  tasks: new Set<string>(),
   threads: new Map<string, { machineId: string; threadId: string }>(),
   prompts: new Set<string>(),
   promptsFetched: new Set<string>(),
@@ -49,12 +49,10 @@ const collect = (v: JsonValue): void => {
   const projectId = str(v["projectId"]);
   const threadId = str(v["threadId"]);
   const workstreamId = str(v["workstreamId"]);
-  const taskId = str(v["taskId"]);
   if (machineId !== undefined) seen.machines.add(machineId);
   if (machineId !== undefined && projectId !== undefined) seen.projects.set(`${machineId}/${projectId}`, { machineId, projectId });
   if (machineId !== undefined && threadId !== undefined) seen.threads.set(`${machineId}/${threadId}`, { machineId, threadId });
   if (workstreamId !== undefined) seen.orders.add(workstreamId);
-  if (taskId !== undefined) seen.tasks.add(taskId);
   for (const x of Object.values(v)) collect(x);
 };
 
@@ -66,37 +64,21 @@ const sweepCalls = (since: string): Array<readonly [string, JsonObject]> => {
     ["prompts_list", {}],
     ["doctor_list", {}],
     ["attention_policy", {}],
-    ["wake_list", {}],
     ["status_get", { scope: { kind: "fleet" } }],
-    ["time_breakdown", { scope: { kind: "fleet" }, since }],
-    ["time_insights", { scope: { kind: "fleet" }, since }],
-    ["time_spans", { scope: { kind: "fleet" }, since, limit: 500 }],
   ];
   for (const { machineId, projectId } of seen.projects.values()) {
     const projectRef = { machineId, projectId };
     calls.push(
-      ["project_get", projectRef],
       ["chat_history", { projectRef }],
       ["orders_board", { projectRef, includeDoneSince: since }],
-      ["tasks_list", { projectRef, limit: 100 }],
-      ["workstream_list", { machineId, projectId, limit: 50 }],
       ["prompts_list", { projectRef }],
-      ["project_files", { machineId, projectId, query: "", limit: 20 }],
       ["status_get", { scope: { kind: "project", projectRef } }],
-      ["time_breakdown", { scope: { kind: "project", projectRef }, since }],
     );
   }
   for (const workstreamId of seen.orders) {
-    calls.push(
-      ["order_get", { workstreamId }],
-      ["steers_list", { workstreamId, limit: 100 }],
-      ["status_get", { scope: { kind: "order", workstreamId } }],
-      ["time_breakdown", { scope: { kind: "order", workstreamId }, since }],
-      ["time_insights", { scope: { kind: "order", workstreamId }, since }],
-      ["time_spans", { scope: { kind: "order", workstreamId }, since, limit: 500 }],
-    );
+    calls.push(["order_get", { workstreamId }], ["status_get", { scope: { kind: "order", workstreamId } }]);
   }
-  for (const taskId of seen.tasks) calls.push(["task_get", { taskId }]);
+  // thread_tail feeds only the conversation fixtures (kit/shared.ts withConversation).
   for (const { machineId, threadId } of seen.threads.values()) {
     calls.push(["thread_tail", { machineId, threadId, n: 50 }], ["session_prompt_get", { machineId, threadId }]);
   }
