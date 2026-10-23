@@ -1,7 +1,7 @@
 // One agent's live work, read-only: what it is on, what it is doing now, and its newest steps (what it wrote, what it
 // ran and edited), with the message it is writing streaming in at the end. To change what it does, you tell the lead.
 import { useMemo } from "react";
-import type { WorkStep } from "../../src/data/agents-contract";
+import type { WorkStep } from "../../../shared/contracts";
 import { useAgentWork, useData } from "../../src/data/react";
 import { selectLiveAgent, selectLiveAgents } from "../../src/data/selectors";
 import { Button, cx, EmptyState, Markdown, RoleTag, Text, Truncate, VirtualList } from "../../ui";

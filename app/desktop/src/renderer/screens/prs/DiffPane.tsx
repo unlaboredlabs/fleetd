@@ -5,7 +5,7 @@ import type { Virtualizer } from "@tanstack/react-virtual";
 import { ChevronDown } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useToolPages, useToolQueries } from "../../src/data/react";
-import type { DiffLine, PrDiffOutput, PrFile } from "../../src/data/pr-contract";
+import type { DiffLine, PrDiffOutput, PrFile } from "../../../shared/contracts";
 import { Button, Text, Truncate, VirtualList, cx, renderTokens } from "../../ui";
 import { DIFF_PAGE, diffRows, fileRowIndex, hunkText, sidesOf, statusWords, type DiffMode, type DiffRow, type Page, type Pages } from "./diffModel";
 import { usePageTokens } from "./tokens";

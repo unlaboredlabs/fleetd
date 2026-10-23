@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { DiffLine, PrFile, PrReviewEntry, PrRow } from "../../src/data/pr-contract";
+import type { DiffLine, PrFile, PrReviewEntry, PrRow } from "../../../shared/contracts";
 import { DIFF_PAGE, diffRows, fileRowIndex, toPairs, type Page } from "./diffModel";
 import { listItems } from "./PrList";
 import { resolvePr } from "./PrsScreen";
@@ -18,7 +18,7 @@ const row = (over: Partial<PrRow> = {}): PrRow => ({
   ...over,
 });
 
-const queue = (state: NonNullable<PrRow["queue"]>["state"], over: Partial<NonNullable<PrRow["queue"]>> = {}) => ({ changeId: "C1", state, length: 3, paused: false, ...over });
+const queue = (state: NonNullable<PrRow["queue"]>["state"], over: Partial<NonNullable<PrRow["queue"]>> = {}) => ({ changeId: "X1", state, length: 3, paused: false, ...over });
 
 describe("where a PR is on its way to main", () => {
   it("says the merge queue's place in plain words, never its name or raw state", () => {

@@ -4,9 +4,6 @@
 // Added to the shared fixtures; the group's own cover no PRs, the reads still on their way, GitHub out of reach, a PR
 // that fails to load, GitHub's rate limit reached with the hub's last answer kept, and a PR of 240 files with a
 // 3,000-line file, paged as the hub pages them.
-//
-// The tools' contract is still on its branch (src/renderer/src/data/pr-contract.ts), so their answers skip schema
-// validation until it lands here.
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import { firstProject } from "../kit/chat.ts";
@@ -14,7 +11,6 @@ import { isObject, type JsonObject } from "../kit/json.ts";
 import { LONG_BRANCH, LONG_PARAGRAPH, LONG_PATH, LONG_TITLES, ofLength } from "../kit/text.ts";
 
 const REPO = "acme/storefront";
-const TOOLS = ["pr_list", "pr_get", "pr_files", "pr_diff"] as const;
 /** Files per pr_files page and lines per pr_diff page, as the hub sends them. */
 const FILES_PAGE = 100;
 const DIFF_PAGE = 200;
@@ -279,7 +275,7 @@ const specs = (f: Fixture): PrSpec[] => [
     title: "Receipts show the shop's local time",
     state: "open",
     branch: "fleetd/receipts-local-time",
-    queue: { changeId: "C11", state: "reviewing", length: 2, paused: false },
+    queue: { changeId: "X11", state: "reviewing", length: 2, paused: false },
     checks: { state: "pending", passed: 6, failed: 0, pending: 1 },
     review: { state: "pending", done: 1, needed: 3 },
     author: implementer("Date receipts in the shop's time zone"),
@@ -351,7 +347,7 @@ const specs = (f: Fixture): PrSpec[] => [
     state: "open",
     branch: "fleetd/cart-minor-units",
     queue: {
-      changeId: "C10",
+      changeId: "X10",
       state: "ci_failed",
       length: 2,
       paused: false,
@@ -401,7 +397,7 @@ const specs = (f: Fixture): PrSpec[] => [
     title: "Search index warms on deploy",
     state: "open",
     branch: "fleetd/search-warm",
-    queue: { changeId: "C9", state: "ready", position: 0, length: 2, paused: false },
+    queue: { changeId: "X9", state: "ready", position: 0, length: 2, paused: false },
     checks: { state: "passing", passed: 6, failed: 0, pending: 0 },
     review: { state: "approved", done: 2, needed: 2 },
     author: implementer("Warm the search index on deploy", "claude-opus-5-5"),
@@ -457,7 +453,7 @@ const specs = (f: Fixture): PrSpec[] => [
     title: "Receipt dates use Intl",
     state: "merged",
     branch: "fleetd/receipt-intl",
-    queue: { changeId: "C8", state: "merged", length: 0, paused: false },
+    queue: { changeId: "X8", state: "merged", length: 0, paused: false },
     checks: { state: "passing", passed: 7, failed: 0, pending: 0 },
     review: { state: "approved", done: 2, needed: 2 },
     author: implementer("Format receipt dates with Intl"),
@@ -481,7 +477,7 @@ const specs = (f: Fixture): PrSpec[] => [
     title: "Try a second payment provider",
     state: "closed",
     branch: "fleetd/second-provider",
-    queue: { changeId: "C7", state: "abandoned", length: 0, paused: false, reason: "The lead dropped it: the provider has no refunds API." },
+    queue: { changeId: "X7", state: "abandoned", length: 0, paused: false, reason: "The lead dropped it: the provider has no refunds API." },
     checks: { state: "passing", passed: 7, failed: 0, pending: 0 },
     review: { state: "pending", done: 0, needed: 2 },
     author: implementer("Spike a second payment provider", "claude-opus-5-5"),
@@ -564,12 +560,7 @@ const answerPr = (f: Fixture, p: PrSpec, githubError?: string, kept = false): vo
   answerFiles(f, p.number, p.files, headSha);
 };
 
-const pending = (f: Fixture): void => {
-  for (const tool of TOOLS) f.pendingContracts.set(tool, "the PR reads land with the hub's PR view (crates/fleetd-contracts/src/prs.rs)");
-};
-
 const answerAll = (f: Fixture, list: readonly PrSpec[], opts: { githubError?: string; kept?: boolean } = {}): void => {
-  pending(f);
   const projectRef = firstProject(f);
   f.answer("pr_list", { projectRef }, { at: f.now, prs: list.map((p) => rowOf(f, p)), ...(opts.githubError === undefined ? {} : { githubError: opts.githubError }) });
   for (const p of list) answerPr(f, p, opts.githubError, opts.kept);
@@ -617,7 +608,6 @@ export default defineGroup({
   fixtures: (base) => [
     (() => {
       const f = Fixture.from(base("typical"), "prs-none", "storefront has no PRs open or closed lately.");
-      pending(f);
       f.answer("pr_list", { projectRef: firstProject(f) }, { at: f.now, prs: [] });
       return f;
     })(),
@@ -647,7 +637,7 @@ export default defineGroup({
       const f = Fixture.from(base("typical"), "prs-error", "#11 fails to load.");
       answerAll(f, specs(f));
       f.drop("pr_get", { repo: REPO, number: 11 });
-      f.fail("pr_get", { repo: REPO, number: 11 }, { code: "unavailable", message: "GitHub returned 502 Bad Gateway" });
+      f.fail("pr_get", { repo: REPO, number: 11 }, { code: "failed", message: "GitHub returned 502 Bad Gateway" });
       return f;
     })(),
     (() => {

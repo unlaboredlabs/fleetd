@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AgentRow } from "../../src/data/agents-contract";
+import type { AgentRow } from "../../../shared/contracts";
 import type { LiveAgent } from "../../src/data/selectors";
 import { actionLine, headline, listItems } from "./model";
 

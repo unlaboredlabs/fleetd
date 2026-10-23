@@ -1,7 +1,6 @@
 // Which call results an event makes stale. Events say what changed, rarely enough to redraw it, so each one names
 // the reads to refetch; the query layer batches them. Pure, so the mapping is tested on its own.
 import { dataField, type HubEvent, type ToolName } from "../../../shared/contracts";
-import "./agents-contract";
 
 /** Refetch `tool`'s queries, or only those whose input has these top-level values. */
 export interface Invalidation {

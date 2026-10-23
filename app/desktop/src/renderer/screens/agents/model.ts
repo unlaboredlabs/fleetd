@@ -1,6 +1,6 @@
 // What the agents view shows, as plain view data: the list with a line per project above its agents, the headline,
 // and one line per step of an agent's work. Pure, so it is unit-tested.
-import type { WorkStep } from "../../src/data/agents-contract";
+import type { WorkStep } from "../../../shared/contracts";
 import type { LiveAgent } from "../../src/data/selectors";
 
 export type ListItem =

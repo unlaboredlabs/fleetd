@@ -2,7 +2,7 @@
 // A row opens the PR beside the list; ↑ and ↓ move between rows.
 import { useMemo, type KeyboardEvent } from "react";
 import type { ProjectRef } from "../../../shared/contracts";
-import type { PrRow } from "../../src/data/pr-contract";
+import type { PrRow } from "../../../shared/contracts";
 import { StatusChip, Text, Truncate, VirtualList, cx } from "../../ui";
 import { toHash } from "../shell/routes";
 import { checksWord, isOpen, reviewsWord, stateLine, when } from "./words";

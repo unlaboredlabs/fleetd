@@ -9,7 +9,7 @@
 // Selectors are memoized on the slices they read, so a component re-renders only when its inputs changed, and
 // useSyncExternalStore sees a stable value between changes.
 import type { AgentLane, LiveLane, Machine, MachineLive, OrderCard, ProjectSummary, TrainLive } from "../../../shared/contracts";
-import type { AgentRow } from "./agents-contract";
+import type { AgentRow } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
 import { chatItems, type ChatItem, type ChatSend } from "./chat";
 import { orderPhase, PHASE_RANK, settled, type Phase } from "./phase";

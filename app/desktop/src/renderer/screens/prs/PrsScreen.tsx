@@ -6,7 +6,7 @@ import { PanelLeft } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { ProjectRef } from "../../../shared/contracts";
 import { useData, useToolQuery } from "../../src/data/react";
-import type { PrListOutput, PrRow } from "../../src/data/pr-contract";
+import type { PrListOutput, PrRow } from "../../../shared/contracts";
 import { Button, Dot, EmptyState, FrameTitle, Text } from "../../ui";
 import type { PrKey } from "../shell/routes";
 import { PrDetail, WithCode, type PrTab } from "./PrDetail";

@@ -2,7 +2,7 @@
 // Plain and state first. fleetd's merge queue shows only as where the PR is ("3rd in line to merge"), never by name,
 // and never as the hub's raw states.
 import type { AgentRole, ChangeState } from "../../../shared/contracts";
-import type { ChecksSummary, PrAuthor, PrCheck, PrReviewEntry, PrRow } from "../../src/data/pr-contract";
+import type { ChecksSummary, PrAuthor, PrCheck, PrReviewEntry, PrRow } from "../../../shared/contracts";
 import { shortModel } from "../live/format";
 import { ROLE_WORD } from "../../ui/primitives/roles";
 

@@ -127,6 +127,5 @@ export const syncAgentsList = (f: Fixture): void => {
       agents.push({ ...lane, projectRef: ref, projectTitle: titles.get(keyOf(ref)) ?? "", ...(typeof workstreamId === "string" ? { workstreamId } : {}) });
     }
   }
-  f.pendingContracts.set("agents_list", "agents_list is on feat/hub-agents-prs");
   f.answer("agents_list", {}, { agents: agents.slice(0, 100), at: f.now });
 };

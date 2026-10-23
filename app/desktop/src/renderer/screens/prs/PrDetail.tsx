@@ -4,7 +4,7 @@ import { ExternalLink } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { useData, useToolQuery } from "../../src/data/react";
 import { selectLiveAgents } from "../../src/data/selectors";
-import type { PrCheck, PrGetOutput, PrReviewEntry, PrRow } from "../../src/data/pr-contract";
+import type { PrCheck, PrGetOutput, PrReviewEntry, PrRow } from "../../../shared/contracts";
 import { codeRuns, machineCode } from "../chat/format";
 import { Button, InlineCode, Markdown, StatusChip, Tab, TabList, TabPanel, Tabs, Text, Truncate, cx, toast } from "../../ui";
 import { AgentRowLink } from "../agents/AgentsScreen";

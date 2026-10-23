@@ -2,7 +2,7 @@
 // screen whatever the PR's size. The hub sends files a page at a time and each file's diff a page of lines at a time;
 // a page not loaded yet stands as one empty row per line it will hold, so the list's length and scroll height are
 // right from the start and nothing below moves when a page lands. Pure, so the shape is tested without a DOM.
-import type { DiffLine, PrFile } from "../../src/data/pr-contract";
+import type { DiffLine, PrFile } from "../../../shared/contracts";
 
 /** Lines per pr_diff page; the hub's default and well under its cap. */
 export const DIFF_PAGE = 200;
