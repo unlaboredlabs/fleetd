@@ -18,8 +18,8 @@ struct TestHub {
     hub: Arc<Hub>,
     url: String,
     served: tokio::task::JoinHandle<std::io::Result<()>>,
-    interrupts: Arc<AtomicUsize>,
-    // Each test gets its own home: the webhook key file is created there, and a shared one races between tests.
+    operate_calls: Arc<AtomicUsize>,
+    // Each test gets its own home, so no two tests share a hub's files.
     _home: tempfile::TempDir,
 }
 
@@ -34,9 +34,9 @@ async fn start() -> TestHub {
     };
     let hub = build_on(HubDb::open_memory().unwrap(), config, Arc::new(SystemClock)).unwrap();
     let mut tools: Registry = api::registry();
-    let interrupts = Arc::new(AtomicUsize::new(0));
-    let counter = interrupts.clone();
-    tools.add_raw("thread_interrupt", move |_, _, _| {
+    let operate_calls = Arc::new(AtomicUsize::new(0));
+    let counter = operate_calls.clone();
+    tools.add_raw("project_add", move |_, _, _| {
         let counter = counter.clone();
         async move {
             counter.fetch_add(1, Ordering::SeqCst);
@@ -51,7 +51,7 @@ async fn start() -> TestHub {
         hub,
         url,
         served,
-        interrupts,
+        operate_calls,
         _home: home,
     }
 }
@@ -236,10 +236,7 @@ async fn tools_check_the_role_then_the_machine_grant_and_filter_fleet_wide_reads
     .await;
 
     let (is_error, body) = reader
-        .call(
-            "thread_interrupt",
-            json!({ "machineId": "lab-a", "threadId": "t1" }),
-        )
+        .call("project_add", json!({ "machineId": "lab-a", "path": "/w" }))
         .await;
     assert!(is_error);
     assert_eq!(
@@ -247,9 +244,9 @@ async fn tools_check_the_role_then_the_machine_grant_and_filter_fleet_wide_reads
         json!({ "code": "forbidden", "message": "This key lacks the operate role.",
         "fix": "Ask the hub admin for a key with that grant (fleetd hub key create --role … --machines …)." })
     );
-    assert_eq!(t.interrupts.load(Ordering::SeqCst), 0);
-    assert!(!a_only.call("thread_interrupt", json!({})).await.0);
-    assert_eq!(t.interrupts.load(Ordering::SeqCst), 1);
+    assert_eq!(t.operate_calls.load(Ordering::SeqCst), 0);
+    assert!(!a_only.call("project_add", json!({})).await.0);
+    assert_eq!(t.operate_calls.load(Ordering::SeqCst), 1);
 
     let (_, body) = a_only
         .call(
@@ -362,7 +359,7 @@ async fn app_socket_closes_on_a_refused_key_and_calls_through_the_same_checks() 
     for frame in [
         json!({ "t": "call", "id": "c0", "tool": "events_wait", "input": {} }),
         json!({ "t": "auth", "key": reader }),
-        json!({ "t": "call", "id": "c1", "tool": "thread_interrupt", "input": {} }),
+        json!({ "t": "call", "id": "c1", "tool": "project_add", "input": {} }),
         json!({ "t": "call", "id": "c2", "tool": "nope", "input": {} }),
     ] {
         app.send(Message::text(frame.to_string())).await.unwrap();
@@ -429,60 +426,6 @@ async fn stops_within_a_second_while_an_app_stream_and_an_events_wait_long_poll_
         other => panic!("expected a 1001 close, got {other:?}"),
     }
     poll.abort();
-}
-
-/// One raw POST to /github with the given signature header.
-async fn deliver(url: &str, signature: &str, body: &str) -> u16 {
-    let mut stream = tokio::net::TcpStream::connect(url).await.unwrap();
-    let request = format!(
-        "POST /github HTTP/1.1\r\nhost: {url}\r\nconnection: close\r\nx-github-event: push\r\nx-hub-signature-256: {signature}\r\ncontent-length: {}\r\n\r\n{body}",
-        body.len()
-    );
-    stream.write_all(request.as_bytes()).await.unwrap();
-    let mut reply = String::new();
-    stream.read_to_string(&mut reply).await.unwrap();
-    reply.split(' ').nth(1).unwrap().parse().unwrap()
-}
-
-#[tokio::test]
-async fn github_deliveries_need_webhooks_on_and_a_valid_signature_then_kick_the_repo() {
-    use hmac::{Hmac, Mac};
-    let t = start().await;
-    let body = r#"{"repository":{"full_name":"Acme/Storefront"}}"#;
-    assert_eq!(
-        deliver(&t.url, "sha256=00", body).await,
-        404,
-        "off by default"
-    );
-    t.hub
-        .db
-        .with(|c| {
-            c.execute(
-                "INSERT INTO trains (repo, machine_id, project_id, watch_since_ms) VALUES ('acme/storefront', 'devbox', 'p1', 0)",
-                [],
-            )?;
-            Ok(())
-        })
-        .unwrap();
-    let sealed = crate::hub::train::secret_box::SecretBox::for_home(&t.hub.config.home)
-        .unwrap()
-        .seal("s3cret");
-    std::fs::write(t.hub.config.home.join("github-webhook.secret"), sealed).unwrap();
-    t.hub.train.set_webhooks(true);
-    assert_eq!(deliver(&t.url, "sha256=00", body).await, 401);
-    assert_eq!(t.hub.train.last_delivery("acme/storefront"), None);
-    let mut mac = Hmac::<sha2::Sha256>::new_from_slice(b"s3cret").unwrap();
-    mac.update(body.as_bytes());
-    let hex: String = mac
-        .finalize()
-        .into_bytes()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    assert_eq!(deliver(&t.url, &format!("sha256={hex}"), body).await, 202);
-    assert!(t.hub.train.last_delivery("acme/storefront").is_some());
-    t.hub.shutdown.trigger();
-    let _ = t.served.await;
 }
 
 #[tokio::test]

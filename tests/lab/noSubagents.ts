@@ -1,8 +1,9 @@
 // Claude Code's own subagents are off and agents start only through fleetd (FLEETD_LAB_SLOT=6 `npm run lab nosub`).
-// The doctor says so for lab-a. A lead told to start a subagent with Agent/Task can't: its init has no agent
-// tool, any call it makes is refused, and no subagent starts. Its MCP `spawn_agent` starts a fleetd task that shows as
-// a lane on the order and ran through the slot board. A task's agent gets only report/ask_lead/claim_done, and its own
-// shell can't spawn either, with FLEETD_THREAD_ID unset or forged as the lead's. A few tiny lead turns, two task turns.
+// A lead told to start a subagent with Agent/Task can't: its init has no agent
+// tool, any call it makes is refused, and no subagent starts; a `claude` it runs in Bash is refused too. Its MCP
+// `spawn_agent` starts a fleetd task that shows as a lane on the order and ran through the slot board. A task's agent
+// gets only report/ask_lead/claim_done, and its own shell can't spawn either, with FLEETD_THREAD_ID unset or forged as
+// the lead's. A few tiny lead turns, two task turns.
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -49,8 +50,8 @@ export const checkedInitTools = (msgs: ReadonlyArray<Body>, what: string): Array
 
 const initOf = (threadId: string) => transcript(threadId).find((m) => m.type === "system" && m.subtype === "init");
 
-/** The session's calls to Claude's own agent tools, each with the error claude answered (undefined: it ran). */
-const agentCalls = (threadId: string) => {
+/** The session's tool calls `pick` keeps, each with whether claude refused it and what it answered. */
+const toolCalls = (threadId: string, pick: (call: Body) => boolean) => {
   const msgs = transcript(threadId);
   const results = new Map<string, Body>();
   for (const m of msgs.filter((m) => m.type === "user")) {
@@ -59,12 +60,17 @@ const agentCalls = (threadId: string) => {
   return msgs
     .filter((m) => m.type === "assistant")
     .flatMap((m) => (m.message?.content as Array<Body> | undefined) ?? [])
-    .filter((c) => c.type === "tool_use" && AGENT_TOOLS.includes(c.name))
+    .filter((c) => c.type === "tool_use" && pick(c))
     .map((c) => {
       const result = results.get(c.id);
       return { name: c.name as string, refused: result?.is_error === true, said: JSON.stringify(result?.content ?? "").slice(0, 160) };
     });
 };
+
+const agentCalls = (threadId: string) => toolCalls(threadId, (c) => AGENT_TOOLS.includes(c.name));
+/** The lead's Bash calls that start a claude of its own (the lab asks for `claude --version`, two spellings). */
+const nestedClaudeCalls = (threadId: string) =>
+  toolCalls(threadId, (c) => c.name === "Bash" && String(c.input?.command ?? "").includes("claude --version"));
 
 /** Lines claude prints when one of its own subagents or background tasks starts. */
 const subagentStarts = (threadId: string) =>
@@ -78,11 +84,6 @@ export async function noSubagents(lab: Lab) {
   const ref = { machineId: MACHINE, projectId };
   const root = (await callTool("project_get", ref)).body.project.workspaceRoot as string;
   prepareRepo(root);
-
-  const doctor = (await callTool("doctor_list", { rerun: true })).body;
-  const entry = doctor.checks.find((c: Body) => c.id === `${MACHINE}/claude_subagents`);
-  check(entry?.status === "ok" && entry.message === "Claude subagents off (fleetd manages agents)", `doctor ${MACHINE}/claude_subagents: ${JSON.stringify(entry)}`);
-  ok(`doctor ${MACHINE}/claude_subagents: ✓ ${entry.message}`);
 
   let leadThread = "";
   let leadTurns = 0;
@@ -127,16 +128,16 @@ export async function noSubagents(lab: Lab) {
 
   // The lead tries Claude's own subagent, then spawns through fleetd.
   const spawnArgs = { workstreamId, title: "say ok", kind: "read", prompt: "Reply with the single word OK.", profile: MECHANICS };
-  const sent = await callTool("thread_send", {
-    ...ref,
-    threadId: leadThread,
+  const sent = await lab.humanCall("chat_send", {
+    projectRef: ref,
     clientRequestId: randomUUID(),
-    message:
+    text:
       `Lab test of how agents start. Step 1: start a Claude Code subagent with your Agent tool (it may be named Task), prompt "say hi". ` +
-      `Step 2: whatever step 1 did, call fleetd's spawn_agent tool once with ${JSON.stringify(spawnArgs)}. ` +
-      `Step 3: reply with one line saying what each step returned, and stop. In later wakes about tasks, call no tools: reply with one short line and stop.`,
+      "Step 2: with your Bash tool, run `claude --version`, then `sh -c 'claude --version'`, as two separate calls. " +
+      `Step 3: whatever steps 1 and 2 did, call fleetd's spawn_agent tool once with ${JSON.stringify(spawnArgs)}. ` +
+      `Step 4: reply with one line saying what each step returned, and stop. In later wakes about tasks, call no tools: reply with one short line and stop.`,
   });
-  check(!sent.isError, `thread_send to the lead: ${JSON.stringify(sent.body)}`);
+  check(!sent.isError, `chat_send to the lead: ${JSON.stringify(sent.body)}`);
   const turn = leadTurnDone(cursor, "try Agent, then spawn_agent");
   turn.catch(() => undefined);
   const started = await lab.waitEvent("task.started from the lead's spawn_agent", TURN_MS, {
@@ -158,6 +159,10 @@ export async function noSubagents(lab: Lab) {
       ? "the lead had no Agent or Task tool to call (none offered); no subagent started"
       : `the lead tried ${calls.map((c) => c.name).join(", ")}: refused (${calls[0]!.said}); no subagent started`,
   );
+  // And no claude of its own from its shell, by name or through `sh -c`.
+  const claudes = nestedClaudeCalls(leadThread);
+  check(claudes.length > 0 && claudes.every((c) => c.refused), `every \`claude\` in the lead's Bash was refused: ${JSON.stringify(claudes)}`);
+  ok(`the lead ran claude from Bash ${claudes.length} time(s): refused (${claudes[0]!.said})`);
 
   // A lane: the order shows the task as one of its agents.
   const order = (await callTool("order_get", { workstreamId })).body;

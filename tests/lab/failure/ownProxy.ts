@@ -7,8 +7,8 @@ import fs from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
-import { type Body, type Lab, nodeHome, seedRepo } from "../harness.ts";
-import { claudeOf, launch, newestReply, runEnd } from "./kit.ts";
+import { type Body, type Lab, leadRun, nodeHome, seedRepo } from "../harness.ts";
+import { claudeOf, newestReply, runEnd } from "./kit.ts";
 
 const MACHINE = "lab-proxy";
 const TOKEN = "stub-proxy-token";
@@ -89,7 +89,8 @@ export async function ownProxy(lab: Lab) {
 
     const projectId = await lab.addProject(MACHINE, repo, "proxy");
     const from = await lab.cursor();
-    const threadId = await launch(lab, MACHINE, projectId, "fleetd lab own-proxy", "Reply with the single word OK and nothing else.");
+    const { threadId } = await leadRun(lab, MACHINE, projectId, "Reply with the single word OK and nothing else.");
+    // The lead's first turn already went through the proxy.
     const { event } = await runEnd(lab, MACHINE, threadId, from, 120_000);
     check(event.type === "thread.completed", `the run through the proxy ended ${event.type}: ${event.summary}`);
     const { reply } = await newestReply(lab, MACHINE, threadId);

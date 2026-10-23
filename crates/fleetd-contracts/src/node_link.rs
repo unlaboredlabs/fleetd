@@ -260,21 +260,6 @@ pub struct NodeProbe {
     /// user.email`; absent when neither is set.
     pub git_email: Option<Text<0, 320>>,
     pub git_email_from: Option<GitEmailFrom>,
-    /// Settings that make the machine sleep when idle on AC power; empty when none do. Absent from older nodes.
-    pub idle_sleep: Option<List<IdleSleep, 0, 8>>,
-}
-
-/// One setting that puts the machine to sleep when idle on AC, and the exact change that stops it.
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct IdleSleep {
-    /// Where it is set, e.g. "KDE power management", "logind IdleAction".
-    pub source: Text<1, 80>,
-    /// "sleeps", "hibernates" or "shuts down".
-    pub action: Text<1, 40>,
-    pub after_sec: Option<Count>,
-    pub fix: Text<1, 400>,
 }
 
 /// Node -> hub, one per `node_action`.

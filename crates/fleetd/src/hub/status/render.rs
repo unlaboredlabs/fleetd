@@ -119,13 +119,12 @@ fn order_rows(c: &Connection, since_iso: &str) -> rusqlite::Result<Vec<Order>> {
     Ok(out)
 }
 
-const RECENT_TYPES: [&str; 12] = [
+const RECENT_TYPES: [&str; 11] = [
     "machine.offline",
     "machine.slept",
     "change.ci_failed",
     "task.failed",
     "claim.failed",
-    "github.drift",
     // The progress model: stage moves and the causes that may lower a figure.
     "change.state",
     "plan.changed",
@@ -626,7 +625,6 @@ pub fn stale_clause(doc: &StatusDoc, tz: Tz) -> String {
             "machine" => format!("{name} silent{since}"),
             "github" => format!("GitHub unchecked{since}"),
             "train" => format!("the {name} train stopped{since}"),
-            "webhook" => format!("{name} webhooks missed{since}"),
             "ci" => format!("main CI of {name} unread{since}"),
             "usage" => format!("{name}'s usage reading is old"),
             _ => continue,
@@ -803,11 +801,7 @@ pub fn render(
     let mut ci = Vec::new();
     for repo in &repos {
         let mut mark: Option<StaleMark> = None;
-        for source in [
-            fresh::github(repo),
-            fresh::train(repo),
-            fresh::webhook(repo),
-        ] {
+        for source in [fresh::github(repo), fresh::train(repo)] {
             if let Some(st) = fresh.view(&source, now).and_then(|v| v.stale) {
                 let m = StaleMark {
                     since: ts(st.since_ms),
@@ -827,7 +821,7 @@ pub fn render(
         let main = hub.train.main_ci(repo);
         // The CI entry is as old as its own read, not as any GitHub answer for the repo.
         let as_of = main.as_ref().map(|m| m.as_of_ms);
-        let due = hub.train.main_ci_every_ms(repo, now) + fresh::github_stale_ms();
+        let due = crate::hub::train::main_ci::main_ci_every_ms() + fresh::github_stale_ms();
         match as_of {
             Some(a) if now - a > due => {
                 let m = StaleMark {
@@ -1384,10 +1378,6 @@ pub fn render(
         slots_queued: w
             .slots_queued_since
             .map(|t| (now - t, w.slots.queued.get(), w.slots.cap.get())),
-        missed_webhooks_today: repos
-            .iter()
-            .map(|r| i64::from(hub.train.drift_counts(r, now - DAY_MS).missed_webhook))
-            .sum(),
         no_plan: virtuals
             .iter()
             .filter(|o| o.w.state != WorkstreamState::Done)

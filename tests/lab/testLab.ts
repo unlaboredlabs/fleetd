@@ -8,7 +8,6 @@ import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { areasParallel } from "./areasParallel.ts";
 import { chatCli } from "./chatCli.ts";
 import { chatLead } from "./chatLead.ts";
 import { degradedMachine } from "./degradedMachine.ts";
@@ -31,7 +30,6 @@ import {
   joinNode,
   LAB,
   type Lab,
-  launchTiny,
   log,
   MACHINES,
   nodeEnv,
@@ -103,10 +101,7 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
   { name: "eff", run: efficiency, only: true },
   // One PR through the train into a base CI never runs for. Only when named, with FLEETD_LAB_NAMESPACE=noci/<n>.
   { name: "noci", run: noCiTrain, only: true },
-  // Two writers in two inferred areas at once (the seed's packages/alpha and packages/beta). Only when named.
-  { name: "areas", run: areasParallel, only: true },
-  // Batches and stacks on the lab repo: a batch of three in one CI run, a red batch bisected, a stacked PR green on
-  // its parent before it lands. Only when named.
+  // Batches on the lab repo: a batch of three in one CI run, a red batch bisected. Only when named.
   { name: "batch", run: trainBatch, only: true },
   // The app demo: one order fanned out to writers, reviewers and verifiers on the lab repo. Only when named.
   { name: "demo", run: demoFanout, only: true },
@@ -265,19 +260,21 @@ async function main() {
         ok(`hub (re)started${Object.keys(env).length > 0 ? ` with ${Object.keys(env).join(", ")}` : ""}`);
       },
       idleThread: async (machineId: string) => {
-        const projectId = (await callTool("fleetd_status")).body.projects.find((p: Body) => p.machineId === machineId)?.projectId;
+        const projectId = (await callTool("fleetd_status")).body.projects.find((p: Body) => p.machineId === machineId)?.projectId as string;
         check(projectId, `${machineId} has a project`);
-        const outcome = (await callTool("project_get", { machineId, projectId })).body;
-        const idle = outcome.threads.find((t: Body) => t.status === "completed");
-        if (idle !== undefined) return { threadId: idle.threadId as string, projectId: projectId as string };
         const from = await cursor();
-        const threadId = await launchTiny({ callTool, check }, machineId, projectId, "fleetd test:lab idle");
-        await waitEvent(`idle thread on ${machineId} to finish`, 240_000, {
-          cursor: from,
-          machineId,
-          match: (e) => e.threadId === threadId && e.type === "thread.completed",
-        });
-        return { threadId, projectId: projectId as string };
+        const lead = await callTool("lead_start", { machineId, projectId });
+        check(!lead.isError, `lead_start on ${machineId}: ${JSON.stringify(lead.body)}`);
+        const threadId = lead.body.threadId as string;
+        if (lead.body.state !== "idle") {
+          await waitEvent(`the lead on ${machineId} to go idle`, 240_000, {
+            cursor: from,
+            machineId,
+            types: ["thread.completed", "thread.failed", "thread.interrupted"],
+            match: (e) => e.threadId === threadId,
+          });
+        }
+        return { threadId, projectId };
       },
     } satisfies Omit<Lab, "dir">;
 

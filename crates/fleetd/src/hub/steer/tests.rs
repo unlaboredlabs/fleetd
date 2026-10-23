@@ -323,7 +323,7 @@ async fn steers_a_restarted_node_forgot_are_closed_after_the_grace() {
 fn running_task(hub: &Hub, project: &str) -> Task {
     let task: Task = serde_json::from_value(json!({
         "taskId": "T1", "projectRef": { "machineId": "lab-a", "projectId": project }, "workstreamId": "W1",
-        "title": "write the API", "kind": "write", "prompt": "do it", "areas": ["api"],
+        "title": "write the API", "kind": "write", "prompt": "do it",
         "state": "running", "attempt": 1, "createdAt": AT,
         "startedAt": AT, "threadRef": { "machineId": "lab-a", "threadId": "task-thread" },
     }))
@@ -986,7 +986,7 @@ async fn a_writers_call_from_its_worktree_acts_on_its_own_project() {
     );
 }
 
-/// `stop_agent` frees the slot and leases only once the agent's claude has exited. With the machine away the node
+/// `stop_agent` frees the slot only once the agent's claude has exited. With the machine away the node
 /// can't stop it, so the task stays running and holding its slot, and the refusal says so.
 #[tokio::test]
 async fn a_cancel_the_node_cannot_carry_out_keeps_the_task_and_its_slot() {

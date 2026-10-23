@@ -1,7 +1,7 @@
 //! What the train asks of GitHub, through the `gh` CLI on the hub machine: PRs, check runs on a head, the
-//! `fleetd/train` commit status, the pinned squash merge, and recently merged PRs for bypass detection.
+//! `fleetd/train` commit status, the pinned squash merge, and recently merged PRs, to report merges outside it.
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -15,8 +15,6 @@ use crate::hub::status::fresh::{self, Fresh};
 use fleetd_contracts::projects::CiInfo;
 
 pub const TRAIN_CONTEXT: &str = "fleetd/train";
-/// The speculative CI of a stacked PR on top of its parent: informative, never required.
-pub const STACK_CONTEXT: &str = "fleetd/stack";
 pub const GH_AUTH_FIX: &str = "run `gh auth login` on the hub machine";
 
 pub struct GhOut {
@@ -215,6 +213,7 @@ struct ClosedPull {
     merged_at: Option<String>,
     merge_commit_sha: Option<String>,
     base: PullBase,
+    head: PullHead,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -223,6 +222,8 @@ pub struct MergedPull {
     pub merged_at: String,
     pub merge_sha: Option<String>,
     pub base: String,
+    /// Its branch.
+    pub head: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -261,68 +262,6 @@ fn http_status(stderr: &str) -> u16 {
         .unwrap_or(0)
 }
 
-/// Paths whose last 200 carried an ETag, with that body: a 304 answer reuses it. GitHub does not count a 304
-/// against the rate limit, so an unchanged PR polled every pass costs nothing.
-const ETAG_PATHS: usize = 512;
-
-#[derive(Default)]
-struct Etags {
-    by_path: HashMap<String, (String, Value, u64)>,
-    tick: u64,
-}
-
-impl Etags {
-    fn get(&mut self, path: &str) -> Option<(String, Value)> {
-        self.tick += 1;
-        let tick = self.tick;
-        let entry = self.by_path.get_mut(path)?;
-        entry.2 = tick;
-        Some((entry.0.clone(), entry.1.clone()))
-    }
-
-    fn put(&mut self, path: &str, etag: String, body: Value) {
-        self.tick += 1;
-        if self.by_path.len() >= ETAG_PATHS && !self.by_path.contains_key(path) {
-            let oldest = self
-                .by_path
-                .iter()
-                .min_by_key(|(_, e)| e.2)
-                .map(|(p, _)| p.clone());
-            if let Some(oldest) = oldest {
-                self.by_path.remove(&oldest);
-            }
-        }
-        self.by_path
-            .insert(path.to_owned(), (etag, body, self.tick));
-    }
-}
-
-/// `gh api -i` output: the status line, headers, a blank line, the body. Absent when stdout does not start with a
-/// status line (gh never reached GitHub, or a runner that prints only the body).
-struct Included<'a> {
-    status: u16,
-    etag: Option<&'a str>,
-    body: &'a str,
-}
-
-fn parse_included(stdout: &str) -> Option<Included<'_>> {
-    let rest = stdout.strip_prefix("HTTP/")?;
-    let status: u16 = rest.split_whitespace().nth(1)?.parse().ok()?;
-    let ends = ["\r\n\r\n", "\n\r\n", "\n\n"];
-    let (head, body) = ends
-        .iter()
-        .filter_map(|sep| stdout.find(sep).map(|i| (i, sep.len())))
-        .min_by_key(|(i, _)| *i)
-        .map_or((stdout, ""), |(i, len)| (&stdout[..i], &stdout[i + len..]));
-    let etag = head.lines().skip(1).find_map(|line| {
-        let (name, value) = line.split_once(':')?;
-        name.trim()
-            .eq_ignore_ascii_case("etag")
-            .then(|| value.trim())
-    });
-    Some(Included { status, etag, body })
-}
-
 /// `owner/name` of a `repos/<owner>/<name>/...` path, lowercased: the `github:<repo>` freshness source.
 fn repo_of(path: &str) -> Option<String> {
     let mut parts = path.strip_prefix("repos/")?.split(['/', '?']);
@@ -342,19 +281,13 @@ fn last_line(stderr: &str) -> String {
 #[derive(Clone)]
 pub struct TrainGitHub {
     gh: Arc<dyn GhRunner>,
-    etags: Arc<Mutex<Etags>>,
     fresh: Arc<Fresh>,
     clock: Arc<dyn Clock>,
 }
 
 impl TrainGitHub {
     pub fn new(gh: Arc<dyn GhRunner>, fresh: Arc<Fresh>, clock: Arc<dyn Clock>) -> Self {
-        Self {
-            gh,
-            etags: Arc::default(),
-            fresh,
-            clock,
-        }
+        Self { gh, fresh, clock }
     }
 
     fn reached(&self, path: &str) {
@@ -371,8 +304,7 @@ impl TrainGitHub {
     }
 
     /// `gh api`; a non-2xx answer is `{ status, message }` rather than an error, so callers can tell a 409 apart.
-    /// Every GET is conditional: `-i` shows the status line and ETag, and a 304 (which gh exits 1 on, with
-    /// "gh: HTTP 304") answers from the cached body. Each answer from GitHub keeps `github:<repo>` fresh.
+    /// Each answer from GitHub keeps `github:<repo>` fresh.
     async fn call(
         &self,
         method: &str,
@@ -396,21 +328,8 @@ impl TrainGitHub {
         path: &str,
         fields: &[(&str, &str)],
     ) -> Result<Reply, GhError> {
-        let get = method == "GET";
-        let cached = if get {
-            self.etags.lock().unwrap().get(path)
-        } else {
-            None
-        };
         let mut args: Vec<String> = vec!["api".into()];
-        if get {
-            args.push("-i".into());
-        }
         args.extend(["-X", method, "-H", "Accept: application/vnd.github+json"].map(String::from));
-        if let Some((etag, _)) = &cached {
-            args.push("-H".into());
-            args.push(format!("If-None-Match: {etag}"));
-        }
         args.push(path.into());
         for (k, v) in fields {
             // `draft` is a JSON boolean; -f would send the string "true".
@@ -430,38 +349,6 @@ impl TrainGitHub {
                 message: format!("gh is not authenticated: {GH_AUTH_FIX}"),
             });
         }
-        // With -i the status line decides, not gh's exit code (1 on a 304).
-        if let Some(included) = parse_included(&out.stdout) {
-            if included.status == 304
-                && let Some((_, body)) = cached
-            {
-                return Ok(Reply::Ok(body));
-            }
-            if (200..300).contains(&included.status) {
-                let text = if included.body.trim().is_empty() {
-                    "null"
-                } else {
-                    included.body
-                };
-                let value: Value = serde_json::from_str(text)
-                    .map_err(|_| GhError::failed(format!("gh api {path} did not return JSON")))?;
-                if let Some(etag) = included.etag {
-                    self.etags
-                        .lock()
-                        .unwrap()
-                        .put(path, etag.to_owned(), value.clone());
-                }
-                return Ok(Reply::Ok(value));
-            }
-            let message = serde_json::from_str::<Value>(included.body)
-                .ok()
-                .and_then(|v| v["message"].as_str().map(String::from))
-                .unwrap_or_else(|| last_line(&out.stderr));
-            return Ok(Reply::Err {
-                status: included.status,
-                message,
-            });
-        }
         if out.exit_code == 0 {
             let text = if out.stdout.is_empty() {
                 "null"
@@ -472,9 +359,14 @@ impl TrainGitHub {
                 .map(Reply::Ok)
                 .map_err(|_| GhError::failed(format!("gh api {path} did not return JSON")));
         }
+        // gh prints GitHub's error body on stdout; its message is the plainest reason.
+        let message = serde_json::from_str::<Value>(&out.stdout)
+            .ok()
+            .and_then(|v| v["message"].as_str().map(String::from))
+            .unwrap_or_else(|| last_line(&out.stderr));
         Ok(Reply::Err {
             status: http_status(&out.stderr),
-            message: last_line(&out.stderr),
+            message,
         })
     }
 
@@ -536,27 +428,6 @@ impl TrainGitHub {
             .into_iter()
             .filter_map(|n| latest.remove(&n))
             .collect())
-    }
-
-    /// Posts `state` of the `fleetd/stack` context on a stacked PR's head: how it fares on top of its parent.
-    pub async fn post_stack_status(
-        &self,
-        repo: &str,
-        sha: &str,
-        state: &str,
-        description: &str,
-        target_url: &str,
-    ) -> Result<(), GhError> {
-        let description: String = description.chars().take(140).collect();
-        let fields = [
-            ("state", state),
-            ("context", STACK_CONTEXT),
-            ("description", description.as_str()),
-            ("target_url", target_url),
-        ];
-        self.json::<Value>("POST", &format!("repos/{repo}/statuses/{sha}"), &fields)
-            .await
-            .map(|_| ())
     }
 
     /// Posts `fleetd/train=success` on `sha`.
@@ -751,40 +622,6 @@ impl TrainGitHub {
         Ok(r.default_branch)
     }
 
-    /// A repo webhook for check_suite, pull_request and push, signed with `secret`; returns its id.
-    pub async fn create_hook(&self, repo: &str, url: &str, secret: &str) -> Result<i64, GhError> {
-        #[derive(Deserialize)]
-        struct Hook {
-            id: i64,
-        }
-        let fields = [
-            ("name", "web"),
-            ("config[url]", url),
-            ("config[content_type]", "json"),
-            ("config[secret]", secret),
-            ("events[]", "check_suite"),
-            ("events[]", "pull_request"),
-            ("events[]", "push"),
-        ];
-        let hook: Hook = self
-            .json("POST", &format!("repos/{repo}/hooks"), &fields)
-            .await?;
-        Ok(hook.id)
-    }
-
-    /// Deletes a hook fleetd made; one already gone counts as deleted.
-    pub async fn delete_hook(&self, repo: &str, id: i64) -> Result<(), GhError> {
-        match self
-            .call("DELETE", &format!("repos/{repo}/hooks/{id}"), &[])
-            .await?
-        {
-            Reply::Ok(_) | Reply::Err { status: 404, .. } => Ok(()),
-            Reply::Err { message, .. } => Err(GhError::failed(format!(
-                "deleting the webhook on {repo} failed: {message}"
-            ))),
-        }
-    }
-
     /// The repo's open PRs, newest first (one page).
     pub async fn open_pulls(&self, repo: &str) -> Result<Vec<OpenPull>, GhError> {
         self.json(
@@ -812,12 +649,13 @@ impl TrainGitHub {
                     merged_at,
                     merge_sha: p.merge_commit_sha,
                     base: p.base.ref_,
+                    head: p.head.ref_,
                 })
             })
             .collect())
     }
 
-    /// Commit status contexts on `sha` other than fleetd's own (`fleetd/train`, `fleetd/stack`).
+    /// Commit status contexts on `sha` other than fleetd's own (`fleetd/train`).
     pub async fn status_contexts(&self, repo: &str, sha: &str) -> Result<Vec<String>, GhError> {
         let combined: Value = self
             .json(
@@ -933,25 +771,19 @@ impl TrainGitHub {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
     use super::*;
     use crate::clock::SystemClock;
 
-    const OK_200: &str = include_str!("fixtures/gh-api-i-200.stdout");
-    const NOT_MODIFIED: &str = include_str!("fixtures/gh-api-i-304.stdout");
-    const NOT_MODIFIED_ERR: &str = include_str!("fixtures/gh-api-i-304.stderr");
-    const NOT_FOUND: &str = include_str!("fixtures/gh-api-i-404.stdout");
-    const NOT_FOUND_ERR: &str = include_str!("fixtures/gh-api-i-404.stderr");
-
-    /// Replays recorded `gh api -i` answers in order and keeps every argv it was run with.
+    /// Replays `gh api` answers in order.
     #[derive(Default)]
     struct Replay {
         answers: Mutex<Vec<(i32, &'static str, &'static str)>>,
-        calls: Mutex<Vec<Vec<String>>>,
     }
 
     impl GhRunner for Replay {
-        fn run(&self, args: Vec<String>) -> BoxFut<'_, Result<GhOut, String>> {
-            self.calls.lock().unwrap().push(args);
+        fn run(&self, _: Vec<String>) -> BoxFut<'_, Result<GhOut, String>> {
             let (exit_code, stdout, stderr) = self.answers.lock().unwrap().remove(0);
             Box::pin(async move {
                 Ok(GhOut {
@@ -963,51 +795,22 @@ mod tests {
         }
     }
 
-    fn github(
-        answers: Vec<(i32, &'static str, &'static str)>,
-    ) -> (Arc<Replay>, Arc<Fresh>, TrainGitHub) {
+    fn github(answers: Vec<(i32, &'static str, &'static str)>) -> (Arc<Fresh>, TrainGitHub) {
         let gh = Arc::new(Replay {
             answers: Mutex::new(answers),
-            calls: Mutex::default(),
         });
         let fresh = Arc::new(Fresh::default());
-        let github = TrainGitHub::new(gh.clone(), fresh.clone(), Arc::new(SystemClock));
-        (gh, fresh, github)
-    }
-
-    #[tokio::test]
-    async fn a_304_answers_from_the_body_its_etag_came_with() {
-        let (gh, fresh, github) =
-            github(vec![(0, OK_200, ""), (1, NOT_MODIFIED, NOT_MODIFIED_ERR)]);
-        let repo = "unlaboredlabs/fleetd-lab";
-        fresh.expect(&fresh::github(repo), 180_000, 0);
-        assert_eq!(github.default_branch(repo).await.unwrap(), "main");
-        assert!(
-            fresh
-                .view(&fresh::github(repo), 1)
-                .unwrap()
-                .as_of_ms
-                .is_some(),
-            "a 200 reached GitHub"
-        );
-        assert_eq!(
-            github.default_branch(repo).await.unwrap(),
-            "main",
-            "gh exits 1 on a 304; the status line decides"
-        );
-        let calls = gh.calls.lock().unwrap();
-        assert!(calls[0].contains(&"-i".to_string()));
-        assert!(!calls[0].iter().any(|a| a.starts_with("If-None-Match")));
-        assert!(
-            calls[1].contains(&r#"If-None-Match: W/"a44d8fe005905792c3265d74087b595af15ffac0d69630e3aff64b3c0e491862""#.to_string()),
-            "{:?}",
-            calls[1]
-        );
+        let github = TrainGitHub::new(gh, fresh.clone(), Arc::new(SystemClock));
+        (fresh, github)
     }
 
     #[tokio::test]
     async fn a_404_is_an_answer_with_its_status() {
-        let (_, _, github) = github(vec![(1, NOT_FOUND, NOT_FOUND_ERR)]);
+        let (_, github) = github(vec![(
+            1,
+            r#"{"message":"Not Found","documentation_url":"https://docs.github.com/rest","status":"404"}"#,
+            "gh: Not Found (HTTP 404)\n",
+        )]);
         let Reply::Err { status, message } = github
             .call("GET", "repos/unlaboredlabs/fleetd-lab/pulls/999999", &[])
             .await
@@ -1020,7 +823,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_unreachable_github_keeps_the_reason_for_the_stale_source() {
-        let (_, fresh, github) = github(vec![(1, "", "gh: connect: network is unreachable\n")]);
+        let (fresh, github) = github(vec![(1, "", "gh: connect: network is unreachable\n")]);
         let repo = "acme/storefront";
         fresh.expect(&fresh::github(repo), 1_000, 0);
         fresh.touch(&fresh::github(repo), 0);
@@ -1031,18 +834,5 @@ mod tests {
             panic!("{flips:?}")
         };
         assert!(reason.contains("unreachable"), "{reason}");
-    }
-
-    #[test]
-    fn the_etag_cache_drops_the_least_recently_used_path() {
-        let mut etags = Etags::default();
-        for i in 0..ETAG_PATHS {
-            etags.put(&format!("p{i}"), "e".into(), Value::Null);
-        }
-        etags.get("p0");
-        etags.put("new", "e".into(), Value::Null);
-        assert!(etags.get("p0").is_some());
-        assert!(etags.get("p1").is_none());
-        assert_eq!(etags.by_path.len(), ETAG_PATHS);
     }
 }

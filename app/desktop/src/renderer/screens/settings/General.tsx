@@ -52,7 +52,8 @@ export function General() {
           <div className={s.stack}>
             <Text>Off for every agent fleetd starts.</Text>
             <Text size="xs" tone="quiet">
-              A project turns it on with <InlineCode>claude: {"{ autoMemory: true }"}</InlineCode> in its <InlineCode>.fleetd/policy.yaml</InlineCode>.
+              Agents learn from their brief, your decisions and your instructions, never from notes another agent left in a worktree.{" "}
+              <InlineCode>fleetd doctor</InlineCode> warns if a machine's claude keeps it on anyway.
             </Text>
           </div>
         </Setting>

@@ -1,4 +1,4 @@
-//! Tasks, slots and leases over the rest of the hub: the executor and node commands (built before tasks) and leads
+//! Tasks and slots over the rest of the hub: the executor and node commands (built before tasks) and leads
 //! (built after, so reached through the `Hub` once it exists). Also the hooks other areas fill in on tasks, and the
 //! hooks tasks fill in on leads.
 use std::sync::{Arc, OnceLock, Weak};
@@ -21,7 +21,7 @@ use super::ports::{
 use super::{TaskCaller, Tasks};
 use crate::hub::api::Hub;
 use crate::hub::executor::{ExecutorError, Executors, LaunchInput, LaunchOptions};
-use crate::hub::leads::hooks::{BoxFuture, PolicyHook, TasksHook};
+use crate::hub::leads::hooks::{BoxFuture, TasksHook};
 use crate::hub::leads::wakes::{LineKind, Trigger};
 use crate::hub::link::commands::CommandInput;
 use crate::hub::link::lead_calls::{AgentDirectory, CallerAgent, LeadCallFuture};
@@ -419,73 +419,11 @@ impl TasksHook for TasksForLeads {
     }
 }
 
-/// Finish-all's max children from the project's policy.
-struct PolicyFromLeases(Arc<crate::hub::leases::Policies>);
-
-impl PolicyHook for PolicyFromLeases {
-    fn max_children(
-        &self,
-        project_ref: &ProjectRef,
-    ) -> BoxFuture<Result<Option<u32>, crate::hub::leads::error::LeadError>> {
-        let (policies, r) = (Arc::clone(&self.0), project_ref.clone());
-        Box::pin(async move {
-            let policy =
-                policies
-                    .get(&r)
-                    .await
-                    .map_err(|e| crate::hub::leads::error::LeadError {
-                        code: e.code,
-                        message: e.message,
-                        fix: e.fix,
-                    })?;
-            Ok(policy.finish_all.map(|f| f.max_children.get() as u32))
-        })
-    }
-
-    fn auto_start(
-        &self,
-        project_ref: &ProjectRef,
-    ) -> BoxFuture<Result<bool, crate::hub::leads::error::LeadError>> {
-        let (policies, r) = (Arc::clone(&self.0), project_ref.clone());
-        Box::pin(async move {
-            let policy =
-                policies
-                    .get(&r)
-                    .await
-                    .map_err(|e| crate::hub::leads::error::LeadError {
-                        code: e.code,
-                        message: e.message,
-                        fix: e.fix,
-                    })?;
-            Ok(policy.lead.is_none_or(|l| l.auto_start))
-        })
-    }
-
-    fn areas(&self, project_ref: &ProjectRef) -> BoxFuture<Option<(Vec<String>, bool)>> {
-        let (policies, r) = (Arc::clone(&self.0), project_ref.clone());
-        Box::pin(async move {
-            let resolved = policies.resolve(&r).await.ok()?;
-            Some((
-                resolved.policy.areas.into_keys().collect(),
-                resolved.inferred,
-            ))
-        })
-    }
-}
-
-/// Everything tasks, slots and leases hook into once the `Hub` exists: the ports' leads half, the lead calls, the
-/// stale-lease sweep check, the usage/receipts hooks on tasks, and the tasks/policy hooks on leads.
+/// Everything tasks and slots hook into once the `Hub` exists: the ports' leads half, the lead calls, the
+/// usage/receipts hooks on tasks, and the tasks hook on leads.
 pub fn wire(hub: &Arc<Hub>, ports: &HubTaskPorts) {
     ports.bind(hub);
     register_lead_calls(hub);
-    let leases = Arc::clone(&hub.leases);
-    hub.sweep.register(crate::hub::sweep::SweepCheck {
-        name: "stale leases".into(),
-        run: Arc::new(move || {
-            let leases = Arc::clone(&leases);
-            Box::pin(async move { leases.flag_stale().map(|_| ()).map_err(|e| e.to_string()) })
-        }),
-    });
     let hooks = &hub.tasks.hooks;
     let _ = hooks
         .usage
@@ -497,7 +435,4 @@ pub fn wire(hub: &Arc<Hub>, ports: &HubTaskPorts) {
     let _ = lead_hooks
         .tasks
         .set(Arc::new(TasksForLeads(Arc::clone(&hub.tasks))));
-    let _ = lead_hooks
-        .policy
-        .set(Arc::new(PolicyFromLeases(Arc::clone(&hub.policies))));
 }

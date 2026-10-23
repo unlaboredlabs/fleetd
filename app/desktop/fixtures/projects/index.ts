@@ -277,14 +277,9 @@ export default defineGroup({
         { id: "devbox/online", scope: "machine", machineId: "devbox", status: "ok", message: "devbox is online." },
         { id: "devbox/disk", scope: "machine", machineId: "devbox", status: "warn", message: "devbox has 6.1 GB free; worktrees need room to grow.", fix: { kind: "manual", label: "Free some space on devbox, for example old build output:", command: "git -C /home/dev/src/storefront worktree prune" } },
         { id: "buildbox/claude_login", scope: "machine", machineId: "buildbox", status: "fail", message: "claude is logged out on buildbox: run `claude /login` there.", fix: { kind: "manual", label: "On buildbox, log claude in:", command: "claude /login" } },
-        { id: "buildbox/claude_auto_memory", scope: "machine", machineId: "buildbox", status: "warn", message: "Claude auto memory is on for buildbox's agents; fleetd turns it off so each lane starts clean.", fix: { kind: "auto", label: "fleetd can turn it off." } },
         { id: "spare/online", scope: "machine", machineId: "spare", status: "unknown", message: "spare is offline, so its checks can't run." },
       ];
       f.update("doctor_list", (out) => (isObject(out) ? { ...out, checks: [...objects(out["checks"]), ...machineChecks] } : out));
-      f.answer("doctor_fix", { checkId: "buildbox/claude_auto_memory" }, {
-        ran: "Turned Claude auto memory off for buildbox's agents.",
-        check: { id: "buildbox/claude_auto_memory", scope: "machine", machineId: "buildbox", status: "ok", message: "Claude auto memory is off for buildbox's agents." },
-      });
       f.events.push({ seq: 9_001, at: at(f.now, -14 * 60_000), type: "machine.slept", machineId: "devbox", summary: "devbox slept 11m00s", data: { fromMs: now - 25 * 60_000, toMs: now - 14 * 60_000 } });
       return f;
     })(),

@@ -1,9 +1,9 @@
 // M7 "done when" 1-5 on lab-a against the public lab repo unlaboredlabs/fleetd-lab, in this slot's namespace (CI fails
 // iff a file FAIL exists; slot/<n>/main requires the `ci` check and the `fleetd/train` status). The lab clone becomes a
-// second project on lab-a, with its policy file kept untracked, so nothing but the train ever lands on the base. With the train frozen by a
-// Decision, two M-tier writers (areas alpha, beta, files under this run's lab/<time>/) open PRs and get one reviewer each; then two S-tier writers open a
-// PR that conflicts with alpha's and one that adds FAIL. Thawed
-// with train_freeze, the train merges alpha and beta in order (the second rebased onto the first's merge), sends the
+// second project on lab-a, with its policy file kept untracked, so nothing but the train ever lands on the base. Every
+// writer opens its PR with the `hold` label: two M-tier writers (files under this run's lab/<time>/) open PRs and get one reviewer each; then two S-tier writers open a
+// PR that conflicts with alpha's and one that adds FAIL. Once the
+// harness takes the labels off, the train merges alpha and beta in order (the second rebased onto the first's merge), sends the
 // conflict back to its author, who resolves it and gets merged, and sends red CI back to its author, never merging
 // it. Writers run on medium, the lead and reviewers on high; the harness's `fleetd` calls cost no turns.
 import { execFileSync, spawnSync } from "node:child_process";
@@ -27,18 +27,13 @@ export const CLONE = path.join(LAB, "lab-repo");
 const TURN_MS = 240_000;
 const CI_MS = 600_000;
 const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
-const FREEZE_KEY = `policy.freeze.${REPO.replace("/", ".")}`;
 // Each run writes under its own directory, so a file from an earlier run never conflicts.
 const DIR = `lab/${new Date().toISOString().slice(0, 19).replace(/\D/gu, "")}`;
 const ALPHA = `${DIR}/alpha.md`;
 const BETA = `${DIR}/beta.md`;
 // Kept untracked (.git/info/exclude): the hub reads it from the checkout, and nothing but the train lands on main.
-// gamma overlaps alpha on purpose, so its writer runs at the same time and conflicts with it. CI looks for FAIL at the root.
-const POLICY = `areas:
-  alpha: ["${ALPHA}"]
-  beta: ["${BETA}"]
-  gamma: ["${ALPHA}"]
-  ci: ["FAIL"]
+// gamma writes alpha's file on purpose, so it conflicts with alpha. CI looks for FAIL at the root.
+const POLICY = `
 `;
 
 const run = (cmd: string, args: ReadonlyArray<string>, cwd = CLONE) =>
@@ -177,7 +172,7 @@ export async function m7Train(lab: Lab) {
   checkClone(check);
   resetNamespace();
   prepareCheckout();
-  ok(`${CLONE} at origin/${BASE} ${git("rev-parse", "--short", "HEAD")} (the seed); untracked .fleetd/policy.yaml (alpha, beta, gamma, ci; branches under ${BRANCH_PREFIX}); nothing else in ${NAMESPACE}/ on ${REPO}`);
+  ok(`${CLONE} at origin/${BASE} ${git("rev-parse", "--short", "HEAD")} (the seed); untracked .fleetd/policy.yaml (branches under ${BRANCH_PREFIX}); nothing else in ${NAMESPACE}/ on ${REPO}`);
 
   const scenarioStart = await lab.cursor();
   try {
@@ -230,20 +225,19 @@ export async function m7Train(lab: Lab) {
     });
     ok(`${wm} (tier M) and ${ws} (tier S) running with frozen briefs`);
 
-    // 5a. A freeze Decision before anything is enqueued.
-    const freeze = await callTool("decisions_record", { key: FREEZE_KEY, value: "true", why: "M7 lab: hold until every PR is ready", scope: { kind: "project", projectRef: ref } });
-    check(!freeze.isError, `decisions_record: ${JSON.stringify(freeze.body)}`);
-    ok(`5. ${freeze.body.decision.decisionId} ${FREEZE_KEY} = true`);
+    // 5a. The writers open their PRs held, so the train takes none before all four are ready.
+    gh("label", "create", "hold", "-R", REPO, "--force", "--description", "fleetd's train holds this PR");
+    ok(`5. the label hold exists on ${REPO}`);
 
-    const spawn = (w: string, area: string, title: string, prompt: string) => {
-      const out = fleetd("task", "spawn", "--workstream", w, "--title", title, "--areas", area, "--profile", MECHANICS, "--prompt", prompt);
+    const spawn = (w: string, title: string, prompt: string) => {
+      const out = fleetd("task", "spawn", "--workstream", w, "--title", title, "--profile", MECHANICS, "--prompt", prompt);
       const taskId = /^Spawned (T\d+)/mu.exec(out.stdout)?.[1];
       check(out.code === 0 && taskId, `task spawn ${title}: ${JSON.stringify(out)}`);
-      lab.log(`spawned ${taskId} (${title}, area ${area})`);
+      lab.log(`spawned ${taskId} (${title})`);
       return taskId!;
     };
     const writer = (file: string, line: string, after = "") =>
-      `Create the file ${file} (from the repo root) containing exactly one line: ${line}. Commit it with the message "add ${file}". Then push your branch and open the pull request as your rules say, with the title "add ${file}". Reply with the PR URL.${after}`;
+      `Create the file ${file} (from the repo root) containing exactly one line: ${line}. Commit it with the message "add ${file}". Then push your branch and open the pull request as your rules say, with the title "add ${file}" and the label hold (\`--label hold\`). Reply with the PR URL.${after}`;
     const queued = async (taskId: string, from: number) => {
       const end = await lab.waitEvent(`${taskId} ends`, TURN_MS, { cursor: from, types: ["task.completed", "task.failed"], match: (e) => e.data?.taskId === taskId });
       check(end.event.type === "task.completed", `${taskId} completed: ${end.event.summary}`);
@@ -255,29 +249,27 @@ export async function m7Train(lab: Lab) {
       return { taskId, prUrl: prUrl!, changeId: q.event.data.changeId as string };
     };
 
-    // 1. Two M-tier writers in different areas.
+    // 1. Two M-tier writers.
     let cursor = await lab.cursor();
-    const a = spawn(wm, "alpha", "add alpha", writer(ALPHA, "alpha"));
-    const b = spawn(wm, "beta", "add beta", writer(BETA, "beta"));
+    const a = spawn(wm, "add alpha", writer(ALPHA, "alpha"));
+    const b = spawn(wm, "add beta", writer(BETA, "beta"));
     const ca = await queued(a, cursor);
     const cb = await queued(b, cursor);
     ok(`1. ${a} opened ${ca.prUrl} (${ca.changeId}) and ${b} opened ${cb.prUrl} (${cb.changeId}), each auto-enqueued`);
-    const frozenEvent = await lab.waitEvent("train.frozen", 60_000, { cursor: scenarioStart, types: ["train.frozen"] });
-    ok(`5. ${frozenEvent.event.type}: ${frozenEvent.event.summary}`);
 
     // 2 and 3. After both, so they come later in train order: a PR conflicting with alpha.md, and one that adds FAIL.
     cursor = await lab.cursor();
-    const c = spawn(ws, "gamma", "add gamma line", writer(
+    const c = spawn(ws, "add gamma line", writer(
       ALPHA,
       "gamma",
       ` If you are later told this PR conflicts: run \`git fetch origin\` and \`git rebase origin/${BASE}\`; make ${ALPHA} exactly two lines, \`alpha\` then \`gamma\`; \`git add ${ALPHA}\`; \`GIT_EDITOR=true git rebase --continue\`; \`git push --force-with-lease\`; then reply with one word: resolved.`,
     ));
-    const d = spawn(ws, "ci", "add FAIL", writer("FAIL", "red", " This PR is meant to fail CI. When a later message says CI failed, that is expected: change nothing, push nothing, and reply with exactly one word: acknowledged."));
+    const d = spawn(ws, "add FAIL", writer("FAIL", "red", " This PR is meant to fail CI. When a later message says CI failed, that is expected: change nothing, push nothing, and reply with exactly one word: acknowledged."));
     const cc = await queued(c, cursor);
     const cd = await queued(d, cursor);
     ok(`${c} opened ${cc.prUrl} (${cc.changeId}, conflicts with ${ALPHA}) and ${d} opened ${cd.prUrl} (${cd.changeId}, adds FAIL)`);
 
-    // 1. Each M PR gets a reviewer that returns blocking: 0; nothing merges while frozen.
+    // 1. Each M PR gets a reviewer that returns blocking: 0; nothing merges while held.
     for (const m of [ca, cb]) {
       await lab.waitEvent(`${m.changeId} ready`, TURN_MS * 2, { cursor: scenarioStart, types: ["change.ready"], match: (e) => e.data?.changeId === m.changeId });
       const ready = await change(m.changeId);
@@ -286,21 +278,19 @@ export async function m7Train(lab: Lab) {
       ok(`1. ${m.changeId} ready: reviewer ${reviewers[0]!.taskId} (spawned by the hub) returned blocking 0 at ${ready.reviews[0].prHeadSha.slice(0, 12)}`);
     }
     for (const s of [cc, cd]) await lab.waitEvent(`${s.changeId} ready`, 120_000, { cursor: scenarioStart, types: ["change.ready"], match: (e) => e.data?.changeId === s.changeId });
-    const held = (await callTool("train_get", { repo: REPO })).body.train;
-    check(held.frozen === true && held.head === undefined && held.queue.length === 4, `the frozen train holds all four: ${JSON.stringify(held)}`);
+    const held = await Promise.all([ca, cb, cc, cd].map((x) => change(x.changeId)));
+    check(held.every((c) => c.state === "ready" && String(c.lastError ?? "").startsWith("held:")), `the train holds all four: ${JSON.stringify(held)}`);
     const early = await callTool("events_wait", { cursor: scenarioStart, types: ["pr.merged"], timeoutSec: 0 });
-    check(early.body.events.length === 0, `nothing merged while frozen: ${JSON.stringify(early.body.events)}`);
-    ok(`5. train_get while frozen: ${JSON.stringify(held)}; no pr.merged`);
-    const queuedOrder = held.queue as Array<string>;
-    const [first, second] = [ca, cb].sort((x, y) => queuedOrder.indexOf(x.changeId) - queuedOrder.indexOf(y.changeId));
+    check(early.body.events.length === 0, `nothing merged while held: ${JSON.stringify(early.body.events)}`);
+    ok(`5. all four ready and held: ${held.map((c) => `${c.changeId} at ${c.position}`).join(", ")}; no pr.merged`);
+    const at = (x: { readonly changeId: string }) => held.find((c) => c.changeId === x.changeId)!.position as number;
+    const [first, second] = [ca, cb].sort((x, y) => at(x) - at(y));
     const secondHeadBefore = (await change(second!.changeId)).headSha as string;
 
-    // 5b. Retiring the decision resumes the train.
+    // 5b. Taking the labels off lets the train go on, on its next pass.
     cursor = await lab.cursor();
-    const thaw = await callTool("train_freeze", { repo: REPO, frozen: false });
-    check(!thaw.isError && thaw.body.train.frozen === false, `train_freeze false: ${JSON.stringify(thaw.body)}`);
-    const resumed = await lab.waitEvent("train.resumed", 60_000, { cursor, types: ["train.resumed"] });
-    ok(`5. train_freeze {frozen: false} retired the decision; ${resumed.event.type}: ${resumed.event.summary}`);
+    for (const x of [ca, cb, cc, cd]) gh("pr", "edit", x.prUrl, "--remove-label", "hold");
+    ok("5. the hold labels are off");
 
     // 1. Merged in train order; the second rebased onto the first's merge, each with fleetd/train on its head.
     const mergedOf = async (x: { readonly changeId: string }, ms: number) =>
@@ -373,10 +363,10 @@ export async function m7Train(lab: Lab) {
     const wakes = userMessages(MACHINE, leadThread).join("\n");
     check(mergedLine.test(wakes), `the lead was woken with ${first!.changeId}'s merge inline`);
     const outcome = (await callTool("project_get", ref)).body;
-    check((outcome.trains as Array<Body> | undefined)?.some((t) => t.repo === REPO && t.frozen === false), `project_get trains: ${JSON.stringify(outcome.trains)}`);
+    check((outcome.trains as Array<Body> | undefined)?.some((t) => t.repo === REPO), `project_get trains: ${JSON.stringify(outcome.trains)}`);
     ok(`lead woken with "${mergedLine.exec(wakes)?.[0]}…"; project_get trains ${JSON.stringify(outcome.trains)}`);
-    const incidents = (await callTool("incidents_list", { projectRef: ref, class: "policy_bypass" })).body.incidents as Array<Body>;
-    check(incidents.length === 0, `no policy_bypass incidents: ${JSON.stringify(incidents)}`);
+    const outside = await callTool("events_wait", { cursor: scenarioStart, types: ["pr.merged_outside"], timeoutSec: 0 });
+    check(outside.body.events.length === 0, `no merge outside the train: ${JSON.stringify(outside.body.events)}`);
 
     // Let the last lead wakes run out, then count every turn this scenario cost.
     for (let after = (await lab.cursor()); ; ) {

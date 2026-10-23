@@ -20,7 +20,6 @@ const LABELS: Readonly<Record<string, string>> = {
   gh_auth: "GitHub CLI login",
   claude_login: "Claude login",
   claude_version: "Claude version",
-  claude_auto_memory: "Claude auto memory",
   https: "HTTPS",
   online: "Node online",
   runner_conformance: "Runner",

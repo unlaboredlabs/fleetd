@@ -57,11 +57,7 @@ fn state_of(changes: &[Change], train: &TrainState) -> String {
             None => id.to_string(),
         })
         .collect();
-    let mut parts = vec![if train.frozen {
-        "frozen".to_string()
-    } else {
-        "running".to_string()
-    }];
+    let mut parts = Vec::new();
     if let Some(head) = &train.head {
         let state = by_id
             .get(head.as_str())

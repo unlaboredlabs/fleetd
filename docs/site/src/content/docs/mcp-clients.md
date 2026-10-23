@@ -39,8 +39,8 @@ You'll connect an MCP client, such as Claude Code on your laptop, to the hub so 
 
 :::note[Writing to a lead]
 With a [human key](/docs/glossary#human-key), `chat_send` writes as you. Any other key writes as an agent, by the
-key's name: the lead takes it as input, never as your answer or approval. To let Claude Code write to leads as you,
-create the key with `--human` in step 1: `fleetd hub key create --human --name laptop`.
+key's name: the lead takes it as input, never as your answer or approval. Don't give Claude Code a human key: it could
+then speak and approve as you.
 :::
 
 `claude mcp add` writes to your Claude config. `--scope` picks where:
@@ -99,7 +99,7 @@ fleetd steers --key-file ~/.fleetd/human.key
 |---|---|
 | `read` | Read chats, status, time and prompts. |
 | `operate` | Also write to leads, set a project's max agents, and manage projects. |
-| `admin` | Also change hub settings, such as timeline retention and GitHub webhooks. |
+| `admin` | Also change hub settings, such as timeline retention. |
 
 `--machines '*'` gives the role on every machine; `--machines devbox,laptop` limits it to those.
 

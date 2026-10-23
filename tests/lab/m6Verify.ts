@@ -101,7 +101,7 @@ export async function m6Verify(lab: Lab) {
   };
   const own = ((await callTool("tasks_list", { projectRef: ref, limit: 100 })).body.tasks as Array<Body>).filter((t) => t.workstreamId === w);
   const leadWriter = own.find((t) => t.kind === "write");
-  const writer = leadWriter?.taskId ?? spawn(["--title", "add x", "--areas", "docs", "--prompt", `create ${FILE} with one line 'hi', commit it on your branch`]);
+  const writer = leadWriter?.taskId ?? spawn(["--title", "add x", "--prompt", `create ${FILE} with one line 'hi', commit it on your branch`]);
   ok(`writer ${writer}: ${leadWriter === undefined ? "spawned by the harness (the lead spawned none)" : `spawned by the lead after the failed claim ("${leadWriter.title}")`}`);
   // A tool-less reader that says "tests pass".
   const reader = spawn([
@@ -153,7 +153,7 @@ export async function m6Verify(lab: Lab) {
   }
   const doneEvent = await lab.waitEvent("workstream.done", 10_000, { cursor, types: ["workstream.done"], match: (e) => e.data?.workstreamId === w });
   ok(`1. ${doneEvent.event.type}: ${doneEvent.event.summary}`);
-  const late = fleetd("task", "spawn", "--workstream", w, "--title", "more", "--areas", "docs", "--prompt", "y");
+  const late = fleetd("task", "spawn", "--workstream", w, "--title", "more", "--prompt", "y");
   check(late.code === 3 && late.stderr.includes(`Workstream ${w} is done; tasks run only for open workstreams.`), `write spawn on a done workstream: ${JSON.stringify(late)}`);
   ok(`a write spawn on done ${w} is refused: ${late.stderr.trim().split("\n")[0]}`);
 

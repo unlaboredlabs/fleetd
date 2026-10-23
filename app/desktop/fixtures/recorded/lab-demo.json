@@ -8416,7 +8416,6 @@
          "workstreamId": "W1"
         }
        ],
-       "frozen": false,
        "mergedToday": 0,
        "repo": "acme/storefront"
       }
@@ -8897,7 +8896,6 @@
          "workstreamId": "W1"
         }
        ],
-       "frozen": false,
        "mergedToday": 0,
        "repo": "acme/storefront"
       }

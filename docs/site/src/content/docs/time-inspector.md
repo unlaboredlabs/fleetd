@@ -68,7 +68,7 @@ Time falls into seven groups, with the same names and colors everywhere:
 | model | Claude writing: the wait for its first token, thinking, and output. |
 | tools | Tool calls: Bash commands, reads, edits, web, MCP, and fleetd's "done" checks. |
 | machine | Starting `claude`, API retries, compaction, and `claude`'s own work between steps. |
-| queue | Waiting for fleetd: a free slot, an area lease, a usage limit, an offline machine, a lead's wake. |
+| queue | Waiting for fleetd: a free slot, a usage limit, an offline machine, a lead's wake. |
 | you | Waiting on you: your reply, a secret, an approval. |
 | pipeline | CI, review and the merge train. |
 | idle | A session alive with nothing to do. Never counted against the work. |

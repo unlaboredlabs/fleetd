@@ -81,8 +81,7 @@ export const stateLine = (pr: Pick<PrRow, "state" | "queue">): StateLine => {
   const q = pr.queue;
   const known = q === undefined ? undefined : QUEUE[q.state];
   if (q === undefined || known === undefined) return { word: "open", sentence: "Open. fleetd isn't merging it.", tone: "quiet" };
-  const paused = q.paused && q.state !== "merged" ? " Merging is paused for this repository." : "";
-  return { word: known.word, sentence: `${queueSentence(q)}${paused}`, tone: known.tone };
+  return { word: known.word, sentence: queueSentence(q), tone: known.tone };
 };
 
 export const isOpen = (r: Pick<PrRow, "state">): boolean => r.state === "open" || r.state === "draft";

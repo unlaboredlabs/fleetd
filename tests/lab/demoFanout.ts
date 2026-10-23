@@ -36,8 +36,7 @@ const DIR = `lab/${new Date().toISOString().slice(0, 19).replace(/\D/gu, "")}`;
 const PAGES = ["alpha", "beta", "gamma"] as const;
 /** How long the full capture runs on after the last merge, past the clip's end. */
 const APP_HOLD_MS = 6_000;
-const POLICY = `areas:
-${PAGES.map((p) => `  ${p}: ["${DIR}/${p}.md"]`).join("\n")}
+const POLICY = `
 `;
 export const ORDER = `Tier L. Add three short pages, ${DIR}/alpha.md, beta.md and gamma.md, each one paragraph on what fleetd's merge train does. One writer per page, all three in parallel. Give each page its own done-when check and its own PR.`;
 
@@ -165,23 +164,19 @@ const stopApp = async (lab: Lab, child: ChildProcess) => {
 
 /**
  * The node refuses to remove a project while one of its threads runs, and a late task result can wake the lead again,
- * so: interrupt every running or waiting thread of the lab repo project, try the removal, and repeat for up to 2 min.
+ * so: stop the lab repo project's work (its agents cancelled), then try the removal until its lead's run is over, for up
+ * to 2 min.
  */
 const quiesceAndRemove = async (lab: Lab) => {
   const deadline = Date.now() + 120_000;
+  let stopped = false;
   for (;;) {
     const listed = (await lab.callTool("projects_list", { machineId: MACHINE })).body.projects as Array<Body>;
     const project = listed.find((p) => p.workspaceRoot === CLONE);
     if (project === undefined) return;
-    const outcome = (await lab.callTool("project_get", { machineId: MACHINE, projectId: project.projectId })).body;
-    // project_get lists the lead's thread; task threads come from their tasks.
-    const tasks = (await lab.callTool("tasks_list", { projectRef: { machineId: MACHINE, projectId: project.projectId }, state: "running" })).body.tasks as Array<Body>;
-    const active = [
-      ...((outcome.threads ?? []) as Array<Body>).filter((t) => t.status === "running" || t.status === "waiting").map((t) => t.threadId as string),
-      ...tasks.flatMap((t) => (t.threadRef === undefined ? [] : [t.threadRef.threadId as string])),
-    ];
-    for (const threadId of active) {
-      await lab.callTool("thread_interrupt", { machineId: MACHINE, threadId, clientRequestId: `demo-stop-${threadId}-${Date.now()}` });
+    if (!stopped) {
+      await lab.humanCall("project_stop", { projectRef: { machineId: MACHINE, projectId: project.projectId }, reason: "lab cleanup" });
+      stopped = true;
     }
     try {
       await removeLabRepoProject(lab);
@@ -200,7 +195,7 @@ export async function demoFanout(lab: Lab) {
   checkClone(check);
   reclaim(lab);
   prepareCheckout(POLICY);
-  ok(`${CLONE} at origin/${BASE} ${git("rev-parse", "--short", "HEAD")}; untracked policy with areas ${PAGES.join(", ")} under ${DIR}`);
+  ok(`${CLONE} at origin/${BASE} ${git("rev-parse", "--short", "HEAD")}; untracked policy under ${DIR}`);
   fs.rmSync(lab.dir, { recursive: true, force: true });
   fs.mkdirSync(lab.dir, { recursive: true });
   const timeline = path.join(lab.dir, "timeline.jsonl");
@@ -224,10 +219,6 @@ export async function demoFanout(lab: Lab) {
   try {
     const projectId = await lab.addProject(MACHINE, CLONE, "fleetd-lab");
     const ref = { machineId: MACHINE, projectId };
-    // The train must be thawed: an earlier M7 run may have left the freeze decision behind.
-    const thaw = await callTool("train_freeze", { repo: REPO, frozen: false });
-    lab.log(`train_freeze false: ${thaw.isError ? JSON.stringify(thaw.body) : "ok"}`);
-
     const started = await callTool("lead_start", ref);
     check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
     const leadThread = started.body.threadId as string;
@@ -279,7 +270,7 @@ export async function demoFanout(lab: Lab) {
       if (task.kind !== "write") continue;
       writers.set(task.taskId as string, task);
       startedAt.set(task.taskId as string, Date.parse(next.event.at as string));
-      mark(`writer ${writers.size} started`, { taskId: task.taskId, title: task.title, areas: task.areas });
+      mark(`writer ${writers.size} started`, { taskId: task.taskId, title: task.title });
     }
 
     const verdict = await lab.waitEvent("the first review verdict", TURN_MS * 3, { cursor: orderCursor, types: ["review.verdict"] });

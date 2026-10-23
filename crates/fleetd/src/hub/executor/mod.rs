@@ -163,35 +163,24 @@ pub struct SendOutcome {
     pub queued: bool,
 }
 
-/// What `thread_send` returns: delivered now, or queued while the machine is offline.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WriteOutcome {
-    pub run_id: Option<String>,
-    pub queued: bool,
-    pub queued_until: Option<String>,
-}
-
 /// What a project's policy file says about its sessions' claude.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SessionRules {
     /// `tools.allow` and `tools.deny`, in claude's syntax.
     pub allow: Vec<String>,
     pub deny: Vec<String>,
-    /// `claude.autoMemory`.
-    pub auto_memory: bool,
 }
 
 pub type ToolRulesFuture<'a> =
     Pin<Box<dyn Future<Output = Result<SessionRules, McpToolError>> + Send + 'a>>;
 
-/// A project's session rules (`tools.allow`, `tools.deny`, `claude.autoMemory` in its policy file), read at every
-/// launch. The leases area's cached policy reader implements it; a file that does not decode refuses the launch
-/// rather than drop its denies.
+/// A project's session rules (`tools.allow` and `tools.deny` in its policy file), read at every launch. The cached
+/// policy reader implements it; a file that does not decode refuses the launch rather than drop its denies.
 pub trait ToolPolicy: Send + Sync + 'static {
     fn tools<'a>(&'a self, project: &'a ProjectRef) -> ToolRulesFuture<'a>;
 }
 
-impl ToolPolicy for crate::hub::leases::Policies {
+impl ToolPolicy for crate::hub::policy::Policies {
     fn tools<'a>(&'a self, project: &'a ProjectRef) -> ToolRulesFuture<'a> {
         Box::pin(async move {
             let policy = self.get(project).await?;
@@ -202,20 +191,9 @@ impl ToolPolicy for crate::hub::leases::Policies {
             Ok(SessionRules {
                 allow: rules(&tools.allow),
                 deny: rules(&tools.deny),
-                auto_memory: policy.claude.is_some_and(|c| c.auto_memory),
             })
         })
     }
-}
-
-/// The queue area's hook: `thread_send` goes through it when set, so a message to an offline machine waits.
-pub trait OfflineWriter: Send + Sync + 'static {
-    fn send<'a>(
-        &'a self,
-        thread_ref: &'a ThreadRef,
-        message: &'a str,
-        client_request_id: &'a str,
-    ) -> Pin<Box<dyn Future<Output = Result<WriteOutcome, ExecutorError>> + Send + 'a>>;
 }
 
 /// What the watchdog needs.
@@ -349,7 +327,6 @@ pub struct Executors {
     machines: Mutex<HashMap<MachineId, Slot>>,
     /// Per machine: true while live. `await_live` waits on it.
     live: Mutex<HashMap<MachineId, watch::Sender<bool>>>,
-    offline_writer: Mutex<Option<Arc<dyn OfflineWriter>>>,
     /// Per machine: true once the link server announced the machine online by its runner's verdict, false while
     /// degraded or unlinked. Queued writes go out only while it is true.
     ready: Mutex<HashMap<MachineId, watch::Sender<bool>>>,
@@ -482,7 +459,6 @@ impl Executors {
             clock,
             machines: Mutex::default(),
             live: Mutex::default(),
-            offline_writer: Mutex::default(),
             steer_sink: Mutex::default(),
             runners: Mutex::default(),
             ready: Mutex::default(),
@@ -493,17 +469,8 @@ impl Executors {
         })
     }
 
-    /// The queue area sets this; `thread_send` then writes through it.
     pub fn set_steer_sink(&self, sink: Arc<dyn SteerSink>) {
         *self.steer_sink.lock().unwrap() = Some(sink);
-    }
-
-    pub fn set_offline_writer(&self, writer: Arc<dyn OfflineWriter>) {
-        *self.offline_writer.lock().unwrap() = Some(writer);
-    }
-
-    pub fn offline_writer(&self) -> Option<Arc<dyn OfflineWriter>> {
-        self.offline_writer.lock().unwrap().clone()
     }
 
     /// `hub/serve` sets this once the policy reader exists; until then launches carry no tool rules.
@@ -1301,8 +1268,8 @@ impl Executors {
                 fix: Some("Launch it with a claude-* model.".into()),
             }
         })?;
-        // No new session goes to a runner the node says can't run it (spec §3.6): an expired login or a claude
-        // outside the supported range. Unknown (the node can't say) leaves it to the node.
+        // No new session goes to a runner the node says can't run it (spec §3.6): an expired login, or a claude that
+        // is missing or broke fleetd's protocol probe. Unknown (the node can't say) leaves it to the node.
         if self.cached_runner(machine_id).is_none() {
             let _ = self.runner_info(machine_id).await;
         }
@@ -1347,7 +1314,6 @@ impl Executors {
             run_id: NonEmpty::unchecked(uuid_from(&format!("run\n{seed}"))),
             allowed_tools: rules.allow,
             disallowed_tools: rules.deny,
-            auto_memory: rules.auto_memory,
             role: options.role,
         };
         self.call(machine_id, op, SessionCall::Launch(launch), LAUNCH_TIMEOUT)

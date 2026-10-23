@@ -188,7 +188,6 @@ impl Ports for HubPorts {
                 title: Line::unchecked(spawn.title),
                 kind: TaskKind::Review,
                 prompt: Text::unchecked(spawn.prompt),
-                areas: wire(Vec::<String>::new())?,
                 profile: None,
                 tier: None,
                 pr: None,
@@ -292,11 +291,4 @@ fn logged<T, E: std::fmt::Display>(result: Result<T, E>, what: &str) -> Option<T
     result
         .map_err(|error| tracing::warn!(%error, "checks: {what} failed"))
         .ok()
-}
-
-/// A checked contract value from plain JSON.
-fn wire<T: serde::de::DeserializeOwned>(value: impl serde::Serialize) -> Result<T, Refusal> {
-    serde_json::to_value(value)
-        .and_then(serde_json::from_value)
-        .map_err(|e| invalid(e.to_string(), None))
 }

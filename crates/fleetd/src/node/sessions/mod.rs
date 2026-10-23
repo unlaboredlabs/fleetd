@@ -42,10 +42,10 @@ use super::runner::claude::{
     ALWAYS_DISALLOWED, AUTO_MEMORY_OFF_ENV, HELPER_MODEL_ENV, SESSION_ENV,
     subagents_off_settings_env,
 };
-use super::runner::claude_setup;
 use super::runner::{
     ExitInfo, RunOutcome, Runner, RunnerError, RunnerEvent, SessionCommand, SessionSpec,
 };
+use super::runner::{claude, claude_setup, failure};
 use super::store::{NodeStore, SessionLocal, SessionRow, StoreError};
 use super::util::{now_iso, tail_utf16};
 use super::wire::{NodeToHub, head_text, to_json};
@@ -53,11 +53,8 @@ use super::worktree;
 use health::Health;
 use state::EndCause;
 
-/// What the node sends after a retryable failure (Overloaded, Network) to continue the same run.
-pub const CONTINUE_PROMPT: &str = "Continue where you left off.";
 /// fleetd's own MCP servers (none yet: leads and agents call the `fleetd` CLI). The user's own servers load too.
 const SNAPSHOT_WINDOW: usize = 200;
-const TRANSCRIPT_CAP: u64 = 20 * 1024 * 1024;
 const DELTA_EVERY: Duration = Duration::from_millis(100);
 /// A project's file list is reused this long.
 const FILES_FOR: Duration = Duration::from_secs(30);
@@ -128,7 +125,12 @@ impl SessionConfig {
                     .map(|n| n.trim().parse().ok())
                     .collect::<Option<Vec<u64>>>()
             })
-            .unwrap_or_else(|| vec![60_000, 240_000, 900_000]);
+            // Drawn once per node, so machines hit by one outage don't all come back at the same second.
+            .unwrap_or_else(|| {
+                (1..=failure::MAX_RUN_RETRIES)
+                    .filter_map(failure::retry_delay_ms)
+                    .collect()
+            });
         // fleetd's old default, which a node unit written by an older `machine add` still sets in the environment:
         // sessions are back on the user's own setup.
         let from_env = std::env::var("CLAUDE_CONFIG_DIR")
@@ -237,10 +239,6 @@ pub fn parse_env_file(text: &str) -> Vec<(String, String)> {
         .collect()
 }
 
-/// fleetd's settings overlay (`--settings`). claude ranks it above the user's own settings, so a user's `env` or
-/// allow rule can't undo what sessions depend on: the pinned claude (no autoupdate), helper calls on the one model,
-/// the subagent cap, the tools
-/// fleetd never gives an agent, and auto memory off unless the project opted in ([`AUTO_MEMORY_OFF_ENV`]).
 /// The session's `--mcp-config`: fleetd's own agent MCP server (`fleetd agent-mcp`, this binary) for a lead or a
 /// worker, scoped to the role; nothing for a plain thread. The server reaches the hub through this node's socket, as the
 /// CLI does, and names the session so the hub can tell a lead from a task.
@@ -265,20 +263,21 @@ fn mcp_config(role: SessionRole, sock: &Path, session_id: &str) -> String {
     format!("{}\n", serde_json::json!({ "mcpServers": servers }))
 }
 
-pub fn settings_overlay(auto_memory: bool) -> String {
+/// fleetd's settings overlay (`--settings`). claude ranks it above the user's own settings, so a user's `env` or
+/// allow rule can't undo what sessions depend on: the pinned claude (no autoupdate), helper calls on the one model,
+/// the subagent cap, the tools fleetd never gives an agent, and auto memory off ([`AUTO_MEMORY_OFF_ENV`]).
+pub fn settings_overlay() -> String {
     let mut env = subagents_off_settings_env();
     env.insert("DISABLE_AUTOUPDATER".into(), "1".into());
     let (key, model) = HELPER_MODEL_ENV;
     env.insert(key.into(), model.into());
-    let mut overlay = serde_json::json!({
+    let (key, value) = AUTO_MEMORY_OFF_ENV;
+    env.insert(key.into(), value.into());
+    let overlay = serde_json::json!({
         "env": env,
         "permissions": { "deny": ALWAYS_DISALLOWED },
+        "autoMemoryEnabled": false,
     });
-    if !auto_memory {
-        let (key, value) = AUTO_MEMORY_OFF_ENV;
-        overlay["env"][key] = value.into();
-        overlay["autoMemoryEnabled"] = false.into();
-    }
     format!("{overlay}\n")
 }
 
@@ -319,7 +318,7 @@ impl From<worktree::GitError> for SessionError {
 
 fn runner_error(e: RunnerError) -> SessionError {
     let fix = match &e {
-        RunnerError::Missing { .. } | RunnerError::UnsupportedVersion { .. } => Some(
+        RunnerError::Missing { .. } => Some(
             "Install a supported claude: curl -fsSL https://claude.ai/install.sh | bash".into(),
         ),
         _ => None,
@@ -411,6 +410,8 @@ struct State {
     outbox: spans::Outbox,
     /// Runs whose send had to start claude's process, until they start: their wait is `run.startup`.
     spawned: HashSet<String>,
+    /// claude's own agent tools a session's init still offered: every later session denies them too.
+    agent_tools: Vec<String>,
     /// Runs the node is retrying: when the retry was scheduled (ms), its attempt and delay.
     node_retry: HashMap<String, (u64, u32, u64)>,
     /// Tagged sends (steers) by steer id, until their receipt is final.
@@ -1160,7 +1161,6 @@ impl SessionService {
                 pid_start: None,
                 allowed_tools: launch.allowed_tools.clone(),
                 disallowed_tools: launch.disallowed_tools.clone(),
-                auto_memory: launch.auto_memory,
                 role: launch.role,
             },
         };
@@ -1335,17 +1335,7 @@ impl SessionService {
                 format!("cannot prepare the session's files: {e}"),
             )
         })?;
-        let handle = match self.inner.runner.spawn(spec.clone()) {
-            // A node that died between spawning claude and recording it: claude already has the session.
-            Err(RunnerError::Refused(why)) if !resume && why.contains("already in use") => {
-                self.inner.runner.spawn(SessionSpec {
-                    resume: true,
-                    ..spec
-                })
-            }
-            other => other,
-        }
-        .map_err(runner_error)?;
+        let handle = self.inner.runner.spawn(spec).map_err(runner_error)?;
         row.local.started = true;
         row.local.pid = Some(handle.pid);
         row.local.pid_start = proc::start_time(handle.pid);
@@ -1381,8 +1371,8 @@ impl SessionService {
         Ok(handle.commands)
     }
 
-    /// The process spec, after writing the session's MCP config and settings overlay and keeping its transcript (fleetd's
-    /// own copy; claude keeps its session in the config dir) under its cap.
+    /// The process spec, after writing the session's MCP config and settings overlay. The transcript is fleetd's own
+    /// copy (claude keeps its session in the config dir); its writer keeps it under its cap.
     fn spec(&self, row: &SessionRow, resume: bool) -> std::io::Result<SessionSpec> {
         let config = &self.inner.config;
         let id = row.summary.session_id.as_str();
@@ -1392,11 +1382,10 @@ impl SessionService {
         let sock = super::lead::lead_socket_path(&config.home);
         std::fs::write(&mcp, mcp_config(row.local.role, &sock, id))?;
         let settings = dir.join("settings.json");
-        std::fs::write(&settings, settings_overlay(row.local.auto_memory))?;
+        std::fs::write(&settings, settings_overlay())?;
         let transcripts = config.home.join("transcripts");
         super::config::mkdir_private(&transcripts)?;
         let transcript = transcripts.join(format!("{id}.jsonl"));
-        state::cap_transcript(&transcript, TRANSCRIPT_CAP)?;
 
         let mut env = config.runner_env();
         env.extend([
@@ -1410,11 +1399,9 @@ impl SessionService {
                 row.summary.project_id.to_string(),
             ),
         ]);
-        if !row.local.auto_memory {
-            let (key, value) = AUTO_MEMORY_OFF_ENV;
-            env.retain(|(k, _)| k != key);
-            env.push((key.to_owned(), value.to_owned()));
-        }
+        let (key, value) = AUTO_MEMORY_OFF_ENV;
+        env.retain(|(k, _)| k != key);
+        env.push((key.to_owned(), value.to_owned()));
         env.extend(compile_cache_env(&env));
         Ok(SessionSpec {
             session_id: id.to_owned(),
@@ -1428,6 +1415,7 @@ impl SessionService {
             disallowed_tools: ALWAYS_DISALLOWED
                 .iter()
                 .map(|t| (*t).to_owned())
+                .chain(self.st().agent_tools.iter().cloned())
                 .chain(row.local.disallowed_tools.iter().cloned())
                 .collect(),
             mcp_config: Some(mcp),
@@ -1636,28 +1624,10 @@ impl SessionService {
                     }
                 }
                 RunnerEvent::RateLimit(limit) => self.remember_limit(limit),
-                RunnerEvent::Init {
-                    auto_memory,
-                    subagent_leaks,
-                    ..
-                } => {
-                    if !subagent_leaks.is_empty() {
-                        tracing::error!(
-                            session = %id,
-                            ?subagent_leaks,
-                            "claude still offers its own subagents despite fleetd's deny list and knobs"
-                        );
-                    }
-                    self.health_changed(|h| h.subagents_seen(subagent_leaks));
-                    // A project that opted back in proves nothing about fleetd's knobs.
-                    if !self.session(&id).is_ok_and(|row| row.local.auto_memory) {
-                        if auto_memory {
-                            tracing::warn!(
-                                session = %id,
-                                "claude kept its auto memory on despite CLAUDE_CODE_DISABLE_AUTO_MEMORY and autoMemoryEnabled"
-                            );
-                        }
-                        self.health_changed(|h| h.auto_memory_seen(auto_memory));
+                RunnerEvent::Init { agent_tools, .. } => {
+                    if agent_tools.as_ref().is_none_or(|t| !t.is_empty()) {
+                        self.agent_tools_offered(&id, run_id.as_deref(), agent_tools)
+                            .await;
                     }
                 }
             }
@@ -1723,6 +1693,74 @@ impl SessionService {
                 Some(tail_utf16(&message.text, state::ASSISTANT_TAIL).to_owned());
             c.put_message(message);
         }));
+    }
+
+    /// A session's init still offers claude's own agent tools, which would start agents outside fleetd's slots: a
+    /// claude newer than fleetd's deny list, or one that ignores it (`None`: the init lists no tools, so none could be
+    /// checked). The process stops before its run can call one, and every later session on this node denies them.
+    async fn agent_tools_offered(
+        &self,
+        id: &str,
+        run_id: Option<&str>,
+        tools: Option<Vec<String>>,
+    ) {
+        let why = match &tools {
+            Some(tools) => format!(
+                "claude offered its own agent tools ({}), which would start agents outside fleetd's slots. fleetd \
+                 stopped the session; the next start denies them. If it happens again, install the claude fleetd was \
+                 tested with: claude install {}",
+                tools.join(", "),
+                crate::node::runner::version::TESTED
+            ),
+            None => format!(
+                "claude's init listed no tools, so fleetd could not check that its own agent tools are off, and \
+                 stopped the session. Install the claude fleetd was tested with: claude install {}",
+                crate::node::runner::version::TESTED
+            ),
+        };
+        tracing::error!(session_id = id, "{why}");
+        let commands = {
+            let mut st = self.st();
+            for tool in tools.into_iter().flatten() {
+                if !st.agent_tools.contains(&tool) {
+                    st.agent_tools.push(tool);
+                }
+            }
+            st.live.get_mut(id).map(|live| {
+                live.ending = Some(why.clone());
+                live.closing = true;
+                live.commands.clone()
+            })
+        };
+        self.log(self.update(id, |c| {
+            let at = c.at.clone();
+            c.put_item(ThreadItem {
+                id: NonEmpty::unchecked(format!("agent-tools-{}", run_id.unwrap_or(id))),
+                run_id: run_id.and_then(|r| NonEmpty::new(r).ok()),
+                status: ItemStatus::Failed,
+                title: "claude offered its own agent tools".into(),
+                started_at: at.clone(),
+                completed_at: Some(at.clone()),
+                updated_at: at,
+                kind: ItemKind::Error {
+                    failure: RunFailure {
+                        class: FailureClass::Other,
+                        message: Text::new(why)
+                            .unwrap_or_else(|_| Text::unchecked("agent tools offered")),
+                        api_status: None,
+                        reset_at: None,
+                        retries: 0,
+                    },
+                },
+            });
+        }));
+        if let Some(commands) = commands {
+            let _ = commands
+                .send(SessionCommand::Shutdown {
+                    grace: Duration::ZERO,
+                })
+                .await;
+        }
     }
 
     async fn permission(
@@ -1816,29 +1854,43 @@ impl SessionService {
             outcome => outcome,
         };
         let mut retries = 0;
-        if let RunOutcome::Failed(failure) = &outcome
-            && matches!(
-                failure.class,
-                FailureClass::Overloaded | FailureClass::Network
-            )
-        {
-            let schedule = &self.inner.config.retry_schedule_ms;
-            let attempt = {
-                let mut st = self.st();
-                let done = st.retries.entry(run_id.to_owned()).or_default();
-                *done += 1;
-                *done
-            };
-            if let Some(&delay) = schedule.get(attempt as usize - 1) {
-                self.schedule_retry(id, run_id, attempt, delay, failure);
+        if let RunOutcome::Failed(failure) = &outcome {
+            // claude never said `started` and no API call answered: it never took the message in, so a retry sends
+            // the message itself.
+            let unread = failure.api_status.is_none()
+                && self.store().runs(id).is_ok_and(|runs| {
+                    runs.iter()
+                        .any(|r| r.id.as_str() == run_id && r.status == RunStatus::Starting)
+                });
+            if unread
+                && claude::session_in_use(failure.message.as_str())
+                && self.resend_refused(id, run_id)
+            {
                 return;
             }
-            retries = attempt - 1;
+            if failure::retryable(failure.class) {
+                let schedule = &self.inner.config.retry_schedule_ms;
+                let attempt = {
+                    let mut st = self.st();
+                    let done = st.retries.entry(run_id.to_owned()).or_default();
+                    *done += 1;
+                    *done
+                };
+                if let Some(&delay) = schedule.get(attempt as usize - 1) {
+                    self.schedule_retry(id, run_id, attempt, delay, failure, unread);
+                    return;
+                }
+                retries = attempt - 1;
+            }
         }
         self.st().retries.remove(run_id);
-        if let Some(live) = self.st().live.get_mut(id) {
-            live.ending = None;
-        }
+        // Why someone ended it (an interrupt, a stop, a removed project): claude's own end of the run says only that
+        // it was cut.
+        let asked = self
+            .st()
+            .live
+            .get_mut(id)
+            .and_then(|live| live.ending.take());
         match &outcome {
             RunOutcome::Failed(failure) if failure.class == FailureClass::Auth => {
                 self.health_changed(|h| h.auth_failed(&failure.message, Instant::now()));
@@ -1856,7 +1908,7 @@ impl SessionService {
             if let Some(run) = index.map(|i| &mut c.runs[i]) {
                 (run.status, run.failure) = match outcome {
                     RunOutcome::Completed { .. } => (RunStatus::Completed, None),
-                    RunOutcome::Interrupted => (RunStatus::Interrupted, None),
+                    RunOutcome::Interrupted => (RunStatus::Interrupted, asked.map(state::ended_by)),
                     RunOutcome::Superseded { by } => {
                         run.superseded_by = NonEmpty::new(by).ok();
                         (RunStatus::Interrupted, None)
@@ -1874,8 +1926,26 @@ impl SessionService {
         }));
     }
 
-    /// The run stays active while the node waits, with a `NodeRetry` item saying why it is slow; then
-    /// [`CONTINUE_PROMPT`] goes to the same session under a fresh uuid that maps back to the run.
+    /// claude refused a first start because it already has the session (the node died between spawning claude and
+    /// recording it, and [`claude::session_file`] could not tell). The message goes again, once, to a respawn, which
+    /// resumes because the session has started.
+    fn resend_refused(&self, id: &str, run_id: &str) -> bool {
+        {
+            let mut st = self.st();
+            if st.retries.contains_key(run_id) {
+                return false;
+            }
+            // Keeps the run active through the refused process's exit.
+            st.retries.insert(run_id.to_owned(), 0);
+            if let Some(live) = st.live.get_mut(id) {
+                live.closing = true;
+            }
+        }
+        self.resend(id, run_id, 0, true);
+        true
+    }
+
+    /// The run stays active while the node waits, with a `NodeRetry` item saying why it is slow.
     fn schedule_retry(
         &self,
         id: &str,
@@ -1883,6 +1953,7 @@ impl SessionService {
         attempt: u32,
         delay: u64,
         failure: &RunFailure,
+        unread: bool,
     ) {
         let max = self.inner.config.retry_schedule_ms.len() as u32;
         let now_ms = crate::node::runner::claude::mapper::Now::system().ms;
@@ -1907,6 +1978,12 @@ impl SessionService {
                 },
             });
         }));
+        self.resend(id, run_id, delay, unread);
+    }
+
+    /// After `delay`, unless the run ended meanwhile, the session gets the run's message again (`unread`: claude never
+    /// took it in) or [`failure::RETRY_MESSAGE`], under a fresh uuid that maps back to the run.
+    fn resend(&self, id: &str, run_id: &str, delay: u64, unread: bool) {
         let service = self.clone();
         let (id, run_id) = (id.to_owned(), run_id.to_owned());
         tokio::spawn(async move {
@@ -1916,19 +1993,40 @@ impl SessionService {
                     .any(|r| r.id.as_str() == run_id && r.status.is_active())
             });
             if !active {
+                if unread {
+                    service.steer_failed(&run_id, "the run ended before claude took it in");
+                }
                 return;
             }
-            let uuid = new_uuid();
-            let command = SessionCommand::Send {
-                run_id: uuid.clone(),
-                text: CONTINUE_PROMPT.to_owned(),
-                mode: SendMode::Plain,
+            let text = if unread {
+                match service.store().message(&id, &run_id) {
+                    Ok(Some(message)) => Ok(message.text),
+                    Ok(None) => Err(not_found(format!("run {run_id} has no message"))),
+                    Err(e) => Err(e.into()),
+                }
+            } else {
+                Ok(failure::RETRY_MESSAGE.to_owned())
             };
-            if let Err(e) = service
-                .dispatch(&id, command, Some((uuid, run_id.clone())))
-                .await
-            {
+            let uuid = new_uuid();
+            let sent = match text {
+                Ok(text) => {
+                    let command = SessionCommand::Send {
+                        run_id: uuid.clone(),
+                        text,
+                        mode: SendMode::Plain,
+                    };
+                    service
+                        .dispatch(&id, command, Some((uuid, run_id.clone())))
+                        .await
+                }
+                Err(e) => Err(e),
+            };
+            if let Err(e) = sent {
+                service.st().retries.remove(&run_id);
                 service.fail_run(&id, &run_id, FailureClass::Other, e.message.as_str());
+                if unread {
+                    service.steer_failed(&run_id, e.message.as_str());
+                }
             }
         });
     }
@@ -2314,7 +2412,7 @@ impl SessionService {
         let _probing = self.inner.probing.lock().await;
         let cached = {
             let health = self.health();
-            if health.next_probe_in(Instant::now()).is_zero() {
+            if health.next_probe_in(Instant::now()) == Some(Duration::ZERO) {
                 None
             } else {
                 health.info()
@@ -2331,8 +2429,8 @@ impl SessionService {
         self.health().info().unwrap_or(shown)
     }
 
-    /// Probes whenever [`Health::next_probe_in`] says so: at start, every 6 h while the runner is usable and every
-    /// 15 s while it is not. A change of health (an Auth failure) wakes it to recompute.
+    /// Probes whenever [`Health::next_probe_in`] says so: at start, then every 15 s while the runner is unusable. A
+    /// change of health (an Auth failure) wakes it to recompute.
     fn spawn_prober(&self) {
         let weak = Arc::downgrade(&self.inner);
         let changed = self.inner.health_changed.clone();
@@ -2343,12 +2441,19 @@ impl SessionService {
                     let health = inner.health.lock().unwrap_or_else(|p| p.into_inner());
                     health.next_probe_in(Instant::now())
                 };
-                if !wait.is_zero() {
-                    tokio::select! {
-                        () = tokio::time::sleep(wait) => {}
-                        () = changed.notified() => {}
+                match wait {
+                    Some(wait) if wait.is_zero() => {}
+                    Some(wait) => {
+                        tokio::select! {
+                            () = tokio::time::sleep(wait) => {}
+                            () = changed.notified() => {}
+                        }
+                        continue;
                     }
-                    continue;
+                    None => {
+                        changed.notified().await;
+                        continue;
+                    }
                 }
                 let Some(inner) = weak.upgrade() else { return };
                 SessionService { inner }.runner_info().await;

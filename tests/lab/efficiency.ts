@@ -45,7 +45,7 @@ async function sliceReviews(lab: Lab) {
   checkClone(check);
   resetNamespace();
   const dir = `lab/eff-${new Date().toISOString().slice(0, 19).replace(/\D/gu, "")}`;
-  prepareCheckout(`areas:\n  eff: ["${dir}/**"]\n`);
+  prepareCheckout("");
   try {
     const projectId = await lab.addProject(MACHINE, CLONE, "fleetd-lab");
     const ref = { machineId: MACHINE, projectId };
@@ -67,7 +67,7 @@ async function sliceReviews(lab: Lab) {
       `On a new branch ${BRANCH_PREFIX}eff-${n} from origin/${BASE} (git fetch origin; git checkout -b ${BRANCH_PREFIX}eff-${n} origin/${BASE}), create ${dir}/${n}.md containing exactly the line ${line}, commit it, push the branch, and open a PR with gh pr create --base ${BASE} --head ${BRANCH_PREFIX}eff-${n} --title "eff ${n}" --body "eff ${n}". Then call the report tool with kind "slice_ready" and prUrl set to that PR's URL.`;
     cursor = await lab.cursor();
     const spawned = fleetd(
-      "task", "spawn", "--workstream", w, "--title", "two slices", "--areas", "eff", "--profile", MECHANICS,
+      "task", "spawn", "--workstream", w, "--title", "two slices", "--profile", MECHANICS,
       "--prompt", `Do these two steps in order. 1. ${slice("one", "one")} 2. ${slice("two", "two")} Reply with both PR URLs.`,
     );
     const writer = /^Spawned (T\d+)/mu.exec(spawned.stdout)?.[1];

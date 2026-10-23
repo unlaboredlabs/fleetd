@@ -69,9 +69,6 @@ Most of this is also enforced by the hub, which refuses a call that breaks it an
 Claude Code can keep its own notes per folder ("auto memory"). fleetd turns that off in every `claude` it starts, so
 what an agent knows comes from its brief, the decisions and your instructions, all of which you can read here.
 
-`fleetd doctor` shows "claude auto memory off" for each machine. To turn it back on for one project, set
-`claude: { autoMemory: true }` in its [policy file](/docs/config-and-files#policy).
-
 ### Claude's own subagents are off {#no-subagents}
 
 Every agent in fleetd is a fleetd agent, with its own session, slot, worktree, lane, steering and receipts. So fleetd
@@ -82,9 +79,10 @@ turns off Claude Code's own subagents in every `claude` it starts. Your `~/.clau
 | Claude's agent, team and background-task tools (Agent/Task, Workflow, ListAgents, SendMessage, TaskStop) | Denied, including any a newer claude adds. |
 | Built-in Explore, Plan and `claude` agents, background shell commands | Switched off. |
 | general-purpose, statusline-setup, and your agents in `~/.claude/agents` | Still listed by claude, but nothing can start them. |
+| `claude` from an agent's shell, by name, by path, through a package runner or a `sh -c` | Denied, so no nested claude runs past the cap or on another model. |
 
-`fleetd doctor` shows "Claude subagents off (fleetd manages agents)" for each machine. If a session ever offers one
-anyway, that machine starts no new sessions until it is fixed: see [Claude](/docs/troubleshooting#claude).
+If a session ever offers one anyway, fleetd stops it before it can start an agent, and every later session on that
+machine denies the tool: see [Claude](/docs/troubleshooting#claude).
 
 ### Agents use fleetd's tools {#agent-tools}
 
@@ -262,7 +260,7 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 
 | Id | Sent | Safety rules |
 |---|---|---|
-| `task.brief.write` | every write task attempt | changes only its areas; never merges; the train does (prompt only) |
+| `task.brief.write` | every write task attempt | never merges; the train does (prompt only) |
 
 ### Reviews and checks
 

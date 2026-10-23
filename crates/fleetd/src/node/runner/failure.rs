@@ -382,14 +382,14 @@ pub fn retry_delay_ms(attempt: u32) -> Option<u64> {
 }
 
 /// [`retry_delay_ms`] with its jitter drawn: 1, 4 and 15 minutes (×4 a step, capped at 15), each ±10% by `unit`
-/// in [0, 1) so that machines hit by one outage don't all come back at the same second.
+/// in [0, 1) so that machines hit by one outage don't all come back at the same second. Whole seconds, as shown.
 pub fn retry_delay_with(attempt: u32, unit: f64) -> Option<u64> {
     if attempt == 0 || attempt > MAX_RUN_RETRIES {
         return None;
     }
     let base = (60_000u64 * 4u64.pow(attempt - 1)).min(15 * 60_000);
     let factor = 0.9 + 0.2 * unit.clamp(0.0, 1.0);
-    Some((base as f64 * factor).round() as u64)
+    Some((base as f64 * factor / 1000.0).round() as u64 * 1000)
 }
 
 /// How to log claude in, run on the machine. Sessions use the user's own claude setup, so it is the same login as
@@ -979,6 +979,8 @@ mod tests {
         assert_eq!(retry_delay_with(3, 0.5), Some(900_000));
         assert_eq!(retry_delay_with(1, 0.0), Some(54_000));
         assert_eq!(retry_delay_with(3, 1.0), Some(990_000));
+        // Whole seconds, so the thread says "node retry 1/3 in 57 s".
+        assert_eq!(retry_delay_with(1, 0.37), Some(58_000));
         assert_eq!(retry_delay_with(0, 0.5), None);
         assert_eq!(retry_delay_with(MAX_RUN_RETRIES + 1, 0.5), None);
         for attempt in 1..=MAX_RUN_RETRIES {

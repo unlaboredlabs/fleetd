@@ -4,7 +4,6 @@
 //! sessions, and reports the sleep to the hub.
 pub mod clock;
 pub mod inhibit;
-pub mod settings;
 
 use std::sync::Mutex;
 use std::time::Duration;

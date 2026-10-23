@@ -137,7 +137,7 @@ if (!listed.ok) {
 const SEED_FILES: Record<string, string> = {
   "README.md": README,
   ".github/workflows/ci.yml": WORKFLOW,
-  // Two workspace packages, so a project without policy areas infers the areas `alpha` and `beta` (areas.rs).
+  // Two workspace packages.
   "packages/alpha/README.md": "# alpha\n\nA lab package.\n",
   "packages/beta/README.md": "# beta\n\nA lab package.\n",
 };

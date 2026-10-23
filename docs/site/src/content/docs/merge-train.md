@@ -1,6 +1,6 @@
 ---
 title: Merge train
-description: "How fleetd merges pull requests: one train per repo, batches of disjoint PRs in one CI run, stacked PRs tested ahead."
+description: "How fleetd merges pull requests: one train per repo, batches of disjoint PRs in one CI run."
 ---
 
 How fleetd merges pull requests. Only fleetd merges: each writer's PR goes on its repo's
@@ -18,7 +18,17 @@ A conflict or red CI goes back to the agent that wrote the PR, with the paths or
 A PR with no CI merges on fleetd's own checks, and the merge says so. "No CI" means the base requires no check but
 `fleetd/train`, and no workflow's `on:` can run for the PR.
 
-To pause a repo's train, use the `train_freeze` tool.
+To keep a PR off the train, [hold it](#hold).
+
+The train takes a PR whose base is a branch it merges into, such as `main`. A PR based on another open PR's branch is
+refused when it is queued: once that PR merges, point it at the same base (`gh pr edit <n> --base main`) and queue it
+again.
+
+## Merges outside the train {#outside}
+
+When a PR is merged into a branch the train guards without the train, such as by hand on GitHub, the train notices
+within a minute. It records `pr.merged_outside` and tells the project's lead. The next PR in line is rebased onto the
+new base as usual, so nothing else changes.
 
 ## Tiers {#tiers}
 
@@ -58,31 +68,16 @@ A member counts as merged for done-when checks only while its head is still the 
 A batch holds at most 4 PRs. Change it with `FLEETD_TRAIN_BATCH_MAX` in the hub's environment; `1` turns batches off.
 See [Hub environment](/docs/config-and-files#env).
 
-## Stacked PRs {#stacks}
-
-A PR whose base is another queued PR's branch waits until that parent lands. It never merges into the parent's branch.
-
-While it waits, the train tests it ahead:
-
-1. It rebases the PR onto the parent's base, parent included, on `train/stack-<n>` under the branch prefix.
-2. It opens a draft PR there for its CI.
-3. The result shows on the stacked PR as the `fleetd/stack` status, which nothing requires. A red result also goes to
-   the PR's author, so it can be fixed before the parent lands.
-
-When the parent lands, the train points the stacked PR at the parent's base, rebases it onto the parent's squash, and
-runs CI again before merging. Then it closes the draft PR.
-
 ## Hold a PR {#hold}
 
 Add the `hold` label to a PR to keep the train from taking it, alone or in a batch. Remove the label and it goes in
-its turn.
+its turn. To hold every PR of a repo, label each one.
 
 ## What never relaxes {#guarantees}
 
-Batches and stacks only save waiting.
+Batches only save waiting.
 
 - Every PR in a batch is reviewed at its current patch.
 - The batch's CI must be green and include the checks the base requires.
 - `fleetd/train` is posted only on a commit whose CI passed.
 - GitHub's rules on the base decide every merge.
-- A stacked PR's early result never replaces the CI on the commit that merges.

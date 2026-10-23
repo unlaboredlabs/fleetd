@@ -1,7 +1,7 @@
 // resume: an idle session's claude process is reaped (FLEETD_NODE_IDLE_REAP_SEC, shortened for the lab) without
 // touching the thread, and the next send respawns it with `--resume` and the conversation intact.
-import type { Body, Lab } from "../harness.ts";
-import { claudeOf, launch, MACHINE, projectOf, replyAfter, runEnd, send, untilProc, withNode } from "./kit.ts";
+import { type Body, type Lab, leadRun } from "../harness.ts";
+import { claudeOf, MACHINE, projectOf, replyAfter, runEnd, send, untilProc, withNode } from "./kit.ts";
 
 const REAP_SEC = 15;
 
@@ -10,12 +10,10 @@ export async function idleResume(lab: Lab) {
   await withNode(lab, MACHINE, { env: { FLEETD_NODE_IDLE_REAP_SEC: String(REAP_SEC) } }, async () => {
     const projectId = await projectOf(lab, MACHINE);
     const word = `ORCHID${1000 + Math.floor(Math.random() * 9000)}`;
-    const from = await lab.cursor();
-    const threadId = await launch(
+    const { threadId, cursor: from } = await leadRun(
       lab,
       MACHINE,
       projectId,
-      "fleetd lab resume",
       `Remember the code word ${word}; I will ask for it later. Reply with the single word OK and nothing else.`,
     );
     const { event: first } = await runEnd(lab, MACHINE, threadId, from, 240_000);
@@ -35,7 +33,7 @@ export async function idleResume(lab: Lab) {
     check(noisy.length === 0, `the reap is silent on the thread: ${JSON.stringify(noisy.map((e) => e.type))}`);
 
     const beforeSend = await lab.cursor();
-    await send(lab, MACHINE, threadId, "What code word did I ask you to remember? Reply with just the word.");
+    await send(lab, MACHINE, projectId, "What code word did I ask you to remember? Reply with just the word.");
     const respawned = await untilProc(lab, "claude respawned for the send", 60_000, () => claudeOf(nodePid, threadId));
     check(respawned.cmdline.includes("--resume"), `respawned with --resume: ${respawned.cmdline.join(" ")}`);
     const reply = await replyAfter(lab, MACHINE, threadId, beforeSend, 240_000, (r) => r.includes(word));

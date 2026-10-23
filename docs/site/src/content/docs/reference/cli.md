@@ -225,14 +225,6 @@ fleetd hub key revoke <keyId> [--home <dir>]
 
 takes effect at once, also on a running hub
 
-### fleetd hub github-webhook {#hub-github-webhook}
-
-```text
-fleetd hub github-webhook (--url <public url>/github | --off) [--hub <url> --key-file <path> | --home <dir>]
-```
-
-let GitHub tell the hub about pull requests, checks and pushes on the train's repos as they happen (admin key). It needs a URL GitHub can reach that forwards to this hub, which fleetd never creates; without one the hub syncs with GitHub on its own
-
 ### fleetd node join {#node-join}
 
 ```text
@@ -428,11 +420,11 @@ fleetd decisions search "<query>"
 ### fleetd task spawn {#task-spawn}
 
 ```text
-fleetd task spawn --workstream <W> --title <t> --prompt <p> [--kind write|read|review] [--areas a,b]
+fleetd task spawn --workstream <W> --title <t> --prompt <p> [--kind write|read|review]
     [--profile high|medium] [--tier S|M|L] [--pr <url>] [--qa] [--item P<n>]
 ```
 
-delegate work to a subagent; writers need `--areas` and get their own branch; a review task needs `--pr`, and `--qa` marks it a QA run; `--item` links it to that plan item
+delegate work to a subagent; writers get their own branch; a review task needs `--pr`, and `--qa` marks it a QA run; `--item` links it to that plan item
 
 ### fleetd task list {#task-list}
 

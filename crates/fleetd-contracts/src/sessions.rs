@@ -68,10 +68,6 @@ pub struct SessionLaunch {
     /// `--disallowedTools` rules from the project's policy (`tools.deny`), on top of the tools fleetd always denies.
     #[serde(default)]
     pub disallowed_tools: Vec<String>,
-    /// The project's policy turns claude's auto memory back on (`claude.autoMemory: true`); otherwise fleetd keeps it
-    /// off in the session.
-    #[serde(default)]
-    pub auto_memory: bool,
     /// Which fleetd management tools the session's MCP server offers.
     #[serde(default)]
     pub role: SessionRole,
@@ -289,7 +285,7 @@ pub struct SessionError {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SendMode {
-    /// Today's send (wakes, nudges, `thread_send`): no priority, claude may join it to the running turn.
+    /// Today's send (wakes, nudges): no priority, claude may join it to the running turn.
     #[default]
     Plain,
     /// `priority: "now"`: the running turn ends at its next tool boundary (the tool's result kept) and this message
@@ -367,6 +363,7 @@ pub struct RunnerInfo {
     pub version: Option<String>,
     /// The range this fleetd supports, e.g. ">=2.1.300, <2.2.0".
     pub supported: String,
+    /// Inside `supported`. Outside it sessions still run; the doctor warns.
     pub version_ok: bool,
     pub login: LoginStatus,
     /// "subscription", "api_key", "token" (an ANTHROPIC_AUTH_TOKEN gateway) or "none".
@@ -382,15 +379,6 @@ pub struct RunnerInfo {
     pub proxy_source: Option<String>,
     /// The claude config dir sessions use: the user's own `~/.claude` unless the machine was given another.
     pub config_dir: Option<String>,
-    /// Whether claude's auto memory was on in the latest session fleetd keeps it off in, from that session's
-    /// `system/init` (`memory_paths`). Absent until such a session has started, and from older nodes.
-    pub auto_memory: Option<bool>,
-    /// The subagent, team and background-task tools the probe found in the installed claude; every session denies
-    /// them. Absent before the first probe and from older nodes.
-    pub agent_tools: Option<Vec<String>>,
-    /// Claude's own subagents that still showed despite fleetd's settings (agent tools, or built-in agents the knobs
-    /// remove), from the probe and the latest session's `system/init`. Empty: off. Absent from older nodes.
-    pub subagent_leaks: Option<Vec<String>>,
 }
 
 #[skip_serializing_none]

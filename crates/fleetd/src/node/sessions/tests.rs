@@ -17,11 +17,11 @@ use tokio::sync::mpsc;
 
 use super::fake::FakeRunner;
 use super::{
-    Attached, CONTINUE_PROMPT, SessionConfig, SessionService, compile_cache_env, mcp_config,
-    parse_env_file,
+    Attached, SessionConfig, SessionService, compile_cache_env, mcp_config, parse_env_file,
 };
 use crate::node::runner::SessionCommand;
 use crate::node::runner::claude::ALWAYS_DISALLOWED;
+use crate::node::runner::failure::RETRY_MESSAGE;
 use crate::node::store::NodeStore;
 use crate::node::wire::NodeToHub;
 use crate::node::worktree::tests::{repo, run as git};
@@ -83,7 +83,6 @@ fn launch(id: &str, mode: RuntimeMode, workspace: SessionWorkspace) -> SessionCa
         run_id: NonEmpty::unchecked("r1"),
         allowed_tools: vec!["Bash(npm test:*)".into()],
         disallowed_tools: vec!["WebFetch".into()],
-        auto_memory: false,
         role: fleetd_contracts::sessions::SessionRole::Worker,
     })
 }
@@ -193,54 +192,6 @@ fn sessions_share_one_compile_cache_when_sccache_is_installed() {
 }
 
 #[tokio::test]
-async fn a_project_that_opts_into_auto_memory_gets_neither_knob() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().join("project");
-    std::fs::create_dir_all(&root).unwrap();
-    std::fs::write(
-        dir.path().join("claude.env"),
-        "CLAUDE_CODE_DISABLE_AUTO_MEMORY=0\n",
-    )
-    .unwrap();
-    let mut hub = hub(
-        dir.path(),
-        NodeStore::open_memory(10_000).unwrap(),
-        FakeRunner::fixture("init-partial-two-turns"),
-    )
-    .await;
-    hub.project(&root).await;
-    let SessionCall::Launch(mut opted_in) =
-        launch("s1", RuntimeMode::FullAccess, SessionWorkspace::Root)
-    else {
-        unreachable!()
-    };
-    opted_in.auto_memory = true;
-    hub.ok(SessionCall::Launch(opted_in)).await;
-    hub.settled("r1").await;
-    let spec = &hub.runner.spawned()[0];
-    let overlay: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(spec.settings.as_ref().unwrap()).unwrap())
-            .unwrap();
-    assert_eq!(overlay.get("autoMemoryEnabled"), None);
-    assert_eq!(overlay["env"].get("CLAUDE_CODE_DISABLE_AUTO_MEMORY"), None);
-    // The user's own value passes through untouched.
-    let ours: Vec<_> = spec
-        .env
-        .iter()
-        .filter(|(k, _)| k == "CLAUDE_CODE_DISABLE_AUTO_MEMORY")
-        .collect();
-    assert_eq!(
-        ours,
-        [&("CLAUDE_CODE_DISABLE_AUTO_MEMORY".to_owned(), "0".to_owned())]
-    );
-    // Its memory dir is the project's choice, not a broken knob.
-    let SessionOutput::RunnerInfo(info) = hub.ok(SessionCall::RunnerInfo).await else {
-        panic!("no runner info")
-    };
-    assert_eq!(info.auto_memory, None);
-}
-
-#[tokio::test]
 async fn a_launch_runs_its_turn_streams_it_and_later_sends_continue_the_session() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("project");
@@ -334,11 +285,6 @@ async fn a_launch_runs_its_turn_streams_it_and_later_sends_continue_the_session(
     assert_eq!(overlay["autoMemoryEnabled"], false);
     assert_eq!(overlay["env"]["CLAUDE_CODE_DISABLE_AUTO_MEMORY"], "1");
     assert_eq!(last("CLAUDE_CODE_DISABLE_AUTO_MEMORY"), Some("1"));
-    // The fixture was recorded with auto memory on: its init names a memory dir, and runner_info says so.
-    let SessionOutput::RunnerInfo(info) = hub.ok(SessionCall::RunnerInfo).await else {
-        panic!("no runner info")
-    };
-    assert_eq!(info.auto_memory, Some(true));
 
     // A retried launch returns the same session without a second process.
     let again = hub
@@ -651,7 +597,7 @@ async fn a_retryable_failure_continues_the_same_run_then_fails_loudly() {
         .collect();
     assert_eq!(sends.len(), 2);
     assert_ne!(sends[1].0, "r1");
-    assert_eq!(sends[1].1, CONTINUE_PROMPT);
+    assert_eq!(sends[1].1, RETRY_MESSAGE);
     let retry = hub
         .service
         .store()
@@ -706,7 +652,7 @@ async fn an_interrupt_during_a_retry_wait_ends_the_run_for_good() {
         !hub.runner
             .received()
             .iter()
-            .any(|c| matches!(c, SessionCommand::Send { text, .. } if text == CONTINUE_PROMPT))
+            .any(|c| matches!(c, SessionCommand::Send { text, .. } if text == RETRY_MESSAGE))
     );
     let runs = hub.service.store().runs("s1").unwrap();
     assert_eq!(runs[0].status, RunStatus::Interrupted);
@@ -714,15 +660,85 @@ async fn an_interrupt_during_a_retry_wait_ends_the_run_for_good() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_session_whose_init_offers_an_agent_tool_stops_and_later_ones_deny_it() {
+    // A claude with an agent tool fleetd's deny list doesn't name yet; the first turn would run for a minute.
+    let lines = r#"
+{"dir":"in","ms":0,"msg":{"type":"user","uuid":"u1"}}
+{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","command_uuid":"u1","state":"started"}}
+{"dir":"out","ms":0,"msg":{"type":"system","subtype":"init","tools":["Bash","Task","SwarmSpawn"]}}
+{"dir":"out","ms":60000,"msg":{"type":"result","subtype":"success","is_error":false,"result":"too late"}}
+{"dir":"in","ms":0,"msg":{"type":"user","uuid":"u2"}}
+{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","command_uuid":"u2","state":"started"}}
+{"dir":"out","ms":0,"msg":{"type":"system","subtype":"init","tools":["Bash","Task","SwarmSpawn"]}}
+{"dir":"out","ms":5,"msg":{"type":"result","subtype":"success","is_error":false,"result":"done"}}
+"#;
+    let dir = tempfile::tempdir().unwrap();
+    let mut runner = FakeRunner::from_lines(lines);
+    runner.timed = true;
+    let mut hub = hub(dir.path(), NodeStore::open_memory(10_000).unwrap(), runner).await;
+    hub.project(dir.path()).await;
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    let stopped = hub.settled("r1").await;
+    assert_eq!(stopped.latest_run.unwrap().status, RunStatus::Interrupted);
+    let said = hub
+        .service
+        .store()
+        .item("s1", "agent-tools-r1")
+        .unwrap()
+        .unwrap();
+    let ItemKind::Error { failure } = said.kind else {
+        panic!("{said:?}")
+    };
+    assert!(
+        failure.message.as_str().contains("(SwarmSpawn)"),
+        "{failure:?}"
+    );
+    assert!(
+        hub.runner
+            .received()
+            .iter()
+            .any(|c| matches!(c, SessionCommand::Shutdown { grace } if grace.is_zero()))
+    );
+
+    // The next start denies it, so its init offers none and the run completes.
+    hub.ok(send("s1", "r2")).await;
+    let done = hub.settled("r2").await;
+    assert_eq!(done.latest_run.unwrap().status, RunStatus::Completed);
+    let spawned = hub.runner.spawned();
+    assert_eq!(spawned.len(), 2);
+    assert!(
+        !spawned[0]
+            .disallowed_tools
+            .iter()
+            .any(|t| t == "SwarmSpawn")
+    );
+    assert!(
+        spawned[1]
+            .disallowed_tools
+            .iter()
+            .any(|t| t == "SwarmSpawn")
+    );
+    assert_eq!(
+        hub.service.store().item("s1", "agent-tools-r2").unwrap(),
+        None
+    );
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_run_silent_since_the_machine_woke_is_resumed_as_a_network_retry() {
     // The first turn's stream never comes back (its result is hours away); the retry's turn completes.
     let lines = r#"
-{"dir":"in","ms":0,"msg":{"type":"user"}}
-{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","state":"started"}}
-{"dir":"out","ms":7200000,"msg":{"type":"result","is_error":false,"result":"too late"}}
-{"dir":"in","ms":0,"msg":{"type":"user"}}
-{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","state":"started"}}
-{"dir":"out","ms":5,"msg":{"type":"result","is_error":false,"result":"done"}}
+{"dir":"in","ms":0,"msg":{"type":"user","uuid":"u1"}}
+{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","command_uuid":"u1","state":"started"}}
+{"dir":"out","ms":7200000,"msg":{"type":"result","subtype":"success","is_error":false,"result":"too late"}}
+{"dir":"in","ms":0,"msg":{"type":"user","uuid":"u2"}}
+{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","command_uuid":"u2","state":"started"}}
+{"dir":"out","ms":5,"msg":{"type":"result","subtype":"success","is_error":false,"result":"done"}}
 "#;
     let dir = tempfile::tempdir().unwrap();
     let mut runner = FakeRunner::from_lines(lines);
@@ -771,7 +787,7 @@ async fn a_run_silent_since_the_machine_woke_is_resumed_as_a_network_retry() {
     assert!(
         received
             .iter()
-            .any(|c| matches!(c, SessionCommand::Send { text, .. } if text == CONTINUE_PROMPT))
+            .any(|c| matches!(c, SessionCommand::Send { text, .. } if text == RETRY_MESSAGE))
     );
     // Honoured, so the process stayed: no stop, no respawn.
     assert!(
@@ -786,11 +802,11 @@ async fn a_run_silent_since_the_machine_woke_is_resumed_as_a_network_retry() {
 #[tokio::test(start_paused = true)]
 async fn deltas_reach_followers_coalesced_and_stop_at_their_message() {
     let lines = r#"
-{"dir":"in","ms":0,"msg":{"type":"user"}}
-{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","state":"started"}}
-{"dir":"out","ms":5,"msg":{"type":"result","is_error":false,"result":""}}
-{"dir":"in","ms":0,"msg":{"type":"user"}}
-{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","state":"started"}}
+{"dir":"in","ms":0,"msg":{"type":"user","uuid":"u3"}}
+{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","command_uuid":"u3","state":"started"}}
+{"dir":"out","ms":5,"msg":{"type":"result","subtype":"success","is_error":false,"result":""}}
+{"dir":"in","ms":0,"msg":{"type":"user","uuid":"u4"}}
+{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","command_uuid":"u4","state":"started"}}
 {"dir":"out","ms":0,"msg":{"type":"stream_event","event":{"type":"message_start","message":{"id":"m2"}}}}
 {"dir":"out","ms":0,"msg":{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"a"}}}}
 {"dir":"out","ms":30,"msg":{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"b"}}}}
@@ -799,7 +815,7 @@ async fn deltas_reach_followers_coalesced_and_stop_at_their_message() {
 {"dir":"out","ms":130,"msg":{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"e"}}}}
 {"dir":"out","ms":250,"msg":{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"f"}}}}
 {"dir":"out","ms":260,"msg":{"type":"assistant","message":{"id":"m2","content":[{"type":"text","text":"abcdef"}]}}}
-{"dir":"out","ms":270,"msg":{"type":"result","is_error":false,"result":"abcdef"}}
+{"dir":"out","ms":270,"msg":{"type":"result","subtype":"success","is_error":false,"result":"abcdef"}}
 "#;
     let dir = tempfile::tempdir().unwrap();
     let mut runner = FakeRunner::from_lines(lines);
@@ -924,10 +940,66 @@ async fn a_first_start_that_claude_already_knows_resumes_instead() {
         SessionWorkspace::Root,
     ))
     .await;
-    hub.settled("r1").await;
+    // claude's refusal fails the first process's send; the run itself completes on a resumed process.
+    let done = hub.settled("r1").await;
+    assert_eq!(done.status, SessionStatus::Idle);
+    assert_eq!(done.latest_run.unwrap().status, RunStatus::Completed);
     let spawned = hub.runner.spawned();
-    assert_eq!(spawned.len(), 1);
-    assert!(spawned[0].resume);
+    assert_eq!(spawned.len(), 2);
+    assert!(!spawned[0].resume);
+    assert!(spawned[1].resume);
+    let prompt = "Reply with the word OK and nothing else.";
+    let sends = sends(&hub.runner);
+    assert_eq!(sends.len(), 2);
+    assert_eq!(sends[0], ("r1".into(), prompt.into()));
+    assert_eq!(sends[1].1, prompt);
+    assert_eq!(hub.service.store().runs("s1").unwrap().len(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_retry_of_a_message_claude_never_took_in_sends_the_message_again() {
+    // The first turn fails before claude says `started`; the retry's turn completes.
+    let lines = r#"
+{"dir":"in","ms":0,"msg":{"type":"user","uuid":"u1"}}
+{"dir":"out","ms":0,"msg":{"type":"assistant","error":"overloaded","message":{"id":"m1","content":[]}}}
+{"dir":"out","ms":0,"msg":{"type":"result","subtype":"error_during_execution","is_error":true,"result":"API Error: 529 Overloaded"}}
+{"dir":"in","ms":0,"msg":{"type":"user","uuid":"u2"}}
+{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","command_uuid":"u2","state":"started"}}
+{"dir":"out","ms":0,"msg":{"type":"result","subtype":"success","is_error":false,"result":"OK"}}
+"#;
+    let dir = tempfile::tempdir().unwrap();
+    let config = SessionConfig {
+        retry_schedule_ms: vec![1000],
+        ..config(dir.path())
+    };
+    let store = NodeStore::open_memory(10_000).unwrap();
+    let mut hub = hub_with(store, FakeRunner::from_lines(lines), config).await;
+    hub.project(dir.path()).await;
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    let done = hub.settled("r1").await;
+    assert_eq!(done.latest_run.unwrap().status, RunStatus::Completed);
+    let prompt = "Reply with the word OK and nothing else.";
+    let sends = sends(&hub.runner);
+    assert_eq!(sends.len(), 2);
+    assert_ne!(sends[1].0, "r1");
+    assert_eq!(sends[1].1, prompt);
+    assert_eq!(hub.service.store().runs("s1").unwrap().len(), 1);
+}
+
+fn sends(runner: &FakeRunner) -> Vec<(String, String)> {
+    runner
+        .received()
+        .into_iter()
+        .filter_map(|c| match c {
+            SessionCommand::Send { run_id, text, .. } => Some((run_id, text)),
+            _ => None,
+        })
+        .collect()
 }
 
 #[tokio::test]
@@ -1008,17 +1080,17 @@ fn a_machine_given_a_config_dir_keeps_it_in_its_node_config() {
 }
 
 /// Three turns: a 30 s Bash call, then a reply naming S1, then a plain reply.
-const STEER_TURNS: &str = r#"{"dir":"in","ms":0,"msg":{"type":"user"}}
-{"dir":"out","ms":1,"msg":{"type":"command_lifecycle","command_uuid":"x","state":"started"}}
+const STEER_TURNS: &str = r#"{"dir":"in","ms":0,"msg":{"type":"user","uuid":"s1"}}
+{"dir":"out","ms":1,"msg":{"type":"command_lifecycle","command_uuid":"s1","state":"started"}}
 {"dir":"out","ms":5,"msg":{"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"tu1","name":"Bash","input":{"command":"sleep 30"}}]}}}
 {"dir":"out","ms":30000,"msg":{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tu1","content":"","is_error":false}]}}}
 {"dir":"out","ms":30010,"msg":{"type":"result","subtype":"success","is_error":false,"result":"slept"}}
-{"dir":"in","ms":0,"msg":{"type":"user"}}
-{"dir":"out","ms":1,"msg":{"type":"command_lifecycle","command_uuid":"x","state":"started"}}
+{"dir":"in","ms":0,"msg":{"type":"user","uuid":"s2"}}
+{"dir":"out","ms":1,"msg":{"type":"command_lifecycle","command_uuid":"s2","state":"started"}}
 {"dir":"out","ms":5,"msg":{"type":"assistant","message":{"id":"m2","content":[{"type":"text","text":"S1: dropping the docs page"}]}}}
 {"dir":"out","ms":6,"msg":{"type":"result","subtype":"success","is_error":false,"result":"S1: dropping the docs page"}}
-{"dir":"in","ms":0,"msg":{"type":"user"}}
-{"dir":"out","ms":1,"msg":{"type":"command_lifecycle","command_uuid":"x","state":"started"}}
+{"dir":"in","ms":0,"msg":{"type":"user","uuid":"s3"}}
+{"dir":"out","ms":1,"msg":{"type":"command_lifecycle","command_uuid":"s3","state":"started"}}
 {"dir":"out","ms":5,"msg":{"type":"assistant","message":{"id":"m3","content":[{"type":"text","text":"OK"}]}}}
 {"dir":"out","ms":6,"msg":{"type":"result","subtype":"success","is_error":false,"result":"OK"}}
 "#;

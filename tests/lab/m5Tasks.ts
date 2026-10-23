@@ -1,6 +1,5 @@
-// M5 "done when" 1-5, end to end on lab-a: the lead spawns a writer with `fleetd task spawn` from its own shell and
-// gets its result inline in one wake; with the cap at 1 a second spawn queues until that turn ends; a second writer
-// on the same area queues on the lease; a writer that touches a file outside its area is flagged; and the instance
+// M5 "done when" 1, 2 and 5, end to end on lab-a: the lead spawns a writer with `fleetd task spawn` from its own shell
+// and gets its result inline in one wake; with the cap at 1 a second spawn queues until that turn ends; and the instance
 // keeps Claude's native Task, Workflow and AskUserQuestion tools from every thread. Further spawns run `fleetd` from the harness in
 // the project's workspace, exactly as a lead's shell would, so they cost no lead turns. Every task turn runs on medium.
 import { execFileSync, spawnSync } from "node:child_process";
@@ -14,9 +13,7 @@ import { type Body, callToolWith, chatOrder, cli, fleetdCommand, initTools, type
 
 const MACHINE = "lab-a";
 const TURN_MS = 240_000;
-const POLICY = `areas:
-  docs: ["docs/**"]
-  api: ["api/**"]
+const POLICY = `
 `;
 const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
 
@@ -57,7 +54,7 @@ export async function m5Tasks(lab: Lab) {
   const ref = { machineId: MACHINE, projectId };
   const root = (await callTool("project_get", ref)).body.project.workspaceRoot as string;
   prepareRepo(root);
-  ok(`${root}: .fleetd/policy.yaml on main (areas docs, api); no fleetd/* branches left`);
+  ok(`${root}: .fleetd/policy.yaml on main; no fleetd/* branches left`);
 
   // `fleetd` as the lead's shell runs it: in the project's workspace, through lab-a's node socket.
   const fleetd = (...args: Array<string>) => {
@@ -138,15 +135,14 @@ export async function m5Tasks(lab: Lab) {
 
     // 1. The lead spawns T1 from its shell: a thread in a new worktree on fleetd/T1-add-file, on the medium profile.
     const spawn1 =
-      `fleetd task spawn --workstream ${workstreamId} --title "add file" --areas docs --profile ${MECHANICS} ` +
+      `fleetd task spawn --workstream ${workstreamId} --title "add file" --profile ${MECHANICS} ` +
       `--prompt "create docs/x.md with one line 'hi', commit it on your branch"`;
-    const sent = await callTool("thread_send", {
-      ...ref,
-      threadId: leadThread,
+    const sent = await lab.humanCall("chat_send", {
+      projectRef: ref,
       clientRequestId: randomUUID(),
-      message: `Run this command once in your shell, exactly as written, then stop. In later wakes about tasks, run no commands: reply with one short line and stop.\n${spawn1}`,
+      text: `Run this command once in your shell, exactly as written, then stop. In later wakes about tasks, run no commands: reply with one short line and stop.\n${spawn1}`,
     });
-    check(!sent.isError, `thread_send to the lead: ${JSON.stringify(sent.body)}`);
+    check(!sent.isError, `chat_send to the lead: ${JSON.stringify(sent.body)}`);
     const spawnTurn = leadTurnDone(cursor, "spawn T1");
     // Awaited below; a rejection before then must not crash the run before its cleanup.
     spawnTurn.catch(() => undefined);
@@ -158,30 +154,15 @@ export async function m5Tasks(lab: Lab) {
     );
     ok(`1. the lead ran fleetd task spawn: T1 started (${t1Started.event.summary}), thread ${t1.threadRef.threadId} on ${t1.branch}`);
 
-    // 3. A second writer on docs queues on the lease (spawned now, while T1 holds it).
-    const t2 = spawnTask([
-      "--workstream", workstreamId, "--title", "more docs", "--areas", "docs",
-      "--prompt", "create docs/y.md with one line 'hi', commit it on your branch",
-    ]);
-    const t2Task = await task(t2.taskId);
-    check(t2Task.state === "queued" && t2Task.queuedReason === "lease: docs held by T1", `T2 queued on the lease: ${JSON.stringify(t2Task)}`);
-    ok(`3. ${t2.taskId} queued: ${t2Task.queuedReason} (CLI said: ${t2.stdout.split("\n")[0]})`);
-
-    // 2. Cap 1: a read task queues on the slot board; so does the out-of-area writer for item 4.
+    // 2. Cap 1: a read task queues on the slot board.
     const capped = (await admin("cap_set", { cap: 1 })).body;
     check(capped.slots?.cap === 1, `cap_set 1: ${JSON.stringify(capped)}`);
     const reader = spawnTask(["--workstream", workstreamId, "--title", "say ok", "--kind", "read", "--prompt", "Reply with the single word OK."]);
     const readerTask = await task(reader.taskId);
     check(readerTask.state === "queued" && /^slots: \d+\/1 in use/u.test(readerTask.queuedReason ?? ""), `the read task queued on the cap: ${JSON.stringify(readerTask)}`);
     ok(`2. cap set to 1; ${reader.taskId} queued: ${readerTask.queuedReason}`);
-    const t4 = spawnTask([
-      "--workstream", workstreamId, "--title", "add notes", "--areas", "api",
-      "--prompt",
-      "This task tests fleetd's out-of-area check, so break the area rule this once: create notes.txt at the repository root (not under api/) with one line 'hi', and commit it on your branch.",
-    ]);
-    ok(`${t4.taskId} (api writer told to write notes.txt at the root) queued: ${(await task(t4.taskId)).queuedReason}`);
     const status = (await callTool("fleetd_status")).body.slots;
-    check(status?.cap === 1 && status.queued >= 2, `fleetd_status shows the board: ${JSON.stringify(status)}`);
+    check(status?.cap === 1 && status.queued >= 1, `fleetd_status shows the board: ${JSON.stringify(status)}`);
 
     // T1 ends: one wake to the lead carries "T1 completed" with the result tail and the branch, inline.
     const t1Done = await taskEvent("task.completed T1", t1Started.cursor, "task.completed", "T1");
@@ -207,32 +188,20 @@ export async function m5Tasks(lab: Lab) {
     check(git(root, "branch", "--list", "fleetd/T1-add-file").trim() !== "", "branch fleetd/T1-add-file exists in the repo");
     check((await task("T1")).worktreePath, `T1 records its worktree: ${JSON.stringify(await task("T1"))}`);
 
-    // 2. The read task got the freed slot only after T1's turn ended; then the cap goes back up so T2 and T4 run side by side.
+    // 2. The read task got the freed slot only after T1's turn ended.
     const readerStarted = await taskEvent(`task.started ${reader.taskId}`, t1Started.cursor, "task.started", reader.taskId);
     check(readerStarted.event.seq > t1Done.event.seq, `${reader.taskId} started (seq ${readerStarted.event.seq}) after T1 ended (seq ${t1Done.event.seq})`);
     ok(`2. ${reader.taskId} started only after T1's turn ended (seq ${readerStarted.event.seq} > ${t1Done.event.seq})`);
     await admin("cap_set", { cap: 40 });
 
-    // 3. T2 starts once T1's lease is released.
-    const t2Started = await taskEvent(`task.started ${t2.taskId}`, t1Started.cursor, "task.started", t2.taskId);
-    check(t2Started.event.seq > t1Done.event.seq, `${t2.taskId} started after T1 released docs`);
-    ok(`3. ${t2.taskId} started after T1's lease on docs was released (seq ${t2Started.event.seq})`);
-
-    // 4. T4's diff touches notes.txt, outside api: task.out_of_area with the path.
-    const outside = await taskEvent(`task.out_of_area ${t4.taskId}`, t1Started.cursor, "task.out_of_area", t4.taskId, 2 * TURN_MS);
-    check((outside.event.data.paths as Array<string>).includes("notes.txt"), `out_of_area names notes.txt: ${JSON.stringify(outside.event)}`);
-    ok(`4. task.out_of_area: ${outside.event.summary}`);
-
     // Every task ends, then the lead's wakes for them: each wake fires within WAKE_MAX_WAIT (60 s) of its trigger.
     let after = afterWake;
-    for (const id of [t2.taskId, reader.taskId, t4.taskId]) {
-      const ended = await lab.waitEvent(`${id} ends`, 2 * TURN_MS, {
-        cursor: t1Started.cursor,
-        types: ["task.completed", "task.failed"],
-        match: (e) => e.data?.taskId === id,
-      });
-      check(ended.event.type === "task.completed", `${id} completed: ${ended.event.summary}`);
-    }
+    const ended = await lab.waitEvent(`${reader.taskId} ends`, 2 * TURN_MS, {
+      cursor: t1Started.cursor,
+      types: ["task.completed", "task.failed"],
+      match: (e) => e.data?.taskId === reader.taskId,
+    });
+    check(ended.event.type === "task.completed", `${reader.taskId} completed: ${ended.event.summary}`);
     for (;;) {
       const woken = await lab
         .waitEvent("another lead wake", 75_000, { cursor: after, machineId: MACHINE, types: ["lead.woken"] })
@@ -244,7 +213,7 @@ export async function m5Tasks(lab: Lab) {
     // Task threads show as tasks in project_get, never as threads.
     const final = (await callTool("project_get", ref)).body;
     const taskThreads = new Set((final.tasks as Array<Body>).map((t) => t.threadRef?.threadId));
-    check(final.taskCounts?.done === 4 && !(final.threads as Array<Body>).some((t) => taskThreads.has(t.threadId)), `project_get: ${JSON.stringify({ taskCounts: final.taskCounts, threads: final.threads.map((t: Body) => t.threadId) })}`);
+    check(final.taskCounts?.done === 2 && !(final.threads as Array<Body>).some((t) => taskThreads.has(t.threadId)), `project_get: ${JSON.stringify({ taskCounts: final.taskCounts, threads: final.threads.map((t: Body) => t.threadId) })}`);
     ok(`project_get: taskCounts ${JSON.stringify(final.taskCounts)}; no task thread among its ${final.threads.length} threads`);
 
     // 5. The node keeps Claude's subagent and question tools (Task, Workflow, AskUserQuestion) from lead and task threads alike.

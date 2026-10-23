@@ -1,4 +1,4 @@
-//! What leads read from areas that merge after them (tasks, checks, train, leases, usage). Each area sets
+//! What leads read from areas that merge after them (tasks, checks, train, usage). Each area sets
 //! its hook once in `hub/serve`; an unset hook reads as "nothing to show".
 use std::future::Future;
 use std::pin::Pin;
@@ -60,24 +60,6 @@ pub trait TrainHook: Send + Sync {
     ) -> Option<Vec<String>>;
 }
 
-/// Policies: finish-all's max children, and whether an order starts the project's lead.
-pub trait PolicyHook: Send + Sync {
-    /// `Err` when the policy file cannot be read: finish-all fails the call.
-    fn max_children(
-        &self,
-        project_ref: &ProjectRef,
-    ) -> BoxFuture<Result<Option<u32>, super::error::LeadError>>;
-    /// `lead.autoStart`, true without it; `Err` when the policy file cannot be read.
-    fn auto_start(
-        &self,
-        project_ref: &ProjectRef,
-    ) -> BoxFuture<Result<bool, super::error::LeadError>>;
-    /// The project's area names and whether they were inferred from the repo; `None` when the policy can't be read.
-    fn areas(&self, _project_ref: &ProjectRef) -> BoxFuture<Option<(Vec<String>, bool)>> {
-        Box::pin(async { None })
-    }
-}
-
 /// GitHub through `gh api`.
 pub trait GitHubHook: Send + Sync {
     fn api(&self, path: &str) -> BoxFuture<Result<serde_json::Value, String>>;
@@ -89,6 +71,5 @@ pub struct LeadHooks {
     pub tasks: OnceLock<Arc<dyn TasksHook>>,
     pub claims: OnceLock<Arc<dyn ClaimsHook>>,
     pub train: OnceLock<Arc<dyn TrainHook>>,
-    pub policy: OnceLock<Arc<dyn PolicyHook>>,
     pub github: OnceLock<Arc<dyn GitHubHook>>,
 }

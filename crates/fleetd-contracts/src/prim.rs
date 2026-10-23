@@ -14,14 +14,6 @@ pub fn is_http_url(url: &str) -> bool {
     url::Url::parse(url).is_ok_and(|parsed| matches!(parsed.scheme(), "http" | "https"))
 }
 
-crate::brand!(
-    /// Absolute http(s) URL; `file:` and every other scheme are refused.
-    WebhookUrl,
-    name = "WebhookUrl",
-    check = is_http_url,
-    expected = "an absolute http:// or https:// URL"
-);
-
 /// JavaScript's `Number.MAX_SAFE_INTEGER`, Effect's bound for `Schema.Int`.
 pub const MAX_SAFE_INT: i64 = 9_007_199_254_740_991;
 

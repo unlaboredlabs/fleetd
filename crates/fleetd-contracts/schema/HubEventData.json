@@ -686,20 +686,6 @@
         }
       ]
     },
-    "DriftKind": {
-      "oneOf": [
-        {
-          "const": "outside_fleetd",
-          "description": "A PR merged or closed outside the train, or the base moved by a non-train push.",
-          "type": "string"
-        },
-        {
-          "const": "missed_webhook",
-          "description": "Webhooks are on and reconciliation saw a change no delivery announced.",
-          "type": "string"
-        }
-      ]
-    },
     "EnvName": {
       "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$",
       "type": "string"
@@ -761,33 +747,6 @@
       "pattern": "^([A-Za-z0-9][A-Za-z0-9-]{0,38})/([A-Za-z0-9._-]{1,100})$",
       "type": "string"
     },
-    "GithubDriftData": {
-      "description": "`github.drift`.",
-      "properties": {
-        "kind": {
-          "$ref": "#/$defs/DriftKind"
-        },
-        "lagMs": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "repo": {
-          "$ref": "#/$defs/GitHubRepo"
-        },
-        "what": {
-          "maxLength": 200,
-          "minLength": 1,
-          "type": "string"
-        }
-      },
-      "required": [
-        "repo",
-        "kind",
-        "what"
-      ],
-      "type": "object"
-    },
     "HubEventData": {
       "properties": {
         "agents.cap": {
@@ -826,9 +785,6 @@
         "claim.passed": {
           "$ref": "#/$defs/ClaimEventData"
         },
-        "github.drift": {
-          "$ref": "#/$defs/GithubDriftData"
-        },
         "machine.guard": {
           "$ref": "#/$defs/MachineGuardData"
         },
@@ -842,6 +798,9 @@
           "$ref": "#/$defs/PlanVerifiedData"
         },
         "pr.merged": {
+          "$ref": "#/$defs/TrainEventData"
+        },
+        "pr.merged_outside": {
           "$ref": "#/$defs/TrainEventData"
         },
         "project.add_failed": {
@@ -895,9 +854,6 @@
         "task.failed": {
           "$ref": "#/$defs/TaskEventData"
         },
-        "task.out_of_area": {
-          "$ref": "#/$defs/TaskEventData"
-        },
         "task.queued": {
           "$ref": "#/$defs/TaskEventData"
         },
@@ -923,12 +879,6 @@
           "$ref": "#/$defs/ThreadEventData"
         },
         "train.blocked": {
-          "$ref": "#/$defs/TrainEventData"
-        },
-        "train.frozen": {
-          "$ref": "#/$defs/TrainEventData"
-        },
-        "train.resumed": {
           "$ref": "#/$defs/TrainEventData"
         },
         "usage.breaker": {
@@ -963,12 +913,12 @@
         "ci.main",
         "claim.failed",
         "claim.passed",
-        "github.drift",
         "machine.guard",
         "machine.slept",
         "plan.changed",
         "plan.verified",
         "pr.merged",
+        "pr.merged_outside",
         "project.add_failed",
         "project.added",
         "project.clone_progress",
@@ -986,7 +936,6 @@
         "task.cancelled",
         "task.completed",
         "task.failed",
-        "task.out_of_area",
         "task.queued",
         "task.started",
         "thread.completed",
@@ -996,8 +945,6 @@
         "thread.usage_limited",
         "thread.waiting",
         "train.blocked",
-        "train.frozen",
-        "train.resumed",
         "usage.breaker",
         "usage.resumed",
         "workstream.created",
@@ -1358,17 +1305,6 @@
     "ProjectInspect": {
       "description": "What `project_inspect` found: the default branch, CI and merge rules, and one line on what the lead will need.",
       "properties": {
-        "areas": {
-          "description": "The areas writers lease: the policy file's, else inferred from the repo's layout. Empty when unknown.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "areasInferred": {
-          "description": "true: `areas` were inferred from the repo, not set in .fleetd/policy.yaml.",
-          "type": "boolean"
-        },
         "ci": {
           "$ref": "#/$defs/CiInfo"
         },
@@ -1842,14 +1778,6 @@
           "$ref": "#/$defs/Timestamp",
           "description": "When the task was spawned: a `task.started` for a task spawned before a turn is not that turn's start."
         },
-        "paths": {
-          "description": "task.out_of_area: the first 20 paths outside the leased globs.",
-          "items": {
-            "type": "string"
-          },
-          "maxItems": 20,
-          "type": "array"
-        },
         "queuedReason": {
           "type": "string"
         },
@@ -1929,7 +1857,7 @@
       "type": "object"
     },
     "TrainEventData": {
-      "description": "The merge train's events: `change.queued`, `change.ready`, `change.needs_rebase`, `change.ci_failed`,\n`change.refused`, `pr.merged`, `train.frozen`, `train.resumed`, `train.blocked`. Which fields each carries is in\n`HubEventType`'s docs.",
+      "description": "The merge train's events: `change.queued`, `change.ready`, `change.needs_rebase`, `change.ci_failed`,\n`change.refused`, `pr.merged`, `pr.merged_outside`, `train.blocked`. Which fields each carries is in\n`HubEventType`'s docs.",
       "properties": {
         "changeId": {
           "$ref": "#/$defs/ChangeId"

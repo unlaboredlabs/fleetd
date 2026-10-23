@@ -26,7 +26,6 @@ describe("where a PR is on its way to main", () => {
     expect(stateLine(row({ queue: queue("ready", { position: 0 }) }))).toMatchObject({ word: "ready to merge", tone: "working" });
     expect(stateLine(row({ queue: queue("ci_failed") }))).toMatchObject({ word: "checks failed", tone: "failed" });
     expect(stateLine(row({ queue: queue("needs_rebase") })).word).toBe("conflicts");
-    expect(stateLine(row({ queue: queue("reviewing", { paused: true }) })).sentence).toMatch(/Merging is paused for this repository\.$/u);
     for (const s of ["queued", "reviewing", "ready", "rebasing", "ci", "merging", "merged", "needs_rebase", "ci_failed", "refused", "abandoned"] as const) {
       const line = stateLine(row({ queue: queue(s) }));
       expect(`${line.word} ${line.sentence}`).not.toMatch(/train|queue|_/u);

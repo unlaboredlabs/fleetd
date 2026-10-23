@@ -10,15 +10,15 @@ mod session;
 pub mod spans;
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use fleetd_contracts::effort::{Effort, MODEL};
 use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::sessions::RunnerInfo;
 
 use super::{
-    BoxFut, ExitInfo, Runner, RunnerError, SessionHandle, SessionSpec, claude_setup, conformance,
-    failure, process,
+    BoxFut, Runner, RunnerError, SessionHandle, SessionSpec, claude_setup, conformance, failure,
+    process,
 };
 use mapper::{Classify, StreamMapper};
 
@@ -43,10 +43,18 @@ const WHY_SCHEDULE: &str = "fleetd schedules work (tasks, wakes), never inside o
                             restart.";
 const WHY_WORKTREE: &str = "fleetd owns worktrees, one per writer. A session that moves its own folder can't be \
                             resumed.";
+const WHY_NESTED: &str = "A claude started inside a session runs outside fleetd's slots, with its own subagents and \
+                          any model. Agents start agents with spawn_agent.";
 
 explained! {
-    /// Tools no fleetd session gets (names from claude 2.1.302's `system/init` tool list). The probe adds any further
-    /// agent tool the installed claude has ([`conformance::agent_like`]), so a new one can't slip in.
+    /// Tools no fleetd session gets (names from claude 2.1.302's `system/init` tool list). Any further agent tool a
+    /// session's init still offers ([`conformance::agent_like`]) stops that session and is denied from then on.
+    ///
+    /// Then the Bash rules against a nested claude. claude itself matches `Bash(claude *)` in every part of a compound
+    /// command, in subshells and `$(…)`, past any leading `VAR=…`, and past the wrappers it strips (`timeout`,
+    /// `nice`, `nohup`, `command`, bare `xargs`, …). It matches no other spelling of the program, so the rest name
+    /// the obvious ones: a path to the binary, a package runner, a `-c` shell, `env`, `exec`, `xargs` with flags. A
+    /// script that hides the name still gets through: these keep agents honest, they are not a sandbox.
     ALWAYS_DISALLOWED, DISALLOWED_WHY: &str = [
         "Task" => WHY_TASK,
         "Agent" => WHY_TASK,
@@ -66,6 +74,18 @@ explained! {
         "ScheduleWakeup" => WHY_SCHEDULE,
         "EnterWorktree" => WHY_WORKTREE,
         "ExitWorktree" => WHY_WORKTREE,
+        "Bash(claude *)" => WHY_NESTED,
+        "Bash(*bin/claude)" => WHY_NESTED,
+        "Bash(*bin/claude *)" => WHY_NESTED,
+        "Bash(*/claude -*)" => WHY_NESTED,
+        "Bash(*claude/versions/*)" => WHY_NESTED,
+        "Bash(npx *claude*)" => WHY_NESTED,
+        "Bash(bunx *claude*)" => WHY_NESTED,
+        "Bash(*@anthropic-ai/claude-code*)" => WHY_NESTED,
+        "Bash(*sh -*c *claude*)" => WHY_NESTED,
+        "Bash(env *claude*)" => WHY_NESTED,
+        "Bash(exec *claude*)" => WHY_NESTED,
+        "Bash(xargs *claude*)" => WHY_NESTED,
     ]
 }
 
@@ -121,8 +141,8 @@ pub fn subagents_off_settings_env() -> serde_json::Map<String, serde_json::Value
         .collect()
 }
 
-/// `--disallowedTools` for a claude fleetd starts: [`ALWAYS_DISALLOWED`], then `extra` (the probe's agent tools, the
-/// project's own denials), each once.
+/// `--disallowedTools` for a claude fleetd starts: [`ALWAYS_DISALLOWED`], then `extra` (agent tools an earlier
+/// session's init offered, the project's own denials), each once.
 pub fn disallowed_tools<'a>(extra: impl IntoIterator<Item = &'a String>) -> Vec<String> {
     let mut tools: Vec<String> = ALWAYS_DISALLOWED.iter().map(|t| (*t).to_owned()).collect();
     for tool in extra {
@@ -136,12 +156,11 @@ pub fn disallowed_tools<'a>(extra: impl IntoIterator<Item = &'a String>) -> Vec<
 /// Claude's auto memory is off in every claude fleetd starts, whatever the user's settings say: fleetd owns an
 /// agent's context (briefs, decisions, instructions), and a memory claude keeps per cwd would carry stale, unreviewed
 /// notes from one agent's worktree to the next. Both knobs, since either alone has been ignored by some claude
-/// versions. A project opts back in with `claude.autoMemory: true` in its policy file (sessions only).
+/// versions.
 pub const AUTO_MEMORY_OFF_ENV: (&str, &str) = ("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1");
 pub const AUTO_MEMORY_OFF_WHY: &str = "fleetd owns an agent's context (briefs, decisions, instructions). Notes claude \
                                        keeps per folder would carry stale, unreviewed text from one agent's worktree \
-                                       to the next. A project opts back in with claude.autoMemory: true in its policy \
-                                       file.";
+                                       to the next.";
 /// The same as a `--settings` value, for the one-shot claude runs that take no overlay file.
 pub const AUTO_MEMORY_OFF_SETTINGS: &str = r#"{"autoMemoryEnabled":false}"#;
 
@@ -183,8 +202,6 @@ pub struct ClaudeRunner {
     pub binary: PathBuf,
     /// [`failure::classify`]; replaceable so tests can see the evidence a run left.
     pub classify: Classify,
-    /// The agent tools the latest probe found; every session denies them too.
-    agent_tools: Arc<Mutex<Vec<String>>>,
 }
 
 impl ClaudeRunner {
@@ -192,7 +209,6 @@ impl ClaudeRunner {
         Self {
             binary,
             classify: Arc::new(failure::classify),
-            agent_tools: Arc::default(),
         }
     }
 
@@ -237,10 +253,7 @@ impl ClaudeRunner {
             args.extend(spec.allowed_tools.iter().cloned());
         }
         args.push("--disallowedTools".into());
-        let probed = self.agent_tools.lock().unwrap().clone();
-        args.extend(disallowed_tools(
-            probed.iter().chain(&spec.disallowed_tools),
-        ));
+        args.extend(disallowed_tools(&spec.disallowed_tools));
         // No `--strict-mcp-config`: sessions run with the user's own claude setup, MCP servers included, and fleetd's
         // servers are added to them.
         if let Some(mcp) = &spec.mcp_config {
@@ -263,13 +276,7 @@ impl ClaudeRunner {
 
 impl Runner for ClaudeRunner {
     fn probe<'a>(&'a self, env: &'a [(String, String)]) -> BoxFut<'a, RunnerInfo> {
-        Box::pin(async move {
-            let info = conformance::probe(&self.binary, env).await;
-            if let Some(found) = &info.agent_tools {
-                *self.agent_tools.lock().unwrap() = found.clone();
-            }
-            info
-        })
+        Box::pin(conformance::probe(&self.binary, env))
     }
 
     fn spawn(&self, mut spec: SessionSpec) -> Result<SessionHandle, RunnerError> {
@@ -361,10 +368,10 @@ pub fn session_file(config_dir: &Path, cwd: &Path, id: &str) -> Option<PathBuf> 
     })
 }
 
-/// claude refused to start because the session id is taken (a first start of a session that already exists, when
-/// [`session_file`] could not tell). The caller retries once with `resume`.
-pub fn session_in_use(exit: &ExitInfo) -> bool {
-    exit.stderr_tail.contains("is already in use")
+/// claude's words (stderr, so also the failed run's message) for a first start of a session it already has, when
+/// [`session_file`] could not tell. The session service sends the run again to a resumed process.
+pub fn session_in_use(text: &str) -> bool {
+    text.contains("is already in use")
 }
 
 #[cfg(test)]
@@ -404,7 +411,10 @@ mod tests {
              --allowedTools Bash(npm test:*) Bash(git commit -m \"a, b\") \
              --disallowedTools Task Agent Workflow ListAgents SendMessage TaskStop TaskOutput TeamCreate TeamDelete \
              AskUserQuestion EnterPlanMode ExitPlanMode CronCreate CronDelete \
-             CronList ScheduleWakeup EnterWorktree ExitWorktree WebFetch \
+             CronList ScheduleWakeup EnterWorktree ExitWorktree Bash(claude *) Bash(*bin/claude) \
+             Bash(*bin/claude *) Bash(*/claude -*) Bash(*claude/versions/*) Bash(npx *claude*) Bash(bunx *claude*) \
+             Bash(*@anthropic-ai/claude-code*) Bash(*sh -*c *claude*) Bash(env *claude*) Bash(exec *claude*) \
+             Bash(xargs *claude*) WebFetch \
              --setting-sources user,project,local --add-dir /work/root"
         );
 
@@ -424,21 +434,66 @@ mod tests {
         assert!(!args.contains("--strict-mcp-config"));
     }
 
+    /// A Bash deny rule as claude matches it against one part of a command, after it split off the other parts and
+    /// stripped leading assignments and its wrappers: `*` is any text, and a trailing ` *` that is the only `*` also
+    /// matches the bare command.
+    fn denies(rule: &str, command: &str) -> bool {
+        fn glob(p: &[u8], s: &[u8]) -> bool {
+            match p.split_first() {
+                None => s.is_empty(),
+                Some((b'*', rest)) => (0..=s.len()).any(|i| glob(rest, &s[i..])),
+                Some((c, rest)) => s.first() == Some(c) && glob(rest, &s[1..]),
+            }
+        }
+        let Some(p) = rule.strip_prefix("Bash(").and_then(|r| r.strip_suffix(')')) else {
+            return false;
+        };
+        let bare = p.strip_suffix(" *").filter(|b| !b.contains('*'));
+        glob(p.as_bytes(), command.as_bytes()) || bare == Some(command)
+    }
+
     #[test]
-    fn every_session_denies_the_agent_tools_the_probe_found() {
-        let runner = ClaudeRunner::new("claude".into());
-        *runner.agent_tools.lock().unwrap() = vec!["Task".into(), "TeamSpawn".into()];
-        let args = runner.args(&spec());
-        let from = args.iter().position(|a| a == "--disallowedTools").unwrap() + 1;
-        let to = args.iter().position(|a| a == "--setting-sources").unwrap();
-        let denied = &args[from..to];
-        assert!(AGENT_TOOLS.iter().all(|t| denied.iter().any(|d| d == t)));
-        // Each once, the probe's new one and the project's own denial after fleetd's.
-        assert_eq!(denied.iter().filter(|d| *d == "Task").count(), 1);
-        assert_eq!(
-            &denied[ALWAYS_DISALLOWED.len()..],
-            ["TeamSpawn", "WebFetch"]
-        );
+    fn no_spelling_of_claude_runs_in_an_agents_bash() {
+        let denied = |c: &str| ALWAYS_DISALLOWED.iter().any(|r| denies(r, c));
+        for nested in [
+            "claude",
+            "claude -p hi",
+            // A helper call on another model.
+            "claude -p --model claude-haiku-4-5 'sum this up'",
+            "/usr/local/bin/claude -p hi",
+            "~/.local/bin/claude --print hi",
+            "./node_modules/.bin/claude -p hi",
+            "/opt/claude -p hi",
+            "~/.local/share/claude/versions/2.1.302 -p hi",
+            "npx claude -p hi",
+            "npx -y @anthropic-ai/claude-code -p hi",
+            "bunx @anthropic-ai/claude-code -p hi",
+            "pnpm dlx @anthropic-ai/claude-code -p hi",
+            "npm exec -- @anthropic-ai/claude-code@latest -p hi",
+            "sh -c 'claude -p hi'",
+            "bash -lc \"claude -p hi\"",
+            "/bin/zsh -c 'cd /w && claude -p hi'",
+            "env -u CLAUDECODE claude -p hi",
+            "env CLAUDECODE= /usr/bin/claude -p hi",
+            "exec claude -p hi",
+            "xargs -0 claude -p",
+        ] {
+            assert!(denied(nested), "{nested}");
+        }
+        // Everyday work on fleetd itself, whose runner lives in a folder named claude.
+        for work in [
+            "cargo test -p fleetd --lib node::runner::claude",
+            "cat crates/fleetd/src/node/runner/claude/mod.rs",
+            "git log --oneline -- crates/fleetd/src/node/runner/claude/",
+            "rg -n claude crates docs",
+            "ls ~/.claude",
+            "git commit -m 'fix(node): the claude runner resumes'",
+            "npx vitest run",
+            "env",
+            "claudette --help",
+        ] {
+            assert!(!denied(work), "{work}");
+        }
     }
 
     #[test]

@@ -26,7 +26,7 @@ fn repo() -> GitHubRepo {
 fn task(id: &str, branch: &str) -> Task {
     serde_json::from_value(json!({
         "taskId": id, "projectRef": { "machineId": "devbox", "projectId": "web" }, "workstreamId": "W3",
-        "title": "Add the pricing page", "kind": "write", "prompt": "do it", "areas": ["app"],
+        "title": "Add the pricing page", "kind": "write", "prompt": "do it",
         "model": "claude-opus-5-5", "effort": "high", "state": "done", "attempt": 1, "createdAt": AT,
         "branch": branch, "threadRef": { "machineId": "devbox", "threadId": format!("s-{id}") },
     }))
@@ -149,7 +149,7 @@ fn the_list_joins_github_with_the_queue_and_names_the_writing_agent() {
     let tasks = vec![task("T4", "fleetd/T4-pricing"), task("T8", "feature-9")];
     let mut ctx = RowCtx::with_tasks(&tasks);
     ctx.reviews_needed.insert("X1".into(), 2);
-    ctx.queues.insert("acme/web".into(), (true, 3));
+    ctx.queues.insert("acme/web".into(), 3);
     let pulls = vec![
         (
             repo(),
@@ -210,8 +210,8 @@ fn the_list_joins_github_with_the_queue_and_names_the_writing_agent() {
     assert_eq!(seven.author.login.as_deref(), Some("octo"));
     let queue = seven.queue.as_ref().unwrap();
     assert_eq!(
-        (queue.state, queue.paused, queue.length.get()),
-        (ChangeState::NeedsRebase, true, 3)
+        (queue.state, queue.length.get()),
+        (ChangeState::NeedsRebase, 3)
     );
     let reason = queue.reason.as_deref().unwrap();
     assert!(

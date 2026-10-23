@@ -46,3 +46,8 @@ question card
 \binbox_reply\b
 \basks_list\b
 recs fine
+
+# The train's freeze, stacked-PR builds and opt-in GitHub webhooks are gone: the `hold` label holds a PR.
+train_freeze
+github-webhook
+fleetd/stack

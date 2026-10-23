@@ -73,7 +73,7 @@ pub fn spawn_refusal(
     if open_children.len() as u32 >= max_children {
         return Some(Refusal {
             message: format!(
-                "{} already has {} open children, the most finishAll.maxChildren allows ({max_children}).",
+                "{} already has {} open children, the most one finish-all run may have ({max_children}).",
                 parent.workstream_id,
                 open_children.len()
             ),

@@ -4,20 +4,17 @@
 //! A run that fails Auth marks the login logged out at once, so the hub shows the `claude auth login` fix without
 //! waiting for a probe. Any later probe that reports logged in clears the mark. That includes a login in the macOS
 //! keychain, which changes no file the node could watch, and the probe makes no model call. A probe that started
-//! before the failure says nothing about it. While the runner is unusable the node re-probes every
-//! [`RECHECK_AFTER`] and pushes each change, so the hub's cached state, and with it its launch gate, flips back
-//! within seconds of the fix.
+//! before the failure says nothing about it. A usable runner is probed once, at start. While it is unusable the node
+//! re-probes every [`RECHECK_AFTER`] and pushes each change, so the hub's cached state, and with it its launch gate,
+//! flips back within seconds of the fix.
 use std::time::Duration;
 
 use tokio::time::Instant;
 
 use fleetd_contracts::sessions::{LoginStatus, RunnerInfo};
 
-use crate::node::runner::conformance::subagents_problem;
 use crate::node::runner::failure::login_fix;
 
-/// The scheduled probe: version drift, a login that expired, a conformance break after `claude update`.
-pub const PROBE_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
 /// How often a runner that can't run sessions is re-probed.
 pub const RECHECK_AFTER: Duration = Duration::from_secs(15);
 
@@ -31,10 +28,6 @@ struct AuthMark {
 pub struct Health {
     probed: Option<(RunnerInfo, Instant)>,
     auth_failed: Option<AuthMark>,
-    /// What the latest session that should have auto memory off showed in its `system/init`.
-    auto_memory: Option<bool>,
-    /// Claude's own subagents the latest session's `system/init` still offered.
-    subagent_leaks: Vec<String>,
 }
 
 impl Health {
@@ -42,25 +35,6 @@ impl Health {
     pub fn info(&self) -> Option<RunnerInfo> {
         let (probed, _) = self.probed.as_ref()?;
         let mut info = probed.clone();
-        info.auto_memory = self.auto_memory;
-        if !self.subagent_leaks.is_empty() {
-            // A live session broke what fleetd guarantees, so no new one starts until a probe says otherwise.
-            let mut leaks = info.subagent_leaks.take().unwrap_or_default();
-            leaks.extend(
-                self.subagent_leaks
-                    .iter()
-                    .filter(|l| !leaks.contains(l))
-                    .cloned()
-                    .collect::<Vec<_>>(),
-            );
-            info.conformance_ok = Some(false);
-            let problem = subagents_problem(&leaks);
-            info.problem = Some(match info.problem.take() {
-                Some(other) => format!("{problem} {other}"),
-                None => problem,
-            });
-            info.subagent_leaks = Some(leaks);
-        }
         if let Some(mark) = &self.auth_failed {
             info.login = LoginStatus::LoggedOut;
             let fix = login_fix(info.proxy.is_some());
@@ -76,29 +50,20 @@ impl Health {
         Some(info)
     }
 
-    /// How long until the next probe: none yet, then [`PROBE_EVERY`] after the last one while the runner is usable
-    /// and [`RECHECK_AFTER`] while it is not. A `runner_info` call answers from the last probe until then.
-    pub fn next_probe_in(&self, now: Instant) -> Duration {
+    /// How long until the next probe: none yet, then [`RECHECK_AFTER`] after the last one while the runner is
+    /// unusable. `None` while it is usable: a `runner_info` call answers from the last probe.
+    pub fn next_probe_in(&self, now: Instant) -> Option<Duration> {
         let Some((_, at)) = &self.probed else {
-            return Duration::ZERO;
+            return Some(Duration::ZERO);
         };
-        let every = if self.info().is_some_and(|i| usable(&i)) {
-            PROBE_EVERY
-        } else {
-            RECHECK_AFTER
-        };
-        every.saturating_sub(now.saturating_duration_since(*at))
-    }
-
-    /// A session's `system/init` showed these of claude's own subagents (empty: none).
-    pub fn subagents_seen(&mut self, leaks: Vec<String>) {
-        self.subagent_leaks = leaks;
+        let usable = self
+            .info()
+            .is_some_and(|i| i.login == LoginStatus::LoggedIn && i.conformance_ok != Some(false));
+        (!usable).then(|| RECHECK_AFTER.saturating_sub(now.saturating_duration_since(*at)))
     }
 
     /// Records a probe that started at `started`.
     pub fn probed(&mut self, info: RunnerInfo, started: Instant) {
-        // A fresh probe of a (perhaps reinstalled) claude starts over; the next session re-checks.
-        self.subagent_leaks.clear();
         if info.login == LoginStatus::LoggedIn
             && self
                 .auth_failed
@@ -118,19 +83,10 @@ impl Health {
         });
     }
 
-    /// A session that should have auto memory off started; `on`: its `system/init` still named a memory dir.
-    pub fn auto_memory_seen(&mut self, on: bool) {
-        self.auto_memory = Some(on);
-    }
-
     /// A run completed, so the login works.
     pub fn run_completed(&mut self) {
         self.auth_failed = None;
     }
-}
-
-fn usable(info: &RunnerInfo) -> bool {
-    info.version_ok && info.login == LoginStatus::LoggedIn && info.conformance_ok != Some(false)
 }
 
 #[cfg(test)]
@@ -152,46 +108,50 @@ mod tests {
             proxy: None,
             proxy_source: None,
             config_dir: None,
-            auto_memory: None,
-            agent_tools: Some(vec!["Task".into()]),
-            subagent_leaks: Some(vec![]),
         }
     }
 
     #[test]
-    fn a_usable_runner_is_probed_every_six_hours_and_an_unusable_one_every_fifteen_seconds() {
+    fn a_usable_runner_is_probed_once_and_an_unusable_one_every_fifteen_seconds() {
         let t0 = Instant::now();
         let mut health = Health::default();
-        assert_eq!(health.next_probe_in(t0), Duration::ZERO);
+        assert_eq!(health.next_probe_in(t0), Some(Duration::ZERO));
 
         health.probed(info(LoginStatus::LoggedIn), t0);
-        let hour = Duration::from_secs(3600);
-        assert_eq!(health.next_probe_in(t0 + hour), PROBE_EVERY - hour);
-        assert_eq!(health.next_probe_in(t0 + PROBE_EVERY), Duration::ZERO);
-
-        for unusable in [
-            info(LoginStatus::LoggedOut),
+        assert_eq!(health.next_probe_in(t0 + Duration::from_secs(86_400)), None);
+        // Outside the tested range is only a warning.
+        health.probed(
             RunnerInfo {
                 version_ok: false,
                 ..info(LoginStatus::LoggedIn)
             },
+            t0,
+        );
+        assert_eq!(health.next_probe_in(t0), None);
+
+        for unusable in [
+            info(LoginStatus::LoggedOut),
             RunnerInfo {
                 conformance_ok: Some(false),
                 ..info(LoginStatus::LoggedIn)
             },
         ] {
             health.probed(unusable, t0);
-            assert_eq!(health.next_probe_in(t0), RECHECK_AFTER);
-            assert_eq!(health.next_probe_in(t0 + RECHECK_AFTER), Duration::ZERO);
+            assert_eq!(health.next_probe_in(t0), Some(RECHECK_AFTER));
+            assert_eq!(
+                health.next_probe_in(t0 + RECHECK_AFTER),
+                Some(Duration::ZERO)
+            );
         }
 
         // An Auth failure makes a usable runner unusable without a probe: re-checked RECHECK_AFTER after the last one.
+        let hour = Duration::from_secs(3600);
         health.probed(info(LoginStatus::LoggedIn), t0);
         health.auth_failed("Not logged in · Please run /login", t0 + hour);
-        assert_eq!(health.next_probe_in(t0 + hour), Duration::ZERO);
-        // The fix lands; the next probe sees it and the schedule goes back to six hours.
+        assert_eq!(health.next_probe_in(t0 + hour), Some(Duration::ZERO));
+        // The fix lands; the next probe sees it and no further one is scheduled.
         health.probed(info(LoginStatus::LoggedIn), t0 + hour);
-        assert_eq!(health.next_probe_in(t0 + hour), PROBE_EVERY);
+        assert_eq!(health.next_probe_in(t0 + hour), None);
     }
 
     #[test]
@@ -218,7 +178,7 @@ mod tests {
             ))
         );
         // Logged out is unusable and the last probe is older than RECHECK_AFTER: probed again now.
-        assert_eq!(health.next_probe_in(failed), Duration::ZERO);
+        assert_eq!(health.next_probe_in(failed), Some(Duration::ZERO));
 
         // A probe that started before the failure, finishing after it, says nothing about it.
         health.probed(info(LoginStatus::LoggedIn), failed - Duration::from_secs(1));
