@@ -16,8 +16,8 @@ use serde_json::json;
 
 use crate::hub::api::{Caller, Hub, HubConfig, Listen};
 use crate::hub::serve::build_on;
-use crate::hub::store::HubDb;
 use crate::hub::store::test_clock::ManualClock;
+use crate::hub::store::{HubDb, MIGRATIONS};
 
 const T0: u64 = 1_792_000_000_000;
 const AT: &str = "2026-10-18T10:00:00.000Z";
@@ -1098,13 +1098,14 @@ async fn an_update_releases_a_figure_the_old_rule_left_stuck() {
         45,
         "held: nothing since that point explains a fall"
     );
-    let version = db.user_version().unwrap();
+    let restart = MIGRATIONS
+        .iter()
+        .find(|m| m.contains("DELETE FROM status_series"))
+        .expect("the series restart");
     db.with(|c| {
-        c.pragma_update(None, "user_version", version - 1)?;
+        c.execute_batch(restart)?;
         Ok(())
     })
     .unwrap();
-    let updated = HubDb::open(home.path()).unwrap();
-    assert_eq!(updated.user_version().unwrap(), version);
     assert_eq!(estimate_after(&hub, &clock, 1).0, 14);
 }

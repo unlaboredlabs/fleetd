@@ -15,6 +15,8 @@ mod tests;
 pub use db::{HubDb, StoreError, expand_home, resolve_hub_home};
 pub use event_log::{EventLog, NewEvent, WaitInput};
 pub use hub_store::{HubStore, StoredThread};
+#[cfg(test)]
+pub(crate) use migrations::MIGRATIONS;
 
 use crate::clock::Clock;
 use std::time::UNIX_EPOCH;
