@@ -32,7 +32,6 @@ use crate::prompts::{
     PromptDetail, PromptId, PromptRef, PromptScope, PromptSummary, PromptVersion, PromptWarning,
     RetiredPromptOverride, SessionPrompt,
 };
-use crate::retro::{RetroProposal, RetroProposalState, RetroRun};
 use crate::secrets::{SealedSecret, SecretFingerprint};
 use crate::status::{ProjectStatusRow, StatusDoc, StatusScope};
 use crate::steer::{Steer, SteerId, SteerMode, SteerTarget};
@@ -776,27 +775,6 @@ output!(IncidentsListOutput {
     counts_since: Timestamp,
 });
 
-// retro_proposals, retro_run (M12)
-input!(RetroProposalsInput {
-    state: Option<RetroProposalState>,
-    #[serde(default)]
-    limit: IntOr<1, 100, 20>,
-});
-output!(RetroProposalsOutput {
-    /// Newest first.
-    proposals: List<RetroProposal, 0, 100>,
-    /// The global Decision policy.retro.apply is true: wording changes apply on their own and gate changes wait for a person's decision.
-    apply: bool,
-    last_run: Option<RetroRun>,
-});
-input!(RetroRunInput {
-    #[serde(default)]
-    window_days: IntOr<1, 28, 14>,
-    /// Propose only, even when policy.retro.apply is true.
-    advise: Option<bool>,
-});
-output!(RetroRunOutput { run: RetroRun, proposals: List<RetroProposal, 0, 10> });
-
 // changes_list
 input!(ChangesListInput {
     project_ref: Option<ProjectRef>,
@@ -1452,9 +1430,6 @@ tools! {
     usage_resume => UsageResume, Operate, UsageResumeInput, UsageResumeOutput;
     claims_list => ClaimsList, Read, ClaimsListInput, ClaimsListOutput;
     incidents_list => IncidentsList, Read, IncidentsListInput, IncidentsListOutput;
-    retro_proposals => RetroProposals, Read, RetroProposalsInput, RetroProposalsOutput;
-    // Admin on every machine: a retro reads every project's incidents and changes hub-wide playbooks.
-    retro_run => RetroRun, Admin, RetroRunInput, RetroRunOutput;
     changes_list => ChangesList, Read, ChangesListInput, ChangesListOutput;
     train_get => TrainGet, Read, TrainGetInput, TrainGetOutput;
     train_freeze => TrainFreeze, Operate, TrainFreezeInput, TrainFreezeOutput;
@@ -1475,7 +1450,7 @@ tools! {
     order_stop => OrderStop, Operate, OrderStopInput, OrderStopOutput;
     prompts_list => PromptsList, Read, PromptsListInput, PromptsListOutput;
     prompt_get => PromptGet, Read, PromptGetInput, PromptGetOutput;
-    // Global: admin on every machine, as the retro; project: admin on its machine; or a person's device (a human key)
+    // Global: admin on every machine; project: admin on its machine; or a person's device (a human key)
     // with operate there. The handler checks which.
     prompt_set => PromptSet, Operate, PromptSetInput, PromptSetOutput;
     prompt_reset => PromptReset, Operate, PromptResetInput, PromptResetOutput;

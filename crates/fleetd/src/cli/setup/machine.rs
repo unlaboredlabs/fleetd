@@ -681,10 +681,7 @@ pub async fn add(a: AddArgs) -> Result<Option<Added>, u8> {
         None,
     )
     .await;
-    let logged_in = serde_json::from_str::<serde_json::Value>(status.stdout.trim())
-        .ok()
-        .and_then(|v| v.get("loggedIn").and_then(serde_json::Value::as_bool))
-        == Some(true);
+    let logged_in = logged_in(&status.stdout);
     let mut notes = plan.notes.clone();
     if !logged_in {
         let login = login_command(&claude, config_dir.as_deref());
@@ -899,6 +896,14 @@ impl AddArgs {
             claude_config_dir: None,
         }
     }
+}
+
+/// `claude auth status --json` says it is logged in.
+pub(super) fn logged_in(stdout: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(stdout.trim())
+        .ok()
+        .and_then(|v| v.get("loggedIn").and_then(serde_json::Value::as_bool))
+        == Some(true)
 }
 
 #[cfg(test)]

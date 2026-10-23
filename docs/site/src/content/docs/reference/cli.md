@@ -242,14 +242,6 @@ fleetd node run [--home <dir>]
 
 keep the link up for a machine that has joined
 
-### fleetd retro run {#retro-run}
-
-```text
-fleetd retro run --hub <url> --key-file <path> [--window 14d] [--advise]
-```
-
-run the retro now: one claude -p turn over the window's incidents (1-28 days) proposes playbook changes; `--advise` only suggests them
-
 ### fleetd prompts list {#prompts-list}
 
 ```text

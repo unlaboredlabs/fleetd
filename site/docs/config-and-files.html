@@ -175,30 +175,11 @@ after you change it.</p>
 <li>Restart the node.</li>
 </ol>
 <p>A session resumes only under the config dir it started in.</p>
-<p>The hub’s own <code dir="auto">claude</code> (the retro) uses your normal login on the hub machine, or the gateway
-variables in <code dir="auto">claude.env</code>.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="claude-env">claude.env</h2><a class="sl-anchor-link" href="#claude-env"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “claude.env”</span></a></div>
 <p>Optional. <code dir="auto">KEY=VALUE</code> lines for every <code dir="auto">claude</code> fleetd runs, for a variable your login needs that the services don’t
 see. Blank lines, <code dir="auto">#</code> comments and <code dir="auto">export </code> are allowed. Keep it mode <code dir="auto">0600</code>.</p>
 <div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="ini"><code><div class="ec-line"><div class="code"><span style="--0:#F97583;--1:#BF3441">CLAUDE_CODE_OAUTH_TOKEN</span><span style="--0:#E1E4E8;--1:#24292E">=&lt;token from claude setup-token&gt;</span></div></div><div class="ec-line"><div class="code"><span style="--0:#99A0A6;--1:#616972"># or</span></div></div><div class="ec-line"><div class="code"><span style="--0:#F97583;--1:#BF3441">ANTHROPIC_BASE_URL</span><span style="--0:#E1E4E8;--1:#24292E">=https://gateway.example.com</span></div></div><div class="ec-line"><div class="code"><span style="--0:#F97583;--1:#BF3441">ANTHROPIC_AUTH_TOKEN</span><span style="--0:#E1E4E8;--1:#24292E">=&lt;token&gt;</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="CLAUDE_CODE_OAUTH_TOKEN=<token from claude setup-token># orANTHROPIC_BASE_URL=https://gateway.example.comANTHROPIC_AUTH_TOKEN=<token>"><div></div></button></div></figure></div>
-<table>
-<thead>
-<tr>
-<th>Reader</th>
-<th>Uses</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Nodes</td>
-<td>Every line, in each session’s environment. Re-read at each session start.</td>
-</tr>
-<tr>
-<td>The hub</td>
-<td>Only <code dir="auto">ANTHROPIC_BASE_URL</code>, <code dir="auto">ANTHROPIC_AUTH_TOKEN</code>, <code dir="auto">ANTHROPIC_API_KEY</code> and <code dir="auto">CLAUDE_CODE_OAUTH_TOKEN</code>. Read when the hub starts, so restart it after a change.</td>
-</tr>
-</tbody>
-</table>
+<p>Nodes put every line in each session’s environment, re-read at each session start.</p>
 <p>The <code dir="auto">env</code> in your <code dir="auto">~/.claude/settings.json</code> outranks it, as it does for your own <code dir="auto">claude</code>.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="policy">.fleetd/policy.yaml</h2><a class="sl-anchor-link" href="#policy"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “.fleetd/policy.yaml”</span></a></div>
 <p>An optional file in a project’s repo. Commit it to the default branch; changes apply within a minute. Without
@@ -391,10 +372,6 @@ Every command then keeps all its state there and never reads or writes <code dir
 <tr>
 <td>Lead-side commands (<code dir="auto">claim</code>, <code dir="auto">change</code>, <code dir="auto">plan</code>, …)</td>
 <td><code dir="auto">FLEETD_NODE_SOCK</code>, else <code dir="auto">$FLEETD_HOME/node/node.sock</code>. Sessions get it set.</td>
-</tr>
-<tr>
-<td><code dir="auto">retro</code></td>
-<td>No home: it always takes <code dir="auto">--hub</code> and <code dir="auto">--key-file</code>.</td>
 </tr>
 </tbody>
 </table>

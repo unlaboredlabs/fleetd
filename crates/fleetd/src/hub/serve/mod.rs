@@ -369,7 +369,6 @@ pub fn build_on(
         ops: ops.ports,
         usage: ops.usage,
         doctor: ops.doctor,
-        retro: ops.retro,
         approvals: ops.approvals,
         train,
         reviews,

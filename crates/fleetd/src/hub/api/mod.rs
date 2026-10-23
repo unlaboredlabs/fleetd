@@ -132,7 +132,6 @@ pub struct Hub {
     pub ops: Arc<crate::hub::usage::wire::OpsPorts>,
     pub usage: Arc<crate::hub::usage::Usage>,
     pub doctor: Arc<crate::hub::doctor::Doctor>,
-    pub retro: Arc<crate::hub::retro::Retro>,
     pub approvals: Arc<crate::hub::approvals::Approvals>,
     pub train: Arc<crate::hub::train::Train>,
     pub reviews: Arc<crate::hub::reviews::Reviews>,
@@ -159,7 +158,6 @@ pub fn registry() -> Registry {
     crate::hub::checks::tools::register(&mut tools);
     crate::hub::usage::tools::register(&mut tools);
     crate::hub::doctor::tools::register(&mut tools);
-    crate::hub::retro::tools::register(&mut tools);
     crate::hub::approvals::tools::register(&mut tools);
     crate::hub::sessions_tools::register(&mut tools);
     crate::hub::projects::tools::register(&mut tools);

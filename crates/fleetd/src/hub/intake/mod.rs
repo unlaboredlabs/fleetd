@@ -1,3 +1,2 @@
-//! What arrives with a person's message: its attached files, and the hub's own one-shot `claude -p` runner.
+//! What arrives with a person's message: its attached files.
 pub mod attachments;
-pub mod oneshot;

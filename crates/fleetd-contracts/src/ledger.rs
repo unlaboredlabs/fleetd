@@ -646,8 +646,8 @@ brand!(
     pattern = r"^/"
 );
 
-/// A retro playbook change that relaxes a gate (fewer reviewers, a weaker or removed check, a looser rule): it applies
-/// only once a person approves it. Stored with the approval and never changed.
+/// A retro playbook change that relaxes a gate (fewer reviewers, a weaker or removed check, a looser rule). The retro is
+/// gone: only an older approval carries one, and the app still shows it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PlaybookGateChange {
@@ -763,7 +763,7 @@ pub struct HumanRequest {
     pub gated: Option<GatedRunSpec>,
     /// approval of a session's tool prompt, instead of a gated run.
     pub permission: Option<ToolPermission>,
-    /// approval of a retro playbook change that relaxes a gate, instead of a gated run or a tool prompt.
+    /// approval of a retro playbook change (an older approval only), instead of a gated run or a tool prompt.
     pub playbook: Option<PlaybookGateChange>,
     /// What happened, in one line: "fingerprint ab12cd34", "exit 0 on devbox, approved by human:desk", or why it did
     /// not run (and so is open again).
