@@ -45,3 +45,6 @@ const subscribe = (l: () => void) => {
 };
 
 export const useSeen = (): Seen => useSyncExternalStore(subscribe, current);
+
+/** The seq last seen in one project's chat, read once (the chat reads it as it opens, before it is marked seen). */
+export const seenOf = (key: string): number | undefined => current()[key];

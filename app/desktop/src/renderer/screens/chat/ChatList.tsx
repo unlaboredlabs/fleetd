@@ -1,7 +1,7 @@
 // The lead chat as a virtualized list: only the rows on screen render, each measured to its wrapped height. It
 // opens at the newest message and stays there as rows measure and new ones stream in, until the reader scrolls
 // (the follow rule is T3 Code's: apps/web MessagesTimeline.logic.ts). Scrolling to the top loads older pages; the
-// list keeps its place while they arrive above.
+// list keeps its place while they arrive above. Scrolled up, a button counts what arrived below and goes back to it.
 import type { Virtualizer } from "@tanstack/react-virtual";
 import { Paperclip } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
@@ -14,14 +14,14 @@ import { fmtBytes } from "./attachments";
 import type { ChatItem } from "../../src/data/chat";
 
 import { shortClock } from "./format";
-import { authorLabel, systemHeadline, type Row, type TopState } from "./model";
+import { authorLabel, latestLabel, newestKey, type Row, type TopState } from "./model";
 import { MessageReceipt, SteerLine } from "./Composer";
 import { LiveStrip, useNow, useOnScreen } from "../live";
 import { Boundary } from "../../src/Boundary";
 import type { ChatItem as InlineItem } from "../../../shared/contracts";
 import { InlineChatItem } from "../inline";
 import type { ProjectRef } from "./slots";
-import { Disclosure, InlineText, Message } from "./text";
+import { InlineText, Message } from "./text";
 import s from "./view.module.css";
 
 /**
@@ -92,22 +92,6 @@ function Top({ state, onLoadOlder }: { state: TopState; onLoadOlder: () => void 
           This is the start of the conversation.
         </Text>
       )}
-    </div>
-  );
-}
-
-function SystemLine({ item }: { item: ChatItem }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className={s.quietRow}>
-      <Disclosure open={open} onToggle={() => setOpen((o) => !o)}>
-        {systemHeadline(item.text)}
-      </Disclosure>
-      {open ? (
-        <div className={s.systemText}>
-          <Message text={item.text} />
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -198,8 +182,14 @@ const RowView = memo(function RowView(props: {
           </Text>
         </div>
       );
-    case "system":
-      return <SystemLine item={r.item} />;
+    case "new":
+      return (
+        <div className={s.day} role="separator">
+          <Text size="xs" tone="accent">
+            New
+          </Text>
+        </div>
+      );
     case "event":
       return (
         <div className={cx(s.quietRow, s.event)} data-entry="event">
@@ -244,13 +234,14 @@ const RowView = memo(function RowView(props: {
       const i = r.item;
       return (
         <div
-          className={cx(s.message, r.head && s.messageHead, (r.history || i.author === "agent") && s.quietMessage)}
+          className={cx(s.message, r.run && s.messageHead, (r.history || i.author === "agent") && s.quietMessage, i.author === "human" && s.mine)}
           data-entry="message"
           data-author={i.author}
+          title={i.author === "human" ? shortClock(i.at) : undefined}
         >
           {r.head ? (
             <div className={s.head}>
-              <Text size="xs" strong tone={i.author === "human" ? "accent" : "default"}>
+              <Text size="xs" strong>
                 {authorLabel(i)}
               </Text>
               <Text size="xs" tone="quiet" tabular>
@@ -304,9 +295,13 @@ export function ChatList(props: {
   // so older pages loading above it don't pin it again.
   const openKey = openAt === undefined ? undefined : rows[openAt]?.key;
   const openIndex = useRef(openAt);
+  const rowsNow = useRef(rows);
   useEffect(() => {
     openIndex.current = openAt;
+    rowsNow.current = rows;
   });
+  /** Lets go of the pin: the reader scrolled, or asked for the newest message. */
+  const unpin = useRef<() => void>(undefined);
   useEffect(() => {
     const v = virtualizer.current;
     const el = v?.scrollElement;
@@ -316,11 +311,13 @@ export function ChatList(props: {
     const release = () => {
       pinned = false;
     };
+    unpin.current = release;
     const pin = () => {
       if (!pinned) return;
       const at = openIndex.current;
       if (openKey === undefined || at === undefined) el.scrollTop = el.scrollHeight;
-      else v.scrollToIndex(at, { align: "center" });
+      // Where you stopped reading goes at the top, with what's new under it.
+      else v.scrollToIndex(at, { align: openKey === "new" ? "start" : "center" });
     };
     if (openKey !== undefined) pin();
     el.addEventListener("wheel", release, { passive: true });
@@ -336,6 +333,24 @@ export function ChatList(props: {
       el.removeEventListener("keydown", release);
     };
   }, [openKey, openSeq]);
+
+  // Scrolled up past the follow threshold (followOptions'), the newest message's key then; undefined at the end.
+  const [awayFrom, setAwayFrom] = useState<string>();
+  useEffect(() => {
+    const el = virtualizer.current?.scrollElement;
+    if (!el) return;
+    const onScroll = () => {
+      const away = el.scrollHeight - el.scrollTop - el.clientHeight > 24;
+      setAwayFrom((from) => (away ? (from ?? newestKey(rowsNow.current)) : undefined));
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+  const latest = latestLabel(rows, awayFrom);
+  const toLatest = () => {
+    unpin.current?.();
+    virtualizer.current?.scrollToIndex(rows.length - 1, { align: "end" });
+  };
 
   useEffect(() => {
     const v = virtualizer.current;
@@ -367,6 +382,14 @@ export function ChatList(props: {
           />
         )}
       />
+      {latest !== undefined ? (
+        <div className={s.latest}>
+          {/* A press keeps the cursor in the box: it would otherwise go to the button, which then goes. */}
+          <Button variant="secondary" onMouseDown={(e) => e.preventDefault()} onClick={toLatest}>
+            {latest} <span aria-hidden>↓</span>
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }

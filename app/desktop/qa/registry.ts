@@ -101,6 +101,8 @@ export const fixtures = [
   "chat-gated",
   "chat-waiting",
   "chat-empty",
+  // The long chat with three lead replies arriving once you've read back a page (fixtures/transcript).
+  "transcript-new",
   // UX-1 [23]: a long lead reply streaming in, in small deltas (fixtures/stream).
   "stream-long",
   // F5 (A5): a chat with every state of the two inline items (fixtures/inline), with every answer failing, and with
@@ -539,6 +541,46 @@ export const screens: readonly Screen[] = [
         await page.getByText("Loading earlier messages…").waitFor({ state: "hidden", timeout: 5_000 });
       }
       await page.getByText("From before this chat").waitFor({ timeout: 10_000 });
+    },
+  },
+  // Back after a while: the chat opens at a "New" divider above what you hadn't seen (forty messages back from the
+  // newest), and the button to the newest shows, since that's further down.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["chat-long"],
+    variant: "new",
+    open: async (page) => {
+      // What the app has seen is read once per launch, so mark storefront as seen forty back, then load again.
+      await page.evaluate(() => {
+        const key = "fleetd.seenChats";
+        const seen = JSON.parse(localStorage.getItem(key) ?? "{}") as Record<string, number>;
+        const [project, seq] = Object.entries(seen).find(([k]) => k.endsWith("/dcffccea-c5a7-40a6-940d-7f70239ffa22")) ?? [];
+        if (project === undefined || seq === undefined) throw new Error("storefront's chat was never marked seen");
+        localStorage.setItem(key, JSON.stringify({ ...seen, [project]: seq - 40 }));
+      });
+      await page.reload();
+      await page.getByRole("separator").filter({ hasText: /^New$/ }).waitFor({ timeout: 10_000 });
+      await page.getByRole("button", { name: "Latest" }).waitFor({ timeout: 10_000 });
+    },
+  },
+  // Scrolled back through two pages while the lead writes: three replies land below, and the button to the newest
+  // counts them.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["transcript-new"],
+    variant: "new-below",
+    open: async (page) => {
+      const log = page.getByLabel("Conversation with the lead");
+      // The page before the newest may load as the chat opens; the replies come once the one before that is read.
+      for (let i = 0; i < 2; i++) {
+        await log.hover();
+        await page.mouse.wheel(0, -50_000);
+        await log.evaluate((el) => el.scrollTo({ top: 0 }));
+        await page.getByText("Loading earlier messages…").waitFor({ state: "hidden", timeout: 5_000 });
+      }
+      await page.getByRole("button", { name: "3 new" }).waitFor({ timeout: 10_000 });
     },
   },
   // UX-1 [23]: a long reply streams in with the chat open, block by block; checked after its last delta.

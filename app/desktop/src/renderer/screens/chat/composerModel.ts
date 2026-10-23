@@ -51,13 +51,22 @@ export interface Sendable {
   readonly delivery?: ChatDelivery | undefined;
   /** chat_send's word on why the lead doesn't have it yet, with the fix. */
   readonly leadWaiting?: string | undefined;
+  /** Where it was written (ChatMessage.client); none is this app. */
+  readonly client?: string | undefined;
 }
 
 /**
  * The receipt under one of your messages. A sent message says nothing unless it is your latest: then how it reached
- * the lead. Trouble, and a lead that can't take it yet, always show.
+ * the lead. Trouble, and a lead that can't take it yet, always show. Written elsewhere than the app, it says where.
  */
 export function receiptFor(m: Sendable, latest: boolean): Receipt | undefined {
+  const r = receiptOf(m, latest);
+  if (m.client === undefined || m.client === "app") return r;
+  const from = `from ${m.client}`;
+  return r === undefined ? { kind: "quiet", line: from } : { ...r, line: `${r.line} · ${from}` };
+}
+
+function receiptOf(m: Sendable, latest: boolean): Receipt | undefined {
   switch (m.state) {
     case "pending":
       return { kind: "quiet", line: "sending…" };

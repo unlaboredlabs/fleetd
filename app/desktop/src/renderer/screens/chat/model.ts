@@ -1,7 +1,7 @@
 // The chat as rows: day dividers, messages grouped by author (a run from one author within a few minutes shows its
-// name and time once), your steers to the lead at their time, fleetd's own messages folded to one quiet line, event
-// one-liners, inline items, the live strip under the lead's newest message (and the field that answers it), and the
-// top of the history.
+// name and time once; yours show none), your steers to the lead at their time, event one-liners (fleetd's own
+// messages among them), inline items, the live strip under the lead's newest message (and the field that answers it),
+// where you stopped reading, and the top of the history.
 import type { Steer, Workstream } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
 
@@ -12,8 +12,18 @@ export type Row =
    */
   | { readonly kind: "top"; readonly key: "top"; readonly state: TopState }
   | { readonly kind: "day"; readonly key: string; readonly label: string }
-  /** `history`: written before the chat existed (an old order, a note, a steer), shown as the conversation it was. */
-  | { readonly kind: "message"; readonly key: string; readonly item: ChatItem; readonly head: boolean; readonly history: boolean }
+  /**
+   * `history`: written before the chat existed (an old order, a note, a steer), shown as the conversation it was.
+   * `run`: it starts a run (the space above it); `head`: its author and time show, which yours never do.
+   */
+  | {
+      readonly kind: "message";
+      readonly key: string;
+      readonly item: ChatItem;
+      readonly run: boolean;
+      readonly head: boolean;
+      readonly history: boolean;
+    }
   /** Above the first message from before the chat existed. */
   | { readonly kind: "history"; readonly key: string }
   /**
@@ -21,9 +31,10 @@ export type Row =
    * them from order_get, as your words with their receipt.
    */
   | { readonly kind: "steer"; readonly key: string; readonly steer: Steer; readonly head: boolean }
-  | { readonly kind: "system"; readonly key: string; readonly item: ChatItem }
   | { readonly kind: "event"; readonly key: string; readonly item: ChatItem }
   | { readonly kind: "inline"; readonly key: string; readonly item: ChatItem }
+  /** Above the first message you hadn't seen when the chat opened. */
+  | { readonly kind: "new"; readonly key: "new" }
   | { readonly kind: "strip"; readonly key: "strip" }
   /**
    * What the lead is doing while its turn runs (under the newest item), and once it is over how long it worked
@@ -42,10 +53,10 @@ export const heldLabel = (offline: boolean, asOf: string | undefined): string =>
 /** Messages from one author this close together read as one turn: the name and time show once. */
 const GROUP_MS = 5 * 60_000;
 
-/** Who a message's header names, from the key that wrote it: you and where you wrote, an agent by its name. */
+/** Who a message's header names, from the key that wrote it: an agent by its name. */
 export const authorLabel = (item: ChatItem): string =>
   item.author === "human"
-    ? `You · ${item.message?.client ?? "app"}`
+    ? "You"
     : item.author === "agent"
       ? `Agent · ${item.message?.by ?? "unnamed"}`
       : item.author === "lead"
@@ -100,6 +111,8 @@ export interface RowsInput {
   readonly workedSince?: number | undefined;
   /** Your steers to the lead, oldest first (leadSteers); those outside the loaded pages wait for theirs. */
   readonly steers?: readonly Steer[];
+  /** The newest seq you had seen when the chat opened, when there was more since (data/seen.ts). */
+  readonly seenSeq?: number | undefined;
   readonly nowMs: number;
   readonly timeZone?: string;
 }
@@ -171,6 +184,12 @@ export function chatRows(i: RowsInput): Row[] {
       prev = undefined;
     }
   };
+  // The first message from someone else after what you'd seen; only when the loaded pages reach back to what you saw.
+  const seen = i.seenSeq;
+  const unseen =
+    seen === undefined || (i.hasOlder && !i.items.some((item) => (item.message?.seq ?? Infinity) <= seen))
+      ? -1
+      : i.items.findIndex((item) => item.author !== "human" && (item.message?.seq ?? -Infinity) > seen);
   const lastAt = i.items.at(-1)?.at;
   // Steers after every item go last, and the lead's activity under them, as under the newest item.
   const steersAfter = lastAt === undefined ? steers.length : steers.filter((st) => msOf(st.queuedAt, i.nowMs) >= msOf(lastAt, i.nowMs)).length;
@@ -180,16 +199,19 @@ export function chatRows(i: RowsInput): Row[] {
     if (history && !inHistory) out.push({ kind: "history", key: `history:${item.id}` });
     inHistory = history;
     day(item.at);
+    if (n === unseen) {
+      out.push({ kind: "new", key: "new" });
+      prev = undefined;
+    }
     if (history && item.author !== "system") {
-      const head = prev === undefined || authorLabel(prev) !== authorLabel(item) || Date.parse(item.at) - Date.parse(prev.at) > GROUP_MS;
-      out.push({ kind: "message", key: item.id, item, head, history: true });
+      const run = prev === undefined || authorLabel(prev) !== authorLabel(item) || Date.parse(item.at) - Date.parse(prev.at) > GROUP_MS;
+      out.push({ kind: "message", key: item.id, item, run, head: run && item.author !== "human", history: true });
     } else if (item.kind === "event") out.push({ kind: "event", key: item.id, item });
     else if (item.kind === "secret" || item.kind === "gated") out.push({ kind: "inline", key: item.id, item });
-    else if (item.author === "system") out.push({ kind: "system", key: item.id, item });
     else {
-      const head =
+      const run =
         prev === undefined || prev.kind !== "message" || authorLabel(prev) !== authorLabel(item) || Date.parse(item.at) - Date.parse(prev.at) > GROUP_MS;
-      out.push({ kind: "message", key: item.id, item, head, history: false });
+      out.push({ kind: "message", key: item.id, item, run, head: run && item.author !== "human", history: false });
     }
     prev = item;
     prevSteer = undefined;
@@ -220,35 +242,22 @@ export function ordersInView(open: readonly string[], listed: readonly Workstrea
 
 /** The row to open at for a message id (a notification's ?message=), or undefined when it isn't loaded. */
 export const rowIndexOf = (rows: readonly Row[], messageId: string): number | undefined => {
-  const i = rows.findIndex((r) => (r.kind === "message" || r.kind === "system" || r.kind === "event" || r.kind === "inline") && r.item.id === messageId);
+  const i = rows.findIndex((r) => (r.kind === "message" || r.kind === "event" || r.kind === "inline") && r.item.id === messageId);
   return i === -1 ? undefined : i;
 };
 
-const plain = (line: string): string =>
-  line
-    .replace(/^\s*(?:[-*+]|\d+\.)\s+/, "")
-    .replace(/^#+\s*/, "")
-    .replace(/[*_`]+/g, "")
-    .trim();
+const hasItem = (r: Row): r is Extract<Row, { item: ChatItem }> => r.kind === "message" || r.kind === "event" || r.kind === "inline";
 
-/** fleetd's own message to the lead, as one quiet line: why it was woken, or its first line. */
-export function systemHeadline(text: string): string {
-  // A wake lists its reasons under "## Events" (before #242, "## Why you are woken").
-  const why = /^##\s*(?:Why you are woken|Events)\s*$/m.exec(text);
-  if (why) {
-    const reasons = text
-      .slice(why.index + why[0].length)
-      .split("\n")
-      .filter((l) => /^\s*-\s+\S/.test(l));
-    const first = reasons[0];
-    if (first !== undefined) {
-      const line = plain(first).split(/;\s|\.\s/)[0] ?? "";
-      const cut = line.length > 120 ? `${line.slice(0, 119)}…` : line;
-      return `Woken: ${cut}${reasons.length > 1 ? ` (+${String(reasons.length - 1)} more)` : ""}`;
-    }
-    return "Woken by fleetd";
-  }
-  if (/^\s*#\s*(?:fleetd digest|project)\b/.test(text)) return "fleetd's digest of the project";
-  const line = text.split("\n").map(plain).find((l) => l.length > 0) ?? "";
-  return line.length > 120 ? `${line.slice(0, 119)}…` : line;
+/** The newest row with a message in it: where "new below" counts from once the reader scrolls up. */
+export const newestKey = (rows: readonly Row[]): string => rows.findLast(hasItem)?.key ?? "top";
+
+/**
+ * The way back to the newest message while scrolled up from `from` (newestKey then): how many arrived below since,
+ * yours aside. Undefined at the end. Older pages loading above don't count.
+ */
+export function latestLabel(rows: readonly Row[], from: string | undefined): string | undefined {
+  if (from === undefined) return undefined;
+  const at = rows.findIndex((r) => r.key === from);
+  const n = at === -1 ? 0 : rows.slice(at + 1).filter((r) => hasItem(r) && r.item.author !== "human").length;
+  return n === 0 ? "Latest" : `${String(n)} new`;
 }
