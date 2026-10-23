@@ -22,6 +22,7 @@ type FeedItem = WorkStep | { readonly kind: "writing"; readonly id: string; read
 export function AgentWork({ id }: { id: string }) {
   const agent = useData(selectLiveAgent(id));
   const listed = useData((st) => selectLiveAgents(st) !== undefined);
+  const fresh = useData((st) => st.fresh);
   const work = useAgentWork(agent);
   const [told, setTold] = useState(false);
   const row = agent?.row;
@@ -32,7 +33,16 @@ export function AgentWork({ id }: { id: string }) {
     return writing === undefined || writing.text === "" ? work.steps : [...work.steps, { kind: "writing", id: `w:${writing.messageId}`, text: writing.text }];
   }, [work.steps, writing]);
 
-  if (!listed) return <div className={s.workBody} aria-busy="true" />;
+  if (!listed) {
+    // Nothing held and no hub to ask: a blank pane would read as loading that never ends.
+    return fresh ? (
+      <div className={s.workBody} aria-busy="true" />
+    ) : (
+      <div className={cx(s.workBody, s.note)} data-screen="agents.work.offline">
+        <Text tone="quiet">This agent shows once you’re connected.</Text>
+      </div>
+    );
+  }
   if (agent === undefined || row === undefined) {
     return (
       <div className={s.workBody} data-screen="agents.work">
@@ -81,6 +91,10 @@ export function AgentWork({ id }: { id: string }) {
               Couldn’t read its work. The agent keeps going; this reads again at its next step.
             </Text>
           </p>
+        ) : feed === undefined && !fresh ? (
+          <Text size="sm" tone="quiet">
+            Its work shows once you’re connected.
+          </Text>
         ) : feed === undefined ? (
           <div aria-busy="true" aria-label="Loading its work" />
         ) : feed.length === 0 ? (

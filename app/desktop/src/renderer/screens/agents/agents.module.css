@@ -59,6 +59,10 @@
   line-height: var(--leading-xs);
 }
 
+.note {
+  padding: var(--space-4);
+}
+
 .skeleton {
   display: flex;
   flex-direction: column;

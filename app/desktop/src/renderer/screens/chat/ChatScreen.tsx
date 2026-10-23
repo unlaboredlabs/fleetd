@@ -156,6 +156,8 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
         <div className={s.composer}>
           <AttentionLine
             waiting={waiting}
+            // As the header chip: a held chat doesn't say what the project is now.
+            blocked={view?.held === true ? undefined : data.blocked}
             onShow={() => {
               const id = waiting?.target;
               if (id !== undefined) setShown((p) => ({ id, n: (p?.n ?? 0) + 1 }));
