@@ -191,13 +191,7 @@ pub fn render_task_prompt(set: &PromptSet, input: &PromptInput<'_>) -> String {
 }
 
 /// The lead's event line for a finished task: its whole result tail, inline.
-/// `receipts` is the receipts area's line for this result.
-pub fn task_result_lines(
-    task_id: &str,
-    title: &str,
-    result: &TaskResult,
-    receipts: Option<&str>,
-) -> String {
+pub fn task_result_lines(task_id: &str, title: &str, result: &TaskResult) -> String {
     let mut place = Vec::new();
     if let Some(b) = &result.branch {
         place.push(format!("branch {}", b.as_str()));
@@ -219,8 +213,6 @@ pub fn task_result_lines(
         },
         title,
         place: &place,
-        // M6 receipts, counted by the hub; absent on results stored before them.
-        receipts,
         result: result.tail.as_str(),
     }
     .render()

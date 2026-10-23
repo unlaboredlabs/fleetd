@@ -166,7 +166,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "order_get",
-        "One order as orders_board shows it, plus its project's lead, its finished agents with their receipts, its open requests and its claims.",
+        "One order as orders_board shows it, plus its project's lead, its finished agents, its open requests and its claims.",
     ),
     (
         "order_note",

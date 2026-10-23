@@ -10,12 +10,11 @@ use crate::hub::leads::wakes::{LineKind, Trigger};
 use crate::hub::ledger::DecisionFilter;
 use crate::hub::link::commands::CommandInput;
 use crate::hub::tasks::{TaskCaller, TaskFilter};
-use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
+use fleetd_contracts::ids::{MachineId, ProjectRef};
 use fleetd_contracts::lead_calls::TaskSpawnCall;
 use fleetd_contracts::ledger::{
     DecisionScope, DecisionState, MetricValues, Workstream, WorkstreamId,
 };
-use fleetd_contracts::model::ActionItem;
 use fleetd_contracts::prim::{Line, Text};
 use fleetd_contracts::tasks::{Task, TaskId, TaskKind};
 use std::sync::{Arc, OnceLock, Weak};
@@ -230,32 +229,6 @@ impl Ports for HubPorts {
             )?)
         });
         logged(at, "reading when a brief was set").flatten()
-    }
-    fn thread_actions<'a>(
-        &'a self,
-        thread: &'a ThreadRef,
-        max: usize,
-    ) -> BoxFuture<'a, Result<Vec<ActionItem>, String>> {
-        Box::pin(async move {
-            let Some(hub) = self.hub() else {
-                return Err(not_linked(&thread.machine_id));
-            };
-            let actions = hub
-                .executors
-                .actions(thread, max, false)
-                .await
-                .map_err(|e| e.to_string())?;
-            // The executor's Action is the contract's ActionItem field for field.
-            Ok(actions
-                .into_iter()
-                .filter_map(|a| {
-                    serde_json::to_value(a)
-                        .and_then(serde_json::from_value)
-                        .map_err(|error| tracing::warn!(%error, "an action did not fit ActionItem"))
-                        .ok()
-                })
-                .collect())
-        })
     }
 }
 

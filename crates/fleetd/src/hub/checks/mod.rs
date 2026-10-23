@@ -24,7 +24,6 @@ pub use records::{ClaimFilter, ClaimRecords};
 pub use runner::{CLAIMS_BY, CheckRunner, CheckScope};
 
 use crate::clock::Clock;
-use crate::hub::receipts::Receipts;
 use crate::hub::reviews::verdicts::Verdicts;
 use crate::hub::store::{EventLog, HubDb};
 use std::sync::Arc;
@@ -32,7 +31,6 @@ use std::sync::Arc;
 /// This slice's services, built before the `Hub` that holds them; `ports` is bound to the `Hub` right after.
 pub struct Built {
     pub ports: Arc<HubPorts>,
-    pub receipts: Arc<Receipts>,
     pub verdicts: Arc<Verdicts>,
     pub checks: Arc<CheckRunner>,
     pub claims: Arc<Claims>,
@@ -41,7 +39,6 @@ pub struct Built {
 pub fn build(db: &Arc<HubDb>, events: &Arc<EventLog>, clock: &Arc<dyn Clock>) -> Built {
     let ports = HubPorts::new();
     let dyn_ports: Arc<dyn ports::Ports> = ports.clone();
-    let receipts = Arc::new(Receipts::new(dyn_ports.clone()));
     let gh: Arc<dyn GhRunner> = Arc::new(GhCli);
     let judge_verdicts = Arc::new(JudgeVerdicts::default());
     let verdicts = Arc::new(Verdicts::new(
@@ -72,7 +69,6 @@ pub fn build(db: &Arc<HubDb>, events: &Arc<EventLog>, clock: &Arc<dyn Clock>) ->
     ));
     Built {
         ports,
-        receipts,
         verdicts,
         checks,
         claims,

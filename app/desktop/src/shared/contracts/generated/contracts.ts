@@ -103,8 +103,6 @@ export type AgentLane = {
   pr?: PrRef;
   /** What it runs on: a task's own profile; a lead is always high. Absent from older hubs. */
   profile?: TaskProfile;
-  /** Counted from the thread's items when it ended. */
-  receipts?: Receipts;
   role: AgentRole;
   startedAt?: Timestamp;
   status: LaneStatus;
@@ -131,8 +129,6 @@ export type AgentRow = {
   profile?: TaskProfile;
   projectRef: ProjectRef;
   projectTitle: string;
-  /** Counted from the thread's items when it ended. */
-  receipts?: Receipts;
   role: AgentRole;
   startedAt?: Timestamp;
   status: LaneStatus;
@@ -2788,14 +2784,6 @@ export type QuietWindow = {
   to: Timestamp;
 };
 
-/** Counted by the hub from the task's thread items, never from its prose. */
-export type Receipts = {
-  commands: number;
-  commandsFailed: number;
-  filesChanged: number;
-  toolCalls: number;
-};
-
 export type RepeatStat = {
   label: string;
   /** Runs in a row with no edit between them. */
@@ -3613,11 +3601,7 @@ export type TaskProfile = "high" | "medium";
 export type TaskResult = {
   at: Timestamp;
   branch?: string;
-  /** The tail claims success ("tests pass", "fixed", ...) while `receipts.commands` is 0. Absent before M6. */
-  claimsUnverified?: boolean;
   prUrl?: string;
-  /** Absent on results stored before M6. */
-  receipts?: Receipts;
   status: TaskResultStatus;
   /** The latest assistant message, trimmed to its last 2000 characters. */
   tail: string;

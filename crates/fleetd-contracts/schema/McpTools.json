@@ -302,10 +302,6 @@
           "$ref": "#/$defs/TaskProfile",
           "description": "What it runs on: a task's own profile; a lead is always high. Absent from older hubs."
         },
-        "receipts": {
-          "$ref": "#/$defs/Receipts",
-          "description": "Counted from the thread's items when it ended."
-        },
         "role": {
           "$ref": "#/$defs/AgentRole"
         },
@@ -390,10 +386,6 @@
         "projectTitle": {
           "maxLength": 200,
           "type": "string"
-        },
-        "receipts": {
-          "$ref": "#/$defs/Receipts",
-          "description": "Counted from the thread's items when it ended."
         },
         "role": {
           "$ref": "#/$defs/AgentRole"
@@ -8528,38 +8520,6 @@
       ],
       "type": "object"
     },
-    "Receipts": {
-      "description": "Counted by the hub from the task's thread items, never from its prose.",
-      "properties": {
-        "commands": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "commandsFailed": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "filesChanged": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "toolCalls": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "commands",
-        "commandsFailed",
-        "filesChanged",
-        "toolCalls"
-      ],
-      "type": "object"
-    },
     "RepeatStat": {
       "properties": {
         "label": {
@@ -10912,16 +10872,8 @@
           "minLength": 1,
           "type": "string"
         },
-        "claimsUnverified": {
-          "description": "The tail claims success (\"tests pass\", \"fixed\", ...) while `receipts.commands` is 0. Absent before M6.",
-          "type": "boolean"
-        },
         "prUrl": {
           "type": "string"
-        },
-        "receipts": {
-          "$ref": "#/$defs/Receipts",
-          "description": "Absent on results stored before M6."
         },
         "status": {
           "$ref": "#/$defs/TaskResultStatus"

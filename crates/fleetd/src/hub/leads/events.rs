@@ -50,13 +50,12 @@ pub enum Event<'a> {
         why: &'a str,
         cancelled: i64,
     },
-    /// A task ended. `place` is its branch and PR; `receipts` the hub's count line; `result` its final message.
+    /// A task ended. `place` is its branch and PR; `result` its final message.
     AgentEnded {
         task: &'a str,
         ended: Ended,
         title: &'a str,
         place: &'a str,
-        receipts: Option<&'a str>,
         result: &'a str,
     },
     AgentWaiting {
@@ -194,7 +193,6 @@ impl Event<'_> {
                 ended,
                 title,
                 place,
-                receipts,
                 result,
             } => {
                 let verb = match ended {
@@ -202,12 +200,9 @@ impl Event<'_> {
                     Ended::Failed => "failed",
                     Ended::Cancelled => "was cancelled",
                 };
-                let mut rest: Vec<String> =
-                    receipts.map(|r| format!("  {r}")).into_iter().collect();
-                rest.extend(body(result));
                 (
                     format!("- {task} {verb}: {}{place}", one_line(title, 80)),
-                    rest,
+                    body(result),
                 )
             }
             Event::AgentWaiting {
@@ -416,10 +411,9 @@ mod tests {
                 ended: Ended::Done,
                 title: "fix login",
                 place: " (branch fix/login, PR https://github.com/o/r/pull/12)",
-                receipts: Some("receipts: 3 commits"),
                 result: "Fixed it.\nTests pass."
             }),
-            "- T4 finished: fix login (branch fix/login, PR https://github.com/o/r/pull/12)\n  receipts: 3 commits\n  > Fixed it.\n  > Tests pass."
+            "- T4 finished: fix login (branch fix/login, PR https://github.com/o/r/pull/12)\n  > Fixed it.\n  > Tests pass."
         );
         assert_eq!(
             r(Event::AgentEnded {
@@ -427,7 +421,6 @@ mod tests {
                 ended: Ended::Failed,
                 title: "port",
                 place: "",
-                receipts: None,
                 result: ""
             }),
             "- T5 failed: port\n  > (no final message)"
@@ -438,7 +431,6 @@ mod tests {
                 ended: Ended::Cancelled,
                 title: "port",
                 place: "",
-                receipts: None,
                 result: "stopped"
             }),
             "- T6 was cancelled: port\n  > stopped"

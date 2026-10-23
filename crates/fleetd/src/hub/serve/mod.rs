@@ -341,7 +341,6 @@ pub fn build_on(
         sweep,
         queue,
         wakes,
-        receipts: checks.receipts,
         verdicts: checks.verdicts,
         checks: checks.checks,
         claims: checks.claims,

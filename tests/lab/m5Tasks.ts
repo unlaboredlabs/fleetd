@@ -181,7 +181,7 @@ export async function m5Tasks(lab: Lab) {
     const delivered = userMessages(MACHINE, leadThread).filter((m) => m.includes(head));
     const parts = delivered[0]?.split(head) ?? [];
     check(
-      delivered.length === 1 && parts.length === 2 && /^(, PR [^)\n]*)?\)(\n {2}receipts: [^\n]*)?\n {2}> \S/u.test(parts[1]!),
+      delivered.length === 1 && parts.length === 2 && /^(, PR [^)\n]*)?\)\n {2}> \S/u.test(parts[1]!),
       `exactly one wake carries T1's result inline: ${JSON.stringify(delivered.map((m) => m.slice(m.indexOf(head), m.indexOf(head) + 400)))}`,
     );
     ok(`1. one wake carried "${head.slice(2)}" with the result tail inline (triggers: ${JSON.stringify(wake.event.data?.triggers)})`);

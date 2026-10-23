@@ -1,9 +1,8 @@
 // M6 "done when" 1-5 on lab-a: done is fleetd's call. A workstream whose only done-when check is a node-run
 // `test -f docs/x.md` fails its first claim, and the lead is woken with the exit code and output. The writer that
 // fixes it (the lead's own, else the harness's) is merged into the project's checkout as it ends, so the next claim,
-// the lead's or the harness's, passes. A tool-less task that says "tests pass" reaches
-// the lead as unverified, and a verdict from a non-review task is refused. The harness's `fleetd` calls run in the
-// project's workspace, as the lead's shell would, so they cost no turns; tasks run on medium.
+// the lead's or the harness's, passes, and a verdict from a non-review task is refused. The harness's `fleetd` calls
+// run in the project's workspace, as the lead's shell would, so they cost no turns; tasks run on medium.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -102,7 +101,7 @@ export async function m6Verify(lab: Lab) {
   const leadWriter = own.find((t) => t.kind === "write");
   const writer = leadWriter?.taskId ?? spawn(["--title", "add x", "--prompt", `create ${FILE} with one line 'hi', commit it on your branch`]);
   ok(`writer ${writer}: ${leadWriter === undefined ? "spawned by the harness (the lead spawned none)" : `spawned by the lead after the failed claim ("${leadWriter.title}")`}`);
-  // A tool-less reader that says "tests pass".
+  // A read task, whose verdict is refused below.
   const reader = spawn([
     "--title", "say tests pass", "--kind", "read",
     "--prompt", "Do not run any command or use any tool. Reply with exactly these two words and nothing else: tests pass",
@@ -119,22 +118,6 @@ export async function m6Verify(lab: Lab) {
   ok(`merged ${branch} into main in ${root}`);
   const readerEnd = await lab.waitEvent(`${reader} ends`, TURN_MS, { cursor, types: ["task.completed", "task.failed"], match: (e) => e.data?.taskId === reader });
   check(readerEnd.event.type === "task.completed", `${reader} completed: ${readerEnd.event.summary}`);
-
-  // 2. The reader ran nothing but says "tests pass": delivered with its receipts as unverified.
-  const readerTask = await task(reader);
-  check(readerTask.result?.receipts?.commands === 0 && readerTask.result?.claimsUnverified === true, `${reader} receipts: ${JSON.stringify(readerTask.result)}`);
-  let after = cursor;
-  let unverifiedDelivered = false;
-  for (;;) {
-    const wake = await lab.waitEvent("a task result wake", 75_000, { cursor: after, machineId: MACHINE, types: ["lead.woken"] }).catch(() => undefined);
-    if (wake === undefined) break;
-    after = (await leadTurnEnds(wake.event.seq)).cursor;
-    const text = sessionText(MACHINE, leadThread);
-    const at = text.indexOf(`- ${reader} finished`);
-    unverifiedDelivered ||= at >= 0 && text.slice(at, at + 300).includes("receipts: 0 commands run — claims unverified");
-  }
-  check(unverifiedDelivered, `the lead got ${reader} with "receipts: 0 commands run — claims unverified"`);
-  ok(`2. ${reader} ("${readerTask.result.tail}") reached the lead as "receipts: 0 commands run — claims unverified"`);
 
   // A verdict from a task that is not a review is refused through the same CLI path a reviewer uses.
   const notReview = fleetd("review", "verdict", "--task", reader, "--sha", "0".repeat(40), "--blocking", "0", "--non-blocking", "0", "--summary", "lab");

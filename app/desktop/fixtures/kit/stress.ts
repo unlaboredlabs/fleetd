@@ -163,7 +163,6 @@ export const agentLane = (f: Fixture, i: number, finished: boolean, machineId: s
     ...(finished ? { endedAt: at(startedAt, 9 * 60_000) } : {}),
     branch: `fleetd/${taskId}-${area}`,
     threadRef: { machineId, threadId: uuid(`lane thread ${i}`) },
-    receipts: { toolCalls: 12 + i, commands: 4 + (i % 5), commandsFailed: i % 3 === 0 ? 1 : 0, filesChanged: 1 + (i % 4) },
     ...(i % 7 === 2 ? { statusReason: "waiting for a free slot on devbox" } : {}),
     live: {
       laneId: taskId,

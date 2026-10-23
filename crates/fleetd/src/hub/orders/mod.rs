@@ -246,7 +246,6 @@ pub fn task_lane(task: &Task, prs: &[(&Change, PrRef)], look: &dyn Lookups) -> A
         ended_at: task.ended_at.clone(),
         branch: task.branch.clone(),
         pr,
-        receipts: task.result.as_ref().and_then(|r| r.receipts.clone()),
         live: parts
             .as_ref()
             .map(|p| live_lane(task.task_id.as_str(), status, Some(p))),
@@ -313,7 +312,6 @@ pub fn lead_lane(lead: &Lead, project_title: &str, look: &dyn Lookups) -> AgentL
         ended_at: None,
         branch: None,
         pr: None,
-        receipts: None,
     }
 }
 

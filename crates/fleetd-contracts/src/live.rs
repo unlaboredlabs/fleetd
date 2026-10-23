@@ -13,7 +13,7 @@ use crate::ledger::{Headline, PlaybookName, WorkstreamId, WorkstreamState};
 use crate::model::MachineStatus;
 use crate::node_link::NodeLoad;
 use crate::prim::{Count, List, NonEmpty, Positive, Text};
-use crate::tasks::{Receipts, SlotState, TaskId};
+use crate::tasks::{SlotState, TaskId};
 use crate::train::{ChangeId, ChangeState, GitHubPrUrl, GitHubRepo};
 
 /// A task id ("T31"), or "lead:<machineId>/<projectId>" for a project's lead.
@@ -258,8 +258,6 @@ pub struct AgentLane {
     pub ended_at: Option<Timestamp>,
     pub branch: Option<NonEmpty>,
     pub pr: Option<PrRef>,
-    /// Counted from the thread's items when it ended.
-    pub receipts: Option<Receipts>,
     /// Live values at snapshot time.
     pub live: Option<LiveLane>,
 }

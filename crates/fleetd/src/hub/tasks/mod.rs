@@ -40,7 +40,7 @@ use crate::hub::store::{
 };
 use crate::hub::time::parse_ms as parse_iso_ms;
 use fleetd_contracts::mcp::ErrorCode;
-use hooks::{ResultReceipts, UsageGate};
+use hooks::UsageGate;
 use ports::{LaunchRequest, PortError, TaskError, TaskPorts, WakeKind, Worktree};
 use render::{branch_for, find_pr_url, render_task_prompt, tail_of};
 use resolve::resolve_profile;
@@ -204,7 +204,7 @@ pub struct Tasks {
     /// task is never paused, and a paused one that asks isn't continued until the answer is in its resume. Not kept
     /// across a hub restart: then the answer still reaches the task, only maybe after its resume.
     asking: Mutex<HashSet<TaskId>>,
-    /// Set once in `hub/serve` (`wire::wire`) to usage and receipts; unset passes through.
+    /// Set once in `hub/serve` (`wire::wire`) to usage; unset passes through.
     pub hooks: TaskHooks,
     cursor: i64,
     /// The last thread event applied, by the follower or by a retry catching up (read and written under `lock`).
@@ -214,7 +214,6 @@ pub struct Tasks {
 #[derive(Default)]
 pub struct TaskHooks {
     pub usage: OnceLock<Arc<dyn UsageGate>>,
-    pub receipts: OnceLock<Arc<dyn ResultReceipts>>,
 }
 
 impl Tasks {
@@ -300,13 +299,7 @@ impl Tasks {
     }
 
     fn wake_result(&self, task: &Task, result: &TaskResult) {
-        let receipts = self.hooks.receipts.get().and_then(|r| r.line(result));
-        let text = render::task_result_lines(
-            task.task_id.as_str(),
-            task.title.as_str(),
-            result,
-            receipts.as_deref(),
-        );
+        let text = render::task_result_lines(task.task_id.as_str(), task.title.as_str(), result);
         self.d
             .ports
             .wake(&task.project_ref, WakeKind::TaskResult, text);
@@ -453,8 +446,6 @@ impl Tasks {
             )),
             branch: task.branch.clone(),
             pr_url: None,
-            receipts: None,
-            claims_unverified: None,
             at: Timestamp(at.clone()),
         };
         let mut next = task.clone();
@@ -739,19 +730,12 @@ impl Tasks {
             .copied()
             .collect::<Vec<_>>()
             .join("\n\n");
-        // M6 receipts: what the thread actually ran, counted from its items.
         let result = TaskResult {
             status,
             tail: Text::unchecked(tail_of(&tail, render::TAIL_MAX)),
             branch: branch.clone().map(NonEmpty::unchecked),
             pr_url: pr_url.map(PrUrl::unchecked),
-            receipts: None,
-            claims_unverified: None,
             at: Timestamp(at.clone()),
-        };
-        let result = match self.hooks.receipts.get() {
-            Some(receipts) => receipts.attach(&thread_ref, result).await,
-            None => result,
         };
         let mut next = task.clone();
         next.state = if status == TaskResultStatus::Done {
@@ -1214,8 +1198,6 @@ impl Tasks {
             tail: Text::unchecked(tail_of(&reason, render::TAIL_MAX)),
             branch: task.branch.clone(),
             pr_url: None,
-            receipts: None,
-            claims_unverified: None,
             at: Timestamp(at.clone()),
         };
         let mut next = task.clone();

@@ -1,10 +1,9 @@
-//! What the checks, receipts and review verdicts areas need from other hub areas, as one trait.
+//! What the checks and review verdicts areas need from other hub areas, as one trait.
 //! The hub's implementation (`HubPorts`, wired once those areas land) forwards to their services; tests use fakes.
 //! Keeping it to this one seam means the claim flow and review verdicts run their real logic under test.
-use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
+use fleetd_contracts::ids::{MachineId, ProjectRef};
 use fleetd_contracts::ledger::{MetricValues, Workstream, WorkstreamId};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
-use fleetd_contracts::model::ActionItem;
 use fleetd_contracts::tasks::{Task, TaskId};
 use fleetd_contracts::verification::{CheckResult, ClaimId};
 use std::future::Future;
@@ -118,10 +117,4 @@ pub trait Ports: Send + Sync + 'static {
     /// When the workstream's brief was last set or edited (its latest `workstream.running`, or a `workstream.state`
     /// that edited it).
     fn brief_set_ms(&self, workstream: &WorkstreamId) -> Option<i64>;
-    // executor
-    fn thread_actions<'a>(
-        &'a self,
-        thread: &'a ThreadRef,
-        max: usize,
-    ) -> BoxFuture<'a, Result<Vec<ActionItem>, String>>;
 }

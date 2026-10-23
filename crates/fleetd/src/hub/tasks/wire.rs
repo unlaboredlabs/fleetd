@@ -11,10 +11,10 @@ use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::prim::NonEmpty;
 use fleetd_contracts::sessions::SessionWorkspace;
-use fleetd_contracts::tasks::{TaskId, TaskResult};
+use fleetd_contracts::tasks::TaskId;
 use fleetd_contracts::usage::UsageParked;
 
-use super::hooks::{ResultReceipts, UsageGate};
+use super::hooks::UsageGate;
 use super::ports::{
     BoxFut, CmdOutput, LaunchRequest, PortError, TaskPorts, ThreadChanges, WakeKind,
 };
@@ -371,17 +371,6 @@ impl UsageGate for UsageFromArea {
     }
 }
 
-struct ReceiptsFromArea(Arc<crate::hub::receipts::Receipts>);
-
-impl ResultReceipts for ReceiptsFromArea {
-    fn attach<'a>(&'a self, thread: &'a ThreadRef, result: TaskResult) -> BoxFut<'a, TaskResult> {
-        Box::pin(self.0.attach(thread, result))
-    }
-    fn line(&self, result: &TaskResult) -> Option<String> {
-        crate::hub::receipts::count::receipts_line(result)
-    }
-}
-
 /// Digest lines, and listing and cancelling the tasks of removed projects.
 struct TasksForLeads(Arc<Tasks>);
 
@@ -412,7 +401,7 @@ impl TasksHook for TasksForLeads {
 }
 
 /// Everything tasks and slots hook into once the `Hub` exists: the ports' leads half, the lead calls, the
-/// usage/receipts hooks on tasks, and the tasks hook on leads.
+/// usage hook on tasks, and the tasks hook on leads.
 pub fn wire(hub: &Arc<Hub>, ports: &HubTaskPorts) {
     ports.bind(hub);
     register_lead_calls(hub);
@@ -420,9 +409,6 @@ pub fn wire(hub: &Arc<Hub>, ports: &HubTaskPorts) {
     let _ = hooks
         .usage
         .set(Arc::new(UsageFromArea(Arc::clone(&hub.usage))));
-    let _ = hooks
-        .receipts
-        .set(Arc::new(ReceiptsFromArea(Arc::clone(&hub.receipts))));
     let lead_hooks = &hub.leads.ctx.hooks;
     let _ = lead_hooks
         .tasks

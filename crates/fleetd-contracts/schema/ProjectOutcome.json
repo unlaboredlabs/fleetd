@@ -503,38 +503,6 @@
       ],
       "type": "object"
     },
-    "Receipts": {
-      "description": "Counted by the hub from the task's thread items, never from its prose.",
-      "properties": {
-        "commands": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "commandsFailed": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "filesChanged": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "toolCalls": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "commands",
-        "commandsFailed",
-        "filesChanged",
-        "toolCalls"
-      ],
-      "type": "object"
-    },
     "ResearchOutcome": {
       "description": "STOP is a success: the question was answered.",
       "enum": [
@@ -742,16 +710,8 @@
           "minLength": 1,
           "type": "string"
         },
-        "claimsUnverified": {
-          "description": "The tail claims success (\"tests pass\", \"fixed\", ...) while `receipts.commands` is 0. Absent before M6.",
-          "type": "boolean"
-        },
         "prUrl": {
           "type": "string"
-        },
-        "receipts": {
-          "$ref": "#/$defs/Receipts",
-          "description": "Absent on results stored before M6."
         },
         "status": {
           "$ref": "#/$defs/TaskResultStatus"

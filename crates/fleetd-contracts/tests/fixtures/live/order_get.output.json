@@ -279,12 +279,6 @@
         "state": "merged",
         "reviewsDone": 2,
         "reviewsNeeded": 2
-      },
-      "receipts": {
-        "commands": 14,
-        "commandsFailed": 1,
-        "filesChanged": 4,
-        "toolCalls": 22
       }
     }
   ],

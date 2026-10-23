@@ -1,18 +1,8 @@
 //! What tasks call in areas that land after them (or whose APIs are still moving). Those areas implement these
 //! traits and `hub/serve` passes them in, so the tasks area depends on behaviour, not on their structs.
 use fleetd_contracts::events::HubEvent;
-use fleetd_contracts::ids::{MachineId, ThreadRef};
-use fleetd_contracts::tasks::TaskResult;
+use fleetd_contracts::ids::MachineId;
 use fleetd_contracts::usage::UsageParked;
-
-pub use super::ports::BoxFut;
-
-/// M6 receipts (receipts area): what the thread actually ran, counted from its items, added to the result.
-pub trait ResultReceipts: Send + Sync {
-    fn attach<'a>(&'a self, thread: &'a ThreadRef, result: TaskResult) -> BoxFut<'a, TaskResult>;
-    /// The result's receipts line for the lead wake, absent on results without receipts.
-    fn line(&self, result: &TaskResult) -> Option<String>;
-}
 
 /// M4 usage (usage area).
 pub trait UsageGate: Send + Sync {

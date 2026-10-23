@@ -8,10 +8,9 @@ use crate::clock::{Clock, SystemClock};
 use crate::hub::orders::open_work::{Item, OpenWork};
 use crate::hub::store::{EventLog, HubDb, WaitInput};
 use fleetd_contracts::events::HubEventType;
-use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
+use fleetd_contracts::ids::{MachineId, ProjectRef};
 use fleetd_contracts::ledger::{MetricValues, Workstream, WorkstreamId, WorkstreamState};
 use fleetd_contracts::mcp::ErrorCode;
-use fleetd_contracts::model::ActionItem;
 use fleetd_contracts::tasks::{Task, TaskId};
 use fleetd_contracts::verification::{CheckOutcome, CheckResultRanBy, ClaimOutcome};
 use serde_json::{Value, json};
@@ -144,13 +143,6 @@ impl Ports for Fake {
     }
     fn brief_set_ms(&self, _: &WorkstreamId) -> Option<i64> {
         *self.brief_set_ms.lock().unwrap()
-    }
-    fn thread_actions<'a>(
-        &'a self,
-        _: &'a ThreadRef,
-        _: usize,
-    ) -> BoxFuture<'a, Result<Vec<ActionItem>, String>> {
-        Box::pin(async { Ok(vec![]) })
     }
 }
 
