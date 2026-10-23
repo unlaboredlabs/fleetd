@@ -18,23 +18,6 @@ export const isChecker = (role: AgentRole): boolean => role === "reviewer" || ro
 
 export { ROLE_WORD };
 
-/** The tint family: writers (implementers, readers), reviewers, verifiers (and QA), the lead. */
-export type Tint = "writer" | "reviewer" | "verifier" | "lead";
-export const roleTint = (role: AgentRole): Tint => {
-  switch (role) {
-    case "implementer":
-    case "reader":
-      return "writer";
-    case "reviewer":
-      return "reviewer";
-    case "verifier":
-    case "qa":
-      return "verifier";
-    case "lead":
-      return "lead";
-  }
-};
-
 /**
  * One activity line: words in the UI voice, then machine text (a command, path or pattern) in mono. `thinking`
  * marks waiting on the model: true, but the quiet state; tool work is what reads loud.

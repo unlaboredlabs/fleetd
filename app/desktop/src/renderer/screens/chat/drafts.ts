@@ -8,7 +8,8 @@ import { createStore, type StoreApi } from "zustand/vanilla";
 import type { AttachmentRef } from "../../../shared/contracts";
 import type { DataLayer } from "../../src/data/queries";
 import { useDataLayer } from "../../src/data/react";
-import { fmtBytes, looksText, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, mimeFor, toBase64 } from "./attachments";
+import { ATTACHMENT_MAX_BYTES } from "../../../shared/contracts";
+import { fmtBytes, looksText, MAX_ATTACHMENTS, mimeFor, toBase64 } from "./attachments";
 
 /** Uploaded: the hub's reference to the file, which a message carries. */
 export type Upload = { readonly ok: true; readonly ref: AttachmentRef } | { readonly ok: false; readonly message: string };
@@ -78,7 +79,7 @@ export function createDrafts(layer: Pick<DataLayer, "call">, saved: Readonly<Rec
           set(key, (d) => ({ ...d, error: `A message carries at most ${MAX_ATTACHMENTS} files.` }));
           return;
         }
-        if (file.size > MAX_ATTACHMENT_BYTES) {
+        if (file.size > ATTACHMENT_MAX_BYTES) {
           set(key, (d) => ({ ...d, error: `${file.name} is ${fmtBytes(file.size)}; a file is at most 5 MB.` }));
           continue;
         }
@@ -145,7 +146,7 @@ const all = new WeakMap<object, Drafts>();
 const flushes = new Set<() => void>();
 
 /** Writes any unsaved words now: before the app restarts itself (an update). Quitting flushes on its own. */
-export const flushDrafts = (): void => {
+const flushDrafts = (): void => {
   for (const flush of flushes) flush();
 };
 
