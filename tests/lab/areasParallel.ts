@@ -1,7 +1,7 @@
 // Default areas (`npm run lab -- areas`), on lab-a in this slot's namespace of the lab repo, whose seed has
 // packages/alpha and packages/beta. The policy file sets no `areas`, so the hub infers `alpha`, `beta` and `all` from
 // the repo: project_add shows them as inferred, `fleetd doctor` lists them, and two writers, one per package, run
-// at the same time instead of queueing on one area. Costs a lead start turn, its wakes and two mechanics writer turns.
+// at the same time instead of queueing on one area. Costs a lead start turn, its wakes and two writer turns.
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -13,10 +13,7 @@ const MACHINE = "lab-a";
 const TURN_MS = 240_000;
 const ENDED = ["thread.completed", "thread.failed", "thread.interrupted"];
 // No `areas`: the inferred ones apply.
-const POLICY = `defaults:
-  model: ${MECHANICS.model}
-  effort: ${MECHANICS.effort}
-`;
+const POLICY = ``;
 
 export async function areasParallel(lab: Lab) {
   const { callTool, check, ok } = lab;
@@ -49,7 +46,7 @@ export async function areasParallel(lab: Lab) {
       });
       return { code: out.status, stdout: out.stdout, stderr: out.stderr };
     };
-    const started = await callTool("lead_start", { ...ref, ...MECHANICS });
+    const started = await callTool("lead_start", ref);
     check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
     const leadThread = started.body.threadId as string;
     await lab.waitEvent("lead start turn", TURN_MS, { cursor: scenarioStart, machineId: MACHINE, match: (e) => e.threadId === leadThread && ENDED.includes(e.type) });
@@ -68,7 +65,7 @@ export async function areasParallel(lab: Lab) {
     const cursor = await lab.cursor();
     const spawn = (area: string) => {
       const out = fleetd(
-        "task", "spawn", "--workstream", w, "--title", `wait in ${area}`, "--areas", area, "--serves", "done:0", "--model", MECHANICS.model, "--effort", MECHANICS.effort,
+        "task", "spawn", "--workstream", w, "--title", `wait in ${area}`, "--areas", area, "--serves", "done:0", "--profile", MECHANICS,
         "--prompt", "Run the shell command `sleep 30`, then reply with one word: ok. Change, commit and push nothing.",
       );
       const taskId = /^Spawned (T\d+)/mu.exec(out.stdout)?.[1];

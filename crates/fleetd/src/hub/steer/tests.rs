@@ -31,7 +31,6 @@ fn lab() -> Lab {
         listen: Default::default(),
         url: None,
         queue_ttl_sec: None,
-        retro_model: None,
     };
     let clock = ManualClock::at(1_792_000_000_000);
     let hub =
@@ -325,7 +324,7 @@ fn running_task(hub: &Hub, project: &str) -> Task {
     let task: Task = serde_json::from_value(json!({
         "taskId": "T1", "projectRef": { "machineId": "lab-a", "projectId": project }, "workstreamId": "W1",
         "title": "write the API", "kind": "write", "prompt": "do it", "areas": ["api"],
-        "model": "claude-haiku-5-5", "effort": "low", "state": "running", "attempt": 1, "createdAt": AT,
+        "state": "running", "attempt": 1, "createdAt": AT,
         "startedAt": AT, "threadRef": { "machineId": "lab-a", "threadId": "task-thread" },
     }))
     .unwrap();

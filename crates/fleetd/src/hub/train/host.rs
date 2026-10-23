@@ -91,7 +91,8 @@ pub struct EventView {
     pub data: Value,
 }
 
-/// A review task as Tasks.spawn takes it (kind "review", no areas), from the caller `by` in `project_ref`.
+/// A review task as Tasks.spawn takes it (kind "review", no areas, so the high profile), from the caller `by` in
+/// `project_ref`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReviewSpawn {
     pub project_ref: ProjectRef,
@@ -102,7 +103,6 @@ pub struct ReviewSpawn {
     pub serves: String,
     pub pr: String,
     pub tier: Tier,
-    pub model: Option<String>,
 }
 
 /// One runner on a machine as a provider instance (executor/providers, from the node's `runner_info`).

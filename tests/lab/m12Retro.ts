@@ -1,7 +1,7 @@
 // M12 lab check, standalone (no nodes needed): `node tests/lab/m12Retro.ts` after
 // `cargo build --release -p fleetd` (or with FLEETD_BIN set). Creates a fresh hub home under the lab with the fleetd under test, seeds a synthetic
 // incident history straight into its SQLite (the schema both hubs share), starts the hub with the user's own claude
-// login, and runs `fleetd retro run --advise`: one real turn on the lab's mechanics model. Checks the run is recorded as
+// login, and runs `fleetd retro run --advise`: one real claude-opus-5-5 turn. Checks the run is recorded as
 // orchestrator usage, every kept proposal is only suggested, no playbook file was written, and the digest and MCP tools
 // show it. The hub is stopped by its spawn PID.
 import { execFileSync } from "node:child_process";
@@ -11,7 +11,7 @@ import { DatabaseSync } from "node:sqlite";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { type Body, callToolWith, check, CLI, cli, fleetdCommand, LAB, log, MECHANICS, ok, scrubbedEnv, slotPort, startCli, stopAll, until } from "./harness.ts";
+import { type Body, callToolWith, check, CLI, cli, fleetdCommand, LAB, log, ok, scrubbedEnv, slotPort, startCli, stopAll, until } from "./harness.ts";
 
 const PORT = Number(process.env.FLEETD_LAB_M12_PORT ?? slotPort(4797));
 const URL_ = `http://127.0.0.1:${PORT}`;
@@ -60,7 +60,7 @@ async function main() {
   const keyFile = path.join(HOME, "admin.key");
   fs.writeFileSync(keyFile, `${key}\n`, { mode: 0o600 });
 
-  startCli("hub-m12", ["hub", "start", "--home", HOME, "--listen", `127.0.0.1:${PORT}`, "--retro-model", MECHANICS.model]);
+  startCli("hub-m12", ["hub", "start", "--home", HOME, "--listen", `127.0.0.1:${PORT}`]);
   await until("hub /healthz", 30_000, async () => {
     try {
       return (await fetch(`${URL_}/healthz`)).ok ? true : undefined;
@@ -79,7 +79,7 @@ async function main() {
   });
   log(`fleetd retro run (${((Date.now() - started) / 1000).toFixed(1)} s):\n${out.trimEnd()}`);
   check(/^retro run 1 \(manual, advise-only\): 6 incidents in 14 d/mu.test(out), "the run saw the 6 seeded incidents, advise-only");
-  check(out.includes(`\nusage: ${MECHANICS.model}, `), `the turn ran on ${MECHANICS.model}`);
+  check(/^usage: claude-opus-5-5, /mu.test(out), "the turn ran on claude-opus-5-5");
 
   const client = new Client({ name: "fleetd-m12-lab", version: "0" });
   await client.connect(new StreamableHTTPClientTransport(new URL(`${URL_}/mcp`), { requestInit: { headers: { authorization: `Bearer ${key}` } } }) as Transport);

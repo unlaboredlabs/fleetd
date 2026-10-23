@@ -9,7 +9,7 @@ use serde_with::skip_serializing_none;
 
 use crate::chat::ChatRequestId;
 use crate::checked;
-use crate::effort::Effort;
+use crate::effort::TaskProfile;
 use crate::ids::ThreadId;
 use crate::ledger::{
     BriefDraft, BriefHash, Decision, DecisionKey, DecisionValue, DecisionWhy, EnvName,
@@ -139,10 +139,10 @@ fn default_task_kind() -> TaskKind {
     TaskKind::Write
 }
 
-/// `fleetd task spawn --workstream W1 --title t --prompt p [--kind write|read|review] [--areas a,b] [--model m]
-/// [--effort e] [--tier S|M|L] [--serves s] [--pr <url>] [--qa]`. Absent model and effort resolve
-/// from the policy file, then the project, then claude-opus-5-5/high. A write task needs `--serves`, a review task
-/// `--pr`; `--qa` marks a review task as a QA run.
+/// `fleetd task spawn --workstream W1 --title t --prompt p [--kind write|read|review] [--areas a,b]
+/// [--profile high|medium] [--tier S|M|L] [--serves s] [--pr <url>] [--qa]`. The profile defaults to high; a review
+/// task, and every task of a project with medium off, runs high whatever it says. A write task needs `--serves`, a
+/// review task `--pr`; `--qa` marks a review task as a QA run.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(remote = "Self", rename_all = "camelCase")]
@@ -154,8 +154,7 @@ pub struct TaskSpawnCall {
     pub prompt: TaskPrompt,
     #[serde(default)]
     pub areas: TaskAreas,
-    pub model: Option<NonEmpty>,
-    pub effort: Option<Effort>,
+    pub profile: Option<TaskProfile>,
     pub tier: Option<Tier>,
     /// Older leads only: fleetd no longer asks for time estimates and the CLI no longer sends one.
     pub estimate_minutes: Option<NonNegative>,

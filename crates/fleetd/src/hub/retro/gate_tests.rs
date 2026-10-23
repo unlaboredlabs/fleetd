@@ -47,7 +47,6 @@ async fn hub_on(
         listen: Listen::default(),
         url: None,
         queue_ttl_sec: None,
-        retro_model: None,
     };
     let hub = crate::hub::serve::build_on(db, config, ManualClock::at(T as u64)).unwrap();
     // The retro reads playbooks and decisions through the ops ports, which `start_loops` binds on a serving hub.
@@ -266,7 +265,6 @@ async fn an_approved_change_applies_when_the_restarted_hub_starts() {
         listen: Listen::default(),
         url: None,
         queue_ttl_sec: None,
-        retro_model: None,
     };
     let restarted = crate::hub::serve::build_on(
         HubDb::open(dir.path()).unwrap(),

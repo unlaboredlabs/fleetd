@@ -15,10 +15,10 @@ use tokio::task::JoinHandle;
 
 mod wire;
 
-pub const HUB_START_USAGE: &str = "  hub start [--home <dir>] [--listen <host:port>] [--queue-ttl <seconds>] [--retro-model <model>]
+pub const HUB_START_USAGE: &str =
+    "  hub start [--home <dir>] [--listen <host:port>] [--queue-ttl <seconds>]
              run the hub (default home ~/.fleetd/hub, listen 127.0.0.1:4790,
-             writes to an offline machine wait 24 h, intents without a project
-             are routed by the claude CLI with claude-haiku-5-5)
+             writes to an offline machine wait 24 h)
 ";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -28,8 +28,6 @@ pub struct HubOptions {
     pub listen: Listen,
     /// How long a write to an offline machine waits in the queue; absent means 24 h.
     pub queue_ttl_sec: Option<u64>,
-    /// The retro's one-shot model; absent means claude-haiku-5-5.
-    pub retro_model: Option<String>,
 }
 
 /// `host:port`, `:port` or `port`; IPv6 hosts in brackets, as in `[::1]:4790`.
@@ -62,8 +60,8 @@ pub fn parse_listen(value: &str) -> Option<Listen> {
 /// The flags of `hub start`, with node:util `parseArgs`'s strict rules and messages: `--flag value` or
 /// `--flag=value`, the last one wins, no positionals.
 pub fn parse_hub_args(argv: &[String]) -> Result<HubOptions, String> {
-    const FLAGS: [&str; 4] = ["home", "listen", "queue-ttl", "retro-model"];
-    let mut values: [Option<String>; 4] = Default::default();
+    const FLAGS: [&str; 3] = ["home", "listen", "queue-ttl"];
+    let mut values: [Option<String>; 3] = Default::default();
     let mut args = argv.iter();
     while let Some(arg) = args.next() {
         if arg == "--" {
@@ -100,7 +98,7 @@ pub fn parse_hub_args(argv: &[String]) -> Result<HubOptions, String> {
         };
         values[index] = Some(value);
     }
-    let [home, listen, ttl, retro_model] = values;
+    let [home, listen, ttl] = values;
     let listen = match listen {
         None => Listen::default(),
         Some(raw) => {
@@ -124,7 +122,6 @@ pub fn parse_hub_args(argv: &[String]) -> Result<HubOptions, String> {
         home,
         listen,
         queue_ttl_sec,
-        retro_model,
     })
 }
 
@@ -167,7 +164,6 @@ pub async fn run(options: HubOptions) -> anyhow::Result<()> {
         listen: options.listen.clone(),
         url: None,
         queue_ttl_sec: options.queue_ttl_sec,
-        retro_model: options.retro_model.clone(),
     };
     let hub = build(config, Arc::new(SystemClock))?;
     let tools = Arc::new(api::registry());
@@ -320,10 +316,7 @@ pub fn build_on(
     });
     let leads = crate::hub::leads::Area::new(
         crate::hub::leads::Ctx::new(db.clone(), store.clone(), events.clone(), clock.clone()),
-        crate::hub::leads::AreaOptions {
-            home: &config.home,
-            leads: Default::default(),
-        },
+        crate::hub::leads::AreaOptions { home: &config.home },
     )?;
     crate::hub::leads::wiring::wire_area(
         &leads,

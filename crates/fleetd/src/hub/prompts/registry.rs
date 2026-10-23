@@ -169,6 +169,35 @@ pub const ENTRIES: &[Entry] = &[
         ]
     ),
     entry!(
+        "lead.profiles",
+        Start,
+        Lead,
+        Lead,
+        "Task profiles",
+        "after lead.start while the project allows medium (project_set)",
+        "",
+        &[
+            (
+                "mechanical-only",
+                "medium only for mechanical work, never for design or anything subtle",
+                r"only for mechanical work",
+                Prompt
+            ),
+            (
+                "reviews-high",
+                "reviews always run high",
+                r"Reviews always run high",
+                Code
+            ),
+            (
+                "redo-on-high",
+                "a medium task whose review finds blockers twice is redone on high",
+                r"redone on high",
+                Prompt
+            ),
+        ]
+    ),
+    entry!(
         "steer.message",
         Msg,
         Messages,

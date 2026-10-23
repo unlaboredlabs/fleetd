@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en" dir="ltr" data-theme="dark" data-has-toc data-has-sidebar class="astro-g5ptsecz"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>Projects | fleetd docs</title><link rel="canonical" href="https://fleetd.sh/docs/projects.html"/><link rel="sitemap" href="/docs/sitemap-index.xml"/><link rel="shortcut icon" href="/docs/favicon.svg" type="image/svg+xml"/><meta name="generator" content="Astro v7.4.0"/><meta name="generator" content="Starlight v0.42.6"/><meta property="og:title" content="Projects"/><meta property="og:type" content="article"/><meta property="og:url" content="https://fleetd.sh/docs/projects.html"/><meta property="og:locale" content="en"/><meta property="og:description" content="Add a project, choose its branch and models, and how its lead plans the work."/><meta property="og:site_name" content="fleetd docs"/><meta name="twitter:card" content="summary_large_image"/><meta name="description" content="Add a project, choose its branch and models, and how its lead plans the work."/><script>
+<!DOCTYPE html><html lang="en" dir="ltr" data-theme="dark" data-has-toc data-has-sidebar class="astro-g5ptsecz"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>Projects | fleetd docs</title><link rel="canonical" href="https://fleetd.sh/docs/projects.html"/><link rel="sitemap" href="/docs/sitemap-index.xml"/><link rel="shortcut icon" href="/docs/favicon.svg" type="image/svg+xml"/><meta name="generator" content="Astro v7.4.0"/><meta name="generator" content="Starlight v0.42.6"/><meta property="og:title" content="Projects"/><meta property="og:type" content="article"/><meta property="og:url" content="https://fleetd.sh/docs/projects.html"/><meta property="og:locale" content="en"/><meta property="og:description" content="Add a project, choose its branch and task profiles, and how its lead plans the work."/><meta property="og:site_name" content="fleetd docs"/><meta name="twitter:card" content="summary_large_image"/><meta name="description" content="Add a project, choose its branch and task profiles, and how its lead plans the work."/><script>
 	window.StarlightThemeProvider = (() => {
 		const storedTheme =
 			typeof localStorage !== 'undefined' && localStorage.getItem('starlight-theme');
@@ -266,7 +266,31 @@ the merge train.</li>
 It never works around the cap: it doesn’t do a writer’s work itself, or ask you to raise it unless you asked about
 speed. At a cap of 1 it works one piece at a time and says so once.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="models">Models and cost</h2><a class="sl-anchor-link" href="#models"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Models and cost”</span></a></div>
-<p>By default the lead and every task run on <code dir="auto">claude-opus-5-5</code> at high effort.</p>
+<p>Every agent runs on <code dir="auto">claude-opus-5-5</code>, with one of two profiles:</p>
+<table>
+<thead>
+<tr>
+<th>Profile</th>
+<th>Effort</th>
+<th>Runs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code dir="auto">high</code></td>
+<td>high</td>
+<td>The default. The lead, every review, every helper call, and every task the lead doesn’t mark medium.</td>
+</tr>
+<tr>
+<td><code dir="auto">medium</code></td>
+<td>medium</td>
+<td>Mechanical tasks the lead picks: dead-code deletions, renames, test removals, doc fixes, moving files, plain wiring, screenshot recaptures. Never design, concurrency, auth or secrets, approvals or the merge train.</td>
+</tr>
+</tbody>
+</table>
+<p>The lead picks the profile for each task it starts. A medium task whose review finds blockers twice is redone on high.
+Each agent’s profile shows on its lane, in <code dir="auto">fleetd task status</code> and in <code dir="auto">fleetd status</code> (<code dir="auto">T12 medium</code>), and the time
+view splits agent time and output tokens by profile, so you can see what medium saves.</p>
 <table>
 <thead>
 <tr>
@@ -276,27 +300,17 @@ speed. At a cap of 1 it works one piece at a time and says so once.</p>
 </thead>
 <tbody>
 <tr>
-<td>The lead’s model and effort</td>
-<td>Call <code dir="auto">lead_start {machineId, projectId, model, effort}</code> from an <a href="/docs/mcp-clients">MCP client</a> before your first message to the project. They are saved for the project.</td>
+<td>Whether the lead may use medium</td>
+<td><code dir="auto">fleetd project set &lt;machine&gt;/&lt;project&gt; --medium off</code> runs every new task on high; <code dir="auto">--medium on</code> allows medium again (the default).</td>
 </tr>
 <tr>
-<td>The tasks’ model and effort</td>
-<td>Set <code dir="auto">defaults.model</code> and <code dir="auto">defaults.effort</code> in the project’s <a href="/docs/config-and-files#policy">policy file</a>, committed to the default branch.</td>
+<td>When the lead picks medium</td>
+<td>Edit the <strong>Task profiles</strong> prompt (<code dir="auto">lead.profiles</code>) like any <a href="/docs/what-agents-are-told">prompt</a>. It takes effect at the lead’s next start.</td>
 </tr>
 </tbody>
 </table>
-<p>For example, to run a test project at medium effort:</p>
-<ol>
-<li>
-<p>Before your first message to it, call
-<code dir="auto">lead_start {"machineId":"devbox","projectId":"&lt;id&gt;","model":"claude-opus-5-5","effort":"medium"}</code>. <code dir="auto">fleetd project list</code> shows the ids.</p>
-</li>
-<li>
-<p>Commit this <code dir="auto">.fleetd/policy.yaml</code> to the default branch. Without <code dir="auto">areas</code>, the project keeps the areas fleetd
-<a href="/docs/config-and-files#inferred-areas">infers from the repo</a>.</p>
-<div class="expressive-code"><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="yaml"><code><div class="ec-line"><div class="code"><span style="--0:#85E89D;--1:#1E7734">defaults</span><span style="--0:#E1E4E8;--1:#24292E">:</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#85E89D;--1:#1E7734">model</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">claude-opus-5-5</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#85E89D;--1:#1E7734">effort</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">medium</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="defaults:  model: claude-opus-5-5  effort: medium"><div></div></button></div></figure></div>
-</li>
-</ol>
+<p>There is no other model or effort: no setting, flag or policy key picks one. An older policy file’s <code dir="auto">defaults.model</code>
+and <code dir="auto">defaults.effort</code> are ignored, and <code dir="auto">fleetd doctor</code> says so.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="scheduling">How the lead schedules work</h2><a class="sl-anchor-link" href="#scheduling"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “How the lead schedules work”</span></a></div>
 <p>The lead plans each piece of work as small items, sized S, M or L, some waiting <code dir="auto">after</code> others. It starts every item it can
 in parallel while slots are free. fleetd keeps that going, but never starts work by itself:</p>

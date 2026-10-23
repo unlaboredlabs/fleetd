@@ -1,4 +1,4 @@
-//! fleetd-owned tasks: every subagent a lead runs. Spawn resolves model and effort, takes leases (writers) and a
+//! fleetd-owned tasks: every subagent a lead runs. Spawn resolves the profile, takes leases (writers) and a
 //! slot or queues with the reason, and launches a thread (writers in a new worktree on `<branchPrefix><taskId>-<slug>`,
 //! `fleetd/` by default).
 //! The thread's status transitions, read off the event log, end the task: the result goes into the record and,
@@ -44,7 +44,7 @@ use fleetd_contracts::mcp::ErrorCode;
 use hooks::{ResultReceipts, SpawnCheck, UsageGate};
 use ports::{LaunchRequest, PortError, TaskError, TaskPorts, WakeKind, Worktree};
 use render::{branch_for, find_pr_url, render_task_prompt, tail_of};
-use resolve::{ModelEffort, resolve_model_effort};
+use resolve::resolve_profile;
 
 pub use records::{StoredTask, TaskRecords};
 
@@ -430,8 +430,7 @@ impl Tasks {
         let request = LaunchRequest {
             project_id: r.project_id.clone(),
             prompt: prompt.clone(),
-            model: task.model.as_str().to_owned(),
-            effort: task.effort,
+            profile: task.profile,
             title: js_prefix(
                 &format!("{}: {}", task.task_id.as_str(), task.title.as_str()),
                 80,
@@ -714,10 +713,9 @@ impl Tasks {
             )
         } else {
             format!(
-                "{} started ({}/{}): {}",
+                "{} started ({}): {}",
                 task.task_id.as_str(),
-                task.model.as_str(),
-                render::effort_str(task.effort),
+                task.profile.as_str(),
                 task.title.as_str()
             )
         };
@@ -1150,16 +1148,7 @@ impl Tasks {
                 )),
             ));
         }
-        let flag = ModelEffort {
-            model: input.model.as_ref().map(|m| m.as_str().to_owned()),
-            effort: input.effort,
-        };
-        let defaults = policy.defaults.as_ref().map(|d| ModelEffort {
-            model: d.model.as_ref().map(|m| m.as_str().to_owned()),
-            effort: d.effort,
-        });
-        let settings = self.d.ports.lead_settings(r);
-        let (model, effort) = resolve_model_effort(&flag, defaults.as_ref(), settings.as_ref());
+        let profile = resolve_profile(input.profile, input.kind, self.d.ports.medium_allowed(r));
         let task = Task {
             task_id: TaskId::unchecked("T0"),
             project_ref: r.clone(),
@@ -1168,8 +1157,7 @@ impl Tasks {
             kind: input.kind,
             prompt: input.prompt.clone(),
             areas: input.areas.clone(),
-            model: NonEmpty::unchecked(model),
-            effort,
+            profile,
             tier: input.tier,
             estimate_minutes: input.estimate_minutes,
             serves: input.serves.clone(),

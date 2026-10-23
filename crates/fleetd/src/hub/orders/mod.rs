@@ -13,7 +13,7 @@ mod tests;
 use std::collections::{BTreeSet, HashMap};
 
 use fleetd_contracts::auth::Role;
-use fleetd_contracts::effort::Effort;
+use fleetd_contracts::effort::{Effort, TaskProfile};
 use fleetd_contracts::ids::{ProjectRef, ThreadRef, Timestamp};
 use fleetd_contracts::ledger::{
     Lead, LeadState, PlaybookName, Workstream, WorkstreamId, WorkstreamState,
@@ -290,8 +290,9 @@ pub fn task_lane(task: &Task, prs: &[(&Change, PrRef)], look: &dyn Lookups) -> A
             pr.as_ref().map(|p| p.number.get()),
             pr_url,
         )),
-        model: model(&task.model),
-        effort: Some(task.effort),
+        model: model(task.profile.model()),
+        effort: Some(task.profile.effort()),
+        profile: Some(task.profile),
         status,
         status_reason: reason_of(task, status).map(|r| text(&r)),
         started_at: task.started_at.clone(),
@@ -358,6 +359,8 @@ pub fn lead_lane(lead: &Lead, project_title: &str, look: &dyn Lookups) -> AgentL
             .as_ref()
             .and_then(|t| t.effort.as_deref())
             .and_then(effort_of),
+        // The lead always runs high.
+        profile: Some(TaskProfile::High),
         status,
         status_reason: None,
         started_at: Some(lead.started_at.clone()),

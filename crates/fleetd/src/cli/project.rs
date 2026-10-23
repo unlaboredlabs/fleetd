@@ -32,6 +32,9 @@ pub const PROJECT_USAGE: &str =
              fleet's cap on running turns (admin key); more wait queued and start as
              slots free. Lowering stops nothing; --pause-extras has the newest agents
              above the new max push their work and wait
+  project set <machine>/<project> --medium on|off [--home <dir>] [--hub <url>]
+             whether the lead may run mechanical tasks on the medium profile (on by
+             default); off runs every task on high
 ";
 
 const SPEC: Spec = Spec {
@@ -47,6 +50,7 @@ const SPEC: Spec = Spec {
         ("pause-extras", Kind::Bool),
         ("fleet-cap", Kind::Str),
         ("key-file", Kind::Str),
+        ("medium", Kind::Str),
     ],
     positionals: true,
 };
@@ -418,8 +422,33 @@ fn count_of(v: &args::Parsed, name: &str) -> Result<Option<u32>, Stop> {
 }
 
 async fn set(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(), Stop> {
+    let medium = match v.str("medium") {
+        None => None,
+        Some("on") => Some(true),
+        Some("off") => Some(false),
+        Some(other) => {
+            return Err(Stop(
+                2,
+                format!("--medium takes on or off, got '{other}'"),
+                None,
+            ));
+        }
+    };
     let max_agents = count_of(v, "max-agents")?;
     let fleet_cap = count_of(v, "fleet-cap")?;
+    if let Some(allowed) = medium {
+        let (machine, project) = find(client, v).await?;
+        let body = call(
+            client,
+            "project_set",
+            json!({ "machineId": machine, "projectId": s(&project, "/projectId"), "mediumAllowed": allowed }),
+        )
+        .await?;
+        out.success(body.get("next").and_then(Value::as_str).unwrap_or("Set."));
+        if max_agents.is_none() && fleet_cap.is_none() {
+            return Ok(());
+        }
+    }
     let mut input = json!({});
     if let Some(cap) = fleet_cap {
         input["cap"] = json!(cap);
@@ -433,13 +462,14 @@ async fn set(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(), 
                 "pauseExtras": v.flag("pause-extras"),
             });
         }
-        (Some(_), None) => {
+        (Some(_), None) if medium.is_none() => {
             return Err(Stop(
                 2,
-                "give --max-agents <n> for the project".into(),
+                "give --max-agents <n> or --medium on|off for the project".into(),
                 None,
             ));
         }
+        (Some(_), None) => {}
         (None, Some(_)) => {
             return Err(Stop(
                 2,
@@ -450,7 +480,8 @@ async fn set(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(), 
         (None, None) if fleet_cap.is_none() => {
             return Err(Stop(
                 2,
-                "give --max-agents <n> with a project, or --fleet-cap <n>".into(),
+                "give --max-agents <n> or --medium on|off with a project, or --fleet-cap <n>"
+                    .into(),
                 None,
             ));
         }

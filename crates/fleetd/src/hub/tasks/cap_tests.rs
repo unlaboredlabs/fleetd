@@ -21,7 +21,6 @@ pub(super) fn hub() -> (Arc<Hub>, tempfile::TempDir) {
         listen: Default::default(),
         url: None,
         queue_ttl_sec: None,
-        retro_model: None,
     };
     let clock = ManualClock::at(1_792_000_000_000);
     let hub = crate::hub::serve::build_on(HubDb::open_memory().unwrap(), config, clock).unwrap();
@@ -40,7 +39,7 @@ pub(super) fn running(hub: &Hub, n: u32) -> Task {
     let task: Task = serde_json::from_value(json!({
         "taskId": format!("T{n}"), "projectRef": { "machineId": "lab-a", "projectId": "p1" }, "workstreamId": "W1",
         "title": format!("slice {n}"), "kind": "read", "prompt": "do it", "areas": [],
-        "model": "claude-haiku-5-5", "effort": "low", "state": "running", "attempt": 1, "createdAt": AT,
+        "state": "running", "attempt": 1, "createdAt": AT,
         "startedAt": AT, "threadRef": { "machineId": "lab-a", "threadId": format!("t{n}") },
     }))
     .unwrap();
@@ -496,4 +495,35 @@ fn a_pause_line_counts_in_good_grammar() {
         paused_line(2, 2, 1, 2),
         "Max agents 2: 1 agent pushes its work and waits; 2 keep running."
     );
+}
+
+/// "Medium allowed" is on until `project_set` turns it off; the change is evented for the clients and is what the next
+/// spawn reads, so a spawn's medium then runs high.
+#[tokio::test]
+async fn the_medium_switch_is_on_by_default_and_a_spawn_reads_it() {
+    let (hub, _home) = hub();
+    let r = project();
+    assert!(hub.tasks.d.ports.medium_allowed(&r));
+    hub.leads
+        .leads
+        .set_medium_allowed(&r, "shop", false)
+        .unwrap();
+    assert!(!hub.tasks.d.ports.medium_allowed(&r));
+    let (summary, data): (String, String) = hub
+        .db
+        .with(|c| {
+            Ok(c.query_row(
+                "SELECT json_extract(data, '$.summary'), json_extract(data, '$.data') FROM events WHERE type = ?",
+                [HubEventType::ProjectSettings.as_str()],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )?)
+        })
+        .unwrap();
+    assert_eq!(summary, "shop: every task runs on high (medium off)");
+    assert_eq!(data, r#"{"mediumAllowed":false}"#);
+    hub.leads
+        .leads
+        .set_medium_allowed(&r, "shop", true)
+        .unwrap();
+    assert!(hub.tasks.d.ports.medium_allowed(&r));
 }

@@ -75,17 +75,16 @@ Every lead gets these, the finish-all lead included.
 
 ### spawn_agent
 
-Start a fleetd agent (a task) with its own session, slot and lane. kind write|read|review; a writer needs areas from the project's policy and serves (done:&lt;n>, issue:&lt;ref>, defect:&lt;text> or decision:&lt;key>) and gets its own worktree and branch; a review task needs pr. model and effort are optional. A busy area or a full slot board queues it and it starts by itself. Its result arrives in a later wake: end your turn instead of waiting.
+Start a fleetd agent (a task) with its own session, slot and lane. kind write|read|review; a writer needs areas from the project's policy and serves (done:&lt;n>, issue:&lt;ref>, defect:&lt;text> or decision:&lt;key>) and gets its own worktree and branch; a review task needs pr. profile is high by default; medium is for mechanical work only, and reviews always run high. A busy area or a full slot board queues it and it starts by itself. Its result arrives in a later wake: end your turn instead of waiting.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `areas` | string[] | no | At most 20 items. |
-| `effort` | string | no | One of `low`, `medium`, `high`, `max`. |
 | `estimateMinutes` | number | no | Older leads only: fleetd no longer asks for time estimates and the CLI no longer sends one. |
 | `item` | string | no | The plan item this task works on; refused when it belongs to another order. |
 | `kind` | string | no | Only write tasks get a worktree and leases. One of `write`, `read`, `review`. Default `"write"`. |
-| `model` | string | no |  |
 | `pr` | string | no |  |
+| `profile` | string | no | What an agent runs on. There are exactly two, both claude-opus-5-5: `high` (effort high) is the default and what the lead, every reviewer and every helper call run; `medium` (effort medium) is for mechanical tasks the lead picks. One of `high`, `medium`. |
 | `prompt` | string | yes | At most 8000 characters. |
 | `qa` | boolean | no |  |
 | `serves` | string | no |  |
@@ -755,6 +754,7 @@ Set in the claude process's environment. "In settings" marks the ones also in fl
 | `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` | removed | Every claude fleetd starts | yes | Agent teams: fleetd manages agents. |
 | `CLAUDE_CODE_COORDINATOR_MODE` | removed | Every claude fleetd starts | yes | Coordinator mode turns a session into one that only delegates (its tools become Task, ListAgents, SendMessage, TaskStop, Workflow). |
 | `CLAUDE_CODE_DISABLE_AUTO_MEMORY` | `1`, and `autoMemoryEnabled: false` | Every claude fleetd starts | yes | fleetd owns an agent's context (briefs, decisions, instructions). Notes claude keeps per folder would carry stale, unreviewed text from one agent's worktree to the next. A project opts back in with claude.autoMemory: true in its policy file. |
+| `ANTHROPIC_DEFAULT_HAIKU_MODEL` | `claude-opus-5-5` | Every claude fleetd starts | yes | claude's background helper calls (session titles and the like) run on Opus 5.5 like everything else fleetd starts, not on the haiku model claude picks by default. |
 | `DISABLE_AUTOUPDATER` | `1` | Sessions | yes | Keeps the claude fleetd checked. An update mid-run would swap the binary under a live session. |
 | `CLAUDE_CODE_STARTUP_FAILURE_RESULTS` | `1` | Sessions | no | A refusal at startup arrives as a result fleetd can read, not only as stderr. |
 | `CLAUDECODE`, `CLAUDE_CODE_ENTRYPOINT`, `CLAUDE_CODE_SSE_PORT` | removed | Sessions | no | claude sets it for its own children and treats a process that has it as nested inside another session. |

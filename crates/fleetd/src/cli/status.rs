@@ -536,7 +536,19 @@ pub fn render(doc: &StatusDoc, zone: Tz) -> String {
                 Some(&row.workstream_id),
                 &row.title,
             )];
-            let tasks: Vec<&str> = row.task_ids.iter().map(|t| t.as_str()).collect();
+            // Each agent with its profile when it runs medium: "T88,T90 medium". High is the default and unmarked.
+            let medium = row.medium_task_ids.as_ref();
+            let tasks: Vec<String> = row
+                .task_ids
+                .iter()
+                .map(|t| {
+                    if medium.is_some_and(|m| m.contains(t)) {
+                        format!("{t} medium")
+                    } else {
+                        t.to_string()
+                    }
+                })
+                .collect();
             if !tasks.is_empty() {
                 cells.push(tasks.join(","));
             }
@@ -1353,7 +1365,6 @@ mod against_a_hub {
             listen: Listen::default(),
             url: None,
             queue_ttl_sec: None,
-            retro_model: None,
         };
         let hub = crate::hub::serve::build_on(
             HubDb::open_memory().unwrap(),

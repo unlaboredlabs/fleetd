@@ -17,8 +17,8 @@ use fleetd::hub::tasks::policy::{
     self, CallerAgent, MAX_DEPTH, MAX_OPEN_TASKS, SPAWN_OPS, WORKER_OPS,
 };
 use fleetd::node::runner::claude::{
-    AUTO_MEMORY_OFF_ENV, AUTO_MEMORY_OFF_WHY, DISALLOWED_WHY, NESTING_VARS_WHY, SESSION_ENV_WHY,
-    SUBAGENTS_OFF_ENV_WHY, SUBAGENTS_ON_ENV_WHY,
+    AUTO_MEMORY_OFF_ENV, AUTO_MEMORY_OFF_WHY, DISALLOWED_WHY, HELPER_MODEL_ENV, HELPER_MODEL_WHY,
+    NESTING_VARS_WHY, SESSION_ENV_WHY, SUBAGENTS_OFF_ENV_WHY, SUBAGENTS_ON_ENV_WHY,
 };
 use fleetd::node::runner::{conformance, version::TESTED};
 use fleetd_contracts::lead_calls::GatedRunCall;
@@ -208,7 +208,7 @@ struct OneShot {
 }
 
 fn one_shot() -> Result<OneShot, String> {
-    let args = fleetd::hub::intake::oneshot::one_shot_args("m");
+    let args = fleetd::hub::intake::oneshot::one_shot_args();
     let has = |flag: &str| args.iter().any(|a| a == flag);
     let mismatch = |why: &str| {
         format!(
@@ -928,6 +928,12 @@ fn switches() -> Result<String, String> {
         &format!("`{value}`, and `autoMemoryEnabled: false`"),
         all,
     );
+    let (name, value) = HELPER_MODEL_ENV;
+    rows(
+        vec![(format!("`{name}`"), HELPER_MODEL_WHY)],
+        &format!("`{value}`"),
+        all,
+    );
     for ((name, value), why) in SESSION_ENV_WHY {
         rows(
             vec![(format!("`{name}`"), why)],
@@ -988,14 +994,14 @@ mod tests {
     #[test]
     fn the_retro_gets_the_same_deny_list_and_switches() {
         use fleetd::hub::intake::oneshot;
-        let args = oneshot::one_shot_args("m");
+        let args = oneshot::one_shot_args();
         for (tool, _) in DISALLOWED_WHY {
             assert!(args.iter().any(|a| a == tool), "{tool}");
         }
         let env = oneshot::one_shot_env(&Default::default());
         for ((name, value), _) in SUBAGENTS_OFF_ENV_WHY
             .iter()
-            .chain([&(AUTO_MEMORY_OFF_ENV, "")])
+            .chain([&(AUTO_MEMORY_OFF_ENV, ""), &(HELPER_MODEL_ENV, "")])
         {
             assert!(env.iter().any(|(k, v)| k == name && v == value), "{name}");
         }

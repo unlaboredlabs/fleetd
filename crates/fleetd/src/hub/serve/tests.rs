@@ -31,7 +31,6 @@ async fn start() -> TestHub {
         listen: Listen::default(),
         url: None,
         queue_ttl_sec: None,
-        retro_model: None,
     };
     let hub = build_on(HubDb::open_memory().unwrap(), config, Arc::new(SystemClock)).unwrap();
     let mut tools: Registry = api::registry();
@@ -619,7 +618,6 @@ async fn a_starting_hub_revokes_the_owner_key_and_deletes_its_file() {
         listen: Listen::default(),
         url: None,
         queue_ttl_sec: None,
-        retro_model: None,
     };
     let hub = super::build(config, Arc::new(SystemClock)).unwrap();
     assert!(!file.exists());

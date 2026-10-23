@@ -37,7 +37,7 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
   status set "<one line>" [--workstream <W>]
   decisions search "<query>"
   task spawn --workstream <W> --title <t> --prompt <p> [--kind write|read|review] [--areas a,b]
-      [--model <m>] [--effort low|medium|high|max] [--tier S|M|L]
+      [--profile high|medium] [--tier S|M|L]
       [--serves done:<n>|issue:<ref>|defect:<text>|decision:<key>] [--pr <url>] [--qa] [--item P<n>]
              delegate work to a subagent; writers need --areas and --serves and get their own
              branch; a review task needs --pr, and --qa marks it a QA run; --item links it to
@@ -131,8 +131,7 @@ const OPTIONS: &[(&str, Kind)] = &[
     ("title", Kind::Str),
     ("prompt", Kind::Str),
     ("areas", Kind::Str),
-    ("model", Kind::Str),
-    ("effort", Kind::Str),
+    ("profile", Kind::Str),
     ("tier", Kind::Str),
     ("serves", Kind::Str),
     ("pr", Kind::Str),
@@ -379,8 +378,7 @@ pub fn parse_lead_args(
                     "prompt",
                     "kind",
                     "areas",
-                    "model",
-                    "effort",
+                    "profile",
                     "tier",
                     "serves",
                     "pr",
@@ -399,8 +397,7 @@ pub fn parse_lead_args(
                     ("prompt", s(v.str("prompt"))),
                     ("kind", s(v.str("kind"))),
                     ("areas", v.str("areas").map(|a| Value::Array(split_list(a)))),
-                    ("model", s(v.str("model"))),
-                    ("effort", s(v.str("effort"))),
+                    ("profile", s(v.str("profile"))),
                     ("tier", s(v.str("tier"))),
                     ("serves", s(v.str("serves"))),
                     ("pr", s(v.str("pr"))),
@@ -993,14 +990,13 @@ fn task_line(task: &Value) -> String {
         _ => String::new(),
     };
     format!(
-        "{} {}{} [{}{}, {}/{}] {}{}",
+        "{} {}{} [{}{}, {}] {}{}",
         st(task, "taskId"),
         st(task, "state"),
         why,
         st(task, "kind"),
         where_,
-        st(task, "model"),
-        st(task, "effort"),
+        st(task, "profile"),
         st(task, "title"),
         opt(task, "branch")
             .map(|b| format!(" on {}", js(Some(b))))

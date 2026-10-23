@@ -339,6 +339,8 @@ pub struct InProgressRow {
     pub title: Line<1, 120>,
     /// Join to the live feed's lanes for what each agent is doing now.
     pub task_ids: List<TaskId, 0, 10>,
+    /// Those of `taskIds` that run on the medium profile; the rest run high. Absent when none does.
+    pub medium_task_ids: Option<List<TaskId, 0, 10>>,
     pub change_ids: List<ChangeId, 0, 10>,
     pub gate: Option<Line<1, 160>>,
     /// Retired with the ETA: always absent.

@@ -34,8 +34,7 @@ export async function degradedMachine(lab: Lab) {
     machineId: MACHINE,
     projectId,
     prompt: "Reply OK.",
-    model: MECHANICS.model,
-    effort: MECHANICS.effort,
+    profile: MECHANICS,
     clientRequestId: randomUUID(),
   });
   check(launch.isError, `a launch on the degraded machine is refused: ${JSON.stringify(launch.body)}`);
