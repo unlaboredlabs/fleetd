@@ -20,6 +20,8 @@ export const startProxy = async (upstream: string, logFile: string) => {
   const target = new URL(upstream);
   const client = target.protocol === "https:" ? https : http;
   const basePath = target.pathname.replace(/\/$/u, "");
+  /** In-flight upstream requests: a contender stopped mid-stream leaves one open, which would keep this process up. */
+  const inFlight = new Set<http.ClientRequest>();
   const server = http.createServer((req, res) => {
     const chunks: Array<Buffer> = [];
     req.on("data", (c: Buffer) => chunks.push(c));
@@ -46,6 +48,11 @@ export const startProxy = async (upstream: string, logFile: string) => {
           upstreamRes.pipe(res);
         },
       );
+      inFlight.add(upstreamReq);
+      upstreamReq.on("close", () => inFlight.delete(upstreamReq));
+      res.on("close", () => {
+        if (!res.writableFinished) upstreamReq.destroy();
+      });
       upstreamReq.on("error", (error) => {
         fs.appendFileSync(logFile, `${JSON.stringify({ at: new Date().toISOString(), method: req.method, path: req.url, model, effort, error: error.message })}\n`);
         if (!res.headersSent) res.writeHead(502);
@@ -59,6 +66,7 @@ export const startProxy = async (upstream: string, logFile: string) => {
   return { url: `http://127.0.0.1:${port}`, close: () =>
       new Promise<void>((resolve) => {
         server.closeAllConnections();
+        for (const r of inFlight) r.destroy();
         server.close(() => resolve());
       }),
   };
