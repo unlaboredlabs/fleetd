@@ -80,9 +80,10 @@ function Harness() {
   );
 }
 
-/** The panel's frame on a hub that answers at once: a launch of the app. */
-const mount = async () => {
-  let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
+let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
+
+/** The panel's frame on a hub that answers at once: a launch of the app. Without `online`, the hub is out of reach. */
+const mount = async ({ online = true }: { online?: boolean } = {}) => {
   const hub: HubApi = {
     call: (tool) => Promise.resolve({ ok: true, output: ANSWERS[tool] ?? {} }),
     subscribe: (l) => ((send = l), () => undefined),
@@ -99,12 +100,15 @@ const mount = async () => {
       </DataProvider>,
     );
   });
+  if (online) connect();
+  await settle();
+};
+
+const connect = () =>
   act(() => {
     send(live());
     send(snapshot(1));
   });
-  await settle();
-};
 
 function unmount() {
   act(() => root?.unmount());
@@ -199,4 +203,24 @@ it("hides itself in a narrow window, shows there with its toggle, and widening r
   expect(panel()).toBeNull();
   await resize(1400);
   expect(panel()).not.toBeNull();
+});
+
+it("says the agents and PRs show once you're connected while it has none to show, never loading bars", async () => {
+  await mount({ online: false });
+  const text = () => panel()?.textContent ?? "";
+  const bars = () => panel()?.querySelector("[aria-label='Loading agents'], [aria-label='Loading the pull requests']") ?? null;
+  expect(text()).toContain("Agents show once you’re connected.");
+  expect(bars()).toBeNull();
+
+  await go(`${CHAT}/prs`);
+  expect(text()).toContain("Pull requests show once you’re connected.");
+  expect(bars()).toBeNull();
+  await go(`${CHAT}/prs/11`);
+  expect(text()).toContain("#11 shows once you’re connected.");
+
+  // Connected: the PR it named opens.
+  connect();
+  await settle();
+  expect(panel()?.querySelector("[data-screen^='prs.detail']")).not.toBeNull();
+  expect(text()).not.toContain("once you’re connected");
 });

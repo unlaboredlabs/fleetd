@@ -54,9 +54,14 @@ function AgentList({ project }: { project: string }) {
           </Text>
         </span>
       ) : null}
-      {agents === undefined ? (
+      {agents === undefined && !fresh ? (
+        // Nothing held and no hub to ask: bars would read as loading that never ends.
+        <div className={s.note}>
+          <Text tone="quiet">Agents show once you’re connected.</Text>
+        </div>
+      ) : agents === undefined ? (
         // A failed read says so above; the skeleton then waits for Retry, it doesn't claim to be loading.
-        <Skeleton busy={fresh && !query.isError} />
+        <Skeleton busy={!query.isError} />
       ) : agents.length === 0 ? (
         <EmptyState title="No agents are working">When the lead starts agents, they show here, with what each is doing.</EmptyState>
       ) : (
@@ -113,7 +118,7 @@ export function Elapsed({ startedAt, running }: { startedAt: string | undefined;
   );
 }
 
-/** Row outlines, no shimmer. Busy only while an answer is on its way, not while the hub is out of reach. */
+/** Row outlines, no shimmer. Busy only while an answer is on its way. */
 function Skeleton({ busy }: { busy: boolean }) {
   return (
     <div className={s.skeleton} aria-busy={busy} aria-label="Loading agents">

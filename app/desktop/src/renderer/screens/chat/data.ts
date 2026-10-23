@@ -20,7 +20,7 @@ import { leadSteers } from "../live/steerModel";
 import { ordersInView } from "./model";
 import type { ProjectRef } from "./slots";
 
-// Status's own query (same input, so one cached read), only for what the hub alone knows (blocked); needs-you
+// Status's own query (same input, so one cached read), only for what the hub alone knows (blocked, and why); needs-you
 // and working come from the project row the sidebar dot reads, so the dot, the header and Status agree.
 const ALL = {} as const;
 
@@ -29,6 +29,8 @@ export interface ChatData {
   /** The project's state word: the sidebar's and Status's. */
   readonly state: ProjectStateWord | undefined;
   readonly leadWorking: boolean | undefined;
+  /** Blocked (the state word says so): the hub's reason, "" when it gave none. */
+  readonly blocked: string | undefined;
   /** The newest page couldn't be read (before any page landed): the chat shows why, with retry. */
   readonly loadError: HubError | undefined;
   readonly retry: () => void;
@@ -55,12 +57,13 @@ export function useChatData(project: ProjectRef): ChatData {
   const status = useToolQuery("status_get", ALL);
   const row = status.data?.rows?.find((r) => r.projectRef.machineId === project.machineId && r.projectRef.projectId === project.projectId);
   const state = projectRow === undefined ? undefined : projectStateWord(projectRow.needsYou, projectRow.working, row?.state);
+  const blocked = state === "blocked" ? (row?.blockedReason ?? "") : undefined;
   const loadOlder = useCallback(() => layer.chat.loadOlder(key), [layer, key]);
   const loadNewer = useCallback(() => layer.chat.loadNewer(key), [layer, key]);
   const jumpToLatest = useCallback(() => layer.chat.jumpToLatest(key), [layer, key]);
   // open() reads the newest page again while none has landed.
   const retry = useCallback(() => layer.chat.open(key), [layer, key]);
-  return { view, state, leadWorking, loadError, retry, strip, title, missing, loadOlder, loadNewer, jumpToLatest };
+  return { view, state, leadWorking, blocked, loadError, retry, strip, title, missing, loadOlder, loadNewer, jumpToLatest };
 }
 
 const noSteers: readonly Steer[] = [];

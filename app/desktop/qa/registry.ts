@@ -354,6 +354,17 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("button", { name: "Approve", exact: true })).toBeInViewport();
     },
   },
+  // A blocked project: the line above the box says why, in the hub's words (checkout's main CI is red).
+  {
+    id: "chat",
+    route: "#/project/devbox/6e8e753c-fe9a-4b79-aec3-5812d498c197",
+    fixtures: ["sidebar-reasons"],
+    variant: "blocked",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await expect(page.locator('[data-attention="blocked"]')).toHaveText("Blocked: main CI is red on acme/checkout");
+    },
+  },
   // An empty chat's starter fills the box (never sends) and gives it the cursor.
   {
     id: "chat",
@@ -755,6 +766,14 @@ export const screens: readonly Screen[] = [
   // out of reach; and a link to a project the hub doesn't have. The narrow window has hidden the panel; the link
   // shows it there.
   { id: "prs", route: PRS, fixtures: ["typical", "long-text", "many-agents", "prs-none", "prs-no-github", "prs-rate-limited", "hub-unreachable"] },
+  // Offline with nothing held: the list says it shows once you're connected, never loading bars.
+  {
+    id: "prs",
+    route: PRS,
+    fixtures: ["offline-held"],
+    variant: "offline",
+    open: (page) => expect(page.getByText("Pull requests show once you’re connected.")).toBeVisible(),
+  },
   { id: "prs", route: PRS, fixtures: ["typical"], variant: "narrow", sizes: ["narrow"] },
   { id: "prs", route: PRS, fixtures: ["empty"], variant: "missing", expect: "error" },
   {
@@ -948,6 +967,14 @@ export const screens: readonly Screen[] = [
     id: "agents",
     route: `${CHAT}/agents`,
     fixtures: ["typical", "many-agents", "long-text", "hub-unreachable", "live-20", "agents-work"],
+  },
+  // ...and offline with nothing held: it says they show once you're connected, never loading bars.
+  {
+    id: "agents",
+    route: `${CHAT}/agents`,
+    fixtures: ["offline-held"],
+    variant: "offline",
+    open: (page) => expect(page.getByText("Agents show once you’re connected.")).toBeVisible(),
   },
   // Under its work, your steers to it with their receipts, in every stage, and the box that steers it directly.
   { id: "agents.work", route: AGENT_ROUTE, fixtures: ["agents-work", "agents-steers"] },
