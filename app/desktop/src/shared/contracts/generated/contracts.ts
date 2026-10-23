@@ -1525,29 +1525,7 @@ export type InsightNumber = {
   value: number;
 };
 
-export type KnownInsightRule =
-  | "full_suite_repeat"
-  | "repeat_no_change"
-  | "failing_repeat"
-  | "slow_commands"
-  | "ci_check_critical"
-  | "ci_reaction"
-  | "slots_full"
-  | "human_wait"
-  | "approval_rule"
-  | "usage_parks"
-  | "retries"
-  | "review_share"
-  | "train_line"
-  | "rebase_loops"
-  | "first_token"
-  | "startup"
-  | "offline"
-  | "coverage"
-  | "queue_wait"
-  | "contention"
-  | "idle_lead"
-  | "slots_underused";
+export type KnownInsightRule = "full_suite_repeat" | "repeat_no_change" | "slow_commands";
 /** KnownInsightRule, or a value from a newer hub. */
 export type InsightRule = KnownInsightRule | (string & {});
 
@@ -3295,7 +3273,6 @@ export type SpanExtra = {
   /** Who answered, e.g. a key's label. Never a secret. */
   answeredBy?: string;
   attempt?: number;
-  cap?: number;
   /** `ci.check`: the check name and its page. */
   check?: string;
   /** `tool.*`: claude's own figure for the call, when the result carries one. */
@@ -3313,8 +3290,6 @@ export type SpanExtra = {
   /** The node's own start stamp, kept when the clock offset was above 100 ms. */
   nodeStartMs?: number;
   outputTokens?: number;
-  /** `slots.full`: the peak count of tasks queued for a slot, and the cap. */
-  peakQueued?: number;
   /** Free text from the source, e.g. a queue reason or a stop reason. */
   reason?: string;
   /** `wait.permission`: the node's request id, joined to the hub's approval request. */
@@ -3366,7 +3341,6 @@ export type SpanKind =
   | "claude.other"
   | "wait.offline"
   | "run.queued"
-  | "slots.full"
   | "wait.permission"
   | "wait.request"
   | "change.queue"
