@@ -285,6 +285,10 @@ async fn a_launch_runs_its_turn_streams_it_and_later_sends_continue_the_session(
     assert_eq!(overlay["autoMemoryEnabled"], false);
     assert_eq!(overlay["env"]["CLAUDE_CODE_DISABLE_AUTO_MEMORY"], "1");
     assert_eq!(last("CLAUDE_CODE_DISABLE_AUTO_MEMORY"), Some("1"));
+    // The 1-hour prompt cache and tool search, by default.
+    for (key, value) in crate::node::runner::claude::DEFAULT_ENV {
+        assert_eq!(last(key), Some(*value), "{key}");
+    }
 
     // A retried launch returns the same session without a second process.
     let again = hub
@@ -1038,6 +1042,31 @@ async fn removing_a_project_stops_its_claude_processes_first() {
         panic!("removed the same project twice")
     };
     assert_eq!(gone.code, SessionErrorCode::NotFound);
+}
+
+#[test]
+fn the_cache_and_tool_search_defaults_yield_to_the_nodes_env_and_claude_env() {
+    let dir = tempfile::tempdir().unwrap();
+    fn get<'a>(env: &'a [(String, String)], key: &str) -> Vec<&'a str> {
+        env.iter()
+            .filter(|(k, _)| k == key)
+            .map(|(_, v)| v.as_str())
+            .collect()
+    }
+    let own = config(dir.path());
+    let env = own.runner_env();
+    for (key, value) in crate::node::runner::claude::DEFAULT_ENV {
+        assert_eq!(get(&env, key), [*value], "{key}");
+    }
+
+    std::fs::write(dir.path().join("claude.env"), "ENABLE_TOOL_SEARCH=false\n").unwrap();
+    let mut base = own;
+    base.base_env
+        .push(("CLAUDE_CODE_PROMPT_CACHE_TTL".into(), "5m".into()));
+    let env = base.runner_env();
+    assert_eq!(get(&env, "CLAUDE_CODE_PROMPT_CACHE_TTL"), ["5m"]);
+    assert_eq!(get(&env, "ENABLE_TOOL_SEARCH"), ["false"]);
+    assert_eq!(get(&env, "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL"), ["1h"]);
 }
 
 #[test]

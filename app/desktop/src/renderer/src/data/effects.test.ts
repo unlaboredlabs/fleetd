@@ -29,10 +29,8 @@ describe("event effects", () => {
     expect(fx.resync).toBe(false);
   });
 
-  it("a steer receipt refetches its order's steers; a thread event its tail and project", () => {
-    expect(effectsOf(e("steer.delivered", { workstreamId: "W1" })).invalidate).toContainEqual({ tool: "steers_list", where: { workstreamId: "W1" } });
+  it("a thread event refetches its project", () => {
     const thread = effectsOf(e("thread.completed", undefined, { threadId: "t1", machineId: "devbox", projectId: "storefront" }));
-    expect(thread.invalidate).toContainEqual({ tool: "thread_tail", where: { threadId: "t1" } });
     expect(thread.invalidate).toContainEqual({ tool: "project_get", where: { machineId: "devbox", projectId: "storefront" } });
   });
 

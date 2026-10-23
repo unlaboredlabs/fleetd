@@ -1454,6 +1454,27 @@
 <td>A refusal at startup arrives as a result fleetd can read, not only as stderr.</td>
 </tr>
 <tr>
+<td><code dir="auto">CLAUDE_CODE_PROMPT_CACHE_TTL</code></td>
+<td><code dir="auto">1h</code> unless your environment or <code dir="auto">claude.env</code> sets it</td>
+<td>Every claude fleetd starts</td>
+<td>no</td>
+<td>An agent idle more than 5 minutes otherwise rewrites its whole context to the prompt cache.</td>
+</tr>
+<tr>
+<td><code dir="auto">CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL</code></td>
+<td><code dir="auto">1h</code> unless your environment or <code dir="auto">claude.env</code> sets it</td>
+<td>Every claude fleetd starts</td>
+<td>no</td>
+<td>An agent idle more than 5 minutes otherwise rewrites its whole context to the prompt cache.</td>
+</tr>
+<tr>
+<td><code dir="auto">ENABLE_TOOL_SEARCH</code></td>
+<td><code dir="auto">true</code> unless your environment or <code dir="auto">claude.env</code> sets it</td>
+<td>Every claude fleetd starts</td>
+<td>no</td>
+<td>Tool schemas load when a tool is used, not on every request.</td>
+</tr>
+<tr>
 <td><code dir="auto">CLAUDECODE</code>, <code dir="auto">CLAUDE_CODE_ENTRYPOINT</code>, <code dir="auto">CLAUDE_CODE_SSE_PORT</code></td>
 <td>removed</td>
 <td>Sessions</td>
