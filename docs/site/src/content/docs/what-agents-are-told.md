@@ -266,6 +266,7 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 | Id | Sent | Safety rules |
 |---|---|---|
 | `review.reviewer` | once per PR patch, fresh, blocking findings only | does not read the PR description or comments (prompt only); changes no files (prompt only); ends with one review verdict (the \`report\` tool) |
+| `review.delta` | after Reviewer, when an earlier round reviewed another head of the PR |  |
 | `judge` | per \`judge\` done-when check of each claim | trusts no claim in the artifacts (prompt only); ends with one review verdict (the \`report\` tool) |
 | `judge.research` | per \`judge\` check of a research claim | trusts no claim in the artifacts (prompt only); ends with one review verdict (the \`report\` tool) |
 
