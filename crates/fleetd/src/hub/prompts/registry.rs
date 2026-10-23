@@ -361,16 +361,6 @@ pub const ENTRIES: &[Entry] = &[
         "",
         &[]
     ),
-    entry!(
-        "tool.denied",
-        Msg,
-        Messages,
-        Any,
-        "Tool call denied",
-        "as the result of a tool call a policy rule or a person denied",
-        "reason!=who or what denied it, and what they said",
-        &[]
-    ),
     Entry {
         id: INSTRUCTIONS,
         title: "Custom instructions",

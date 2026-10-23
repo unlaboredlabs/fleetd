@@ -17,7 +17,7 @@ pub struct Retired {
 const STATE: &str = "the state block at the top of the lead's messages is fixed text now";
 const EVENTS: &str = "wakes are a fixed event format now, one line per event";
 const CHAT: &str = "the lead hears the human in its chat now";
-const DENIED: &str = "one Tool call denied prompt, with the reason filled in, replaces it";
+const DENIED: &str = "sessions run with full access, so no tool call waits on a person; a risky command goes through gated_run";
 const FIX_PR: &str = "one Fix your PR prompt replaces it";
 const LATE: &str = "a late or held wake is your own wake text, with how late it is in front";
 const STALL: &str =
@@ -289,26 +289,27 @@ pub const RETIRED: &[Retired] = &[
         "permission.denied.policy",
         "Tool denied by policy",
         DENIED,
-        Some("tool.denied"),
+        None,
     ),
     r(
         "permission.denied.withdrawn",
         "Tool ask withdrawn",
         DENIED,
-        Some("tool.denied"),
+        None,
     ),
     r(
         "permission.denied.human",
         "Tool denied by the human",
         DENIED,
-        Some("tool.denied"),
+        None,
     ),
     r(
         "permission.denied.answer",
         "Tool denied with thread_answer",
         DENIED,
-        Some("tool.denied"),
+        None,
     ),
+    r("tool.denied", "Tool call denied", DENIED, None),
     r("router", "Order router", ROUTER, None),
     r("status.headline", "Status headline", HEADLINE, None),
     r("router.retry", "Order router, second try", ROUTER, None),

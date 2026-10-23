@@ -1,6 +1,5 @@
 //! Classifies a failed run from what claude said, structured fields first and text second. The text rules are the
-//! hub's `executor/limit.rs` ones (gateway texts and reset parsing included), moved here so the node decides once;
-//! [`classify_text`] is that classifier with its old order, for the hub's legacy events.
+//! hub's `executor/limit.rs` ones (gateway texts and reset parsing included), moved here so the node decides once.
 use std::str::FromStr;
 use std::sync::LazyLock;
 
@@ -119,46 +118,42 @@ static CONTEXT_FULL: LazyLock<Regex> = LazyLock::new(|| {
 
 /// A limit the text rules found.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TextLimit {
+struct TextLimit {
     /// UsageLimit, RateLimit or PoolExhausted.
-    pub class: FailureClass,
+    class: FailureClass,
     /// Epoch ms to continue at; absent for PoolExhausted, which waits for a person (`usage_resume`).
-    pub reset_ms: Option<i64>,
+    reset_ms: Option<i64>,
     /// The model a gateway named (PoolExhausted's "unknown provider for model X").
-    pub model: Option<String>,
+    model: Option<String>,
 }
 
-/// The hub's old `classify_limit`, same order and parsers: gateway texts, then RATE, then USAGE (or
-/// `usage_hint`, a source that already called it a usage limit). `reset_hint_ms` wins when it lies after `at_ms`.
-pub fn classify_text(
-    text: &str,
-    usage_hint: bool,
-    reset_hint_ms: Option<i64>,
-    at_ms: i64,
-) -> Option<TextLimit> {
-    if let Some(limit) = gateway_limit(text, at_ms) {
-        return Some(limit);
-    }
+/// The model a gateway's "unknown provider for model X" names, for the hub's "no account available for X".
+pub fn gateway_model(text: &str) -> Option<String> {
+    UNKNOWN_PROVIDER.captures(text).map(|c| c[1].to_owned())
+}
+
+/// A limit only the text names: RATE before USAGE.
+fn text_limit(text: &str, at_ms: i64) -> Option<TextLimit> {
     let class = if RATE.is_match(text) {
         FailureClass::RateLimit
-    } else if usage_hint || USAGE.is_match(text) {
+    } else if USAGE.is_match(text) {
         FailureClass::UsageLimit
     } else {
         return None;
     };
     Some(TextLimit {
         class,
-        reset_ms: Some(reset_ms(text, reset_hint_ms, at_ms, class)),
+        reset_ms: Some(reset_ms(text, None, at_ms, class)),
         model: None,
     })
 }
 
 fn gateway_limit(text: &str, at_ms: i64) -> Option<TextLimit> {
-    if let Some(c) = UNKNOWN_PROVIDER.captures(text) {
+    if let Some(model) = gateway_model(text) {
         return Some(TextLimit {
             class: FailureClass::PoolExhausted,
             reset_ms: None,
-            model: Some(c[1].to_owned()),
+            model: Some(model),
         });
     }
     if NO_ACCOUNT.is_match(text) {
@@ -317,7 +312,7 @@ fn decide(e: &FailureEvidence, stderr: &str) -> (FailureClass, Option<i64>) {
     if reason == Some("blocking_limit") || (error == Some("rate_limit") && plan_text) {
         return (UsageLimit, Some(reset_ms(text, None, now, UsageLimit)));
     }
-    if let Some(limit) = classify_text(text, false, None, now) {
+    if let Some(limit) = text_limit(text, now) {
         return (limit.class, limit.reset_ms);
     }
     if limited || reason == Some("rapid_refill_breaker") {
@@ -645,7 +640,9 @@ mod tests {
             "rate limit (reset after 9223372036854775807h9223372036854775807m)",
             "Claude AI usage limit reached|9999999999",
         ] {
-            let limit = classify_text(text, false, None, NOW).unwrap();
+            let limit = gateway_limit(text, NOW)
+                .or_else(|| text_limit(text, NOW))
+                .unwrap();
             assert_eq!(iso(limit.reset_ms.unwrap()), cap, "{text}");
         }
         let mut e = evidence("usage-limit-subscription.documented");
@@ -880,74 +877,54 @@ mod tests {
                 model: model.map(str::to_owned),
             })
         };
-        let table: Vec<(&str, bool, Option<TextLimit>)> = vec![
+        let table: Vec<(&str, Option<TextLimit>)> = vec![
             (
                 "Claude usage limit reached. Send the message again once the limit resets.",
-                true,
                 limit(UsageLimit, Some(at + 60 * MIN), None),
             ),
             (
                 "Claude AI usage limit reached|1792483200",
-                false,
                 limit(UsageLimit, Some(1_792_483_200_000), None),
             ),
             (
                 "Claude API rate limit reached. Try again later.",
-                true,
                 limit(RateLimit, Some(at + 5 * MIN), None),
             ),
             (
                 r#"API Error: 429 {"type":"error","error":{"type":"rate_limit_error","message":"Number of request tokens has exceeded your per-minute rate limit"}}"#,
-                false,
                 limit(RateLimit, Some(at + 5 * MIN), None),
             ),
             (
                 r#"API Error: 503 [claude] [429]: {"type":"error","error":{"type":"rate_limit_error","message":"rate limited"}} (reset after 1h30m)"#,
-                false,
                 limit(RateLimit, Some(at + 90 * MIN), None),
             ),
             (
                 r#"API Error: 400 {"error":{"message":"unknown provider for model claude-opus-5-5","type":"invalid_request_error","code":"model_not_found","param":"model"}}"#,
-                false,
                 limit(PoolExhausted, None, Some("claude-opus-5-5")),
             ),
             (
                 r#"API Error: 503 {"error":{"message":"no auth available","code":"auth_unavailable"}}"#,
-                false,
                 limit(PoolExhausted, None, None),
             ),
             (
                 "API Error: 503 no available account for claude-opus-5-5",
-                false,
                 limit(PoolExhausted, None, None),
             ),
             (
                 r#"API Error: 429 {"error":{"code":"model_cooldown","message":"All credentials for model claude-opus-5-5 are cooling down","model":"claude-opus-5-5","reset_time":"1h2m0s","reset_seconds":3720}}"#,
-                false,
                 limit(UsageLimit, Some(at + 3_720_000), None),
             ),
-            (
-                "Claude API is overloaded (529). Try again shortly.",
-                false,
-                None,
-            ),
+            ("Claude API is overloaded (529). Try again shortly.", None),
             (
                 "Claude stopped: the prompt exceeds the model's context window.",
-                false,
                 None,
             ),
-            ("Claude API connection error.", false, None),
+            ("Claude API connection error.", None),
         ];
-        for (text, usage_hint, want) in table {
-            assert_eq!(classify_text(text, usage_hint, None, at), want, "{text}");
+        for (text, want) in table {
+            let found = gateway_limit(text, at).or_else(|| text_limit(text, at));
+            assert_eq!(found, want, "{text}");
         }
-        // A reported reset that isn't after the failure is ignored.
-        assert_eq!(
-            classify_text("Claude usage limit reached.", true, Some(at - 1000), at)
-                .unwrap()
-                .reset_ms,
-            Some(at + 60 * MIN)
-        );
     }
 
     #[test]

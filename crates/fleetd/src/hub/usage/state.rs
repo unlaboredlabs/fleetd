@@ -491,7 +491,7 @@ mod tests {
         "Claude usage limit reached. Send the message again once the limit resets.",
     );
     const PROXY_400: (&str, &str) = (
-        "provider_error",
+        "pool_exhausted",
         r#"API Error: 400 {"error":{"message":"unknown provider for model claude-opus-5-5","type":"invalid_request_error","code":"model_not_found","param":"model"}}"#,
     );
 
