@@ -16,6 +16,8 @@ pub struct TaskView {
     pub task_id: TaskId,
     pub project_ref: ProjectRef,
     pub workstream_id: WorkstreamId,
+    /// The lead's title for it: a writer's names what its PRs serve.
+    pub title: String,
     /// "write", "review", ...
     pub kind: String,
     /// "done", "failed", "running", ...

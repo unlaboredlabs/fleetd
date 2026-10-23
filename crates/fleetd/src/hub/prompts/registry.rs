@@ -284,7 +284,7 @@ pub const ENTRIES: &[Entry] = &[
         Task,
         "Reviewer",
         "once per PR patch, fresh, blocking findings only",
-        "prUrl!=the PR; repo=owner/name; prNumber!=its number; headSha!=the head reviewed",
+        "prUrl!=the PR; repo=owner/name; prNumber!=its number; headSha!=the head reviewed; serves=its writer task's title, or the goal",
         &[
             (
                 "independent-review",

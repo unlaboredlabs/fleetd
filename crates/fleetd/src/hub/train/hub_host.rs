@@ -65,6 +65,7 @@ fn task_view(task: Task) -> TaskView {
         task_id: task.task_id.clone(),
         project_ref: task.project_ref.clone(),
         workstream_id: task.workstream_id.clone(),
+        title: task.title.to_string(),
         kind: wire_str(task.kind),
         state: wire_str(task.state),
         pr_url: result.and_then(|r| r.pr_url.as_ref()).map(wire_str),

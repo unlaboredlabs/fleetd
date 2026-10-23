@@ -190,6 +190,11 @@ impl Reviews {
             .optional()
             .expect("reviewed head")
         });
+        let serves = change
+            .task_id
+            .as_ref()
+            .and_then(|t| self.host.task(t))
+            .map(|t| t.title);
         let spawn = ReviewSpawn {
             project_ref: change.project_ref.clone(),
             by: REVIEWS_BY,
@@ -204,6 +209,7 @@ impl Reviews {
             prompt: review_prompt(
                 &self.db.prompts().current(Some(&change.project_ref)),
                 change,
+                serves.as_deref(),
                 reviewed.as_deref(),
             ),
             pr: change.pr_url.to_string(),

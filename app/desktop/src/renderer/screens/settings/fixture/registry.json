@@ -421,6 +421,11 @@
      "name": "headSha",
      "required": true,
      "description": "the head reviewed"
+    },
+    {
+     "name": "serves",
+     "required": false,
+     "description": "its writer task's title, or the goal"
     }
    ],
    "rules": [
@@ -443,7 +448,7 @@
      "enforced": "code"
     }
    ],
-   "text": "Review pull request {{prUrl}} at head {{headSha}}. You are an independent reviewer: judge the diff (`gh pr diff {{prNumber}} --repo {{repo}}`) against the goal and done-when, and do not read the PR description or comments.\nBlocking means wrong, unsafe, or failing what it sets out to do; other done-when checks are other PRs' work, and style and nice-to-haves are non-blocking. Report everything in this one round. Do not change, commit or push anything.\nFinish with the `report` tool: the blocking and non-blocking counts and a summary naming each blocking finding as path:line.\n",
+   "text": "Review pull request {{prUrl}} at head {{headSha}}; it serves: {{serves}}. You are an independent reviewer: judge the diff (`gh pr diff {{prNumber}} --repo {{repo}}`) against the goal and done-when, and do not read the PR description or comments.\nBlocking means wrong, unsafe, or failing what it serves; other done-when checks are other PRs' work, and style and nice-to-haves are non-blocking. Report everything in this one round. Do not change, commit or push anything.\nFinish with the `report` tool: the blocking and non-blocking counts and a summary naming each blocking finding as path:line.\n",
    "perProject": true
   },
   {

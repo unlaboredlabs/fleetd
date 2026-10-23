@@ -53,10 +53,16 @@ pub fn gate(patch_id: &str, reviews: &[BoundReview]) -> Gate {
     }
 }
 
-/// A reviewer's prompt: the PR diff ref. Tasks adds the brief's goal and done-when. Never the author's narrative, so
+/// A reviewer's prompt: the PR diff ref and what it serves, its writer's title (the lead's words, so the other
+/// done-when items stay other PRs' work). Tasks adds the brief's goal and done-when. Never the author's narrative, so
 /// the PR description and comments are off limits too. `reviewed` is the head an earlier round reviewed, if any: a
 /// re-review starts from what changed since.
-pub fn review_prompt(set: &PromptSet, change: &Change, reviewed: Option<&str>) -> String {
+pub fn review_prompt(
+    set: &PromptSet,
+    change: &Change,
+    serves: Option<&str>,
+    reviewed: Option<&str>,
+) -> String {
     let text = set.render(
         "review.reviewer",
         &[
@@ -64,6 +70,7 @@ pub fn review_prompt(set: &PromptSet, change: &Change, reviewed: Option<&str>) -
             ("repo", &change.repo),
             ("prNumber", &change.pr_number),
             ("headSha", &change.head_sha),
+            ("serves", &serves.unwrap_or("the goal")),
         ],
     );
     match reviewed.filter(|sha| *sha != change.head_sha.as_str()) {
@@ -168,9 +175,9 @@ mod delta_tests {
     fn a_re_review_starts_from_the_delta_at_the_same_bar() {
         let (old, new) = ("a".repeat(40), "b".repeat(40));
         let set = PromptSet::defaults();
-        let first = review_prompt(set, &change(&new), None);
+        let first = review_prompt(set, &change(&new), None, None);
         assert!(!first.contains("reviewed before"));
-        let again = review_prompt(set, &change(&new), Some(&old));
+        let again = review_prompt(set, &change(&new), None, Some(&old));
         assert!(again.starts_with(&first), "the full review text stays");
         assert!(
             again.contains(&format!("git range-diff {old}...{new}")),
@@ -182,6 +189,6 @@ mod delta_tests {
             )
         );
         // The same head reviewed again is no delta.
-        assert_eq!(review_prompt(set, &change(&new), Some(&new)), first);
+        assert_eq!(review_prompt(set, &change(&new), None, Some(&new)), first);
     }
 }

@@ -681,6 +681,7 @@ impl TrainHost for FakeHost {
                 task_id: TaskId::unchecked(format!("T{}", 50 + spawns.len())),
                 project_ref: spawn.project_ref.clone(),
                 workstream_id: spawn.workstream_id.clone(),
+                title: spawn.title.clone(),
                 kind: "review".into(),
                 state: "running".into(),
                 pr_url: Some(spawn.pr.clone()),
@@ -1027,6 +1028,7 @@ impl Kit {
             task_id: task_id.clone(),
             project_ref: project(),
             workstream_id: ws(),
+            title: "add a1".into(),
             kind: "write".into(),
             state: "done".into(),
             pr_url: pr_url.map(String::from),
@@ -2067,6 +2069,7 @@ impl Kit {
             task_id: TaskId::unchecked(id),
             project_ref: project(),
             workstream_id: ws(),
+            title: format!("{kind} by {id}"),
             kind: kind.into(),
             state: "running".into(),
             pr_url: None,
@@ -2178,6 +2181,42 @@ async fn a_ready_slice_gets_the_orders_reviewer_and_a_refused_spawn_never_lets_i
         held.last_error
     );
     assert_eq!(kit.host.review_spawns.lock().unwrap().len(), 1);
+}
+
+/// The reviewer judges a PR by what it serves, its writer's title, so the done-when items it doesn't serve stay other
+/// PRs' work; a PR no task wrote serves the goal.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_reviewer_is_told_what_the_pr_serves() {
+    use super::calls::slice_ready;
+    let kit = Kit::with_reviews();
+    let writer = kit.running_task("T1", "write");
+    kit.host.tasks.lock().unwrap().get_mut("T1").unwrap().title = "add FAIL".into();
+    let pr = kit.open_pr(7, "slice-1", &[add("FAIL", "red\n")]);
+    slice_ready(&kit.train, &project(), &writer, GitHubPrUrl::unchecked(&pr))
+        .await
+        .unwrap();
+    let untasked = kit.open_pr(8, "slice-2", &[add("a2.txt", "b\n")]);
+    kit.train
+        .enqueue(&project(), enqueue_call(untasked))
+        .await
+        .unwrap();
+    let spawns = kit.host.review_spawns.lock().unwrap();
+    assert_eq!(spawns.len(), 2);
+    assert!(
+        spawns[0].prompt.contains("; it serves: add FAIL."),
+        "{}",
+        spawns[0].prompt
+    );
+    assert!(
+        spawns[0].prompt.contains("failing what it serves"),
+        "{}",
+        spawns[0].prompt
+    );
+    assert!(
+        spawns[1].prompt.contains("; it serves: the goal."),
+        "{}",
+        spawns[1].prompt
+    );
 }
 
 /// The hub's own gate: one fresh reviewer per patch. Nothing merges before a clean verdict on the current patch;
