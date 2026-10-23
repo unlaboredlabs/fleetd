@@ -101,7 +101,6 @@ missing or logged out runs no sessions until it is fixed. fleetd turns claude's 
 | "Commits on laptop use … ; the hub's identity is …" `[commit_identity]` | The machine's git config differs from the hub's. | Same as above. |
 | "Paused new agents: 14 GB free on laptop" `[disk]` | Low disk where the worktrees live. Each writer gets its own git worktree and build output. | Free space on that disk. New agents start again by themselves once it has room. See [Disk and load](/docs/machines#guard). |
 | "Paused new agents: load 70.2 on 32 CPUs on laptop" `[disk]` | The machine is overloaded. | Nothing: new agents start once the load falls. |
-| "The node on laptop won't run commands in … (outside its cmdRoots)" `[cmd-roots]` | A project's checkout is outside the node's `cmdRoots`, so the merge train can't merge its PRs. | Move the checkout into your home directory, or add its folder to `cmdRoots` in [`node.json`](/docs/config-and-files#node-json) and restart the node. |
 | "New turns on laptop are paused by the usage breaker" `[usage_breaker]` | Its Claude login hit a plan or rate limit. | Wait for the reset (the finding says when), or, once it has capacity, call `usage_resume` from an [MCP client](/docs/mcp-clients). |
 
 ### Keep a machine awake {#sleep}
@@ -156,8 +155,7 @@ fleetd status storefront
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| A pull request stays queued on the [merge train](/docs/glossary#merge-train) | The train can't work in the checkout, or CI or a review is pending. | The `train_get` tool shows each PR on the train with its state and last error. |
-| The train's error says "#212 can't merge: its checkout on laptop is outside the node's cmdRoots" | The checkout is outside the node's `cmdRoots` (default: your home directory). | Add its folder to `cmdRoots` in [`node.json`](/docs/config-and-files#node-json) and restart the node. |
+| A pull request stays queued on the [merge train](/docs/glossary#merge-train) | CI or a review is pending, or the train can't read GitHub. | The `train_get` tool shows each PR on the train with its state and last error. |
 | An agent's activity says "node retry 1/3 in 57 s: overloaded" | Claude's API was overloaded or the network failed, after claude's own retries. | Nothing. The node continues the same run after about 1, 4 and 15 minutes, then fails it with claude's words. |
 | Your message waits and the chat says why | The lead can't start: `claude` logged out, out of range, or the worker offline. | See [Claude](#claude) and [Machines](#machines). |
 

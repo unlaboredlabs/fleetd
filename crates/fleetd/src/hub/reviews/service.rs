@@ -8,7 +8,6 @@ use std::sync::{Arc, Mutex, Weak};
 use rusqlite::{OptionalExtension, params};
 use serde_json::Value;
 
-use super::patch_ids;
 use super::rules::{
     BoundReview, FindingsVerdict, Gate, findings_message, gate, one_line, review_prompt,
 };
@@ -100,7 +99,7 @@ impl Reviews {
         });
     }
 
-    /// The patch id of `sha`: known from the train for heads it handed over, else computed on the project's machine.
+    /// The patch id of `sha`: known from the train for heads it handed over, else computed as the train computes it.
     async fn patch_for(&self, change: &Change, sha: &str) -> Result<String, String> {
         let known: Option<String> = sql(&self.db, |conn| {
             conn.query_row(
@@ -114,27 +113,16 @@ impl Reviews {
         if let Some(known) = known {
             return Ok(known);
         }
-        let root = self.host.project_root(&change.project_ref).ok_or_else(|| {
-            format!(
-                "the hub has no record of project {}",
-                change.project_ref.project_id
-            )
-        })?;
         let train = self.train().ok_or("the train is gone")?;
-        let pull = train
-            .github()
+        let github = train.github();
+        let pull = github
             .pull(&change.repo, change.pr_number.get())
             .await
             .map_err(|e| e.message)?;
-        let patch_id = patch_ids::compute(
-            self.host.as_ref(),
-            &change.project_ref.machine_id,
-            &root,
-            &pull.base.ref_,
-            change.pr_number.get(),
-            sha,
-        )
-        .await?;
+        let patch_id = github
+            .patch_id(&change.repo, &pull.base.ref_, sha)
+            .await
+            .map_err(|e| e.message)?;
         self.put_patch(&change.change_id, sha, &patch_id);
         Ok(patch_id)
     }

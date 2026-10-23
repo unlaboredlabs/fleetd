@@ -265,11 +265,6 @@ missing or logged out runs no sessions until it is fixed. fleetd turns claude’
 <td>Nothing: new agents start once the load falls.</td>
 </tr>
 <tr>
-<td>“The node on laptop won’t run commands in … (outside its cmdRoots)” <code dir="auto">[cmd-roots]</code></td>
-<td>A project’s checkout is outside the node’s <code dir="auto">cmdRoots</code>, so the merge train can’t merge its PRs.</td>
-<td>Move the checkout into your home directory, or add its folder to <code dir="auto">cmdRoots</code> in <a href="/docs/config-and-files#node-json"><code dir="auto">node.json</code></a> and restart the node.</td>
-</tr>
-<tr>
 <td>“New turns on laptop are paused by the usage breaker” <code dir="auto">[usage_breaker]</code></td>
 <td>Its Claude login hit a plan or rate limit.</td>
 <td>Wait for the reset (the finding says when), or, once it has capacity, call <code dir="auto">usage_resume</code> from an <a href="/docs/mcp-clients">MCP client</a>.</td>
@@ -373,13 +368,8 @@ and why its bar last fell:</p>
 <tbody>
 <tr>
 <td>A pull request stays queued on the <a href="/docs/glossary#merge-train">merge train</a></td>
-<td>The train can’t work in the checkout, or CI or a review is pending.</td>
+<td>CI or a review is pending, or the train can’t read GitHub.</td>
 <td>The <code dir="auto">train_get</code> tool shows each PR on the train with its state and last error.</td>
-</tr>
-<tr>
-<td>The train’s error says “#212 can’t merge: its checkout on laptop is outside the node’s cmdRoots”</td>
-<td>The checkout is outside the node’s <code dir="auto">cmdRoots</code> (default: your home directory).</td>
-<td>Add its folder to <code dir="auto">cmdRoots</code> in <a href="/docs/config-and-files#node-json"><code dir="auto">node.json</code></a> and restart the node.</td>
 </tr>
 <tr>
 <td>An agent’s activity says “node retry 1/3 in 57 s: overloaded”</td>

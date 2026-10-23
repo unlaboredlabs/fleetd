@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en" dir="ltr" data-theme="dark" data-has-toc data-has-sidebar class="astro-g5ptsecz"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>Merge train | fleetd docs</title><link rel="canonical" href="https://fleetd.sh/docs/merge-train.html"/><link rel="sitemap" href="/docs/sitemap-index.xml"/><link rel="shortcut icon" href="/docs/favicon.svg" type="image/svg+xml"/><meta name="generator" content="Astro v7.4.0"/><meta name="generator" content="Starlight v0.42.6"/><meta property="og:title" content="Merge train"/><meta property="og:type" content="article"/><meta property="og:url" content="https://fleetd.sh/docs/merge-train.html"/><meta property="og:locale" content="en"/><meta property="og:description" content="How fleetd merges pull requests: one train per repo, batches of disjoint PRs in one CI run."/><meta property="og:site_name" content="fleetd docs"/><meta name="twitter:card" content="summary_large_image"/><meta name="description" content="How fleetd merges pull requests: one train per repo, batches of disjoint PRs in one CI run."/><script>
+<!DOCTYPE html><html lang="en" dir="ltr" data-theme="dark" data-has-toc data-has-sidebar class="astro-g5ptsecz"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>Merge train | fleetd docs</title><link rel="canonical" href="https://fleetd.sh/docs/merge-train.html"/><link rel="sitemap" href="/docs/sitemap-index.xml"/><link rel="shortcut icon" href="/docs/favicon.svg" type="image/svg+xml"/><meta name="generator" content="Astro v7.4.0"/><meta name="generator" content="Starlight v0.42.6"/><meta property="og:title" content="Merge train"/><meta property="og:type" content="article"/><meta property="og:url" content="https://fleetd.sh/docs/merge-train.html"/><meta property="og:locale" content="en"/><meta property="og:description" content="How fleetd merges pull requests: one train per repo, batches of ready PRs in one CI run."/><meta property="og:site_name" content="fleetd docs"/><meta name="twitter:card" content="summary_large_image"/><meta name="description" content="How fleetd merges pull requests: one train per repo, batches of ready PRs in one CI run."/><script>
 	window.StarlightThemeProvider = (() => {
 		const storedTheme =
 			typeof localStorage !== 'undefined' && localStorage.getItem('starlight-theme');
@@ -76,11 +76,11 @@
 <div class="sl-heading-wrapper level-h2"><h2 id="steps">What the train does</h2><a class="sl-anchor-link" href="#steps"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “What the train does”</span></a></div>
 <ol>
 <li>Takes the next ready PR. A PR is ready once its review passes (see <a href="#review">Review</a>).</li>
-<li>Rebases it onto its base branch.</li>
+<li>Has GitHub rebase it onto its base branch, as <strong>Update branch</strong> with rebase does.</li>
 <li>Waits for CI on that exact commit.</li>
 <li>Posts the <code dir="auto">fleetd/train</code> status and squash-merges it, pinned to that commit.</li>
 </ol>
-<p>A conflict or red CI goes back to the agent that wrote the PR, with the paths or failing checks.</p>
+<p>A conflict or red CI goes back to the agent that wrote the PR; for red CI, with the failing checks.</p>
 <p>fleetd merges only on green CI. A ready PR on a repo with no CI (no GitHub Actions workflow, and no required check but
 <code dir="auto">fleetd/train</code>) waits, and its queue entry and <code dir="auto">fleetd doctor</code> say to add one. It goes on by itself once a workflow
 exists.</p>
@@ -97,17 +97,11 @@ new base as usual, so nothing else changes.</p>
 patch: a rebase that keeps the patch keeps the review, and a new commit gets a new reviewer, who starts from what
 changed. Blocking findings go to the agent that wrote the PR, and the PR waits for its next commit.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="batches">Batches</h2><a class="sl-anchor-link" href="#batches"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Batches”</span></a></div>
-<p>When several PRs are ready at once, the train merges them together in one CI run. It takes the first PR in line and
-adds the ones after it that:</p>
-<ul>
-<li>go into the same base branch;</li>
-<li>change none of the same files (lockfiles such as <code dir="auto">Cargo.lock</code> or <code dir="auto">package-lock.json</code> aside);</li>
-<li>are green on their own commit.</li>
-</ul>
-<p>Then:</p>
+<p>When several PRs are ready at once, the train merges them together in one CI run. It takes up to 8 ready PRs in
+line that go into the same base branch and are green on their own commit. Then:</p>
 <ol>
-<li>It squashes them onto the base, in order, on its own branch: <code dir="auto">train/batch</code> under the project’s branch prefix
-(<code dir="auto">fleetd/train/batch</code> by default).</li>
+<li>It makes its own branch from the base on GitHub, <code dir="auto">train/batch</code> under the project’s branch prefix
+(<code dir="auto">fleetd/train/batch</code> by default), and merges each PR into it in order.</li>
 <li>It opens one PR for them, whose CI runs once.</li>
 <li>When that PR is green, it posts <code dir="auto">fleetd/train</code> and merges it as one squash.</li>
 <li>It closes each member PR with a comment linking the batch.</li>
@@ -122,21 +116,19 @@ adds the ones after it that:</p>
 </thead>
 <tbody>
 <tr>
-<td>The batch is red</td>
-<td>Drops the last member and tries again. The dropped PR later goes alone, so its CI result blames only it.</td>
+<td>A PR conflicts with the base or the PRs ahead of it</td>
+<td>Leaves it out and sends it back to the agent that wrote it.</td>
+</tr>
+<tr>
+<td>The batch is red, or GitHub refuses to merge its PR</td>
+<td>Takes each member alone, so each CI result blames only that PR.</td>
 </tr>
 <tr>
 <td>A member gets a new push, the <code dir="auto">hold</code> label, or is closed during CI</td>
-<td>Leaves it out before the merge, so untested code never lands.</td>
-</tr>
-<tr>
-<td>GitHub refuses to merge a batch PR (for example, every PR needs an approving review)</td>
-<td>Stops batching that repo until the hub restarts.</td>
+<td>Drops the batch before the merge, so untested code never lands, and builds a new one without it.</td>
 </tr>
 </tbody>
 </table>
-<p>A batch holds at most 4 PRs. Change it with <code dir="auto">FLEETD_TRAIN_BATCH_MAX</code> in the hub’s environment; <code dir="auto">1</code> turns batches off.
-See <a href="/docs/config-and-files#env">Hub environment</a>.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="hold">Hold a PR</h2><a class="sl-anchor-link" href="#hold"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Hold a PR”</span></a></div>
 <p>Add the <code dir="auto">hold</code> label to a PR to keep the train from taking it, alone or in a batch. Remove the label and it goes in
 its turn. To hold every PR of a repo, label each one.</p>

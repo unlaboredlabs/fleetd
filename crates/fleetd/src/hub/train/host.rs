@@ -1,22 +1,14 @@
-//! What the train and the review gate take from other hub areas: tasks, workstreams, decisions, the event log, wakes
-//! and node commands. One port, so the logic tests run on a fake
+//! What the train and the review gate take from other hub areas: tasks, workstreams, decisions, the event log and
+//! wakes. One port, so the logic tests run on a fake
 //! and the hub provides it from its services (`HubHost`).
 use std::future::Future;
 use std::pin::Pin;
 
 use serde_json::Value;
 
-use super::contract::{MachineId, ProjectRef, TaskId, WorkstreamId};
+use super::contract::{ProjectRef, TaskId, WorkstreamId};
 
 pub type BoxFut<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
-
-/// A node's answer to `cmd_check`: no shell, output tail, `exit_code` None when it could not start or timed out.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CmdOut {
-    pub exit_code: Option<i32>,
-    pub output_tail: String,
-    pub timed_out: bool,
-}
 
 /// The parts of a Task the train and reviews read.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -91,25 +83,17 @@ pub trait TrainHost: Send + Sync + 'static {
         types: &'a [&'static str],
         timeout_sec: u64,
     ) -> BoxFut<'a, (Vec<EventView>, i64)>;
-    /// The project's checkout (`workspaceRoot`) on its machine.
+    /// The project's checkout (`workspaceRoot`) on its machine; None once the project is removed.
     fn project_root(&self, project_ref: &ProjectRef) -> Option<String>;
     /// LeadWakes.trigger(ref, { kind: "train", line }).
     fn wake_lead<'a>(&'a self, project_ref: &'a ProjectRef, line: String) -> BoxFut<'a, ()>;
-    /// NodeCommands.run: argv on the machine, through its node.
-    fn run_command<'a>(
-        &'a self,
-        machine_id: &'a MachineId,
-        cwd: &'a str,
-        argv: Vec<String>,
-        timeout_sec: u64,
-    ) -> BoxFut<'a, Result<CmdOut, String>>;
     /// The project's branch prefix (its policy's `branchPrefix`, default `fleetd/`); None when the policy can't be
     /// read now. The train's scratch batch branches live under
     /// `<prefix>train/`, so fleets sharing one repo never collide.
     fn branch_prefix<'a>(&'a self, _project_ref: &'a ProjectRef) -> BoxFut<'a, Option<String>> {
         Box::pin(async { Some(fleetd_contracts::tasks::DEFAULT_BRANCH_PREFIX.to_string()) })
     }
-    /// Where the train's state, CI and git spans go; none in tests.
+    /// Where the train's state and CI spans go; none in tests.
     fn time(&self) -> Option<crate::hub::time::TimeSink> {
         None
     }

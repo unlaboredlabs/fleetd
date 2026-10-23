@@ -1,6 +1,7 @@
-//! The train over real git in temp repos (a bare "origin", the project's checkout, an author's clone) run by local
-//! commands, a fake `gh` that answers from that origin like GitHub would (CI red iff the head has a file FAIL, or both
-//! `pair-a` and `pair-b`), and a fake host for tasks, workstreams, events and wakes.
+//! The train over a fake `gh` that answers like GitHub would from a real bare git "origin" in a temp dir: it rebases a
+//! PR's branch, merges heads into a batch branch, serves diffs, and runs CI (red iff the head has a file FAIL, or both
+//! `pair-a` and `pair-b`). An author's clone pushes to it, and a fake host stands in for tasks, workstreams, events and
+//! wakes.
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -11,7 +12,7 @@ use serde_json::{Value, json};
 use tokio::sync::Notify;
 
 use super::contract::*;
-use super::github::{GhOut, GhRunner, TRAIN_CONTEXT, batch_heads, batch_members};
+use super::github::{GhOut, GhRunner, TRAIN_CONTEXT, batch_heads};
 use super::host::*;
 use super::records::{Db, ListFilter};
 use super::service::{ReviewGate, Train, TrainOptions, Verdict};
@@ -251,7 +252,45 @@ impl FakeGh {
         ok(json!({ "sha": squash, "merged": true, "message": "Pull Request successfully merged" }))
     }
 
+    /// `git merge-tree` of `ours` and `theirs` as a commit with `parents`: None on a conflict.
+    fn merged(&self, ours: &str, theirs: &str, parents: &[&str], message: &str) -> Option<String> {
+        let tree = git_out(&self.origin, &["merge-tree", "--write-tree", ours, theirs])?;
+        let mut args = vec!["commit-tree", tree.lines().next()?];
+        for p in parents {
+            args.extend(["-p", p]);
+        }
+        args.extend(["-m", message]);
+        Some(git(&self.origin, &args))
+    }
+
+    /// `gh pr update-branch <n> --rebase`: the PR's changes as one commit on its base, unless it is already on it.
+    fn update_branch(&self, n: i64) -> GhOut {
+        let (branch, base) = match self.pulls.lock().unwrap().get(&n) {
+            Some(p) => (p.branch.clone(), p.base.clone()),
+            None => return http_error(404, "Not Found"),
+        };
+        let (head, onto) = (self.head_of(&branch).unwrap(), self.head_of(&base).unwrap());
+        if git_out(&self.origin, &["merge-base", "--is-ancestor", &onto, &head]).is_some() {
+            return ok(Value::Null);
+        }
+        let Some(rebased) = self.merged(&onto, &head, &[&onto], &format!("change {branch}")) else {
+            return GhOut {
+                exit_code: 1,
+                stdout: String::new(),
+                stderr: "X Cannot update PR branch due to conflicts\n".into(),
+            };
+        };
+        git(
+            &self.origin,
+            &["update-ref", &format!("refs/heads/{branch}"), &rebased],
+        );
+        ok(Value::Null)
+    }
+
     fn answer(&self, args: &[String]) -> GhOut {
+        if args[..2] == ["pr", "update-branch"] {
+            return self.update_branch(args[2].parse().unwrap());
+        }
         let method = args
             .iter()
             .position(|a| a == "-X")
@@ -394,6 +433,49 @@ impl FakeGh {
                         .collect(),
                 ))
             }
+            (["compare", range], "GET") => {
+                let diff = git(&self.origin, &["diff", range]);
+                GhOut {
+                    exit_code: 0,
+                    stdout: format!("{diff}\n"),
+                    stderr: String::new(),
+                }
+            }
+            (["git", "ref", "heads", branch @ ..], "GET") => {
+                match self.head_of(&branch.join("/")) {
+                    Some(sha) => ok(json!({ "object": { "sha": sha } })),
+                    None => http_error(404, "Not Found"),
+                }
+            }
+            (["git", "refs"], "POST") => {
+                let name = fields.get("ref").copied().unwrap_or_default();
+                if git_out(&self.origin, &["rev-parse", "--verify", name]).is_some() {
+                    return http_error(422, "Reference already exists");
+                }
+                let sha = fields.get("sha").copied().unwrap_or_default();
+                git(&self.origin, &["update-ref", name, sha]);
+                ok(json!({ "ref": name }))
+            }
+            (["merges"], "POST") => {
+                let get = |k: &str| fields.get(k).copied().unwrap_or_default();
+                let (branch, head) = (get("base"), get("head"));
+                let Some(onto) = self.head_of(branch) else {
+                    return http_error(404, "Base does not exist");
+                };
+                if git_out(&self.origin, &["merge-base", "--is-ancestor", head, &onto]).is_some() {
+                    return ok(Value::Null);
+                }
+                match self.merged(&onto, head, &[&onto, head], get("commit_message")) {
+                    Some(sha) => {
+                        git(
+                            &self.origin,
+                            &["update-ref", &format!("refs/heads/{branch}"), &sha],
+                        );
+                        ok(json!({ "sha": sha }))
+                    }
+                    None => http_error(409, "Merge conflict"),
+                }
+            }
             (["pulls", n], "GET") => match self.pulls.lock().unwrap().get(&number(Some(n))) {
                 Some(p) => ok(self.pull_json(number(Some(n)), p)),
                 None => http_error(404, "Not Found"),
@@ -487,16 +569,13 @@ impl GhRunner for FakeGh {
     }
 }
 
-/// The rest of the hub: tasks, workstreams, events and wakes in memory; commands run locally.
+/// The rest of the hub: tasks, workstreams, events and wakes in memory.
 struct FakeHost {
-    checkout: PathBuf,
     tasks: Mutex<HashMap<String, TaskView>>,
     sends: Mutex<Vec<(String, String)>>,
     events: Mutex<Vec<EventView>>,
     appended: Notify,
     wakes: Mutex<Vec<String>>,
-    /// The node's cmdRoots, when a test sets them: commands elsewhere are refused as the node refuses them.
-    cmd_roots: Mutex<Option<Vec<String>>>,
     /// Reviewers the real review gate asked for, and the refusal the spawn path answers with, if any.
     review_spawns: Mutex<Vec<ReviewSpawn>>,
     spawn_refusal: Mutex<Option<String>>,
@@ -652,68 +731,11 @@ impl TrainHost for FakeHost {
         })
     }
     fn project_root(&self, project_ref: &ProjectRef) -> Option<String> {
-        (project_ref.project_id.as_str() != REMOVED).then(|| self.checkout.display().to_string())
+        (project_ref.project_id.as_str() != REMOVED).then(|| "/srv/storefront".into())
     }
     fn wake_lead<'a>(&'a self, _: &'a ProjectRef, line: String) -> BoxFut<'a, ()> {
         self.wakes.lock().unwrap().push(line);
         Box::pin(async {})
-    }
-    fn run_command<'a>(
-        &'a self,
-        _: &'a MachineId,
-        cwd: &'a str,
-        argv: Vec<String>,
-        _: u64,
-    ) -> BoxFut<'a, Result<CmdOut, String>> {
-        let cwd = cwd.to_string();
-        let roots = self.cmd_roots.lock().unwrap().clone();
-        Box::pin(async move {
-            if let Some(Err(why)) = roots.map(|r| crate::node::cmd::confine(&cwd, &r)) {
-                return Ok(CmdOut {
-                    exit_code: None,
-                    output_tail: format!("{}{why}", crate::node::cmd::REFUSED),
-                    timed_out: false,
-                });
-            }
-            let out = tokio::task::spawn_blocking(move || {
-                Command::new(&argv[0])
-                    .args(&argv[1..])
-                    .current_dir(&cwd)
-                    .env_clear()
-                    .env("PATH", std::env::var("PATH").unwrap_or_default())
-                    .envs(GIT_ENV)
-                    .output()
-            })
-            .await
-            .map_err(|e| e.to_string())?;
-            Ok(match out {
-                Ok(out) => {
-                    let text = format!(
-                        "{}{}",
-                        String::from_utf8_lossy(&out.stdout),
-                        String::from_utf8_lossy(&out.stderr)
-                    );
-                    let tail: String = text
-                        .chars()
-                        .rev()
-                        .take(2000)
-                        .collect::<Vec<_>>()
-                        .into_iter()
-                        .rev()
-                        .collect();
-                    CmdOut {
-                        exit_code: out.status.code(),
-                        output_tail: tail,
-                        timed_out: false,
-                    }
-                }
-                Err(e) => CmdOut {
-                    exit_code: None,
-                    output_tail: format!("could not run: {e}"),
-                    timed_out: false,
-                },
-            })
-        })
     }
 }
 
@@ -803,11 +825,7 @@ impl Kit {
         ));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let (origin, author, checkout) = (
-            dir.join("origin.git"),
-            dir.join("author"),
-            dir.join("project"),
-        );
+        let (origin, author) = (dir.join("origin.git"), dir.join("author"));
         git(
             &dir,
             &[
@@ -832,15 +850,6 @@ impl Kit {
         git(&author, &["add", "-A"]);
         git(&author, &["commit", "-q", "-m", "base"]);
         git(&author, &["push", "-q", "origin", "HEAD:main"]);
-        git(
-            &dir,
-            &[
-                "clone",
-                "-q",
-                origin.to_str().unwrap(),
-                checkout.to_str().unwrap(),
-            ],
-        );
 
         let db: Db = crate::hub::store::HubDb::open_memory().unwrap();
         let gh = Arc::new(FakeGh {
@@ -858,24 +867,20 @@ impl Kit {
             merge_then_fail: Mutex::default(),
         });
         let host = Arc::new(FakeHost {
-            checkout,
             tasks: Mutex::default(),
             sends: Mutex::default(),
             events: Mutex::default(),
             appended: Notify::new(),
             wakes: Mutex::default(),
-            cmd_roots: Mutex::default(),
             review_spawns: Mutex::default(),
             spawn_refusal: Mutex::default(),
             branches: Mutex::default(),
         });
         let gate = Arc::new(FakeGate::default());
-        let worktree = dir.join("train-wt").display().to_string();
         let mut options = TrainOptions {
             auto_run: false,
             bypass_every: Duration::ZERO,
             ready_every: Duration::ZERO,
-            worktree_for: Arc::new(move |_| worktree.clone()),
             ..TrainOptions::default()
         };
         tweak(&mut options);
@@ -1166,8 +1171,8 @@ async fn moves_the_train_to_the_repos_new_project_when_its_first_project_was_rem
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn sends_a_conflicting_pr_back_to_its_author_with_the_paths_moves_on_and_merges_it_after_the_author_pushes()
- {
+async fn sends_a_conflicting_pr_back_to_its_author_moves_on_and_merges_it_after_the_author_pushes()
+{
     let kit = Kit::new();
     let pr = kit.open_pr(
         7,
@@ -1175,9 +1180,6 @@ async fn sends_a_conflicting_pr_back_to_its_author_with_the_paths_moves_on_and_m
         &[("a.txt", Some(&a_with(&[(5, "author's line 5")])))],
     );
     let (_, first) = kit.author_task(Some(&pr)).await;
-    let other = kit
-        .enqueue(kit.open_pr(8, "other", &[add("b.txt", "b\n")]))
-        .await;
     kit.commit(
         "main",
         &[("a.txt", Some(&a_with(&[(5, "main's line 5")])))],
@@ -1188,20 +1190,20 @@ async fn sends_a_conflicting_pr_back_to_its_author_with_the_paths_moves_on_and_m
     let parked = kit.get(&first);
     assert_eq!(
         (parked.state, parked.last_error.as_deref()),
-        (
-            ChangeState::NeedsRebase,
-            Some("conflicts with origin/main in a.txt")
-        )
+        (ChangeState::NeedsRebase, Some("conflicts with main"))
     );
     assert_eq!(
         kit.host.events_of("change.needs_rebase"),
-        [json!({ "changeId": first, "workstreamId": "W1", "paths": ["a.txt"] })]
+        [json!({ "changeId": first, "workstreamId": "W1" })]
     );
     let (to, message) = kit.host.sends.lock().unwrap().last().cloned().unwrap();
     assert_eq!(to, "T1");
-    assert!(message.contains("conflicts with origin/main in a.txt"));
+    assert!(message.contains("could not rebase it: it conflicts with main"));
 
     // The train moves on to the next ready PR.
+    let other = kit
+        .enqueue(kit.open_pr(8, "other", &[add("b.txt", "b\n")]))
+        .await;
     assert!(kit.train.step(REPO).await);
     assert_eq!(kit.get(&other.change_id).state, ChangeState::Merged);
 
@@ -1255,11 +1257,6 @@ async fn parks_a_pr_whose_ci_is_red_wakes_its_author_with_the_failing_check_and_
     assert!(kit.gh.merges.lock().unwrap().is_empty());
 }
 
-/// The one-at-a-time path: no batches.
-fn one_at_a_time(options: &mut TrainOptions) {
-    options.batch_max = 1;
-}
-
 /// No wait for CI that never comes: one poll decides.
 fn one_poll(options: &mut TrainOptions) {
     options.ci_timeout = Duration::ZERO;
@@ -1311,25 +1308,22 @@ async fn a_workflow_whose_check_never_comes_times_out_rather_than_merging() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn merges_into_the_pull_requests_own_base_when_it_is_not_the_default_branch() {
-    let kit = Kit::with(FakeCi::Actions, one_at_a_time);
-    kit.open_pr_on(
+    let kit = Kit::new();
+    let first = kit.open_pr_on(
         "slot/1/main",
         8,
         "slot/1/fleetd/T9-other",
         &[add("other.txt", "other\n")],
     );
-    let first = kit
-        .enqueue("https://github.com/acme/storefront/pull/8".into())
-        .await;
-    let pr = kit.open_pr_on(
+    let second = kit.open_pr_on(
         "slot/1/main",
         7,
         "slot/1/fleetd/T1-docs",
         &[add("docs.md", "docs\n")],
     );
-    let second = kit.enqueue(pr).await;
-
+    let first = kit.enqueue(first).await;
     assert!(kit.train.step(REPO).await);
+    let second = kit.enqueue(second).await;
     assert!(kit.train.step(REPO).await);
     for change in [&first, &second] {
         assert_eq!(kit.get(&change.change_id).state, ChangeState::Merged);
@@ -1481,12 +1475,13 @@ async fn never_takes_a_failed_ci_read_for_no_ci() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn requeues_at_the_front_when_github_refuses_the_pinned_merge_with_409_then_merges() {
-    let kit = Kit::with(FakeCi::Actions, one_at_a_time);
+    let kit = Kit::new();
     let a = kit
         .enqueue(kit.open_pr(7, "a", &[add("b.txt", "b\n")]))
         .await;
+    // Behind it in the queue, in review.
     let b = kit
-        .enqueue(kit.open_pr(8, "b", &[add("c.txt", "c\n")]))
+        .enqueue_held(kit.open_pr(8, "b", &[add("c.txt", "c\n")]))
         .await;
     kit.gh.merge_replies.lock().unwrap().push(GhOut {
         exit_code: 1,
@@ -1602,101 +1597,6 @@ async fn sends_a_change_back_to_reviewing_when_a_clean_rebase_changes_its_patch_
     assert_eq!(kit.get(&change.change_id).state, ChangeState::Merged);
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn replaces_a_stale_train_worktree_left_by_an_earlier_clone() {
-    let kit = Kit::new();
-    let dir = kit.author.parent().unwrap().to_path_buf();
-    // An earlier clone of the project made the train worktree, then was deleted: its .git file points nowhere.
-    let earlier = dir.join("earlier");
-    git(
-        &dir,
-        &[
-            "clone",
-            "-q",
-            kit.gh.origin.to_str().unwrap(),
-            earlier.to_str().unwrap(),
-        ],
-    );
-    let worktree = dir.join("train-wt");
-    git(
-        &earlier,
-        &[
-            "worktree",
-            "add",
-            "-q",
-            "--detach",
-            worktree.to_str().unwrap(),
-        ],
-    );
-    std::fs::remove_dir_all(&earlier).unwrap();
-
-    let pr = kit.open_pr(5, "stale", &[add("b.txt", "b\n")]);
-    let change = kit.enqueue(pr).await;
-    assert_eq!(
-        (
-            change.last_error.as_ref().map(|e| e.as_str()),
-            change.patch_id.is_some()
-        ),
-        (None, true)
-    );
-    let common = git(
-        &worktree,
-        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
-    );
-    assert!(common.ends_with("/project/.git"), "{common}");
-
-    // A healthy worktree is kept as it is.
-    std::fs::write(worktree.join("kept"), "").unwrap();
-    let next = kit.open_pr(6, "next", &[add("c.txt", "c\n")]);
-    assert!(kit.enqueue(next).await.last_error.is_none());
-    assert!(worktree.join("kept").exists());
-    assert!(kit.host.events_of("train.blocked").is_empty());
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn leaves_what_is_not_the_trains_where_its_worktree_goes_and_says_what_to_move() {
-    let kit = Kit::new();
-    let worktree = kit.author.parent().unwrap().join("train-wt");
-    std::fs::create_dir_all(&worktree).unwrap();
-    std::fs::write(worktree.join("notes.txt"), "mine\n").unwrap();
-    let path = worktree.display().to_string();
-
-    let pr = kit.open_pr(6, "blocked", &[add("b.txt", "b\n")]);
-    let change = kit.enqueue(pr).await;
-    assert_eq!(change.state, ChangeState::Queued);
-    let error = change.last_error.unwrap();
-    assert!(
-        error
-            .as_str()
-            .contains(&format!("`mv {path} {path}.moved`")),
-        "{}",
-        error.as_str()
-    );
-    assert_eq!(
-        std::fs::read_to_string(worktree.join("notes.txt")).unwrap(),
-        "mine\n"
-    );
-    let blocked = kit.host.events_of("train.blocked");
-    assert_eq!(
-        (blocked.len(), blocked[0]["changeId"].as_str()),
-        (1, Some(change.change_id.as_str()))
-    );
-
-    // Each pass retries, but the event is not repeated for the same error; once moved, the train goes on.
-    kit.train.step(REPO).await;
-    assert_eq!(kit.host.events_of("train.blocked").len(), 1);
-    std::fs::rename(&worktree, format!("{path}.moved")).unwrap();
-    kit.train.step(REPO).await;
-    let after = kit.get(&change.change_id);
-    assert_eq!(
-        (
-            after.last_error.as_ref().map(|e| e.as_str()),
-            after.patch_id.is_some()
-        ),
-        (None, true)
-    );
-}
-
 /// The merges GitHub saw, by PR number.
 fn merged_prs(kit: &Kit) -> Vec<i64> {
     kit.gh.merges.lock().unwrap().iter().map(|m| m.0).collect()
@@ -1706,9 +1606,17 @@ fn state_of(kit: &Kit, change: &Change) -> ChangeState {
     kit.get(&change.change_id).state
 }
 
+/// The members of the first PR GitHub merged, a batch, by PR number.
+fn members_of_batch(kit: &Kit) -> Vec<i64> {
+    let batch = kit.gh.merges.lock().unwrap()[0].0;
+    batch_heads(&kit.gh.pulls.lock().unwrap()[&batch].body)
+        .into_iter()
+        .map(|(n, _)| n)
+        .collect()
+}
+
 #[tokio::test(flavor = "multi_thread")]
-async fn batches_three_disjoint_ready_prs_into_one_ci_run_and_one_squash_and_closes_each_with_a_link()
- {
+async fn batches_three_ready_prs_into_one_ci_run_and_one_squash_and_closes_each_with_a_link() {
     let kit = Kit::new();
     let a = kit
         .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
@@ -1785,7 +1693,7 @@ async fn batches_three_disjoint_ready_prs_into_one_ci_run_and_one_squash_and_clo
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_red_batch_drops_its_last_member_merges_the_rest_and_tests_the_dropped_one_alone() {
+async fn a_red_batch_sends_each_member_through_alone() {
     let kit = Kit::new();
     // Each green alone; pair-a and pair-b together are red.
     let a = kit
@@ -1799,51 +1707,45 @@ async fn a_red_batch_drops_its_last_member_merges_the_rest_and_tests_the_dropped
         .await;
 
     assert!(kit.train.step(REPO).await);
+    assert_eq!(merged_prs(&kit), [7, 8], "each alone, in queue order");
     assert_eq!(state_of(&kit, &a), ChangeState::Merged);
     assert_eq!(state_of(&kit, &b), ChangeState::Merged);
-    assert_eq!(
-        state_of(&kit, &c),
-        ChangeState::Ready,
-        "dropped from the red batch, waiting its turn"
-    );
-    assert_eq!(merged_prs(&kit).len(), 1);
-    assert!(
-        kit.host.events_of("change.ci_failed").is_empty(),
-        "nobody is blamed for a red batch"
-    );
-
     // Alone, on the new main, it is red: its author hears it, and it never merges.
-    kit.enqueue(kit.open_pr(10, "d", &[add("d1.txt", "d\n")]))
-        .await;
-    assert!(kit.train.step(REPO).await);
     assert_eq!(state_of(&kit, &c), ChangeState::CiFailed);
     assert!(kit.main_file("pair-b").is_none());
-    assert_eq!(kit.host.events_of("change.ci_failed").len(), 1);
+    assert_eq!(
+        kit.host.events_of("change.ci_failed").len(),
+        1,
+        "nobody is blamed for the red batch itself"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_batch_of_one_is_the_old_path_and_overlapping_files_never_batch() {
-    let kit = Kit::with(FakeCi::Actions, one_at_a_time);
-    kit.enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+async fn a_member_that_conflicts_in_the_batch_goes_back_to_its_writer_and_the_rest_merge() {
+    let kit = Kit::new();
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[("a.txt", Some(&a_with(&[(2, "a")])))]))
         .await;
     let b = kit
-        .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]))
+        .enqueue(kit.open_pr(8, "b", &[("a.txt", Some(&a_with(&[(2, "b")])))]))
         .await;
-    assert!(kit.train.step(REPO).await);
-    assert_eq!(merged_prs(&kit), [7], "the PR itself merges, no batch PR");
-    assert_eq!(state_of(&kit, &b), ChangeState::Ready);
+    let c = kit
+        .enqueue(kit.open_pr(9, "c", &[add("c1.txt", "c\n")]))
+        .await;
 
-    let kit = Kit::new();
-    kit.enqueue(kit.open_pr(7, "a", &[("a.txt", Some(&a_with(&[(2, "a")])))]))
-        .await;
-    kit.enqueue(kit.open_pr(8, "b", &[("a.txt", Some(&a_with(&[(9, "b")])))]))
-        .await;
     assert!(kit.train.step(REPO).await);
+    assert_eq!(members_of_batch(&kit), [7, 9]);
+    assert_eq!(state_of(&kit, &a), ChangeState::Merged);
+    assert_eq!(state_of(&kit, &c), ChangeState::Merged);
+    let parked = kit.get(&b.change_id);
     assert_eq!(
-        merged_prs(&kit),
-        [7],
-        "both touch a.txt: the first goes alone"
+        (parked.state, parked.last_error.as_deref()),
+        (
+            ChangeState::NeedsRebase,
+            Some("conflicts with main and the PRs ahead of it in the train")
+        )
     );
+    assert_eq!(kit.host.events_of("change.needs_rebase").len(), 1);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1875,11 +1777,7 @@ async fn only_reviewed_held_free_and_own_green_prs_join_a_batch() {
         .await;
 
     assert!(kit.train.step(REPO).await);
-    let batch = kit.gh.merges.lock().unwrap()[0].0;
-    assert_eq!(
-        batch_members(&kit.gh.pulls.lock().unwrap()[&batch].body),
-        [7, 11]
-    );
+    assert_eq!(members_of_batch(&kit), [7, 11]);
     assert_eq!(state_of(&kit, &a), ChangeState::Merged);
     assert_eq!(state_of(&kit, &d), ChangeState::Merged);
     assert_eq!(state_of(&kit, &m), ChangeState::Reviewing);
@@ -1916,7 +1814,8 @@ async fn only_reviewed_held_free_and_own_green_prs_join_a_batch() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn required_checks_and_githubs_rules_still_block_a_batch() {
-    // Checks the base requires never report: the batch times out, and each alone times out too, never merging.
+    // Checks the base requires never report: neither is green on its own, so no batch forms, and each alone times out,
+    // never merging.
     let kit = Kit::with(FakeCi::Required, one_poll);
     let a = kit
         .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
@@ -1931,8 +1830,7 @@ async fn required_checks_and_githubs_rules_still_block_a_batch() {
     assert_eq!(state_of(&kit, &a), ChangeState::CiFailed);
     assert_eq!(state_of(&kit, &b), ChangeState::CiFailed);
 
-    // GitHub refuses the batch PR (say, it wants an approval): after the merge attempts, batching is off for the
-    // repo and each goes alone, through GitHub's rules again.
+    // GitHub refuses the batch PR (say, it wants an approval): each member goes alone, through GitHub's rules again.
     let kit = Kit::new();
     let a = kit
         .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
@@ -1940,38 +1838,26 @@ async fn required_checks_and_githubs_rules_still_block_a_batch() {
     let b = kit
         .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]))
         .await;
-    for _ in 0..3 {
-        kit.gh.merge_replies.lock().unwrap().push(http_error(
-            405,
-            "At least 1 approving review is required by reviewers with write access.",
-        ));
-    }
+    kit.gh.merge_replies.lock().unwrap().push(http_error(
+        405,
+        "At least 1 approving review is required by reviewers with write access.",
+    ));
     assert!(kit.train.step(REPO).await);
-    assert!(merged_prs(&kit).is_empty());
-    let back = kit.get(&a.change_id);
-    assert_eq!(back.state, ChangeState::Ready);
-    assert!(
-        back.last_error
-            .as_deref()
-            .unwrap()
-            .contains("approving review"),
-        "{:?}",
-        back.last_error
-    );
-    let batch_pr = kit
+    assert_eq!(merged_prs(&kit), [7, 8], "each alone");
+    assert_eq!(state_of(&kit, &a), ChangeState::Merged);
+    assert_eq!(state_of(&kit, &b), ChangeState::Merged);
+    // The next pass deletes the batch's branch, which closes its PR.
+    kit.train.step(REPO).await;
+    let batch = kit
         .gh
         .pulls
         .lock()
         .unwrap()
-        .iter()
-        .find(|(_, p)| p.branch == "fleetd/train/batch")
-        .map(|(n, p)| (*n, p.state.clone()))
+        .values()
+        .find(|p| p.branch == "fleetd/train/batch")
+        .map(|p| (p.state.clone(), p.merged))
         .unwrap();
-    assert_eq!(batch_pr.1, "closed", "the batch PR is dissolved");
-    assert!(kit.train.step(REPO).await);
-    assert!(kit.train.step(REPO).await);
-    assert_eq!(merged_prs(&kit), [7, 8], "one at a time now");
-    assert_eq!(state_of(&kit, &b), ChangeState::Merged);
+    assert_eq!(batch, ("closed".into(), false));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1988,19 +1874,19 @@ async fn a_member_pushed_to_while_the_batch_is_in_ci_leaves_it_untested_code_nev
         .await;
     *kit.gh.push_during_ci.lock().unwrap() = Some("b".into());
 
+    // The batch did not test b's new head: it goes, and nothing merges.
     assert!(kit.train.step(REPO).await);
-    let batch = kit.gh.merges.lock().unwrap()[0].0;
-    assert_eq!(
-        batch_members(&kit.gh.pulls.lock().unwrap()[&batch].body),
-        [7, 9]
-    );
+    assert!(merged_prs(&kit).is_empty());
+    for change in [&a, &b, &c] {
+        assert_eq!(state_of(&kit, change), ChangeState::Ready);
+    }
+
+    // The next one goes without b, whose new head (same patch) goes after it.
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(members_of_batch(&kit), [7, 9]);
     assert_eq!(state_of(&kit, &a), ChangeState::Merged);
     assert_eq!(state_of(&kit, &c), ChangeState::Merged);
     assert_eq!(state_of(&kit, &b), ChangeState::Ready);
-    assert_eq!(kit.gh.pulls.lock().unwrap()[&8].state, "open");
-
-    // Its new head, same patch, goes next.
-    assert!(kit.train.step(REPO).await);
     assert!(kit.train.step(REPO).await);
     assert_eq!(state_of(&kit, &b), ChangeState::Merged);
 }
@@ -2037,7 +1923,7 @@ fn a_cancelled_check_is_red_only_once_nothing_else_runs() {
     ));
 }
 
-/// Three disjoint PRs, reviewed and ready: 7 (a), 8 (b), 9 (c).
+/// Three PRs, each adding its own file, reviewed and ready: 7 (a), 8 (b), 9 (c).
 async fn three_ready(kit: &Kit) -> [Change; 3] {
     let mut out = Vec::new();
     for (n, branch) in [(7, "a"), (8, "b"), (9, "c")] {
@@ -2168,9 +2054,10 @@ async fn scratch_branches_and_prs_nothing_uses_are_swept_and_a_merged_batch_leav
     hold(false);
     assert!(kit.train.step(REPO).await);
     assert_eq!(merged_prs(&kit).len(), 1);
+    kit.train.step(REPO).await;
     assert!(
         kit.gh.head_of("fleetd/train/batch").is_none(),
-        "deleted once merged"
+        "the next pass deletes it"
     );
 }
 
@@ -2482,46 +2369,6 @@ async fn racing_enqueues_of_one_pr_make_one_change_and_one_review_round() {
         kit.host.review_spawns.lock().unwrap().len(),
         1,
         "one review round"
-    );
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_checkout_outside_the_nodes_cmd_roots_says_so_and_needs_a_person() {
-    let kit = Kit::new();
-    let elsewhere = tempfile::tempdir().unwrap();
-    *kit.host.cmd_roots.lock().unwrap() = Some(vec![elsewhere.path().display().to_string()]);
-
-    let pr = kit.open_pr(7, "outside", &[add("b.txt", "b\n")]);
-    let change = kit.enqueue(pr).await;
-    assert_eq!(change.state, ChangeState::Queued);
-    let error = change.last_error.unwrap();
-    assert!(
-        error.as_str().contains("is outside cmdRoots"),
-        "{}",
-        error.as_str()
-    );
-    assert!(
-        error.as_str().contains("\"cmdRoots\" in node.json"),
-        "{}",
-        error.as_str()
-    );
-    assert!(
-        !error.as_str().contains("not a git checkout"),
-        "{}",
-        error.as_str()
-    );
-    assert_eq!(kit.host.events_of("train.blocked").len(), 1);
-
-    // Once the node runs commands there, the train goes on.
-    *kit.host.cmd_roots.lock().unwrap() = None;
-    kit.train.step(REPO).await;
-    let after = kit.get(&change.change_id);
-    assert_eq!(
-        (
-            after.last_error.as_ref().map(|e| e.as_str()),
-            after.patch_id.is_some()
-        ),
-        (None, true)
     );
 }
 

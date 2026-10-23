@@ -1,5 +1,6 @@
-//! What the train asks of GitHub, through the `gh` CLI on the hub machine: PRs, check runs on a head, the
-//! `fleetd/train` commit status, the pinned squash merge, and recently merged PRs, to report merges outside it.
+//! What the train asks of GitHub, through the `gh` CLI on the hub machine: PRs, rebasing a PR's branch, batch branches
+//! built by merges, patch ids, check runs on a head, the `fleetd/train` commit status, the pinned squash merge, and
+//! recently merged PRs, to report merges outside it. The train runs no git of its own but `git patch-id`.
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -152,11 +153,6 @@ pub fn batch_heads(body: &str) -> Vec<(i64, Option<String>)> {
         .unwrap_or_default()
 }
 
-/// The PR numbers a batch PR's body names on its `fleetd-batch:` line.
-pub fn batch_members(body: &str) -> Vec<i64> {
-    batch_heads(body).into_iter().map(|(n, _)| n).collect()
-}
-
 #[derive(Clone, Debug, Deserialize)]
 pub struct CheckRun {
     pub id: f64,
@@ -238,6 +234,47 @@ pub enum MergeOutcome {
     },
 }
 
+/// What merging a PR's head into the train's batch branch on GitHub did.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BranchMerge {
+    /// The branch's new head.
+    Merged(String),
+    /// The branch already has it.
+    Nothing,
+    Conflict,
+}
+
+fn is_sha(s: &str) -> bool {
+    (s.len() == 40 || s.len() == 64) && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// `git patch-id --stable` of `diff`, by the hub's git, which needs no repository for it.
+async fn stable_patch_id(diff: String) -> Result<String, String> {
+    use tokio::io::AsyncWriteExt;
+    let mut child = tokio::process::Command::new("git")
+        .args(["patch-id", "--stable"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| format!("git patch-id could not start on the hub: {e}"))?;
+    let mut stdin = child.stdin.take().ok_or("git patch-id has no stdin")?;
+    let feed = tokio::spawn(async move { stdin.write_all(diff.as_bytes()).await });
+    let out = child
+        .wait_with_output()
+        .await
+        .map_err(|e| format!("git patch-id: {e}"))?;
+    let _ = feed.await;
+    // "<patch id> <commit id>", the commit id zeros for a diff read from stdin; nothing for an empty diff.
+    String::from_utf8_lossy(&out.stdout)
+        .split_whitespace()
+        .next()
+        .filter(|id| is_sha(id))
+        .map(String::from)
+        .ok_or_else(|| "the diff against its merge base is empty".into())
+}
+
 enum Reply {
     Ok(Value),
     Err { status: u16, message: String },
@@ -303,39 +340,8 @@ impl TrainGitHub {
         }
     }
 
-    /// `gh api`; a non-2xx answer is `{ status, message }` rather than an error, so callers can tell a 409 apart.
-    /// Each answer from GitHub keeps `github:<repo>` fresh.
-    async fn call(
-        &self,
-        method: &str,
-        path: &str,
-        fields: &[(&str, &str)],
-    ) -> Result<Reply, GhError> {
-        let reply = self.call_inner(method, path, fields).await;
-        match &reply {
-            Ok(Reply::Ok(_)) => self.reached(path),
-            // GitHub answered, just not with what was asked for (404, 405, 409, 422): it was reached.
-            Ok(Reply::Err { status, .. }) if (400..500).contains(status) => self.reached(path),
-            Ok(Reply::Err { message, .. }) => self.missed(path, message),
-            Err(e) => self.missed(path, &e.message),
-        }
-        reply
-    }
-
-    async fn call_inner(
-        &self,
-        method: &str,
-        path: &str,
-        fields: &[(&str, &str)],
-    ) -> Result<Reply, GhError> {
-        let mut args: Vec<String> = vec!["api".into()];
-        args.extend(["-X", method, "-H", "Accept: application/vnd.github+json"].map(String::from));
-        args.push(path.into());
-        for (k, v) in fields {
-            // `draft` is a JSON boolean; -f would send the string "true".
-            args.push(if *k == "draft" { "-F" } else { "-f" }.into());
-            args.push(format!("{k}={v}"));
-        }
+    /// One `gh` run: gh missing or not logged in is an error of its own kind.
+    async fn run(&self, args: Vec<String>) -> Result<GhOut, GhError> {
         let out = self.gh.run(args).await.map_err(|spawn| {
             if spawn == "ENOENT" {
                 GhError { kind: GhErrorKind::Missing, message: format!("gh is not installed on the hub machine: install the GitHub CLI, then {GH_AUTH_FIX}") }
@@ -349,25 +355,62 @@ impl TrainGitHub {
                 message: format!("gh is not authenticated: {GH_AUTH_FIX}"),
             });
         }
-        if out.exit_code == 0 {
-            let text = if out.stdout.is_empty() {
-                "null"
-            } else {
-                &out.stdout
-            };
-            return serde_json::from_str(text)
-                .map(Reply::Ok)
-                .map_err(|_| GhError::failed(format!("gh api {path} did not return JSON")));
+        Ok(out)
+    }
+
+    /// `gh api` with `accept`: the answer's text, or `(status, message)` for a non-2xx answer, so callers can tell a
+    /// 409 apart. Each answer from GitHub keeps `github:<repo>` fresh.
+    async fn exchange(
+        &self,
+        method: &str,
+        path: &str,
+        accept: &str,
+        fields: &[(&str, &str)],
+    ) -> Result<Result<String, (u16, String)>, GhError> {
+        let mut args: Vec<String> = vec!["api".into()];
+        args.extend(["-X", method, "-H", accept].map(String::from));
+        args.push(path.into());
+        for (k, v) in fields {
+            // `draft` is a JSON boolean; -f would send the string "true".
+            args.push(if *k == "draft" { "-F" } else { "-f" }.into());
+            args.push(format!("{k}={v}"));
         }
-        // gh prints GitHub's error body on stdout; its message is the plainest reason.
-        let message = serde_json::from_str::<Value>(&out.stdout)
-            .ok()
-            .and_then(|v| v["message"].as_str().map(String::from))
-            .unwrap_or_else(|| last_line(&out.stderr));
-        Ok(Reply::Err {
-            status: http_status(&out.stderr),
-            message,
-        })
+        let reply = self.run(args).await.map(|out| {
+            if out.exit_code == 0 {
+                return Ok(out.stdout);
+            }
+            // gh prints GitHub's error body on stdout; its message is the plainest reason.
+            let message = serde_json::from_str::<Value>(&out.stdout)
+                .ok()
+                .and_then(|v| v["message"].as_str().map(String::from))
+                .unwrap_or_else(|| last_line(&out.stderr));
+            Err((http_status(&out.stderr), message))
+        });
+        match &reply {
+            Ok(Ok(_)) => self.reached(path),
+            // GitHub answered, just not with what was asked for (404, 405, 409, 422): it was reached.
+            Ok(Err((status, _))) if (400..500).contains(status) => self.reached(path),
+            Ok(Err((_, message))) => self.missed(path, message),
+            Err(e) => self.missed(path, &e.message),
+        }
+        reply
+    }
+
+    async fn call(
+        &self,
+        method: &str,
+        path: &str,
+        fields: &[(&str, &str)],
+    ) -> Result<Reply, GhError> {
+        match self
+            .exchange(method, path, "Accept: application/vnd.github+json", fields)
+            .await?
+        {
+            Ok(text) => serde_json::from_str(if text.is_empty() { "null" } else { &text })
+                .map(Reply::Ok)
+                .map_err(|_| GhError::failed(format!("gh api {path} did not return JSON"))),
+            Err((status, message)) => Ok(Reply::Err { status, message }),
+        }
     }
 
     async fn json<T: DeserializeOwned>(
@@ -482,6 +525,106 @@ impl TrainGitHub {
                 ))),
             },
         }
+    }
+
+    /// Rebases the PR's branch onto its base on GitHub (`gh pr update-branch --rebase`); a branch already on its base
+    /// stays as it is. False when it conflicts.
+    pub async fn update_branch(&self, repo: &str, n: i64) -> Result<bool, GhError> {
+        let path = format!("repos/{repo}/pulls/{n}");
+        let args = [
+            "pr",
+            "update-branch",
+            &n.to_string(),
+            "--rebase",
+            "--repo",
+            repo,
+        ];
+        let out = match self.run(args.map(String::from).into()).await {
+            Ok(out) => out,
+            Err(e) => {
+                self.missed(&path, &e.message);
+                return Err(e);
+            }
+        };
+        let conflict = out.stderr.to_lowercase().contains("conflict");
+        if out.exit_code != 0 && !conflict {
+            let why = last_line(&out.stderr);
+            self.missed(&path, &why);
+            return Err(GhError::failed(format!(
+                "rebasing {repo}#{n} on GitHub failed: {why}"
+            )));
+        }
+        self.reached(&path);
+        Ok(out.exit_code == 0)
+    }
+
+    /// Where `branch` points now.
+    pub async fn branch_sha(&self, repo: &str, branch: &str) -> Result<String, GhError> {
+        #[derive(Deserialize)]
+        struct Object {
+            sha: String,
+        }
+        #[derive(Deserialize)]
+        struct Ref {
+            object: Object,
+        }
+        let r: Ref = self
+            .json("GET", &format!("repos/{repo}/git/ref/heads/{branch}"), &[])
+            .await?;
+        Ok(r.object.sha.to_lowercase())
+    }
+
+    pub async fn create_branch(&self, repo: &str, branch: &str, sha: &str) -> Result<(), GhError> {
+        let name = format!("refs/heads/{branch}");
+        let fields = [("ref", name.as_str()), ("sha", sha)];
+        self.json::<Value>("POST", &format!("repos/{repo}/git/refs"), &fields)
+            .await
+            .map(|_| ())
+    }
+
+    /// Merges `sha` into `branch` on GitHub, a merge commit with `message`.
+    pub async fn merge_into(
+        &self,
+        repo: &str,
+        branch: &str,
+        sha: &str,
+        message: &str,
+    ) -> Result<BranchMerge, GhError> {
+        let fields = [("base", branch), ("head", sha), ("commit_message", message)];
+        match self
+            .call("POST", &format!("repos/{repo}/merges"), &fields)
+            .await?
+        {
+            Reply::Ok(Value::Null) => Ok(BranchMerge::Nothing),
+            Reply::Ok(v) => v["sha"]
+                .as_str()
+                .map(|s| BranchMerge::Merged(s.to_lowercase()))
+                .ok_or_else(|| GhError::failed(format!("merging into {branch} returned no sha"))),
+            Reply::Err { status: 409, .. } => Ok(BranchMerge::Conflict),
+            Reply::Err { message, .. } => Err(GhError::failed(format!(
+                "merging {} into {branch} failed: {message}",
+                &sha[..sha.len().min(12)]
+            ))),
+        }
+    }
+
+    /// The patch id of `sha`: `git patch-id --stable` of its diff against its merge base with `base`, the diff from
+    /// GitHub. The train and the reviews both bind to it, so it is computed one way only.
+    pub async fn patch_id(&self, repo: &str, base: &str, sha: &str) -> Result<String, GhError> {
+        if !is_sha(sha) {
+            let shown: String = sha.chars().take(80).collect();
+            return Err(GhError::failed(format!("not a full commit SHA: {shown}")));
+        }
+        let base_sha = self.branch_sha(repo, base).await?;
+        let path = format!("repos/{repo}/compare/{base_sha}...{sha}");
+        let at = format!("{repo}@{}", &sha[..12]);
+        let diff = self
+            .exchange("GET", &path, "Accept: application/vnd.github.diff", &[])
+            .await?
+            .map_err(|(_, message)| GhError::failed(format!("the diff of {at}: {message}")))?;
+        stable_patch_id(diff)
+            .await
+            .map_err(|why| GhError::failed(format!("the patch id of {at}: {why}")))
     }
 
     /// Comments on the PR with why, then closes it.

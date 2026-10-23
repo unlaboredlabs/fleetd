@@ -843,9 +843,6 @@
         "thread.waiting": {
           "$ref": "#/$defs/ThreadEventData"
         },
-        "train.blocked": {
-          "$ref": "#/$defs/TrainEventData"
-        },
         "usage.breaker": {
           "$ref": "#/$defs/UsageEventData"
         },
@@ -907,7 +904,6 @@
         "thread.started",
         "thread.usage_limited",
         "thread.waiting",
-        "train.blocked",
         "usage.breaker",
         "usage.resumed",
         "workstream.created",
@@ -1820,7 +1816,7 @@
       "type": "object"
     },
     "TrainEventData": {
-      "description": "The merge train's events: `change.queued`, `change.ready`, `change.needs_rebase`, `change.ci_failed`,\n`change.refused`, `pr.merged`, `pr.merged_outside`, `train.blocked`. Which fields each carries is in\n`HubEventType`'s docs.",
+      "description": "The merge train's events: `change.queued`, `change.ready`, `change.needs_rebase`, `change.ci_failed`,\n`change.refused`, `pr.merged`, `pr.merged_outside`. Which fields each carries is in\n`HubEventType`'s docs.",
       "properties": {
         "changeId": {
           "$ref": "#/$defs/ChangeId"
@@ -1836,10 +1832,6 @@
           "description": "pr.merged on a repo with no CI: what fleetd checked instead.",
           "type": "string"
         },
-        "error": {
-          "description": "train.blocked: what a person has to move.",
-          "type": "string"
-        },
         "fix": {
           "type": "string"
         },
@@ -1848,13 +1840,6 @@
         },
         "mergedSha": {
           "type": "string"
-        },
-        "paths": {
-          "description": "change.needs_rebase: the conflicting paths.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
         },
         "prNumber": {
           "maximum": 9007199254740991,

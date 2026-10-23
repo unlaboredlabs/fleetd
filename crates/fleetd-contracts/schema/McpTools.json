@@ -3031,7 +3031,7 @@
         },
         {
           "const": "change.needs_rebase",
-          "description": "The rebase conflicted; `data.changeId`, `data.paths`.",
+          "description": "The PR conflicts with its base, or with the PRs ahead of it in a batch; `data.changeId`.",
           "type": "string"
         },
         {
@@ -3047,11 +3047,6 @@
         {
           "const": "pr.merged_outside",
           "description": "A PR was merged into a base the train guards without the train; `data.repo`, `data.prNumber`,\n`data.mergedSha`, and `data.changeId` when it had been enqueued.",
-          "type": "string"
-        },
-        {
-          "const": "train.blocked",
-          "description": "Something that is not the train's sits where its worktree goes, and a person has to move it; `data.changeId`,\n`data.repo`, `data.error` (what to move).",
           "type": "string"
         },
         {
