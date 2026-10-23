@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::effort::Effort;
 use crate::ids::{ProjectRef, ThreadRef, Timestamp};
-use crate::ledger::{SERVES_FIX, Serves, Tier, WorkstreamId};
+use crate::ledger::{Tier, WorkstreamId};
 use crate::prim::{
     Count, Int, Line, List, NonEmpty, NonNegative, Positive, Text, UniqueList, is_http_url, js_len,
 };
@@ -66,16 +66,8 @@ pub fn task_areas_rule(kind: TaskKind, areas_len: usize) -> Result<(), String> {
     Ok(())
 }
 
-/// A write task must say what it serves; a review task names its PR; only review tasks may be QA runs.
-pub fn task_spawn_rule(
-    kind: TaskKind,
-    serves: bool,
-    qa: Option<bool>,
-    pr: bool,
-) -> Result<(), String> {
-    if kind == TaskKind::Write && !serves {
-        return Err(format!("a write task needs --serves: {SERVES_FIX}"));
-    }
+/// A review task names its PR; only review tasks may be QA runs.
+pub fn task_spawn_rule(kind: TaskKind, qa: Option<bool>, pr: bool) -> Result<(), String> {
     if kind == TaskKind::Review && !pr {
         return Err("a review task needs --pr <PR URL>".into());
     }
@@ -146,8 +138,6 @@ pub struct Task {
     pub effort: Effort,
     pub tier: Option<Tier>,
     pub estimate_minutes: Option<NonNegative>,
-    /// Required at spawn for write tasks; optional here for tasks stored before M6.
-    pub serves: Option<Serves>,
     /// A review task spawned with `--qa`.
     pub qa: Option<bool>,
     /// The PR a review task reviews. Required at spawn for review; absent on hub-spawned judge tasks and older rows.
@@ -398,13 +388,10 @@ mod tests {
     fn spawn_rules() {
         assert!(task_areas_rule(TaskKind::Write, 0).is_err());
         assert!(task_areas_rule(TaskKind::Read, 0).is_ok());
-        let err = task_spawn_rule(TaskKind::Write, false, None, false).unwrap_err();
-        assert!(err.contains(
-            "say what this serves: serves done:<n> | issue:<ref> | defect:<text> | decision:<key>"
-        ));
-        assert!(task_spawn_rule(TaskKind::Review, false, Some(true), true).is_ok());
-        assert!(task_spawn_rule(TaskKind::Review, false, None, false).is_err());
-        assert!(task_spawn_rule(TaskKind::Write, true, Some(true), false).is_err());
+        assert!(task_spawn_rule(TaskKind::Write, None, false).is_ok());
+        assert!(task_spawn_rule(TaskKind::Review, Some(true), true).is_ok());
+        assert!(task_spawn_rule(TaskKind::Review, None, false).is_err());
+        assert!(task_spawn_rule(TaskKind::Write, Some(true), false).is_err());
     }
 
     #[test]

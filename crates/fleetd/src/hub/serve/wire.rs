@@ -58,7 +58,7 @@ fn stopping() -> McpToolError {
     )
 }
 
-/// The lead calls `claim_done` and `review_verdict`, answered by checks and the value bar.
+/// The lead calls `claim_done` and `review_verdict`, answered by checks and review verdicts.
 struct CheckCalls(Weak<Hub>);
 
 impl LeadCallHandler for CheckCalls {
@@ -67,7 +67,7 @@ impl LeadCallHandler for CheckCalls {
         let hub = self.0.upgrade();
         Box::pin(async move {
             let hub = hub.ok_or_else(stopping)?;
-            let caller = crate::hub::valuebar::Caller {
+            let caller = crate::hub::reviews::verdicts::Caller {
                 project_ref: caller.project_ref,
                 by: caller.by,
             };

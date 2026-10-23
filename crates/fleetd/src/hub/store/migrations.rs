@@ -452,4 +452,9 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     r#"
   DELETE FROM status_series;
   "#,
+    // No value bar: tasks and changes no longer say what they serve.
+    r#"
+  UPDATE tasks SET data = json_remove(data, '$.serves') WHERE json_valid(data);
+  UPDATE changes SET data = json_remove(data, '$.serves') WHERE json_valid(data);
+  "#,
 ];

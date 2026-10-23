@@ -1,7 +1,7 @@
 //! Checks runner and claims: `fleetd claim done` runs a workstream's frozen done-when checks, and only all of them
 //! passing makes it done.
 //!
-//! The hub holds `GitHub` (the `gh` CLI), `JudgeVerdicts` (completed by the value bar), `CheckRunner` (also approvals'
+//! The hub holds `GitHub` (the `gh` CLI), `JudgeVerdicts` (completed by review verdicts), `CheckRunner` (also approvals'
 //! `verify`) and `Claims`. `cmd` checks run through the link area's `NodeCommands`.
 pub mod claims;
 pub mod github;
@@ -29,8 +29,8 @@ use crate::hub::estimates::Estimates;
 use crate::hub::incidents::Incidents;
 use crate::hub::incidents::detectors::Detectors;
 use crate::hub::receipts::Receipts;
+use crate::hub::reviews::verdicts::Verdicts;
 use crate::hub::store::{EventLog, HubDb};
-use crate::hub::valuebar::{GhPrHeads, ValueBar};
 use std::sync::Arc;
 
 /// This slice's services, built before the `Hub` that holds them; `ports` is bound to the `Hub` right after.
@@ -39,7 +39,7 @@ pub struct Built {
     pub incidents: Arc<Incidents>,
     pub estimates: Arc<Estimates>,
     pub receipts: Arc<Receipts>,
-    pub value_bar: Arc<ValueBar>,
+    pub verdicts: Arc<Verdicts>,
     pub checks: Arc<CheckRunner>,
     pub claims: Arc<Claims>,
 }
@@ -51,17 +51,19 @@ pub fn build(db: &Arc<HubDb>, events: &Arc<EventLog>, clock: &Arc<dyn Clock>) ->
     let estimates = Arc::new(Estimates::new(db.clone(), dyn_ports.clone(), clock.clone()));
     let receipts = Arc::new(Receipts::new(dyn_ports.clone()));
     let gh: Arc<dyn GhRunner> = Arc::new(GhCli);
-    let verdicts = Arc::new(JudgeVerdicts::default());
-    let value_bar = Arc::new(ValueBar::new(
+    let judge_verdicts = Arc::new(JudgeVerdicts::default());
+    let verdicts = Arc::new(Verdicts::new(
         db.clone(),
         events.clone(),
         dyn_ports.clone(),
-        incidents.clone(),
-        Arc::new(GhPrHeads { runner: gh.clone() }),
-        verdicts.clone(),
+        judge_verdicts.clone(),
         clock.clone(),
     ));
-    let judges = Arc::new(Judges::new(dyn_ports.clone(), events.clone(), verdicts));
+    let judges = Arc::new(Judges::new(
+        dyn_ports.clone(),
+        events.clone(),
+        judge_verdicts,
+    ));
     let checks = Arc::new(CheckRunner::new(
         Arc::new(GitHub::new(gh)),
         judges,
@@ -83,7 +85,7 @@ pub fn build(db: &Arc<HubDb>, events: &Arc<EventLog>, clock: &Arc<dyn Clock>) ->
         incidents,
         estimates,
         receipts,
-        value_bar,
+        verdicts,
         checks,
         claims,
     }

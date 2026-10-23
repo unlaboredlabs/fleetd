@@ -85,8 +85,7 @@ static TOOLS: &[Tool] = &[
         "spawn_agent",
         "task_spawn",
         "Start a fleetd agent (a task) with its own session, slot and lane. kind write|read|review; a writer needs \
-         areas from the project's policy and serves (done:<n>, issue:<ref>, defect:<text> or decision:<key>) and gets its own \
-         worktree and branch; a review task needs pr. model and effort are optional. A busy area or a full slot board \
+         areas from the project's policy and gets its own worktree and branch; a review task needs pr. model and effort are optional. A busy area or a full slot board \
          queues it and it starts by itself. Its result arrives in a later wake: end your turn instead of waiting.",
         inline_schema::<TaskSpawnCall>,
     ),
@@ -221,7 +220,7 @@ static TOOLS: &[Tool] = &[
         "workstream_open",
         "workstream_open",
         "Open a workstream for work you took from the chat: a draft you then freeze with brief. template picks the \
-         playbook (feature, bugfix, research, finish-all); serves is optional.",
+         playbook (feature, bugfix, research, finish-all).",
         inline_schema::<WorkstreamOpenCall>,
     ),
     lead(
@@ -490,7 +489,7 @@ mod tests {
         let spawn = call_of(
             Role::Lead,
             "spawn_agent",
-            json!({ "workstreamId": "W1", "title": "t", "prompt": "p", "areas": ["docs"], "serves": "done:0" }),
+            json!({ "workstreamId": "W1", "title": "t", "prompt": "p", "areas": ["docs"] }),
         )
         .unwrap();
         assert_eq!(spawn["op"], "task_spawn");

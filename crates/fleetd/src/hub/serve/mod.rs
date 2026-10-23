@@ -366,7 +366,7 @@ pub fn build_on(
         incidents: checks.incidents,
         estimates: checks.estimates,
         receipts: checks.receipts,
-        value_bar: checks.value_bar,
+        verdicts: checks.verdicts,
         checks: checks.checks,
         claims: checks.claims,
         ops: ops.ports,

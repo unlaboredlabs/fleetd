@@ -130,10 +130,10 @@ async function sliceReviews(lab: Lab) {
 
     // One writer, two slices, each reported as soon as its PR is open.
     const slice = (n: string, line: string) =>
-      `On a new branch ${BRANCH_PREFIX}eff-${n} from origin/${BASE} (git fetch origin; git checkout -b ${BRANCH_PREFIX}eff-${n} origin/${BASE}), create ${dir}/${n}.md containing exactly the line ${line}, commit it, push the branch, and open a PR with gh pr create --base ${BASE} --head ${BRANCH_PREFIX}eff-${n} --title "eff ${n}" --body "Source: done:0". Then call the report tool with kind "slice_ready" and prUrl set to that PR's URL.`;
+      `On a new branch ${BRANCH_PREFIX}eff-${n} from origin/${BASE} (git fetch origin; git checkout -b ${BRANCH_PREFIX}eff-${n} origin/${BASE}), create ${dir}/${n}.md containing exactly the line ${line}, commit it, push the branch, and open a PR with gh pr create --base ${BASE} --head ${BRANCH_PREFIX}eff-${n} --title "eff ${n}" --body "eff ${n}". Then call the report tool with kind "slice_ready" and prUrl set to that PR's URL.`;
     cursor = await lab.cursor();
     const spawned = fleetd(
-      "task", "spawn", "--workstream", w, "--title", "two slices", "--areas", "eff", "--serves", "done:0", "--model", SHIPPED.model, "--effort", SHIPPED.effort,
+      "task", "spawn", "--workstream", w, "--title", "two slices", "--areas", "eff", "--model", SHIPPED.model, "--effort", SHIPPED.effort,
       "--prompt", `Do these two steps in order. 1. ${slice("one", "one")} 2. ${slice("two", "two")} Reply with both PR URLs.`,
     );
     const writer = /^Spawned (T\d+)/mu.exec(spawned.stdout)?.[1];

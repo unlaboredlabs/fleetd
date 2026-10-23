@@ -2,10 +2,8 @@
 // `test -f docs/x.md` fails its first claim, and the lead is woken with the exit code and output. The writer that
 // fixes it (the lead's own, else the harness's) is merged into the project's checkout as it ends, so the next claim,
 // the lead's or the harness's, passes and records actual vs estimate. A tool-less task that says "tests pass" reaches
-// the lead as unverified; a writer without --serves and a verdict from a non-review task are refused. The same-SHA
-// review rule needs a real PR head from GitHub, so a unit test covers it (tasks/LeadTaskCalls.test.ts) until M7's
-// lab repo. The harness's `fleetd` calls run in the project's workspace, as the lead's shell would, so they cost no
-// turns; wakes and tasks are on MECHANICS.
+// the lead as unverified, and a verdict from a non-review task is refused. The harness's `fleetd` calls run in the
+// project's workspace, as the lead's shell would, so they cost no turns; wakes and tasks are on MECHANICS.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -97,14 +95,7 @@ export async function m6Verify(lab: Lab) {
   check(!wakeText.includes("(raw 1m × "), "the lead's digest shows no ETA");
   ok(`1. the lead's wake (triggers ${JSON.stringify(woken.event.data?.triggers)}) carried the evidence inline, and no ETA`);
 
-  // 3. A writer without --serves is refused with the fix text.
-  const unserved = fleetd("task", "spawn", "--workstream", w, "--title", "x", "--areas", "docs", "--prompt", "y");
-  // The CLI refuses it before the hub would (exit 2, usage); the hub's own refusal is unit-tested in LeadTaskCalls.test.ts.
-  const refusal = unserved.stderr.split("\n")[0]!;
-  check(unserved.code === 2 && refusal === "fleetd: a write task needs --serves: say what this serves: --serves done:<n> | issue:<ref> | defect:<text> | decision:<key>", `spawn without --serves: ${JSON.stringify(unserved)}`);
-  ok(`3. task spawn (kind write) without --serves refused (exit ${unserved.code}): ${refusal}`);
-
-  // The fix: a lead given the failing evidence spawns a `--serves done:0` writer itself; if it did not, the harness does.
+  // The fix: a lead given the failing evidence spawns a writer itself; if it did not, the harness does.
   const spawn = (args: Array<string>) => {
     const out = fleetd("task", "spawn", "--workstream", w, "--model", MECHANICS.model, "--effort", MECHANICS.effort, ...args);
     const taskId = /^Spawned (T\d+)/mu.exec(out.stdout)?.[1];
@@ -112,9 +103,9 @@ export async function m6Verify(lab: Lab) {
     return taskId!;
   };
   const own = ((await callTool("tasks_list", { projectRef: ref, limit: 100 })).body.tasks as Array<Body>).filter((t) => t.workstreamId === w);
-  const leadWriter = own.find((t) => t.kind === "write" && t.serves === "done:0");
-  const writer = leadWriter?.taskId ?? spawn(["--title", "add x", "--areas", "docs", "--serves", "done:0", "--prompt", `create ${FILE} with one line 'hi', commit it on your branch`]);
-  ok(`writer ${writer}: ${leadWriter === undefined ? "spawned by the harness (the lead spawned none)" : `spawned by the lead after the failed claim ("${leadWriter.title}", serves done:0)`}`);
+  const leadWriter = own.find((t) => t.kind === "write");
+  const writer = leadWriter?.taskId ?? spawn(["--title", "add x", "--areas", "docs", "--prompt", `create ${FILE} with one line 'hi', commit it on your branch`]);
+  ok(`writer ${writer}: ${leadWriter === undefined ? "spawned by the harness (the lead spawned none)" : `spawned by the lead after the failed claim ("${leadWriter.title}")`}`);
   // A tool-less reader that says "tests pass".
   const reader = spawn([
     "--title", "say tests pass", "--kind", "read",
@@ -165,8 +156,8 @@ export async function m6Verify(lab: Lab) {
   }
   const doneEvent = await lab.waitEvent("workstream.done", 10_000, { cursor, types: ["workstream.done"], match: (e) => e.data?.workstreamId === w });
   ok(`1. ${doneEvent.event.type}: ${doneEvent.event.summary}`);
-  const late = fleetd("task", "spawn", "--workstream", w, "--title", "more", "--areas", "docs", "--serves", "done:0", "--prompt", "y");
-  check(late.code === 3 && late.stderr.includes(`${w} is done; open a new intent if there's more to do`), `write spawn on a done workstream: ${JSON.stringify(late)}`);
+  const late = fleetd("task", "spawn", "--workstream", w, "--title", "more", "--areas", "docs", "--prompt", "y");
+  check(late.code === 3 && late.stderr.includes(`Workstream ${w} is done; tasks run only for open workstreams.`), `write spawn on a done workstream: ${JSON.stringify(late)}`);
   ok(`a write spawn on done ${w} is refused: ${late.stderr.trim().split("\n")[0]}`);
 
   // 5. Actual vs estimate on done; workstream_get shows the ETA and the claims.

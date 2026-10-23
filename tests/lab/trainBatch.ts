@@ -71,7 +71,7 @@ const pushPr = (name: string, files: Readonly<Record<string, string>>, base = BA
   git("commit", "-q", "-m", `lab: ${name}`);
   git("push", "-q", "--force", "origin", `HEAD:refs/heads/${branch}`);
   git("checkout", "-q", BASE);
-  const url = gh("pr", "create", "-R", REPO, "--base", base, "--head", branch, "--title", `lab: ${name}`, "--body", "Source: done:0");
+  const url = gh("pr", "create", "-R", REPO, "--base", base, "--head", branch, "--title", `lab: ${name}`, "--body", `lab: ${name}`);
   return { number: Number(/\/pull\/(\d+)$/u.exec(url)?.[1]), url, branch };
 };
 

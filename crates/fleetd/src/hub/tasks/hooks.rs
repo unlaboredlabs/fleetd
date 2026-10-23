@@ -2,25 +2,10 @@
 //! traits and `hub/serve` passes them in, so the tasks area depends on behaviour, not on their structs.
 use fleetd_contracts::events::HubEvent;
 use fleetd_contracts::ids::{MachineId, ThreadRef};
-use fleetd_contracts::ledger::Workstream;
 use fleetd_contracts::tasks::TaskResult;
 use fleetd_contracts::usage::UsageParked;
 
-use super::ports::TaskError;
-use super::{SpawnInput, TaskCaller};
-
 pub use super::ports::BoxFut;
-
-/// M6 value bar (valuebar area): serves, done workstreams and review rounds. Called before the spawn takes the
-/// tasks lock, since it may ask GitHub for a PR head.
-pub trait SpawnCheck: Send + Sync {
-    fn check_spawn<'a>(
-        &'a self,
-        caller: &'a TaskCaller,
-        input: &'a SpawnInput,
-        workstream: &'a Workstream,
-    ) -> BoxFut<'a, Result<(), TaskError>>;
-}
 
 /// M6 receipts (receipts area): what the thread actually ran, counted from its items, added to the result.
 pub trait ResultReceipts: Send + Sync {

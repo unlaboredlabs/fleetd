@@ -68,7 +68,7 @@ export async function areasParallel(lab: Lab) {
     const cursor = await lab.cursor();
     const spawn = (area: string) => {
       const out = fleetd(
-        "task", "spawn", "--workstream", w, "--title", `wait in ${area}`, "--areas", area, "--serves", "done:0", "--model", MECHANICS.model, "--effort", MECHANICS.effort,
+        "task", "spawn", "--workstream", w, "--title", `wait in ${area}`, "--areas", area, "--model", MECHANICS.model, "--effort", MECHANICS.effort,
         "--prompt", "Run the shell command `sleep 30`, then reply with one word: ok. Change, commit and push nothing.",
       );
       const taskId = /^Spawned (T\d+)/mu.exec(out.stdout)?.[1];

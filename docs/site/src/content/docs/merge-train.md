@@ -30,8 +30,6 @@ A PR's [tier](/docs/glossary#tier) sets the reviews it needs, each bound to its 
 | M | one clean review |
 | L | two clean reviews and a verifier |
 
-A PR body needs a `Source:` line that names what it serves.
-
 ## Batches {#batches}
 
 When several PRs are ready at once, the train merges them together in one CI run. It takes the first PR in line and

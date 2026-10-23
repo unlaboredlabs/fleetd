@@ -140,9 +140,8 @@ fn default_task_kind() -> TaskKind {
 }
 
 /// `fleetd task spawn --workstream W1 --title t --prompt p [--kind write|read|review] [--areas a,b] [--model m]
-/// [--effort e] [--tier S|M|L] [--serves s] [--pr <url>] [--qa]`. Absent model and effort resolve
-/// from the policy file, then the project, then claude-opus-5-5/high. A write task needs `--serves`, a review task
-/// `--pr`; `--qa` marks a review task as a QA run.
+/// [--effort e] [--tier S|M|L] [--pr <url>] [--qa]`. Absent model and effort resolve from the policy file, then the
+/// project, then claude-opus-5-5/high. A review task needs `--pr`; `--qa` marks a review task as a QA run.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(remote = "Self", rename_all = "camelCase")]
@@ -159,7 +158,6 @@ pub struct TaskSpawnCall {
     pub tier: Option<Tier>,
     /// Older leads only: fleetd no longer asks for time estimates and the CLI no longer sends one.
     pub estimate_minutes: Option<NonNegative>,
-    pub serves: Option<Serves>,
     pub pr: Option<PrUrl>,
     pub qa: Option<bool>,
     /// `--item P<n>`: the plan item this task works on; refused when it belongs to another order.
@@ -167,7 +165,7 @@ pub struct TaskSpawnCall {
 }
 checked!(TaskSpawnCall, |call| {
     task_areas_rule(call.kind, call.areas.len())?;
-    task_spawn_rule(call.kind, call.serves.is_some(), call.qa, call.pr.is_some())
+    task_spawn_rule(call.kind, call.qa, call.pr.is_some())
 });
 
 /// `fleetd task list [--state s] [--workstream W1]`, within the calling project.
@@ -219,7 +217,7 @@ pub struct ClaimDoneCall {
     pub close_over: Option<Text<1, 300>>,
 }
 
-/// `fleetd change enqueue <PR URL> [--task T1] [--workstream W1] [--serves s] [--tier S|M|L]`. Absent fields come
+/// `fleetd change enqueue <PR URL> [--task T1] [--workstream W1] [--tier S|M|L]`. Absent fields come
 /// from the task, then the workstream's brief; the tier may be raised above the brief's, never lowered.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -228,7 +226,6 @@ pub struct ChangeEnqueueCall {
     pub task_id: Option<TaskId>,
     pub pr_url: GitHubPrUrl,
     pub workstream_id: Option<WorkstreamId>,
-    pub serves: Option<Serves>,
     pub tier: Option<Tier>,
     /// `--item P<n>`: stores the PR as a link of that plan item (for a PR no task of the item wrote).
     pub item: Option<PlanItemId>,
@@ -259,7 +256,6 @@ pub struct WorkstreamSpawnCall {
 pub struct WorkstreamOpenCall {
     pub text: IntakeText,
     pub template: Option<PlaybookName>,
-    pub serves: Option<Serves>,
 }
 
 #[skip_serializing_none]
@@ -554,7 +550,7 @@ mod tests {
 
     #[test]
     fn task_spawn_defaults_to_write_and_runs_its_rules() {
-        let spawn = serde_json::json!({ "op": "task_spawn", "workstreamId": "W1", "title": "t", "prompt": "p", "areas": ["docs"], "serves": "done:0" });
+        let spawn = serde_json::json!({ "op": "task_spawn", "workstreamId": "W1", "title": "t", "prompt": "p", "areas": ["docs"] });
         let LeadCall::TaskSpawn(task) = call(spawn.clone()).unwrap() else {
             panic!("not a spawn")
         };

@@ -75,7 +75,7 @@ Every lead gets these, the finish-all lead included.
 
 ### spawn_agent
 
-Start a fleetd agent (a task) with its own session, slot and lane. kind write|read|review; a writer needs areas from the project's policy and serves (done:&lt;n>, issue:&lt;ref>, defect:&lt;text> or decision:&lt;key>) and gets its own worktree and branch; a review task needs pr. model and effort are optional. A busy area or a full slot board queues it and it starts by itself. Its result arrives in a later wake: end your turn instead of waiting.
+Start a fleetd agent (a task) with its own session, slot and lane. kind write|read|review; a writer needs areas from the project's policy and gets its own worktree and branch; a review task needs pr. model and effort are optional. A busy area or a full slot board queues it and it starts by itself. Its result arrives in a later wake: end your turn instead of waiting.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -88,7 +88,6 @@ Start a fleetd agent (a task) with its own session, slot and lane. kind write|re
 | `pr` | string | no |  |
 | `prompt` | string | yes | At most 8000 characters. |
 | `qa` | boolean | no |  |
-| `serves` | string | no |  |
 | `tier` | string | no | One of `S`, `M`, `L`. |
 | `title` | string | yes | One line. At most 80 characters. |
 | `workstreamId` | string | yes | `W<n>`, e.g. `W1`. |
@@ -104,7 +103,6 @@ Start a fleetd agent (a task) with its own session, slot and lane. kind write|re
     ],
     "kind": "write",
     "prompt": "Limit uploads to 10 a minute per API key. Over the limit, answer 429 with Retry-After.",
-    "serves": "done:0",
     "title": "Rate-limit the upload API",
     "workstreamId": "W3"
   }
@@ -546,7 +544,6 @@ Put a PR no task's result put there on its repo's merge train; only the train me
 |---|---|---|---|
 | `item` | string | no | Stores the PR as a link of that plan item (for a PR no task of the item wrote). |
 | `prUrl` | string | yes | Like `https://github.com/<owner>/<name>/pull/<n>`. |
-| `serves` | string | no |  |
 | `taskId` | string | no | `T<n>`, e.g. `T1`. |
 | `tier` | string | no | One of `S`, `M`, `L`. |
 | `workstreamId` | string | no | `W<n>`, e.g. `W1`. |
@@ -584,11 +581,10 @@ A merge-train change as stored.
 
 ### workstream_open
 
-Open a workstream for work you took from the chat: a draft you then freeze with brief. template picks the playbook (feature, bugfix, research, finish-all); serves is optional.
+Open a workstream for work you took from the chat: a draft you then freeze with brief. template picks the playbook (feature, bugfix, research, finish-all).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `serves` | string | no |  |
 | `template` | string | no | The prefixes `bug:`/`fix:`, `research:` and `finish:` pick bugfix, research and finish-all. One of `bugfix`, `feature`, `research`, `finish-all`. |
 | `text` | string | yes | At most 4000 characters. |
 

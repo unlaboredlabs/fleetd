@@ -43,6 +43,5 @@ pub mod tasks;
 pub mod time;
 pub mod train;
 pub mod usage;
-pub mod valuebar;
 pub mod wakes;
 pub mod watchdog;

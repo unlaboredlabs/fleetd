@@ -151,7 +151,7 @@ pub fn rank_decisions<'a>(
     ranked
 }
 
-/// The done-when list as `done:<n>`, the index `--serves` and claims use; ✓ only where fleetd's own check passed.
+/// The done-when list as `done:<n>`, the index claims use; ✓ only where fleetd's own check passed.
 pub fn done_when_text(checks: &[CheckSpec], passed: Option<&HashSet<usize>>, max: usize) -> String {
     checks
         .iter()

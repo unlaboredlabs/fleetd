@@ -2,7 +2,7 @@
 // iff a file FAIL exists; slot/<n>/main requires the `ci` check and the `fleetd/train` status). The lab clone becomes a
 // second project on lab-a, with its policy file kept untracked, so nothing but the train ever lands on the base. With the train frozen by a
 // Decision, two M-tier writers (areas alpha, beta, files under this run's lab/<time>/) open PRs and get one reviewer each; then two S-tier writers open a
-// PR that conflicts with alpha's and one that adds FAIL. A harness PR without `Source:` is refused at enqueue. Thawed
+// PR that conflicts with alpha's and one that adds FAIL. Thawed
 // with train_freeze, the train merges alpha and beta in order (the second rebased onto the first's merge), sends the
 // conflict back to its author, who resolves it and gets merged, and sends red CI back to its author, never merging
 // it. Lead, writers and reviewers are on MECHANICS; the harness's `fleetd` calls cost no turns.
@@ -238,30 +238,15 @@ export async function m7Train(lab: Lab) {
     check(!freeze.isError, `decisions_record: ${JSON.stringify(freeze.body)}`);
     ok(`5. ${freeze.body.decision.decisionId} ${FREEZE_KEY} = true`);
 
-    // 4. A PR without a Source: line is refused at enqueue with the fix text.
-    const bare = `${NAMESPACE}/lab-m7/no-source`;
-    git("checkout", "-q", "-b", bare, `origin/${BASE}`);
-    fs.writeFileSync(path.join(CLONE, "no-source.md"), "no source\n");
-    git("add", "no-source.md");
-    git("commit", "-q", "-m", "lab: a PR without a Source line");
-    git("push", "-q", "origin", `HEAD:refs/heads/${bare}`);
-    git("checkout", "-q", BASE);
-    const bareUrl = gh("pr", "create", "-R", REPO, "--base", BASE, "--head", bare, "--title", "lab: no Source line", "--body", "Adds a file.");
-    const bareNumber = Number(/\/pull\/(\d+)$/u.exec(bareUrl)?.[1]);
-    const refused = fleetd("change", "enqueue", "--pr", bareUrl, "--workstream", wm);
-    check(refused.code === 3 && refused.stderr.includes("has no 'Source:' line") && refused.stderr.includes("Next: add 'Source: done:0' to the PR body"), `enqueue without Source: ${JSON.stringify(refused)}`);
-    ok(`4. fleetd change enqueue ${bareUrl} refused (exit 3): ${refused.stderr.trim().replace(/\n/gu, " | ")}`);
-    gh("pr", "close", String(bareNumber), "-R", REPO, "--delete-branch");
-
-    const spawn = (w: string, area: string, serves: string, title: string, prompt: string) => {
-      const out = fleetd("task", "spawn", "--workstream", w, "--title", title, "--areas", area, "--serves", serves, "--model", MECHANICS.model, "--effort", MECHANICS.effort, "--prompt", prompt);
+    const spawn = (w: string, area: string, title: string, prompt: string) => {
+      const out = fleetd("task", "spawn", "--workstream", w, "--title", title, "--areas", area, "--model", MECHANICS.model, "--effort", MECHANICS.effort, "--prompt", prompt);
       const taskId = /^Spawned (T\d+)/mu.exec(out.stdout)?.[1];
       check(out.code === 0 && taskId, `task spawn ${title}: ${JSON.stringify(out)}`);
-      lab.log(`spawned ${taskId} (${title}, area ${area}, serves ${serves})`);
+      lab.log(`spawned ${taskId} (${title}, area ${area})`);
       return taskId!;
     };
-    const writer = (file: string, line: string, serves: string, after = "") =>
-      `Create the file ${file} (from the repo root) containing exactly one line: ${line}. Commit it with the message "add ${file}". Then push your branch and open the pull request as your rules say, with the title "add ${file}" and the body exactly "Source: ${serves}". Reply with the PR URL.${after}`;
+    const writer = (file: string, line: string, after = "") =>
+      `Create the file ${file} (from the repo root) containing exactly one line: ${line}. Commit it with the message "add ${file}". Then push your branch and open the pull request as your rules say, with the title "add ${file}". Reply with the PR URL.${after}`;
     const queued = async (taskId: string, from: number) => {
       const end = await lab.waitEvent(`${taskId} ends`, TURN_MS, { cursor: from, types: ["task.completed", "task.failed"], match: (e) => e.data?.taskId === taskId });
       check(end.event.type === "task.completed", `${taskId} completed: ${end.event.summary}`);
@@ -275,8 +260,8 @@ export async function m7Train(lab: Lab) {
 
     // 1. Two M-tier writers in different areas.
     let cursor = await lab.cursor();
-    const a = spawn(wm, "alpha", "done:0", "add alpha", writer(ALPHA, "alpha", "done:0"));
-    const b = spawn(wm, "beta", "done:1", "add beta", writer(BETA, "beta", "done:1"));
+    const a = spawn(wm, "alpha", "add alpha", writer(ALPHA, "alpha"));
+    const b = spawn(wm, "beta", "add beta", writer(BETA, "beta"));
     const ca = await queued(a, cursor);
     const cb = await queued(b, cursor);
     ok(`1. ${a} opened ${ca.prUrl} (${ca.changeId}) and ${b} opened ${cb.prUrl} (${cb.changeId}), each auto-enqueued`);
@@ -285,13 +270,12 @@ export async function m7Train(lab: Lab) {
 
     // 2 and 3. After both, so they come later in train order: a PR conflicting with alpha.md, and one that adds FAIL.
     cursor = await lab.cursor();
-    const c = spawn(ws, "gamma", "done:0", "add gamma line", writer(
+    const c = spawn(ws, "gamma", "add gamma line", writer(
       ALPHA,
       "gamma",
-      "done:0",
       ` If you are later told this PR conflicts: run \`git fetch origin\` and \`git rebase origin/${BASE}\`; make ${ALPHA} exactly two lines, \`alpha\` then \`gamma\`; \`git add ${ALPHA}\`; \`GIT_EDITOR=true git rebase --continue\`; \`git push --force-with-lease\`; then reply with one word: resolved.`,
     ));
-    const d = spawn(ws, "ci", "done:1", "add FAIL", writer("FAIL", "red", "done:1", " This PR is meant to fail CI. When a later message says CI failed, that is expected: change nothing, push nothing, and reply with exactly one word: acknowledged."));
+    const d = spawn(ws, "ci", "add FAIL", writer("FAIL", "red", " This PR is meant to fail CI. When a later message says CI failed, that is expected: change nothing, push nothing, and reply with exactly one word: acknowledged."));
     const cc = await queued(c, cursor);
     const cd = await queued(d, cursor);
     ok(`${c} opened ${cc.prUrl} (${cc.changeId}, conflicts with ${ALPHA}) and ${d} opened ${cd.prUrl} (${cd.changeId}, adds FAIL)`);
@@ -387,7 +371,7 @@ export async function m7Train(lab: Lab) {
     ok(`3. ${cd.changeId} stayed ${(await change(cd.changeId)).state}; ${cd.prUrl} closed unmerged`);
 
     // What the lead, project_get and the human digest show.
-    // The fixed event line (hub/leads/events.rs): "- PR #12 merged as abc1234: <url> (X1, tier S, serves done:0, by T4)".
+    // The fixed event line (hub/leads/events.rs): "- PR #12 merged as abc1234: <url> (X1, tier S, by T4)".
     const mergedLine = new RegExp(`^- PR #${m1.data.prNumber} merged as [0-9a-f]+: \\S+ \\(${first!.changeId}, `, "mu");
     const wakes = userMessages(MACHINE, leadThread).join("\n");
     check(mergedLine.test(wakes), `the lead was woken with ${first!.changeId}'s merge inline`);

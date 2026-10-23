@@ -158,7 +158,7 @@ impl CheckType {
     }
 }
 
-/// What a write task must serve, as `--serves` takes it.
+/// What a finish-all child serves, as `workstream spawn --serves` takes it.
 pub const SERVES_FIX: &str =
     "say what this serves: serves done:<n> | issue:<ref> | defect:<text> | decision:<key>";
 
@@ -183,8 +183,8 @@ pub fn is_serves(serves: &str) -> bool {
 }
 
 brand!(
-    /// What a task works towards: `done:<n>` (0-based index into the brief's doneWhen, same as
-    /// CheckResult.checkIndex), `issue:<url|#n>`, `defect:<one line, at most 200>` or `decision:<key>` (a decision the lead logged after the human said so in chat).
+    /// The item a finish-all child works on: `done:<n>` (0-based index into the brief's doneWhen, same as
+    /// CheckResult.checkIndex), `issue:<url|#n>`, `defect:<one line, at most 200>` or `decision:<key>`.
     Serves, name = "Serves", check = is_serves, expected = SERVES_FIX
 );
 

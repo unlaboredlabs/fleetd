@@ -67,9 +67,9 @@ export async function noCiTrain(lab: Lab) {
 
     const cursor = await lab.cursor();
     const spawned = fleetd(
-      "task", "spawn", "--workstream", w, "--title", "add noci.md", "--areas", "noci", "--serves", "done:0", "--model", MECHANICS.model, "--effort", MECHANICS.effort,
+      "task", "spawn", "--workstream", w, "--title", "add noci.md", "--areas", "noci", "--model", MECHANICS.model, "--effort", MECHANICS.effort,
       "--prompt",
-      `Create the file ${FILE} (from the repo root) containing exactly one line: noci. Commit it with the message "add ${FILE}". Then push your branch and open the pull request as your rules say, with the title "add ${FILE}" and the body exactly "Source: done:0". Reply with the PR URL.`,
+      `Create the file ${FILE} (from the repo root) containing exactly one line: noci. Commit it with the message "add ${FILE}". Then push your branch and open the pull request as your rules say, with the title "add ${FILE}" and the body exactly "Adds the file.". Reply with the PR URL.`,
     );
     const taskId = /^Spawned (T\d+)/mu.exec(spawned.stdout)?.[1];
     check(spawned.code === 0 && taskId, `task spawn: ${JSON.stringify(spawned)}`);

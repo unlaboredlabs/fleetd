@@ -681,10 +681,6 @@
         "result": {
           "$ref": "#/$defs/TaskResult"
         },
-        "serves": {
-          "$ref": "#/$defs/Serves",
-          "description": "Required at spawn for write tasks; optional here for tasks stored before M6."
-        },
         "startedAt": {
           "$ref": "#/$defs/Timestamp"
         },

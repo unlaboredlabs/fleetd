@@ -633,7 +633,7 @@ async function fixesPart(lab: Lab, chat: Chat, ref: Ref, fleetd: Shell) {
     spawned(
       lab,
       fleetd(
-        "task", "spawn", "--workstream", w, "--title", title, "--kind", "write", "--serves", `defect: ${title}`, "--areas", "all", "--model", MECHANICS.model, "--effort", MECHANICS.effort,
+        "task", "spawn", "--workstream", w, "--title", title, "--kind", "write", "--areas", "all", "--model", MECHANICS.model, "--effort", MECHANICS.effort,
         "--prompt", "Your first tool call must be your Bash tool running exactly `sleep 90`; wait the full 90 seconds for it to finish. Then reply with the single word OK. Change no files.",
       ),
       `spawn the fix "${title}"`,
@@ -729,10 +729,10 @@ async function cap1Part(lab: Lab, ref: Ref, fleetd: Shell, need: (t: string) => 
     const writer = spawned(
       lab,
       fleetd(
-        "task", "spawn", "--workstream", w, "--title", "add cap1.md", "--areas", "all", "--serves", "done:0", "--model", MECHANICS.model, "--effort", MECHANICS.effort,
+        "task", "spawn", "--workstream", w, "--title", "add cap1.md", "--areas", "all", "--model", MECHANICS.model, "--effort", MECHANICS.effort,
         "--prompt",
         `Do these steps in order. 1. Create the file ${file} (from the repo root) containing exactly one line: cap one. Commit it with the message "add ${file}". ` +
-          `2. Push your branch and open the pull request as your rules say, with the title "add ${file}" and the body exactly "Source: done:0". ` +
+          `2. Push your branch and open the pull request as your rules say, with the title "add ${file}" and the body exactly "Adds the file.". ` +
           `3. Call the report tool with kind "slice_ready" and prUrl set to that PR's URL. 4. Run \`sleep 30\` with your Bash tool and wait for it. 5. Reply with the PR URL.`,
       ),
       "spawn the writer",
@@ -891,7 +891,7 @@ async function areasPart(lab: Lab, ref: Ref) {
     spawned(
       lab,
       fleetd(
-        "task", "spawn", "--workstream", w, "--title", `note in ${area}`, "--areas", area, "--serves", `defect: package ${area} has no lab note`, "--model", MECHANICS.model, "--effort", MECHANICS.effort,
+        "task", "spawn", "--workstream", w, "--title", `note in ${area}`, "--areas", area, "--model", MECHANICS.model, "--effort", MECHANICS.effort,
         "--prompt", `Run \`sleep 10\`, then append the line "chat lab" to packages/${area}/README.md and commit it with the message "chat lab: ${area}". Reply with the commit hash.`,
       ),
       `task spawn --areas ${area}`,

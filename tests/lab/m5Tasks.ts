@@ -141,7 +141,7 @@ export async function m5Tasks(lab: Lab) {
 
     // 1. The lead spawns T1 from its shell: a thread in a new worktree on fleetd/T1-add-file, explicit model and effort.
     const spawn1 =
-      `fleetd task spawn --workstream ${workstreamId} --title "add file" --areas docs --serves done:0 --model ${MECHANICS.model} --effort ${MECHANICS.effort} ` +
+      `fleetd task spawn --workstream ${workstreamId} --title "add file" --areas docs --model ${MECHANICS.model} --effort ${MECHANICS.effort} ` +
       `--prompt "create docs/x.md with one line 'hi', commit it on your branch"`;
     const sent = await callTool("thread_send", {
       ...ref,
@@ -163,7 +163,7 @@ export async function m5Tasks(lab: Lab) {
 
     // 3. A second writer on docs queues on the lease (spawned now, while T1 holds it).
     const t2 = spawnTask([
-      "--workstream", workstreamId, "--title", "more docs", "--areas", "docs", "--serves", "done:0",
+      "--workstream", workstreamId, "--title", "more docs", "--areas", "docs",
       "--prompt", "create docs/y.md with one line 'hi', commit it on your branch",
     ]);
     const t2Task = await task(t2.taskId);
@@ -178,7 +178,7 @@ export async function m5Tasks(lab: Lab) {
     check(readerTask.state === "queued" && /^slots: \d+\/1 in use/u.test(readerTask.queuedReason ?? ""), `the read task queued on the cap: ${JSON.stringify(readerTask)}`);
     ok(`2. cap set to 1; ${reader.taskId} queued: ${readerTask.queuedReason}`);
     const t4 = spawnTask([
-      "--workstream", workstreamId, "--title", "add notes", "--areas", "api", "--serves", "done:0",
+      "--workstream", workstreamId, "--title", "add notes", "--areas", "api",
       "--prompt",
       "This task tests fleetd's out-of-area check, so break the area rule this once: create notes.txt at the repository root (not under api/) with one line 'hi', and commit it on your branch.",
     ]);

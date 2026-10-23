@@ -1,6 +1,6 @@
-//! What the checks, receipts, value bar, estimates and incidents areas need from other hub areas, as one trait.
+//! What the checks, receipts, review verdicts, estimates and incidents areas need from other hub areas, as one trait.
 //! The hub's implementation (`HubPorts`, wired once those areas land) forwards to their services; tests use fakes.
-//! Keeping it to this one seam means the claim flow and the value bar run their real logic under test.
+//! Keeping it to this one seam means the claim flow and review verdicts run their real logic under test.
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
 use fleetd_contracts::ledger::{MetricValues, PlaybookRef, Workstream, WorkstreamId};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
@@ -32,10 +32,9 @@ pub enum ClaimWake {
     },
 }
 
-/// The pinned playbook's numbers the value bar and estimates read.
+/// The pinned playbook's numbers estimates read.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PlaybookLimits {
-    pub max_review_rounds: u32,
     pub estimate_prior: f64,
 }
 

@@ -128,7 +128,7 @@ pub struct Hub {
     pub incidents: Arc<crate::hub::incidents::Incidents>,
     pub estimates: Arc<crate::hub::estimates::Estimates>,
     pub receipts: Arc<crate::hub::receipts::Receipts>,
-    pub value_bar: Arc<crate::hub::valuebar::ValueBar>,
+    pub verdicts: Arc<crate::hub::reviews::verdicts::Verdicts>,
     pub checks: Arc<crate::hub::checks::CheckRunner>,
     pub claims: Arc<crate::hub::checks::Claims>,
     pub ops: Arc<crate::hub::usage::wire::OpsPorts>,

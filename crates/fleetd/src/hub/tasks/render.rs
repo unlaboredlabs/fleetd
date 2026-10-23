@@ -164,7 +164,6 @@ fn state_str(state: TaskState) -> &'static str {
 /// custom instructions.
 pub fn render_task_prompt(set: &PromptSet, input: &PromptInput<'_>) -> String {
     let task = input.task;
-    let serves = task.serves.as_ref().map(|s| s.as_str());
     let mut context = Vec::new();
     if let Some(brief) = input.brief {
         context.push(format!("Goal: {}", one_line(brief.goal.as_str(), 1000)));
@@ -172,9 +171,6 @@ pub fn render_task_prompt(set: &PromptSet, input: &PromptInput<'_>) -> String {
             "Done when: {}",
             input.done_when.as_deref().unwrap_or_default()
         ));
-    }
-    if let Some(serves) = serves {
-        context.push(format!("This task serves: {}", one_line(serves, 200)));
     }
     let workstream = if context.is_empty() {
         String::new()
@@ -209,7 +205,6 @@ pub fn render_task_prompt(set: &PromptSet, input: &PromptInput<'_>) -> String {
             "baseBranch",
             &input.base_branch.unwrap_or("<default branch>"),
         ),
-        ("serves", &serves.unwrap_or("<what this serves>")),
     ];
     let text = match task.kind {
         TaskKind::Write => set.render("task.brief.write", vars),
