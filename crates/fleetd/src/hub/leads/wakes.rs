@@ -33,10 +33,6 @@ pub enum LineKind {
     ResearchVerdict,
     /// A person's words for the lead about an order (a steer, a stop).
     Human,
-    /// The lead ended a turn with an order frozen and nothing under way (`orders::idle`).
-    Idle,
-    /// A slot is free and approved work is runnable (`orders::filler`).
-    Runnable,
     /// A person raised the project's max agents (`tasks::cap`).
     CapRaised,
     /// A secret or approval request settled, or came back open (`approvals`).
@@ -86,8 +82,6 @@ impl Trigger {
                 LineKind::Train => "train",
                 LineKind::ResearchVerdict => "research_verdict",
                 LineKind::Human => "human",
-                LineKind::Idle => "idle",
-                LineKind::Runnable => "runnable",
                 LineKind::CapRaised => "cap_raised",
                 LineKind::Request => "request",
             },
