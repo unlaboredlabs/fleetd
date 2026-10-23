@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ProjectStatusRow } from "../../../shared/contracts";
 import type { ProjectRow } from "../../src/data/selectors";
 import { barOf, orderRows } from "./rows";
-import { age, dropLines, fullWhen, staleWords, when } from "./view";
+import { age, dropLines, fullWhen, heldLine, staleWords, when } from "./view";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -89,5 +89,14 @@ describe("words", () => {
       { at, pct: 74, verifiedPct: 50, drop: { reason: "scope_change", fromPct: 80, text: "+3 items: currency export added" } },
     ];
     expect(dropLines(series)).toEqual(["↓ 80% → 74%: +3 items: currency export added", "↓ 61% → 55%: CI failed on #212"]);
+  });
+
+  it("says the figure holds only while the newest point is paused", () => {
+    const at = "2026-10-19T10:00:00.000Z";
+    const held = { at, pct: 64, verifiedPct: 52, paused: "paused: an agent hit a usage limit" };
+    expect(heldLine([{ at, pct: 60, verifiedPct: 52 }, held])).toBe("Held at 64% (paused: an agent hit a usage limit)");
+    // Resumed: the paused point is history, and the figure moves again.
+    expect(heldLine([held, { at, pct: 66, verifiedPct: 52 }])).toBeUndefined();
+    expect(heldLine([])).toBeUndefined();
   });
 });

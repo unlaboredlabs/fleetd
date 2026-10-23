@@ -11,10 +11,11 @@ import { useData, useToolQuery } from "../../src/data/react";
 import { useNow } from "../live/clock";
 import { selectSkew } from "../live/strip";
 import { selectProjectList } from "../../src/data/selectors";
+import { Pause } from "lucide-react";
 import { Button, cx, Dot, FrameTitle, Text, Tooltip, Truncate } from "../../ui";
 import { asGetOutput } from "./contracts";
 import { barOf, orderRows, STATE_WORDS, type StateWord } from "./rows";
-import { dropLines, fullWhen, staleWords, when } from "./view";
+import { dropLines, fullWhen, heldLine, staleWords, when } from "./view";
 import s from "./status.module.css";
 
 const ALL = {} as const;
@@ -177,15 +178,23 @@ function Row({ row, state, now }: { row: ProjectStatusRow; state: StateWord; now
   );
 }
 
-/** The bar's hover: verified and in flight, then why it last fell. The drops are in the project's own status doc,
- * read only while this hover is open. */
+/** The bar's hover: verified and in flight, whether it holds while work is paused, then why it last fell. These are
+ * in the project's own status doc, read only while this hover is open. */
 function Drops({ row, pct }: { row: ProjectStatusRow; pct: { pct: number; verifiedPct: number; inFlightPct: number } }) {
   const query = useToolQuery("status_get", { scope: { kind: "project", projectRef: row.projectRef } });
   const doc = query.data === undefined ? undefined : asGetOutput(query.data)?.doc;
-  const lines = doc === undefined ? [] : dropLines(doc.progress.estimate?.series ?? []);
+  const series = doc?.progress.estimate?.series ?? [];
+  const lines = dropLines(series);
+  const held = heldLine(series);
   return (
     <span className={cx(s.drops)}>
       <span>{`${pct.pct}% done: ${pct.verifiedPct}% verified, ${pct.inFlightPct}% in flight`}</span>
+      {held === undefined ? null : (
+        <span className={cx(s.held)}>
+          <Pause size={12} aria-hidden />
+          {held}
+        </span>
+      )}
       {lines.map((l) => (
         <span key={l}>{l}</span>
       ))}

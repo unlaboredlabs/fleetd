@@ -85,6 +85,8 @@ export const fixtures = [
   "status-stale",
   "status-planning",
   "status-skeleton",
+  // The bar's hover on a figure that holds while its work is paused (fixtures/status).
+  "status-paused",
   // E3b's shared stress fixture; the time inspector fills it with a ~15k-span order (fixtures/time).
   "time-heavy",
   "conversation-20k",
@@ -1062,6 +1064,18 @@ export const screens: readonly Screen[] = [
     id: "status.fleet",
     route: "#/status",
     fixtures: ["typical", "status-rows", "long-text", "empty", "many-agents", "hub-unreachable", "status-stale", "status-planning", "status-skeleton"],
+  },
+  // A held figure: the bar's hover marks it, with why, above the drop that came before it. Nothing moves.
+  {
+    id: "status.fleet",
+    route: "#/status",
+    fixtures: ["status-paused"],
+    variant: "paused",
+    open: async (page) => {
+      await page.getByRole("img", { name: /^78% done/u }).hover();
+      await page.getByText("Held at 78% (paused: an agent hit a usage limit)").waitFor();
+      await page.getByText("↓ 61% → 55%: CI failed on #212").waitFor();
+    },
   },
   // F7: the time inspector (fixtures/time): an order's timeline, ~15k spans in time-heavy; the fleet's breakdown;
   // its insights. Each tab's root carries its own id, so the three are shot apart.

@@ -52,6 +52,15 @@ export const staleWords = (mark: StaleMark, nowMs: number): string => {
   return `${Number.isNaN(at) ? "Out of date" : `Out of date for ${age(nowMs - at)}`}: ${mark.reason}`;
 };
 
+/**
+ * While the figure holds because the work in flight paused (an agent waiting for an answer or for a usage limit), the
+ * hub marks the newest point: "Held at 64% (paused: an agent hit a usage limit)". A marker, not a drop.
+ */
+export const heldLine = (series: readonly ProgressPoint[]): string | undefined => {
+  const last = series.at(-1);
+  return last?.paused === undefined ? undefined : `Held at ${last.pct}% (${last.paused})`;
+};
+
 /** Why the figure last fell, newest first, at most three: "↓ 80% → 74%: +3 items: currency export added". */
 export const dropLines = (series: readonly ProgressPoint[]): string[] =>
   series

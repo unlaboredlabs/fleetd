@@ -76,6 +76,33 @@ const own = (what: string, note: string, base: Fixture, variant: Variant, delayM
   return f;
 };
 
+/**
+ * The first row's project (storefront, working at 78%) with its estimate's series in its status doc: it climbed, fell
+ * once when CI failed, and now holds because its agent hit a usage limit. The bar's hover shows the held marker.
+ */
+const paused = (base: Fixture): Fixture => {
+  const f = own("paused", "Status: storefront's figure holds while its agent waits for a usage limit to reset.", base, "typical");
+  const first = projectsOf(f)[0];
+  if (first === undefined) throw new Error("status-paused: no project");
+  const point = (minutesAgo: number, pct: number, verifiedPct: number, extra: JsonObject = {}): JsonObject => ({ at: ago(f, minutesAgo * MIN), pct, verifiedPct, ...extra });
+  const series = [
+    point(90, 40, 30),
+    point(70, 61, 44),
+    point(55, 55, 44, { drop: { reason: "ci_failed", fromPct: 61, text: "CI failed on #212" } }),
+    point(30, 78, 58),
+    point(12, 78, 58, { paused: "paused: an agent hit a usage limit" }),
+  ];
+  f.update("status_get", (out, input) => {
+    const scope = isObject(input) && isObject(input["scope"]) ? input["scope"] : undefined;
+    const ref = scope !== undefined && isObject(scope["projectRef"]) ? scope["projectRef"] : undefined;
+    const doc = isObject(out) ? out["doc"] : undefined;
+    const progress = isObject(doc) ? doc["progress"] : undefined;
+    if (ref?.["projectId"] !== first.projectId || !isObject(out) || !isObject(doc) || !isObject(progress)) return out;
+    return { ...out, doc: { ...doc, progress: { ...progress, estimate: { ...estimate(78, 58, 20), series } } } };
+  });
+  return f;
+};
+
 export default defineGroup({
   extend: {
     typical: (f) => answer(f, "typical"),
@@ -86,6 +113,7 @@ export default defineGroup({
   fixtures: (base) => [
     own("stale", "Status: half the projects' machines went quiet.", base("typical"), "stale"),
     own("planning", "Status: every lead is still planning: no numbers, a planning word.", base("typical"), "planning"),
+    paused(base("typical")),
     own("skeleton", "Status: the hub is live but hasn't answered yet: row outlines, no words or numbers.", base("typical"), "typical", HOLD_MS),
   ],
 });

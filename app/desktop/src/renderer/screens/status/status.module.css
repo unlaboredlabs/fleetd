@@ -131,6 +131,12 @@
   flex-direction: column;
   gap: var(--space-1);
 }
+/* The held point's marker: a still glyph beside its words, nothing that moves. */
+.held {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
 
 .skeleton {
   display: flex;
