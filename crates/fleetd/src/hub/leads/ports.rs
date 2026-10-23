@@ -10,14 +10,6 @@ use super::error::LeadError;
 use super::hooks::BoxFuture;
 use crate::hub::executor::LaunchInput;
 
-/// `cmd_result` from the node, as finish-all's inventory reads it.
-#[derive(Debug, Clone)]
-pub struct CmdOutcome {
-    /// None when the process did not exit on its own.
-    pub exit_code: Option<i64>,
-    pub output_tail: String,
-}
-
 pub trait LeadPorts: Send + Sync {
     /// `Executors.launch(machineId, input)`. Map `MachineNotConnected` with `LeadError::machine_offline`, anything
     /// else with `LeadError::failed`.
@@ -34,15 +26,6 @@ pub trait LeadPorts: Send + Sync {
         message: String,
         client_request_id: String,
     ) -> BoxFuture<Result<bool, LeadError>>;
-    /// `NodeCommands.run(machineId, {cwd, argv, timeoutSec})`; `Err` is the command error's message.
-    fn run_command(
-        &self,
-        machine_id: &MachineId,
-        cwd: String,
-        argv: Vec<String>,
-        timeout_sec: u32,
-    ) -> BoxFuture<Result<CmdOutcome, String>>;
-
     /// Open secret and approval requests, in one project or all, newest first.
     fn open_requests(
         &self,
@@ -79,17 +62,6 @@ impl LeadPorts for Unwired {
     }
     fn send(&self, _: ThreadRef, _: String, _: String) -> BoxFuture<Result<bool, LeadError>> {
         Box::pin(async { Err(unwired("Sending to a lead thread")) })
-    }
-    fn run_command(
-        &self,
-        _: &MachineId,
-        _: String,
-        _: Vec<String>,
-        _: u32,
-    ) -> BoxFuture<Result<CmdOutcome, String>> {
-        Box::pin(async {
-            Err("running commands on a node is not wired in this hub yet".to_string())
-        })
     }
     fn open_requests(
         &self,

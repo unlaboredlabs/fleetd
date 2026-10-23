@@ -114,9 +114,6 @@ pub enum HubEventType {
     /// `data.taskId`, `data.prHeadSha`, `data.blocking`.
     #[serde(rename = "review.verdict")]
     ReviewVerdict,
-    /// `data.incidentId`, `data.class`.
-    #[serde(rename = "incident.recorded")]
-    IncidentRecorded,
     /// `data.changeId`, `data.repo`, `data.prNumber`.
     #[serde(rename = "change.queued")]
     ChangeQueued,
@@ -257,7 +254,6 @@ impl HubEventType {
             Self::ClaimPassed => "claim.passed",
             Self::WorkstreamDone => "workstream.done",
             Self::ReviewVerdict => "review.verdict",
-            Self::IncidentRecorded => "incident.recorded",
             Self::ChangeQueued => "change.queued",
             Self::ChangeReady => "change.ready",
             Self::ChangeNeedsRebase => "change.needs_rebase",

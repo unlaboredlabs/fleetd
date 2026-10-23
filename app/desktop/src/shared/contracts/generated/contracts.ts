@@ -1295,7 +1295,6 @@ export type KnownHubEventType =
   | "claim.failed"
   | "workstream.done"
   | "review.verdict"
-  | "incident.recorded"
   | "change.queued"
   | "change.ready"
   | "change.needs_rebase"
@@ -1417,61 +1416,6 @@ export type InProgressRow = {
   workstreamId: WorkstreamId;
 };
 
-/** Recorded by the hub, never by an agent. */
-export type Incident = {
-  at: Timestamp;
-  class: IncidentClass;
-  /** Plain-language lines: claim ids with their failing checks, ratios, SHAs. */
-  evidence: string[];
-  incidentId: IncidentId;
-  projectRef: ProjectRef;
-  taskId?: TaskId;
-  workstreamId?: WorkstreamId;
-};
-
-/**
- * `policy_bypass`: a PR on a watched repo was merged by something other than the train. M12: `override`, a human
- * replaced a lead's Decision with another value.
- */
-export type IncidentClass =
-  | "false_claim"
-  | "polish_loop"
-  | "stall"
-  | "policy_bypass"
-  | "override"
-  | "misfiled_ask"
-  | "out_of_area"
-  | "re_ask";
-
-export type IncidentCount = {
-  class: IncidentClass;
-  count: number;
-};
-
-export type IncidentId = string;
-
-export type IncidentsListInput = {
-  class?: IncidentClass;
-  limit?: number;
-  projectRef?: ProjectRef;
-  /** M12: the span `counts` covers, ending now. */
-  windowDays?: number;
-  workstreamId?: WorkstreamId;
-};
-
-export type IncidentsListOutput = {
-  /**
-   * M12: incidents per class since `counts_since`, under the same filters; classes with none are left out. Most
-   * first.
-   */
-  counts: IncidentCount[];
-  countsSince: Timestamp;
-  /** Newest first. */
-  incidents: Incident[];
-  next?: string;
-  truncated?: boolean;
-};
-
 export type Insight = {
   /**
    * The same numbers for the compare period. Present on every insight when a compare period was asked for,
@@ -1553,22 +1497,6 @@ export type IntakeSubmitOutput = {
   next?: string;
   truncated?: boolean;
   workstreamId: WorkstreamId;
-};
-
-export type InventoryInput = {
-  machineId: MachineId;
-  projectId: ProjectId;
-};
-
-export type InventoryOutput = {
-  /** The project's finish-all workstream went (or stayed) idle: nothing left with a value source. */
-  idle: boolean;
-  next?: string;
-  /** Items with a value source that no open child serves yet. */
-  spawnable: number;
-  /** The ranked list, one item per line. */
-  text: string;
-  truncated?: boolean;
 };
 
 /** The observable stages an item passes on its way to verified, in order. Each is credited only once fleetd saw it. */
@@ -2144,8 +2072,8 @@ export type PlaybookGateChange = {
   summary: string;
 };
 
-/** The prefixes `bug:`/`fix:`, `research:` and `finish:` pick bugfix, research and finish-all. */
-export type PlaybookName = "bugfix" | "feature" | "research" | "finish-all";
+/** The prefixes `bug:`/`fix:` and `research:` pick bugfix and research. */
+export type PlaybookName = "bugfix" | "feature" | "research";
 
 /** <playbook name>@<full lowercase hex git blob SHA> */
 export type PlaybookRef = string;
@@ -3074,8 +3002,6 @@ export type SecretSubmitOutput = {
   requestId: ChatRequestId;
   truncated?: boolean;
 };
-
-export type Serves = string;
 
 /** `session_prompt_get`: exactly what a session was told at its start. */
 export type SessionPrompt = {
@@ -4168,8 +4094,6 @@ export type Workstream = {
   headlineAt?: Timestamp;
   /** Research workstreams, once the verdict is computed; set together with `verdict`. A STOP is done, not failed. */
   outcome?: ResearchOutcome;
-  /** M9 finish-all: the finish-all workstream that spawned this one, and the value source it was spawned for. */
-  parent?: WorkstreamParent;
   /** Pinned at creation; the brief validates against this version. Absent on workstreams from before M9. */
   playbook?: PlaybookRef;
   projectRef: ProjectRef;
@@ -4227,11 +4151,6 @@ export type WorkstreamListOutput = {
   workstreams: Workstream[];
 };
 
-export type WorkstreamParent = {
-  serves: Serves;
-  workstreamId: WorkstreamId;
-};
-
 export type WorkstreamSource = {
   at: Timestamp;
   /** Who submitted it: an agent keyId, "human" or "lead:<machineId>/<projectId>". */
@@ -4240,24 +4159,7 @@ export type WorkstreamSource = {
   text: string;
 };
 
-export type WorkstreamSpawnInput = {
-  machineId: MachineId;
-  projectId: ProjectId;
-  serves: Serves;
-  template?: PlaybookName;
-  text: string;
-};
-
-export type WorkstreamSpawnOutput = {
-  next?: string;
-  /** The project's open finish-all workstream it is a child of. */
-  parent: WorkstreamId;
-  playbook?: PlaybookRef;
-  truncated?: boolean;
-  workstreamId: WorkstreamId;
-};
-
-export type WorkstreamState = "draft" | "running" | "converging" | "verifying" | "done" | "idle" | "stopped" | "failed";
+export type WorkstreamState = "draft" | "running" | "converging" | "verifying" | "done" | "stopped" | "failed";
 
 /** Every tool the app can `call`: its input and its output. */
 export interface ToolMap {
@@ -4281,10 +4183,8 @@ export interface ToolMap {
   events_wait: { input: EventsWaitInput; output: EventsWaitOutput };
   fleetd_status: { input: FleetdStatusInput; output: FleetdStatusOutput };
   hub_info: { input: HubInfoInput; output: HubInfoOutput };
-  incidents_list: { input: IncidentsListInput; output: IncidentsListOutput };
   intake_preview: { input: IntakePreviewInput; output: IntakePreviewOutput };
   intake_submit: { input: IntakeSubmitInput; output: IntakeSubmitOutput };
-  inventory: { input: InventoryInput; output: InventoryOutput };
   lead_restart: { input: LeadStartInput; output: LeadStartOutput };
   lead_start: { input: LeadStartInput; output: LeadStartOutput };
   order_get: { input: OrderGetInput; output: OrderGetOutput };
@@ -4334,7 +4234,6 @@ export interface ToolMap {
   wake_set: { input: WakeSetInput; output: WakeSetOutput };
   workstream_get: { input: WorkstreamGetInput; output: WorkstreamGetOutput };
   workstream_list: { input: WorkstreamListInput; output: WorkstreamListOutput };
-  workstream_spawn: { input: WorkstreamSpawnInput; output: WorkstreamSpawnOutput };
 }
 
 /** `HubEvent.data` by event type, for the types whose data has a declared shape. */

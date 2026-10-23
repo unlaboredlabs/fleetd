@@ -15,7 +15,6 @@ The app shows each agent's role on its lane. The role decides the fleetd tools; 
 | Role | How it starts | fleetd tools | Can start agents |
 |---|---|---|---|
 | Lead | One per project, started by the project's first order | [Lead tools](#lead-tools) | Yes |
-| Finish-all lead | A lead whose workstream runs the finish-all playbook. It also uses `inventory` and `workstream_spawn` | [Lead tools](#lead-tools) | Yes, child workstreams too |
 | Implementer | `spawn_agent` with kind `write`. Gets its own worktree and branch | [Task tools](#task-tools) | No |
 | Reader | `spawn_agent` with kind `read` | [Task tools](#task-tools) | No |
 | Reviewer | `spawn_agent` with kind `review` | [Task tools](#task-tools) | No |
@@ -27,21 +26,19 @@ The hub checks these on every fleetd call a session makes, through its MCP tools
 
 | Limit | Value |
 |---|---|
-| Who can start agents | A lead, with `spawn_agent`, `workstream_spawn`. A task's agent can't. |
+| Who can start agents | A lead, with `spawn_agent`. A task's agent can't. |
 | Depth | 1. A lead is depth 0 and its tasks depth 1; nothing goes deeper. |
 | Open tasks per lead | 32 (queued, running or idle). |
 | Agents running at once, per project | The project's max agents, which a person sets (`cap_set`, the chat's Max agents); unset, the fleet cap. A spawn over it queues and starts by itself; a review goes ahead of queued writers. The lead is not an agent and doesn't count. |
 | Agents running at once, fleet-wide | The fleet cap, 40 by default. |
 | Calls a task's agent may make | `report`, `ask_lead`, `claim_done`. Every other call is refused. |
-| Finish-all children open at once | 5. |
-| What a child workstream may serve | `issue`, `defect`, `done`. Never invented work. |
 | Gated commands (`gated_run`) | Classes `irreversible`, `money`, `credential`. Run only after a human approves; at most 1800 s. |
 
 These limits cover calls to fleetd, not what the agent's own shell can do. A task runs with full Bash, so `gated_run` is not the only way it could run a command. A process that leaves its session's process tree (for example with `setsid`) and scrubs its environment counts as you, with no limits: see "Known limit" on the Security page. Run agents you don't trust as a different OS user.
 
 ## Lead tools
 
-Every lead gets these, the finish-all lead included.
+Every lead gets these.
 
 | Tool | What it does | Needs a human |
 |---|---|---|
@@ -66,8 +63,6 @@ Every lead gets these, the finish-all lead included.
 | [`change_enqueue`](#change_enqueue) | Put a PR no task's result put there on its repo's merge train; only the train merges. | No |
 | [`change_status`](#change_status) | A merge-train change as stored. | No |
 | [`workstream_open`](#workstream_open) | Open a workstream for work you took from the chat: a draft you then brief. | No |
-| [`workstream_spawn`](#workstream_spawn) | A finish-all lead starts a child workstream for one item with a value source. | No |
-| [`inventory`](#inventory) | The project's open work, ranked. | No |
 
 ### spawn_agent
 
@@ -563,11 +558,11 @@ A merge-train change as stored.
 
 ### workstream_open
 
-Open a workstream for work you took from the chat: a draft you then brief. template picks the playbook (feature, bugfix, research, finish-all).
+Open a workstream for work you took from the chat: a draft you then brief. template picks the playbook (feature, bugfix, research).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `template` | string | no | The prefixes `bug:`/`fix:`, `research:` and `finish:` pick bugfix, research and finish-all. One of `bugfix`, `feature`, `research`, `finish-all`. |
+| `template` | string | no | The prefixes `bug:`/`fix:` and `research:` pick bugfix and research. One of `bugfix`, `feature`, `research`. |
 | `text` | string | yes | At most 4000 characters. |
 
 **Who may call:** a lead, checked by the hub. **Needs a human:** no.
@@ -579,43 +574,6 @@ Open a workstream for work you took from the chat: a draft you then brief. templ
     "template": "feature",
     "text": "Build the schedules page"
   }
-}
-```
-
-### workstream_spawn
-
-A finish-all lead starts a child workstream for one item with a value source.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `serves` | string | yes |  |
-| `template` | string | no | The prefixes `bug:`/`fix:`, `research:` and `finish:` pick bugfix, research and finish-all. One of `bugfix`, `feature`, `research`, `finish-all`. |
-| `text` | string | yes | At most 4000 characters. |
-
-**Who may call:** a lead, checked by the hub. **Needs a human:** no.
-
-```json
-{
-  "name": "workstream_spawn",
-  "arguments": {
-    "serves": "issue:#88",
-    "text": "Fix the flaky upload test"
-  }
-}
-```
-
-### inventory
-
-The project's open work, ranked.
-
-No parameters.
-
-**Who may call:** a lead, checked by the hub. **Needs a human:** no.
-
-```json
-{
-  "name": "inventory",
-  "arguments": {}
 }
 ```
 

@@ -5,8 +5,7 @@ use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::lead_calls::{BriefCreateResult, StatusSetResult};
 use fleetd_contracts::ledger::{
-    Brief, IntakeChannel, PlaybookName, PlaybookRef, Workstream, WorkstreamId, WorkstreamParent,
-    WorkstreamState,
+    Brief, IntakeChannel, PlaybookName, PlaybookRef, Workstream, WorkstreamId, WorkstreamState,
 };
 use fleetd_contracts::mcp::ErrorCode;
 
@@ -28,8 +27,6 @@ pub struct IntakeInput {
     pub by: String,
     /// M9: the playbook to pin; None leaves the workstream unpinned, as before M9.
     pub template: Option<PlaybookName>,
-    /// M9 finish-all: the workstream that spawns this one, and what it serves there.
-    pub parent: Option<WorkstreamParent>,
 }
 
 #[derive(Debug, Clone)]
@@ -141,7 +138,6 @@ impl Workstreams {
             at: now_iso(&self.ctx).into(),
             client_request_id: Some(input.client_request_id),
             playbook: pinned.as_ref().map(|p| p.r#ref.clone()),
-            parent: input.parent,
         })?;
         let id = workstream.workstream_id.clone();
         if created {
@@ -217,9 +213,9 @@ impl Workstreams {
         if w.brief.as_ref() == Some(&brief) {
             return Ok(result(w.state, format!("Unchanged. {running}")));
         }
-        // A draft starts running; an idle finish-all stays idle (only new work with a value source reopens it). A new
-        // brief while verifying reopens the work, and the claim made on the old one no longer counts.
-        let starts = w.brief.is_none() && w.state != WorkstreamState::Idle;
+        // A draft starts running. A new brief while verifying reopens the work, and the claim made on the old one no
+        // longer counts.
+        let starts = w.brief.is_none();
         let verifying = w.state == WorkstreamState::Verifying;
         let state = if starts || verifying {
             WorkstreamState::Running
@@ -248,12 +244,6 @@ impl Workstreams {
             format!("{id} brief edited"),
             Some(serde_json::json!({ "workstreamId": id, "state": state, "briefEdited": true })),
         )?;
-        if state == WorkstreamState::Idle {
-            return Ok(result(
-                state,
-                format!("Brief set; {id} stays idle. Nothing to do until new work comes in."),
-            ));
-        }
         if verifying && let Some(claims) = self.ctx.hooks.claims.get() {
             claims.void(id);
             return Ok(result(

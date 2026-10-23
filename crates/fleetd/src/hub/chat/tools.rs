@@ -143,7 +143,6 @@ pub fn register_lead_calls(hub: &Arc<Hub>) {
                         channel: IntakeChannel::Lead,
                         by: caller.by.clone(),
                         template: open.template,
-                        parent: None,
                     })
                     .map_err(McpToolError::from)?;
                 Ok(LeadCallResult::WorkstreamOpen(WorkstreamOpenResult {

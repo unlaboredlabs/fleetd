@@ -3754,11 +3754,6 @@
           "type": "string"
         },
         {
-          "const": "incident.recorded",
-          "description": "`data.incidentId`, `data.class`.",
-          "type": "string"
-        },
-        {
           "const": "change.queued",
           "description": "`data.changeId`, `data.repo`, `data.prNumber`.",
           "type": "string"
@@ -4151,159 +4146,6 @@
       ],
       "type": "object"
     },
-    "Incident": {
-      "description": "Recorded by the hub, never by an agent.",
-      "properties": {
-        "at": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "class": {
-          "$ref": "#/$defs/IncidentClass"
-        },
-        "evidence": {
-          "description": "Plain-language lines: claim ids with their failing checks, ratios, SHAs.",
-          "items": {
-            "maxLength": 2000,
-            "minLength": 1,
-            "type": "string"
-          },
-          "maxItems": 20,
-          "type": "array"
-        },
-        "incidentId": {
-          "$ref": "#/$defs/IncidentId"
-        },
-        "projectRef": {
-          "$ref": "#/$defs/ProjectRef"
-        },
-        "taskId": {
-          "$ref": "#/$defs/TaskId"
-        },
-        "workstreamId": {
-          "$ref": "#/$defs/WorkstreamId"
-        }
-      },
-      "required": [
-        "incidentId",
-        "class",
-        "projectRef",
-        "evidence",
-        "at"
-      ],
-      "type": "object"
-    },
-    "IncidentClass": {
-      "description": "`policy_bypass`: a PR on a watched repo was merged by something other than the train. M12: `override`, a human\nreplaced a lead's Decision with another value.",
-      "oneOf": [
-        {
-          "enum": [
-            "false_claim",
-            "polish_loop",
-            "stall",
-            "policy_bypass",
-            "override"
-          ],
-          "type": "string"
-        },
-        {
-          "const": "misfiled_ask",
-          "description": "Retired with the questions tool. Kept so older incidents still read.",
-          "type": "string"
-        },
-        {
-          "const": "out_of_area",
-          "description": "Retired with area leases. Kept so older incidents still read.",
-          "type": "string"
-        },
-        {
-          "const": "re_ask",
-          "description": "Retired with the questions tool. Kept so older incidents still read.",
-          "type": "string"
-        }
-      ]
-    },
-    "IncidentCount": {
-      "properties": {
-        "class": {
-          "$ref": "#/$defs/IncidentClass"
-        },
-        "count": {
-          "maximum": 9007199254740991,
-          "minimum": 1,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "class",
-        "count"
-      ],
-      "type": "object"
-    },
-    "IncidentId": {
-      "pattern": "^I[1-9][0-9]*$",
-      "type": "string"
-    },
-    "IncidentsListInput": {
-      "properties": {
-        "class": {
-          "$ref": "#/$defs/IncidentClass"
-        },
-        "limit": {
-          "default": 20,
-          "maximum": 100,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "projectRef": {
-          "$ref": "#/$defs/ProjectRef"
-        },
-        "windowDays": {
-          "default": 7,
-          "description": "M12: the span `counts` covers, ending now.",
-          "maximum": 30,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "workstreamId": {
-          "$ref": "#/$defs/WorkstreamId"
-        }
-      },
-      "type": "object"
-    },
-    "IncidentsListOutput": {
-      "properties": {
-        "counts": {
-          "description": "M12: incidents per class since `counts_since`, under the same filters; classes with none are left out. Most\nfirst.",
-          "items": {
-            "$ref": "#/$defs/IncidentCount"
-          },
-          "type": "array"
-        },
-        "countsSince": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "incidents": {
-          "description": "Newest first.",
-          "items": {
-            "$ref": "#/$defs/Incident"
-          },
-          "maxItems": 100,
-          "type": "array"
-        },
-        "next": {
-          "type": "string"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "incidents",
-        "counts",
-        "countsSince"
-      ],
-      "type": "object"
-    },
     "Insight": {
       "properties": {
         "compare": {
@@ -4567,51 +4409,6 @@
       },
       "required": [
         "workstreamId"
-      ],
-      "type": "object"
-    },
-    "InventoryInput": {
-      "properties": {
-        "machineId": {
-          "$ref": "#/$defs/MachineId"
-        },
-        "projectId": {
-          "$ref": "#/$defs/ProjectId"
-        }
-      },
-      "required": [
-        "machineId",
-        "projectId"
-      ],
-      "type": "object"
-    },
-    "InventoryOutput": {
-      "properties": {
-        "idle": {
-          "description": "The project's finish-all workstream went (or stayed) idle: nothing left with a value source.",
-          "type": "boolean"
-        },
-        "next": {
-          "type": "string"
-        },
-        "spawnable": {
-          "description": "Items with a value source that no open child serves yet.",
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "text": {
-          "description": "The ranked list, one item per line.",
-          "type": "string"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "text",
-        "spawnable",
-        "idle"
       ],
       "type": "object"
     },
@@ -5134,12 +4931,6 @@
         "hub_info.output": {
           "$ref": "#/$defs/HubInfoOutput"
         },
-        "incidents_list.input": {
-          "$ref": "#/$defs/IncidentsListInput"
-        },
-        "incidents_list.output": {
-          "$ref": "#/$defs/IncidentsListOutput"
-        },
         "intake_preview.input": {
           "$ref": "#/$defs/IntakePreviewInput"
         },
@@ -5151,12 +4942,6 @@
         },
         "intake_submit.output": {
           "$ref": "#/$defs/IntakeSubmitOutput"
-        },
-        "inventory.input": {
-          "$ref": "#/$defs/InventoryInput"
-        },
-        "inventory.output": {
-          "$ref": "#/$defs/InventoryOutput"
         },
         "lead_restart.input": {
           "$ref": "#/$defs/LeadStartInput"
@@ -5451,12 +5236,6 @@
         },
         "workstream_list.output": {
           "$ref": "#/$defs/WorkstreamListOutput"
-        },
-        "workstream_spawn.input": {
-          "$ref": "#/$defs/WorkstreamSpawnInput"
-        },
-        "workstream_spawn.output": {
-          "$ref": "#/$defs/WorkstreamSpawnOutput"
         }
       },
       "required": [
@@ -5500,14 +5279,10 @@
         "fleetd_status.output",
         "hub_info.input",
         "hub_info.output",
-        "incidents_list.input",
-        "incidents_list.output",
         "intake_preview.input",
         "intake_preview.output",
         "intake_submit.input",
         "intake_submit.output",
-        "inventory.input",
-        "inventory.output",
         "lead_restart.input",
         "lead_restart.output",
         "lead_start.input",
@@ -5605,9 +5380,7 @@
         "workstream_get.input",
         "workstream_get.output",
         "workstream_list.input",
-        "workstream_list.output",
-        "workstream_spawn.input",
-        "workstream_spawn.output"
+        "workstream_list.output"
       ],
       "type": "object"
     },
@@ -6683,18 +6456,17 @@
       "type": "object"
     },
     "PlaybookName": {
-      "description": "The prefixes `bug:`/`fix:`, `research:` and `finish:` pick bugfix, research and finish-all.",
+      "description": "The prefixes `bug:`/`fix:` and `research:` pick bugfix and research.",
       "enum": [
         "bugfix",
         "feature",
-        "research",
-        "finish-all"
+        "research"
       ],
       "type": "string"
     },
     "PlaybookRef": {
       "description": "<playbook name>@<full lowercase hex git blob SHA>",
-      "pattern": "^(?:bugfix|feature|research|finish-all)@(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+      "pattern": "^(?:bugfix|feature|research)@(?:[0-9a-f]{40}|[0-9a-f]{64})$",
       "type": "string"
     },
     "PrAuthor": {
@@ -9302,9 +9074,6 @@
         "fingerprint"
       ],
       "type": "object"
-    },
-    "Serves": {
-      "type": "string"
     },
     "SessionPrompt": {
       "description": "`session_prompt_get`: exactly what a session was told at its start.",
@@ -12576,10 +12345,6 @@
           "$ref": "#/$defs/ResearchOutcome",
           "description": "Research workstreams, once the verdict is computed; set together with `verdict`. A STOP is done, not failed."
         },
-        "parent": {
-          "$ref": "#/$defs/WorkstreamParent",
-          "description": "M9 finish-all: the finish-all workstream that spawned this one, and the value source it was spawned for."
-        },
         "playbook": {
           "$ref": "#/$defs/PlaybookRef",
           "description": "Pinned at creation; the brief validates against this version. Absent on workstreams from before M9."
@@ -12718,21 +12483,6 @@
       ],
       "type": "object"
     },
-    "WorkstreamParent": {
-      "properties": {
-        "serves": {
-          "$ref": "#/$defs/Serves"
-        },
-        "workstreamId": {
-          "$ref": "#/$defs/WorkstreamId"
-        }
-      },
-      "required": [
-        "workstreamId",
-        "serves"
-      ],
-      "type": "object"
-    },
     "WorkstreamSource": {
       "properties": {
         "at": {
@@ -12759,59 +12509,6 @@
       ],
       "type": "object"
     },
-    "WorkstreamSpawnInput": {
-      "properties": {
-        "machineId": {
-          "$ref": "#/$defs/MachineId"
-        },
-        "projectId": {
-          "$ref": "#/$defs/ProjectId"
-        },
-        "serves": {
-          "$ref": "#/$defs/Serves"
-        },
-        "template": {
-          "$ref": "#/$defs/PlaybookName"
-        },
-        "text": {
-          "maxLength": 4000,
-          "minLength": 1,
-          "type": "string"
-        }
-      },
-      "required": [
-        "machineId",
-        "projectId",
-        "text",
-        "serves"
-      ],
-      "type": "object"
-    },
-    "WorkstreamSpawnOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "parent": {
-          "$ref": "#/$defs/WorkstreamId",
-          "description": "The project's open finish-all workstream it is a child of."
-        },
-        "playbook": {
-          "$ref": "#/$defs/PlaybookRef"
-        },
-        "truncated": {
-          "type": "boolean"
-        },
-        "workstreamId": {
-          "$ref": "#/$defs/WorkstreamId"
-        }
-      },
-      "required": [
-        "workstreamId",
-        "parent"
-      ],
-      "type": "object"
-    },
     "WorkstreamState": {
       "enum": [
         "draft",
@@ -12819,7 +12516,6 @@
         "converging",
         "verifying",
         "done",
-        "idle",
         "stopped",
         "failed"
       ],

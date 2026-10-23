@@ -47,8 +47,6 @@ export const MODEL = "claude-opus-5-5";
 export const MECHANICS = "medium" as const;
 
 // Texts the binary emits that scenarios match on; each mirrors a constant in crates/fleetd.
-/** `hub/playbooks/finish_all_rules.rs` FINISH_ALL_IDLE. */
-export const FINISH_ALL_IDLE = "finish-all: nothing left with a value source";
 
 /** The hub's offline-queue TTL in lab runs, short enough for the expiry check to wait it out. */
 export const QUEUE_TTL_SEC = 40;

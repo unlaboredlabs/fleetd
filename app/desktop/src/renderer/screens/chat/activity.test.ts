@@ -81,7 +81,7 @@ describe("the lead's activity line", () => {
     expect(doingWords({ kind: "read", path: "app/desktop/src/renderer/screens/chat/ChatList.tsx" })).toBe("reading `ChatList.tsx`");
     expect(doingWords({ kind: "read", pattern: "chat_delta" })).toBe("searching the code");
     expect(doingWords({ kind: "command", text: "cargo test -p fleetd" })).toBe("running a command");
-    expect(doingWords({ kind: "tool", name: "mcp__fleetd__workstream_spawn" })).toBe("starting agents");
+    expect(doingWords({ kind: "tool", name: "mcp__fleetd__workstream_open" })).toBe("opening an order");
     expect(doingWords({ kind: "tool", name: "mcp__fleetd__something_new" })).toBe("asking fleetd");
     expect(doingWords({ kind: "tool", name: "mcp__other__x" })).toBe("working");
   });

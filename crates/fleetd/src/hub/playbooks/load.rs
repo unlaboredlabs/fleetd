@@ -34,7 +34,7 @@ pub struct LoadedPlaybook {
 }
 
 /// fleetd's own playbooks, by name.
-pub const BUNDLED: [(PlaybookName, &str); 4] = [
+pub const BUNDLED: [(PlaybookName, &str); 3] = [
     (
         PlaybookName::Bugfix,
         include_str!("../../../../../playbooks/bugfix.md"),
@@ -47,10 +47,6 @@ pub const BUNDLED: [(PlaybookName, &str); 4] = [
         PlaybookName::Research,
         include_str!("../../../../../playbooks/research.md"),
     ),
-    (
-        PlaybookName::FinishAll,
-        include_str!("../../../../../playbooks/finish-all.md"),
-    ),
 ];
 
 /// What `git hash-object <file>` prints for these bytes.
@@ -61,8 +57,7 @@ pub fn git_blob_sha(content: &[u8]) -> String {
     hex(&sha.finalize())
 }
 
-/// Lowercase hex.
-pub fn hex(bytes: &[u8]) -> String {
+fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
@@ -144,9 +139,14 @@ pub fn load_dir(dir: &Path) -> Result<BTreeMap<&'static str, LoadedPlaybook>, Pl
     files.sort();
     for file in files {
         let place = dir.join(&file).display().to_string();
-        let Some(name) = name_of(&file[..file.len() - 3]) else {
+        let stem = &file[..file.len() - 3];
+        // finish-all went; an override of it stays a retired prompt's orphan, not a reason to refuse to start.
+        if stem == "finish-all" {
+            continue;
+        }
+        let Some(name) = name_of(stem) else {
             return Err(PlaybookError::new(format!(
-                "playbook {place} is invalid: playbooks are named bugfix, feature, research, finish-all"
+                "playbook {place} is invalid: playbooks are named bugfix, feature, research"
             )));
         };
         let text = std::fs::read_to_string(dir.join(&file))
@@ -180,7 +180,7 @@ mod tests {
     #[test]
     fn bundled_playbooks_load_and_pin_like_git() {
         let all = load_all(None).unwrap();
-        assert_eq!(all.len(), 4);
+        assert_eq!(all.len(), 3);
         // `git hash-object playbooks/bugfix.md` at this commit; a playbook edit changes it on purpose.
         assert_eq!(
             git_blob_sha(BUNDLED[0].1.as_bytes()),

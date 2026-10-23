@@ -2,8 +2,6 @@
 //! A workstream pins `name@sha` at creation and the pinned text is kept (table `playbook_versions`), so a later edit of
 //! the file never changes the rules of a workstream already under way.
 pub mod budget;
-pub mod finish_all;
-pub mod finish_all_rules;
 pub mod floor;
 pub mod load;
 pub mod research;
@@ -13,7 +11,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-pub use finish_all::FinishAll;
 use fleetd_contracts::ledger::{PlaybookName, PlaybookRef};
 pub use fleetd_contracts::playbooks::Playbook;
 pub use load::{LoadedPlaybook, PlaybookError};

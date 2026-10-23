@@ -27,6 +27,8 @@ const HEADLINE: &str = "the status view has no generated headline";
 const RETRO: &str = "fleetd no longer runs a retro; edit the lead prompt or a playbook yourself";
 const PLAYBOOK: &str = "the playbooks are sections of the lead prompt now; this file's rules still apply, its instructions don't";
 const ONE_REVIEW: &str = "every PR gets one fresh reviewer now, and nothing verifies it apart";
+const FINISH_ALL: &str =
+    "finish-all went: a lead lists the open work and opens an order per item itself";
 
 const fn r(
     id: &'static str,
@@ -58,7 +60,7 @@ pub const RETIRED: &[Retired] = &[
     r(
         "digest.finish_all_idle",
         "Digest: finish-all is idle",
-        STATE,
+        FINISH_ALL,
         Some("lead.start"),
     ),
     r(
@@ -351,7 +353,7 @@ pub const RETIRED: &[Retired] = &[
     r(
         "playbook.finish-all",
         "Playbook: finish-all",
-        PLAYBOOK,
+        FINISH_ALL,
         Some("lead.start"),
     ),
     r(

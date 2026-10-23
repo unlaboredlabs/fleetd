@@ -1,4 +1,4 @@
-//! The hub's `Ports` and `DetectorPorts`: this slice's view of the other areas, forwarding to their services on the
+//! The hub's `Ports`: this slice's view of the other areas, forwarding to their services on the
 //! `Hub`. Built before the `Hub` exists (the services that hold it go into the `Hub`), so it is bound right after.
 //! Before `bind` (or after the hub is dropped) each answers as if there were nothing.
 use super::ports::{
@@ -6,17 +6,14 @@ use super::ports::{
 };
 use super::{JUDGE_BY, render};
 use crate::hub::api::Hub;
-use crate::hub::incidents::detectors::DetectorPorts;
 use crate::hub::leads::wakes::{LineKind, Trigger};
 use crate::hub::ledger::DecisionFilter;
 use crate::hub::link::commands::CommandInput;
-use crate::hub::tasks::records::TaskRecords;
 use crate::hub::tasks::{TaskCaller, TaskFilter};
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
 use fleetd_contracts::lead_calls::TaskSpawnCall;
 use fleetd_contracts::ledger::{
-    Decision, DecisionId, DecisionKey, DecisionScope, DecisionState, MetricValues, Workstream,
-    WorkstreamId,
+    DecisionScope, DecisionState, MetricValues, Workstream, WorkstreamId,
 };
 use fleetd_contracts::model::ActionItem;
 use fleetd_contracts::prim::{Line, Text};
@@ -259,29 +256,6 @@ impl Ports for HubPorts {
                 })
                 .collect())
         })
-    }
-}
-
-impl DetectorPorts for HubPorts {
-    fn task_by_thread(&self, thread: &ThreadRef) -> Option<Task> {
-        let hub = self.hub()?;
-        let stored = hub.db.with(|c| Ok(TaskRecords::by_thread(c, thread)?));
-        logged(stored, "reading a thread's task")
-            .flatten()
-            .map(|s| s.task)
-    }
-    fn decision(&self, id: &DecisionId) -> Option<Decision> {
-        logged(self.hub()?.decisions.get(id.as_str()), "reading a decision").flatten()
-    }
-    fn decisions_active_on_key(&self, key: &DecisionKey, project: &ProjectRef) -> Vec<Decision> {
-        let Some(hub) = self.hub() else {
-            return Vec::new();
-        };
-        logged(
-            hub.decisions.active_on_key(key.as_str(), project),
-            "reading decisions on a key",
-        )
-        .unwrap_or_default()
     }
 }
 

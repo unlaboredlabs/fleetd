@@ -2019,7 +2019,6 @@
         "converging",
         "verifying",
         "done",
-        "idle",
         "stopped",
         "failed"
       ],

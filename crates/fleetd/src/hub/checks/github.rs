@@ -1,5 +1,5 @@
 //! GitHub's REST API through the `gh` CLI on the hub machine, so the hub holds no GitHub token of its own.
-//! The train, reviews, finish-all and the doctor reuse this.
+//! The train, reviews and the doctor reuse this.
 use super::ports::BoxFuture;
 use regex::Regex;
 use std::sync::{Arc, LazyLock};

@@ -14,14 +14,14 @@ use crate::ids::ThreadId;
 use crate::ledger::{
     Brief, Decision, DecisionKey, DecisionValue, DecisionWhy, EnvName, GATED_MAX_TIMEOUT_SEC,
     GatedArgv, GatedClass, GatedCwd, GatedTimeoutSec, IntakeText, PlaybookName, PlaybookRef,
-    RequestState, SecretEnv, Serves, WorkstreamId, WorkstreamState,
+    RequestState, SecretEnv, WorkstreamId, WorkstreamState,
 };
 use crate::mcp::McpToolError;
 use crate::plan::{
     PlanAddCall, PlanDropCall, PlanEditCall, PlanItemId, PlanItemResult, PlanMilestoneCall,
     PlanMilestoneResult, PlanShowCall, PlanShowResult,
 };
-use crate::prim::{Count, Line, List, NonEmpty, Text};
+use crate::prim::{Line, List, NonEmpty, Text};
 use crate::secrets::SecretSink;
 use crate::steer::SteerId;
 use crate::tasks::{
@@ -226,18 +226,8 @@ pub struct ChangeStatusCall {
     pub change_id: ChangeId,
 }
 
-/// `fleetd workstream spawn --text "<intent>" --serves issue:<#n|url>|defect:<text>|done:<n> [--template t]`: a
-/// finish-all lead starts a child workstream in its own project, for one item with a value source.
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct WorkstreamSpawnCall {
-    pub text: IntakeText,
-    pub serves: Serves,
-    pub template: Option<PlaybookName>,
-}
-
 /// A lead opens its own workstream for work it took from the chat (`workstream_open`): a draft it then briefs with
-/// `brief`. `template` picks the playbook (feature, bugfix, research, finish-all).
+/// `brief`. `template` picks the playbook (feature, bugfix, research).
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -270,10 +260,6 @@ pub struct SliceReadyCall {
     pub pr_url: GitHubPrUrl,
 }
 
-/// `fleetd inventory`: the project's open work, ranked, as plain text.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct InventoryCall {}
-
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum LeadCall {
@@ -295,8 +281,6 @@ pub enum LeadCall {
     ChangeEnqueue(ChangeEnqueueCall),
     ChangeStatus(ChangeStatusCall),
     GatedRun(GatedRunCall),
-    WorkstreamSpawn(WorkstreamSpawnCall),
-    Inventory(InventoryCall),
     PlanMilestone(PlanMilestoneCall),
     PlanAdd(PlanAddCall),
     PlanEdit(PlanEditCall),
@@ -398,28 +382,6 @@ pub struct ChangeResult {
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct WorkstreamSpawnResult {
-    pub workstream_id: WorkstreamId,
-    pub parent: WorkstreamId,
-    pub playbook: Option<PlaybookRef>,
-    pub next: Option<String>,
-}
-
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct InventoryResult {
-    /// The ranked list, one item per line.
-    pub text: String,
-    /// Items with a value source that no open child serves yet.
-    pub spawnable: Count,
-    /// The project's finish-all workstream went (or stayed) idle: nothing left with a value source.
-    pub idle: bool,
-    pub next: Option<String>,
-}
-
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct AskLeadResult {
     pub task_id: TaskId,
     pub next: Option<String>,
@@ -445,8 +407,6 @@ pub enum LeadCallResult {
     ChangeEnqueue(ChangeResult),
     ChangeStatus(ChangeResult),
     GatedRun(RequestResult),
-    WorkstreamSpawn(WorkstreamSpawnResult),
-    Inventory(InventoryResult),
     PlanMilestone(PlanMilestoneResult),
     PlanAdd(PlanItemResult),
     PlanEdit(PlanItemResult),
@@ -564,8 +524,7 @@ mod tests {
         let error = serde_json::json!({ "t": "lead_result", "id": "1", "error": { "code": "invalid", "message": "no" } });
         assert!(serde_json::from_value::<LeadSocketFrame>(error.clone()).is_ok());
         let mut both = error;
-        both["result"] =
-            serde_json::json!({ "op": "inventory", "text": "", "spawnable": 0, "idle": true });
+        both["result"] = serde_json::json!({ "op": "status_set", "workstreamId": "W1" });
         assert!(serde_json::from_value::<LeadSocketFrame>(both).is_err());
     }
 }

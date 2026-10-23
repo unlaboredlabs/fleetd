@@ -13,8 +13,7 @@ use crate::hello::ProtocolVersion;
 use crate::ids::{EventSeq, MachineId, ProjectId, ProjectRef, ThreadId, Timestamp};
 use crate::ledger::{
     Decision, DecisionKey, DecisionScope, DecisionValue, DecisionWhy, HumanRequest, IntakeText,
-    Lead, PlaybookName, PlaybookRef, RequestState, Serves, Workstream, WorkstreamId,
-    WorkstreamState,
+    Lead, PlaybookName, RequestState, Workstream, WorkstreamId, WorkstreamState,
 };
 use crate::live::{AgentLane, OrderCard, TrainLive};
 use crate::model::{ActionItem, Machine, ProjectOutcome, ProjectSummary, ThreadSummary};
@@ -39,7 +38,7 @@ use crate::time::{
 };
 use crate::train::{Change, ChangeState, GitHubPrUrl, GitHubRepo};
 use crate::usage::UsageStatus;
-use crate::verification::{Claim, ClaimOutcome, Incident, IncidentClass};
+use crate::verification::{Claim, ClaimOutcome};
 use crate::wakes::{Wake, WakeCatchUp, WakeMessage, WakeSchedule, WakeState, WakeTarget};
 use crate::{brand, checked};
 
@@ -586,35 +585,6 @@ output!(WorkstreamGetOutput {
     claims: Option<List<Claim, 0, 20>>,
 });
 
-// workstream_spawn: what a finish-all lead's `fleetd workstream spawn` does, for an outside orchestrator.
-input!(WorkstreamSpawnInput {
-    machine_id: MachineId,
-    project_id: ProjectId,
-    text: IntakeText,
-    serves: Serves,
-    template: Option<PlaybookName>,
-});
-output!(WorkstreamSpawnOutput {
-    workstream_id: WorkstreamId,
-    /// The project's open finish-all workstream it is a child of.
-    parent: WorkstreamId,
-    playbook: Option<PlaybookRef>,
-});
-
-// inventory: what a finish-all lead's `fleetd inventory` returns.
-input!(InventoryInput {
-    machine_id: MachineId,
-    project_id: ProjectId
-});
-output!(InventoryOutput {
-    /// The ranked list, one item per line.
-    text: String,
-    /// Items with a value source that no open child serves yet.
-    spawnable: Count,
-    /// The project's finish-all workstream went (or stayed) idle: nothing left with a value source.
-    idle: bool,
-});
-
 // requests_list: secret and approval requests, newest first.
 input!(RequestsListInput {
     project_ref: Option<ProjectRef>,
@@ -700,27 +670,6 @@ input!(ClaimsListInput {
 output!(ClaimsListOutput {
     /// Newest first.
     claims: List<Claim, 0, 100>,
-});
-
-// incidents_list
-input!(IncidentsListInput {
-    project_ref: Option<ProjectRef>,
-    workstream_id: Option<WorkstreamId>,
-    class: Option<IncidentClass>,
-    #[serde(default)]
-    limit: IntOr<1, 100, 20>,
-    /// M12: the span `counts` covers, ending now.
-    #[serde(default)]
-    window_days: IntOr<1, 30, 7>,
-});
-input!(IncidentCount { class: IncidentClass, count: Int<1, MAX_SAFE_INT> });
-output!(IncidentsListOutput {
-    /// Newest first.
-    incidents: List<Incident, 0, 100>,
-    /// M12: incidents per class since `counts_since`, under the same filters; classes with none are left out. Most
-    /// first.
-    counts: Vec<IncidentCount>,
-    counts_since: Timestamp,
 });
 
 // changes_list
@@ -1310,8 +1259,6 @@ tools! {
     intake_submit => IntakeSubmit, Operate, IntakeSubmitInput, IntakeSubmitOutput;
     workstream_list => WorkstreamList, Read, WorkstreamListInput, WorkstreamListOutput;
     workstream_get => WorkstreamGet, Read, WorkstreamGetInput, WorkstreamGetOutput;
-    workstream_spawn => WorkstreamSpawn, Operate, WorkstreamSpawnInput, WorkstreamSpawnOutput;
-    inventory => Inventory, Read, InventoryInput, InventoryOutput;
     requests_list => RequestsList, Read, RequestsListInput, RequestsListOutput;
     decisions_search => DecisionsSearch, Read, DecisionsSearchInput, DecisionsSearchOutput;
     decisions_record => DecisionsRecord, Operate, DecisionsRecordInput, DecisionsRecordOutput;
@@ -1321,7 +1268,6 @@ tools! {
     usage_status => UsageStatus, Read, UsageStatusInput, UsageStatusOutput;
     usage_resume => UsageResume, Operate, UsageResumeInput, UsageResumeOutput;
     claims_list => ClaimsList, Read, ClaimsListInput, ClaimsListOutput;
-    incidents_list => IncidentsList, Read, IncidentsListInput, IncidentsListOutput;
     changes_list => ChangesList, Read, ChangesListInput, ChangesListOutput;
     secret_submit => SecretSubmit, Operate, SecretSubmitInput, SecretSubmitOutput;
     // Human keys only (the handler checks).
@@ -1449,8 +1395,6 @@ mod tests {
         let wake: WakeSetInput = decode(wake).unwrap();
         assert!(wake.once);
         assert_eq!(wake.catch_up, WakeCatchUp::FireOnce);
-        let decoded = McpToolName::IncidentsList.decode_input(json!({})).unwrap();
-        assert_eq!(decoded, json!({ "limit": 20, "windowDays": 7 }));
     }
 
     #[test]

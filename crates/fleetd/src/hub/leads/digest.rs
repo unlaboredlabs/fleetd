@@ -10,7 +10,6 @@ use fleetd_contracts::ledger::{
 use fleetd_contracts::prim::js_len;
 
 use super::events::AgentsLine;
-use crate::hub::playbooks::finish_all_rules::is_finish_all;
 
 /// About 1,500 tokens: ids, keys and paths run near 3 characters a token.
 pub const DIGEST_MAX_CHARS: usize = 4500;
@@ -163,33 +162,13 @@ fn workstream_lines(w: &Workstream, facts: Option<&WorkstreamFacts>) -> String {
             .split_once('@')
             .map_or(p.as_str(), |(name, _)| name)
     });
-    let child = w
-        .parent
-        .as_ref()
-        .map(|p| {
-            format!(
-                ", child of {} for {}",
-                p.workstream_id,
-                one_line(p.serves.as_ref(), 80)
-            )
-        })
-        .unwrap_or_default();
-    let tag = if playbook.is_none() && child.is_empty() {
-        String::new()
-    } else {
-        format!(" ({}{child})", playbook.unwrap_or("no playbook"))
-    };
+    let tag = playbook.map(|p| format!(" ({p})")).unwrap_or_default();
     let head = format!(
         "- {} {}{tag}: {}",
         w.workstream_id,
         state_text(w.state),
         one_line(&w.title, 120)
     );
-    if w.state == WorkstreamState::Idle && is_finish_all(w) {
-        return format!(
-            "{head}\n  finish-all: nothing left with a value source; `inventory` again only when something new comes in"
-        );
-    }
     let Some(brief) = &w.brief else {
         return format!(
             "{head}\n  no brief yet: register it with `brief` {{workstreamId: \"{}\"}}",
@@ -222,7 +201,6 @@ pub fn state_text(state: WorkstreamState) -> &'static str {
         WorkstreamState::Converging => "converging",
         WorkstreamState::Verifying => "verifying",
         WorkstreamState::Done => "done",
-        WorkstreamState::Idle => "idle",
         WorkstreamState::Stopped => "stopped",
         WorkstreamState::Failed => "failed",
     }

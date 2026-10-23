@@ -51,7 +51,6 @@ fn lab() -> Lab {
             at: AT.into(),
             client_request_id: None,
             playbook: None,
-            parent: None,
         })
         .unwrap();
     assert_eq!(w.workstream_id.as_str(), "W1");

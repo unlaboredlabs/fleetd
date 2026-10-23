@@ -308,7 +308,6 @@ pub fn build_on(
         crate::hub::leads::wiring::Links {
             executors: &executors,
             queue: &queue,
-            commands: &node_commands,
             requests: &requests,
             decisions: &decisions,
             lead_calls: &lead_calls,
@@ -342,7 +341,6 @@ pub fn build_on(
         sweep,
         queue,
         wakes,
-        incidents: checks.incidents,
         receipts: checks.receipts,
         verdicts: checks.verdicts,
         checks: checks.checks,
@@ -388,7 +386,6 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
     loops.push(tokio::spawn(crate::hub::steer::run_sweep(hub.clone())));
     loops.push(hub.sweep.start(crate::hub::sweep::SWEEP_EVERY_MS));
     loops.push(crate::hub::queue::start_loops(hub));
-    loops.extend(crate::hub::checks::start_loops(hub));
     loops.extend(crate::hub::usage::wire::start(hub));
     // The train and reviews spawn their own tasks (a repo's loop starts on its first enqueue); this one stops them.
     hub.train.start();

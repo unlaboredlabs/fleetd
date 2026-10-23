@@ -14,7 +14,7 @@ pub const MAX_OPEN_TASKS: usize = 32;
 /// claim.
 pub const WORKER_OPS: &[&str] = &["review_verdict", "slice_ready", "ask_lead", "claim_done"];
 /// The calls that start an agent.
-pub const SPAWN_OPS: &[&str] = &["task_spawn", "workstream_spawn"];
+pub const SPAWN_OPS: &[&str] = &["task_spawn"];
 
 /// Which of fleetd's agents a lead-side call comes from, by the session it names.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -139,13 +139,7 @@ mod tests {
     #[test]
     fn a_lead_and_a_person_make_every_call_but_a_tasks_own() {
         for agent in [CallerAgent::Lead, CallerAgent::Person] {
-            for op in [
-                "task_spawn",
-                "workstream_spawn",
-                "task_message",
-                "claim_done",
-                "gated_run",
-            ] {
+            for op in ["task_spawn", "task_message", "claim_done", "gated_run"] {
                 assert_eq!(check(&agent, op), Ok(()), "{op}");
             }
             for op in ["ask_lead", "slice_ready"] {

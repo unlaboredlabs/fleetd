@@ -11,14 +11,12 @@ const FLEETD = "mcp__fleetd__";
 const FLEETD_WORDS: readonly (readonly [string, string])[] = [
   ["plan_", "planning"],
   ["brief_create", "writing the brief"],
-  ["workstream_spawn", "starting agents"],
   ["workstream_open", "opening an order"],
   ["decisions_record", "noting a decision"],
   ["decisions_search", "looking up decisions"],
   ["task_message", "messaging an agent"],
   ["steer_send", "messaging an agent"],
   ["status_set", "updating the status"],
-  ["inventory", "checking what runs"],
   ["change_", "moving a PR along"],
   ["slice_ready", "moving a PR along"],
 ];

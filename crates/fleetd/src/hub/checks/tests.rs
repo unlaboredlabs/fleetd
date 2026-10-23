@@ -5,27 +5,20 @@ use super::ports::{
 use super::render::claim_failed_lines;
 use super::*;
 use crate::clock::{Clock, SystemClock};
-use crate::hub::incidents::{IncidentFilter, Incidents};
 use crate::hub::orders::open_work::{Item, OpenWork};
 use crate::hub::store::{EventLog, HubDb, WaitInput};
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
-use fleetd_contracts::ledger::{
-    MetricValues, PlaybookRef, Workstream, WorkstreamId, WorkstreamState,
-};
+use fleetd_contracts::ledger::{MetricValues, Workstream, WorkstreamId, WorkstreamState};
 use fleetd_contracts::mcp::ErrorCode;
 use fleetd_contracts::model::ActionItem;
 use fleetd_contracts::tasks::{Task, TaskId};
-use fleetd_contracts::verification::{CheckOutcome, CheckResultRanBy, ClaimOutcome, IncidentClass};
+use fleetd_contracts::verification::{CheckOutcome, CheckResultRanBy, ClaimOutcome};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 const LEAD_BY: &str = "lead:lab-a/p1";
-
-fn project() -> ProjectRef {
-    serde_json::from_value(json!({ "machineId": "lab-a", "projectId": "p1" })).unwrap()
-}
 
 fn w1() -> WorkstreamId {
     WorkstreamId::unchecked("W1")
@@ -165,7 +158,6 @@ struct Kit {
     claims: Arc<Claims>,
     ports: Arc<Fake>,
     events: Arc<EventLog>,
-    incidents: Arc<Incidents>,
     /// What the fake node answers to every `cmd_check`: exit code and output tail.
     node: Arc<Mutex<(i64, String)>>,
     commands: Arc<Mutex<Vec<Value>>>,
@@ -180,7 +172,6 @@ fn kit(workstreams: Vec<Workstream>) -> Kit {
         ports.put_workstream(&w);
     }
     let dyn_ports: Arc<dyn Ports> = ports.clone();
-    let incidents = Arc::new(Incidents::new(db.clone(), events.clone(), clock.clone()));
     let verdicts = Arc::new(JudgeVerdicts::default());
     let judges = Arc::new(Judges::new(dyn_ports.clone(), events.clone(), verdicts));
     let runner = Arc::new(CheckRunner::new(
@@ -194,7 +185,6 @@ fn kit(workstreams: Vec<Workstream>) -> Kit {
         runner,
         dyn_ports,
         events.clone(),
-        incidents.clone(),
         clock,
         INLINE_WAIT,
     ));
@@ -202,7 +192,6 @@ fn kit(workstreams: Vec<Workstream>) -> Kit {
         claims,
         ports: ports.clone(),
         events,
-        incidents,
         node: ports.node.clone(),
         commands: ports.commands.clone(),
     }
@@ -387,51 +376,6 @@ async fn fails_while_the_file_is_missing_then_passes_and_marks_the_workstream_do
 }
 
 #[tokio::test]
-async fn records_one_false_claim_incident_at_the_third_failed_claim() {
-    let k = kit(vec![workstream("W1", Some(vec![doc_check()]))]);
-    k.set_node(1, "");
-    let incidents = || k.incidents.list(&IncidentFilter::default(), 10).unwrap();
-    for _ in 0..2 {
-        k.claims
-            .claim_done(&w1(), LEAD_BY, None, None)
-            .await
-            .unwrap();
-    }
-    assert!(incidents().is_empty());
-    k.claims
-        .claim_done(&w1(), LEAD_BY, None, None)
-        .await
-        .unwrap();
-    let recorded = incidents();
-    assert_eq!(recorded.len(), 1);
-    let i = &recorded[0];
-    assert_eq!(
-        (
-            i.incident_id.as_str(),
-            i.class,
-            &i.project_ref,
-            i.workstream_id.as_ref()
-        ),
-        ("I1", IncidentClass::FalseClaim, &project(), Some(&w1()))
-    );
-    let expected: Vec<String> =
-        (1..=3).map(|n| format!("C{n} failed: done:0 fail (exit 1): `test -f docs/x.md` in /w/p1 exited 1 (expected 0)")).collect();
-    assert_eq!(
-        i.evidence
-            .iter()
-            .map(|l| l.as_str().to_owned())
-            .collect::<Vec<_>>(),
-        expected
-    );
-    k.claims
-        .claim_done(&w1(), LEAD_BY, None, None)
-        .await
-        .unwrap();
-    assert_eq!(incidents().len(), 1);
-    assert_eq!(k.state(), WorkstreamState::Verifying);
-}
-
-#[tokio::test]
 async fn asks_no_one_once_an_automatic_check_failed() {
     let k = kit(vec![workstream(
         "W1",
@@ -460,16 +404,9 @@ async fn asks_no_one_once_an_automatic_check_failed() {
 
 #[tokio::test]
 async fn refuses_drafts_other_projects_and_unknown_workstreams() {
-    let mut finish_all = workstream("W3", Some(vec![doc_check()]));
-    finish_all.state = WorkstreamState::Idle;
-    finish_all.playbook = Some(PlaybookRef::unchecked(format!(
-        "finish-all@{}",
-        "a".repeat(40)
-    )));
     let k = kit(vec![
         workstream("W1", Some(vec![doc_check()])),
         workstream("W2", None),
-        finish_all,
     ]);
     let draft = k
         .claims
@@ -500,15 +437,6 @@ async fn refuses_drafts_other_projects_and_unknown_workstreams() {
             .unwrap_err()
             .code,
         ErrorCode::NotFound
-    );
-    let idle = k
-        .claims
-        .claim_done(&WorkstreamId::unchecked("W3"), LEAD_BY, None, None)
-        .await
-        .unwrap_err();
-    assert_eq!(
-        idle.message,
-        "W3 is idle: finish-all: nothing left with a value source. A finish-all run ends idle, not done."
     );
     assert!(k.commands.lock().unwrap().is_empty());
 }

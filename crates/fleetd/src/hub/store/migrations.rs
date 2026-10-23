@@ -550,4 +550,19 @@ pub(crate) const MIGRATIONS: &[&str] = &[
   UPDATE tasks SET data = json_remove(data, '$.tier') WHERE json_valid(data);
   UPDATE changes SET data = json_remove(data, '$.tier') WHERE json_valid(data);
   "#,
+    // Finish-all went: children forget their parent, an idle finish-all (nothing left to do) is done, and the
+    // finish-all playbook's pins go.
+    r#"
+  UPDATE workstreams SET data = json_remove(data, '$.parent') WHERE json_valid(data);
+  UPDATE workstreams SET state = 'done', data = json_set(data, '$.state', 'done') WHERE state = 'idle' AND json_valid(data);
+  UPDATE workstreams SET data = json_remove(data, '$.playbook')
+    WHERE json_valid(data) AND json_extract(data, '$.playbook') LIKE 'finish-all@%';
+  DELETE FROM playbook_versions WHERE ref LIKE 'finish-all@%';
+  "#,
+    // Incidents went: what they told is in the events they were taken from. Their events go too, as no reader decodes
+    // them.
+    r#"
+  DROP TABLE incidents;
+  DELETE FROM events WHERE type = 'incident.recorded';
+  "#,
 ];
