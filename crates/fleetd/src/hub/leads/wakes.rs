@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{ProjectRef, ThreadRef};
-use fleetd_contracts::ledger::WorkstreamId;
+use fleetd_contracts::ledger::{WorkstreamId, WorkstreamState};
 
 use super::digest::{DigestInput, WorkstreamFacts, render_lead_digest};
 use super::error::LeadError;
@@ -260,9 +260,8 @@ impl LeadWakes {
         let project = ctx.store.project_get(r)?;
         let workstreams = self.records.workstreams_list(&WorkstreamFilter {
             project_ref: Some(r.clone()),
-            open: true,
+            state: Some(WorkstreamState::Open),
             limit: 50,
-            ..Default::default()
         })?;
         let since = self.records.lead_get(r)?.and_then(|l| l.last_wake_at);
         let open_requests = ctx.ports().open_requests(Some(r), 50)?;

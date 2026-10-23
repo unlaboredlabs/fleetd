@@ -198,7 +198,6 @@ pub struct LiveFrame {
 pub enum OrderPhase {
     /// An open ask for it, or a lane waiting on a permission.
     WaitingOnYou,
-    Failed,
     Stopped,
     /// An implementer or reader lane starting or working.
     Working,
@@ -206,8 +205,6 @@ pub enum OrderPhase {
     Reviewing,
     /// A Change ready, rebasing, in CI or merging.
     Merging,
-    /// Never produced now that a lead closes its work; stays until the app stops naming it.
-    Verifying,
     /// Only queued lanes.
     Queued,
     /// Draft, or running with no tasks while the lead works.

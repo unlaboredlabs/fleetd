@@ -165,11 +165,11 @@
       "kind": "command_approval",
       "requestId": "Q10",
       "machineId": "devbox",
-      "playbook": {
-        "proposalId": "RP3",
-        "playbook": "feature",
-        "summary": "Features, medium-size work: reviewers 1 → 0",
-        "diff": "--- feature (v7)\n+++ feature (v8)\n@@ reviewRules.M @@\n-  reviewers: 1\n+  reviewers: 0\n"
+      "permission": {
+        "threadId": "t-writer-3",
+        "requestId": "perm-2",
+        "toolName": "Edit",
+        "summary": "Edit src/billing/invoice.ts"
       },
       "state": "open"
     }

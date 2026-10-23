@@ -202,7 +202,7 @@ export const agentsAt = (f: Fixture, projects: ReadonlyArray<{ ref: Ref; n: numb
         createdAt: at(f.now, -40 * 60_000),
         updatedAt: at(f.now, -5_000),
         phase: "working",
-        state: "running",
+        state: "open",
         lanes: own,
         prs: [],
         needsYou: 0,

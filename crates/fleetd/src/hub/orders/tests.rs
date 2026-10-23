@@ -32,7 +32,8 @@ fn workstream() -> Workstream {
     serde_json::from_value(json!({
         "workstreamId": "W14", "projectRef": { "machineId": "lab-a", "projectId": "p1" }, "title": "Three pages",
         "source": { "text": "Three pages", "channel": "app", "by": "human", "at": AT },
-        "state": "running", "headline": "waiting on reviews",
+        "state": "open", "headline": "waiting on reviews",
+        "brief": { "goal": "g", "why": "w", "pointers": [], "constraints": [], "doneWhen": ["the pages ship"] },
         "createdAt": AT, "updatedAt": AT,
     }))
     .unwrap()
@@ -198,6 +199,7 @@ fn a_done_order_leaves_only_its_open_prs_that_are_not_on_their_way_in() {
 #[test]
 fn cards_get_a_short_title() {
     let mut w = workstream();
+    w.brief = None;
     w.title = Text::unchecked(
         "Add three short pages, lab/20261018153639/alpha.md, beta.md and gamma.md, each one paragraph on what fleetd's merge train does. One writer per page.",
     );

@@ -44,8 +44,7 @@ pub fn order(w: &Workstream) -> Vec<NewMessage> {
     let ended = match w.state {
         WorkstreamState::Done => Some("done"),
         WorkstreamState::Stopped => Some("stopped"),
-        WorkstreamState::Failed => Some("failed"),
-        _ => None,
+        WorkstreamState::Open => None,
     };
     if let Some(how) = ended {
         out.push(entry(

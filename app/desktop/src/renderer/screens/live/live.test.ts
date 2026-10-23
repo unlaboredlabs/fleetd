@@ -21,7 +21,7 @@ const card = (workstreamId: string, lanes: AgentLane[]): OrderCard => ({
   workstreamId,
   projectRef: project,
   title: "Round cart totals once",
-  state: "running",
+  state: "open",
   phase: "working",
   needsYou: 0,
   settled: 0,

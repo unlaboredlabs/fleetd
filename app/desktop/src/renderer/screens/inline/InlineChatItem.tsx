@@ -4,7 +4,7 @@
 // re-emits its chat.message; the only state here is what the person just did, until the hub's next read of it.
 // Once answered, an item folds to one line that opens back up to the whole card.
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import type { ChatItem, CommandApprovalItem, Machine, SecretRequestItem } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
 import { Button, Code, cx, InlineCode, Input, Text, Truncate } from "../../ui";
@@ -12,7 +12,6 @@ import { useData, useDataLayer, useReadOf, useToolQuery } from "../../src/data/r
 import { patchLocal, useLocal, type Failed } from "./local";
 import { prose } from "./prose";
 import {
-  approvalKind,
   approvalOffline,
   approvalOutcome,
   approvalTitle,
@@ -319,9 +318,7 @@ function ApprovalItem({ item, read }: { item: CommandApprovalItem; read: number 
   const { local, shown, busy, failed, confirming, setConfirming, run, refocus, focused } = useSent(key, item, read, machine, section);
   const outcome = approvalOutcome(shown);
   const offline = approvalOffline(shown.state, live);
-  const { gated, permission, playbook } = item;
-  const kind = approvalKind(item);
-  const [showDiff, setShowDiff] = useState(false);
+  const { gated, permission } = item;
   const confirm = useRef<HTMLDivElement>(null);
   const approveButton = useRef<HTMLButtonElement>(null);
   const canAnswer = live && !busy && shown.state === "open";
@@ -379,13 +376,8 @@ function ApprovalItem({ item, read }: { item: CommandApprovalItem; read: number 
     <Shell ref={section} label="Command to approve" requestId={item.requestId} outcome={outcome} about={approvalTitle(item)} refocus={refocus} onFocused={focused} open={local.open} onToggle={() => patchLocal(key, { open: !local.open })} onKeyDown={onKeyDown}>
       <div className={s.head}>
         <Text size="xs" tone="quiet" strong>
-          {kind === "playbook" ? "Playbook change" : kind === "command" ? "Command" : "Permission"}
+          {gated === undefined ? "Permission" : "Command"}
         </Text>
-        {kind === "playbook" ? (
-          <Text size="xs" tone="warning" strong>
-            Relaxes a gate
-          </Text>
-        ) : null}
         {gated === undefined ? null : (
           <Text size="xs" tone={gated.class === "credential" ? "warning" : "danger"} strong>
             {classWords(gated.class)}
@@ -393,50 +385,33 @@ function ApprovalItem({ item, read }: { item: CommandApprovalItem; read: number 
         )}
       </div>
       <Text as="p" strong className={cx(s.title)}>
-        {playbook !== undefined
-          ? playbook.summary
-          : gated !== undefined
+        {gated !== undefined
           ? prose(gated.reason)
           : permission !== undefined
             ? `An agent wants to use ${permission.toolName}`
             : "An agent needs your OK"}
       </Text>
-      {playbook === undefined ? null : (
-        <div className={s.detail}>
-          <div className={s.flush}>
-            <Button variant="quiet" aria-expanded={showDiff} onClick={() => setShowDiff((v) => !v)}>
-              {showDiff ? "Hide the change" : "Show the change"}
-            </Button>
-          </div>
-          {showDiff ? <Code code={playbook.diff} lang="diff" bare /> : null}
-          <Text size="xs" tone="quiet">
-            This loosens a gate for every project. It applies only if you approve.
-          </Text>
-        </div>
-      )}
-      {playbook !== undefined ? null : (
-        <div className={s.detail}>
-          {gated !== undefined ? <Code code={shellLine(gated.argv)} lang="sh" bare /> : null}
-          {gated === undefined && permission !== undefined ? <Code code={permission.summary} bare /> : null}
-          <Text size="xs" tone="quiet">
-            on {machine}
-            {gated?.cwd === undefined ? null : (
-              <>
-                {" "}
-                in <InlineCode>{gated.cwd}</InlineCode>
-              </>
-            )}
-            {gated === undefined ? null : ` · stops after ${String(Math.ceil(gated.timeoutSec / 60))} min`}
-          </Text>
-          {gated === undefined
-            ? null
-            : secretEnvLines(gated).map((line) => (
-                <Text key={line} size="xs" tone="quiet">
-                  {prose(line)}
-                </Text>
-              ))}
-        </div>
-      )}
+      <div className={s.detail}>
+        {gated !== undefined ? <Code code={shellLine(gated.argv)} lang="sh" bare /> : null}
+        {gated === undefined && permission !== undefined ? <Code code={permission.summary} bare /> : null}
+        <Text size="xs" tone="quiet">
+          on {machine}
+          {gated?.cwd === undefined ? null : (
+            <>
+              {" "}
+              in <InlineCode>{gated.cwd}</InlineCode>
+            </>
+          )}
+          {gated === undefined ? null : ` · stops after ${String(Math.ceil(gated.timeoutSec / 60))} min`}
+        </Text>
+        {gated === undefined
+          ? null
+          : secretEnvLines(gated).map((line) => (
+              <Text key={line} size="xs" tone="quiet">
+                {prose(line)}
+              </Text>
+            ))}
+      </div>
       {/* Why it is open again (approved while the node was offline) or why it failed. */}
       {item.note === undefined || item.note.trim() === "" ? null : (
         <p className={s.outcome}>

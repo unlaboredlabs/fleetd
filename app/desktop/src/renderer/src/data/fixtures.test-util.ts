@@ -42,7 +42,7 @@ export const card = (workstreamId: string, patch: Partial<OrderCard> = {}): Orde
   workstreamId,
   projectRef: project,
   title: `Order ${workstreamId}`,
-  state: "running",
+  state: "open",
   phase: "working",
   needsYou: 0,
   settled: 0,

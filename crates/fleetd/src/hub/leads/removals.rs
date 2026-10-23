@@ -45,9 +45,8 @@ impl ProjectRemovals {
         }
         let open = self.records.workstreams_list(&WorkstreamFilter {
             project_ref: Some(r.clone()),
-            open: true,
+            state: Some(WorkstreamState::Open),
             limit: SCAN_LIMIT,
-            ..Default::default()
         })?;
         for w in open {
             let Some(mut stored) = self.records.workstream_get(&w.workstream_id)? else {
@@ -86,7 +85,7 @@ impl ProjectRemovals {
             }
         }
         for w in self.records.workstreams_list(&WorkstreamFilter {
-            open: true,
+            state: Some(WorkstreamState::Open),
             limit: SCAN_LIMIT,
             ..Default::default()
         })? {

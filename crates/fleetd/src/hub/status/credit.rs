@@ -325,7 +325,7 @@ impl Data {
         for row in c
             .prepare_cached(
                 "SELECT machine_id, project_id, data FROM workstreams
-                 WHERE state IN ('running', 'converging', 'verifying', 'idle')
+                 WHERE state = 'open'
                     OR (state = 'done' AND json_extract(data, '$.updatedAt') >= ?)",
             )?
             .query_map([&since_iso], |r| {

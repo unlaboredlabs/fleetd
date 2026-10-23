@@ -150,14 +150,7 @@ pub fn request_outcome(r: &HumanRequest) -> (String, String) {
             )
         ),
         (_, _, Some(p)) => format!("tool prompt {} {}", p.tool_name, clip(&p.summary, 120)),
-        _ => match &r.playbook {
-            Some(c) => format!(
-                "playbook change ({} playbook: {})",
-                c.playbook,
-                clip(&c.summary, 160)
-            ),
-            None => "request".into(),
-        },
+        _ => "request".into(),
     };
     let evidence = r.evidence.as_ref().map_or("", |e| e.as_str());
     let outcome = match r.state {

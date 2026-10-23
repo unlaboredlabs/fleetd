@@ -767,7 +767,7 @@ impl Plans {
     }
 
     /// An order ended: at done, its open items with no links are dropped (they closed with it, not separately
-    /// verified); stopped or failed, every open item is dropped. Each writes one marker per milestone.
+    /// verified); stopped, every open item is dropped. Each writes one marker per milestone.
     pub fn close_order(&self, ws: &str, state: WorkstreamState) -> bool {
         let now = self.now();
         let mut pending = Pending::default();
@@ -777,8 +777,8 @@ impl Plans {
             for mut item in items.into_iter().filter(|i| i.state == PlanItemState::Open) {
                 let drop = match state {
                     WorkstreamState::Done => !item.has_work_links(),
-                    WorkstreamState::Stopped | WorkstreamState::Failed => true,
-                    _ => false,
+                    WorkstreamState::Stopped => true,
+                    WorkstreamState::Open => false,
                 };
                 if !drop {
                     continue;
@@ -794,14 +794,7 @@ impl Plans {
                 item.state = PlanItemState::Dropped;
                 item.data.drop_reason = Some(match state {
                     WorkstreamState::Done => format!("closed with {ws}, not separately verified"),
-                    _ => format!(
-                        "{ws} {}",
-                        if state == WorkstreamState::Stopped {
-                            "stopped"
-                        } else {
-                            "failed"
-                        }
-                    ),
+                    _ => format!("{ws} stopped"),
                 });
                 store::item_set(c, &item)?;
             }
@@ -813,8 +806,7 @@ impl Plans {
                         "−{n} item{}: closed with {ws}, not separately verified",
                         if n == 1 { "" } else { "s" }
                     ),
-                    WorkstreamState::Stopped => format!("−{n}: {ws} stopped"),
-                    _ => format!("−{n}: {ws} failed"),
+                    _ => format!("−{n}: {ws} stopped"),
                 };
                 let row = ChangeRow {
                     n: 0,

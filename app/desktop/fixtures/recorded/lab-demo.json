@@ -7545,7 +7545,7 @@
        }
       ],
       "settled": 7,
-      "state": "running",
+      "state": "open",
       "title": "Add three short pages under lab/20261019090134/: alpha.md…",
       "total": 12,
       "updatedAt": "2026-10-19T09:02:17.552Z",
@@ -7808,7 +7808,7 @@
         }
        ],
        "settled": 7,
-       "state": "running",
+       "state": "open",
        "title": "Add three short pages under lab/20261019090134/: alpha.md…",
        "total": 12,
        "updatedAt": "2026-10-19T09:02:17.552Z",
@@ -8059,7 +8059,7 @@
         }
        ],
        "settled": 7,
-       "state": "running",
+       "state": "open",
        "title": "Add three short pages under lab/20261019090134/: alpha.md…",
        "total": 12,
        "updatedAt": "2026-10-19T09:02:17.552Z",

@@ -30,7 +30,7 @@ describe("connection", () => {
   });
 
   it("ignores an event it already applied", () => {
-    const s = run([live(), snapshot(10), event(9, "workstream.state", { workstreamId: "W1", state: "failed" })]);
+    const s = run([live(), snapshot(10), event(9, "workstream.state", { workstreamId: "W1", state: "stopped" })]);
     expect(s.cursor).toBe(10);
     expect(s.events).toHaveLength(0);
   });
@@ -71,8 +71,8 @@ describe("a project's work", () => {
 describe("events patch what they change", () => {
   it("moves an order's state", () => {
     let s = withBoard(run([live(), snapshot(1)]), [card("W1"), card("W2")]);
-    s = run([event(2, "workstream.state", { workstreamId: "W2", state: "failed" })], s);
-    expect(s.orders?.["W2"]?.state).toBe("failed");
+    s = run([event(2, "workstream.state", { workstreamId: "W2", state: "stopped" })], s);
+    expect(s.orders?.["W2"]?.state).toBe("stopped");
     expect(s.orderEvents["W2"]).toHaveLength(1);
   });
 

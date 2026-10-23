@@ -117,7 +117,6 @@ impl Area {
                 limit: if r.is_some() { limit + 1 } else { 1000 },
                 project_ref: r,
                 state: input.state,
-                open: false,
             })
             .map_err(refusal)?
             .into_iter()

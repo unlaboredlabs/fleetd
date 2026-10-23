@@ -113,7 +113,7 @@ pub async fn stop(
     let id = stored.workstream_id.clone();
     match stored.state {
         WorkstreamState::Stopped => return Ok(0),
-        WorkstreamState::Done | WorkstreamState::Failed => {
+        WorkstreamState::Done => {
             return Err(ToolError::new(
                 ErrorCode::Invalid,
                 format!(
@@ -122,7 +122,7 @@ pub async fn stop(
                 ),
             ));
         }
-        _ => {}
+        WorkstreamState::Open => {}
     }
     let by = caller.key_id.to_string();
     let why = reason.unwrap_or("stopped by the human");

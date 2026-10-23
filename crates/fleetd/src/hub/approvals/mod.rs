@@ -275,7 +275,6 @@ pub fn chat_item(r: &HumanRequest) -> ChatItem {
             machine_id: r.project_ref.machine_id.clone(),
             gated: r.gated.clone(),
             permission: r.permission.clone(),
-            playbook: r.playbook.clone().map(Box::new),
             state: match r.state {
                 RequestState::Approved => CommandApprovalState::Approved,
                 RequestState::Denied => CommandApprovalState::Denied,

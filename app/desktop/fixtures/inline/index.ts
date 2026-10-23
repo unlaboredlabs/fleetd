@@ -65,13 +65,13 @@ const inlineItems = (base: Fixture, name = "inline-items", note = "A project's c
       state: item["state"] ?? "open",
       text: text(
         item["text"],
-        text((item["gated"] as JsonObject | undefined)?.["reason"], text((item["permission"] as JsonObject | undefined)?.["summary"], text((item["playbook"] as JsonObject | undefined)?.["summary"], "A tool prompt"))),
+        text((item["gated"] as JsonObject | undefined)?.["reason"], text((item["permission"] as JsonObject | undefined)?.["summary"], "A tool prompt")),
       ),
       createdAt: at(i + 2),
       ...opt("evidence", item["note"]),
       ...(secret
         ? { secret: { key: item["name"] ?? "", sink: item["sink"] ?? "", ...opt("envName", item["envName"]), ...opt("fingerprint", item["fingerprint"]) } }
-        : { ...opt("gated", item["gated"]), ...opt("permission", item["permission"]), ...opt("playbook", item["playbook"]), ...opt("exitCode", item["exitCode"]), ...opt("outputTail", item["outputTail"]) }),
+        : { ...opt("gated", item["gated"]), ...opt("permission", item["permission"]), ...opt("exitCode", item["exitCode"]), ...opt("outputTail", item["outputTail"]) }),
       ...opt("answeredAt", item["answeredAt"]),
       ...opt("finishedAt", item["finishedAt"]),
     };

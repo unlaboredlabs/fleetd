@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import data from "../../../../fixtures/inline/items.json";
 import type { ChatItem, CommandApprovalItem, HumanRequest, Machine, SecretRequestItem } from "../../../shared/contracts";
-import { approvalKind, approvalOffline, approvalOutcome, approvalTitle, failureLine, needsConfirm, OFFLINE_LINE, secretEnvLines, secretOutcome, secretTarget, secretTitle, shellLine, withRequest } from "./request";
+import { approvalOffline, approvalOutcome, approvalTitle, failureLine, needsConfirm, OFFLINE_LINE, secretEnvLines, secretOutcome, secretTarget, secretTitle, shellLine, withRequest } from "./request";
 
 const items = data.items as unknown as ChatItem[];
 const secret = (id: string): SecretRequestItem => {
@@ -76,11 +76,6 @@ describe("a command approval", () => {
     expect(secretEnvLines(gated("Q5"))).toEqual([]);
   });
 
-  it("tells a command, a tool prompt and a playbook gate change apart", () => {
-    expect(["Q4", "Q8", "Q10"].map((id) => approvalKind(approval(id)))).toEqual(["command", "permission", "playbook"]);
-    expect(approvalOutcome(approval("Q10"))).toBeUndefined();
-  });
-
   it("offline, an open one says why it can't be answered; an answered one says nothing more", () => {
     expect(approvalOffline("open", false)).toBe("Offline: approve once the hub is back.");
     expect(approvalOffline("open", true)).toBeUndefined();
@@ -114,7 +109,6 @@ describe("a command approval", () => {
   it("folds to what it was about, as plain text", () => {
     expect(approvalTitle(approval("Q4"))).toBe("Run the database migration on the staging box: it adds the share_snapshots table");
     expect(approvalTitle(approval("Q8"))).toBe("An agent wanted to use Bash");
-    expect(approvalTitle(approval("Q10"))).toBe("Features, medium-size work: reviewers 1 → 0");
   });
 });
 

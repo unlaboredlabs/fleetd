@@ -680,8 +680,6 @@ export type CommandApprovalItem = {
   outputTail?: string;
   /** A session's permission prompt: the tool and what it would do. */
   permission?: ToolPermission;
-  /** A retro playbook change (an older approval only): what changes, in plain words, and the exact diff. */
-  playbook?: PlaybookGateChange;
   requestId: ChatRequestId;
   state: CommandApprovalState;
 };
@@ -1145,8 +1143,6 @@ export type HumanRequest = {
   outputTail?: string;
   /** approval of a session's tool prompt, instead of a gated run. */
   permission?: ToolPermission;
-  /** approval of a retro playbook change (an older approval only), instead of a gated run or a tool prompt. */
-  playbook?: PlaybookGateChange;
   projectRef: ProjectRef;
   requestId: ChatRequestId;
   /** secret only. */
@@ -1527,14 +1523,12 @@ export type OrderGetOutput = {
 
 /** An order's phase: the first match in this order wins, and the board sorts by it. */
 export type OrderPhase =
-  | "failed"
   | "stopped"
   | "done"
   | "waiting_on_you"
   | "working"
   | "reviewing"
   | "merging"
-  | "verifying"
   | "queued"
   | "planning"
   | "idle";
@@ -1688,23 +1682,6 @@ export type PlanVerifiedData = {
   itemId: PlanItemId;
   milestoneId: MilestoneId;
   workstreamId?: WorkstreamId;
-};
-
-/**
- * A retro playbook change that relaxes a gate (fewer reviewers, a weaker or removed check, a looser rule). The retro is
- * gone: only an older approval carries one, and the app still shows it.
- */
-export type PlaybookGateChange = {
-  /** The exact unified diff that applies on approve. */
-  diff: string;
-  playbook: string;
-  /** The retro proposal, R<n>. */
-  proposalId: string;
-  /**
-   * The change in plain words, rendered by the hub for the person: "Bugfixes, medium-size work: reviewers 1 → 0".
-   * The app shows it as the item's label; `diff` only behind expand or copy.
-   */
-  summary: string;
 };
 
 /** Who wrote the PR: fleetd's agent when one did, and the GitHub account it was opened from. */
@@ -3547,7 +3524,7 @@ export type WorkstreamSource = {
   text: string;
 };
 
-export type WorkstreamState = "draft" | "running" | "converging" | "done" | "stopped" | "failed" | "verifying";
+export type WorkstreamState = "done" | "stopped" | "open";
 
 /** Every tool the app can `call`: its input and its output. */
 export interface ToolMap {

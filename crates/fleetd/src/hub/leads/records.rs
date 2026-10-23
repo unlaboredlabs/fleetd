@@ -22,14 +22,8 @@ pub struct StoredLead {
     pub session_generation: i64,
 }
 
-pub const CLOSED_STATES: [WorkstreamState; 3] = [
-    WorkstreamState::Done,
-    WorkstreamState::Stopped,
-    WorkstreamState::Failed,
-];
-
 pub fn is_closed(state: WorkstreamState) -> bool {
-    CLOSED_STATES.contains(&state)
+    state != WorkstreamState::Open
 }
 
 pub struct NewWorkstream {
@@ -46,8 +40,6 @@ pub struct NewWorkstream {
 pub struct WorkstreamFilter {
     pub project_ref: Option<ProjectRef>,
     pub state: Option<WorkstreamState>,
-    /// Keeps states other than done, stopped and failed.
-    pub open: bool,
     pub limit: usize,
 }
 
@@ -161,7 +153,7 @@ impl LeadRecords {
         })
     }
 
-    /// Creates a draft. A repeated `client_request_id` in the same project returns the first one with `created: false`.
+    /// Creates a draft: open, with no brief. A repeated `client_request_id` in the same project returns the first one with `created: false`.
     pub fn workstream_create(
         &self,
         input: NewWorkstream,
@@ -181,7 +173,7 @@ impl LeadRecords {
                 }
             }
             let n: i64 = c.query_row(
-                "INSERT INTO workstreams (machine_id, project_id, client_request_id, state, data) VALUES (?, ?, ?, 'draft', '') RETURNING n",
+                "INSERT INTO workstreams (machine_id, project_id, client_request_id, state, data) VALUES (?, ?, ?, 'open', '') RETURNING n",
                 params![r.machine_id.as_str(), r.project_id.as_str(), input.client_request_id],
                 |row| row.get(0),
             )?;
@@ -195,7 +187,7 @@ impl LeadRecords {
                     by: input.by.clone(),
                     at: input.at.clone(),
                 },
-                "state": "draft",
+                "state": "open",
                 "createdAt": input.at,
                 "updatedAt": input.at,
             }))?;
@@ -231,13 +223,11 @@ impl LeadRecords {
         &self,
         filter: &WorkstreamFilter,
     ) -> Result<Vec<Workstream>, StoreError> {
-        let closed = serde_json::to_string(&CLOSED_STATES.map(state_str))?;
         let rows: Vec<String> = self.db.with(|c| {
             let mut stmt = c.prepare(
                 "SELECT data FROM workstreams
                  WHERE ($machine IS NULL OR machine_id = $machine) AND ($project IS NULL OR project_id = $project)
                    AND ($state IS NULL OR state = $state)
-                   AND ($open = 0 OR state NOT IN (SELECT value FROM json_each($closed)))
                  ORDER BY n DESC LIMIT $limit",
             )?;
             let rows = stmt
@@ -246,8 +236,6 @@ impl LeadRecords {
                         "$machine": filter.project_ref.as_ref().map(|r| r.machine_id.as_str()),
                         "$project": filter.project_ref.as_ref().map(|r| r.project_id.as_str()),
                         "$state": filter.state.map(state_str),
-                        "$open": i64::from(filter.open),
-                        "$closed": closed,
                         "$limit": filter.limit as i64,
                     },
                     |row| row.get(0),
@@ -273,9 +261,8 @@ impl LeadRecords {
     pub fn open_in(&self, project_ref: &ProjectRef, limit: usize) -> Vec<WorkstreamId> {
         self.workstreams_list(&WorkstreamFilter {
             project_ref: Some(project_ref.clone()),
-            open: true,
+            state: Some(WorkstreamState::Open),
             limit,
-            ..Default::default()
         })
         .map(|ws| ws.into_iter().map(|w| w.workstream_id).collect())
         .unwrap_or_default()

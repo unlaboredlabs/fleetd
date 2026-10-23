@@ -90,14 +90,17 @@ pub struct Brief {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum WorkstreamState {
-    Draft,
-    Running,
-    Converging,
-    /// Never set now that a lead closes its work; old records were moved back to running.
-    Verifying,
+    /// A draft (no brief yet) or running: which one is the brief's to say. Older records read back as open.
+    #[serde(
+        alias = "draft",
+        alias = "running",
+        alias = "converging",
+        alias = "verifying"
+    )]
+    Open,
     Done,
+    #[serde(alias = "failed")]
     Stopped,
-    Failed,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -289,21 +292,6 @@ brand!(
     pattern = r"^/"
 );
 
-/// A retro playbook change that relaxes a gate (fewer reviewers, a weaker or removed check, a looser rule). The retro is
-/// gone: only an older approval carries one, and the app still shows it.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct PlaybookGateChange {
-    /// The retro proposal, R<n>.
-    pub proposal_id: Line<1, 20>,
-    pub playbook: Line<1, 40>,
-    /// The change in plain words, rendered by the hub for the person: "Bugfixes, medium-size work: reviewers 1 → 0".
-    /// The app shows it as the item's label; `diff` only behind expand or copy.
-    pub summary: Text<1, 500>,
-    /// The exact unified diff that applies on approve.
-    pub diff: Text<1, 8000>,
-}
-
 /// Stored with the approval and never changed: the human approves exactly these bytes.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -406,8 +394,6 @@ pub struct HumanRequest {
     pub gated: Option<GatedRunSpec>,
     /// approval of a session's tool prompt, instead of a gated run.
     pub permission: Option<ToolPermission>,
-    /// approval of a retro playbook change (an older approval only), instead of a gated run or a tool prompt.
-    pub playbook: Option<PlaybookGateChange>,
     /// What happened, in one line: "fingerprint ab12cd34", "exit 0 on devbox, approved by human:desk", or why it did
     /// not run (and so is open again).
     pub evidence: Option<Text<0, 2000>>,
@@ -424,16 +410,11 @@ pub struct HumanRequest {
 }
 checked!(HumanRequest, |r| request_kind_rule(r));
 
-/// Each kind carries its own fields only: a secret its `secret`; an approval exactly one of `gated`, `permission` and
-/// `playbook`.
+/// Each kind carries its own fields only: a secret its `secret`; an approval exactly one of `gated` and `permission`.
 pub fn request_kind_rule(r: &HumanRequest) -> Result<(), String> {
     match r.kind {
         RequestKind::Secret => {
-            if r.secret.is_none()
-                || r.gated.is_some()
-                || r.permission.is_some()
-                || r.playbook.is_some()
-            {
+            if r.secret.is_none() || r.gated.is_some() || r.permission.is_some() {
                 return Err("a secret request has a secret and nothing else".into());
             }
             if let Some(secret) = &r.secret
@@ -444,13 +425,8 @@ pub fn request_kind_rule(r: &HumanRequest) -> Result<(), String> {
             }
         }
         RequestKind::Approval => {
-            let subjects = [
-                r.gated.is_some(),
-                r.permission.is_some(),
-                r.playbook.is_some(),
-            ];
-            if r.secret.is_some() || subjects.iter().filter(|s| **s).count() != 1 {
-                return Err("an approval has exactly one of a gated run, a tool prompt or a playbook change".into());
+            if r.secret.is_some() || r.gated.is_some() == r.permission.is_some() {
+                return Err("an approval has exactly one of a gated run and a tool prompt".into());
             }
         }
     }

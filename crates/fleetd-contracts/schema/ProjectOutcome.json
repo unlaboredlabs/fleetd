@@ -737,18 +737,14 @@
       "oneOf": [
         {
           "enum": [
-            "draft",
-            "running",
-            "converging",
             "done",
-            "stopped",
-            "failed"
+            "stopped"
           ],
           "type": "string"
         },
         {
-          "const": "verifying",
-          "description": "Never set now that a lead closes its work; old records were moved back to running.",
+          "const": "open",
+          "description": "A draft (no brief yet) or running: which one is the brief's to say. Older records read back as open.",
           "type": "string"
         }
       ]

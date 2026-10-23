@@ -530,7 +530,7 @@ mod tests {
             )?;
             c.execute(
                 "INSERT INTO workstreams (n, machine_id, project_id, state, data)
-                 VALUES (1, 'devbox', 'p1', 'running', '{\"title\":\"Accounts\"}')",
+                 VALUES (1, 'devbox', 'p1', 'open', '{\"title\":\"Accounts\"}')",
                 [],
             )?;
             let merged = |at: i64, n: i64| {

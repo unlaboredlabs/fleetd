@@ -92,8 +92,6 @@ const THREAD_EVENTS: [HubEventType; 9] = [
     HubEventType::PrMerged,
 ];
 
-const CLOSED_STATES: [&str; 3] = ["done", "stopped", "failed"];
-
 fn same_project(a: &ProjectRef, b: &ProjectRef) -> bool {
     a.machine_id == b.machine_id && a.project_id == b.project_id
 }
@@ -938,8 +936,8 @@ impl Tasks {
                 ));
             }
         };
-        let ws_state = state_name(&ws.state);
-        if CLOSED_STATES.contains(&ws_state.as_str()) {
+        if ws.state != fleetd_contracts::ledger::WorkstreamState::Open {
+            let ws_state = state_name(&ws.state);
             return Err(lead_error(
                 ErrorCode::Invalid,
                 format!(
