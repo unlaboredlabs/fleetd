@@ -278,6 +278,14 @@ pub struct Tail {
     pub truncated: bool,
 }
 
+/// One page of an agent's steps: `(id, row)` newest first.
+pub struct Work {
+    pub rows: Vec<(String, TailRow)>,
+    /// Older steps remain in the view.
+    pub more: bool,
+    pub running: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Ready {
     Pending,
@@ -1552,6 +1560,50 @@ impl Executors {
             items,
             thread,
             truncated,
+        })
+    }
+
+    /// A page of the session's steps for the agents view, newest first: those strictly older than `before`
+    /// (`(at, id)`), at most `limit`, with whether older ones remain. Read from the followed view (the node's newest
+    /// window plus live events), with cut outputs of the page's actions filled in.
+    pub async fn work(
+        self: &Arc<Self>,
+        r: &ThreadRef,
+        before: Option<(&str, &str)>,
+        limit: usize,
+    ) -> Result<Work, ExecutorError> {
+        let summary = self.summary_of(r)?;
+        let w = self.view(r).await?;
+        let (rows, more) = {
+            let state = w.state.lock().unwrap();
+            thread_view::work_page(&state.view, before, limit)
+        };
+        let ids: Vec<String> = rows
+            .iter()
+            .filter(|(_, row)| matches!(row, TailRow::Action { .. }))
+            .map(|(id, _)| id.clone())
+            .collect();
+        self.fill_outputs(r, &w, &ids).await?;
+        let state = w.state.lock().unwrap();
+        let rows = rows
+            .into_iter()
+            .map(|(id, row)| match row {
+                TailRow::Action { at, action } => {
+                    let action = state
+                        .view
+                        .items
+                        .get(&id)
+                        .and_then(thread_view::to_action)
+                        .unwrap_or(action);
+                    (id, TailRow::Action { at, action })
+                }
+                message => (id, message),
+            })
+            .collect();
+        Ok(Work {
+            rows,
+            more,
+            running: summary.status == "running",
         })
     }
 

@@ -4,6 +4,7 @@
 
 pub mod prim;
 
+pub mod agents;
 pub mod app;
 pub mod auth;
 pub mod chat;
@@ -23,6 +24,7 @@ pub mod plan;
 pub mod playbooks;
 pub mod projects;
 pub mod prompts;
+pub mod prs;
 pub mod retro;
 pub mod schema;
 pub mod secrets;

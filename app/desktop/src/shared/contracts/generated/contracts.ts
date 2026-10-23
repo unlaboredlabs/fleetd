@@ -115,6 +115,49 @@ export type AgentLane = {
 
 export type AgentRole = "lead" | "implementer" | "reader" | "reviewer" | "verifier" | "qa";
 
+/** One agent: a task, or a project's lead, with its project. */
+export type AgentRow = {
+  branch?: string;
+  effort?: Effort;
+  endedAt?: Timestamp;
+  laneId: string;
+  /** Live values at snapshot time. */
+  live?: LiveLane;
+  model?: string;
+  pr?: PrRef;
+  projectRef: ProjectRef;
+  projectTitle: string;
+  /** Counted from the thread's items when it ended. */
+  receipts?: Receipts;
+  role: AgentRole;
+  startedAt?: Timestamp;
+  status: LaneStatus;
+  /** Queued, parked or failed: why, e.g. "slots: 40/40 in use", "usage limit: resumes 14:05". */
+  statusReason?: string;
+  taskId?: TaskId;
+  threadRef?: ThreadRef;
+  title: string;
+  /** The work it belongs to; `live { focus }` with it streams this agent's text too. Absent for a lead. */
+  workstreamId?: WorkstreamId;
+};
+
+export type AgentWorkInput = {
+  before?: string;
+  limit?: number;
+  machineId: MachineId;
+  threadId: ThreadId;
+};
+
+export type AgentWorkOutput = {
+  /** Pass back as `before` for the page before this one; absent when there is nothing older. */
+  before?: string;
+  next?: string;
+  /** A run of it is active now. */
+  running: boolean;
+  steps: WorkStep[];
+  truncated?: boolean;
+};
+
 /**
  * `agents.cap` data: a project's max agents or the fleet cap changed. The event's summary is the one quiet line its
  * chat shows.
@@ -131,6 +174,18 @@ export type AgentsCapData = {
   to: number;
 };
 
+export type AgentsListInput = {
+  endedSince?: Timestamp;
+  projectRef?: ProjectRef;
+};
+
+export type AgentsListOutput = {
+  agents: AgentRow[];
+  at: Timestamp;
+  next?: string;
+  truncated?: boolean;
+};
+
 export type AppClientMessage = {
   key: string;
   t: "auth";
@@ -145,6 +200,7 @@ export type AppClientMessage = {
   t: "call";
   tool: string;
 } | {
+  agent?: string;
   board: boolean;
   focus?: WorkstreamId;
   t: "live";
@@ -584,6 +640,18 @@ export type Checkout = {
   projectId?: ProjectId;
 };
 
+/** The checks on the PR's head, rolled up: any failed is `failing`, else any running is `pending`. */
+export type KnownChecksState = "pending" | "passing" | "failing" | "none";
+/** KnownChecksState, or a value from a newer hub. */
+export type ChecksState = KnownChecksState | (string & {});
+
+export type ChecksSummary = {
+  failed: number;
+  passed: number;
+  pending: number;
+  state: ChecksState;
+};
+
 export type CiCheckStat = {
   /** Time this check added on critical paths past the second-latest check. */
   criticalExcessMs: number;
@@ -837,6 +905,23 @@ export type Decrease = "decrease";
 /** How a delivered steer was taken in. */
 export type DeliveredHow = "turn" | "boundary" | "stopped" | "joined";
 
+/** One line of a file's diff. Secrets are replaced by `[secret]`. */
+export type DiffLine = {
+  /** The line was longer than `PR_DIFF_LINE_MAX` and is cut. */
+  cut?: boolean;
+  kind: DiffLineKind;
+  /** Line number in the new file (context and added lines; a hunk's start). */
+  new?: number;
+  /** Line number in the old file (context and deleted lines; a hunk's start). */
+  old?: number;
+  /** Without the leading "+", "-" or " ". */
+  text: string;
+};
+
+export type KnownDiffLineKind = "context" | "add" | "del" | "hunk";
+/** KnownDiffLineKind, or a value from a newer hub. */
+export type DiffLineKind = KnownDiffLineKind | (string & {});
+
 export type DigestGetInput = { [key: string]: unknown };
 
 export type DigestGetOutput = {
@@ -913,7 +998,7 @@ export type DoneRow = {
 
 export type DriftKind = "outside_fleetd" | "missed_webhook";
 
-export type KnownDropReason = "scope_change" | "review_failed" | "ci_failed" | "reopened";
+export type KnownDropReason = "scope_change" | "review_failed" | "ci_failed" | "reopened" | "work_stopped";
 /** KnownDropReason, or a value from a newer hub. */
 export type DropReason = KnownDropReason | (string & {});
 
@@ -2149,6 +2234,33 @@ export type PlaybookName = "bugfix" | "feature" | "research" | "finish-all";
 /** <playbook name>@<full lowercase hex git blob SHA> */
 export type PlaybookRef = string;
 
+/** Who wrote the PR: fleetd's agent when one did, and the GitHub account it was opened from. */
+export type PrAuthor = {
+  effort?: Effort;
+  /** The writing agent's lane in the agents view. */
+  laneId?: string;
+  /** GitHub login; absent when GitHub wasn't reached. */
+  login?: string;
+  model?: string;
+  role?: AgentRole;
+  taskId?: TaskId;
+  /** Its session, for `agent_work`. */
+  threadRef?: ThreadRef;
+  /** The agent's task title. */
+  title?: string;
+};
+
+/** One check run or commit status on the head. fleetd's own merge statuses are left out: `queue` says the same. */
+export type PrCheck = {
+  completedAt?: Timestamp;
+  /** GitHub's conclusion as given, lowercased ("success", "failure", "skipped", "timed_out"…). */
+  conclusion?: string;
+  name: string;
+  startedAt?: Timestamp;
+  state: ChecksState;
+  url?: string;
+};
+
 /** One PR on a train strip. */
 export type PrChip = {
   changeId: ChangeId;
@@ -2158,6 +2270,130 @@ export type PrChip = {
   state: ChangeState;
   url: GitHubPrUrl;
   workstreamId: WorkstreamId;
+};
+
+export type PrDiffInput = {
+  limit?: number;
+  number: number;
+  offset?: number;
+  path: string;
+  repo: GitHubRepo;
+};
+
+export type PrDiffOutput = {
+  headSha?: CommitSha;
+  lines: DiffLine[];
+  next?: string;
+  /** Pass back as `offset` for the next page; absent on the last. */
+  nextOffset?: number;
+  /** GitHub shows no diff for this file (binary, or too large). */
+  noDiff?: boolean;
+  /** Lines in the file's diff. */
+  total: number;
+  truncated?: boolean;
+};
+
+/** One changed file. */
+export type PrFile = {
+  additions: number;
+  deletions: number;
+  /** Lines `pr_diff` pages through; absent when GitHub shows no diff for it (binary, or too large). */
+  diffLines?: number;
+  /** Repo-relative; the new path of a rename. */
+  path: string;
+  /** A rename's old path. */
+  previousPath?: string;
+  status: PrFileStatus;
+};
+
+export type KnownPrFileStatus = "added" | "modified" | "removed" | "renamed" | "copied" | "changed" | "unchanged";
+/** KnownPrFileStatus, or a value from a newer hub. */
+export type PrFileStatus = KnownPrFileStatus | (string & {});
+
+export type PrFilesInput = {
+  number: number;
+  offset?: number;
+  repo: GitHubRepo;
+};
+
+export type PrFilesOutput = {
+  files: PrFile[];
+  /** The head these files are of. */
+  headSha?: CommitSha;
+  next?: string;
+  /** Pass back as `offset` for the next page; absent on the last. */
+  nextOffset?: number;
+  /** Changed files in the PR. */
+  total: number;
+  truncated?: boolean;
+};
+
+export type PrGetInput = {
+  number: number;
+  repo: GitHubRepo;
+};
+
+export type PrGetOutput = {
+  additions?: number;
+  baseBranch?: string;
+  /** The PR's description, at most 8000 characters. Secrets are replaced by `[secret]`. */
+  body: string;
+  changedFiles?: number;
+  checks: PrCheck[];
+  deletions?: number;
+  githubError?: string;
+  headSha?: CommitSha;
+  /** Its moves through the merge queue, newest first. */
+  history: PrQueueStep[];
+  links: PrLinks;
+  next?: string;
+  pr: PrRow;
+  /** Newest first: agent verdicts and people's reviews. */
+  reviews: PrReviewEntry[];
+  truncated?: boolean;
+};
+
+export type PrLinks = {
+  checks: string;
+  files: string;
+  /** The squash commit on the base, once merged. */
+  mergeCommit?: string;
+  pr: GitHubPrUrl;
+};
+
+export type PrListInput = {
+  closedSince?: Timestamp;
+  projectRef: ProjectRef;
+};
+
+export type PrListOutput = {
+  at: Timestamp;
+  /** GitHub couldn't be reached: the list holds only the PRs fleetd records, without checks. Why, and what to do. */
+  githubError?: string;
+  next?: string;
+  prs: PrRow[];
+  truncated?: boolean;
+};
+
+/** Where the PR stands in fleetd's merge queue. Absent from a PR fleetd doesn't land. */
+export type PrQueue = {
+  changeId: ChangeId;
+  /** PRs waiting in the same queue. */
+  length: number;
+  /** Merging is paused for the repository. */
+  paused: boolean;
+  /** 0-based place in the queue; absent when not waiting in it. */
+  position?: number;
+  /** Why it is held or was sent back: a conflict, failing check names, or the refusal's fix. */
+  reason?: string;
+  state: ChangeState;
+};
+
+/** One move of the PR through the merge queue. */
+export type PrQueueStep = {
+  at: Timestamp;
+  from: ChangeState;
+  to: ChangeState;
 };
 
 /** One PR of an order. */
@@ -2176,6 +2412,50 @@ export type PrRef = {
   taskId?: TaskId;
   url: GitHubPrUrl;
 };
+
+/** One review: an agent's verdict with its findings, or a person's review on GitHub. */
+export type PrReviewEntry = {
+  /** The reviewing agent (reviewer, verifier or QA); absent for a person's review. */
+  agent?: PrAuthor;
+  at: Timestamp;
+  /** Findings that must be fixed before merging; agent reviews only. */
+  blocking?: number;
+  /** It reviewed the PR's current change (an agent review stays current across a rebase that changes nothing). */
+  current: boolean;
+  /** GitHub login of a person's review. */
+  login?: string;
+  nonBlocking?: number;
+  /** The agent's findings, or the person's review text. Secrets are replaced by `[secret]`. */
+  text: string;
+  verdict: ReviewVerdictKind;
+};
+
+/** One PR as the list shows it. */
+export type PrRow = {
+  author: PrAuthor;
+  /** Its head branch. */
+  branch?: string;
+  /** Absent when GitHub wasn't reached. */
+  checks?: ChecksSummary;
+  createdAt: Timestamp;
+  mergedAt?: Timestamp;
+  number: number;
+  queue?: PrQueue;
+  repo: GitHubRepo;
+  review: ReviewSummary;
+  state: PrState;
+  /** GitHub's title; the writing agent's task title when GitHub wasn't reached. */
+  title: string;
+  updatedAt: Timestamp;
+  url: GitHubPrUrl;
+  /** The work it belongs to, when fleetd's agents wrote it. */
+  workstreamId?: WorkstreamId;
+};
+
+/** The PR on GitHub. */
+export type KnownPrState = "open" | "draft" | "merged" | "closed";
+/** KnownPrState, or a value from a newer hub. */
+export type PrState = KnownPrState | (string & {});
 
 /** A figure. `pct` counts verified must items by size only; polish shows beside it. */
 export type Progress = {
@@ -2855,6 +3135,23 @@ export type RetroSnapshot = {
 };
 
 export type RetroTrigger = "weekly" | "threshold" | "manual";
+
+/** Its reviews, rolled up. */
+export type KnownReviewState = "approved" | "changes_requested" | "none" | "pending";
+/** KnownReviewState, or a value from a newer hub. */
+export type ReviewState = KnownReviewState | (string & {});
+
+export type ReviewSummary = {
+  /** Clean agent reviews of the current change. */
+  done: number;
+  /** Agent reviews it needs before it can merge; 0 for a PR fleetd doesn't land. */
+  needed: number;
+  state: ReviewState;
+};
+
+export type KnownReviewVerdictKind = "approved" | "changes_requested" | "commented" | "dismissed";
+/** KnownReviewVerdictKind, or a value from a newer hub. */
+export type ReviewVerdictKind = KnownReviewVerdictKind | (string & {});
 
 export type Risk = {
   level: RiskLevel;
@@ -4174,6 +4471,29 @@ export type KnownWeightsBasis = "project" | "fleet" | "default";
 /** KnownWeightsBasis, or a value from a newer hub. */
 export type WeightsBasis = KnownWeightsBasis | (string & {});
 
+/** A command, file edit or tool call. Secrets in its summary and output are replaced by `[secret]`. */
+export type WorkAction = {
+  action: ActionItem;
+  at: Timestamp;
+  id: string;
+};
+
+/** A message the agent or its person wrote. Secrets are replaced by `[secret]`. */
+export type WorkMessage = {
+  at: Timestamp;
+  id: string;
+  role: TailRole;
+  /** The last 2000 characters of a longer message. */
+  text: string;
+};
+
+/** One step of an agent's work. */
+export type WorkStep = WorkMessage & {
+  kind: "message";
+} | WorkAction & {
+  kind: "action";
+};
+
 export type Workstream = {
   /** Absent while draft. */
   brief?: Brief;
@@ -4299,6 +4619,8 @@ export type WorkstreamState = "draft" | "running" | "converging" | "verifying" |
 /** Every tool the app can `call`: its input and its output. */
 export interface ToolMap {
   actions_list: { input: ActionsListInput; output: ActionsListOutput };
+  agent_work: { input: AgentWorkInput; output: AgentWorkOutput };
+  agents_list: { input: AgentsListInput; output: AgentsListOutput };
   approval_answer: { input: ApprovalAnswerInput; output: ApprovalAnswerOutput };
   attachment_get: { input: AttachmentGetInput; output: AttachmentGetOutput };
   attachment_put: { input: AttachmentPutInput; output: AttachmentPutOutput };
@@ -4328,6 +4650,10 @@ export interface ToolMap {
   order_stop: { input: OrderStopInput; output: OrderStopOutput };
   orders_board: { input: OrdersBoardInput; output: OrdersBoardOutput };
   plan_get: { input: PlanGetInput; output: PlanGetOutput };
+  pr_diff: { input: PrDiffInput; output: PrDiffOutput };
+  pr_files: { input: PrFilesInput; output: PrFilesOutput };
+  pr_get: { input: PrGetInput; output: PrGetOutput };
+  pr_list: { input: PrListInput; output: PrListOutput };
   project_add: { input: ProjectAddInput; output: ProjectAddOutput };
   project_discover: { input: ProjectDiscoverInput; output: ProjectDiscoverOutput };
   project_files: { input: ProjectFilesInput; output: ProjectFilesOutput };

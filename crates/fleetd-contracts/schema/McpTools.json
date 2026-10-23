@@ -346,6 +346,180 @@
       ],
       "type": "string"
     },
+    "AgentRow": {
+      "description": "One agent: a task, or a project's lead, with its project.",
+      "properties": {
+        "branch": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "effort": {
+          "$ref": "#/$defs/Effort"
+        },
+        "endedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "laneId": {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        "live": {
+          "$ref": "#/$defs/LiveLane",
+          "description": "Live values at snapshot time."
+        },
+        "model": {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        "pr": {
+          "$ref": "#/$defs/PrRef"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "projectTitle": {
+          "maxLength": 200,
+          "type": "string"
+        },
+        "receipts": {
+          "$ref": "#/$defs/Receipts",
+          "description": "Counted from the thread's items when it ended."
+        },
+        "role": {
+          "$ref": "#/$defs/AgentRole"
+        },
+        "startedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "status": {
+          "$ref": "#/$defs/LaneStatus"
+        },
+        "statusReason": {
+          "description": "Queued, parked or failed: why, e.g. \"slots: 40/40 in use\", \"usage limit: resumes 14:05\".",
+          "maxLength": 160,
+          "type": "string"
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        },
+        "threadRef": {
+          "$ref": "#/$defs/ThreadRef"
+        },
+        "title": {
+          "maxLength": 80,
+          "type": "string"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId",
+          "description": "The work it belongs to; `live { focus }` with it streams this agent's text too. Absent for a lead."
+        }
+      },
+      "required": [
+        "laneId",
+        "role",
+        "title",
+        "status",
+        "projectRef",
+        "projectTitle"
+      ],
+      "type": "object"
+    },
+    "AgentWorkInput": {
+      "properties": {
+        "before": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "limit": {
+          "default": 20,
+          "maximum": 40,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        }
+      },
+      "required": [
+        "machineId",
+        "threadId"
+      ],
+      "type": "object"
+    },
+    "AgentWorkOutput": {
+      "properties": {
+        "before": {
+          "description": "Pass back as `before` for the page before this one; absent when there is nothing older.",
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "next": {
+          "type": "string"
+        },
+        "running": {
+          "description": "A run of it is active now.",
+          "type": "boolean"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/WorkStep"
+          },
+          "maxItems": 40,
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "steps",
+        "running"
+      ],
+      "type": "object"
+    },
+    "AgentsListInput": {
+      "properties": {
+        "endedSince": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "type": "object"
+    },
+    "AgentsListOutput": {
+      "properties": {
+        "agents": {
+          "items": {
+            "$ref": "#/$defs/AgentRow"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "agents",
+        "at"
+      ],
+      "type": "object"
+    },
     "ApprovalAnswerInput": {
       "properties": {
         "decision": {
@@ -1591,6 +1765,54 @@
       ],
       "type": "object"
     },
+    "ChecksState": {
+      "description": "The checks on the PR's head, rolled up: any failed is `failing`, else any running is `pending`.",
+      "oneOf": [
+        {
+          "enum": [
+            "pending",
+            "passing",
+            "failing"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "none",
+          "description": "No checks ran on it.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "ChecksSummary": {
+      "properties": {
+        "failed": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "passed": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pending": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "state": {
+          "$ref": "#/$defs/ChecksState"
+        }
+      },
+      "required": [
+        "state",
+        "passed",
+        "failed",
+        "pending"
+      ],
+      "type": "object"
+    },
     "CiCheckStat": {
       "properties": {
         "criticalExcessMs": {
@@ -2312,6 +2534,58 @@
         }
       ]
     },
+    "DiffLine": {
+      "description": "One line of a file's diff. Secrets are replaced by `[secret]`.",
+      "properties": {
+        "cut": {
+          "description": "The line was longer than `PR_DIFF_LINE_MAX` and is cut.",
+          "type": "boolean"
+        },
+        "kind": {
+          "$ref": "#/$defs/DiffLineKind"
+        },
+        "new": {
+          "description": "Line number in the new file (context and added lines; a hunk's start).",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "old": {
+          "description": "Line number in the old file (context and deleted lines; a hunk's start).",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text": {
+          "description": "Without the leading \"+\", \"-\" or \" \".",
+          "maxLength": 400,
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "text"
+      ],
+      "type": "object"
+    },
+    "DiffLineKind": {
+      "oneOf": [
+        {
+          "enum": [
+            "context",
+            "add",
+            "del"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "hunk",
+          "description": "A hunk header (\"@@ -12,7 +12,9 @@ fn main\"); `text` is its trailing context.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
     "DigestGetInput": {
       "type": "object"
     },
@@ -2543,6 +2817,11 @@
         {
           "const": "reopened",
           "description": "A done item reopened when a later check failed.",
+          "type": "string"
+        },
+        {
+          "const": "work_stopped",
+          "description": "An agent ended with nothing else in flight for its item: the item's in-stage credit is taken back.",
           "type": "string"
         }
       ],
@@ -4959,6 +5238,18 @@
         "actions_list.output": {
           "$ref": "#/$defs/ActionsListOutput"
         },
+        "agent_work.input": {
+          "$ref": "#/$defs/AgentWorkInput"
+        },
+        "agent_work.output": {
+          "$ref": "#/$defs/AgentWorkOutput"
+        },
+        "agents_list.input": {
+          "$ref": "#/$defs/AgentsListInput"
+        },
+        "agents_list.output": {
+          "$ref": "#/$defs/AgentsListOutput"
+        },
         "approval_answer.input": {
           "$ref": "#/$defs/ApprovalAnswerInput"
         },
@@ -5132,6 +5423,30 @@
         },
         "plan_get.output": {
           "$ref": "#/$defs/PlanGetOutput"
+        },
+        "pr_diff.input": {
+          "$ref": "#/$defs/PrDiffInput"
+        },
+        "pr_diff.output": {
+          "$ref": "#/$defs/PrDiffOutput"
+        },
+        "pr_files.input": {
+          "$ref": "#/$defs/PrFilesInput"
+        },
+        "pr_files.output": {
+          "$ref": "#/$defs/PrFilesOutput"
+        },
+        "pr_get.input": {
+          "$ref": "#/$defs/PrGetInput"
+        },
+        "pr_get.output": {
+          "$ref": "#/$defs/PrGetOutput"
+        },
+        "pr_list.input": {
+          "$ref": "#/$defs/PrListInput"
+        },
+        "pr_list.output": {
+          "$ref": "#/$defs/PrListOutput"
         },
         "project_add.input": {
           "$ref": "#/$defs/ProjectAddInput"
@@ -5413,6 +5728,10 @@
       "required": [
         "actions_list.input",
         "actions_list.output",
+        "agent_work.input",
+        "agent_work.output",
+        "agents_list.input",
+        "agents_list.output",
         "approval_answer.input",
         "approval_answer.output",
         "attachment_get.input",
@@ -5471,6 +5790,14 @@
         "orders_board.output",
         "plan_get.input",
         "plan_get.output",
+        "pr_diff.input",
+        "pr_diff.output",
+        "pr_files.input",
+        "pr_files.output",
+        "pr_get.input",
+        "pr_get.output",
+        "pr_list.input",
+        "pr_list.output",
         "project_add.input",
         "project_add.output",
         "project_discover.input",
@@ -6719,6 +7046,82 @@
       "pattern": "^(?:bugfix|feature|research|finish-all)@(?:[0-9a-f]{40}|[0-9a-f]{64})$",
       "type": "string"
     },
+    "PrAuthor": {
+      "description": "Who wrote the PR: fleetd's agent when one did, and the GitHub account it was opened from.",
+      "properties": {
+        "effort": {
+          "$ref": "#/$defs/Effort"
+        },
+        "laneId": {
+          "description": "The writing agent's lane in the agents view.",
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        "login": {
+          "description": "GitHub login; absent when GitHub wasn't reached.",
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        },
+        "model": {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/AgentRole"
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        },
+        "threadRef": {
+          "$ref": "#/$defs/ThreadRef",
+          "description": "Its session, for `agent_work`."
+        },
+        "title": {
+          "description": "The agent's task title.",
+          "maxLength": 80,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "PrCheck": {
+      "description": "One check run or commit status on the head. fleetd's own merge statuses are left out: `queue` says the same.",
+      "properties": {
+        "completedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "conclusion": {
+          "description": "GitHub's conclusion as given, lowercased (\"success\", \"failure\", \"skipped\", \"timed_out\"…).",
+          "maxLength": 40,
+          "minLength": 1,
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "startedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "state": {
+          "$ref": "#/$defs/ChecksState"
+        },
+        "url": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "state"
+      ],
+      "type": "object"
+    },
     "PrChip": {
       "description": "One PR on a train strip.",
       "properties": {
@@ -6752,6 +7155,427 @@
         "url",
         "workstreamId",
         "state"
+      ],
+      "type": "object"
+    },
+    "PrDiffInput": {
+      "properties": {
+        "limit": {
+          "default": 200,
+          "maximum": 400,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "number": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "offset": {
+          "default": 0,
+          "maximum": 1000000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "path": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        }
+      },
+      "required": [
+        "repo",
+        "number",
+        "path"
+      ],
+      "type": "object"
+    },
+    "PrDiffOutput": {
+      "properties": {
+        "headSha": {
+          "$ref": "#/$defs/CommitSha"
+        },
+        "lines": {
+          "items": {
+            "$ref": "#/$defs/DiffLine"
+          },
+          "maxItems": 400,
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "nextOffset": {
+          "description": "Pass back as `offset` for the next page; absent on the last.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "noDiff": {
+          "description": "GitHub shows no diff for this file (binary, or too large).",
+          "type": "boolean"
+        },
+        "total": {
+          "description": "Lines in the file's diff.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "lines",
+        "total"
+      ],
+      "type": "object"
+    },
+    "PrFile": {
+      "description": "One changed file.",
+      "properties": {
+        "additions": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "deletions": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "diffLines": {
+          "description": "Lines `pr_diff` pages through; absent when GitHub shows no diff for it (binary, or too large).",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "path": {
+          "description": "Repo-relative; the new path of a rename.",
+          "maxLength": 1000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "previousPath": {
+          "description": "A rename's old path.",
+          "maxLength": 1000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/PrFileStatus"
+        }
+      },
+      "required": [
+        "path",
+        "status",
+        "additions",
+        "deletions"
+      ],
+      "type": "object"
+    },
+    "PrFileStatus": {
+      "enum": [
+        "added",
+        "modified",
+        "removed",
+        "renamed",
+        "copied",
+        "changed",
+        "unchanged"
+      ],
+      "type": "string",
+      "x-open": true
+    },
+    "PrFilesInput": {
+      "properties": {
+        "number": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "offset": {
+          "default": 0,
+          "maximum": 3000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        }
+      },
+      "required": [
+        "repo",
+        "number"
+      ],
+      "type": "object"
+    },
+    "PrFilesOutput": {
+      "properties": {
+        "files": {
+          "items": {
+            "$ref": "#/$defs/PrFile"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "headSha": {
+          "$ref": "#/$defs/CommitSha",
+          "description": "The head these files are of."
+        },
+        "next": {
+          "type": "string"
+        },
+        "nextOffset": {
+          "description": "Pass back as `offset` for the next page; absent on the last.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total": {
+          "description": "Changed files in the PR.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "files",
+        "total"
+      ],
+      "type": "object"
+    },
+    "PrGetInput": {
+      "properties": {
+        "number": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        }
+      },
+      "required": [
+        "repo",
+        "number"
+      ],
+      "type": "object"
+    },
+    "PrGetOutput": {
+      "properties": {
+        "additions": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "baseBranch": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "body": {
+          "description": "The PR's description, at most 8000 characters. Secrets are replaced by `[secret]`.",
+          "maxLength": 8000,
+          "type": "string"
+        },
+        "changedFiles": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "checks": {
+          "items": {
+            "$ref": "#/$defs/PrCheck"
+          },
+          "maxItems": 60,
+          "type": "array"
+        },
+        "deletions": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "githubError": {
+          "maxLength": 300,
+          "type": "string"
+        },
+        "headSha": {
+          "$ref": "#/$defs/CommitSha"
+        },
+        "history": {
+          "description": "Its moves through the merge queue, newest first.",
+          "items": {
+            "$ref": "#/$defs/PrQueueStep"
+          },
+          "maxItems": 30,
+          "type": "array"
+        },
+        "links": {
+          "$ref": "#/$defs/PrLinks"
+        },
+        "next": {
+          "type": "string"
+        },
+        "pr": {
+          "$ref": "#/$defs/PrRow"
+        },
+        "reviews": {
+          "description": "Newest first: agent verdicts and people's reviews.",
+          "items": {
+            "$ref": "#/$defs/PrReviewEntry"
+          },
+          "maxItems": 30,
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "pr",
+        "body",
+        "checks",
+        "reviews",
+        "history",
+        "links"
+      ],
+      "type": "object"
+    },
+    "PrLinks": {
+      "properties": {
+        "checks": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "files": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "mergeCommit": {
+          "description": "The squash commit on the base, once merged.",
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "pr": {
+          "$ref": "#/$defs/GitHubPrUrl"
+        }
+      },
+      "required": [
+        "pr",
+        "files",
+        "checks"
+      ],
+      "type": "object"
+    },
+    "PrListInput": {
+      "properties": {
+        "closedSince": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "projectRef"
+      ],
+      "type": "object"
+    },
+    "PrListOutput": {
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "githubError": {
+          "description": "GitHub couldn't be reached: the list holds only the PRs fleetd records, without checks. Why, and what to do.",
+          "maxLength": 300,
+          "type": "string"
+        },
+        "next": {
+          "type": "string"
+        },
+        "prs": {
+          "items": {
+            "$ref": "#/$defs/PrRow"
+          },
+          "maxItems": 60,
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "prs",
+        "at"
+      ],
+      "type": "object"
+    },
+    "PrQueue": {
+      "description": "Where the PR stands in fleetd's merge queue. Absent from a PR fleetd doesn't land.",
+      "properties": {
+        "changeId": {
+          "$ref": "#/$defs/ChangeId"
+        },
+        "length": {
+          "description": "PRs waiting in the same queue.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "paused": {
+          "description": "Merging is paused for the repository.",
+          "type": "boolean"
+        },
+        "position": {
+          "description": "0-based place in the queue; absent when not waiting in it.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reason": {
+          "description": "Why it is held or was sent back: a conflict, failing check names, or the refusal's fix.",
+          "maxLength": 2000,
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/ChangeState"
+        }
+      },
+      "required": [
+        "changeId",
+        "state",
+        "length",
+        "paused"
+      ],
+      "type": "object"
+    },
+    "PrQueueStep": {
+      "description": "One move of the PR through the merge queue.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "from": {
+          "$ref": "#/$defs/ChangeState"
+        },
+        "to": {
+          "$ref": "#/$defs/ChangeState"
+        }
+      },
+      "required": [
+        "at",
+        "from",
+        "to"
       ],
       "type": "object"
     },
@@ -6808,6 +7632,132 @@
         "reviewsNeeded"
       ],
       "type": "object"
+    },
+    "PrReviewEntry": {
+      "description": "One review: an agent's verdict with its findings, or a person's review on GitHub.",
+      "properties": {
+        "agent": {
+          "$ref": "#/$defs/PrAuthor",
+          "description": "The reviewing agent (reviewer, verifier or QA); absent for a person's review."
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "blocking": {
+          "description": "Findings that must be fixed before merging; agent reviews only.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "current": {
+          "description": "It reviewed the PR's current change (an agent review stays current across a rebase that changes nothing).",
+          "type": "boolean"
+        },
+        "login": {
+          "description": "GitHub login of a person's review.",
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        },
+        "nonBlocking": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text": {
+          "description": "The agent's findings, or the person's review text. Secrets are replaced by `[secret]`.",
+          "maxLength": 2000,
+          "type": "string"
+        },
+        "verdict": {
+          "$ref": "#/$defs/ReviewVerdictKind"
+        }
+      },
+      "required": [
+        "verdict",
+        "text",
+        "current",
+        "at"
+      ],
+      "type": "object"
+    },
+    "PrRow": {
+      "description": "One PR as the list shows it.",
+      "properties": {
+        "author": {
+          "$ref": "#/$defs/PrAuthor"
+        },
+        "branch": {
+          "description": "Its head branch.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "checks": {
+          "$ref": "#/$defs/ChecksSummary",
+          "description": "Absent when GitHub wasn't reached."
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "mergedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "number": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "queue": {
+          "$ref": "#/$defs/PrQueue"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        },
+        "review": {
+          "$ref": "#/$defs/ReviewSummary"
+        },
+        "state": {
+          "$ref": "#/$defs/PrState"
+        },
+        "title": {
+          "description": "GitHub's title; the writing agent's task title when GitHub wasn't reached.",
+          "maxLength": 300,
+          "type": "string"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "url": {
+          "$ref": "#/$defs/GitHubPrUrl"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId",
+          "description": "The work it belongs to, when fleetd's agents wrote it."
+        }
+      },
+      "required": [
+        "repo",
+        "number",
+        "url",
+        "title",
+        "state",
+        "review",
+        "author",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "PrState": {
+      "description": "The PR on GitHub.",
+      "enum": [
+        "open",
+        "draft",
+        "merged",
+        "closed"
+      ],
+      "type": "string",
+      "x-open": true
     },
     "Progress": {
       "description": "A figure. `pct` counts verified must items by size only; polish shows beside it.",
@@ -8697,6 +9647,64 @@
         "manual"
       ],
       "type": "string"
+    },
+    "ReviewState": {
+      "description": "Its reviews, rolled up.",
+      "oneOf": [
+        {
+          "enum": [
+            "approved",
+            "changes_requested"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "none",
+          "description": "Nothing asks for a review.",
+          "type": "string"
+        },
+        {
+          "const": "pending",
+          "description": "Reviews are asked for or running.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "ReviewSummary": {
+      "properties": {
+        "done": {
+          "description": "Clean agent reviews of the current change.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "needed": {
+          "description": "Agent reviews it needs before it can merge; 0 for a PR fleetd doesn't land.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "state": {
+          "$ref": "#/$defs/ReviewState"
+        }
+      },
+      "required": [
+        "state",
+        "done",
+        "needed"
+      ],
+      "type": "object"
+    },
+    "ReviewVerdictKind": {
+      "enum": [
+        "approved",
+        "changes_requested",
+        "commented",
+        "dismissed"
+      ],
+      "type": "string",
+      "x-open": true
     },
     "Risk": {
       "properties": {
@@ -12588,6 +13596,85 @@
         }
       ],
       "x-open": true
+    },
+    "WorkAction": {
+      "description": "A command, file edit or tool call. Secrets in its summary and output are replaced by `[secret]`.",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/ActionItem"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "action"
+      ],
+      "type": "object"
+    },
+    "WorkMessage": {
+      "description": "A message the agent or its person wrote. Secrets are replaced by `[secret]`.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/TailRole"
+        },
+        "text": {
+          "description": "The last 2000 characters of a longer message.",
+          "maxLength": 2000,
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "role",
+        "text"
+      ],
+      "type": "object"
+    },
+    "WorkStep": {
+      "description": "One step of an agent's work.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/WorkMessage",
+          "properties": {
+            "kind": {
+              "const": "message",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/WorkAction",
+          "properties": {
+            "kind": {
+              "const": "action",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "Workstream": {
       "properties": {

@@ -18,7 +18,7 @@ use super::model::{
     self, Calibration, Cause, Group, ItemProgress, Obs, Point, PointDrop, Unit, UnitKey, UnitKind,
     What,
 };
-use super::render::{Order, Scope, World};
+use super::render::{DAY_MS, Order, Scope, World};
 use crate::hub::plan::parse_ms;
 use crate::hub::plan::store::ItemRow;
 use crate::hub::store::iso_ms;
@@ -38,6 +38,9 @@ pub struct ModelData {
     pub order_push: HashMap<String, i64>,
     /// Order → planning share fixed when its plan appeared, and when.
     pub planning: HashMap<String, (f64, i64)>,
+    /// Live tasks (running, or idle until an answer or a usage reset) of the orders in view: task → (its order, the
+    /// Change it reviews when it is a reviewer).
+    pub live_tasks: HashMap<String, (String, Option<String>)>,
     /// Changes before review whose tier asks for none: their steps skip it. Filled by the caller, which has the
     /// review rules.
     pub reviewless: HashSet<String>,
@@ -150,6 +153,19 @@ impl ModelData {
                 ))
             })?
             .collect::<rusqlite::Result<_>>()?;
+        let live_tasks = c
+            .prepare_cached(
+                "SELECT json_extract(t.data, '$.taskId'), t.workstream_id, r.change_id FROM tasks t
+                 LEFT JOIN review_tasks r ON r.task_id = json_extract(t.data, '$.taskId')
+                 WHERE t.state IN ('running', 'idle') AND t.workstream_id IN (SELECT value FROM json_each(?))",
+            )?
+            .query_map([&ids], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    (r.get::<_, String>(1)?, r.get::<_, Option<String>>(2)?),
+                ))
+            })?
+            .collect::<rusqlite::Result<_>>()?;
         Ok(Self {
             calibration,
             drafts,
@@ -158,6 +174,7 @@ impl ModelData {
             task_push,
             order_push,
             planning,
+            live_tasks,
             reviewless: HashSet::new(),
         })
     }
@@ -478,6 +495,76 @@ pub fn compute(w: &World, scope: &StatusScope, s: &Scope<'_>) -> ModelOut {
     let pr_of = change_units;
     let facts = model::observe(&obs, now);
 
+    // What is in flight for each unit, and since when: a live task of its own, or a Change of its moving on the train
+    // (one the train holds, or one in review with no reviewer running, is not). Only time since then earns in-stage
+    // credit, so work resumed after a gap never claims the gap. A task's run began at its last start or end in the
+    // last day (a task live after an end was continued); with neither, it has run all day. A Change has been moving
+    // since its last update: a state move or a hold lifted. A start read later than the real one only under-counts,
+    // which the drop rule shows as a pause, never as a fall or a jump.
+    let mut run_start: HashMap<&str, i64> = HashMap::new();
+    for (t, e) in &w.recent {
+        if !matches!(
+            t.as_str(),
+            "task.started" | "task.completed" | "task.failed" | "task.cancelled"
+        ) {
+            continue;
+        }
+        let (Some(task), Some(at)) = (
+            e.pointer("/data/taskId").and_then(Value::as_str),
+            e.get("at").and_then(Value::as_str).and_then(parse_ms),
+        ) else {
+            continue;
+        };
+        let since = run_start.entry(task).or_insert(at);
+        *since = (*since).max(at);
+    }
+    let task_since = |t: &str| {
+        md.live_tasks
+            .contains_key(t)
+            .then(|| run_start.get(t).copied().unwrap_or(now - DAY_MS))
+    };
+    let change_since = |ch: &Change| {
+        let updated = parse_ms(ch.updated_at.as_str()).unwrap_or(now);
+        let train = match ch.state {
+            ChangeState::Queued | ChangeState::Ready => ch
+                .last_error
+                .as_ref()
+                .is_none_or(|e| e.is_empty())
+                .then_some(updated),
+            ChangeState::Reviewing => md
+                .live_tasks
+                .iter()
+                .filter(|(_, (_, c))| c.as_deref() == Some(ch.change_id.as_str()))
+                .filter_map(|(t, _)| task_since(t))
+                .min(),
+            ChangeState::Rebasing | ChangeState::Ci | ChangeState::Merging => Some(updated),
+            _ => None,
+        };
+        let writer = ch.task_id.as_ref().and_then(|t| task_since(t.as_str()));
+        train.into_iter().chain(writer).min()
+    };
+    let mut in_flight: HashMap<UnitKey, i64> = HashMap::new();
+    let mut flying = |key: &UnitKey, since: Option<i64>| {
+        if let Some(since) = since {
+            let at = in_flight.entry(key.clone()).or_insert(since);
+            *at = (*at).min(since);
+        }
+    };
+    for (key, ch) in &pr_of {
+        flying(key, change_since(ch));
+    }
+    for i in &counted {
+        for t in &i.data.links.tasks {
+            flying(&UnitKey::Item(i.n), task_since(t.as_str()));
+        }
+    }
+    for o in &virtual_orders {
+        let ws = o.w.workstream_id.as_str();
+        for (t, _) in md.live_tasks.iter().filter(|(_, (order, _))| order == ws) {
+            flying(&UnitKey::Order(ws.to_owned()), task_since(t));
+        }
+    }
+
     // Each unit's progress against its calibration.
     let mut units: HashMap<UnitKey, ItemProgress> = HashMap::new();
     let mut bases: Vec<WeightsBasis> = Vec::new();
@@ -492,12 +579,13 @@ pub fn compute(w: &World, scope: &StatusScope, s: &Scope<'_>) -> ModelOut {
         let r = cal.resolve(pkey, kind, size);
         bases.push(r.basis);
         let f = facts.get(&key).cloned().unwrap_or_default();
-        let p = model::item_progress(&f, now, &r);
         let (stage, entered) = f.current();
+        let since = in_flight.get(&key).copied();
+        let p = model::item_progress(&f, now, &r, since);
         if !p.verified {
             let k = stage.index();
-            let capped_at = entered + (r.usual_ms(k) as f64 * model::IN_STAGE_CAP) as i64;
-            if capped_at > now {
+            let cap_ms = (r.usual_ms(k) as f64 * model::IN_STAGE_CAP) as i64;
+            if since.is_some_and(|since| entered.max(since) + cap_ms > now) {
                 wake_at(now + TICK_MS);
             }
             if let Some(slow) = r.slow_at(k) {

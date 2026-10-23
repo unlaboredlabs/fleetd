@@ -343,6 +343,8 @@ pub fn build_on(
     }
     let plans = crate::hub::plan::Plans::new(db.clone(), events.clone(), clock.clone());
     let chat = crate::hub::chat::Chat::new(db.clone(), events.clone(), clock.clone());
+    let prs =
+        crate::hub::prs::Prs::new(Arc::new(crate::hub::train::github::SystemGh), clock.clone());
     let hub = Arc::new(Hub {
         config,
         clock,
@@ -383,6 +385,7 @@ pub fn build_on(
         status: crate::hub::status::Status::new(fresh),
         plans,
         chat,
+        prs,
     });
     crate::hub::train::hooks::restore(&hub);
     checks.ports.bind(&hub);
