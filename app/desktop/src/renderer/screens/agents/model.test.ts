@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentRow } from "../../../shared/contracts";
 import type { LiveAgent } from "../../src/data/selectors";
-import { actionLine, headline, listItems } from "./model";
+import { actionLine, headline, projectAgents } from "./model";
 
 const agent = (project: string, laneId: string, status: AgentRow["status"] = "working"): LiveAgent => ({
   id: `devbox/${project}/${laneId}`,
@@ -10,10 +10,11 @@ const agent = (project: string, laneId: string, status: AgentRow["status"] = "wo
 });
 
 describe("the agents list", () => {
-  it("puts one line per project above its agents, with how many it runs", () => {
-    const items = listItems([agent("api", "T1"), agent("api", "T2"), agent("web", "T3")]);
-    expect(items.map((i) => (i.kind === "project" ? `${i.title} ${String(i.count)}` : i.agent.row.laneId))).toEqual(["api 2", "T1", "T2", "web 1", "T3"]);
-    expect(listItems([])).toEqual([]);
+  it("lists one project's agents, those waiting on you first, without its lead", () => {
+    const lead: LiveAgent = { ...agent("api", "lead:devbox/api"), row: { ...agent("api", "lead:devbox/api").row, role: "lead" } };
+    const list = projectAgents([lead, agent("api", "T1"), agent("web", "T2", "waiting"), agent("api", "T3", "waiting"), agent("api", "T4", "queued")], "devbox/api");
+    expect(list.map((a) => a.row.laneId)).toEqual(["T3", "T1", "T4"]);
+    expect(projectAgents([], "devbox/api")).toEqual([]);
   });
 
   it("heads the view with what works, what waits on you and what is queued", () => {

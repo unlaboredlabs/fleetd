@@ -10,6 +10,7 @@ export const MENU_COMMANDS = [
   "palette.toggle",
   "shortcuts.show",
   "sidebar.toggle",
+  "panel.toggle",
   "project.previous",
   "project.next",
 ] as const;

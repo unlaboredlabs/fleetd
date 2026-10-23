@@ -8,6 +8,7 @@ import { useEffect, useId, useRef, useSyncExternalStore, type CSSProperties } fr
 import { useData, useToolQuery } from "../../src/data/react";
 import { Text, Truncate, VirtualList, cx } from "../../ui";
 import { navigate } from "../shell/navigation";
+import { panelRoute } from "../shell/routes";
 import { runCommand } from "../palette";
 import { useNow, useOnScreen } from "./clock";
 import type { AgentLane } from "./contracts";
@@ -124,7 +125,7 @@ function Opened({ id, project, strip, onTold }: { id: string; project: ProjectRe
       return (
         <div className={s.group}>
           {/* The PR view keeps Open on GitHub one click away. */}
-          <button type="button" className={s.pr} onClick={() => navigate({ id: "prs", project, pr: { repo: null, number: r.number } })} aria-label={`Open PR #${r.number}`}>
+          <button type="button" className={s.pr} onClick={() => navigate(panelRoute(project, { tab: "prs", pr: { repo: null, number: r.number } }))} aria-label={`Open PR #${r.number}`}>
             #{r.number}
           </button>
           <span className={s.groupTitle}>

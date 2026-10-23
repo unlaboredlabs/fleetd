@@ -1,11 +1,11 @@
-// The project's PRs, open ones first, then those merged or closed lately: each row its title and where it stands.
-// A row opens the PR beside the list; ↑ and ↓ move between rows.
+// The project's PRs, open ones first, then those merged or closed lately: each row its title, where it stands, its
+// checks and reviews, and the agent that wrote it. A row opens the PR in the list's place; ↑ and ↓ move between rows.
 import { useMemo, type KeyboardEvent } from "react";
 import type { ProjectRef } from "../../../shared/contracts";
 import type { PrRow } from "../../../shared/contracts";
-import { StatusChip, Text, Truncate, VirtualList, cx } from "../../ui";
-import { toHash } from "../shell/routes";
-import { checksWord, isOpen, reviewsWord, stateLine, when } from "./words";
+import { StatusChip, Text, Truncate, VirtualList } from "../../ui";
+import { panelRoute, toHash } from "../shell/routes";
+import { authorWords, checksWord, isOpen, reviewsWord, stateLine, when } from "./words";
 import s from "./prs.module.css";
 
 type Item =
@@ -24,18 +24,26 @@ export const listItems = (rows: readonly PrRow[], cut = false): Item[] => {
   ];
 };
 
-export const prHref = (project: ProjectRef, row: Pick<PrRow, "repo" | "number">): string => toHash({ id: "prs", project, pr: { repo: row.repo, number: row.number } });
+export const prHref = (project: ProjectRef, row: Pick<PrRow, "repo" | "number">): string =>
+  toHash(panelRoute(project, { tab: "prs", pr: { repo: row.repo, number: row.number } }));
+
+/** Who wrote it, and the task it was asked for when that says more than the title: "A writer (opus) · Round totals". */
+export const byLine = (row: Pick<PrRow, "author" | "title">): string | undefined => {
+  const who = authorWords(row.author);
+  const task = row.author.title;
+  const asked = task === undefined || task === "" || task === row.title ? undefined : task;
+  return who === undefined ? asked : asked === undefined ? who : `${who} · ${asked}`;
+};
 
 interface PrListProps {
   readonly rows: readonly PrRow[];
   /** The hub sent only the most recent. */
   readonly cut: boolean;
   readonly project: ProjectRef;
-  readonly selected: { repo: string; number: number } | undefined;
   readonly nowMs: number;
 }
 
-export function PrList({ rows, cut, project, selected, nowMs }: PrListProps) {
+export function PrList({ rows, cut, project, nowMs }: PrListProps) {
   const items = useMemo(() => listItems(rows, cut), [rows, cut]);
   if (rows.length === 0) {
     return (
@@ -44,7 +52,7 @@ export function PrList({ rows, cut, project, selected, nowMs }: PrListProps) {
       </div>
     );
   }
-  // ↑/↓ from a focused row moves to the row above or below and opens it, as in a mail list.
+  // ↑/↓ from a focused row moves to the row above or below; Enter opens it.
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
     const links = [...e.currentTarget.querySelectorAll<HTMLAnchorElement>("a[data-pr]")];
@@ -54,7 +62,6 @@ export function PrList({ rows, cut, project, selected, nowMs }: PrListProps) {
     if (next === undefined) return;
     e.preventDefault();
     next.focus();
-    next.click();
   };
   return (
     <div className={s.listScroll} onKeyDown={onKeyDown}>
@@ -78,7 +85,7 @@ export function PrList({ rows, cut, project, selected, nowMs }: PrListProps) {
               <Text size="xs" tone="quiet">{`Only the ${it.count} most recent are here; the rest are on GitHub.`}</Text>
             </div>
           ) : (
-            <Row row={it.row} project={project} current={selected?.repo === it.row.repo && selected.number === it.row.number} nowMs={nowMs} />
+            <Row row={it.row} project={project} nowMs={nowMs} />
           )
         }
       />
@@ -86,17 +93,16 @@ export function PrList({ rows, cut, project, selected, nowMs }: PrListProps) {
   );
 }
 
-function Row({ row, project, current, nowMs }: { row: PrRow; project: ProjectRef; current: boolean; nowMs: number }) {
+function Row({ row, project, nowMs }: { row: PrRow; project: ProjectRef; nowMs: number }) {
   const state = stateLine(row);
   // The state word already says the checks failed or are running for the merge; a closed PR's checks don't matter.
   const checksSaid = row.queue?.state === "ci_failed" || row.queue?.state === "ci";
   const checks = row.checks === undefined || checksSaid || !isOpen(row) ? undefined : checksWord(row.checks);
   const reviews = isOpen(row) ? reviewsWord(row.review) : undefined;
-  // One hint: checks that failed or still run, else what the reviews say, else that the checks passed.
-  const hint = checks !== undefined && checks.tone !== "done" ? checks : (reviews ?? checks);
+  const by = byLine(row);
   const at = row.mergedAt ?? row.updatedAt;
   return (
-    <a className={cx(s.row, current && s.rowCurrent)} href={prHref(project, row)} data-pr={row.number} aria-current={current ? "page" : undefined}>
+    <a className={s.row} href={prHref(project, row)} data-pr={row.number}>
       <span className={s.rowTop}>
         <span className={s.rowTitle}>
           <Truncate lines={2} expand="none">
@@ -116,12 +122,21 @@ function Row({ row, project, current, nowMs }: { row: PrRow; project: ProjectRef
         <StatusChip tone={state.tone} inRow>
           {state.word}
         </StatusChip>
-        {hint !== undefined ? (
-          <Text size="xs" tone={hint.tone === "failed" ? "danger" : "quiet"}>
-            {hint.text}
-          </Text>
-        ) : null}
+        {[checks, reviews].map((hint) =>
+          hint === undefined ? null : (
+            <Text key={hint.text} size="xs" tone={hint.tone === "failed" ? "danger" : "quiet"}>
+              {hint.text}
+            </Text>
+          ),
+        )}
       </span>
+      {by !== undefined ? (
+        <span className={s.rowBy}>
+          <Truncate size="xs" tone="quiet" expand="none">
+            {by}
+          </Truncate>
+        </span>
+      ) : null}
     </a>
   );
 }

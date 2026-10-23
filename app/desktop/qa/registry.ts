@@ -210,9 +210,9 @@ const openUpdates = async (page: Page) => {
   await page.keyboard.press("Enter");
 };
 
-// storefront's PRs (fixtures/prs): the list alone, and #11 (in review, its reviewers at work), #10 (checks failed), #8
-// (merged), #14 (a person's, review asked for) and #13 (240 files) open.
-const PRS = CHAT.replace("#/project/", "#/prs/");
+// storefront's PRs in the panel beside its chat (fixtures/prs): the list, and #11 (in review, its reviewers at work),
+// #10 (checks failed), #8 (merged), #14 (a person's, review asked for) and #13 (240 files) open.
+const PRS = `${CHAT}/prs`;
 const PR = (n: number) => `${PRS}/acme/storefront/${String(n)}`;
 const openChanges = (page: Page) => page.getByRole("tab", { name: /^Changes/u }).click();
 /**
@@ -431,6 +431,40 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.getByRole("button", { name: "Hide the sidebar" }).click();
       await page.getByRole("navigation", { name: "Sidebar" }).waitFor({ state: "detached" });
+    },
+  },
+  // The panel beside the chat, opened with its toggle on the tab it had (agents, on a first launch), and closed again.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["chat-waiting", "agents-work"],
+    variant: "panel",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Show agents and PRs" }).click();
+      await page.getByRole("complementary", { name: "Agents and pull requests" }).waitFor();
+    },
+  },
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["chat-waiting"],
+    variant: "panel-closed",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Show agents and PRs" }).click();
+      await page.getByRole("button", { name: "Hide agents and PRs" }).click();
+      await page.getByRole("complementary", { name: "Agents and pull requests" }).waitFor({ state: "detached" });
+    },
+  },
+  // ...and in the smallest window, where it had hidden itself, shown with its toggle beside the chat.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["chat-waiting"],
+    variant: "panel-narrow",
+    sizes: ["narrow"],
+    open: async (page) => {
+      await page.getByRole("button", { name: "Show agents and PRs" }).click();
+      await page.getByRole("complementary", { name: "Agents and pull requests" }).waitFor();
     },
   },
   // The smallest window: the sidebar has hidden itself, its toggle and the chat's title share the top row.
@@ -685,21 +719,23 @@ export const screens: readonly Screen[] = [
       await page.getByRole("alert").waitFor();
     },
   },
-  // UX-1 A3: a project's PRs. The list (open first, then merged or closed lately), with nothing picked; none at all;
-  // GitHub out of reach; and a link to a project the hub doesn't have.
+  // UX-1 A3: a project's PRs in the panel. The list (open first, then merged or closed lately); none at all; GitHub
+  // out of reach; and a link to a project the hub doesn't have. The narrow window has hidden the panel; the link
+  // shows it there.
   { id: "prs", route: PRS, fixtures: ["typical", "long-text", "many-agents", "prs-none", "prs-no-github", "prs-rate-limited", "hub-unreachable"] },
+  { id: "prs", route: PRS, fixtures: ["typical"], variant: "narrow", sizes: ["narrow"] },
   { id: "prs", route: PRS, fixtures: ["empty"], variant: "missing", expect: "error" },
   {
     id: "prs",
     route: CHAT,
     fixtures: ["prs-loading"],
     variant: "loading",
-    open: whileLoading(
-      (page) => page.getByRole("button", { name: "Pull requests" }).click({ timeout: 10_000 }),
-      (page) => page.getByLabel("Loading the pull requests"),
-    ),
+    open: whileLoading(async (page) => {
+      await page.getByRole("button", { name: "Show agents and PRs" }).click({ timeout: 10_000 });
+      await page.getByRole("tab", { name: /^Pull requests/u }).click();
+    }, (page) => page.getByLabel("Loading the pull requests")),
   },
-  // One PR beside the list: its facts, description, checks, reviews with their findings, and its way to main so far.
+  // One PR in the list's place: its facts, description, checks, reviews with their findings, and its way to main so far.
   // #10's checks failed after its approval and an outdated review; a chat line's link names only the number.
   { id: "prs.detail", route: PR(11), fixtures: ["typical", "long-text", "prs-no-github", "prs-rate-limited"] },
   { id: "prs.detail", route: PR(10), fixtures: ["typical"], variant: "failed" },
@@ -873,16 +909,17 @@ export const screens: readonly Screen[] = [
       await page.keyboard.press("Enter");
     },
   },
-  // UX-1 A2: every agent across the projects, by project (none, many, long titles and commands, the link down), and
-  // one agent's live work beside the list: told, ran, edited, a failed command, a message streaming in. An agent
-  // that isn't running any more says so.
+  // UX-1 A2: the project's agents in the panel, those waiting on you first (none, many, long titles and commands, the
+  // link down), and one agent's live work in the list's place: told, ran, edited, a failed command, a message
+  // streaming in. An agent that isn't running any more says so.
   {
     id: "agents",
-    route: "#/agents",
-    fixtures: ["typical", "many-agents", "long-text", "empty", "hub-unreachable", "live-20", "agents-work"],
+    route: `${CHAT}/agents`,
+    fixtures: ["typical", "many-agents", "long-text", "hub-unreachable", "live-20", "agents-work"],
   },
   { id: "agents.work", route: AGENT_ROUTE, fixtures: ["agents-work"] },
-  { id: "agents.work", route: "#/agents/devbox/storefront/T99", fixtures: ["typical"], variant: "finished" },
+  { id: "agents.work", route: AGENT_ROUTE, fixtures: ["agents-work"], variant: "narrow", sizes: ["narrow"] },
+  { id: "agents.work", route: `${CHAT}/agents/T99`, fixtures: ["typical"], variant: "finished" },
   { id: "machines", route: "#/machines", fixtures: ["typical", "empty", "long-text", "many-agents", "hub-unreachable", "projects-machines"] },
   // F11: the command palette (opening on the project on screen, then go-tos), a typed search, and the shortcuts
   // sheet. status-rows has eight projects, one with a ~120-character name.

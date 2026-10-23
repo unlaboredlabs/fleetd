@@ -117,10 +117,12 @@ For a project's progress at a glance, see [Status](/docs/status). For where the 
 
 ## Read a pull request {#prs}
 
-Choose **Pull requests** in the sidebar, or click a PR's number in the agents strip or in [Agents](/docs/desktop-app#agents),
-to read the project's PRs in the app: open ones first, then those merged or closed in the last week. The sidebar opens
-the PRs of the project you're in. For another project's, open the command palette (⌘K), select the project, press ⌘K
-again and choose **Pull requests in this project**.
+The Pull requests tab of the panel beside the chat (⌥⌘B) lists the project's PRs: open ones first, then those merged
+or closed in the last week, each with its checks, its reviews and the agent that wrote it. A PR's number in the agents
+strip or in [Agents](/docs/desktop-app#agents) opens it there too. For another project's, open the command palette
+(⌘K), select the project, press ⌘K again and choose **Pull requests in this project**.
+
+Click a PR to read it in the list's place; **All pull requests** or Esc goes back.
 
 If GitHub can't be reached or its rate limit is reached, the list says so: you see the PRs fleetd made, or GitHub's last
 answer, and **Retry** asks again.
@@ -128,7 +130,7 @@ answer, and **Retry** asks again.
 | A PR shows | |
 |---|---|
 | Overview | Where it is on its way to main, its checks, its reviews with their findings, the agent that wrote it, the agents at work on it now, and its description. |
-| Changes | The changed files and their diff, in one column or side by side. Click a file to jump to it. |
+| Changes | The changed files and their diff, in one column or side by side. Click a file to jump to it. The panel widens while you read them. |
 
 **Open on GitHub** is always there, for anything the app doesn't show.
 

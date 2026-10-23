@@ -1,0 +1,34 @@
+/* The panel beside the chat: opaque, so nothing composites over the live chat, and nothing animates. Its width is
+   fixed per state (tokens.css), never measured from its content. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  width: var(--panel-w);
+  height: 100%;
+  min-height: 0;
+}
+.wide {
+  width: var(--panel-wide-w);
+}
+
+/* The tabs' own underline is the head's bottom edge. */
+.head {
+  flex: none;
+  padding-inline: var(--space-4);
+}
+
+.back {
+  flex: none;
+  display: flex;
+  align-items: center;
+  min-height: var(--row);
+  padding: var(--space-1) var(--space-2) 0;
+}
+
+.body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}

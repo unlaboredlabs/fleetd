@@ -1,25 +1,15 @@
-// What the agents view shows, as plain view data: the list with a line per project above its agents, the headline,
-// and one line per step of an agent's work. Pure, so it is unit-tested.
+// What the panel's agents show, as plain view data: one project's agents, the headline, and one line per step of an
+// agent's work. Pure, so it is unit-tested.
 import type { WorkStep } from "../../../shared/contracts";
 import type { LiveAgent } from "../../src/data/selectors";
 
-export type ListItem =
-  | { readonly kind: "project"; readonly key: string; readonly title: string; readonly count: number }
-  | { readonly kind: "agent"; readonly agent: LiveAgent };
-
-/** The agents in their order, each project's under one line naming it and how many it runs. */
-export const listItems = (agents: readonly LiveAgent[]): readonly ListItem[] => {
-  const out: ListItem[] = [];
-  let header: { kind: "project"; key: string; title: string; count: number } | undefined;
-  for (const agent of agents) {
-    if (header?.key !== agent.project) {
-      header = { kind: "project", key: agent.project, title: agent.row.projectTitle, count: 0 };
-      out.push(header);
-    }
-    header.count++;
-    out.push({ kind: "agent", agent });
-  }
-  return out;
+/**
+ * One project's agents, those waiting on you first, then the data layer's order (oldest first), so a row moves only
+ * when it starts or stops needing you. Not the lead: its chat is beside them.
+ */
+export const projectAgents = (agents: readonly LiveAgent[], project: string): readonly LiveAgent[] => {
+  const mine = agents.filter((a) => a.project === project && a.row.role !== "lead");
+  return [...mine.filter((a) => a.row.status === "waiting"), ...mine.filter((a) => a.row.status !== "waiting")];
 };
 
 /**
