@@ -6,7 +6,7 @@
       "projectId": "storefront"
     },
     "title": "Fix cart total rounding",
-    "state": "running",
+    "state": "open",
     "phase": "waiting_on_you",
     "phaseDetail": "1 question",
     "next": "merge after one clean review",

@@ -95,13 +95,12 @@ impl Leads {
             if self.records.lead_get(&r)?.is_some() {
                 continue;
             }
-            let drafts = self.records.workstreams_list(&WorkstreamFilter {
+            let open = self.records.workstreams_list(&WorkstreamFilter {
                 project_ref: Some(r.clone()),
-                state: Some(WorkstreamState::Draft),
-                limit: 1,
-                ..Default::default()
+                state: Some(WorkstreamState::Open),
+                limit: 100,
             })?;
-            if drafts.is_empty() {
+            if open.iter().all(|w| w.brief.is_some()) {
                 continue;
             }
             match self.auto_start(&r).await {

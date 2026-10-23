@@ -346,7 +346,7 @@ pub fn card(p: &OrderParts<'_>, look: &dyn Lookups) -> Joined {
     let w = p.workstream;
     let (phase, detail) = phase::phase(&PhaseInput {
         state: w.state,
-        headline: w.headline.as_deref(),
+        draft: w.brief.is_none(),
         open_requests: p.open_requests,
         lanes: &phase_lanes,
         prs: &pr_states,
@@ -457,9 +457,8 @@ pub fn orders_in_scope(
     };
     let mut out = read(WorkstreamFilter {
         project_ref: project.cloned(),
-        open: true,
+        state: Some(WorkstreamState::Open),
         limit: 500,
-        ..Default::default()
     });
     if let Some(since) = done_since {
         out.extend(
@@ -467,7 +466,6 @@ pub fn orders_in_scope(
                 project_ref: project.cloned(),
                 state: Some(WorkstreamState::Done),
                 limit: 100,
-                ..Default::default()
             })
             .into_iter()
             .filter(|w| w.updated_at.0.as_str() >= since.0.as_str()),

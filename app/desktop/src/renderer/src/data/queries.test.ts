@@ -51,17 +51,17 @@ describe("data layer", () => {
     fake.send(snapshot(1));
     const stop = new QueryObserver(layer.queryClient, layer.toolQuery("orders_board", {})).subscribe(() => undefined);
     await vi.advanceTimersByTimeAsync(0);
-    // The order fails while the first board is on its way; that board still has it running.
-    fake.send(event(2, "workstream.state", { workstreamId: "W1", state: "failed" }));
+    // The order stops while the first board is on its way; that board still has it running.
+    fake.send(event(2, "workstream.state", { workstreamId: "W1", state: "stopped" }));
     await vi.advanceTimersByTimeAsync(150);
     expect(fake.calls).toEqual(["orders_board"]);
     fake.answers[0]?.(board);
     await vi.advanceTimersByTimeAsync(0);
     expect(layer.store.getState().orders).toBeUndefined();
     expect(fake.calls).toEqual(["orders_board", "orders_board"]);
-    fake.answers[1]?.({ ...board, orders: [card("W1", { state: "failed" })] });
+    fake.answers[1]?.({ ...board, orders: [card("W1", { state: "stopped" })] });
     await vi.advanceTimersByTimeAsync(0);
-    expect(layer.store.getState().orders?.["W1"]?.state).toBe("failed");
+    expect(layer.store.getState().orders?.["W1"]?.state).toBe("stopped");
     stop();
   });
 

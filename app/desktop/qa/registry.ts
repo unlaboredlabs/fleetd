@@ -627,7 +627,7 @@ export const screens: readonly Screen[] = [
       await page.getByRole("textbox", { name: "Secret value" }).fill("sk_test_51Hx");
       await page.getByRole("button", { name: "Save secret" }).click();
       await page.getByText("Not saved: no answer in time.").waitFor();
-      const card = page.getByRole("region", { name: "Command to approve" }).filter({ hasText: "reviewers 1" });
+      const card = page.getByRole("region", { name: "Command to approve" }).filter({ hasText: "invoice.ts" });
       await card.getByRole("button", { name: "Approve", exact: true }).click();
       await page.getByText("Not approved: something went wrong.").waitFor();
     },

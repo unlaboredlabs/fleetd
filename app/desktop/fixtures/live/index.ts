@@ -99,7 +99,7 @@ const fromBase = (base: Fixture, agents: number): Fixture => {
       workstreamId: `W${14 + k}`,
       projectRef,
       title: k === 0 ? "Round cart totals once, in one place" : "Receipts show the rounded total",
-      state: "running",
+      state: "open",
       phase: "working",
       needsYou: 0,
       settled: 0,

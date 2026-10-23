@@ -138,13 +138,9 @@ fn workstream_lines(w: &Workstream, facts: Option<&WorkstreamFacts>) -> String {
 
 pub fn state_text(state: WorkstreamState) -> &'static str {
     match state {
-        WorkstreamState::Draft => "draft",
-        WorkstreamState::Running => "running",
-        WorkstreamState::Converging => "converging",
-        WorkstreamState::Verifying => "verifying",
+        WorkstreamState::Open => "open",
         WorkstreamState::Done => "done",
         WorkstreamState::Stopped => "stopped",
-        WorkstreamState::Failed => "failed",
     }
 }
 
@@ -178,7 +174,7 @@ fn decision_line(d: &Decision) -> String {
     )
 }
 
-/// A unit enum's wire name, e.g. `WorkstreamState::Running` → "running".
+/// A unit enum's wire name, e.g. `WorkstreamState::Open` → "open".
 pub fn serde_plain<T: serde::Serialize>(value: &T) -> String {
     match serde_json::to_value(value) {
         Ok(serde_json::Value::String(s)) => s,

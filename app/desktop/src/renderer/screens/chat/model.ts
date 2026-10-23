@@ -211,8 +211,6 @@ export function chatRows(i: RowsInput): Row[] {
   return out;
 }
 
-const ENDED = new Set<Workstream["state"]>(["done", "stopped", "failed"]);
-
 /**
  * The project's orders that can hold a steer within the loaded pages (`from`..`to`, open-ended without older or
  * newer pages): every open one (the board's), and each listed one that began before `to` and was open after `from`.
@@ -222,7 +220,7 @@ export function ordersInView(open: readonly string[], listed: readonly Workstrea
   const ids = new Set(open);
   for (const w of listed ?? []) {
     if (to !== undefined && Date.parse(w.createdAt) > Date.parse(to)) continue;
-    if (from !== undefined && ENDED.has(w.state) && Date.parse(w.updatedAt) < Date.parse(from)) continue;
+    if (from !== undefined && w.state !== "open" && Date.parse(w.updatedAt) < Date.parse(from)) continue;
     ids.add(w.workstreamId);
   }
   return [...ids].toSorted();

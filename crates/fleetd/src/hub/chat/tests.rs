@@ -466,7 +466,7 @@ async fn a_brief_without_a_workstream_opens_one_with_no_intent_wake() {
         (
             IntakeChannel::Lead,
             "build schedules",
-            WorkstreamState::Running
+            WorkstreamState::Open
         )
     );
     assert!(

@@ -182,16 +182,10 @@ impl Workstreams {
         if w.brief.as_ref() == Some(&brief) {
             return Ok(result(w.state, format!("Unchanged. {running}")));
         }
-        // A draft starts running.
+        // A draft starts running: it stays open, now with a brief.
         let starts = w.brief.is_none();
-        let state = if starts {
-            WorkstreamState::Running
-        } else {
-            w.state
-        };
         let next = Workstream {
             brief: Some(brief),
-            state,
             updated_at: now_iso(&self.ctx).into(),
             ..w.clone()
         };
@@ -203,15 +197,15 @@ impl Workstreams {
                 format!("{id} is running: {}", w.title),
                 Some(serde_json::json!({ "workstreamId": id })),
             )?;
-            return Ok(result(state, format!("Brief set. {running}")));
+            return Ok(result(w.state, format!("Brief set. {running}")));
         }
         self.event(
             &next,
             HubEventType::WorkstreamState,
             format!("{id} brief edited"),
-            Some(serde_json::json!({ "workstreamId": id, "state": state, "briefEdited": true })),
+            Some(serde_json::json!({ "workstreamId": id, "state": w.state, "briefEdited": true })),
         )?;
-        Ok(result(state, format!("Brief edited. {running}")))
+        Ok(result(w.state, format!("Brief edited. {running}")))
     }
 
     /// `close` from the lead of `caller`: the workstream is done, with why. It stops nothing; what still runs keeps

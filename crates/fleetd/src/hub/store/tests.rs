@@ -429,7 +429,7 @@ fn routed_intents_go_on_an_older_hub() {
 }
 
 /// A hub from before the retro went: its tables, events and incident class go, and a playbook change still open is
-/// denied, so every stored event, incident and request still decodes.
+/// denied.
 #[test]
 fn the_retro_goes_on_an_older_hub() {
     use super::migrations::MIGRATIONS;
@@ -482,10 +482,6 @@ fn the_retro_goes_on_an_older_hub() {
         strings("SELECT state FROM requests ORDER BY n"),
         ["denied", "approved"]
     );
-    for data in strings("SELECT data FROM requests ORDER BY n") {
-        let request: fleetd_contracts::ledger::HumanRequest = serde_json::from_str(&data).unwrap();
-        assert!(request.playbook.is_some(), "an older approval still reads");
-    }
 }
 
 /// A hub from before the unused tables went: they are dropped, and the events nothing emits any more are deleted so
@@ -839,10 +835,7 @@ fn stored_done_when_checks_become_plain_lines() {
     let w: fleetd_contracts::ledger::Workstream = serde_json::from_str(&data).unwrap();
     assert_eq!(
         (state.as_str(), w.state),
-        (
-            "running",
-            fleetd_contracts::ledger::WorkstreamState::Running
-        )
+        ("running", fleetd_contracts::ledger::WorkstreamState::Open)
     );
     let lines: Vec<&str> = w
         .brief
@@ -880,4 +873,88 @@ fn stored_done_when_checks_become_plain_lines() {
         )
         .unwrap();
     assert_eq!(claims, 0);
+}
+
+/// A hub from before workstreams were open, done or stopped: every older state reads back as one of them, and the
+/// playbook-change approvals the retro left go with their chat items, so every request and message still decodes.
+#[test]
+fn workstreams_are_open_done_or_stopped_on_an_older_hub() {
+    use super::migrations::MIGRATIONS;
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    let at = MIGRATIONS
+        .iter()
+        .position(|m| m.contains("THEN 'stopped' ELSE 'open'"))
+        .expect("the open, done or stopped migration");
+    for m in &MIGRATIONS[..at] {
+        conn.execute_batch(m).unwrap();
+    }
+    let ts = "2026-10-18T10:00:00.000Z";
+    for (n, state) in [
+        "draft",
+        "running",
+        "converging",
+        "verifying",
+        "done",
+        "stopped",
+        "failed",
+    ]
+    .iter()
+    .enumerate()
+    {
+        let w = serde_json::json!({
+            "workstreamId": format!("W{}", n + 1), "projectRef": { "machineId": "m", "projectId": "p" }, "title": "t",
+            "source": { "text": "t", "channel": "app", "by": "human", "at": ts },
+            "state": state, "createdAt": ts, "updatedAt": ts,
+        });
+        conn.execute(
+            "INSERT INTO workstreams (n, machine_id, project_id, state, data) VALUES (?1, 'm', 'p', ?2, ?3)",
+            rusqlite::params![n as i64, state, w.to_string()],
+        )
+        .unwrap();
+    }
+    let request = |n: i64, subject: &str| {
+        format!(
+            r#"{{"requestId":"Q{n}","projectRef":{{"machineId":"m","projectId":"p"}},"kind":"approval","text":"t","state":"denied",{subject},"createdAt":"{ts}"}}"#
+        )
+    };
+    let playbook = r#""playbook":{"proposalId":"R1","playbook":"bugfix","summary":"s","diff":"d"}"#;
+    let permission =
+        r#""permission":{"threadId":"t1","requestId":"r1","toolName":"Bash","summary":"ls"}"#;
+    for (n, subject) in [(1, playbook), (2, permission)] {
+        conn.execute(
+            "INSERT INTO requests (n, project_key, kind, state, created_ms, data) VALUES (?1, 'm/p', 'approval', 'denied', 0, ?2)",
+            rusqlite::params![n, request(n, subject)],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO chat_messages (machine_id, project_id, seq, created_ms, request, data) VALUES ('m', 'p', ?1, 0, ?2, ?3)",
+            rusqlite::params![n, format!("Q{n}"), format!(r#"{{"item":{{"kind":"command_approval",{subject}}}}}"#)],
+        )
+        .unwrap();
+    }
+    conn.execute_batch(MIGRATIONS[at]).unwrap();
+
+    let strings = |sql: &str| -> Vec<String> {
+        conn.prepare(sql)
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    };
+    assert_eq!(
+        strings("SELECT state FROM workstreams ORDER BY n"),
+        ["open", "open", "open", "open", "done", "stopped", "stopped"]
+    );
+    for (state, data) in strings("SELECT state FROM workstreams ORDER BY n")
+        .iter()
+        .zip(strings("SELECT data FROM workstreams ORDER BY n"))
+    {
+        let w: fleetd_contracts::ledger::Workstream = serde_json::from_str(&data).unwrap();
+        assert_eq!(crate::hub::leads::digest::state_text(w.state), state);
+    }
+    for data in strings("SELECT data FROM requests") {
+        let _: fleetd_contracts::ledger::HumanRequest = serde_json::from_str(&data).unwrap();
+    }
+    assert_eq!(strings("SELECT request FROM chat_messages"), ["Q2"]);
 }

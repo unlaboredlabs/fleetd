@@ -125,10 +125,6 @@ export const secretOutcome = (item: SecretRequestItem): Outcome | undefined => {
   return NEWER;
 };
 
-/** What an approval approves: a gated command, a session's tool prompt, or (an older approval) a playbook change. */
-export const approvalKind = (item: CommandApprovalItem): "command" | "permission" | "playbook" =>
-  item.playbook !== undefined ? "playbook" : item.gated !== undefined ? "command" : "permission";
-
 /** Only a command that can't be undone asks once more before it runs. */
 export const needsConfirm = (item: CommandApprovalItem): boolean => item.gated?.class === "irreversible";
 
@@ -137,7 +133,7 @@ const plain = (text: string): string => text.replace(/`/gu, "");
 
 /** What an answered approval was about, as one plain line for its folded row. */
 export const approvalTitle = (item: CommandApprovalItem): string =>
-  plain(item.playbook?.summary ?? item.gated?.reason ?? (item.permission === undefined ? "An agent's request" : `An agent wanted to use ${item.permission.toolName}`));
+  plain(item.gated?.reason ?? (item.permission === undefined ? "An agent's request" : `An agent wanted to use ${item.permission.toolName}`));
 
 /** What an answered secret was for, in the lead's words: its key is a slug, never row text. */
 export const secretTitle = (item: SecretRequestItem): string => plain(item.text);

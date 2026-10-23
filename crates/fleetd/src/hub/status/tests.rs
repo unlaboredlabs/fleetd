@@ -61,10 +61,10 @@ fn hub_on(db: Arc<HubDb>, clock: Arc<ManualClock>) -> (Arc<Hub>, tempfile::TempD
                 "workstreamId": "W1", "projectRef": { "machineId": "devbox", "projectId": "storefront" },
                 "title": "Checkout redesign",
                 "source": { "text": "Checkout redesign", "channel": "app", "by": "human", "at": AT },
-                "state": "running", "createdAt": AT, "updatedAt": AT,
+                "state": "open", "createdAt": AT, "updatedAt": AT,
             });
             c.execute(
-                "INSERT INTO workstreams (machine_id, project_id, state, data) VALUES ('devbox', 'storefront', 'running', ?)",
+                "INSERT INTO workstreams (machine_id, project_id, state, data) VALUES ('devbox', 'storefront', 'open', ?)",
                 [w.to_string()],
             )?;
             Ok(())

@@ -560,18 +560,12 @@ async fn stop_all(
         .records
         .workstreams_list(&WorkstreamFilter {
             project_ref: Some(r.clone()),
-            open: true,
+            state: Some(WorkstreamState::Open),
             limit: 200,
-            ..Default::default()
         })
         .map_err(store_error)?;
     let (mut orders, mut cancelled) = (0, 0);
-    for w in open.iter().filter(|w| {
-        !matches!(
-            w.state,
-            WorkstreamState::Stopped | WorkstreamState::Done | WorkstreamState::Failed
-        )
-    }) {
+    for w in &open {
         let why = reason.as_ref().map(|r| r.as_str());
         match crate::hub::orders::notes::stop(hub, caller, w.workstream_id.as_str(), why).await {
             Ok(n) => {

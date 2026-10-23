@@ -143,6 +143,7 @@ A machine that runs agents: any machine with a node. See [Machines](/docs/machin
 ## Workstream {#workstream}
 
 fleetd's record of one piece of the lead's work, with an id such as `W41`. The lead keeps them; you never file one.
+Each is open until the lead closes it as done, or it is stopped.
 
 ## Writer {#writer}
 

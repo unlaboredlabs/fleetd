@@ -61,7 +61,7 @@ const work = (base: Fixture): Fixture => {
         workstreamId: "W40",
         projectRef: CHECKOUT,
         title: "Payment element",
-        state: "running",
+        state: "open",
         phase: "working",
         needsYou: 0,
         settled: 0,

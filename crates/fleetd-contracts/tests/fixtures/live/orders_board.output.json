@@ -7,7 +7,7 @@
         "projectId": "storefront"
       },
       "title": "Fix cart total rounding",
-      "state": "running",
+      "state": "open",
       "phase": "waiting_on_you",
       "phaseDetail": "1 question",
       "next": "merge after one clean review",
@@ -198,7 +198,7 @@
         "projectId": "storefront"
       },
       "title": "Faster product search",
-      "state": "running",
+      "state": "open",
       "phase": "merging",
       "phaseDetail": "#208 in CI",
       "needsYou": 0,

@@ -4,7 +4,9 @@ use std::sync::Arc;
 
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadId, ThreadRef};
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
-use fleetd_contracts::ledger::{Decision, DecisionScope, HumanRequest, RequestState, WorkstreamId};
+use fleetd_contracts::ledger::{
+    Decision, DecisionScope, HumanRequest, RequestState, WorkstreamId, WorkstreamState,
+};
 use fleetd_contracts::mcp::McpToolError;
 
 use super::Area;
@@ -214,9 +216,8 @@ pub fn wire_area(area: &Arc<Area>, links: Links<'_>) {
                     .workstreams
                     .list(&WorkstreamFilter {
                         project_ref: Some(project_ref),
-                        open: true,
+                        state: Some(WorkstreamState::Open),
                         limit: OUTCOME_WORKSTREAMS + 1,
-                        ..Default::default()
                     })
                     .map_err(internal)?;
                 if open.len() > OUTCOME_WORKSTREAMS {

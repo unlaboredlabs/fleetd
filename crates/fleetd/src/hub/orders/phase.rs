@@ -16,7 +16,8 @@ pub struct PrState {
 
 pub struct PhaseInput<'a> {
     pub state: WorkstreamState,
-    pub headline: Option<&'a str>,
+    /// Open with no brief yet.
+    pub draft: bool,
     pub open_requests: usize,
     pub lanes: &'a [(AgentRole, LaneStatus, Option<&'a str>)],
     pub prs: &'a [PrState],
@@ -51,9 +52,6 @@ pub fn phase(i: &PhaseInput<'_>) -> (OrderPhase, Option<String>) {
         return (OrderPhase::WaitingOnYou, Some(detail));
     }
     match i.state {
-        WorkstreamState::Failed => {
-            return (OrderPhase::Failed, i.headline.map(str::to_owned));
-        }
         WorkstreamState::Stopped => return (OrderPhase::Stopped, None),
         WorkstreamState::Done => {
             let merged = i
@@ -64,7 +62,7 @@ pub fn phase(i: &PhaseInput<'_>) -> (OrderPhase, Option<String>) {
             let detail = (merged > 0).then(|| plural(merged, "PR merged", "PRs merged"));
             return (OrderPhase::Done, detail);
         }
-        _ => {}
+        WorkstreamState::Open => {}
     }
     let working = i
         .lanes
@@ -114,7 +112,7 @@ pub fn phase(i: &PhaseInput<'_>) -> (OrderPhase, Option<String>) {
         return (OrderPhase::Queued, Some(reason));
     }
     let tasks = i.lanes.iter().any(|(r, _, _)| *r != AgentRole::Lead);
-    if i.state == WorkstreamState::Draft || (!tasks && i.lead_working) {
+    if i.draft || (!tasks && i.lead_working) {
         return (OrderPhase::Planning, None);
     }
     (OrderPhase::Idle, Some("waiting for the lead".into()))
@@ -194,7 +192,7 @@ mod tests {
     ) -> PhaseInput<'a> {
         PhaseInput {
             state,
-            headline: None,
+            draft: false,
             open_requests: 0,
             lanes,
             prs,
@@ -202,7 +200,7 @@ mod tests {
         }
     }
 
-    const W: WorkstreamState = WorkstreamState::Running;
+    const W: WorkstreamState = WorkstreamState::Open;
 
     #[test]
     fn the_worst_child_rolls_up_in_table_order() {
@@ -257,10 +255,9 @@ mod tests {
         let mut planning = input(W, &[], &[]);
         planning.lead_working = true;
         assert_eq!(phase(&planning).0, OrderPhase::Planning);
-        assert_eq!(
-            phase(&input(WorkstreamState::Draft, &[], &[])).0,
-            OrderPhase::Planning
-        );
+        let mut draft = input(W, &[], &[]);
+        draft.draft = true;
+        assert_eq!(phase(&draft).0, OrderPhase::Planning);
         assert_eq!(phase(&input(W, &done, &[])).0, OrderPhase::Idle);
     }
 
@@ -279,16 +276,6 @@ mod tests {
         assert_eq!(
             phase(&input(WorkstreamState::Done, &[], &merged)),
             (OrderPhase::Done, Some("2 PRs merged".into()))
-        );
-        let mut failed = input(
-            WorkstreamState::Failed,
-            &[(AgentRole::Implementer, LaneStatus::Working, None)],
-            &[],
-        );
-        failed.headline = Some("tests failed");
-        assert_eq!(
-            phase(&failed),
-            (OrderPhase::Failed, Some("tests failed".into()))
         );
         assert_eq!(
             phase(&input(WorkstreamState::Stopped, &[], &[])).0,

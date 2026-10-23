@@ -149,7 +149,6 @@ impl Status {
             HubEventType::WorkstreamDone => Some(WorkstreamState::Done),
             HubEventType::WorkstreamState => match data.and_then(|d| d.get("state")?.as_str()) {
                 Some("stopped") => Some(WorkstreamState::Stopped),
-                Some("failed") => Some(WorkstreamState::Failed),
                 Some("done") => Some(WorkstreamState::Done),
                 _ => None,
             },

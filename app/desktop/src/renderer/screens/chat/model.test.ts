@@ -208,7 +208,7 @@ describe("your steers to the lead", () => {
 
   it("are read from the open orders, and from those that ended within the pages", () => {
     const w = (id: string, created: string, updated: string, state: Workstream["state"]) => ({ workstreamId: id, createdAt: created, updatedAt: updated, state }) as Workstream;
-    const listed = [w("W4", at(19, 12), at(19, 13), "done"), w("W3", at(19, 8), at(19, 10), "done"), w("W2", at(18, 8), at(18, 9), "stopped"), w("W1", at(17, 8), at(17, 9), "running")];
+    const listed = [w("W4", at(19, 12), at(19, 13), "done"), w("W3", at(19, 8), at(19, 10), "done"), w("W2", at(18, 8), at(18, 9), "stopped"), w("W1", at(17, 8), at(17, 9), "open")];
     expect(ordersInView(["W9"], listed, undefined, undefined)).toEqual(["W1", "W2", "W3", "W4", "W9"]);
     expect(ordersInView(["W9"], listed, at(19, 9), at(19, 11))).toEqual(["W1", "W3", "W9"]);
   });
