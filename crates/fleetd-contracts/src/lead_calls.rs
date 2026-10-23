@@ -13,8 +13,8 @@ use crate::effort::TaskProfile;
 use crate::ids::ThreadId;
 use crate::ledger::{
     Brief, Decision, DecisionKey, DecisionValue, DecisionWhy, EnvName, GATED_MAX_TIMEOUT_SEC,
-    GatedArgv, GatedClass, GatedCwd, GatedTimeoutSec, IntakeText, PlaybookName, PlaybookRef,
-    RequestState, SecretEnv, WorkstreamId, WorkstreamState,
+    GatedArgv, GatedClass, GatedCwd, GatedTimeoutSec, IntakeText, RequestState, SecretEnv,
+    WorkstreamId, WorkstreamState,
 };
 use crate::mcp::McpToolError;
 use crate::plan::{
@@ -209,13 +209,12 @@ pub struct ChangeEnqueueCall {
 }
 
 /// A lead opens its own workstream for work it took from the chat (`workstream_open`): a draft it then briefs with
-/// `brief`. `template` picks the playbook (feature, bugfix, research).
+/// `brief`.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkstreamOpenCall {
     pub text: IntakeText,
-    pub template: Option<PlaybookName>,
 }
 
 #[skip_serializing_none]
@@ -223,7 +222,6 @@ pub struct WorkstreamOpenCall {
 #[serde(rename_all = "camelCase")]
 pub struct WorkstreamOpenResult {
     pub workstream_id: WorkstreamId,
-    pub playbook: Option<PlaybookRef>,
     pub next: Option<String>,
 }
 

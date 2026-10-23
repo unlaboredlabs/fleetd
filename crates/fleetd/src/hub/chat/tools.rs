@@ -111,7 +111,6 @@ pub fn register_lead_calls(hub: &Arc<Hub>) {
                         client_request_id: request_id(),
                         channel: IntakeChannel::Lead,
                         by: caller.by.clone(),
-                        template: open.template,
                     })
                     .map_err(McpToolError::from)?;
                 Ok(LeadCallResult::WorkstreamOpen(WorkstreamOpenResult {
@@ -120,7 +119,6 @@ pub fn register_lead_calls(hub: &Arc<Hub>) {
                         outcome.workstream_id
                     )),
                     workstream_id: outcome.workstream_id,
-                    playbook: outcome.playbook,
                 }))
             })
         },

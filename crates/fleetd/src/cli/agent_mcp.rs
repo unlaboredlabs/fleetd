@@ -195,8 +195,7 @@ static TOOLS: &[Tool] = &[
     lead(
         "workstream_open",
         "workstream_open",
-        "Open a workstream for work you took from the chat: a draft you then brief. template picks the \
-         playbook (feature, bugfix, research).",
+        "Open a workstream for work you took from the chat: a draft you then brief.",
         inline_schema::<WorkstreamOpenCall>,
     ),
     Tool {

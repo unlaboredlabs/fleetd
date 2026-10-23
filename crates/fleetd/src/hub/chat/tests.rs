@@ -300,7 +300,6 @@ async fn a_projects_past_reads_in_once_in_time_order_without_ids() {
             by: "human".into(),
             at: "2026-10-19T08:00:00.000Z".into(),
             client_request_id: None,
-            playbook: None,
         })
         .unwrap();
     hub.db
@@ -443,10 +442,9 @@ async fn a_lead_opens_its_own_workstream_as_a_draft_with_no_intent_wake() {
         })
         .unwrap();
     let handler = hub.lead_calls.handler("workstream_open").unwrap();
-    let call: LeadCall = serde_json::from_value(
-        json!({ "op": "workstream_open", "text": "build schedules", "template": "feature" }),
-    )
-    .unwrap();
+    let call: LeadCall =
+        serde_json::from_value(json!({ "op": "workstream_open", "text": "build schedules" }))
+            .unwrap();
     let caller = crate::hub::link::LeadCaller {
         project_ref: r.clone(),
         by: "lead:devbox/app".into(),
@@ -464,10 +462,6 @@ async fn a_lead_opens_its_own_workstream_as_a_draft_with_no_intent_wake() {
     assert_eq!(
         (w.source.channel, w.source.text.as_str()),
         (IntakeChannel::Lead, "build schedules")
-    );
-    assert!(
-        w.playbook
-            .is_some_and(|p| p.as_ref().starts_with("feature@"))
     );
     assert!(
         !hub.leads.wakes.pending(&r),
@@ -775,7 +769,6 @@ async fn a_stopped_order_tells_its_lead_to_do_no_more_work_on_it() {
             by: "human".into(),
             at: AT.into(),
             client_request_id: None,
-            playbook: None,
         })
         .unwrap();
     crate::hub::api::registry()

@@ -63,7 +63,7 @@ pub const LEAD_USAGE: &str = r#"  brief create --workstream <W> (--json '<Brief>
              Changing scope after a milestone's first 10 minutes needs --why, and the status
              view shows it as a marker. --steer S<n> says the human's steer asked for it: it
              stands in for --why and acknowledges the steer
-  workstream open --text "<intent>" [--template bugfix|feature|research]
+  workstream open --text "<intent>"
              open a workstream for work taken from the chat: a draft to brief
              lead-side commands reach the hub through the local node (FLEETD_NODE_SOCK, default
              ~/.fleetd/node/node.sock); exit 0 ok, 2 usage, 3 refused, 4 hub unreachable
@@ -122,7 +122,6 @@ const OPTIONS: &[(&str, Kind)] = &[
     ("cwd", Kind::Str),
     ("secret-env", Kind::Multi),
     ("timeout", Kind::Str),
-    ("template", Kind::Str),
     ("item", Kind::Str),
     ("milestone", Kind::Str),
     ("must", Kind::Bool),
@@ -492,12 +491,11 @@ pub fn parse_lead_args(
             ])
         }
         Some("workstream") if sub == Some("open") && rest.is_empty() => {
-            only(&["text", "template"])?;
+            only(&["text"])?;
             required(&["text"])?;
             defined(vec![
                 ("op", s(Some("workstream_open"))),
                 ("text", s(v.str("text"))),
-                ("template", s(v.str("template"))),
             ])
         }
         Some("workstream") => {
@@ -1289,18 +1287,10 @@ mod tests {
     }
 
     #[test]
-    fn workstream_open_takes_the_intent_and_an_optional_template() {
+    fn workstream_open_takes_the_intent() {
         assert_eq!(
-            parse(&[
-                "workstream",
-                "open",
-                "--text",
-                "build schedules",
-                "--template",
-                "feature"
-            ])
-            .unwrap(),
-            json!({ "op": "workstream_open", "text": "build schedules", "template": "feature" })
+            parse(&["workstream", "open", "--text", "build schedules"]).unwrap(),
+            json!({ "op": "workstream_open", "text": "build schedules" })
         );
         assert!(
             parse(&["workstream", "open"])

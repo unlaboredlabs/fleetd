@@ -17,7 +17,6 @@ fleetd is one Cargo workspace and the desktop app. The shipped `fleetd` is one s
   (`schema::generated_contracts_are_current`) fails while either is out of date or hand-edited. A Rust enum a newer
   hub may extend gets `#[schemars(extend("x-open" = true))]`, so the app's type also admits values it doesn't know
   yet.
-- `playbooks/`: the built-in playbooks, embedded in the binary.
 - `app/desktop`: the desktop app, Electron + React (see below). Its own pnpm workspace, outside Cargo.
 - `tests/lab`: the end-to-end lab suite.
 - `site/` and `.github/release/`: the `fleetd.sh` installer and site, and the release pipeline. `docs/site/` is

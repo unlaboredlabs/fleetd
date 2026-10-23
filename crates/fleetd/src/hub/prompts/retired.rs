@@ -24,9 +24,8 @@ const STALL: &str =
     "a stalled run fails and its lead decides whether to continue it; nothing nudges it";
 const ROUTER: &str = "one lead per project: an order goes to its project's lead, no router";
 const HEADLINE: &str = "the status view has no generated headline";
-const RETRO: &str = "fleetd no longer runs a retro; edit the lead prompt or a playbook yourself";
+const RETRO: &str = "fleetd no longer runs a retro; edit the lead prompt yourself";
 const CLOSE: &str = "fleetd no longer checks a claim of done; the lead closes work and says why";
-const PLAYBOOK: &str = "the playbooks are sections of the lead prompt now; this file's rules still apply, its instructions don't";
 const ONE_REVIEW: &str = "every PR gets one fresh reviewer now, and nothing verifies it apart";
 const FINISH_ALL: &str =
     "finish-all went: a lead lists the open work and opens an order per item itself";
@@ -316,30 +315,6 @@ pub const RETIRED: &[Retired] = &[
     r("judge", "Judge", CLOSE, None),
     r("judge.research", "Research judge", CLOSE, None),
     r(
-        "playbook.bugfix",
-        "Playbook: bugfix",
-        PLAYBOOK,
-        Some("lead.start"),
-    ),
-    r(
-        "playbook.feature",
-        "Playbook: feature",
-        PLAYBOOK,
-        Some("lead.start"),
-    ),
-    r(
-        "playbook.research",
-        "Playbook: research",
-        PLAYBOOK,
-        Some("lead.start"),
-    ),
-    r(
-        "playbook.finish-all",
-        "Playbook: finish-all",
-        FINISH_ALL,
-        Some("lead.start"),
-    ),
-    r(
         "review.verifier",
         "Verifier",
         ONE_REVIEW,
@@ -349,13 +324,6 @@ pub const RETIRED: &[Retired] = &[
 
 pub fn get(id: &str) -> Option<&'static Retired> {
     RETIRED.iter().find(|r| r.id == id)
-}
-
-impl Retired {
-    /// A playbook's override is its file under `<hub home>/playbooks`, hub-wide only.
-    pub fn playbook(&self) -> Option<&'static str> {
-        self.id.strip_prefix("playbook.")
-    }
 }
 
 #[cfg(test)]
@@ -373,8 +341,9 @@ mod tests {
         }
         assert_eq!(
             ENTRIES.len() + RETIRED.len(),
-            77,
-            "the 69 prompts of an earlier release, lead.profiles, and seven fixed texts made prompts"
+            73,
+            "the 69 prompts of an earlier release, lead.profiles, and seven fixed texts made prompts, less the four \
+             playbooks"
         );
     }
 }

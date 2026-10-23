@@ -50,7 +50,6 @@ fn lab() -> Lab {
             by: "human".into(),
             at: AT.into(),
             client_request_id: None,
-            playbook: None,
         })
         .unwrap();
     assert_eq!(w.workstream_id.as_str(), "W1");

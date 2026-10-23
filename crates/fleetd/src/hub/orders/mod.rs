@@ -12,9 +12,7 @@ use std::collections::{BTreeSet, HashMap};
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::effort::{Effort, TaskProfile};
 use fleetd_contracts::ids::{ProjectRef, ThreadRef, Timestamp};
-use fleetd_contracts::ledger::{
-    Lead, LeadState, PlaybookName, Workstream, WorkstreamId, WorkstreamState,
-};
+use fleetd_contracts::ledger::{Lead, LeadState, Workstream, WorkstreamId, WorkstreamState};
 use fleetd_contracts::live::{
     AgentLane, AgentRole, LaneStatus, LiveLane, OrderCard, PrChip, PrRef, TrainLive, lead_lane_id,
 };
@@ -84,17 +82,11 @@ fn effort_of(s: &str) -> Option<Effort> {
     serde_json::from_value(serde_json::Value::String(s.to_owned())).ok()
 }
 
-fn template_of(w: &Workstream) -> Option<PlaybookName> {
-    let pinned = w.playbook.as_ref()?;
-    let name = pinned.as_str().split('@').next()?;
-    PlaybookName::ALL.into_iter().find(|p| p.as_str() == name)
-}
-
 /// Longest order title on a card, in characters.
 pub const TITLE_CHARS: usize = 60;
 
 /// A card's title: the frozen brief's goal once there is one, else the order's first line, without a leading
-/// `@project` or template prefix, cut to its first sentence and to `TITLE_CHARS` on a word boundary.
+/// `@project` or a kind prefix such as `fix:`, cut to its first sentence and to `TITLE_CHARS` on a word boundary.
 pub fn short_title(w: &Workstream) -> String {
     let source = w
         .brief
@@ -373,7 +365,6 @@ pub fn card(p: &OrderParts<'_>, look: &dyn Lookups) -> Joined {
         project_ref: w.project_ref.clone(),
         title: Text::unchecked(short_title(w)),
         state: w.state,
-        template: template_of(w),
         phase,
         phase_detail: detail.map(|d| text(&d)),
         next: w.headline.clone(),

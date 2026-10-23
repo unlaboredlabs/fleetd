@@ -614,4 +614,9 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     r#"
   DELETE FROM events WHERE type = 'train.blocked';
   "#,
+    // Playbooks went: a workstream pins none, and the pinned texts go.
+    r#"
+  DROP TABLE playbook_versions;
+  UPDATE workstreams SET data = json_remove(data, '$.playbook') WHERE json_valid(data);
+  "#,
 ];

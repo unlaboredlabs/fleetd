@@ -299,10 +299,12 @@ pub fn build_on(
         slots: slots.clone(),
         policies: policies.clone(),
     });
-    let leads = crate::hub::leads::Area::new(
-        crate::hub::leads::Ctx::new(db.clone(), store.clone(), events.clone(), clock.clone()),
-        crate::hub::leads::AreaOptions { home: &config.home },
-    )?;
+    let leads = crate::hub::leads::Area::new(crate::hub::leads::Ctx::new(
+        db.clone(),
+        store.clone(),
+        events.clone(),
+        clock.clone(),
+    ));
     crate::hub::leads::wiring::wire_area(
         &leads,
         crate::hub::leads::wiring::Links {

@@ -502,11 +502,10 @@ Put a PR no task's result put there on its repo's merge train; only the train me
 
 ### workstream_open
 
-Open a workstream for work you took from the chat: a draft you then brief. template picks the playbook (feature, bugfix, research).
+Open a workstream for work you took from the chat: a draft you then brief.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `template` | string | no | The prefixes `bug:`/`fix:` and `research:` pick bugfix and research. One of `bugfix`, `feature`, `research`. |
 | `text` | string | yes | At most 4000 characters. |
 
 **Who may call:** a lead, checked by the hub. **Needs a human:** no.
@@ -515,7 +514,6 @@ Open a workstream for work you took from the chat: a draft you then brief. templ
 {
   "name": "workstream_open",
   "arguments": {
-    "template": "feature",
     "text": "Build the schedules page"
   }
 }

@@ -508,7 +508,7 @@ keep the project's plan: milestones of must or polish items sized s, m or l (rel
 ### fleetd workstream open {#workstream-open}
 
 ```text
-fleetd workstream open --text "<intent>" [--template bugfix|feature|research]
+fleetd workstream open --text "<intent>"
 ```
 
 open a workstream for work taken from the chat: a draft to brief

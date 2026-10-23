@@ -653,7 +653,6 @@ fn example(role: Role, tool: &str) -> Option<Value> {
         }),
         (Role::Lead, "workstream_open") => json!({
             "text": "Build the schedules page",
-            "template": "feature",
         }),
         (Role::Worker, "report") => json!({
             "blocking": 0,
