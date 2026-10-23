@@ -8,7 +8,8 @@ import { Button, cx, EmptyState, Markdown, PROFILE_LINE, RoleTag, Text, Truncate
 import { ActivityLine, MiddleCut } from "../live/parts";
 import { describe, isRunning } from "../live/words";
 import { navigate } from "../shell/navigation";
-import { Elapsed } from "./AgentsScreen";
+import { panelRoute } from "../shell/routes";
+import { Elapsed } from "./AgentsPane";
 import { actionLine } from "./model";
 import s from "./agents.module.css";
 
@@ -29,41 +30,32 @@ export function AgentWork({ id }: { id: string }) {
   if (!listed) return <div className={s.workBody} aria-busy="true" />;
   if (agent === undefined || row === undefined) {
     return (
-      <EmptyState title="This agent isn’t running now" actions={<Button onClick={() => navigate({ id: "agents", agent: null })}>All agents</Button>}>
-        It finished, or its lead stopped it. Its project’s chat says how it went.
-      </EmptyState>
+      <div className={s.workBody} data-screen="agents.work">
+        <EmptyState title="This agent isn’t running now">It finished, or the lead stopped it. The chat says how it went.</EmptyState>
+      </div>
     );
   }
-  const chat = { id: "project", project: { machineId: row.projectRef.machineId, projectId: row.projectRef.projectId }, message: null } as const;
   const pr = row.pr;
 
   return (
-    <section className={s.workBody} aria-label={`What ${row.title} is doing`}>
+    <section className={s.workBody} aria-label={`What ${row.title} is doing`} data-screen="agents.work">
       <div className={s.workHead}>
         <Text as="h2" strong>
           {row.title}
         </Text>
         <span className={s.meta}>
           <RoleTag role={row.role} />
-          <Text size="xs" tone="quiet">
-            {row.projectTitle}
-          </Text>
           {row.profile === undefined ? null : (
             <Text size="xs" tone="quiet">
               {PROFILE_LINE[row.profile]}
             </Text>
           )}
           {pr !== undefined ? (
-            <Button variant="quiet" size="sm" onClick={() => navigate({ id: "prs", project: chat.project, pr: { repo: pr.repo, number: pr.number } })}>
+            <Button variant="quiet" size="sm" onClick={() => navigate(panelRoute(row.projectRef, { tab: "prs", pr: { repo: pr.repo, number: pr.number } }))}>
               {`PR #${String(pr.number)}`}
             </Button>
           ) : null}
           <Elapsed startedAt={row.startedAt} running={isRunning(row.status)} />
-          <span className={s.metaEnd}>
-            <Button variant="quiet" size="sm" onClick={() => navigate(chat)}>
-              Open the lead’s chat
-            </Button>
-          </span>
         </span>
         <ActivityLine line={describe(row)} />
       </div>

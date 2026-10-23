@@ -1,5 +1,6 @@
 // The app's hash routes (binding for every screen; the QA harness navigates by setting location.hash). A project's
-// lead chat is the main surface; Status, Time and Settings are secondary. notes/electron-routes.md has the table.
+// lead chat is the main surface, with its agents and PRs in the panel beside it (`/agents`, `/prs` after the
+// project); Status, Time and Settings are secondary. notes/electron-routes.md has the table.
 
 /** A project is (machine, project): the same repo can be checked out on two machines. */
 export interface ProjectKey {
@@ -13,10 +14,10 @@ export interface PrKey {
   readonly number: number;
 }
 
-/** One agent: its project and its lane. */
-export interface AgentKey extends ProjectKey {
-  readonly laneId: string;
-}
+export type PanelTab = "agents" | "prs";
+
+/** What the panel beside a project's chat shows: a tab's list, or one agent's work or one PR from it. */
+export type PanelView = { readonly tab: "agents"; readonly agent: string | null } | { readonly tab: "prs"; readonly pr: PrKey | null };
 
 export const SETTINGS_TABS = ["general", "notifications", "agents", "prompts", "instructions"] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
@@ -24,13 +25,12 @@ export type SettingsTab = (typeof SETTINGS_TABS)[number];
 export type Screen =
   /** `#/`: the last project opened, else the first; the frame resolves it once the projects have loaded. */
   | { readonly id: "home" }
-  /** A project's lead chat; `message` scrolls to one message (a clicked notification). */
-  | { readonly id: "project"; readonly project: ProjectKey; readonly message: string | null }
-  /** A project's pull requests; `pr` opens one beside the list. */
-  | { readonly id: "prs"; readonly project: ProjectKey; readonly pr: PrKey | null }
+  /**
+   * A project's lead chat; `message` scrolls to one message (a clicked notification). `panel` opens the panel on a
+   * view; without it the panel shows what the window last had, if it is open.
+   */
+  | { readonly id: "project"; readonly project: ProjectKey; readonly message: string | null; readonly panel?: PanelView }
   | { readonly id: "status" }
-  /** Every agent across the projects; `agent` opens one's live work beside the list. */
-  | { readonly id: "agents"; readonly agent: AgentKey | null }
   | { readonly id: "machines" }
   /** The time inspector, for one order or (null) the fleet. */
   | { readonly id: "time"; readonly orderId: string | null }
@@ -66,19 +66,24 @@ const prKey = (rest: ReadonlyArray<string>): PrKey | null => {
   return rest.length === 3 && number !== null ? { repo: `${a ?? ""}/${b ?? ""}`, number } : null;
 };
 
+/** `prs[/<pr>]` or `agents[/<lane>]` after the project; anything else, no view. */
+const panelView = (rest: ReadonlyArray<string>): PanelView | null => {
+  const [tab, ...item] = rest;
+  if (tab === "prs") return { tab, pr: prKey(item) };
+  if (tab === "agents") return { tab, agent: item.length === 1 ? (item[0] ?? null) : null };
+  return null;
+};
+
 const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): Screen => {
-  const [head, a, b, c] = parts;
+  const [head, a, b] = parts;
   switch (head) {
-    case "project":
+    case "project": {
       if (a === undefined || b === undefined) return HOME;
-      return { id: "project", project: { machineId: a, projectId: b }, message: query.get("message") || null };
-    case "prs":
-      // Like the agents view's `agents/<machine>/<project>/<lane>`; the hub lists PRs a project at a time.
-      return a === undefined || b === undefined ? HOME : { id: "prs", project: { machineId: a, projectId: b }, pr: prKey(parts.slice(3)) };
+      const panel = panelView(parts.slice(3));
+      return { id: "project", project: { machineId: a, projectId: b }, message: query.get("message") || null, ...(panel === null ? {} : { panel }) };
+    }
     case "status":
       return { id: "status" };
-    case "agents":
-      return { id: "agents", agent: a === undefined || b === undefined || c === undefined ? null : { machineId: a, projectId: b, laneId: c } };
     case "time":
       return { id: "time", orderId: a === "order" && b !== undefined ? b : null };
     case "machines":
@@ -90,7 +95,7 @@ const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): Screen 
     case "onboarding":
       return { id: "onboarding", hub: query.get("hub") || null, code: query.get("code") || null };
     default:
-      // The removed surfaces (#/board, #/order, #/inbox) and anything unknown land on the home project.
+      // The removed surfaces (#/board, #/order, #/inbox, #/agents, #/prs) and anything unknown land on the home project.
       return HOME;
   }
 };
@@ -111,21 +116,18 @@ export const parseHash = (hash: string): Screen => {
   return screenOf(parts, query);
 };
 
+const panelPath = (view: PanelView): Array<string> => {
+  if (view.tab === "agents") return view.agent === null ? ["agents"] : ["agents", view.agent];
+  const pr = view.pr;
+  return pr === null ? ["prs"] : ["prs", ...(pr.repo === null ? [] : pr.repo.split("/", 2)), String(pr.number)];
+};
+
 const path = (screen: Screen): Array<string> => {
   switch (screen.id) {
     case "home":
       return [];
     case "project":
-      return ["project", screen.project.machineId, screen.project.projectId];
-    case "prs":
-      return [
-        "prs",
-        screen.project.machineId,
-        screen.project.projectId,
-        ...(screen.pr === null ? [] : [...(screen.pr.repo === null ? [] : screen.pr.repo.split("/", 2)), String(screen.pr.number)]),
-      ];
-    case "agents":
-      return screen.agent === null ? ["agents"] : ["agents", screen.agent.machineId, screen.agent.projectId, screen.agent.laneId];
+      return ["project", screen.project.machineId, screen.project.projectId, ...(screen.panel === undefined ? [] : panelPath(screen.panel))];
     case "time":
       return screen.orderId === null ? ["time"] : ["time", "order", screen.orderId];
     case "projects.add":
@@ -150,8 +152,8 @@ export const toHash = (screen: Screen): string => {
   return `#/${path(screen).map(encodeURIComponent).join("/")}${q === "" ? "" : `?${q}`}`;
 };
 
-/** An agent's key as the data layer's live agents name it: "machineId/projectId/laneId". */
-export const agentId = (key: AgentKey): string => `${key.machineId}/${key.projectId}/${key.laneId}`;
+/** A project's chat with the panel on `panel`. */
+export const panelRoute = (project: ProjectKey, panel: PanelView): Screen => ({ id: "project", project, message: null, panel });
 
 export const sameProject = (a: ProjectKey | null, b: ProjectKey | null): boolean =>
   a === b || (a !== null && b !== null && a.machineId === b.machineId && a.projectId === b.projectId);

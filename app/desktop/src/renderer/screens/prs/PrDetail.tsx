@@ -7,7 +7,7 @@ import { selectLiveAgents } from "../../src/data/selectors";
 import type { PrCheck, PrGetOutput, PrReviewEntry, PrRow } from "../../../shared/contracts";
 import { codeRuns, machineCode } from "../chat/format";
 import { Button, InlineCode, Markdown, StatusChip, Tab, TabList, TabPanel, Tabs, Text, Truncate, cx, toast } from "../../ui";
-import { AgentRowLink } from "../agents/AgentsScreen";
+import { AgentRowLink } from "../agents/AgentsPane";
 import { DiffPane } from "./DiffPane";
 import {
   authorWords,
@@ -250,7 +250,7 @@ function Overview({ data, now, githubSaid }: { data: PrGetOutput; now: number; g
 
 const ALL_AGENTS = {} as const;
 
-/** The agents working on this PR now (its reviewers, a fixer), as the agents view lists them; each opens its work there. */
+/** The agents working on this PR now (its reviewers, a fixer), as the panel's agents list them; each opens its work. */
 function AtWork({ repo, number }: { repo: string; number: number }) {
   useToolQuery("agents_list", ALL_AGENTS);
   const agents = useData(selectLiveAgents);
@@ -260,7 +260,7 @@ function AtWork({ repo, number }: { repo: string; number: number }) {
     <Section title="At work on it now">
       <div className={s.atWork}>
         {on.map((a) => (
-          <AgentRowLink key={a.id} agent={a} current={false} />
+          <AgentRowLink key={a.id} agent={a} />
         ))}
       </div>
     </Section>

@@ -25,7 +25,7 @@ const MINUTE = 60_000;
 export const projectHref = (ref: ProjectStatusRow["projectRef"]): string =>
   `#/project/${encodeURIComponent(ref.machineId)}/${encodeURIComponent(ref.projectId)}`;
 
-/** A project's PR list: its chat's route plus /prs (the PR screen's route table). */
+/** A project's PR list: its chat with the panel on its PRs (shell/routes.ts). */
 export const prsHref = (ref: ProjectStatusRow["projectRef"]): string => `${projectHref(ref)}/prs`;
 
 /** One phrase wherever there is no bar yet: nothing to count. */
