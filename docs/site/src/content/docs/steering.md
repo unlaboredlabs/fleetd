@@ -84,11 +84,8 @@ Once delivered, a steer can't be taken back. Send another one that says what cha
 
 ## When a steer changes the plan {#plan}
 
-If your steer changes what the work delivers, the lead updates the plan in the same turn and names your steer:
-
-```sh
-fleetd plan drop P3 --steer S12
-```
+If your steer changes what the work delivers, the lead updates the plan in the same turn and names your steer (S12)
+on the change.
 
 That also counts as acknowledging the steer.
 
@@ -124,8 +121,7 @@ That also counts as acknowledging the steer.
 
 See the [CLI reference](/docs/reference/cli#steer).
 
-A lead steers its own agents the same way with `fleetd task message T88 "<text>"`, adding `--now` to stop the
-agent's current step.
+A lead steers its own agents the same way through its own task message call, and can stop the agent's current step.
 
 From an MCP client: `steer_send {target: {workstreamId} | {taskId}, text, mode: "queue" | "now", clientRequestId}`
 (operate, human key), `steer_withdraw {steerId}`; `order_get {workstreamId}` lists the order's newest steers. `clientRequestId` is any
