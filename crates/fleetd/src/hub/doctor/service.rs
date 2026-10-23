@@ -273,12 +273,6 @@ impl Doctor {
             disk.as_ref(),
             paused.as_deref(),
         ));
-        out.push(checks::idle_sleep(
-            id,
-            probe.as_ref().map_err(String::as_str),
-            machine.last_slept.as_ref(),
-            self.now_ms(),
-        ));
         out.push(checks::usage_breaker(id, &usage.breaker));
         if let Some(refused) = refused {
             out.push(checks::cmd_roots(id, &refused));

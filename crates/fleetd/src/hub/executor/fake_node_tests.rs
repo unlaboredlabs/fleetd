@@ -171,7 +171,6 @@ impl ToolPolicy for Rules {
             Ok(super::SessionRules {
                 allow: vec!["Bash(npm test:*)".into()],
                 deny: vec!["WebFetch".into()],
-                auto_memory: false,
             })
         })
     }

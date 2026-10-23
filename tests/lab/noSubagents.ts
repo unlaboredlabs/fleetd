@@ -1,5 +1,5 @@
 // Claude Code's own subagents are off and agents start only through fleetd (FLEETD_LAB_SLOT=6 `npm run lab nosub`).
-// The doctor says so for lab-a. A lead told to start a subagent with Agent/Task can't: its init has no agent
+// A lead told to start a subagent with Agent/Task can't: its init has no agent
 // tool, any call it makes is refused, and no subagent starts. Its MCP `spawn_agent` starts a fleetd task that shows as
 // a lane on the order and ran through the slot board. A task's agent gets only report/ask_lead/claim_done, and its own
 // shell can't spawn either, with FLEETD_THREAD_ID unset or forged as the lead's. A few tiny lead turns, two task turns.
@@ -78,11 +78,6 @@ export async function noSubagents(lab: Lab) {
   const ref = { machineId: MACHINE, projectId };
   const root = (await callTool("project_get", ref)).body.project.workspaceRoot as string;
   prepareRepo(root);
-
-  const doctor = (await callTool("doctor_list", { rerun: true })).body;
-  const entry = doctor.checks.find((c: Body) => c.id === `${MACHINE}/claude_subagents`);
-  check(entry?.status === "ok" && entry.message === "Claude subagents off (fleetd manages agents)", `doctor ${MACHINE}/claude_subagents: ${JSON.stringify(entry)}`);
-  ok(`doctor ${MACHINE}/claude_subagents: ✓ ${entry.message}`);
 
   let leadThread = "";
   let leadTurns = 0;

@@ -16,6 +16,7 @@ use fleetd_contracts::sessions::{
 use serde_json::Value;
 use tokio::sync::mpsc;
 
+use crate::node::runner::conformance::agent_like;
 use crate::node::runner::{
     BoxFut, ExitInfo, RunOutcome, Runner, RunnerError, RunnerEvent, SessionCommand, SessionHandle,
     SessionSpec,
@@ -110,14 +111,12 @@ impl Runner for FakeRunner {
                 proxy: None,
                 proxy_source: None,
                 config_dir: None,
-                auto_memory: None,
-                agent_tools: Some(Vec::new()),
-                subagent_leaks: Some(Vec::new()),
             }
         })
     }
 
     fn spawn(&self, spec: SessionSpec) -> Result<SessionHandle, RunnerError> {
+        let denied = spec.disallowed_tools.clone();
         let index = {
             let mut spawns = self.spawns.lock().unwrap();
             spawns.push(spec);
@@ -127,6 +126,7 @@ impl Runner for FakeRunner {
         let (ev_tx, ev_rx) = mpsc::channel(256);
         let process = Process {
             refusal: self.refuse_next.lock().unwrap().take(),
+            denied,
             index,
             turns: self.turns.clone(),
             next_turn: self.next_turn.clone(),
@@ -148,6 +148,8 @@ impl Runner for FakeRunner {
 
 struct Process {
     refusal: Option<String>,
+    /// The spawn's `--disallowedTools`.
+    denied: Vec<String>,
     index: usize,
     turns: Vec<Turn>,
     next_turn: Arc<AtomicUsize>,
@@ -328,7 +330,7 @@ impl Process {
                     return stop;
                 }
             }
-            for event in map_line(&msg, run_id, &mut message_id, &mut api_error) {
+            for event in map_line(&msg, run_id, &self.denied, &mut message_id, &mut api_error) {
                 let asks = matches!(event, RunnerEvent::PermissionRequest { .. });
                 let _ = self.tx.send(event).await;
                 if asks {
@@ -365,6 +367,7 @@ fn at() -> Timestamp {
 fn map_line(
     msg: &Value,
     run_id: &str,
+    denied: &[String],
     message_id: &mut String,
     api_error: &mut Option<(String, Option<u16>)>,
 ) -> Vec<RunnerEvent> {
@@ -374,9 +377,15 @@ fn map_line(
             version: s(&msg["claude_code_version"]),
             model: s(&msg["model"]),
             cwd: s(&msg["cwd"]),
-            auto_memory: crate::node::runner::conformance::auto_memory_on(msg.get("memory_paths")),
-            // The fixtures were recorded without fleetd's deny list, which a real claude would have applied.
-            subagent_leaks: Vec::new(),
+            // As claude applies the spawn's deny list (the fixtures were recorded without one).
+            agent_tools: msg["tools"].as_array().map(|tools| {
+                tools
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .filter(|t| agent_like(t) && !denied.iter().any(|d| d == t))
+                    .map(str::to_owned)
+                    .collect()
+            }),
         }],
         "command_lifecycle" if msg["state"] == "started" => vec![RunnerEvent::RunStarted {
             run_id: run_id.to_owned(),

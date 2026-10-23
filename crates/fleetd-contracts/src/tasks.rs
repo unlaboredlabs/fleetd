@@ -286,16 +286,6 @@ pub struct PolicyFileLead {
     pub auto_start: bool,
 }
 
-/// How fleetd runs claude for the project's sessions.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct PolicyFileClaude {
-    /// true: the sessions keep claude's own auto memory (per-cwd notes under the claude config dir). Default false:
-    /// fleetd turns it off, since it owns what an agent is told.
-    #[serde(default)]
-    pub auto_memory: bool,
-}
-
 /// Tool permission rules in claude's own syntax (`Bash(npm test:*)`, `Read`, `mcp__github`). They become the
 /// session's `--allowedTools` / `--disallowedTools`, and the hub answers a prompt that one of them matches itself.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -318,7 +308,6 @@ pub struct PolicyFile {
     pub finish_all: Option<PolicyFileFinishAll>,
     pub tools: Option<PolicyFileTools>,
     pub lead: Option<PolicyFileLead>,
-    pub claude: Option<PolicyFileClaude>,
     /// What the branches fleetd names start with (default `fleetd/`), for several fleets sharing one repo.
     pub branch_prefix: Option<BranchPrefix>,
 }
@@ -345,7 +334,6 @@ pub fn default_policy() -> PolicyFile {
         finish_all: None,
         tools: None,
         lead: None,
-        claude: None,
         branch_prefix: None,
     }
 }
