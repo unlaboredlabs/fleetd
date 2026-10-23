@@ -250,7 +250,7 @@ pub struct AgentLane {
     pub model: Option<Text<1, 80>>,
     pub effort: Option<Effort>,
     pub status: LaneStatus,
-    /// Queued, parked or failed: why, e.g. "slots: 40/40 in use", "usage limit: resumes 14:05".
+    /// Queued, parked or failed: why, e.g. "fleet cap: 40 of 40 running", "usage limit: resumes 14:05".
     pub status_reason: Option<Text<0, 160>>,
     pub started_at: Option<Timestamp>,
     pub ended_at: Option<Timestamp>,

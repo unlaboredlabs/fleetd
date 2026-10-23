@@ -452,4 +452,8 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     r#"
   DELETE FROM status_series;
   "#,
+    // A point marks a figure holding on paused work (`paused`, the plain words).
+    r#"
+  ALTER TABLE status_series ADD COLUMN paused TEXT;
+  "#,
 ];

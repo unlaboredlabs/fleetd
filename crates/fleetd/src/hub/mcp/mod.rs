@@ -266,7 +266,7 @@ pub async fn handle(
         let result = json!({
             "protocolVersion": protocol,
             "capabilities": { "logging": {}, "tools": { "listChanged": true }, "completions": {} },
-            "serverInfo": { "name": "fleetd", "version": env!("CARGO_PKG_VERSION") },
+            "serverInfo": { "name": "fleetd", "version": crate::version() },
         });
         let body = json!({ "jsonrpc": "2.0", "id": id, "result": result });
         return json_response(

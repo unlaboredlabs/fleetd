@@ -1441,11 +1441,25 @@ impl Executors {
         Ok(())
     }
 
+    /// A person's Stop: interrupts whatever run the thread has now. [`Self::interrupt`] names the run it tracks, and
+    /// the node ignores a name that is no longer its active run (a message sent just as a turn started).
+    pub async fn interrupt_now(&self, r: &ThreadRef) -> Result<(), ExecutorError> {
+        let call = SessionCall::Interrupt {
+            session_id: r.thread_id.clone(),
+            run_id: None,
+            reason: Some("stopped by the person".into()),
+        };
+        self.call(&r.machine_id, NodeOperation::Interrupt, call, READ_TIMEOUT)
+            .await?;
+        Ok(())
+    }
+
     /// Ends the thread's claude process; `Ok` only once the node saw it exit (it escalates to SIGKILL).
-    pub async fn stop(&self, r: &ThreadRef) -> Result<(), ExecutorError> {
+    /// `remove_worktree` then deletes its worktree, and its branch once merged.
+    pub async fn stop(&self, r: &ThreadRef, remove_worktree: bool) -> Result<(), ExecutorError> {
         let call = SessionCall::Stop {
             session_id: r.thread_id.clone(),
-            remove_worktree: false,
+            remove_worktree,
         };
         self.call(&r.machine_id, NodeOperation::Stop, call, STOP_TIMEOUT)
             .await?;

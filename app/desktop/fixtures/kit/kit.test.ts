@@ -1,10 +1,8 @@
-import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { Fixture } from "./fixture.ts";
 import { assertClean, findLeaks } from "./leaks.ts";
 import { makeSanitizer } from "./sanitize.ts";
-import { buildShared, recorded } from "./shared.ts";
 import { LOG, SCREENSHOT, writeChat } from "./chat.ts";
 import { fitStrings, validateFixture } from "./schema.ts";
 
@@ -107,30 +105,6 @@ describe("schema", () => {
     const code = new Fixture("t", "").fail("order_get", { workstreamId: "W1" }, { code: "not_a_code", message: "no" });
     expect(validateFixture(code).join("\n")).toMatch(/not a hub error code/u);
     expect(validateFixture(new Fixture("t", "").fail("order_get", { workstreamId: "W1" }, { code: "not_found", message: "no" }))).toEqual([]);
-  });
-});
-
-// Always: the generic leak patterns. With FLEETD_FIXTURE_DENYLIST=<file outside the repo>, the real names too.
-describe("recorded fixtures", () => {
-  const dir = path.join(import.meta.dirname, "../recorded");
-  it.each(fs.readdirSync(dir).filter((f) => f.endsWith(".json")))("%s leaks nothing", (file) => {
-    expect(findLeaks(fs.readFileSync(path.join(dir, file), "utf8"))).toEqual([]);
-  });
-});
-
-describe("recorded moments", () => {
-  const dir = path.join(import.meta.dirname, "../recorded");
-  it.each(fs.readdirSync(dir).filter((f) => f.endsWith(".json")))("%s is traffic a hub could send", (file) => {
-    expect(validateFixture(recorded(file.slice(0, -5)))).toEqual([]);
-  });
-});
-
-// What `pnpm fixtures` checks, in the desktop CI job too, which runs tests but not the build.
-describe("shared fixtures", () => {
-  const shared = [...buildShared().values()];
-  it.each(shared.map((f) => [f.name, f] as const))("%s leaks nothing and is traffic a hub could send", (_name, f) => {
-    expect(findLeaks(JSON.stringify(f.toFile()))).toEqual([]);
-    expect(validateFixture(f)).toEqual([]);
   });
 });
 

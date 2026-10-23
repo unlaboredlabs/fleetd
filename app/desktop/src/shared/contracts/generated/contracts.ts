@@ -106,7 +106,7 @@ export type AgentLane = {
   role: AgentRole;
   startedAt?: Timestamp;
   status: LaneStatus;
-  /** Queued, parked or failed: why, e.g. "slots: 40/40 in use", "usage limit: resumes 14:05". */
+  /** Queued, parked or failed: why, e.g. "fleet cap: 40 of 40 running", "usage limit: resumes 14:05". */
   statusReason?: string;
   taskId?: TaskId;
   threadRef?: ThreadRef;
@@ -132,7 +132,7 @@ export type AgentRow = {
   role: AgentRole;
   startedAt?: Timestamp;
   status: LaneStatus;
-  /** Queued, parked or failed: why, e.g. "slots: 40/40 in use", "usage limit: resumes 14:05". */
+  /** Queued, parked or failed: why, e.g. "fleet cap: 40 of 40 running", "usage limit: resumes 14:05". */
   statusReason?: string;
   taskId?: TaskId;
   threadRef?: ThreadRef;
@@ -583,6 +583,20 @@ export type ChatSendOutput = {
   leadWaiting?: string;
   message: ChatMessage;
   next?: string;
+  truncated?: boolean;
+};
+
+export type ChatStopInput = {
+  clientRequestId: string;
+  projectRef: ProjectRef;
+};
+
+export type ChatStopOutput = {
+  /** The system line it wrote into the chat. */
+  message: ChatMessage;
+  next?: string;
+  /** Something was running and stopped: the lead's turn or an agent. */
+  stopped: boolean;
   truncated?: boolean;
 };
 
@@ -1317,6 +1331,7 @@ export type KnownHubEventType =
   | "claim.passed"
   | "steer.withdrawn"
   | "machine.slept"
+  | "machine.guard"
   | "project.removed"
   | "project.added"
   | "project.clone_progress"
@@ -1811,6 +1826,12 @@ export type Machine = {
   tags: string[];
 };
 
+/** `machine.guard`. */
+export type MachineGuardData = {
+  /** true: new agents wait; false: they start again. */
+  paused: boolean;
+};
+
 /** Machine slug, [a-z0-9-]{1,32} */
 export type MachineId = string;
 
@@ -1924,10 +1945,24 @@ export type NextRow = {
   workstreamId?: WorkstreamId;
 };
 
+/** Space on the volume holding a node's worktrees and build cache. */
+export type NodeDisk = {
+  /** Free for the node's user. */
+  freeBytes: number;
+  /**
+   * Below this the hub starts no new agents there: node.json's `minFreeGb`, else 10% of the volume or 20 GB,
+   * whichever is larger.
+   */
+  minFreeBytes: number;
+  totalBytes: number;
+};
+
 /** What a machine reports about itself with each heartbeat. */
 export type NodeLoad = {
   /** Logical CPUs. */
   cpus: number;
+  /** The volume holding the node's worktrees and build cache; absent from older nodes and when it can't be read. */
+  disk?: NodeDisk;
   /**
    * The latest claude.ai subscription limit of each type claude reported. Empty behind API keys and gateways,
    * which send none.
@@ -2508,6 +2543,11 @@ export type ProgressPoint = {
   at: Timestamp;
   /** Set when the estimate fell at this point; it never falls without one. */
   drop?: ProgressDrop;
+  /**
+   * Set while the estimate holds because the work in flight paused, waiting for an answer or for a usage limit to
+   * reset ("paused: an agent hit a usage limit"). A marker, not a drop: what was earned stays.
+   */
+  paused?: string;
   pct: number;
   verifiedPct: number;
 };
@@ -3879,7 +3919,7 @@ export type Task = {
   prompt: string;
   /** A review task spawned with `--qa`. */
   qa?: boolean;
-  /** Why it is queued, e.g. "lease: docs held by T1" or "slots: 40/40 in use". */
+  /** Why it is queued, e.g. "lease: docs held by T1" or "fleet cap: 40 of 40 running". */
   queuedReason?: string;
   result?: TaskResult;
   /** Required at spawn for write tasks; optional here for tasks stored before M6. */
@@ -4255,6 +4295,8 @@ export type TrainEventData = {
   prUrl?: string;
   reason?: string;
   repo?: GitHubRepo;
+  /** pr.merged: the writer task whose PR it was, when a task wrote it. */
+  taskId?: TaskId;
   workstreamId?: WorkstreamId;
 };
 
@@ -4629,6 +4671,7 @@ export interface ToolMap {
   changes_list: { input: ChangesListInput; output: ChangesListOutput };
   chat_history: { input: ChatHistoryInput; output: ChatHistoryOutput };
   chat_send: { input: ChatSendInput; output: ChatSendOutput };
+  chat_stop: { input: ChatStopInput; output: ChatStopOutput };
   claims_list: { input: ClaimsListInput; output: ClaimsListOutput };
   decisions_record: { input: DecisionsRecordInput; output: DecisionsRecordOutput };
   decisions_search: { input: DecisionsSearchInput; output: DecisionsSearchOutput };
@@ -4717,6 +4760,7 @@ export interface HubEventDataMap {
   "claim.failed": ClaimEventData;
   "claim.passed": ClaimEventData;
   "github.drift": GithubDriftData;
+  "machine.guard": MachineGuardData;
   "machine.slept": MachineSleptData;
   "plan.changed": PlanChangedData;
   "plan.verified": PlanVerifiedData;

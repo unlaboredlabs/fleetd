@@ -38,12 +38,31 @@ pub struct ModelData {
     pub order_push: HashMap<String, i64>,
     /// Order → planning share fixed when its plan appeared, and when.
     pub planning: HashMap<String, (f64, i64)>,
-    /// Live tasks (running, or idle until an answer or a usage reset) of the orders in view: task → (its order, the
-    /// Change it reviews when it is a reviewer).
-    pub live_tasks: HashMap<String, (String, Option<String>)>,
+    /// Live tasks (running, or idle until an answer or a usage reset) of the orders in view.
+    pub live_tasks: HashMap<String, LiveTask>,
+    /// The last day's pauses and restarts of the live tasks' threads, oldest first.
+    pub thread_moves: Vec<ThreadMove>,
     /// Changes before review whose tier asks for none: their steps skip it. Filled by the caller, which has the
     /// review rules.
     pub reviewless: HashSet<String>,
+}
+
+pub struct LiveTask {
+    pub order: String,
+    /// The Change it reviews, when it is a reviewer.
+    pub reviews: Option<String>,
+    /// Its record says running and not parked on a usage limit: what counts when its last day has no start, end or
+    /// pause event to go by.
+    pub running: bool,
+}
+
+/// A live task's thread waiting on an answer (`thread.waiting`), parked on a usage limit (`thread.usage_limited`) or
+/// running again (`thread.started`), when the hub received it: the node's own times can be skewed, and the model
+/// measures against the hub's.
+pub struct ThreadMove {
+    pub task: String,
+    pub kind: String,
+    pub at_ms: i64,
 }
 
 fn json_ids(ids: &[String]) -> String {
@@ -153,19 +172,67 @@ impl ModelData {
                 ))
             })?
             .collect::<rusqlite::Result<_>>()?;
-        let live_tasks = c
+        let mut task_of_thread: HashMap<(String, String), String> = HashMap::new();
+        let mut live_tasks = HashMap::new();
+        for row in c
             .prepare_cached(
-                "SELECT json_extract(t.data, '$.taskId'), t.workstream_id, r.change_id FROM tasks t
-                 LEFT JOIN review_tasks r ON r.task_id = json_extract(t.data, '$.taskId')
+                "SELECT json_extract(t.data, '$.taskId'), t.workstream_id, r.change_id,
+                        t.state = 'running' AND json_extract(t.data, '$.parked') IS NULL,
+                        t.machine_id, t.thread_id
+                 FROM tasks t LEFT JOIN review_tasks r ON r.task_id = json_extract(t.data, '$.taskId')
                  WHERE t.state IN ('running', 'idle') AND t.workstream_id IN (SELECT value FROM json_each(?))",
             )?
             .query_map([&ids], |r| {
                 Ok((
                     r.get::<_, String>(0)?,
-                    (r.get::<_, String>(1)?, r.get::<_, Option<String>>(2)?),
+                    LiveTask {
+                        order: r.get(1)?,
+                        reviews: r.get(2)?,
+                        running: r.get(3)?,
+                    },
+                    r.get::<_, String>(4)?,
+                    r.get::<_, Option<String>>(5)?,
                 ))
             })?
-            .collect::<rusqlite::Result<_>>()?;
+        {
+            let (task, live, machine, thread) = row?;
+            if let Some(thread) = thread {
+                task_of_thread.insert((machine, thread), task.clone());
+            }
+            live_tasks.insert(task, live);
+        }
+        // One pass over the day's thread events, matched here: a join per task would rescan them for each.
+        // Reminders of a prompt still open are not moves.
+        let mut thread_moves = Vec::new();
+        if !task_of_thread.is_empty() {
+            for row in c
+                .prepare_cached(
+                    "SELECT machine_id, json_extract(data, '$.threadId'), type, created_ms FROM events
+                     WHERE type IN ('thread.started', 'thread.waiting', 'thread.usage_limited') AND created_ms >= ?
+                       AND COALESCE(json_extract(data, '$.data.reminder'), 0) = 0
+                     ORDER BY seq",
+                )?
+                .query_map([parse_ms(since_iso).unwrap_or(0)], |r| {
+                    Ok((
+                        r.get::<_, Option<String>>(0)?,
+                        r.get::<_, Option<String>>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, i64>(3)?,
+                    ))
+                })?
+            {
+                let (Some(machine), Some(thread), kind, at_ms) = row? else {
+                    continue;
+                };
+                if let Some(task) = task_of_thread.get(&(machine, thread)) {
+                    thread_moves.push(ThreadMove {
+                        task: task.clone(),
+                        kind,
+                        at_ms,
+                    });
+                }
+            }
+        }
         Ok(Self {
             calibration,
             drafts,
@@ -175,6 +242,7 @@ impl ModelData {
             order_push,
             planning,
             live_tasks,
+            thread_moves,
             reviewless: HashSet::new(),
         })
     }
@@ -256,6 +324,8 @@ pub struct ModelOut {
     pub fix_planning: Vec<(String, f64, i64)>,
     /// When the figure next moves with time alone (in-stage credit, a unit turning slow, planning's bar).
     pub wake_at: Option<i64>,
+    /// Why the figure holds, while paused work is all it has in flight.
+    pub paused: Option<String>,
 }
 
 fn label_of(w: &World, key: &UnitKey) -> String {
@@ -495,75 +565,137 @@ pub fn compute(w: &World, scope: &StatusScope, s: &Scope<'_>) -> ModelOut {
     let pr_of = change_units;
     let facts = model::observe(&obs, now);
 
-    // What is in flight for each unit, and since when: a live task of its own, or a Change of its moving on the train
-    // (one the train holds, or one in review with no reviewer running, is not). Only time since then earns in-stage
-    // credit, so work resumed after a gap never claims the gap. A task's run began at its last start or end in the
-    // last day (a task live after an end was continued); with neither, it has run all day. A Change has been moving
-    // since its last update: a state move or a hold lifted. A start read later than the real one only under-counts,
-    // which the drop rule shows as a pause, never as a fall or a jump.
-    let mut run_start: HashMap<&str, i64> = HashMap::new();
+    // What each unit has had in flight, as spans of time: its tasks while they ran, and a Change of its while it moves
+    // on the train (one the train holds, or one in review with no reviewer running, is not). Only time those spans
+    // cover earns in-stage credit, so time nobody worked never counts, and a pause keeps what was earned. A task's
+    // moves in the last day give its spans: a start opens one (a continued task keeps what it earned), and an end
+    // keeps nothing (an ended task's credit is taken back with a marker); a pause (its thread waiting on an answer, or
+    // parked on a usage limit) closes one, and its thread running again after a stop opens one (while it runs, that
+    // is only a new turn). A day's first move says what came before: only a thread running again follows a stop. With no move in
+    // the day its record decides, and it has run all day. The events go first because the task area updates the
+    // record after them, and a render in between must already see the pause. A Change has been moving since its last
+    // update: a state move or a hold lifted. A start read later than the real one only under-counts, which the drop
+    // rule shows as a hold, never as a fall or a jump.
+    #[derive(Clone, Copy, PartialEq)]
+    enum Move {
+        Start,
+        End,
+        Park(&'static str),
+        ThreadRuns,
+    }
+    let mut moves: Vec<(i64, &str, Move)> = Vec::new();
     for (t, e) in &w.recent {
-        if !matches!(
-            t.as_str(),
-            "task.started" | "task.completed" | "task.failed" | "task.cancelled"
-        ) {
-            continue;
-        }
-        let (Some(task), Some(at)) = (
+        let m = match t.as_str() {
+            "task.started" => Move::Start,
+            "task.completed" | "task.failed" | "task.cancelled" => Move::End,
+            _ => continue,
+        };
+        if let (Some(task), Some(at)) = (
             e.pointer("/data/taskId").and_then(Value::as_str),
             e.get("at").and_then(Value::as_str).and_then(parse_ms),
-        ) else {
-            continue;
-        };
-        let since = run_start.entry(task).or_insert(at);
-        *since = (*since).max(at);
+        ) {
+            moves.push((at, task, m));
+        }
     }
-    let task_since = |t: &str| {
-        md.live_tasks
-            .contains_key(t)
-            .then(|| run_start.get(t).copied().unwrap_or(now - DAY_MS))
-    };
-    let change_since = |ch: &Change| {
-        let updated = parse_ms(ch.updated_at.as_str()).unwrap_or(now);
-        let train = match ch.state {
-            ChangeState::Queued | ChangeState::Ready => ch
-                .last_error
-                .as_ref()
-                .is_none_or(|e| e.is_empty())
-                .then_some(updated),
-            ChangeState::Reviewing => md
+    for m in &md.thread_moves {
+        let kind = match m.kind.as_str() {
+            "thread.started" => Move::ThreadRuns,
+            "thread.waiting" => Move::Park("an agent is waiting for an answer"),
+            _ => Move::Park("an agent hit a usage limit"),
+        };
+        moves.push((m.at_ms, m.task.as_str(), kind));
+    }
+    moves.sort_by_key(|(at, _, _)| *at);
+    #[derive(Default)]
+    struct Run {
+        spans: Vec<(i64, i64)>,
+        open: Option<i64>,
+        /// While paused: when, and why.
+        parked: Option<(i64, &'static str)>,
+    }
+    let mut runs: HashMap<&str, Run> = HashMap::new();
+    for (at, task, m) in moves {
+        let run = runs.entry(task).or_insert_with(|| Run {
+            open: (m != Move::ThreadRuns).then_some(now - DAY_MS),
+            ..Run::default()
+        });
+        match m {
+            Move::Start => {
+                run.open = Some(at);
+                run.parked = None;
+            }
+            Move::End => *run = Run::default(),
+            Move::Park(why) => {
+                if let Some(start) = run.open.take() {
+                    run.spans.push((start, at));
+                }
+                run.parked = Some((at, why));
+            }
+            Move::ThreadRuns if run.open.is_none() => {
+                run.open = Some(at);
+                run.parked = None;
+            }
+            Move::ThreadRuns => {}
+        }
+    }
+    let mut spans: HashMap<UnitKey, Vec<(i64, i64)>> = HashMap::new();
+    let mut unit_tasks: Vec<(UnitKey, &str)> = Vec::new();
+    for (key, ch) in &pr_of {
+        let moving = match ch.state {
+            ChangeState::Queued | ChangeState::Ready => {
+                ch.last_error.as_ref().is_none_or(|e| e.is_empty())
+            }
+            ChangeState::Rebasing | ChangeState::Ci | ChangeState::Merging => true,
+            _ => false,
+        };
+        if moving {
+            let updated = parse_ms(ch.updated_at.as_str()).unwrap_or(now);
+            spans.entry(key.clone()).or_default().push((updated, now));
+        }
+        if ch.state == ChangeState::Reviewing {
+            for (t, _) in md
                 .live_tasks
                 .iter()
-                .filter(|(_, (_, c))| c.as_deref() == Some(ch.change_id.as_str()))
-                .filter_map(|(t, _)| task_since(t))
-                .min(),
-            ChangeState::Rebasing | ChangeState::Ci | ChangeState::Merging => Some(updated),
-            _ => None,
-        };
-        let writer = ch.task_id.as_ref().and_then(|t| task_since(t.as_str()));
-        train.into_iter().chain(writer).min()
-    };
-    let mut in_flight: HashMap<UnitKey, i64> = HashMap::new();
-    let mut flying = |key: &UnitKey, since: Option<i64>| {
-        if let Some(since) = since {
-            let at = in_flight.entry(key.clone()).or_insert(since);
-            *at = (*at).min(since);
+                .filter(|(_, l)| l.reviews.as_deref() == Some(ch.change_id.as_str()))
+            {
+                unit_tasks.push((key.clone(), t));
+            }
         }
-    };
-    for (key, ch) in &pr_of {
-        flying(key, change_since(ch));
+        if let Some(t) = &ch.task_id {
+            unit_tasks.push((key.clone(), t.as_str()));
+        }
     }
     for i in &counted {
         for t in &i.data.links.tasks {
-            flying(&UnitKey::Item(i.n), task_since(t.as_str()));
+            unit_tasks.push((UnitKey::Item(i.n), t.as_str()));
         }
     }
     for o in &virtual_orders {
         let ws = o.w.workstream_id.as_str();
-        for (t, _) in md.live_tasks.iter().filter(|(_, (order, _))| order == ws) {
-            flying(&UnitKey::Order(ws.to_owned()), task_since(t));
+        for (t, _) in md.live_tasks.iter().filter(|(_, l)| l.order == ws) {
+            unit_tasks.push((UnitKey::Order(ws.to_owned()), t));
         }
     }
+    // The scope's latest pause, shown while nothing else in it runs.
+    let mut paused: Option<(i64, &str)> = None;
+    for (key, t) in unit_tasks {
+        let Some(live) = md.live_tasks.get(t) else {
+            continue;
+        };
+        let unit = spans.entry(key).or_default();
+        match runs.get(t) {
+            Some(run) => {
+                unit.extend(run.spans.iter().copied().chain(run.open.map(|s| (s, now))));
+                paused = paused.max(run.parked);
+            }
+            None if live.running => unit.push((now - DAY_MS, now)),
+            None => {}
+        }
+    }
+    let running = spans.values().flatten().any(|&(_, end)| end == now);
+    let paused = paused
+        .filter(|_| !running)
+        .map(|(_, why)| format!("paused: {why}"));
 
     // Each unit's progress against its calibration.
     let mut units: HashMap<UnitKey, ItemProgress> = HashMap::new();
@@ -580,12 +712,12 @@ pub fn compute(w: &World, scope: &StatusScope, s: &Scope<'_>) -> ModelOut {
         bases.push(r.basis);
         let f = facts.get(&key).cloned().unwrap_or_default();
         let (stage, entered) = f.current();
-        let since = in_flight.get(&key).copied();
-        let p = model::item_progress(&f, now, &r, since);
+        let sp = spans.get(&key).map_or(&[][..], Vec::as_slice);
+        let p = model::item_progress(&f, now, &r, sp);
         if !p.verified {
             let k = stage.index();
             let cap_ms = (r.usual_ms(k) as f64 * model::IN_STAGE_CAP) as i64;
-            if since.is_some_and(|since| entered.max(since) + cap_ms > now) {
+            if sp.iter().any(|&(_, end)| end == now) && model::covered(sp, entered, now) < cap_ms {
                 wake_at(now + TICK_MS);
             }
             if let Some(slow) = r.slow_at(k) {
@@ -756,6 +888,7 @@ pub fn compute(w: &World, scope: &StatusScope, s: &Scope<'_>) -> ModelOut {
         no_review,
         fix_planning,
         wake_at: wake.get(),
+        paused,
     }
 }
 
@@ -816,17 +949,18 @@ fn drop_text(d: &PointDrop) -> String {
 }
 
 /// Applies the drop rule to the scope's stored series and returns it, oldest first, with the new point appended
-/// when it changes anything.
+/// when it changes anything. `paused` marks the new point while the figure holds on paused work.
 pub fn series(
     c: &Connection,
     key: &str,
     raw: model::Estimate,
+    paused: Option<String>,
     causes: &[Cause],
     now: i64,
 ) -> rusqlite::Result<Vec<Point>> {
     let mut points: Vec<Point> = c
         .prepare_cached(
-            "SELECT at_ms, pct, verified, drop_reason FROM status_series WHERE scope = ?
+            "SELECT at_ms, pct, verified, drop_reason, paused FROM status_series WHERE scope = ?
              ORDER BY at_ms DESC LIMIT ?",
         )?
         .query_map(params![key, model::SERIES_CAP as i64], |r| {
@@ -837,16 +971,28 @@ pub fn series(
                 drop: r
                     .get::<_, Option<String>>(3)?
                     .and_then(|d| serde_json::from_str(&d).ok()),
+                paused: r.get(4)?,
             })
         })?
         .collect::<rusqlite::Result<_>>()?;
     points.reverse();
-    let next = model::next_point(points.last(), raw.pct, raw.verified_pct, causes, now);
+    let next = Point {
+        paused,
+        ..model::next_point(points.last(), raw.pct, raw.verified_pct, causes, now)
+    };
     if model::changes(points.last(), &next) && points.last().is_none_or(|l| l.at_ms < now) {
         c.prepare_cached(
-            "INSERT OR REPLACE INTO status_series (scope, at_ms, pct, verified, drop_reason) VALUES (?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO status_series (scope, at_ms, pct, verified, drop_reason, paused)
+             VALUES (?, ?, ?, ?, ?, ?)",
         )?
-        .execute(params![key, next.at_ms, next.pct, next.verified, next.drop.as_ref().map(drop_text)])?;
+        .execute(params![
+            key,
+            next.at_ms,
+            next.pct,
+            next.verified,
+            next.drop.as_ref().map(drop_text),
+            next.paused
+        ])?;
         c.prepare_cached(
             "DELETE FROM status_series WHERE scope = ? AND at_ms NOT IN
                (SELECT at_ms FROM status_series WHERE scope = ? ORDER BY at_ms DESC LIMIT ?)",
@@ -902,6 +1048,10 @@ pub fn estimate_of(out: &ModelOut, series: Option<&[Point]>) -> ProgressEstimate
                                 200,
                             )),
                         }),
+                        paused: x
+                            .paused
+                            .as_deref()
+                            .map(|t| Line::unchecked(crate::hub::plan::clip(t, 200))),
                     })
                     .collect(),
             )

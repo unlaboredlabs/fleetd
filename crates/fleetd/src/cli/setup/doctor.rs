@@ -59,10 +59,24 @@ pub async fn connect_to(
     hub: Option<&str>,
     client: &str,
 ) -> Result<McpClient, Failure> {
-    let again = |message: String| Failure {
+    let key = cli_key(home).map_err(again)?;
+    connect_with(home, hub, client, &key).await
+}
+
+fn again(message: String) -> Failure {
+    Failure {
         message,
         fix: "fleetd init (it starts the hub and repairs its setup)".into(),
-    };
+    }
+}
+
+/// [`connect_to`] with `key` instead of the CLI's own, for what speaks for the person: their human key.
+pub async fn connect_with(
+    home: &Path,
+    hub: Option<&str>,
+    client: &str,
+    key: &str,
+) -> Result<McpClient, Failure> {
     let listen = match hub {
         Some(url) => url.trim_end_matches('/').to_owned(),
         None => {
@@ -73,20 +87,18 @@ pub async fn connect_to(
             format!("http://{}", state.listen)
         }
     };
-    let state_listen = listen.clone();
-    let key = cli_key(home).map_err(again)?;
-    McpClient::connect(&listen, &key, client, Duration::from_secs(15))
+    McpClient::connect(&listen, key, client, Duration::from_secs(15))
         .await
         .map_err(|error| {
             again(format!(
                 "the hub does not answer at {}: {}",
-                state_listen,
+                listen,
                 error.message()
             ))
         })
 }
 
-async fn list(client: &mut McpClient) -> Result<Vec<DoctorCheck>, Failure> {
+async fn list_checks(client: &mut McpClient) -> Result<Vec<DoctorCheck>, Failure> {
     let result = client
         .call_tool(
             "doctor_list",
@@ -109,7 +121,7 @@ async fn list(client: &mut McpClient) -> Result<Vec<DoctorCheck>, Failure> {
 /// Runs every check now.
 pub async fn run(home: &Path) -> Result<Vec<DoctorCheck>, Failure> {
     let mut client = connect(home).await?;
-    list(&mut client).await
+    list_checks(&mut client).await
 }
 
 /// Registers `path` on `machine_id` as a project through the hub (project_add, the path the app and agents use).
@@ -254,9 +266,19 @@ pub async fn doctor_command(argv: &[String]) -> u8 {
         }
     };
     let mut list = Checklist::new();
-    match run(&home).await {
+    let mut client = match connect(&home).await {
+        Ok(client) => client,
+        Err(failure) => {
+            list.failed("doctor", &failure.message, &failure.fix);
+            return 4;
+        }
+    };
+    match list_checks(&mut client).await {
         Ok(checks) => {
             let ok = show(&mut list, &checks, &[]);
+            if let Some(line) = super::super::versions::line(&mut client).await {
+                list.warn("versions", &line, None);
+            }
             list.done("doctor", &format!("{ok} of {} checks pass", checks.len()));
             u8::from(list.failures().next().is_some())
         }

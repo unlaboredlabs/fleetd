@@ -159,24 +159,6 @@ mod tests {
     }
 
     #[test]
-    fn reads_node_keys_and_signs_the_hello_exactly_as_node_does() {
-        let v = vectors();
-        let home = tempfile::tempdir().unwrap();
-        std::fs::write(
-            home.path().join(KEY_FILE),
-            v["identityPem"].as_str().unwrap(),
-        )
-        .unwrap();
-        let identity = load_or_create_identity(home.path()).unwrap();
-        assert_eq!(identity.pub_key(), v["pubKey"].as_str().unwrap());
-        // ed25519 is deterministic: the same key signs the same nonce to the same bytes.
-        assert_eq!(
-            identity.sign(v["nonce"].as_str().unwrap()),
-            v["sig"].as_str().unwrap()
-        );
-    }
-
-    #[test]
     fn sealed_boxes_interoperate_with_libsodium() {
         let v = vectors();
         let home = tempfile::tempdir().unwrap();

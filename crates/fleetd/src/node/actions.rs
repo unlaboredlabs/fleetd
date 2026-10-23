@@ -1,14 +1,14 @@
-//! `node_action` frames from the hub's doctor: probe the commit identity, free disk space and idle sleep. Each always answers, in
-//! plain words.
+//! `node_action` frames from the hub's doctor: probe the commit identity and idle sleep. Each always answers, in plain
+//! words.
 use std::time::Duration;
 
 use super::power;
-use super::util::{exec, head_utf16, home_dir};
+use super::util::{exec, head_utf16};
 use super::wire::{
     GitEmailFrom, NodeAction, NodeActionKind, NodeActionResult, NodeProbe, head_text,
 };
 use fleetd_contracts::node_link::IdleSleep;
-use fleetd_contracts::prim::{Count, Finite, List, Text};
+use fleetd_contracts::prim::{Count, List, Text};
 
 /// `git config --global user.email`, absent when unset or git is missing.
 async fn git_config_email() -> Option<String> {
@@ -44,21 +44,11 @@ async fn commit_email() -> (Option<String>, Option<GitEmailFrom>) {
     }
 }
 
-/// Free bytes for this user on the filesystem holding `dir`; -1 when it cannot be read.
-fn disk_free(dir: &std::path::Path) -> f64 {
-    nix::sys::statfs::statfs(dir).map_or(-1.0, |s| {
-        s.blocks_available() as f64 * s.block_size() as f64
-    })
-}
-
 pub async fn probe_host() -> NodeProbe {
-    let home = home_dir();
     let (git_email, git_email_from) = commit_email().await;
     NodeProbe {
         git_email: git_email.map(|e| head_text(&e)),
         git_email_from,
-        disk_free_bytes: Finite::unchecked(disk_free(&home)),
-        disk_path: home.to_string_lossy().into_owned(),
         idle_sleep: Some(List::unchecked(
             power::settings::read()
                 .await

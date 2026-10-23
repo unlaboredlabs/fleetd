@@ -38,10 +38,10 @@ show this message
 ### fleetd update {#update}
 
 ```text
-fleetd update [--check] [--channel <c>]
+fleetd update [--check] [--channel <c>] [--restart-now]
 ```
 
-replace this fleetd with the latest release
+replace this fleetd with the latest release, then restart its hub and node when nothing runs on them; while something does, they keep the running version until their next restart. `--restart-now` restarts them anyway
 
 
 ## Setting up {#setting-up}
@@ -137,10 +137,10 @@ fleetd project list [--machine <id>] [--home <dir>] [--hub <url>]
 ### fleetd project stop {#project-stop}
 
 ```text
-fleetd project stop <machine>/<project> [--yes] [--home <dir>] [--hub <url>]
+fleetd project stop <machine>/<project> --key-file <human key> [--yes] [--home <dir>] [--hub <url>]
 ```
 
-stop everything running in it: its agents are cancelled, the lead and its chat stay, and the chat says so
+stop its lead's turn and its agents, as you; the lead and its chat stay, and the chat says what stopped
 
 ### fleetd project remove {#project-remove}
 
@@ -182,15 +182,15 @@ run the hub (default home `~/.fleetd/hub`, listen 127.0.0.1:4790, writes to an o
 ### fleetd hub key create {#hub-key-create}
 
 ```text
-fleetd hub key create --name <name> --role <read|operate|admin> --machines <'*'|id,id> [--home <dir>]
+fleetd hub key create --name <name> --role <read|operate|admin> --machines <'*'|id,id> [--out <file>] [--home <dir>]
 ```
 
-create an agent key for the MCP endpoint; prints the key once
+create an agent key for the MCP endpoint; prints the key once, or with `--out` writes it to a new file (0600) and prints the file's path
 
 ### fleetd hub key create {#hub-key-create-human}
 
 ```text
-fleetd hub key create --human --name <device> [--role <role>] [--machines <'*'|id,id>] [--home <dir>]
+fleetd hub key create --human --name <device> [--role <role>] [--machines <'*'|id,id>] [--out <file>] [--home <dir>]
 ```
 
 a key for a person's device (the desktop app): what it answers is recorded as the human's; role defaults to operate on every machine
@@ -208,14 +208,6 @@ fleetd hub key revoke <keyId> [--home <dir>]
 ```
 
 takes effect at once, also on a running hub
-
-### fleetd hub token create {#hub-token-create}
-
-```text
-fleetd hub token create --machine <id> [--home <dir>]
-```
-
-print a one-time enrollment token (15 min) for `fleetd node join`
 
 ### fleetd hub github-webhook {#hub-github-webhook}
 

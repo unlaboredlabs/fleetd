@@ -312,7 +312,7 @@
           "$ref": "#/$defs/LaneStatus"
         },
         "statusReason": {
-          "description": "Queued, parked or failed: why, e.g. \"slots: 40/40 in use\", \"usage limit: resumes 14:05\".",
+          "description": "Queued, parked or failed: why, e.g. \"fleet cap: 40 of 40 running\", \"usage limit: resumes 14:05\".",
           "maxLength": 160,
           "type": "string"
         },
@@ -397,7 +397,7 @@
           "$ref": "#/$defs/LaneStatus"
         },
         "statusReason": {
-          "description": "Queued, parked or failed: why, e.g. \"slots: 40/40 in use\", \"usage limit: resumes 14:05\".",
+          "description": "Queued, parked or failed: why, e.g. \"fleet cap: 40 of 40 running\", \"usage limit: resumes 14:05\".",
           "maxLength": 160,
           "type": "string"
         },
@@ -1517,6 +1517,45 @@
         }
       },
       "required": [
+        "message"
+      ],
+      "type": "object"
+    },
+    "ChatStopInput": {
+      "properties": {
+        "clientRequestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "projectRef",
+        "clientRequestId"
+      ],
+      "type": "object"
+    },
+    "ChatStopOutput": {
+      "properties": {
+        "message": {
+          "$ref": "#/$defs/ChatMessage",
+          "description": "The system line it wrote into the chat."
+        },
+        "next": {
+          "type": "string"
+        },
+        "stopped": {
+          "description": "Something was running and stopped: the lead's turn or an agent.",
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "stopped",
         "message"
       ],
       "type": "object"
@@ -3785,6 +3824,11 @@
           "type": "string"
         },
         {
+          "const": "machine.guard",
+          "description": "The machine's disk or load stopped new agents there, or no longer does; `data.paused`, and the summary says\nwhy. Agents already running keep going.",
+          "type": "string"
+        },
+        {
           "const": "project.removed",
           "description": "The node no longer has the project: the hub dropped it from its cache, and its open workstreams stop. `data.title`.",
           "type": "string"
@@ -5298,6 +5342,12 @@
         "chat_send.output": {
           "$ref": "#/$defs/ChatSendOutput"
         },
+        "chat_stop.input": {
+          "$ref": "#/$defs/ChatStopInput"
+        },
+        "chat_stop.output": {
+          "$ref": "#/$defs/ChatStopOutput"
+        },
         "claims_list.input": {
           "$ref": "#/$defs/ClaimsListInput"
         },
@@ -5748,6 +5798,8 @@
         "chat_history.output",
         "chat_send.input",
         "chat_send.output",
+        "chat_stop.input",
+        "chat_stop.output",
         "claims_list.input",
         "claims_list.output",
         "decisions_record.input",
@@ -7902,6 +7954,13 @@
           "$ref": "#/$defs/ProgressDrop",
           "description": "Set when the estimate fell at this point; it never falls without one."
         },
+        "paused": {
+          "description": "Set while the estimate holds because the work in flight paused, waiting for an answer or for a usage limit to\nreset (\"paused: an agent hit a usage limit\"). A marker, not a drop: what was earned stays.",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
         "pct": {
           "maximum": 100,
           "minimum": 0,
@@ -8470,7 +8529,7 @@
         },
         {
           "const": "blocked",
-          "description": "Something outside the work stops it: its machine is offline or at its usage limit, or main CI is red.",
+          "description": "Something outside the work stops it: its machine is offline, at its usage limit or short of disk or CPU for new\nagents, or main CI is red.",
           "type": "string"
         },
         {
@@ -11836,7 +11895,7 @@
           "type": "boolean"
         },
         "queuedReason": {
-          "description": "Why it is queued, e.g. \"lease: docs held by T1\" or \"slots: 40/40 in use\".",
+          "description": "Why it is queued, e.g. \"lease: docs held by T1\" or \"fleet cap: 40 of 40 running\".",
           "maxLength": 200,
           "minLength": 1,
           "type": "string"

@@ -491,6 +491,11 @@
           "type": "string"
         },
         {
+          "const": "machine.guard",
+          "description": "The machine's disk or load stopped new agents there, or no longer does; `data.paused`, and the summary says\nwhy. Agents already running keep going.",
+          "type": "string"
+        },
+        {
           "const": "project.removed",
           "description": "The node no longer has the project: the hub dropped it from its cache, and its open workstreams stop. `data.title`.",
           "type": "string"
@@ -1038,6 +1043,34 @@
       ],
       "type": "string"
     },
+    "NodeDisk": {
+      "description": "Space on the volume holding a node's worktrees and build cache.",
+      "properties": {
+        "freeBytes": {
+          "description": "Free for the node's user.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "minFreeBytes": {
+          "description": "Below this the hub starts no new agents there: node.json's `minFreeGb`, else 10% of the volume or 20 GB,\nwhichever is larger.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "totalBytes": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "freeBytes",
+        "totalBytes",
+        "minFreeBytes"
+      ],
+      "type": "object"
+    },
     "NodeLoad": {
       "description": "What a machine reports about itself with each heartbeat.",
       "properties": {
@@ -1046,6 +1079,10 @@
           "maximum": 4096,
           "minimum": 1,
           "type": "integer"
+        },
+        "disk": {
+          "$ref": "#/$defs/NodeDisk",
+          "description": "The volume holding the node's worktrees and build cache; absent from older nodes and when it can't be read."
         },
         "limits": {
           "default": [],

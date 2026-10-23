@@ -127,6 +127,7 @@ When the cap is reached:
 
 - A new agent **queues**; it doesn't fail. The lead is told its place in line, and the hub starts it the moment a
   slot frees.
+- New agents also wait while their machine is short of disk or CPU ([Disk and load](/docs/machines#guard)).
 - Reviewers and verifiers count toward the cap, but a review that gates a merge goes first, so a low cap never stalls
   the merge train.
 

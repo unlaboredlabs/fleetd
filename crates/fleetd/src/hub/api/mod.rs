@@ -178,5 +178,6 @@ pub fn registry() -> Registry {
     crate::hub::chat::tools::register(&mut tools);
     crate::hub::agents::tools::register(&mut tools);
     crate::hub::prs::tools::register(&mut tools);
+    crate::hub::info::register(&mut tools);
     tools
 }

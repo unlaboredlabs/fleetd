@@ -181,6 +181,31 @@ impl SessionConfig {
     }
 }
 
+/// One compile cache for every session on the machine, when sccache is installed and the environment names no
+/// wrapper: dependencies compile once, not once per worktree. Target dirs stay in each worktree and go with it,
+/// since cargo checks a workspace's own crates by path and mtime: a target shared between worktrees can hand one
+/// worktree another's build.
+pub fn compile_cache_env(env: &[(String, String)]) -> Vec<(String, String)> {
+    let var = |name: &str| env.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str());
+    if var("RUSTC_WRAPPER").is_some() {
+        return Vec::new();
+    }
+    let Some(sccache) = std::env::split_paths(var("PATH").unwrap_or_default())
+        .map(|dir| dir.join("sccache"))
+        .find(|bin| bin.is_file())
+    else {
+        return Vec::new();
+    };
+    vec![
+        (
+            "RUSTC_WRAPPER".to_owned(),
+            sccache.to_string_lossy().into_owned(),
+        ),
+        // A cache server that fails compiles locally instead of failing the build.
+        ("SCCACHE_IGNORE_SERVER_IO_ERROR".to_owned(), "1".to_owned()),
+    ]
+}
+
 /// `~/x` as `$HOME/x`; other paths as given.
 fn expand_home(dir: &str) -> PathBuf {
     match dir.strip_prefix("~/") {
@@ -850,6 +875,11 @@ impl SessionService {
             .insert(key, (limit, now()));
     }
 
+    /// The node home, where the worktrees live: the heartbeat reports its volume's free space.
+    pub fn home(&self) -> PathBuf {
+        self.inner.config.home.clone()
+    }
+
     /// The claude.ai usage windows sessions last reported, for the heartbeat.
     pub fn login_limits(&self) -> Vec<fleetd_contracts::node_link::LoginLimit> {
         use fleetd_contracts::node_link::LoginLimit;
@@ -1378,6 +1408,7 @@ impl SessionService {
             env.retain(|(k, _)| k != key);
             env.push((key.to_owned(), value.to_owned()));
         }
+        env.extend(compile_cache_env(&env));
         Ok(SessionSpec {
             session_id: id.to_owned(),
             resume,
@@ -2036,8 +2067,9 @@ impl SessionService {
             && let (Some(base_ref), Some(branch)) = (row.local.base_ref, row.local.branch)
         {
             let (root, path) = (row.local.workspace_root, row.local.cwd);
-            let deleted =
-                blocking(move || worktree::remove(&root, &path, &branch, &base_ref)).await?;
+            let deleted = blocking(move || worktree::remove(&root, &path, &branch, &base_ref))
+                .await
+                .inspect_err(|e| tracing::warn!(session_id = id, "worktree not removed: {e:?}"))?;
             self.update(id, |c| {
                 c.row.summary.worktree_path = None;
                 if deleted {

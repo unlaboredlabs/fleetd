@@ -109,6 +109,7 @@ pub async fn join(args: JoinArgs) -> Result<(), NodeError> {
         tags: args.tags.unwrap_or_default(),
         cmd_roots: None,
         claude_config_dir: args.claude_config_dir,
+        min_free_gb: None,
         enrolled: false,
     };
     write_config(&home, &config).map_err(|_| {
@@ -216,7 +217,7 @@ async fn run_node(
             machine_id: config.machine_id.clone(),
             name: config.name.clone(),
             tags: config.tags.clone(),
-            node_version: env!("CARGO_PKG_VERSION").to_owned(),
+            node_version: crate::version().to_owned(),
         },
         identity,
         enroll_token,
