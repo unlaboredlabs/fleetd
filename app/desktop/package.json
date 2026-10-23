@@ -26,8 +26,8 @@
     "qa:selftest": "playwright test -c qa/playwright.config.ts --project=selftest",
     "site:shots": "QA_SCALE=2 playwright test -c qa/playwright.config.ts --project=site",
     "fixtures": "node fixtures/build.ts",
-    "perf": "vite build -c perf/vite.config.ts && node perf/run.ts",
-    "perf:record": "vite build -c perf/vite.config.ts && node perf/record-smoke.ts",
+    "perf": "node fixtures/build.ts && node perf/run.ts",
+    "perf:record": "node fixtures/build.ts && node perf/record-smoke.ts",
     "debug-guard-check": "node scripts/debug-guard-check.ts",
     "build:test": "MAIN_VITE_FLEETD_TEST_BUILD=1 electron-vite build"
   },

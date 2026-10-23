@@ -1,15 +1,14 @@
-// `pnpm perf:record` (after `pnpm build:test`): the demo recording end to end, without a hub. The app records itself (FLEETD_RECORD) and types
-// an order (FLEETD_DEMO_TYPE) into the stand-in composer; SIGUSR1 ends the clip as tests/lab/demoFanout.ts ends it,
+// `pnpm perf:record` (after `pnpm build:test`): the demo recording end to end, on a fixture instead of a hub. The app records itself
+// (FLEETD_RECORD) and types an order (FLEETD_DEMO_TYPE) into the chat's composer; SIGUSR1 ends the clip as tests/lab/demoFanout.ts ends it,
 // SIGTERM ends the run. Then both MP4s are checked: H.264, moov before the first fragment, and real frames; and the
 // traffic lights, which the recorder paints on macOS, are forced on (FLEETD_RECORD_CHROME) and looked for in a still.
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { chromium } from "@playwright/test";
-import { devtoolsPort, launch, sleep } from "./app.ts";
+import { devtoolsPort, launch, openChat, sleep } from "./app.ts";
 import { summarize } from "./mp4.ts";
 import { pixel } from "./png.ts";
-import { COMPOSER } from "./targets.ts";
 
 const ORDER = "@storefront Add a short page on what the merge train does.";
 const out = mkdtempSync(path.join(tmpdir(), "fleetd-record-"));
@@ -25,12 +24,12 @@ try {
   await app.waitFor(/^FLEETD_RECORD start /u, 30_000);
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
   try {
-    const page = browser.contexts().flatMap((c) => c.pages()).find((p) => p.url().endsWith("/index.html"));
+    const page = browser.contexts().flatMap((c) => c.pages()).find((p) => new URL(p.url()).pathname.endsWith("/index.html"));
     if (page === undefined) throw new Error("no app window over CDP");
-    await COMPOSER.open(page);
+    const chat = await openChat(page);
     await app.waitFor(/^FLEETD_DEMO sent/u, 60_000);
     await sleep(1000);
-    check((await page.getByText(ORDER, { exact: true }).count()) > 0, "the typed order was sent and shows in the log");
+    check((await chat.log.getByText(ORDER, { exact: true }).count()) > 0, "the typed order was sent and shows in the chat");
   } finally {
     await browser.close();
   }

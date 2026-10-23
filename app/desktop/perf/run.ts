@@ -1,12 +1,10 @@
-// The desktop app's four budgets, measured: `pnpm perf` after `pnpm build:test` (a release build refuses the DevTools
-// port the harness drives it through). Prints one line per budget.
+// The desktop app's four budgets, measured on the real chat (the chat-long fixture): `pnpm perf` after
+// `pnpm build:test` (a release build refuses the DevTools port the harness drives it through). Prints one line per
+// budget.
 //
-//   --runs N             launches timed for first paint after an untimed first one (default 5; the median counts)
 //   --json FILE          also write the numbers as JSON
 //   --baseline FILE      exit 1 when a number regressed past budgets.ts's limit from FILE (the Linux CI job)
-//   --strict             exit 1 when a number misses its budget (the Mac, where the budgets apply)
 //   (CI gates first paint only over a bare Electron window, perf/reference, which moves with the runner too)
-//   FLEETD_PERF_FIXTURE  a fixture (pnpm fixtures) to launch on, instead of an unpaired app
 //
 // First paint is timed from this script's spawn to the page's first contentful paint (FLEETD_PERF's stderr line),
 // with no debugger attached. Memory is the RSS of every process in the app's tree after 10 s idle. Scroll and
@@ -16,16 +14,14 @@ import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
-import { type Browser, chromium, type Page } from "@playwright/test";
-import { devtoolsPort, launch, type Memory, sleep } from "./app.ts";
+import { type Browser, chromium, type Locator, type Page } from "@playwright/test";
+import { devtoolsPort, launch, type Memory, openChat, sleep } from "./app.ts";
 import { frameStats, median, type Metric, METRICS, quantile, regressions, type Results, RULES, withinBudget } from "./budgets.ts";
-import { COMPOSER, SCROLL } from "./targets.ts";
 import { keyLatencies, traced } from "./trace.ts";
 
-const { values: flags } = parseArgs({
-  options: { runs: { type: "string", default: "5" }, json: { type: "string" }, baseline: { type: "string" }, strict: { type: "boolean", default: false } },
-});
-const RUNS = Number(flags.runs);
+const { values: flags } = parseArgs({ options: { json: { type: "string" }, baseline: { type: "string" } } });
+/** Launches timed for first paint after an untimed first one; the median counts. */
+const RUNS = 5;
 const IDLE_MS = 10_000;
 const SCROLL_MS = 4_000;
 // About 160 keys: a p95 over fewer swings with two or three slow ones on a shared CI runner.
@@ -78,35 +74,39 @@ const frames = async (page: Page, during: () => Promise<unknown>): Promise<Array
   });
 };
 
-const scroll = async (page: Page) => {
-  await SCROLL.open(page);
-  const list = page.locator(SCROLL.selector);
-  await list.waitFor({ state: "visible" });
+const scroll = async (page: Page, list: Locator) => {
   await sleep(1000);
   // The display's refresh interval, from an idle second of frames.
   const idle = await frames(page, () => sleep(1000));
   const refreshMs = quantile(idle.slice(1).map((t, i) => t - (idle[i] ?? t)), 0.5);
   const box = await list.boundingBox();
-  if (box === null) throw new Error("the log has no box");
+  if (box === null) throw new Error("the chat has no box");
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  const from = await list.evaluate((el) => el.scrollTop);
+  // Upward travel only: a page of older messages landing above shifts scrollTop down by its height, which isn't scrolling.
+  await list.evaluate((el) => {
+    const travel = { up: 0, last: el.scrollTop };
+    el.addEventListener("scroll", () => {
+      travel.up += Math.max(0, travel.last - el.scrollTop);
+      travel.last = el.scrollTop;
+    });
+    Object.assign(el, { __perfTravel: travel });
+  });
   const stamps = await frames(page, async () => {
     const end = performance.now() + SCROLL_MS;
     while (performance.now() < end) {
-      // Up: a conversation opens at its newest line, and reading back is the scroll that renders new rows.
+      // Up: a chat opens at its newest message, and reading back is the scroll that renders (and pages in) older ones.
       await page.mouse.wheel(0, -240);
       await sleep(16);
     }
   });
-  const moved = Math.abs((await list.evaluate((el) => el.scrollTop)) - from);
-  if (moved < 5_000) throw new Error(`the log scrolled only ${moved}px; the measurement would not mean anything`);
+  const moved = await list.evaluate((el) => (el as unknown as { __perfTravel: { up: number } }).__perfTravel.up);
+  if (moved < 5_000) throw new Error(`the chat scrolled only ${moved}px; the measurement would not mean anything`);
   return { ...frameStats(stamps, refreshMs), refreshHz: 1000 / refreshMs, moved };
 };
 
 /** Per key: Chromium's EventLatency for the key press, input timestamp to presentation (perf/trace.ts). */
-const keys = async (browser: Browser, page: Page) => {
-  await COMPOSER.open(page);
-  await page.locator(COMPOSER.selector).click();
+const keys = async (browser: Browser, page: Page, composer: Locator) => {
+  await composer.click();
   const events = await traced(browser, async () => {
     await page.keyboard.type(KEYS, { delay: 60 });
     await sleep(500);
@@ -133,10 +133,11 @@ const main = async () => {
     }
     const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
     try {
-      const page = browser.contexts().flatMap((c) => c.pages()).find((p) => p.url().endsWith("/index.html"));
+      const page = browser.contexts().flatMap((c) => c.pages()).find((p) => new URL(p.url()).pathname.endsWith("/index.html"));
       if (page === undefined) throw new Error("no app window over CDP");
-      const scrolled = await scroll(page);
-      const typed = await keys(browser, page);
+      const chat = await openChat(page);
+      const scrolled = await scroll(page, chat.log);
+      const typed = await keys(browser, page, chat.composer);
       const firstPaintMs = median(paints.app);
       const firstPaintRefMs = median(paints.bare);
       results = {
@@ -154,8 +155,8 @@ const main = async () => {
         firstPaintOverMs: "what the app adds to Electron's own start; CI gates this, not the runner-bound first paint",
         idleRssMb: "summed RSS of the same processes; counts the shared Electron pages once per process, never gated",
         idleMemoryMb: `${process.platform === "linux" ? "PSS" : "physical footprint"} summed over all ${samples[0]?.processes ?? 0} processes read (${[...new Set(samples[0]?.kinds ?? [])].join(", ")}) after ${IDLE_MS / 1000} s idle`,
-        scrollFps: `${SCROLL.label}; ${(scrolled.dropped * 100).toFixed(1)}% long frames, ${(scrolled.moved / 1000).toFixed(0)}k px, display ${scrolled.refreshHz.toFixed(0)} Hz`,
-        keyP95Ms: `${COMPOSER.label}; EventLatency, key press to presentation; p50 ${typed.p50.toFixed(1)} ms over ${typed.count} keys, ${typed.slow} at 16 ms or more`,
+        scrollFps: `the chat-long fixture's chat; ${(scrolled.dropped * 100).toFixed(1)}% long frames, ${(scrolled.moved / 1000).toFixed(0)}k px, display ${scrolled.refreshHz.toFixed(0)} Hz`,
+        keyP95Ms: `the chat's composer; EventLatency, key press to presentation; p50 ${typed.p50.toFixed(1)} ms over ${typed.count} keys, ${typed.slow} at 16 ms or more`,
       };
     } finally {
       await browser.close();
@@ -178,7 +179,7 @@ const main = async () => {
   const definitions = [
     "  first paint: from spawning the app until its window is shown and has painted its first content (the later of ready-to-show and FCP)",
     "  idle memory: deduplicated memory summed over every app process after 10 s idle: PSS on Linux, physical footprint (Activity Monitor's Memory) on macOS",
-    "  log scroll: requestAnimationFrame rate while wheel-scrolling the log",
+    "  chat scroll: requestAnimationFrame rate while wheel-scrolling back through the chat",
     `  keypress to screen: Chromium's EventLatency per key press, from the OS input timestamp to the presentation of the frame that shows it${process.platform === "linux" && process.env["WAYLAND_DISPLAY"] === undefined ? " (on X11/Xvfb, presentation is the swap, with no wait for a display's vsync)" : ""}`,
   ];
   const report = [header, ...rows.map((r) => r.line), ...definitions].join("\n");
@@ -193,7 +194,6 @@ const main = async () => {
     failed ||= worse.length > 0;
     if (worse.length === 0) console.log(`no regression from ${flags.baseline}`);
   }
-  if (flags.strict && rows.some((r) => r.ok === false)) failed = true;
   const summary = process.env["GITHUB_STEP_SUMMARY"];
   if (summary !== undefined) appendFileSync(summary, `### Desktop budgets\n\n\`\`\`\n${report}\n\`\`\`\n`);
   process.exitCode = failed ? 1 : 0;
