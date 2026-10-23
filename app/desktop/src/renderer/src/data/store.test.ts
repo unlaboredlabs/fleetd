@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { applyFrame, applyLive, applyStreams, ingest, initialState, type DataState } from "./store";
-import { projectStateWord, selectBoard, selectConnection, selectLiveAgents, selectNeedsYou, selectOrder, selectProjectList, selectProjectRow } from "./selectors";
+import { applyFrame, applyLive, ingest, initialState, type DataState } from "./store";
+import { projectStateWord, selectConnection, selectLiveAgents, selectNeedsYou, selectProjectList, selectProjectRow, selectProjectWork } from "./selectors";
 import type { AgentRow } from "../../../shared/contracts";
 import { card, event, lane, live, liveLane, project, snapshot } from "./fixtures.test-util";
 import type { HubFrame } from "../../../shared/hub";
 
 const run = (frames: readonly HubFrame[], from: DataState = initialState()): DataState =>
   frames.reduce((s, f) => applyFrame(s, f, Date.parse("2026-10-19T10:00:00.000Z"))[0], from);
+
+const work = selectProjectWork("devbox/storefront");
 
 const withBoard = (s: DataState, cards = [card("W1")]): DataState =>
   ingest(s, { tool: "orders_board", input: {}, output: { at: "2026-10-19T10:00:00.000Z", orders: cards, trains: [] } });
@@ -17,14 +19,14 @@ describe("connection", () => {
     expect(selectConnection(s).view).toBe("skeleton");
     s = withBoard(run([snapshot(10)], s));
     expect(selectConnection(s).view).toBe("live");
-    expect(selectBoard(s)).toHaveLength(1);
+    expect(work(s)?.orders).toEqual(["W1"]);
 
     s = run([{ t: "state", state: { phase: "retrying", hub: "devbox:4710", reason: "closed", retryAt: 1 } }, live()], s);
     expect(selectConnection(s).view).toBe("skeleton");
     expect(s.live.stale).toBe(true);
     s = run([snapshot(12)], s);
     expect(selectConnection(s).view).toBe("live");
-    expect(selectBoard(s)).toBeUndefined();
+    expect(work(s)).toBeUndefined();
   });
 
   it("ignores an event it already applied", () => {
@@ -34,37 +36,40 @@ describe("connection", () => {
   });
 });
 
-describe("an order's phase", () => {
-  const start = () => withBoard(run([live(), snapshot(10)]), [card("W1", { phase: "waiting_on_you", needsYou: 1 })]);
+describe("a project's work", () => {
+  const start = () => withBoard(run([live(), snapshot(10)]), [card("W1", { prs: [{ changeId: "C1", number: 7, repo: "acme/storefront", reviewsDone: 0, reviewsNeeded: 1, state: "reviewing", url: "https://github.com/acme/storefront/pull/7" }] })]);
 
-  it("counts what the hub says waits on you for it, and a lane waiting on a permission from the live feed", () => {
+  it("takes its agents' status from the live feed, and the finished ones from its orders' details", () => {
     let s = start();
-    expect(selectBoard(s)?.[0]?.phase).toEqual({ phase: "waiting_on_you", detail: "1 question" });
-    s = withBoard(s, [card("W1")]);
-    expect(selectBoard(s)?.[0]?.phase.phase).toBe("working");
+    expect(work(s)?.lanes.map((l) => l.status)).toEqual(["working"]);
+    expect(work(s)?.prs.map((p) => p.number)).toEqual([7]);
     s = run([{ t: "live", frame: { at: "2026-10-19T10:00:01.000Z", full: true, lanes: [liveLane("T1", "waiting")] } }], s);
-    expect(selectBoard(s)?.[0]?.phase).toEqual({ phase: "waiting_on_you", detail: "1 approval" });
-  });
-
-  it("an order's detail holds its finished lanes", () => {
-    const s = ingest(start(), {
+    expect(work(s)?.lanes.map((l) => l.status)).toEqual(["waiting"]);
+    s = ingest(s, {
       tool: "order_get",
       input: { workstreamId: "W1" },
       output: { order: card("W1"), requests: [], doneLanes: [lane("T0", "done")] },
     });
-    expect(selectOrder("W1")(s)?.detail?.doneLanes).toHaveLength(1);
+    expect(work(s)?.doneLanes.map((l) => l.laneId)).toEqual(["T0"]);
+  });
+
+  it("is empty for a project with no orders, and keeps the board when a read adds finished orders", () => {
+    let s = start();
+    expect(selectProjectWork("buildbox/acme")(s)?.lanes).toEqual([]);
+    s = ingest(s, {
+      tool: "orders_board",
+      input: { includeDoneSince: "2026-10-18T10:00:00.000Z" },
+      output: { at: "2026-10-19T10:00:00.000Z", orders: [card("W8", { state: "done" })], trains: [] },
+    });
+    expect(Object.keys(s.orders ?? {})).toEqual(["W1"]);
   });
 });
 
 describe("events patch what they change", () => {
-  it("moves an order's state and resorts the board", () => {
-    let s = withBoard(run([live(), snapshot(1)]), [card("W1"), card("W2", { updatedAt: "2026-10-19T09:00:00.000Z" })]);
-    expect(selectBoard(s)?.map((o) => o.card.workstreamId)).toEqual(["W1", "W2"]);
+  it("moves an order's state", () => {
+    let s = withBoard(run([live(), snapshot(1)]), [card("W1"), card("W2")]);
     s = run([event(2, "workstream.state", { workstreamId: "W2", state: "failed" })], s);
-    expect(selectBoard(s)?.map((o) => [o.card.workstreamId, o.phase.phase])).toEqual([
-      ["W2", "failed"],
-      ["W1", "working"],
-    ]);
+    expect(s.orders?.["W2"]?.state).toBe("failed");
     expect(s.orderEvents["W2"]).toHaveLength(1);
   });
 
@@ -88,9 +93,9 @@ describe("events patch what they change", () => {
 describe("bounds and freshness", () => {
   it("serves nothing while the link is down", () => {
     let s = withBoard(run([live(), snapshot(1)]));
-    expect(selectBoard(s)).toHaveLength(1);
+    expect(work(s)?.lanes).toHaveLength(1);
     s = run([{ t: "state", state: { phase: "connecting", hub: "devbox:4710", attempt: 1 } }], s);
-    expect(selectBoard(s)).toBeUndefined();
+    expect(work(s)).toBeUndefined();
     expect(selectProjectList(s)).toBeUndefined();
   });
 
@@ -115,16 +120,6 @@ describe("live frames", () => {
     expect(l.lanes["T1"]?.activity).toBeUndefined();
     l = applyLive(l, frame(true, [liveLane("T2", "queued")]), 0);
     expect(Object.keys(l.lanes)).toEqual(["T2"]);
-  });
-
-  it("keeps a lead's messages in full past the text tail, and no stream for other lanes", () => {
-    const parts = Array.from({ length: 30 }, (_, i) => ({ laneId: "lead:devbox/p1", messageId: i < 20 ? "m1" : "m2", append: `${"x".repeat(299)}\n` }));
-    const f = { ...frame(false, []), text: [...parts, { laneId: "T1", messageId: "t", append: "hi" }] };
-    const streams = applyStreams(undefined, f);
-    expect(streams?.["lead:devbox/p1"]?.map((m) => [m.messageId, m.text.length])).toEqual([["m1", 6000], ["m2", 3000]]);
-    expect(applyLive(initialState().live, f, 0).text["lead:devbox/p1"]?.text).toHaveLength(2000);
-    expect(streams?.["T1"]).toBeUndefined();
-    expect(applyStreams(streams, frame(false, []))).toBe(streams);
   });
 
   it("appends streamed text per message, keeping a 2000-unit tail", () => {

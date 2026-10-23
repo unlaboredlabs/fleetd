@@ -8,7 +8,7 @@ import { selectOrderEvents } from "../../src/data/selectors";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import type { HubError, HubEvent } from "../../../shared/hub";
 import { spansInput, type TimeQuery } from "./filters";
-import type { TaskProfile } from "../../../shared/contracts";
+import type { OrderCard, TaskProfile } from "../../../shared/contracts";
 import { NO_NAMES, numberCollisions, type Lane, type Names } from "./format";
 import type { DataState } from "../../src/data/store";
 import type { AgentRole, Coverage, InsightRule, Span, SpanKind, ThreadWindowOutput, TimeBreakdownOutput, TimeInsightsOutput } from "./types";
@@ -219,7 +219,10 @@ export const useWindow = (span: Span | undefined): Answer<ThreadWindowOutput> | 
   return span === undefined ? undefined : answerOf(q);
 };
 
-export type NamesInput = Pick<DataState, "fresh" | "orders" | "details" | "projects" | "machines">;
+export type NamesInput = Pick<DataState, "fresh" | "orders" | "details" | "projects" | "machines"> & {
+  /** The orders Time read itself, finished ones included, which the board leaves out. */
+  readonly done?: readonly OrderCard[] | undefined;
+};
 
 /** What ids are called on screen, from the store: lanes by role, task and title, PRs by number, orders by title. */
 export const namesOf = (s: NamesInput): Names => {
@@ -243,7 +246,7 @@ export const namesOf = (s: NamesInput): Names => {
   const projects = Object.values(s.projects);
   const titleOf = (r: { machineId: string; projectId: string }) =>
     projects.find((p) => p.machineId === r.machineId && p.projectId === r.projectId)?.title ?? r.projectId;
-  for (const card of Object.values(s.orders ?? {})) {
+  for (const card of [...(s.done ?? []), ...Object.values(s.orders ?? {})]) {
     orders.set(card.workstreamId, { title: card.title, project: titleOf(card.projectRef), ref: card.projectRef });
     card.lanes.forEach(lane);
     for (const pr of card.prs) changes.set(pr.changeId, pr.number);
@@ -262,14 +265,19 @@ export const namesOf = (s: NamesInput): Names => {
   };
 };
 
+const DAY_MS = 86_400_000;
+
 /** The names, kept stable until the store's orders, details, projects or machines change. */
 export const useNames = (order: string | undefined): Names => {
   // An order's finished lanes and its lead come with order_get, which also folds them into the store.
   useToolQuery("order_get", { workstreamId: order ?? "" }, { enabled: order !== undefined });
+  // The board holds open orders only; the picker also lists the last day's finished work.
+  const [doneSince] = useState(() => new Date(Date.now() - DAY_MS).toISOString());
+  const done = useToolQuery("orders_board", { includeDoneSince: doneSince }).data?.orders;
   const fresh = useData((s) => s.fresh);
   const orders = useData((s) => s.orders);
   const details = useData((s) => s.details);
   const projects = useData((s) => s.projects);
   const machines = useData((s) => s.machines);
-  return useMemo(() => namesOf({ fresh, orders, details, projects, machines }), [fresh, orders, details, projects, machines]);
+  return useMemo(() => namesOf({ fresh, orders, details, projects, machines, done }), [fresh, orders, details, projects, machines, done]);
 };

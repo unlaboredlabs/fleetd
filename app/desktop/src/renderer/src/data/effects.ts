@@ -46,7 +46,6 @@ const startsWithAny = (type: string, prefixes: readonly string[]): boolean => pr
 export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unknown>> = {}): EventEffects => {
   const type = event.type;
   const out: Invalidation[] = [];
-  const workstreamId = dataField(event, "workstreamId");
   const orders = ordersNamed(event);
   const shapesOrders = startsWithAny(type, ORDER_PREFIXES) || ORDER_TYPES.has(type);
 
@@ -55,20 +54,13 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   if (type.startsWith("request.")) out.push({ tool: "requests_list" });
   if (shapesOrders) {
     out.push({ tool: "orders_board" });
-    for (const id of orders) {
-      out.push({ tool: "order_get", where: { workstreamId: id } });
-      // The order view's brief and claims (done-when).
-      if (type.startsWith("workstream.") || type.startsWith("claim.")) out.push({ tool: "workstream_get", where: { workstreamId: id } });
-    }
+    for (const id of orders) out.push({ tool: "order_get", where: { workstreamId: id } });
   }
   // Only the PR screen on view has these reads mounted, so this refetches one list, one PR and its visible pages.
   if (startsWithAny(type, PR_PREFIXES)) out.push({ tool: "pr_list" }, { tool: "pr_get" });
   if (startsWithAny(type, PR_DIFF_PREFIXES)) out.push({ tool: "pr_files" }, { tool: "pr_diff" });
-  if (type.startsWith("steer.")) {
-    out.push(workstreamId === undefined ? { tool: "steers_list" } : { tool: "steers_list", where: { workstreamId } });
-  }
   // Status's per-project rows read the same facts as the status doc.
-  if (shapesOrders || STATUS_TYPES.has(type)) out.push({ tool: "status_get" }, { tool: "status_projects" }, { tool: "plan_get" });
+  if (shapesOrders || STATUS_TYPES.has(type)) out.push({ tool: "status_get" }, { tool: "status_projects" });
   else if (startsWithAny(type, STATUS_PREFIXES)) out.push({ tool: "status_get" }, { tool: "status_projects" });
   // Only the open order's time reads: they are scoped `{ kind: "order", workstreamId }`, matched inside `scope`.
   // time_spans is paged; its view fetches new pages itself, so it is not refetched whole here.
@@ -77,9 +69,7 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
       out.push({ tool: "time_breakdown", where: { workstreamId: id } }, { tool: "time_insights", where: { workstreamId: id } });
     }
   }
-  if (type.startsWith("thread.") && event.threadId !== undefined) {
-    out.push({ tool: "thread_tail", where: { threadId: event.threadId } }, { tool: "agent_work", where: { threadId: event.threadId } });
-  }
+  if (type.startsWith("thread.") && event.threadId !== undefined) out.push({ tool: "agent_work", where: { threadId: event.threadId } });
   // The agents view's list: who runs, and what for. Their live status and activity come with the live feed instead.
   if (startsWithAny(type, AGENT_PREFIXES) || AGENT_TYPES.has(type)) out.push({ tool: "agents_list" });
   const projectScoped = startsWithAny(type, ["workstream.", "lead.", "thread."]) || type === "project.settings";
@@ -90,12 +80,10 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
     out.push({ tool: "prompts_list" }, { tool: "prompt_get" }, { tool: "session_prompt_get" });
   }
   if (type === "doctor.changed") out.push({ tool: "doctor_list" });
-  if (type === "decision.recorded") out.push({ tool: "attention_policy" }, { tool: "decisions_search" });
-  if (type.startsWith("usage.") || type === "thread.usage_limited") out.push({ tool: "usage_status" });
+  if (type === "decision.recorded") out.push({ tool: "attention_policy" });
 
   const newMachine = type.startsWith("machine.") && (event.machineId === undefined || !(event.machineId in machines));
   const resync = newMachine || type === "project.added" || type === "project.removed";
-  if (resync) out.push({ tool: "projects_list" });
   // Add project's list marks which repos are already projects.
   if (type === "project.added" || type === "project.removed") out.push({ tool: "project_discover" });
   return { invalidate: out, resync };
