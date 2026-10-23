@@ -1098,13 +1098,17 @@ async fn an_update_releases_a_figure_the_old_rule_left_stuck() {
         45,
         "held: nothing since that point explains a fall"
     );
-    let version = db.user_version().unwrap();
+    // Run the in-flight migration itself: re-opening at an older version would re-run the later ones too, which
+    // can't run twice.
+    use crate::hub::store::migrations::MIGRATIONS;
+    let release = MIGRATIONS
+        .iter()
+        .position(|m| m.contains("DELETE FROM status_series"))
+        .expect("the in-flight migration");
     db.with(|c| {
-        c.pragma_update(None, "user_version", version - 1)?;
+        c.execute_batch(MIGRATIONS[release])?;
         Ok(())
     })
     .unwrap();
-    let updated = HubDb::open(home.path()).unwrap();
-    assert_eq!(updated.user_version().unwrap(), version);
     assert_eq!(estimate_after(&hub, &clock, 1).0, 14);
 }
