@@ -1,4 +1,4 @@
-//! MCP tools of the lead chat (chat_send, chat_history, project_stop), the tools it replaces (each answers where it
+//! MCP tools of the lead chat (chat_send, chat_history, chat_stop, project_stop), the tools it replaces (each answers where it
 //! moved, for one release), and the lead's `workstream_open` call.
 use std::sync::{Arc, Weak};
 
@@ -6,8 +6,8 @@ use fleetd_contracts::auth::Role;
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult, WorkstreamOpenResult};
 use fleetd_contracts::ledger::IntakeChannel;
 use fleetd_contracts::mcp::{
-    ChatHistoryInput, ChatHistoryOutput, ChatSendInput, ChatSendOutput, ErrorCode, McpToolError,
-    ProjectStopInput, ProjectStopOutput,
+    ChatHistoryInput, ChatHistoryOutput, ChatSendInput, ChatSendOutput, ChatStopInput, ErrorCode,
+    McpToolError, ProjectStopInput, ProjectStopOutput,
 };
 use fleetd_contracts::prim::List;
 use serde_json::Value;
@@ -42,6 +42,7 @@ pub fn register(tools: &mut Registry) {
     tools.add("chat_send", chat_send);
     tools.add("chat_history", chat_history);
     tools.add("project_stop", project_stop);
+    tools.add_raw("chat_stop", chat_stop);
     for (name, fix) in MOVED {
         let fix = *fix;
         tools.add::<Value, Value, _, _>(name, move |_hub: Arc<Hub>, _caller, _input| async move {
@@ -102,6 +103,17 @@ async fn project_stop(
     input: ProjectStopInput,
 ) -> Result<ProjectStopOutput, ToolError> {
     flow::project_stop(&hub, &caller, input).await
+}
+
+/// The key is checked before the input, so the app's probe with `{}` tells "you may stop" (invalid input) from "you
+/// may not" (forbidden).
+async fn chat_stop(hub: Arc<Hub>, caller: Caller, input: Value) -> Result<Value, ToolError> {
+    crate::hub::orders::notes::require_human(&caller, "chat_stop")?;
+    let input: ChatStopInput = serde_json::from_value(input)
+        .map_err(|e| ToolError::new(ErrorCode::Invalid, e.to_string()))?;
+    let output = flow::chat_stop(&hub, &caller, input).await?;
+    serde_json::to_value(output)
+        .map_err(|e| ToolError::from(crate::hub::store::StoreError::from(e)))
 }
 
 /// Registers `workstream_open`: a lead opens its own workstream for work it took from the chat, as a draft it then

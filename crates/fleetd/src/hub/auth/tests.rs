@@ -199,12 +199,7 @@ fn enrollment_tokens_are_one_time_and_record_the_node_key() {
         (again.code, again.message.as_str()),
         (ErrorCode::Forbidden, "enrollment token was already used")
     );
-    assert!(
-        again
-            .fix
-            .unwrap()
-            .contains("fleetd hub token create --machine lab-a")
-    );
+    assert!(again.fix.unwrap().contains("fleetd pair --worker lab-a"));
     assert_eq!(
         auth.node_pub_key(&m("lab-a")).unwrap().as_deref(),
         Some("pub-1")

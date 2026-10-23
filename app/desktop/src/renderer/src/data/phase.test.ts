@@ -17,9 +17,9 @@ describe("order phase", () => {
   });
 
   it("is queued only when every live lane is, and planning while the lead works on an order with no tasks", () => {
-    const queued = { role: "implementer", status: "queued", statusReason: "slots: 40/40 in use" } as const;
+    const queued = { role: "implementer", status: "queued", statusReason: "fleet cap: 40 of 40 running" } as const;
     const done = { role: "implementer", status: "done" } as const;
-    expect(orderPhase({ ...base, lanes: [queued, done] })).toEqual({ phase: "queued", detail: "queued: slots: 40/40 in use" });
+    expect(orderPhase({ ...base, lanes: [queued, done] })).toEqual({ phase: "queued", detail: "queued: fleet cap: 40 of 40 running" });
     expect(orderPhase({ ...base, hasTasks: false, leadWorking: true }).phase).toBe("planning");
     expect(orderPhase({ ...base, state: "draft" }).phase).toBe("planning");
     expect(orderPhase(base)).toEqual({ phase: "idle", detail: "waiting for the lead" });

@@ -142,7 +142,15 @@ impl TaskPorts for HubTaskPorts {
     }
 
     fn stop<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Result<(), PortError>> {
-        Box::pin(async move { self.executors.stop(thread).await.map_err(port_error) })
+        Box::pin(async move { self.executors.stop(thread, false).await.map_err(port_error) })
+    }
+
+    fn remove_worktree<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Result<(), PortError>> {
+        Box::pin(async move { self.executors.stop(thread, true).await.map_err(port_error) })
+    }
+
+    fn paused(&self, machine_id: &MachineId) -> Option<String> {
+        self.hub()?.link.paused(machine_id)
     }
 
     fn action_texts<'a>(

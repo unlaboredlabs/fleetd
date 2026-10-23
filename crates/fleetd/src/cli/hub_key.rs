@@ -1,4 +1,4 @@
-//! `fleetd hub key …` and `fleetd hub token create`: they open the hub home's database directly; SQLite WAL makes
+//! `fleetd hub key …`: it opens the hub home's database directly; SQLite WAL makes
 //! that safe while the hub runs.
 
 use std::path::{Path, PathBuf};
@@ -27,10 +27,6 @@ pub const HUB_KEY_USAGE: &str = r#"  hub key create --name <name> --role <read|o
   hub key list [--home <dir>]
   hub key revoke <keyId> [--home <dir>]
              takes effect at once, also on a running hub
-"#;
-
-pub const HUB_TOKEN_USAGE: &str = r#"  hub token create --machine <id> [--home <dir>]
-             print a one-time enrollment token (15 min) for `fleetd node join`
 "#;
 
 /// The hub home's database, opened beside a running hub.
@@ -315,50 +311,6 @@ pub fn hub_key(argv: &[String]) -> CliResult {
         Some(other) => key_usage(&format!("unknown hub key command '{other}'")),
         None => key_usage("missing hub key command"),
     }
-}
-
-/// `fleetd hub token create`.
-pub fn hub_token(argv: &[String]) -> CliResult {
-    let usage = |message: &str| fail(2, &format!("{message}\n\nusage:\n{HUB_TOKEN_USAGE}"));
-    let (command, rest) = argv
-        .split_first()
-        .map_or((None, &[][..]), |(c, r)| (Some(c.as_str()), r));
-    let v = match args::parse(
-        rest,
-        &Spec {
-            options: &[("home", Kind::Str), ("machine", Kind::Str)],
-            positionals: false,
-        },
-    ) {
-        Ok(v) => v,
-        Err(message) => return usage(&message),
-    };
-    match command {
-        Some("create") => {}
-        Some(other) => return usage(&format!("unknown hub token command '{other}'")),
-        None => return usage("missing hub token command"),
-    }
-    let Some(machine) = v.str("machine").filter(|m| !m.is_empty()) else {
-        return usage("--machine is required");
-    };
-    let Ok(machine_id) = MachineId::new(machine) else {
-        return usage(&format!(
-            "'{machine}' is not a machine id ([a-z0-9-]{{1,32}})"
-        ));
-    };
-    with_hub(v.str("home"), |hub| {
-        match hub.auth.create_enroll_token(&machine_id) {
-            Ok(token) => CliResult {
-                code: 0,
-                stdout: format!("{}\n", token.token),
-                stderr: format!(
-                    "one-time token for {machine}, valid until {}. On {machine}, run:\n  fleetd node join --hub <hub url> --token <token> --machine {machine}\n",
-                    token.expires_at
-                ),
-            },
-            Err(error) => fail(1, &error.to_string()),
-        }
-    })
 }
 
 #[cfg(test)]

@@ -376,7 +376,10 @@ async fn app_socket_closes_on_a_refused_key_and_calls_through_the_same_checks() 
         );
     }
     frames.sort_by_key(|f| f["id"].as_str().unwrap_or("").to_owned());
-    assert_eq!(frames[0], json!({ "t": "ready", "protocol": 1 }));
+    assert_eq!(
+        frames[0],
+        json!({ "t": "ready", "protocol": 1, "version": crate::version() })
+    );
     assert_eq!(
         frames[1],
         json!({ "t": "error", "id": "c0", "code": "forbidden", "message": "Not authenticated.", "fix": "Send {t:auth,key} first." })

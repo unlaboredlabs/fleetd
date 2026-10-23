@@ -113,14 +113,18 @@ for later." Nothing was moved or deleted. Scroll up to read it.
 
 ## Stop everything {#stop}
 
-To stop all of a project's work at once, say "stop" in the chat, or run:
+To stop all of a project's work at once, press Stop in the chat, or run:
 
 ```sh
-fleetd project stop devbox/storefront
+fleetd project stop devbox/storefront --key-file ~/.fleetd/human.key
 ```
 
-From an MCP client, call `project_stop`. Every running and queued agent is stopped, and the lead says so in the chat. Merged pull requests stay, and so do the lead and the
-chat: write again to start new work.
+A stop speaks for you, so it takes your [human key](/docs/glossary#human-key). Make one once with
+`fleetd hub key create --human --name terminal --out ~/.fleetd/human.key`.
+
+From an MCP client, call `project_stop`. The lead's turn and every running and queued agent stop, and the chat says
+what stopped, such as "Stopped the lead and 2 agents." Merged pull requests stay, and so do the lead and the chat: write
+again to start new work.
 
 ## Secrets and risky commands {#inline}
 

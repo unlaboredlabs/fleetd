@@ -98,7 +98,7 @@ pub async fn connect_with(
         })
 }
 
-async fn list(client: &mut McpClient) -> Result<Vec<DoctorCheck>, Failure> {
+async fn list_checks(client: &mut McpClient) -> Result<Vec<DoctorCheck>, Failure> {
     let result = client
         .call_tool(
             "doctor_list",
@@ -121,7 +121,7 @@ async fn list(client: &mut McpClient) -> Result<Vec<DoctorCheck>, Failure> {
 /// Runs every check now.
 pub async fn run(home: &Path) -> Result<Vec<DoctorCheck>, Failure> {
     let mut client = connect(home).await?;
-    list(&mut client).await
+    list_checks(&mut client).await
 }
 
 /// Registers `path` on `machine_id` as a project through the hub (project_add, the path the app and agents use).
@@ -266,9 +266,19 @@ pub async fn doctor_command(argv: &[String]) -> u8 {
         }
     };
     let mut list = Checklist::new();
-    match run(&home).await {
+    let mut client = match connect(&home).await {
+        Ok(client) => client,
+        Err(failure) => {
+            list.failed("doctor", &failure.message, &failure.fix);
+            return 4;
+        }
+    };
+    match list_checks(&mut client).await {
         Ok(checks) => {
             let ok = show(&mut list, &checks, &[]);
+            if let Some(line) = super::super::versions::line(&mut client).await {
+                list.warn("versions", &line, None);
+            }
             list.done("doctor", &format!("{ok} of {} checks pass", checks.len()));
             u8::from(list.failures().next().is_some())
         }

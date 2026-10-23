@@ -151,6 +151,9 @@ pub struct ProgressPoint {
     pub verified_pct: Int<0, 100>,
     /// Set when the estimate fell at this point; it never falls without one.
     pub drop: Option<ProgressDrop>,
+    /// Set while the estimate holds because the work in flight paused, waiting for an answer or for a usage limit to
+    /// reset ("paused: an agent hit a usage limit"). A marker, not a drop: what was earned stays.
+    pub paused: Option<Line<1, 200>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -551,7 +554,8 @@ pub enum ProjectRowState {
     Working,
     /// The lead is waiting for your reply.
     WaitingOnYou,
-    /// Something outside the work stops it: its machine is offline or at its usage limit, or main CI is red.
+    /// Something outside the work stops it: its machine is offline, at its usage limit or short of disk or CPU for new
+    /// agents, or main CI is red.
     Blocked,
     /// Nothing running and nothing waiting.
     Idle,

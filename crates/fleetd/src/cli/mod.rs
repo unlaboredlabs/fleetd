@@ -18,6 +18,7 @@ pub mod status;
 pub mod steer;
 pub mod time;
 pub mod update;
+pub mod versions;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -66,7 +67,7 @@ setting up (on the hub machine):
 projects:
 {}
 running by hand:
-{}{}{}{}{}{}{}{}{}{}{}
+{}{}{}{}{}{}{}{}{}{}
 lead-side commands (a lead uses its fleetd tools; these are for you, inside a project workspace):
 {}",
         UPDATE_USAGE,
@@ -76,7 +77,6 @@ lead-side commands (a lead uses its fleetd tools; these are for you, inside a pr
         project::PROJECT_USAGE,
         node::HUB_START_USAGE,
         hub_key::HUB_KEY_USAGE,
-        hub_key::HUB_TOKEN_USAGE,
         status::GITHUB_WEBHOOK_USAGE,
         node::NODE_USAGE,
         retro::RETRO_USAGE,
@@ -89,8 +89,10 @@ lead-side commands (a lead uses its fleetd tools; these are for you, inside a pr
     )
 }
 
-const UPDATE_USAGE: &str = "  update [--check] [--channel <c>]
-             replace this fleetd with the latest release
+const UPDATE_USAGE: &str = "  update [--check] [--channel <c>] [--restart-now]
+             replace this fleetd with the latest release, then restart its hub and node when
+             nothing runs on them; while something does, they keep the running version until
+             their next restart. --restart-now restarts them anyway
 ";
 
 /// `fleetd <command> … --help` (or `-h`): that command's usage, for stdout and exit 0. After `--` they are arguments.
@@ -111,13 +113,11 @@ pub fn help_for(argv: &[String]) -> Option<String> {
         "hub" => match rest.first().map(String::as_str) {
             Some("start" | "serve") => node::HUB_START_USAGE.to_owned(),
             Some("key") => hub_key::HUB_KEY_USAGE.to_owned(),
-            Some("token") => hub_key::HUB_TOKEN_USAGE.to_owned(),
             Some("github-webhook") => status::GITHUB_WEBHOOK_USAGE.to_owned(),
             _ => format!(
-                "{}{}{}{}",
+                "{}{}{}",
                 node::HUB_START_USAGE,
                 hub_key::HUB_KEY_USAGE,
-                hub_key::HUB_TOKEN_USAGE,
                 status::GITHUB_WEBHOOK_USAGE
             ),
         },
@@ -135,7 +135,7 @@ pub fn help_for(argv: &[String]) -> Option<String> {
     Some(format!("usage:\n{text}"))
 }
 
-/// The short-lived commands that are not lead calls: version, help and `hub key|token`.
+/// The short-lived commands that are not lead calls: version, help and `hub key`.
 pub fn run(argv: &[String]) -> CliResult {
     let command = argv.first().map(String::as_str);
     match command {
@@ -158,7 +158,6 @@ pub fn run(argv: &[String]) -> CliResult {
         Some("instructions") => prompts::instructions_command(&argv[1..]),
         Some("hub") => match argv.get(1).map(String::as_str) {
             Some("key") => hub_key::hub_key(&argv[2..]),
-            Some("token") => hub_key::hub_token(&argv[2..]),
             other => CliResult::err(
                 2,
                 format!(
@@ -208,10 +207,14 @@ async fn run_long_running(argv: &[String]) -> u8 {
     }
 }
 
-/// `fleetd update [--check] [--channel <c>]`.
+/// `fleetd update [--check] [--channel <c>] [--restart-now]`.
 async fn update_command(argv: &[String]) -> u8 {
     let spec = args::Spec {
-        options: &[("check", args::Kind::Bool), ("channel", args::Kind::Str)],
+        options: &[
+            ("check", args::Kind::Bool),
+            ("channel", args::Kind::Str),
+            ("restart-now", args::Kind::Bool),
+        ],
         positionals: false,
     };
     let v = match args::parse(argv, &spec) {
@@ -224,6 +227,7 @@ async fn update_command(argv: &[String]) -> u8 {
     match update::run(update::UpdateArgs {
         check: v.flag("check"),
         channel: v.string("channel"),
+        restart_now: v.flag("restart-now"),
     })
     .await
     {
@@ -350,11 +354,7 @@ mod tests {
                 .contains("hub key create")
         );
         assert!(!help(&["hub", "key", "-h"]).unwrap().contains("hub start"));
-        assert!(
-            help(&["hub", "--help"])
-                .unwrap()
-                .contains("hub token create")
-        );
+        assert!(help(&["hub", "--help"]).unwrap().contains("hub key create"));
         assert!(
             help(&["update", "-h"])
                 .unwrap()

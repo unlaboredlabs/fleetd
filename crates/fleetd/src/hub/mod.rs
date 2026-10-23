@@ -13,6 +13,7 @@ pub mod estimates;
 pub mod executor;
 pub mod http;
 pub mod incidents;
+pub mod info;
 pub mod intake;
 pub mod leads;
 pub mod leases;

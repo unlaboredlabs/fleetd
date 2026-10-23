@@ -10,8 +10,8 @@ use serde_json::{Map, Value};
 use crate::app::{AppClientMessage, AppServerMessage};
 use crate::chat::{ChatMessage, ProjectChatState};
 use crate::events::{
-    ClaimEventData, HubEvent, HubEventType, MachineSleptData, PromptChangedData, RequestEventData,
-    ThreadEventData, TrainEventData, WorkstreamEventData, WorkstreamNoteData,
+    ClaimEventData, HubEvent, HubEventType, MachineGuardData, MachineSleptData, PromptChangedData,
+    RequestEventData, ThreadEventData, TrainEventData, WorkstreamEventData, WorkstreamNoteData,
 };
 use crate::ledger::{Decision, HumanRequest, Lead, Workstream};
 use crate::mcp::McpToolName;
@@ -86,6 +86,7 @@ fn hub_event_data_document_for(side: Side) -> Value {
         data!(ThreadEventData: ThreadStarted, ThreadCompleted, ThreadFailed, ThreadInterrupted, ThreadWaiting, ThreadStalled);
         data!(UsageEventData: ThreadUsageLimited, UsageBreaker, UsageResumed);
         data!(MachineSleptData: MachineSlept);
+        data!(MachineGuardData: MachineGuard);
         data!(ProjectAddedData: ProjectAdded);
         data!(CloneProgressData: ProjectCloneProgress);
         data!(ProjectAddFailedData: ProjectAddFailed);

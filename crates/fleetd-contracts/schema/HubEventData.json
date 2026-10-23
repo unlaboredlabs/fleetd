@@ -829,6 +829,9 @@
         "github.drift": {
           "$ref": "#/$defs/GithubDriftData"
         },
+        "machine.guard": {
+          "$ref": "#/$defs/MachineGuardData"
+        },
         "machine.slept": {
           "$ref": "#/$defs/MachineSleptData"
         },
@@ -967,6 +970,7 @@
         "claim.failed",
         "claim.passed",
         "github.drift",
+        "machine.guard",
         "machine.slept",
         "plan.changed",
         "plan.verified",
@@ -1008,6 +1012,19 @@
         "workstream.note",
         "workstream.running",
         "workstream.state"
+      ],
+      "type": "object"
+    },
+    "MachineGuardData": {
+      "description": "`machine.guard`.",
+      "properties": {
+        "paused": {
+          "description": "true: new agents wait; false: they start again.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "paused"
       ],
       "type": "object"
     },
@@ -1969,6 +1986,10 @@
         },
         "repo": {
           "$ref": "#/$defs/GitHubRepo"
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId",
+          "description": "pr.merged: the writer task whose PR it was, when a task wrote it."
         },
         "workstreamId": {
           "$ref": "#/$defs/WorkstreamId"

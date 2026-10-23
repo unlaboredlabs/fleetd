@@ -38,10 +38,10 @@ show this message
 ### fleetd update {#update}
 
 ```text
-fleetd update [--check] [--channel <c>]
+fleetd update [--check] [--channel <c>] [--restart-now]
 ```
 
-replace this fleetd with the latest release
+replace this fleetd with the latest release, then restart its hub and node when nothing runs on them; while something does, they keep the running version until their next restart. `--restart-now` restarts them anyway
 
 
 ## Setting up {#setting-up}
@@ -137,10 +137,10 @@ fleetd project list [--machine <id>] [--home <dir>] [--hub <url>]
 ### fleetd project stop {#project-stop}
 
 ```text
-fleetd project stop <machine>/<project> [--yes] [--home <dir>] [--hub <url>]
+fleetd project stop <machine>/<project> --key-file <human key> [--yes] [--home <dir>] [--hub <url>]
 ```
 
-stop everything running in it: its agents are cancelled, the lead and its chat stay, and the chat says so
+stop its lead's turn and its agents, as you; the lead and its chat stay, and the chat says what stopped
 
 ### fleetd project remove {#project-remove}
 
@@ -216,14 +216,6 @@ fleetd hub key revoke <keyId> [--home <dir>]
 ```
 
 takes effect at once, also on a running hub
-
-### fleetd hub token create {#hub-token-create}
-
-```text
-fleetd hub token create --machine <id> [--home <dir>]
-```
-
-print a one-time enrollment token (15 min) for `fleetd node join`
 
 ### fleetd hub github-webhook {#hub-github-webhook}
 

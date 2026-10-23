@@ -180,7 +180,10 @@ pub fn rows(hub: &Hub, w: &World, changes: &Changes) -> Vec<ProjectStatusRow> {
                 Some(format!("{mname} can't run agents (see Machines)"))
             }
             _ if usage_hit => Some(format!("claude usage limit reached on {mname}")),
-            _ => red.map(|repo| format!("main CI is red on {repo}")),
+            _ => hub
+                .link
+                .paused(&r.machine_id)
+                .or_else(|| red.map(|repo| format!("main CI is red on {repo}"))),
         };
         // The lead chat's own rule, so the row and the chat's needs-you dot never disagree; the side-effect-free
         // read, since a status read must not announce chat state.

@@ -12,9 +12,9 @@ use crate::hub::slots::{Agents, SlotPriority, SlotRequest};
 use crate::hub::store::HubDb;
 use crate::hub::store::test_clock::ManualClock;
 
-const AT: &str = "2026-10-19T10:00:00.000Z";
+pub(super) const AT: &str = "2026-10-19T10:00:00.000Z";
 
-fn hub() -> (Arc<Hub>, tempfile::TempDir) {
+pub(super) fn hub() -> (Arc<Hub>, tempfile::TempDir) {
     let home = tempfile::tempdir().unwrap();
     let config = HubConfig {
         home: home.path().to_path_buf(),
@@ -36,7 +36,7 @@ fn project() -> ProjectRef {
 }
 
 /// A running read task holding its slot, as a launch leaves it.
-fn running(hub: &Hub, n: u32) -> Task {
+pub(super) fn running(hub: &Hub, n: u32) -> Task {
     let task: Task = serde_json::from_value(json!({
         "taskId": format!("T{n}"), "projectRef": { "machineId": "lab-a", "projectId": "p1" }, "workstreamId": "W1",
         "title": format!("slice {n}"), "kind": "read", "prompt": "do it", "areas": [],
@@ -218,12 +218,12 @@ async fn every_digest_says_how_many_agents_run_of_the_max_and_wait() {
 }
 
 /// A node linked to the hub that runs sessions t1..t3 and accepts every message sent to them.
-struct Node {
-    rx: tokio::sync::mpsc::UnboundedReceiver<fleetd_contracts::node_link::HubToNode>,
+pub(super) struct Node {
+    pub(super) rx: tokio::sync::mpsc::UnboundedReceiver<fleetd_contracts::node_link::HubToNode>,
 }
 
 impl Node {
-    async fn link(hub: &Hub) -> Self {
+    pub(super) async fn link(hub: &Hub) -> Self {
         use fleetd_contracts::node_link::{HubToNode, NodeToHub};
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let m = MachineId::unchecked("lab-a");
@@ -325,7 +325,7 @@ async fn pausing_the_extras_parks_the_newest_and_continues_them_in_their_thread(
     );
     assert_eq!(
         outcome.next,
-        "Max agents 40 → 1: 2 agents push their work and wait; 1 keep running."
+        "Max agents 40 → 1: 2 agents push their work and wait; 1 keeps running."
     );
 
     let t3 = super::TaskId::unchecked("T3");
@@ -441,5 +441,23 @@ fn a_raise_with_nothing_queued_says_only_the_new_cap() {
     assert_eq!(
         raised_line(3, 12, 3, 6),
         "Max agents 3 → 12: 3 queued agents start now, 6 slots free."
+    );
+}
+
+/// Dogfood: "1 agent push their work and wait; 1 keep running".
+#[test]
+fn a_pause_line_counts_in_good_grammar() {
+    use super::cap::paused_line;
+    assert_eq!(
+        paused_line(40, 1, 1, 1),
+        "Max agents 40 → 1: 1 agent pushes its work and waits; 1 keeps running."
+    );
+    assert_eq!(
+        paused_line(40, 2, 3, 2),
+        "Max agents 40 → 2: 3 agents push their work and wait; 2 keep running."
+    );
+    assert_eq!(
+        paused_line(2, 0, 2, 0),
+        "Max agents 2 → 0: 2 agents push their work and wait; 0 keep running."
     );
 }

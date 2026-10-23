@@ -1225,7 +1225,7 @@ async fn auto_enqueues_a_write_tasks_pr_rebases_it_onto_the_moved_base_and_merge
     assert_eq!(
         kit.host.events_of("pr.merged"),
         [
-            json!({ "changeId": change_id, "workstreamId": "W1", "repo": REPO, "prNumber": 7, "mergedSha": merged.merged_sha })
+            json!({ "changeId": change_id, "workstreamId": "W1", "taskId": task_id, "repo": REPO, "prNumber": 7, "mergedSha": merged.merged_sha })
         ]
     );
     let moves: Vec<(String, String)> = kit
@@ -1397,7 +1397,7 @@ fn one_poll(options: &mut TrainOptions) {
 async fn merges_on_local_checks_when_the_repo_has_no_ci_and_says_so_on_the_merge() {
     let kit = Kit::with(FakeCi::None, one_poll);
     let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")], "Source: done:0");
-    let (_, change_id) = kit.author_task(Some(&pr)).await;
+    let (task_id, change_id) = kit.author_task(Some(&pr)).await;
 
     assert!(kit.train.step(REPO).await);
     let merged = kit.get(&change_id);
@@ -1406,7 +1406,7 @@ async fn merges_on_local_checks_when_the_repo_has_no_ci_and_says_so_on_the_merge
     assert_eq!(
         kit.host.events_of("pr.merged"),
         [
-            json!({ "changeId": change_id, "repo": REPO, "prNumber": 7, "mergedSha": merged.merged_sha, "ci": format!("no CI on {REPO}: used local checks"), "workstreamId": "W1" })
+            json!({ "changeId": change_id, "repo": REPO, "prNumber": 7, "mergedSha": merged.merged_sha, "ci": format!("no CI on {REPO}: used local checks"), "workstreamId": "W1", "taskId": task_id })
         ]
     );
 }

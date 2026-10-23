@@ -265,9 +265,14 @@ fixed. fleetd turns claude’s auto-updater off for its own sessions.</p>
 <td>Same as above.</td>
 </tr>
 <tr>
-<td>“… free under ~ on laptop; fleetd needs at least 5.0 GB” <code dir="auto">[disk]</code></td>
-<td>Low disk. Each writer gets its own git worktree.</td>
-<td>Free space under the named path. <code dir="auto">df -h &lt;path&gt;</code> shows what is left.</td>
+<td>“Paused new agents: 14 GB free on laptop” <code dir="auto">[disk]</code></td>
+<td>Low disk where the worktrees live. Each writer gets its own git worktree and build output.</td>
+<td>Free space on that disk. New agents start again by themselves once it has room. See <a href="/docs/machines#guard">Disk and load</a>.</td>
+</tr>
+<tr>
+<td>“Paused new agents: load 70.2 on 32 CPUs on laptop” <code dir="auto">[disk]</code></td>
+<td>The machine is overloaded.</td>
+<td>Nothing: new agents start once the load falls.</td>
 </tr>
 <tr>
 <td>“The node on laptop won’t run commands in … (outside its cmdRoots)” <code dir="auto">[cmd-roots]</code></td>

@@ -13,7 +13,7 @@ use crate::node::runner::claude_setup::ClaudeSetup;
 use crate::node::runner::failure::login_fix;
 use crate::node::runner::version::{self, TESTED as CLAUDE_TESTED, VersionVerdict};
 use fleetd_contracts::model::{SleptSpan, duration_text};
-use fleetd_contracts::node_link::IdleSleep;
+use fleetd_contracts::node_link::{IdleSleep, NodeDisk};
 use fleetd_contracts::sessions::{LoginStatus, RunnerInfo};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,9 +64,6 @@ pub struct DoctorCheck {
 pub struct Entry {
     pub check: DoctorCheck,
 }
-
-/// The disk floor: below this a machine cannot hold more worktrees.
-pub const MIN_FREE_BYTES: f64 = 5e9;
 
 fn manual(label: &str, command: Option<String>) -> DoctorFix {
     DoctorFix {
@@ -726,8 +723,6 @@ pub struct HostProbe {
     /// "env": the node's service environment (GIT_AUTHOR_EMAIL), which setup writes; else git's global config.
     #[serde(default)]
     pub git_email_from: Option<String>,
-    pub disk_path: String,
-    pub disk_free_bytes: f64,
     /// Absent from nodes older than the sleep check.
     #[serde(default)]
     pub idle_sleep: Option<Vec<IdleSleep>>,
@@ -940,51 +935,54 @@ pub fn areas(machine_id: &str, projects: &[super::service::ProjectAreas]) -> Ent
     )
 }
 
-pub fn disk_space(machine_id: &str, probe: Result<&HostProbe, &str>) -> Entry {
-    let probe = match probe {
-        Err(why) => return machine_entry(machine_id, "disk", Unknown, why, None),
-        Ok(p) => p,
+/// Free space where the node's worktrees live, from its heartbeat, and whether the guard holds new agents there.
+pub fn disk_space(
+    machine_id: &str,
+    offline: bool,
+    disk: Option<&NodeDisk>,
+    paused: Option<&str>,
+) -> Entry {
+    let Some(d) = disk.filter(|_| !offline) else {
+        let why = if offline {
+            format!("{machine_id} is offline.")
+        } else {
+            format!("{machine_id}'s node hasn't reported its free disk space.")
+        };
+        return machine_entry(machine_id, "disk", Unknown, &why, None);
     };
-    if probe.disk_free_bytes < 0.0 {
+    let (free, min) = (d.free_bytes.get() as f64, d.min_free_bytes.get() as f64);
+    let space = format!(
+        "{} free of {} where {machine_id}'s worktrees live",
+        gb(free),
+        gb(d.total_bytes.get() as f64)
+    );
+    let Some(paused) = paused else {
+        let floor = if min > 0.0 {
+            format!("new agents pause below {}", gb(min))
+        } else {
+            "minFreeGb 0 turns the disk pause off".to_owned()
+        };
         return machine_entry(
             machine_id,
             "disk",
-            Unknown,
+            Pass,
+            &format!("{space}; {floor}."),
+            None,
+        );
+    };
+    let message = format!(
+        "{paused}. {space}. Running agents keep going; new ones start again once it has room."
+    );
+    if free < min {
+        let fix = manual(
             &format!(
-                "Could not read the free space under {} on {machine_id}.",
-                probe.disk_path
+                "Free disk space on {machine_id}: a writer's worktree goes once its PR merges"
             ),
             None,
         );
+        return machine_entry(machine_id, "disk", Fail, &message, Some(fix));
     }
-    if probe.disk_free_bytes < MIN_FREE_BYTES {
-        return machine_entry(
-            machine_id,
-            "disk",
-            Fail,
-            &format!(
-                "{} free under {} on {machine_id}; fleetd needs at least {}.",
-                gb(probe.disk_free_bytes),
-                probe.disk_path,
-                gb(MIN_FREE_BYTES)
-            ),
-            Some(manual(
-                &format!("Free disk space on {machine_id}"),
-                Some(format!("df -h {}", probe.disk_path)),
-            )),
-        );
-    }
-    machine_entry(
-        machine_id,
-        "disk",
-        Pass,
-        &format!(
-            "{} free under {}.",
-            gb(probe.disk_free_bytes),
-            probe.disk_path
-        ),
-        None,
-    )
+    machine_entry(machine_id, "disk", Warn, &message, None)
 }
 
 #[cfg(test)]
@@ -1088,7 +1086,7 @@ mod tests {
     fn warns_when_a_machine_sleeps_idle_on_ac() {
         let probe = |idle_sleep: Option<serde_json::Value>| -> HostProbe {
             serde_json::from_value(serde_json::json!({
-                "diskPath": "/home/u", "diskFreeBytes": 1e11, "idleSleep": idle_sleep,
+                "idleSleep": idle_sleep,
             }))
             .unwrap()
         };

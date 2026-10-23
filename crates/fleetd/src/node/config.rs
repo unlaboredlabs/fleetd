@@ -23,6 +23,10 @@ pub struct NodeConfig {
     /// claude setup, as their own `claude` sees it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claude_config_dir: Option<String>,
+    /// Below this many GB free where the worktrees live, the hub starts no new agents here. Absent: 10% of the
+    /// volume or 20 GB, whichever is larger. 0 turns the disk pause off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_free_gb: Option<u64>,
     /// True once the hub has accepted this node's key.
     pub enrolled: bool,
 }

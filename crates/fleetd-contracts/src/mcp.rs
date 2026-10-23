@@ -489,8 +489,9 @@ output!(OrderStopOutput {
     cancelled: Count,
 });
 
-// project_stop: the safety valve. Stops every running and queued agent of the project and its open orders, withdraws
-// what waits on a person, and tells the lead in its chat. Merged PRs stay; the lead and the chat stay. Idempotent.
+// project_stop: the safety valve. Interrupts the lead's turn, stops every running and queued agent of the project and
+// its open orders, withdraws what waits on a person, and tells the lead in its chat. Merged PRs stay; the lead and the
+// chat stay. Idempotent.
 input!(ProjectStopInput {
     project_ref: ProjectRef,
     reason: Option<Text<1, 200>>,
@@ -500,6 +501,19 @@ output!(ProjectStopOutput {
     stopped: Count,
     /// Tasks this call cancelled.
     cancelled: Count,
+    /// The system line it wrote into the chat.
+    message: crate::chat::ChatMessage,
+});
+
+// chat_stop: the chat's Stop, the same stop as project_stop: the lead's turn and the project's agents stop, and one
+// line in the chat says what stopped ("Stopped the lead and 2 agents."). The same clientRequestId returns that line.
+input!(ChatStopInput {
+    project_ref: ProjectRef,
+    client_request_id: RequestId,
+});
+output!(ChatStopOutput {
+    /// Something was running and stopped: the lead's turn or an agent.
+    stopped: bool,
     /// The system line it wrote into the chat.
     message: crate::chat::ChatMessage,
 });
@@ -1479,7 +1493,7 @@ tools! {
     steers_list => SteersList, Read, SteersListInput, SteersListOutput;
     chat_send => ChatSend, Operate, ChatSendInput, ChatSendOutput;
     chat_history => ChatHistory, Read, ChatHistoryInput, ChatHistoryOutput;
-    // Human keys only (the handler checks).
+    // Human keys only (the handlers check).
     project_stop => ProjectStop, Operate, ProjectStopInput, ProjectStopOutput;
     hub_info => HubInfo, Read, HubInfoInput, HubInfoOutput;
     agents_list => AgentsList, Read, AgentsListInput, AgentsListOutput;
@@ -1488,6 +1502,7 @@ tools! {
     pr_get => PrGet, Read, PrGetInput, PrGetOutput;
     pr_files => PrFiles, Read, PrFilesInput, PrFilesOutput;
     pr_diff => PrDiff, Read, PrDiffInput, PrDiffOutput;
+    chat_stop => ChatStop, Operate, ChatStopInput, ChatStopOutput;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]

@@ -10,7 +10,15 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "project_stop",
-        "Stop everything in a project: every open order stops, its agents are cancelled and what waits on you is withdrawn, one line in the chat says so and the lead hears it. The lead and the chat stay. A person's device (a human key) only.",
+        "Stop everything in a project: the lead's turn is interrupted, every open order stops, its agents are cancelled and what waits on you is withdrawn, one line in the chat says what stopped and what still runs, and the lead hears it. The lead and the chat stay. A person's device (a human key) only.",
+    ),
+    (
+        "chat_stop",
+        "The chat's Stop, the same stop as project_stop: the lead's turn and the project's agents stop, and one line in the chat says what stopped. stopped is false when nothing was running. Idempotent per clientRequestId. A person's device (a human key) only.",
+    ),
+    (
+        "hub_info",
+        "The hub's fleetd version, protocol and release channel, and busy: everything a restart would interrupt now (a lead's turn, running agents, a merge or rebase the hub is doing, an approved command still running, a clone; a change waiting on CI is not), one plain line each. machineId keeps only what runs on that machine (before restarting its node). Empty busy: a restart interrupts nothing.",
     ),
     (
         "attachment_get",

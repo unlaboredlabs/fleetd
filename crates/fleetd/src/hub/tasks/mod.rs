@@ -8,6 +8,8 @@ pub mod cap;
 #[cfg(test)]
 mod cap_tests;
 pub mod glob;
+#[cfg(test)]
+mod guard_tests;
 pub mod hooks;
 pub mod policy;
 pub mod ports;
@@ -77,7 +79,7 @@ pub struct TaskDeps {
     pub policies: Arc<Policies>,
 }
 
-const THREAD_EVENTS: [HubEventType; 7] = [
+const THREAD_EVENTS: [HubEventType; 9] = [
     HubEventType::ThreadStarted,
     HubEventType::ThreadWaiting,
     HubEventType::ThreadCompleted,
@@ -86,6 +88,10 @@ const THREAD_EVENTS: [HubEventType; 7] = [
     HubEventType::ThreadUsageLimited,
     // M4 usage: a lifted pause lets queued tasks start.
     HubEventType::UsageResumed,
+    // The disk and load guard: the same, for a machine with room again.
+    HubEventType::MachineGuard,
+    // A merged writer's worktree goes.
+    HubEventType::PrMerged,
 ];
 
 const OUT_OF_AREA_MAX: usize = 20;
@@ -615,6 +621,12 @@ impl Tasks {
         if let Some(paused) = self.hooks.usage.get().and_then(|u| u.gate(&r.machine_id)) {
             return self.queue(stored, "usage", &paused);
         }
+        let continuing = task.thread_ref.is_some() && stored.pending_message.is_some();
+        // The disk and load guard holds new agents only; machine.guard runs the queue again. One with a thread
+        // continues in the worktree it has.
+        if !continuing && let Some(paused) = self.d.ports.paused(&r.machine_id) {
+            return self.queue(stored, "guard", &paused);
+        }
         let slot = self.d.slots.acquire(SlotRequest {
             holder: task.task_id.as_str(),
             project_ref: r,
@@ -624,7 +636,6 @@ impl Tasks {
             return self.queue(stored, "slot", &reason);
         }
 
-        let continuing = task.thread_ref.is_some() && stored.pending_message.is_some();
         // A paused agent's thread is still pushing its work: it continues once that turn ended, when its stop frees
         // the slot and runs the queue again. One that asked its lead meanwhile continues with the answer.
         if continuing && self.asking.lock().unwrap().contains(&task.task_id) {
@@ -895,9 +906,13 @@ impl Tasks {
     }
 
     async fn on_thread_event(self: &Arc<Self>, event: &HubEvent) -> Result<(), StoreError> {
-        if event.r#type == HubEventType::UsageResumed {
-            self.retry_queue().await;
-            return Ok(());
+        match event.r#type {
+            HubEventType::UsageResumed | HubEventType::MachineGuard => {
+                self.retry_queue().await;
+                return Ok(());
+            }
+            HubEventType::PrMerged => return self.merged(event),
+            _ => {}
         }
         let (Some(machine_id), Some(thread_id)) = (&event.machine_id, &event.thread_id) else {
             return Ok(());
@@ -1383,6 +1398,39 @@ impl Tasks {
         done.map_err(store_error)?;
         self.retry_queue().await;
         Ok(next)
+    }
+
+    /// A writer's PR merged: its worktree goes, unless its agent is still at work.
+    fn merged(self: &Arc<Self>, event: &HubEvent) -> Result<(), StoreError> {
+        let Some(task_id) = event
+            .data
+            .as_ref()
+            .and_then(|d| d.get("taskId"))
+            .and_then(Value::as_str)
+            .and_then(|id| TaskId::new(id).ok())
+        else {
+            return Ok(());
+        };
+        if let Some(task) = self.get(&task_id)?
+            && matches!(task.state, TaskState::Done | TaskState::Failed)
+        {
+            self.remove_worktree(&task);
+        }
+        Ok(())
+    }
+
+    /// Has the node delete a writer's worktree, and the build output in it, off the lock. A node that can't (offline,
+    /// a git error, or work that exists only there) leaves it, logged.
+    fn remove_worktree(self: &Arc<Self>, task: &Task) {
+        let (TaskKind::Write, Some(thread)) = (task.kind, task.thread_ref.clone()) else {
+            return;
+        };
+        let (tasks, task_id) = (self.clone(), task.task_id.clone());
+        tokio::spawn(async move {
+            if let Err(error) = tasks.d.ports.remove_worktree(&thread).await {
+                tracing::warn!(task_id = task_id.as_str(), ?error, "worktree not removed");
+            }
+        });
     }
 
     pub fn get(&self, task_id: &TaskId) -> Result<Option<Task>, StoreError> {

@@ -111,6 +111,10 @@ pub trait TaskPorts: Send + Sync {
     }
     /// Executors.stop(ref): ends the thread's claude process; `Ok` only once the node saw it exit.
     fn stop<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Result<(), PortError>>;
+    /// Executors.stop(ref, removeWorktree): the node deletes the thread's worktree and the build output in it.
+    fn remove_worktree<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Result<(), PortError>>;
+    /// NodeLinkServer.paused: why the disk and load guard holds new agents on the machine.
+    fn paused(&self, machine_id: &MachineId) -> Option<String>;
     /// Executors.actions(ref, limit): each action's summary and output tail, newest first; empty when unreadable.
     fn action_texts<'a>(
         &'a self,
