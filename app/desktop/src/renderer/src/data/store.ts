@@ -410,7 +410,9 @@ export const ingest = (s: DataState, call: Ingest): DataState => {
       const id = order.workstreamId;
       return {
         ...s,
-        orders: s.orders === undefined ? undefined : { ...s.orders, [id]: order },
+        // Refreshes a card the board holds, never adds one: the board is open orders only, and a finished order's
+        // read (Time's, the chat's for your steers) or one landing after the board dropped it must not reopen it.
+        orders: s.orders === undefined || !(id in s.orders) ? s.orders : { ...s.orders, [id]: order },
         details: { ...s.details, [id]: { lead, doneLanes } },
       };
     }

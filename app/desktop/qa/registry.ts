@@ -52,9 +52,10 @@ export const fixtures = [
   "live-0",
   "live-3",
   "live-20",
-  // F4: the chat composer's sends (fixtures/composer).
+  // F4: the chat composer's sends (fixtures/composer), and your steers to the lead in the chat.
   "composer-sends",
   "composer-waiting",
+  "composer-steers",
   // The lead mid-turn: the quiet line under its reply counts up and says what it does now and what the turn did; and
   // once it's over, how long it worked (fixtures/lead).
   "lead-planning",
@@ -293,7 +294,7 @@ export const screens: readonly Screen[] = [
       await expect(page.getByText("Stopping the lead and its agents…")).toBeVisible();
     },
   },
-  // ⌘Enter while the lead works on an order: the steer stops its step, and its receipt says so above the box.
+  // ⌘Enter while the lead works on an order: the steer shows in the chat, its receipt saying it stops the step.
   {
     id: "chat.composer",
     route: CHAT,
@@ -306,7 +307,21 @@ export const screens: readonly Screen[] = [
       await box.fill(STEER_WORDS.leadNow);
       await box.press("ControlOrMeta+Enter");
       await expect(box).toHaveValue("");
-      await expect(page.locator('[data-steer="delivered"]')).toHaveCount(1);
+      await expect(page.locator('[data-entry="steer"]').getByText(STEER_WORDS.leadNow)).toBeVisible();
+      await expect(page.locator('[data-steer="queued"]')).toHaveCount(1);
+    },
+  },
+  // Your steers to the lead stay in the chat at their times, each with where it is; one to an agent stays under its
+  // work, and the lead's own to its agent isn't yours.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["composer-steers"],
+    variant: "steers",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      // The newest, so on screen at every size; the list renders only what is in view.
+      for (const stage of ["failed", "queued"]) await expect(page.locator(`[data-steer="${stage}"]`)).toHaveCount(1);
     },
   },
   // ↑ in the empty box brings back your last message.

@@ -43,22 +43,29 @@ export const steerTooLong = (text: string): string | undefined =>
 /** `S12` → 12, for newest first. */
 const nOf = (id: string): number => Number(id.slice(1)) || 0;
 
-/** An order's steers (order_get) that went to one of its tasks; all of them for its lead's (`taskId` undefined). */
-export const steersFor = (steers: readonly Steer[] | undefined, taskId: string | undefined): readonly Steer[] | undefined =>
-  taskId === undefined ? steers : steers?.filter((s) => "taskId" in s.target && s.target.taskId === taskId);
+/** An order's steers (order_get) that went to its task `taskId`. */
+export const steersFor = (steers: readonly Steer[] | undefined, taskId: string): readonly Steer[] | undefined =>
+  steers?.filter((s) => "taskId" in s.target && s.target.taskId === taskId);
 
 /**
- * The receipts to show: what this window sent (its own answer until the list has it), then, unless `onlySent`, the
- * person's other steers to this target the hub lists. Newest first, at most `max`.
+ * The receipts under an agent's box: what this box sent (its own answer until the list has it), then the person's
+ * other steers to it the hub lists. Newest first, at most `max`.
  */
-export function receiptsToShow(listed: readonly Steer[] | undefined, sent: readonly Steer[], onlySent: boolean, max = 3): readonly Steer[] {
+export function receiptsToShow(listed: readonly Steer[] | undefined, sent: readonly Steer[], max = 3): readonly Steer[] {
   const byId = new Map<string, Steer>();
   for (const s of sent) byId.set(s.id, s);
-  for (const s of listed ?? []) {
-    if (s.by.kind !== "human") continue;
-    if (byId.has(s.id) || !onlySent) byId.set(s.id, s);
-  }
+  for (const s of listed ?? []) if (s.by.kind === "human") byId.set(s.id, s);
   return [...byId.values()].toSorted((a, b) => nOf(b.id) - nOf(a.id)).slice(0, max);
+}
+
+/**
+ * The person's steers to the lead (never one to an agent, which shows under its work), from its orders' order_get
+ * lists and what this window sent until a list has it. Oldest first, as the chat reads.
+ */
+export function leadSteers(listed: readonly Steer[], sent: readonly Steer[]): readonly Steer[] {
+  const byId = new Map<string, Steer>();
+  for (const s of [...sent, ...listed]) if (s.by.kind === "human" && "workstreamId" in s.target) byId.set(s.id, s);
+  return [...byId.values()].toSorted((a, b) => Date.parse(a.queuedAt) - Date.parse(b.queuedAt) || nOf(a.id) - nOf(b.id));
 }
 
 export interface SteerReceipt {

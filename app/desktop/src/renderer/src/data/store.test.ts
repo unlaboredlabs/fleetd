@@ -62,6 +62,9 @@ describe("a project's work", () => {
       output: { at: "2026-10-19T10:00:00.000Z", orders: [card("W8", { state: "done" })], trains: [] },
     });
     expect(Object.keys(s.orders ?? {})).toEqual(["W1"]);
+    // A finished order's own read (Time's, the chat's for your steers) refreshes no card onto the board.
+    s = ingest(s, { tool: "order_get", input: { workstreamId: "W8" }, output: { order: card("W8", { state: "done" }), requests: [], doneLanes: [lane("T8", "done")] } });
+    expect(Object.keys(s.orders ?? {})).toEqual(["W1"]);
   });
 });
 

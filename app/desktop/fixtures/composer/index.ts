@@ -2,7 +2,9 @@
 // message refused, cut off by the link, unanswered, sent to a lead that can't take it yet, still sending, or unsent
 // for want of a hub. QA types each (qa/registry.ts, CHAT_SENDS). The hub can stop the lead and its agents (chat_stop).
 // The chat has a reply written from `fleetd chat` and a message from an agent's own key, so both labels are shot.
-// The lead works on W1, so ⌘Enter stops its step: QA's steer lands, and its receipt says it stopped the step.
+// The lead works on W1, so ⌘Enter stops its step: QA's steer lands in the chat, its receipt saying it stops the step.
+// composer-steers: the same chat with your steers to the lead in it, at their times, in each stage; one to an agent
+// and one the lead sent its agent are listed too, and never shown.
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import { at } from "../kit/ids.ts";
@@ -59,10 +61,23 @@ function composerSends(f: Fixture): void {
   // when the shot is taken, so Stop shows pressed.
   f.fail("chat_stop", undefined, { code: "invalid", message: "chat_stop: missing field `projectRef`." });
   f.answer("chat_stop", { projectRef: STOREFRONT }, { stopped: true, message: msg(8, "lead", "Stopped the lead and 2 agents.", 0, { author: "system" }) }, 600_000);
-  const lead = { workstreamId: "W1" };
-  f.answer("steer_send", { target: lead, mode: "now" }, steer(f.now, 21, lead, "queued", STEER_WORDS.leadNow, 0, { mode: "now" }));
-  withSteers(f, [steer(f.now, 21, lead, "delivered", STEER_WORDS.leadNow, 0, { mode: "now", deliveredAt: f.now, how: "stopped", stoppedTool: "pnpm test" })]);
+  f.answer("steer_send", { target: LEAD, mode: "now" }, steer(f.now, 21, LEAD, "queued", STEER_WORDS.leadNow, 0, { mode: "now" }));
   f.settleAt(f.settleMs ?? 0);
+}
+
+const LEAD = { workstreamId: "W1" };
+
+/** W1's steers as order_get lists them, newest first: yours to the lead in every stage, and two the chat leaves out. */
+function chatSteers(f: Fixture): void {
+  const t = (s: number) => at(f.now, -s * 1000);
+  withSteers(f, [
+    steer(f.now, 15, LEAD, "queued", "Hold the merge until I’ve seen the card on a phone.", 20, { mode: "now" }),
+    steer(f.now, 14, LEAD, "failed", "Use the brand font on the card.", 300, { detail: "the node refused the message: thread is closed" }),
+    steer(f.now, 13, LEAD, "withdrawn", "Skip the public link for now.", 470),
+    { ...steer(f.now, 12, LEAD, "acknowledged", "Rebase on main first.", 475), by: { kind: "lead" } },
+    steer(f.now, 11, { taskId: "T1" }, "delivered", "Keep the old date helper exported.", 520, { deliveredAt: t(519), how: "boundary" }),
+    steer(f.now, 10, LEAD, "acknowledged", STEER_WORDS.leadLink, 530, { deliveredAt: t(529), how: "stopped", ackedAt: t(528), ackExcerpt: "Seven days it is." }),
+  ]);
 }
 
 export default defineGroup({
@@ -70,6 +85,12 @@ export default defineGroup({
     (() => {
       const f = Fixture.from(base("typical"), "composer-sends", "storefront's lead chat with the lead mid-turn, and a chat_send answer for every way a message can fail to reach it.");
       composerSends(f);
+      return f;
+    })(),
+    (() => {
+      const f = Fixture.from(base("typical"), "composer-steers", "storefront's lead chat with your steers to the lead in it, at their times, in each stage.");
+      composerSends(f);
+      chatSteers(f);
       return f;
     })(),
     (() => {

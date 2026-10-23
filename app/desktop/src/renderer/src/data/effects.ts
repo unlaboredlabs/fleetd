@@ -56,6 +56,8 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
     out.push({ tool: "orders_board" });
     for (const id of orders) out.push({ tool: "order_get", where: { workstreamId: id } });
   }
+  // The chat lists a project's orders to find your steers to its lead in those that ended; only a new one adds to it.
+  if (type === "workstream.created") out.push({ tool: "workstream_list" });
   // Only the PR screen on view has these reads mounted, so this refetches one list, one PR and its visible pages.
   if (startsWithAny(type, PR_PREFIXES)) out.push({ tool: "pr_list" }, { tool: "pr_get" });
   if (startsWithAny(type, PR_DIFF_PREFIXES)) out.push({ tool: "pr_files" }, { tool: "pr_diff" });

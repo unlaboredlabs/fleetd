@@ -1,6 +1,9 @@
 // The chat's data, from E1's layer (one source of hub data): the chat view, the project's state word, whether the
-// live strip has agents to show, and the actions that page through its history. The shell opens the chat on screen.
-import { useCallback } from "react";
+// live strip has agents to show, the actions that page through its history, and your steers to the lead. The shell
+// opens the chat on screen.
+import { useQueries, type UseQueryResult } from "@tanstack/react-query";
+import { useCallback, useMemo } from "react";
+import type { OrderGetOutput, Steer } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import {
@@ -13,6 +16,8 @@ import {
 } from "../../src/data/selectors";
 import { projectKey } from "../../src/data/store";
 import { selectStrip } from "../live/strip";
+import { leadSteers } from "../live/steerModel";
+import { ordersInView } from "./model";
 import type { ProjectRef } from "./slots";
 
 // Status's own query (same input, so one cached read), only for what the hub alone knows (blocked); needs-you
@@ -56,4 +61,39 @@ export function useChatData(project: ProjectRef): ChatData {
   // open() reads the newest page again while none has landed.
   const retry = useCallback(() => layer.chat.open(key), [layer, key]);
   return { view, state, leadWorking, loadError, retry, strip, title, missing, loadOlder, loadNewer, jumpToLatest };
+}
+
+const noSteers: readonly Steer[] = [];
+
+/** Every steer the orders' reads list; one array per change of any read, so the rows aren't rebuilt otherwise. */
+const listedSteers = (reads: readonly UseQueryResult<OrderGetOutput>[]): readonly Steer[] => {
+  const all = reads.flatMap((r) => r.data?.steers ?? []);
+  return all.length === 0 ? noSteers : all;
+};
+
+/**
+ * Your steers to the lead within the chat's loaded pages, and `sent` (this window's, until a read lists them). The hub
+ * keeps steers apart from the chat, so they are read per order with order_get (the read the live strip and the
+ * agent's box share, which every steer.* event naming the order reads again): the project's open orders from the
+ * board, and those that ended within the pages from workstream_list, read again when an order is created.
+ */
+export function useLeadSteers(project: ProjectRef, view: ChatView | undefined, sent: readonly Steer[]): readonly Steer[] {
+  const layer = useDataLayer();
+  const fresh = useData((s) => s.fresh);
+  // A string, so the selector's answer is equal while the board changes elsewhere.
+  const open = useData((s) =>
+    Object.values(s.orders ?? {})
+      .filter((o) => o.projectRef.machineId === project.machineId && o.projectRef.projectId === project.projectId)
+      .map((o) => o.workstreamId)
+      .join(" "),
+  );
+  const listed = useToolQuery("workstream_list", { machineId: project.machineId, projectId: project.projectId }, { enabled: view !== undefined }).data?.workstreams;
+  const from = view?.hasOlder === true ? view.items[0]?.at : undefined;
+  const to = view?.hasNewer === true ? view.items.at(-1)?.at : undefined;
+  const orders = useMemo(() => ordersInView(open === "" ? [] : open.split(" "), listed, from, to), [open, listed, from, to]);
+  const steers = useQueries({
+    queries: orders.map((workstreamId) => ({ ...layer.toolQuery("order_get", { workstreamId }), enabled: fresh })),
+    combine: listedSteers,
+  });
+  return useMemo(() => leadSteers(steers, sent), [steers, sent]);
 }
