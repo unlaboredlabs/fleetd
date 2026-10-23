@@ -4,9 +4,9 @@
 // is driven over the DevTools protocol through window.fleetd, exactly as the renderer uses it:
 // 1. auth + snapshot: the state goes live and a snapshot with both lab machines arrives;
 // 2. call: fleetd_status answers, an unknown tool comes back as not_found, a malformed request is refused in main;
-// 3. live: a board subscription gets a full frame;
+// 3. live: the board subscription main sends on every ready gets a full frame;
 // 4. events: stopping and starting lab-b's node streams machine.offline and machine.online;
-// 5. liveness: with live frames off, a quiet link stays live for 50 s (the client pings; the hub answers);
+// 5. liveness: an idle link stays live for 50 s (the client pings; the hub answers);
 // 6. reconnect: a hub restart shows retrying, then live with a fresh snapshot, and events and live flow again;
 // 7. pairing through window.fleetd.hub.connect: a refused key (close 4401) stops at the refused state; the right key
 //    goes live, is saved (0600, never in the page), and a relaunch connects from the saved key.
@@ -156,11 +156,11 @@ export async function desktopShell(lab: Lab) {
   ok(`events: machine.offline #${offline.seq}, machine.online #${online.seq}, ${seqs.length} events in order after cursor ${snapshot.cursor}`);
 
   // 5. liveness
-  const quietFrom = (await frames()).length;
+  const idleFrom = (await frames()).length;
   await new Promise((r) => setTimeout(r, 50_000));
-  const quiet = (await frames()).slice(quietFrom);
-  check(!quiet.some((f) => f.t === "state"), `a quiet link stays live: ${JSON.stringify(quiet.filter((f) => f.t === "state"))}`);
-  ok(`liveness: 50 s with ${quiet.length} frames and no state change`);
+  const idle = (await frames()).slice(idleFrom);
+  check(!idle.some((f) => f.t === "state"), `an idle link stays live: ${JSON.stringify(idle.filter((f) => f.t === "state"))}`);
+  ok(`liveness: 50 s with ${idle.length} frames and no state change`);
 
   // 6. reconnect
   const snapshotsBefore = await count("snapshot");

@@ -55,7 +55,7 @@ const mount = async (): Promise<Send> => {
     },
     subscribe: (l) => ((send = l), () => undefined),
     resync: () => Promise.resolve(),
-    live: () => Promise.resolve(),
+    focus: () => Promise.resolve(),
     chat: () => Promise.resolve(),
   };
   const layer = createDataLayer(hub);
