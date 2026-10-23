@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import path from "node:path";
 import { expect, test } from "@playwright/test";
 import { launch, pngSize, resultsDir, setNativeView, type Shot, settle, show } from "./harness.ts";
-import { platformChecks, sizes, themes } from "./registry.ts";
+import { sizes, themes } from "./registry.ts";
 
 test.describe.configure({ mode: "parallel" });
 
@@ -35,7 +35,7 @@ test("every text face is a font the app bundles, never a system fallback", async
 });
 
 test("the macOS app menu has an Edit menu wired to the text actions", async () => {
-  test.skip(process.platform !== "darwin" || !platformChecks.appMenu, "macOS only, on once F1's menu lands");
+  test.skip(process.platform !== "darwin", "macOS only");
   const { app, close } = await launch("typical");
   try {
     const roles = await app.evaluate(({ Menu }) => {
