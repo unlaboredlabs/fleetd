@@ -12,8 +12,8 @@
 # The fleetd it runs is the nightly release: the CLI and the desktop app (fleetd-desktop-macos-universal.zip) from
 # https://github.com/unlaboredlabs/fleetd/releases/download/nightly/, each checked against the release's SHA256SUMS
 # as site/install.sh does, and the lab driver (tests/lab) checked out at the commit release.json names, so the two
-# match. It prints that commit and its date, and refuses a nightly without the board pass (#138). FLEETD_DEMO_BUILD=1,
-# or running it from a checkout, builds from source instead (cargo for the CLI, pnpm for the app).
+# match. It prints that commit and its date. FLEETD_DEMO_BUILD=1, or running it from a checkout, builds from source
+# instead (cargo for the CLI, pnpm for the app).
 #
 # Everything lives in FLEETD_DEMO_DIR (default ~/fleetd-demo): the binaries, the fleetd checkout, a pinned Node if
 # yours is older than 24, a sandbox HOME for the hub, node, agents and app, the lab, the recordings. Your own
@@ -32,7 +32,6 @@
 #   FLEETD_DEMO_DIR          the sandbox (default ~/fleetd-demo)
 #   FLEETD_DEMO_BUILD=1      build from source instead of using the nightly
 #   FLEETD_DEMO_REF          with FLEETD_DEMO_BUILD=1 and no checkout: the branch or tag to build (default main)
-#   FLEETD_DEMO_ANY_COMMIT=1 skip the board-pass check (for trying the script itself)
 #
 # It drives lab slot 9 (ports 4975 and up) against unlaboredlabs/fleetd-lab. Ctrl-C, or any exit, stops the
 # demo driver, which closes this run's PRs and stops the hub, node and app by their PIDs; then this script stops
@@ -44,7 +43,6 @@ say() { printf '\033[1m%s\033[0m\n' "$*"; }
 die() { printf 'demo-mac: %s\n' "$*" >&2; exit 1; }
 
 REPO=unlaboredlabs/fleetd
-BOARD_PASS_PR=138
 
 [ "$(uname -s)" = Darwin ] || die "this records the macOS app; on Linux, app/desktop's pnpm perf:record exercises the recorder"
 user="${USER:-$(id -un)}"
@@ -208,24 +206,6 @@ else
   printf '#!/bin/sh\nexec "%s" "%s" --fleetd-launcher="$0" "$@"\n' "$electron" "$repo/app/desktop" >"$app"
   chmod 755 "$app"
   fleetd_bin="$repo/target/release/fleetd"
-fi
-recorder=app/desktop/src/main/instrument/record.ts
-
-# The app must have its recorder and the lab driver FLEETD_DEMO_APP (#136); both must have the board pass (#138).
-git -C "$repo" cat-file -e "$app_commit:$recorder" 2>/dev/null ||
-  die "the app (${app_commit:0:7}) predates its recorder ($recorder); wait for a nightly with it, or set FLEETD_DEMO_BUILD=1"
-grep -q FLEETD_DEMO_APP "$repo/tests/lab/demoFanout.ts" ||
-  die "the lab driver at ${cli_commit:0:7} predates the demo recorder (#136); wait for a nightly with it"
-if [ "${FLEETD_DEMO_ANY_COMMIT:-}" != 1 ]; then
-  # The commit that landed it on main, whatever became of the PR: its own squash or a train batch's, whose subject
-  # lists every PR it carries.
-  git -C "$repo" fetch -q origin main
-  merged="$(git -C "$repo" log --fixed-strings --grep "(#$BOARD_PASS_PR)" -1 --format=%H origin/main)"
-  [ -n "$merged" ] || die "the board pass (#$BOARD_PASS_PR) isn't on main yet; run this again once it is and a nightly has it"
-  for part in "CLI $cli_commit" "app $app_commit"; do
-    git -C "$repo" merge-base --is-ancestor "$merged" "${part#* }" ||
-      die "the nightly's ${part% *} (${part#* }) predates the board pass (#$BOARD_PASS_PR); wait for the next nightly, or set FLEETD_DEMO_BUILD=1 to build main"
-  done
 fi
 
 # The sandbox HOME, so npm reads no ~/.npmrc and caches nothing in ~/.npm; no package needs an install script.
