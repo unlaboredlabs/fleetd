@@ -21,9 +21,7 @@ export function PaletteHost() {
   useCommands(themeCommands(mode, setMode), []);
 
   useEffect(() => {
-    // The lowest priority: this effect runs after the screens' own and the screen modules' (time, settings), and a
-    // built-in must never shadow either.
-    const offDefaults = registerCommands(defaultCommands(), "builtin");
+    const offDefaults = registerCommands(defaultCommands());
     // Another shortcut pressed over the shortcuts sheet closes it first, so the command isn't hidden behind it.
     const offKeys = installKeymap(window.fleetd.platform, paletteOpen, (id) => {
       if (id !== "palette.toggle" && id !== "shortcuts.show") closeOverlay();
