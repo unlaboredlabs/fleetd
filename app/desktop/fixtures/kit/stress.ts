@@ -156,7 +156,8 @@ export const agentLane = (f: Fixture, i: number, finished: boolean, machineId: s
     taskId,
     role,
     status,
-    title: `${verb} ${area.replaceAll("-", " ")} (${taskId})`,
+    // Told apart by a part number, never the task id (no raw ids in the UI).
+    title: `${verb} ${area.replaceAll("-", " ")}${i >= AREAS.length ? `, part ${Math.floor(i / AREAS.length) + 1}` : ""}`,
     // Mechanical writers run on medium now and then; everything else on high.
     model: "claude-opus-5-5",
     ...(role === "implementer" && i % 3 === 0 ? { profile: "medium", effort: "medium" } : { profile: "high", effort: "high" }),
