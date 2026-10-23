@@ -1,7 +1,7 @@
 //! The train over real git in temp repos (a bare "origin", the project's checkout, an author's clone) run by local
 //! commands, a fake `gh` that answers from that origin like GitHub would (CI red iff the head has a file FAIL, or both
 //! `pair-a` and `pair-b`), and a fake host for tasks, workstreams, events and wakes.
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
@@ -106,13 +106,8 @@ enum FakeCi {
     Unreadable,
     /// No workflows; main requires only the train's own `fleetd/train` status.
     TrainOnly,
-    /// A CI workflow file `yaml`, whose run for the head appears from the `run_from`th check-run poll on, and whose
-    /// `ci` check is green from the `green_from`th.
-    Workflow {
-        yaml: &'static str,
-        run_from: Option<u32>,
-        green_from: Option<u32>,
-    },
+    /// A CI workflow whose `ci` check only appears, green, from the `green_from`th check-run poll on.
+    Workflow { green_from: u32 },
 }
 
 /// GitHub as the train sees it, answered from the origin repo.
@@ -434,43 +429,13 @@ impl FakeGh {
                 };
                 let red = match self.ci {
                     FakeCi::Actions => self.red(sha),
-                    FakeCi::Workflow {
-                        green_from: Some(at),
-                        ..
-                    } if poll >= at => false,
+                    FakeCi::Workflow { green_from } if poll >= green_from => false,
                     _ => return ok(json!({ "total_count": 0, "check_runs": [] })),
                 };
                 ok(
                     json!({ "check_runs": [{ "id": 1, "name": "ci", "status": "completed", "conclusion": if red { "failure" } else { "success" }, "html_url": format!("https://github.com/{REPO}/actions/runs/1") }] }),
                 )
             }
-            (["actions", "runs"], "GET") => {
-                let started = match self.ci {
-                    FakeCi::Actions => true,
-                    FakeCi::Workflow { run_from, .. } => {
-                        run_from.is_some_and(|at| *self.polls.lock().unwrap() >= at)
-                    }
-                    _ => false,
-                };
-                ok(json!({ "total_count": i32::from(started), "workflow_runs": [] }))
-            }
-            (["commits", sha, "status"], "GET") => {
-                let statuses = self.statuses.lock().unwrap();
-                let mine: Vec<Value> = statuses
-                    .iter()
-                    .filter(|(s, ..)| s == sha)
-                    .map(|(_, context, state)| json!({ "context": context, "state": state }))
-                    .collect();
-                ok(json!({ "total_count": mine.len(), "statuses": mine }))
-            }
-            (["contents", ..], "GET") => match self.ci {
-                FakeCi::Workflow { yaml, .. } => {
-                    use base64::Engine;
-                    let content = base64::engine::general_purpose::STANDARD.encode(yaml);
-                    ok(json!({ "encoding": "base64", "content": content }))
-                }
-                _ => ok(json!({ "encoding": "base64", "content": "b246IHB1bGxfcmVxdWVzdAo=" })),
-            },
             (["actions", "workflows"], "GET") => match self.ci {
                 FakeCi::Actions | FakeCi::Workflow { .. } => ok(
                     json!({ "total_count": 1, "workflows": [{ "name": "CI", "path": ".github/workflows/ci.yml", "state": "active" }] }),
@@ -571,6 +536,21 @@ impl FakeHost {
         .unwrap_or_else(|_| panic!("no {event_type} event"))
     }
 
+    /// The `n`th message sent to a task (0-based), once it is sent.
+    async fn nth_send(&self, n: usize) -> (String, String) {
+        tokio::time::timeout(Duration::from_secs(20), async {
+            loop {
+                let notified = self.appended.notified();
+                if let Some(sent) = self.sends.lock().unwrap().get(n) {
+                    return sent.clone();
+                }
+                notified.await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("no message {n}"))
+    }
+
     fn push_event(&self, event_type: &str, data: Value) {
         let mut events = self.events.lock().unwrap();
         let seq = events.len() as i64 + 1;
@@ -610,6 +590,7 @@ impl TrainHost for FakeHost {
         text: String,
     ) -> BoxFut<'a, Result<(), String>> {
         self.sends.lock().unwrap().push((task_id.to_string(), text));
+        self.appended.notify_waiters();
         Box::pin(async { Ok(()) })
     }
     fn spawn_review(&self, spawn: ReviewSpawn) -> BoxFut<'_, Result<TaskView, String>> {
@@ -623,10 +604,7 @@ impl TrainHost for FakeHost {
                 workstream_id: spawn.workstream_id.clone(),
                 kind: "review".into(),
                 state: "running".into(),
-                tier: Some(spawn.tier),
                 pr_url: Some(spawn.pr.clone()),
-                receipt_commands: 0,
-                claims_unverified: false,
                 result_tail: None,
             }),
         };
@@ -639,12 +617,8 @@ impl TrainHost for FakeHost {
         (*workstream_id == ws()).then(|| WorkstreamView {
             workstream_id: ws(),
             project_ref: project(),
-            brief: Some(BriefView { tier: Tier::S }),
-            playbook: None,
+            has_brief: true,
         })
-    }
-    fn playbook(&self, _: &str) -> Option<PlaybookView> {
-        None
     }
     fn append_event(&self, _: &ProjectRef, event_type: &'static str, _: String, data: Value) {
         self.push_event(event_type, data);
@@ -741,26 +715,34 @@ impl TrainHost for FakeHost {
             })
         })
     }
-    fn provider_instances<'a>(
-        &'a self,
-        _: &'a MachineId,
-    ) -> BoxFut<'a, Result<Vec<ProviderView>, String>> {
-        Box::pin(async { Ok(Vec::new()) })
-    }
 }
 
-/// Tier S ready at once, the rest pending until the test marks them ready; records what it was handed.
+/// Ready at once with a clean review of the patch it is handed, unless the test holds the PR for its own review;
+/// records what it was handed.
 #[derive(Default)]
 struct FakeGate {
     reviewed: Mutex<Vec<Change>>,
+    /// PR numbers that stay in review until the test marks them ready.
+    held: Mutex<HashSet<i64>>,
+    /// Ready with no review at all, as a hub from before every PR was reviewed could have left a Change.
+    unreviewed: Mutex<bool>,
 }
 
 impl ReviewGate for FakeGate {
     fn review(&self, change: Change) -> BoxFut<'_, Verdict> {
-        let verdict = if change.tier == Tier::S {
-            Verdict::Ready
-        } else {
+        let clean = change.patch_id.clone().map(|patch_id| ChangeReview {
+            task_id: TaskId::unchecked("T90"),
+            pr_head_sha: change.head_sha.clone(),
+            patch_id,
+            blocking: Count::unchecked(0),
+            non_blocking: Count::unchecked(0),
+        });
+        let verdict = if self.held.lock().unwrap().contains(&change.pr_number.get()) {
             Verdict::Pending
+        } else if *self.unreviewed.lock().unwrap() {
+            Verdict::Ready(Vec::new())
+        } else {
+            clean.map_or(Verdict::Pending, |r| Verdict::Ready(vec![r]))
         };
         self.reviewed.lock().unwrap().push(change);
         Box::pin(async move { verdict })
@@ -774,6 +756,8 @@ struct Kit {
     host: Arc<FakeHost>,
     gate: Arc<FakeGate>,
     train: Arc<Train>,
+    /// The hub's own review gate, following verdicts, when the kit has it.
+    _reviews: Option<Arc<crate::hub::reviews::Reviews>>,
 }
 
 struct TempDir(PathBuf);
@@ -896,24 +880,26 @@ impl Kit {
         };
         tweak(&mut options);
         let gate_for_train = gate.clone();
-        let train = if real_reviews {
-            crate::hub::reviews::service::build(
+        let (train, reviews) = if real_reviews {
+            let (train, reviews) = crate::hub::reviews::service::build(
                 host.clone(),
                 Arc::new(SystemClock),
                 db,
                 gh.clone(),
                 options,
-            )
-            .0
+            );
+            reviews.start();
+            (train, Some(reviews))
         } else {
-            Train::new(
+            let train = Train::new(
                 host.clone(),
                 Arc::new(SystemClock),
                 db,
                 gh.clone(),
                 options,
                 |_| gate_for_train,
-            )
+            );
+            (train, None)
         };
         train.start();
         Kit {
@@ -923,6 +909,7 @@ impl Kit {
             host,
             gate,
             train,
+            _reviews: reviews,
         }
     }
 
@@ -1014,15 +1001,18 @@ impl Kit {
         format!("https://github.com/{REPO}/pull/{number}")
     }
 
-    async fn enqueue(&self, pr_url: String, tier: Option<Tier>) -> Change {
-        let input = ChangeEnqueueCall {
-            tier,
-            ..enqueue_call(pr_url)
-        };
+    async fn enqueue(&self, pr_url: String) -> Change {
         self.train
-            .enqueue(&project(), input)
+            .enqueue(&project(), enqueue_call(pr_url))
             .await
             .expect("enqueued")
+    }
+
+    /// Enqueued, and kept in review until the test marks it ready.
+    async fn enqueue_held(&self, pr_url: String) -> Change {
+        let number = pr_url.rsplit('/').next().unwrap().parse().unwrap();
+        self.gate.held.lock().unwrap().insert(number);
+        self.enqueue(pr_url).await
     }
 
     /// A write task that opened `pr_url`, completed: the train auto-enqueues it. Returns the ready Change's id.
@@ -1034,10 +1024,7 @@ impl Kit {
             workstream_id: ws(),
             kind: "write".into(),
             state: "done".into(),
-            tier: None,
             pr_url: pr_url.map(String::from),
-            receipt_commands: 0,
-            claims_unverified: false,
             result_tail: None,
         };
         self.host
@@ -1065,7 +1052,6 @@ fn enqueue_call(pr_url: String) -> ChangeEnqueueCall {
         task_id: None,
         pr_url: GitHubPrUrl::unchecked(pr_url),
         workstream_id: Some(ws()),
-        tier: None,
         item: None,
     }
 }
@@ -1080,17 +1066,16 @@ async fn auto_enqueues_a_write_tasks_pr_rebases_it_onto_the_moved_base_and_merge
     let kit = Kit::new();
     let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
     let (task_id, change_id) = kit.author_task(Some(&pr)).await;
-    // Ready once its patch id is read, since tier S needs no review.
+    // Ready once its patch id is read and the review of that patch is clean.
     let before = kit.get(&change_id);
     assert_eq!(
         (
             before.state,
             before.task_id.as_ref(),
-            before.tier,
             before.position.map(|p| p.get()),
             before.branch.as_str()
         ),
-        (ChangeState::Ready, Some(&task_id), Tier::S, Some(0), "docs")
+        (ChangeState::Ready, Some(&task_id), Some(0), "docs")
     );
 
     // main moves on in another file: a clean rebase that keeps the patch id.
@@ -1191,7 +1176,7 @@ async fn sends_a_conflicting_pr_back_to_its_author_with_the_paths_moves_on_and_m
     );
     let (_, first) = kit.author_task(Some(&pr)).await;
     let other = kit
-        .enqueue(kit.open_pr(8, "other", &[add("b.txt", "b\n")]), None)
+        .enqueue(kit.open_pr(8, "other", &[add("b.txt", "b\n")]))
         .await;
     kit.commit(
         "main",
@@ -1275,81 +1260,53 @@ fn one_at_a_time(options: &mut TrainOptions) {
     options.batch_max = 1;
 }
 
-/// No grace before asking whether the repo has CI, and no wait for CI that never comes: one poll decides.
+/// No wait for CI that never comes: one poll decides.
 fn one_poll(options: &mut TrainOptions) {
-    options.no_ci_grace = Duration::ZERO;
     options.ci_timeout = Duration::ZERO;
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn merges_on_local_checks_when_the_repo_has_no_ci_and_says_so_on_the_merge() {
-    let kit = Kit::with(FakeCi::None, one_poll);
+/// A reviewed, ready PR on a repo with no CI: it waits with the fix, untouched, and the doctor names the repo.
+async fn held_for_no_ci(ci: FakeCi) {
+    let kit = Kit::with(ci, one_poll);
     let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
-    let (task_id, change_id) = kit.author_task(Some(&pr)).await;
+    let head = kit.head_of("docs");
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
 
-    assert!(kit.train.step(REPO).await);
-    let merged = kit.get(&change_id);
-    assert_eq!(merged.state, ChangeState::Merged);
-    assert_eq!(kit.main_file("docs.md").as_deref(), Some("docs"));
-    assert_eq!(
-        kit.host.events_of("pr.merged"),
-        [
-            json!({ "changeId": change_id, "repo": REPO, "prNumber": 7, "mergedSha": merged.merged_sha, "ci": format!("no CI on {REPO}: used local checks"), "workstreamId": "W1", "taskId": task_id })
-        ]
-    );
+    kit.train.step(REPO).await;
+    let held = kit.get(&change_id);
+    assert_eq!(held.state, ChangeState::Ready);
+    assert_eq!(held.last_error.as_deref(), Some(super::batch::NO_CI));
+    assert_eq!(kit.head_of("docs"), head, "never rebased or pushed");
+    assert!(kit.gh.merges.lock().unwrap().is_empty());
+    assert!(kit.gh.statuses.lock().unwrap().is_empty());
+    assert_eq!(kit.train.repos_without_ci(), [REPO]);
 }
 
-/// Merges `docs.md` alone and returns the `pr.merged` event's `ci` note, if any.
-async fn merge_docs(kit: &Kit) -> Option<Value> {
-    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
-    let (_, change_id) = kit.author_task(Some(&pr)).await;
-    assert!(kit.train.step(REPO).await);
-    assert_eq!(kit.get(&change_id).state, ChangeState::Merged);
-    assert_eq!(kit.main_file("docs.md").as_deref(), Some("docs"));
-    kit.host.events_of("pr.merged")[0].get("ci").cloned()
+#[tokio::test(flavor = "multi_thread")]
+async fn a_repo_with_no_ci_holds_its_ready_pr_with_the_add_ci_fix() {
+    held_for_no_ci(FakeCi::None).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_trains_own_required_status_is_not_ci() {
-    let kit = Kit::with(FakeCi::TrainOnly, one_poll);
-    assert_eq!(
-        merge_docs(&kit).await,
-        Some(json!(format!("no CI on {REPO}: used local checks")))
-    );
-}
-
-const ON_PULL_REQUEST: &str = "on:\n  pull_request:\n";
-const IGNORES_NOCI: &str =
-    "on:\n  pull_request:\n    branches-ignore: [\"noci/**\"]\n  push:\n    branches: [main]\n";
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_workflow_whose_triggers_skip_the_pr_is_not_ci() {
-    let workflow = FakeCi::Workflow {
-        yaml: "on:\n  pull_request:\n    branches: [release]\n",
-        run_from: None,
-        green_from: None,
-    };
-    let kit = Kit::with(workflow, one_poll);
-    assert_eq!(
-        merge_docs(&kit).await,
-        Some(json!(format!("no CI on {REPO}: used local checks")))
-    );
+    held_for_no_ci(FakeCi::TrainOnly).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_started_workflow_run_with_no_checks_yet_is_waited_for() {
-    let workflow = FakeCi::Workflow {
-        yaml: "on: workflow_dispatch\n",
-        run_from: Some(1),
-        green_from: None,
-    };
-    let kit = Kit::with(workflow, one_poll);
+async fn a_workflow_whose_check_never_comes_times_out_rather_than_merging() {
+    let kit = Kit::with(
+        FakeCi::Workflow {
+            green_from: u32::MAX,
+        },
+        one_poll,
+    );
     let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
     let (_, change_id) = kit.author_task(Some(&pr)).await;
 
     assert!(kit.train.step(REPO).await);
     assert_eq!(kit.get(&change_id).state, ChangeState::CiFailed);
     assert!(kit.gh.merges.lock().unwrap().is_empty());
+    assert!(kit.train.repos_without_ci().is_empty());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1362,7 +1319,7 @@ async fn merges_into_the_pull_requests_own_base_when_it_is_not_the_default_branc
         &[add("other.txt", "other\n")],
     );
     let first = kit
-        .enqueue("https://github.com/acme/storefront/pull/8".into(), None)
+        .enqueue("https://github.com/acme/storefront/pull/8".into())
         .await;
     let pr = kit.open_pr_on(
         "slot/1/main",
@@ -1370,7 +1327,7 @@ async fn merges_into_the_pull_requests_own_base_when_it_is_not_the_default_branc
         "slot/1/fleetd/T1-docs",
         &[add("docs.md", "docs\n")],
     );
-    let second = kit.enqueue(pr, None).await;
+    let second = kit.enqueue(pr).await;
 
     assert!(kit.train.step(REPO).await);
     assert!(kit.train.step(REPO).await);
@@ -1388,35 +1345,6 @@ async fn merges_into_the_pull_requests_own_base_when_it_is_not_the_default_branc
     );
     assert_eq!(kit.main_file("docs.md"), None);
     assert_eq!(kit.main_file("other.txt"), None);
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn merges_on_local_checks_into_a_base_its_workflows_ignore() {
-    let workflow = FakeCi::Workflow {
-        yaml: IGNORES_NOCI,
-        run_from: None,
-        green_from: None,
-    };
-    let kit = Kit::with(workflow, one_poll);
-    let pr = kit.open_pr_on(
-        "noci/1/main",
-        7,
-        "noci/1/fleetd/T1-docs",
-        &[add("docs.md", "docs\n")],
-    );
-    let (_, change_id) = kit.author_task(Some(&pr)).await;
-
-    assert!(kit.train.step(REPO).await);
-    assert_eq!(kit.get(&change_id).state, ChangeState::Merged);
-    assert_eq!(
-        kit.file_on("noci/1/main", "docs.md").as_deref(),
-        Some("docs")
-    );
-    assert_eq!(kit.main_file("docs.md"), None);
-    assert_eq!(
-        kit.host.events_of("pr.merged")[0]["ci"],
-        json!(format!("no CI on {REPO}: used local checks"))
-    );
 }
 
 /// PR `number`, merged into `base` without the train, after the train started watching.
@@ -1443,7 +1371,7 @@ async fn a_merge_outside_the_train_is_reported_once_and_only_into_a_base_the_tra
         "slot/1/fleetd/T1-docs",
         &[add("docs.md", "docs\n")],
     );
-    kit.enqueue(pr, None).await;
+    kit.enqueue(pr).await;
     assert!(kit.train.step(REPO).await);
     merged_outside(&kit, 8, "slot/2/main");
     merged_outside(&kit, 9, "slot/1/main");
@@ -1481,7 +1409,7 @@ async fn a_merge_outside_the_train_is_reported_once_and_only_into_a_base_the_tra
 async fn a_pr_based_on_another_open_prs_branch_is_refused() {
     let kit = Kit::new();
     let parent = kit.open_pr(7, "p", &[add("p.txt", "p\n")]);
-    kit.enqueue(parent, None).await;
+    kit.enqueue(parent).await;
     let child = kit.stacked_pr(8, "c", "p", &[add("c.txt", "c\n")]);
     let refused = kit
         .train
@@ -1503,56 +1431,17 @@ async fn a_pr_based_on_another_open_prs_branch_is_refused() {
     );
 }
 
-/// GitHub may take minutes to start a run. A workflow whose trigger matches the PR is CI before any run exists: with
-/// no grace at all, the train still waits for its check instead of merging on local checks.
+/// GitHub may take minutes to start a run: the train waits for the check however long it takes to appear.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_triggered_workflow_is_ci_however_long_github_takes_to_start_it() {
-    let workflow = FakeCi::Workflow {
-        yaml: ON_PULL_REQUEST,
-        run_from: None,
-        green_from: Some(4),
-    };
-    let kit = Kit::with(workflow, |o| {
+async fn waits_for_a_check_however_long_github_takes_to_start_it() {
+    let kit = Kit::with(FakeCi::Workflow { green_from: 4 }, |o| {
         o.poll_interval = Duration::ZERO;
-        o.no_ci_grace = Duration::ZERO;
     });
-    assert_eq!(merge_docs(&kit).await, None);
-    assert!(*kit.gh.polls.lock().unwrap() >= 4);
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn the_lab_workflow_is_ci_for_a_slot_base_and_not_for_a_noci_one() {
-    let workflow = FakeCi::Workflow {
-        yaml: IGNORES_NOCI,
-        run_from: None,
-        green_from: None,
-    };
-    let kit = Kit::with(workflow, one_poll);
-    let pr = kit.open_pr_on(
-        "slot/1/main",
-        7,
-        "slot/1/fleetd/T1-docs",
-        &[add("docs.md", "docs\n")],
-    );
-    let (_, change_id) = kit.author_task(Some(&pr)).await;
-    assert!(kit.train.step(REPO).await);
-    assert_eq!(kit.get(&change_id).state, ChangeState::CiFailed);
-    assert!(kit.gh.merges.lock().unwrap().is_empty());
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn an_unreadable_workflow_file_is_ci() {
-    let workflow = FakeCi::Workflow {
-        yaml: "on: [::",
-        run_from: None,
-        green_from: None,
-    };
-    let kit = Kit::with(workflow, one_poll);
     let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
     let (_, change_id) = kit.author_task(Some(&pr)).await;
     assert!(kit.train.step(REPO).await);
-    assert_eq!(kit.get(&change_id).state, ChangeState::CiFailed);
-    assert!(kit.gh.merges.lock().unwrap().is_empty());
+    assert_eq!(kit.get(&change_id).state, ChangeState::Merged);
+    assert!(*kit.gh.polls.lock().unwrap() >= 4);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1577,20 +1466,16 @@ async fn keeps_waiting_for_checks_a_repo_without_check_runs_requires() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn never_takes_a_failed_ci_read_for_no_ci_and_says_what_failed() {
+async fn never_takes_a_failed_ci_read_for_no_ci() {
     let kit = Kit::with(FakeCi::Unreadable, one_poll);
     let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
     let (_, change_id) = kit.author_task(Some(&pr)).await;
 
     assert!(kit.train.step(REPO).await);
+    // Not held for want of CI: it waited for checks that never came, and nothing merged.
     let parked = kit.get(&change_id);
     assert_eq!(parked.state, ChangeState::CiFailed);
-    let why = parked.last_error.as_deref().unwrap();
-    assert!(
-        why.contains(&format!("could not tell whether {REPO} has CI"))
-            && why.contains("Resource not accessible by integration"),
-        "{why}"
-    );
+    assert!(kit.train.repos_without_ci().is_empty());
     assert!(kit.gh.merges.lock().unwrap().is_empty());
 }
 
@@ -1598,10 +1483,10 @@ async fn never_takes_a_failed_ci_read_for_no_ci_and_says_what_failed() {
 async fn requeues_at_the_front_when_github_refuses_the_pinned_merge_with_409_then_merges() {
     let kit = Kit::with(FakeCi::Actions, one_at_a_time);
     let a = kit
-        .enqueue(kit.open_pr(7, "a", &[add("b.txt", "b\n")]), None)
+        .enqueue(kit.open_pr(7, "a", &[add("b.txt", "b\n")]))
         .await;
     let b = kit
-        .enqueue(kit.open_pr(8, "b", &[add("c.txt", "c\n")]), None)
+        .enqueue(kit.open_pr(8, "b", &[add("c.txt", "c\n")]))
         .await;
     kit.gh.merge_replies.lock().unwrap().push(GhOut {
         exit_code: 1,
@@ -1647,15 +1532,9 @@ async fn sends_a_change_back_to_reviewing_when_a_clean_rebase_changes_its_patch_
  {
     let kit = Kit::new();
     let change = kit
-        .enqueue(
-            kit.open_pr(7, "m", &[("a.txt", Some(&a_with(&[(6, "pr line 6")])))]),
-            Some(Tier::M),
-        )
+        .enqueue_held(kit.open_pr(7, "m", &[("a.txt", Some(&a_with(&[(6, "pr line 6")])))]))
         .await;
-    assert_eq!(
-        (change.state, change.tier),
-        (ChangeState::Reviewing, Tier::M)
-    );
+    assert_eq!(change.state, ChangeState::Reviewing);
     assert_eq!(
         kit.gate
             .reviewed
@@ -1752,7 +1631,7 @@ async fn replaces_a_stale_train_worktree_left_by_an_earlier_clone() {
     std::fs::remove_dir_all(&earlier).unwrap();
 
     let pr = kit.open_pr(5, "stale", &[add("b.txt", "b\n")]);
-    let change = kit.enqueue(pr, None).await;
+    let change = kit.enqueue(pr).await;
     assert_eq!(
         (
             change.last_error.as_ref().map(|e| e.as_str()),
@@ -1769,7 +1648,7 @@ async fn replaces_a_stale_train_worktree_left_by_an_earlier_clone() {
     // A healthy worktree is kept as it is.
     std::fs::write(worktree.join("kept"), "").unwrap();
     let next = kit.open_pr(6, "next", &[add("c.txt", "c\n")]);
-    assert!(kit.enqueue(next, None).await.last_error.is_none());
+    assert!(kit.enqueue(next).await.last_error.is_none());
     assert!(worktree.join("kept").exists());
     assert!(kit.host.events_of("train.blocked").is_empty());
 }
@@ -1783,7 +1662,7 @@ async fn leaves_what_is_not_the_trains_where_its_worktree_goes_and_says_what_to_
     let path = worktree.display().to_string();
 
     let pr = kit.open_pr(6, "blocked", &[add("b.txt", "b\n")]);
-    let change = kit.enqueue(pr, None).await;
+    let change = kit.enqueue(pr).await;
     assert_eq!(change.state, ChangeState::Queued);
     let error = change.last_error.unwrap();
     assert!(
@@ -1832,13 +1711,13 @@ async fn batches_three_disjoint_ready_prs_into_one_ci_run_and_one_squash_and_clo
  {
     let kit = Kit::new();
     let a = kit
-        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]), None)
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
         .await;
     let b = kit
-        .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]), None)
+        .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]))
         .await;
     let c = kit
-        .enqueue(kit.open_pr(9, "c", &[add("c1.txt", "c\n")]), None)
+        .enqueue(kit.open_pr(9, "c", &[add("c1.txt", "c\n")]))
         .await;
     kit.commit("main", &[add("other.txt", "other\n")], None);
 
@@ -1910,13 +1789,13 @@ async fn a_red_batch_drops_its_last_member_merges_the_rest_and_tests_the_dropped
     let kit = Kit::new();
     // Each green alone; pair-a and pair-b together are red.
     let a = kit
-        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]), None)
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
         .await;
     let b = kit
-        .enqueue(kit.open_pr(8, "b", &[add("pair-a", "a\n")]), None)
+        .enqueue(kit.open_pr(8, "b", &[add("pair-a", "a\n")]))
         .await;
     let c = kit
-        .enqueue(kit.open_pr(9, "c", &[add("pair-b", "b\n")]), None)
+        .enqueue(kit.open_pr(9, "c", &[add("pair-b", "b\n")]))
         .await;
 
     assert!(kit.train.step(REPO).await);
@@ -1934,7 +1813,7 @@ async fn a_red_batch_drops_its_last_member_merges_the_rest_and_tests_the_dropped
     );
 
     // Alone, on the new main, it is red: its author hears it, and it never merges.
-    kit.enqueue(kit.open_pr(10, "d", &[add("d1.txt", "d\n")]), None)
+    kit.enqueue(kit.open_pr(10, "d", &[add("d1.txt", "d\n")]))
         .await;
     assert!(kit.train.step(REPO).await);
     assert_eq!(state_of(&kit, &c), ChangeState::CiFailed);
@@ -1945,26 +1824,20 @@ async fn a_red_batch_drops_its_last_member_merges_the_rest_and_tests_the_dropped
 #[tokio::test(flavor = "multi_thread")]
 async fn a_batch_of_one_is_the_old_path_and_overlapping_files_never_batch() {
     let kit = Kit::with(FakeCi::Actions, one_at_a_time);
-    kit.enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]), None)
+    kit.enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
         .await;
     let b = kit
-        .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]), None)
+        .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]))
         .await;
     assert!(kit.train.step(REPO).await);
     assert_eq!(merged_prs(&kit), [7], "the PR itself merges, no batch PR");
     assert_eq!(state_of(&kit, &b), ChangeState::Ready);
 
     let kit = Kit::new();
-    kit.enqueue(
-        kit.open_pr(7, "a", &[("a.txt", Some(&a_with(&[(2, "a")])))]),
-        None,
-    )
-    .await;
-    kit.enqueue(
-        kit.open_pr(8, "b", &[("a.txt", Some(&a_with(&[(9, "b")])))]),
-        None,
-    )
-    .await;
+    kit.enqueue(kit.open_pr(7, "a", &[("a.txt", Some(&a_with(&[(2, "a")])))]))
+        .await;
+    kit.enqueue(kit.open_pr(8, "b", &[("a.txt", Some(&a_with(&[(9, "b")])))]))
+        .await;
     assert!(kit.train.step(REPO).await);
     assert_eq!(
         merged_prs(&kit),
@@ -1977,14 +1850,14 @@ async fn a_batch_of_one_is_the_old_path_and_overlapping_files_never_batch() {
 async fn only_reviewed_held_free_and_own_green_prs_join_a_batch() {
     let kit = Kit::new();
     let a = kit
-        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]), None)
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
         .await;
-    // Tier M: reviewing until a review marks it ready.
+    // In review until a review marks it ready.
     let m = kit
-        .enqueue(kit.open_pr(8, "m", &[add("m1.txt", "m\n")]), Some(Tier::M))
+        .enqueue_held(kit.open_pr(8, "m", &[add("m1.txt", "m\n")]))
         .await;
     let held = kit
-        .enqueue(kit.open_pr(9, "h", &[add("h1.txt", "h\n")]), None)
+        .enqueue(kit.open_pr(9, "h", &[add("h1.txt", "h\n")]))
         .await;
     kit.gh
         .pulls
@@ -1995,10 +1868,10 @@ async fn only_reviewed_held_free_and_own_green_prs_join_a_batch() {
         .labels
         .push("hold".into());
     let red = kit
-        .enqueue(kit.open_pr(10, "r", &[add("FAIL", "x\n")]), None)
+        .enqueue(kit.open_pr(10, "r", &[add("FAIL", "x\n")]))
         .await;
     let d = kit
-        .enqueue(kit.open_pr(11, "d", &[add("d1.txt", "d\n")]), None)
+        .enqueue(kit.open_pr(11, "d", &[add("d1.txt", "d\n")]))
         .await;
 
     assert!(kit.train.step(REPO).await);
@@ -2046,10 +1919,10 @@ async fn required_checks_and_githubs_rules_still_block_a_batch() {
     // Checks the base requires never report: the batch times out, and each alone times out too, never merging.
     let kit = Kit::with(FakeCi::Required, one_poll);
     let a = kit
-        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]), None)
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
         .await;
     let b = kit
-        .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]), None)
+        .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]))
         .await;
     for _ in 0..3 {
         kit.train.step(REPO).await;
@@ -2062,10 +1935,10 @@ async fn required_checks_and_githubs_rules_still_block_a_batch() {
     // repo and each goes alone, through GitHub's rules again.
     let kit = Kit::new();
     let a = kit
-        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]), None)
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
         .await;
     let b = kit
-        .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]), None)
+        .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]))
         .await;
     for _ in 0..3 {
         kit.gh.merge_replies.lock().unwrap().push(http_error(
@@ -2105,13 +1978,13 @@ async fn required_checks_and_githubs_rules_still_block_a_batch() {
 async fn a_member_pushed_to_while_the_batch_is_in_ci_leaves_it_untested_code_never_lands() {
     let kit = Kit::new();
     let a = kit
-        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]), None)
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
         .await;
     let b = kit
-        .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]), None)
+        .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]))
         .await;
     let c = kit
-        .enqueue(kit.open_pr(9, "c", &[add("c1.txt", "c\n")]), None)
+        .enqueue(kit.open_pr(9, "c", &[add("c1.txt", "c\n")]))
         .await;
     *kit.gh.push_during_ci.lock().unwrap() = Some("b".into());
 
@@ -2164,13 +2037,13 @@ fn a_cancelled_check_is_red_only_once_nothing_else_runs() {
     ));
 }
 
-/// Three disjoint tier-S PRs, ready: 7 (a), 8 (b), 9 (c).
+/// Three disjoint PRs, reviewed and ready: 7 (a), 8 (b), 9 (c).
 async fn three_ready(kit: &Kit) -> [Change; 3] {
     let mut out = Vec::new();
     for (n, branch) in [(7, "a"), (8, "b"), (9, "c")] {
         let file = format!("{branch}1.txt");
         let pr = kit.open_pr(n, branch, &[(file.as_str(), Some("x\n"))]);
-        out.push(kit.enqueue(pr, None).await);
+        out.push(kit.enqueue(pr).await);
     }
     out.try_into().unwrap_or_else(|_| unreachable!())
 }
@@ -2309,10 +2182,7 @@ impl Kit {
             workstream_id: ws(),
             kind: kind.into(),
             state: "running".into(),
-            tier: Some(Tier::M),
             pr_url: None,
-            receipt_commands: 0,
-            claims_unverified: false,
             result_tail: None,
         };
         self.host.tasks.lock().unwrap().insert(id.into(), task);
@@ -2327,6 +2197,7 @@ async fn a_writers_ready_slice_is_reviewed_at_once_once_per_head_and_never_past_
     use super::calls::slice_ready;
     use fleetd_contracts::lead_calls::SliceReadyCall;
     let kit = Kit::new();
+    kit.gate.held.lock().unwrap().extend([7, 8]);
     let writer = kit.running_task("T1", "write");
     let slice = |pr: &str| SliceReadyCall {
         pr_url: GitHubPrUrl::unchecked(pr),
@@ -2337,8 +2208,8 @@ async fn a_writers_ready_slice_is_reviewed_at_once_once_per_head_and_never_past_
         .await
         .unwrap();
     assert_eq!(
-        (change.state, change.task_id.as_ref(), change.tier),
-        (ChangeState::Reviewing, Some(&writer), Tier::M)
+        (change.state, change.task_id.as_ref()),
+        (ChangeState::Reviewing, Some(&writer))
     );
     assert!(next.starts_with("go on with your next slice"), "{next}");
     assert_eq!(
@@ -2376,8 +2247,7 @@ async fn a_writers_ready_slice_is_reviewed_at_once_once_per_head_and_never_past_
     assert_eq!(kit.gate.reviewed.lock().unwrap().len(), 2);
 }
 
-/// The order's review policy picks the reviewers of a ready slice (tier M: one reviewer, spawned by the gate through
-/// the tasks' spawn path), once per head. When that path refuses (the lead's fan-out limit), nothing is waived: the
+/// A ready slice gets one reviewer, spawned by the gate through the tasks' spawn path, once per head. When that path refuses (the lead's fan-out limit), nothing is waived: the
 /// slice stays in review and can't merge.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_ready_slice_gets_the_orders_reviewer_and_a_refused_spawn_never_lets_it_through() {
@@ -2392,15 +2262,15 @@ async fn a_ready_slice_gets_the_orders_reviewer_and_a_refused_spawn_never_lets_i
     let (change, _) = slice_ready(&kit.train, &project(), &writer, slice(&first))
         .await
         .unwrap();
-    let spawned: Vec<(String, &str, Tier)> = kit
+    let spawned: Vec<(String, &str)> = kit
         .host
         .review_spawns
         .lock()
         .unwrap()
         .iter()
-        .map(|s| (s.pr.clone(), s.by, s.tier))
+        .map(|s| (s.pr.clone(), s.by))
         .collect();
-    assert_eq!(spawned, [(first.clone(), "hub:reviews", Tier::M)]);
+    assert_eq!(spawned, [(first.clone(), "hub:reviews")]);
     slice_ready(&kit.train, &project(), &writer, slice(&first))
         .await
         .unwrap();
@@ -2430,6 +2300,99 @@ async fn a_ready_slice_gets_the_orders_reviewer_and_a_refused_spawn_never_lets_i
     assert_eq!(kit.host.review_spawns.lock().unwrap().len(), 1);
 }
 
+/// The hub's own gate: one fresh reviewer per patch. Nothing merges before a clean verdict on the current patch;
+/// blocking findings go to the author, and its new head is reviewed again by a new reviewer, from the delta.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pr_merges_only_on_a_clean_review_of_its_current_patch() {
+    let kit = Kit::with_reviews();
+    let writer = kit.running_task("T1", "write");
+    let pr = kit.open_pr(7, "slice-1", &[add("a1.txt", "a\n")]);
+    let first_head = kit.head_of("slice-1");
+    let change = kit
+        .train
+        .enqueue(
+            &project(),
+            ChangeEnqueueCall {
+                task_id: Some(writer.clone()),
+                ..enqueue_call(pr)
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(change.state, ChangeState::Reviewing);
+    assert_eq!(kit.host.review_spawns.lock().unwrap().len(), 1);
+    kit.train.step(REPO).await;
+    assert_eq!(kit.get(&change.change_id).state, ChangeState::Reviewing);
+    assert!(merged_prs(&kit).is_empty(), "no review, no merge");
+
+    kit.host.push_event(
+        "review.verdict",
+        json!({ "taskId": "T50", "prHeadSha": first_head, "blocking": 2, "nonBlocking": 0 }),
+    );
+    let (to, text) = kit.host.nth_send(0).await;
+    assert_eq!(to, writer.as_str(), "blocking findings go to the author");
+    assert!(text.contains("T50"), "{text}");
+    kit.train.step(REPO).await;
+    assert!(merged_prs(&kit).is_empty());
+
+    // The author's fix is a new head: a new reviewer starts from what changed since the reviewed head.
+    let fixed_head = kit.commit("slice-1", &[add("a2.txt", "fixed\n")], None);
+    kit.train.step(REPO).await;
+    {
+        let spawns = kit.host.review_spawns.lock().unwrap();
+        assert_eq!(spawns.len(), 2, "a new head needs a new review");
+        assert!(
+            spawns[1]
+                .prompt
+                .contains(&format!("git range-diff {first_head}...{fixed_head}")),
+            "{}",
+            spawns[1].prompt
+        );
+    }
+    assert!(merged_prs(&kit).is_empty());
+    // The old reviewer's clean word on the old head counts for nothing.
+    kit.host.push_event(
+        "review.verdict",
+        json!({ "taskId": "T50", "prHeadSha": first_head, "blocking": 0, "nonBlocking": 0 }),
+    );
+    let cursor = kit.host.events_head();
+    kit.host.push_event(
+        "review.verdict",
+        json!({ "taskId": "T51", "prHeadSha": fixed_head, "blocking": 0, "nonBlocking": 1 }),
+    );
+    kit.host.next_event(cursor, "change.ready").await;
+    let ready = kit.get(&change.change_id);
+    assert_eq!(
+        ready
+            .reviews
+            .iter()
+            .map(|r| r.task_id.as_str())
+            .collect::<Vec<_>>(),
+        ["T51"]
+    );
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change.change_id).state, ChangeState::Merged);
+}
+
+/// A Change ready with no clean review of its patch (as a hub from before every PR was reviewed could leave one) is
+/// never taken: it goes back to review.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_ready_change_without_a_review_goes_back_to_review() {
+    let kit = Kit::new();
+    *kit.gate.unreviewed.lock().unwrap() = true;
+    let change = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    assert_eq!(change.state, ChangeState::Ready);
+    kit.gate.held.lock().unwrap().insert(7);
+
+    kit.train.step(REPO).await;
+    assert_eq!(kit.get(&change.change_id).state, ChangeState::Reviewing);
+    assert_eq!(kit.gate.reviewed.lock().unwrap().len(), 2);
+    kit.train.step(REPO).await;
+    assert!(merged_prs(&kit).is_empty());
+}
+
 /// A running writer's draft PR marked ready is a ready slice, found on the train's own pass (no webhook): it goes to
 /// the review gate once per head. A PR that was never a draft waits for the writer's result as before.
 #[tokio::test(flavor = "multi_thread")]
@@ -2442,9 +2405,10 @@ async fn a_writers_draft_marked_ready_is_reviewed_on_the_trains_pass_once_per_he
         .unwrap()
         .insert("T1".into(), "fleetd/T1-slice".into());
     let pr = kit.open_pr(7, "fleetd/T1-slice", &[add("a1.txt", "a\n")]);
+    kit.gate.held.lock().unwrap().insert(7);
     // A second train change keeps the repo's train (and its pass) alive.
     let other = kit.open_pr(3, "other", &[add("o.txt", "o\n")]);
-    kit.enqueue(other, None).await;
+    kit.enqueue(other).await;
     kit.gh.pulls.lock().unwrap().get_mut(&7).unwrap().draft = true;
     let reviewed = || {
         kit.gate
@@ -2547,7 +2511,7 @@ async fn a_checkout_outside_the_nodes_cmd_roots_says_so_and_needs_a_person() {
     *kit.host.cmd_roots.lock().unwrap() = Some(vec![elsewhere.path().display().to_string()]);
 
     let pr = kit.open_pr(7, "outside", &[add("b.txt", "b\n")]);
-    let change = kit.enqueue(pr, None).await;
+    let change = kit.enqueue(pr).await;
     assert_eq!(change.state, ChangeState::Queued);
     let error = change.last_error.unwrap();
     assert!(
@@ -2583,15 +2547,12 @@ async fn a_checkout_outside_the_nodes_cmd_roots_says_so_and_needs_a_person() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_done_order_closes_its_leftover_prs_but_keeps_the_review_fixes_it_is_told_to() {
     let kit = Kit::new();
-    // Tier M: both wait for reviews, so both are leftovers when the order is done.
+    // Both wait for reviews, so both are leftovers when the order is done.
     let leftover = kit
-        .enqueue(
-            kit.open_pr(7, "left", &[add("l.txt", "l\n")]),
-            Some(Tier::M),
-        )
+        .enqueue_held(kit.open_pr(7, "left", &[add("l.txt", "l\n")]))
         .await;
     let fix = kit
-        .enqueue(kit.open_pr(8, "fix", &[add("f.txt", "f\n")]), Some(Tier::M))
+        .enqueue_held(kit.open_pr(8, "fix", &[add("f.txt", "f\n")]))
         .await;
 
     let closed = kit

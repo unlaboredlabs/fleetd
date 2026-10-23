@@ -1,8 +1,8 @@
 // M7 "done when" 1-5 on lab-a against the public lab repo unlaboredlabs/fleetd-lab, in this slot's namespace (CI fails
 // iff a file FAIL exists; slot/<n>/main requires the `ci` check and the `fleetd/train` status). The lab clone becomes a
 // second project on lab-a, with its policy file kept untracked, so nothing but the train ever lands on the base. Every
-// writer opens its PR with the `hold` label: two M-tier writers (files under this run's lab/<time>/) open PRs and get one reviewer each; then two S-tier writers open a
-// PR that conflicts with alpha's and one that adds FAIL. Once the
+// writer opens its PR with the `hold` label: two writers (files under this run's lab/<time>/) open PRs; then two more writers open a
+// PR that conflicts with alpha's and one that adds FAIL. Every PR gets one reviewer. Once the
 // harness takes the labels off, the train merges alpha and beta in order (the second rebased onto the first's merge), sends the
 // conflict back to its author, who resolves it and gets merged, and sends red CI back to its author, never merging
 // it. Writers run on medium, the lead and reviewers on high; the harness's `fleetd` calls cost no turns.
@@ -14,11 +14,11 @@ import { type Body, MODEL, openWorkstream, fleetdCommand, LAB, type Lab, MECHANI
 
 const MACHINE = "lab-a";
 // One lab repo for every slot; each slot runs the train in parallel in its own branch namespace: its base
-// `<namespace>/main` and its task branches `<namespace>/fleetd/…`. FLEETD_LAB_REPO and FLEETD_LAB_NAMESPACE override
-// (`noci/<n>` is a base CI never runs for); tests/lab/labRepo.ts sets the repo up and clones it.
+// `<namespace>/main` and its task branches `<namespace>/fleetd/…`. FLEETD_LAB_REPO and FLEETD_LAB_NAMESPACE
+// override; tests/lab/labRepo.ts sets the repo up and clones it.
 export const REPO = process.env.FLEETD_LAB_REPO ?? "unlaboredlabs/fleetd-lab";
 export const NAMESPACE = process.env.FLEETD_LAB_NAMESPACE ?? `slot/${SLOT}`;
-if (!/^(slot|noci)\/\d$/u.test(NAMESPACE)) throw new Error(`FLEETD_LAB_NAMESPACE must be slot/<n> or noci/<n>, got ${NAMESPACE}`);
+if (!/^slot\/\d$/u.test(NAMESPACE)) throw new Error(`FLEETD_LAB_NAMESPACE must be slot/<n>, got ${NAMESPACE}`);
 export const BASE = `${NAMESPACE}/main`;
 export const BRANCH_PREFIX = `${NAMESPACE}/fleetd/`;
 /** The tag a namespace's main is reset to after each run. */
@@ -168,7 +168,6 @@ export async function m7Train(lab: Lab) {
   const { callTool, check, ok } = lab;
   await lab.waitLive(MACHINE);
   requireGhLogin();
-  check(NAMESPACE.startsWith("slot/"), `m7 needs CI: run it in a slot/<n> namespace, not ${NAMESPACE}`);
   checkClone(check);
   resetNamespace();
   prepareCheckout();
@@ -212,7 +211,6 @@ export async function m7Train(lab: Lab) {
       goal: `two independent PRs: one adds ${ALPHA}, the other adds ${BETA}`,
       why: "the M7 lab scenario",
       doneWhen: [cmd(onMain(ALPHA)), cmd(onMain(BETA))],
-      tier: "M",
     });
     const ws = await workstream("Train edge cases.", {
       goal: `one PR that adds the line gamma to ${ALPHA}, and one that adds FAIL and so must never merge`,
@@ -221,9 +219,8 @@ export async function m7Train(lab: Lab) {
         cmd(["sh", "-c", `gh api '${onBase(ALPHA)}' -H 'Accept: application/vnd.github.raw' | grep -qx gamma`]),
         cmd(["sh", "-c", `! gh api '${onBase("FAIL")}' --silent`]),
       ],
-      tier: "S",
     });
-    ok(`${wm} (tier M) and ${ws} (tier S) running with frozen briefs`);
+    ok(`${wm} and ${ws} running with their briefs`);
 
     // 5a. The writers open their PRs held, so the train takes none before all four are ready.
     gh("label", "create", "hold", "-R", REPO, "--force", "--description", "fleetd's train holds this PR");
@@ -249,7 +246,7 @@ export async function m7Train(lab: Lab) {
       return { taskId, prUrl: prUrl!, changeId: q.event.data.changeId as string };
     };
 
-    // 1. Two M-tier writers.
+    // 1. Two writers.
     let cursor = await lab.cursor();
     const a = spawn(wm, "add alpha", writer(ALPHA, "alpha"));
     const b = spawn(wm, "add beta", writer(BETA, "beta"));
@@ -269,15 +266,14 @@ export async function m7Train(lab: Lab) {
     const cd = await queued(d, cursor);
     ok(`${c} opened ${cc.prUrl} (${cc.changeId}, conflicts with ${ALPHA}) and ${d} opened ${cd.prUrl} (${cd.changeId}, adds FAIL)`);
 
-    // 1. Each M PR gets a reviewer that returns blocking: 0; nothing merges while held.
-    for (const m of [ca, cb]) {
+    // 1. Each PR gets one reviewer that returns blocking: 0; nothing merges while held.
+    for (const m of [ca, cb, cc, cd]) {
       await lab.waitEvent(`${m.changeId} ready`, TURN_MS * 2, { cursor: scenarioStart, types: ["change.ready"], match: (e) => e.data?.changeId === m.changeId });
       const ready = await change(m.changeId);
       const reviewers = ((await callTool("tasks_list", { projectRef: ref, limit: 100 })).body.tasks as Array<Body>).filter((t) => t.kind === "review" && t.pr === m.prUrl);
       check(reviewers.length === 1 && ready.reviews.length === 1 && ready.reviews[0].taskId === reviewers[0]!.taskId && ready.reviews[0].blocking === 0, `${m.changeId} reviews: ${JSON.stringify({ reviews: ready.reviews, reviewers })}`);
       ok(`1. ${m.changeId} ready: reviewer ${reviewers[0]!.taskId} (spawned by the hub) returned blocking 0 at ${ready.reviews[0].prHeadSha.slice(0, 12)}`);
     }
-    for (const s of [cc, cd]) await lab.waitEvent(`${s.changeId} ready`, 120_000, { cursor: scenarioStart, types: ["change.ready"], match: (e) => e.data?.changeId === s.changeId });
     const held = await Promise.all([ca, cb, cc, cd].map((x) => change(x.changeId)));
     check(held.every((c) => c.state === "ready" && String(c.lastError ?? "").startsWith("held:")), `the train holds all four: ${JSON.stringify(held)}`);
     const early = await callTool("events_wait", { cursor: scenarioStart, types: ["pr.merged"], timeoutSec: 0 });
@@ -358,7 +354,7 @@ export async function m7Train(lab: Lab) {
     ok(`3. ${cd.changeId} stayed ${(await change(cd.changeId)).state}; ${cd.prUrl} closed unmerged`);
 
     // What the lead and project_get show.
-    // The fixed event line (hub/leads/events.rs): "- PR #12 merged as abc1234: <url> (X1, tier S, by T4)".
+    // The fixed event line (hub/leads/events.rs): "- PR #12 merged as abc1234: <url> (X1, by T4)".
     const mergedLine = new RegExp(`^- PR #${m1.data.prNumber} merged as [0-9a-f]+: \\S+ \\(${first!.changeId}, `, "mu");
     const wakes = userMessages(MACHINE, leadThread).join("\n");
     check(mergedLine.test(wakes), `the lead was woken with ${first!.changeId}'s merge inline`);
@@ -384,7 +380,7 @@ export async function m7Train(lab: Lab) {
       at = page.cursor;
     }
     ok(`M7 used ${leadTurns} lead turns + ${taskTurns} task turns (${tasks.map((t) => `${t.taskId} ${t.kind}×${t.attempt}`).join(", ")}) = ${leadTurns + taskTurns} claude turns (${MODEL}, tasks on medium)`);
-    check(leadTurns + taskTurns <= 20, `M7 stays within 20 claude turns (${leadTurns + taskTurns})`);
+    check(leadTurns + taskTurns <= 22, `M7 stays within 22 claude turns (${leadTurns + taskTurns})`);
   } finally {
     // Only this slot's namespace, never the repo's main: its PRs, branches and main, the lab project and its policy file.
     resetNamespace();

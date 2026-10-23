@@ -7,7 +7,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{ProjectRef, Timestamp};
-use crate::ledger::{Tier, WorkstreamId};
+use crate::ledger::WorkstreamId;
 use crate::prim::{Count, NonEmpty, Positive, Text, UniqueList};
 use crate::tasks::TaskId;
 use crate::verification::CommitSha;
@@ -132,8 +132,6 @@ pub struct Change {
     /// The write task that opened it; absent when the lead enqueued a PR no task wrote.
     pub task_id: Option<TaskId>,
     pub workstream_id: WorkstreamId,
-    /// From the workstream's brief; may be raised, never lowered.
-    pub tier: Tier,
     pub head_sha: CommitSha,
     pub patch_id: Option<PatchId>,
     pub state: ChangeState,
@@ -182,7 +180,6 @@ mod tests {
             "branch": "fleetd/T1-add-file",
             "taskId": "T1",
             "workstreamId": "W1",
-            "tier": "M",
             "headSha": SHA,
             "state": "queued",
             "reviews": [{ "taskId": "T2", "prHeadSha": SHA, "patchId": "f".repeat(40), "blocking": 0, "nonBlocking": 1 }],

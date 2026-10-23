@@ -110,12 +110,8 @@ pub fn project_changes(hub: &Hub, project: &ProjectRef) -> Vec<Change> {
     })
 }
 
-/// The hub's side of the join: agent reviews needed per Change, and each repo's queue.
-pub fn fill_ctx(hub: &Hub, ctx: &mut RowCtx<'_>, changes: &[Change], repos: &[GitHubRepo]) {
-    for c in changes {
-        ctx.reviews_needed
-            .insert(c.change_id.to_string(), hub.reviews.reviews_needed(c));
-    }
+/// The hub's side of the join: each repo's queue.
+pub fn fill_ctx(hub: &Hub, ctx: &mut RowCtx<'_>, repos: &[GitHubRepo]) {
     for repo in repos {
         let state = hub.train.records().train_state(repo);
         ctx.queues.insert(repo.to_lowercase(), state.queue.len());
@@ -161,7 +157,6 @@ pub fn agent_review(
     verdict: &ReviewVerdict,
     at: String,
     reviewer: Option<&Task>,
-    review_role: Option<crate::hub::reviews::rules::ReviewRole>,
     current: bool,
 ) -> PrReviewEntry {
     PrReviewEntry {
@@ -170,8 +165,7 @@ pub fn agent_review(
         } else {
             ReviewVerdictKind::Approved
         },
-        agent: reviewer
-            .map(|t| join::agent_of(t, phase::role(t.kind, t.qa == Some(true), review_role))),
+        agent: reviewer.map(|t| join::agent_of(t, phase::role(t.kind, t.qa == Some(true)))),
         login: None,
         blocking: Some(verdict.blocking),
         non_blocking: Some(verdict.non_blocking),

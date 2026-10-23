@@ -10,10 +10,7 @@ use fleetd_contracts::tasks::Task;
 use serde_json::{Value, json};
 
 use super::contract::{MachineId, ProjectRef, TaskId, WorkstreamId};
-use super::host::{
-    BoxFut, BriefView, CmdOut, EventView, PlaybookView, ProviderView, ReviewSpawn, TaskView,
-    TrainHost, WorkstreamView,
-};
+use super::host::{BoxFut, CmdOut, EventView, ReviewSpawn, TaskView, TrainHost, WorkstreamView};
 use crate::clock::Clock;
 use crate::hub::api::Hub;
 use crate::hub::link::commands::CommandInput;
@@ -55,11 +52,6 @@ fn event_type(name: &str) -> Option<HubEventType> {
     serde_json::from_value(Value::String(name.into())).ok()
 }
 
-/// A wire string as its contract type (a brand or enum), checked as the contracts decode it.
-fn parse<T: serde::de::DeserializeOwned>(s: &str) -> Option<T> {
-    serde_json::from_value(Value::String(s.into())).ok()
-}
-
 fn wire_str(value: impl serde::Serialize) -> String {
     match serde_json::to_value(value) {
         Ok(Value::String(s)) => s,
@@ -76,12 +68,7 @@ fn task_view(task: Task) -> TaskView {
         workstream_id: task.workstream_id.clone(),
         kind: wire_str(task.kind),
         state: wire_str(task.state),
-        tier: task.tier,
         pr_url: result.and_then(|r| r.pr_url.as_ref()).map(wire_str),
-        receipt_commands: result
-            .and_then(|r| r.receipts.as_ref())
-            .map_or(0, |r| r.commands.get()),
-        claims_unverified: result.and_then(|r| r.claims_unverified) == Some(true),
         result_tail: result.map(|r| r.tail.to_string()),
     }
 }
@@ -170,7 +157,6 @@ impl TrainHost for HubHost {
                 "kind": "review",
                 "prompt": spawn.prompt,
                 "pr": spawn.pr,
-                "tier": spawn.tier,
             });
             let input = serde_json::from_value(call).map_err(|e| e.to_string())?;
             let caller = TaskCaller {
@@ -197,24 +183,7 @@ impl TrainHost for HubHost {
         Some(WorkstreamView {
             workstream_id: w.workstream_id.clone(),
             project_ref: w.project_ref.clone(),
-            brief: w.brief.as_ref().map(|b| BriefView { tier: b.tier }),
-            playbook: w.playbook.as_ref().map(wire_str),
-        })
-    }
-
-    fn playbook(&self, pin: &str) -> Option<PlaybookView> {
-        let pin = parse(pin)?;
-        let loaded = match self.hub()?.leads.playbooks.by_ref(&pin) {
-            Ok(loaded) => loaded?,
-            Err(error) => {
-                tracing::warn!(%error, "train: playbook not read");
-                return None;
-            }
-        };
-        let p = loaded.playbook;
-        let rules = &p.review_rules;
-        Some(PlaybookView {
-            review_rules: [rules.s.clone(), rules.m.clone(), rules.l.clone()],
+            has_brief: w.brief.is_some(),
         })
     }
 
@@ -327,19 +296,6 @@ impl TrainHost for HubHost {
                 output_tail: result.output_tail.to_string(),
                 timed_out: result.timed_out,
             })
-        })
-    }
-
-    fn provider_instances<'a>(
-        &'a self,
-        machine_id: &'a MachineId,
-    ) -> BoxFut<'a, Result<Vec<ProviderView>, String>> {
-        Box::pin(async move {
-            let hub = self.hub().ok_or_else(not_bound)?;
-            hub.executors
-                .provider_instances(machine_id)
-                .await
-                .map_err(|e| e.to_string())
         })
     }
 }

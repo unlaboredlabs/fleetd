@@ -124,8 +124,6 @@ const TYPES: &[&str] = &[
 struct Order {
     ws: String,
     order_ms: i64,
-    /// The brief's tier, which sizes an order with no plan items.
-    tier: Option<String>,
     /// (at, type, the event's `data`).
     events: Vec<(i64, String, Value)>,
 }
@@ -133,27 +131,21 @@ struct Order {
 /// Every unit of the orders created at or after `since_ms`, or only `only`'s whenever it was created.
 pub fn load(c: &Connection, since_ms: i64, only: Option<&str>) -> rusqlite::Result<Vec<Timeline>> {
     let mut stmt = c.prepare(
-        "SELECT json_extract(data, '$.workstreamId'), json_extract(data, '$.createdAt'),
-           json_extract(data, '$.brief.tier') FROM workstreams
+        "SELECT json_extract(data, '$.workstreamId'), json_extract(data, '$.createdAt') FROM workstreams
          WHERE ?1 IS NULL OR json_extract(data, '$.workstreamId') = ?1 ORDER BY n",
     )?;
     let mut orders: Vec<Order> = stmt
         .query_map([only], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, Option<String>>(2)?,
-            ))
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
         })?
         .filter_map(|r| r.ok())
-        .filter_map(|(ws, created, tier)| {
+        .filter_map(|(ws, created)| {
             let order_ms = chrono::DateTime::parse_from_rfc3339(&created)
                 .ok()?
                 .timestamp_millis();
             (only.is_some() || order_ms >= since_ms).then_some(Order {
                 ws,
                 order_ms,
-                tier,
                 events: Vec::new(),
             })
         })
@@ -309,14 +301,11 @@ fn order_units(c: &Connection, o: &Order) -> rusqlite::Result<Vec<Timeline>> {
             .or(first)
     };
     if items.is_empty() {
+        // An order with no plan items counts as one small item, as in the status figure.
         drafts.push(Draft {
             key: UnitKey::Order(ws.to_owned()),
             label: ws.to_owned(),
-            size: match o.tier.as_deref() {
-                Some("S") => Size::S,
-                Some("L") => Size::L,
-                _ => Size::M,
-            },
+            size: Size::S,
             start_ms: o.order_ms,
             dropped: state == "stopped",
             tasks: write_tasks.clone(),

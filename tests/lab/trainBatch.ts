@@ -1,7 +1,8 @@
 // The merge train's batches on lab-a, in this slot's namespace of the lab repo, with PRs the harness pushes and
 // enqueues itself (no writer agents; the lead only answers wakes). Each PR opens with the `hold` label, so the train
-// waits until the part's PRs are green on their own heads; then the harness takes the labels off:
-// 1. three tier-S PRs with disjoint files merge as one batch: one batch PR, one CI run on its head, one squash, and
+// waits until the part's PRs are reviewed (one hub reviewer each) and green on their own heads; then the harness takes
+// the labels off:
+// 1. three PRs with disjoint files merge as one batch: one batch PR, one CI run on its head, one squash, and
 //    each member closed with a link;
 // 2. a red batch bisects: a, b and c are green alone, but c's ci.yml (a PR runs its own workflow) also fails on the
 //    file b adds, so together they are red; the train drops c, merges a and b, and c alone is red and never merges.
@@ -100,7 +101,6 @@ export async function trainBatch(lab: Lab) {
       constraints: [],
       // Never passes: a lead that claims the order done would close the PRs still on the train as leftovers.
       doneWhen: [{ type: "cmd", machineId: MACHINE, argv: ["false"], expectExit: 0 }],
-      tier: "S",
     };
     const briefed = fleetd("brief", "create", "--workstream", w, "--json", JSON.stringify(brief));
     check(briefed.code === 0, `brief create ${w}: ${JSON.stringify(briefed)}`);
@@ -144,6 +144,9 @@ export async function trainBatch(lab: Lab) {
       }
       check(false, `#${pr.number}'s own ci did not finish within ${CI_MS / 60_000} min`);
     };
+    /** Waits until the hub's reviewer passed the Change: every PR merges only on one clean review. */
+    const reviewed = (changeId: string) =>
+      lab.waitEvent(`${changeId} ready`, TURN_MS * 2, { cursor: scenarioStart, types: ["change.ready"], match: (e) => e.data?.changeId === changeId });
     const merged = (cursor: number, changeId: string) =>
       lab.waitEvent(`pr.merged ${changeId}`, CI_MS * 2, { cursor, types: ["pr.merged"], match: (e) => e.data?.changeId === changeId });
     const batchPrs = () =>
@@ -154,6 +157,7 @@ export async function trainBatch(lab: Lab) {
     const oneIds: Array<string> = [];
     for (const pr of one) oneIds.push(await enqueue(pr));
     for (const pr of one) await ownCi(pr);
+    for (const id of oneIds) await reviewed(id);
     let cursor = await lab.cursor();
     release(one);
     const oneMerged = await Promise.all(oneIds.map((id) => merged(cursor, id)));
@@ -177,6 +181,7 @@ export async function trainBatch(lab: Lab) {
     const c = pushPr("two-c", { ".github/workflows/ci.yml": STRICT_CI });
     const [aId, bId, cId] = [await enqueue(a), await enqueue(b), await enqueue(c)];
     for (const pr of [a, b, c]) await ownCi(pr);
+    for (const id of [aId!, bId!, cId!]) await reviewed(id);
     cursor = await lab.cursor();
     release([a, b, c]);
     const [aMerged, bMerged] = [await merged(cursor, aId!), await merged(cursor, bId!)];

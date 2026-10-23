@@ -1,2 +1,0 @@
-Verify pull request {{prUrl}} by running the repo's tests on exactly {{headSha}} (`git fetch origin pull/{{prNumber}}/head`), in a temporary worktree (`git worktree add --detach`), never in the project's checkout; remove it afterwards. The repo's docs, scripts or CI say how to test. Do not read the PR description or comments; do not change, commit or push anything.
-Finish with the `report` tool: blocking is the number of failed test commands (0 when all pass), and the summary lists the commands and their exit codes.

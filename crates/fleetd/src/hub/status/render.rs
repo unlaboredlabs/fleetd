@@ -6,7 +6,7 @@ use chrono_tz::Tz;
 use fleetd_contracts::chat::ChatRequestId;
 use fleetd_contracts::effort::TaskProfile;
 use fleetd_contracts::ids::{MachineId, Timestamp};
-use fleetd_contracts::ledger::{HumanRequest, Tier, Workstream, WorkstreamId, WorkstreamState};
+use fleetd_contracts::ledger::{HumanRequest, Workstream, WorkstreamId, WorkstreamState};
 use fleetd_contracts::live::OrderCard;
 use fleetd_contracts::model::{Machine, MachineStatus};
 use fleetd_contracts::node_link::NodeLoad;
@@ -44,9 +44,6 @@ pub struct Order {
 impl Order {
     fn id(&self) -> &str {
         self.w.workstream_id.as_str()
-    }
-    fn tier(&self) -> Tier {
-        self.w.brief.as_ref().map_or(Tier::M, |b| b.tier)
     }
 }
 
@@ -244,7 +241,7 @@ impl World {
             .collect();
         let failures = item_failures(&items, &recent, &links);
         let steers = crate::hub::steer::store::recent(&hub.db, now - DAY_MS)?;
-        let mut model = hub.db.with(|c| {
+        let model = hub.db.with(|c| {
             Ok(super::estimate::ModelData::read(
                 c,
                 &orders,
@@ -252,17 +249,6 @@ impl World {
                 calibration,
             )?)
         })?;
-        // Only Changes before review need the rule, and reading it reads the order: few, not every Change in view.
-        model.reviewless = model
-            .changes
-            .iter()
-            .filter(|c| {
-                super::model::change_stage(c.state)
-                    == Some(fleetd_contracts::plan::ItemStage::PrOpen)
-            })
-            .filter(|c| hub.reviews.reviews_needed(c) == 0)
-            .map(|c| c.change_id.to_string())
-            .collect();
         Ok(World {
             now,
             tz: crate::hub::attention::hub_zone(),
@@ -497,7 +483,7 @@ fn scope_of<'a>(w: &'a World, scope: &StatusScope) -> Option<Scope<'a>> {
     })
 }
 
-/// Orders with no plan items count as one must item of their tier from when they start running (a placeholder, with
+/// Orders with no plan items count as one must item of size s from when they start running (a placeholder, with
 /// a marker on the way in and out), done when the order is done.
 fn virtual_orders<'a>(w: &World, s: &Scope<'a>) -> Vec<&'a Order> {
     s.orders
@@ -740,14 +726,7 @@ pub fn render(
         };
         let steps: Vec<Line<1, 80>> = p
             .filter(|p| !p.verified)
-            .map(|p| {
-                super::estimate::steps(
-                    p.stage,
-                    mo.prs.get(&key).copied(),
-                    !mo.no_review.contains(&key),
-                    after,
-                )
-            })
+            .map(|p| super::estimate::steps(p.stage, mo.prs.get(&key).copied(), after))
             .unwrap_or_default()
             .iter()
             .map(|x| line::<80>(x))
@@ -1379,7 +1358,7 @@ pub fn render(
             .filter(|o| o.w.state != WorkstreamState::Done)
             .filter_map(|o| {
                 let started = parse_ms(o.w.created_at.as_str())?;
-                Some((o.id().to_owned(), format!("{:?}", o.tier()), now - started))
+                Some((o.id().to_owned(), now - started))
             })
             .collect(),
         steers_unacked,
@@ -1568,10 +1547,6 @@ pub fn render(
             risks: Count::unchecked(risks_more),
             parts: Count::unchecked(parts_more),
             stale: Count::unchecked(stale_more),
-        },
-        virtual_tier: match scope {
-            StatusScope::Order { .. } => virtuals.first().map(|o| o.tier()),
-            _ => None,
         },
     };
     Some(Rendered {

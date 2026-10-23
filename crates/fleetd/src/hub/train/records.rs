@@ -333,19 +333,6 @@ impl ChangeRecords {
             repo: GitHubRepo::unchecked(repo),
         }
     }
-
-    /// The reason the polish-loop rule waived review of each listed Change's patch, in insertion order.
-    pub fn waivers(&self) -> Vec<(String, String)> {
-        sql(&self.db, |conn| {
-            let mut stmt = conn
-                .prepare_cached("SELECT change_id, reason FROM review_waivers ORDER BY rowid")
-                .expect("prepare");
-            stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
-                .expect("query")
-                .map(|r| r.expect("row"))
-                .collect()
-        })
-    }
 }
 
 #[cfg(test)]

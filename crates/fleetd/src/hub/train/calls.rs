@@ -84,7 +84,7 @@ pub fn register_lead_calls(hub: &Arc<Hub>) {
 }
 
 /// A writer's `report` with `kind: "slice_ready"`: the PR goes on the train now, as its task's, so the review gate
-/// starts the order's reviewers on it at once. Every check of `change_enqueue` applies (Source line, tier, open PR in
+/// starts the order's reviewers on it at once. Every check of `change_enqueue` applies (Source line, open PR in
 /// the project's repo); the same PR again is the same Change, so a slice is reviewed once per head.
 pub async fn slice_ready(
     train: &Train,
@@ -107,7 +107,6 @@ pub async fn slice_ready(
         task_id: Some(task_id.clone()),
         pr_url: call.pr_url,
         workstream_id: None,
-        tier: None,
         item: None,
     };
     let change = train.enqueue(project_ref, input).await?;

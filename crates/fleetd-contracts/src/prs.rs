@@ -77,7 +77,7 @@ pub struct ReviewSummary {
     pub state: ReviewState,
     /// Clean agent reviews of the current change.
     pub done: Count,
-    /// Agent reviews it needs before it can merge; 0 for a PR fleetd doesn't land.
+    /// Agent reviews it needs before it can merge: 1 for a PR fleetd lands, else 0.
     pub needed: Count,
 }
 
@@ -170,7 +170,7 @@ pub enum ReviewVerdictKind {
 #[serde(rename_all = "camelCase")]
 pub struct PrReviewEntry {
     pub verdict: ReviewVerdictKind,
-    /// The reviewing agent (reviewer, verifier or QA); absent for a person's review.
+    /// The reviewing agent (reviewer or QA); absent for a person's review.
     pub agent: Option<PrAuthor>,
     /// GitHub login of a person's review.
     pub login: Option<Text<1, 100>>,

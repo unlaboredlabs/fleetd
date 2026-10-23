@@ -158,7 +158,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "changes_list",
-        "PRs on the merge train (Changes), newest first: state (queued, reviewing, ready, rebasing, ci, merging, merged, needs_rebase, ci_failed, refused, abandoned), tier, reviews bound to the patch id, queue position and why it is parked. Filter by projectRef, repo or state.",
+        "PRs on the merge train (Changes), newest first: state (queued, reviewing, ready, rebasing, ci, merging, merged, needs_rebase, ci_failed, refused, abandoned), reviews bound to the patch id, queue position and why it is parked. Filter by projectRef, repo or state.",
     ),
     (
         "doctor_list",

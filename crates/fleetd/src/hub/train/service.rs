@@ -13,16 +13,15 @@ use tokio::sync::Notify;
 use super::contract::{
     Change, ChangeEnqueueCall, ChangeId, ChangeReview, ChangeState, CommitSha, Count, GitHubPrUrl,
     GitHubRepo, NonEmpty, Positive, ProjectRef, Timestamp, TrainState, last_error, parse_pr_url,
-    state_str, tier_str,
+    state_str,
 };
 use super::git::{BLOCKED, GitError, REFUSED_HERE, Rebase, TrainGit, default_worktree};
 use super::github::{CheckRun, GhError, GhRunner, MergeOutcome, Pull, TRAIN_CONTEXT, TrainGitHub};
 use super::host::{BoxFut, TrainHost};
 use super::main_ci::{GithubSync, MainCi, ci_state};
 use super::records::{ChangeRecords, Db, HEAD_STATES, ListFilter, QUEUED_STATES};
-use super::rules::{Refusal, check_tier};
+use super::rules::Refusal;
 use super::time::{iso, millis, parse_iso};
-use super::triggers;
 use crate::clock::Clock;
 use crate::hub::leads::events::Event;
 use crate::hub::prompts::fixed::{FixPr, fix_your_pr};
@@ -54,15 +53,16 @@ impl TrainError {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Verdict {
-    Ready,
+    /// With the clean reviews bound to the patch that make it ready.
+    Ready(Vec<ChangeReview>),
     Pending,
 }
 
 /// The port between the train and reviews. The train calls `review` whenever a Change enters `reviewing`: on
 /// enqueue, when its author pushed a new patch, and when a rebase changed its patch id. The gate answers Ready when
-/// the tier needs nothing more for this patch id, or Pending and later calls `Train::mark_ready`.
+/// a clean review is already bound to this patch id, or Pending and later calls `Train::mark_ready`.
 pub trait ReviewGate: Send + Sync + 'static {
     fn review(&self, change: Change) -> BoxFut<'_, Verdict>;
 }
@@ -75,9 +75,6 @@ pub struct TrainOptions {
     pub poll_interval: Duration,
     /// How long CI may take on a rebased head.
     pub ci_timeout: Duration,
-    /// How long a head may have no checks at all before the train asks GitHub whether its PR has CI; the answer comes
-    /// from the workflows' triggers, not this wait (`FLEETD_TRAIN_NO_CI_GRACE_SEC`, default 90).
-    pub no_ci_grace: Duration,
     /// How often merged PRs are checked for merges outside the train.
     pub bypass_every: Duration,
     /// How often a repo's open PRs are read for a running writer's draft marked ready.
@@ -100,13 +97,6 @@ impl Default for TrainOptions {
         Self {
             poll_interval: Duration::from_secs(15),
             ci_timeout: Duration::from_secs(30 * 60),
-            no_ci_grace: Duration::from_secs(
-                std::env::var("FLEETD_TRAIN_NO_CI_GRACE_SEC")
-                    .ok()
-                    .and_then(|v| v.parse::<u64>().ok())
-                    .filter(|s| *s > 0)
-                    .unwrap_or(90),
-            ),
             bypass_every: Duration::from_secs(60),
             ready_every: Duration::from_secs(60),
             merge_attempts: 3,
@@ -122,8 +112,8 @@ impl Default for TrainOptions {
     }
 }
 
-/// A repo's CI config for one base as read at a time: workflows and required checks, and the workflow files.
-type CiConfig = (i64, CiInfo, Vec<Option<String>>);
+/// A repo's CI config for one base as read at a time: its workflows and required checks.
+type CiConfig = (i64, CiInfo);
 
 /// How long a repo's CI config (workflows, required checks) is trusted before it is read again.
 const CI_CONFIG_TTL_MS: i64 = 10 * 60_000;
@@ -178,11 +168,8 @@ pub(super) fn error_text(text: &str) -> Text<0, 2000> {
 
 pub(super) enum CiOutcome {
     Green,
-    /// The repo has no CI: the head passes on fleetd's own checks (receipts and reviews before it was ready).
-    NoCi(String),
     Red(Vec<CheckRun>),
-    /// With the last GitHub read error, when one kept the train from deciding.
-    Timeout(Option<String>),
+    Timeout,
 }
 
 enum TakeError {
@@ -548,7 +535,11 @@ impl Train {
         let ready = self.update(&change.change_id, Some(&from), |mut c| {
             c.last_error = None;
             c.state = ChangeState::Ready;
-            c.reviews.extend(reviews);
+            for r in reviews {
+                if !c.reviews.contains(&r) {
+                    c.reviews.push(r);
+                }
+            }
             c
         })?;
         self.emit(
@@ -564,10 +555,10 @@ impl Train {
         Some(ready)
     }
 
-    /// Hands a Change in `reviewing` to the gate; the tier may need nothing more, making it ready at once.
-    async fn to_gate(&self, change: Change) {
-        if self.gate.review(change.clone()).await == Verdict::Ready {
-            self.set_ready(&change, Vec::new());
+    /// Hands a Change in `reviewing` to the gate; a clean review already bound to its patch makes it ready at once.
+    pub(super) async fn to_gate(&self, change: Change) {
+        if let Verdict::Ready(reviews) = self.gate.review(change.clone()).await {
+            self.set_ready(&change, reviews);
         }
     }
 
@@ -663,13 +654,11 @@ impl Train {
         }
     }
 
-    /// `ci_note` says how CI passed when it was not GitHub's checks (a repo with no CI); `batch` is the batch PR it
-    /// landed in with the others, when it did.
+    /// `batch` is the batch PR it landed in with the others, when it did.
     pub(super) async fn finish_merged(
         &self,
         change: &Change,
         merged_sha: Option<&str>,
-        ci_note: Option<&str>,
         batch: Option<&super::batch::Landed>,
     ) {
         let sha = merged_sha.map(str::to_lowercase);
@@ -696,13 +685,9 @@ impl Train {
         if let Some(task_id) = &merged.task_id {
             data["taskId"] = json!(task_id);
         }
-        let mut note = ci_note.map(|n| format!(" ({n})")).unwrap_or_default();
-        if let Some(n) = ci_note {
-            data["ci"] = json!(n);
-        }
-        if let Some(batch) = batch {
-            note.push_str(&format!(" in batch #{}", batch.pr_number));
-        }
+        let note = batch
+            .map(|b| format!(" in batch #{}", b.pr_number))
+            .unwrap_or_default();
         self.emit(
             &merged.project_ref,
             "pr.merged",
@@ -716,7 +701,6 @@ impl Train {
             change: merged.change_id.as_str(),
             pr_url: merged.pr_url.as_str(),
             sha: &as_sha,
-            tier: tier_str(merged.tier),
             by: merged.task_id.as_ref().map(|t| t.as_str()),
         }
         .render();
@@ -762,12 +746,7 @@ impl Train {
     }
 
     /// `timed_out` carries the GitHub read error that kept the train from deciding, when there was one.
-    pub(super) async fn ci_failed(
-        &self,
-        change: &Change,
-        failing: &[CheckRun],
-        timed_out: Option<Option<String>>,
-    ) {
+    pub(super) async fn ci_failed(&self, change: &Change, failing: &[CheckRun], timed_out: bool) {
         let names: Vec<String> = failing
             .iter()
             .map(|r| {
@@ -779,10 +758,9 @@ impl Train {
             })
             .collect();
         let log_url = failing.iter().find_map(|r| r.html_url.clone());
-        let why = if let Some(unread) = timed_out {
-            let unread = unread.map(|e| format!(" ({e})")).unwrap_or_default();
+        let why = if timed_out {
             format!(
-                "CI on {} did not finish within {} min{unread}",
+                "CI on {} did not finish within {} min",
                 short(&change.head_sha),
                 (self.options.ci_timeout.as_millis() as f64 / 60_000.0).round()
             )
@@ -823,20 +801,11 @@ impl Train {
         self.tell_author(&parked, text).await;
     }
 
-    /// Polls the check runs of `sha`, the head of a PR from `head` into `base`, until all are done, one is red, or
-    /// the timeout passes. A head with no checks past the grace period, on a repo with no workflows and no required
-    /// checks, passes on fleetd's own checks.
-    pub(super) async fn wait_ci(
-        &self,
-        change: &Change,
-        repo: &str,
-        base: &str,
-        head: &str,
-        sha: &str,
-    ) -> CiOutcome {
+    /// Polls the check runs of `sha` until all are done, one is red, or the timeout passes. A head with no checks is
+    /// never green: only a repo with CI reaches here (`has_ci`).
+    pub(super) async fn wait_ci(&self, change: &Change, repo: &str, sha: &str) -> CiOutcome {
         let start = self.now_ms();
         let mut last: Vec<CheckRun> = Vec::new();
-        let mut unread: Option<String> = None;
         loop {
             let runs = match self.github.check_runs(repo, sha).await {
                 Ok(runs) => Some(runs),
@@ -845,7 +814,6 @@ impl Train {
                     None
                 }
             };
-            let runs_seen = runs.as_ref().map(|r| !r.is_empty());
             let runs = runs.unwrap_or_default();
             if !runs.is_empty() {
                 last = runs.clone();
@@ -862,39 +830,9 @@ impl Train {
                 Checks::None | Checks::Pending => {}
             }
             let elapsed = self.now_ms() - start;
-            if runs_seen == Some(false) && elapsed >= self.options.no_ci_grace.as_millis() as i64 {
-                match self.has_ci(repo, base, head, sha).await {
-                    Ok(false) => {
-                        self.check_spans(change, sha, &[]);
-                        return CiOutcome::NoCi(format!("no CI on {repo}: used local checks"));
-                    }
-                    Ok(true) => {
-                        if unread.take().is_some() {
-                            self.update(&change.change_id, Some(&[ChangeState::Ci]), |mut c| {
-                                c.last_error = None;
-                                c
-                            });
-                        }
-                    }
-                    Err(e) => {
-                        let why = format!(
-                            "GitHub: could not tell whether {repo} has CI: {}",
-                            e.message
-                        );
-                        if unread.as_ref() != Some(&why) {
-                            tracing::warn!(repo, sha, error = %why, "train: CI config not read");
-                            self.update(&change.change_id, Some(&[ChangeState::Ci]), |mut c| {
-                                c.last_error = Some(error_text(&why));
-                                c
-                            });
-                            unread = Some(why);
-                        }
-                    }
-                }
-            }
             if elapsed >= self.options.ci_timeout.as_millis() as i64 {
                 self.check_spans(change, sha, &last);
-                return CiOutcome::Timeout(unread);
+                return CiOutcome::Timeout;
             }
             // A pass waiting on CI is the train running: keep its source live and main CI read.
             self.options.fresh.touch(&fresh::train(repo), self.now_ms());
@@ -905,53 +843,42 @@ impl Train {
         }
     }
 
-    /// Whether `sha`, the head of a PR from `head` into `base`, has CI: anything reports on it (a commit status other
-    /// than the train's, a workflow run), `base` requires a check other than the train's own, or one of the repo's
-    /// workflows has a trigger that can run for this PR. Decided from the workflows' `on:`, never from how long GitHub
-    /// takes to start a run, and "may run" wins every doubt. The config is cached per repo and base; a failed read is
-    /// an error, not "no CI".
-    pub(super) async fn has_ci(
-        &self,
-        repo: &str,
-        base: &str,
-        head: &str,
-        sha: &str,
-    ) -> Result<bool, GhError> {
-        if !self.github.status_contexts(repo, sha).await?.is_empty() {
-            return Ok(true);
-        }
+    /// Whether PRs into `base` get CI: the repo has a workflow, or `base` requires a check other than the train's own.
+    /// Read as adding a project reads it, cached per repo and base; a failed read is an error, not "no CI".
+    /// The repos whose ready PRs wait because they have no CI, sorted, from the Changes held for it.
+    pub fn repos_without_ci(&self) -> Vec<String> {
+        let mut repos: Vec<String> = self
+            .records
+            .trains()
+            .into_iter()
+            .map(|t| t.repo)
+            .filter(|repo| {
+                self.records
+                    .in_train(repo, &[ChangeState::Ready])
+                    .iter()
+                    .any(|c| c.last_error.as_deref() == Some(super::batch::NO_CI))
+            })
+            .collect();
+        repos.sort();
+        repos
+    }
+
+    pub(super) async fn has_ci(&self, repo: &str, base: &str) -> Result<bool, GhError> {
         let key = (repo.to_string(), base.to_string());
         let now = self.now_ms();
         let cached = lock(&self.ci_configs)
             .get(&key)
-            .filter(|(at, ..)| now - at < CI_CONFIG_TTL_MS)
-            .map(|(_, ci, files)| (ci.clone(), files.clone()));
-        let (ci, files) = match cached {
-            Some(read) => read,
+            .filter(|(at, _)| now - at < CI_CONFIG_TTL_MS)
+            .map(|(_, ci)| ci.clone());
+        let ci = match cached {
+            Some(ci) => ci,
             None => {
                 let ci = self.github.ci_config(repo, base).await?;
-                let files = if ci.workflows.is_empty() {
-                    Vec::new()
-                } else {
-                    self.github.workflow_files(repo, base).await?
-                };
-                lock(&self.ci_configs).insert(key, (now, ci.clone(), files.clone()));
-                (ci, files)
+                lock(&self.ci_configs).insert(key, (now, ci.clone()));
+                ci
             }
         };
-        if ci.required_checks.iter().any(|c| c != TRAIN_CONTEXT) {
-            return Ok(true);
-        }
-        if ci.workflows.is_empty() {
-            return Ok(false);
-        }
-        if self.github.workflow_runs(repo, sha).await? > 0 {
-            return Ok(true);
-        }
-        Ok(files.iter().any(|f| {
-            f.as_deref()
-                .is_none_or(|yaml| triggers::may_run(yaml, base, head))
-        }))
+        Ok(!ci.workflows.is_empty() || ci.required_checks.iter().any(|c| c != TRAIN_CONTEXT))
     }
 
     /// One `ci.check` span per check run of the deciding poll, from GitHub's own stamps; a check still running when
@@ -1197,18 +1124,14 @@ impl Train {
         ) else {
             return Ok(());
         };
-        let ci_note = match self
-            .wait_ci(&in_ci, repo, base, change.branch.as_str(), &head_sha)
-            .await
-        {
-            CiOutcome::Green => None,
-            CiOutcome::NoCi(note) => Some(note),
+        match self.wait_ci(&in_ci, repo, &head_sha).await {
+            CiOutcome::Green => {}
             CiOutcome::Red(failing) => {
-                self.ci_failed(&in_ci, &failing, None).await;
+                self.ci_failed(&in_ci, &failing, false).await;
                 return Ok(());
             }
-            CiOutcome::Timeout(unread) => {
-                self.ci_failed(&in_ci, &[], Some(unread)).await;
+            CiOutcome::Timeout => {
+                self.ci_failed(&in_ci, &[], true).await;
                 return Ok(());
             }
         };
@@ -1223,11 +1146,7 @@ impl Train {
             .post_train_status(
                 repo,
                 &head_sha,
-                &format!(
-                    "{}: rebased onto {base}, {}",
-                    change.change_id,
-                    ci_note.as_deref().unwrap_or("CI green")
-                ),
+                &format!("{}: rebased onto {base}, CI green", change.change_id),
             )
             .await?;
         let (status, message) = match self
@@ -1236,8 +1155,7 @@ impl Train {
             .await?
         {
             MergeOutcome::Merged { sha } => {
-                self.finish_merged(&merging, Some(&sha), ci_note.as_deref(), None)
-                    .await;
+                self.finish_merged(&merging, Some(&sha), None).await;
                 return Ok(());
             }
             MergeOutcome::Refused { status, message } => (status, message),
@@ -1381,12 +1299,12 @@ impl Train {
             }
             match pull {
                 Ok(pull) if pull.merged && change.state == ChangeState::Merging => {
-                    self.finish_merged(&change, pull.merge_commit_sha.as_deref(), None, None)
+                    self.finish_merged(&change, pull.merge_commit_sha.as_deref(), None)
                         .await
                 }
                 Ok(pull) if change.state == ChangeState::Merging && pull.state == "open" => {
                     match self.landed_in_batch(&change).await {
-                        Some(landed) => self.finish_batch_member(&change, &landed, None).await,
+                        Some(landed) => self.finish_batch_member(&change, &landed).await,
                         None => {
                             self.put_back(&change, "the hub restarted while the train worked on it")
                         }
@@ -1662,7 +1580,7 @@ impl Train {
         )
     }
 
-    /// Validates the PR (its tier) and puts it on its repo's train; the same open PR returns its Change.
+    /// Validates the PR and puts it on its repo's train; the same open PR returns its Change.
     pub async fn enqueue(
         &self,
         project_ref: &ProjectRef,
@@ -1716,13 +1634,13 @@ impl Train {
                 Some("Use a workstream id from your digest."),
             ));
         };
-        let Some(brief) = workstream.brief.clone() else {
+        if !workstream.has_brief {
             let refusal = Refusal::new(
-                format!("{workstream_id} has no brief, so it has no tier or done-when."),
+                format!("{workstream_id} has no brief yet."),
                 format!("register its brief with `brief` for {workstream_id} first"),
             );
             return Err(self.refuse(project_ref, &pr_url, refusal, None).await);
-        };
+        }
 
         let pull = self.github.pull(&repo, pr_number).await.map_err(|e| {
             TrainError::new(
@@ -1742,7 +1660,6 @@ impl Train {
             branch: NonEmpty::unchecked(pull.head.ref_.clone()),
             task_id: input.task_id.clone(),
             workstream_id: workstream_id.clone(),
-            tier: brief.tier,
             head_sha: CommitSha::unchecked(pull.head.sha.to_lowercase()),
             patch_id: None,
             state: ChangeState::Queued,
@@ -1807,18 +1724,10 @@ impl Train {
             );
             return Err(self.refuse(project_ref, &pr_url, refusal, Some(row)).await);
         }
-        let tier = match check_tier(brief.tier, input.tier, task.as_ref().and_then(|t| t.tier)) {
-            Ok(tier) => tier,
-            Err(refusal) => {
-                return Err(self.refuse(project_ref, &pr_url, refusal, Some(row)).await);
-            }
-        };
-
         self.records.ensure_train(&repo, project_ref, self.now_ms());
         self.train_project(&repo, project_ref);
         let at = self.now_iso();
         let change = self.records.create(Change {
-            tier,
             state: ChangeState::Queued,
             created_at: at.clone(),
             updated_at: at,
@@ -1831,10 +1740,8 @@ impl Train {
             project_ref,
             "change.queued",
             format!(
-                "{} queued: {repo}#{} (tier {})",
-                change.change_id,
-                change.pr_number,
-                tier_str(change.tier)
+                "{} queued: {repo}#{}",
+                change.change_id, change.pr_number
             ),
             json!({ "changeId": change.change_id, "workstreamId": change.workstream_id, "repo": repo, "prNumber": change.pr_number }),
         );
@@ -1855,7 +1762,7 @@ impl Train {
         ))
     }
 
-    /// Reviews satisfied the tier for the Change's current patch id; it may be taken. For the review gate.
+    /// A clean review is bound to the Change's current patch id; it may be taken. For the review gate.
     pub fn mark_ready(
         &self,
         change_id: &ChangeId,
@@ -1925,7 +1832,6 @@ impl Train {
             task_id: Some(task.task_id.clone()),
             pr_url: GitHubPrUrl::unchecked(pr_url.clone()),
             workstream_id: None,
-            tier: None,
             item: None,
         };
         if let Err(e) = self.enqueue(&task.project_ref, input).await {

@@ -84,16 +84,6 @@ impl Size {
     }
 }
 
-impl From<crate::ledger::Tier> for Size {
-    fn from(tier: crate::ledger::Tier) -> Self {
-        match tier {
-            crate::ledger::Tier::S => Self::S,
-            crate::ledger::Tier::M => Self::M,
-            crate::ledger::Tier::L => Self::L,
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PlanItemState {

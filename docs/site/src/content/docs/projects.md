@@ -22,7 +22,7 @@ You'll add a repo as a [project](/docs/glossary#project), send it work, and foll
      resolving
      inspecting
    ✓ ~/src/storefront cloned and added on devbox
-   Lead needs: no CI found: the merge train will only use local checks
+   Lead needs: no CI found: the merge train holds its PRs until the repo has CI
    Default branch: main
    CI: none; required checks: none
    Merge: unprotected, squash allowed
@@ -101,7 +101,7 @@ both; the lead plans to them.
 
 | Cap | Counts | Default | Set it |
 |---|---|---|---|
-| Per project: Max agents | The project's agents: writers, readers, reviewers, verifiers. Not the lead. | The fleet cap | Click "agents 6 / 12" in the project's chat header, or use Settings → Agents. From 1 up to the fleet cap. |
+| Per project: Max agents | The project's agents: writers, readers, reviewers. Not the lead. | The fleet cap | Click "agents 6 / 12" in the project's chat header, or use Settings → Agents. From 1 up to the fleet cap. |
 | Fleet-wide | Every project's agents together. Not the leads. | | Settings → Agents → Whole fleet. Needs an admin key. |
 
 The header shows "· 2 queued" when agents wait their turn. While you move the slider it says what the change will do; it
@@ -128,7 +128,7 @@ When the cap is reached:
 - A new agent **queues**; it doesn't fail. The lead is told its place in line, and the hub starts it the moment a
   slot frees.
 - New agents also wait while their machine is short of disk or CPU ([Disk and load](/docs/machines#guard)).
-- Reviewers and verifiers count toward the cap, but a review that gates a merge goes first, so a low cap never stalls
+- Reviewers count toward the cap, but a review that gates a merge goes first, so a low cap never stalls
   the merge train.
 
 Changing it while work runs:
@@ -174,6 +174,6 @@ Slices are reviewed as they land: a writer reports each finished PR (`report`, k
 PR ready on GitHub. fleetd puts it on the train and starts its reviewers right away, while the writer goes on. A new
 commit is reviewed again from what changed.
 
-No gate relaxes. Every PR still gets its tier's reviews and green CI and goes through the train, done is still decided
+No gate relaxes. Every PR still gets its review and green CI and goes through the train, done is still decided
 by the done-when checks, and anything that needs your approval still waits for it. The reviewers fleetd starts count
 against the slots and the lead's limit of 32 open tasks like any task.

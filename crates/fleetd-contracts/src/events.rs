@@ -120,7 +120,7 @@ pub enum HubEventType {
     /// `data.changeId`, `data.repo`, `data.prNumber`.
     #[serde(rename = "change.queued")]
     ChangeQueued,
-    /// Its tier's reviews are satisfied for the current patch id. `data.changeId`.
+    /// A clean review is bound to its current patch id. `data.changeId`.
     #[serde(rename = "change.ready")]
     ChangeReady,
     /// The rebase conflicted; `data.changeId`, `data.paths`.

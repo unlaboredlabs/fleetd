@@ -98,7 +98,6 @@ pub enum Event<'a> {
         change: &'a str,
         pr_url: &'a str,
         sha: &'a str,
-        tier: &'a str,
         by: Option<&'a str>,
     },
     /// The train dropped a PR (closed, or a newer change replaced it).
@@ -268,11 +267,10 @@ impl Event<'_> {
                 change,
                 pr_url,
                 sha,
-                tier,
                 by,
             } => (
                 format!(
-                    "- {} merged{sha}: {pr_url} ({change}, tier {tier}{})",
+                    "- {} merged{sha}: {pr_url} ({change}{})",
                     pr_label(pr_url),
                     by.map(|b| format!(", by {b}")).unwrap_or_default()
                 ),
@@ -512,10 +510,9 @@ mod tests {
                 change: "C4",
                 pr_url: url,
                 sha: " as abc1234",
-                tier: "S",
                 by: Some("T4")
             }),
-            "- PR #12 merged as abc1234: https://github.com/o/r/pull/12 (C4, tier S, by T4)"
+            "- PR #12 merged as abc1234: https://github.com/o/r/pull/12 (C4, by T4)"
         );
         assert_eq!(
             r(Event::PrLeft {

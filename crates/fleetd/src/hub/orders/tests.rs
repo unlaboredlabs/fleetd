@@ -13,17 +13,10 @@ use super::*;
 const AT: &str = "2026-10-18T10:00:00.000Z";
 
 struct Fake {
-    roles: HashMap<&'static str, ReviewRole>,
     threads: HashMap<&'static str, &'static str>,
 }
 
 impl Lookups for Fake {
-    fn review_role(&self, task_id: &str) -> Option<ReviewRole> {
-        self.roles.get(task_id).copied()
-    }
-    fn reviews_needed(&self, _: &Change) -> i64 {
-        3
-    }
     fn thread(&self, r: &ThreadRef) -> Option<ThreadSeen> {
         self.threads.get(r.thread_id.as_str()).map(|s| ThreadSeen {
             status: (*s).into(),
@@ -65,7 +58,7 @@ fn change(id: &str, number: i64, task: &str, state: &str) -> Change {
     serde_json::from_value(json!({
         "changeId": id, "projectRef": { "machineId": "lab-a", "projectId": "p1" }, "repo": "o/testbed",
         "prNumber": number, "prUrl": format!("https://github.com/o/testbed/pull/{number}"), "branch": format!("fleetd/{task}"),
-        "taskId": task, "workstreamId": "W14", "tier": "L", "headSha": sha, "patchId": patch,
+        "taskId": task, "workstreamId": "W14", "headSha": sha, "patchId": patch,
         "state": state, "createdAt": AT, "updatedAt": AT,
         "reviews": [
             { "taskId": "T5", "prHeadSha": sha, "patchId": patch, "blocking": 0, "nonBlocking": 1 },
@@ -103,7 +96,6 @@ fn an_order_joins_its_agents_prs_and_asks() {
     ];
     let changes = vec![change("X2", 12, "T1", "reviewing")];
     let fake = Fake {
-        roles: HashMap::from([("T3", ReviewRole::Reviewer), ("T4", ReviewRole::Verifier)]),
         threads: HashMap::from([
             ("s-T2", "running"),
             ("s-T3", "waiting"),
@@ -138,7 +130,7 @@ fn an_order_joins_its_agents_prs_and_asks() {
         lanes,
         vec![
             ("T5", AgentRole::Qa, LaneStatus::Working),
-            ("T4", AgentRole::Verifier, LaneStatus::Queued),
+            ("T4", AgentRole::Reviewer, LaneStatus::Queued),
             ("T3", AgentRole::Reviewer, LaneStatus::Waiting),
             ("T2", AgentRole::Implementer, LaneStatus::Working),
         ]
@@ -152,12 +144,12 @@ fn an_order_joins_its_agents_prs_and_asks() {
     assert_eq!(t4.pr.as_ref().map(|p| p.number.get()), Some(12));
     // Checkers are named by what they check; a writer keeps its task's title.
     let titles: Vec<_> = c.lanes.iter().map(|l| l.title.as_str()).collect();
-    assert_eq!(titles, ["QA #12", "verify #12", "review #12", "T2 work"]);
+    assert_eq!(titles, ["QA #12", "review #12", "review #12", "T2 work"]);
     assert_eq!(joined.done.len(), 1);
     assert_eq!(joined.done[0].pr.as_ref().map(|p| p.number.get()), Some(12));
     // One clean review of the current patch: T6 reviewed an older patch, T7 found blocking issues.
     let pr = &c.prs[0];
-    assert_eq!((pr.reviews_done.get(), pr.reviews_needed.get()), (1, 3));
+    assert_eq!((pr.reviews_done.get(), pr.reviews_needed.get()), (1, 1));
     assert_eq!(pr.state, ChangeState::Reviewing);
 }
 
@@ -208,7 +200,7 @@ fn a_done_order_leaves_only_its_open_prs_that_are_not_on_their_way_in() {
 fn cards_get_a_short_title() {
     let mut w = workstream();
     w.title = Text::unchecked(
-        "Tier L. Add three short pages, lab/20261018153639/alpha.md, beta.md and gamma.md, each one paragraph on what fleetd's merge train does. One writer per page.",
+        "Add three short pages, lab/20261018153639/alpha.md, beta.md and gamma.md, each one paragraph on what fleetd's merge train does. One writer per page.",
     );
     assert_eq!(
         short_title(&w),
@@ -219,7 +211,7 @@ fn cards_get_a_short_title() {
     // Once the brief is set its goal names the order.
     w.brief = Some(
         serde_json::from_value(json!({ "goal": "Three pages on the merge train. One per writer.", "why": "demo", "pointers": [], "constraints": [],
-            "doneWhen": [{ "type": "pr_merged", "repo": "o/testbed" }], "tier": "L" }))
+            "doneWhen": [{ "type": "pr_merged", "repo": "o/testbed" }] }))
         .unwrap(),
     );
     assert_eq!(short_title(&w), "Three pages on the merge train");

@@ -39,7 +39,7 @@ pub enum SteerMode {
     Now,
 }
 
-/// Who a steer is for: an order's lead, or one task (writer, reviewer, verifier, …).
+/// Who a steer is for: an order's lead, or one task (writer, reviewer, …).
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged, deny_unknown_fields)]
 pub enum SteerTarget {

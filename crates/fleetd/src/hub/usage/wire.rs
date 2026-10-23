@@ -250,6 +250,9 @@ impl DoctorFleet for OpsPorts {
         let link = &self.hub().link;
         (link.load(&m).and_then(|l| l.disk), link.paused(&m))
     }
+    fn repos_without_ci(&self) -> Vec<String> {
+        self.hub().train.repos_without_ci()
+    }
     /// One `true` in each project's checkout: the node answers a refusal without running anything.
     fn refused_projects(&self, machine_id: &str) -> BoxFut<'_, Vec<(String, String)>> {
         let m = machine(machine_id);

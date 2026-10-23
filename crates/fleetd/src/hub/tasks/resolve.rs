@@ -2,7 +2,7 @@
 use fleetd_contracts::effort::TaskProfile;
 use fleetd_contracts::tasks::TaskKind;
 
-/// The spawn's profile, high when it names none. A review task (the train's reviewers, verifiers, QA and judges
+/// The spawn's profile, high when it names none. A review task (the train's reviewers, QA and judges
 /// included) always runs high, and so does every task of a project with medium off.
 pub fn resolve_profile(
     spawn: Option<TaskProfile>,

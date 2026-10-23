@@ -154,24 +154,12 @@ pub fn who(c: &Connection, machine: &str, thread: &str) -> Result<Who, StoreErro
         .optional()?;
     if let Some((n, project, workstream, data)) = task {
         let task_id = format!("T{n}");
-        let review: Option<String> = c
-            .query_row(
-                "SELECT role FROM review_tasks WHERE task_id = ?1",
-                [&task_id],
-                |r| r.get(0),
-            )
-            .optional()?;
         let data: serde_json::Value = serde_json::from_str(&data).unwrap_or_default();
-        let role = match (
-            data["kind"].as_str(),
-            review.as_deref(),
-            data["qa"].as_bool(),
-        ) {
-            (Some("write"), _, _) => "implementer",
-            (Some("read"), _, _) => "reader",
-            (Some("review"), Some("verifier"), _) => "verifier",
-            (Some("review"), _, Some(true)) => "qa",
-            (Some("review"), _, _) => "reviewer",
+        let role = match (data["kind"].as_str(), data["qa"].as_bool()) {
+            (Some("write"), _) => "implementer",
+            (Some("read"), _) => "reader",
+            (Some("review"), Some(true)) => "qa",
+            (Some("review"), _) => "reviewer",
             _ => "implementer",
         };
         return Ok(Who {

@@ -12,9 +12,9 @@ use crate::checked;
 use crate::effort::TaskProfile;
 use crate::ids::ThreadId;
 use crate::ledger::{
-    BriefDraft, Decision, DecisionKey, DecisionValue, DecisionWhy, EnvName, GATED_MAX_TIMEOUT_SEC,
+    Brief, Decision, DecisionKey, DecisionValue, DecisionWhy, EnvName, GATED_MAX_TIMEOUT_SEC,
     GatedArgv, GatedClass, GatedCwd, GatedTimeoutSec, IntakeText, PlaybookName, PlaybookRef,
-    RequestState, SecretEnv, Serves, Tier, WorkstreamId, WorkstreamState,
+    RequestState, SecretEnv, Serves, WorkstreamId, WorkstreamState,
 };
 use crate::mcp::McpToolError;
 use crate::plan::{
@@ -33,15 +33,13 @@ use crate::verification::{Claim, ClaimId, ReviewVerdict};
 /// Under the node user's home directory; mode 0600.
 pub const NODE_SOCKET_PATH: &str = ".fleetd/node/node.sock";
 
-/// `fleetd brief create --workstream W12 --json '<Brief>'`. Sets or edits the brief; a draft moves to running. `tier`
-/// may be left out: the workstream's pinned playbook fills its `tierDefault`, and the hub refuses it when there is
-/// none.
+/// `fleetd brief create --workstream W12 --json '<Brief>'`. Sets or edits the brief; a draft moves to running.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BriefCreateCall {
     pub workstream_id: WorkstreamId,
-    pub brief: BriefDraft,
+    pub brief: Brief,
 }
 
 /// `request_secret`: the human enters a secret in a masked field in the app; it is sealed to the sink's machine and
@@ -136,7 +134,7 @@ fn default_task_kind() -> TaskKind {
 }
 
 /// `fleetd task spawn --workstream W1 --title t --prompt p [--kind write|read|review]
-/// [--profile high|medium] [--tier S|M|L] [--pr <url>] [--qa]`. The profile defaults to high; a review task, and
+/// [--profile high|medium] [--pr <url>] [--qa]`. The profile defaults to high; a review task, and
 /// every task of a project with medium off, runs high whatever it says. A review task needs `--pr`; `--qa` marks a
 /// review task as a QA run.
 #[skip_serializing_none]
@@ -149,7 +147,6 @@ pub struct TaskSpawnCall {
     pub kind: TaskKind,
     pub prompt: TaskPrompt,
     pub profile: Option<TaskProfile>,
-    pub tier: Option<Tier>,
     pub pr: Option<PrUrl>,
     pub qa: Option<bool>,
     /// `--item P<n>`: the plan item this task works on; refused when it belongs to another order.
@@ -210,8 +207,7 @@ pub struct ClaimDoneCall {
     pub close_over: Option<Text<1, 300>>,
 }
 
-/// `fleetd change enqueue <PR URL> [--task T1] [--workstream W1] [--tier S|M|L]`. Absent fields come
-/// from the task, then the workstream's brief; the tier may be raised above the brief's, never lowered.
+/// `fleetd change enqueue <PR URL> [--task T1] [--workstream W1]`. The workstream defaults to the task's.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -219,7 +215,6 @@ pub struct ChangeEnqueueCall {
     pub task_id: Option<TaskId>,
     pub pr_url: GitHubPrUrl,
     pub workstream_id: Option<WorkstreamId>,
-    pub tier: Option<Tier>,
     /// `--item P<n>`: stores the PR as a link of that plan item (for a PR no task of the item wrote).
     pub item: Option<PlanItemId>,
 }

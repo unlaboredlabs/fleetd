@@ -1312,7 +1312,7 @@
           "type": "string"
         },
         "leadNeeds": {
-          "description": "One line for a person, e.g. \"no CI found: the merge train will only use local checks\".",
+          "description": "One line for a person, e.g. \"no CI found: the merge train holds its PRs until the repo has CI\".",
           "maxLength": 300,
           "minLength": 1,
           "type": "string"

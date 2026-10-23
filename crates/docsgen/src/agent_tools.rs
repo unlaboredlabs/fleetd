@@ -10,7 +10,6 @@ use std::path::Path;
 use fleetd::cli::agent_mcp::{self, Role, SERVER_NAME, Tool};
 use fleetd::hub::orders::phase;
 use fleetd::hub::playbooks::finish_all_rules::{CHILD_SOURCES, DEFAULT_MAX_CHILDREN};
-use fleetd::hub::reviews::rules::ReviewRole;
 use fleetd::hub::slots::DEFAULT_CAP;
 use fleetd::hub::tasks::policy::{
     self, CallerAgent, MAX_DEPTH, MAX_OPEN_TASKS, SPAWN_OPS, WORKER_OPS,
@@ -89,7 +88,7 @@ pub fn page(root: &Path) -> Result<String, String> {
     let lead_names: Vec<&str> = lead_tools.iter().map(|t| t.name).collect();
     md.push_str(&tool_section(
         "Task tools",
-        "Every task's agent gets these: implementers, readers, reviewers, verifiers and QA.",
+        "Every task's agent gets these: implementers, readers, reviewers and QA.",
         Role::Worker,
         &task_tools,
         &lead_names,
@@ -173,24 +172,19 @@ fn session_role(role: AgentRole) -> SessionRole {
 fn started_as(role: AgentRole) -> Option<String> {
     for kind in [TaskKind::Write, TaskKind::Read, TaskKind::Review] {
         for qa in [false, true] {
-            for review in [None, Some(ReviewRole::Verifier)] {
-                if phase::role(kind, qa, review) != role {
-                    continue;
-                }
-                let kind = serde_json::to_value(kind).ok()?;
-                let kind = kind.as_str()?;
-                let mut how = format!("`spawn_agent` with kind `{kind}`");
-                if qa {
-                    how.push_str(" and `qa: true`");
-                }
-                if review.is_some() {
-                    how = format!("A {kind} task the review gate starts as the verifier");
-                }
-                if kind == "write" {
-                    how.push_str(". Gets its own worktree and branch");
-                }
-                return Some(how);
+            if phase::role(kind, qa) != role {
+                continue;
             }
+            let kind = serde_json::to_value(kind).ok()?;
+            let kind = kind.as_str()?;
+            let mut how = format!("`spawn_agent` with kind `{kind}`");
+            if qa {
+                how.push_str(" and `qa: true`");
+            }
+            if kind == "write" {
+                how.push_str(". Gets its own worktree and branch");
+            }
+            return Some(how);
         }
     }
     None
@@ -222,7 +216,6 @@ fn roles() -> String {
         AgentRole::Implementer,
         AgentRole::Reader,
         AgentRole::Reviewer,
-        AgentRole::Verifier,
         AgentRole::Qa,
     ] {
         let session = session_role(role);
@@ -627,7 +620,6 @@ fn example(role: Role, tool: &str) -> Option<Value> {
                 "pointers": ["api/src/upload.rs"],
                 "constraints": ["No new service; use the existing Redis."],
                 "doneWhen": [{ "type": "pr_merged", "repo": "acme/shop" }],
-                "tier": "S",
             },
         }),
         (Role::Lead, "request_secret") => json!({

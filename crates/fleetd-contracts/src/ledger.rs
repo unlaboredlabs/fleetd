@@ -187,10 +187,11 @@ brand!(
     Serves, name = "Serves", check = is_serves, expected = SERVES_FIX
 );
 
+/// How big a research spend is, relative like plan sizes.
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
-pub enum Tier {
+pub enum BudgetSize {
     S,
     M,
     L,
@@ -333,7 +334,7 @@ brand!(
 #[serde(rename_all = "camelCase")]
 pub struct BriefBudget {
     /// How big a research spend the lead allows, relative like plan sizes; never a time guess.
-    pub size: Option<Tier>,
+    pub size: Option<BudgetSize>,
     /// Older briefs only; a lead now gives `size`.
     pub agent_hours: Option<PositiveNumber>,
 }
@@ -348,7 +349,6 @@ pub struct Brief {
     pub constraints: List<Text<1, 500>, 0, 20>,
     /// At least one.
     pub done_when: List<CheckSpec, 1, 20>,
-    pub tier: Tier,
     pub budget: Option<BriefBudget>,
     /// Research: what the candidate is compared against, and how both are measured.
     pub baseline: Option<Text<1, 1000>>,
@@ -356,40 +356,6 @@ pub struct Brief {
     pub metric: Option<Line<1, 200>>,
     /// Research: the rule the verdict is computed from.
     pub decision_rule: Option<DecisionRule>,
-}
-
-/// A [`Brief`] whose `tier` may be left out, as `fleetd brief create` takes it; the playbook's `tierDefault` fills it.
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct BriefDraft {
-    pub goal: Text<1, 1000>,
-    pub why: Text<1, 2000>,
-    pub pointers: List<Text<1, 500>, 0, 20>,
-    pub constraints: List<Text<1, 500>, 0, 20>,
-    pub done_when: List<CheckSpec, 1, 20>,
-    pub tier: Option<Tier>,
-    pub budget: Option<BriefBudget>,
-    pub baseline: Option<Text<1, 1000>>,
-    pub metric: Option<Line<1, 200>>,
-    pub decision_rule: Option<DecisionRule>,
-}
-
-impl BriefDraft {
-    pub fn into_brief(self, tier: Tier) -> Brief {
-        Brief {
-            goal: self.goal,
-            why: self.why,
-            pointers: self.pointers,
-            constraints: self.constraints,
-            done_when: self.done_when,
-            tier: self.tier.unwrap_or(tier),
-            budget: self.budget,
-            baseline: self.baseline,
-            metric: self.metric,
-            decision_rule: self.decision_rule,
-        }
-    }
 }
 
 // Workstreams
@@ -985,19 +951,15 @@ mod tests {
     }
 
     #[test]
-    fn briefs_need_a_done_when_check_and_a_tier() {
+    fn briefs_need_a_done_when_check() {
         let brief = json!({
-            "goal": "g", "why": "w", "pointers": [], "constraints": [], "tier": "S",
+            "goal": "g", "why": "w", "pointers": [], "constraints": [],
             "doneWhen": [{ "type": "http", "url": "http://127.0.0.1:4790/health", "status": 200 }],
         });
         assert!(accepts::<Brief>(brief.clone()));
         assert!(!accepts::<Brief>(with(
             brief.clone(),
             json!({ "doneWhen": [] })
-        )));
-        assert!(!accepts::<Brief>(with(
-            brief.clone(),
-            json!({ "tier": "XL" })
         )));
         assert!(!accepts::<Brief>(with(
             brief.clone(),

@@ -75,7 +75,7 @@ it (the login variables and `apiKeyHelper` from `~/.claude/settings.json`, and `
 deletes the copies when the run ends, and never writes under your real `~/.claude` or `~/.fleetd`. It isn't run in CI. Mechanics
 scenarios run small `claude` turns on `claude-opus-5-5` at medium effort. Behaviour scenarios run the lead (and, in `eff`, the writer)
 on the model fleetd ships, `claude-opus-5-5` at high effort, because the prompts are written for it: the `chat` lead,
-`steer`, and `eff`'s slices. The lab needs Node 24 or newer to run its TypeScript. The m7, m9, time, noci and
+`steer`, and `eff`'s slices. The lab needs Node 24 or newer to run its TypeScript. The m7, m9, time and
 demo scenarios also use your `gh` login and the public lab repository `unlaboredlabs/fleetd-lab`.
 
 ```sh
@@ -89,9 +89,7 @@ branches are `slot/N/fleetd/...` (the lab writes `branchPrefix` into the project
 after a run the lab closes the namespace's open PRs, deletes its branches and resets `slot/N/main` to the `seed` tag;
 it never touches another namespace or the repository's `main` (the demo closes only the PRs and branches it made). A
 run leases its namespace with the branch `lease/<namespace>` for up to 4 hours and drops it on exit, so a second run on
-a busy namespace, from any worktree or machine, stops and says which run holds it; an expired lease is taken over. `FLEETD_LAB_NAMESPACE=noci/N` runs in a namespace CI
-never runs for (the repository's `ci` workflow ignores PRs into `noci/**`), for the `noci` scenario:
-`FLEETD_LAB_SLOT=4 FLEETD_LAB_NAMESPACE=noci/4 npm --prefix tests/lab run lab -- noci`. `FLEETD_LAB_REPO` picks
+a busy namespace, from any worktree or machine, stops and says which run holds it; an expired lease is taken over. `FLEETD_LAB_REPO` picks
 another repository. Set one up, with its clone, using `node tests/lab/labRepo.ts --repo <owner/name> --clone
 ~/src/fleetd-lab/slot-N/lab-repo`: it never creates the repository, and it adds the rulesets (`slot/*/main` requires
 the `ci` check and the `fleetd/train` status, `noci/*/main` only `fleetd/train`, squash merges only). Repository

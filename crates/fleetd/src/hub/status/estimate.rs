@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use fleetd_contracts::ids::Timestamp;
-use fleetd_contracts::ledger::{Tier, WorkstreamState};
+use fleetd_contracts::ledger::WorkstreamState;
 use fleetd_contracts::plan::{ItemStage, PlanItemState, Size, Weight};
 use fleetd_contracts::prim::{Int, Line, List};
 use fleetd_contracts::status::{
@@ -44,9 +44,6 @@ pub struct ModelData {
     pub live_tasks: HashMap<String, LiveTask>,
     /// The last day's pauses and restarts of the live tasks' threads, oldest first.
     pub thread_moves: Vec<ThreadMove>,
-    /// Changes before review whose tier asks for none: their steps skip it. Filled by the caller, which has the
-    /// review rules.
-    pub reviewless: HashSet<String>,
 }
 
 pub struct LiveTask {
@@ -254,7 +251,6 @@ impl ModelData {
             planning,
             live_tasks,
             thread_moves,
-            reviewless: HashSet::new(),
         })
     }
 }
@@ -307,14 +303,6 @@ fn change_obs(
     }
 }
 
-fn tier_points(t: Tier) -> f64 {
-    Size::from(t).points() as f64
-}
-
-fn tier_of(o: &Order) -> Tier {
-    o.w.brief.as_ref().map_or(Tier::M, |b| b.tier)
-}
-
 /// The scope's figure under the progress model.
 pub struct ModelOut {
     pub groups: Vec<Group>,
@@ -329,8 +317,6 @@ pub struct ModelOut {
     pub critical: Option<UnitKey>,
     /// Each unit's open PR number, for its steps.
     pub prs: HashMap<UnitKey, i64>,
-    /// Units whose PR needs no review.
-    pub no_review: HashSet<UnitKey>,
     /// Plans that appeared since the last read: (order, share, when), to store once.
     pub fix_planning: Vec<(String, f64, i64)>,
     /// When the figure next moves with time alone (in-stage credit, a unit turning slow, planning's bar).
@@ -415,9 +401,8 @@ fn critical(
     best.map(|(k, _)| k.clone())
 }
 
-/// What a unit still waits on, in order: open items it is `after`, then its remaining stages (review only when its
-/// tier asks for one).
-pub fn steps(stage: ItemStage, pr: Option<i64>, review: bool, after: &[String]) -> Vec<String> {
+/// What a unit still waits on, in order: open items it is `after`, then its remaining stages.
+pub fn steps(stage: ItemStage, pr: Option<i64>, after: &[String]) -> Vec<String> {
     let on = |what: &str| pr.map_or_else(|| what.to_owned(), |n| format!("{what} of #{n}"));
     let ci = pr.map_or_else(|| "CI".to_owned(), |n| format!("CI on #{n}"));
     let mut out: Vec<String> = after.to_vec();
@@ -433,13 +418,7 @@ pub fn steps(stage: ItemStage, pr: Option<i64>, review: bool, after: &[String]) 
     ];
     let k = stage.index().min(rest.len());
     if stage != ItemStage::Verified {
-        out.extend(
-            rest.iter()
-                .enumerate()
-                .skip(k)
-                .filter(|(i, _)| review || *i != ItemStage::PrOpen.index())
-                .map(|(_, s)| s.clone()),
-        );
+        out.extend(rest.iter().skip(k).cloned());
     }
     out.truncate(8);
     out
@@ -786,7 +765,7 @@ pub fn compute(w: &World, scope: &StatusScope, s: &Scope<'_>) -> ModelOut {
             });
             ph.size as f64
         } else if draft {
-            tier_points(tier_of(o))
+            Size::S.points() as f64
         } else {
             continue;
         };
@@ -865,7 +844,6 @@ pub fn compute(w: &World, scope: &StatusScope, s: &Scope<'_>) -> ModelOut {
     }
     let critical = critical(&counted, &units, &points);
     let mut prs: HashMap<UnitKey, i64> = HashMap::new();
-    let mut no_review: HashSet<UnitKey> = HashSet::new();
     for (key, ch) in &pr_of {
         let open = !matches!(
             ch.state,
@@ -873,11 +851,6 @@ pub fn compute(w: &World, scope: &StatusScope, s: &Scope<'_>) -> ModelOut {
         );
         if open || !prs.contains_key(key) {
             prs.insert(key.clone(), ch.pr_number.get());
-            if md.reviewless.contains(ch.change_id.as_str()) {
-                no_review.insert(key.clone());
-            } else {
-                no_review.remove(key);
-            }
         }
     }
     slower.sort_by_key(|(_, _, _, ratio)| std::cmp::Reverse(*ratio));
@@ -891,7 +864,6 @@ pub fn compute(w: &World, scope: &StatusScope, s: &Scope<'_>) -> ModelOut {
         slower,
         critical,
         prs,
-        no_review,
         fix_planning,
         wake_at: wake.get(),
         paused,

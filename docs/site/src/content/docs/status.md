@@ -122,7 +122,7 @@ The stages, in pipeline order. "Waiting on" lists the ones left after the item's
 | a writer | A [writer](/docs/glossary#writer) task to start. |
 | the writer's push | The writer to push its branch. |
 | a PR | The pull request to open. |
-| review of #212 | Reviews of that PR. Left out when its tier needs none, as for an `S` change. |
+| review of #212 | The review of that PR's current commit. |
 | CI on #212 | CI on the PR's current commit. |
 | merge | The merge train to rebase, check and merge it. |
 | done-when checks | The hub to run the work's [done-when checks](/docs/glossary#done-when-check). |

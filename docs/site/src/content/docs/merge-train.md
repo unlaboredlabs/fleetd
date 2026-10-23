@@ -8,15 +8,16 @@ How fleetd merges pull requests. Only fleetd merges: each writer's PR goes on it
 
 ## What the train does {#steps}
 
-1. Takes the next ready PR. A PR is ready once its reviews pass (see [Tiers](#tiers)).
+1. Takes the next ready PR. A PR is ready once its review passes (see [Review](#review)).
 2. Rebases it onto its base branch.
 3. Waits for CI on that exact commit.
 4. Posts the `fleetd/train` status and squash-merges it, pinned to that commit.
 
 A conflict or red CI goes back to the agent that wrote the PR, with the paths or failing checks.
 
-A PR with no CI merges on fleetd's own checks, and the merge says so. "No CI" means the base requires no check but
-`fleetd/train`, and no workflow's `on:` can run for the PR.
+fleetd merges only on green CI. A ready PR on a repo with no CI (no GitHub Actions workflow, and no required check but
+`fleetd/train`) waits, and its queue entry and `fleetd doctor` say to add one. It goes on by itself once a workflow
+exists.
 
 To keep a PR off the train, [hold it](#hold).
 
@@ -30,15 +31,11 @@ When a PR is merged into a branch the train guards without the train, such as by
 within a minute. It records `pr.merged_outside` and tells the project's lead. The next PR in line is rebased onto the
 new base as usual, so nothing else changes.
 
-## Tiers {#tiers}
+## Review {#review}
 
-A PR's [tier](/docs/glossary#tier) sets the reviews it needs, each bound to its current patch:
-
-| Tier | Reviews before the train takes it |
-|---|---|
-| S | none |
-| M | one clean review |
-| L | two clean reviews and a verifier |
+Every PR gets one fresh reviewer, which reports blocking findings only. Its verdict is bound to the PR's current
+patch: a rebase that keeps the patch keeps the review, and a new commit gets a new reviewer, who starts from what
+changed. Blocking findings go to the agent that wrote the PR, and the PR waits for its next commit.
 
 ## Batches {#batches}
 

@@ -7,7 +7,7 @@ use serde_with::skip_serializing_none;
 
 use crate::chat::ChatRequestId;
 use crate::ids::{EventSeq, MachineId, ProjectRef, Timestamp};
-use crate::ledger::{Tier, WorkstreamId};
+use crate::ledger::WorkstreamId;
 use crate::model::MachineStatus;
 use crate::plan::{ItemStage, MilestoneId, PlanItemId};
 use crate::prim::{AnyInt, Count, Int, Line, List, NonNegative, Text};
@@ -578,8 +578,6 @@ pub struct StatusDoc {
     pub health: Health,
     pub stale: List<StaleSource, 0, 10>,
     pub more: MoreCounts,
-    /// The order's tier when the scope is an order with no plan items.
-    pub virtual_tier: Option<Tier>,
 }
 
 /// What the headline prompt is given: code builds it, the model only phrases it. Canonical JSON, at most 2 KB. It

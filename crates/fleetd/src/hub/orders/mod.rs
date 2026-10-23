@@ -28,7 +28,6 @@ use crate::hub::api::{Caller, Hub, allows};
 use crate::hub::executor::LiveParts;
 use crate::hub::executor::shell_mapper::js_take;
 use crate::hub::leads::records::WorkstreamFilter;
-use crate::hub::reviews::rules::ReviewRole;
 use crate::hub::store::{iso_ms, now_ms};
 use crate::hub::tasks::TaskFilter;
 use crate::hub::train::records::ListFilter;
@@ -46,8 +45,6 @@ const PROJECT_CHANGES: i64 = 200;
 
 /// What the join asks of the rest of the hub, so the join itself stays testable.
 pub trait Lookups {
-    fn review_role(&self, task_id: &str) -> Option<ReviewRole>;
-    fn reviews_needed(&self, change: &Change) -> i64;
     /// The thread's status, model and effort as the hub last saw them.
     fn thread(&self, r: &ThreadRef) -> Option<ThreadSeen>;
     fn live(&self, r: &ThreadRef) -> Option<LiveParts>;
@@ -61,12 +58,6 @@ pub struct ThreadSeen {
 }
 
 impl Lookups for Hub {
-    fn review_role(&self, task_id: &str) -> Option<ReviewRole> {
-        self.reviews.role_of(task_id)
-    }
-    fn reviews_needed(&self, change: &Change) -> i64 {
-        self.reviews.reviews_needed(change)
-    }
     fn thread(&self, r: &ThreadRef) -> Option<ThreadSeen> {
         self.executors.thread_summary(r).map(|s| ThreadSeen {
             status: s.status,
@@ -105,7 +96,7 @@ fn template_of(w: &Workstream) -> Option<PlaybookName> {
 pub const TITLE_CHARS: usize = 60;
 
 /// A card's title: the frozen brief's goal once there is one, else the order's first line, without a leading
-/// `@project`, template prefix or "Tier L.", cut to its first sentence and to `TITLE_CHARS` on a word boundary.
+/// `@project` or template prefix, cut to its first sentence and to `TITLE_CHARS` on a word boundary.
 pub fn short_title(w: &Workstream) -> String {
     let source = w
         .brief
@@ -133,13 +124,6 @@ pub fn short_title(w: &Workstream) -> String {
                 rest = rest[prefix.len()..].trim_start();
             }
         }
-        if let Some(tier) = lower.strip_prefix("tier ")
-            && tier.len() >= 2
-            && matches!(&tier[..1], "s" | "m" | "l")
-            && matches!(&tier[1..2], "." | ":" | ",")
-        {
-            rest = rest["tier x.".len()..].trim_start();
-        }
         if rest == before {
             break;
         }
@@ -164,8 +148,8 @@ pub fn short_title(w: &Workstream) -> String {
     format!("{cut}…")
 }
 
-/// One PR for the app, with its clean reviews of the current patch against what its tier asks for.
-pub fn pr_ref(change: &Change, reviews_needed: i64) -> PrRef {
+/// One PR for the app, with its clean reviews of the current patch against the one it needs.
+pub fn pr_ref(change: &Change) -> PrRef {
     let done = change
         .reviews
         .iter()
@@ -183,7 +167,7 @@ pub fn pr_ref(change: &Change, reviews_needed: i64) -> PrRef {
         state: change.state,
         position: change.position,
         reviews_done: count(done),
-        reviews_needed: Count::unchecked(reviews_needed.max(0)),
+        reviews_needed: Count::unchecked(1),
         task_id: change.task_id.clone(),
     }
 }
@@ -229,11 +213,7 @@ fn hhmm(iso: &str) -> &str {
 pub fn task_lane(task: &Task, prs: &[(&Change, PrRef)], look: &dyn Lookups) -> AgentLane {
     let thread = task.thread_ref.as_ref().and_then(|r| look.thread(r));
     let status = phase::task_lane_status(task, thread.as_ref().map(|t| t.status.as_str()));
-    let role = phase::role(
-        task.kind,
-        task.qa == Some(true),
-        look.review_role(task.task_id.as_str()),
-    );
+    let role = phase::role(task.kind, task.qa == Some(true));
     let pr_url = task
         .result
         .as_ref()
@@ -273,13 +253,12 @@ pub fn task_lane(task: &Task, prs: &[(&Change, PrRef)], look: &dyn Lookups) -> A
     }
 }
 
-/// A checker's lane names what it checks, "review #113", "verify #114", "QA #114", so a column of checkers
+/// A checker's lane names what it checks, "review #113", "QA #114", so a column of checkers
 /// reads apart; the lead's own titles for them ("Review owner/repo#113 for X3") are long and alike. Other lanes keep
 /// their task's title.
 fn lane_title(task: &Task, role: AgentRole, number: Option<i64>, pr_url: Option<&str>) -> String {
     let verb = match role {
         AgentRole::Reviewer => "review",
-        AgentRole::Verifier => "verify",
         AgentRole::Qa => "QA",
         _ => return task.title.to_string(),
     };
@@ -358,11 +337,7 @@ pub struct Joined {
 
 /// The card: active lanes (newest first), PRs, the phase and the agent counts.
 pub fn card(p: &OrderParts<'_>, look: &dyn Lookups) -> Joined {
-    let prs: Vec<(&Change, PrRef)> = p
-        .changes
-        .iter()
-        .map(|c| (c, pr_ref(c, look.reviews_needed(c))))
-        .collect();
+    let prs: Vec<(&Change, PrRef)> = p.changes.iter().map(|c| (c, pr_ref(c))).collect();
     let mut lanes: Vec<AgentLane> = p.tasks.iter().map(|t| task_lane(t, &prs, look)).collect();
     lanes.sort_by(|a, b| {
         b.started_at

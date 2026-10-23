@@ -47,7 +47,7 @@ fn workstream(id: &str, done_when: Option<Vec<Value>>) -> Workstream {
         "updatedAt": "2026-10-17T10:00:00.000Z",
     });
     if let Some(done_when) = done_when {
-        w["brief"] = json!({ "goal": "g", "why": "y", "pointers": [], "constraints": [], "tier": "S", "doneWhen": done_when });
+        w["brief"] = json!({ "goal": "g", "why": "y", "pointers": [], "constraints": [], "doneWhen": done_when });
     }
     serde_json::from_value(w).unwrap()
 }
@@ -519,7 +519,7 @@ fn build_brief(mut w: Workstream) -> Workstream {
     w.brief = Some(
         serde_json::from_value(
             json!({ "goal": "build schedules", "why": "the human chose to build", "pointers": [],
-            "constraints": [], "tier": "L", "doneWhen": [
+            "constraints": [], "doneWhen": [
                 { "type": "human", "question": "Schedules are live in the app: looks good on your end?" },
                 doc_check(),
             ] }),
