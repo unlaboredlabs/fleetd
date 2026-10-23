@@ -55,8 +55,9 @@ export async function runFleetd(opts: FleetdRun) {
   const clients: Array<Client> = [];
   let sent = false;
   try {
-    // The run branch: the frozen base, copied. PRs merge here; the base never moves.
-    const baseSha = gh("api", `repos/${LAB_REPO}/commits/${encodeURIComponent(task.base)}`, "--jq", ".sha");
+    // The run branch: the frozen base (benchVs.ts ensureBase checked it is on the lab repo), copied. PRs merge here;
+    // the base never moves.
+    const baseSha = task.baseSha;
     gh("api", "-X", "POST", `repos/${LAB_REPO}/git/refs`, "-f", `ref=refs/heads/${runBranch}`, "-f", `sha=${baseSha}`, "--silent");
     cloneBranch(runBranch, work);
     git(work, "remote", "set-head", "origin", runBranch);

@@ -90,6 +90,8 @@ export const activeSetup = () => {
 };
 
 export const claudeVersion = () => spawnSync("claude", ["--version"], { encoding: "utf8" }).stdout.trim();
+/** The version as session files record it: `2.1.302` for `2.1.302 (Claude Code)`. */
+export const cliVersion = () => claudeVersion().split(" ")[0] ?? "";
 
 /** Load average and how many claude processes run on the machine (counted from /proc, read only). */
 export const loadSnapshot = () => {
@@ -108,8 +110,30 @@ export const loadSnapshot = () => {
   return { at: new Date().toISOString(), loadavg1: Math.round(one! * 100) / 100, loadavg5: Math.round(five! * 100) / 100, cpus: os.cpus().length, claudeProcesses: claudes };
 };
 
+export type LoadSnapshot = ReturnType<typeof loadSnapshot>;
+
 /** True when the machine was busy enough to skew a timing: load above half the cores. */
-export const busy = (s: ReturnType<typeof loadSnapshot>) => s.loadavg1 > s.cpus / 2;
+export const busy = (s: Pick<LoadSnapshot, "loadavg1" | "cpus">) => s.loadavg1 > s.cpus / 2;
+
+/** Samples the load every 30 s while a contender runs; `stop` gives the peak and mean. */
+export const sampleLoad = () => {
+  const samples: Array<LoadSnapshot> = [loadSnapshot()];
+  const timer = setInterval(() => samples.push(loadSnapshot()), 30_000);
+  timer.unref();
+  return {
+    stop: () => {
+      clearInterval(timer);
+      samples.push(loadSnapshot());
+      const loads = samples.map((s) => s.loadavg1);
+      return {
+        samples: samples.length,
+        maxLoadavg1: Math.max(...loads),
+        meanLoadavg1: Math.round((loads.reduce((a, b) => a + b, 0) / loads.length) * 100) / 100,
+        maxClaudeProcesses: Math.max(...samples.map((s) => s.claudeProcesses ?? 0)),
+      };
+    },
+  };
+};
 
 /**
  * A `claude` for fleetd's node and hub PATH: every print-mode call runs MODEL at EFFORT whatever model or effort the

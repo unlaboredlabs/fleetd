@@ -1,0 +1,8 @@
+{
+  "title": "Five independent bug reports across tinyhttp packages",
+  "kind": "N independent bugs",
+  "codebase": "tinyhttp (MIT), snapshot of 781bfbc with five fixes reverted",
+  "base": "bench/tinyhttp-five-bugs/base",
+  "baseSha": "022d3a662031393166e9c4bfd1126805cc5a7e6d",
+  "timeoutMin": 120
+}
