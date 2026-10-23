@@ -70,7 +70,7 @@ describe("the add flow", () => {
     expect(s.phase).toMatchObject({ kind: "ready", ready: { project: { machineId: "devbox", projectId: "p7" }, machine: "devbox-name" } });
   });
 
-  it("after a reconnect, the snapshot says added or failed, and never shows old progress as live", () => {
+  it("after a reconnect, the snapshot says added or not listed yet, never failed, and never shows old progress as live", () => {
     let [s, calls] = run(live(), start());
     [s] = run(s, ok(only(calls, "add"), { machineId: "devbox", path: "/p", created: true, addId: "a1" }));
     [s] = run(s, event(11, "project.clone_progress", { addId: "a1", path: "/p", phase: "receiving", percent: 42 }), { t: "live", live: false });
@@ -80,12 +80,14 @@ describe("the add flow", () => {
     expect(calls).toEqual([]);
     expect(s.phase).toMatchObject({ kind: "ready", ready: { project: { machineId: "devbox", projectId: "p7" }, machine: "devbox-name" } });
 
-    // The answer was lost and the hub doesn't list it: failed, with a way to send it again.
+    // The answer was lost and the hub doesn't list it: not on the hub yet (a clone may still run), with the request kept for a retry.
     [s, calls] = run(s, start());
     [s] = run(s, err(only(calls, "add"), "disconnected", "the connection closed"));
     expect(s.phase.kind).toBe("working");
-    [s] = run(s, { t: "snapshot", projects: [] });
-    expect(s.phase).toMatchObject({ kind: "failed", failure: { action: { kind: "retry", request: cloneReq } } });
+    [s, calls] = run(s, { t: "snapshot", projects: [] });
+    expect(calls).toEqual([]);
+    expect(s.phase).toEqual({ kind: "unlisted", what: "acme/ledger", path: "/p", request: cloneReq });
+    expect(run(s, { t: "back" })[0].phase.kind).toBe("pick");
   });
 
   it("offers the existing folder only when a dry run says it is the same repo", () => {

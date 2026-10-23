@@ -64,6 +64,7 @@ export const fixtures = [
   "lead-worked",
   // Group fixtures (fixtures/<group>/index.ts), named <group>-<what>.
   "projects-cloning",
+  "projects-dropped",
   // F10: the connect screen's states (fixtures/onboarding).
   "onboarding-first-run",
   "onboarding-code-refused",
@@ -917,6 +918,19 @@ export const screens: readonly Screen[] = [
       await page.keyboard.press("Enter");
       // The fixture's progress events are timed; shoot once the bar shows git's 42%.
       await page.locator('[role="progressbar"][aria-valuenow="42"]').waitFor();
+    },
+  },
+  // The link drops before project_add answers and the resync doesn't list the project: not on the hub yet, never
+  // "failed", since a clone may still be running.
+  {
+    id: "projects.add.unlisted",
+    route: "#/projects/add",
+    fixtures: ["projects-dropped"],
+    open: async (page) => {
+      await page.getByRole("listbox", { name: "Repos" }).waitFor();
+      await page.getByRole("textbox", { name: "GitHub URL, folder path, or filter" }).fill("acme/checkout-v2");
+      await page.keyboard.press("Enter");
+      await page.locator('[data-screen="projects.add.unlisted"]').waitFor();
     },
   },
   {

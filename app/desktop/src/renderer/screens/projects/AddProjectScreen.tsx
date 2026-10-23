@@ -8,7 +8,7 @@ import { Button, Dot, Input, Sheet, Text, Truncate, copyText, cx } from "../../u
 import { clonePath, discovery as discoveryOf, orList, plan, rows as rowsFor, target, type Discovery, type Failure, type Found, type Plan, type Ready, type Request, type Row, type Worker } from "./discovery";
 import { CallError, callKey } from "../../src/data/queries";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
-import type { Job } from "./flow";
+import type { Job, Phase } from "./flow";
 import { HubText } from "./HubText";
 import { otherHost, tilde } from "./source";
 import {
@@ -40,7 +40,7 @@ export function AddProjectScreen() {
   }, [data]);
 
   const title =
-    phase.kind === "working" ? `Adding ${phase.job.what}` : phase.kind === "ready" ? `${phase.ready.title} is ready` : phase.kind === "failed" ? `Couldn't add ${phase.what}` : "Add a project";
+    phase.kind === "working" ? `Adding ${phase.job.what}` : phase.kind === "ready" ? `${phase.ready.title} is ready` : phase.kind === "failed" ? `Couldn't add ${phase.what}` : phase.kind === "unlisted" ? `${phase.what} isn't on the hub yet` : "Add a project";
 
   return (
     <Sheet
@@ -49,13 +49,20 @@ export function AddProjectScreen() {
         if (!open) closeAddProject();
       }}
       title={title}
-      footer={phase.kind === "pick" ? <PickFooter pick={pick} /> : phase.kind === "ready" ? <ReadyFooter ready={phase.ready} /> : phase.kind === "failed" ? <FailedFooter failure={phase.failure} /> : <WorkingFooter />}
+      footer={phase.kind === "pick" ? <PickFooter pick={pick} /> : phase.kind === "ready" ? <ReadyFooter ready={phase.ready} /> : phase.kind === "failed" ? <FailedFooter failure={phase.failure} /> : phase.kind === "unlisted" ? <UnlistedFooter phase={phase} /> : <WorkingFooter />}
     >
       <div className={s.root} data-screen="projects.add">
         {phase.kind === "pick" ? <Pick pick={pick} /> : null}
         {phase.kind === "working" ? <Working job={phase.job} /> : null}
         {phase.kind === "ready" ? <ReadyView ready={phase.ready} /> : null}
         {phase.kind === "failed" ? <FailedView failure={phase.failure} /> : null}
+        {phase.kind === "unlisted" ? (
+          <div data-screen="projects.add.unlisted">
+            <Text tone="quiet">
+              The connection dropped before the add finished, and the hub doesn&apos;t list {phase.what} yet. If the clone was still running, it appears in the sidebar when it finishes. Machines shows any error.
+            </Text>
+          </div>
+        ) : null}
       </div>
     </Sheet>
   );
@@ -575,9 +582,21 @@ function FailedFooter({ failure }: { failure: Failure }) {
             else startAdd(a.request, a.request.kind === "folder" ? a.request.path : "");
           }}
         >
-          {a.kind === "use_existing" ? "Add the existing folder" : a.kind === "retry" ? "Send it again" : "Open project"}
+          {a.kind === "use_existing" ? "Add the existing folder" : "Open project"}
         </Button>
       ) : null}
+    </>
+  );
+}
+
+/** Done is the way out; sending the add again is a secondary retry, since the first may still be cloning. */
+function UnlistedFooter({ phase }: { phase: Extract<Phase, { kind: "unlisted" }> }) {
+  return (
+    <>
+      <Button onClick={() => startAdd(phase.request, phase.path)}>Retry the add</Button>
+      <Button variant="primary" onClick={closeAddProject}>
+        Done
+      </Button>
     </>
   );
 }

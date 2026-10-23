@@ -72,6 +72,8 @@ const announce = () => {
   const p = ui.add.phase;
   if (p.kind === "ready") {
     toast({ title: `${p.ready.title} is ready on ${p.ready.machine}`, tone: "success", action: { label: "Show", onClick: () => openAddProject() } });
+  } else if (p.kind === "unlisted") {
+    toast({ title: `${p.what} isn't on the hub yet`, description: "If the clone was still running, it appears when it finishes; Machines shows any error.", action: { label: "Show", onClick: () => openAddProject() } });
   } else if (p.kind === "failed") {
     toast({ title: `Couldn't add ${p.what}`, description: p.failure.message, tone: "danger", action: { label: "Show", onClick: () => openAddProject() } });
   }

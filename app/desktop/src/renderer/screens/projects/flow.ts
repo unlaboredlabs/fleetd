@@ -2,7 +2,7 @@
 // the calls to make out. The hub answers `project_add` and streams the clone's events separately, so an event can
 // come before the answer that names its addId: those wait in `early`. A dropped connection loses the answer and any
 // events sent meanwhile, so the next snapshot settles it: its project list has the project (added), or it doesn't
-// (failed, and Machines says why).
+// yet (unlisted: a clone may still be running, so it is never called failed).
 
 import type { ToolInput } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
@@ -34,7 +34,9 @@ export type Phase =
   | { readonly kind: "pick" }
   | { readonly kind: "working"; readonly job: Job }
   | { readonly kind: "ready"; readonly ready: Ready }
-  | { readonly kind: "failed"; readonly what: string; readonly failure: Failure };
+  | { readonly kind: "failed"; readonly what: string; readonly failure: Failure }
+  /** After a drop, the hub doesn't list the project yet: a clone may still be running, or it failed (Machines says). */
+  | { readonly kind: "unlisted"; readonly what: string; readonly path: string; readonly request: Request };
 
 export interface AddState {
   readonly phase: Phase;
@@ -160,10 +162,7 @@ const onEvent = (s: AddState, e: HubEvent, names: Names): Step_ => {
   return [fail(s, f), []];
 };
 
-/**
- * The snapshot after a drop settles the add: the project is in its list (added while the link was down), or the add
- * failed or never reached the hub, and Machines shows why.
- */
+/** The snapshot after a drop settles the add: the project is in its list (added while the link was down), or not yet. */
 const settle = (s: AddState, projects: ReadonlyArray<ProjectSummary>, names: Names): Step_ => {
   if (!s.lost || s.request === undefined || s.phase.kind !== "working") return [s, []];
   const { machineId, path } = s.phase.job;
@@ -172,14 +171,7 @@ const settle = (s: AddState, projects: ReadonlyArray<ProjectSummary>, names: Nam
     const ready: Ready = { project: { machineId, projectId: p.projectId }, title: p.title, machine: names(machineId), path: p.workspaceRoot, facts: [], leadLine: "Added while the connection was down.", leadOk: true, notes: [] };
     return [{ ...finish(s), phase: { kind: "ready", ready } }, []];
   }
-  return [
-    fail(s, {
-      message: "The connection dropped before the add finished, and the hub doesn't list the project.",
-      fix: "Machines shows why if it failed; otherwise send it again.",
-      action: { kind: "retry", request: s.request },
-    }),
-    [],
-  ];
+  return [{ ...finish(s), phase: { kind: "unlisted", what: s.phase.job.what, path, request: s.request } }, []];
 };
 
 export const active = (s: AddState): boolean => s.request !== undefined && (s.awaiting || s.addId !== undefined || s.held !== undefined || s.lost);
@@ -221,7 +213,7 @@ export const step = (s: AddState, msg: AddMsg, names: Names): Step_ => {
     case "event":
       return onEvent(s, msg.event, names);
     case "back":
-      return s.phase.kind === "failed" ? [{ ...s, phase: { kind: "pick" } }, []] : [s, []];
+      return s.phase.kind === "failed" || s.phase.kind === "unlisted" ? [{ ...s, phase: { kind: "pick" } }, []] : [s, []];
     case "reset":
       return active(s) ? [s, []] : [{ ...finish(s), phase: { kind: "pick" } }, []];
     case "answer":
