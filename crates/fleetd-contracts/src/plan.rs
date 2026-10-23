@@ -1,5 +1,5 @@
 //! A project's plan: milestones `M<n>` holding items `P<n>`, each must or polish with a size. Only the hub marks an
-//! item done, from verification (a train merge of its linked work); leads add, edit and drop.
+//! item done, when its linked PR merged; leads set the list with `plan`.
 
 use crate::steer::SteerId;
 use schemars::JsonSchema;
@@ -121,7 +121,7 @@ pub struct Milestone {
     pub position: Count,
     pub state: MilestoneState,
     pub created_at: Timestamp,
-    /// The first item's time; scope changes within 10 minutes of it carry no marker.
+    /// The first item's time.
     pub first_item_at: Option<Timestamp>,
     pub done_at: Option<Timestamp>,
 }
@@ -156,7 +156,7 @@ pub struct PlanItem {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PlanChangeKind {
-    /// A lead's add, edit or drop that moved an open milestone's total after its planning window.
+    /// A lead's `plan` call that moved a milestone's total after it had items.
     Scope,
     /// Older markers only: a later claim failed a check a done item listed.
     Reopened,
@@ -213,103 +213,41 @@ pub struct PlanView {
     pub markers: List<PlanChange, 0, 50>,
 }
 
-// Lead calls (`fleetd plan …`), scoped to the caller's project by cwd.
-
-/// `fleetd plan milestone "<title>" [--position n]`.
+/// One line of `plan`: an existing item by `id`, or a new one.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct PlanMilestoneCall {
+pub struct PlanItemSpec {
+    pub id: Option<PlanItemId>,
     pub title: PlanTitle,
-    pub position: Option<Count>,
-}
-
-/// `fleetd plan add "<title>" --milestone M1 [--workstream W] [--must|--polish] [--size s|m|l] [--after P1,P2]
-/// [--pr <url>] [--why "<note>"]`. `--why` is required when it changes scope after the planning window.
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct PlanAddCall {
-    pub title: PlanTitle,
-    pub milestone_id: MilestoneId,
-    pub workstream_id: Option<WorkstreamId>,
     #[serde(default)]
     pub weight: Weight,
-    /// Absent: `m`, with a warning to size it.
     #[serde(default)]
-    pub size: Option<Size>,
+    pub size: Size,
+    /// Items that must be done first.
     #[serde(default)]
     pub after: UniqueList<PlanItemId, 0, 20>,
-    pub pr: Option<GitHubPrUrl>,
-    pub why: Option<PlanWhy>,
-    /// `--steer S12`: the change carries out a steer; it stands in for `--why` and acknowledges the steer.
-    pub steer: Option<SteerId>,
+    /// The milestone's title, created when new. Absent: the workstream's title.
+    pub milestone: Option<PlanTitle>,
 }
 
-/// `fleetd plan edit P1 [--title] [--size] [--must|--polish] [--milestone] [--workstream] [--after] [--pr +url|-url]
-/// [--position n] [--why]`. There is no state field: only the hub marks done.
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct PlanEditCall {
-    pub item_id: PlanItemId,
-    pub title: Option<PlanTitle>,
-    pub size: Option<Size>,
-    pub weight: Option<Weight>,
-    pub milestone_id: Option<MilestoneId>,
-    pub workstream_id: Option<WorkstreamId>,
-    /// Replaces the list.
-    pub after: Option<UniqueList<PlanItemId, 0, 20>>,
-    #[serde(default)]
-    pub pr_add: UniqueList<GitHubPrUrl, 0, 20>,
-    #[serde(default)]
-    pub pr_remove: UniqueList<GitHubPrUrl, 0, 20>,
-    pub position: Option<Count>,
-    pub why: Option<PlanWhy>,
-    /// `--steer S12`, as on `plan add`.
-    pub steer: Option<SteerId>,
-}
-
-/// `fleetd plan drop P1 --why "<reason>" | --steer S12`: one of the two is required.
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct PlanDropCall {
-    pub item_id: PlanItemId,
-    pub why: Option<PlanWhy>,
-    /// `--steer S12`, as on `plan add`.
-    pub steer: Option<SteerId>,
-}
-
-/// `fleetd plan show [--workstream W]`.
+/// `plan`: sets a workstream's items, in order, and returns the plan. Its open items left out are dropped. Without
+/// `items` it only returns the plan (one workstream's with `workstreamId`).
 #[skip_serializing_none]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct PlanShowCall {
+pub struct PlanCall {
     pub workstream_id: Option<WorkstreamId>,
+    pub items: Option<List<PlanItemSpec, 0, 100>>,
+    /// A note for the change's marker.
+    pub why: Option<PlanWhy>,
+    /// The change carries out steer S12, which counts as acknowledged.
+    pub steer: Option<SteerId>,
 }
 
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct PlanMilestoneResult {
-    pub milestone: Milestone,
-    pub next: Option<String>,
-}
-
-/// The answer to plan add, edit and drop. `change` is the marker it wrote, if it changed scope.
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct PlanItemResult {
-    pub item: PlanItem,
-    pub change: Option<PlanChange>,
-    pub next: Option<String>,
-    /// Granularity: the item has no size, or is bigger than m; split it.
-    pub warning: Option<String>,
-}
-
-#[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct PlanShowResult {
+pub struct PlanResult {
     pub plan: PlanView,
     /// The plan as plain text, one item per line.
     pub text: String,

@@ -233,16 +233,6 @@ pub const ENTRIES: &[Entry] = &[
         )]
     ),
     entry!(
-        "plan.granularity",
-        Msg,
-        Lead,
-        Lead,
-        "Plan item too big or unsized",
-        "with plan_add's or plan_edit's result, for an item with no size or size l",
-        "item!=the plan item, P<n>; reason!=has no size, or is size l",
-        &[]
-    ),
-    entry!(
         "steer.message",
         Msg,
         Messages,

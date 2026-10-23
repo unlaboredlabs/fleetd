@@ -1,6 +1,5 @@
-//! Plans: a project's milestones and items. Leads add, edit and drop through `fleetd plan …`; only [`Plans::verify`]
-//! marks an item done, from train merges. Every change to an open milestone's total after its
-//! planning window needs a reason and writes a marker, so a figure never jumps silently.
+//! Plans: a project's milestones and items. Leads set a workstream's items with `plan`; only [`Plans::verify`]
+//! marks an item done, when a linked PR merged through the train.
 pub mod calls;
 pub mod store;
 pub mod tools;
@@ -13,9 +12,8 @@ use fleetd_contracts::ids::{ProjectRef, Timestamp};
 use fleetd_contracts::ledger::{WorkstreamId, WorkstreamState};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::plan::{
-    Milestone, MilestoneId, MilestoneState, MilestoneView, PlanAddCall, PlanChange, PlanChangeKind,
-    PlanDropCall, PlanEditCall, PlanItem, PlanItemId, PlanItemResult, PlanItemState,
-    PlanMilestoneCall, PlanView, Weight,
+    Milestone, MilestoneId, MilestoneState, MilestoneView, PlanChange, PlanChangeKind, PlanItem,
+    PlanItemId, PlanItemSpec, PlanItemState, PlanView, Weight,
 };
 use fleetd_contracts::prim::{AnyInt, Count, Int, Line, List, UniqueList};
 use fleetd_contracts::status::{Marker, Progress};
@@ -281,6 +279,7 @@ pub struct Plans {
 }
 
 /// A marker to write and announce; built inside the write, emitted after it.
+#[derive(Default)]
 struct Pending {
     changes: Vec<ChangeRow>,
     verified: Vec<(ItemRow, String)>,
@@ -314,20 +313,8 @@ impl Plans {
     fn emit(&self, pending: Pending) {
         for ch in pending.changes {
             let (m, p) = ch.pkey.split_once('/').unwrap_or((&ch.pkey, ""));
-            // A placeholder's marker belongs to no milestone (`milestone` 0), so it is not a `PlanChange`.
-            let data = if ch.milestone == 0 {
-                Some(serde_json::json!({
-                    "kind": ch.kind, "workstreamId": ch.workstream_id, "at": iso_ms(ch.at_ms), "by": ch.by,
-                    "deltaItems": ch.delta_items, "deltaSize": ch.delta_size, "note": ch.note,
-                }))
-            } else {
-                serde_json::to_value(change_contract(&ch)).ok()
-            };
-            let mut summary = if ch.milestone == 0 {
-                ch.note.clone()
-            } else {
-                format!("M{}: {}", ch.milestone, ch.note)
-            };
+            let data = serde_json::to_value(change_contract(&ch)).ok();
+            let mut summary = format!("M{}: {}", ch.milestone, ch.note);
             if let (Some(b), Some(a)) = (ch.pct_before, ch.pct_after) {
                 summary = format!("{summary} ({b}% → {a}%)");
             }
@@ -390,21 +377,7 @@ impl Plans {
             Some(i) if i.pkey == pk => Ok(i),
             _ => Err(not_found(
                 format!("There is no plan item {id} in your project."),
-                "Call `plan_show` for your items.",
-            )),
-        }
-    }
-
-    fn own_milestone(
-        c: &Connection,
-        pk: &str,
-        id: &MilestoneId,
-    ) -> Result<MilestoneRow, PlanError> {
-        match store::milestone_get(c, number(id.as_str()))? {
-            Some(m) if m.pkey == pk => Ok(m),
-            _ => Err(not_found(
-                format!("There is no milestone {id} in your project."),
-                "Call `plan_show`, or add one with `plan_milestone`.",
+                "Call `plan` without items to see them.",
             )),
         }
     }
@@ -429,111 +402,162 @@ impl Plans {
         Ok(out)
     }
 
-    pub fn milestone(
+    /// `plan`: sets `ws`'s items to `specs`, in order. Its open items left out are dropped, a dropped item listed
+    /// again reopens, and done items keep their state. A milestone whose total moved after it had items gets a
+    /// scope marker, so a figure never jumps silently.
+    pub fn set(
         &self,
         r: &ProjectRef,
-        call: PlanMilestoneCall,
-    ) -> Result<Milestone, PlanError> {
+        by: &str,
+        ws: &WorkstreamId,
+        specs: &[PlanItemSpec],
+        why: Option<&str>,
+    ) -> Result<Vec<PlanChange>, PlanError> {
         let now = self.now();
         let pk = pkey(r);
-        self.tx(|c| {
-            let n = store::milestone_insert(
-                c,
-                &pk,
-                call.title.as_str(),
-                call.position.map(|p| p.get()),
-                now,
-            )?;
-            let m = store::milestone_get(c, n)?.ok_or_else(|| failed("milestone vanished"))?;
-            Ok(milestone_contract(&m, &[]))
-        })
+        let mut pending = Pending::default();
+        let result = self.tx(|c| {
+            let order = Self::own_order(c, &pk, ws)?;
+            let mut milestones: HashMap<String, i64> = store::milestones_of(c, &pk)?
+                .into_iter()
+                .map(|m| (m.title, m.n))
+                .collect();
+            let mut before: HashMap<i64, Figure> = HashMap::new();
+            let mut touch = |c: &Connection, m: i64| -> rusqlite::Result<()> {
+                if let std::collections::hash_map::Entry::Vacant(e) = before.entry(m) {
+                    e.insert(figure_of(&store::items_of_milestone(c, m)?));
+                }
+                Ok(())
+            };
+            let mut listed = HashSet::new();
+            for (position, spec) in specs.iter().enumerate() {
+                let title = spec.milestone.as_ref().map_or(order.title.as_str(), |t| t.as_str());
+                let milestone = match milestones.get(title) {
+                    Some(n) => *n,
+                    None => {
+                        let n = store::milestone_insert(c, &pk, title, None, now)?;
+                        milestones.insert(title.to_owned(), n);
+                        n
+                    }
+                };
+                let mut item = match &spec.id {
+                    Some(id) => {
+                        let item = Self::own_item(c, &pk, id)?;
+                        if let Some(own) = &item.workstream_id
+                            && own != ws.as_str()
+                        {
+                            return Err(forbidden(
+                                format!("{id} belongs to {own}, not {ws}."),
+                                format!("Plan it with workstreamId {own}, or leave out its id to add a new item."),
+                            ));
+                        }
+                        item
+                    }
+                    None => ItemRow {
+                        n: 0,
+                        pkey: pk.clone(),
+                        milestone,
+                        workstream_id: None,
+                        state: PlanItemState::Open,
+                        weight: spec.weight,
+                        size: spec.size,
+                        position: 0,
+                        started_ms: None,
+                        done_ms: None,
+                        data: ItemData {
+                            title: String::new(),
+                            links: Default::default(),
+                            after: vec![],
+                            evidence: None,
+                            drop_reason: None,
+                            created_ms: Some(now),
+                        },
+                    },
+                };
+                if !listed.insert(item.n) && item.n != 0 {
+                    return Err(invalid(
+                        format!("P{} is listed twice.", item.n),
+                        "List each item once.",
+                    ));
+                }
+                if item.state == PlanItemState::Done {
+                    continue;
+                }
+                touch(c, item.milestone)?;
+                touch(c, milestone)?;
+                let me = (item.n != 0).then_some(item.n);
+                item.data.after = Self::own_after(c, &pk, &spec.after, me)?;
+                item.data.title = spec.title.to_string();
+                item.data.drop_reason = None;
+                item.state = PlanItemState::Open;
+                item.workstream_id = Some(ws.to_string());
+                item.milestone = milestone;
+                item.weight = spec.weight;
+                item.size = spec.size;
+                item.position = position as i64;
+                if item.n == 0 {
+                    listed.insert(store::item_insert(c, &item)?);
+                } else {
+                    store::item_set(c, &item)?;
+                }
+            }
+            for mut item in store::items_of_workstream(c, ws.as_str())? {
+                if item.state != PlanItemState::Open || listed.contains(&item.n) {
+                    continue;
+                }
+                touch(c, item.milestone)?;
+                item.state = PlanItemState::Dropped;
+                item.data.drop_reason = Some(why.unwrap_or("left out of the plan").to_owned());
+                store::item_set(c, &item)?;
+            }
+            let mut changes = vec![];
+            let mut touched: Vec<(i64, Figure)> = before.into_iter().collect();
+            touched.sort_by_key(|(m, _)| *m);
+            for (milestone, before) in touched {
+                if let Some(row) = Self::scope_change(c, milestone, before, why, by, ws, now)? {
+                    changes.push(change_contract(&row));
+                    pending.changes.push(row);
+                }
+                Self::settle_milestone(c, milestone, now, &mut pending)?;
+            }
+            Ok(changes)
+        })?;
+        self.emit(pending);
+        Ok(result)
     }
 
-    /// Records a change to `milestone`'s totals from `before` to its current items. Inside the planning window it
-    /// writes nothing; after it, it needs `why` and writes a marker with the milestone's figure before and after.
-    #[allow(clippy::too_many_arguments)]
+    /// The marker for a milestone whose total moved; none while it is first filled.
     fn scope_change(
         c: &Connection,
         milestone: i64,
         before: Figure,
         why: Option<&str>,
         by: &str,
-        ws: Option<&str>,
+        ws: &WorkstreamId,
         now: i64,
-        what: &str,
-        pending: &mut Pending,
     ) -> Result<Option<ChangeRow>, PlanError> {
         let Some(mut m) = store::milestone_get(c, milestone)? else {
             return Ok(None);
         };
-        let items = store::items_of_milestone(c, milestone)?;
-        let after = figure_of(&items);
-        if m.first_item_ms.is_none() && !items.is_empty() {
+        let after = figure_of(&store::items_of_milestone(c, milestone)?);
+        if m.first_item_ms.is_none() {
             m.first_item_ms = Some(now);
             store::milestone_set(c, &m)?;
         }
-        let moved = (
-            after.must_total_pts,
-            after.polish_total_pts,
-            after.must_total + after.polish_total,
-        ) != (
-            before.must_total_pts,
-            before.polish_total_pts,
-            before.must_total + before.polish_total,
-        );
-        if !moved {
-            return Ok(None);
-        }
-        let was_done = m.done_ms.is_some();
-        if was_done && !milestone_done(&items) {
-            m.done_ms = None;
-            store::milestone_set(c, &m)?;
-            let row = ChangeRow {
-                n: 0,
-                pkey: m.pkey.clone(),
-                milestone,
-                workstream_id: ws.map(str::to_owned),
-                at_ms: now,
-                by: by.to_owned(),
-                kind: PlanChangeKind::MilestoneReopened,
-                delta_items: 0,
-                delta_size: 0,
-                pct_before: Some(100),
-                pct_after: Some(after.pct()),
-                note: format!("M{milestone} {} reopened: {what}", m.title),
-            };
-            store::change_insert(c, &row)?;
-            pending.changes.push(row);
-        }
-        if !was_done && progress::in_planning_window(m.first_item_ms, now) {
-            return Ok(None);
-        }
-        let Some(why) = why else {
-            return Err(invalid(
-                format!(
-                    "That changes M{milestone}'s scope after its planning window ({}), so it needs a reason.",
-                    progress::delta_text(
-                        after.must_total + after.polish_total
-                            - before.must_total
-                            - before.polish_total,
-                        after.must_total_pts + after.polish_total_pts
-                            - before.must_total_pts
-                            - before.polish_total_pts
-                    )
-                ),
-                "Add why; it shows next to the figure as a marker.",
-            ));
-        };
         let delta_items =
             after.must_total + after.polish_total - before.must_total - before.polish_total;
         let delta_size = after.must_total_pts + after.polish_total_pts
             - before.must_total_pts
             - before.polish_total_pts;
+        if before.must_total + before.polish_total == 0 || (delta_items, delta_size) == (0, 0) {
+            return Ok(None);
+        }
+        let delta = progress::delta_text(delta_items, delta_size);
         let row = ChangeRow {
             n: 0,
             pkey: m.pkey.clone(),
             milestone,
-            workstream_id: ws.map(str::to_owned),
+            workstream_id: Some(ws.to_string()),
             at_ms: now,
             by: by.to_owned(),
             kind: PlanChangeKind::Scope,
@@ -541,253 +565,11 @@ impl Plans {
             delta_size,
             pct_before: Some(before.pct()),
             pct_after: Some(after.pct()),
-            note: format!("{}: {why}", progress::delta_text(delta_items, delta_size)),
+            note: why.map_or_else(|| delta.clone(), |why| format!("{delta}: {why}")),
         };
         let n = store::change_insert(c, &row)?;
-        let row = ChangeRow { n, ..row };
-        pending.changes.push(row.clone());
-        Ok(Some(row))
+        Ok(Some(ChangeRow { n, ..row }))
     }
-
-    pub fn add(
-        &self,
-        r: &ProjectRef,
-        by: &str,
-        call: PlanAddCall,
-    ) -> Result<PlanItemResult, PlanError> {
-        let now = self.now();
-        let pk = pkey(r);
-        let mut pending = Pending {
-            changes: vec![],
-            verified: vec![],
-        };
-        let result = self.tx(|c| {
-            let m = Self::own_milestone(c, &pk, &call.milestone_id)?;
-            if let Some(ws) = &call.workstream_id {
-                Self::own_order(c, &pk, ws)?;
-            }
-            let after = Self::own_after(c, &pk, &call.after, None)?;
-            let before = figure_of(&store::items_of_milestone(c, m.n)?);
-            let mut links = fleetd_contracts::plan::PlanLinks::default();
-            if let Some(pr) = &call.pr {
-                links.prs = UniqueList::try_from(vec![pr.clone()]).unwrap_or_default();
-            }
-            let mut item = ItemRow {
-                n: 0,
-                pkey: pk.clone(),
-                milestone: m.n,
-                workstream_id: call.workstream_id.as_ref().map(|w| w.to_string()),
-                state: PlanItemState::Open,
-                weight: call.weight,
-                size: call.size.unwrap_or_default(),
-                position: store::next_item_position(c, m.n)?,
-                started_ms: None,
-                done_ms: None,
-                data: ItemData {
-                    title: call.title.to_string(),
-                    links,
-                    after,
-                    evidence: None,
-                    drop_reason: None,
-                    created_ms: Some(now),
-                },
-            };
-            item.n = store::item_insert(c, &item)?;
-            if let Some(ws) = &item.workstream_id {
-                Self::placeholder_planned(c, ws, now, &mut pending)?;
-            }
-            let what = format!("P{} {} added", item.n, item.data.title);
-            let change = Self::scope_change(
-                c,
-                m.n,
-                before,
-                call.why.as_deref(),
-                by,
-                item.workstream_id.as_deref(),
-                now,
-                &what,
-                &mut pending,
-            )?;
-            Ok(PlanItemResult {
-                item: item_contract(&item),
-                change: change.as_ref().map(change_contract),
-                next: Some(format!(
-                    "link work with item P{} on `spawn_agent`; fleetd marks it done when its PR merges through the train.",
-                    item.n
-                )),
-                warning: None,
-            })
-        })?;
-        self.emit(pending);
-        Ok(result)
-    }
-
-    pub fn edit(
-        &self,
-        r: &ProjectRef,
-        by: &str,
-        call: PlanEditCall,
-    ) -> Result<PlanItemResult, PlanError> {
-        let now = self.now();
-        let pk = pkey(r);
-        let mut pending = Pending {
-            changes: vec![],
-            verified: vec![],
-        };
-        let result = self.tx(|c| {
-            let mut item = Self::own_item(c, &pk, &call.item_id)?;
-            if item.state == PlanItemState::Dropped {
-                return Err(invalid(
-                    format!("{} is dropped.", call.item_id),
-                    "Add a new item instead.",
-                ));
-            }
-            let old_milestone = item.milestone;
-            let before_old = figure_of(&store::items_of_milestone(c, old_milestone)?);
-            if let Some(t) = &call.title {
-                item.data.title = t.to_string();
-            }
-            if let Some(s) = call.size {
-                item.size = s;
-            }
-            if let Some(w) = call.weight {
-                item.weight = w;
-            }
-            if let Some(ws) = &call.workstream_id {
-                Self::own_order(c, &pk, ws)?;
-                item.workstream_id = Some(ws.to_string());
-            }
-            if let Some(after) = &call.after {
-                item.data.after = Self::own_after(c, &pk, after, Some(item.n))?;
-            }
-            let links = &mut item.data.links;
-            let mut prs: Vec<GitHubPrUrl> = links
-                .prs
-                .iter()
-                .filter(|p| !call.pr_remove.contains(p))
-                .cloned()
-                .collect();
-            prs.extend(
-                call.pr_add
-                    .iter()
-                    .filter(|p| !links.prs.contains(p))
-                    .cloned(),
-            );
-            links.prs = UniqueList::try_from(prs)
-                .map_err(|e| invalid(format!("Too many PRs: {e}"), "Keep at most 20."))?;
-            if let Some(p) = call.position {
-                item.position = p.get();
-            }
-            let mut before_new = None;
-            if let Some(mid) = &call.milestone_id {
-                let m = Self::own_milestone(c, &pk, mid)?;
-                if m.n != old_milestone {
-                    before_new = Some(figure_of(&store::items_of_milestone(c, m.n)?));
-                    item.milestone = m.n;
-                    if call.position.is_none() {
-                        item.position = store::next_item_position(c, m.n)?;
-                    }
-                }
-            }
-            store::item_set(c, &item)?;
-            if let Some(ws) = &item.workstream_id {
-                Self::placeholder_planned(c, ws, now, &mut pending)?;
-            }
-            let what = format!("P{} {} changed", item.n, item.data.title);
-            let ws = item.workstream_id.clone();
-            let mut change = Self::scope_change(
-                c,
-                old_milestone,
-                before_old,
-                call.why.as_deref(),
-                by,
-                ws.as_deref(),
-                now,
-                &what,
-                &mut pending,
-            )?;
-            if let Some(before) = before_new {
-                let moved = Self::scope_change(
-                    c,
-                    item.milestone,
-                    before,
-                    call.why.as_deref(),
-                    by,
-                    ws.as_deref(),
-                    now,
-                    &what,
-                    &mut pending,
-                )?;
-                change = change.or(moved);
-            }
-            Ok(PlanItemResult {
-                item: item_contract(&item),
-                change: change.as_ref().map(change_contract),
-                next: None,
-                warning: None,
-            })
-        })?;
-        self.emit(pending);
-        Ok(result)
-    }
-
-    pub fn drop_item(
-        &self,
-        r: &ProjectRef,
-        by: &str,
-        call: PlanDropCall,
-    ) -> Result<PlanItemResult, PlanError> {
-        let now = self.now();
-        let pk = pkey(r);
-        let mut pending = Pending {
-            changes: vec![],
-            verified: vec![],
-        };
-        let result = self.tx(|c| {
-            let mut item = Self::own_item(c, &pk, &call.item_id)?;
-            if item.state != PlanItemState::Open {
-                return Err(invalid(
-                    format!(
-                        "{} is already {}.",
-                        call.item_id,
-                        if item.state == PlanItemState::Done {
-                            "done"
-                        } else {
-                            "dropped"
-                        }
-                    ),
-                    "Only open items can be dropped.",
-                ));
-            }
-            let before = figure_of(&store::items_of_milestone(c, item.milestone)?);
-            item.state = PlanItemState::Dropped;
-            let why = call.why.as_ref().map_or("", |w| w.as_str());
-            item.data.drop_reason = Some(why.to_owned());
-            store::item_set(c, &item)?;
-            let what = format!("P{} dropped", item.n);
-            let change = Self::scope_change(
-                c,
-                item.milestone,
-                before,
-                Some(why),
-                by,
-                item.workstream_id.as_deref(),
-                now,
-                &what,
-                &mut pending,
-            )?;
-            Self::settle_milestone(c, item.milestone, now, &mut pending)?;
-            Ok(PlanItemResult {
-                item: item_contract(&item),
-                change: change.as_ref().map(change_contract),
-                next: None,
-                warning: None,
-            })
-        })?;
-        self.emit(pending);
-        Ok(result)
-    }
-
     /// A finished milestone leaves its project's figure with a marker.
     fn settle_milestone(
         c: &Connection,
@@ -852,9 +634,7 @@ impl Plans {
         {
             return Err(forbidden(
                 format!("{item} belongs to {own}, not {ws}."),
-                format!(
-                    "Spawn it under {own}, or move the item with `plan_edit` (itemId {item}, workstreamId {ws})."
-                ),
+                format!("Spawn it under {own}, or list it in `plan` with workstreamId {ws}."),
             ));
         }
         Ok(())
@@ -931,10 +711,7 @@ impl Plans {
     /// tasks. Returns whether anything changed.
     pub fn verify(&self, ws: &str) -> bool {
         let now = self.now();
-        let mut pending = Pending {
-            changes: vec![],
-            verified: vec![],
-        };
+        let mut pending = Pending::default();
         let changed =
             self.tx(|c| {
                 let mut items = store::items_of_workstream(c, ws)?;
@@ -993,10 +770,7 @@ impl Plans {
     /// verified); stopped or failed, every open item is dropped. Each writes one marker per milestone.
     pub fn close_order(&self, ws: &str, state: WorkstreamState) -> bool {
         let now = self.now();
-        let mut pending = Pending {
-            changes: vec![],
-            verified: vec![],
-        };
+        let mut pending = Pending::default();
         let changed = self.tx(|c| {
             let items = store::items_of_workstream(c, ws)?;
             let mut by_milestone: HashMap<i64, (Figure, i64, i64)> = HashMap::new();
@@ -1076,8 +850,7 @@ impl Plans {
             .with(|c| {
                 let milestones = store::milestones_of(c, &pk)?;
                 let all = store::items_of_project(c, &pk)?;
-                let mut changes = store::changes_of(c, &pk, 60)?;
-                changes.retain(|ch| ch.milestone != 0);
+                let changes = store::changes_of(c, &pk, 50)?;
                 Ok((milestones, all, changes))
             })
             .map_err(failed)
@@ -1133,188 +906,6 @@ impl Plans {
     }
 }
 
-/// Hours a done order's placeholder stays in the figure before it leaves with a marker.
-pub const PLACEHOLDER_DONE_MS: i64 = 24 * 3_600_000;
-
-impl Plans {
-    #[allow(clippy::too_many_arguments)]
-    fn placeholder_marker(
-        c: &Connection,
-        ws: &str,
-        pkey: &str,
-        kind: PlanChangeKind,
-        delta: i64,
-        size: i64,
-        note: String,
-        now: i64,
-        pending: &mut Pending,
-    ) -> rusqlite::Result<()> {
-        let row = ChangeRow {
-            n: 0,
-            pkey: pkey.to_owned(),
-            milestone: 0,
-            workstream_id: Some(ws.to_owned()),
-            at_ms: now,
-            by: "hub".into(),
-            kind,
-            delta_items: delta,
-            delta_size: delta * size,
-            pct_before: None,
-            pct_after: None,
-            note,
-        };
-        store::change_insert(c, &row)?;
-        pending.changes.push(row);
-        Ok(())
-    }
-
-    /// An order started running with no plan items: it enters its project's figure as one item of size s.
-    /// `quiet` (the backfill at start) writes no marker, since no figure was shown before it.
-    pub fn placeholder_enter(&self, ws: &str, quiet: bool) -> bool {
-        let now = self.now();
-        let mut pending = Pending {
-            changes: vec![],
-            verified: vec![],
-        };
-        let entered = self.tx(|c| {
-            let Some(order) = order_info(c, ws)? else { return Ok(false) };
-            let planned: bool =
-                c.query_row("SELECT EXISTS (SELECT 1 FROM plan_items WHERE workstream_id = ?)", [ws], |r| r.get(0))?;
-            if planned {
-                return Ok(false);
-            }
-            let size = fleetd_contracts::plan::Size::S.points();
-            let done = order.state == WorkstreamState::Done;
-            let n = c.execute(
-                "INSERT OR IGNORE INTO plan_placeholders (workstream_id, project_ref, size, title, state, entered_ms, done_ms)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)",
-                params![ws, order.pkey, size, order.title, if done { "done" } else { "open" }, now, done.then_some(now)],
-            )?;
-            if n == 1 && !quiet {
-                let note = format!("+1 item: {ws} {} (no plan yet)", clip(&order.title, 100));
-                Self::placeholder_marker(c, ws, &order.pkey, PlanChangeKind::Scope, 1, size, note, now, &mut pending)?;
-            }
-            Ok(n == 1)
-        });
-        self.emit(pending);
-        entered.unwrap_or(false)
-    }
-
-    /// The order behind a placeholder finished: done stays in the figure (verified); stopped or failed leaves it.
-    pub fn placeholder_order_ended(&self, ws: &str, state: WorkstreamState) -> bool {
-        let now = self.now();
-        let mut pending = Pending {
-            changes: vec![],
-            verified: vec![],
-        };
-        let changed = self.tx(|c| {
-            let row: Option<(String, i64, String)> = c
-                .query_row(
-                    "SELECT project_ref, size, state FROM plan_placeholders WHERE workstream_id = ?",
-                    [ws],
-                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-                )
-                .optional()?;
-            let Some((pkey, size, current)) = row.filter(|r| r.2 == "open") else { return Ok(false) };
-            let _ = current;
-            if state == WorkstreamState::Done {
-                c.execute("UPDATE plan_placeholders SET state = 'done', done_ms = ? WHERE workstream_id = ?", params![now, ws])?;
-                return Ok(true);
-            }
-            c.execute("UPDATE plan_placeholders SET state = 'left', left_ms = ? WHERE workstream_id = ?", params![now, ws])?;
-            let word = if state == WorkstreamState::Stopped { "stopped" } else { "failed" };
-            Self::placeholder_marker(c, ws, &pkey, PlanChangeKind::Closed, -1, size, format!("−1: {ws} {word}"), now, &mut pending)?;
-            Ok(true)
-        });
-        self.emit(pending);
-        changed.unwrap_or(false)
-    }
-
-    /// An order got plan items: its placeholder gives way, with a marker. Inside the caller's write.
-    fn placeholder_planned(
-        c: &Connection,
-        ws: &str,
-        now: i64,
-        pending: &mut Pending,
-    ) -> rusqlite::Result<()> {
-        let row: Option<(String, i64)> = c
-            .query_row(
-                "SELECT project_ref, size FROM plan_placeholders WHERE workstream_id = ? AND state != 'left'",
-                [ws],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .optional()?;
-        let Some((pkey, size)) = row else {
-            return Ok(());
-        };
-        c.execute(
-            "UPDATE plan_placeholders SET state = 'left', left_ms = ? WHERE workstream_id = ?",
-            params![now, ws],
-        )?;
-        let note = format!("−1 item: {ws}'s placeholder gives way to its plan");
-        Self::placeholder_marker(
-            c,
-            ws,
-            &pkey,
-            PlanChangeKind::Scope,
-            -1,
-            size,
-            note,
-            now,
-            pending,
-        )
-    }
-
-    /// Done placeholders leave the figure a day after their order finished, each with a marker. Returns the next
-    /// time one is due.
-    pub fn placeholder_roll_off(&self) -> Option<i64> {
-        let now = self.now();
-        let mut pending = Pending {
-            changes: vec![],
-            verified: vec![],
-        };
-        let next = self.tx(|c| {
-            let due: Vec<(String, String, i64)> = c
-                .prepare_cached(
-                    "SELECT workstream_id, project_ref, size FROM plan_placeholders WHERE state = 'done' AND done_ms <= ?",
-                )?
-                .query_map([now - PLACEHOLDER_DONE_MS], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
-                .collect::<rusqlite::Result<_>>()?;
-            for (ws, pkey, size) in due {
-                c.execute("UPDATE plan_placeholders SET state = 'left', left_ms = ? WHERE workstream_id = ?", params![now, ws])?;
-                let note = format!("{ws} done a day ago, leaves the figure");
-                Self::placeholder_marker(c, &ws, &pkey, PlanChangeKind::Closed, -1, size, note, now, &mut pending)?;
-            }
-            let next: Option<i64> = c.query_row(
-                "SELECT MIN(done_ms) FROM plan_placeholders WHERE state = 'done'",
-                [],
-                |r| r.get(0),
-            )?;
-            Ok(next.map(|d| d + PLACEHOLDER_DONE_MS))
-        });
-        self.emit(pending);
-        next.unwrap_or(None)
-    }
-
-    /// At start: every running order with no plan and no placeholder gets one, quietly.
-    pub fn placeholder_backfill(&self) {
-        let orders: Vec<String> = self
-            .db
-            .with(|c| {
-                Ok(c.prepare(
-                    "SELECT 'W' || n FROM workstreams WHERE state IN ('running', 'converging', 'verifying', 'idle')",
-                )?
-                .query_map([], |r| r.get(0))?
-                .collect::<rusqlite::Result<_>>()?)
-            })
-            .unwrap_or_default();
-        for ws in orders {
-            self.placeholder_enter(&ws, true);
-        }
-    }
-}
-
-/// The first `task.started` of the item's linked tasks, from their stored rows.
 fn first_task_start(c: &Connection, item: &ItemRow) -> rusqlite::Result<Option<i64>> {
     let mut first: Option<i64> = None;
     for t in item.data.links.tasks.iter() {

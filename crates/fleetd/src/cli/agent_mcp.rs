@@ -13,9 +13,7 @@ use fleetd_contracts::lead_calls::{
     GatedRunCall, LeadCall, LeadSocketFrame, RequestSecretCall, RequestWithdrawCall, TaskCancelCall, TaskListCall,
     TaskMessageCall, TaskSpawnCall, TaskStatusCall, WorkstreamOpenCall,
 };
-use fleetd_contracts::plan::{
-    PlanAddCall, PlanDropCall, PlanEditCall, PlanMilestoneCall, PlanShowCall,
-};
+use fleetd_contracts::plan::PlanCall;
 use fleetd_contracts::schema::inline_schema;
 use fleetd_contracts::verification::ReviewVerdict;
 use serde_json::{Value, json};
@@ -149,35 +147,11 @@ static TOOLS: &[Tool] = &[
     )
     .needs("A human approves the exact command in chat before the node runs it."),
     lead(
-        "plan_milestone",
-        "plan_milestone",
-        "Add a milestone to the project's plan.",
-        inline_schema::<PlanMilestoneCall>,
-    ),
-    lead(
-        "plan_add",
-        "plan_add",
-        "Add a plan item (must or polish, size s|m|l, after other items). After a milestone's first 10 minutes a \
-         change needs why, or steer when the human's steer asked for it.",
-        inline_schema::<PlanAddCall>,
-    ),
-    lead(
-        "plan_edit",
-        "plan_edit",
-        "Change a plan item.",
-        inline_schema::<PlanEditCall>,
-    ),
-    lead(
-        "plan_drop",
-        "plan_drop",
-        "Drop a plan item, with why or steer.",
-        inline_schema::<PlanDropCall>,
-    ),
-    lead(
-        "plan_show",
-        "plan_show",
-        "The project's plan.",
-        inline_schema::<PlanShowCall>,
+        "plan",
+        "plan",
+        "Set a workstream's plan items, in order (must or polish, size s|m|l, after other items, an optional \
+         milestone title), and get the plan back. Its open items you leave out are dropped. Without items: the plan.",
+        inline_schema::<PlanCall>,
     ),
     lead(
         "decisions_search",
@@ -525,8 +499,7 @@ mod tests {
             "brief",
             "close",
             "gated_run",
-            "plan_add",
-            "plan_show",
+            "plan",
         ] {
             assert!(lead.contains(&tool.to_owned()), "{tool}");
         }

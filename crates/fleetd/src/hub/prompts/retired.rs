@@ -28,6 +28,8 @@ const RETRO: &str = "fleetd no longer runs a retro; edit the lead prompt or a pl
 const CLOSE: &str = "fleetd no longer checks a claim of done; the lead closes work and says why";
 const PLAYBOOK: &str = "the playbooks are sections of the lead prompt now; this file's rules still apply, its instructions don't";
 const ONE_REVIEW: &str = "every PR gets one fresh reviewer now, and nothing verifies it apart";
+const PLAN: &str =
+    "the lead sets a workstream's items with one plan call; nothing nags it about item sizes";
 const FINISH_ALL: &str =
     "finish-all went: a lead lists the open work and opens an order per item itself";
 
@@ -286,6 +288,12 @@ pub const RETIRED: &[Retired] = &[
     ),
     r("watchdog.nudge", "Stall nudge", STALL, None),
     r(
+        "plan.granularity",
+        "Plan item too big or unsized",
+        PLAN,
+        None,
+    ),
+    r(
         "permission.denied.policy",
         "Tool denied by policy",
         DENIED,
@@ -375,7 +383,7 @@ mod tests {
         assert_eq!(
             ENTRIES.len() + RETIRED.len(),
             77,
-            "the 69 prompts of an earlier release, lead.profiles, and seven fixed texts made prompts"
+            "the 69 prompts of an earlier release, lead.profiles, and eight fixed texts made prompts"
         );
     }
 }

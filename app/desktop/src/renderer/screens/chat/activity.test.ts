@@ -34,7 +34,7 @@ describe("the lead's activity line", () => {
       ev(7, "task.started", started("T2")),
     ];
     const lanes = {
-      [leadLaneId(ref)]: { laneId: leadLaneId(ref), status: "working" as const, activity: { activity: { kind: "tool" as const, name: "mcp__fleetd__plan_add" }, since: AT } },
+      [leadLaneId(ref)]: { laneId: leadLaneId(ref), status: "working" as const, activity: { activity: { kind: "tool" as const, name: "mcp__fleetd__plan" }, since: AT } },
     };
     const s = state({ chatStates: { [KEY]: working(true) }, events, live: { ...createDataStore().getState().live, lanes } });
     // Only this project's events since it started working: the task before the turn and the other project's don't count.

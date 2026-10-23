@@ -17,10 +17,7 @@ use crate::ledger::{
     RequestState, SecretEnv, WorkstreamId, WorkstreamState,
 };
 use crate::mcp::McpToolError;
-use crate::plan::{
-    PlanAddCall, PlanDropCall, PlanEditCall, PlanItemId, PlanItemResult, PlanMilestoneCall,
-    PlanMilestoneResult, PlanShowCall, PlanShowResult,
-};
+use crate::plan::{PlanCall, PlanItemId, PlanResult};
 use crate::prim::{List, NonEmpty, Text};
 use crate::secrets::SecretSink;
 use crate::steer::SteerId;
@@ -253,11 +250,7 @@ pub enum LeadCall {
     ReviewVerdict(ReviewVerdict),
     ChangeEnqueue(ChangeEnqueueCall),
     GatedRun(GatedRunCall),
-    PlanMilestone(PlanMilestoneCall),
-    PlanAdd(PlanAddCall),
-    PlanEdit(PlanEditCall),
-    PlanDrop(PlanDropCall),
-    PlanShow(PlanShowCall),
+    Plan(PlanCall),
     AskLead(AskLeadCall),
     WorkstreamOpen(WorkstreamOpenCall),
 }
@@ -365,11 +358,7 @@ pub enum LeadCallResult {
     ReviewVerdict(ReviewVerdictResult),
     ChangeEnqueue(ChangeResult),
     GatedRun(RequestResult),
-    PlanMilestone(PlanMilestoneResult),
-    PlanAdd(PlanItemResult),
-    PlanEdit(PlanItemResult),
-    PlanDrop(PlanItemResult),
-    PlanShow(PlanShowResult),
+    Plan(PlanResult),
     AskLead(AskLeadResult),
     WorkstreamOpen(WorkstreamOpenResult),
 }
