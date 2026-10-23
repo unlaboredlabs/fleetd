@@ -262,6 +262,26 @@ as stopping a project, answering an approval or entering a secret, need one.</p>
 <td>read</td>
 </tr>
 <tr>
+<td><code dir="auto">agents_list {projectRef?, endedSince?}</code></td>
+<td>Every agent of your projects: its role, task, what it’s doing now, when it started and its PR.</td>
+<td>read</td>
+</tr>
+<tr>
+<td><code dir="auto">agent_work {machineId, threadId, before?, limit?}</code></td>
+<td>A page of one agent’s recent messages, commands and edits, oldest first. Secrets show as <code dir="auto">[secret]</code>.</td>
+<td>read</td>
+</tr>
+<tr>
+<td><code dir="auto">pr_list {projectRef, closedSince?}</code>, <code dir="auto">pr_get {repo, number}</code></td>
+<td>A project’s PRs, and one in detail: description, checks, reviews with their findings, its place in the merge queue and the agent that wrote it.</td>
+<td>read</td>
+</tr>
+<tr>
+<td><code dir="auto">pr_files {repo, number, offset?}</code>, <code dir="auto">pr_diff {repo, number, path, offset?}</code></td>
+<td>A PR’s changed files, and one file’s diff a page at a time.</td>
+<td>read</td>
+</tr>
+<tr>
 <td><code dir="auto">workstream_list</code>, <code dir="auto">workstream_get</code>, <code dir="auto">thread_tail</code>, <code dir="auto">fleetd_status</code></td>
 <td>Lower-level views of the lead’s work.</td>
 <td>read</td>

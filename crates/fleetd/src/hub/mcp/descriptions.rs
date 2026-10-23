@@ -284,4 +284,28 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "github_webhook_set",
         "Turn opt-in GitHub webhooks on (url: a public URL GitHub can reach that forwards to this hub's /github; fleetd never creates one) or off (no url). Makes a secret and a repo hook on every train repo for check_suite, pull_request and push. Deliveries only make the train sync sooner; without them it reconciles every pass. Admin keys on every machine.",
     ),
+    (
+        "agents_list",
+        "Every agent of the projects you can read: each running, queued or idle task and each project's lead, with its project, role, title, status (and why when queued, parked or failed), model, start time, its PR and what it is doing now. endedSince adds agents that finished since then. Waiting on a person first, then working, then newest. Read-only.",
+    ),
+    (
+        "agent_work",
+        "A page of one agent's recent steps (messages, commands, edits, tool calls), oldest first within the page; before pages back. From the newest 200 messages and 200 steps the hub follows of the session. Secrets are replaced by [secret]. Read-only.",
+    ),
+    (
+        "pr_list",
+        "A project's PRs: open ones on its repos and those closed or merged since closedSince (default 7 days), with title, state, checks, review state, merge-queue state and the agent that wrote it. GitHub data is cached for a minute; githubError says when only fleetd's records could be read. Read-only.",
+    ),
+    (
+        "pr_get",
+        "One PR in detail: its description, checks, agent verdicts with their findings and people's reviews, merge-queue state and moves, the writing agent and links. Read-only.",
+    ),
+    (
+        "pr_files",
+        "A page of a PR's changed files (100 per page) with their additions, deletions and diff length. Read-only.",
+    ),
+    (
+        "pr_diff",
+        "A page of one changed file's diff as numbered lines (hunk, context, add, del; at most 400 per page). Secrets are replaced by [secret]. Read-only.",
+    ),
 ];
