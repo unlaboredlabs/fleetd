@@ -1097,18 +1097,12 @@ async fn an_update_releases_a_figure_the_old_rule_left_stuck() {
         45,
         "held: nothing since that point explains a fall"
     );
-    // Run the in-flight migration itself: re-opening at an older version would re-run the later ones too, which
-    // can't run twice.
-    use crate::hub::store::migrations::MIGRATIONS;
-    let release = MIGRATIONS
+    // Found by content, not as the last migration, so a later migration doesn't break this test.
+    let update = crate::hub::store::MIGRATIONS
         .iter()
-        .position(|m| m.contains("DELETE FROM status_series"))
-        .expect("the in-flight migration");
-    db.with(|c| {
-        c.execute_batch(MIGRATIONS[release])?;
-        Ok(())
-    })
-    .unwrap();
+        .find(|m| m.contains("DELETE FROM status_series"))
+        .expect("the series restart");
+    db.with(|c| Ok(c.execute_batch(update)?)).unwrap();
     assert_eq!(estimate_after(&hub, &clock, 1).0, 14);
 }
 

@@ -44,11 +44,6 @@ pub enum Event<'a> {
         workstream: &'a str,
         text: &'a str,
     },
-    /// References and attachments that came with an order.
-    OrderRefs {
-        workstream: &'a str,
-        references: &'a str,
-    },
     OrderStopped {
         workstream: &'a str,
         title: &'a str,
@@ -201,10 +196,6 @@ impl Event<'_> {
             Event::Order { workstream, text } => {
                 (format!("- new order {workstream}: {}", quote(text)), vec![])
             }
-            Event::OrderRefs {
-                workstream,
-                references,
-            } => (format!("- {workstream} came with:{references}"), vec![]),
             Event::OrderStopped {
                 workstream,
                 title,
@@ -452,13 +443,6 @@ mod tests {
                 text: "add a dark\nmode"
             }),
             "- new order W3: \"add a dark mode\""
-        );
-        assert_eq!(
-            r(Event::OrderRefs {
-                workstream: "W3",
-                references: "\n  - https://example.com/spec"
-            }),
-            "- W3 came with:\n  - https://example.com/spec"
         );
         assert_eq!(
             r(Event::OrderStopped {

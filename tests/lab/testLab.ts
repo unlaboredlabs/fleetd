@@ -119,8 +119,6 @@ const SCENARIOS: ReadonlyArray<{ readonly name: string; readonly run: (lab: Lab)
 ];
 
 const hubHome = path.join(RUN, "hub");
-// The intake router runs `claude -p` on the hub. Like an installed hub, it finds Claude through the user's own login,
-// not variables passed in.
 const startHubProcess = async (env: Readonly<Record<string, string>> = {}) => {
   startCli("hub", ["hub", "start", "--home", hubHome, "--listen", `127.0.0.1:${HUB_PORT}`, "--queue-ttl", String(QUEUE_TTL_SEC)], env);
   await until("hub /healthz", 30_000, async () => {

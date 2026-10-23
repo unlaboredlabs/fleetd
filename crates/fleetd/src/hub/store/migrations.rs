@@ -474,4 +474,8 @@ pub(crate) const MIGRATIONS: &[&str] = &[
   UPDATE time_spans SET profile = 'medium'
     WHERE task_id IN (SELECT 'T' || n FROM tasks WHERE json_extract(data, '$.profile') = 'medium');
   "#,
+    // The order router went: nothing emits intake.routed, and a stored one would no longer decode.
+    r#"
+  DELETE FROM events WHERE type = 'intake.routed';
+  "#,
 ];
