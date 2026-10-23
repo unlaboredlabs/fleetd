@@ -3,7 +3,7 @@
 // number is the hub's (`time_*` tools); the screen lays them out and says plainly where a figure is a bound, a split
 // or an approximation rather than a measurement (spec §2f).
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, Dot, Tab, TabList, TabPanel, Tabs, Text, Truncate, copyText, cx, toast } from "../../ui";
+import { Button, Dot, FrameTitle, Tab, TabList, TabPanel, Tabs, Text, Truncate, copyText, cx, toast } from "../../ui";
 import { selectConnection } from "../../src/data/selectors";
 import { useData } from "../../src/data/react";
 import { useCommands } from "../palette";
@@ -234,24 +234,20 @@ export function TimeScreen(props: TimeScreenProps) {
 
   return (
     <div className={cx(s.screen)} data-screen="time">
-      <header className={cx(s.head)}>
-        {order !== undefined ? (
-          <Button variant="ghost" onClick={() => openOrder(order)}>
-            ‹ Chat
-          </Button>
-        ) : null}
-        {orderInfo !== undefined ? (
-          <Truncate tone="quiet" className={cx(s.crumb)}>{`${orderInfo.project} ›`}</Truncate>
-        ) : null}
-        {/* The title has the room first: up to two lines, then an ellipsis that opens the whole title. */}
-        <Truncate strong as="h2" lines={2} className={cx(s.title)}>
-          {title}
-        </Truncate>
-        {figures.length > 0 ? (
-          <Truncate size="xs" tone="quiet" tabular className={cx(s.figures)}>
-            {figures.join(" · ")}
-          </Truncate>
-        ) : null}
+      <FrameTitle
+        title={title}
+        detail={figures.length > 0 ? figures.join(" · ") : undefined}
+        lead={
+          <>
+            {order !== undefined ? (
+              <Button variant="ghost" onClick={() => openOrder(order)}>
+                ‹ Chat
+              </Button>
+            ) : null}
+            {orderInfo !== undefined ? <Truncate tone="quiet" className={cx(s.crumb)}>{`${orderInfo.project} ›`}</Truncate> : null}
+          </>
+        }
+      >
         {badge.length > 0 ? (
           <span className={cx(s.badge)}>
             <Dot color="var(--warning)" />
@@ -260,7 +256,7 @@ export function TimeScreen(props: TimeScreenProps) {
             </Truncate>
           </span>
         ) : null}
-      </header>
+      </FrameTitle>
       <FilterBar filters={filters} order={order} names={names} nowMs={nowMs} onFilters={changeFilters} onOrder={changeOrder} />
       <Tabs value={tab} onValueChange={(v) => setTab(v as TabId)} className={cx(s.tabs)}>
         <TabList className={cx(s.tabList)} aria-label="Views">

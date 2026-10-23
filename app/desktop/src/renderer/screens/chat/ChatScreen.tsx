@@ -5,7 +5,7 @@
 // "What the writer was told" opens from the strip's rows.
 import { useCallback, useMemo, useState } from "react";
 import type { AgentLane, ThreadRef } from "../../../shared/contracts";
-import { Button, FrameTitle, IdChip, ROLE_WORD, StatusChip, Text, Truncate, type StatusTone } from "../../ui";
+import { Button, FrameTitle, IdChip, ROLE_WORD, StatusChip, Text, type StatusTone } from "../../ui";
 import { STATE_WORDS } from "../status/rows";
 import type { ProjectStateWord } from "../../src/data/selectors";
 import { useData } from "../../src/data/react";
@@ -101,19 +101,13 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
         data.missing ? "chat.missing" : view !== undefined ? "chat" : data.loadError !== undefined ? "chat.error" : offline ? "chat.offline" : "chat.loading"
       }
     >
-      {/* In the window's top row: one header, not two. */}
-      <FrameTitle>
-        <span className={s.title}>{title ? <Truncate strong>{title}</Truncate> : null}</span>
+      <FrameTitle title={title || undefined}>
         {view?.held === true ? (
           // A held chat is as it was then, connected or not, until this connection's newest page lands; what the
           // lead is doing now isn't known from it.
-          <span className={s.flexNone}>
-            <StatusChip tone="quiet">{heldLabel(view.offline, asOf)}</StatusChip>
-          </span>
+          <StatusChip tone="quiet">{heldLabel(view.offline, asOf)}</StatusChip>
         ) : state ? (
-          <span className={s.flexNone}>
-            <StatusChip tone={TONE[state]}>{STATE_WORDS[state]}</StatusChip>
-          </span>
+          <StatusChip tone={TONE[state]}>{STATE_WORDS[state]}</StatusChip>
         ) : null}
         {data.missing ? null : <AgentsCapControl projectRef={project} />}
       </FrameTitle>

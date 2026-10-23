@@ -5,7 +5,7 @@
 import { memo, useMemo } from "react";
 import { useData, useToolQuery } from "../../src/data/react";
 import { selectLiveAgents, type LiveAgent } from "../../src/data/selectors";
-import { Button, cx, Dot, EmptyState, RoleTag, Text, Truncate, VirtualList } from "../../ui";
+import { Button, cx, Dot, EmptyState, FrameTitle, RoleTag, Text, Truncate, VirtualList } from "../../ui";
 import { ActivityLine } from "../live/parts";
 import { describe, isRunning } from "../live/words";
 import { fmtElapsed, parseMs } from "../live/format";
@@ -26,15 +26,7 @@ export function AgentsScreen({ agent }: { agent: AgentKey | null }) {
 
   return (
     <div className={s.screen} data-screen={agent === null ? "agents" : "agents.work"}>
-      <header className={s.header}>
-        <span className={s.title}>
-          <Text strong>Agents</Text>
-          {agents !== undefined && agents.length > 0 ? (
-            <Text size="xs" tone="quiet">
-              {headline(agents)}
-            </Text>
-          ) : null}
-        </span>
+      <FrameTitle title="Agents" detail={agents !== undefined && agents.length > 0 ? headline(agents) : undefined}>
         {!fresh ? (
           <span className={s.liveness} role="status">
             <Dot color="var(--warning)" />
@@ -49,7 +41,7 @@ export function AgentsScreen({ agent }: { agent: AgentKey | null }) {
             </Button>
           </span>
         ) : null}
-      </header>
+      </FrameTitle>
       {items === undefined ? (
         <div className={s.split}>
           <Skeleton busy={fresh} />

@@ -58,10 +58,33 @@ export function TopBar(props: { leading?: ReactNode; trailing?: ReactNode; class
   );
 }
 
-/** A screen's title and its controls, shown in the frame's top row rather than in a header bar of the screen's own. */
-export function FrameTitle({ children }: { children: ReactNode }) {
+/**
+ * A screen's header, in the frame's top row rather than a header bar of the screen's own: every page's one header
+ * style. `title` is the page's name (its heading), `detail` a quiet line beside it, `lead` what comes before it (a
+ * way back), and `children` the page's controls and state, at the end.
+ */
+export function FrameTitle(props: { title?: string | undefined; detail?: string | undefined; lead?: ReactNode; children?: ReactNode }) {
   const slot = useContext(TitleSlot);
-  return slot === null ? null : createPortal(children, slot);
+  if (slot === null) return null;
+  return createPortal(
+    <>
+      <span className={s.frameTitle}>
+        {props.lead}
+        {props.title === undefined ? null : (
+          <Truncate as="h1" strong className={s.frameHeading}>
+            {props.title}
+          </Truncate>
+        )}
+        {props.detail === undefined ? null : (
+          <Truncate size="xs" tone="quiet" className={s.frameDetail}>
+            {props.detail}
+          </Truncate>
+        )}
+      </span>
+      {props.children}
+    </>,
+    slot,
+  );
 }
 
 export interface Crumb {

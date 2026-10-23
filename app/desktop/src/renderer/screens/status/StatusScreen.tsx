@@ -11,7 +11,7 @@ import { useData, useToolQuery } from "../../src/data/react";
 import { useNow } from "../live/clock";
 import { selectSkew } from "../live/strip";
 import { selectProjectList } from "../../src/data/selectors";
-import { Button, cx, Dot, Text, Tooltip, Truncate } from "../../ui";
+import { Button, cx, Dot, FrameTitle, Text, Tooltip, Truncate } from "../../ui";
 import { asGetOutput } from "./contracts";
 import { barOf, orderRows, STATE_WORDS, type StateWord } from "./rows";
 import { dropLines, fullWhen, staleWords, when } from "./view";
@@ -41,8 +41,7 @@ export function StatusScreen() {
 
   return (
     <div className={cx(s.screen)} data-screen="status.fleet" data-phase={rows === undefined ? "skeleton" : "live"}>
-      <header className={cx(s.header)}>
-        <Text strong>Status</Text>
+      <FrameTitle title="Status">
         {!fresh ? (
           <span className={cx(s.liveness)} role="status">
             <Dot color="var(--warning)" />
@@ -57,7 +56,7 @@ export function StatusScreen() {
             </Button>
           </span>
         ) : null}
-      </header>
+      </FrameTitle>
       <div className={cx(s.body)}>
         {rows === undefined ? (
           <Skeleton />

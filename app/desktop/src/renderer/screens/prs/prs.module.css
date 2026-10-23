@@ -11,32 +11,13 @@
   min-height: 0;
   min-width: 0;
 }
-/* The bar as the agents view has it: the title and what it covers, and on the right whether it is live. */
-.header {
-  flex: none;
-  min-height: var(--bar);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: 0 var(--pad);
-  border-bottom: 1px solid var(--hairline);
-}
-.title {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-3);
-  min-width: 0;
-}
-.titleProject {
-  min-width: 0;
-}
+/* Whether the page is live, at the end of its header (FrameTitle). */
 .liveness {
-  flex: none;
   display: flex;
   align-items: center;
   gap: var(--space-2);
 }
+
 .banner {
   flex: none;
   display: flex;

@@ -7,7 +7,7 @@ import { useMemo, useState } from "react";
 import type { ProjectRef } from "../../../shared/contracts";
 import { useData, useToolQuery } from "../../src/data/react";
 import type { PrListOutput, PrRow } from "../../src/data/pr-contract";
-import { Button, Dot, EmptyState, Text, Truncate } from "../../ui";
+import { Button, Dot, EmptyState, FrameTitle, Text } from "../../ui";
 import type { PrKey } from "../shell/routes";
 import { PrDetail, WithCode, type PrTab } from "./PrDetail";
 import { PrList } from "./PrList";
@@ -59,15 +59,7 @@ export function PrsScreen({ project, pr }: { project: ProjectRef; pr: PrKey | nu
   const open = rows === undefined ? 0 : openCount(rows);
   return (
     <div className={s.screen} data-screen={state}>
-      <header className={s.header}>
-        <span className={s.title}>
-          <Text strong>Pull requests</Text>
-          <span className={s.titleProject}>
-            <Truncate size="xs" tone="quiet" expand="none">
-              {open > 0 ? `${title ?? ""} · ${String(open)} open` : (title ?? "")}
-            </Truncate>
-          </span>
-        </span>
+      <FrameTitle title="Pull requests" detail={open > 0 ? `${title ?? ""} · ${String(open)} open` : (title || undefined)}>
         {!fresh ? (
           <span className={s.liveness} role="status">
             <Dot color="var(--warning)" />
@@ -79,7 +71,7 @@ export function PrsScreen({ project, pr }: { project: ProjectRef; pr: PrKey | nu
             Show the list
           </Button>
         ) : null}
-      </header>
+      </FrameTitle>
       {list.data?.githubError !== undefined ? <GitHubBanner list={list.data} onRetry={() => void list.refetch()} /> : null}
       <div className={s.body}>
         <aside className={s.list} aria-label="Pull requests" hidden={wide}>

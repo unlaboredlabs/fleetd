@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Button, Dialog, Select, Text } from "../../ui";
+import { Button, Dialog, FrameTitle, Select, Text } from "../../ui";
 import { selectProjects } from "../../src/data/selectors";
 import { useData } from "../../src/data/react";
 import type { ProjectSummary } from "./contracts";
@@ -79,18 +79,21 @@ export function ConfirmDiscard(props: { open: boolean; what: string; why: string
   );
 }
 
-/** Every Settings page's one title, with its one-line description and, beside it, a control for the whole page. */
+/**
+ * Every Settings page's title, in the window's top row like every page's. Its one-line description opens the page,
+ * with a control for the whole page beside it (a full-size field, too tall for the top row).
+ */
 export function PageHead(props: { title: string; children?: ReactNode; aside?: ReactNode }) {
   return (
-    <header className={s.pageHead}>
-      <div className={s.pageTitles}>
-        <Text as="h1" size="xl" strong>
-          {props.title}
-        </Text>
-        {props.children ? <Text tone="quiet">{props.children}</Text> : null}
-      </div>
-      {props.aside}
-    </header>
+    <>
+      <FrameTitle title={props.title} />
+      {props.children || props.aside ? (
+        <div className={s.pageIntro}>
+          {props.children ? <Text tone="quiet">{props.children}</Text> : null}
+          {props.aside}
+        </div>
+      ) : null}
+    </>
   );
 }
 

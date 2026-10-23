@@ -634,9 +634,7 @@ function LayoutSection() {
             </Sidebar>
           }
         >
-          <FrameTitle>
-            <Breadcrumb items={[{ label: "storefront", onClick: () => undefined }, { label: LONG }]} />
-          </FrameTitle>
+          <FrameTitle lead={<Breadcrumb items={[{ label: "storefront", onClick: () => undefined }, { label: LONG }]} />} />
           <Panel
             fill
             header={
