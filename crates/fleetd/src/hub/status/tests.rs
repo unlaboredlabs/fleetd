@@ -1098,16 +1098,16 @@ async fn an_update_releases_a_figure_the_old_rule_left_stuck() {
         45,
         "held: nothing since that point explains a fall"
     );
-    // Back to before the series restart, which the paused column came after.
-    let version = db.user_version().unwrap();
+    // Found by content, not as the last migration, so later migrations don't break this test.
+    let update = crate::hub::store::migrations::MIGRATIONS
+        .iter()
+        .find(|m| m.contains("DELETE FROM status_series"))
+        .unwrap();
     db.with(|c| {
-        c.execute_batch("ALTER TABLE status_series DROP COLUMN paused")?;
-        c.pragma_update(None, "user_version", version - 2)?;
+        c.execute_batch(update)?;
         Ok(())
     })
     .unwrap();
-    let updated = HubDb::open(home.path()).unwrap();
-    assert_eq!(updated.user_version().unwrap(), version);
     assert_eq!(estimate_after(&hub, &clock, 1).0, 14);
 }
 
