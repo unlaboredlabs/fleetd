@@ -1,7 +1,6 @@
-// Steering mid-run from the app: the box under an agent's live work, with its receipts, and the sends the lead
-// composer's ⌘Enter shares (its steers show in the chat, chat/ChatList.tsx). Sent with the app's paired key, as chat
-// is: the hub takes it as the person's (steer_send refuses an agent key). Receipts are the order's steers in
-// order_get, the read the live strip shares, which every steer.* event naming the order reads again (effects.ts).
+// Steering one agent mid-run from the app: the box under its live work, with its receipts. Sent with the app's paired
+// key, as chat is: the hub takes it as the person's (steer_send refuses an agent key). Receipts are the order's steers
+// in order_get, the read the live strip shares, which every steer.* event naming the order reads again (effects.ts).
 import { ArrowUp } from "lucide-react";
 import { useCallback, useState, type KeyboardEvent } from "react";
 import type { AttachmentId, Steer, SteerMode, SteerTarget } from "../../../shared/contracts";
@@ -13,11 +12,8 @@ import s from "./steer.module.css";
 /** ⌘Enter, as this platform writes it. */
 export const nowKeys = (): string => (window.fleetd.platform === "darwin" ? "⌘↩" : "Ctrl+↩");
 
-/**
- * The steers this view sent, kept as the hub answered until its order lists them. `send` and `withdraw` keep their
- * identity, so the chat's memoized rows can hold them.
- */
-export function useSteerSends() {
+/** The steers this box sent, kept as the hub answered until its order lists them. */
+function useSteerSends() {
   const { call } = useDataLayer();
   const [sent, setSent] = useState<readonly Steer[]>([]);
   const keep = useCallback((steer: Steer) => setSent((all) => [steer, ...all.filter((x) => x.id !== steer.id)]), []);
@@ -41,7 +37,7 @@ export function useSteerSends() {
   return { sent, send, withdraw };
 }
 
-export type SteerSends = ReturnType<typeof useSteerSends>;
+type SteerSends = ReturnType<typeof useSteerSends>;
 
 /** Under an agent's box: the person's steers to task `taskId` of order `workstreamId`, newest first. */
 function SteerReceipts({ workstreamId, taskId, steers }: { workstreamId: string; taskId: string; steers: SteerSends }) {

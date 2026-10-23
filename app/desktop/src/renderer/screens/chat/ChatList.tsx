@@ -15,7 +15,7 @@ import type { ChatItem } from "../../src/data/chat";
 
 import { shortClock } from "./format";
 import { authorLabel, latestLabel, newestKey, type Row, type TopState } from "./model";
-import { MessageReceipt, SteerLine } from "./Composer";
+import { MessageReceipt } from "./Composer";
 import { LiveStrip, useNow, useOnScreen } from "../live";
 import { Boundary } from "../../src/Boundary";
 import type { ChatItem as InlineItem } from "../../../shared/contracts";
@@ -160,7 +160,6 @@ const RowView = memo(function RowView(props: {
   mineLatest: boolean;
   onLoadOlder: () => void;
   onTold: (lane: AgentLane) => void;
-  onWithdraw: (steerId: string) => Promise<boolean>;
 }) {
   const { row: r, project } = props;
   switch (r.kind) {
@@ -213,23 +212,6 @@ const RowView = memo(function RowView(props: {
           </Boundary>
         </div>
       );
-    case "steer":
-      return (
-        <div className={cx(s.message, r.head && s.messageHead)} data-entry="steer" data-author="human">
-          {r.head ? (
-            <div className={s.head}>
-              <Text size="xs" strong tone="accent">
-                You · steer
-              </Text>
-              <Text size="xs" tone="quiet" tabular>
-                {shortClock(r.steer.queuedAt)}
-              </Text>
-            </div>
-          ) : null}
-          <Message text={r.steer.text} />
-          <SteerLine steer={r.steer} onWithdraw={props.onWithdraw} />
-        </div>
-      );
     case "message": {
       const i = r.item;
       return (
@@ -276,8 +258,6 @@ export function ChatList(props: {
   project: ProjectRef;
   onLoadOlder: () => void;
   onTold: (lane: AgentLane) => void;
-  /** Takes back one of your steers while it waits. */
-  onWithdraw: (steerId: string) => Promise<boolean>;
   /** A message to open at (a notification's link): scrolled to once it is loaded. */
   openAt?: number | undefined;
   /** Bumped to scroll to `openAt` again (Show, pressed twice). */
@@ -378,7 +358,6 @@ export function ChatList(props: {
             mineLatest={r.key === mineLatest}
             onLoadOlder={props.onLoadOlder}
             onTold={props.onTold}
-            onWithdraw={props.onWithdraw}
           />
         )}
       />

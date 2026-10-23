@@ -52,10 +52,9 @@ export const fixtures = [
   "live-0",
   "live-3",
   "live-20",
-  // F4: the chat composer's sends (fixtures/composer), and your steers to the lead in the chat.
+  // F4: the chat composer's sends (fixtures/composer).
   "composer-sends",
   "composer-waiting",
-  "composer-steers",
   // The lead mid-turn: the quiet line under its reply counts up and says what it does now and what the turn did; and
   // once it's over, how long it worked (fixtures/lead).
   "lead-planning",
@@ -297,7 +296,7 @@ export const screens: readonly Screen[] = [
       await expect(page.getByText("Stopping the lead and its agents…")).toBeVisible();
     },
   },
-  // ⌘Enter while the lead works on an order: the steer shows in the chat, its receipt saying it stops the step.
+  // ⌘Enter while the lead works: a chat message like any other, its receipt saying it stopped the lead's step.
   {
     id: "chat.composer",
     route: CHAT,
@@ -307,24 +306,11 @@ export const screens: readonly Screen[] = [
       await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
       const box = page.getByRole("textbox", { name: "Message the lead" });
       await expect(page.getByText(/stops its step and sends now/)).toBeVisible();
-      await box.fill(STEER_WORDS.leadNow);
+      await box.fill(CHAT_SENDS.now);
       await box.press("ControlOrMeta+Enter");
       await expect(box).toHaveValue("");
-      await expect(page.locator('[data-entry="steer"]').getByText(STEER_WORDS.leadNow)).toBeVisible();
-      await expect(page.locator('[data-steer="queued"]')).toHaveCount(1);
-    },
-  },
-  // Your steers to the lead stay in the chat at their times, each with where it is; one to an agent stays under its
-  // work, and the lead's own to its agent isn't yours.
-  {
-    id: "chat",
-    route: CHAT,
-    fixtures: ["composer-steers"],
-    variant: "steers",
-    open: async (page) => {
-      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
-      // The newest, so on screen at every size; the list renders only what is in view.
-      for (const stage of ["failed", "queued"]) await expect(page.locator(`[data-steer="${stage}"]`)).toHaveCount(1);
+      const mine = page.locator('[data-entry="message"]').filter({ hasText: CHAT_SENDS.now });
+      await expect(mine.getByText("delivered; the lead stopped its step to read this")).toBeVisible();
     },
   },
   // ↑ in the empty box brings back your last message.

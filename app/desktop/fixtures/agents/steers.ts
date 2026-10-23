@@ -1,5 +1,5 @@
 // Steers and their receipts, as order_get (its `steers`) and steer_send answer them: the agents-work agent's (one receipt per
-// stage across agents-work and agents-steers) and the lead composer's ⌘Enter (fixtures/composer). QA types the words.
+// stage across agents-work and agents-steers). QA types the words.
 import type { Fixture } from "../kit/fixture.ts";
 import { at } from "../kit/ids.ts";
 import { obj } from "../kit/stress.ts";
@@ -8,9 +8,6 @@ import { AGENT } from "./route.ts";
 
 export const STEER_WORDS = {
   agent: "Keep the old date helper exported until the email templates move.",
-  leadNow: "Stop the public link work; ship the card first.",
-  /** composer-steers: acknowledged, between the lead's question and your answer. */
-  leadLink: "Make the public link expire after seven days.",
 } as const;
 
 export const steer = (now: string, n: number, target: JsonObject, stage: string, text: string, agoS: number, more: JsonObject = {}): JsonObject => ({

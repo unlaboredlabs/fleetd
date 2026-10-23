@@ -91,7 +91,7 @@ A message reaches the lead at once. How depends on what the lead is doing:
 | The lead is | Your message |
 |---|---|
 | Idle | Starts its next turn. |
-| Working | Is a steer: it reads it at its next step, after the tool it is running. The box says so while you type. |
+| Working | Is a steer: it reads it at its next step, after the tool it is running. The box says so while you type. With ⌘Enter (Ctrl+Enter on Linux and Windows) it stops that step and reads it now. |
 | Starting, or its machine is away | Is held, and goes in as soon as it can. The chat says why it waits. |
 
 To stop the work, click Stop beside Send (or "Stop the lead and its agents" in the command palette). The lead's turn
@@ -100,7 +100,8 @@ instead.
 
 A message is never lost: if it can't be delivered, it stays held, the chat says why, and fleetd keeps trying.
 
-A small receipt under your message shows when it was taken in. See [Steering](/docs/steering).
+A small receipt under your newest message shows how it went in. A message sent with ⌘Enter keeps a quiet line saying
+the lead stopped its step to read it. See [Steering](/docs/steering).
 
 ## Follow the work {#follow}
 

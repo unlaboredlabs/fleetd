@@ -1,8 +1,7 @@
 // The chat as rows: day dividers, messages grouped by author (a run from one author within a few minutes shows its
-// name and time once; yours show none), your steers to the lead at their time, event one-liners (fleetd's own
-// messages among them), inline items, the live strip under the lead's newest message (and the field that answers it),
-// where you stopped reading, and the top of the history.
-import type { Steer, Workstream } from "../../../shared/contracts";
+// name and time once; yours show none), event one-liners (fleetd's own messages among them), inline items, the live
+// strip under the lead's newest message (and the field that answers it), where you stopped reading, and the top of the
+// history.
 import type { ChatItem } from "../../src/data/chat";
 
 export type Row =
@@ -26,11 +25,6 @@ export type Row =
     }
   /** Above the first message from before the chat existed. */
   | { readonly kind: "history"; readonly key: string }
-  /**
-   * Your steer to the lead (⌘Enter, or `fleetd steer`): the hub keeps steers apart from the chat, so the chat shows
-   * them from order_get, as your words with their receipt.
-   */
-  | { readonly kind: "steer"; readonly key: string; readonly steer: Steer; readonly head: boolean }
   | { readonly kind: "event"; readonly key: string; readonly item: ChatItem }
   | { readonly kind: "inline"; readonly key: string; readonly item: ChatItem }
   /** Above the first message you hadn't seen when the chat opened. */
@@ -109,8 +103,6 @@ export interface RowsInput {
    * newest message when it was written during that turn.
    */
   readonly workedSince?: number | undefined;
-  /** Your steers to the lead, oldest first (leadSteers); those outside the loaded pages wait for theirs. */
-  readonly steers?: readonly Steer[];
   /** The newest seq you had seen when the chat opened, when there was more since (data/seen.ts). */
   readonly seenSeq?: number | undefined;
   readonly nowMs: number;
@@ -120,28 +112,11 @@ export interface RowsInput {
 /** From before the chat existed: the layer shows these as one-liners, this view as the conversation they were. */
 const isHistory = (item: ChatItem): boolean => item.message?.history !== undefined;
 
-/**
- * The steers to show with these items: the ones within the loaded pages (none above a page with older ones before
- * it), apart from those the chat already holds as history from before it existed.
- */
-const steersShown = (i: RowsInput): readonly Steer[] => {
-  const steers = i.steers ?? [];
-  if (steers.length === 0) return steers;
-  const from = i.hasOlder && i.items[0] !== undefined ? msOf(i.items[0].at, i.nowMs) : -Infinity;
-  const copied = new Set(i.items.filter((item) => item.message?.history === "steer").map((item) => `${String(msOf(item.at, i.nowMs))} ${item.text}`));
-  return steers.filter((st) => {
-    const at = msOf(st.queuedAt, i.nowMs);
-    return at >= from && !copied.has(`${String(at)} ${st.text.trim()}`);
-  });
-};
-
 export function chatRows(i: RowsInput): Row[] {
   const top: TopState = i.loadingOlder ? "loading" : !i.hasOlder ? "start" : i.held !== true ? "more" : i.offline === false ? "reread" : "held";
   const out: Row[] = [{ kind: "top", key: "top", state: top }];
   let lastDay: string | undefined;
   let prev: ChatItem | undefined;
-  /** When the steer just before was sent: a run of steers shows its header once, as messages do. */
-  let prevSteer: number | undefined;
   // The strip goes under the lead's newest message, or at the end when the lead hasn't said anything yet. A secret
   // or command field right after that message answers it, so the strip goes after the field, never between them.
   let leadLast = -1;
@@ -170,19 +145,6 @@ export function chatRows(i: RowsInput): Row[] {
     out.push({ kind: "day", key: `day:${d}`, label: dayLabel(iso, i.nowMs, i.timeZone) });
     lastDay = d;
     prev = undefined;
-    prevSteer = undefined;
-  };
-  const steers = steersShown(i);
-  let next = 0;
-  /** Your steers sent before `ms`, in their place. */
-  const steersUntil = (ms: number) => {
-    for (let st = steers[next]; st !== undefined && msOf(st.queuedAt, i.nowMs) < ms; st = steers[++next]) {
-      const at = msOf(st.queuedAt, i.nowMs);
-      day(st.queuedAt);
-      out.push({ kind: "steer", key: `steer:${st.id}`, steer: st, head: prevSteer === undefined || at - prevSteer > GROUP_MS });
-      prevSteer = at;
-      prev = undefined;
-    }
   };
   // The first message from someone else after what you'd seen; only when the loaded pages reach back to what you saw.
   const seen = i.seenSeq;
@@ -190,11 +152,7 @@ export function chatRows(i: RowsInput): Row[] {
     seen === undefined || (i.hasOlder && !i.items.some((item) => (item.message?.seq ?? Infinity) <= seen))
       ? -1
       : i.items.findIndex((item) => item.author !== "human" && (item.message?.seq ?? -Infinity) > seen);
-  const lastAt = i.items.at(-1)?.at;
-  // Steers after every item go last, and the lead's activity under them, as under the newest item.
-  const steersAfter = lastAt === undefined ? steers.length : steers.filter((st) => msOf(st.queuedAt, i.nowMs) >= msOf(lastAt, i.nowMs)).length;
   i.items.forEach((item, n) => {
-    steersUntil(msOf(item.at, i.nowMs));
     const history = isHistory(item);
     if (history && !inHistory) out.push({ kind: "history", key: `history:${item.id}` });
     inHistory = history;
@@ -214,28 +172,12 @@ export function chatRows(i: RowsInput): Row[] {
       out.push({ kind: "message", key: item.id, item, run, head: run && item.author !== "human", history: false });
     }
     prev = item;
-    prevSteer = undefined;
-    if ((activity && steersAfter === 0 && n === i.items.length - 1) || (worked && n === reply)) out.push({ kind: "activity", key: "activity" });
+    if ((activity && n === i.items.length - 1) || (worked && n === reply)) out.push({ kind: "activity", key: "activity" });
     if (i.strip && n === leadLast) out.push({ kind: "strip", key: "strip" });
   });
-  steersUntil(Infinity);
-  if (activity && (i.items.length === 0 || steersAfter > 0)) out.push({ kind: "activity", key: "activity" });
+  if (activity && i.items.length === 0) out.push({ kind: "activity", key: "activity" });
   if (i.strip && leadLast === -1) out.push({ kind: "strip", key: "strip" });
   return out;
-}
-
-/**
- * The project's orders that can hold a steer from `from` on (all of them without older pages): every open one
- * (the board's), and each listed one that was open after `from`.
- * Sorted, so the reads keep their order.
- */
-export function ordersInView(open: readonly string[], listed: readonly Workstream[] | undefined, from: string | undefined): readonly string[] {
-  const ids = new Set(open);
-  for (const w of listed ?? []) {
-    if (from !== undefined && w.state !== "open" && Date.parse(w.updatedAt) < Date.parse(from)) continue;
-    ids.add(w.workstreamId);
-  }
-  return [...ids].toSorted();
 }
 
 /** The row to open at for a message id (a notification's ?message=), or undefined when it isn't loaded. */

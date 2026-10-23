@@ -189,6 +189,8 @@ export interface ChatSend {
   readonly attachments: readonly AttachmentRef[];
   readonly at: string;
   readonly state: SendState;
+  /** Sent with ⌘Enter: chat_send's `now`, kept for every resend. */
+  readonly now?: boolean;
   /** An earlier call was cut off: the hub may hold it, so it is never called "not sent". */
   readonly reached?: boolean;
 }
