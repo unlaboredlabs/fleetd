@@ -4,8 +4,7 @@
 // - Commands: actions with a stable id. When the id is a ShortcutId (shared/shortcuts.ts), its key runs it and the
 //   palette shows the key. Register while the screen that handles it is mounted (useCommands), so "Attach a file" only
 //   exists while a chat composer is on screen; when no registered command has an id, its key does nothing and falls through.
-//   A screen's registration always outranks the built-in defaults (defaults.ts), whatever the mount order. Between
-//   two screens registering the same id, the later registration wins until it unmounts.
+//   Each id has one definition. If two mounted copies of a screen register it, the later wins until it unmounts.
 // - Sources: data the palette searches (projects, machines, prompts). `items` is read only while the
 //   palette is open, so a large list costs nothing the rest of the time.
 
@@ -63,26 +62,12 @@ export interface Source {
 
 type Listener = () => void;
 
-/**
- * Lowest first: `builtin` is the palette's own fallback (defaults.ts), `default` a screen module's always-on version
- * (time, settings), `screen` a mounted screen's. A lower one never shadows a higher one, whichever registered first.
- */
-export type Priority = "builtin" | "default" | "screen";
-const RANK: Readonly<Record<Priority, number>> = { builtin: 0, default: 1, screen: 2 };
-
-interface Entry {
-  readonly command: Command;
-  readonly priority: Priority;
-}
-
-// Stacks, top last: by priority, then in registration order. An unmount restores the one below.
-const commands = new Map<string, Entry[]>();
+// Stacks, top last, in registration order: an unmount restores the one below.
+const commands = new Map<string, Command[]>();
 const sources = new Map<string, Source>();
 const listeners = new Set<Listener>();
-let version = 0;
 
 const changed = () => {
-  version += 1;
   for (const listener of listeners) listener();
 };
 
@@ -91,27 +76,16 @@ export const subscribeRegistry = (listener: Listener): (() => void) => {
   return () => listeners.delete(listener);
 };
 
-/** Bumps on every registration change; for useSyncExternalStore. */
-export const registryVersion = (): number => version;
-
-export const registerCommands = (list: readonly Command[], priority: Priority = "screen"): (() => void) => {
-  const entries = list.map((command): Entry => ({ command, priority }));
-  for (const entry of entries) {
-    const stack = commands.get(entry.command.id) ?? [];
-    // Above its own priority's entries, below the first of a higher one.
-    const above = stack.findIndex((e) => RANK[e.priority] > RANK[priority]);
-    if (above >= 0) stack.splice(above, 0, entry);
-    else stack.push(entry);
-    commands.set(entry.command.id, stack);
-  }
+export const registerCommands = (list: readonly Command[]): (() => void) => {
+  // Copies, so the same object registered twice still unregisters once each.
+  const entries = list.map((command): Command => ({ ...command }));
+  for (const entry of entries) commands.set(entry.id, [...(commands.get(entry.id) ?? []), entry]);
   changed();
   return () => {
     for (const entry of entries) {
-      const stack = commands.get(entry.command.id);
-      if (!stack) continue;
-      const at = stack.indexOf(entry);
-      if (at >= 0) stack.splice(at, 1);
-      if (stack.length === 0) commands.delete(entry.command.id);
+      const stack = commands.get(entry.id)?.filter((c) => c !== entry) ?? [];
+      if (stack.length === 0) commands.delete(entry.id);
+      else commands.set(entry.id, stack);
     }
     changed();
   };
@@ -130,7 +104,7 @@ const isEnabled = (command: Command): boolean => command.enabled?.() ?? true;
 
 /** The command a shortcut or a menu item runs right now, if one is registered and enabled. */
 export const commandFor = (id: string): Command | undefined => {
-  const top = commands.get(id)?.at(-1)?.command;
+  const top = commands.get(id)?.at(-1);
   return top && isEnabled(top) ? top : undefined;
 };
 
@@ -147,7 +121,7 @@ export const snapshotItems = (): Command[] => {
   const out: Command[] = [];
   const seen = new Set<string>();
   for (const stack of commands.values()) {
-    const top = stack.at(-1)?.command;
+    const top = stack.at(-1);
     if (top && isEnabled(top)) {
       out.push(top);
       seen.add(top.id);

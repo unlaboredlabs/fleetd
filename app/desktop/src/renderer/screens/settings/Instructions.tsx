@@ -5,7 +5,8 @@ import { useEffect, useState } from "react";
 import { Button, Field, Separator, Text, Textarea } from "../../ui";
 import { INSTRUCTIONS, type PromptDetail, type PromptScope } from "./contracts";
 import { parseScope, projectRefOf, scopeKey, shownDraft, type Draft, type Scope } from "./editor";
-import { errorText, useHubCall, useLive, useRead, useRefetch } from "./hub";
+import { useToolQuery } from "../../src/data/react";
+import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { ConfirmDiscard, PageHead, ScopeSelect, scopeName, useProjects } from "./parts";
 import { replaceRoute, type SettingsRoute } from "./route";
 import s from "./settings.module.css";
@@ -23,7 +24,7 @@ export function Instructions({ route }: { route: SettingsRoute }) {
   const ref = project ? projectRefOf(project) : undefined;
   const key = project ? scopeKey(project) : "hub";
 
-  const [load, reload] = useRead("prompt_get", { id: INSTRUCTIONS, ...(ref ? { projectRef: ref } : {}) }, live);
+  const read = useToolQuery("prompt_get", { id: INSTRUCTIONS, ...(ref ? { projectRef: ref } : {}) }, { enabled: live });
   const hubCall = useHubCall();
   const refetch = useRefetch();
 
@@ -33,7 +34,7 @@ export function Instructions({ route }: { route: SettingsRoute }) {
   const [busy, setBusy] = useState<PromptScope | null>(null);
   const [echo, setEcho] = useState<Echo | null>(null);
 
-  const d = load.state === "ready" ? (load.value.prompt ?? null) : null;
+  const d = read.data?.prompt ?? null;
   if (d && d !== synced) {
     setSynced(d);
     setGlobal(fill(global, d.global?.text ?? ""));
@@ -99,10 +100,10 @@ export function Instructions({ route }: { route: SettingsRoute }) {
         <PageHead title="Instructions">
           Added to every agent's first message, the lead's too: these first, then the project's own.
         </PageHead>
-        {load.state === "failed" ? (
+        {read.isLoadingError ? (
           <div className={s.inline}>
-            <Text tone="danger">{load.message}</Text>
-            <Button onClick={reload}>Try again</Button>
+            <Text tone="danger">{errorText(read.error)}</Text>
+            <Button onClick={() => void read.refetch()}>Try again</Button>
           </div>
         ) : null}
         <div className={s.stack}>

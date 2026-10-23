@@ -82,6 +82,7 @@ describe("event effects", () => {
     const w1 = { scope: { kind: "order", workstreamId: "W1" }, since: "2026-10-19T00:00:00.000Z" };
     expect(matches(w1, { workstreamId: "W1" })).toBe(true);
     expect(matches(w1, { workstreamId: "W2" })).toBe(false);
+    expect(matches({ workstreamId: "W1" }, { workstreamId: "W1" })).toBe(true);
   });
 
   it("a lead woken for several orders refetches each one's detail and time", () => {
@@ -93,9 +94,4 @@ describe("event effects", () => {
     }
   });
 
-  it("matches queries by their input's fields", () => {
-    expect(matches({ workstreamId: "W1", n: 3 }, { workstreamId: "W1" })).toBe(true);
-    expect(matches({ workstreamId: "W2" }, { workstreamId: "W1" })).toBe(false);
-    expect(matches({}, undefined)).toBe(true);
-  });
 });

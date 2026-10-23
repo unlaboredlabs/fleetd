@@ -104,8 +104,6 @@ export interface Orphan {
 
 export class PromptHub {
   readonly prompts: Prompt[];
-  retentionDays = 30;
-  readonly storedBytes = 184_320_000;
   /** Set to make every call fail as if the hub dropped; the tests and the error fixtures use it. */
   offline = false;
 
@@ -214,11 +212,6 @@ export class PromptHub {
         }
         return { ok: true, output: { ref: refOf(p.id, text), warnings } };
       }
-      case "time_breakdown":
-        return { ok: true, output: { retentionDays: this.retentionDays, storedBytes: this.storedBytes } };
-      case "time_retention_set":
-        this.retentionDays = Number(input["retentionDays"]);
-        return { ok: true, output: { retentionDays: this.retentionDays } };
       default:
         return { ok: false, error: { code: "not_found", message: `The fixture hub has no ${tool}.` } };
     }

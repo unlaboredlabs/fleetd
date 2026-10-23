@@ -140,5 +140,3 @@ Change it with an admin key:
 ```sh
 fleetd time --retention 90
 ```
-
-Or in the app: Settings → General → Time data, which also shows how much space it takes.

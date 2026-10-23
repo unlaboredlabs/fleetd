@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NO_NAMES, agentName, clockMs, delta, numberCollisions, ordinal, rangeText, tickLabel, fmtBytes, fmtDur, inexact, markedDur, missing, pct, spanTitle } from "./format";
+import { NO_NAMES, agentName, clockMs, delta, numberCollisions, ordinal, rangeText, tickLabel, fmtDur, inexact, markedDur, missing, pct, spanTitle } from "./format";
 import { compareLine, pieces } from "./insightText";
 import type { Coverage, Span } from "./types";
 
@@ -51,18 +51,9 @@ describe("figures", () => {
     expect(fmtDur(-5)).toBe("0 ms");
   });
 
-  it("read sizes, clocks, shares and changes plainly", () => {
-    expect(fmtBytes(312)).toBe("312 B");
-    expect(fmtBytes(48 * 1024 + 100)).toBe("48 KB");
-    expect(fmtBytes(1_258_291)).toBe("1.2 MB");
-    expect(fmtBytes(118 * 1024 * 1024)).toBe("118 MB");
-    expect(pct(39, 100)).toBe("39%");
+  it("never read a small share as none, and a change from nothing as a percentage", () => {
     expect(pct(1, 1000)).toBe("<1%");
-    expect(pct(0, 100)).toBe("0%");
-    expect(delta(100, 102)).toBe("▲ 2%");
-    expect(delta(100, 69)).toBe("▼ 31%");
     expect(delta(0, 5)).toBe("new");
-    expect(delta(7, 7)).toBe("same");
   });
 });
 

@@ -8,12 +8,12 @@ describe("settings search", () => {
   it("finds an option by its own name, name matches first", () => {
     expect(labels("max agents")[0]).toBe("Max agents per project");
     expect(labels("max agents")).toContain("Whole fleet");
-    expect(labels("MOTION")).toEqual(["Motion"]);
+    expect(labels("APPEARANCE")).toEqual(["Appearance"]);
   });
 
   it("finds an option by the words people use for it", () => {
     expect(labels("dark")).toEqual(["Appearance"]);
-    expect(labels("retention")).toEqual(["Time data"]);
+    expect(labels("disconnect")).toEqual(["Hub"]);
   });
 
   it("finds a prompt by its name, opening it in the editor", () => {
@@ -23,7 +23,7 @@ describe("settings search", () => {
   });
 
   it("needs every word, and finds nothing for nothing", () => {
-    expect(labels("dark motion")).toEqual([]);
+    expect(labels("dark sound")).toEqual([]);
     expect(labels("   ")).toEqual([]);
   });
 
@@ -32,7 +32,7 @@ describe("settings search", () => {
   });
 
   it("opens a prompt in the project Prompts was showing, so a save never lands hub-wide by surprise", () => {
-    vi.stubGlobal("window", { location: { hash: "" }, history: { state: null, replaceState: () => undefined } });
+    vi.stubGlobal("window", { location: { hash: "" }, history: { state: null, replaceState: () => undefined }, dispatchEvent: () => true });
     replaceRoute({ tab: "prompts", prompt: "lead.start", for: "devbox/storefront" });
     const [reviewer] = searchSettings("reviewer");
     if (reviewer === undefined) throw new Error("no reviewer");

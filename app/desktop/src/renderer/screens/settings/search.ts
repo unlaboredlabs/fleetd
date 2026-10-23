@@ -31,11 +31,8 @@ const page = (tab: Tab, keywords: ReadonlyArray<string>): SettingsOption => ({ k
 export const OPTIONS: ReadonlyArray<SettingsOption> = [
   page("general", ["preferences"]),
   { key: "general.appearance", label: "Appearance", tab: "general", keywords: ["theme", "dark", "light", "mode", "match system"] },
-  { key: "general.motion", label: "Motion", tab: "general", keywords: ["animation", "reduce motion"] },
   { key: "general.hub", label: "Hub", tab: "general", keywords: ["pair", "connection", "disconnect", "key", "server"] },
   { key: "general.links", label: "Pairing links", tab: "general", keywords: ["fleetd://", "link handler", "open links"] },
-  { key: "general.retention", label: "Time data", tab: "general", keywords: ["retention", "keep", "storage", "disk", "spans"] },
-  { key: "general.memory", label: "Claude auto memory", tab: "general", keywords: ["memory", "notes"] },
   page("notifications", ["alerts", "mute"]),
   { key: "notifications.kinds", label: "Notify me when", tab: "notifications", keywords: ["notifications", "alerts", "mute", "finished", "done"] },
   { key: "notifications.sound", label: "Sound", tab: "notifications", keywords: ["notifications", "mute", "silent"] },

@@ -1,7 +1,9 @@
 // Commands that need nothing but the route table (notes/electron-routes.md): the palette itself, the shortcuts
-// sheet, and plain navigation. A screen that does better registers the same id and wins while it is mounted.
+// sheet, and plain navigation. Settings and Add project are defined by their own screens (settings/commands.ts,
+// ProjectsHost), which are up for the life of the app.
 
 import type { ThemeMode } from "../../ui";
+import { timeRouteFor } from "../time/route";
 import type { Command } from "./registry";
 import { togglePalette, toggleShortcuts } from "./state";
 
@@ -30,19 +32,15 @@ export const defaultCommands = (): Command[] => [
       else go(target);
     },
   },
-  { id: "go:time", title: "Time", detail: "Where the time went", group: "go-to", keywords: ["timeline", "inspector"], run: () => go("#/time") },
-  { id: "go:machines", title: "Machines", detail: "Machines and setup checks", group: "go-to", run: () => go("#/machines") },
-  { id: "go:projects.add", title: "Add a project…", detail: "Point the fleet at a folder", group: "actions", run: () => go("#/projects/add") },
   {
-    id: "settings.open",
-    title: "Settings",
-    detail: "Appearance, motion and hub connection",
-    group: "settings",
-    keywords: ["preferences"],
-    run: () => go("#/settings"),
+    id: "go:time",
+    title: "Time",
+    detail: "Where the time went: all work, or one piece of work's timeline",
+    group: "go-to",
+    keywords: ["timeline", "inspector", "breakdown", "insights", "slow", "critical path"],
+    run: () => go(timeRouteFor(window.location.hash)),
   },
-  { id: "go:settings.prompts", title: "Prompts", detail: "Settings", group: "settings", keywords: ["templates"], run: () => go("#/settings/prompts") },
-  { id: "go:settings.instructions", title: "Instructions", detail: "Settings", group: "settings", run: () => go("#/settings/instructions") },
+  { id: "go:machines", title: "Machines", detail: "Machines and setup checks", group: "go-to", run: () => go("#/machines") },
   { id: "go:onboarding", title: "Connect to a hub…", detail: "Pair this app with a fleetd hub", group: "actions", keywords: ["pair"], run: () => go("#/onboarding") },
 ];
 
