@@ -1032,7 +1032,7 @@ async function stopPart(lab: Lab, chat: Chat, ref: Ref, need: (tool: string) => 
   const two = spawnSleepers(lab, fleetd, openWorkstream(check, fleetd, "Stop."), "stop", 2, 600).map((s) => s.taskId);
   await poll("two agents running", TURN_MS, async () => ((await running(two)) === 2 ? true : undefined));
   const from = await lab.cursor();
-  const started = await lab.callTool("lead_start", { ...ref, model: MECHANICS.model, effort: MECHANICS.effort });
+  const started = await lab.callTool("lead_start", ref);
   check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
   const leadThread = started.body.threadId as string;
   const leadEnds = (cursor: number, what: string, ms = TURN_MS) =>
