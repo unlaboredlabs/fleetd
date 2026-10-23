@@ -41,7 +41,7 @@ export function useChatData(project: ProjectRef): ChatData {
   const view = useData(selectChat(key));
   const projectRow = useData(selectProjectRow(key));
   const leadWorking = useData(selectLeadWorking(key));
-  const strip = useData((s) => (selectStrip(project)(s)?.rows.length ?? 0) > 0);
+  const strip = useData((s) => (selectStrip(project)(s)?.agents ?? 0) > 0);
   const title = useData((s) => s.projects[key]?.title);
   const missing = useData((s) => s.fresh && !(key in s.projects));
   const loadError = useData((s) => (s.chats[key]?.loaded === true ? undefined : s.chats[key]?.error));

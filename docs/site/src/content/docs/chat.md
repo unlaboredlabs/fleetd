@@ -109,7 +109,7 @@ Everything shows up in the chat, quietly:
 
 | In the chat | Shows |
 |---|---|
-| The agents strip, under the lead's message | One line: how many agents are working, and on which PRs. Expand it to see each agent's role, what it's doing and for how long. Click an agent waiting on you to jump to what it needs. |
+| The agents strip, under the lead's message | One line: how many agents are working, and on which PRs. Click it to see each agent in the panel's [Agents](/docs/desktop-app#agents) tab. |
 | A quiet line under the lead's reply | While the lead works: how long it has been working, what it's doing now, and the orders and agents it started. When it's done: how long it worked, such as "Worked for 3m 40s". |
 | One-line events | A pull request opened, merged, or sent back. |
 
@@ -119,8 +119,8 @@ For a project's progress at a glance, see [Status](/docs/status). For where the 
 ## Read a pull request {#prs}
 
 The Pull requests tab of the panel beside the chat (⌥⌘B) lists the project's PRs: open ones first, then those merged
-or closed in the last week, each with its checks, its reviews and the agent that wrote it. A PR's number in the agents
-strip or in [Agents](/docs/desktop-app#agents) opens it there too. For another project's, open the command palette
+or closed in the last week, each with its checks, its reviews and the agent that wrote it. A PR named in the chat
+("#221", "PR #221" or its GitHub link), in the agents strip or in [Agents](/docs/desktop-app#agents) opens it there too. For another project's, open the command palette
 (⌘K), select the project, press ⌘K again and choose **Pull requests in this project**.
 
 Click a PR to read it in the list's place; **All pull requests** or Esc goes back.

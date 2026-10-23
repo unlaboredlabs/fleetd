@@ -5,7 +5,7 @@
 import type { Virtualizer } from "@tanstack/react-virtual";
 import { Paperclip } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import type { AgentLane, AttachmentRef } from "../../../shared/contracts";
+import type { AttachmentRef } from "../../../shared/contracts";
 import { Button, cx, Text, Truncate, VirtualList } from "../../ui";
 import { useData, useToolQuery } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
@@ -159,7 +159,6 @@ const RowView = memo(function RowView(props: {
   /** This is the person's newest message: its receipt shows even once sent. */
   mineLatest: boolean;
   onLoadOlder: () => void;
-  onTold: (lane: AgentLane) => void;
 }) {
   const { row: r, project } = props;
   switch (r.kind) {
@@ -192,7 +191,7 @@ const RowView = memo(function RowView(props: {
     case "event":
       return (
         <div className={cx(s.quietRow, s.event)} data-entry="event">
-          <InlineText size="xs" tone="quiet" text={r.item.text} />
+          <InlineText size="xs" tone="quiet" text={r.item.text} project={project} />
           <span className={s.eventTime}>{shortClock(r.item.at)}</span>
         </div>
       );
@@ -208,7 +207,7 @@ const RowView = memo(function RowView(props: {
       return (
         <div className={s.strip}>
           <Boundary part="the live strip">
-            <LiveStrip project={project} onTold={props.onTold} />
+            <LiveStrip project={project} />
           </Boundary>
         </div>
       );
@@ -231,7 +230,7 @@ const RowView = memo(function RowView(props: {
               </Text>
             </div>
           ) : null}
-          {i.text.trim() !== "" ? <Message text={i.text} /> : null}
+          {i.text.trim() !== "" ? <Message text={i.text} project={project} /> : null}
           {i.attachments.length > 0 ? (
             <div className={s.attachments}>
               {i.attachments.map((a) => (
@@ -257,7 +256,6 @@ export function ChatList(props: {
   rows: readonly Row[];
   project: ProjectRef;
   onLoadOlder: () => void;
-  onTold: (lane: AgentLane) => void;
   /** A message to open at (a notification's link): scrolled to once it is loaded. */
   openAt?: number | undefined;
   /** Bumped to scroll to `openAt` again (Show, pressed twice). */
@@ -357,7 +355,6 @@ export function ChatList(props: {
             project={props.project}
             mineLatest={r.key === mineLatest}
             onLoadOlder={props.onLoadOlder}
-            onTold={props.onTold}
           />
         )}
       />

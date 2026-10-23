@@ -414,32 +414,34 @@ export const screens: readonly Screen[] = [
       await expect(page.locator("header").getByText(/^Last known, as of/u)).toBeVisible();
     },
   },
-  // The agents strip, opened to its rows.
+  // The strip's headline opens the panel's agents, where each one's work is (the chat doesn't list them itself): the
+  // panel is closed first, so the shot shows the headline opening it.
   {
     id: "chat",
     route: CHAT,
-    // The expand control is the strip's header button, named by its headline ("17 agents working · 1 needs you ·
-    // 1 on hold · 1 queued"); scoped to the strip, since the sidebar's project button also says "3 agents working". long-text has
-    // no agent at work in this project, so it has no strip; live-20 carries the long commands and paths.
     fixtures: ["live-3", "live-20"],
-    open: (page) =>
-      page.getByRole("region", { name: /agents? working/u }).getByRole("button", { name: /agents? working/u, expanded: false }).click(),
-    variant: "strip-open",
+    variant: "strip-to-panel",
+    open: async (page) => {
+      const panel = page.getByRole("complementary", { name: "Agents and pull requests" });
+      await page.getByRole("button", { name: "Hide agents and PRs" }).click();
+      await panel.waitFor({ state: "detached" });
+      // Scoped to the strip: the sidebar's project button also says "3 agents working".
+      await page.getByRole("region", { name: /agents? working/u }).getByRole("button", { name: /agents? working/u }).click();
+      await expect(panel.getByRole("list", { name: "Agents" })).toBeVisible();
+    },
   },
-  // ...and scrolled to its last agent: twenty fill more than the third of the window the opened strip may take, so
-  // its box scrolls and draws only the rows in view.
+  // A PR the chat names (in an event line, as "#10" in live-3 and as its GitHub URL in live-20) opens in the panel.
   {
     id: "chat",
     route: CHAT,
-    fixtures: ["live-20"],
+    fixtures: ["live-3", "live-20"],
+    variant: "pr-link",
     open: async (page) => {
-      const strip = page.getByRole("region", { name: /agents? working/u });
-      await strip.getByRole("button", { name: /agents? working/u, expanded: false }).click();
-      const list = strip.getByRole("list", { name: "Agents" });
-      await list.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
-      await expect(strip.getByText(/^queued · waiting for a free slot/u)).toBeVisible();
+      const chat = page.getByRole("list", { name: "Conversation with the lead" });
+      await chat.getByRole("link", { name: /^#10$|\/pull\/10$/u }).click();
+      await page.getByRole("complementary", { name: "Agents and pull requests" }).locator('[data-screen^="prs.detail"]').waitFor();
+      await expect(page).toHaveURL(/\/prs\/(acme\/storefront\/)?10$/u);
     },
-    variant: "strip-scrolled",
   },
   // The lead chat (lead-chat-spec.md).
   // UX-1 [5]: each row says why it wants you (reply, approve · 2, secret, blocked), and docs' reply that arrives
@@ -1004,6 +1006,17 @@ export const screens: readonly Screen[] = [
       await box.press("Enter");
       await expect(box).toHaveValue("");
       await expect(page.locator('[data-steer="queued"]')).toHaveCount(2);
+    },
+  },
+  // What it was told at its start, opened from its head.
+  {
+    id: "agents.work",
+    route: AGENT_ROUTE,
+    fixtures: ["agents-work"],
+    variant: "told",
+    open: async (page) => {
+      await page.getByRole("button", { name: "What it was told" }).click();
+      await expect(page.getByRole("dialog", { name: "What the writer was told" }).getByText("First message", { exact: true })).toBeVisible();
     },
   },
   { id: "agents.work", route: AGENT_ROUTE, fixtures: ["agents-work"], variant: "narrow", sizes: ["narrow"] },

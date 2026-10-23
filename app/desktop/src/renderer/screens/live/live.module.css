@@ -1,10 +1,11 @@
-/* The live strip in the lead's chat: one quiet line folded, a short scrolling box opened, no motion
-   but the chevron turning. */
+/* The live strip in the lead's chat: one quiet line, no motion. On a narrow line the PRs wrap under the headline. */
 
 .strip {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-3);
+  row-gap: var(--space-1);
   min-width: 0;
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--hairline);
@@ -13,9 +14,7 @@
 
 .head {
   all: unset;
-  display: flex;
-  align-items: center;
-  gap: var(--space-1-5);
+  flex: 0 1 auto;
   min-width: 0;
   color: var(--text);
   cursor: pointer;
@@ -24,112 +23,27 @@
 .head:hover {
   text-decoration: underline;
 }
-/* `all: unset` drops the app's focus outline too, so these two buttons put it back (base.css :focus-visible). The
-   PR number sits in the scrolling box, which clips past its rows, so its ring is drawn tight. */
+/* `all: unset` drops the app's focus outline too, so the headline and the PR links put it back (base.css :focus-visible). */
 .head:focus-visible,
 .pr:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-.pr:focus-visible {
-  outline-offset: 0;
-}
-.headline {
-  flex: 0 1 auto;
-  min-width: 0;
-}
 /* The PRs the agents are on, pushed to the line's end. */
 .prs {
-  flex: 0 1 auto;
-  min-width: 0;
-  margin-left: auto;
-  padding-left: var(--space-3);
-}
-.chevron {
   flex: none;
-  width: 12px;
-  height: 12px;
-  color: var(--quiet);
-  transition: transform var(--dur-fast) var(--ease-out);
-}
-.chevronOpen {
-  transform: rotate(90deg);
+  margin-left: auto;
+  white-space: nowrap;
 }
 
 .pr {
   all: unset;
-  flex: none;
   cursor: pointer;
   border-radius: var(--radius-sm);
   font-family: var(--font-mono);
   font-size: var(--text-sm);
   color: var(--text);
-  white-space: nowrap;
 }
 .pr:hover {
   text-decoration: underline;
-}
-
-.opened {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-/* Sized to its rows, up to about a third of the window; past that it scrolls and draws only the rows in view. */
-.rows {
-  height: min(var(--rows-px), 33vh);
-  min-height: 0;
-}
-/* A PR's one line, above the agents on it (parts.tsx rows are 24 px; this is 28). */
-.group {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-  height: 28px;
-  padding: var(--space-1) 0 0 2px;
-}
-.groupTitle {
-  flex: 0 1 auto;
-  min-width: 0;
-}
-.groupLabel {
-  flex: none;
-  margin-left: auto;
-  font-size: var(--text-xs);
-  white-space: nowrap;
-}
-.foot {
-  display: flex;
-  padding-top: var(--space-1);
-}
-.timeLink {
-  color: var(--accent);
-  text-decoration: none;
-  border-radius: var(--radius-sm);
-}
-.timeLink:hover {
-  text-decoration: underline;
-}
-
-.quiet {
-  color: var(--quiet);
-}
-.loud {
-  color: var(--text);
-}
-.warning {
-  color: var(--warning);
-}
-.danger {
-  color: var(--danger);
-}
-.success {
-  color: var(--success);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .chevron {
-    transition: none;
-  }
 }
