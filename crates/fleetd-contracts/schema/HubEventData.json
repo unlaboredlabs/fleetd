@@ -1748,12 +1748,12 @@
         },
         {
           "const": "acknowledged",
-          "description": "The agent's reply named its id, or a lead call did (`--steer S12`).",
+          "description": "The agent replied after taking it in, or a lead call named it (`--steer S12`).",
           "type": "string"
         },
         {
           "const": "unacknowledged",
-          "description": "Its run ended with no reply naming it.",
+          "description": "Its run ended with no reply after it was delivered.",
           "type": "string"
         },
         {

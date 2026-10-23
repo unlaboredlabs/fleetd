@@ -135,15 +135,8 @@
      "description": "references and attachments, or nothing"
     }
    ],
-   "rules": [
-    {
-     "id": "names-steer",
-     "label": "asks the agent to name the steer first, so its receipt can say it was acknowledged",
-     "needle": "\\{\\{id\\}\\}:",
-     "enforced": "prompt"
-    }
-   ],
-   "text": "{{id}} · {{who}} steers you ({{scope}}): '{{text}}'{{references}}\nBegin your next message with \"{{id}}:\" and one line on what you will do now; then carry on unless this changes it. It outranks your earlier instructions.\n",
+   "rules": [],
+   "text": "{{id}} · {{who}} steers you ({{scope}}): '{{text}}'{{references}}\nThis outranks your earlier instructions. Say in one line what you will do now, then carry on.\n",
    "perProject": true
   },
   {

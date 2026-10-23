@@ -211,12 +211,7 @@ pub const ENTRIES: &[Entry] = &[
         "Steer",
         "per steer (steer_send, task message), straight to the agent, at its next tool boundary or now",
         "id!=the steer, S<n>; who!=the human or your lead; scope!=the order (W<n> 'title') or the task (T<n> (kind) for W<n>); text!=the words; references=references and attachments, or nothing",
-        &[(
-            "names-steer",
-            "asks the agent to name the steer first, so its receipt can say it was acknowledged",
-            r"\{\{id\}\}:",
-            Prompt
-        )]
+        &[]
     ),
     entry!(
         "task.brief.write",

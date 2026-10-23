@@ -42,18 +42,15 @@ Each steer gets an id, such as `S12`, and its receipt shows under your message:
 |---|---|
 | queued | fleetd has it; the agent hasn't taken it in yet. You can still withdraw it. |
 | delivered | The agent took it in. The receipt says how: a new turn, after the running tool, or by stopping that tool. |
-| acknowledged | The agent's reply starts with "S12:" and says what it will do. The receipt quotes it. |
-| not acknowledged | The agent's turn ended without naming S12. The receipt quotes what it said instead. |
+| acknowledged | The agent replied after taking it in, saying what it will do. The receipt quotes it. |
+| not acknowledged | The agent's turn ended without a reply after taking it in. |
 | withdrawn | You took it back before the agent saw it. |
 | failed | It couldn't be delivered. The receipt says why. |
 | expired | The agent's machine stayed offline past the hub's queue time, so it was never delivered. |
 
-Agents are asked to begin their next message with the steer's id. That is how fleetd knows the agent read your words
-as yours.
-
 :::tip[Not acknowledged?]
-The agent saw the message but didn't say it would act on it. Read the quoted reply. If it is still doing the wrong
-thing, send it again, or use `fleetd steer … --now` to stop its current step.
+The agent took the message in but ended its turn without replying. If it is still doing the wrong thing, send it
+again, or use `fleetd steer … --now` to stop its current step.
 :::
 
 If the agent's machine is offline, the steer waits ("waiting for lab-b (until 14:30)") and goes when the machine is

@@ -274,6 +274,6 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 
 | Id | Sent | Safety rules |
 |---|---|---|
-| `steer.message` | per steer (steer\_send, task message), straight to the agent, at its next tool boundary or now | asks the agent to name the steer first, so its receipt can say it was acknowledged (prompt only) |
+| `steer.message` | per steer (steer\_send, task message), straight to the agent, at its next tool boundary or now |  |
 
 <!-- /prompt-table -->
