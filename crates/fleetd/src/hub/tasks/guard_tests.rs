@@ -125,7 +125,8 @@ async fn low_disk_holds_new_agents_keeps_running_ones_and_room_again_starts_them
 async fn a_merged_writer_has_the_node_remove_its_worktree() {
     let (hub, _home) = hub();
     let mut calls = serve(&hub, Node::link(&hub).await);
-    insert(
+    // The store numbers tasks itself: this one is T1.
+    let task = insert(
         &hub,
         json!({ "taskId": "T3", "title": "fix", "kind": "write", "areas": ["all"], "state": "done",
             "threadRef": { "machineId": "lab-a", "threadId": "t3" }, "branch": "fleetd/T3-fix", "startedAt": AT,
@@ -133,7 +134,7 @@ async fn a_merged_writer_has_the_node_remove_its_worktree() {
     );
     let merged: NewEvent = serde_json::from_value(json!({
         "at": AT, "type": "pr.merged", "machineId": "lab-a", "projectId": "p1", "summary": "X1 merged",
-        "data": { "changeId": "X1", "taskId": "T3", "repo": "o/r", "prNumber": 7 },
+        "data": { "changeId": "X1", "taskId": task.task_id, "repo": "o/r", "prNumber": 7 },
     }))
     .unwrap();
     hub.events.append(merged).unwrap();
