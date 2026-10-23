@@ -164,6 +164,18 @@ pub const AUTO_MEMORY_OFF_WHY: &str = "fleetd owns an agent's context (briefs, d
 /// The same as a `--settings` value, for the one-shot claude runs that take no overlay file.
 pub const AUTO_MEMORY_OFF_SETTINGS: &str = r#"{"autoMemoryEnabled":false}"#;
 
+explained! {
+    /// Defaults for every claude fleetd starts, unlike the forced lists: the node's own environment or `claude.env`
+    /// sets any of them otherwise (`SessionConfig::runner_env`).
+    DEFAULT_ENV, DEFAULT_ENV_WHY: (&str, &str) = [
+        ("CLAUDE_CODE_PROMPT_CACHE_TTL", "1h") =>
+            "An agent idle more than 5 minutes otherwise rewrites its whole context to the prompt cache.",
+        ("CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL", "1h") =>
+            "An agent idle more than 5 minutes otherwise rewrites its whole context to the prompt cache.",
+        ("ENABLE_TOOL_SEARCH", "true") => "Tool schemas load when a tool is used, not on every request.",
+    ]
+}
+
 const WHY_NESTING: &str = "claude sets it for its own children and treats a process that has it as nested inside \
                            another session.";
 

@@ -39,7 +39,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 use tokio::time::Instant;
 
 use super::runner::claude::{
-    ALWAYS_DISALLOWED, AUTO_MEMORY_OFF_ENV, HELPER_MODEL_ENV, SESSION_ENV,
+    ALWAYS_DISALLOWED, AUTO_MEMORY_OFF_ENV, DEFAULT_ENV, HELPER_MODEL_ENV, SESSION_ENV,
     subagents_off_settings_env,
 };
 use super::runner::{
@@ -156,7 +156,7 @@ impl SessionConfig {
 
 impl SessionConfig {
     /// What every claude the node starts gets, sessions and probes alike: the base environment, then `claude.env`
-    /// (re-read on each call), then fleetd's own values, which win. No `CLAUDE_CONFIG_DIR` unless the machine has a
+    /// (re-read on each call), then [`DEFAULT_ENV`] for what neither set, then fleetd's own values, which win. No `CLAUDE_CONFIG_DIR` unless the machine has a
     /// dedicated one: claude then reads the user's own `~/.claude` and `~/.claude.json`.
     pub fn runner_env(&self) -> Vec<(String, String)> {
         let mut env = self.base_env.clone();
@@ -169,6 +169,11 @@ impl SessionConfig {
                 ));
             }
             env.extend(extra);
+        }
+        for (key, value) in DEFAULT_ENV {
+            if !env.iter().any(|(k, _)| k == key) {
+                env.push(((*key).to_owned(), (*value).to_owned()));
+            }
         }
         if let Some(dir) = &self.config_dir {
             env.push((
