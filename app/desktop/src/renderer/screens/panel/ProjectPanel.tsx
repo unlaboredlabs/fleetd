@@ -1,4 +1,4 @@
-// The panel beside a project's chat: its agents and its pull requests, a tab each. A row opens one agent's live work
+// The panel beside a project's chat: its agents (or every project's) and its pull requests, a tab each. A row opens one agent's live work
 // or one PR in the list's place, with a way back above it. Tabs, rows and Back are all routes (shell/routes.ts), so
 // links from the chat, Status and the palette open the same views. Only the open tab reads from the hub.
 import { ChevronLeft } from "lucide-react";
@@ -7,8 +7,7 @@ import { useData, useToolQuery } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
 import { selectLiveAgents } from "../../src/data/selectors";
 import { Button, Tab, TabList, TabPanel, Tabs, cx } from "../../ui";
-import { AgentsPane } from "../agents/AgentsPane";
-import { projectAgents } from "../agents/model";
+import { AgentsPane, isLine, scopedAgents, useAgentScope, type AgentScope } from "../agents/AgentsPane";
 import type { PrTab } from "../prs/PrDetail";
 import { PrsPane, usePrList } from "../prs/PrsPane";
 import { openCount } from "../prs/words";
@@ -25,6 +24,7 @@ const LIST: Readonly<Record<PanelView["tab"], PanelView>> = { agents: { tab: "ag
 
 export function ProjectPanel({ project, view }: { project: ProjectKey; view: PanelView }) {
   const [prTab, setPrTab] = useState<PrTab>(lastPrTab);
+  const [scope, setScope] = useAgentScope();
   const pickPrTab = (next: PrTab) => {
     lastPrTab = next;
     setPrTab(next);
@@ -41,7 +41,7 @@ export function ProjectPanel({ project, view }: { project: ProjectKey; view: Pan
     >
       <div className={s.head}>
         <TabList aria-label="Agents and pull requests">
-          <Tab value="agents" count={<AgentCount project={project} />}>
+          <Tab value="agents" count={<AgentCount project={project} scope={scope} />}>
             Agents
           </Tab>
           <Tab value="prs" count={<PrCount project={project} reading={view.tab === "prs"} />}>
@@ -57,7 +57,7 @@ export function ProjectPanel({ project, view }: { project: ProjectKey; view: Pan
         </div>
       ) : null}
       <TabPanel value="agents" className={s.body}>
-        {view.tab === "agents" ? <AgentsPane project={project} agent={view.agent} /> : null}
+        {view.tab === "agents" ? <AgentsPane project={project} agent={view.agent} scope={scope} onScope={setScope} /> : null}
       </TabPanel>
       <TabPanel value="prs" className={s.body}>
         {view.tab === "prs" ? <PrsPane project={project} pr={view.pr} tab={prTab} onTab={pickPrTab} /> : null}
@@ -66,12 +66,12 @@ export function ProjectPanel({ project, view }: { project: ProjectKey; view: Pan
   );
 }
 
-/** The project's agents, the lead not counted; nothing until known. */
-function AgentCount({ project }: { project: ProjectKey }) {
+/** The agents the tab lists, the leads not counted; nothing until known. */
+function AgentCount({ project, scope }: { project: ProjectKey; scope: AgentScope }) {
   useToolQuery("agents_list", ALL);
   const all = useData(selectLiveAgents);
   const key = projectKey(project);
-  const n = useMemo(() => (all === undefined ? 0 : projectAgents(all, key).length), [all, key]);
+  const n = useMemo(() => (all === undefined ? 0 : scopedAgents(all, key, scope).filter((a) => !isLine(a)).length), [all, key, scope]);
   return n > 0 ? String(n) : null;
 }
 
