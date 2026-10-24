@@ -122,11 +122,13 @@ measured. See <a href="/docs/status">Status</a>.</p>
 <ul>
 <li>Start every agent with <code dir="auto">spawn_agent</code>, and wait for results in its next wake instead of polling.</li>
 <li>Close work with <code dir="auto">close</code> once it is done, and say why: in the wake that reports its last merge, without an agent to
-rerun the checks CI just passed.</li>
+rerun the checks CI just passed. The reviews’ non-blocking findings are listed in that message; they become new
+work only if your order or you ask for it.</li>
 <li>Ask for secrets with <code dir="auto">request_secret</code> and run risky commands with <code dir="auto">gated_run</code>, which you approve.</li>
-<li>Leave merging to the merge train, which merges only after green CI and review.</li>
-<li>Start the writers first, largest part first, and plan while they work. A part’s docs and tests go to that part’s
-writer, not to a writer of their own. Parts that edit the same file go to one writer. Writers run up to the
+<li>Leave merging to the merge train, which merges only after its own review and green CI. The lead adds no review of
+its own, and doesn’t relay blocking findings, conflicts or red CI: those reach the writer by themselves.</li>
+<li>Start the writers first, largest part first, and plan while they work. Writers read what they need, with no survey
+agent ahead of them. A part’s docs and tests go to that part’s writer, not to a writer of their own. Parts that edit the same file go to one writer. Writers run up to the
 <a href="/docs/projects#max-agents">Max agents</a> cap; a spawn past it queues and starts by itself.</li>
 <li>Never relax a review, CI, approval or check to go faster. Idle is fine.</li>
 </ul>
