@@ -273,13 +273,24 @@ export async function m7Train(lab: Lab) {
     ok(`3. ${cd.changeId}: reviewer ${redReviewer[0]!.taskId} returned blocking ${redVerdict.event.data.blocking}${reviewBlocked ? ", so it waits for a new head" : ""}`);
     if (!reviewBlocked) await lab.waitEvent(`${cd.changeId} ready`, TURN_MS, { cursor: scenarioStart, types: ["change.ready"], match: (e) => e.data?.changeId === cd.changeId });
 
-    const held = await Promise.all([ca, cb, cc].map((x) => change(x.changeId)));
-    check(held.every((c) => c.state === "ready" && String(c.lastError ?? "").startsWith("held:")), `the train holds all three: ${JSON.stringify(held)}`);
-    const redHeld = await change(cd.changeId);
-    check(reviewBlocked ? redHeld.state === "reviewing" : redHeld.state === "ready" && String(redHeld.lastError ?? "").startsWith("held:"), `${cd.changeId} is ${reviewBlocked ? "blocked by its review" : "held"}: ${JSON.stringify(redHeld)}`);
+    // change.ready comes first; the pass it kicks reads the PR's labels and marks it held, so allow that pass.
+    const isHeld = (c: Body) => c.state === "ready" && String(c.lastError ?? "").startsWith("held:");
+    const redSettled = (c: Body) => (reviewBlocked ? c.state === "reviewing" : isHeld(c));
+    let seen: Array<Body> = [];
+    const heldAfter = Date.now();
+    await lab.until("the train holds the ready PRs", 60_000, async () => {
+      seen = await Promise.all([ca, cb, cc, cd].map((x) => change(x.changeId)));
+      if (seen.slice(0, 3).every(isHeld) && redSettled(seen[3]!)) return true;
+      await callTool("events_wait", { cursor: await lab.cursor(), timeoutSec: 2 });
+      return undefined;
+    }).catch(() => undefined);
+    const held = seen.slice(0, 3);
+    const redHeld = seen[3]!;
+    check(held.every(isHeld), `the train holds all three: ${JSON.stringify(held)}`);
+    check(redSettled(redHeld), `${cd.changeId} is ${reviewBlocked ? "blocked by its review" : "held"}: ${JSON.stringify(redHeld)}`);
     const early = await callTool("events_wait", { cursor: scenarioStart, types: ["pr.merged"], timeoutSec: 0 });
     check(early.body.events.length === 0, `nothing merged while held: ${JSON.stringify(early.body.events)}`);
-    ok(`5. ${held.map((c) => `${c.changeId} at ${c.position}`).join(", ")} ready and held, ${cd.changeId} ${redHeld.state}; no pr.merged`);
+    ok(`5. ${held.map((c) => `${c.changeId} at ${c.position}`).join(", ")} ready and held (${((Date.now() - heldAfter) / 1000).toFixed(1)} s after the last verdict), ${cd.changeId} ${redHeld.state}; no pr.merged`);
     const at = (x: { readonly changeId: string }) => held.find((c) => c.changeId === x.changeId)!.position as number;
     const [first, second] = [ca, cb].sort((x, y) => at(x) - at(y));
     const secondHeadBefore = (await change(second!.changeId)).headSha as string;
