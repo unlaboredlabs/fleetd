@@ -294,10 +294,19 @@ export async function m7Train(lab: Lab) {
     const at = (x: { readonly changeId: string }) => held.find((c) => c.changeId === x.changeId)!.position as number;
     const [first, second] = [ca, cb].sort((x, y) => at(x) - at(y));
     const secondHeadBefore = (await change(second!.changeId)).headSha as string;
+    // A PR whose own CI still runs is passed too, so a batch could take the second without the first: wait for both.
+    await lab.until("alpha's and beta's own ci done", CI_MS, async () => {
+      const heads = await Promise.all([first!, second!].map(async (x) => (await change(x.changeId)).headSha as string));
+      const done = heads.every((sha) => (ghJson("api", `repos/${REPO}/commits/${sha}/check-runs`).check_runs as Array<Body>).some((r) => r.name === "ci" && r.status === "completed"));
+      if (done) return true;
+      await callTool("events_wait", { cursor: await lab.cursor(), timeoutSec: 5 });
+      return undefined;
+    });
 
-    // 5b. Taking the labels off lets the train go on, on its next pass.
+    // 5b. Taking the labels off lets the train go on, on its next pass. In train order: the train passes a held PR, so
+    // a pass between two edits would rightly take a later PR whose hold came off first.
     cursor = await lab.cursor();
-    for (const x of [ca, cb, cc, cd]) gh("pr", "edit", x.prUrl, "--remove-label", "hold");
+    for (const x of [first!, second!, cc, cd]) gh("pr", "edit", x.prUrl, "--remove-label", "hold");
     ok("5. the hold labels are off");
 
     // 1. Merged in train order; the second rebased onto the first's merge, each with fleetd/train on its head.
