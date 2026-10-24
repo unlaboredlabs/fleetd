@@ -1028,6 +1028,17 @@ export const screens: readonly Screen[] = [
     variant: "offline",
     open: (page) => expect(page.getByText("Agents show once you’re connected.")).toBeVisible(),
   },
+  // ...and with All projects, every project's agents under its name, checkout's first as one waits on you.
+  {
+    id: "agents",
+    route: `${CHAT}/agents`,
+    fixtures: ["agents-work", "long-text", "many-agents"],
+    variant: "all",
+    open: async (page) => {
+      await page.getByRole("button", { name: "All projects" }).click();
+      await expect(page.getByRole("button", { name: "All projects" })).toHaveAttribute("aria-pressed", "true");
+    },
+  },
   // Under its work, your steers to it with their receipts, in every stage, and the box that steers it directly.
   { id: "agents.work", route: AGENT_ROUTE, fixtures: ["agents-work", "agents-steers"] },
   // ...and offline with nothing held: it says it shows once you're connected, never a blank loading pane.

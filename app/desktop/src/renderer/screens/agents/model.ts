@@ -12,6 +12,24 @@ export const projectAgents = (agents: readonly LiveAgent[], project: string): re
   return [...mine.filter((a) => a.row.status === "waiting"), ...mine.filter((a) => a.row.status !== "waiting")];
 };
 
+/** A project's name above its agents in the All projects list. */
+export interface ProjectLine {
+  readonly group: string;
+  readonly title: string;
+}
+
+/**
+ * Every project's agents, each project under a line with its name: the projects with an agent waiting on you first,
+ * then the data layer's order (by name); in each, as `projectAgents`. Not the leads.
+ */
+export const allAgents = (agents: readonly LiveAgent[]): readonly (ProjectLine | LiveAgent)[] => {
+  const groups = [...new Set(agents.map((a) => a.project))].map((key) => projectAgents(agents, key));
+  const waits = (g: readonly LiveAgent[]) => g[0]?.row.status === "waiting";
+  return [...groups.filter(waits), ...groups.filter((g) => !waits(g))].flatMap((g) =>
+    g[0] === undefined ? [] : [{ group: g[0].project, title: g[0].row.projectTitle }, ...g],
+  );
+};
+
 /**
  * "18 working · 1 needs you · 1 queued", the leads not counted, so it agrees with the sidebar's count; empty
  * when none of the three.

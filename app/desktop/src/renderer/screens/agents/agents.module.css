@@ -18,6 +18,15 @@
   padding: var(--space-1) var(--space-4) 0;
 }
 
+/* This project or All projects. */
+.scope {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-2) 0;
+}
+
 .list {
   flex: 1;
   display: flex;
@@ -50,6 +59,12 @@
 .task {
   flex: 1;
   min-width: 0;
+}
+/* A project's name above its agents, in All projects. */
+.group {
+  display: flex;
+  min-width: 0;
+  padding: var(--space-2) var(--space-2) var(--space-1);
 }
 .doing {
   display: flex;

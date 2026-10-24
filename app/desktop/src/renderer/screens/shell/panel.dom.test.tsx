@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
-import type { PrGetOutput, PrRow } from "../../../shared/contracts";
+import type { AgentRow, PrGetOutput, PrRow } from "../../../shared/contracts";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { AT, live, snapshot } from "../../src/data/fixtures.test-util";
@@ -27,10 +27,28 @@ const pr: PrRow = {
 };
 const detail: PrGetOutput = { pr, body: "", checks: [], reviews: [], history: [], links: { checks: "", files: "", pr: pr.url } };
 
+// Two projects at work: the one on screen, and checkout, whose reviewer waits on you.
+const agentRow = (projectId: string, projectTitle: string, laneId: string, title: string, status: AgentRow["status"] = "working"): AgentRow => ({
+  laneId,
+  role: laneId === "T41" ? "reviewer" : "implementer",
+  status,
+  title,
+  projectRef: { machineId: "devbox", projectId },
+  projectTitle,
+  threadRef: { machineId: "devbox", threadId: `s-${laneId}` },
+  startedAt: AT,
+});
+const agents: AgentRow[] = [
+  agentRow("checkout", "checkout", "T40", "Move the card form to the payment element"),
+  agentRow("checkout", "checkout", "T41", "Review the payment element change", "waiting"),
+  agentRow("storefront", "storefront", "T1", "Receipts show the shop's local time"),
+];
+
 const ANSWERS: Readonly<Record<string, unknown>> = {
   pr_list: { at: AT, prs: [pr] },
   pr_get: detail,
-  agents_list: { at: AT, agents: [] },
+  agents_list: { at: AT, agents },
+  agent_work: { running: true, steps: [] },
 };
 
 let host: HTMLDivElement;
@@ -230,4 +248,37 @@ it("says the agents and PRs show once you're connected while it has none to show
   await settle();
   expect(panel()?.querySelector("[data-screen^='prs.detail']")).not.toBeNull();
   expect(text()).not.toContain("once you’re connected");
+});
+
+it("lists every project's agents with All projects, remembers it across a remount, and opens another project's agent", async () => {
+  await mount();
+  const rows = () => [...(panel()?.querySelectorAll<HTMLAnchorElement>("[data-screen='agents'] a") ?? [])].map((a) => a.getAttribute("href"));
+  const lines = () => panel()?.querySelector("[role='list']")?.textContent ?? "";
+  const tabCount = () => panel()?.querySelector("[role='tab']")?.textContent;
+  expect(button("This project")?.getAttribute("aria-pressed")).toBe("true");
+  expect(rows()).toEqual([`${CHAT}/agents/T1`]);
+  expect(tabCount()).toBe("Agents1");
+
+  // Every project's, under its name; checkout first, as one of its agents waits on you, and the waiting one first.
+  await click("All projects");
+  expect(button("All projects")?.getAttribute("aria-pressed")).toBe("true");
+  expect(rows()).toEqual(["#/project/devbox/checkout/agents/T41", "#/project/devbox/checkout/agents/T40", `${CHAT}/agents/T1`]);
+  expect(lines().indexOf("checkout")).toBeLessThan(lines().indexOf("Review the payment element change"));
+  expect(lines()).toContain("storefront");
+  expect(tabCount()).toBe("Agents3");
+
+  unmount();
+  await mount();
+  expect(button("All projects")?.getAttribute("aria-pressed")).toBe("true");
+  expect(rows()).toHaveLength(3);
+
+  // Another project's agent opens its work, beside that project's chat; its list is every project's still.
+  await go(rows()[0] ?? "");
+  expect(panel()?.querySelector("[data-screen='agents.work'][aria-label='What Review the payment element change is doing']")).not.toBeNull();
+  await click("All agents");
+  expect(window.location.hash).toBe("#/project/devbox/checkout/agents");
+  expect(rows()).toHaveLength(3);
+
+  await click("This project");
+  expect(rows()).toEqual(["#/project/devbox/checkout/agents/T41", "#/project/devbox/checkout/agents/T40"]);
 });
