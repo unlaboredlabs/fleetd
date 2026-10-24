@@ -1,7 +1,7 @@
 #!/bin/sh
 # The controlled head-to-head speed bench: claude -p (ungated, and claude-p+gate: its result through a PR, fleetd's
 # review, CI and a merge) vs fleetd (vs an imported T3 Code run) on hidden-checked tasks.
-# Method and results: docs/build/BENCH.md in the plan repo (wynn-dev/t3-fork-plan).
+# Method and results: the run JSONs and TABLE.md it writes (see tests/lab/bench/benchVs.ts).
 #   scripts/bench-vs --suite [--contenders claude-p,claude-p+gate,fleetd] [--repeat N]   # in sequence; then the table
 #   scripts/bench-vs --task <task> --contender <claude-p|fleetd|t3|reference> [options]
 #   scripts/bench-vs --finish <run-dir> --start <iso> --end <iso>   # imports a T3 Code run prepared with --contender t3

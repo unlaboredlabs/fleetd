@@ -1,4 +1,4 @@
-// `scripts/bench-vs`: the controlled head-to-head speed bench (t3-fork docs/build/BENCH.md). Each run starts from a
+// `scripts/bench-vs`: the controlled head-to-head speed bench. Each run starts from a
 // fresh clone of the task's frozen base (bench/<task>/base in the lab repo, checked against the sha in task.json),
 // runs one contender with the task text and no human input until it says it is finished (or the timeout), applies the
 // task's hidden checks, runs a blind blocker-only review, and writes the metrics as JSON to <bench>/results/<run>.json.
