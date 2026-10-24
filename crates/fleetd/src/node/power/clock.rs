@@ -144,6 +144,7 @@ mod tests {
     fn reads_this_machines_clocks() {
         let first = sample().unwrap();
         assert!(first.asleep_ms >= 0);
-        assert!(sample().unwrap().asleep_ms >= first.asleep_ms);
+        // The two clocks are read one after the other, so their difference can step back a millisecond or two.
+        assert!(sample().unwrap().asleep_ms >= first.asleep_ms - 5);
     }
 }
