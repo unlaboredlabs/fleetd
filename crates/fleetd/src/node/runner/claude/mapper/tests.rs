@@ -1267,3 +1267,50 @@ fn a_persons_stop_ends_the_turn_interrupted_and_withdraws_the_waiting_steer() {
         }]
     );
 }
+
+/// Seen live on a resumed lead: claude first runs its own turn for a background task's notice left from the previous
+/// process (a `result` with an `origin` and no `user_message_uuid`), then the message fleetd sent. That first result
+/// ended fleetd's waiting run before its turn began, so the run read as over while the lead was still working, and
+/// its reply came after.
+#[test]
+fn a_notice_turn_on_resume_ends_no_run_of_fleetds() {
+    let classify: Classify = Arc::new(|_: &FailureEvidence| None);
+    let mut mapper = StreamMapper::new("s", classify);
+    mapper.send("chat", "The human writes in your chat", SendMode::Plain);
+    let mut ends = Vec::new();
+    for line in [
+        serde_json::json!({"type": "system", "subtype": "task_notification", "task_id": "b1", "status": "stopped",
+            "summary": "Background shell command didn't finish before the previous session ended"}),
+        serde_json::json!({"type": "command_lifecycle", "command_uuid": "chat", "state": "queued"}),
+        serde_json::json!({"type": "result", "subtype": "success", "is_error": false, "result": "", "num_turns": 0,
+            "origin": {"kind": "task-notification"}}),
+        serde_json::json!({"type": "command_lifecycle", "command_uuid": "chat", "state": "started"}),
+        serde_json::json!({"type": "result", "subtype": "success", "is_error": false, "result": "W8 is closed.",
+            "user_message_uuid": "chat"}),
+        serde_json::json!({"type": "command_lifecycle", "command_uuid": "chat", "state": "completed"}),
+    ] {
+        let events = mapper
+            .feed(serde_json::from_value(line).unwrap(), &now())
+            .events;
+        ends.extend(events.into_iter().filter_map(|e| match e {
+            RunnerEvent::RunStarted { run_id } => Some(format!("started {run_id}")),
+            RunnerEvent::RunEnded {
+                run_id, outcome, ..
+            } => Some(format!("ended {run_id}: {outcome:?}")),
+            _ => None,
+        }));
+    }
+    assert_eq!(
+        ends,
+        [
+            "started chat".to_owned(),
+            format!(
+                "ended chat: {:?}",
+                RunOutcome::Completed {
+                    text: "W8 is closed.".into()
+                }
+            ),
+        ]
+    );
+    assert!(!mapper.has_open_run());
+}

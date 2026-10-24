@@ -151,6 +151,8 @@ pub struct ResultLine {
     pub duration_api_ms: Option<u64>,
     /// Every user message the turn took in: the first, then any that joined it.
     pub user_message_uuids: Option<Vec<String>>,
+    /// What started the turn when no user message did, such as `{"kind": "task-notification"}`.
+    pub origin: Option<Value>,
 }
 
 #[derive(Clone, Debug, PartialEq, Default, Deserialize)]

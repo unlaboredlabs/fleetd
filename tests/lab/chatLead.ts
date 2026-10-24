@@ -374,6 +374,16 @@ export async function chatLead(lab: Lab) {
         const leaky = lead.filter((m) => INTERNAL_ID.test(m.text));
         check(leaky.length === 0, `lead messages carry no internal ids: ${JSON.stringify(leaky.map((m) => m.text.slice(0, 200)))}`);
         ok(`${lead.length} lead messages, none with an internal id`);
+        // Every reply the lead's session holds reached the chat, whatever its turn did first (a queued notice, a
+        // close): the node once ended a resumed turn early and its reply never landed.
+        const threadId = await chat.leadThread();
+        if (threadId !== undefined) {
+          const items = (await callTool("thread_tail", { machineId: LEAD_MACHINE, threadId, n: 20, kinds: ["message"] })).body.items as Array<Body>;
+          const said = items.filter((i) => i.role === "assistant" && String(i.text ?? "").trim() !== "").map((i) => String(i.text).trim().slice(0, 120));
+          const missing = said.filter((s) => !lead.some((m) => m.text.trim().startsWith(s)));
+          check(missing.length === 0, `every lead reply reached the chat; missing: ${JSON.stringify(missing)}`);
+          ok(`the lead's last ${said.length} replies are all in the chat`);
+        }
       });
     }
     await part("history", () => historyPart(lab));

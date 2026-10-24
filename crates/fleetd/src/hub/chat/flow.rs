@@ -10,7 +10,7 @@ use fleetd_contracts::chat::{
     ChatAuthor, ChatClient, ChatDelivery, ChatHistorySource, ProjectChatState,
 };
 use fleetd_contracts::events::HubEventType;
-use fleetd_contracts::ids::{ProjectRef, ThreadRef};
+use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
 use fleetd_contracts::ledger::{LeadState, WorkstreamState};
 use fleetd_contracts::mcp::{
     ChatSendInput, ChatSendOutput, ChatStopInput, ChatStopOutput, ErrorCode, ProjectStopInput,
@@ -32,6 +32,9 @@ use crate::hub::tasks::records::TaskRecords;
 
 /// How long the history read waits for the lead's session on its machine before reading without its messages.
 const LEAD_READ_WAIT: Duration = Duration::from_secs(5);
+/// How long a machine that came online gets for the hub's subscription to its node before its leads' missed replies
+/// are read.
+const LINK_WAIT: Duration = Duration::from_secs(30);
 /// Streamed text is folded into the chat this often.
 const STREAM_TICK: Duration = Duration::from_millis(250);
 /// Held messages are tried again this often, besides on a lead starting and its machine coming online.
@@ -815,7 +818,8 @@ fn run_over(hub: &Hub, thread: &ThreadRef) -> bool {
 }
 
 /// Folds each working lead's streamed text into its chat: the first text of a reply starts a streaming message,
-/// later text appends to it, and once the reply is complete it lands whole and final, even when a delta never came.
+/// later text appends to it, and once the reply is complete it lands whole and final, even when a delta never came
+/// or the reply reached the hub after its run ended.
 fn stream_pass(hub: &Hub, sent: &mut HashMap<String, u64>) {
     stream_pass_with(hub, sent, |thread| hub.executors.live(thread));
 }
@@ -838,7 +842,7 @@ pub(super) fn stream_pass_with(
             machine_id: r.machine_id.clone(),
             thread_id: lead.thread_id,
         };
-        let Some(parts) = live_parts(&thread).filter(|p| p.run_active) else {
+        let Some(parts) = live_parts(&thread).filter(|p| p.run_active || !p.done.is_empty()) else {
             continue;
         };
         if !hub.chat.history_read(&r).unwrap_or(false) {
@@ -852,7 +856,7 @@ pub(super) fn stream_pass_with(
                 sent.insert(source, LANDED);
             }
         }
-        let Some(text) = parts.text else {
+        let Some(text) = parts.text.filter(|_| parts.run_active) else {
             continue;
         };
         let source = history::lead_source(thread.thread_id.as_str(), &text.message_id);
@@ -933,6 +937,28 @@ fn lead_project(hub: &Hub, thread: &ThreadRef) -> Option<ProjectRef> {
         .map(|l| l.project_ref)
 }
 
+/// Lands every reply of the leads (on `machine`, else everywhere) that isn't in their chat yet: one said while the hub
+/// was down, or while it couldn't read the lead's machine. On the hub's start a node is rarely linked yet, so its
+/// coming online is the read that counts. Idempotent by each reply's `source`.
+pub(super) async fn land_missed(hub: &Hub, machine: Option<&MachineId>) {
+    let Ok(leads) = hub.leads.records.leads_list() else {
+        return;
+    };
+    for lead in leads {
+        let r = lead.project_ref;
+        if machine.is_some_and(|m| *m != r.machine_id)
+            || !hub.chat.history_read(&r).unwrap_or(false)
+        {
+            continue;
+        }
+        let thread = ThreadRef {
+            machine_id: r.machine_id.clone(),
+            thread_id: lead.thread_id,
+        };
+        mirror(hub, &r, &thread).await;
+    }
+}
+
 /// Follows the leads until the hub stops: their turns starting and ending (the chat's working state, their replies
 /// landing), a lead starting (messages held for it go in), and their streamed text.
 pub async fn run(hub: Arc<Hub>) {
@@ -949,18 +975,7 @@ pub async fn run(hub: Arc<Hub>) {
     // The cursor first: a request that moves while the start shows the open ones (the approvals service reopens
     // unfinished commands at the same time) is an event after it, followed below. Showing is safe to repeat.
     let mut cursor = startup(&hub).await;
-    // Leads that ended a turn while the hub was down: their replies land now.
-    if let Ok(leads) = hub.leads.records.leads_list() {
-        for lead in leads {
-            let thread = ThreadRef {
-                machine_id: lead.project_ref.machine_id.clone(),
-                thread_id: lead.thread_id,
-            };
-            if hub.chat.history_read(&lead.project_ref).unwrap_or(false) {
-                mirror(&hub, &lead.project_ref, &thread).await;
-            }
-        }
-    }
+    land_missed(&hub, None).await;
     // Held messages from before a restart, and every minute after, go when they can.
     let sweeper = {
         let hub = hub.clone();
@@ -1030,6 +1045,15 @@ pub async fn run(hub: Arc<Hub>) {
                     continue;
                 }
                 HubEventType::MachineOnline => {
+                    if let Some(machine) = event.machine_id.clone() {
+                        let hub = hub.clone();
+                        tokio::spawn(async move {
+                            // machine.online can be logged before the hub's subscription to the node is live.
+                            let live = hub.executors.await_live(&machine);
+                            let _ = tokio::time::timeout(LINK_WAIT, live).await;
+                            land_missed(&hub, Some(&machine)).await;
+                        });
+                    }
                     for r in hub.chat.held_projects().unwrap_or_default() {
                         if Some(&r.machine_id) == event.machine_id.as_ref() {
                             send_held(&hub, &r).await;

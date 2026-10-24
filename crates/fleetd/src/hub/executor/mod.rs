@@ -240,7 +240,8 @@ pub struct LiveParts {
     pub tokens: Option<fleetd_contracts::live::Tokens>,
     pub spark: fleetd_contracts::live::Spark,
     pub text: Option<activity::StreamText>,
-    /// The active run's complete text messages: the chat lands these whole, whatever deltas it missed.
+    /// The complete text messages since the latest run started (see `ActivityTracker`): the chat lands these whole,
+    /// whatever deltas it missed and whether or not the run is still going.
     pub done: Vec<activity::DoneText>,
     pub run_active: bool,
 }
