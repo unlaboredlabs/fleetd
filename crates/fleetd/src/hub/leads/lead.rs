@@ -23,7 +23,7 @@ use crate::hub::store::{NewEvent, WaitInput, now_ms};
 pub enum AutoStart {
     /// The project already had its lead.
     Running(Lead),
-    /// The lead was just started; its first message lists the order.
+    /// This call started the lead; its first message lists the order and ends with the call's `first` text.
     Started(Lead),
     /// The lead could not start now (the runner is logged out or out of range, the machine is offline): why, and
     /// the fix. The order waits; the lead starts once the machine is online again.
@@ -63,24 +63,35 @@ impl Leads {
 
     /// Launches the project's lead, or returns the one it already has.
     pub async fn start(&self, r: &ProjectRef) -> Result<Lead, LeadError> {
+        Ok(self.start_with(r, None).await?.0)
+    }
+
+    /// The lead, and whether this call launched it (with `first` at the end of its first message).
+    async fn start_with(
+        &self,
+        r: &ProjectRef,
+        first: Option<&str>,
+    ) -> Result<(Lead, bool), LeadError> {
         let _guard = self.lock.lock().await;
         if let Some(existing) = self.records.lead_get(r)? {
-            return self.with_state(existing);
+            return Ok((self.with_state(existing)?, false));
         }
         let project = self.project_of(r)?;
-        self.launch(r, &project, 0).await
+        Ok((self.launch(r, &project, 0, first).await?, true))
     }
 
     /// Starts the project's lead for its waiting orders. The lead's first message carries the digest, which lists
-    /// every draft, so the orders reach it with the start.
-    pub async fn auto_start(&self, r: &ProjectRef) -> AutoStart {
+    /// every draft, so the orders reach it with the start. `first`, the chat message that starts it, ends that
+    /// message.
+    pub async fn auto_start(&self, r: &ProjectRef, first: Option<&str>) -> AutoStart {
         match self.get(r) {
             Ok(Some(lead)) => return AutoStart::Running(lead),
             Ok(None) => {}
             Err(e) => return AutoStart::Held(e),
         }
-        match self.start(r).await {
-            Ok(lead) => AutoStart::Started(lead),
+        match self.start_with(r, first).await {
+            Ok((lead, true)) => AutoStart::Started(lead),
+            Ok((lead, false)) => AutoStart::Running(lead),
             Err(e) => AutoStart::Held(e),
         }
     }
@@ -103,7 +114,7 @@ impl Leads {
             if open.iter().all(|w| w.brief.is_some()) {
                 continue;
             }
-            match self.auto_start(&r).await {
+            match self.auto_start(&r, None).await {
                 AutoStart::Held(e) => {
                     tracing::info!(project = %project.title, reason = %e.message, "waiting orders: lead still not started")
                 }
@@ -161,7 +172,7 @@ impl Leads {
             ));
         };
         let project = self.project_of(r)?;
-        self.launch(r, &project, existing.session_generation + 1)
+        self.launch(r, &project, existing.session_generation + 1, None)
             .await
     }
 
@@ -240,6 +251,7 @@ impl Leads {
         r: &ProjectRef,
         project: &ProjectSummary,
         session_generation: i64,
+        first: Option<&str>,
     ) -> Result<Lead, LeadError> {
         // M4 usage: no lead turn goes into a login fleetd knows is exhausted.
         if let Some(paused) = self
@@ -259,13 +271,16 @@ impl Leads {
         let at = now_iso(&self.ctx);
         let set = self.ctx.db.prompts().current(Some(r));
         let medium = self.records.medium_allowed(r)?;
-        let prompt = render_lead_start(
+        let mut prompt = render_lead_start(
             &set,
             r,
             &project.title,
             medium,
             &self.wakes.digest(r).await?,
         );
+        if let Some(first) = first {
+            prompt = format!("{}\n\n{}", prompt.trim_end(), first.trim_end());
+        }
         let launched_ms = now_ms(self.ctx.clock.as_ref());
         let title: String = format!("fleetd lead: {}", project.title)
             .chars()

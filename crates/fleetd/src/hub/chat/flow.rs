@@ -289,14 +289,31 @@ pub async fn send(
 
 /// Sends a held message to the project's lead, starting it if it has none: released once its session or the
 /// offline queue took it, with how it went in; still held, with why, when it couldn't go. `now` stops a working
-/// lead's running step for it; an idle or starting lead takes it as any message.
+/// lead's running step for it; an idle or starting lead takes it as any message. A message that starts the lead ends
+/// its first message, so the lead's first turn answers it instead of an empty chat.
 async fn go(
     hub: &Arc<Hub>,
     r: &ProjectRef,
     mut message: fleetd_contracts::chat::ChatMessage,
     now: bool,
 ) -> (fleetd_contracts::chat::ChatMessage, Option<String>) {
-    let lead = match hub.leads.leads.auto_start(r).await {
+    // Files that can't be placed yet leave the message to `deliver`, which says why it waits.
+    let first = match hub.leads.leads.get(r) {
+        Ok(None) => match files_of(hub, r, &message).await {
+            Ok(files) => Some(for_lead(
+                &hub.db.prompts().current(Some(r)),
+                &message,
+                &files,
+            )),
+            Err(_) => None,
+        },
+        _ => None,
+    };
+    let lead = match hub.leads.leads.auto_start(r, first.as_deref()).await {
+        AutoStart::Started(_) if first.is_some() => {
+            sent(hub, &mut message, ChatDelivery::Turn);
+            return (message, None);
+        }
         AutoStart::Running(lead) | AutoStart::Started(lead) => lead,
         AutoStart::Held(e) => return (message, Some(waiting_reason(&e))),
     };
@@ -307,20 +324,14 @@ async fn go(
     let now = now && lead.state == LeadState::Working;
     match deliver(hub, r, &thread, &message, now).await {
         Ok(queued) => {
-            message.delivery = Some(match lead.state {
+            let delivery = match lead.state {
                 _ if queued => ChatDelivery::Queued,
                 LeadState::Working if now => ChatDelivery::Now,
                 LeadState::Working => ChatDelivery::Steer,
                 LeadState::Starting => ChatDelivery::Queued,
                 _ => ChatDelivery::Turn,
-            });
-            if let Err(error) = hub
-                .chat
-                .put(&message)
-                .and_then(|()| hub.chat.release(&message))
-            {
-                tracing::warn!(%error, "chat: sent message not released");
-            }
+            };
+            sent(hub, &mut message, delivery);
             (message, None)
         }
         Err(e) => (
@@ -330,6 +341,18 @@ async fn go(
                 e.message
             )),
         ),
+    }
+}
+
+/// Records how a message went in and releases it.
+fn sent(hub: &Hub, message: &mut fleetd_contracts::chat::ChatMessage, delivery: ChatDelivery) {
+    message.delivery = Some(delivery);
+    if let Err(error) = hub
+        .chat
+        .put(message)
+        .and_then(|()| hub.chat.release(message))
+    {
+        tracing::warn!(%error, "chat: sent message not released");
     }
 }
 
@@ -367,21 +390,7 @@ async fn deliver(
     message: &fleetd_contracts::chat::ChatMessage,
     now: bool,
 ) -> Result<bool, ToolError> {
-    let ids: Vec<_> = message
-        .attachments
-        .iter()
-        .map(|a| a.attachment_id.clone())
-        .collect();
-    let files = if ids.is_empty() {
-        Vec::new()
-    } else {
-        attachments::place(hub, &ids, r, "chat", None).await?
-    };
-    let files = if files.is_empty() {
-        String::new()
-    } else {
-        format!("\n\nAttached:\n{}", files.join("\n"))
-    };
+    let files = files_of(hub, r, message).await?;
     let set = hub
         .db
         .prompts()
@@ -398,6 +407,28 @@ async fn deliver(
         .await
         .map_err(|e| ToolError::new(ErrorCode::Failed, e.to_string()))?;
     Ok(sent.queued)
+}
+
+/// The message's files placed on the project's machine, as the lines the lead reads after its text.
+async fn files_of(
+    hub: &Arc<Hub>,
+    r: &ProjectRef,
+    message: &fleetd_contracts::chat::ChatMessage,
+) -> Result<String, ToolError> {
+    let ids: Vec<_> = message
+        .attachments
+        .iter()
+        .map(|a| a.attachment_id.clone())
+        .collect();
+    if ids.is_empty() {
+        return Ok(String::new());
+    }
+    let files = attachments::place(hub, &ids, r, "chat", None).await?;
+    Ok(if files.is_empty() {
+        String::new()
+    } else {
+        format!("\n\nAttached:\n{}", files.join("\n"))
+    })
 }
 
 /// Every held message of the project, oldest first; one that can't go stops the rest, so they stay in order.

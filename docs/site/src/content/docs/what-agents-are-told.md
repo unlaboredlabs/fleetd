@@ -20,7 +20,7 @@ There is no hidden system prompt. fleetd's text reaches a model in one of two wa
 
 | Way | Used for |
 |---|---|
-| The first message of a session | Leads, tasks, reviewers. |
+| The first message of a session | Leads (with the chat message that started the lead), tasks, reviewers. |
 | A later message into a session | Wakes, chat messages, review findings, train news, pauses, [steers](/docs/steering). |
 
 Your own claude setup still applies underneath. See [Config & files](/docs/config-and-files#claude).
