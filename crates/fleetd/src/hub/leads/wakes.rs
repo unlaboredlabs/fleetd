@@ -23,6 +23,9 @@ use crate::hub::store::{NewEvent, now_ms};
 pub const WAKE_DEBOUNCE: Duration = Duration::from_secs(10);
 /// A steady trigger stream still wakes the lead this long after the first pending trigger.
 pub const WAKE_MAX_WAIT: Duration = Duration::from_secs(60);
+/// How long a wake that skips the debounce still waits for what comes right behind it: a batch's PRs merge seconds
+/// apart, and a train merge lands seconds after its review's result.
+pub const WAKE_COALESCE: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LineKind {
@@ -62,7 +65,8 @@ impl Trigger {
     }
 
     /// A merge or other train outcome, or a task's result (a finished agent, a review verdict): what an idle lead
-    /// waits on to take its next step, so it goes without the quiet window ([`LeadWakes::trigger`]).
+    /// waits on to take its next step, so it goes after WAKE_COALESCE instead of the quiet window
+    /// ([`LeadWakes::trigger`]).
     pub fn skips_debounce(&self) -> bool {
         matches!(
             self,
@@ -117,14 +121,15 @@ pub fn render_wake(set: &PromptSet, digest: &str, triggers: &[Trigger]) -> Strin
 }
 
 /// Coalesces items per key: a key flushes once no new item arrived for `debounce`, or `max_wait` after its first
-/// pending item, or at once for an item pushed with `now` unless the key flushed within `debounce`. Timers are never
-/// cancelled: a superseded one wakes, sees a newer generation and does nothing. Taking the entry out is under the same
-/// lock as that check and as `push`, so an item lands in exactly one flush, and a `now` item that comes while the last
-/// flush is still in flight waits out the window like any other.
+/// pending item, or `coalesce` after an item pushed with `now` unless the key flushed within `debounce`. Timers are
+/// never cancelled: a superseded one wakes, sees a newer generation and does nothing. Taking the entry out is under the
+/// same lock as that check and as `push`, so an item lands in exactly one flush, and a `now` item that comes while the
+/// last flush is still in flight waits out the window like any other.
 pub struct Debouncer<K, T> {
     clock: Arc<dyn Clock>,
     debounce_ms: i64,
     max_wait_ms: i64,
+    coalesce_ms: i64,
     keys: Mutex<Keys<K, T>>,
     next_entry: AtomicU64,
 }
@@ -140,16 +145,23 @@ struct Pending<T> {
     items: Vec<T>,
     generation: u64,
     first_ms: i64,
-    /// An item of this flush may skip the quiet window.
-    now: bool,
+    /// Set by the first item that may skip the quiet window: the flush goes then, fixed, so the items right behind
+    /// it ride along without pushing it later.
+    now_at_ms: Option<i64>,
 }
 
 impl<K: Clone + Eq + Hash + Send + 'static, T: Send + 'static> Debouncer<K, T> {
-    pub fn new(clock: Arc<dyn Clock>, debounce: Duration, max_wait: Duration) -> Arc<Self> {
+    pub fn new(
+        clock: Arc<dyn Clock>,
+        debounce: Duration,
+        max_wait: Duration,
+        coalesce: Duration,
+    ) -> Arc<Self> {
         Arc::new(Self {
             clock,
             debounce_ms: debounce.as_millis() as i64,
             max_wait_ms: max_wait.as_millis() as i64,
+            coalesce_ms: coalesce.as_millis() as i64,
             keys: Mutex::new(Keys {
                 pending: HashMap::new(),
                 flushed_ms: HashMap::new(),
@@ -158,8 +170,8 @@ impl<K: Clone + Eq + Hash + Send + 'static, T: Send + 'static> Debouncer<K, T> {
         })
     }
 
-    /// Queues `item`; `flush` runs with every pending item of `key` when its window closes, or at once when `now`
-    /// and the key has not flushed within the debounce.
+    /// Queues `item`; `flush` runs with every pending item of `key` when its window closes, or `coalesce` after a
+    /// `now` item when the key has not flushed within the debounce.
     pub fn push<F>(self: &Arc<Self>, key: K, item: T, now: bool, flush: F)
     where
         F: FnOnce(K, Vec<T>) -> BoxFuture<()> + Send + 'static,
@@ -176,19 +188,16 @@ impl<K: Clone + Eq + Hash + Send + 'static, T: Send + 'static> Debouncer<K, T> {
                 items: Vec::new(),
                 generation: 0,
                 first_ms: at,
-                now: false,
+                now_at_ms: None,
             });
             p.items.push(item);
             p.generation += 1;
-            p.now |= now && quiet;
+            if now && quiet && p.now_at_ms.is_none() {
+                p.now_at_ms = Some(at + self.coalesce_ms);
+            }
             // The quiet window, cut short so the latest timer never sleeps past the max-wait deadline.
-            let delay = if p.now {
-                0
-            } else {
-                self.debounce_ms
-                    .min(p.first_ms + self.max_wait_ms - at)
-                    .max(0)
-            };
+            let due = p.now_at_ms.unwrap_or(at + self.debounce_ms);
+            let delay = (due.min(p.first_ms + self.max_wait_ms) - at).max(0);
             (p.entry, p.generation, delay)
         };
         // The deadline is taken now, not when the task first runs.
@@ -266,7 +275,12 @@ pub struct LeadWakes {
 
 impl LeadWakes {
     pub fn new(ctx: Arc<Ctx>, records: Arc<LeadRecords>) -> Arc<Self> {
-        let debouncer = Debouncer::new(Arc::clone(&ctx.clock), WAKE_DEBOUNCE, WAKE_MAX_WAIT);
+        let debouncer = Debouncer::new(
+            Arc::clone(&ctx.clock),
+            WAKE_DEBOUNCE,
+            WAKE_MAX_WAIT,
+            WAKE_COALESCE,
+        );
         Arc::new(Self {
             ctx,
             records,
@@ -277,9 +291,10 @@ impl LeadWakes {
     }
 
     /// Queues a trigger; the lead is woken once no new trigger has arrived for WAKE_DEBOUNCE, or WAKE_MAX_WAIT after
-    /// the first. One the lead waits on ([`Trigger::skips_debounce`]) goes at once, with whatever is pending, when the
-    /// lead is idle and was not woken within WAKE_DEBOUNCE: the window only pays off by batching a burst into one turn,
-    /// and while the lead is busy (or a wake is still on its way) triggers coalesce as before.
+    /// the first. One the lead waits on ([`Trigger::skips_debounce`]) goes WAKE_COALESCE after it, with whatever is
+    /// pending or comes in that time, when the lead is idle and was not woken within WAKE_DEBOUNCE: the long window only
+    /// pays off by batching a burst into one turn, and while the lead is busy (or a wake is still on its way) triggers
+    /// coalesce as before.
     pub fn trigger(self: &Arc<Self>, r: &ProjectRef, trigger: Trigger) {
         self.first_trigger(r);
         let now = trigger.skips_debounce() && self.lead_idle(r);
@@ -557,7 +572,7 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn coalesces_into_one_flush_ten_seconds_after_the_last_trigger() {
         let clock = ManualClock::at(0);
-        let d = Debouncer::new(clock.clone(), WAKE_DEBOUNCE, WAKE_MAX_WAIT);
+        let d = Debouncer::new(clock.clone(), WAKE_DEBOUNCE, WAKE_MAX_WAIT, WAKE_COALESCE);
         let flushes: Flushes = Default::default();
         push(&d, &clock, &flushes, 1, 1);
         advance(&clock, 5).await;
@@ -577,7 +592,7 @@ mod tests {
     async fn flushes_sixty_seconds_after_the_first_trigger_under_a_steady_stream_then_opens_a_fresh_window()
      {
         let clock = ManualClock::at(0);
-        let d = Debouncer::new(clock.clone(), WAKE_DEBOUNCE, WAKE_MAX_WAIT);
+        let d = Debouncer::new(clock.clone(), WAKE_DEBOUNCE, WAKE_MAX_WAIT, WAKE_COALESCE);
         let flushes: Flushes = Default::default();
         // A trigger every 8 s never leaves a 10 s quiet window.
         for i in 1..=7 {
@@ -603,42 +618,49 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn a_now_item_flushes_at_once_with_what_waits_unless_the_key_just_flushed() {
+    async fn a_now_item_flushes_soon_with_what_comes_by_then_unless_the_key_just_flushed() {
         let clock = ManualClock::at(0);
-        let d = Debouncer::new(clock.clone(), WAKE_DEBOUNCE, WAKE_MAX_WAIT);
+        let d = Debouncer::new(clock.clone(), WAKE_DEBOUNCE, WAKE_MAX_WAIT, WAKE_COALESCE);
         let flushes: Flushes = Default::default();
         push(&d, &clock, &flushes, 1, 1);
         advance(&clock, 3).await;
-        // It takes the waiting item along, without the clock moving.
+        // Due WAKE_COALESCE after it, with the item already waiting and those that come by then (a batch's second
+        // merge, the result behind it), none of which moves the flush later.
         push_now(&d, &clock, &flushes, 1, 2, true);
+        advance(&clock, 2).await;
+        push_now(&d, &clock, &flushes, 1, 3, true);
+        advance(&clock, 2).await;
+        push(&d, &clock, &flushes, 1, 4);
         settle().await;
-        assert_eq!(*flushes.lock().unwrap(), vec![(1, vec![1, 2], 3_000)]);
+        assert!(flushes.lock().unwrap().is_empty());
+        advance(&clock, 1).await;
+        assert_eq!(*flushes.lock().unwrap(), vec![(1, vec![1, 2, 3, 4], 8_000)]);
 
         // Within the debounce of that flush (its wake may still be on its way), a now item and an item behind it
         // coalesce in the quiet window as before: one more flush, never one per item.
         advance(&clock, 1).await;
-        push_now(&d, &clock, &flushes, 1, 3, true);
-        push(&d, &clock, &flushes, 1, 4);
+        push_now(&d, &clock, &flushes, 1, 5, true);
+        push(&d, &clock, &flushes, 1, 6);
         advance(&clock, 9).await;
         assert_eq!(flushes.lock().unwrap().len(), 1);
         advance(&clock, 1).await;
-        assert_eq!(flushes.lock().unwrap()[1], (1, vec![3, 4], 14_000));
+        assert_eq!(flushes.lock().unwrap()[1], (1, vec![5, 6], 19_000));
 
-        // Quiet for the debounce since: at once again. Another key's flush doesn't count.
-        push_now(&d, &clock, &flushes, 2, 5, true);
-        settle().await;
-        assert_eq!(flushes.lock().unwrap()[2], (2, vec![5], 14_000));
-        advance(&clock, 10).await;
-        push_now(&d, &clock, &flushes, 1, 6, true);
-        settle().await;
-        assert_eq!(flushes.lock().unwrap()[3], (1, vec![6], 24_000));
+        // Quiet for the debounce since: the short window again. Another key's flush doesn't count.
+        push_now(&d, &clock, &flushes, 2, 7, true);
+        advance(&clock, 5).await;
+        assert_eq!(flushes.lock().unwrap()[2], (2, vec![7], 24_000));
+        advance(&clock, 5).await;
+        push_now(&d, &clock, &flushes, 1, 8, true);
+        advance(&clock, 5).await;
+        assert_eq!(flushes.lock().unwrap()[3], (1, vec![8], 34_000));
         assert_eq!(flushes.lock().unwrap().len(), 4);
     }
 
     #[tokio::test(flavor = "current_thread")]
     async fn debounces_each_key_on_its_own() {
         let clock = ManualClock::at(0);
-        let d = Debouncer::new(clock.clone(), WAKE_DEBOUNCE, WAKE_MAX_WAIT);
+        let d = Debouncer::new(clock.clone(), WAKE_DEBOUNCE, WAKE_MAX_WAIT, WAKE_COALESCE);
         let flushes: Flushes = Default::default();
         push(&d, &clock, &flushes, 1, 1);
         advance(&clock, 6).await;

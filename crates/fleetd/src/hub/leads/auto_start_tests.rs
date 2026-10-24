@@ -14,7 +14,7 @@ use crate::hub::executor::LaunchInput;
 use crate::hub::leads::hooks::BoxFuture;
 use crate::hub::leads::lead::AutoStart;
 use crate::hub::leads::ports::LeadPorts;
-use crate::hub::leads::wakes::{LineKind, Trigger, WAKE_DEBOUNCE};
+use crate::hub::leads::wakes::{LineKind, Trigger, WAKE_COALESCE, WAKE_DEBOUNCE};
 use crate::hub::leads::workstreams::IntakeInput;
 use crate::hub::leads::{Area, Ctx, LeadError};
 use crate::hub::store::test_clock::ManualClock;
@@ -305,7 +305,7 @@ fn line(kind: LineKind, text: &str) -> Trigger {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn a_merge_or_a_result_wakes_an_idle_lead_at_once_and_a_busy_one_after_the_window() {
+async fn a_merge_or_a_result_wakes_an_idle_lead_soon_and_a_busy_one_after_the_window() {
     let hub = hub(true);
     hub.order("fix the five bugs").await;
     hub.after_debounce().await;
@@ -327,13 +327,23 @@ async fn a_merge_or_a_result_wakes_an_idle_lead_at_once_and_a_busy_one_after_the
     settle().await;
     assert_eq!(sends(), start + 1, "one wake for the burst");
 
-    // Idle, and the last wake one window ago: a merge goes now, without the clock moving.
+    // Idle, and the last wake one window ago: a merge goes WAKE_COALESCE later, not after the quiet window, and takes
+    // along the batch's next merge that lands in between.
     lead_thread(&hub, "idle");
     hub.clock.advance(WAKE_DEBOUNCE);
     wakes.trigger(&hub.project, line(LineKind::Train, "#353 merged"));
     settle().await;
-    assert_eq!(sends(), start + 2);
-    assert!(hub.node.sends.lock().unwrap()[start + 1].contains("#353 merged"));
+    hub.clock.advance(WAKE_COALESCE - Duration::from_secs(2));
+    wakes.trigger(&hub.project, line(LineKind::Train, "#354 merged"));
+    settle().await;
+    hub.clock.advance(Duration::from_secs(1));
+    settle().await;
+    assert_eq!(sends(), start + 1);
+    hub.clock.advance(Duration::from_secs(1));
+    settle().await;
+    assert_eq!(sends(), start + 2, "one wake for both merges");
+    let sent = hub.node.sends.lock().unwrap()[start + 1].clone();
+    assert!(sent.contains("#353 merged") && sent.contains("#354 merged"));
 
     // Right behind it, before the lead's status says it took the wake: no second wake at once. It comes after the
     // window, once.
