@@ -59,8 +59,9 @@ The lead is also told to:
   rerun the checks CI just passed.
 - Ask for secrets with `request_secret` and run risky commands with `gated_run`, which you approve.
 - Leave merging to the merge train, which merges only after green CI and review.
-- Start the writers first, largest part first, and plan while they work. Parts that edit the same file go to one
-  writer. Writers run up to the [Max agents](/docs/projects#max-agents) cap; a spawn past it queues and starts by itself.
+- Start the writers first, largest part first, and plan while they work. A part's docs and tests go to that part's
+  writer, not to a writer of their own. Parts that edit the same file go to one writer. Writers run up to the
+  [Max agents](/docs/projects#max-agents) cap; a spawn past it queues and starts by itself.
 - Never relax a review, CI, approval or check to go faster. Idle is fine.
 
 Most of this is also enforced by the hub, which refuses a call that breaks it and says why. See [Safety rules](#safety).
