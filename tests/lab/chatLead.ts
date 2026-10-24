@@ -588,7 +588,9 @@ async function buildPart(lab: Lab, chat: Chat, ref: Ref) {
   const end = await lab.waitEvent("the research agent ends", TURN_MS * 2, { cursor: research.cursor, types: TASK_ENDS, match: (e) => e.data?.taskId === research.task.taskId });
   check(end.event.type === "task.completed", `the research agent completed: ${end.event.summary}`);
   const offer = await chat.reply({ cursor: end.cursor, seq: (await chat.state()).lastSeq as number }, "the research result", TURN_MS * 2);
-  check(offer.some((m) => /\bbuild\b/iu.test(m.text)), `the lead offers the build: ${JSON.stringify(offer.map((m) => m.text))}`);
+  // The lead may name the build or ask whether to do the follow-up ("Should I add those two lines to the README?").
+  const offers = (text: string) => /\bbuild\b/iu.test(text) || (text.includes("?") && /\b(?:should|shall|can) I\b|\b(?:want|like) me to\b|\bgo ahead\b/iu.test(text));
+  check(offer.some((m) => offers(m.text)), `the lead offers the build: ${JSON.stringify(offer.map((m) => m.text))}`);
   const workstreamId = research.task.workstreamId as string | undefined;
 
   const answered = await chat.send("build it");
