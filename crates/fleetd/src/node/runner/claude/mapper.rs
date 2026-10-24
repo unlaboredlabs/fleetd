@@ -919,6 +919,11 @@ impl StreamMapper {
     }
 
     fn result(&mut self, result: ResultLine, now: &Now, events: &mut Vec<RunnerEvent>) {
+        // claude's own turn for a background task's notice (on a resume it runs before the message fleetd just sent)
+        // ends no run of fleetd's: taking it for the waiting run ended that run before its turn began.
+        if result.user_message_uuid.is_none() && result.origin.is_some() {
+            return;
+        }
         let Some(run_id) = result
             .user_message_uuid
             .clone()

@@ -1237,6 +1237,14 @@ fn lead_and_two_agents(hub: &Hub) {
 async fn obliging_node(
     hub: &Arc<Hub>,
 ) -> Arc<std::sync::Mutex<Vec<fleetd_contracts::sessions::SessionCall>>> {
+    obliging_node_with(hub, None).await
+}
+
+/// `obliging_node`, whose sessions answer a follow with `followed` (a thread snapshot) when there is one.
+async fn obliging_node_with(
+    hub: &Arc<Hub>,
+    followed: Option<Value>,
+) -> Arc<std::sync::Mutex<Vec<fleetd_contracts::sessions::SessionCall>>> {
     use fleetd_contracts::node_link::{HubToNode, NodeToHub};
     use fleetd_contracts::sessions::SessionCall;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
@@ -1255,9 +1263,10 @@ async fn obliging_node(
     tokio::spawn(async move {
         while let Some(HubToNode::SessionCall(f)) = rx.recv().await {
             let result = match &f.call {
-                SessionCall::Follow { .. } => {
-                    json!({ "err": { "code": "not_found", "message": "-" } })
-                }
+                SessionCall::Follow { .. } => match &followed {
+                    Some(snapshot) => json!({ "ok": snapshot }),
+                    None => json!({ "err": { "code": "not_found", "message": "-" } }),
+                },
                 SessionCall::Send { run_id, .. } => {
                     json!({ "ok": { "kind": "sent", "runId": run_id.as_str(), "queued": false } })
                 }
@@ -1802,4 +1811,231 @@ fn a_working_lead_has_a_live_lane_before_it_opens_an_order() {
     );
     hub.store.thread_upsert(&thread("running")).unwrap();
     assert_eq!(lead_lane(), ["lead:devbox/app"]);
+}
+
+/// The lead's thread row as the node last reported it.
+fn lead_thread_row(status: &str) -> crate::hub::store::StoredThread {
+    serde_json::from_value(json!({
+        "machineId": "devbox", "threadId": "lead-thread", "projectId": "app", "title": "lead", "status": status,
+        "headline": "", "latestMessageTail": "", "lastProgressAt": AT, "stale": false, "asOf": AT,
+    }))
+    .unwrap()
+}
+
+/// The lead's session as the node answers a follow: `runs` and `messages` of it.
+fn lead_session(status: &str, runs: Value, messages: Value) -> Value {
+    json!({
+        "kind": "snapshot", "truncated": false, "items": [], "runs": runs, "messages": messages,
+        "summary": { "sessionId": "lead-thread", "projectId": "app", "title": "lead", "status": status,
+            "model": "claude-opus-5-5", "effort": "high", "runtimeMode": "full-access",
+            "createdAt": AT, "updatedAt": AT },
+    })
+}
+
+fn said(id: &str, run: &str, role: &str, text: &str, at: &str) -> Value {
+    json!({ "id": id, "runId": run, "role": role, "text": text, "createdAt": at })
+}
+
+fn lead_texts(hub: &Hub) -> Vec<(String, ChatMessageState)> {
+    let (page, _, _) = hub.chat.page(&project(), None, None, 50).unwrap();
+    page.into_iter()
+        .filter(|m| m.author == ChatAuthor::Lead)
+        .map(|m| (m.text.as_str().to_owned(), m.state))
+        .collect()
+}
+
+const ASKED: &str = "how can this be improved?";
+const ANSWER: &str = "W8 is closed. What would make it a factory, in priority order: …";
+
+/// The live bug: a person's message resumed the lead, whose session first ran claude's own turn for a background
+/// task's notice, so the node reported the run over before the turn began. The lead then closed its order and
+/// replied, after the run had ended and the chat had read the thread for that end. The reply still lands, once.
+#[tokio::test]
+async fn a_resumed_lead_turn_that_closes_its_order_lands_its_reply() {
+    use fleetd_contracts::node_link::NodeToHub;
+    let (hub, _home) = hub();
+    give_lead(&hub);
+    let r = project();
+    hub.chat
+        .read_history(&r, || async { Vec::new() })
+        .await
+        .unwrap();
+    let (order, _) = hub
+        .leads
+        .records
+        .workstream_create(NewWorkstream {
+            project_ref: r.clone(),
+            title: "UX items".into(),
+            text: "build the approved UX items".into(),
+            channel: IntakeChannel::App,
+            by: "human".into(),
+            at: AT.into(),
+            client_request_id: None,
+        })
+        .unwrap();
+    hub.store
+        .thread_upsert(&lead_thread_row("completed"))
+        .unwrap();
+    let turn = "r68";
+    obliging_node_with(
+        &hub,
+        Some(lead_session(
+            "running",
+            json!([{ "id": turn, "status": "running", "ordinal": 68 }]),
+            json!([said(turn, turn, "user", ASKED, "2026-10-19T10:00:01.000Z")]),
+        )),
+    )
+    .await;
+    hub.executors.set_runner_ready(&r.machine_id, true);
+    hub.executors.await_ready(&r.machine_id).await;
+    let tools = crate::hub::api::registry();
+    let sent = tools
+        .call(&hub, &person(), "chat_send", say_to_app(ASKED, "q1", None))
+        .await
+        .unwrap();
+    assert_eq!(sent["message"]["delivery"], "turn", "{sent}");
+
+    let thread = fleetd_contracts::ids::ThreadRef {
+        machine_id: r.machine_id.clone(),
+        thread_id: fleetd_contracts::ids::ThreadId::unchecked("lead-thread"),
+    };
+    // The hub follows the lead's session.
+    hub.executors.messages(&thread).await.unwrap();
+    let frame = |event: Value| {
+        let frame =
+            serde_json::from_value(json!({ "sessionId": "lead-thread", "at": AT, "event": event }))
+                .unwrap();
+        hub.executors
+            .handle_frame(&r.machine_id, NodeToHub::ThreadEvent(frame));
+    };
+    // The lead closes its order...
+    frame(
+        json!({ "type": "item", "id": "close-1", "runId": turn, "status": "completed", "title": "",
+        "startedAt": AT, "completedAt": AT, "updatedAt": AT,
+        "kind": { "type": "tool", "toolName": "mcp__fleetd__close", "input": { "workstreamId": order.workstream_id },
+            "output": "Closed." } }),
+    );
+    hub.leads
+        .records
+        .workstream_put(&fleetd_contracts::ledger::Workstream {
+            state: WorkstreamState::Done,
+            ..order
+        })
+        .unwrap();
+    // ...its run reads as over (the notice turn's end), and the chat reads the thread for that end...
+    frame(json!({ "type": "run", "id": turn, "status": "completed", "ordinal": 68 }));
+    hub.store
+        .thread_upsert(&lead_thread_row("completed"))
+        .unwrap();
+    flow::mirror(&hub, &r, &thread).await;
+    assert!(lead_texts(&hub).is_empty(), "no reply yet");
+    // ...and its reply comes after.
+    frame(
+        json!({ "type": "message", "id": "msg_reply", "runId": turn, "role": "assistant", "text": ANSWER,
+        "createdAt": "2026-10-19T10:00:48.000Z" }),
+    );
+    let mut sent = HashMap::new();
+    let live = |t: &fleetd_contracts::ids::ThreadRef| hub.executors.live(t);
+    flow::stream_pass_with(&hub, &mut sent, live);
+    assert_eq!(
+        lead_texts(&hub),
+        [(ANSWER.to_owned(), ChatMessageState::Final)]
+    );
+    let (page, _, _) = hub.chat.page(&r, None, None, 50).unwrap();
+    assert_eq!(
+        page.iter().map(|m| m.author).collect::<Vec<_>>(),
+        [ChatAuthor::Human, ChatAuthor::Lead],
+        "the reply follows the message it answers"
+    );
+    // Once: later ticks, the next turn's read and a re-delivery add nothing.
+    let announced = events_of(&hub, HubEventType::ChatMessage).len();
+    flow::stream_pass_with(&hub, &mut sent, live);
+    flow::mirror(&hub, &r, &thread).await;
+    flow::land_missed(&hub, None).await;
+    assert_eq!(lead_texts(&hub).len(), 1);
+    assert_eq!(events_of(&hub, HubEventType::ChatMessage).len(), announced);
+}
+
+/// A reply the chat never got (lost as above, or said while the hub was down) lands when the hub next reads the lead:
+/// not on its start, when the node hasn't linked yet, but when its machine comes online. Once, by its source, after
+/// the person's message it answers; a reply already in the chat isn't added again.
+#[tokio::test]
+async fn a_missed_lead_reply_is_redelivered_once() {
+    let (hub, _home) = hub();
+    give_lead(&hub);
+    let r = project();
+    hub.chat
+        .read_history(&r, || async { Vec::new() })
+        .await
+        .unwrap();
+    hub.store
+        .thread_upsert(&lead_thread_row("completed"))
+        .unwrap();
+    let earlier = "#398 has merged.";
+    hub.chat
+        .add(
+            &r,
+            NewMessage {
+                author: Some(ChatAuthor::Lead),
+                text: earlier.into(),
+                source: Some(history::lead_source("lead-thread", "msg_earlier")),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    hub.chat
+        .add(
+            &r,
+            NewMessage {
+                author: Some(ChatAuthor::Human),
+                text: ASKED.into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    // The hub starts before the node links: nothing to read, nothing lands.
+    flow::land_missed(&hub, None).await;
+    assert_eq!(lead_texts(&hub).len(), 1);
+
+    obliging_node_with(
+        &hub,
+        Some(lead_session(
+            "idle",
+            json!([{ "id": "r67", "status": "completed", "ordinal": 67 },
+                   { "id": "r68", "status": "completed", "ordinal": 68 }]),
+            json!([
+                said(
+                    "msg_earlier",
+                    "r67",
+                    "assistant",
+                    earlier,
+                    "2026-10-19T09:00:00.000Z"
+                ),
+                said("r68", "r68", "user", ASKED, "2026-10-19T10:00:01.000Z"),
+                said(
+                    "msg_reply",
+                    "r68",
+                    "assistant",
+                    ANSWER,
+                    "2026-10-19T10:00:48.000Z"
+                ),
+            ]),
+        )),
+    )
+    .await;
+    hub.executors.await_live(&r.machine_id).await;
+    flow::land_missed(&hub, Some(&r.machine_id)).await;
+    let (page, _, _) = hub.chat.page(&r, None, None, 50).unwrap();
+    let last = page.last().unwrap();
+    assert_eq!(
+        (last.author, last.text.as_str(), last.state, last.history),
+        (ChatAuthor::Lead, ANSWER, ChatMessageState::Final, None)
+    );
+    assert_eq!(last.created_at.as_str(), "2026-10-19T10:00:48.000Z");
+    assert_eq!(page.len(), 3, "the earlier reply isn't added again");
+    let announced = events_of(&hub, HubEventType::ChatMessage).len();
+    flow::land_missed(&hub, Some(&r.machine_id)).await;
+    flow::land_missed(&hub, None).await;
+    assert_eq!(hub.chat.page(&r, None, None, 50).unwrap().0.len(), 3);
+    assert_eq!(events_of(&hub, HubEventType::ChatMessage).len(), announced);
 }

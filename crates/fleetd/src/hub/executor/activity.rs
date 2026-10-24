@@ -26,7 +26,7 @@ pub const TEXT_TAIL_CHARS: usize = 2000;
 const BUCKET_MS: i64 = SPARK_BUCKET_SECS as i64 * 1000;
 /// Roughly, for English and code: how many streamed characters one output token is.
 const CHARS_PER_TOKEN: u64 = 4;
-/// The active run's complete text messages kept per thread. The chat folds each in within a tick, so a few will do.
+/// Complete text messages kept per thread. The chat folds each in within a tick, so a few will do.
 const DONE_KEPT: usize = 8;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -71,7 +71,7 @@ impl StreamText {
     }
 }
 
-/// A text message of the active run as the node stored it, complete. Deltas aren't: the node drops one still pending
+/// A text message as the node stored it, complete. Deltas aren't: the node drops one still pending
 /// when its complete message lands, so a reader that only follows deltas can miss a message's last words.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DoneText {
@@ -91,7 +91,8 @@ pub struct ActivityTracker {
     last_delta_ms: Option<i64>,
     retry: Option<(Activity, i64)>,
     text: Option<StreamText>,
-    /// The active run's complete assistant messages, oldest first, at most `DONE_KEPT`.
+    /// The complete assistant messages since the latest run started, oldest first, at most `DONE_KEPT`: the active
+    /// run's, and any that reached the hub after its run ended.
     done: Vec<DoneText>,
     /// Final usage per run, from `run` events (and the snapshot's runs).
     run_usage: HashMap<String, RunUsage>,
@@ -141,11 +142,8 @@ impl ActivityTracker {
                     self.open_item(item, started);
                 }
             }
-            ThreadEvent::Message(m) => {
-                if self.active_run.is_some() {
-                    self.message(m);
-                }
-            }
+            // Kept with no run active too: a reply that reaches the hub after its run ended must still land.
+            ThreadEvent::Message(m) => self.message(m),
             ThreadEvent::Item(item) => {
                 self.retry = None;
                 if item.status == ItemStatus::Running {
