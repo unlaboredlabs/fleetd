@@ -407,6 +407,48 @@ async fn a_message_to_a_project_without_a_lead_is_kept_once_and_says_why_it_wait
     let _ = ChatDelivery::Queued;
 }
 
+/// The lead's first turn is the person's message, not an empty chat followed by it.
+#[tokio::test]
+async fn the_message_that_starts_the_lead_goes_in_with_its_start() {
+    use fleetd_contracts::sessions::SessionCall;
+    let (hub, _home) = hub();
+    let calls = obliging_node(&hub).await;
+    hub.executors.set_runner_ready(&project().machine_id, true);
+    hub.executors.await_ready(&project().machine_id).await;
+    let tools = crate::hub::api::registry();
+    let sent = tools
+        .call(
+            &hub,
+            &person(),
+            "chat_send",
+            say_to_app("add dark mode", "s1", None),
+        )
+        .await
+        .unwrap();
+    assert_eq!(sent["message"]["delivery"], "turn", "{sent}");
+    assert!(hub.chat.held(&project()).unwrap().is_empty());
+    let (launches, sends): (Vec<_>, Vec<_>) = calls
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|c| match c {
+            SessionCall::Launch(l) => Some(Ok(l.prompt.to_string())),
+            SessionCall::Send { text, .. } => Some(Err(text.to_string())),
+            _ => None,
+        })
+        .partition(Result::is_ok);
+    assert!(
+        (launches.len(), sends.len()) == (1, 0),
+        "{launches:?} {sends:?}"
+    );
+    let first = launches[0].as_ref().unwrap();
+    assert!(
+        first.starts_with("You are the lead of project app")
+            && first.ends_with("The human writes in your chat:\n\nadd dark mode"),
+        "{first}"
+    );
+}
+
 #[tokio::test]
 async fn project_stop_with_nothing_running_says_so() {
     let (hub, _home) = hub();
@@ -1219,6 +1261,7 @@ async fn obliging_node(
                 SessionCall::Send { run_id, .. } => {
                     json!({ "ok": { "kind": "sent", "runId": run_id.as_str(), "queued": false } })
                 }
+                SessionCall::ReadFile { .. } => json!({ "ok": { "kind": "file" } }),
                 _ => json!({ "ok": { "kind": "done" } }),
             };
             seen.lock().unwrap().push(f.call);

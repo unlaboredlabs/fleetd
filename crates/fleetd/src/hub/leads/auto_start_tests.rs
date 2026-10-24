@@ -133,7 +133,7 @@ impl Hub {
                 by: "human".into(),
             })
             .unwrap();
-        let lead = self.area.leads.auto_start(&self.project).await;
+        let lead = self.area.leads.auto_start(&self.project, None).await;
         (created.workstream_id, lead)
     }
 
@@ -205,6 +205,37 @@ async fn an_order_for_a_project_without_a_lead_starts_it_and_the_lead_gets_the_o
     for w in [&w1, &w2] {
         assert!(sends[0].contains(&format!("new order {w}")), "{}", sends[0]);
     }
+    assert_eq!(hub.launched_prompts().len(), 1);
+}
+
+/// Otherwise the lead's first turn answers an empty chat ("tell me what you'd like done") and the message that
+/// started it waits for a second turn.
+#[tokio::test(flavor = "current_thread")]
+async fn the_message_that_starts_the_lead_ends_its_first_message_and_only_that_one() {
+    let hub = hub(true);
+    let lead = hub
+        .area
+        .leads
+        .auto_start(
+            &hub.project,
+            Some("The human writes: add a /health endpoint"),
+        )
+        .await;
+    assert!(matches!(lead, AutoStart::Started(_)));
+    let prompts = hub.launched_prompts();
+    assert!(
+        prompts[0].starts_with("You are the lead of project repo-a")
+            && prompts[0].ends_with("\n\nThe human writes: add a /health endpoint"),
+        "{}",
+        prompts[0]
+    );
+    // The lead runs now: a later message goes in on its own, and nothing launches again.
+    let lead = hub
+        .area
+        .leads
+        .auto_start(&hub.project, Some("The human writes: and /ready"))
+        .await;
+    assert!(matches!(lead, AutoStart::Running(_)));
     assert_eq!(hub.launched_prompts().len(), 1);
 }
 
