@@ -175,12 +175,13 @@ if [ "$build" = 0 ]; then
   curl -fsSL --retry 3 -o "$nightly/release.json" "$base/release.json" || die "could not download $base/release.json"
   field() { sed -n "s/.*\"$1\": *\"\([^\"]*\)\".*/\1/p" "$nightly/release.json" | head -1; }
   # A nightly republishes the CLI and the app only when they changed, so each can come from an older commit than
-  # the release's: the app's is appCommit, the CLI's the commit its version ends in.
+  # the release's: the app's is appCommit, the CLI's the build metadata after the + in its version.
   cli_version="$(field cliVersion)"
   app_commit="$(field appCommit)"
   [ -n "$cli_version" ] && [ -n "$app_commit" ] || die "release.json names no cliVersion or appCommit"
+  case "$cli_version" in *+?*) ;; *) die "the nightly's CLI version ($cli_version) names no commit after a +" ;; esac
   clone_at "$app_commit"
-  cli_commit="$(git -C "$repo" rev-parse -q --verify "${cli_version##*.}^{commit}")" ||
+  cli_commit="$(git -C "$repo" rev-parse -q --verify "${cli_version##*+}^{commit}")" ||
     die "can't find the commit of the nightly's CLI ($cli_version)"
   git -C "$repo" checkout -q --detach "$cli_commit"
   say "Nightly published $(field date): CLI $cli_version (${cli_commit:0:7}), app $(field appVersion) (${app_commit:0:7})"

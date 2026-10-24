@@ -19,6 +19,11 @@ Things a daily user will notice that the design pass left for later. Remove a li
   and the empty state would save the trip to a terminal.
 - **Unverified on a Mac.** The system font, SF Mono with its Menlo fallback, and Match system following the OS live
   were all checked on Linux only.
+- **Slow reconnect after quick hub bounces.** Mac QA (a hub restart, then 3 quick bounces): one run had not
+  reconnected 20 s after the last bounce. The backoff only starts over after a link stays ready for `STABLE_MS`
+  (30 s, `app/desktop/src/main/hub/client.ts:280`), so each short-lived link keeps growing it toward the 30 s cap
+  (`protocol.ts:50`), plus up to 25 % jitter, so a wait of up to ~37 s. Deciding how fast a link that reached ready
+  may retry, without hammering a hub that accepts and drops, is a design call.
 
 # Hub and CLI follow-ups
 
