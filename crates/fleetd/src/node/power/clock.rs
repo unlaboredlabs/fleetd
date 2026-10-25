@@ -3,6 +3,12 @@
 //! Linux: CLOCK_BOOTTIME counts suspend and CLOCK_MONOTONIC does not, so their difference grows by exactly the time
 //! spent asleep. macOS: mach_continuous_time and mach_absolute_time, the same pair. Wall-clock jumps (NTP, a user
 //! changing the time) move neither.
+//!
+//! The two clocks are read one after the other, so a raw difference runs short by the gap between the reads: on a
+//! machine that never slept it is slightly negative, and a read preempted under load comes out lower than the one
+//! before it. The time actually asleep never shrinks, so readings are taken as the highest seen yet.
+
+use std::sync::atomic::{AtomicI64, Ordering};
 
 /// A span the machine spent asleep, in wall-clock epoch milliseconds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -48,25 +54,33 @@ impl SleepWatch {
 }
 
 pub fn sample() -> Option<Sample> {
+    static HIGHEST_NS: AtomicI64 = AtomicI64::new(0);
     Some(Sample {
-        asleep_ms: asleep_ms()?,
+        asleep_ms: settle(&HIGHEST_NS, asleep_ns()?),
         wall_ms: chrono::Utc::now().timestamp_millis(),
     })
 }
 
+/// A raw reading in ms, never below zero or below an earlier one. Raw readings only ever run short (see the module
+/// doc), so the highest yet is the closest to the truth.
+fn settle(highest_ns: &AtomicI64, raw_ns: i64) -> i64 {
+    highest_ns.fetch_max(raw_ns, Ordering::Relaxed).max(raw_ns) / 1_000_000
+}
+
 #[cfg(target_os = "linux")]
-fn asleep_ms() -> Option<i64> {
+fn asleep_ns() -> Option<i64> {
     use nix::time::{ClockId, clock_gettime};
-    let ms = |id| {
+    let ns = |id| {
         clock_gettime(id)
             .ok()
-            .map(|t| t.tv_sec() * 1000 + t.tv_nsec() / 1_000_000)
+            .map(|t| t.tv_sec() * 1_000_000_000 + t.tv_nsec())
     };
-    Some(ms(ClockId::CLOCK_BOOTTIME)? - ms(ClockId::CLOCK_MONOTONIC)?)
+    // BOOTTIME first: MONOTONIC read after it can only make the difference short, never long.
+    Some(ns(ClockId::CLOCK_BOOTTIME)? - ns(ClockId::CLOCK_MONOTONIC)?)
 }
 
 #[cfg(target_os = "macos")]
-fn asleep_ms() -> Option<i64> {
+fn asleep_ns() -> Option<i64> {
     use std::ffi::c_void;
     #[repr(C)]
     struct Timebase {
@@ -96,11 +110,11 @@ fn asleep_ms() -> Option<i64> {
         (continuous(), mach_absolute_time())
     };
     let ticks = continuous.saturating_sub(absolute) as u128;
-    Some((ticks * base.numer as u128 / base.denom as u128 / 1_000_000) as i64)
+    Some((ticks * base.numer as u128 / base.denom as u128) as i64)
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-fn asleep_ms() -> Option<i64> {
+fn asleep_ns() -> Option<i64> {
     None
 }
 
@@ -139,12 +153,22 @@ mod tests {
         assert_eq!(watch.observe(at(MIN_SLEEP_MS - 1, 3_705_000)), None);
     }
 
+    #[test]
+    fn a_reading_never_goes_below_zero_or_back() {
+        let highest = AtomicI64::new(0);
+        // A machine that never slept: MONOTONIC, read second, is a little ahead of BOOTTIME.
+        assert_eq!(settle(&highest, -500), 0);
+        assert_eq!(settle(&highest, 7_400_000), 7);
+        // Preempted between the two reads: the gap made this one short.
+        assert_eq!(settle(&highest, 1_200_000), 7);
+        assert_eq!(settle(&highest, 646_000_000_000), 646_000);
+    }
+
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn reads_this_machines_clocks() {
         let first = sample().unwrap();
         assert!(first.asleep_ms >= 0);
-        // The two clocks are read one after the other, so their difference can step back a millisecond or two.
-        assert!(sample().unwrap().asleep_ms >= first.asleep_ms - 5);
+        assert!(sample().unwrap().asleep_ms >= first.asleep_ms);
     }
 }
