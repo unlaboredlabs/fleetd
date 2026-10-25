@@ -485,13 +485,17 @@ pub fn resumed_event(
 pub const BRAKE_PAUSE: f64 = 0.90;
 /// A braked machine starts new agents again once every window is below this, or past its reset.
 pub const BRAKE_LIFT: f64 = 0.85;
+/// A reading older than this, or of unknown age, no longer counts. claude reports a window only while a session
+/// runs, so with none running a reading would otherwise hold new agents until the node restarts.
+pub const BRAKE_STALE_MS: i64 = 15 * 60_000;
 
 /// The window that holds new agents back: its name as claude sends it, how used it is (None: claude sent a warning
-/// with no figure), and when it resets.
+/// with no figure), when claude reported it, and when it resets.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Brake {
     pub limit_type: String,
     pub utilization: Option<f64>,
+    pub observed_at: String,
     pub resets_at: Option<String>,
 }
 
@@ -507,7 +511,8 @@ fn window_text(limit_type: &str) -> String {
 }
 
 impl Brake {
-    /// "Paused new agents: 5-hour limit 91% on builder-1, resets Tue 14:00 UTC (pauses at 90%, lifts below 85%)".
+    /// "Paused new agents: 5-hour limit 91% on builder-1 as of 13:42 UTC, resets Tue 14:00 UTC (pauses at 90%, lifts
+    /// below 85%)".
     pub fn text(&self, machine: &str) -> String {
         let used = self
             .utilization
@@ -516,8 +521,13 @@ impl Brake {
             .resets_at
             .as_deref()
             .map_or_else(String::new, |r| format!(", resets {}", reset_text(r)));
+        // Never older than BRAKE_STALE_MS, so the time alone says when.
+        let observed = chrono::DateTime::parse_from_rfc3339(&self.observed_at).map_or_else(
+            |_| "Invalid Date".to_string(),
+            |d| d.with_timezone(&chrono::Utc).format("%H:%M").to_string(),
+        );
         format!(
-            "Paused new agents: {} limit {used} on {machine}{resets} (pauses at {:.0}%, lifts below {:.0}%)",
+            "Paused new agents: {} limit {used} on {machine} as of {observed} UTC{resets} (pauses at {:.0}%, lifts below {:.0}%)",
             window_text(&self.limit_type),
             BRAKE_PAUSE * 100.0,
             BRAKE_LIFT * 100.0
@@ -526,7 +536,8 @@ impl Brake {
 }
 
 /// The soft brake over the windows the machine's login last reported: the most used window at `BRAKE_PAUSE` or
-/// more (`BRAKE_LIFT` once `braked`), or None. A window past its reset no longer counts. A warning or rejection
+/// more (`BRAKE_LIFT` once `braked`), or None. A window past its reset, or read more than `BRAKE_STALE_MS` ago, no
+/// longer counts. A warning or rejection
 /// with no figure counts as full; with a figure, the figure decides, so claude's own warning level never pauses
 /// early. Running agents are not its business: the caller holds new ones only.
 pub fn brake(limits: &[LoginLimit], braked: bool, now_ms: i64) -> Option<Brake> {
@@ -540,17 +551,22 @@ pub fn brake(limits: &[LoginLimit], braked: bool, now_ms: i64) -> Option<Brake> 
                 .is_some_and(|r| r <= now_ms)
         })
         .filter_map(|l| {
+            let observed_at = l.observed_at.as_ref()?;
+            if parse_ms(observed_at.as_str()).is_none_or(|o| now_ms - o > BRAKE_STALE_MS) {
+                return None;
+            }
             let used = match &l.utilization {
                 Some(u) => u.get(),
                 None if l.status.as_str() != "allowed" => f64::INFINITY,
                 None => return None,
             };
-            (used >= at).then_some((used, l))
+            (used >= at).then_some((used, l, observed_at))
         })
         .max_by(|a, b| a.0.total_cmp(&b.0))
-        .map(|(_, l)| Brake {
+        .map(|(_, l, observed_at)| Brake {
             limit_type: l.limit_type.as_str().to_string(),
             utilization: l.utilization.as_ref().map(|u| u.get()),
+            observed_at: observed_at.as_str().to_string(),
             resets_at: l.resets_at.as_ref().map(|r| r.as_str().to_string()),
         })
 }
@@ -769,9 +785,11 @@ mod tests {
     }
 
     /// A window as the heartbeat carries it, resetting at `reset_ms`.
+    /// Read at 0, when every test but the stale one runs.
     fn window(kind: &str, used: Option<f64>, status: &str, reset_ms: i64) -> LoginLimit {
         serde_json::from_value(json!({
             "limitType": kind, "utilization": used, "resetsAt": iso_ms(reset_ms), "status": status,
+            "observedAt": iso_ms(0),
         }))
         .unwrap()
     }
@@ -790,7 +808,7 @@ mod tests {
         let paused = at(0.91, false).expect("pauses at 90%");
         assert_eq!(
             paused.text("builder-1"),
-            "Paused new agents: 5-hour limit 91% on builder-1, resets Thu 14:00 UTC (pauses at 90%, lifts below 85%)"
+            "Paused new agents: 5-hour limit 91% on builder-1 as of 00:00 UTC, resets Thu 14:00 UTC (pauses at 90%, lifts below 85%)"
         );
         assert!(
             at(0.87, true).is_some(),
@@ -817,7 +835,7 @@ mod tests {
         ];
         assert_eq!(
             brake(&both, false, 0).unwrap().text("mbp"),
-            "Paused new agents: 7-day limit 97% on mbp, resets Mon 04:00 UTC (pauses at 90%, lifts below 85%)"
+            "Paused new agents: 7-day limit 97% on mbp as of 00:00 UTC, resets Mon 04:00 UTC (pauses at 90%, lifts below 85%)"
         );
         assert_eq!(
             brake(
@@ -835,7 +853,7 @@ mod tests {
         );
         assert_eq!(
             warned.unwrap().text("mbp"),
-            "Paused new agents: 7-day Opus limit warning on mbp, resets Thu 14:00 UTC (pauses at 90%, lifts below 85%)"
+            "Paused new agents: 7-day Opus limit warning on mbp as of 00:00 UTC, resets Thu 14:00 UTC (pauses at 90%, lifts below 85%)"
         );
         assert_eq!(
             brake(&[window("five_hour", None, "allowed", reset)], false, 0),
@@ -845,6 +863,30 @@ mod tests {
             brake(&[], true, 0),
             None,
             "API keys and gateways report no windows"
+        );
+    }
+
+    #[test]
+    fn a_reading_older_than_15_minutes_or_of_unknown_age_no_longer_brakes() {
+        // A warning with no figure and no reset: only its age can end it.
+        let mut warned: LoginLimit = serde_json::from_value(json!({
+            "limitType": "seven_day", "status": "allowed_warning", "observedAt": iso_ms(0),
+        }))
+        .unwrap();
+        let fresh = brake(std::slice::from_ref(&warned), true, BRAKE_STALE_MS);
+        assert_eq!(
+            fresh.unwrap().text("mbp"),
+            "Paused new agents: 7-day limit warning on mbp as of 00:00 UTC (pauses at 90%, lifts below 85%)"
+        );
+        assert_eq!(
+            brake(std::slice::from_ref(&warned), true, BRAKE_STALE_MS + 1),
+            None
+        );
+        warned.observed_at = None;
+        assert_eq!(
+            brake(&[warned], true, 0),
+            None,
+            "an older node's reading has no age, so it can't hold anyone"
         );
     }
 }
