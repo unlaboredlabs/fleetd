@@ -273,6 +273,26 @@ async fn t23_resumes_about_30_s_after_its_node_is_back_after_a_stop_or_a_crash()
     }
 }
 
+/// The node is OOM-killed and systemd restarts it: today's 20 tasks failed with "[process_exited] the node
+/// stopped". Each resumes about 30 s after the node is back.
+#[tokio::test]
+async fn an_oom_killed_node_restarted_by_systemd_resumes_its_tasks() {
+    let (hub, clock, _first, _home) = running_t1().await;
+    let mut calls = away_and_back(&hub, &clock, Duration::from_secs(20), |hub| {
+        session(
+            hub,
+            3,
+            "r1",
+            "failed",
+            json!({ "failure": { "class": "process_exited", "message": "the node stopped" } }),
+        )
+    })
+    .await;
+    logged(&hub, "thread.failed", "r1").await;
+    let run = resumes_about_30_s_later(&hub, &clock, &mut calls, "the node on lab-a stopped").await;
+    completes(&hub, &run, 10).await;
+}
+
 /// The node keeps going away: resumed three times, and the fourth death fails the task, which wakes the lead with
 /// why. No fourth resume goes out.
 #[tokio::test]
@@ -333,13 +353,14 @@ async fn a_task_killed_the_same_way_twice_is_escalated() {
     logged(&hub, "thread.failed", "r1").await;
     catch_up(&hub.tasks).await;
     assert!(reason(&hub).starts_with("recovering: claude was killed by signal 9; resumes at "));
-    clock.advance(Duration::from_secs(55));
+    // A minute, ±10%.
+    clock.advance(Duration::from_secs(50));
     {
         let _guard = hub.tasks.lock.lock().await;
         hub.tasks.retry_queue().await;
     }
     nothing_sent(&mut calls).await;
-    clock.advance(Duration::from_secs(12));
+    clock.advance(Duration::from_secs(17));
     let (run, _) = sent(&mut calls).await;
     session(&hub, 4, &run, "running", json!({}));
     clock.advance(Duration::from_secs(600));

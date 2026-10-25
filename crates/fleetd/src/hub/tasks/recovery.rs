@@ -88,13 +88,22 @@ pub fn death(
         "network" | "overloaded" => (Kind::Unreachable, RunEnd::Failed),
         _ => (Kind::Fatal, RunEnd::Failed),
     };
+    // The node's own words for its stop and its restart are the node going away whatever else the event says: an
+    // OOM kill of the node, then its restart by systemd, failed 20 tasks with "[process_exited] the node stopped".
+    let node_end = reported
+        .filter(|e| matches!(e, RunEnd::NodeStopping | RunEnd::NodeRestarted))
+        .or(match message.trim() {
+            "the node stopped" => Some(RunEnd::NodeStopping),
+            "node restarted mid-run" => Some(RunEnd::NodeRestarted),
+            _ => None,
+        });
     let ((kind, cause), text) = if stalled {
         (
             (Kind::Stalled, RunEnd::Stalled),
             format!("no output for too long: {message}"),
         )
     } else {
-        match reported {
+        match node_end.or(reported) {
             Some(RunEnd::NodeStopping) => ((Kind::NodeLost, RunEnd::NodeStopping), node("stopped")),
             Some(RunEnd::NodeRestarted) => (
                 (Kind::NodeLost, RunEnd::NodeRestarted),
@@ -118,15 +127,8 @@ pub fn death(
                 | RunEnd::Stalled),
             ) => ((Kind::NotDead, end), message.clone()),
             // A node that records no cause (like the one on Oct 22): an interrupt reported on the node's
-            // return, or in the node's own words for its stop or restart, is the node going away.
+            // return is the node going away.
             None | Some(RunEnd::Unknown) => match r#type {
-                HubEventType::ThreadInterrupted if message == "node restarted mid-run" => (
-                    (Kind::NodeLost, RunEnd::NodeRestarted),
-                    node("restarted mid-run (a crash, a kill or a power loss)"),
-                ),
-                HubEventType::ThreadInterrupted if message == "the node stopped" => {
-                    ((Kind::NodeLost, RunEnd::NodeStopping), node("stopped"))
-                }
                 HubEventType::ThreadInterrupted if late => {
                     ((Kind::NodeLost, RunEnd::NodeStopping), node("went away"))
                 }
@@ -328,6 +330,41 @@ mod tests {
                 (d.kind, d.cause, d.text.as_str()),
                 (Kind::NodeLost, cause, text)
             );
+        }
+    }
+
+    /// The node OOM-killed, then restarted by systemd: its runs failed with "[process_exited] the node stopped" or
+    /// "node restarted mid-run", whatever cause came with them. That is the node going away, never "died twice".
+    #[test]
+    fn an_oom_killed_and_restarted_node_is_the_node_going_away() {
+        for (message, cause) in [
+            ("the node stopped", RunEnd::NodeStopping),
+            ("node restarted mid-run", RunEnd::NodeRestarted),
+        ] {
+            for end in [
+                json!(null),
+                json!("exited"),
+                json!("failed"),
+                json!("requested"),
+            ] {
+                let d = failed(
+                    json!({ "endCause": end, "error": { "class": "process_exited", "message": message } }),
+                    Some("Ran cargo build"),
+                );
+                assert_eq!(
+                    (d.kind, d.cause),
+                    (Kind::NodeLost, cause),
+                    "{message} with {end}"
+                );
+                let first = resume(decide(&d, None, false, NOW, 0.0, 3));
+                assert_eq!(due_in(&first), 30_000);
+                assert_eq!(
+                    resume(decide(&d, Some(&first), false, NOW, 0.0, 3))
+                        .count
+                        .get(),
+                    2
+                );
+            }
         }
     }
 
