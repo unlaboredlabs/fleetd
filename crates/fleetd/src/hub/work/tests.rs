@@ -366,6 +366,55 @@ async fn renewing_an_expired_claim_makes_it_active_again() {
     assert_eq!(hub.work.expire_due().unwrap(), 0);
 }
 
+/// Once an expired claim has dropped out of the view, someone else may take its work; renewing it then would make
+/// two holders of one piece of work, so it is released instead, naming who took it.
+#[tokio::test]
+async fn an_expired_claim_out_of_the_view_is_not_renewed_over_work_taken_since() {
+    let (hub, clock, _home) = hub();
+    let shop = scope("git@gitlab.example.com:acme/shop.git", "main");
+    let app = project("devbox", "app");
+    hub.work.bind_project(&app, &shop).unwrap();
+    let taken = hub
+        .work
+        .claim(new_claim(&shop, "dark mode toggle"))
+        .unwrap();
+    let free = hub.work.claim(new_claim(&shop, "search box")).unwrap();
+    // `free` keeps its issue key to itself.
+    hub.db
+        .with(|c| {
+            let mut claim = store::get(c, &free.claim_id)?.unwrap();
+            claim.keys = List::unchecked(vec![WorkKey::Issue(Line::unchecked("SHOP-99"))]);
+            claim.branch = None;
+            Ok(store::put(c, &claim)?)
+        })
+        .unwrap();
+    clock.advance(Duration::from_millis(CLAIM_TTL_MS as u64));
+    assert_eq!(hub.work.expire_due().unwrap(), 2);
+    clock.advance(Duration::from_millis(EXPIRED_SHOWN_MS as u64 + 1));
+    let now = iso_ms(now_ms(clock.as_ref()));
+    task(
+        &hub,
+        &app,
+        "SHOP-12: dark mode, done properly",
+        "write",
+        "running",
+        json!({ "createdAt": now }),
+    );
+
+    assert!(hub.work.renew(&taken.claim_id, None).unwrap().is_none());
+    let released = hub.work.get(&taken.claim_id).unwrap().unwrap();
+    assert_eq!(released.state, ClaimState::Released);
+    assert_eq!(
+        released.end.unwrap().reason.as_str(),
+        "T1 took the same work after this claim expired"
+    );
+    let ended = events_of(&hub, HubEventType::WorkEnded);
+    assert_eq!(ended.last().unwrap()["state"], "released");
+
+    let renewed = hub.work.renew(&free.claim_id, None).unwrap().unwrap();
+    assert_eq!(renewed.state, ClaimState::Active, "nobody took its work");
+}
+
 #[tokio::test]
 async fn a_project_is_bound_to_one_repo_and_base() {
     let (hub, _clock, _home) = hub();
@@ -657,4 +706,75 @@ async fn a_change_is_matched_to_its_repo_on_any_host() {
         let items = hub.work.in_flight(&shop).await.unwrap();
         assert_eq!(ids(&items), [ours.change_id.as_str()], "{remote}");
     }
+}
+
+/// A node that never answers.
+struct Hung;
+
+impl WorkPorts for Hung {
+    fn changed_paths<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Option<Vec<String>>> {
+        Box::pin(async move {
+            if thread.thread_id.as_str() == "th1" {
+                std::future::pending::<()>().await;
+            }
+            Some(vec!["app/search.ts".to_owned()])
+        })
+    }
+}
+
+/// A spawn asks every writer's node at once and waits at most its timeout: a node that hasn't answered by then
+/// leaves its writer "unknown" rather than holding the spawn.
+#[tokio::test]
+async fn observing_waits_for_no_node_past_its_timeout() {
+    let (hub, _clock, _home) = hub();
+    let (shop, app, _web) = shared_repo(&hub);
+    let thread = |id: &str| json!({ "machineId": "devbox", "threadId": id });
+    let hung = task(
+        &hub,
+        &app,
+        "dark mode toggle",
+        "write",
+        "running",
+        json!({ "threadRef": thread("th1") }),
+    );
+    let fine = task(
+        &hub,
+        &app,
+        "search box",
+        "write",
+        "running",
+        json!({ "threadRef": thread("th2") }),
+    );
+    let work = Work::new(
+        hub.db.clone(),
+        hub.events.clone(),
+        hub.clock.clone(),
+        Arc::new(Hung),
+    );
+
+    let observed = tokio::time::timeout(
+        Duration::from_secs(5),
+        work.observe(&shop, Some(Duration::from_millis(50))),
+    )
+    .await
+    .expect("not held by the hung node")
+    .unwrap();
+    assert_eq!(observed.unknown, HashSet::from([hung.task_id.clone()]));
+    assert_eq!(
+        observed.paths,
+        HashMap::from([(fine.task_id.clone(), vec!["app/search.ts".to_owned()])])
+    );
+    let items = work.in_flight_observed(&shop, &observed.paths).unwrap();
+    let paths_of = |id: &TaskId| {
+        let item = items
+            .iter()
+            .find(|i| i.task_id.as_ref() == Some(id))
+            .unwrap();
+        item.paths
+            .iter()
+            .map(|p| p.as_str().to_owned())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(paths_of(&fine.task_id), ["app/search.ts"]);
+    assert!(paths_of(&hung.task_id).is_empty());
 }

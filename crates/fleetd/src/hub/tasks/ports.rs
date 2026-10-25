@@ -8,6 +8,10 @@ use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadId, ThreadRe
 use fleetd_contracts::ledger::{Brief, Workstream, WorkstreamId};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::sessions::WorktreeBase;
+use fleetd_contracts::work::{WorkMatch, WorkScope};
+
+use crate::hub::store::StoreError;
+use crate::hub::work::{Observed, matcher};
 
 pub type BoxFut<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
@@ -148,4 +152,39 @@ pub trait TaskPorts: Send + Sync {
     /// `leads::digest::done_when_text` of the brief's lines, at most 200 units each, for the task prompt's "Done
     /// when:".
     fn done_when_text(&self, brief: &Brief) -> String;
+    /// Work.scope_of: the repo and base the project's work lands on, as recorded. Plain ports record none, so
+    /// nothing is checked.
+    fn work_scope<'a>(
+        &'a self,
+        _project_ref: &'a ProjectRef,
+    ) -> BoxFut<'a, Result<Option<WorkScope>, StoreError>> {
+        Box::pin(async { Ok(None) })
+    }
+    /// `work::bind_from_root`: reads and records them from the project's root, which asks its node and may wait on
+    /// its remote. `'static`, so the tasks can leave it running in the background.
+    fn work_bind(
+        &self,
+        _project_ref: &ProjectRef,
+    ) -> BoxFut<'static, Result<Option<WorkScope>, StoreError>> {
+        Box::pin(async { Ok(None) })
+    }
+    /// Work.observe: the scope's writers' changed paths, asked of their nodes at once, none waited on past
+    /// `timeout`.
+    fn work_observe<'a>(
+        &'a self,
+        _scope: &'a WorkScope,
+        _timeout: std::time::Duration,
+    ) -> BoxFut<'a, Result<Observed, StoreError>> {
+        Box::pin(async { Ok(Observed::default()) })
+    }
+    /// Work.check_observed: what the intent may repeat among the scope's work in flight, strongest first, with the
+    /// writers' paths already gathered. Reads the store only, so it may run under the tasks lock.
+    fn work_match(
+        &self,
+        _scope: &WorkScope,
+        _intent: &matcher::Work,
+        _paths: &std::collections::HashMap<fleetd_contracts::tasks::TaskId, Vec<String>>,
+    ) -> Result<Vec<WorkMatch>, StoreError> {
+        Ok(Vec::new())
+    }
 }

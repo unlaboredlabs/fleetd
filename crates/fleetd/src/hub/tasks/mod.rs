@@ -7,6 +7,9 @@ pub mod base;
 pub mod cap;
 #[cfg(test)]
 mod cap_tests;
+pub mod duplicates;
+#[cfg(test)]
+mod duplicates_tests;
 #[cfg(test)]
 mod guard_tests;
 pub mod hooks;
@@ -46,7 +49,9 @@ use crate::hub::store::parse_ms;
 use crate::hub::store::{
     EventLog, HubDb, HubStore, NewEvent, StoreError, WaitInput, iso_ms, now_ms,
 };
+use crate::hub::work::Observed;
 use fleetd_contracts::mcp::ErrorCode;
+use fleetd_contracts::work::WorkScope;
 use hooks::UsageGate;
 use ports::{LaunchRequest, PortError, TaskError, TaskPorts, WakeKind, Worktree};
 use render::{branch_for, find_pr_url, render_task_prompt, tail_of};
@@ -215,6 +220,38 @@ fn queued_reason(reason: &str) -> Text<1, 200> {
     Text::unchecked(js_prefix(reason, 200))
 }
 
+/// A spawn's task, with what its duplicate check says and the writers' changed paths it gathered.
+pub struct Spawned {
+    pub task: Task,
+    pub note: Option<String>,
+    pub observed: Observed,
+}
+
+/// A project's repo and base being read in the background: dropping it, when the read ends however it ends, takes the
+/// project out of `Tasks::binding`.
+struct Reading {
+    projects: Arc<Mutex<HashSet<ProjectRef>>>,
+    project: ProjectRef,
+}
+
+impl Drop for Reading {
+    fn drop(&mut self) {
+        self.projects
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&self.project);
+    }
+}
+
+/// Where a writer's spawn checks for duplicates.
+enum SpawnScope {
+    Bound(WorkScope),
+    /// The project has no remote, or isn't known.
+    NoRepo,
+    /// Still being read from its root, in the background.
+    Binding,
+}
+
 pub struct Tasks {
     d: TaskDeps,
     // Every state change goes through this, so a release, a completion and a lead call never interleave.
@@ -230,6 +267,8 @@ pub struct Tasks {
     /// one (T19: a node back from a stop reported the run it cut off after the task had been continued), so it doesn't
     /// end the task. Not kept across a hub restart, whose follower starts after every event appended before it.
     continuing: Mutex<HashMap<TaskId, (String, i64)>>,
+    /// Projects whose repo and base a spawn is reading from their root, in the background once it stopped waiting.
+    binding: Arc<Mutex<HashSet<ProjectRef>>>,
     /// Set once in `hub/serve` (`wire::wire`) to usage; unset passes through.
     pub hooks: TaskHooks,
     cursor: i64,
@@ -252,6 +291,7 @@ impl Tasks {
             awaiting: Mutex::new(HashSet::new()),
             asking: Mutex::new(HashSet::new()),
             continuing: Mutex::new(HashMap::new()),
+            binding: Arc::new(Mutex::new(HashSet::new())),
             hooks: TaskHooks::default(),
             cursor,
             applied: std::sync::atomic::AtomicI64::new(cursor),
@@ -398,6 +438,11 @@ impl Tasks {
                 task.title.as_str(),
             )
         });
+        let elsewhere = if write {
+            self.elsewhere_for(task).await
+        } else {
+            Vec::new()
+        };
         let set = self.d.db.prompts().current(Some(r));
         let prompt = render_task_prompt(
             &set,
@@ -408,6 +453,7 @@ impl Tasks {
                 done_when: brief.as_ref().map(|b| self.d.ports.done_when_text(b)),
                 branch: branch.as_deref(),
                 base_branch: base_branch.as_deref(),
+                elsewhere: &elsewhere,
             },
         );
         let request = LaunchRequest {
@@ -1319,7 +1365,36 @@ impl Tasks {
         caller: &TaskCaller,
         input: SpawnInput,
     ) -> Result<Task, TaskError> {
+        self.spawn_noted(caller, input).await.map(|s| s.task)
+    }
+
+    /// `spawn`, with what a writer's duplicate check has to say: the work elsewhere it may overlap, or that it was
+    /// not checked; and the writers' changed paths it gathered, for `also_writing`. A writer that repeats work in
+    /// flight is refused (`duplicates`).
+    pub async fn spawn_noted(
+        self: &Arc<Self>,
+        caller: &TaskCaller,
+        input: SpawnInput,
+    ) -> Result<Spawned, TaskError> {
         let r = &caller.project_ref;
+        // Binding may ask the node, and so does each writer's changed paths: both happen before the lock, the paths
+        // within `OBSERVE_TIMEOUT`, so a slow node never holds up other task calls. Under the lock the check reads
+        // the store only.
+        let checked = if input.kind == TaskKind::Write {
+            let scope = self.spawn_scope(r).await?;
+            let observed = match &scope {
+                SpawnScope::Bound(scope) => self
+                    .d
+                    .ports
+                    .work_observe(scope, OBSERVE_TIMEOUT)
+                    .await
+                    .map_err(store_error)?,
+                _ => Observed::default(),
+            };
+            Some((scope, observed))
+        } else {
+            None
+        };
         let _guard = self.lock.lock().await;
         let ws = match self.workstream(&input.workstream_id) {
             Some(ws) if same_project(&ws.project_ref, r) => ws,
@@ -1366,6 +1441,10 @@ impl Tasks {
                 return Err(lead_error(e.0.code, e.0.message, e.0.fix.as_deref()));
             }
         }
+        let (note, overridden) = match &checked {
+            Some((scope, observed)) => self.check_duplicates(r, scope, observed, &input)?,
+            None => (None, Vec::new()),
+        };
         // A broken policy file refuses the spawn now, not at its launch. An offline machine's file can't be read: the
         // task queues "offline", and its launch reads the file and still refuses a broken one.
         match self.d.policies.get(r).await {
@@ -1384,6 +1463,7 @@ impl Tasks {
             qa: input.qa,
             pr: input.pr.clone(),
             item_id: input.item.clone(),
+            paths: input.paths.clone(),
             state: TaskState::Queued,
             queued_reason: None,
             thread_ref: None,
@@ -1412,7 +1492,16 @@ impl Tasks {
                 Ok(task)
             })
             .map_err(store_error)?;
-        Ok(self
+        if !overridden.is_empty() {
+            tracing::info!(
+                task = task.task_id.as_str(),
+                project = %r.project_id,
+                over = overridden.join(", "),
+                why = input.not_duplicate_why.as_ref().map_or("", |w| w.as_str()),
+                "tasks: spawned over a possible duplicate"
+            );
+        }
+        let task = self
             .try_start(
                 StoredTask {
                     task,
@@ -1420,7 +1509,96 @@ impl Tasks {
                 },
                 false,
             )
-            .await)
+            .await;
+        Ok(Spawned {
+            task,
+            note,
+            observed: checked.map(|(_, observed)| observed).unwrap_or_default(),
+        })
+    }
+
+    /// The project's repo and base for a writer's duplicate check. Unrecorded, they are read from its root, waiting at
+    /// most `BIND_WAIT`: a slow remote finishes in the background, so a later spawn has them. One read runs per
+    /// project at a time.
+    async fn spawn_scope(&self, r: &ProjectRef) -> Result<SpawnScope, TaskError> {
+        if let Some(scope) = self.d.ports.work_scope(r).await.map_err(store_error)? {
+            return Ok(SpawnScope::Bound(scope));
+        }
+        if !self.binding.lock().unwrap().insert(r.clone()) {
+            return Ok(SpawnScope::Binding);
+        }
+        let bind = self.d.ports.work_bind(r);
+        // However the read ends (done, panicked or cancelled), the project is free to be read again.
+        let reading = Reading {
+            projects: self.binding.clone(),
+            project: r.clone(),
+        };
+        let mut bound = tokio::spawn(async move {
+            let bound = bind.await;
+            if let Err(error) = &bound {
+                tracing::warn!(%error, project = %reading.project.project_id, "tasks: repo and base not read");
+            }
+            drop(reading);
+            bound
+        });
+        match tokio::time::timeout(BIND_WAIT, &mut bound).await {
+            Ok(Ok(Ok(Some(scope)))) => Ok(SpawnScope::Bound(scope)),
+            Ok(Ok(Ok(None)) | Err(_)) => Ok(SpawnScope::NoRepo),
+            Ok(Ok(Err(error))) => Err(store_error(error)),
+            Err(_) => Ok(SpawnScope::Binding),
+        }
+    }
+
+    /// The work in flight a writer may overlap, read again from the store as it starts, for its prompt: no node is
+    /// asked, as a launch holds the tasks lock. Nothing when it can't be read: the spawn was checked already.
+    async fn elsewhere_for(&self, task: &Task) -> Vec<String> {
+        let r = &task.project_ref;
+        let Ok(Some(scope)) = self.d.ports.work_scope(r).await else {
+            return Vec::new();
+        };
+        let intent = duplicates::intent(
+            r,
+            &scope,
+            task.title.as_str(),
+            task.prompt.as_str(),
+            task.item_id.as_ref(),
+            task.pr.as_ref(),
+            task.paths.iter().flatten().map(|p| p.as_str().to_owned()),
+        );
+        match self.d.ports.work_match(&scope, &intent, &HashMap::new()) {
+            Ok(matches) => duplicates::for_writer(&matches, &task.task_id),
+            Err(error) => {
+                tracing::warn!(%error, task = task.task_id.as_str(), "tasks: work elsewhere not read");
+                Vec::new()
+            }
+        }
+    }
+
+    /// A writer against the work in flight on its project's repo and base, with the writers' paths gathered before
+    /// the lock: refused when it repeats some, else what it may overlap (the result's `elsewhere:` line) and the ids
+    /// `notDuplicateOf` let it through over. Reads the store only.
+    fn check_duplicates(
+        &self,
+        r: &ProjectRef,
+        scope: &SpawnScope,
+        observed: &Observed,
+        input: &SpawnInput,
+    ) -> Result<(Option<String>, Vec<String>), TaskError> {
+        let scope = match scope {
+            SpawnScope::Bound(scope) => scope,
+            SpawnScope::NoRepo => return Ok((Some(duplicates::UNBOUND.to_owned()), Vec::new())),
+            SpawnScope::Binding => return Ok((Some(duplicates::BINDING.to_owned()), Vec::new())),
+        };
+        let intent = duplicates::spawn_intent(input, r, scope);
+        let matches = self
+            .d
+            .ports
+            .work_match(scope, &intent, &observed.paths)
+            .map_err(store_error)?;
+        let passed = duplicates::judge(&matches, input, &observed.unknown)?;
+        let note = (!passed.elsewhere.is_empty())
+            .then(|| format!("elsewhere: {}", passed.elsewhere.join("; ")));
+        Ok((note, passed.overridden))
     }
 
     /// Steers a running task; continues an ended one in the same thread, which re-takes its slot.
@@ -1688,6 +1866,10 @@ impl Tasks {
 }
 
 const ALSO_WRITING_MAX: usize = 10;
+/// How long a spawn waits to read an unrecorded project's repo and base before it goes on without the check.
+const BIND_WAIT: std::time::Duration = std::time::Duration::from_secs(3);
+/// How long a spawn waits for a node to say what its writers changed; one that hasn't by then is "changes unknown".
+const OBSERVE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 const ALSO_WRITING_PATHS: usize = 5;
 const LIVE_TASKS: [TaskState; 3] = [TaskState::Queued, TaskState::Running, TaskState::Idle];
 const SCAN_LIMIT: usize = 10_000;
@@ -1736,8 +1918,9 @@ impl Tasks {
 
     /// The project's other writers that have started, with the first files each changed so far, for a writer's
     /// spawn result: the lead plans slices that don't overlap, and this lets it check. Writers share the repo; a
-    /// real overlap costs one of them a rebase, which the train sends back to it.
-    pub async fn also_writing(&self, task: &Task) -> Option<String> {
+    /// real overlap costs one of them a rebase, which the train sends back to it. A writer whose changes the spawn
+    /// already gathered (`observed`) isn't asked again.
+    pub async fn also_writing(&self, task: &Task, observed: &Observed) -> Option<String> {
         if task.kind != TaskKind::Write {
             return None;
         }
@@ -1758,10 +1941,21 @@ impl Tasks {
         if others.is_empty() {
             return None;
         }
+        // `None`: its node didn't say, or not within `OBSERVE_TIMEOUT`.
         let changes = futures_util::future::join_all(others.iter().map(|t| async {
+            if let Some(paths) = observed.paths.get(&t.task_id) {
+                return Some(paths.clone());
+            }
+            if observed.unknown.contains(&t.task_id) {
+                return None;
+            }
             match &t.thread_ref {
-                Some(thread) => self.d.ports.changes(thread).await.map(|c| c.paths),
-                None => None,
+                Some(thread) => tokio::time::timeout(OBSERVE_TIMEOUT, self.d.ports.changes(thread))
+                    .await
+                    .ok()
+                    .flatten()
+                    .map(|c| c.paths),
+                None => Some(Vec::new()),
             }
         }))
         .await;
@@ -1769,8 +1963,9 @@ impl Tasks {
             .iter()
             .zip(changes)
             .map(|(t, paths)| {
-                let paths = match paths.filter(|p| !p.is_empty()) {
-                    None => "no changes yet".to_owned(),
+                let paths = match paths {
+                    None => "changes unknown".to_owned(),
+                    Some(p) if p.is_empty() => "no changes yet".to_owned(),
                     Some(p) if p.len() > ALSO_WRITING_PATHS => format!(
                         "{}, +{} more",
                         p[..ALSO_WRITING_PATHS].join(", "),
@@ -1852,6 +2047,14 @@ mod tests {
         policy: Mutex<Option<String>>,
         /// Where each writer's worktree starts, as the node reports it.
         base: Mutex<Option<WorktreeBase>>,
+        /// The project's recorded repo and base; `work_bind` records one, counting its reads in `binds`. With
+        /// `bind_hangs`, a read waits for `bind_gate`, like a remote that doesn't answer.
+        scope: Arc<Mutex<Option<WorkScope>>>,
+        binds: Arc<std::sync::atomic::AtomicUsize>,
+        bind_hangs: std::sync::atomic::AtomicBool,
+        bind_gate: Arc<tokio::sync::Notify>,
+        /// A read that panics.
+        bind_panics: std::sync::atomic::AtomicBool,
     }
 
     impl Node {
@@ -1952,6 +2155,36 @@ mod tests {
         fn done_when_text(&self, _: &Brief) -> String {
             String::new()
         }
+        fn work_scope<'a>(
+            &'a self,
+            _: &'a ProjectRef,
+        ) -> BoxFut<'a, Result<Option<WorkScope>, StoreError>> {
+            Box::pin(async move { Ok(self.scope.lock().unwrap().clone()) })
+        }
+        fn work_bind(
+            &self,
+            _: &ProjectRef,
+        ) -> BoxFut<'static, Result<Option<WorkScope>, StoreError>> {
+            use std::sync::atomic::Ordering::SeqCst;
+            self.binds.fetch_add(1, SeqCst);
+            let hangs = self.bind_hangs.load(SeqCst);
+            let panics = self.bind_panics.load(SeqCst);
+            let (scope, gate) = (self.scope.clone(), self.bind_gate.clone());
+            Box::pin(async move {
+                if panics {
+                    panic!("the read panicked");
+                }
+                if hangs {
+                    gate.notified().await;
+                }
+                let bound: WorkScope = serde_json::from_value(
+                    json!({ "repoKey": "git.example.com/acme/shop", "base": "main" }),
+                )
+                .unwrap();
+                *scope.lock().unwrap() = Some(bound.clone());
+                Ok(Some(bound))
+            })
+        }
     }
 
     /// The policy file as the node reads it from the project's checkout: none unless the test writes one.
@@ -2024,7 +2257,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            tasks.also_writing(&first).await,
+            tasks.also_writing(&first, &Observed::default()).await,
             None,
             "nobody else writes yet"
         );
@@ -2041,7 +2274,10 @@ mod tests {
             ]
         );
         assert_eq!(
-            tasks.also_writing(&second).await.as_deref(),
+            tasks
+                .also_writing(&second, &Observed::default())
+                .await
+                .as_deref(),
             Some("also writing: T1 add the docs page (docs/t1.md)")
         );
 
@@ -2051,7 +2287,7 @@ mod tests {
         .unwrap();
         let reader = tasks.spawn(&caller, reader).await.unwrap();
         assert_eq!(
-            tasks.also_writing(&reader).await,
+            tasks.also_writing(&reader, &Observed::default()).await,
             None,
             "only writers hear of writers"
         );
@@ -2322,5 +2558,112 @@ mod tests {
             "{}",
             raised[0].summary.as_str()
         );
+    }
+
+    /// The first spawn in a project with no repo recorded waits at most `BIND_WAIT` on a remote that hangs: it goes on
+    /// unchecked, saying so, while the read finishes in the background. A spawn meanwhile starts no second read, and
+    /// the next spawn after it is checked.
+    #[tokio::test(start_paused = true)]
+    async fn a_hanging_remote_never_holds_up_a_spawn() {
+        use std::sync::atomic::Ordering::SeqCst;
+        let (tasks, node) = tasks();
+        node.bind_hangs.store(true, SeqCst);
+        let caller = TaskCaller {
+            project_ref: ProjectRef {
+                machine_id: MachineId::unchecked("lab-a"),
+                project_id: ProjectId::unchecked("p1"),
+            },
+            by: "lead".into(),
+        };
+        let started = tokio::time::Instant::now();
+        let first = tasks
+            .spawn_noted(&caller, writer("add the docs page"))
+            .await
+            .unwrap();
+        assert!(started.elapsed() <= BIND_WAIT + std::time::Duration::from_millis(100));
+        assert_eq!(first.note.as_deref(), Some(duplicates::BINDING));
+        let second = tasks
+            .spawn_noted(&caller, writer("fix the api"))
+            .await
+            .unwrap();
+        assert_eq!(second.note.as_deref(), Some(duplicates::BINDING));
+        assert_eq!(node.binds.load(SeqCst), 1, "one read at a time");
+
+        node.bind_gate.notify_one();
+        while !tasks.binding.lock().unwrap().is_empty() {
+            tokio::task::yield_now().await;
+        }
+        let third = tasks
+            .spawn_noted(&caller, writer("tidy the readme"))
+            .await
+            .unwrap();
+        assert_eq!(
+            third.note, None,
+            "checked, against the scope read in the background"
+        );
+        assert_eq!(node.binds.load(SeqCst), 1);
+    }
+
+    /// `also writing` uses the changed paths the spawn's check gathered, and asks only nodes it didn't.
+    #[tokio::test]
+    async fn also_writing_reuses_what_the_check_gathered() {
+        let (tasks, _node) = tasks();
+        let caller = TaskCaller {
+            project_ref: ProjectRef {
+                machine_id: MachineId::unchecked("lab-a"),
+                project_id: ProjectId::unchecked("p1"),
+            },
+            by: "lead".into(),
+        };
+        let first = tasks
+            .spawn(&caller, writer("add the docs page"))
+            .await
+            .unwrap();
+        let second = tasks.spawn(&caller, writer("fix the api")).await.unwrap();
+        let third = tasks
+            .spawn(&caller, writer("tidy the readme"))
+            .await
+            .unwrap();
+        let mut observed = Observed::default();
+        observed
+            .paths
+            .insert(first.task_id.clone(), vec!["app/api.ts".to_owned()]);
+        observed.unknown.insert(second.task_id.clone());
+        assert_eq!(
+            tasks.also_writing(&third, &observed).await.as_deref(),
+            Some(
+                "also writing: T2 fix the api (changes unknown); T1 add the docs page (app/api.ts)"
+            )
+        );
+    }
+
+    /// A read that panics still frees its project: the next spawn there reads again rather than skipping the check
+    /// as "being read" until the hub restarts.
+    #[tokio::test]
+    async fn a_read_that_panics_frees_its_project() {
+        use std::sync::atomic::Ordering::SeqCst;
+        let (tasks, node) = tasks();
+        node.bind_panics.store(true, SeqCst);
+        let caller = TaskCaller {
+            project_ref: ProjectRef {
+                machine_id: MachineId::unchecked("lab-a"),
+                project_id: ProjectId::unchecked("p1"),
+            },
+            by: "lead".into(),
+        };
+        let first = tasks
+            .spawn_noted(&caller, writer("add the docs page"))
+            .await
+            .unwrap();
+        assert_eq!(first.note.as_deref(), Some(duplicates::UNBOUND));
+        assert!(tasks.binding.lock().unwrap().is_empty());
+
+        node.bind_panics.store(false, SeqCst);
+        let second = tasks
+            .spawn_noted(&caller, writer("fix the api"))
+            .await
+            .unwrap();
+        assert_eq!(second.note, None, "read again, and checked");
+        assert_eq!(node.binds.load(SeqCst), 2);
     }
 }

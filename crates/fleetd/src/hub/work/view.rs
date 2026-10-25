@@ -74,6 +74,10 @@ fn task_keys(task: &Task) -> Vec<WorkKey> {
     if let Some(key) = task.branch.as_deref().and_then(branch_key) {
         push_key(&mut keys, key);
     }
+    // A writer spawned for a PR (to finish or fix it) holds that PR as much as one that opened it.
+    if let Some(url) = &task.pr {
+        push_key(&mut keys, WorkKey::Pr(url.clone()));
+    }
     if let Some(url) = task.result.as_ref().and_then(|r| r.pr_url.clone()) {
         push_key(&mut keys, WorkKey::Pr(url));
     }
@@ -81,10 +85,8 @@ fn task_keys(task: &Task) -> Vec<WorkKey> {
 }
 
 fn task_item(task: &Task, observed: &HashMap<TaskId, Vec<String>>) -> WorkItem {
-    let paths = observed
-        .get(&task.task_id)
-        .map(Vec::as_slice)
-        .unwrap_or_default();
+    let declared = task.paths.iter().flatten().map(|p| p.as_str());
+    let observed = observed.get(&task.task_id).into_iter().flatten();
     WorkItem {
         id: Line::unchecked(task.task_id.as_str()),
         kind: WorkItemKind::Task,
@@ -93,7 +95,7 @@ fn task_item(task: &Task, observed: &HashMap<TaskId, Vec<String>>) -> WorkItem {
         title: Line::unchecked(task.title.as_str()),
         state: Line::unchecked(task_state_str(task.state)),
         keys: List::unchecked(task_keys(task)),
-        paths: paths_of(paths.iter().map(String::as_str)),
+        paths: paths_of(declared.chain(observed.map(String::as_str))),
         task_id: Some(task.task_id.clone()),
         change_id: None,
         claim_id: None,

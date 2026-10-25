@@ -18,14 +18,16 @@ use crate::ledger::{
 };
 use crate::mcp::McpToolError;
 use crate::plan::{PlanCall, PlanItemId, PlanResult};
-use crate::prim::{List, NonEmpty, Text};
+use crate::prim::{Line, List, NonEmpty, Text};
 use crate::secrets::SecretSink;
 use crate::steer::SteerId;
 use crate::tasks::{
-    AbsolutePath, PrUrl, Task, TaskId, TaskKind, TaskPrompt, TaskState, TaskTitle, task_spawn_rule,
+    AbsolutePath, PrUrl, SPAWN_PATHS_MAX, Task, TaskId, TaskKind, TaskPrompt, TaskState, TaskTitle,
+    task_spawn_rule,
 };
 use crate::train::{Change, GitHubPrUrl};
 use crate::verification::ReviewVerdict;
+use crate::work::WorkPath;
 
 /// Under the node user's home directory; mode 0600.
 pub const NODE_SOCKET_PATH: &str = ".fleetd/node/node.sock";
@@ -151,12 +153,26 @@ pub struct TaskSpawnCall {
     pub qa: Option<bool>,
     /// `--item P<n>`: the plan item this task works on; refused when it belongs to another order.
     pub item: Option<PlanItemId>,
+    /// The files a writer will change, repo-relative (`app/theme.ts`, `app/settings/**`): matched against the work
+    /// in flight.
+    pub paths: Option<List<WorkPath, 1, SPAWN_PATHS_MAX>>,
+    /// A writer refused as a possible duplicate: the ids it was refused for (`T12`, `C7`), when this is different
+    /// work. Needs `notDuplicateWhy`.
+    pub not_duplicate_of: Option<List<Line<1, 300>, 1, NOT_DUPLICATE_MAX>>,
+    /// Why it is different work, in one line; kept in the hub's log.
+    pub not_duplicate_why: Option<Line<1, 200>>,
 }
-checked!(TaskSpawnCall, |call| task_spawn_rule(
-    call.kind,
-    call.qa,
-    call.pr.is_some()
-));
+checked!(TaskSpawnCall, |call| {
+    task_spawn_rule(call.kind, call.qa, call.pr.is_some())?;
+    if call.not_duplicate_of.is_some() && call.not_duplicate_why.is_none() {
+        return Err(
+            "notDuplicateOf needs notDuplicateWhy: one line on why it is different work".into(),
+        );
+    }
+    Ok(())
+});
+
+pub const NOT_DUPLICATE_MAX: usize = 10;
 
 /// `fleetd task list [--task T1] [--state s] [--workstream W1]`, within the calling project.
 #[skip_serializing_none]

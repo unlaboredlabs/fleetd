@@ -11,7 +11,8 @@ use super::CliResult;
 use super::args::{self, Kind, Spec};
 use crate::clock::SystemClock;
 use crate::hub::auth::{Auth, AuthError};
-use crate::hub::store::{HubDb, HubStore};
+use crate::hub::store::{EventLog, HubDb, HubStore, StoreError};
+use crate::hub::work::{NoPorts, Work};
 
 pub const HUB_KEY_USAGE: &str = r#"  hub key create --name <name> --role <read|operate|admin> --machines <'*'|id,id> [--out <file>] [--home <dir>]
              create an agent key for the MCP endpoint; prints the key once, or with --out writes it
@@ -33,6 +34,7 @@ pub const HUB_KEY_USAGE: &str = r#"  hub key create --name <name> --role <read|o
 pub struct HubAccess {
     pub auth: Auth,
     pub store: HubStore,
+    db: Arc<HubDb>,
 }
 
 /// `--home` resolved (default `~/.fleetd/hub`).
@@ -47,8 +49,23 @@ pub fn open_hub(home: &Path) -> Result<HubAccess, String> {
     let db = HubDb::open(home).map_err(|error| error.to_string())?;
     Ok(HubAccess {
         auth: Auth::new(db.clone(), Arc::new(SystemClock)),
-        store: HubStore::new(db),
+        store: HubStore::new(db.clone()),
+        db,
     })
+}
+
+impl HubAccess {
+    /// Releases the work a revoked key had claimed, so it stops blocking others now rather than when it expires.
+    fn release_claims(&self, key_id: &str) -> Result<Vec<String>, StoreError> {
+        let clock: Arc<dyn crate::clock::Clock> = Arc::new(SystemClock);
+        let events = Arc::new(EventLog::new(self.db.clone(), clock.clone())?);
+        let work = Work::new(self.db.clone(), events, clock, Arc::new(NoPorts));
+        Ok(work
+            .release_owner(key_id, "its key was revoked")?
+            .into_iter()
+            .map(|c| c.claim_id.as_str().to_owned())
+            .collect())
+    }
 }
 
 fn fail(code: u8, message: &str) -> CliResult {
@@ -299,10 +316,21 @@ pub fn hub_key(argv: &[String]) -> CliResult {
                 return key_usage("revoke needs a key id (see `fleetd hub key list`)");
             };
             with_hub(v.str("home"), |hub| match hub.auth.revoke(key_id) {
-                Ok(()) => CliResult {
-                    code: 0,
-                    stdout: format!("revoked {key_id}\n"),
-                    stderr: String::new(),
+                Ok(()) => match hub.release_claims(key_id) {
+                    Ok(released) if released.is_empty() => CliResult {
+                        code: 0,
+                        stdout: format!("revoked {key_id}\n"),
+                        stderr: String::new(),
+                    },
+                    Ok(released) => CliResult {
+                        code: 0,
+                        stdout: format!("revoked {key_id}; released {}\n", released.join(", ")),
+                        stderr: String::new(),
+                    },
+                    Err(error) => fail(
+                        1,
+                        &format!("revoked {key_id}, but its claims were not released: {error}"),
+                    ),
                 },
                 Err(error @ AuthError::KeyNotFound { .. }) => fail(1, &error.to_string()),
                 Err(error) => fail(1, &error.to_string()),
@@ -432,5 +460,57 @@ mod tests {
             "never overwritten"
         );
         assert_eq!(keys().len(), 1, "nothing minted for a file it can't write");
+    }
+
+    /// A revoked key's claims are released at once, so its work stops blocking others before it would expire.
+    #[test]
+    fn revoking_a_key_releases_what_it_claimed() {
+        use fleetd_contracts::prim::{Line, List};
+        use fleetd_contracts::work::{ClaimOwner, ClaimOwnerKind, ClaimState, RepoKey, WorkScope};
+
+        let home = tempfile::tempdir().unwrap();
+        let h = home.path().to_str().unwrap();
+        assert_eq!(
+            create(&["--human", "--name", "laptop", "--home", h]).code,
+            0
+        );
+        let hub = open_hub(home.path()).unwrap();
+        let key_id = hub.auth.list().unwrap()[0].key_id.to_string();
+        let clock: Arc<dyn crate::clock::Clock> = Arc::new(SystemClock);
+        let events = Arc::new(EventLog::new(hub.db.clone(), clock.clone()).unwrap());
+        let work = Work::new(hub.db.clone(), events, clock, Arc::new(NoPorts));
+        let claim = work
+            .claim(crate::hub::work::NewClaim {
+                scope: WorkScope {
+                    repo_key: RepoKey::of("ssh://git@git.example.com/acme/shop.git").unwrap(),
+                    base: Line::unchecked("main"),
+                },
+                project_ref: None,
+                owner: ClaimOwner {
+                    kind: ClaimOwnerKind::HumanSession,
+                    key_id: Line::new(key_id.clone()).unwrap(),
+                    label: None,
+                },
+                title: Line::unchecked("dark mode toggle"),
+                keys: List::unchecked(vec![]),
+                branch: None,
+                paths: List::unchecked(vec![]),
+                author_email: None,
+            })
+            .unwrap();
+
+        let revoked = hub_key(&[
+            "revoke".to_owned(),
+            key_id.clone(),
+            "--home".to_owned(),
+            h.to_owned(),
+        ]);
+        assert_eq!(
+            (revoked.code, revoked.stdout.as_str()),
+            (0, format!("revoked {key_id}; released C1\n").as_str())
+        );
+        let released = work.get(&claim.claim_id).unwrap().unwrap();
+        assert_eq!(released.state, ClaimState::Released);
+        assert_eq!(released.end.unwrap().reason.as_str(), "its key was revoked");
     }
 }
