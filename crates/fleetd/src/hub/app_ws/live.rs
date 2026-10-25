@@ -448,7 +448,7 @@ pub fn machines(hub: &Hub, caller: &Caller) -> Vec<MachineLive> {
     out
 }
 
-/// The slot board, its per-project rows cut to the projects the key may read.
+/// The slot board, its per-project and per-machine rows cut to the machines the key may read.
 pub fn slots(hub: &Hub, caller: &Caller) -> SlotState {
     let mut state = hub.slots.state();
     let rows: Vec<_> = std::mem::take(&mut state.per_project)
@@ -456,6 +456,11 @@ pub fn slots(hub: &Hub, caller: &Caller) -> SlotState {
         .filter(|p| allows(caller, Role::Read, Some(&p.project_ref.machine_id)))
         .collect();
     state.per_project = List::unchecked(rows);
+    let machines: Vec<_> = std::mem::take(&mut state.per_machine)
+        .into_iter()
+        .filter(|m| allows(caller, Role::Read, Some(&m.machine_id)))
+        .collect();
+    state.per_machine = List::unchecked(machines);
     state
 }
 
