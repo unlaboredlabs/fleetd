@@ -741,3 +741,45 @@ async fn the_status_row_counts_the_last_7_days_and_a_merge_just_reported() {
     );
     assert_eq!(fact(&hub)[1], ("web".to_owned(), Some(5), Some(20.0)));
 }
+
+/// Status never breaks on the metrics: with them unreadable, every row still comes back, its 7-day fact left out.
+#[tokio::test]
+async fn status_reads_its_rows_when_the_metrics_cannot_be_read() {
+    let (hub, _clock, _home) = hub();
+    hub.store
+        .projects_upsert_many(
+            &MachineId::unchecked("devbox"),
+            &[serde_json::from_value(json!({
+                "machineId": "devbox", "projectId": "web", "title": "web", "workspaceRoot": "/work/web",
+                "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 }, "lastActivityAt": NOW,
+            }))
+            .unwrap()],
+        )
+        .unwrap();
+    a_week(&hub);
+    sql(&hub, "DROP TABLE metric_merges", &[]);
+    let rows = crate::hub::status::rows::read(&hub, &Default::default(), ms(NOW)).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        (rows[0].merged_7d, rows[0].through_fleetd_pct_7d),
+        (None, None)
+    );
+}
+
+/// A step from an older cursor (a catch-up racing the loop) folds again but never moves the saved cursor back.
+#[tokio::test]
+async fn the_saved_cursor_only_moves_forward() {
+    let (hub, _clock, _home) = hub();
+    a_week(&hub);
+    let end = project_from(&hub, 0);
+    let saved = |hub: &Hub| {
+        hub.db
+            .with(|c| crate::hub::time::store::cursor(c, "metrics:events"))
+            .unwrap()
+    };
+    assert_eq!(saved(&hub), Some(end));
+    let before = rows(&hub);
+    project::step(&hub.db, &hub.events, 0).unwrap();
+    assert_eq!(saved(&hub), Some(end));
+    assert_eq!(rows(&hub), before, "a replay writes the same rows");
+}

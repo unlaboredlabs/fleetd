@@ -89,7 +89,9 @@ pub fn step(
         for fold in folds.iter().flatten() {
             write(c, fold)?;
         }
-        crate::hub::time::store::set_cursor(c, CURSOR, page.cursor)
+        // A catch-up beside the loop may have saved a later cursor: never move it back.
+        let saved = crate::hub::time::store::cursor(c, CURSOR)?.unwrap_or(0);
+        crate::hub::time::store::set_cursor(c, CURSOR, page.cursor.max(saved))
     })?;
     Ok((page.cursor, page.more))
 }

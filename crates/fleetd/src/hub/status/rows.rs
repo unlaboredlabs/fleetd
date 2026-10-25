@@ -234,7 +234,14 @@ pub fn read(hub: &Hub, fresh: &Fresh, now: i64) -> anyhow::Result<Vec<ProjectSta
     if let Err(e) = crate::hub::metrics::project::catch_up(&hub.db, &hub.events) {
         tracing::warn!(error = %e, "status: metrics not caught up");
     }
-    let weeks = hub.db.with(|c| crate::hub::metrics::weeks(c, now, tz))?;
+    // Status never fails on the metrics: a row whose 7-day fact can't be read leaves it out.
+    let weeks = hub
+        .db
+        .with(|c| crate::hub::metrics::weeks(c, now, tz))
+        .unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "status: 7-day merges not read");
+            Default::default()
+        });
     let machines = hub.store.machines_list()?;
     let mut projects: Vec<(String, String)> = hub
         .store
