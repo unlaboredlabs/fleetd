@@ -130,6 +130,13 @@ impl TaskPorts for HubTaskPorts {
         self.executors.started_run(thread)
     }
 
+    fn recreated_from(
+        &self,
+        thread: &ThreadRef,
+    ) -> Option<fleetd_contracts::sessions::WorktreeSource> {
+        self.executors.recreated_from(thread)
+    }
+
     fn send_steer<'a>(
         &'a self,
         thread: &'a ThreadRef,

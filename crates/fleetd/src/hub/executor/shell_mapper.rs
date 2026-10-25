@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 
 use fleetd_contracts::sessions::{
     FailureClass, MachineEvent, PendingPermission, ProjectInfo, RunEnd, RunStatus, SessionStatus,
-    SessionSummary,
+    SessionSummary, WorktreeSource,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -144,6 +144,8 @@ pub struct TrackedThread {
     pub active_run_starting: bool,
     /// The permission prompt the run waits on.
     pub pending: Option<PendingPermission>,
+    /// What the node rebuilt the worktree from the last time it was gone.
+    pub recreated_from: Option<WorktreeSource>,
 }
 
 impl TrackedThread {
@@ -496,6 +498,7 @@ impl Applier<'_, '_> {
             active_run_id,
             active_run_starting: starting,
             pending: session.pending_permission.clone(),
+            recreated_from: session.recreated_from,
         };
         self.state.threads.insert(id.clone(), next.clone());
         if let Some(k) = &known

@@ -52,6 +52,11 @@ async fn running_t1() -> (Arc<Hub>, Arc<ManualClock>, Calls, tempfile::TempDir) 
 
 /// The node's update of session t1: run `run` in `status`, with `end` (a run's `end`, `failure`) on it.
 fn session(hub: &Hub, seq: u64, run: &str, status: &str, end: Value) {
+    session_with(hub, seq, run, status, end, json!({}));
+}
+
+/// The same, with `extra` on the session (its `recreatedFrom`).
+fn session_with(hub: &Hub, seq: u64, run: &str, status: &str, end: Value, extra: Value) {
     let active = matches!(status, "queued" | "starting" | "running" | "waiting");
     let session_status = match status {
         "completed" => "idle",
@@ -69,6 +74,10 @@ fn session(hub: &Hub, seq: u64, run: &str, status: &str, end: Value) {
     if active {
         event["activeRunId"] = json!(run);
     }
+    event
+        .as_object_mut()
+        .unwrap()
+        .extend(extra.as_object().cloned().unwrap_or_default());
     if status == "waiting" {
         event["pendingPermission"] =
             json!({ "requestId": "q1", "toolName": "Bash", "summary": "rm -rf build" });
@@ -183,13 +192,8 @@ async fn resumes_about_30_s_later(
         (resumed.state, resumed.attempt.get()),
         (TaskState::Running, 2)
     );
-    assert!(
-        !hub.leads.wakes.pending(&project()),
-        "the lead is not woken"
-    );
-    // It reads of it in its next wake.
-    let held = hub.leads.wakes.held(&project());
-    let line = held.last().expect("a line for the next wake");
+    // Once its run starts, it reads of it in its next wake; nothing wakes it.
+    let line = resumed_line(hub, &run, 9, json!({})).await;
     assert!(
         line.starts_with(&format!(
             "- T1 resumed automatically (attempt 2, recovery 1 of 3): slice 1\n  > its run was cut off ({cause}) \
@@ -198,6 +202,24 @@ async fn resumes_about_30_s_later(
         "{line}"
     );
     run
+}
+
+/// The resumed run `run` starts (the node's session with `extra`): the lead's line held for its next wake.
+async fn resumed_line(hub: &Hub, run: &str, seq: u64, extra: Value) -> String {
+    assert!(
+        hub.leads.wakes.held(&project()).is_empty(),
+        "not before the run starts"
+    );
+    session_with(hub, seq, run, "running", json!({}), extra);
+    logged(hub, "thread.started", run).await;
+    catch_up(&hub.tasks).await;
+    assert!(
+        !hub.leads.wakes.pending(&project()),
+        "the lead is not woken"
+    );
+    let held = hub.leads.wakes.held(&project());
+    assert_eq!(held.len(), 1, "{held:?}");
+    held[0].clone()
 }
 
 /// The resumed run starts and completes: the task is done, and the lead hears of it once, as for any task.
@@ -405,6 +427,88 @@ async fn a_task_killed_the_same_way_twice_is_escalated() {
     assert_eq!(continued.recovery.unwrap().resumed_at, None);
     let digest = hub.tasks.digest_lines(&project(), None, 10);
     assert!(!digest[0].contains("resumed automatically"), "{digest:?}");
+}
+
+/// T1's worktree and local branch were gone when it resumed: its node rebuilt the worktree from the pushed branch, and
+/// the lead's line says so. A rebuild the node reported before (the last one) isn't this resume's.
+#[tokio::test]
+async fn a_worktree_rebuilt_from_the_pushed_branch_is_in_the_leads_line() {
+    let (hub, clock, mut calls, _home) = running_t1().await;
+    let mut stored = hub
+        .db
+        .with(|c| Ok(super::TaskRecords::get(c, &TaskId::unchecked("T1"))?))
+        .unwrap()
+        .unwrap();
+    stored.task.branch = Some(fleetd_contracts::prim::NonEmpty::unchecked(
+        "fleetd/T1-slice-1",
+    ));
+    hub.db
+        .with(|c| Ok(super::TaskRecords::put(c, &stored)?))
+        .unwrap();
+    // An earlier rebuild, from the local branch.
+    session_with(
+        &hub,
+        3,
+        "r1",
+        "running",
+        json!({}),
+        json!({ "recreatedFrom": "local" }),
+    );
+    let killed = json!({ "end": "exited", "failure": { "class": "process_exited",
+        "message": "claude was killed by signal 9" } });
+    session_with(
+        &hub,
+        4,
+        "r1",
+        "failed",
+        killed,
+        json!({ "recreatedFrom": "local" }),
+    );
+    logged(&hub, "thread.failed", "r1").await;
+    catch_up(&hub.tasks).await;
+    clock.advance(Duration::from_secs(70));
+    let (run, _) = sent(&mut calls).await;
+    let line = resumed_line(&hub, &run, 5, json!({ "recreatedFrom": "remote" })).await;
+    assert!(
+        line.ends_with(
+            "Its worktree and local branch were gone, so the worktree was rebuilt from origin/fleetd/T1-slice-1 as \
+             pushed: unpushed commits and uncommitted changes are lost. Nothing for you to do."
+        ),
+        "{line}"
+    );
+}
+
+/// The same rebuild still on the session is not news.
+#[tokio::test]
+async fn an_earlier_rebuild_is_not_reported_again() {
+    let (hub, clock, mut calls, _home) = running_t1().await;
+    session_with(
+        &hub,
+        3,
+        "r1",
+        "running",
+        json!({}),
+        json!({ "recreatedFrom": "remote" }),
+    );
+    let killed = json!({ "end": "exited", "failure": { "class": "process_exited",
+        "message": "claude was killed by signal 9" } });
+    session_with(
+        &hub,
+        4,
+        "r1",
+        "failed",
+        killed,
+        json!({ "recreatedFrom": "remote" }),
+    );
+    logged(&hub, "thread.failed", "r1").await;
+    catch_up(&hub.tasks).await;
+    clock.advance(Duration::from_secs(70));
+    let (run, _) = sent(&mut calls).await;
+    let line = resumed_line(&hub, &run, 5, json!({ "recreatedFrom": "remote" })).await;
+    assert!(
+        line.ends_with("It goes on in its own worktree; nothing for you to do."),
+        "{line}"
+    );
 }
 
 /// A node stopped cleanly reports its runs' ends before it goes; the hub applies T1's once the node is offline. T1

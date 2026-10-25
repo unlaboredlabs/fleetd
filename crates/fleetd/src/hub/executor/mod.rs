@@ -38,7 +38,7 @@ use fleetd_contracts::sessions::{
     ItemKind, ItemStatus, MachineEvent, MachineEventFrame, RunnerInfo, SessionCall,
     SessionCallFrame, SessionError, SessionErrorCode, SessionLaunch, SessionOutput, SessionResult,
     SessionStatus, SessionSummary, SessionWorkspace, ThreadEvent, ThreadEventFrame, ThreadItem,
-    WorktreeBase,
+    WorktreeBase, WorktreeSource,
 };
 use fleetd_contracts::steer::{SteerReceipt, SteerTag};
 use futures_util::StreamExt;
@@ -1693,6 +1693,11 @@ impl Executors {
                 .or_else(|| t.known_run().map(str::to_owned)),
             running: t.summary.status == "running",
         })
+    }
+
+    /// What the node rebuilt the session's worktree from the last time it was gone, as last seen.
+    pub fn recreated_from(&self, r: &ThreadRef) -> Option<WorktreeSource> {
+        self.tracked(r)?.recreated_from
     }
 
     /// The run the session is on as last seen: its active run once it has started, else its latest run. A send queued

@@ -3,6 +3,7 @@
 use std::sync::LazyLock;
 
 use fleetd_contracts::ledger::Brief;
+use fleetd_contracts::sessions::WorktreeSource;
 use fleetd_contracts::tasks::{
     BranchPrefix, DEFAULT_BRANCH_PREFIX, Task, TaskKind, TaskRecovery, TaskResult,
     TaskResultStatus, TaskState,
@@ -251,8 +252,36 @@ fn branch_place(task: &Task) -> String {
         .map_or_else(String::new, |b| format!(" [{}]", b.as_str()))
 }
 
-/// The lead's quiet line for a dead task fleetd resumed: why its run ended and what it was doing.
-pub fn task_recovered_lines(task: &Task, recovery: &TaskRecovery, doing: &str) -> String {
+/// What became of a resumed task's worktree: as it was, or rebuilt by its node (`rebuilt`) from what was left of its
+/// branch.
+fn worktree_words(task: &Task, rebuilt: Option<WorktreeSource>) -> String {
+    let branch = task.branch.as_ref().map_or("its branch", |b| b.as_str());
+    match rebuilt {
+        None | Some(WorktreeSource::Unknown) => {
+            "It goes on in its own worktree; nothing for you to do.".to_owned()
+        }
+        Some(WorktreeSource::Local) => format!(
+            "Its worktree was gone and was rebuilt from its local branch {branch}: its commits are there, uncommitted \
+             changes are lost. Nothing for you to do."
+        ),
+        Some(WorktreeSource::Remote) => format!(
+            "Its worktree and local branch were gone, so the worktree was rebuilt from origin/{branch} as pushed: \
+             unpushed commits and uncommitted changes are lost. Nothing for you to do."
+        ),
+        Some(WorktreeSource::Base) => format!(
+            "Its worktree was gone and {branch} was neither on the machine nor pushed, so it starts again on a new \
+             {branch} from the default branch: its earlier work is lost."
+        ),
+    }
+}
+
+/// The lead's quiet line for a dead task fleetd resumed: why its run ended, what it was doing, and its worktree.
+pub fn task_recovered_lines(
+    task: &Task,
+    recovery: &TaskRecovery,
+    doing: &str,
+    rebuilt: Option<WorktreeSource>,
+) -> String {
     Event::AgentRecovered {
         task: task.task_id.as_str(),
         title: task.title.as_str(),
@@ -262,6 +291,7 @@ pub fn task_recovered_lines(task: &Task, recovery: &TaskRecovery, doing: &str) -
         max: recovery.max.get(),
         cause: recovery.last_cause_text.as_str(),
         doing,
+        worktree: &worktree_words(task, rebuilt),
     }
     .render()
 }

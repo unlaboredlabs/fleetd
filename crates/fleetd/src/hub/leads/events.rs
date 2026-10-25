@@ -56,7 +56,7 @@ pub enum Event<'a> {
         result: &'a str,
     },
     /// fleetd resumed a task whose run died, in its thread and worktree. Quiet: in the next wake, never one alone.
-    /// `doing` is the last thing the run did; `place` its branch.
+    /// `doing` is the last thing the run did; `place` its branch; `worktree` what became of its worktree.
     AgentRecovered {
         task: &'a str,
         title: &'a str,
@@ -66,6 +66,7 @@ pub enum Event<'a> {
         max: i64,
         cause: &'a str,
         doing: &'a str,
+        worktree: &'a str,
     },
     /// A running task's machine has been offline for `minutes`; it resumes when the machine is back. Quiet.
     AgentUnreachable {
@@ -208,13 +209,14 @@ impl Event<'_> {
                 max,
                 cause,
                 doing,
+                worktree,
             } => (
                 format!(
                     "- {task} resumed automatically (attempt {attempt}, recovery {recovery} of {max}): {}{place}",
                     one_line(title, 80)
                 ),
                 vec![format!(
-                    "  > its run was cut off ({}) during: {}. It goes on in its own worktree; nothing for you to do.",
+                    "  > its run was cut off ({}) during: {}. {worktree}",
                     one_line(cause, 200),
                     one_line(doing, 200)
                 )],
@@ -385,6 +387,7 @@ mod tests {
                 max: 3,
                 cause: "the node on forge stopped",
                 doing: "Ran cargo test --workspace",
+                worktree: "It goes on in its own worktree; nothing for you to do.",
             }),
             "- T23 resumed automatically (attempt 2, recovery 1 of 3): B: progress bar takes in-flight credit back \
              [fleetd/T23-b-progress-bar]\n  > its run was cut off (the node on forge stopped) during: Ran cargo test \

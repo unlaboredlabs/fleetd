@@ -244,6 +244,9 @@ has been offline for 30 minutes:
   > Its worktree and session are on forge, so it stays there. To have it done elsewhere, cancel it and start a new task.
 ```
 
+When the node had to rebuild a resumed agent's worktree, the line says what from instead: its local branch,
+`origin/<branch>` as pushed, or a new branch from the default branch, and what is lost.
+
 One that fleetd did not resume wakes the lead: `- T23 failed and was not resumed: …`, with why (it died the same way
 twice, it ran out of automatic recoveries, or resuming can't fix the cause) and the lead's choices.
 
