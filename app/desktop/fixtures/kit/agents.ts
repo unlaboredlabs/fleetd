@@ -72,13 +72,26 @@ export const syncAgents = (f: Fixture): void => {
     // A recording's max (the lab runs 40) reads as no setting at all: only a fixture about the slot state keeps its own.
     const kept = f.agentsFromSlots && typeof row?.["maxAgents"] === "number" && row["maxAgents"] >= running ? row["maxAgents"] : plausibleMax(running);
     const waiting = f.agentsFromSlots && typeof row?.["queued"] === "number" ? row["queued"] : queued;
-    return { projectRef: ref, maxAgents: kept, running, queued: waiting };
+    // A fixture about the slot state keeps what else its rows say (whether someone set the max).
+    return { ...(f.agentsFromSlots ? row : {}), projectRef: ref, maxAgents: kept, running, queued: waiting };
   });
   const used = perProject.reduce((n, r) => n + (r["running"] as number), 0);
   const queued = perProject.reduce((n, r) => n + (r["queued"] as number), 0);
   const largest = Math.max(0, ...perProject.map((r) => r["maxAgents"] as number));
   const cap = f.agentsFromSlots && typeof set["cap"] === "number" ? set["cap"] : Math.max(12, largest, Math.ceil(used / 6) * 6);
   const slots: JsonObject = { cap, used, queued, perProject };
+  if (f.agentsFromSlots) {
+    // Its fleet cap and machines too, each machine running what its projects do.
+    if (set["fleetCap"] !== undefined) slots["fleetCap"] = set["fleetCap"];
+    if (set["perMachine"] !== undefined) {
+      slots["perMachine"] = arr(set["perMachine"])
+        .filter(isObject)
+        .map((m) => ({
+          ...m,
+          running: perProject.filter((r) => asText(obj(r["projectRef"])["machineId"]) === asText(m["machineId"])).reduce((n, r) => n + (r["running"] as number), 0),
+        }));
+    }
+  }
   f.snapshot["slots"] = slots;
   for (const frame of f.live) if (frame["slots"] !== undefined || frame["full"] === true) frame["slots"] = structuredClone(slots);
 

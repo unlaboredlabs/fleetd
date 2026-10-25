@@ -95,7 +95,7 @@ whole fleet. The hub enforces all of them; the lead plans to them.
 
 | Cap | Counts | Default | Set it |
 |---|---|---|---|
-| Per machine | Every project's agents on the machine. Not the leads. | What it fits: one per CPU less one in eight, and 2 GB of memory each after a quarter of it (4 to 16 GB) is left for the system, at most 64. An 8 GB laptop fits 2, a 32 GB one 12. | node.json's `memPerAgentGb` changes the 2 GB. |
+| Per machine | Every project's agents on the machine. Not the leads. | What it fits: one per CPU less one in eight, and 2 GB of memory each after a quarter of it (4 to 16 GB) is left for the system, at most 64. An 8 GB laptop fits 2, a 32 GB one 12. | Settings → Agents → Max agents per machine: a number (it may go above what the machine fits, with a warning), or Auto. node.json's `memPerAgentGb` changes the 2 GB. |
 | Per project: Max agents | The project's agents: writers, readers, reviewers. Not the lead. | Its machine's cap | Click "agents 6 / 12" in the project's chat header, or use Settings → Agents. |
 | Fleet-wide | Every project's agents together. Not the leads. | None: the machines' caps added up | Settings → Agents → Whole fleet. Needs an admin key. A fleet cap saved before stays until you change it. |
 
@@ -104,7 +104,9 @@ in the last 10 minutes still counted, since their worktrees haven't grown yet. T
 its cap, e.g. "agents: 4 running of 6 (auto: memory 18 GB), 2 queued".
 
 The header shows "· 2 queued" when agents wait their turn. While you move the slider it says what the change will do; it
-applies when you let go, with Undo. A fleet cap below a project's own max gets a warning.
+applies when you let go, with Undo. A fleet cap below a project's own max gets a warning. Settings → Agents shows each
+machine's cap and what sets it ("Auto: memory 18 GB.", or "Set to 8. Auto would be 6 (memory 18 GB)."), and Auto
+(No limit, for the whole fleet) takes a number someone set back to the default.
 
 Writers in a project run side by side, each in its own worktree and branch. The lead gives them slices that touch
 separate files; if two PRs still conflict, the [merge train](/docs/merge-train) sends the later one back to its writer.

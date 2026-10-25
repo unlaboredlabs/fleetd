@@ -46,6 +46,8 @@ export const fixtures = [
   // F9: the whole real prompt registry, with edits, a project's own texts and a default changed under an edit.
   "settings-prompts",
   "settings-agents",
+  // ...with the fleet cap a lab run left saved, 40 (fixtures/settings).
+  "settings-agents-fleet",
   // ...with storefront's medium switch off (fixtures/settings).
   "settings-medium-off",
   // F2: the lead chat's live strip with 0, 3 and 20 agents at work (fixtures/live).
@@ -1132,8 +1134,9 @@ export const screens: readonly Screen[] = [
   { id: "shortcuts", route: "#/", fixtures: ["typical"], open: (page) => page.keyboard.press("ControlOrMeta+Slash") },
   // F9: Settings. Prompts opens on the lead's first message, the longest text; many-prompts lists 72 with long
   // keys and titles; settings-prompts is the real registry with edits. Compare and Update are deep links.
-  // Max agents: the fleet cap and each project's slider.
-  { id: "settings.agents", route: "#/settings/agents", fixtures: ["settings-agents", "long-text", "empty", "hub-unreachable"] },
+  // Max agents: the fleet cap (none, and a saved 40), each machine's cap (auto, set above auto, short of disk) and
+  // each project's slider.
+  { id: "settings.agents", route: "#/settings/agents", fixtures: ["settings-agents", "settings-agents-fleet", "long-text", "empty", "hub-unreachable"] },
   // The two task profiles, and each project's medium switch: storefront's off in settings-medium-off.
   {
     id: "settings.agents",
@@ -1156,7 +1159,8 @@ export const screens: readonly Screen[] = [
     open: (page) => expect(page.getByRole("slider", { name: "storefront" })).toBeFocused(),
   },
   // A slider applies when you let go (keys: once they rest): a project lowered under its running agents, with the
-  // pause and Undo; and the whole fleet moved below a project's own max, which warns.
+  // pause and Undo; the whole fleet moved below a project's own max, which warns; and a machine raised above what it
+  // fits, which warns too.
   {
     id: "settings.agents",
     route: "#/settings/agents",
@@ -1175,9 +1179,53 @@ export const screens: readonly Screen[] = [
     fixtures: ["settings-agents"],
     variant: "fleet-below",
     open: async (page) => {
+      // No fleet cap: the slider sits at the 20 the machines fit, and goes down to 2, under billing's own 3.
       await page.getByRole("slider").first().focus();
-      for (let i = 0; i < 8; i++) await page.keyboard.press("ArrowLeft");
+      for (let i = 0; i < 18; i++) await page.keyboard.press("ArrowLeft");
       await page.getByRole("button", { name: "Undo" }).waitFor();
+    },
+  },
+  {
+    id: "settings.agents",
+    route: "#/settings/agents",
+    fixtures: ["settings-agents"],
+    variant: "machine-above",
+    open: async (page) => {
+      // devbox: auto 12, raised to 14.
+      await page.getByRole("slider", { name: "devbox" }).focus();
+      for (let i = 0; i < 2; i++) await page.keyboard.press("ArrowRight");
+      await page.getByRole("button", { name: "Undo" }).waitFor();
+    },
+  },
+  // Auto takes back a number someone set: buildbox's 8, billing's own 3, and the saved fleet cap of 40.
+  {
+    id: "settings.agents",
+    route: "#/settings/agents",
+    fixtures: ["settings-agents"],
+    variant: "machine-auto",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Set buildbox's max agents back to auto, 6" }).click();
+      await page.getByText("Max agents on buildbox: auto, was 8.").waitFor();
+    },
+  },
+  {
+    id: "settings.agents",
+    route: "#/settings/agents",
+    fixtures: ["settings-agents"],
+    variant: "project-auto",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Set billing's max agents back to auto" }).click();
+      await page.getByText("Max agents: auto, was 3.").waitFor();
+    },
+  },
+  {
+    id: "settings.agents",
+    route: "#/settings/agents",
+    fixtures: ["settings-agents-fleet"],
+    variant: "fleet-no-limit",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Remove the fleet cap: no limit beyond the machines" }).click();
+      await page.getByText("Whole fleet: no limit, was 40.").waitFor();
     },
   },
   // Settings search: an option found by its name, and by nothing.
