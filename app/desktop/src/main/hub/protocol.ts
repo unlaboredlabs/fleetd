@@ -18,7 +18,12 @@ export type ClientMessage =
 const cursor = z.int().min(0);
 
 export const ServerFrame = z.discriminatedUnion("t", [
-  z.object({ t: z.literal("ready"), protocol: z.int(), version: z.string().max(200).optional() }),
+  z.object({
+    t: z.literal("ready"),
+    protocol: z.int(),
+    version: z.string().max(200).optional(),
+    features: z.array(z.string().max(64)).max(64).optional(),
+  }),
   z.looseObject({ t: z.literal("snapshot"), cursor }),
   z.looseObject({ t: z.literal("event"), seq: cursor, type: z.string() }),
   z.object({ t: z.literal("result"), id: z.string(), output: z.unknown() }),
@@ -34,6 +39,10 @@ export const ServerFrame = z.discriminatedUnion("t", [
 ]);
 /** Checked at the fields above; the rest is typed by the contracts the hub validated it against. */
 export type ServerFrame = AppServerMessage;
+
+/** The hub's answer, without an id, to a message it can't read: an older hub's to a newer message. */
+export const isUnknownMessage = (code: string, message: string): boolean =>
+  code === "invalid" && message.startsWith("Unknown or malformed message");
 
 /** A frame this build can read, or null: not JSON, an unknown `t` (a newer hub) or a malformed one, all skipped. */
 export const parseServerFrame = (text: string): ServerFrame | null => {

@@ -196,6 +196,16 @@
         {
           "description": "Sent once the key is accepted.",
           "properties": {
+            "features": {
+              "description": "The newer client messages it reads ([`APP_FEATURES`]). Absent from older hubs: send them none.",
+              "items": {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[^\\r\\n]*$",
+                "type": "string"
+              },
+              "type": "array"
+            },
             "protocol": {
               "maximum": 9007199254740991,
               "minimum": 1,

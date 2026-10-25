@@ -10,10 +10,14 @@ use crate::ids::EventSeq;
 use crate::ledger::WorkstreamId;
 use crate::live::LiveFrame;
 use crate::mcp::{ErrorCode, FleetStatus};
-use crate::prim::{NonEmpty, Text};
+use crate::prim::{Line, NonEmpty, Text};
 
 /// Chosen by the client; echoed on the call's `result` or `error`.
 pub type AppCallId = Text<1, 64>;
+
+/// The client messages this hub reads beyond protocol 1's first set, named in `ready`'s `features`. A client sends
+/// one of them only to a hub that names it, so an older hub never sees a message it can't read.
+pub const APP_FEATURES: [&str; 1] = ["presence"];
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "t", rename_all = "snake_case", rename_all_fields = "camelCase")]
@@ -51,6 +55,7 @@ pub enum AppClientMessage {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         project: Option<crate::ids::ProjectRef>,
     },
+    /// Sent only to a hub whose `ready` names `presence` in its features.
     /// Once a minute while app presence is on (Settings › General, on by default): whether a window is focused,
     /// the project on screen, and whether there was input in the last minute. Only that: never keystrokes or
     /// content. A human key's minute with all three becomes an `app.presence` event; anything else is dropped.
@@ -82,6 +87,9 @@ pub enum AppServerMessage {
         /// The hub's fleetd version, as hub_info reports it. Absent from older hubs.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         version: Option<String>,
+        /// The newer client messages it reads ([`APP_FEATURES`]). Absent from older hubs: send them none.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        features: Option<Vec<Line<1, 64>>>,
     },
     /// Answer to `snapshot`: the fleetd_status data.
     Snapshot(FleetStatus),
@@ -110,6 +118,14 @@ mod tests {
             json!({ "t": "ready", "protocol": 1, "version": "0.0.0-nightly.202610221107+333368c" });
         let ready: AppServerMessage = serde_json::from_value(frame.clone()).unwrap();
         assert_eq!(serde_json::to_value(&ready).unwrap(), frame);
+        // A hub that reads presence says so; one that doesn't names no features.
+        let newer = json!({ "t": "ready", "protocol": 1, "features": APP_FEATURES });
+        let ready: AppServerMessage = serde_json::from_value(newer.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&ready).unwrap(), newer);
+        assert!(matches!(
+            serde_json::from_value(frame).unwrap(),
+            AppServerMessage::Ready { features: None, .. }
+        ));
 
         let older = json!({ "t": "ready", "protocol": 1 });
         let ready: AppServerMessage = serde_json::from_value(older.clone()).unwrap();

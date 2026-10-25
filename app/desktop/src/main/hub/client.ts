@@ -5,7 +5,7 @@
 // (Wi-Fi or tailnet gone without a sleep) must not keep showing as live.
 import type { CallOutcome, HubError, HubFrame, HubState } from "../../shared/hub";
 import { MAX_CALL_INPUT_BYTES, type CallRequest, type ChatScope, type OrderFocus } from "../../shared/ipc";
-import { appUrl, backoff, CLOSE_UNAUTHORIZED, parseServerFrame, type ClientMessage, type ServerFrame } from "./protocol";
+import { appUrl, backoff, CLOSE_UNAUTHORIZED, isUnknownMessage, parseServerFrame, type ClientMessage, type ServerFrame } from "./protocol";
 import type { PresenceFrame } from "../presence";
 import type { HubSource } from "./source";
 import type { Connection, Transport } from "./transport";
@@ -60,6 +60,10 @@ export class HubClient implements HubSource {
   #heardAt = 0;
   #readyTimer: ReturnType<typeof setTimeout> | null = null;
   #heartbeat: ReturnType<typeof setInterval> | null = null;
+  /** This connection's hub reads presence: its `ready` named it, and it hasn't refused a presence frame since. */
+  #presence = false;
+  /** A presence frame went out on this connection, so an "unknown message" reply is about it. */
+  #presenceSent = false;
 
   constructor(options: HubClientOptions) {
     this.#options = options;
@@ -139,9 +143,14 @@ export class HubClient implements HubSource {
     if (this.#ready) this.#send({ t: "snapshot" });
   }
 
-  /** Dropped while the link is down: a minute missed is a minute not counted, never one sent late. */
+  /**
+   * Sent only to a hub whose `ready` names presence, so an older hub never sees it. Dropped while the link is down:
+   * a minute missed is a minute not counted, never one sent late.
+   */
   presence(frame: PresenceFrame): void {
-    if (this.#ready) this.#send({ t: "presence", ...frame });
+    if (!this.#ready || !this.#presence) return;
+    this.#presenceSent = true;
+    this.#send({ t: "presence", ...frame });
   }
 
   #connect(): void {
@@ -203,6 +212,8 @@ export class HubClient implements HubSource {
         this.#ready = true;
         this.#readyAt = Date.now();
         this.#cursor = null;
+        this.#presence = frame.features?.includes("presence") ?? false;
+        this.#presenceSent = false;
         if (this.#readyTimer !== null) clearTimeout(this.#readyTimer);
         this.#readyTimer = null;
         this.#startHeartbeat();
@@ -250,6 +261,9 @@ export class HubClient implements HubSource {
         } else if (!this.#ready) {
           // Before ready, an error can only be about the key.
           this.#refuse(frame.message);
+        } else if (this.#presenceSent && isUnknownMessage(frame.code, frame.message)) {
+          // The hub can't read presence after all: none more on this connection, and the stream is fine as it is.
+          this.#presence = false;
         } else {
           this.#options.emit({ t: "error", error });
           this.#scheduleResume();

@@ -242,6 +242,8 @@ export type AppPresenceData = {
 };
 
 export type AppServerMessage = {
+  /** The newer client messages it reads ([`APP_FEATURES`]). Absent from older hubs: send them none. */
+  features?: string[];
   protocol: number;
   t: "ready";
   /** The hub's fleetd version, as hub_info reports it. Absent from older hubs. */
