@@ -57,6 +57,7 @@ describe.each([
   const bases = ["bg", "sidebar", "raised"].map((k) => [k, get(k)] as const);
   const surfaces = [
     ...bases,
+    ["bubble", get("bubble")] as const,
     ["diff-add", get("diff-add")] as const,
     ["diff-del", get("diff-del")] as const,
     ...bases.flatMap(([k, c]) => [[`${k}+hover`, over(c, get("hover"))] as const, [`${k}+selected`, over(c, get("selected"))] as const]),
@@ -73,7 +74,7 @@ describe.each([
 
   it("control edges and the focus outline reach 3:1 on every surface (WCAG 1.4.11)", () => {
     for (const [surface, bg] of surfaces) {
-      if (surface.startsWith("diff")) continue;
+      if (surface.startsWith("diff") || surface === "bubble") continue;
       expect(contrast(get("control-border"), bg), `control edge on ${surface}`).toBeGreaterThanOrEqual(3);
       // The focus outline is drawn in the accent (base.css :focus-visible).
       expect(contrast(get("accent"), bg), `focus outline on ${surface}`).toBeGreaterThanOrEqual(3);

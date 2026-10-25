@@ -1,8 +1,10 @@
-// The chat as rows: day dividers, messages grouped by author (a run from one author within a few minutes shows its
-// name and time once; yours show none), event one-liners (fleetd's own messages among them), inline items, the live
+// The chat as rows: day dividers, a quiet time where the conversation picked up again after a pause, messages as
+// bubbles grouped by author (a run from one author within a few minutes draws as one stack; an agent's names it once),
+// event one-liners (fleetd's own messages among them), inline items, the live
 // strip under the lead's newest message (and the field that answers it), where you stopped reading, and the top of the
 // history.
 import type { ChatItem } from "../../src/data/chat";
+import { shortClock } from "./format";
 
 export type Row =
   /**
@@ -11,15 +13,19 @@ export type Row =
    */
   | { readonly kind: "top"; readonly key: "top"; readonly state: TopState }
   | { readonly kind: "day"; readonly key: string; readonly label: string }
+  /** The clock time over a message that comes after a long pause on the same day. */
+  | { readonly kind: "time"; readonly key: string; readonly label: string }
   /**
    * `history`: written before the chat existed (an old order, a note, a steer), shown as the conversation it was.
-   * `run`: it starts a run (the space above it); `head`: its author and time show, which yours never do.
+   * `run`: it starts a run (the space above it); `end`: it ends one (the stack's last bubble); `head`: its author
+   * could show, which yours never do.
    */
   | {
       readonly kind: "message";
       readonly key: string;
       readonly item: ChatItem;
       readonly run: boolean;
+      readonly end: boolean;
       readonly head: boolean;
       readonly history: boolean;
     }
@@ -46,6 +52,8 @@ export const heldLabel = (offline: boolean, asOf: string | undefined): string =>
 
 /** Messages from one author this close together read as one turn: the name and time show once. */
 const GROUP_MS = 5 * 60_000;
+/** A pause this long on one day puts the time over the message that ends it, as a messaging app does. */
+const PAUSE_MS = 60 * 60_000;
 
 /** Who a message's header names, from the key that wrote it: an agent by its name. */
 export const authorLabel = (item: ChatItem): string =>
@@ -156,20 +164,26 @@ export function chatRows(i: RowsInput): Row[] {
     const history = isHistory(item);
     if (history && !inHistory) out.push({ kind: "history", key: `history:${item.id}` });
     inHistory = history;
+    const before = i.items[n - 1];
     day(item.at);
+    const clock = shortClock(item.at, i.timeZone);
+    if (before !== undefined && clock !== "" && lastDay === dayKey(before.at, i.nowMs, i.timeZone) && msOf(item.at, i.nowMs) - msOf(before.at, i.nowMs) > PAUSE_MS) {
+      out.push({ kind: "time", key: `time:${item.id}`, label: clock });
+      prev = undefined;
+    }
     if (n === unseen) {
       out.push({ kind: "new", key: "new" });
       prev = undefined;
     }
     if (history && item.author !== "system") {
       const run = prev === undefined || authorLabel(prev) !== authorLabel(item) || Date.parse(item.at) - Date.parse(prev.at) > GROUP_MS;
-      out.push({ kind: "message", key: item.id, item, run, head: run && item.author !== "human", history: true });
+      out.push({ kind: "message", key: item.id, item, run, end: true, head: run && item.author !== "human", history: true });
     } else if (item.kind === "event") out.push({ kind: "event", key: item.id, item });
     else if (item.kind === "secret" || item.kind === "gated") out.push({ kind: "inline", key: item.id, item });
     else {
       const run =
         prev === undefined || prev.kind !== "message" || authorLabel(prev) !== authorLabel(item) || Date.parse(item.at) - Date.parse(prev.at) > GROUP_MS;
-      out.push({ kind: "message", key: item.id, item, run, head: run && item.author !== "human", history: false });
+      out.push({ kind: "message", key: item.id, item, run, end: true, head: run && item.author !== "human", history: false });
     }
     prev = item;
     if ((activity && n === i.items.length - 1) || (worked && n === reply)) out.push({ kind: "activity", key: "activity" });
@@ -177,6 +191,11 @@ export function chatRows(i: RowsInput): Row[] {
   });
   if (activity && i.items.length === 0) out.push({ kind: "activity", key: "activity" });
   if (i.strip && leadLast === -1) out.push({ kind: "strip", key: "strip" });
+  // A bubble ends its stack unless the next row is the next bubble of the same run.
+  out.forEach((r, n) => {
+    const next = out[n + 1];
+    if (r.kind === "message" && next?.kind === "message" && !next.run) out[n] = { ...r, end: false };
+  });
   return out;
 }
 
