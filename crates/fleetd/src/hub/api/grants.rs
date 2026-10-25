@@ -34,7 +34,7 @@ pub fn require(
     if allows(caller, role, machine_id) {
         Ok(())
     } else {
-        Err(forbidden(role, machine_id))
+        Err(refused(caller, role, machine_id))
     }
 }
 
@@ -85,6 +85,29 @@ pub fn forbidden(role: Role, machine_id: Option<&MachineId>) -> ToolError {
         message,
         "Ask the hub admin for a key with that grant (fleetd hub key create --role … --machines …).",
     )
+}
+
+/// The fix for a person's device refused an admin write: keys from `fleetd pair` carry admin now, but a key paired
+/// before, or with `--role operate`, keeps the role it got.
+pub const REPAIR_FIX: &str = "Run `fleetd pair` on the hub machine, then pair this app again with the new code: it grants admin.";
+
+/// [`forbidden`], with the re-pair fix when a person's device lacks admin.
+pub fn refused(caller: &Caller, role: Role, machine_id: Option<&MachineId>) -> ToolError {
+    let refusal = forbidden(role, machine_id);
+    if role == Role::Admin && is_human(caller) {
+        refusal.with_fix(REPAIR_FIX)
+    } else {
+        refusal
+    }
+}
+
+/// The fix for a refused write that needs admin on every machine.
+pub fn admin_everywhere_fix(caller: &Caller) -> &'static str {
+    if is_human(caller) {
+        REPAIR_FIX
+    } else {
+        "Use an Admin key for all machines (`--machines '*'`)."
+    }
 }
 
 pub fn offline(machine_id: &MachineId) -> ToolError {
@@ -220,6 +243,22 @@ mod tests {
         assert!(allows_everywhere(&mixed, Role::Read));
         assert!(!allows_everywhere(&mixed, Role::Operate));
         assert!(readable(&mixed, &m("lab-z")));
+
+        // A person's device refused admin is told to re-pair; an agent key keeps the key-create fix.
+        let mut device = key(vec![grant("operate", serde_json::json!("*"))]);
+        device.kind = Some(KeyKind::Human);
+        let refusal = require(&device, Role::Admin, None).unwrap_err();
+        assert_eq!(refusal.message, "This key lacks the admin role.");
+        assert_eq!(refusal.fix.as_deref(), Some(REPAIR_FIX));
+        assert_ne!(
+            require(&a_only, Role::Admin, None)
+                .unwrap_err()
+                .fix
+                .as_deref(),
+            Some(REPAIR_FIX)
+        );
+        assert_eq!(admin_everywhere_fix(&device), REPAIR_FIX);
+        assert_ne!(admin_everywhere_fix(&a_only), REPAIR_FIX);
 
         let mut revoked = key(vec![grant("admin", serde_json::json!("*"))]);
         revoked.revoked_at = Some("2026-10-17T00:00:01.000Z".into());

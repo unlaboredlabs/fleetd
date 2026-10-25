@@ -748,4 +748,9 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     WHERE json_valid(data)
       AND EXISTS (SELECT 1 FROM json_each(work_claims.data, '$.keys') AS k WHERE json_type(k.value, '$.item') IS NOT NULL);
   "#,
+    // The role a pairing code grants, fixed by `fleetd pair --role` when it is minted. Codes minted before this
+    // keep the operate they were made with.
+    r#"
+  ALTER TABLE pair_codes ADD COLUMN role TEXT NOT NULL DEFAULT 'operate';
+  "#,
 ];

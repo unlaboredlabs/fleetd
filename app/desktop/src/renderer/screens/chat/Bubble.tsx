@@ -3,7 +3,7 @@
 // cards. While the lead writes, a typing bubble stands in for the text. Hovering a bubble shows its time and, on the
 // lead's, a tapback and Reply. A reply of yours shows the bubble it answers above it.
 import { Paperclip, Reply, SmilePlus } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type CSSProperties } from "react";
 import type { AttachmentRef } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
 import { useToolQuery } from "../../src/data/react";
@@ -16,7 +16,7 @@ import { Block } from "./blocks/Block";
 import { bubblesOf, isWide, quoteOf, TAPBACK_WORD, TAPBACKS, tapbackSend, type Bubble, type Tapback } from "./bubbles";
 import { MessageReceipt } from "./Composer";
 import { shortClock } from "./format";
-import { authorLabel, type Row } from "./model";
+import { authorLabel, ENTER_MS, type Arrival, type Row } from "./model";
 import type { ProjectRef } from "./slots";
 import { bubbleKey, toggleTapback, useTapbacks } from "./tapbacks";
 import { Message } from "./text";
@@ -52,6 +52,21 @@ function ImageAttachment({ project, file }: { project: ProjectRef; file: Attachm
 
 function Attachment({ project, file }: { project: ProjectRef; file: AttachmentRef }) {
   return file.mime.startsWith("image/") ? <ImageAttachment project={project} file={file} /> : <FileChip file={file} />;
+}
+
+/** A reply's bubbles enter a step apart, up to this many steps: a long one doesn't keep you waiting for its last. */
+const MAX_STEP = 5;
+
+/**
+ * A line that came in while the chat was open (arrivalsOf) enters as it mounts, `step` places into its message. One
+ * remounted soon after (the list remeasuring, your send under its hub id) picks the motion up where it was; one
+ * mounted later (scrolled back to) is still.
+ */
+export function useEnter(arrival: Arrival | undefined, step = 0): { className?: string | undefined; style?: CSSProperties | undefined } {
+  const [since] = useState(() => (arrival === undefined ? undefined : Date.now() - arrival.at));
+  if (arrival === undefined || since === undefined || since >= ENTER_MS) return {};
+  const style = { "--enter-step": Math.min(arrival.step + step, MAX_STEP), "--enter-since": `${String(since)}ms` } as CSSProperties;
+  return { className: s.enter, style };
 }
 
 /** One to three emoji and nothing else: shown large, without a bubble, as a messaging app does. */
@@ -122,10 +137,13 @@ function BubbleLine(props: {
   lead: boolean;
   answer: string | undefined;
   tapback: Tapback | undefined;
-  sending: boolean;
+  enter: Arrival | undefined;
+  /** Its place in the message, for the stagger as the message enters. */
+  step: number;
 }) {
   const { item, bubble, first, last, lead } = props;
   const actions = useBubbleActions();
+  const enter = useEnter(props.enter, props.step);
   const mine = item.author === "human";
   const block = bubble.kind === "block";
   const wide = isWide(bubble);
@@ -140,7 +158,7 @@ function BubbleLine(props: {
     if (send !== undefined) actions.send(send.text);
   };
   return (
-    <div className={cx(s.line, wide && s.wide, props.tapback !== undefined && s.reacted)}>
+    <div className={cx(s.line, wide && s.wide, props.tapback !== undefined && s.reacted, enter.className)} style={enter.style}>
       <div
         className={cx(
           !block && !jumbo && s.bubble,
@@ -150,7 +168,6 @@ function BubbleLine(props: {
           wide && s.wide,
           block && s.blockBubble,
           jumbo && s.jumbo,
-          props.sending && s.sending,
         )}
         data-bubble={block ? bubble.block.kind : "text"}
       >
@@ -178,7 +195,17 @@ function BubbleLine(props: {
   );
 }
 
-export function MessageView({ row: r, mineLatest }: { row: Extract<Row, { kind: "message" }>; mineLatest: boolean }) {
+/** The lead writing, as a line: it enters with the message, and its text enters again once written. */
+function TypingLine({ enter }: { enter: Arrival | undefined }) {
+  const e = useEnter(enter);
+  return (
+    <div className={cx(s.line, e.className)} style={e.style}>
+      <TypingBubble />
+    </div>
+  );
+}
+
+export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, { kind: "message" }>; mineLatest: boolean; enter?: Arrival | undefined }) {
   const i = r.item;
   const actions = useBubbleActions();
   const mine = i.author === "human";
@@ -189,6 +216,8 @@ export function MessageView({ row: r, mineLatest }: { row: Extract<Row, { kind: 
   const typing = i.state === "streaming";
   const files = i.attachments.length > 0;
   const target = r.reply?.target;
+  const quote = useEnter(enter);
+  const tail = useEnter(enter, bubbles.length);
   return (
     <div
       className={cx(s.message, r.run && s.messageHead, (r.history || i.author === "agent") && s.quietMessage, mine && s.mine)}
@@ -203,16 +232,14 @@ export function MessageView({ row: r, mineLatest }: { row: Extract<Row, { kind: 
         </div>
       ) : null}
       {r.reply !== undefined ? (
-        <button type="button" className={s.quote} disabled={target === undefined} onClick={() => target !== undefined && actions?.show(target)} aria-label={`Replying to: ${r.reply.quote}`}>
+        <button type="button" className={cx(s.quote, quote.className)} style={quote.style} disabled={target === undefined} onClick={() => target !== undefined && actions?.show(target)} aria-label={`Replying to: ${r.reply.quote}`}>
           <Truncate size="xs" tone="quiet" expand="none">
             {r.reply.quote}
           </Truncate>
         </button>
       ) : null}
       {typing ? (
-        <div className={s.line}>
-          <TypingBubble />
-        </div>
+        <TypingLine enter={enter} />
       ) : (
         bubbles.map((b, n) => (
           <BubbleLine
@@ -224,12 +251,13 @@ export function MessageView({ row: r, mineLatest }: { row: Extract<Row, { kind: 
             lead={lead}
             answer={r.answered?.[b.key]}
             tapback={lead ? marks[bubbleKey(i.id, b.key)] : undefined}
-            sending={mine && i.state === "pending"}
+            enter={enter}
+            step={n}
           />
         ))
       )}
       {files && actions !== undefined ? (
-        <div className={s.attachments}>
+        <div className={cx(s.attachments, tail.className)} style={tail.style}>
           {i.attachments.map((a) => (
             <Attachment key={a.attachmentId} project={actions.project} file={a} />
           ))}

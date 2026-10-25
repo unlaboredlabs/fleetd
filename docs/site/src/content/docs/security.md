@@ -25,6 +25,11 @@ What fleetd trusts and why. fleetd is built for one person or a small team runni
 Each key has `read`, `operate` or `admin` rights, on every machine or a named list. Only human keys enter secrets
 and approve commands, so no agent can approve itself.
 
+A pairing code carries the role it was printed with: `fleetd pair` gives the device `admin` on every machine, so the
+person at the hub can change its settings from the app, and `fleetd pair --role read` or `--role operate` gives a
+lesser device less. The role is fixed when the code is made; the device that redeems it cannot ask for more. A key
+paired before keeps its role: if the app says it lacks `admin`, run `fleetd pair` on the hub machine and pair again.
+
 Agents run as the same OS user as the hub, so anything that can read the hub home (its keys and its database) an
 agent can reach too. Human key files are no exception: keep yours outside the hub home and your projects, but don't
 count on that to stop an agent that goes looking. Isolating agents from your files is future work.
