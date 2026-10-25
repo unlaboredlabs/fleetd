@@ -761,11 +761,13 @@ async fn a_remote_git_cant_reach_is_told_to_the_lead_once_per_outage() {
 
     scan(&hub, &git).await;
     assert_eq!(hub.work.scope_of(&shop).unwrap(), Some(scope(GITLAB)));
-    assert_eq!(hub.work.scan_failure(&shop).as_deref(), Some("offline"));
+    // Why, as #407 and #431 word a failed fetch: here, git's own line.
+    let why = hub.work.scan_failure(&shop).unwrap();
+    assert!(why.contains("gone.git"), "{why}");
     assert!(hub.leads.wakes.pending(&shop), "the lead is told");
     scan(&hub, &git).await;
     assert!(
-        !hub.work.scan_failed(&shop, "offline"),
+        !hub.work.scan_failed(&shop, &why),
         "told once: the same failure again is not news"
     );
 
@@ -778,10 +780,10 @@ async fn a_remote_git_cant_reach_is_told_to_the_lead_once_per_outage() {
     assert!(hub.work.watch(&scope(GITLAB)).unwrap().is_some());
     scan(&hub, &git).await;
     assert_eq!(hub.work.scan_failure(&shop), None);
-    assert!(!hub.work.scan_failed(&shop, "offline"));
-    assert_eq!(hub.work.scan_failure(&shop).as_deref(), Some("offline"));
+    assert!(!hub.work.scan_failed(&shop, &why));
+    assert_eq!(hub.work.scan_failure(&shop).as_deref(), Some(why.as_str()));
     clock.advance(Duration::from_millis(super::OUTAGE_GAP_MS as u64));
-    assert!(hub.work.scan_failed(&shop, "offline"));
+    assert!(hub.work.scan_failed(&shop, &why));
 }
 
 #[tokio::test]
