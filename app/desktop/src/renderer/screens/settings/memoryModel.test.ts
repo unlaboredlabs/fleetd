@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MemoryFile } from "../../../shared/contracts";
 import { parseHash } from "../shell/routes";
-import { capState, charCount, fileName, noteHref, projectCapState } from "./memory";
+import { capState, charCount, fileName, noteHref, projectCapState } from "./memoryModel";
 import { parseRoute } from "./route";
 import { searchSettings } from "./search";
 

@@ -7,7 +7,7 @@ import { Button, Field, Separator, Text, Textarea } from "../../ui";
 import { useToolQuery } from "../../src/data/react";
 import { parseScope, projectRefOf, scopeKey, type Draft, type Scope } from "./editor";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { capState, fileName, noteHref, projectCapState } from "./memory";
+import { capState, fileName, noteHref, projectCapState } from "./memoryModel";
 import { PageHead, ScopeSelect, scopeName, useProjects } from "./parts";
 import { replaceRoute, type SettingsRoute } from "./route";
 import s from "./settings.module.css";
