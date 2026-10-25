@@ -236,6 +236,23 @@ Each event is `- <subject> <what>: <detail>`, sometimes followed by `  > ` lines
 C4) are for the lead's tools; the lead doesn't repeat them to you. The state and the event lines are facts in a format
 fixed in code, the same in every project; the words around them are `lead.wake`.
 
+Some lines leave the lead nothing to decide, so they never wake it on their own: they go out with its next wake. An
+agent whose run died (its node stopped, claude was killed, a stall) and that fleetd resumed, and an agent whose machine
+has been offline for 30 minutes:
+
+```
+- T23 resumed automatically (attempt 2, recovery 1 of 3): progress bar [fleetd/T23-progress-bar]
+  > its run was cut off (the node on devbox stopped) during: Ran cargo test --workspace. It goes on in its own worktree; nothing for you to do.
+- T24 waits for devbox, offline for 30 min: docs [fleetd/T24-docs]; it resumes on its own when devbox is back
+  > Its worktree and session are on devbox, so it stays there. To have it done elsewhere, cancel it and start a new task.
+```
+
+When the node had to rebuild a resumed agent's worktree, the line says what from instead: its local branch,
+`origin/<branch>` as pushed, or a new branch from the default branch, and what is lost.
+
+One that fleetd did not resume wakes the lead: `- T23 failed and was not resumed: …`, with why (it died the same way
+twice, it ran out of automatic recoveries, or resuming can't fix the cause) and the lead's choices.
+
 ### Tool texts {#tool-texts}
 
 MCP tool descriptions, fleetd's agent tools included, and what the hub answers back (each `next:` and `fix:`) are

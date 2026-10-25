@@ -144,6 +144,15 @@ impl TaskRecords {
         .collect()
     }
 
+    /// The running tasks on a machine, oldest first.
+    pub fn running_on(db: &Connection, machine_id: &str) -> rusqlite::Result<Vec<Task>> {
+        db.prepare_cached(
+            "SELECT data FROM tasks WHERE machine_id = ?1 AND state = 'running' ORDER BY n",
+        )?
+        .query_map([machine_id], |row| decode(&row.get::<_, String>(0)?))?
+        .collect()
+    }
+
     /// Newest first.
     pub fn list(db: &Connection, filter: &TaskFilter) -> rusqlite::Result<Vec<Task>> {
         db.prepare_cached(

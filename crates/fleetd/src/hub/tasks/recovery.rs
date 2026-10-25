@@ -5,6 +5,7 @@
 //! Waiting is not death: a run waiting on a person (`thread.waiting`), a usage limit (`thread.usage_limited`) or the
 //! node's own retry never ends here, and a write task that pushed and ended its turn for CI or the train completed.
 use fleetd_contracts::events::HubEventType;
+use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::prim::{Count, Int, Text};
 use fleetd_contracts::sessions::RunEnd;
 use fleetd_contracts::tasks::TaskRecovery;
@@ -20,6 +21,8 @@ pub const RECOVERY_MAX: i64 = 3;
 const NODE_SETTLE_MS: i64 = 30_000;
 const NODE_JITTER_MS: i64 = 10_000;
 const MINUTE_MS: i64 = 60_000;
+/// A running task's machine offline this long: its lead is told, once per offline spell.
+pub const UNREACHABLE_MS: i64 = 30 * MINUTE_MS;
 /// A resumed run that dies sooner did nothing, and its death counts twice.
 const PRODUCTIVE_MS: i64 = 5 * MINUTE_MS;
 
@@ -147,6 +150,19 @@ pub fn death(
     let tool = last_tool
         .map(|t| format!(" while: {}", one_line(t, 120)))
         .unwrap_or_default();
+    // A stall's message counts its idle minutes, which differ from one stall to the next: the same stall twice is
+    // the same tool stuck, wherever it is.
+    let same = if stalled {
+        let inside = data.and_then(|d| d.get("inTool")).and_then(Value::as_bool) == Some(true);
+        if inside {
+            "inside a tool"
+        } else {
+            "outside a tool"
+        }
+        .to_owned()
+    } else {
+        text.clone()
+    };
     Death {
         kind,
         reported: if stalled {
@@ -155,7 +171,7 @@ pub fn death(
             reported
         },
         cause,
-        signature: one_line(&format!("{kind:?}: {text}{tool}"), 400),
+        signature: one_line(&format!("{kind:?}: {same}{tool}"), 400),
         text,
     }
 }
@@ -231,7 +247,7 @@ pub fn decide(
         last_cause_text: Text::unchecked(one_line(&death.text, 200)),
         signature: Some(Text::unchecked(death.signature.clone())),
         streak: Int::unchecked(streak),
-        next_at: Some(fleetd_contracts::ids::Timestamp(iso_ms(now_ms + delay))),
+        next_at: Some(Timestamp(iso_ms(now_ms + delay))),
         resumed_at: prior.and_then(|p| p.resumed_at.clone()),
     })
 }
@@ -250,6 +266,26 @@ pub fn queued_reason(recovery: &TaskRecovery) -> String {
         recovery.count.get(),
         recovery.max.get()
     )
+}
+
+/// When a task its node's going away cut off resumes, given that the node has been back since `live_since_ms`: the
+/// settle counts from its return, not from the death, which a node that stops cleanly reports before it goes. `None`
+/// when its time already allows for that, or it died some other way.
+pub fn settled(recovery: &TaskRecovery, live_since_ms: i64, task_id: &str) -> Option<Timestamp> {
+    if !matches!(
+        recovery.last_cause,
+        RunEnd::NodeStopping | RunEnd::NodeRestarted
+    ) {
+        return None;
+    }
+    let at = parse_ms(recovery.next_at.as_ref()?.as_str())?;
+    // Each task its own share of the jitter, the same every time it is asked.
+    let share = task_id
+        .bytes()
+        .fold(0u32, |h, b| h.wrapping_mul(31).wrapping_add(b.into()))
+        % 1000;
+    let due = live_since_ms + NODE_SETTLE_MS + NODE_JITTER_MS * i64::from(share) / 1000;
+    (due > at).then(|| Timestamp(iso_ms(due)))
 }
 
 /// Whether it is waiting out its delay at `now_ms`.
@@ -395,7 +431,7 @@ mod tests {
         // Same signature, and soon after its resume: still the node's doing, so no escalation and no double count.
         let resumed = TaskRecovery {
             next_at: None,
-            resumed_at: Some(fleetd_contracts::ids::Timestamp(iso_ms(NOW))),
+            resumed_at: Some(Timestamp(iso_ms(NOW))),
             ..first
         };
         let second = resume(decide(&d, Some(&resumed), false, NOW + 1_000, 0.99, 3));
@@ -437,6 +473,62 @@ mod tests {
         );
     }
 
+    /// The watchdog's message counts the idle minutes; two stalls in the same tool are still the same death, and the
+    /// second is escalated.
+    #[test]
+    fn the_same_stall_twice_escalates_whatever_its_minutes() {
+        let stall = |minutes: u32, in_tool: bool| {
+            failed(
+                json!({ "reason": "stalled", "inTool": in_tool, "error": { "class": "stalled",
+                    "message": format!("no progress for {minutes} min inside a tool, so fleetd interrupted it") } }),
+                Some("Ran cargo test --workspace"),
+            )
+        };
+        let first = resume(decide(&stall(20, true), None, false, NOW, 0.5, 3));
+        assert_eq!(
+            escalated(decide(&stall(23, true), Some(&first), false, NOW, 0.5, 3)),
+            "it died the same way twice: no output for too long: no progress for 23 min inside a tool, so fleetd \
+             interrupted it"
+        );
+        // Stuck outside a tool is another death.
+        assert!(matches!(
+            decide(&stall(23, false), Some(&first), false, NOW, 0.5, 3),
+            Action::Resume(_)
+        ));
+    }
+
+    /// A node that stops cleanly reports its runs' ends before it goes: their tasks resume 30-40 s after it is back,
+    /// not after the death. Other deaths keep their time.
+    #[test]
+    fn a_node_lost_task_settles_from_the_nodes_return() {
+        let lost = resume(decide(
+            &interrupted(json!({ "endCause": "node_stopping" })),
+            None,
+            false,
+            NOW,
+            0.0,
+            3,
+        ));
+        let back = NOW + 600_000;
+        let at = parse_ms(settled(&lost, back, "T1").unwrap().as_str()).unwrap();
+        assert!((back + 30_000..back + 40_000).contains(&at), "{at}");
+        assert_eq!(settled(&lost, back, "T1"), settled(&lost, back, "T1"));
+        // Back before the death was reported: its own 30 s from the death already allow for it.
+        assert_eq!(settled(&lost, NOW - 60_000, "T1"), None);
+        let killed = resume(decide(
+            &failed(
+                json!({ "endCause": "exited", "error": { "class": "process_exited", "message": "claude was killed by signal 9" } }),
+                None,
+            ),
+            None,
+            false,
+            NOW,
+            0.0,
+            3,
+        ));
+        assert_eq!(settled(&killed, back, "T1"), None);
+    }
+
     /// A resumed run that dies within 5 minutes counts twice toward the cap.
     #[test]
     fn a_resume_that_did_nothing_counts_twice() {
@@ -447,7 +539,7 @@ mod tests {
         assert_eq!((d.kind, d.reported), (Kind::Stalled, Some(RunEnd::Stalled)));
         let prior = TaskRecovery {
             signature: None,
-            resumed_at: Some(fleetd_contracts::ids::Timestamp(iso_ms(NOW - 60_000))),
+            resumed_at: Some(Timestamp(iso_ms(NOW - 60_000))),
             next_at: None,
             ..resume(decide(&d, None, false, NOW, 0.5, 3))
         };
@@ -458,9 +550,7 @@ mod tests {
             3
         );
         let later = TaskRecovery {
-            resumed_at: Some(fleetd_contracts::ids::Timestamp(iso_ms(
-                NOW - PRODUCTIVE_MS,
-            ))),
+            resumed_at: Some(Timestamp(iso_ms(NOW - PRODUCTIVE_MS))),
             ..prior
         };
         assert_eq!(

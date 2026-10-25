@@ -1200,6 +1200,7 @@ async fn a_lost_worktree_and_branch_come_back_from_the_pushed_branch_and_the_age
     hub.ok(send("s1", "r2")).await;
     let resumed = hub.settled("r2").await;
     assert_eq!(resumed.recreated_from, Some(WorktreeSource::Remote));
+    assert!(resumed.recreated_at.is_some());
     assert_eq!(resumed.worktree_path.as_deref(), path.to_str());
     assert!(path.join("work.txt").exists());
     let spec = &hub.runner.spawned()[1];

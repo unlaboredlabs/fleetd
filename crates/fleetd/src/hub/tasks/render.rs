@@ -3,8 +3,10 @@
 use std::sync::LazyLock;
 
 use fleetd_contracts::ledger::Brief;
+use fleetd_contracts::sessions::WorktreeSource;
 use fleetd_contracts::tasks::{
-    BranchPrefix, DEFAULT_BRANCH_PREFIX, Task, TaskKind, TaskResult, TaskResultStatus, TaskState,
+    BranchPrefix, DEFAULT_BRANCH_PREFIX, Task, TaskKind, TaskRecovery, TaskResult,
+    TaskResultStatus, TaskState,
 };
 use regex::Regex;
 
@@ -208,8 +210,14 @@ pub fn render_task_prompt(set: &PromptSet, input: &PromptInput<'_>) -> String {
     set.with_instructions(text)
 }
 
-/// The lead's event line for a finished task: its whole result tail, inline.
-pub fn task_result_lines(task_id: &str, title: &str, result: &TaskResult) -> String {
+/// The lead's event line for a finished task: its whole result tail, inline. `escalated`: its run died and fleetd
+/// did not resume it, which the tail says why.
+pub fn task_result_lines(
+    task_id: &str,
+    title: &str,
+    result: &TaskResult,
+    escalated: bool,
+) -> String {
     let mut place = Vec::new();
     if let Some(b) = &result.branch {
         place.push(format!("branch {}", b.as_str()));
@@ -225,6 +233,7 @@ pub fn task_result_lines(task_id: &str, title: &str, result: &TaskResult) -> Str
     Event::AgentEnded {
         task: task_id,
         ended: match result.status {
+            TaskResultStatus::Failed if escalated => Ended::NotResumed,
             TaskResultStatus::Done => Ended::Done,
             TaskResultStatus::Failed => Ended::Failed,
             TaskResultStatus::Cancelled => Ended::Cancelled,
@@ -232,6 +241,81 @@ pub fn task_result_lines(task_id: &str, title: &str, result: &TaskResult) -> Str
         title,
         place: &place,
         result: result.tail.as_str(),
+    }
+    .render()
+}
+
+/// `" [branch]"`, or nothing.
+fn branch_place(task: &Task) -> String {
+    task.branch
+        .as_ref()
+        .map_or_else(String::new, |b| format!(" [{}]", b.as_str()))
+}
+
+/// What became of a resumed task's worktree: as it was, or rebuilt by its node (`rebuilt`) from what was left of its
+/// branch.
+fn worktree_words(task: &Task, rebuilt: Option<WorktreeSource>) -> String {
+    let branch = task.branch.as_ref().map_or("its branch", |b| b.as_str());
+    match rebuilt {
+        None | Some(WorktreeSource::Unknown) => {
+            "It goes on in its own worktree; nothing for you to do.".to_owned()
+        }
+        Some(WorktreeSource::Local) => format!(
+            "Its worktree was gone and was rebuilt from its local branch {branch}: its commits are there, uncommitted \
+             changes are lost. Nothing for you to do."
+        ),
+        Some(WorktreeSource::Remote) => format!(
+            "Its worktree and local branch were gone, so the worktree was rebuilt from origin/{branch} as pushed: \
+             unpushed commits and uncommitted changes are lost. Nothing for you to do."
+        ),
+        Some(WorktreeSource::Base) => format!(
+            "Its worktree was gone and {branch} was neither on the machine nor pushed, so it starts again on a new \
+             {branch} from the default branch: its earlier work is lost."
+        ),
+    }
+}
+
+/// The lead's quiet line for a dead task fleetd resumed: why its run ended, what it was doing, and its worktree.
+pub fn task_recovered_lines(
+    task: &Task,
+    recovery: &TaskRecovery,
+    doing: &str,
+    rebuilt: Option<WorktreeSource>,
+) -> String {
+    Event::AgentRecovered {
+        task: task.task_id.as_str(),
+        title: task.title.as_str(),
+        place: &branch_place(task),
+        attempt: task.attempt.get(),
+        recovery: recovery.count.get(),
+        max: recovery.max.get(),
+        cause: recovery.last_cause_text.as_str(),
+        doing,
+        worktree: &worktree_words(task, rebuilt),
+    }
+    .render()
+}
+
+/// The lead's line for a message to a task that never reached it: a person continued the task while it waited to
+/// resume, and sending it into that run failed.
+pub fn task_message_not_sent_lines(task: &Task, why: &str, text: &str) -> String {
+    Event::MessageNotSent {
+        task: task.task_id.as_str(),
+        title: task.title.as_str(),
+        why,
+        text,
+    }
+    .render()
+}
+
+/// The lead's quiet line for a running task whose machine has been offline for `minutes`.
+pub fn task_unreachable_lines(task: &Task, minutes: i64) -> String {
+    Event::AgentUnreachable {
+        task: task.task_id.as_str(),
+        title: task.title.as_str(),
+        place: &branch_place(task),
+        machine: task.project_ref.machine_id.as_str(),
+        minutes,
     }
     .render()
 }
@@ -247,7 +331,13 @@ pub fn task_waiting_lines(task_id: &str, title: &str, question: &str) -> String 
 }
 
 /// One digest line per task: running and idle, then queued with reasons, then those that ended since `since`.
-pub fn task_digest_lines(tasks: &[Task], since: Option<&str>, now: &str) -> Vec<String> {
+/// `offline` says since when a machine is offline (`HH:MM` UTC), for a running task on it.
+pub fn task_digest_lines(
+    tasks: &[Task],
+    since: Option<&str>,
+    now: &str,
+    offline: &dyn Fn(&str) -> Option<String>,
+) -> Vec<String> {
     let title = |t: &Task| one_line(t.title.as_str(), 80);
     let mut out = Vec::new();
     for t in tasks
@@ -277,8 +367,15 @@ pub fn task_digest_lines(tasks: &[Task], since: Option<&str>, now: &str) -> Vec<
                     r.max.get()
                 )
             });
+        // Its machine is away: it resumes when that is back, so the lead needn't continue it either.
+        let machine = t.project_ref.machine_id.as_str();
+        let away = offline(machine)
+            .filter(|_| t.state == TaskState::Running)
+            .map_or_else(String::new, |at| {
+                format!("; {machine} offline since {at} UTC, it resumes when {machine} is back")
+            });
         out.push(format!(
-            "- {} {state} ({}, {}): {}{branch}{recovered}",
+            "- {} {state} ({}, {}): {}{branch}{recovered}{away}",
             t.task_id,
             kind_str(t.kind),
             t.profile.as_str(),
@@ -322,6 +419,22 @@ pub fn task_digest_lines(tasks: &[Task], since: Option<&str>, now: &str) -> Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A dead run fleetd did not resume says so in its head; the tail says why and what the lead can do.
+    #[test]
+    fn an_escalated_end_says_it_was_not_resumed() {
+        let result: TaskResult = serde_json::from_value(serde_json::json!({
+            "status": "failed", "tail": "Not resumed automatically: it died the same way twice.",
+            "branch": "fleetd/T23-b", "at": "2026-10-25T10:00:00.000Z",
+        }))
+        .unwrap();
+        assert_eq!(
+            task_result_lines("T23", "B: progress bar", &result, true),
+            "- T23 failed and was not resumed: B: progress bar (branch fleetd/T23-b)\n  > Not resumed automatically: \
+             it died the same way twice."
+        );
+        assert!(task_result_lines("T23", "B", &result, false).starts_with("- T23 failed: B"));
+    }
 
     #[test]
     fn a_task_branch_starts_with_the_policys_prefix_else_fleetd() {

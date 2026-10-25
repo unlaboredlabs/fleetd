@@ -14,6 +14,8 @@ use super::digest::one_line;
 pub enum Ended {
     Done,
     Failed,
+    /// Its run died and fleetd did not resume it (`tasks::recovery`): the lead decides.
+    NotResumed,
     Cancelled,
 }
 
@@ -52,6 +54,34 @@ pub enum Event<'a> {
         title: &'a str,
         place: &'a str,
         result: &'a str,
+    },
+    /// fleetd resumed a task whose run died, in its thread and worktree. Quiet: in the next wake, never one alone.
+    /// `doing` is the last thing the run did; `place` its branch; `worktree` what became of its worktree.
+    AgentRecovered {
+        task: &'a str,
+        title: &'a str,
+        place: &'a str,
+        attempt: i64,
+        recovery: i64,
+        max: i64,
+        cause: &'a str,
+        doing: &'a str,
+        worktree: &'a str,
+    },
+    /// A running task's machine has been offline for `minutes`; it resumes when the machine is back. Quiet.
+    AgentUnreachable {
+        task: &'a str,
+        title: &'a str,
+        place: &'a str,
+        machine: &'a str,
+        minutes: i64,
+    },
+    /// A message for a task, held while it waited to resume, that could not be sent to the run a person started.
+    MessageNotSent {
+        task: &'a str,
+        title: &'a str,
+        why: &'a str,
+        text: &'a str,
     },
     AgentWaiting {
         task: &'a str,
@@ -169,6 +199,7 @@ impl Event<'_> {
                 let verb = match ended {
                     Ended::Done => "finished",
                     Ended::Failed => "failed",
+                    Ended::NotResumed => "failed and was not resumed",
                     Ended::Cancelled => "was cancelled",
                 };
                 (
@@ -176,6 +207,54 @@ impl Event<'_> {
                     body(result),
                 )
             }
+            Event::AgentRecovered {
+                task,
+                title,
+                place,
+                attempt,
+                recovery,
+                max,
+                cause,
+                doing,
+                worktree,
+            } => (
+                format!(
+                    "- {task} resumed automatically (attempt {attempt}, recovery {recovery} of {max}): {}{place}",
+                    one_line(title, 80)
+                ),
+                vec![format!(
+                    "  > its run was cut off ({}) during: {}. {worktree}",
+                    one_line(cause, 200),
+                    one_line(doing, 200)
+                )],
+            ),
+            Event::AgentUnreachable {
+                task,
+                title,
+                place,
+                machine,
+                minutes,
+            } => (
+                format!(
+                    "- {task} waits for {machine}, offline for {minutes} min: {}{place}; it resumes on its own when {machine} is back",
+                    one_line(title, 80)
+                ),
+                vec![format!(
+                    "  > Its worktree and session are on {machine}, so it stays there. To have it done elsewhere, cancel it and start a new task."
+                )],
+            ),
+            Event::MessageNotSent {
+                task,
+                title,
+                why,
+                text,
+            } => (
+                format!(
+                    "- {task} did not get your message ({why}): {}; it runs again, so send it again with message_agent if it still applies",
+                    one_line(title, 80)
+                ),
+                body(text),
+            ),
             Event::AgentWaiting {
                 task,
                 title,
@@ -313,6 +392,38 @@ mod tests {
         };
         assert!(ended("Fixed it.\nTests pass.").ends_with("\n  > Fixed it.\n  > Tests pass."));
         assert!(ended("").ends_with("\n  > (no final message)"));
+    }
+
+    #[test]
+    fn a_recovery_says_what_was_cut_off_and_that_nothing_is_to_do() {
+        assert_eq!(
+            r(Event::AgentRecovered {
+                task: "T23",
+                title: "B: progress bar takes in-flight credit back",
+                place: " [fleetd/T23-b-progress-bar]",
+                attempt: 2,
+                recovery: 1,
+                max: 3,
+                cause: "the node on devbox stopped",
+                doing: "Ran cargo test --workspace",
+                worktree: "It goes on in its own worktree; nothing for you to do.",
+            }),
+            "- T23 resumed automatically (attempt 2, recovery 1 of 3): B: progress bar takes in-flight credit back \
+             [fleetd/T23-b-progress-bar]\n  > its run was cut off (the node on devbox stopped) during: Ran cargo test \
+             --workspace. It goes on in its own worktree; nothing for you to do."
+        );
+        assert_eq!(
+            r(Event::AgentUnreachable {
+                task: "T23",
+                title: "B: progress bar",
+                place: "",
+                machine: "devbox",
+                minutes: 30,
+            }),
+            "- T23 waits for devbox, offline for 30 min: B: progress bar; it resumes on its own when devbox is back\n  > \
+             Its worktree and session are on devbox, so it stays there. To have it done elsewhere, cancel it and start \
+             a new task."
+        );
     }
 
     #[test]
