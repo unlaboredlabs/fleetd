@@ -68,6 +68,9 @@ pub struct ThreadChanges {
     pub pull_request_urls: Vec<String>,
 }
 
+/// A rebuild of a thread's worktree: its source, and when the node did it.
+pub type Rebuilt = (fleetd_contracts::sessions::WorktreeSource, Option<String>);
+
 /// A node command's result (`cmd_result`).
 #[derive(Clone, Debug)]
 pub struct CmdOutput {
@@ -81,6 +84,8 @@ pub enum WakeKind {
     TaskResult,
     TaskWaiting,
     CapRaised,
+    /// A dead task resumed, or one waits for its offline machine: in the lead's next wake, never one alone.
+    Recovery,
 }
 
 pub trait TaskPorts: Send + Sync {
@@ -88,6 +93,10 @@ pub trait TaskPorts: Send + Sync {
     fn is_connected(&self, machine_id: &MachineId) -> bool;
     /// Executors.awaitLive: resolves once the machine has a live node link.
     fn await_live<'a>(&'a self, machine_id: &'a MachineId) -> BoxFut<'a, ()>;
+    /// Executors.liveSince: when the machine's current node link went live, in ms; None while it has none.
+    fn live_since(&self, _machine_id: &MachineId) -> Option<i64> {
+        None
+    }
     /// Executors.launch: the thread, and where its worktree's branch started when it has one.
     fn launch<'a>(
         &'a self,
@@ -110,6 +119,11 @@ pub trait TaskPorts: Send + Sync {
         _steer: fleetd_contracts::steer::SteerTag,
     ) -> BoxFut<'a, Result<(), PortError>> {
         self.send(thread, message, client_request_id)
+    }
+    /// Executors.recreatedFrom: what the node rebuilt the thread's worktree from the last time it was gone, and when
+    /// (older nodes don't say).
+    fn recreated_from(&self, _thread: &ThreadRef) -> Option<Rebuilt> {
+        None
     }
     /// Executors.startedRun: the run the thread is on, not a send queued behind it; None when unknown.
     fn started_run(&self, thread: &ThreadRef) -> Option<String>;

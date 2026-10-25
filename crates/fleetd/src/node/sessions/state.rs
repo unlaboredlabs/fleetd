@@ -304,6 +304,7 @@ mod tests {
             branch: None,
             worktree_path: None,
             recreated_from: None,
+            recreated_at: None,
             created_at: Timestamp::from("t0"),
             updated_at: Timestamp::from("t0"),
         }

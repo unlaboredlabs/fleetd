@@ -731,6 +731,8 @@ pub struct SessionSummary {
     pub worktree_path: Option<String>,
     /// What the node rebuilt the worktree from the last time it was gone. Absent while it never was.
     pub recreated_from: Option<WorktreeSource>,
+    /// When it did, so each rebuild is told apart from the last, even from the same source. Absent from older nodes.
+    pub recreated_at: Option<Timestamp>,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
 }

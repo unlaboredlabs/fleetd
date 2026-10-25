@@ -38,7 +38,7 @@ use fleetd_contracts::sessions::{
     ItemKind, ItemStatus, MachineEvent, MachineEventFrame, RunnerInfo, SessionCall,
     SessionCallFrame, SessionError, SessionErrorCode, SessionLaunch, SessionOutput, SessionResult,
     SessionStatus, SessionSummary, SessionWorkspace, ThreadEvent, ThreadEventFrame, ThreadItem,
-    WorktreeBase,
+    WorktreeBase, WorktreeSource,
 };
 use fleetd_contracts::steer::{SteerReceipt, SteerTag};
 use futures_util::StreamExt;
@@ -308,6 +308,8 @@ struct Slot {
     events: Option<mpsc::UnboundedSender<MachineEventFrame>>,
     /// Set once the node accepted the subscription on the current link.
     live: bool,
+    /// When `live` was last set, in ms.
+    live_since_ms: i64,
     shell: ShellState,
     watches: HashMap<String, Arc<Watch>>,
     /// Calls in flight on the current link, by frame id.
@@ -592,6 +594,16 @@ impl Executors {
             .unwrap()
             .get(machine_id)
             .is_some_and(|s| s.live && s.link.is_some())
+    }
+
+    /// When the machine's current link went live, in ms; None while it has no live link.
+    pub fn live_since(&self, machine_id: &MachineId) -> Option<i64> {
+        self.machines
+            .lock()
+            .unwrap()
+            .get(machine_id)
+            .filter(|s| s.live && s.link.is_some())
+            .map(|s| s.live_since_ms)
     }
 
     /// Returns once the machine's node accepted the subscription, at once if it has.
@@ -892,6 +904,7 @@ impl Executors {
         }
         if let Some(slot) = self.machines.lock().unwrap().get_mut(&machine_id) {
             slot.live = true;
+            slot.live_since_ms = now_ms(self.clock.as_ref());
         }
         self.set_live(&machine_id, true);
         while let Some(frame) = events.recv().await {
@@ -1680,6 +1693,11 @@ impl Executors {
                 .or_else(|| t.known_run().map(str::to_owned)),
             running: t.summary.status == "running",
         })
+    }
+
+    /// What the node rebuilt the session's worktree from the last time it was gone, and when, as last seen.
+    pub fn recreated_from(&self, r: &ThreadRef) -> Option<(WorktreeSource, Option<String>)> {
+        self.tracked(r)?.recreated_from
     }
 
     /// The run the session is on as last seen: its active run once it has started, else its latest run. A send queued
