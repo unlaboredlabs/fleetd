@@ -3263,6 +3263,22 @@ async fn every_pr_a_writer_opened_is_queued_when_it_ends() {
     );
 }
 
+/// A writer's PR set after its `task.completed` (D67: looked up once the task ends) is queued as the writer's, so
+/// the plan items the task serves are linked to its Change and close when it merges.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_writers_pr_set_after_it_completed_is_queued_as_its_own() {
+    let kit = swept_kit().await;
+    kit.gate.held.lock().unwrap().insert(9);
+    let pr = kit.open_pr(9, "not-the-writers-branch", &[add("a9.txt", "a\n")]);
+    kit.host.tasks.lock().unwrap().get_mut("T1").unwrap().state = "done".into();
+    kit.train.on_task_pr("T1").await;
+    assert_eq!(writers_changes(&kit), [], "no PR in the result yet");
+
+    kit.host.tasks.lock().unwrap().get_mut("T1").unwrap().pr_url = Some(pr);
+    kit.train.on_task_pr("T1").await;
+    assert_eq!(writers_changes(&kit), [(9, Some("T1".into()))]);
+}
+
 /// The ready pass and a writer's result may enqueue one PR at once: one Change, one review round.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn racing_enqueues_of_one_pr_make_one_change_and_one_review_round() {

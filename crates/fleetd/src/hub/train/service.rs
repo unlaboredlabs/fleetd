@@ -1784,9 +1784,15 @@ impl Train {
     // it on the train. The result names one PR, so the ready pass runs now for any other slices the writer opened. A
     // refusal goes to the lead with its fix.
     async fn on_task_completed(&self, data: &Value) {
-        let Some(task_id) = data.get("taskId").and_then(Value::as_str) else {
-            return;
-        };
+        if let Some(task_id) = data.get("taskId").and_then(Value::as_str) {
+            self.on_task_pr(task_id).await;
+        }
+    }
+
+    /// The same for a write task whose result names its PR: at `task.completed`, and again when tasks set the PR
+    /// after it (D67: the host lookup runs after the task ends), so its Change carries the task and plan items it
+    /// serves close when it merges.
+    pub async fn on_task_pr(&self, task_id: &str) {
         let Some(task) = self
             .host
             .task(&super::contract::TaskId::unchecked(task_id))

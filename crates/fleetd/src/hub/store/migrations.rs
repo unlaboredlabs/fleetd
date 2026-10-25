@@ -726,4 +726,9 @@ pub(crate) const MIGRATIONS: &[&str] = &[
   );
   CREATE INDEX task_threads_by_thread ON task_threads (thread_id);
   "#,
+    // D67: a finished task whose PR lookup has not settled, so a hub restart runs it again.
+    r#"
+  ALTER TABLE tasks ADD COLUMN pr_lookup INTEGER NOT NULL DEFAULT 0;
+  CREATE INDEX tasks_pr_lookup ON tasks (n) WHERE pr_lookup = 1;
+  "#,
 ];

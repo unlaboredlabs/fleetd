@@ -43,6 +43,8 @@ pub enum LineKind {
     Recovery,
     /// Agents on a machine kept dying, so fleetd stopped resuming them there (`tasks::breaker`).
     RecoveryPaused,
+    /// A finished task's PR, found after its result line went out (D67): rides along with the next wake too.
+    Quiet,
 }
 
 #[derive(Debug, Clone)]
@@ -94,16 +96,17 @@ impl Trigger {
                 LineKind::Request => "request",
                 LineKind::Recovery => "recovery",
                 LineKind::RecoveryPaused => "recovery_paused",
+                LineKind::Quiet => "quiet",
             },
         }
     }
 
-    /// Never wakes the lead alone ([`LineKind::Recovery`]).
+    /// Never wakes the lead alone ([`LineKind::Recovery`], [`LineKind::Quiet`]).
     pub fn quiet(&self) -> bool {
         matches!(
             self,
             Trigger::Line {
-                kind: LineKind::Recovery,
+                kind: LineKind::Recovery | LineKind::Quiet,
                 ..
             }
         )
