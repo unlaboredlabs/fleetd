@@ -93,6 +93,9 @@ pub struct MergeRow {
     pub url: Option<String>,
     pub seen_claim: Option<String>,
     pub src: String,
+    /// The merger's login on the git host, as the event or the sweep read it: the person's merge-by-hand touch is
+    /// theirs only when it is one of their identities. Not stored; reads give `None`.
+    pub merged_by: Option<String>,
 }
 
 pub const SKIPPED: &str = "skipped";
@@ -256,6 +259,7 @@ pub fn merges(
                 url: r.get(23)?,
                 seen_claim: r.get(24)?,
                 src: r.get(25)?,
+                merged_by: None,
             })
         })?
         .collect::<Result<_, _>>()?;
@@ -272,11 +276,14 @@ pub struct RepoRow {
     pub last_ok_ms: Option<i64>,
     pub last_error: Option<String>,
     pub backfilled_ms: Option<i64>,
+    /// A read of its merged PRs was cut short and goes on at the next one.
+    pub partly_read: bool,
 }
 
 pub fn repos(conn: &Connection) -> Result<Vec<RepoRow>, StoreError> {
     let mut stmt = conn.prepare_cached(
-        "SELECT repo, host, default_branch, last_ok_ms, last_error, backfilled_ms FROM metric_repos ORDER BY repo",
+        "SELECT repo, host, default_branch, last_ok_ms, last_error, backfilled_ms, merged_resume IS NOT NULL
+         FROM metric_repos ORDER BY repo",
     )?;
     let rows = stmt
         .query_map([], |r| {
@@ -287,6 +294,7 @@ pub fn repos(conn: &Connection) -> Result<Vec<RepoRow>, StoreError> {
                 last_ok_ms: r.get(3)?,
                 last_error: r.get(4)?,
                 backfilled_ms: r.get(5)?,
+                partly_read: r.get(6)?,
             })
         })?
         .collect::<Result<_, _>>()?;

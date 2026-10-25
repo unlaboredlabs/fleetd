@@ -158,7 +158,18 @@ fn resolve(db: &HubDb, e: &HubEvent) -> Result<Option<Fold>, StoreError> {
             let Some(d) = data::<TrainEventData>(e) else {
                 return Ok(None);
             };
-            merge(db, e, &d, at)?.map(|m| Fold::Merge(Box::new(m)))
+            let event_project = e
+                .machine_id
+                .as_ref()
+                .zip(e.project_id.as_ref())
+                .map(|(m, p)| (m.to_string(), p.to_string()));
+            let train = e.r#type == HubEventType::PrMerged;
+            let default = match &d.repo {
+                Some(r) => default_branch(db, &store::github_remote(r.as_str()))?,
+                None => None,
+            };
+            landed(db, train, &d, at, event_project, default.as_deref())?
+                .map(|m| Fold::Merge(Box::new(m)))
         }
         HubEventType::ChangeState => data::<ChangeStateData>(e)
             .filter(|d| d.to == ChangeState::Ready)
@@ -201,17 +212,21 @@ pub fn actor_str(k: ActorKind) -> &'static str {
     }
 }
 
-/// The row a train merge or an outside merge makes.
-fn merge(
+/// The row a merge makes, whoever reports it: the train's `pr.merged` (`train`), its `pr.merged_outside`, or the host
+/// sweep with the same fields read from the host. `at` stands in for a missing `mergedAt`, and `fallback` owns it
+/// when no train or Change does. A merge without the train counts only into `default_branch`; one into any other
+/// base is skipped as such. One with no `base` (an older hub's event), or before the default branch is known, counts.
+pub fn landed(
     db: &HubDb,
-    e: &HubEvent,
+    train: bool,
     d: &TrainEventData,
     at: i64,
+    fallback: Option<(String, String)>,
+    default_branch: Option<&str>,
 ) -> Result<Option<MergeRow>, StoreError> {
     let (Some(repo), Some(pr)) = (&d.repo, d.pr_number) else {
         return Ok(None);
     };
-    let train = e.r#type == HubEventType::PrMerged;
     let change = match &d.change_id {
         Some(id) => change(db, id.as_str())?,
         None => None,
@@ -259,6 +274,13 @@ fn merge(
         (MergeRoute::Train.as_str(), None)
     } else if d.author_kind == Some(ActorKind::Bot) {
         (store::SKIPPED, Some(skip_str(SkipWhy::Bot)))
+    } else if d
+        .base
+        .as_deref()
+        .zip(default_branch)
+        .is_some_and(|(base, default)| base != default)
+    {
+        (store::SKIPPED, Some(skip_str(SkipWhy::OtherBase)))
     } else if fleetd {
         (MergeRoute::FleetdByHand.as_str(), None)
     } else {
@@ -271,7 +293,7 @@ fn merge(
         _ => None,
     };
     let remote = store::github_remote(repo.as_str());
-    // The project that owns it: the train's owner, else its Change's, else the event's.
+    // The project that owns it: the train's owner, else its Change's, else the reporter's.
     let owner = train_owner(db, repo.as_str())?
         .or_else(|| {
             change.as_ref().map(|c| {
@@ -281,12 +303,7 @@ fn merge(
                 )
             })
         })
-        .or_else(|| {
-            e.machine_id
-                .as_ref()
-                .zip(e.project_id.as_ref())
-                .map(|(m, p)| (m.to_string(), p.to_string()))
-        });
+        .or(fallback);
     let (machine_id, project_id) = owner.unzip();
     Ok(Some(MergeRow {
         unit_key: format!("pr:{}", pr.get()),
@@ -323,6 +340,7 @@ fn merge(
         } else {
             actor(d.merged_by_kind)
         },
+        merged_by: d.merged_by.clone().filter(|_| !train),
         url: d
             .pr_url
             .clone()
@@ -399,6 +417,19 @@ fn task_workstream(db: &HubDb, task: &str) -> Result<Option<String>, StoreError>
             |r| r.get(0),
         )
         .optional()?)
+    })
+}
+
+/// A repo's default branch, once the sweep or a project's node said.
+fn default_branch(db: &HubDb, remote: &str) -> Result<Option<String>, StoreError> {
+    db.with(|c| {
+        Ok(c.query_row(
+            "SELECT default_branch FROM metric_repos WHERE repo = ?1",
+            [remote],
+            |r| r.get(0),
+        )
+        .optional()?
+        .flatten())
     })
 }
 

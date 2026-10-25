@@ -1,0 +1,13 @@
+{
+ "id": 1,
+ "name": "web",
+ "full_name": "acme/web",
+ "private": true,
+ "default_branch": "main",
+ "fork": true,
+ "parent": {
+  "id": 2,
+  "name": "web",
+  "full_name": "upstream/web"
+ }
+}

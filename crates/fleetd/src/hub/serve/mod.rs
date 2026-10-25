@@ -208,14 +208,35 @@ pub fn build(config: HubConfig, clock: Arc<dyn Clock>) -> anyhow::Result<Arc<Hub
     for gone in ["github-webhook.secret", "webhook.key"] {
         let _ = std::fs::remove_file(config.home.join(gone));
     }
-    build_on(db, config, clock)
+    // A lab hub sets FLEETD_HOST_SWEEP=off, so the metrics read no git host and the run needs no network.
+    let hosts = if std::env::var("FLEETD_HOST_SWEEP").is_ok_and(|v| v == "off") {
+        crate::hub::metrics::source::HostSources::none()
+    } else {
+        crate::hub::metrics::source::HostSources::real()
+    };
+    build_on_with(db, config, clock, hosts)
 }
 
-/// [`build`] over an opened database (tests use `HubDb::open_memory`).
+/// [`build`] over an opened database (tests use `HubDb::open_memory`), reading no git host for the metrics.
 pub fn build_on(
     db: Arc<HubDb>,
     config: HubConfig,
     clock: Arc<dyn Clock>,
+) -> anyhow::Result<Arc<Hub>> {
+    build_on_with(
+        db,
+        config,
+        clock,
+        crate::hub::metrics::source::HostSources::none(),
+    )
+}
+
+/// [`build_on`] with the git host readers the metrics' sweep uses: real for a shipped hub, none or fakes otherwise.
+pub fn build_on_with(
+    db: Arc<HubDb>,
+    config: HubConfig,
+    clock: Arc<dyn Clock>,
+    hosts: crate::hub::metrics::source::HostSources,
 ) -> anyhow::Result<Arc<Hub>> {
     let store = Arc::new(HubStore::new(db.clone()));
     let events = Arc::new(EventLog::new(db.clone(), clock.clone())?);
@@ -365,6 +386,7 @@ pub fn build_on(
         chat,
         prs,
         work,
+        metrics: crate::hub::metrics::Metrics::new(hosts),
     });
     checks.ports.bind(&hub);
     train_host.bind(&hub);
