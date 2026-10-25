@@ -83,6 +83,15 @@ pub enum Event<'a> {
         why: &'a str,
         tries: i64,
     },
+    /// A PR's reviewers kept ending without a verdict: the train stopped starting new ones. `tail` is the last
+    /// reviewer's final lines.
+    PrReviewStalled {
+        change: &'a str,
+        pr_url: &'a str,
+        task: &'a str,
+        tries: i64,
+        tail: &'a str,
+    },
     PrRefused {
         pr_url: &'a str,
         task: &'a str,
@@ -222,6 +231,19 @@ impl Event<'_> {
                     pr_label(pr_url)
                 ),
                 vec![],
+            ),
+            Event::PrReviewStalled {
+                change,
+                pr_url,
+                task,
+                tries,
+                tail,
+            } => (
+                format!(
+                    "- {} not reviewed: {tries} reviewers in a row ended without a verdict, the last {task}; the train starts no more ({change}, {pr_url})",
+                    pr_label(pr_url)
+                ),
+                body(tail),
             ),
             Event::PrRefused {
                 pr_url,

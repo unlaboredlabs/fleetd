@@ -147,7 +147,7 @@ pub(super) fn checks(runs: &[CheckRun]) -> Checks {
     }
 }
 
-pub(super) fn short(sha: &str) -> &str {
+pub(crate) fn short(sha: &str) -> &str {
     &sha[..sha.len().min(12)]
 }
 
@@ -201,7 +201,7 @@ pub struct Train {
     tasks: Mutex<Vec<tokio::task::JoinHandle<()>>>,
 }
 
-pub(super) fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+pub(crate) fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 

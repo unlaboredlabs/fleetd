@@ -3,6 +3,11 @@
 //! a clean verdict is already bound to it. Every verdict is bound to the patch id of the head it reviewed, and only
 //! verdicts bound to the Change's current patch id count. Blocking findings go back to the author task and the Change
 //! waits for a new head, which the train brings back here with its new patch id.
+//!
+//! A reviewer that ends without a verdict is replaced, `RETRIES` times per patch, then the lead is told. A reviewer
+//! still on an older patch when the Change moves on is stopped, and what it reports later is ignored. A new patch that
+//! only drops commits already on the base from an approved head keeps that approval (`carry`).
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex, Weak};
 
 use rusqlite::{OptionalExtension, params};
@@ -11,15 +16,19 @@ use serde_json::Value;
 use super::rules::{
     BoundReview, FindingsVerdict, Gate, findings_message, gate, one_line, review_prompt,
 };
+use crate::hub::leads::events::Event;
 use crate::hub::train::contract::{
     Change, ChangeId, ChangeReview, ChangeState, CommitSha, Count, PatchId, TaskId,
 };
 use crate::hub::train::host::{BoxFut, EventView, ReviewSpawn, TrainHost};
 use crate::hub::train::records::{Db, sql};
-use crate::hub::train::service::{ReviewGate, Train, Verdict};
+use crate::hub::train::service::{ReviewGate, Train, Verdict, lock, short};
 
 /// Recorded as the spawner of review tasks and the sender of findings.
 pub const REVIEWS_BY: &str = "hub:reviews";
+
+/// New reviewers started for one patch after one ended without a verdict, before the gate stops and tells the lead.
+const RETRIES: usize = 2;
 
 const FOLLOWED: [&str; 4] = [
     "review.verdict",
@@ -33,6 +42,19 @@ pub struct Reviews {
     db: Db,
     train: Weak<Train>,
     lock: tokio::sync::Mutex<()>,
+    /// The patches whose stalled review the lead was told about.
+    told: Mutex<HashSet<(ChangeId, String)>>,
+}
+
+/// A review task the gate spawned: the Change, the patch its round was for, and whether a newer patch superseded it.
+struct Round {
+    change_id: ChangeId,
+    patch_id: String,
+    superseded: bool,
+}
+
+fn ended(state: &str) -> bool {
+    matches!(state, "done" | "failed" | "cancelled")
 }
 
 impl Reviews {
@@ -42,6 +64,7 @@ impl Reviews {
             db,
             train,
             lock: tokio::sync::Mutex::new(()),
+            told: Mutex::default(),
         }
     }
 
@@ -89,6 +112,45 @@ impl Reviews {
             .optional()
             .expect("review task")
         })
+    }
+
+    fn round_of(&self, task_id: &str) -> Option<Round> {
+        sql(&self.db, |conn| {
+            conn.query_row(
+                "SELECT change_id, patch_id, role FROM review_tasks WHERE task_id = ?1",
+                [task_id],
+                |r| {
+                    Ok(Round {
+                        change_id: ChangeId::unchecked(r.get::<_, String>(0)?),
+                        patch_id: r.get(1)?,
+                        superseded: r.get::<_, String>(2)? == "superseded",
+                    })
+                },
+            )
+            .optional()
+            .expect("review task")
+        })
+    }
+
+    /// The reviewers spawned for this patch of the Change, oldest first.
+    fn reviewers(&self, change_id: &ChangeId, patch_id: &str) -> Vec<String> {
+        sql(&self.db, |conn| {
+            let mut stmt = conn
+                .prepare_cached(
+                    "SELECT task_id FROM review_tasks WHERE change_id = ?1 AND patch_id = ?2 AND role = 'reviewer' ORDER BY rowid",
+                )
+                .expect("prepare");
+            stmt.query_map(params![change_id.as_str(), patch_id], |r| r.get(0))
+                .expect("query")
+                .map(|r| r.expect("row"))
+                .collect()
+        })
+    }
+
+    fn live(&self, task_id: &str) -> bool {
+        self.host
+            .task(&TaskId::unchecked(task_id))
+            .is_some_and(|t| !ended(&t.state))
     }
 
     fn put_patch(&self, change_id: &ChangeId, sha: &str, patch_id: &str) {
@@ -164,21 +226,9 @@ impl Reviews {
         (gate(patch_id, &bound), reviews)
     }
 
-    /// Spawns this patch's reviewer, once: a reviewer the node refused to start is not counted, so the next pass
-    /// tries again.
-    async fn ensure_reviewer(&self, change: &Change, patch_id: &str) {
-        let spawned = sql(&self.db, |conn| {
-            conn.query_row(
-                "SELECT 1 FROM review_tasks WHERE change_id = ?1 AND patch_id = ?2 LIMIT 1",
-                params![change.change_id.as_str(), patch_id],
-                |_| Ok(()),
-            )
-            .optional()
-            .expect("review task")
-        });
-        if spawned.is_some() {
-            return;
-        }
+    /// Spawns a reviewer for this patch; the task id when it started. A reviewer the node refused to start is not
+    /// counted, so the next pass tries again.
+    async fn spawn_reviewer(&self, change: &Change, patch_id: &str) -> Option<String> {
         // The newest head an earlier round of this Change reviewed: a re-push is reviewed from its delta.
         let reviewed: Option<String> = sql(&self.db, |conn| {
             conn.query_row(
@@ -225,7 +275,7 @@ impl Reviews {
                     }
                     None => self.note(&change.change_id, &why),
                 }
-                return;
+                return None;
             }
         };
         if task.state == "failed" {
@@ -237,7 +287,7 @@ impl Reviews {
                     task.result_tail.unwrap_or_default()
                 ),
             );
-            return;
+            return None;
         }
         sql(&self.db, |conn| {
             conn
@@ -247,6 +297,117 @@ impl Reviews {
             )
             .expect("put review task")
         });
+        Some(task.task_id.to_string())
+    }
+
+    /// The Change is at `patch_id` now: its reviewers of an older patch that gave no verdict are stopped, and what
+    /// they report later is ignored.
+    async fn supersede(&self, change: &Change, patch_id: &str) {
+        let stale: Vec<String> = sql(&self.db, |conn| {
+            let mut stmt = conn
+                .prepare_cached(
+                    "SELECT task_id FROM review_tasks t WHERE change_id = ?1 AND patch_id != ?2 AND role = 'reviewer'
+                       AND NOT EXISTS (SELECT 1 FROM review_bindings b WHERE b.task_id = t.task_id)",
+                )
+                .expect("prepare");
+            stmt.query_map(params![change.change_id.as_str(), patch_id], |r| r.get(0))
+                .expect("query")
+                .map(|r| r.expect("row"))
+                .collect()
+        });
+        for task_id in stale {
+            sql(&self.db, |conn| {
+                conn.execute(
+                    "UPDATE review_tasks SET role = 'superseded' WHERE task_id = ?1",
+                    [&task_id],
+                )
+                .expect("supersede review task")
+            });
+            if !self.live(&task_id) {
+                continue;
+            }
+            let reason = format!(
+                "Superseded: {}#{} has a new head {}; its reviewer reviews that.",
+                change.repo,
+                change.pr_number,
+                short(&change.head_sha)
+            );
+            let id = TaskId::unchecked(&task_id);
+            if let Err(e) = self
+                .host
+                .cancel_task(&change.project_ref, REVIEWS_BY, &id, reason)
+                .await
+            {
+                tracing::warn!(change_id = %change.change_id, task_id, error = %e, "reviews: superseded reviewer not stopped");
+            }
+        }
+    }
+
+    /// Whether the Change's new patch keeps the approval of its last reviewed head, binding it to the new patch when
+    /// it does. It does when the new head only drops commits already on the base from that head: the approved head's
+    /// last commits, as many as the new head has, make the same patch on the commit below them as the new head makes
+    /// on its base, so `git range-diff` shows the PR's own commits unchanged. Any change to them, a conflict
+    /// resolution included, makes another patch and gets a review.
+    async fn carry(&self, change: &Change, patch_id: &str) -> Result<bool, String> {
+        let approved: Option<(String, String, String, i64)> = sql(&self.db, |conn| {
+            conn.query_row(
+                "SELECT b.task_id, b.pr_head_sha, b.patch_id, b.non_blocking FROM review_bindings b
+                 JOIN review_tasks t ON t.task_id = b.task_id
+                 WHERE t.change_id = ?1 AND b.patch_id != ?2 ORDER BY b.rowid DESC LIMIT 1",
+                params![change.change_id.as_str(), patch_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .optional()
+            .expect("approved head")
+        });
+        let Some((task_id, approved_head, approved_patch, non_blocking)) = approved else {
+            return Ok(false);
+        };
+        if !self.gate_for(change, &approved_patch).0.ready {
+            return Ok(false);
+        }
+        let train = self.train().ok_or("the train is gone")?;
+        let (github, repo) = (train.github(), change.repo.as_str());
+        let pull = github
+            .pull(repo, change.pr_number.get())
+            .await
+            .map_err(|e| e.message)?;
+        let base = github
+            .branch_sha(repo, &pull.base.ref_)
+            .await
+            .map_err(|e| e.message)?;
+        let own = github.range(repo, &base, &change.head_sha).await;
+        let reviewed = github.range(repo, &base, &approved_head).await;
+        let (Some((_, own)), Some((reviewed_base, reviewed))) = (
+            own.map_err(|e| e.message)?,
+            reviewed.map_err(|e| e.message)?,
+        ) else {
+            return Ok(false);
+        };
+        if own.is_empty() || own.len() > reviewed.len() {
+            return Ok(false);
+        }
+        let below = match reviewed.len() - own.len() {
+            0 => reviewed_base,
+            dropped => reviewed[dropped - 1].clone(),
+        };
+        let same = github
+            .patch_id_from(repo, &below, &approved_head)
+            .await
+            .map_err(|e| e.message)?
+            == patch_id;
+        if same {
+            sql(&self.db, |conn| {
+                conn
+                .execute(
+                    "INSERT OR REPLACE INTO review_bindings (task_id, pr_head_sha, patch_id, blocking, non_blocking) VALUES (?1, ?2, ?3, 0, ?4)",
+                    params![task_id, change.head_sha.as_str(), patch_id, non_blocking],
+                )
+                .expect("carry the approval")
+            });
+            tracing::info!(change_id = %change.change_id, task_id, approved_head, head = %change.head_sha, "reviews: a rebase kept the approval");
+        }
+        Ok(same)
     }
 
     async fn review_inner(&self, change: Change) -> Verdict {
@@ -262,15 +423,23 @@ impl Reviews {
             },
         };
         self.put_patch(&change.change_id, &change.head_sha, &patch_id);
+        self.supersede(&change, &patch_id).await;
         let (before, reviews) = self.gate_for(&change, &patch_id);
         // Ready on this patch already (a carried-over patch), or held by its blocking findings until the head moves.
         if before.ready {
             return Verdict::Ready(reviews);
         }
-        if before.waiting_for_head {
+        if before.waiting_for_head || !self.reviewers(&change.change_id, &patch_id).is_empty() {
             return Verdict::Pending;
         }
-        self.ensure_reviewer(&change, &patch_id).await;
+        match self.carry(&change, &patch_id).await {
+            Ok(true) => return Verdict::Ready(self.gate_for(&change, &patch_id).1),
+            Ok(false) => {}
+            Err(e) => {
+                tracing::warn!(change_id = %change.change_id, error = %e, "reviews: approval not carried; reviewing")
+            }
+        }
+        self.spawn_reviewer(&change, &patch_id).await;
         Verdict::Pending
     }
 
@@ -302,7 +471,12 @@ impl Reviews {
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string();
-        let Some(change_id) = self.change_of(&task_id) else {
+        // A reviewer of a patch the Change has moved past was stopped; what it says counts for nothing.
+        let Some(change_id) = self
+            .round_of(&task_id)
+            .filter(|r| !r.superseded)
+            .map(|r| r.change_id)
+        else {
             return Ok(());
         };
         let Some(change) = self.train().and_then(|t| t.records().get(&change_id)) else {
@@ -338,7 +512,7 @@ impl Reviews {
                 .unwrap_or_else(|| "(the verdict had no summary)".into());
             let waiting = format!(
                 "waiting for a new head: {task_id} found {blocking} blocking at {}",
-                &sha[..sha.len().min(12)]
+                short(&sha)
             );
             let Some(author) = &change.task_id else {
                 self.note(
@@ -378,16 +552,17 @@ impl Reviews {
         Ok(())
     }
 
-    /// A review task ended, perhaps without the verdict it owed.
-    fn on_task_ended(&self, event: &EventView) {
+    /// A review task ended, perhaps without the verdict it owed: then the current patch gets a new reviewer.
+    async fn on_task_ended(&self, event: &EventView) {
         let task_id = event
             .data
             .get("taskId")
             .and_then(Value::as_str)
             .unwrap_or_default();
-        let Some(change_id) = self.change_of(task_id) else {
+        let Some(round) = self.round_of(task_id) else {
             return;
         };
+        let change_id = round.change_id.clone();
         let bound = sql(&self.db, |conn| {
             conn.query_row(
                 "SELECT 1 FROM review_bindings WHERE task_id = ?1 LIMIT 1",
@@ -397,17 +572,72 @@ impl Reviews {
             .optional()
             .expect("bound")
         });
-        if bound.is_none() {
+        self.evaluate(&change_id);
+        if bound.is_none() && !round.superseded {
             let how = event
                 .event_type
                 .strip_prefix("task.")
                 .unwrap_or(&event.event_type);
-            self.note(
-                &change_id,
-                &format!("the reviewer {task_id} ended ({how}) without a review verdict"),
-            );
+            let why = format!("the reviewer {task_id} ended ({how}) without a review verdict");
+            self.note(&change_id, &why);
+            self.retry(&round, task_id, &why).await;
         }
-        self.evaluate(&change_id);
+    }
+
+    /// The reviewer `task_id` of `round` ended with no verdict: if the Change still waits on that patch's review and
+    /// no other reviewer of it is at work, a new one starts, at most `RETRIES` times; after that the lead is told
+    /// once, with the last reviewer's final lines.
+    async fn retry(&self, round: &Round, task_id: &str, why: &str) {
+        let Some(change) = self.train().and_then(|t| t.records().get(&round.change_id)) else {
+            return;
+        };
+        if change.state != ChangeState::Reviewing
+            || change.patch_id.as_deref() != Some(round.patch_id.as_str())
+        {
+            return;
+        }
+        let (g, _) = self.gate_for(&change, &round.patch_id);
+        if g.ready || g.waiting_for_head {
+            return;
+        }
+        let reviewers = self.reviewers(&change.change_id, &round.patch_id);
+        if reviewers.iter().any(|t| t != task_id && self.live(t)) {
+            return;
+        }
+        let tries = reviewers.len();
+        if tries <= RETRIES {
+            if let Some(next) = self.spawn_reviewer(&change, &round.patch_id).await {
+                self.note(
+                    &change.change_id,
+                    &format!("{why}; {next} reviews it again (retry {tries} of {RETRIES})"),
+                );
+            }
+            return;
+        }
+        if !lock(&self.told).insert((change.change_id.clone(), round.patch_id.clone())) {
+            return;
+        }
+        self.note(
+            &change.change_id,
+            &format!(
+                "{why}; {tries} reviewers of patch {} ended without a verdict, so no more start until a new head; the lead was told",
+                short(&round.patch_id)
+            ),
+        );
+        let tail = self
+            .host
+            .task(&TaskId::unchecked(task_id))
+            .and_then(|t| t.result_tail)
+            .unwrap_or_default();
+        let line = Event::PrReviewStalled {
+            change: change.change_id.as_str(),
+            pr_url: change.pr_url.as_str(),
+            task: task_id,
+            tries: tries as i64,
+            tail: &tail,
+        }
+        .render();
+        self.host.wake_lead(&change.project_ref, line).await;
     }
 
     async fn handle(&self, event: &EventView) {
@@ -417,7 +647,7 @@ impl Reviews {
                 tracing::warn!(seq = event.seq, error = %e, "reviews: verdict not bound");
             }
         } else {
-            self.on_task_ended(event);
+            self.on_task_ended(event).await;
         }
     }
 }
