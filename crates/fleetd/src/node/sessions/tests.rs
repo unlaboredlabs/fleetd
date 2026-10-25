@@ -8,9 +8,10 @@ use fleetd_contracts::ids::{ProjectId, ThreadId};
 use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::prim::NonEmpty;
 use fleetd_contracts::sessions::{
-    FailureClass, ItemKind, ItemStatus, MachineEvent, MessageRole, PermissionDecision, RunFailure,
-    RunStatus, SendMode, SendNow, SessionCall, SessionCallFrame, SessionErrorCode, SessionLaunch,
-    SessionOutput, SessionResult, SessionStatus, SessionSummary, SessionWorkspace, ThreadEvent,
+    FailureClass, ItemKind, ItemStatus, MachineEvent, MessageRole, PermissionDecision, RunEnd,
+    RunFailure, RunStatus, SendMode, SendNow, SessionCall, SessionCallFrame, SessionErrorCode,
+    SessionLaunch, SessionOutput, SessionResult, SessionStatus, SessionSummary, SessionWorkspace,
+    ThreadEvent,
 };
 use fleetd_contracts::steer::{DeliveredHow, SteerId, SteerReceipt, SteerStage, SteerTag};
 use tokio::sync::mpsc;
@@ -497,6 +498,7 @@ async fn a_restarted_node_closes_what_was_running_and_the_next_send_resumes() {
     assert_eq!(row.local.pid, None);
     let run = row.summary.latest_run.unwrap();
     assert_eq!(run.status, RunStatus::Interrupted);
+    assert_eq!(run.end, Some(RunEnd::NodeRestarted));
     assert_eq!(
         run.failure.unwrap().message.as_str(),
         "node restarted mid-run"
@@ -552,6 +554,8 @@ async fn an_unhonoured_interrupt_escalates_to_stopping_the_process() {
     assert_eq!(ended.pending_permission, None);
     let run = ended.latest_run.unwrap();
     assert_eq!(run.status, RunStatus::Interrupted);
+    assert_eq!(run.end, Some(RunEnd::Requested));
+    assert_eq!(run.ended_by.as_ref().unwrap().as_str(), "hub asked");
     assert_eq!(run.failure.unwrap().message.as_str(), "hub asked");
     let received = hub.runner.received();
     assert_eq!(
@@ -585,7 +589,9 @@ async fn a_retryable_failure_continues_the_same_run_then_fails_loudly() {
     .await;
     let failed = hub.settled("r1").await;
     assert_eq!(failed.status, SessionStatus::Failed);
-    let failure = failed.latest_run.unwrap().failure.unwrap();
+    let run = failed.latest_run.unwrap();
+    assert_eq!(run.end, Some(RunEnd::Failed));
+    let failure = run.failure.unwrap();
     assert_eq!(
         (failure.class, failure.retries, failure.api_status),
         (FailureClass::Overloaded, 1, Some(529))
@@ -766,7 +772,9 @@ async fn a_run_silent_since_the_machine_woke_is_resumed_as_a_network_retry() {
     tokio::time::sleep(Duration::from_secs(1)).await;
     hub.service.woke();
     let done = hub.settled("r1").await;
-    assert_eq!(done.latest_run.unwrap().status, RunStatus::Completed);
+    let run = done.latest_run.unwrap();
+    assert_eq!(run.status, RunStatus::Completed);
+    assert_eq!(run.end, Some(RunEnd::Completed));
     assert_eq!(hub.service.store().runs("s1").unwrap().len(), 1);
     let retry = hub
         .service
@@ -805,6 +813,88 @@ async fn a_run_silent_since_the_machine_woke_is_resumed_as_a_network_retry() {
     );
     assert_eq!(hub.runner.spawned().len(), 1);
     assert_eq!(*hub.service.running().borrow(), 0);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_run_cut_by_sleep_whose_retries_fail_ended_by_the_sleep() {
+    let lines = r#"
+{"dir":"in","ms":0,"msg":{"type":"user","uuid":"u1"}}
+{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","command_uuid":"u1","state":"started"}}
+{"dir":"out","ms":7200000,"msg":{"type":"result","subtype":"success","is_error":false,"result":"too late"}}
+{"dir":"in","ms":0,"msg":{"type":"user","uuid":"u2"}}
+{"dir":"out","ms":0,"msg":{"type":"command_lifecycle","command_uuid":"u2","state":"started"}}
+{"dir":"out","ms":5,"msg":{"type":"result","subtype":"error_during_execution","is_error":true,"result":"API Error: Connection error."}}
+"#;
+    let dir = tempfile::tempdir().unwrap();
+    let mut runner = FakeRunner::from_lines(lines);
+    runner.timed = true;
+    let mut hub = hub(dir.path(), NodeStore::open_memory(10_000).unwrap(), runner).await;
+    hub.project(dir.path()).await;
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    hub.summary(|s| s.status == SessionStatus::Running).await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    hub.service.woke();
+    let failed = hub.settled("r1").await;
+    let run = failed.latest_run.unwrap();
+    assert_eq!(run.status, RunStatus::Failed);
+    assert_eq!(run.failure.unwrap().class, FailureClass::Network);
+    assert_eq!(run.end, Some(RunEnd::MachineSlept));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_node_shutdown_cuts_the_turn_and_never_starts_a_send_queued_behind_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut runner = FakeRunner::from_lines(STEER_TURNS);
+    runner.timed = true;
+    let mut hub = hub(dir.path(), NodeStore::open_memory(10_000).unwrap(), runner).await;
+    hub.project(dir.path()).await;
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    hub.summary(|s| {
+        s.latest_run
+            .as_ref()
+            .is_some_and(|r| r.id == "r1" && r.status == RunStatus::Running)
+    })
+    .await;
+    // Queued behind the 30 s tool, as T19's "pause" message was when its node stopped.
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    hub.ok(send("s1", "r2")).await;
+    hub.service.shutdown().await;
+
+    let runs = hub.service.store().runs("s1").unwrap();
+    let (cut, queued) = (&runs[0], &runs[1]);
+    assert!(cut.started_at.is_some());
+    assert_eq!(cut.status, RunStatus::Interrupted);
+    assert_eq!(cut.end, Some(RunEnd::NodeStopping));
+    assert_eq!(cut.ended_by, None);
+    assert_eq!(
+        cut.failure.as_ref().unwrap().message.as_str(),
+        "the node stopped"
+    );
+    // Withdrawn before the interrupt ended the turn ahead of it: claude never took it in.
+    assert_eq!(queued.status, RunStatus::Interrupted);
+    assert_eq!(queued.started_at, None);
+    assert_eq!(queued.end, Some(RunEnd::NodeStopping));
+    let received = hub.runner.received();
+    let withdraw = received
+        .iter()
+        .position(|c| matches!(c, SessionCommand::Withdraw { run_id } if run_id == "r2"));
+    let interrupt = received
+        .iter()
+        .position(|c| matches!(c, SessionCommand::Interrupt));
+    assert!(withdraw.unwrap() < interrupt.unwrap());
+    let summary = hub.service.store().session("s1").unwrap().unwrap().summary;
+    assert_eq!(summary.status, SessionStatus::Interrupted);
+    assert_eq!(summary.latest_run.unwrap().id, "r1");
 }
 
 #[tokio::test(start_paused = true)]

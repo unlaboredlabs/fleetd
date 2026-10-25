@@ -370,6 +370,11 @@ pub fn context_full(evidence: &FailureEvidence) -> bool {
         || CONTEXT_FULL.is_match(&evidence.text)
 }
 
+/// [`context_full`] from a recorded failure's message, which keeps claude's text ("Prompt is too long").
+pub fn context_full_text(message: &str) -> bool {
+    CONTEXT_FULL.is_match(message)
+}
+
 /// The node's own bounded retry for Overloaded and Network, after claude's internal retries gave up: the delay
 /// before retry `attempt` (1-based), or `None` once the run should fail loudly.
 pub fn retry_delay_ms(attempt: u32) -> Option<u64> {

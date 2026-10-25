@@ -8,6 +8,67 @@
     "ProjectId": {
       "type": "string"
     },
+    "RunEnd": {
+      "description": "Why a run ended, so a node going away reads apart from a person stopping it. Set once the run is no longer active.",
+      "oneOf": [
+        {
+          "const": "completed",
+          "description": "claude finished the turn.",
+          "type": "string"
+        },
+        {
+          "const": "requested",
+          "description": "Someone interrupted or stopped it: `RunInfo.endedBy` says who.",
+          "type": "string"
+        },
+        {
+          "const": "superseded",
+          "description": "A steer cut it short at a tool boundary to take its own turn (`RunInfo.supersededBy`). Not a failure.",
+          "type": "string"
+        },
+        {
+          "const": "node_stopping",
+          "description": "The node was stopping (SIGTERM) and cut it.",
+          "type": "string"
+        },
+        {
+          "const": "node_restarted",
+          "description": "The node found it active on start: it died with the node process (crash, SIGKILL, power loss).",
+          "type": "string"
+        },
+        {
+          "const": "machine_slept",
+          "description": "The machine slept and claude's stream did not come back.",
+          "type": "string"
+        },
+        {
+          "const": "exited",
+          "description": "claude exited or was killed with nobody asking; `failure` has the exit code or signal.",
+          "type": "string"
+        },
+        {
+          "const": "limited",
+          "description": "A usage, rate or pool limit; `failure.resetAt` says when to continue.",
+          "type": "string"
+        },
+        {
+          "const": "context_full",
+          "description": "The conversation no longer fits in the model's context.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "Any other failure; `failure.class` says which.",
+          "type": "string"
+        },
+        {
+          "const": "stalled",
+          "description": "Set by the hub, never by a node: the watchdog saw no output for too long and ended the run.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
     "ThreadError": {
       "properties": {
         "class": {
@@ -46,6 +107,10 @@
         "effort": {
           "description": "As reported by the runner; not narrowed to Effort because it may report other levels.",
           "type": "string"
+        },
+        "endCause": {
+          "$ref": "#/$defs/RunEnd",
+          "description": "Why its latest run ended; absent while it runs and from older nodes."
         },
         "headline": {
           "description": "First line of the latest visible assistant text.",

@@ -2462,6 +2462,22 @@ export type KnownReviewVerdictKind = "approved" | "changes_requested" | "comment
 /** KnownReviewVerdictKind, or a value from a newer hub. */
 export type ReviewVerdictKind = KnownReviewVerdictKind | (string & {});
 
+/** Why a run ended, so a node going away reads apart from a person stopping it. Set once the run is no longer active. */
+export type KnownRunEnd =
+  | "completed"
+  | "requested"
+  | "superseded"
+  | "node_stopping"
+  | "node_restarted"
+  | "machine_slept"
+  | "exited"
+  | "limited"
+  | "context_full"
+  | "failed"
+  | "stalled";
+/** KnownRunEnd, or a value from a newer hub. */
+export type RunEnd = KnownRunEnd | (string & {});
+
 /** A rule the default text carries, found in a text by `needle` (a case-insensitive regex). */
 export type SafetyRule = {
   enforced: Enforcement;
@@ -3024,6 +3040,11 @@ export type TaskProfile = "high" | "medium";
 export type TaskResult = {
   at: Timestamp;
   branch?: string;
+  /**
+   * Why its last run ended (the node stopped, claude exited, a limit, context full, …); absent on results an
+   * older hub recorded, and when it never ran.
+   */
+  endCause?: RunEnd;
   prUrl?: string;
   status: TaskResultStatus;
   /** The latest assistant message, trimmed to its last 2000 characters. */
@@ -3061,6 +3082,11 @@ export type ThreadError = {
 
 /** Fields `HubEvent.data` may carry on `thread.*` events, alongside whatever else the hub adds. */
 export type ThreadEventData = {
+  /**
+   * Why the run ended: on `thread.completed`, `.failed`, `.interrupted` and `.usage_limited` from a node that
+   * records it.
+   */
+  endCause?: RunEnd;
   /** The run ended while the hub was down and this event was emitted on its return. */
   late?: boolean;
   reason?: ThreadEventReason;
@@ -3082,6 +3108,8 @@ export type ThreadSummary = {
   asOf: Timestamp;
   /** As reported by the runner; not narrowed to Effort because it may report other levels. */
   effort?: string;
+  /** Why its latest run ended; absent while it runs and from older nodes. */
+  endCause?: RunEnd;
   /** First line of the latest visible assistant text. */
   headline: string;
   lastError?: ThreadError;

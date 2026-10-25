@@ -7,14 +7,14 @@ use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::prim::Text;
 use fleetd_contracts::sessions::{
-    FailureClass, ItemKind, PermissionDecision, RunFailure, RunInfo, RunStatus, SessionStatus,
-    SessionSummary, ThreadItem,
+    FailureClass, ItemKind, PermissionDecision, RunEnd, RunFailure, RunInfo, RunStatus,
+    SessionStatus, SessionSummary, ThreadItem,
 };
 
-use crate::node::runner::ExitInfo;
 use crate::node::runner::claude::ALWAYS_DISALLOWED;
+use crate::node::runner::{ExitInfo, RunOutcome, failure};
 use crate::node::store::SessionLocal;
-use crate::node::util::tail_utf16;
+use crate::node::util::{head_utf16, tail_utf16};
 
 /// Item outputs longer than this go over the link cut to their tail; `read_item` returns them whole.
 pub const OUTPUT_KEPT: usize = 8 * 1024;
@@ -56,34 +56,95 @@ pub fn settle(summary: &mut SessionSummary, runs: &[RunInfo], at: &Timestamp) {
 /// Why a process ended while runs were still active.
 #[derive(Clone, Debug, PartialEq)]
 pub enum EndCause {
-    /// Someone asked: an interrupt that had to escalate, `stop`, or the node shutting down.
+    /// Someone asked: an interrupt that had to escalate, `stop`, a removed project.
     Requested(String),
+    /// The node is shutting down (SIGTERM).
+    NodeStopping,
     /// The node found the run active on start: it died with the previous node process.
     NodeRestarted,
     /// claude exited or was killed with nobody asking.
     Exited(ExitInfo),
 }
 
-/// Closes every active run of a process that is gone. A run ended by request or by a node restart is
-/// `Interrupted` (its lead decides whether to continue it); an unexplained exit fails the run with the exit code and
-/// claude's stderr. Returns the indexes of the runs it changed.
+impl EndCause {
+    /// Ended on purpose: by someone, or by the node stopping. A run the node is retrying ends with it.
+    pub fn asked(&self) -> bool {
+        matches!(self, Self::Requested(_) | Self::NodeStopping)
+    }
+
+    pub fn end(&self) -> RunEnd {
+        match self {
+            Self::Requested(_) => RunEnd::Requested,
+            Self::NodeStopping => RunEnd::NodeStopping,
+            Self::NodeRestarted => RunEnd::NodeRestarted,
+            Self::Exited(_) => RunEnd::Exited,
+        }
+    }
+
+    /// The reason a request was sent with.
+    pub fn ended_by(&self) -> Option<Text<1, 200>> {
+        match self {
+            Self::Requested(why) => Text::new(head_utf16(why.trim(), 200)).ok(),
+            _ => None,
+        }
+    }
+
+    pub fn message(&self) -> String {
+        match self {
+            Self::Requested(why) => why.clone(),
+            Self::NodeStopping => "the node stopped".into(),
+            Self::NodeRestarted => "node restarted mid-run".into(),
+            Self::Exited(exit) => describe_exit(exit),
+        }
+    }
+}
+
+/// Closes every active run of a process that is gone. A run ended on purpose or by a node restart is `Interrupted`
+/// (its lead decides whether to continue it); an unexplained exit fails the run with the exit code and claude's
+/// stderr. Returns the indexes of the runs it changed.
 pub fn close_out(runs: &mut [RunInfo], cause: &EndCause, at: &Timestamp) -> Vec<usize> {
     let mut changed = Vec::new();
     for (index, run) in runs.iter_mut().enumerate() {
         if !run.status.is_active() {
             continue;
         }
-        let (status, message) = match cause {
-            EndCause::Requested(why) => (RunStatus::Interrupted, why.clone()),
-            EndCause::NodeRestarted => (RunStatus::Interrupted, "node restarted mid-run".into()),
-            EndCause::Exited(exit) => (RunStatus::Failed, describe_exit(exit)),
+        run.status = match cause {
+            EndCause::Exited(_) => RunStatus::Failed,
+            _ => RunStatus::Interrupted,
         };
-        run.status = status;
         run.ended_at = Some(at.clone());
-        run.failure = Some(ended_by(message));
+        run.failure = Some(ended_by(cause.message()));
+        run.end = Some(cause.end());
+        run.ended_by = cause.ended_by();
         changed.push(index);
     }
     changed
+}
+
+/// Why a run claude ended itself (with a `result`, or cut by an interrupt) ended. `asked`: why the node was asked
+/// to end it, if it was; `slept`: the node cut it after the machine woke.
+pub fn run_end(outcome: &RunOutcome, asked: Option<&EndCause>, slept: bool) -> RunEnd {
+    match outcome {
+        RunOutcome::Completed { .. } => RunEnd::Completed,
+        RunOutcome::Superseded { .. } => RunEnd::Superseded,
+        _ if slept => RunEnd::MachineSlept,
+        RunOutcome::Interrupted => asked.map_or(RunEnd::Requested, EndCause::end),
+        RunOutcome::Failed(failure) => failure_end(failure),
+    }
+}
+
+/// The end of a run claude failed.
+pub fn failure_end(failure: &RunFailure) -> RunEnd {
+    match failure.class {
+        FailureClass::UsageLimit | FailureClass::RateLimit | FailureClass::PoolExhausted => {
+            RunEnd::Limited
+        }
+        FailureClass::ProcessExited => RunEnd::Exited,
+        FailureClass::InvalidRequest if failure::context_full_text(&failure.message) => {
+            RunEnd::ContextFull
+        }
+        _ => RunEnd::Failed,
+    }
 }
 
 /// The failure of a run that ended because of `message`: a request, a restart or an exit.
@@ -222,6 +283,8 @@ mod tests {
             failure: None,
             usage: None,
             superseded_by: None,
+            end: None,
+            ended_by: None,
         }
     }
 
@@ -293,6 +356,25 @@ mod tests {
             "node restarted mid-run"
         );
 
+        assert_eq!(runs[0].end, None);
+        assert_eq!(runs[1].end, Some(RunEnd::NodeRestarted));
+        assert_eq!(runs[1].ended_by, None);
+
+        let mut runs = base.clone();
+        close_out(&mut runs, &EndCause::NodeStopping, &at);
+        assert_eq!(runs[1].status, RunStatus::Interrupted);
+        assert_eq!(runs[1].end, Some(RunEnd::NodeStopping));
+        assert_eq!(
+            runs[1].failure.as_ref().unwrap().message.as_str(),
+            "the node stopped"
+        );
+
+        let mut runs = base.clone();
+        close_out(&mut runs, &EndCause::Requested("watchdog".into()), &at);
+        assert_eq!(runs[1].status, RunStatus::Interrupted);
+        assert_eq!(runs[1].end, Some(RunEnd::Requested));
+        assert_eq!(runs[1].ended_by.as_ref().unwrap().as_str(), "watchdog");
+
         let mut runs = base;
         let exit = ExitInfo {
             code: None,
@@ -302,11 +384,115 @@ mod tests {
         close_out(&mut runs, &EndCause::Exited(exit), &at);
         let failure = runs[1].failure.as_ref().unwrap();
         assert_eq!(runs[1].status, RunStatus::Failed);
+        assert_eq!(runs[1].end, Some(RunEnd::Exited));
         assert_eq!(failure.class, FailureClass::ProcessExited);
         assert_eq!(
             failure.message.as_str(),
             "claude was killed by signal 9 before the run ended\n--- stderr tail ---\nboom"
         );
+    }
+
+    #[test]
+    fn a_run_claude_ended_says_why() {
+        let failed = |class, message: &str| {
+            RunOutcome::Failed(RunFailure {
+                class,
+                message: Text::unchecked(message),
+                api_status: None,
+                reset_at: None,
+                retries: 0,
+            })
+        };
+        let completed = RunOutcome::Completed { text: "ok".into() };
+        let stopping = EndCause::NodeStopping;
+        let lead = EndCause::Requested("interrupted through fleetd".into());
+        let cases = [
+            (run_end(&completed, None, false), RunEnd::Completed),
+            // A turn that completed after the machine woke is just completed.
+            (run_end(&completed, None, true), RunEnd::Completed),
+            (
+                run_end(&RunOutcome::Superseded { by: "r2".into() }, None, false),
+                RunEnd::Superseded,
+            ),
+            (
+                run_end(&RunOutcome::Interrupted, Some(&lead), false),
+                RunEnd::Requested,
+            ),
+            (
+                run_end(&RunOutcome::Interrupted, Some(&stopping), false),
+                RunEnd::NodeStopping,
+            ),
+            (
+                run_end(&RunOutcome::Interrupted, None, false),
+                RunEnd::Requested,
+            ),
+            (
+                run_end(&failed(FailureClass::Network, "stream lost"), None, true),
+                RunEnd::MachineSlept,
+            ),
+            (
+                run_end(
+                    &failed(FailureClass::UsageLimit, "You've hit your limit"),
+                    None,
+                    false,
+                ),
+                RunEnd::Limited,
+            ),
+            (
+                run_end(&failed(FailureClass::RateLimit, "429"), None, false),
+                RunEnd::Limited,
+            ),
+            (
+                run_end(
+                    &failed(FailureClass::PoolExhausted, "no account"),
+                    None,
+                    false,
+                ),
+                RunEnd::Limited,
+            ),
+            (
+                run_end(
+                    &failed(FailureClass::InvalidRequest, "Prompt is too long"),
+                    None,
+                    false,
+                ),
+                RunEnd::ContextFull,
+            ),
+            (
+                run_end(
+                    &failed(FailureClass::InvalidRequest, "model not found"),
+                    None,
+                    false,
+                ),
+                RunEnd::Failed,
+            ),
+            (
+                run_end(
+                    &failed(FailureClass::ProcessExited, "claude exited with code 1"),
+                    None,
+                    false,
+                ),
+                RunEnd::Exited,
+            ),
+            (
+                run_end(&failed(FailureClass::Auth, "Not logged in"), None, false),
+                RunEnd::Failed,
+            ),
+            (
+                run_end(&failed(FailureClass::Overloaded, "529"), None, false),
+                RunEnd::Failed,
+            ),
+        ];
+        for (index, (got, want)) in cases.into_iter().enumerate() {
+            assert_eq!(got, want, "case {index}");
+        }
+        assert_eq!(
+            lead.ended_by().unwrap().as_str(),
+            "interrupted through fleetd"
+        );
+        assert_eq!(stopping.ended_by(), None);
+        let long = EndCause::Requested("x".repeat(300));
+        assert_eq!(long.ended_by().unwrap().as_str().len(), 200);
     }
 
     #[test]
