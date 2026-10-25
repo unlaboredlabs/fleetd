@@ -218,6 +218,47 @@ async fn mcp_refuses_requests_without_a_live_key_with_401_and_a_fix() {
     );
 }
 
+/// Claude Code puts `instructions` in the session's system prompt: every session is told to claim work first.
+#[tokio::test]
+async fn initialize_tells_a_session_to_claim_its_work_and_lists_the_work_tools() {
+    let t = start().await;
+    let key = key(&t.hub, json!([{ "role": "operate", "machines": "*" }]));
+    let init = json!({ "jsonrpc": "2.0", "id": 0, "method": "initialize",
+        "params": { "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": { "name": "t", "version": "0" } } });
+    let reply = request(
+        &t.url,
+        &[("authorization", &format!("Bearer {key}"))],
+        &init.to_string(),
+    )
+    .await;
+    let instructions = reply.body["result"]["instructions"].as_str().unwrap();
+    assert_eq!(instructions, crate::hub::mcp::INSTRUCTIONS);
+    for tool in ["work_claim", "work_done", "taken or possible_duplicate"] {
+        assert!(instructions.contains(tool), "{tool}");
+    }
+    let mcp = Mcp::connect(&t.url, &key).await;
+    let listed = mcp.rpc("tools/list", json!({})).await;
+    let tool = |name: &str| {
+        listed["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["name"] == name)
+            .cloned()
+            .unwrap_or_else(|| panic!("{name} listed"))
+    };
+    assert_eq!(tool("work_list")["annotations"]["readOnlyHint"], true);
+    let claim = tool("work_claim");
+    assert!(
+        claim["description"]
+            .as_str()
+            .unwrap()
+            .starts_with("Call before you start a code change")
+    );
+    assert_eq!(claim["inputSchema"]["required"], json!(["title"]));
+    assert!(tool("work_done")["inputSchema"]["properties"]["outcome"].is_object());
+}
+
 #[tokio::test]
 async fn tools_check_the_role_then_the_machine_grant_and_filter_fleet_wide_reads() {
     let t = start().await;

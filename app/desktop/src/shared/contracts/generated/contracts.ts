@@ -662,7 +662,55 @@ export type KnownCiState = "green" | "red" | "pending" | "unknown";
 /** KnownCiState, or a value from a newer hub. */
 export type CiState = KnownCiState | (string & {});
 
+/** Intent fleetd can't otherwise see: a free-text title plus optional exact keys and paths. */
+export type Claim = {
+  /** `git config user.email` of whoever does the work, for matching their direct pushes. */
+  authorEmail?: string;
+  base: string;
+  /** The branch the work is on; its key too. */
+  branch?: string;
+  claimId: ClaimId;
+  createdAt: Timestamp;
+  /** Set once it is no longer active. */
+  end?: ClaimEnd;
+  expiresAt: Timestamp;
+  keys: WorkKey[];
+  observed?: ClaimObserved;
+  owner: ClaimOwner;
+  /** Declared. */
+  paths: string[];
+  /** When the repo is a project's. */
+  projectRef?: ProjectRef;
+  renewedAt: Timestamp;
+  repoKey: RepoKey;
+  state: ClaimState;
+  /** "dark mode toggle in settings". */
+  title: string;
+};
+
+export type ClaimEnd = {
+  at: Timestamp;
+  /** The commit on the base it landed as. */
+  landing?: CommitSha;
+  reason: string;
+};
+
 export type ClaimId = string;
+
+/** What the claim's branch actually changed, refreshed from the remote branch or the CLI. */
+export type ClaimObserved = {
+  at: Timestamp;
+  headSha?: CommitSha;
+  paths: string[];
+};
+
+export type ClaimOwner = {
+  /** The key it called with; a lead's is its project, as `<machineId>/<projectId>`. */
+  keyId: string;
+  kind: ClaimOwnerKind;
+  /** Who it is to a person: "laptop", a git user.email. */
+  label?: string;
+};
 
 export type ClaimOwnerKind = "human_session" | "agent_key" | "lead";
 
@@ -1486,6 +1534,9 @@ export type Marker = {
   /** "+3 items: time inspector added". */
   text: string;
 };
+
+/** How sure the matcher is that new work repeats a piece in flight. */
+export type MatchStrength = "weak" | "strong" | "exact";
 
 /** How a landed change reached the default branch. The fixed order, bottom up on every chart, is the order here. */
 export type KnownMergeRoute = "train" | "fleetd_by_hand" | "outside" | "direct";
@@ -3312,6 +3363,8 @@ export type Task = {
   kind: TaskKind;
   /** M4: its thread hit a usage limit; the task is idle until fleetd sends "continue" at `resumeAt`. */
   parked?: UsageParked;
+  /** The files the lead said a writer will change (`spawn_agent` `paths`), matched against later work. */
+  paths?: string[];
   /** The PR a review task reviews. Required at spawn for review; absent on older rows (hub-spawned judges). */
   pr?: string;
   /** Resolved at spawn. Rows stored with a model and effort read as `high` (the hub migrates its own). */
@@ -3322,6 +3375,8 @@ export type Task = {
   qa?: boolean;
   /** Why it is queued, e.g. "fleet cap: 40 of 40 running". */
   queuedReason?: string;
+  /** Set once a run of it died (its node stopped, claude was killed, a stall) and fleetd resumed it or will. */
+  recovery?: TaskRecovery;
   result?: TaskResult;
   startedAt?: Timestamp;
   state: TaskState;
@@ -3374,6 +3429,28 @@ export type TaskKind = "write" | "read" | "review";
  * the lead, every reviewer and every helper call run; `medium` (effort medium) is for mechanical tasks the lead picks.
  */
 export type TaskProfile = "high" | "medium";
+
+/** A task fleetd resumes on its own after its run died: in the same thread and worktree, with a note to continue. */
+export type TaskRecovery = {
+  /** Automatic recoveries used of `max`; a resumed run that died again before doing anything counts twice. */
+  count: number;
+  /** How its last run ended. */
+  lastCause: RunEnd;
+  /** The same, in plain words: "the node on devbox stopped", "claude was killed by signal 9". */
+  lastCauseText: string;
+  max: number;
+  /** When the resume goes out; absent once it has. */
+  nextAt?: Timestamp;
+  /** When the last resume went out. */
+  resumedAt?: Timestamp;
+  /**
+   * What tells one death from another (its cause, exit and last tool); the same one twice is not resumed again.
+   * Cleared when the lead continues the task itself.
+   */
+  signature?: string;
+  /** Deaths in a row with this signature, the latest one included. */
+  streak: number;
+};
 
 export type TaskResult = {
   at: Timestamp;
@@ -3853,6 +3930,67 @@ export type WorkAction = {
   id: string;
 };
 
+export type WorkClaimInput = {
+  /** A human key only: claim it even though it is taken, with a link to what holds it. */
+  anyway?: boolean;
+  /** `git config user.email`, for knowing its pushes. */
+  authorEmail?: string;
+  /** The branch the work lands on. Absent: the project's, else that of a project on the repo, else "main". */
+  base?: string;
+  /** The branch the work is on. */
+  branch?: string;
+  /** What the branch has changed so far, against the base and uncommitted. */
+  changed?: string[];
+  headSha?: CommitSha;
+  keys?: WorkKey[];
+  /** Ids from a possible_duplicate answer that this work is not. */
+  notDuplicateOf?: string[];
+  /** Why not: needed with notDuplicateOf, and logged. */
+  notDuplicateWhy?: string;
+  /** Files or globs it will touch. */
+  paths?: string[];
+  projectRef?: ProjectRef;
+  /**
+   * The repo's origin remote, in any form: "git@github.com:acme/shop.git", "https://gitlab.example.com/g/shop",
+   * "/srv/git/shop.git". Give it or projectRef.
+   */
+  repo?: string;
+  /** One line: what the change does. */
+  title: string;
+};
+
+export type WorkClaimOutput = {
+  /** Claimed or renewed. */
+  claim?: Claim;
+  /** Work in flight it may repeat, strongest first. */
+  matches: WorkMatch[];
+  /** "claimed C7", "taken by T12 (an agent of devbox/shop): dark mode toggle". */
+  message: string;
+  next?: string;
+  status: WorkClaimStatus;
+  truncated?: boolean;
+  /** No project is bound to the repo yet, so fleetd's agents' work on it may be missing from the matches. */
+  warning?: string;
+};
+
+export type WorkClaimStatus = "claimed" | "renewed" | "taken" | "possible_duplicate" | "yours";
+
+export type WorkDoneInput = {
+  claimId: ClaimId;
+  /** Landed: the commit on the base. */
+  landing?: CommitSha;
+  outcome: WorkDoneOutcome;
+  reason?: string;
+};
+
+export type WorkDoneOutcome = "landed" | "dropped";
+
+export type WorkDoneOutput = {
+  claim: Claim;
+  next?: string;
+  truncated?: boolean;
+};
+
 /** `HubEvent.data` on `work.claimed` and `work.ended`. */
 export type WorkEventData = {
   base: string;
@@ -3866,6 +4004,65 @@ export type WorkEventData = {
   state: ClaimState;
 };
 
+/** One piece of work in flight, from whichever source holds it. */
+export type WorkItem = {
+  changeId?: ChangeId;
+  claimId?: ClaimId;
+  /** "T12", "X4", "C7", "acme/shop#57", "P5". */
+  id: string;
+  keys: WorkKey[];
+  kind: WorkItemKind;
+  /** A claim's owner. */
+  owner?: ClaimOwner;
+  /** Declared and observed, deduplicated. */
+  paths: string[];
+  /** The project whose lead runs it; absent for a claim not tied to one, and for outside PRs. */
+  projectRef?: ProjectRef;
+  /** When it was made, or a claim last renewed. */
+  since: Timestamp;
+  /** Its source's own state: a task's ("running"), a Change's ("ci"), a claim's ("active", "expired"). */
+  state: string;
+  taskId?: TaskId;
+  title: string;
+};
+
+export type WorkItemKind = "claim" | "task" | "change" | "pr" | "planned";
+
+/** An id someone chose on purpose; the same key on two pieces of work means the same work. */
+export type WorkKey = {
+  issue: string;
+} | {
+  item: PlanItemId;
+} | {
+  pr: string;
+} | {
+  branch: string;
+};
+
+export type WorkListInput = {
+  base?: string;
+  projectRef?: ProjectRef;
+  /** The repo's origin remote, in any form. Give it or projectRef. */
+  repo?: string;
+};
+
+export type WorkListOutput = {
+  items: WorkItem[];
+  next?: string;
+  scope: WorkScope;
+  truncated?: boolean;
+  /** No project is bound to the repo yet, so fleetd's agents' work on it may be missing from the items. */
+  warning?: string;
+};
+
+/** A piece of work in flight that new work may repeat, and why the matcher thinks so. */
+export type WorkMatch = {
+  item: WorkItem;
+  strength: MatchStrength;
+  /** "same #42", "3 shared words: dark, mode, toggle; same file app/theme.ts". */
+  why: string;
+};
+
 /** A message the agent or its person wrote. Secrets are replaced by `[secret]`. */
 export type WorkMessage = {
   at: Timestamp;
@@ -3873,6 +4070,12 @@ export type WorkMessage = {
   role: TailRole;
   /** The last 2000 characters of a longer message. */
   text: string;
+};
+
+/** The repo and base branch work lands on: what the in-flight view is read for. */
+export type WorkScope = {
+  base: string;
+  repoKey: RepoKey;
 };
 
 /** One step of an agent's work. */
@@ -4010,6 +4213,9 @@ export interface ToolMap {
   wake_cancel: { input: WakeCancelInput; output: WakeCancelOutput };
   wake_list: { input: WakeListInput; output: WakeListOutput };
   wake_set: { input: WakeSetInput; output: WakeSetOutput };
+  work_claim: { input: WorkClaimInput; output: WorkClaimOutput };
+  work_done: { input: WorkDoneInput; output: WorkDoneOutput };
+  work_list: { input: WorkListInput; output: WorkListOutput };
   workstream_list: { input: WorkstreamListInput; output: WorkstreamListOutput };
 }
 

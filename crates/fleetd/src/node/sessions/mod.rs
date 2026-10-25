@@ -852,9 +852,14 @@ impl SessionService {
             }
             SessionCall::Changes { session_id } => {
                 let row = self.session(&session_id)?;
-                let (cwd, base_ref) = (row.local.cwd.clone(), row.local.base_ref.clone());
+                let (cwd, root) = (row.local.cwd.clone(), row.local.workspace_root.clone());
+                let recorded = row.local.base_ref.clone();
                 let paths = if cwd.is_dir() {
-                    blocking(move || worktree::changes(&cwd, base_ref.as_deref())).await?
+                    blocking(move || {
+                        let base = recorded.map(|b| worktree::changes_base(&root, &b));
+                        worktree::changes(&cwd, base.as_deref())
+                    })
+                    .await?
                 } else {
                     Vec::new()
                 };

@@ -130,6 +130,8 @@ pub struct PromptInput<'a> {
     /// Write tasks: their branch and the branch it starts from.
     pub branch: Option<&'a str>,
     pub base_branch: Option<&'a str>,
+    /// Write tasks: the work in flight elsewhere they may overlap (`duplicates::for_writer`).
+    pub elsewhere: &'a [String],
 }
 
 fn kind_str(kind: TaskKind) -> &'static str {
@@ -168,6 +170,20 @@ pub fn render_task_prompt(set: &PromptSet, input: &PromptInput<'_>) -> String {
     } else {
         format!("\n\n## Workstream\n{}", context.join("\n"))
     };
+    let elsewhere = if input.elsewhere.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\n\n## Elsewhere\nWork in flight that may overlap yours. Don't redo it; if yours is the same work, stop and \
+             ask your lead.\n{}",
+            input
+                .elsewhere
+                .iter()
+                .map(|l| format!("- {}", one_line(l, 300)))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    };
     let vars: &[(&str, &dyn std::fmt::Display)] = &[
         ("taskId", &task.task_id),
         ("kind", &kind_str(task.kind)),
@@ -176,6 +192,7 @@ pub fn render_task_prompt(set: &PromptSet, input: &PromptInput<'_>) -> String {
         ("title", &task.title),
         ("task", &task.prompt.as_str().trim()),
         ("workstream", &workstream),
+        ("elsewhere", &elsewhere),
         ("branch", &input.branch.unwrap_or("<your branch>")),
         (
             "baseBranch",
@@ -247,8 +264,21 @@ pub fn task_digest_lines(tasks: &[Task], since: Option<&str>, now: &str) -> Vec<
         } else {
             "running"
         };
+        // Resumed on its own after a death: the lead needn't continue it.
+        let recovered = t
+            .recovery
+            .as_ref()
+            .filter(|r| r.resumed_at.is_some())
+            .map_or_else(String::new, |r| {
+                format!(
+                    "; resumed automatically after {}, recovery {} of {}",
+                    r.last_cause_text.as_str(),
+                    r.count.get(),
+                    r.max.get()
+                )
+            });
         out.push(format!(
-            "- {} {state} ({}, {}): {}{branch}",
+            "- {} {state} ({}, {}): {}{branch}{recovered}",
             t.task_id,
             kind_str(t.kind),
             t.profile.as_str(),

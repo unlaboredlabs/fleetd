@@ -19,6 +19,14 @@ use std::sync::{Arc, Mutex};
 const PROTOCOLS: [&str; 3] = ["2025-11-25", "2025-06-18", "2025-03-26"];
 const SESSION_HEADER: &str = "mcp-session-id";
 const PROTOCOL_HEADER: &str = "mcp-protocol-version";
+/// `initialize`'s `instructions`: Claude Code puts them in the session's system prompt, so a person's own sessions
+/// check the work ledger before they build something an agent or another session already is.
+pub const INSTRUCTIONS: &str = "fleetd runs agents on this person's repositories and keeps a ledger of the work in \
+flight on each one. Before you start a code change in a git repository, call work_claim with a one-line title of \
+the change, the repo's origin remote (`git remote get-url origin`), its branch, and the paths and issue keys you \
+know. If the answer is taken or possible_duplicate, tell the user what holds it before going on. If it is yours, \
+you are fleetd's own agent on its task's branch: the task already holds the work, so go on. Call work_done when the \
+change lands or you drop it. work_list shows what is in flight on a repo.";
 
 /// The tools/list result, built once from the registry, and the sessions `initialize` opened.
 pub struct McpEndpoint {
@@ -267,6 +275,7 @@ pub async fn handle(
             "protocolVersion": protocol,
             "capabilities": { "logging": {}, "tools": { "listChanged": true }, "completions": {} },
             "serverInfo": { "name": "fleetd", "version": crate::version() },
+            "instructions": INSTRUCTIONS,
         });
         let body = json!({ "jsonrpc": "2.0", "id": id, "result": result });
         return json_response(

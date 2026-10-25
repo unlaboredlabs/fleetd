@@ -58,12 +58,15 @@ Every lead gets these.
 
 ### spawn_agent
 
-Start a fleetd agent (a task) with its own session, slot and lane. kind write|read|review; a writer gets its own worktree and branch; a review task needs pr. profile is high by default; medium is for mechanical work only, and reviews always run high. A full slot board queues it and it starts by itself. The result names the other writers running in the project. Its result arrives in a later wake: end your turn instead of waiting.
+Start a fleetd agent (a task) with its own session, slot and lane. kind write|read|review; a writer gets its own worktree and branch; a review task needs pr. profile is high by default; medium is for mechanical work only, and reviews always run high. A full slot board queues it and it starts by itself. A writer is checked against the work in flight on the repo: one that repeats it is refused (taken, or a possible duplicate); if it is different work, call again with notDuplicateOf and notDuplicateWhy. A person's claim is theirs: ask in chat. The result names the other writers running in the project and the work elsewhere it may overlap. Its result arrives in a later wake: end your turn instead of waiting.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `item` | string | no | The plan item this task works on; refused when it belongs to another order. |
 | `kind` | string | no | Only write tasks get a worktree. One of `write`, `read`, `review`. Default `"write"`. |
+| `notDuplicateOf` | string[] | no | A writer refused as a possible duplicate: the ids it was refused for (`T12`, `C7`), when this is different work. Needs `notDuplicateWhy`. At most 10 items. |
+| `notDuplicateWhy` | string | no | Why it is different work, in one line; kept in the hub's log. At most 200 characters. |
+| `paths` | string[] | no | The files a writer will change, repo-relative (`app/theme.ts`, `app/settings/**`): matched against the work in flight. At most 50 items. |
 | `pr` | string | no |  |
 | `profile` | string | no | What an agent runs on. There are exactly two, both claude-opus-5-5: `high` (effort high) is the default and what the lead, every reviewer and every helper call run; `medium` (effort medium) is for mechanical tasks the lead picks. One of `high`, `medium`. |
 | `prompt` | string | yes | At most 8000 characters. |

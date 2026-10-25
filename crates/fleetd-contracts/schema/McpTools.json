@@ -1725,6 +1725,224 @@
       ],
       "type": "object"
     },
+    "Claim": {
+      "description": "Intent fleetd can't otherwise see: a free-text title plus optional exact keys and paths.",
+      "properties": {
+        "authorEmail": {
+          "description": "`git config user.email` of whoever does the work, for matching their direct pushes.",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "base": {
+          "maxLength": 250,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "branch": {
+          "description": "The branch the work is on; its key too.",
+          "maxLength": 250,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "claimId": {
+          "$ref": "#/$defs/ClaimId"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "end": {
+          "$ref": "#/$defs/ClaimEnd",
+          "description": "Set once it is no longer active."
+        },
+        "expiresAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "keys": {
+          "items": {
+            "$ref": "#/$defs/WorkKey"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "observed": {
+          "$ref": "#/$defs/ClaimObserved"
+        },
+        "owner": {
+          "$ref": "#/$defs/ClaimOwner"
+        },
+        "paths": {
+          "description": "Declared.",
+          "items": {
+            "maxLength": 500,
+            "minLength": 1,
+            "pattern": "^[^\\r\\n]*$",
+            "type": "string"
+          },
+          "maxItems": 50,
+          "type": "array"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "When the repo is a project's."
+        },
+        "renewedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "repoKey": {
+          "$ref": "#/$defs/RepoKey"
+        },
+        "state": {
+          "$ref": "#/$defs/ClaimState"
+        },
+        "title": {
+          "description": "\"dark mode toggle in settings\".",
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "claimId",
+        "repoKey",
+        "base",
+        "owner",
+        "title",
+        "keys",
+        "paths",
+        "state",
+        "createdAt",
+        "renewedAt",
+        "expiresAt"
+      ],
+      "type": "object"
+    },
+    "ClaimEnd": {
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "landing": {
+          "$ref": "#/$defs/CommitSha",
+          "description": "The commit on the base it landed as."
+        },
+        "reason": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "ClaimId": {
+      "pattern": "^C[1-9][0-9]*$",
+      "type": "string"
+    },
+    "ClaimObserved": {
+      "description": "What the claim's branch actually changed, refreshed from the remote branch or the CLI.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "headSha": {
+          "$ref": "#/$defs/CommitSha"
+        },
+        "paths": {
+          "items": {
+            "maxLength": 500,
+            "minLength": 1,
+            "pattern": "^[^\\r\\n]*$",
+            "type": "string"
+          },
+          "maxItems": 200,
+          "type": "array"
+        }
+      },
+      "required": [
+        "paths",
+        "at"
+      ],
+      "type": "object"
+    },
+    "ClaimOwner": {
+      "properties": {
+        "keyId": {
+          "description": "The key it called with; a lead's is its project, as `<machineId>/<projectId>`.",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ClaimOwnerKind"
+        },
+        "label": {
+          "description": "Who it is to a person: \"laptop\", a git user.email.",
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "keyId"
+      ],
+      "type": "object"
+    },
+    "ClaimOwnerKind": {
+      "oneOf": [
+        {
+          "const": "human_session",
+          "description": "A person's own session (Claude Code over MCP, or the CLI).",
+          "type": "string"
+        },
+        {
+          "const": "agent_key",
+          "description": "Anything else holding an agent key.",
+          "type": "string"
+        },
+        {
+          "const": "lead",
+          "description": "A project's lead, holding work in reserve.",
+          "type": "string"
+        }
+      ]
+    },
+    "ClaimState": {
+      "oneOf": [
+        {
+          "enum": [
+            "active"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "landed",
+          "description": "Its work reached the base.",
+          "type": "string"
+        },
+        {
+          "const": "released",
+          "description": "Its owner dropped it.",
+          "type": "string"
+        },
+        {
+          "const": "expired",
+          "description": "Not renewed for `CLAIM_TTL_MS`.",
+          "type": "string"
+        }
+      ]
+    },
     "CloneTarget": {
       "description": "Where a clone would go on a machine, and what is there now.",
       "properties": {
@@ -4026,6 +4244,26 @@
       ],
       "type": "object"
     },
+    "MatchStrength": {
+      "description": "How sure the matcher is that new work repeats a piece in flight.",
+      "oneOf": [
+        {
+          "const": "weak",
+          "description": "Shared words or a shared file: only listed.",
+          "type": "string"
+        },
+        {
+          "const": "strong",
+          "description": "Most words, or words and most files: refused once; `notDuplicateOf` with a reason lets it through.",
+          "type": "string"
+        },
+        {
+          "const": "exact",
+          "description": "The same item (held by someone else), issue, PR or branch: refused.",
+          "type": "string"
+        }
+      ]
+    },
     "McpTools": {
       "properties": {
         "actions_list.input": {
@@ -4364,6 +4602,24 @@
         "wake_set.output": {
           "$ref": "#/$defs/WakeSetOutput"
         },
+        "work_claim.input": {
+          "$ref": "#/$defs/WorkClaimInput"
+        },
+        "work_claim.output": {
+          "$ref": "#/$defs/WorkClaimOutput"
+        },
+        "work_done.input": {
+          "$ref": "#/$defs/WorkDoneInput"
+        },
+        "work_done.output": {
+          "$ref": "#/$defs/WorkDoneOutput"
+        },
+        "work_list.input": {
+          "$ref": "#/$defs/WorkListInput"
+        },
+        "work_list.output": {
+          "$ref": "#/$defs/WorkListOutput"
+        },
         "workstream_list.input": {
           "$ref": "#/$defs/WorkstreamListInput"
         },
@@ -4484,6 +4740,12 @@
         "wake_list.output",
         "wake_set.input",
         "wake_set.output",
+        "work_claim.input",
+        "work_claim.output",
+        "work_done.input",
+        "work_done.output",
+        "work_list.input",
+        "work_list.output",
         "workstream_list.input",
         "workstream_list.output"
       ],
@@ -7795,6 +8057,9 @@
       ],
       "type": "object"
     },
+    "RepoKey": {
+      "type": "string"
+    },
     "RepoStale": {
       "description": "A repo whose reads are failing: its figures stop at `since`, never a silent zero.",
       "properties": {
@@ -9605,6 +9870,18 @@
           "$ref": "#/$defs/UsageParked",
           "description": "M4: its thread hit a usage limit; the task is idle until fleetd sends \"continue\" at `resumeAt`."
         },
+        "paths": {
+          "description": "The files the lead said a writer will change (`spawn_agent` `paths`), matched against later work.",
+          "items": {
+            "maxLength": 500,
+            "minLength": 1,
+            "pattern": "^[^\\r\\n]*$",
+            "type": "string"
+          },
+          "maxItems": 50,
+          "minItems": 1,
+          "type": "array"
+        },
         "pr": {
           "description": "The PR a review task reviews. Required at spawn for review; absent on older rows (hub-spawned judges).",
           "type": "string"
@@ -9631,6 +9908,10 @@
           "maxLength": 200,
           "minLength": 1,
           "type": "string"
+        },
+        "recovery": {
+          "$ref": "#/$defs/TaskRecovery",
+          "description": "Set once a run of it died (its node stopped, claude was killed, a stall) and fleetd resumed it or will."
         },
         "result": {
           "$ref": "#/$defs/TaskResult"
@@ -9766,6 +10047,60 @@
         "medium"
       ],
       "type": "string"
+    },
+    "TaskRecovery": {
+      "description": "A task fleetd resumes on its own after its run died: in the same thread and worktree, with a note to continue.",
+      "properties": {
+        "count": {
+          "description": "Automatic recoveries used of `max`; a resumed run that died again before doing anything counts twice.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "lastCause": {
+          "$ref": "#/$defs/RunEnd",
+          "description": "How its last run ended."
+        },
+        "lastCauseText": {
+          "description": "The same, in plain words: \"the node on devbox stopped\", \"claude was killed by signal 9\".",
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "max": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "nextAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When the resume goes out; absent once it has."
+        },
+        "resumedAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When the last resume went out."
+        },
+        "signature": {
+          "description": "What tells one death from another (its cause, exit and last tool); the same one twice is not resumed again.\nCleared when the lead continues the task itself.",
+          "maxLength": 400,
+          "minLength": 1,
+          "type": "string"
+        },
+        "streak": {
+          "description": "Deaths in a row with this signature, the latest one included.",
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "count",
+        "max",
+        "lastCause",
+        "lastCauseText",
+        "streak"
+      ],
+      "type": "object"
     },
     "TaskResult": {
       "properties": {
@@ -11146,6 +11481,468 @@
       ],
       "type": "object"
     },
+    "WorkClaimInput": {
+      "properties": {
+        "anyway": {
+          "description": "A human key only: claim it even though it is taken, with a link to what holds it.",
+          "type": "boolean"
+        },
+        "authorEmail": {
+          "description": "`git config user.email`, for knowing its pushes.",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "base": {
+          "description": "The branch the work lands on. Absent: the project's, else that of a project on the repo, else \"main\".",
+          "maxLength": 250,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "branch": {
+          "description": "The branch the work is on.",
+          "maxLength": 250,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "changed": {
+          "description": "What the branch has changed so far, against the base and uncommitted.",
+          "items": {
+            "maxLength": 500,
+            "minLength": 1,
+            "pattern": "^[^\\r\\n]*$",
+            "type": "string"
+          },
+          "maxItems": 200,
+          "type": "array"
+        },
+        "headSha": {
+          "$ref": "#/$defs/CommitSha"
+        },
+        "keys": {
+          "items": {
+            "$ref": "#/$defs/WorkKey"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "notDuplicateOf": {
+          "description": "Ids from a possible_duplicate answer that this work is not.",
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "pattern": "^[^\\r\\n]*$",
+            "type": "string"
+          },
+          "maxItems": 10,
+          "minItems": 1,
+          "type": "array"
+        },
+        "notDuplicateWhy": {
+          "description": "Why not: needed with notDuplicateOf, and logged.",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "paths": {
+          "description": "Files or globs it will touch.",
+          "items": {
+            "maxLength": 500,
+            "minLength": 1,
+            "pattern": "^[^\\r\\n]*$",
+            "type": "string"
+          },
+          "maxItems": 50,
+          "type": "array"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "repo": {
+          "description": "The repo's origin remote, in any form: \"git@github.com:acme/shop.git\", \"https://gitlab.example.com/g/shop\",\n\"/srv/git/shop.git\". Give it or projectRef.",
+          "maxLength": 500,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "title": {
+          "description": "One line: what the change does.",
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "type": "object"
+    },
+    "WorkClaimOutput": {
+      "properties": {
+        "claim": {
+          "$ref": "#/$defs/Claim",
+          "description": "Claimed or renewed."
+        },
+        "matches": {
+          "description": "Work in flight it may repeat, strongest first.",
+          "items": {
+            "$ref": "#/$defs/WorkMatch"
+          },
+          "maxItems": 10,
+          "type": "array"
+        },
+        "message": {
+          "description": "\"claimed C7\", \"taken by T12 (an agent of devbox/shop): dark mode toggle\".",
+          "type": "string"
+        },
+        "next": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/WorkClaimStatus"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "warning": {
+          "description": "No project is bound to the repo yet, so fleetd's agents' work on it may be missing from the matches.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "matches",
+        "message"
+      ],
+      "type": "object"
+    },
+    "WorkClaimStatus": {
+      "oneOf": [
+        {
+          "enum": [
+            "claimed"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "renewed",
+          "description": "The caller's own claim on the branch, renewed and updated.",
+          "type": "string"
+        },
+        {
+          "const": "taken",
+          "description": "Someone else holds the same issue, PR, branch or plan item. Not claimed.",
+          "type": "string"
+        },
+        {
+          "const": "possible_duplicate",
+          "description": "Likely the same as work in flight. Not claimed; `notDuplicateOf` says it is different.",
+          "type": "string"
+        },
+        {
+          "const": "yours",
+          "description": "The branch is a fleetd task's own, and an agent key asked: the task's agent on its own work, which fleetd\nalready tracks. Nothing is claimed; go on.",
+          "type": "string"
+        }
+      ]
+    },
+    "WorkDoneInput": {
+      "properties": {
+        "claimId": {
+          "$ref": "#/$defs/ClaimId"
+        },
+        "landing": {
+          "$ref": "#/$defs/CommitSha",
+          "description": "Landed: the commit on the base."
+        },
+        "outcome": {
+          "$ref": "#/$defs/WorkDoneOutcome"
+        },
+        "reason": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "claimId",
+        "outcome"
+      ],
+      "type": "object"
+    },
+    "WorkDoneOutcome": {
+      "oneOf": [
+        {
+          "const": "landed",
+          "description": "It reached the base.",
+          "type": "string"
+        },
+        {
+          "const": "dropped",
+          "description": "Dropped, or left to someone else.",
+          "type": "string"
+        }
+      ]
+    },
+    "WorkDoneOutput": {
+      "properties": {
+        "claim": {
+          "$ref": "#/$defs/Claim"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "claim"
+      ],
+      "type": "object"
+    },
+    "WorkItem": {
+      "description": "One piece of work in flight, from whichever source holds it.",
+      "properties": {
+        "changeId": {
+          "$ref": "#/$defs/ChangeId"
+        },
+        "claimId": {
+          "$ref": "#/$defs/ClaimId"
+        },
+        "id": {
+          "description": "\"T12\", \"X4\", \"C7\", \"acme/shop#57\", \"P5\".",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "keys": {
+          "items": {
+            "$ref": "#/$defs/WorkKey"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "$ref": "#/$defs/WorkItemKind"
+        },
+        "owner": {
+          "$ref": "#/$defs/ClaimOwner",
+          "description": "A claim's owner."
+        },
+        "paths": {
+          "description": "Declared and observed, deduplicated.",
+          "items": {
+            "maxLength": 500,
+            "minLength": 1,
+            "pattern": "^[^\\r\\n]*$",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "The project whose lead runs it; absent for a claim not tied to one, and for outside PRs."
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When it was made, or a claim last renewed."
+        },
+        "state": {
+          "description": "Its source's own state: a task's (\"running\"), a Change's (\"ci\"), a claim's (\"active\", \"expired\").",
+          "maxLength": 40,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        },
+        "title": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "title",
+        "state",
+        "keys",
+        "paths",
+        "since"
+      ],
+      "type": "object"
+    },
+    "WorkItemKind": {
+      "oneOf": [
+        {
+          "enum": [
+            "claim"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "task",
+          "description": "A write task that is queued, running or idle and has no Change yet.",
+          "type": "string"
+        },
+        {
+          "const": "change",
+          "description": "A Change on the merge train that is not merged or abandoned.",
+          "type": "string"
+        },
+        {
+          "const": "pr",
+          "description": "An open PR that isn't fleetd's.",
+          "type": "string"
+        },
+        {
+          "const": "planned",
+          "description": "An open plan item with no live task.",
+          "type": "string"
+        }
+      ]
+    },
+    "WorkKey": {
+      "description": "An id someone chose on purpose; the same key on two pieces of work means the same work.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "\"#123\", \"ABC-123\", or an issue URL.",
+          "properties": {
+            "issue": {
+              "maxLength": 300,
+              "minLength": 1,
+              "pattern": "^[^\\r\\n]*$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "issue"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "item": {
+              "$ref": "#/$defs/PlanItemId"
+            }
+          },
+          "required": [
+            "item"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "pr": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "pr"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "branch": {
+              "maxLength": 250,
+              "minLength": 1,
+              "pattern": "^[^\\r\\n]*$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "branch"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "WorkListInput": {
+      "properties": {
+        "base": {
+          "maxLength": 250,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "repo": {
+          "description": "The repo's origin remote, in any form. Give it or projectRef.",
+          "maxLength": 500,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "WorkListOutput": {
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/WorkItem"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/WorkScope"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "warning": {
+          "description": "No project is bound to the repo yet, so fleetd's agents' work on it may be missing from the items.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "scope",
+        "items"
+      ],
+      "type": "object"
+    },
+    "WorkMatch": {
+      "description": "A piece of work in flight that new work may repeat, and why the matcher thinks so.",
+      "properties": {
+        "item": {
+          "$ref": "#/$defs/WorkItem"
+        },
+        "strength": {
+          "$ref": "#/$defs/MatchStrength"
+        },
+        "why": {
+          "description": "\"same #42\", \"3 shared words: dark, mode, toggle; same file app/theme.ts\".",
+          "type": "string"
+        }
+      },
+      "required": [
+        "strength",
+        "why",
+        "item"
+      ],
+      "type": "object"
+    },
     "WorkMessage": {
       "description": "A message the agent or its person wrote. Secrets are replaced by `[secret]`.",
       "properties": {
@@ -11170,6 +11967,25 @@
         "at",
         "role",
         "text"
+      ],
+      "type": "object"
+    },
+    "WorkScope": {
+      "description": "The repo and base branch work lands on: what the in-flight view is read for.",
+      "properties": {
+        "base": {
+          "maxLength": 250,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "repoKey": {
+          "$ref": "#/$defs/RepoKey"
+        }
+      },
+      "required": [
+        "repoKey",
+        "base"
       ],
       "type": "object"
     },

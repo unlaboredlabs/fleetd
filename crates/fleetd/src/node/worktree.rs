@@ -347,9 +347,16 @@ pub fn changes(cwd: &Path, base_ref: Option<&str>) -> Result<Vec<String>, GitErr
                 .map(str::to_owned),
         );
     }
+    // A query: without optional locks, git doesn't refresh and rewrite the index of the person's own checkout.
     let status = git(
         cwd,
-        &["status", "--porcelain", "-z", "--untracked-files=all"],
+        &[
+            "--no-optional-locks",
+            "status",
+            "--porcelain",
+            "-z",
+            "--untracked-files=all",
+        ],
     )?;
     let mut entries = status.split('\0').filter(|e| !e.is_empty());
     while let Some(entry) = entries.next() {
@@ -363,6 +370,26 @@ pub fn changes(cwd: &Path, base_ref: Option<&str>) -> Result<Vec<String>, GitErr
         }
     }
     Ok(paths.into_iter().collect())
+}
+
+/// What a worktree's changes are measured from: the remote's copy of the branch its PRs target, as last fetched
+/// (by a start's fresh base, or the writer itself), whatever `recorded` (the base it started from) says. A session
+/// that started from a stale local `main`, or a writer that rebased onto a newer base since, then lists only what
+/// it changed. Read-only: it fetches nothing and writes nothing to the person's checkout. `recorded` when there is
+/// no such copy.
+pub fn changes_base(root: &Path, recorded: &str) -> String {
+    let Some(remote) = remote(root) else {
+        return recorded.to_owned();
+    };
+    let name = recorded
+        .strip_prefix(&format!("{remote}/"))
+        .unwrap_or(recorded);
+    let tracking = format!("{remote}/{name}");
+    if ref_sha(root, &format!("refs/remotes/{tracking}")).is_some() {
+        tracking
+    } else {
+        recorded.to_owned()
+    }
 }
 
 /// The remote worktrees are based on: `origin`, else the only remote. A fork's `origin` is where the human pushes and
@@ -1282,6 +1309,82 @@ pub(crate) mod tests {
         let checkout = dir.join("checkout");
         clone(&origin, &checkout);
         (origin, checkout)
+    }
+
+    /// A writer that touched two files lists two, however far main has moved and whichever base its session
+    /// recorded: a stale local `main` (sessions from before fresh bases, or a failed fetch) or the remote's copy.
+    #[test]
+    fn changes_are_measured_from_a_fresh_merge_base_with_the_remote() {
+        let dir = tempfile::tempdir().unwrap();
+        let (origin, checkout) = origin_and_checkout(dir.path());
+        let path = dir.path().join("wt/p1/s1");
+        ensure(&checkout, &path, "fleetd/s1", "origin/main").unwrap();
+        for file in ["app/one.txt", "app/two.txt"] {
+            std::fs::create_dir_all(path.join("app")).unwrap();
+            std::fs::write(path.join(file), "w\n").unwrap();
+        }
+        run(&path, &["add", "."]);
+        run(&path, &["commit", "-q", "-m", "two files"]);
+        // Others land on main, and the writer rebases onto it; the human's local main stays where it was.
+        for file in ["ci.yml", "release.sh", "docs.md"] {
+            land(&origin, "main", file);
+        }
+        run(&path, &["fetch", "-q", "origin"]);
+        run(&path, &["rebase", "-q", "origin/main"]);
+        for file in ["site.html", "three.txt"] {
+            land(&origin, "main", file);
+        }
+
+        assert_eq!(
+            changes(&path, Some("main")).unwrap().len(),
+            5,
+            "against the stale local main, main's own commits count"
+        );
+        for recorded in ["main", "origin/main"] {
+            let base = changes_base(&checkout, recorded);
+            assert_eq!(base, "origin/main", "{recorded}");
+            assert_eq!(
+                changes(&path, Some(&base)).unwrap(),
+                ["app/one.txt", "app/two.txt"],
+                "{recorded}"
+            );
+        }
+    }
+
+    /// Everything a person's checkout keeps that a query could change: its config and every ref.
+    fn checkout_state(root: &Path) -> (String, String) {
+        (
+            git(root, &["config", "--local", "--list"]).unwrap(),
+            git(
+                root,
+                &[
+                    "for-each-ref",
+                    "--format=%(refname) %(objectname) %(symref)",
+                ],
+            )
+            .unwrap(),
+        )
+    }
+
+    /// Asking what a writer changed is a read: it neither fetches into the person's checkout nor sets its remote's
+    /// HEAD, even when the remote has moved and git has no copy of that HEAD.
+    #[test]
+    fn a_changes_query_leaves_the_checkouts_config_and_refs_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let (origin, checkout) = origin_and_checkout(dir.path());
+        let path = dir.path().join("wt/p1/s1");
+        ensure(&checkout, &path, "fleetd/s1", "origin/main").unwrap();
+        std::fs::write(path.join("mine.txt"), "w\n").unwrap();
+        run(&checkout, &["remote", "set-head", "origin", "-d"]);
+        land(&origin, "main", "theirs.txt");
+        let before = checkout_state(&checkout);
+
+        for recorded in ["main", "origin/main"] {
+            let base = changes_base(&checkout, recorded);
+            assert_eq!(base, "origin/main");
+            assert_eq!(changes(&path, Some(&base)).unwrap(), ["mine.txt"]);
+        }
+        assert_eq!(checkout_state(&checkout), before);
     }
 
     #[test]

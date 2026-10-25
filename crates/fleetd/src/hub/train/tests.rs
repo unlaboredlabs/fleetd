@@ -449,6 +449,18 @@ impl FakeGh {
                         .collect(),
                 ))
             }
+            (["compare", range], "GET") if !args.iter().any(|a| a.contains("github.diff")) => {
+                let (from, head) = range.split_once("...").unwrap_or_default();
+                let base = git(&self.origin, &["merge-base", from, head]);
+                let commits = git(
+                    &self.origin,
+                    &["rev-list", "--reverse", &format!("{base}..{head}")],
+                );
+                let commits: Vec<Value> = commits.lines().map(|c| json!({ "sha": c })).collect();
+                ok(
+                    json!({ "merge_base_commit": { "sha": base }, "total_commits": commits.len(), "commits": commits }),
+                )
+            }
             (["compare", range], "GET") => {
                 let diff = git(&self.origin, &["diff", range]);
                 GhOut {
@@ -527,6 +539,14 @@ impl FakeGh {
                     None => http_error(404, "Not Found"),
                 }
             }
+            (["commits", sha], "GET") => GhOut {
+                exit_code: 0,
+                stdout: format!(
+                    "{}\n",
+                    git(&self.origin, &["diff", &format!("{sha}^"), sha])
+                ),
+                stderr: String::new(),
+            },
             (["commits", sha, "check-runs"], _) => {
                 self.moves_during_ci(sha);
                 let poll = {
@@ -604,6 +624,8 @@ struct FakeHost {
     /// Reviewers the real review gate asked for, and the refusal the spawn path answers with, if any.
     review_spawns: Mutex<Vec<ReviewSpawn>>,
     spawn_refusal: Mutex<Option<String>>,
+    /// Tasks cancelled through the host, in order.
+    cancels: Mutex<Vec<String>>,
     /// The workstream is done or stopped.
     ws_closed: Mutex<bool>,
     /// Running write tasks' branches, by task id.
@@ -714,10 +736,29 @@ impl TrainHost for FakeHost {
                 result_tail: None,
             }),
         };
-        if answer.is_ok() {
+        if let Ok(task) = &answer {
             spawns.push(spawn);
+            self.tasks
+                .lock()
+                .unwrap()
+                .insert(task.task_id.to_string(), task.clone());
         }
         Box::pin(async move { answer })
+    }
+    fn cancel_task<'a>(
+        &'a self,
+        _: &'a ProjectRef,
+        _: &'static str,
+        task_id: &'a TaskId,
+        reason: String,
+    ) -> BoxFut<'a, Result<(), String>> {
+        if let Some(task) = self.tasks.lock().unwrap().get_mut(task_id.as_str()) {
+            task.state = "cancelled".into();
+            task.result_tail = Some(reason);
+        }
+        self.cancels.lock().unwrap().push(task_id.to_string());
+        self.push_event("task.cancelled", json!({ "taskId": task_id }));
+        Box::pin(async { Ok(()) })
     }
     fn workstream(&self, workstream_id: &WorkstreamId) -> Option<WorkstreamView> {
         (*workstream_id == ws()).then(|| WorkstreamView {
@@ -806,6 +847,7 @@ struct Kit {
     host: Arc<FakeHost>,
     gate: Arc<FakeGate>,
     train: Arc<Train>,
+    db: Db,
     /// The hub's own review gate, following verdicts, when the kit has it.
     _reviews: Option<Arc<crate::hub::reviews::Reviews>>,
 }
@@ -914,6 +956,7 @@ impl Kit {
             wakes: Mutex::default(),
             review_spawns: Mutex::default(),
             spawn_refusal: Mutex::default(),
+            cancels: Mutex::default(),
             ws_closed: Mutex::default(),
             branches: Mutex::default(),
         });
@@ -930,16 +973,21 @@ impl Kit {
             let (train, reviews) = crate::hub::reviews::service::build(
                 host.clone(),
                 clock.clone(),
-                db,
+                db.clone(),
                 gh.clone(),
                 options,
             );
             reviews.start();
             (train, Some(reviews))
         } else {
-            let train = Train::new(host.clone(), clock.clone(), db, gh.clone(), options, |_| {
-                gate_for_train
-            });
+            let train = Train::new(
+                host.clone(),
+                clock.clone(),
+                db.clone(),
+                gh.clone(),
+                options,
+                |_| gate_for_train,
+            );
             (train, None)
         };
         train.start();
@@ -950,6 +998,7 @@ impl Kit {
             host,
             gate,
             train,
+            db,
             _reviews: reviews,
         }
     }
@@ -2530,6 +2579,340 @@ async fn a_pr_merges_only_on_a_clean_review_of_its_current_patch() {
     );
     assert!(kit.train.step(REPO).await);
     assert_eq!(kit.get(&change.change_id).state, ChangeState::Merged);
+}
+
+/// Waits until `done` holds, as the gate follows events on its own task.
+async fn eventually(what: &str, done: impl Fn() -> bool) {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        while !done() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("never: {what}"));
+}
+
+impl Kit {
+    fn spawned(&self) -> usize {
+        self.host.review_spawns.lock().unwrap().len()
+    }
+
+    /// The task ends as `event` (`task.completed`, ...) says, with `tail` as its last lines.
+    fn end_task(&self, task_id: &str, event: &str, tail: &str) {
+        if let Some(task) = self.host.tasks.lock().unwrap().get_mut(task_id) {
+            task.state = match event {
+                "task.completed" => "done",
+                "task.failed" => "failed",
+                _ => "cancelled",
+            }
+            .into();
+            task.result_tail = Some(tail.into());
+        }
+        self.host.push_event(event, json!({ "taskId": task_id }));
+    }
+
+    /// A PR into main from two commits, its parent's (p.txt) and its own (o.txt), approved at that head. Returns the
+    /// Change, ready, and the approved head.
+    async fn approved_with_its_parent(&self) -> (Change, String) {
+        self.commit("slice-1", &[add("p.txt", "parent\n")], Some("origin/main"));
+        let approved = self.commit("slice-1", &[add("o.txt", "own\n")], None);
+        self.gh
+            .pulls
+            .lock()
+            .unwrap()
+            .insert(7, FakePull::open("slice-1", "main", ""));
+        let pr = format!("https://github.com/{REPO}/pull/7");
+        let change = self.enqueue(pr).await;
+        assert_eq!(self.spawned(), 1);
+        let cursor = self.host.events_head();
+        self.host.push_event(
+            "review.verdict",
+            json!({ "taskId": "T50", "prHeadSha": approved, "blocking": 0, "nonBlocking": 0 }),
+        );
+        self.host.next_event(cursor, "change.ready").await;
+        (change, approved)
+    }
+
+    /// `approved_with_its_parent`, then the parent lands on main as one squash, and the author rebases onto it, which
+    /// drops the parent's commit.
+    async fn approved_then_rebased_past_its_parent(&self) -> (Change, String) {
+        let (change, approved) = self.approved_with_its_parent().await;
+        self.commit("main", &[add("p.txt", "parent\n")], Some("origin/main"));
+        git(&self.author, &["fetch", "-q", "origin"]);
+        git(
+            &self.author,
+            &["checkout", "-q", "-B", "slice-1", &approved],
+        );
+        git(&self.author, &["rebase", "-q", "origin/main"]);
+        (change, approved)
+    }
+
+    fn push_author(&self, branch: &str) -> String {
+        let to = format!("HEAD:refs/heads/{branch}");
+        git(&self.author, &["push", "-q", "--force", "origin", &to]);
+        self.head_of(branch)
+    }
+}
+
+/// A reviewer that ends without a verdict, however it ends, is replaced by a new one for the same head, twice. When
+/// the third ends without one too, no more start and the lead is told once, with the PR and that reviewer's last lines.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_reviewer_that_ends_without_a_verdict_is_retried_twice_then_the_lead_is_told() {
+    let kit = Kit::with_reviews();
+    let pr = kit.open_pr(7, "slice-1", &[add("a1.txt", "a\n")]);
+    let head = kit.head_of("slice-1");
+    let change = kit.enqueue(pr.clone()).await;
+    assert_eq!(kit.spawned(), 1);
+
+    kit.end_task("T50", "task.completed", "Done.");
+    eventually("a second reviewer", || kit.spawned() == 2).await;
+    kit.end_task("T51", "task.cancelled", "Cancelled by the person.");
+    eventually("a third reviewer", || kit.spawned() == 3).await;
+    {
+        let spawns = kit.host.review_spawns.lock().unwrap();
+        assert!(
+            spawns
+                .iter()
+                .all(|s| s.pr == pr && s.prompt.contains(&head))
+        );
+    }
+    let stalled = || {
+        let wakes = kit.host.wakes.lock().unwrap();
+        wakes
+            .iter()
+            .filter(|w| w.contains("not reviewed"))
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    assert!(stalled().is_empty());
+
+    kit.end_task("T52", "task.failed", "reading the diff\nran out of turns");
+    eventually("the lead told", || !stalled().is_empty()).await;
+    let told = stalled();
+    assert_eq!(told.len(), 1);
+    assert!(
+        told[0].starts_with(
+            "- PR #7 not reviewed: 3 reviewers in a row ended without a verdict, the last T52"
+        ) && told[0].contains(&pr)
+            && told[0].ends_with("  > reading the diff\n  > ran out of turns"),
+        "{told:?}"
+    );
+    let parked = kit.get(&change.change_id);
+    assert_eq!(parked.state, ChangeState::Reviewing);
+    assert!(
+        parked
+            .last_error
+            .as_ref()
+            .is_some_and(|e| e.contains("the lead was told")),
+        "{:?}",
+        parked.last_error
+    );
+
+    // Its end seen again starts nothing and tells nobody twice; a verdict that comes after all still counts.
+    kit.end_task("T52", "task.failed", "ran out of turns");
+    let cursor = kit.host.events_head();
+    kit.host.push_event(
+        "review.verdict",
+        json!({ "taskId": "T52", "prHeadSha": head, "blocking": 0, "nonBlocking": 0 }),
+    );
+    kit.host.next_event(cursor, "change.ready").await;
+    assert_eq!(kit.spawned(), 3);
+    assert_eq!(stalled().len(), 1);
+}
+
+/// The lead hears of a stalled review once, even across a hub restart: a fresh gate over the same database tells
+/// nobody again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stalled_review_is_told_once_across_a_restart() {
+    let kit = Kit::with_reviews();
+    let change = kit
+        .enqueue(kit.open_pr(7, "slice-1", &[add("a1.txt", "a\n")]))
+        .await;
+    for (n, task) in ["T50", "T51", "T52"].into_iter().enumerate() {
+        eventually("a reviewer", || kit.spawned() == n + 1).await;
+        kit.end_task(task, "task.completed", "Done.");
+    }
+    let stalled = || {
+        let wakes = kit.host.wakes.lock().unwrap();
+        wakes.iter().filter(|w| w.contains("not reviewed")).count()
+    };
+    eventually("the lead told", || stalled() == 1).await;
+
+    let restarted = crate::hub::reviews::Reviews::new(
+        kit.host.clone(),
+        kit.db.clone(),
+        Arc::downgrade(&kit.train),
+    );
+    let verdict = restarted.again(kit.get(&change.change_id)).await;
+    assert_eq!(verdict, Verdict::Pending);
+    assert_eq!(stalled(), 1);
+    assert_eq!(kit.spawned(), 3);
+}
+
+/// A replacement reviewer the tasks' spawn path refuses (the project's fan-out limit) is started on a later pass of
+/// the train, as soon as it can be.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_refused_replacement_reviewer_starts_on_a_later_pass() {
+    let kit = Kit::with_reviews();
+    let change = kit
+        .enqueue(kit.open_pr(7, "slice-1", &[add("a1.txt", "a\n")]))
+        .await;
+    assert_eq!(kit.spawned(), 1);
+    *kit.host.spawn_refusal.lock().unwrap() = Some(
+        "This project already has 32 open tasks, the most one lead may have at once (32).".into(),
+    );
+    kit.end_task("T50", "task.completed", "Done.");
+    let error = || {
+        kit.get(&change.change_id)
+            .last_error
+            .map(|e| e.to_string())
+            .unwrap_or_default()
+    };
+    eventually("the refusal noted", || {
+        error().contains("could not spawn the reviewer")
+    })
+    .await;
+    kit.train.step(REPO).await;
+    assert_eq!(kit.spawned(), 1, "still refused");
+
+    *kit.host.spawn_refusal.lock().unwrap() = None;
+    kit.train.step(REPO).await;
+    assert_eq!(kit.spawned(), 2);
+    assert!(
+        error().contains("T51 reviews it again (retry 1 of 2)"),
+        "{}",
+        error()
+    );
+    kit.train.step(REPO).await;
+    assert_eq!(kit.spawned(), 2, "one replacement while it runs");
+}
+
+/// A new head while its review runs: the new head's reviewer starts and the old one is cancelled. Whatever the old
+/// one reports later, even on the new head, counts for nothing, and its cancel starts no other reviewer.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_new_head_stops_the_old_heads_reviewer_and_ignores_its_verdict() {
+    let kit = Kit::with_reviews();
+    let writer = kit.running_task("T1", "write");
+    let pr = kit.open_pr(7, "slice-1", &[add("a1.txt", "a\n")]);
+    let change = kit
+        .train
+        .enqueue(
+            &project(),
+            ChangeEnqueueCall {
+                task_id: Some(writer.clone()),
+                ..enqueue_call(pr)
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(kit.spawned(), 1);
+
+    let new_head = kit.commit("slice-1", &[add("a2.txt", "b\n")], None);
+    kit.train.step(REPO).await;
+    assert_eq!(kit.spawned(), 2);
+    assert_eq!(*kit.host.cancels.lock().unwrap(), ["T50"]);
+    let old = kit.host.task(&TaskId::unchecked("T50")).unwrap();
+    assert_eq!(old.state, "cancelled");
+    assert!(old.result_tail.unwrap().contains("Superseded"));
+
+    kit.host.push_event(
+        "review.verdict",
+        json!({ "taskId": "T50", "prHeadSha": new_head, "blocking": 0, "nonBlocking": 0 }),
+    );
+    kit.host.push_event(
+        "review.verdict",
+        json!({ "taskId": "T51", "prHeadSha": new_head, "blocking": 1, "nonBlocking": 0 }),
+    );
+    let (to, text) = kit.host.nth_send(0).await;
+    assert_eq!(to, writer.as_str());
+    assert!(text.contains("T51"), "{text}");
+    assert_eq!(kit.get(&change.change_id).state, ChangeState::Reviewing);
+    assert_eq!(kit.spawned(), 2);
+}
+
+/// A rebase that only drops commits already on the base keeps the approval: the PR's own commits are as reviewed
+/// (`git range-diff` shows them unchanged), so it merges with no second review.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_rebase_that_only_drops_commits_already_on_the_base_keeps_the_approval() {
+    let kit = Kit::with_reviews();
+    let (change, approved) = kit.approved_then_rebased_past_its_parent().await;
+    let rebased = kit.push_author("slice-1");
+    assert_eq!(
+        git(
+            &kit.gh.origin,
+            &["rev-list", "--count", &format!("main..{rebased}")]
+        ),
+        "1",
+        "the parent's commit is gone"
+    );
+
+    kit.train.step(REPO).await;
+    let kept = kit.get(&change.change_id);
+    assert_eq!(kept.state, ChangeState::Ready, "{:?}", kept.last_error);
+    assert_eq!(kept.head_sha.as_str(), rebased);
+    assert_ne!(
+        kept.patch_id, change.patch_id,
+        "the PR-level patch id did change"
+    );
+    let carried = kept.reviews.last().unwrap();
+    assert_eq!(
+        (carried.task_id.as_str(), carried.pr_head_sha.as_str()),
+        ("T50", rebased.as_str())
+    );
+    assert_ne!(rebased, approved);
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change.change_id).state, ChangeState::Merged);
+    assert_eq!(kit.spawned(), 1, "no second review");
+}
+
+/// A new head that drops a commit the base lacks is reviewed again, though its own commits are as approved: approved
+/// at base + A + B, then B alone is pushed onto a base without A.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_new_head_that_drops_a_commit_the_base_lacks_is_reviewed_again() {
+    let kit = Kit::with_reviews();
+    let (change, approved) = kit.approved_with_its_parent().await;
+    git(&kit.author, &["fetch", "-q", "origin"]);
+    git(
+        &kit.author,
+        &["checkout", "-q", "-B", "slice-1", "origin/main"],
+    );
+    git(&kit.author, &["cherry-pick", &approved]);
+    let alone = kit.push_author("slice-1");
+    assert!(kit.main_file("p.txt").is_none(), "the base lacks A");
+    assert_eq!(
+        git(
+            &kit.gh.origin,
+            &["rev-list", "--count", &format!("main..{alone}")]
+        ),
+        "1"
+    );
+
+    kit.train.step(REPO).await;
+    assert_eq!(kit.get(&change.change_id).state, ChangeState::Reviewing);
+    assert_eq!(kit.spawned(), 2);
+    kit.train.step(REPO).await;
+    assert!(merged_prs(&kit).is_empty());
+}
+
+/// A rebase that changes the PR's own diff, as a conflict resolution can, is reviewed again, from the delta.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_rebase_that_changes_the_prs_own_diff_is_reviewed_again() {
+    let kit = Kit::with_reviews();
+    let (change, approved) = kit.approved_then_rebased_past_its_parent().await;
+    std::fs::write(kit.author.join("o.txt"), "own, resolved another way\n").unwrap();
+    git(&kit.author, &["commit", "-q", "-a", "--amend", "--no-edit"]);
+    let rebased = kit.push_author("slice-1");
+
+    kit.train.step(REPO).await;
+    assert_eq!(kit.get(&change.change_id).state, ChangeState::Reviewing);
+    assert_eq!(kit.spawned(), 2);
+    let prompt = kit.host.review_spawns.lock().unwrap()[1].prompt.clone();
+    assert!(
+        prompt.contains(&format!("git range-diff {approved}...{rebased}")),
+        "{prompt}"
+    );
+    kit.train.step(REPO).await;
+    assert!(merged_prs(&kit).is_empty());
 }
 
 /// A Change ready with no clean review of its patch (as a hub from before every PR was reviewed could leave one) is

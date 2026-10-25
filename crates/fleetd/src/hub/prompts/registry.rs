@@ -249,7 +249,7 @@ pub const ENTRIES: &[Entry] = &[
         Task,
         "Writer brief",
         "every write task attempt",
-        "taskId!=T<n>; kind=write; workstreamId=W<n>; project=the project's title; title=the task's title; task!=the lead's task text; workstream=the order's goal and done-when, or nothing; branch!=the task's branch; baseBranch=the default branch",
+        "taskId!=T<n>; kind=write; workstreamId=W<n>; project=the project's title; title=the task's title; task!=the lead's task text; workstream=the order's goal and done-when, or nothing; elsewhere=work in flight elsewhere it may overlap, or nothing; branch!=the task's branch; baseBranch=the default branch",
         &[(
             "train-only-merges",
             "never merges; the train does",
@@ -339,6 +339,16 @@ pub const ENTRIES: &[Entry] = &[
         "Resume after a pause",
         "to a paused agent once a slot frees for it",
         "",
+        &[]
+    ),
+    entry!(
+        "task.recover",
+        Msg,
+        Messages,
+        Task,
+        "Resume after a run died",
+        "to an agent whose run was cut off (its node stopped, claude was killed, a stall), when fleetd resumes it",
+        "cause!=why the run ended, in plain words; doing!=the last thing it did; count!=this recovery's number; max!=the most fleetd makes",
         &[]
     ),
     entry!(
