@@ -3,29 +3,36 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-/// What children get of the node's environment: enough to run, plus the SSH agent and git's SSH command, so git
-/// reaches an SSH remote whose key lives in the agent.
-const PASSED_ENV: [&str; 8] = [
-    "HOME",
-    "PATH",
-    "USER",
-    "LANG",
+/// What children get of the node's environment, so the `CLAUDE*` ones of whatever started the node never leak into
+/// the commands and sessions it runs.
+const BASE_ENV: [&str; 4] = ["HOME", "PATH", "USER", "LANG"];
+/// What git the hub runs on a project (`cmd_check`) also gets: the SSH agent and git's SSH command, so it reaches an
+/// SSH remote whose key lives in the agent. Never claude sessions.
+const GIT_SSH_ENV: [&str; 4] = [
     "SSH_AUTH_SOCK",
     "SSH_AGENT_PID",
     "GIT_SSH_COMMAND",
     "GIT_SSH",
 ];
 
-/// Children get only `PASSED_ENV`, so the `CLAUDE*` ones of whatever started the node never leak into the commands it
-/// runs.
+/// Children get only `BASE_ENV`.
 pub fn scrubbed_env() -> Vec<(String, String)> {
-    passed_env(|key| std::env::var(key).ok())
+    passed_env(&BASE_ENV, |key| std::env::var(key).ok())
 }
 
-fn passed_env(var: impl Fn(&str) -> Option<String>) -> Vec<(String, String)> {
-    PASSED_ENV
-        .into_iter()
-        .filter_map(|key| var(key).map(|value| (key.to_owned(), value)))
+/// `scrubbed_env` plus `GIT_SSH_ENV`, for git the hub runs.
+pub fn git_command_env() -> Vec<(String, String)> {
+    let mut env = scrubbed_env();
+    env.extend(passed_env(&GIT_SSH_ENV, |key| std::env::var(key).ok()));
+    env
+}
+
+pub(crate) fn passed_env(
+    keys: &[&str],
+    var: impl Fn(&str) -> Option<String>,
+) -> Vec<(String, String)> {
+    keys.iter()
+        .filter_map(|key| var(key).map(|value| ((*key).to_owned(), value)))
         .collect()
 }
 
@@ -184,7 +191,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn children_get_the_ssh_agent_and_gits_ssh_command_and_nothing_else() {
+    fn only_git_the_hub_runs_gets_the_ssh_agent_and_gits_ssh_command() {
         let node: std::collections::HashMap<&str, &str> = [
             ("HOME", "/home/me"),
             ("PATH", "/usr/bin"),
@@ -196,22 +203,17 @@ mod tests {
             ("GITHUB_TOKEN", "secret"),
         ]
         .into();
-        let passed = passed_env(|key| node.get(key).map(|v| (*v).to_owned()));
-        let keys: Vec<&str> = passed.iter().map(|(k, _)| k.as_str()).collect();
+        let var = |key: &str| node.get(key).map(|v| (*v).to_owned());
+        let keys = |env: Vec<(String, String)>| env.into_iter().map(|(k, _)| k).collect::<Vec<_>>();
+        assert_eq!(keys(passed_env(&BASE_ENV, var)), ["HOME", "PATH"]);
         assert_eq!(
-            keys,
+            keys(passed_env(&GIT_SSH_ENV, var)),
             [
-                "HOME",
-                "PATH",
                 "SSH_AUTH_SOCK",
                 "SSH_AGENT_PID",
                 "GIT_SSH_COMMAND",
                 "GIT_SSH"
             ]
         );
-        assert!(passed.contains(&(
-            "SSH_AUTH_SOCK".into(),
-            "/run/user/1000/ssh-agent.sock".into()
-        )));
     }
 }

@@ -747,8 +747,8 @@ async fn every_commit_of_a_github_rebase_merge_is_its_prs() {
 }
 
 #[tokio::test]
-async fn a_remote_git_cant_reach_is_told_to_the_lead_once_until_it_reads_again() {
-    let (hub, _clock, _home) = hub();
+async fn a_remote_git_cant_reach_is_told_to_the_lead_once_per_outage() {
+    let (hub, clock, _home) = hub();
     let repo = Repo::new(GITLAB);
     let root = repo.checkout("shop");
     let shop = project(&hub, "devbox", "shop", &root);
@@ -769,7 +769,8 @@ async fn a_remote_git_cant_reach_is_told_to_the_lead_once_until_it_reads_again()
         "told once: the same failure again is not news"
     );
 
-    // Reachable again: the watch starts, and a later failure is told again.
+    // Reachable again: the watch starts. A failure soon after is the same outage (a flaky network); one after an hour
+    // without failures is a new one.
     repo.run(Path::new(&root), &["config", "--unset-all", &rewrite], None);
     let rewrite = format!("url.{}.insteadOf", repo.origin().display());
     repo.run(Path::new(&root), &["config", &rewrite, GITLAB], None);
@@ -777,6 +778,9 @@ async fn a_remote_git_cant_reach_is_told_to_the_lead_once_until_it_reads_again()
     assert!(hub.work.watch(&scope(GITLAB)).unwrap().is_some());
     scan(&hub, &git).await;
     assert_eq!(hub.work.scan_failure(&shop), None);
+    assert!(!hub.work.scan_failed(&shop, "offline"));
+    assert_eq!(hub.work.scan_failure(&shop).as_deref(), Some("offline"));
+    clock.advance(Duration::from_millis(super::OUTAGE_GAP_MS as u64));
     assert!(hub.work.scan_failed(&shop, "offline"));
 }
 

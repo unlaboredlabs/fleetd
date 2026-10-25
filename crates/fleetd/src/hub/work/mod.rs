@@ -107,14 +107,24 @@ pub enum Ending {
     Released,
 }
 
+/// A failure after this long without one is a new outage, told to the lead again.
+pub const OUTAGE_GAP_MS: i64 = 3_600_000;
+
+struct ScanFailure {
+    why: String,
+    at_ms: i64,
+    /// Not read since.
+    failing: bool,
+}
+
 pub struct Work {
     db: Arc<HubDb>,
     events: Arc<EventLog>,
     clock: Arc<dyn Clock>,
     ports: Arc<dyn WorkPorts>,
     landings: OnceLock<Arc<dyn elsewhere::Landings>>,
-    /// Why the landing scanner can't read each project's base, while it can't.
-    scan_failures: Mutex<HashMap<ProjectRef, String>>,
+    /// Each project's last failure to read its base.
+    scan_failures: Mutex<HashMap<ProjectRef, ScanFailure>>,
 }
 
 impl Work {
@@ -257,21 +267,36 @@ impl Work {
         Ok(true)
     }
 
-    /// Notes why the landing scanner can't read the project's base. True the first time for that reason: then its
-    /// lead is told.
+    /// Notes why the landing scanner can't read the project's base. True when this starts an outage, and its lead is
+    /// told: the first failure, or one after `OUTAGE_GAP_MS` without any. A flaky network is one outage.
     pub fn scan_failed(&self, project: &ProjectRef, why: &str) -> bool {
-        let mut failed = self.scan_failures.lock().unwrap();
-        failed.insert(project.clone(), why.to_owned()).as_deref() != Some(why)
+        let now = self.now();
+        let mut failures = self.scan_failures.lock().unwrap();
+        let last = failures.insert(
+            project.clone(),
+            ScanFailure {
+                why: why.to_owned(),
+                at_ms: now,
+                failing: true,
+            },
+        );
+        last.is_none_or(|l| now - l.at_ms >= OUTAGE_GAP_MS)
     }
 
-    /// The scanner read the project's base: a failure after this is told again.
+    /// The scanner read the project's base.
     pub fn scan_ok(&self, project: &ProjectRef) {
-        self.scan_failures.lock().unwrap().remove(project);
+        if let Some(failure) = self.scan_failures.lock().unwrap().get_mut(project) {
+            failure.failing = false;
+        }
     }
 
     /// Why the scanner last failed to read the project's base, while it does.
     pub fn scan_failure(&self, project: &ProjectRef) -> Option<String> {
-        self.scan_failures.lock().unwrap().get(project).cloned()
+        let failures = self.scan_failures.lock().unwrap();
+        failures
+            .get(project)
+            .filter(|f| f.failing)
+            .map(|f| f.why.clone())
     }
 
     pub fn scope_of(&self, project: &ProjectRef) -> Result<Option<WorkScope>, StoreError> {

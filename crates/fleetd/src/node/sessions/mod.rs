@@ -77,6 +77,23 @@ const SHUTDOWN_DRAIN: Duration = Duration::from_secs(10);
 /// After the machine wakes, how long a running claude gets to say anything before its stream counts as lost.
 const WAKE_GRACE: Duration = Duration::from_secs(60);
 
+/// HOME, PATH, USER, LANG and the git identity of the node's environment, `var`: never its SSH agent or anything else.
+pub(crate) fn session_env(var: impl Fn(&str) -> Option<String>) -> Vec<(String, String)> {
+    super::util::passed_env(
+        &[
+            "HOME",
+            "PATH",
+            "USER",
+            "LANG",
+            "GIT_AUTHOR_NAME",
+            "GIT_AUTHOR_EMAIL",
+            "GIT_COMMITTER_NAME",
+            "GIT_COMMITTER_EMAIL",
+        ],
+        var,
+    )
+}
+
 /// Where sessions live and what their processes get.
 #[derive(Clone, Debug)]
 pub struct SessionConfig {
@@ -103,17 +120,7 @@ impl SessionConfig {
     /// the lab only.
     pub fn for_node(home: &Path) -> Self {
         let fleetd = crate::home::fleetd_dir();
-        let mut base_env = super::util::scrubbed_env();
-        for key in [
-            "GIT_AUTHOR_NAME",
-            "GIT_AUTHOR_EMAIL",
-            "GIT_COMMITTER_NAME",
-            "GIT_COMMITTER_EMAIL",
-        ] {
-            if let Ok(value) = std::env::var(key) {
-                base_env.push((key.to_owned(), value));
-            }
-        }
+        let base_env = session_env(|key| std::env::var(key).ok());
         let idle_reap = std::env::var("FLEETD_NODE_IDLE_REAP_SEC")
             .ok()
             .and_then(|s| s.trim().parse().ok())
