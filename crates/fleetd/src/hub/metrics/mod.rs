@@ -1,15 +1,22 @@
 //! Factory metrics' hub area: landed changes folded out of the event log (the train's merges, merges made outside
 //! it, review stamps and order request times), kept past the event log's 30 days for as long as the retention says,
-//! and read as merged per day, order to merged and the share through fleetd by calendar day in the viewer's zone.
+//! and read as merged per day, order to merged, the person's minutes per merged PR and the share through fleetd by
+//! calendar day in the viewer's zone. The person's minutes come from their touches: acts on fleetd's surfaces, and
+//! reviews and comments on the git host.
 //! Repos are keyed by their remote, host first, so nothing here assumes one git host, CI or release cadence. No
 //! polling: the projector wakes on the log's append notification, and the prune runs hourly.
 pub mod compute;
+pub mod host_acts;
+pub mod human;
 pub mod project;
 pub mod store;
 pub mod tools;
+pub mod touches;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod touch_tests;
 
 use std::collections::HashMap;
 use std::sync::Arc;

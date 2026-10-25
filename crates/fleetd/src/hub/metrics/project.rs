@@ -6,6 +6,7 @@
 //!   bot's PR is kept as skipped.
 //! - `change.state`: the first move to `ready` is when its review passed.
 //! - `workstream.created`: the order's request time, for rows that landed before it was known.
+//! - the person's acts on fleetd's surfaces, and their merges by hand, as touches (`touches.rs`).
 //!
 //! What a fold needs from the other areas' tables (the Change, the order, the train) is read before the transaction,
 //! as `leads::requested` reads on its own connection.
@@ -19,16 +20,21 @@ use fleetd_contracts::train::{Change, ChangeState};
 use rusqlite::{Connection, OptionalExtension, params};
 
 use super::store::{self, MergeRow};
+use super::touches;
 use crate::hub::api::Hub;
 use crate::hub::leads::requested;
 use crate::hub::store::{HubDb, StoreError, parse_ms};
 
 const CURSOR: &str = "metrics:events";
-const TYPES: [HubEventType; 4] = [
+const TYPES: [HubEventType; 8] = [
     HubEventType::PrMerged,
     HubEventType::PrMergedOutside,
     HubEventType::ChangeState,
     HubEventType::WorkstreamCreated,
+    HubEventType::ChatMessage,
+    HubEventType::RequestUpdated,
+    HubEventType::SteerQueued,
+    HubEventType::DecisionRecorded,
 ];
 /// The branches fleetd's write tasks push: `fleetd/T<n>-…`.
 const FLEETD_BRANCH: &str = "fleetd/";
@@ -76,17 +82,21 @@ pub fn step(
     if page.events.is_empty() && page.cursor == cursor {
         return Ok((cursor, page.more));
     }
-    let folds = page
-        .events
-        .iter()
-        .map(|e| resolve(db, e))
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut folds = Vec::new();
+    for e in &page.events {
+        let fold = resolve(db, e)?;
+        if let Some(Fold::Merge(m)) = &fold {
+            folds.extend(touches::merged_by_hand(m).map(|t| Fold::Touch(Box::new(t))));
+        }
+        folds.extend(fold);
+        folds.extend(touches::of_event(db, e)?.map(|t| Fold::Touch(Box::new(t))));
+    }
     let first_ms = page.events.first().and_then(|e| parse_ms(e.at.as_str()));
     db.transaction(|c| {
         if cursor == 0 {
             known_since(c, first_ms)?;
         }
-        for fold in folds.iter().flatten() {
+        for fold in &folds {
             write(c, fold)?;
         }
         // A catch-up beside the loop may have saved a later cursor: never move it back.
@@ -130,9 +140,10 @@ enum Fold {
         at_ms: i64,
         basis: &'static str,
     },
+    Touch(Box<store::TouchRow>),
 }
 
-fn data<T: serde::de::DeserializeOwned>(e: &HubEvent) -> Option<T> {
+pub(super) fn data<T: serde::de::DeserializeOwned>(e: &HubEvent) -> Option<T> {
     let decoded = e.data.clone().map(serde_json::from_value).transpose();
     decoded.unwrap_or_else(|error| {
         tracing::warn!(seq = e.seq.get(), %error, "metrics: event data not read");
@@ -348,6 +359,7 @@ fn write(c: &Connection, fold: &Fold) -> Result<(), StoreError> {
             at_ms,
             basis,
         } => store::set_requested(c, workstream_id, *at_ms, basis),
+        Fold::Touch(t) => store::upsert_touch(c, t),
     }
 }
 

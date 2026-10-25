@@ -292,3 +292,133 @@ pub fn repos(conn: &Connection) -> Result<Vec<RepoRow>, StoreError> {
         .collect::<Result<_, _>>()?;
     Ok(rows)
 }
+
+/// One act by the person, as the projector or a git host read saw it. Idempotent on `(src, src_key)`.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TouchRow {
+    /// Where it was read: "chat", "request", "steer", "decision", "order", "merge" or "host".
+    pub src: String,
+    pub src_key: String,
+    /// `TouchKind::as_str`.
+    pub kind: String,
+    /// When the act was recorded; the act itself took the `credit_ms` before it.
+    pub at_ms: i64,
+    pub credit_ms: i64,
+    /// An interval observed as it is (app use): `[at_ms, end_ms]`, and the credit is its length.
+    pub end_ms: Option<i64>,
+    pub machine_id: Option<String>,
+    pub project_id: Option<String>,
+    pub repo: Option<String>,
+    pub workstream_id: Option<String>,
+    pub pr_number: Option<i64>,
+    /// The name of the key that made it.
+    pub key_id: Option<String>,
+    /// The credit is estimated from a floor (reviews), not observed.
+    pub estimated: bool,
+    /// On work fleetd didn't write: it counts toward the outside figure.
+    pub outside: bool,
+}
+
+/// Writes a touch; a later read of the same act replaces what an earlier one said.
+pub fn upsert_touch(conn: &Connection, t: &TouchRow) -> Result<(), StoreError> {
+    conn.prepare_cached(
+        "INSERT INTO metric_touches (src, src_key, kind, at_ms, credit_ms, end_ms, machine_id, project_id, repo,
+           workstream_id, pr_number, key_id, estimated, outside)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+         ON CONFLICT(src, src_key) DO UPDATE SET kind = excluded.kind, at_ms = excluded.at_ms,
+           credit_ms = excluded.credit_ms, end_ms = excluded.end_ms,
+           machine_id = COALESCE(excluded.machine_id, machine_id),
+           project_id = COALESCE(excluded.project_id, project_id), repo = COALESCE(excluded.repo, repo),
+           workstream_id = COALESCE(excluded.workstream_id, workstream_id),
+           pr_number = COALESCE(excluded.pr_number, pr_number), key_id = COALESCE(excluded.key_id, key_id),
+           estimated = excluded.estimated, outside = excluded.outside",
+    )?
+    .execute(params![
+        t.src,
+        t.src_key,
+        t.kind,
+        t.at_ms,
+        t.credit_ms,
+        t.end_ms,
+        t.machine_id,
+        t.project_id,
+        t.repo,
+        t.workstream_id,
+        t.pr_number,
+        t.key_id,
+        t.estimated,
+        t.outside,
+    ])?;
+    Ok(())
+}
+
+/// Every touch recorded in `[since, until)`, oldest first.
+pub fn touches(
+    conn: &Connection,
+    since_ms: i64,
+    until_ms: i64,
+) -> Result<Vec<TouchRow>, StoreError> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT src, src_key, kind, at_ms, credit_ms, end_ms, machine_id, project_id, repo, workstream_id, pr_number,
+           key_id, estimated, outside
+         FROM metric_touches WHERE at_ms >= ?1 AND at_ms < ?2 ORDER BY at_ms, id",
+    )?;
+    let rows = stmt
+        .query_map(params![since_ms, until_ms], |r| {
+            Ok(TouchRow {
+                src: r.get(0)?,
+                src_key: r.get(1)?,
+                kind: r.get(2)?,
+                at_ms: r.get(3)?,
+                credit_ms: r.get(4)?,
+                end_ms: r.get(5)?,
+                machine_id: r.get(6)?,
+                project_id: r.get(7)?,
+                repo: r.get(8)?,
+                workstream_id: r.get(9)?,
+                pr_number: r.get(10)?,
+                key_id: r.get(11)?,
+                estimated: r.get(12)?,
+                outside: r.get(13)?,
+            })
+        })?
+        .collect::<Result<_, _>>()?;
+    Ok(rows)
+}
+
+/// Where a repo's reviews and comments were last read up to.
+pub fn reviews_cursor(conn: &Connection, repo: &str) -> Result<Option<i64>, StoreError> {
+    Ok(conn
+        .prepare_cached("SELECT reviews_cursor_ms FROM metric_repos WHERE repo = ?1")?
+        .query_row([repo], |r| r.get(0))
+        .optional()?
+        .flatten())
+}
+
+pub fn set_reviews_cursor(conn: &Connection, repo: &str, at_ms: i64) -> Result<(), StoreError> {
+    conn.prepare_cached(
+        "UPDATE metric_repos SET reviews_cursor_ms = MAX(COALESCE(reviews_cursor_ms, 0), ?2) WHERE repo = ?1",
+    )?
+    .execute(params![repo, at_ms])?;
+    Ok(())
+}
+
+/// The person's own git host logins and emails, lowercased: only their reviews, comments and merges are their time.
+pub fn identities(conn: &Connection) -> Result<Vec<String>, StoreError> {
+    let mut stmt =
+        conn.prepare_cached("SELECT identity FROM metric_identities ORDER BY identity")?;
+    let rows = stmt
+        .query_map([], |r| r.get(0))?
+        .collect::<Result<_, _>>()?;
+    Ok(rows)
+}
+
+/// Records one of the person's identities; `src` says where it was learned (the host's signed-in login, a setting).
+pub fn add_identity(conn: &Connection, identity: &str, src: &str) -> Result<(), StoreError> {
+    conn.prepare_cached(
+        "INSERT INTO metric_identities (identity, src) VALUES (?1, ?2)
+         ON CONFLICT(identity) DO UPDATE SET src = excluded.src",
+    )?
+    .execute(params![identity.trim().to_lowercase(), src])?;
+    Ok(())
+}

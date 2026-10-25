@@ -1,23 +1,25 @@
 //! The figures, pure: stored rows + range + zone → tiles, calendar days, the merge list and per-repo rows. Days are
 //! calendar days in the viewer's zone and empty ones count: "per day" is a rate over the range. Medians and p90 don't
-//! add across days, so everything is computed from rows on each read.
-use std::collections::{BTreeMap, BTreeSet};
+//! add across days, so everything is computed from rows on each read. The person's minutes are sessionized over the
+//! whole period (`human.rs`) and then cut by day, so a session across midnight counts once.
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use chrono::{Days, NaiveDate, TimeZone as _};
 use chrono_tz::Tz;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, Timestamp};
 use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::metrics::{
-    ActorKind, HumanTile, LocalDate, MergeRoute, MergedTile, MetricsDay, MetricsMerge,
+    ActorKind, HumanSource, HumanTile, LocalDate, MergeRoute, MergedTile, MetricsDay, MetricsMerge,
     MetricsRepoRow, MetricsTiles, OrderToMergedTile, RemoteRepo, RequestedBasis, RouteCounts,
-    RouteLines, SkipCount, SkipWhy, Spark, SparkPoint, ThroughFleetdTile,
+    RouteLines, SkipCount, SkipWhy, SourceMs, Spark, SparkPoint, ThroughFleetdTile,
 };
 use fleetd_contracts::prim::{Count, Line, List, NonNegative, Positive, Text};
 use fleetd_contracts::tasks::TaskId;
 use fleetd_contracts::train::ChangeId;
 use fleetd_contracts::verification::CommitSha;
 
-use super::store::{MergeRow, SKIPPED};
+use super::human::{self, Minutes, Span};
+use super::store::{MergeRow, SKIPPED, TouchRow};
 use crate::hub::store::iso_ms;
 
 /// The day list's bound: a range is clamped to this many calendar days in its zone.
@@ -282,16 +284,67 @@ fn per_day(s: &Stats, days: &[Day]) -> f64 {
     if w > 0.0 { s.n() as f64 / w } else { 0.0 }
 }
 
-/// A range's rows (landed and skipped) and days, and whether the figures before it were read.
+/// A range's rows (landed and skipped), the person's touches around it, and its days.
 pub struct Period<'a> {
     pub rows: &'a [MergeRow],
+    /// Cut to the days: one recorded just after the range may have started in it.
+    pub touches: &'a [TouchRow],
     pub days: &'a [Day],
+}
+
+impl Period<'_> {
+    fn bounds(&self) -> (i64, i64) {
+        (
+            self.days.first().map_or(0, |d| d.start),
+            self.days.last().map_or(0, |d| d.end),
+        )
+    }
+
+    /// The spans of the touches `keep` admits, cut to the period.
+    fn spans(&self, keep: impl Fn(&TouchRow) -> bool) -> Vec<Span> {
+        let (from, to) = self.bounds();
+        human::clip(
+            self.touches.iter().filter(|t| keep(t)).map(human::span),
+            from,
+            to,
+        )
+    }
+}
+
+/// The person's minutes over a period: on fleetd work, and on outside work.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct HumanMinutes {
+    pub fleetd: Minutes,
+    pub outside: Minutes,
+    /// The fleetd work's sessions, for the sparkline's slices.
+    pub fleetd_pieces: Vec<Span>,
+}
+
+pub fn human_minutes(p: &Period) -> HumanMinutes {
+    let fleetd = p.spans(|t| !t.outside);
+    HumanMinutes {
+        fleetd: human::minutes(&fleetd),
+        outside: human::minutes(&p.spans(|t| t.outside)),
+        fleetd_pieces: human::sessions(&fleetd, human::BRIDGE_MS),
+    }
+}
+
+/// Minutes over landed changes; none when there are no changes.
+fn per_pr(ms: i64, prs: i64) -> Option<Count> {
+    (prs > 0).then(|| count(ms / prs))
 }
 
 /// The KPI row. `previous` is the period of the same length before, when its merges were known.
 pub fn tiles(cur: &Period, previous: Option<&Period>) -> MetricsTiles {
     let s = Stats::of(cur.rows);
     let prev = previous.map(|p| (Stats::of(p.rows), p.days));
+    let h = human_minutes(cur);
+    let prev_per_pr = previous.and_then(|p| {
+        per_pr(
+            human_minutes(p).fleetd.total_ms,
+            Stats::of(p.rows).made_by_fleetd(),
+        )
+    });
     let ms = |v: Option<i64>| v.map(count);
     MetricsTiles {
         merged: MergedTile {
@@ -313,17 +366,29 @@ pub fn tiles(cur: &Period, previous: Option<&Period>) -> MetricsTiles {
                 median(&s.order_ms).map(|m| m as f64)
             }),
         },
-        // The person's minutes come with the touches (metrics PR 4): none are counted yet.
         human: HumanTile {
-            per_pr_ms: None,
-            total_ms: count(0),
-            low_ms: count(0),
+            per_pr_ms: per_pr(h.fleetd.total_ms, s.made_by_fleetd()),
+            total_ms: count(h.fleetd.total_ms),
+            low_ms: count(h.fleetd.low_ms),
             prs: count(s.made_by_fleetd()),
-            outside_per_pr_ms: None,
-            outside_total_ms: count(0),
+            outside_per_pr_ms: per_pr(h.outside.total_ms, s.no_order()),
+            outside_total_ms: count(h.outside.total_ms),
             outside_prs: count(s.no_order()),
-            previous_per_pr_ms: None,
-            spark: List::unchecked(Vec::new()),
+            previous_per_pr_ms: prev_per_pr,
+            spark: List::unchecked(
+                slices(cur.days)
+                    .into_iter()
+                    .map(|slice| {
+                        let (from, to) = (slice[0].start, slice[slice.len() - 1].end);
+                        let ms = human::within(&h.fleetd_pieces, from, to);
+                        let prs = Stats::of(in_days(cur.rows, slice)).made_by_fleetd();
+                        SparkPoint {
+                            since: ts(from),
+                            value: per_pr(ms, prs).map(|v| number(v.get() as f64)),
+                        }
+                    })
+                    .collect(),
+            ),
         },
         through_fleetd: ThroughFleetdTile {
             pct: s.pct().map(number),
@@ -347,8 +412,10 @@ pub fn tiles(cur: &Period, previous: Option<&Period>) -> MetricsTiles {
     }
 }
 
-/// Every day of the period, empty ones too: merges by route, and merges not counted by why.
+/// Every day of the period, empty ones too: merges by route, merges not counted by why, and the person's minutes by
+/// source. The minutes are every touch fleetd saw, fleetd work and outside work together, so they count once.
 pub fn day_list(p: &Period) -> Vec<MetricsDay> {
+    let pieces = human::sessions(&p.spans(|_| true), human::BRIDGE_MS);
     p.days
         .iter()
         .map(|d| {
@@ -370,7 +437,30 @@ pub fn day_list(p: &Period) -> Vec<MetricsDay> {
                         .map(|(why, n)| SkipCount { why, n: count(n) })
                         .collect(),
                 ),
-                human: List::unchecked(Vec::new()),
+                human: List::unchecked(
+                    HumanSource::ALL
+                        .iter()
+                        .filter_map(|source| {
+                            let mine: Vec<Span> = pieces
+                                .iter()
+                                .filter(|s| s.source == *source)
+                                .copied()
+                                .collect();
+                            let ms = human::within(&mine, d.start, d.end);
+                            let touches = p
+                                .touches
+                                .iter()
+                                .filter(|t| t.at_ms >= d.start && t.at_ms < d.end)
+                                .filter(|t| human::span(t).source == *source)
+                                .count() as i64;
+                            (ms > 0 || touches > 0).then(|| SourceMs {
+                                source: *source,
+                                ms: count(ms),
+                                touches: count(touches),
+                            })
+                        })
+                        .collect(),
+                ),
             }
         })
         .collect()
@@ -383,8 +473,21 @@ fn project_ref(machine: &str, project: &str) -> Option<ProjectRef> {
     })
 }
 
+/// The person's touches on each PR: (repo, PR number) → touches.
+pub type PrTouches = HashMap<(String, i64), i64>;
+
+pub fn pr_touches(touches: &[TouchRow]) -> PrTouches {
+    let mut out = PrTouches::new();
+    for t in touches {
+        if let (Some(repo), Some(pr)) = (&t.repo, t.pr_number) {
+            *out.entry((repo.clone(), pr)).or_default() += 1;
+        }
+    }
+    out
+}
+
 /// One landed change for the list; `None` for a skipped merge or a row this build can't name.
-pub fn merge_item(row: &MergeRow) -> Option<MetricsMerge> {
+pub fn merge_item(row: &MergeRow, touches: &PrTouches) -> Option<MetricsMerge> {
     let route = route_of(row)?;
     let project_ref = row
         .machine_id
@@ -425,7 +528,12 @@ pub fn merge_item(row: &MergeRow) -> Option<MetricsMerge> {
         merged_by: actor_of(row.merged_by_kind.as_deref()),
         additions: row.additions.map(count),
         deletions: row.deletions.map(count),
-        touches: count(0),
+        touches: count(
+            row.pr_number
+                .and_then(|pr| touches.get(&(row.repo.clone(), pr)))
+                .copied()
+                .unwrap_or(0),
+        ),
         seen_claim: row.seen_claim.as_deref().and_then(|c| Line::new(c).ok()),
     })
 }
@@ -440,6 +548,18 @@ pub fn repo_rows(
         .filter_map(|(repo, refs)| {
             let rows: Vec<MergeRow> = p.rows.iter().filter(|r| &r.repo == repo).cloned().collect();
             let s = Stats::of(&rows);
+            // A touch on the repo, or one with no repo in a project that has it checked out.
+            let spans = p.spans(|t| {
+                !t.outside
+                    && match &t.repo {
+                        Some(r) => r == repo,
+                        None => t
+                            .machine_id
+                            .clone()
+                            .zip(t.project_id.clone())
+                            .is_some_and(|mp| refs.contains(&mp)),
+                    }
+            });
             Some(MetricsRepoRow {
                 repo: RemoteRepo::new(repo).ok()?,
                 projects: List::unchecked(
@@ -451,7 +571,7 @@ pub fn repo_rows(
                 merged_per_day: number(per_day(&s, p.days)),
                 n: count(s.n()),
                 order_to_merged_median_ms: median(&s.order_ms).map(count),
-                human_per_pr_ms: None,
+                human_per_pr_ms: per_pr(human::minutes(&spans).total_ms, s.made_by_fleetd()),
                 through_fleetd_pct: s.pct().map(number),
                 spark: spark(&rows, p.days, |s, d| Some(per_day(s, d))),
             })
