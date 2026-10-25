@@ -10,9 +10,10 @@ use fleetd_contracts::mcp::ErrorCode;
 use super::digest::{clip, state_text};
 use super::error::LeadError;
 use super::records::{LeadRecords, NewWorkstream, WorkstreamFilter, is_closed};
+use super::requested::{self, Requested, RequestedBasis};
 use super::wakes::{LeadWakes, Trigger};
 use super::{Ctx, now_iso};
-use crate::hub::store::NewEvent;
+use crate::hub::store::{NewEvent, now_ms, parse_ms};
 
 pub struct IntakeInput {
     pub project_ref: ProjectRef,
@@ -124,6 +125,9 @@ impl Workstreams {
             client_request_id: Some(input.client_request_id),
         })?;
         let id = workstream.workstream_id.clone();
+        if created && input.channel == IntakeChannel::Lead {
+            self.stamp_requested(&workstream)?;
+        }
         if created {
             self.event(
                 &workstream,
@@ -152,6 +156,28 @@ impl Workstreams {
             workstream_id: id,
             next,
         })
+    }
+
+    /// An order the lead opens was asked for at the earliest human message of the run that opens it, else when it
+    /// opened.
+    fn stamp_requested(&self, w: &Workstream) -> Result<(), LeadError> {
+        let r = &w.project_ref;
+        let now = now_ms(self.ctx.clock.as_ref());
+        let human = match self.records.lead_get(r)? {
+            Some(lead) => requested::run_human_ms(&self.ctx.db, r, &lead.thread_id, now)?,
+            None => None,
+        };
+        let stamp = match human {
+            Some(at_ms) => Requested {
+                at_ms,
+                basis: RequestedBasis::Chat,
+            },
+            None => Requested {
+                at_ms: parse_ms(w.created_at.as_str()).unwrap_or(now),
+                basis: RequestedBasis::Opened,
+            },
+        };
+        Ok(requested::set(&self.ctx.db, w, stamp)?)
     }
 
     /// `fleetd brief create` from the lead of `caller`: sets the brief of a draft and starts it, or edits it. Every
