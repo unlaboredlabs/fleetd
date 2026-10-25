@@ -382,3 +382,10 @@
   gap: var(--space-4);
   min-width: 0;
 }
+.notes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: var(--space-4);
+}

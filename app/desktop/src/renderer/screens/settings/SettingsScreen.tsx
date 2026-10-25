@@ -1,9 +1,10 @@
-// Settings (⌘, or the app menu): General, Notifications, Agents (Max agents), Instructions and Prompts. The route picks the page
+// Settings (⌘, or the app menu): General, Notifications, Agents (Max agents), Instructions, Memory and Prompts. The route picks the page
 // (#/settings/<tab>); see route.ts for the links into one prompt. The shell shows SettingsSidebar in the sidebar's
 // place while Settings is open.
 import { AgentsSettings } from "./Agents";
 import { General } from "./General";
 import { Instructions } from "./Instructions";
+import { Memory } from "./Memory";
 import { Notifications } from "./Notifications";
 import { Prompts } from "./Prompts";
 import { useSettingsRoute } from "./route";
@@ -23,6 +24,8 @@ export function SettingsScreen() {
         <AgentsSettings />
       ) : route.tab === "prompts" ? (
         <Prompts route={route} />
+      ) : route.tab === "memory" ? (
+        <Memory route={route} />
       ) : (
         <Instructions route={route} />
       )}

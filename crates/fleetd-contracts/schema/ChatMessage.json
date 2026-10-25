@@ -224,6 +224,10 @@
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
         },
+        "remembered": {
+          "$ref": "#/$defs/RememberedItem",
+          "description": "A system line \"Remembered: …\": what the lead's `remember` wrote, which `memory_undo` takes back."
+        },
         "seq": {
           "maximum": 9007199254740991,
           "minimum": 0,
@@ -425,6 +429,25 @@
       "pattern": "^[a-z0-9-]{1,32}$",
       "type": "string"
     },
+    "MemoryScope": {
+      "oneOf": [
+        {
+          "const": "user",
+          "description": "`user.md`: how the human works across every project.",
+          "type": "string"
+        },
+        {
+          "const": "project",
+          "description": "This project's `MEMORY.md`, or one of its topic files.",
+          "type": "string"
+        }
+      ]
+    },
+    "MemoryTopic": {
+      "description": "Lowercase slug, [a-z0-9][a-z0-9-]{0,47}, other than memory",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,47}$",
+      "type": "string"
+    },
     "ProjectId": {
       "type": "string"
     },
@@ -440,6 +463,38 @@
       "required": [
         "machineId",
         "projectId"
+      ],
+      "type": "object"
+    },
+    "RememberedItem": {
+      "description": "What a `remember` call wrote, as a line in the project's chat. Undone with `memory_undo`.",
+      "properties": {
+        "replaced": {
+          "description": "The whole entry it replaced, which Undo puts back.",
+          "maxLength": 1000,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/MemoryScope"
+        },
+        "text": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "topic": {
+          "$ref": "#/$defs/MemoryTopic"
+        },
+        "undone": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "scope",
+        "text"
       ],
       "type": "object"
     },

@@ -638,6 +638,12 @@ fn example(role: Role, tool: &str) -> Option<Value> {
             "why": "The limiter needs a shared store.",
         }),
         (Role::Lead, "decisions_search") => json!({ "query": "pagination" }),
+        (Role::Lead, "remember") => json!({
+            "scope": "project",
+            "text": "No npm here: use pnpm.",
+            "replaces": "Use npm",
+        }),
+        (Role::Lead, "memory_read") => json!({ "topic": "deploys" }),
         (Role::Lead, "change_enqueue") => json!({
             "prUrl": "https://github.com/acme/shop/pull/42",
             "workstreamId": "W3",

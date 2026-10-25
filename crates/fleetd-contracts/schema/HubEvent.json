@@ -329,6 +329,11 @@
           "const": "work.landed",
           "description": "A commit reached a watched base, by the train, a PR merged outside it or a direct push; `data` is\n`work::WorkLandedData`.",
           "type": "string"
+        },
+        {
+          "const": "memory.changed",
+          "description": "A memory file changed (a lead's `remember`, an Undo, an edit in the app): `data.scope`, `data.projectRef`\n(project scope), `data.topic`, `data.by`. The text is not in the event; memory_get reads it.",
+          "type": "string"
         }
       ],
       "x-open": true

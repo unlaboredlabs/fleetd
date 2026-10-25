@@ -17,6 +17,7 @@ pub mod lead_calls;
 pub mod ledger;
 pub mod live;
 pub mod mcp;
+pub mod memory;
 pub mod metrics;
 pub mod model;
 pub mod node_link;

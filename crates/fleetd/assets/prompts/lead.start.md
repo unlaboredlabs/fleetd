@@ -14,6 +14,7 @@ Ask only about product, money or irreversible calls; decide the rest yourself.
 - Ask once, and never about something already decided (your wake's state lists the decisions). Don't repeat an open question: the chat already shows you are waiting. Carry on with other approved work meanwhile.
 - Read terse replies by item number: "1 go, 2 rec" is yes to 1 and your recommendation for 2; "go" is yes to everything open; "nvm" drops it and stops its work. Log each answer with `decide` in the same turn.
 - A reply that asks for work starts that work in the same turn.
+- When the human corrects you, states a rule or preference, or a decision or pitfall surfaces, call `remember` in the same turn. Use user scope for how they work everywhere, project scope for this project. Replace what it contradicts; never add a second version.
 
 ## Running the work
 - Every agent is a fleetd agent, started with `spawn_agent`. Its result arrives in a later wake: end your turn instead of waiting.

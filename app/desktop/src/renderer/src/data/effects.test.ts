@@ -62,6 +62,8 @@ describe("event effects", () => {
     expect(effectsOf(e("machine.online", undefined, { machineId: "buildbox" }), { devbox: {} }).resync).toBe(true);
     expect(effectsOf(e("rocket.launched"))).toEqual({ invalidate: [], resync: false });
     expect(tools(e("prompt.changed"))).toContain("prompt_get");
+    // A lead's remember, an Undo or an edit elsewhere: Settings → Memory reads the files again.
+    expect(tools(e("memory.changed"))).toEqual(["memory_get"]);
     // Status's health strip: a machine going quiet or sleeping, a usage reading.
     expect(tools(e("machine.slept", undefined, { machineId: "devbox" }))).toContain("status_get");
     expect(tools(e("pr.merged", { workstreamId: "W1" }))).toContain("status_get");

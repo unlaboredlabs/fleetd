@@ -550,6 +550,8 @@ export type ChatMessage = {
   item?: ChatItem;
   messageId: ChatMessageId;
   projectRef: ProjectRef;
+  /** A system line "Remembered: …": what the lead's `remember` wrote, which `memory_undo` takes back. */
+  remembered?: RememberedItem;
   seq: number;
   state: ChatMessageState;
   /** Markdown. Empty while a streamed message has no text yet, and for an inline `item`. */
@@ -1216,7 +1218,8 @@ export type KnownHubEventType =
   | "repo.advanced"
   | "work.claimed"
   | "work.ended"
-  | "work.landed";
+  | "work.landed"
+  | "memory.changed";
 /** KnownHubEventType, or a value from a newer hub. */
 export type HubEventType = KnownHubEventType | (string & {});
 
@@ -1550,6 +1553,75 @@ export type Marker = {
 
 /** How sure the matcher is that new work repeats a piece in flight. */
 export type MatchStrength = "weak" | "strong" | "exact";
+
+export type MemoryFile = {
+  cap: number;
+  chars: number;
+  /** Newest first. */
+  notes: MemoryNote[];
+  scope: MemoryScope;
+  text: string;
+  /** A project's topic file; absent for `user.md` and `MEMORY.md`. */
+  topic?: MemoryTopic;
+  updatedAt?: Timestamp;
+};
+
+export type MemoryGetInput = {
+  /** Also that project's MEMORY.md and topic files; absent: user.md only. */
+  projectRef?: ProjectRef;
+};
+
+export type MemoryGetOutput = {
+  /** With projectRef: MEMORY.md first, then the topic files by name. */
+  files?: MemoryFile[];
+  next?: string;
+  projectCap?: number;
+  /** With projectRef: the project's files together, and their cap. */
+  projectChars?: number;
+  truncated?: boolean;
+  user: MemoryFile;
+};
+
+/** An entry `remember` wrote that is still in its file: when, and the chat line that said so. */
+export type MemoryNote = {
+  at: Timestamp;
+  messageId: ChatMessageId;
+  projectRef: ProjectRef;
+  text: string;
+};
+
+export type MemoryScope = "user" | "project";
+
+export type MemorySetInput = {
+  /** Required with scope project. */
+  projectRef?: ProjectRef;
+  scope: MemoryScope;
+  /** The whole file. Empty deletes it (a topic's index line too). */
+  text: string;
+  /** Project scope: a topic file; absent, MEMORY.md. */
+  topic?: MemoryTopic;
+};
+
+export type MemorySetOutput = {
+  file: MemoryFile;
+  next?: string;
+  truncated?: boolean;
+};
+
+/** Lowercase slug, [a-z0-9][a-z0-9-]{0,47}, other than memory */
+export type MemoryTopic = string;
+
+export type MemoryUndoInput = {
+  /** The chat line that said "Remembered: …". */
+  messageId: ChatMessageId;
+  projectRef: ProjectRef;
+};
+
+export type MemoryUndoOutput = {
+  next?: string;
+  ok: true;
+  truncated?: boolean;
+};
 
 /** How a landed change reached the default branch. The fixed order, bottom up on every chart, is the order here. */
 export type KnownMergeRoute = "train" | "fleetd_by_hand" | "outside" | "direct";
@@ -2706,6 +2778,16 @@ export type PromptWarningCode = "placeholder_missing" | "placeholder_unknown" | 
 export type QuietWindow = {
   from: Timestamp;
   to: Timestamp;
+};
+
+/** What a `remember` call wrote, as a line in the project's chat. Undone with `memory_undo`. */
+export type RememberedItem = {
+  /** The whole entry it replaced, which Undo puts back. */
+  replaced?: string;
+  scope: MemoryScope;
+  text: string;
+  topic?: MemoryTopic;
+  undone?: boolean;
 };
 
 export type RemoteRepo = string;
@@ -4235,6 +4317,9 @@ export interface ToolMap {
   fleetd_status: { input: FleetdStatusInput; output: FleetdStatusOutput };
   hub_info: { input: HubInfoInput; output: HubInfoOutput };
   lead_start: { input: LeadStartInput; output: LeadStartOutput };
+  memory_get: { input: MemoryGetInput; output: MemoryGetOutput };
+  memory_set: { input: MemorySetInput; output: MemorySetOutput };
+  memory_undo: { input: MemoryUndoInput; output: MemoryUndoOutput };
   metrics_get: { input: MetricsGetInput; output: MetricsGetOutput };
   metrics_retention_set: { input: MetricsRetentionSetInput; output: MetricsRetentionSetOutput };
   order_get: { input: OrderGetInput; output: OrderGetOutput };

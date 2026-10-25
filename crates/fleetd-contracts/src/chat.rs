@@ -222,6 +222,8 @@ pub struct ChatMessage {
     pub item: Option<ChatItem>,
     /// From before the chat: where this history message came from.
     pub history: Option<ChatHistorySource>,
+    /// A system line "Remembered: …": what the lead's `remember` wrote, which `memory_undo` takes back.
+    pub remembered: Option<crate::memory::RememberedItem>,
 }
 
 /// One chat's state, for the sidebar and the status row.

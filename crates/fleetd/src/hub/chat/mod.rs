@@ -38,6 +38,7 @@ pub struct NewMessage {
     pub source: Option<String>,
     pub item: Option<ChatItem>,
     pub history: Option<ChatHistorySource>,
+    pub remembered: Option<fleetd_contracts::memory::RememberedItem>,
     pub by: Option<String>,
     pub client: Option<ChatClient>,
     pub delivery: Option<ChatDelivery>,
@@ -281,6 +282,7 @@ impl Chat {
                 client: new.client,
                 item: new.item,
                 history: new.history,
+                remembered: new.remembered,
             };
             c.execute(
                 "UPDATE chat_messages SET data = ?1 WHERE n = ?2",
@@ -347,6 +349,19 @@ impl Chat {
         self.put(&message)?;
         self.announce(&message)?;
         Ok(Some(message))
+    }
+
+    /// A remembered line's new state, in place.
+    pub fn set_remembered(
+        &self,
+        mut message: ChatMessage,
+        remembered: fleetd_contracts::memory::RememberedItem,
+    ) -> Result<ChatMessage, StoreError> {
+        message.remembered = Some(remembered);
+        message.updated_at = Some(self.now_ts());
+        self.put(&message)?;
+        self.announce(&message)?;
+        Ok(message)
     }
 
     fn now_ts(&self) -> Timestamp {
