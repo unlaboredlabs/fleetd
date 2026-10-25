@@ -1274,6 +1274,30 @@ export const screens: readonly Screen[] = [
   // Memory: user.md with what the lead remembered, then one project's MEMORY.md and a topic.
   { id: "settings.memory", route: "#/settings/memory", fixtures: ["typical", "empty", "hub-unreachable"] },
   { id: "settings.memory", route: "#/settings/memory?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22", fixtures: ["typical", "long-text"], variant: "project" },
+  // An entry being edited in its card, and a topic open as text.
+  {
+    id: "settings.memory",
+    route: "#/settings/memory?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["typical"],
+    variant: "editing",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Edit “No npm here: use pnpm.”" }).click();
+      await page.getByRole("textbox", { name: "Edit the entry in MEMORY.md" }).fill("No npm here: use pnpm, and pin its version.");
+      await page.getByRole("region", { name: "deploys (deploys.md)" }).getByRole("button", { name: "Edit as text" }).click();
+      await expect(page.getByRole("textbox", { name: "All of deploys.md" })).toBeVisible();
+    },
+  },
+  // A deleted entry, gone from its file, with Undo in the toast.
+  {
+    id: "settings.memory",
+    route: "#/settings/memory",
+    fixtures: ["typical"],
+    variant: "deleted",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Delete “Never estimate time.”" }).click();
+      await expect(page.getByRole("button", { name: "Undo" })).toBeVisible();
+    },
+  },
   // Prompts before one is picked.
   { id: "settings.prompts", route: "#/settings/prompts", fixtures: ["settings-prompts"], variant: "none" },
   { id: "settings.general", route: "#/settings/general", fixtures: ["typical", "empty", "hub-unreachable"] },

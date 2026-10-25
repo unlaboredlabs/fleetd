@@ -1,0 +1,98 @@
+/*
+ * Settings → Memory: each file a group of entry cards under its cap meter. Cards size to their text (no fixed heights,
+ * as everywhere in Settings) and wrap long entries rather than clip them.
+ */
+
+.search {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-width: 420px;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.group + .group {
+  margin-top: var(--space-4);
+}
+.groupHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.meter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.track {
+  height: 4px;
+  max-width: 320px;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--hover);
+}
+.fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+.fill[data-over] {
+  background: var(--danger);
+}
+
+.entries {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.heading {
+  padding: var(--space-2) 0 0;
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--raised);
+}
+.card[data-editing] {
+  border-color: var(--accent);
+}
+.cardBody {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.entryText {
+  flex: 1;
+  min-width: 0;
+  padding-top: 2px;
+  overflow-wrap: anywhere;
+}
+.cardActions {
+  flex: none;
+  display: flex;
+  gap: var(--space-1);
+}
