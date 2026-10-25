@@ -47,7 +47,10 @@ export interface ActivityFeed {
   readonly retry: () => void;
   readonly hasOlder: boolean;
   readonly loadingOlder: boolean;
+  /** Reading the next older page failed (its retries spent): nothing loads it again until `retryOlder`. */
+  readonly olderFailed: boolean;
   readonly loadOlder: () => void;
+  readonly retryOlder: () => void;
 }
 
 /** `project`'s activity under `filter`: the pages read so far, with what streamed in since above them. */
@@ -72,16 +75,21 @@ export function useActivityFeed(project: ProjectKey, filter: KindFilter): Activi
     const after = streamed.filter((e) => e.seq > top);
     return linesOf([...after, ...events].filter((e) => inFeed(e, project, filter)));
   }, [read, streamed, project, filter]);
-  const { fetchNextPage, refetch, hasNextPage, isFetchingNextPage } = pages;
+  const { fetchNextPage, refetch, hasNextPage, isFetchingNextPage, isFetchNextPageError } = pages;
+  // Stable between renders, so the list's end asks for the next page once, not on every render.
+  const loadOlder = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage && !isFetchNextPageError) void fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage]);
+  const retryOlder = useCallback(() => void fetchNextPage(), [fetchNextPage]);
   return {
     lines,
     error: pages.error,
     retry: () => void refetch(),
     hasOlder: hasNextPage,
     loadingOlder: isFetchingNextPage,
-    loadOlder: () => {
-      if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
-    },
+    olderFailed: isFetchNextPageError,
+    loadOlder,
+    retryOlder,
   };
 }
 

@@ -166,6 +166,29 @@ it("loads older events as the end of the list comes into view, and then says whe
   expect(host.textContent).toContain("That’s everything from the last 30 days.");
 });
 
+it("stops asking for an older page that keeps failing, and offers Retry", async () => {
+  const older = [ev(3, "task.started", { taskId: "T12" }, "T12 started (high): Receipt dates", 60 * 30)];
+  let down = true;
+  await mount((input) =>
+    input.before === undefined ? page(FIRST, true) : down ? { ok: false, error: { code: "failed", message: "The hub couldn't read its event log" } } : page(older),
+  );
+  // The read's own retries, then nothing more however long it waits.
+  await act(() => vi.advanceTimersByTimeAsync(30_000));
+  const tried = reads.length;
+  expect(reads.filter((r) => r.before === 6).length).toBe(3);
+  await act(() => vi.advanceTimersByTimeAsync(60_000));
+  expect(reads.length).toBe(tried);
+  const retry = [...host.querySelectorAll("button")].find((b) => b.textContent === "Couldn’t load older activity. Retry");
+  expect(retry).toBeDefined();
+  expect(host.textContent).not.toContain("Loading older activity");
+
+  down = false;
+  act(() => retry?.click());
+  await settle();
+  expect(texts().slice(-2)).toEqual(["Yesterday", "T12 startedReceipt dates"]);
+  expect(host.textContent).toContain("That’s everything from the last 30 days.");
+});
+
 it("says when nothing has happened, and when the hub can't list activity", async () => {
   await mount(() => page([]));
   expect(host.textContent).toContain("Nothing has happened yet");

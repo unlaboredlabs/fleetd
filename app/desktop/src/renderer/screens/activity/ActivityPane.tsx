@@ -280,22 +280,23 @@ function RunRow({ item, onToggle }: { item: Extract<Row, { t: "run" }>; onToggle
 
 /** The list's foot: loads the next page as it scrolls into view, or says the log ends here. */
 function End({ feed }: { feed: ReturnType<typeof useActivityFeed> }) {
-  const { hasOlder, loadOlder, loadingOlder } = feed;
+  const { hasOlder, loadOlder, loadingOlder, olderFailed, retryOlder } = feed;
+  // A page that failed waits for Retry: asking again by itself would ask forever.
   useEffect(() => {
-    if (hasOlder) loadOlder();
-  }, [hasOlder, loadOlder]);
+    if (hasOlder && !olderFailed) loadOlder();
+  }, [hasOlder, olderFailed, loadOlder]);
   return (
     <div className={s.end}>
-      {hasOlder || loadingOlder ? (
+      {olderFailed && !loadingOlder ? (
+        <Button variant="quiet" size="sm" onClick={retryOlder}>
+          Couldn’t load older activity. Retry
+        </Button>
+      ) : hasOlder || loadingOlder ? (
         <span role="status">
           <Text size="xs" tone="faint">
             Loading older activity…
           </Text>
         </span>
-      ) : feed.error !== null ? (
-        <Button variant="quiet" size="sm" onClick={feed.retry}>
-          Couldn’t load older activity. Retry
-        </Button>
       ) : (
         <Text size="xs" tone="faint">
           That’s everything from the last 30 days.
