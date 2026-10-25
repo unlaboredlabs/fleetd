@@ -21,7 +21,9 @@ use super::compute::{self, Period};
 use super::human;
 use super::no_host;
 use super::store::{self, MergeRow, RepoRow, TouchRow};
-use crate::hub::api::{Caller, Hub, Registry, ToolError, allows, allows_everywhere, require};
+use crate::hub::api::{
+    Caller, Hub, Registry, ToolError, admin_everywhere_fix, allows, allows_everywhere, require,
+};
 use crate::hub::status::fresh;
 use crate::hub::store::{StoreError, iso_ms, now_ms, parse_ms};
 
@@ -341,7 +343,7 @@ async fn metrics_retention_set(
             ErrorCode::Forbidden,
             "Metrics retention is fleet-wide: it needs Admin on every machine.",
         )
-        .with_fix("Use an Admin key for all machines (`--machines '*'`)."));
+        .with_fix(admin_everywhere_fix(&caller)));
     }
     let days = input.retention_days.get();
     hub.db.transaction(|c| store::set_retention_days(c, days))?;

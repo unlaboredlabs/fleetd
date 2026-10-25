@@ -25,6 +25,7 @@ when it opens. On another computer:
    ```console capture=pair
    $ fleetd pair
    Pairing code: 38X0-57P8  (single use, valid until 2026-10-18T22:43:43.690Z)
+   Grants:       admin on every machine
    Hub address:  http://127.0.0.1:4778
    Pairing link: fleetd://pair?hub=http%3A%2F%2F127.0.0.1%3A4778&code=38X0-57P8
 
@@ -36,6 +37,11 @@ when it opens. On another computer:
    `fleetd://pair` link.
 
 The code works once, for 15 minutes. Capitals and the dash are optional: `abcd2345` works as `ABCD-2345`. To connect with a key instead, click "Use a key instead".
+
+The app gets `admin` on every machine, so it changes the hub's settings, such as max agents. For a device that
+should only watch or only drive agents, print its code with `fleetd pair --role read` or `--role operate`. If
+Settings says "This key lacks the admin role", the app was paired with less: run `fleetd pair` on the hub machine and
+pair again with the new code.
 
 To change hubs, open Settings (⌘,) → General → Hub.
 

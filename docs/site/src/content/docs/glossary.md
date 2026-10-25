@@ -86,6 +86,7 @@ The fleetd process on a worker. It connects out to the hub and starts the Claude
 ## Pairing code {#pairing-code}
 
 A one-time code, such as `K4QW-7RNP`, that connects the desktop app or a new worker to the hub. It lasts 15 minutes.
+The app's code grants the role it was printed with (`fleetd pair --role`, default `admin`).
 
 ## Policy file {#policy-file}
 

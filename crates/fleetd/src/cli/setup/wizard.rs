@@ -1364,7 +1364,7 @@ fn app(
         return Ok(!devices.is_empty());
     }
     let home = opts.home.to_string_lossy().into_owned();
-    match pair::mint(Some(&home), None) {
+    match pair::mint(Some(&home), None, crate::hub::pair::DEFAULT_ROLE) {
         Ok(minted) => {
             let hub = minted.urls.first().cloned().unwrap_or_default();
             let (installed, _) = app_hint();
