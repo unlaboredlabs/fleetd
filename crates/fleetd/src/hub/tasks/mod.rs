@@ -1609,6 +1609,7 @@ impl Tasks {
             .map_err(store_error)?;
         policy::check_fan_out(
             (counts.queued.get() + counts.running.get() + counts.idle.get()) as usize,
+            self.d.slots.agents(r).max_agents,
         )?;
         if let Some(item) = &input.item {
             let mut refused = None;
@@ -2232,6 +2233,11 @@ impl Tasks {
             running: agents.running,
             cap: agents.max_agents,
             queued: agents.queued,
+            source: match agents.source {
+                crate::hub::slots::MaxSource::Project => "max agents set".to_owned(),
+                crate::hub::slots::MaxSource::Machine => "machine cap set".to_owned(),
+                crate::hub::slots::MaxSource::Auto(why) => format!("auto: {why}"),
+            },
         }
     }
 
@@ -2465,7 +2471,7 @@ mod tests {
             .unwrap();
         let node = Arc::new(Node::default());
         let ports: Arc<dyn TaskPorts> = node.clone();
-        let slots = Slots::new(db.clone(), &store, &events).unwrap();
+        let slots = Slots::new(db.clone(), clock.clone(), &store, &events).unwrap();
         let policies = Policies::new(node.clone(), clock.clone());
         let tasks = Tasks::new(TaskDeps {
             db,
