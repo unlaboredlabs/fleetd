@@ -107,6 +107,12 @@ export const fixtures = [
   "transcript-new",
   // UX-1 [23]: a long lead reply streaming in, in small deltas (fixtures/stream).
   "stream-long",
+  // The chat as a messaging app (fixtures/bubbles): split bubbles with a reply, charts and a table, a PR card with its
+  // diff, and the lead asking.
+  "bubbles-casual",
+  "bubbles-charts",
+  "bubbles-pr",
+  "bubbles-ask",
   // F5 (A5): a chat with every state of the two inline items (fixtures/inline), with every answer failing, and with
   // two approvals the hub reopens after Approve.
   "inline-items",
@@ -585,7 +591,40 @@ export const screens: readonly Screen[] = [
       await page.getByRole("button", { name: "3 new" }).waitFor({ timeout: 10_000 });
     },
   },
-  // UX-1 [23]: a long reply streams in with the chat open, block by block; checked after its last delta.
+  // The chat as bubbles: a casual exchange the hub split into bubbles with your reply to one, charts and a table, a
+  // PR card with its diff, and an ask waiting on you.
+  { id: "chat", route: CHAT, fixtures: ["bubbles-casual", "bubbles-charts", "bubbles-pr", "bubbles-ask"], variant: "bubbles" },
+  // A tapback put on one of the lead's bubbles, from the button its hover shows.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["bubbles-casual"],
+    variant: "tapback",
+    open: async (page) => {
+      const bubble = page.locator('[data-bubble="text"]').filter({ hasText: "Nightly was green" }).locator("..");
+      await bubble.hover();
+      await bubble.getByRole("button", { name: "Tapback" }).click();
+      await page.getByRole("button", { name: "Love" }).click();
+      await page.getByRole("img", { name: "You reacted: Love" }).waitFor({ timeout: 5_000 });
+      await page.mouse.move(0, 0);
+    },
+  },
+  // Replying to a bubble: its quote over the box, with what you write under it.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["bubbles-casual"],
+    variant: "reply",
+    open: async (page) => {
+      const bubble = page.locator('[data-bubble="text"]').filter({ hasText: "Both PRs are green" }).locator("..");
+      await bubble.hover();
+      await bubble.getByRole("button", { name: "Reply" }).click();
+      await page.getByRole("textbox", { name: "Message the lead" }).fill("merge the dates one first");
+      await page.mouse.move(0, 0);
+    },
+  },
+  // UX-1 [23]: a long reply streams in with the chat open, the typing bubble standing in for it; checked after its last
+  // delta.
   { id: "chat", route: CHAT, fixtures: ["stream-long"], variant: "stream", replay: true },
   // UX-1 [10]: just set up, no chat has a message yet: the empty chat shows the checklist on its last step.
   { id: "chat", route: CHAT, fixtures: ["onboarding-first-chat"], variant: "first-chat" },

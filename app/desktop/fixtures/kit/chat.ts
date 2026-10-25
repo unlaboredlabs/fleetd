@@ -21,6 +21,10 @@ export interface Draft {
   readonly state?: "streaming" | "final";
   readonly item?: JsonObject;
   readonly history?: "order" | "note" | "steer" | "lead_message" | "order_outcome";
+  /** A lead message's bubbles, as the hub splits it (ChatPart: start, end, block). */
+  readonly parts?: ReadonlyArray<JsonObject>;
+  /** Written this many minutes before the fixture's now, rather than spaced evenly back from it. */
+  readonly minutesAgo?: number;
 }
 
 /** A file sent with a message; `data` is what attachment_get returns for it. */
@@ -92,7 +96,7 @@ export const writeChat = (f: Fixture, ref: Ref, drafts: ReadonlyArray<Draft>, op
   let file = 0;
   const messages = drafts.map((d, i): JsonObject => {
     const seq = i + 1;
-    const createdAt = new Date(end - (drafts.length - seq) * step).toISOString();
+    const createdAt = new Date(d.minutesAgo === undefined ? end - (drafts.length - seq) * step : Date.parse(f.now) - d.minutesAgo * 60_000).toISOString();
     const item = d.item === undefined ? undefined : { ...d.item, requestId: d.item["requestId"] ?? `Q${String(++request)}` };
     const attachments = (d.attachments ?? []).map((a) => {
       const attachmentId = `F${String(++file)}`;
@@ -113,6 +117,7 @@ export const writeChat = (f: Fixture, ref: Ref, drafts: ReadonlyArray<Draft>, op
       ...(d.author === "human" && d.history === undefined ? { delivery: "turn", by: "laptop", clientRequestId: `c-${sha(`${ref.projectId} ${String(seq)}`).slice(0, 12)}` } : {}),
       ...(d.history === undefined ? {} : { history: d.history }),
       ...(item === undefined ? {} : { item }),
+      ...(d.parts === undefined ? {} : { parts: d.parts.map((p) => ({ ...p })) }),
     };
   });
   const last = messages.at(-1);

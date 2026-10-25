@@ -1,6 +1,6 @@
 // A long lead reply streaming in (UX-1 [23]): storefront's lead writes a plan of headings, lists, code, a table and a
-// quote, in many small deltas over the live chat feed, and is still writing at the last one. The chat redraws only the
-// reply's last block per delta; this is the screen that must stay right while it does.
+// quote, in many small deltas over the live chat feed, and is still writing at the last one. The chat shows the typing
+// bubble for it until it is final; this is the screen that must stay right while the deltas land.
 import { fromLines, firstProject, streamReply, writeChat } from "../kit/chat.ts";
 import { QUESTION } from "../kit/chatText.ts";
 import { Fixture } from "../kit/fixture.ts";

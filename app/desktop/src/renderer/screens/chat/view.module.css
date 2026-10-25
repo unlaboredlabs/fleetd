@@ -1,6 +1,6 @@
 /*
- * The lead chat. One column, inset like the rest of the app; messages read like a conversation (author and time
- * once per run, none on yours), fleet activity and fleetd's own lines stay quiet and one line high.
+ * The lead chat. One column, inset like the rest of the app; messages are bubbles, the lead's on the left and yours on
+ * the right, a run drawn as one stack; fleet activity and fleetd's own lines stay quiet and one line high.
  */
 .screen {
   --pad: var(--space-4);

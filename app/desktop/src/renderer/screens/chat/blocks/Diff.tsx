@@ -49,7 +49,7 @@ export function Diff({ diff }: { diff: DiffBlock }) {
           </Text>
         </div>
       ) : null}
-      <div className={b.files}>
+      <div className={b.files} data-text="code">
         {(diff.files ?? []).map((f) => (
           <FileDiff key={f.path} file={f} />
         ))}
