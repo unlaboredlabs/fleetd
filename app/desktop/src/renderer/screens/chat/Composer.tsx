@@ -26,6 +26,7 @@ import { composerSendOn } from "../live/steerModel";
 import { fmtBytes, PASTE_AS_FILE, pastedName } from "./attachments";
 import { ACT_LABEL, checkMessage, placeholder, receiptFor, recallsOn, stopFailed, type Act } from "./composerModel";
 import { useDraft, useDrafts } from "./drafts";
+import { useSkillPicker } from "./SkillPicker";
 import type { ReplyTarget } from "./actions";
 import { replyText } from "./bubbles";
 import c from "./composer.module.css";
@@ -56,6 +57,7 @@ export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCa
   const box = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const pastes = useRef(0);
+  const skills = useSkillPicker(project, draft.text, (text) => setDraft((d) => ({ ...d, text })), box);
   const canStop = useData(selectCanStop);
   // Asked for until the lead's turn ends (or the call says it can't): Stop stays pressed meanwhile.
   const [stopping, setStopping] = useState(false);
@@ -120,7 +122,8 @@ export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCa
     // The quote stays in the text for every client; the hub gives the lead the whole bubble `replyTo` names.
     const text = replyTo === undefined || replyTo.quote === "" ? checked.text : replyText(replyTo.quote, checked.text);
     const reply = replyTo === undefined ? {} : { replyTo: { messageId: replyTo.id, part: replyTo.part } };
-    void chat.send(projectKey, { text, ...reply, ...(files.length > 0 ? { attachments: files } : {}), ...(now ? { now } : {}) });
+    const named = skills.named(checked.text);
+    void chat.send(projectKey, { text, ...reply, ...(files.length > 0 ? { attachments: files } : {}), ...(now ? { now } : {}), ...(named.length > 0 ? { skills: named } : {}) });
   };
 
   // A reply goes to the box: the cursor follows it.
@@ -129,6 +132,7 @@ export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCa
   }, [replyTo]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (skills.onKeyDown(e)) return;
     const key = { ...e, isComposing: e.nativeEvent.isComposing };
     if (e.key === "Escape" && replyTo !== undefined) {
       e.preventDefault();
@@ -204,6 +208,7 @@ export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCa
   return (
     <div className={c.composer} data-composer data-screen="chat.composer">
       <div className={c.box}>
+        {skills.popup}
         {replyTo !== undefined ? (
           <div className={c.replying}>
             <Reply className={c.replyIcon} aria-hidden />
@@ -225,7 +230,9 @@ export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCa
           rows={1}
           value={draft.text}
           autoFocus={autoFocus}
+          onSelect={(e) => skills.track(e.currentTarget)}
           onChange={(e) => {
+            skills.track(e.target);
             const text = e.target.value;
             setDraft((d) => {
               const { error: _e, ...rest } = d;

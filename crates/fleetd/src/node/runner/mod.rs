@@ -73,6 +73,8 @@ pub struct SessionSpec {
     pub strict_mcp: bool,
     /// fleetd's settings overlay (`--settings`), which claude merges over the user's own settings.
     pub settings: Option<PathBuf>,
+    /// Plugins for this session only (`--plugin-dir`): the session's skills (`node::skills`).
+    pub plugin_dirs: Vec<PathBuf>,
     /// The whole child environment. Nothing is inherited: no CLAUDE* variable of the node's own parent leaks in.
     pub env: Vec<(String, String)>,
     /// Raw stdout and stderr lines are appended here for debugging and conformance.

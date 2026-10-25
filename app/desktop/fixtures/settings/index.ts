@@ -7,6 +7,7 @@ import { defineGroup, SHARED } from "../kit/group.ts";
 import { Fixture } from "../kit/fixture.ts";
 import { asText, clone, isObject, type JsonObject, type JsonValue } from "../kit/json.ts";
 import { PROJECTS, PromptHub, type RegistryEntry } from "./promptHub.ts";
+import { skills } from "./skills.ts";
 
 const registry = (
   JSON.parse(fs.readFileSync(new URL("../../src/renderer/screens/settings/fixture/registry.json", import.meta.url), "utf8")) as {
@@ -148,6 +149,7 @@ function basics(f: Fixture) {
   projectSettings(f);
   memory(f);
   automations(f);
+  skills(f);
   if (f.output("project_get") === undefined) f.answer("project_get", undefined, { projects: PROJECTS.map(projectSummary) });
   // The dry run, for any text: a fixture cannot know what will be typed, so it answers with no warnings.
   f.answer("prompt_set", { dryRun: true }, { ref: "lead.start@5e771ed000", warnings: [] });

@@ -26,6 +26,7 @@ use crate::mcp::McpToolError;
 use crate::memory::{MemoryReadCall, MemoryReadResult, RememberCall, RememberResult};
 use crate::prim::{Line, List, NonEmpty, Text};
 use crate::secrets::SecretSink;
+use crate::skills::{SkillInstallCall, SkillInstallResult};
 use crate::steer::SteerId;
 use crate::tasks::{
     AbsolutePath, PrUrl, SPAWN_PATHS_MAX, Task, TaskId, TaskKind, TaskPrompt, TaskState, TaskTitle,
@@ -266,6 +267,7 @@ pub enum LeadCall {
     AutomationRun(AutomationRunCall),
     AutomationRuns(AutomationRunsCall),
     Checklist(ChecklistCall),
+    SkillInstall(SkillInstallCall),
 }
 
 #[skip_serializing_none]
@@ -381,6 +383,7 @@ pub enum LeadCallResult {
     AutomationRun(AutomationRunResult),
     AutomationRuns(AutomationRunsResult),
     Checklist(ChecklistResult),
+    SkillInstall(SkillInstallResult),
 }
 
 /// CLI -> node on the local socket, and node -> hub on the link.

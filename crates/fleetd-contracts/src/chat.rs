@@ -252,6 +252,8 @@ pub struct ChatMessage {
     pub parts: Option<List<ChatPart, 1, CHAT_PARTS_MAX>>,
     /// A system line "Remembered: …": what the lead's `remember` wrote, which `memory_undo` takes back.
     pub remembered: Option<crate::memory::RememberedItem>,
+    /// A human message: the skills it named with `$name`, which the lead's copy lists.
+    pub skills: Option<List<crate::skills::SkillName, 1, 8, true>>,
 }
 
 /// One chat's state, for the sidebar and the status row.

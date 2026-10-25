@@ -1,0 +1,40 @@
+/* The `$` list, fixed over the chat like a menu; the anchor, a zero-height row at the box's top edge, places it. */
+.anchor {
+  height: 0;
+}
+
+.list {
+  position: fixed;
+  z-index: 20;
+  margin: 0;
+  padding: var(--space-1);
+  list-style: none;
+  border-radius: 12px;
+  background: var(--raised);
+  box-shadow: var(--float-shadow);
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.option {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.option:hover {
+  background: var(--hover);
+}
+.option[data-active] {
+  background: var(--selected);
+}
+
+.description {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

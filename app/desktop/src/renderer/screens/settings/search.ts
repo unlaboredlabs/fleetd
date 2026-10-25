@@ -25,6 +25,7 @@ export const PAGE_LABEL: Readonly<Record<Tab, string>> = {
   instructions: "Instructions",
   memory: "Memory",
   automations: "Automations",
+  skills: "Skills",
 };
 
 /** "Dock" is the Mac's word for it. (No window in the unit tests.) */
@@ -58,6 +59,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   page("instructions", ["custom instructions", "rules", "my text"]),
   page("memory", ["remember", "remembered", "user.md", "MEMORY.md", "forget", "preferences", "rules"]),
   page("automations", ["schedule", "cron", "webhook", "recurring", "run now", "trigger"]),
+  page("skills", ["skill", "SKILL.md", "skills.sh", "workflow", "install", ".agents", ".claude"]),
   page("prompts", ["templates", "system prompt"]),
   ...Object.entries(ENTRIES).map(([id, e]) => ({ key: `prompt:${id}`, label: e.name, tab: "prompts" as const, keywords: ["prompt", id], prompt: id })),
 ];

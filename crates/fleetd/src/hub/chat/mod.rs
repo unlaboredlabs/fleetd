@@ -40,6 +40,8 @@ pub struct NewMessage {
     pub item: Option<ChatItem>,
     pub history: Option<ChatHistorySource>,
     pub remembered: Option<fleetd_contracts::memory::RememberedItem>,
+    /// A human message's `$name` skills.
+    pub skills: Vec<fleetd_contracts::skills::SkillName>,
     pub by: Option<String>,
     pub client: Option<ChatClient>,
     pub reply_to: Option<fleetd_contracts::chat::ChatReplyTo>,
@@ -295,6 +297,7 @@ impl Chat {
                 item: new.item,
                 history: new.history,
                 remembered: new.remembered,
+                skills: (!new.skills.is_empty()).then(|| List::unchecked(new.skills)),
                 parts: (author == ChatAuthor::Lead && !new.streaming)
                     .then(|| parts::parts(&text))
                     .flatten(),

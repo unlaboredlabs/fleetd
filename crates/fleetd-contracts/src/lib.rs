@@ -33,6 +33,7 @@ pub mod prs;
 pub mod schema;
 pub mod secrets;
 pub mod sessions;
+pub mod skills;
 pub mod status;
 pub mod steer;
 pub mod tasks;

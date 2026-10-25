@@ -95,6 +95,7 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   if (type.startsWith("automation.")) out.push({ tool: "automation_list" }, { tool: "automation_runs" });
   // Only the open panel's project has its checklist mounted.
   if (type === "checklist.changed") out.push({ tool: "checklist_get" });
+  if (type === "skills.changed") out.push({ tool: "skills_list" });
   if (type === "doctor.changed") out.push({ tool: "doctor_list" });
   // The hub's attention policy is a global decision. Only the open Decisions tab has its list mounted, so this
   // refetches one read.

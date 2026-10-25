@@ -104,7 +104,6 @@ explained! {
     AGENT_DISALLOWED, AGENT_DISALLOWED_WHY: &str = [
         "ReportFindings" => "Agents report a review with fleetd's own `report`.",
         "DesignSync" => WHY_UNUSED,
-        "Skill" => WHY_UNUSED,
         "NotebookEdit" => WHY_UNUSED,
     ]
 }
@@ -394,6 +393,11 @@ impl ClaudeRunner {
             args.push("--add-dir".into());
             args.push(dir.display().to_string());
         }
+        // The session's skills (`node::skills`), a plugin for this session only.
+        for dir in &spec.plugin_dirs {
+            args.push("--plugin-dir".into());
+            args.push(dir.display().to_string());
+        }
         args
     }
 }
@@ -537,9 +541,10 @@ mod tests {
         let denied = |role| role_disallowed(role).collect::<Vec<_>>();
         assert!(denied(SessionRole::Plain).is_empty());
         let worker = denied(SessionRole::Worker);
-        assert!(worker.contains(&"Skill") && !worker.contains(&"Edit"));
+        // Skills are fleetd's own (`node::skills`): every agent keeps the Skill tool.
+        assert!(!worker.contains(&"Skill") && !worker.contains(&"Edit"));
         let lead = denied(SessionRole::Lead);
-        assert!(lead.contains(&"Skill") && lead.contains(&"Edit") && lead.contains(&"WebFetch"));
+        assert!(!lead.contains(&"Skill") && lead.contains(&"Edit") && lead.contains(&"WebFetch"));
         // Every name is a tool claude 2.1.302 offers, and none overlaps the list every session gets.
         let init = include_str!("../fixtures/claude-2.1.302-interrupt-mid-tool.jsonl");
         for tool in lead {
@@ -577,6 +582,7 @@ mod tests {
             mcp_config: None,
             strict_mcp: false,
             settings: None,
+            plugin_dirs: Vec::new(),
             env: Vec::new(),
             transcript: None,
         }

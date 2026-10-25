@@ -195,6 +195,11 @@ moving items along in the turn their news arrives; every wake shows it how many 
 You see the list in the panel's [Checklist tab](/docs/desktop-app#checklist). Writers can't change it, and nothing
 is worked out from it: no figure, no estimate.
 
+## Skills {#skills}
+
+Every agent gets the [skills](/docs/skills) of its repo (`.agents/skills`, `.claude/skills`), its project and the hub,
+listed by name and description as `fleetd:<name>`. It opens one with the Skill tool when it needs it.
+
 ## When fleetd changes a default you edited {#updates}
 
 Your version stays in use.

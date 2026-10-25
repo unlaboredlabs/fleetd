@@ -95,6 +95,10 @@ pub struct SessionLaunch {
     /// node keeps them for every start of the session's process. Absent: the session runs as before MCP servers
     /// (the person's own servers, fleetd's tools). An older node ignores it.
     pub mcp: Option<crate::mcp_servers::McpSessionConfig>,
+    /// The skills the hub keeps for this session (the project's, then the global ones not of a name already there).
+    /// The node gives the session these and the checkout's own, the checkout's first on a name clash.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skills: Vec<crate::skills::SkillBundle>,
 }
 
 /// A session's place among fleetd's agents, which decides the MCP tools it gets. The hub enforces the same split on
@@ -325,6 +329,12 @@ pub enum SessionCall {
         branch: NonEmpty,
         since_ms: Count,
         stop_at: Option<NonEmpty>,
+    },
+    /// The skills in the project's checkout: `.agents/skills` and `.claude/skills`. Only nodes listing
+    /// [`crate::node_link::CAP_SKILLS`] get it.
+    #[serde(rename_all = "camelCase")]
+    SkillsList {
+        project_id: ProjectId,
     },
     /// Write a file under the project's workspace root, creating its directories. `rel_path` must stay inside
     /// `.fleetd/attachments/`, which the node keeps out of git through `.git/info/exclude`.
@@ -578,6 +588,10 @@ pub enum SessionOutput {
     },
     /// Answer to `mcp_test`.
     McpTested(crate::mcp_servers::McpTestResult),
+    /// Answer to `skills_list`.
+    Skills {
+        skills: Vec<crate::skills::RepoSkill>,
+    },
 }
 
 /// The default branch's first-parent line, newest first, at most [`LandedLog::MAX`] commits.

@@ -20,6 +20,8 @@ pub struct HubDb {
     prompts_dir: Option<PathBuf>,
     /// `<home>/memory`, the leads' memory (`hub::memory`); set by `open`, or by the hub built over an in-memory one.
     memory_dir: OnceLock<PathBuf>,
+    /// `<home>/skills`, the skills the hub keeps (`hub::skills`); set like `memory_dir`.
+    skills_dir: OnceLock<PathBuf>,
 }
 
 impl HubDb {
@@ -36,6 +38,7 @@ impl HubDb {
             Some(home.join("prompts")),
         )?;
         db.set_memory_dir(home.join("memory"));
+        db.set_skills_dir(home.join("skills"));
         Ok(db)
     }
 
@@ -57,6 +60,7 @@ impl HubDb {
             conn: Mutex::new(conn),
             prompts_dir,
             memory_dir: OnceLock::new(),
+            skills_dir: OnceLock::new(),
         };
         db.migrate()?;
         Ok(Arc::new(db))
@@ -100,6 +104,15 @@ impl HubDb {
     /// The first one set stays.
     pub fn set_memory_dir(&self, dir: PathBuf) {
         let _ = self.memory_dir.set(dir);
+    }
+
+    pub fn skills_dir(&self) -> Option<&Path> {
+        self.skills_dir.get().map(PathBuf::as_path)
+    }
+
+    /// The first one set stays.
+    pub fn set_skills_dir(&self, dir: PathBuf) {
+        let _ = self.skills_dir.set(dir);
     }
 
     pub fn user_version(&self) -> Result<i64, StoreError> {

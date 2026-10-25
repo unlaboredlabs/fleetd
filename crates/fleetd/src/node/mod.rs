@@ -20,6 +20,7 @@ pub mod runner;
 pub mod secrets;
 pub mod self_exe;
 pub mod sessions;
+pub mod skills;
 pub mod store;
 pub mod util;
 pub mod wire;

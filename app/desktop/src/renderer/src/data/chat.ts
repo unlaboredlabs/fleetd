@@ -193,6 +193,8 @@ export interface ChatSend {
   readonly now?: boolean;
   /** A reply: the lead's bubble it answers, kept for every resend. */
   readonly replyTo?: ChatReplyTo;
+  /** The skills named with `$name`, which the lead's copy lists. */
+  readonly skills?: readonly string[];
   /** An earlier call was cut off: the hub may hold it, so it is never called "not sent". */
   readonly reached?: boolean;
 }

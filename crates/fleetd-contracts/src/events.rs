@@ -245,6 +245,10 @@ pub enum HubEventType {
     /// A project's checklist changed (the lead's `checklist`); `data` is `checklist::ChecklistChangedData`.
     #[serde(rename = "checklist.changed")]
     ChecklistChanged,
+    /// A hub-kept skill was created, edited, installed, updated or deleted: `data.scope`, `data.projectRef` (project
+    /// scope), `data.names`, `data.by`. skills_list reads them.
+    #[serde(rename = "skills.changed")]
+    SkillsChanged,
 }
 
 impl HubEventType {
@@ -327,6 +331,7 @@ impl HubEventType {
             Self::AutomationChanged => "automation.changed",
             Self::AutomationRun => "automation.run",
             Self::ChecklistChanged => "checklist.changed",
+            Self::SkillsChanged => "skills.changed",
         }
     }
 }

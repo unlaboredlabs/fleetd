@@ -142,7 +142,7 @@ impl HubDb {
 }
 
 /// A project's directory name: its id when that is a plain file name, else a hash of it.
-fn project_dir_name(r: &ProjectRef) -> String {
+pub fn project_dir_name(r: &ProjectRef) -> String {
     let id = r.project_id.as_str();
     let plain = id.len() <= 128
         && !id.starts_with('.')

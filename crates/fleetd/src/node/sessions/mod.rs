@@ -322,8 +322,12 @@ fn agent_exe(exe: std::io::Result<PathBuf>, pid: u32) -> String {
 /// fleetd's settings overlay (`--settings`). claude ranks it above the user's own settings, so a user's `env` or
 /// allow rule can't undo what sessions depend on: the pinned claude (no autoupdate), helper calls on the one model,
 /// the subagent cap, the tools fleetd never gives an agent, auto memory off ([`AUTO_MEMORY_OFF_ENV`]), and `extra_env`
-/// (the session's prompt cache TTL and role defaults such as a task agent's command timeout).
-pub fn settings_overlay(extra_env: &[(String, String)]) -> String {
+/// (the session's prompt cache TTL and role defaults such as a task agent's command timeout). `skills` turns off
+/// claude's own skills of the names fleetd's plugin gives the session (`node::skills`).
+pub fn settings_overlay(
+    extra_env: &[(String, String)],
+    skills: serde_json::Map<String, serde_json::Value>,
+) -> String {
     let mut env = subagents_off_settings_env();
     env.extend(
         extra_env
@@ -335,11 +339,14 @@ pub fn settings_overlay(extra_env: &[(String, String)]) -> String {
     env.insert(key.into(), model.into());
     let (key, value) = AUTO_MEMORY_OFF_ENV;
     env.insert(key.into(), value.into());
-    let overlay = serde_json::json!({
+    let mut overlay = serde_json::json!({
         "env": env,
         "permissions": { "deny": ALWAYS_DISALLOWED },
         "autoMemoryEnabled": false,
     });
+    if !skills.is_empty() {
+        overlay["skillOverrides"] = skills.into();
+    }
     format!("{overlay}\n")
 }
 
@@ -978,6 +985,11 @@ impl SessionService {
                 Ok(SessionOutput::Item { item })
             }
             SessionCall::ReadFile { project_id, path } => self.read_file(&project_id, &path),
+            SessionCall::SkillsList { project_id } => {
+                let root = self.project_root(&project_id)?;
+                let skills = blocking(move || super::skills::repo_skills(&root)).await;
+                Ok(SessionOutput::Skills { skills })
+            }
             SessionCall::RepoScan => {
                 let home = crate::node::util::home_dir();
                 let (clone_root, repos) = blocking(move || super::repos::scan(&home)).await;
@@ -1485,6 +1497,13 @@ impl SessionService {
             self.keep_mcp(&id, super::mcp_servers::Kept { role, config })
                 .await;
         }
+        let dir = self.inner.config.home.join("sessions").join(&id);
+        super::skills::keep(&dir, &launch.skills).map_err(|e| {
+            error(
+                SessionErrorCode::Internal,
+                format!("cannot keep the session's skills: {e}"),
+            )
+        })?;
         let prompt = match launch.role {
             SessionRole::Worker => {
                 let home = self.inner.config.home.clone();
@@ -1867,8 +1886,9 @@ impl SessionService {
         role_env.extend(claude::role_env(row.local.role, &env));
         env.retain(|(k, _)| !role_env.iter().any(|(c, _)| c == k));
         env.extend(role_env.iter().cloned());
+        let skills = super::skills::prepare(&dir, &row.local.cwd)?;
         let settings = dir.join("settings.json");
-        std::fs::write(&settings, settings_overlay(&role_env))?;
+        std::fs::write(&settings, settings_overlay(&role_env, skills.overrides()))?;
         env.extend([
             (
                 "FLEETD_NODE_SOCK".to_owned(),
@@ -1924,6 +1944,7 @@ impl SessionService {
             mcp_config: Some(mcp),
             strict_mcp: session_mcp.strict,
             settings: Some(settings),
+            plugin_dirs: skills.plugin_dir.into_iter().collect(),
             env,
             transcript: Some(transcript),
         };

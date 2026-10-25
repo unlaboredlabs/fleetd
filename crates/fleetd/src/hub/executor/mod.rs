@@ -351,6 +351,8 @@ pub struct Executors {
     /// Per thread (`machine/thread`): its project, and a digest of the MCP servers it last got, so a send carries them
     /// only when they changed. Empty after a hub restart: each thread's next send carries them once.
     mcp_sent: Mutex<HashMap<String, (ProjectId, [u8; 32])>>,
+    /// Where the skills a launch carries come from (`hub::skills`); none until `hub/serve` sets it.
+    skills: std::sync::OnceLock<Arc<crate::hub::store::HubDb>>,
     /// Running clones by add id: where their `clone_progress` frames go.
     clones: repos::CloneWatchers,
     /// Where a node's steer receipts go (the steer area).
@@ -498,6 +500,7 @@ impl Executors {
             tool_policy: Mutex::default(),
             mcp_servers: std::sync::OnceLock::new(),
             mcp_sent: Mutex::default(),
+            skills: std::sync::OnceLock::new(),
             clones: Mutex::default(),
             hooks: tools::ToolHooks::default(),
             time: std::sync::OnceLock::new(),
@@ -575,6 +578,11 @@ impl Executors {
             return (None, None);
         }
         (Some(config), Some((project, digest)))
+    }
+
+    /// `hub/serve` sets this once: every launch from then on carries the project's skills and the global ones.
+    pub fn set_skills(&self, db: Arc<crate::hub::store::HubDb>) {
+        let _ = self.skills.set(db);
     }
 
     fn now_ms(&self) -> u64 {
@@ -1412,6 +1420,12 @@ impl Executors {
                     })?
             }
         };
+        let skills = self.skills.get().map_or_else(Vec::new, |db| {
+            db.skills().bundles(&ProjectRef {
+                machine_id: machine_id.clone(),
+                project_id: input.project_id.clone(),
+            })
+        });
         let seed = format!("{machine_id}\n{}", input.client_request_id);
         let session_id = ThreadId::unchecked(uuid_from(&format!("session\n{seed}")));
         let launch = SessionLaunch {
@@ -1433,6 +1447,7 @@ impl Executors {
             mcp: options
                 .mcp_role
                 .and_then(|_| self.mcp_config(machine_id, &input.project_id)),
+            skills,
         };
         let sent = launch
             .mcp
@@ -2145,6 +2160,22 @@ impl Executors {
         match self.call(&r.machine_id, op, call, READ_TIMEOUT).await? {
             SessionOutput::Files { paths, truncated } => Ok((paths, truncated)),
             _ => Err(failed(&r.machine_id, op, "the node sent no file list")),
+        }
+    }
+
+    /// The skills in the project's checkout (`.agents/skills`, `.claude/skills`). Only for a node listing
+    /// `CAP_SKILLS`.
+    pub async fn list_repo_skills(
+        &self,
+        r: &ProjectRef,
+    ) -> Result<Vec<fleetd_contracts::skills::RepoSkill>, ExecutorError> {
+        let op = NodeOperation::Read;
+        let call = SessionCall::SkillsList {
+            project_id: r.project_id.clone(),
+        };
+        match self.call(&r.machine_id, op, call, READ_TIMEOUT).await? {
+            SessionOutput::Skills { skills } => Ok(skills),
+            _ => Err(failed(&r.machine_id, op, "the node sent no skills")),
         }
     }
 

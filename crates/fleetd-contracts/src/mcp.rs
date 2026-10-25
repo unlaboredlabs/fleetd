@@ -1260,6 +1260,122 @@ output!(ChecklistGetOutput {
     updated_at: Option<Timestamp>,
 });
 
+// skills_list: Settings > Skills and the composer's `$`. The hub's global skills; with projectRef also the project's
+// and its repo's (.agents/skills, .claude/skills), each marked when a skill of the same name outranks it.
+input!(SkillsListInput {
+    project_ref: Option<ProjectRef>
+});
+output!(SkillsListOutput {
+    /// In precedence order, then by name.
+    skills: List<crate::skills::SkillSummary, 0, 1000>,
+    /// Why the repo's skills are missing from the list (the machine is offline, or its node can't list them).
+    repo_unavailable: Option<String>,
+});
+// skill_get: one skill's SKILL.md (a repo one's as the checkout has it).
+input!(
+    #[serde(remote = "Self")]
+    SkillGetInput {
+        origin: crate::skills::SkillOrigin,
+        /// Required for every origin but global.
+        project_ref: Option<ProjectRef>,
+        name: crate::skills::SkillName,
+    }
+);
+checked!(SkillGetInput, |input| {
+    if input.origin != crate::skills::SkillOrigin::Global && input.project_ref.is_none() {
+        return Err("only a global skill is read without projectRef".into());
+    }
+    Ok(())
+});
+output!(SkillGetOutput {
+    skill: crate::skills::SkillSummary,
+    text: Text<0, { crate::skills::SKILL_TEXT_CAP }>,
+});
+// skill_set: creates or replaces a hub-kept skill's SKILL.md (a human key's write). Its other files stay.
+input!(
+    #[serde(remote = "Self")]
+    SkillSetInput {
+        scope: crate::skills::SkillScope,
+        /// Required with scope project.
+        project_ref: Option<ProjectRef>,
+        name: crate::skills::SkillName,
+        text: Text<1, { crate::skills::SKILL_TEXT_CAP }>,
+        /// Refuse when a skill of that name is already in the scope (New).
+        create: Option<bool>,
+    }
+);
+checked!(SkillSetInput, |input| {
+    if input.scope == crate::skills::SkillScope::Project && input.project_ref.is_none() {
+        return Err("scope project needs projectRef".into());
+    }
+    Ok(())
+});
+output!(SkillSetOutput {
+    skill: crate::skills::SkillSummary
+});
+// skill_delete: removes a hub-kept skill's folder (a human key's write).
+input!(
+    #[serde(remote = "Self")]
+    SkillDeleteInput {
+        scope: crate::skills::SkillScope,
+        /// Required with scope project.
+        project_ref: Option<ProjectRef>,
+        name: crate::skills::SkillName,
+    }
+);
+checked!(SkillDeleteInput, |input| {
+    if input.scope == crate::skills::SkillScope::Project && input.project_ref.is_none() {
+        return Err("scope project needs projectRef".into());
+    }
+    Ok(())
+});
+output!(SkillDeleteOutput { ok: True });
+// skill_install: fetches a source (skills.sh's: owner/repo, owner/repo@skill, a GitHub URL, any git URL) on the hub
+// and keeps its skills in the scope, pinned to the commit fetched (a human key's write). A skill of the same name in
+// the scope is replaced.
+input!(
+    #[serde(remote = "Self")]
+    SkillInstallInput {
+        scope: crate::skills::SkillScope,
+        /// Required with scope project.
+        project_ref: Option<ProjectRef>,
+        source: Line<1, 500>,
+        /// Only this skill of the source; absent, every skill it has.
+        skill: Option<crate::skills::SkillName>,
+    }
+);
+checked!(SkillInstallInput, |input| {
+    if input.scope == crate::skills::SkillScope::Project && input.project_ref.is_none() {
+        return Err("scope project needs projectRef".into());
+    }
+    Ok(())
+});
+output!(SkillInstallOutput {
+    installed: List<crate::skills::SkillSummary, 1, { crate::skills::SCOPE_CAP }>,
+});
+// skill_update: fetches an installed skill's source again, at the newest commit of the ref it follows, and moves its
+// pin (a human key's write). Nothing updates on its own.
+input!(
+    #[serde(remote = "Self")]
+    SkillUpdateInput {
+        scope: crate::skills::SkillScope,
+        /// Required with scope project.
+        project_ref: Option<ProjectRef>,
+        name: crate::skills::SkillName,
+    }
+);
+checked!(SkillUpdateInput, |input| {
+    if input.scope == crate::skills::SkillScope::Project && input.project_ref.is_none() {
+        return Err("scope project needs projectRef".into());
+    }
+    Ok(())
+});
+output!(SkillUpdateOutput {
+    skill: crate::skills::SkillSummary,
+    /// The pin moved: the source had a newer commit.
+    updated: bool,
+});
+
 // status_get: without projectRef, one row per project the key reads, for the Status screen; with it, that project's
 // row.
 input!(StatusGetInput {
@@ -1283,6 +1399,8 @@ input!(ChatSendInput {
     now: Option<bool>,
     /// From attachment_put.
     attachments: Option<Attachments>,
+    /// Skills the person named with `$name`: the lead's message lists them, so it uses them.
+    skills: Option<List<crate::skills::SkillName, 1, 8, true>>,
     client_request_id: RequestId,
     /// A human key: where it is written. Absent means the app.
     client: Option<crate::chat::ChatClient>,
@@ -1745,6 +1863,13 @@ tools! {
     automation_run => AutomationRun, Operate, AutomationRunInput, AutomationRunOutput;
     automation_runs => AutomationRuns, Read, AutomationRunsInput, AutomationRunsOutput;
     checklist_get => ChecklistGet, Read, ChecklistGetInput, ChecklistGetOutput;
+    skills_list => SkillsList, Read, SkillsListInput, SkillsListOutput;
+    skill_get => SkillGet, Read, SkillGetInput, SkillGetOutput;
+    // Human keys only (the handlers check): a lead installs with its own skill_install.
+    skill_set => SkillSet, Operate, SkillSetInput, SkillSetOutput;
+    skill_delete => SkillDelete, Operate, SkillDeleteInput, SkillDeleteOutput;
+    skill_install => SkillInstall, Operate, SkillInstallInput, SkillInstallOutput;
+    skill_update => SkillUpdate, Operate, SkillUpdateInput, SkillUpdateOutput;
     time_spans => TimeSpans, Read, TimeSpansInput, TimeSpansOutput;
     time_breakdown => TimeBreakdown, Read, TimeBreakdownInput, TimeBreakdownOutput;
     time_insights => TimeInsights, Read, TimeInsightsInput, TimeInsightsOutput;

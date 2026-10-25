@@ -547,3 +547,82 @@ async fn queued_writes_wait_for_the_online_verdict_not_just_the_link() {
         &node.machine
     ));
 }
+
+/// Every launch carries the skills the hub keeps for its project: the project's, then the global ones of other names.
+#[tokio::test]
+async fn a_launch_carries_the_hubs_skills_for_its_project() {
+    use fleetd_contracts::skills::{SkillName, SkillOrigin, SkillScope};
+    let mut node = Node::start(None).await;
+    node.subscribe(json!([])).await;
+    let home = tempfile::tempdir().unwrap();
+    let db = HubDb::open_memory().unwrap();
+    db.set_skills_dir(home.path().join("skills"));
+    let md = |n: &str, d: &str| format!("---\nname: {n}\ndescription: {d}\n---\n");
+    let p1 = ProjectRef {
+        machine_id: node.machine.clone(),
+        project_id: ProjectId::unchecked("p1"),
+    };
+    let skills = db.skills();
+    skills
+        .set(
+            SkillScope::Project,
+            Some(&p1),
+            &SkillName::unchecked("release"),
+            &md("release", "p1's"),
+            true,
+        )
+        .unwrap();
+    skills
+        .set(
+            SkillScope::Global,
+            None,
+            &SkillName::unchecked("release"),
+            &md("release", "hub's"),
+            true,
+        )
+        .unwrap();
+    skills
+        .set(
+            SkillScope::Global,
+            None,
+            &SkillName::unchecked("standup"),
+            &md("standup", "hub's"),
+            true,
+        )
+        .unwrap();
+    node.executors.set_skills(db);
+
+    let executors = node.executors.clone();
+    let machine = node.machine.clone();
+    let launched = tokio::spawn(async move {
+        executors
+            .launch(
+                &machine,
+                &launch_input("req-skills"),
+                LaunchOptions::default(),
+            )
+            .await
+    });
+    let (id, call) = node.call().await;
+    let SessionCall::Launch(l) = call else {
+        panic!("not a launch: {call:?}")
+    };
+    let got: Vec<(&str, SkillOrigin)> = l
+        .skills
+        .iter()
+        .map(|b| (b.name.as_str(), b.origin))
+        .collect();
+    assert_eq!(
+        got,
+        [
+            ("release", SkillOrigin::Project),
+            ("standup", SkillOrigin::Global)
+        ]
+    );
+    assert!(l.skills[0].files[0].text.contains("p1's"));
+    node.reply(
+        &id,
+        json!({ "ok": { "kind": "launched", "summary": session(l.session_id.as_str(), json!({})) } }),
+    );
+    launched.await.unwrap().unwrap();
+}

@@ -95,6 +95,7 @@ impl Fake {
             mcp_config: None,
             strict_mcp: false,
             settings: None,
+            plugin_dirs: Vec::new(),
             env: vec![
                 ("PATH".into(), std::env::var("PATH").unwrap()),
                 ("CLAUDE_CONFIG_DIR".into(), path("config")),
