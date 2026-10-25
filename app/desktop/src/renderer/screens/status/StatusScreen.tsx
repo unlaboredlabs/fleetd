@@ -1,6 +1,7 @@
 // Status (⌘.): one row per project under one line of column names. A state word, the two-tone progress bar (solid =
 // verified, lighter = in flight), agents running, last merged. A row opens the project's chat; its PRs link opens the
-// project's PR list. Detail lives in the hovers; nothing estimates time.
+// project's PR list, and its 7-day count opens the project's Factory numbers. Detail lives in the hovers; nothing
+// estimates time.
 // It cannot be stale: the rows come from the data layer (status_get, refetched on events), which drops every
 // answer on a reconnect, so the view is a skeleton until this connection has answered; a row whose source went
 // quiet says so.
@@ -13,9 +14,10 @@ import { selectSkew } from "../live/strip";
 import { selectProjectList } from "../../src/data/selectors";
 import { Pause } from "lucide-react";
 import { Button, cx, Dot, FrameTitle, Text, Tooltip, Truncate } from "../../ui";
+import { toHash } from "../shell/routes";
 import { asGetOutput } from "./contracts";
 import { barOf, orderRows, STATE_WORDS, type StateWord } from "./rows";
-import { dropLines, fullWhen, heldLine, staleWords, when } from "./view";
+import { dropLines, fullWhen, heldLine, staleWords, weekLine, when } from "./view";
 import s from "./status.module.css";
 
 const ALL = {} as const;
@@ -27,6 +29,10 @@ export const projectHref = (ref: ProjectStatusRow["projectRef"]): string =>
 
 /** A project's PR list: its chat with the panel on its PRs (shell/routes.ts). */
 export const prsHref = (ref: ProjectStatusRow["projectRef"]): string => `${projectHref(ref)}/prs`;
+
+/** A project's Factory numbers: what it merged and how (`#/factory?project=<machine>/<project>`). */
+export const factoryHref = (ref: ProjectStatusRow["projectRef"]): string =>
+  toHash({ id: "factory", project: { machineId: ref.machineId, projectId: ref.projectId } });
 
 /** One phrase wherever there is no bar yet: nothing to count. */
 const NO_PROGRESS = "no progress yet";
@@ -88,6 +94,7 @@ const TONE = { waiting_on_you: "warning", blocked: "danger", working: "default",
 function Row({ row, state, now }: { row: ProjectStatusRow; state: StateWord; now: number }) {
   const bar = barOf(row);
   const merged = row.lastMerged;
+  const week = weekLine(row.merged7d, row.throughFleetdPct7d);
   const mergedAt = merged === undefined ? "" : when(merged.at, now);
   const label = [
     `${row.title}: ${STATE_WORDS[state]}`,
@@ -161,6 +168,17 @@ function Row({ row, state, now }: { row: ProjectStatusRow; state: StateWord; now
           </Text>
         )}
       </a>
+      {week === undefined ? (
+        <span aria-hidden />
+      ) : (
+        <Tooltip content={week}>
+          <a className={cx(s.week)} href={factoryHref(row.projectRef)} aria-label={`${row.title}: ${week}, in Factory`}>
+            <Text size="xs" tone="quiet" tabular>
+              {`${row.merged7d ?? 0} in 7 days`}
+            </Text>
+          </a>
+        </Tooltip>
+      )}
       <a className={cx(s.prs)} href={prsHref(row.projectRef)} aria-label={`${row.title}: pull requests`}>
         <Text size="xs" tone="quiet">
           PRs

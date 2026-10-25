@@ -8,7 +8,7 @@ use serde_with::skip_serializing_none;
 use crate::ids::{ProjectRef, Timestamp};
 use crate::ledger::WorkstreamId;
 use crate::plan::{MilestoneId, PlanItemId};
-use crate::prim::{AnyInt, Count, Int, Line, List, Text};
+use crate::prim::{AnyInt, Count, Int, Line, List, NonNegative, Text};
 use crate::train::{ChangeId, ChangeState, GitHubRepo};
 
 /// Why a part is not live: its source went quiet past its cadence.
@@ -171,6 +171,11 @@ pub struct ProjectStatusRow {
     /// Its task agents holding a slot now (the lead's own turn is not one).
     pub agents_running: Count,
     pub last_merged: Option<LastMerged>,
+    /// Landed changes on its repos over the last 7 calendar days in the hub's zone, today included, by every route
+    /// (metrics_get's count). Absent when the metrics know none of its repos, so nothing is read as zero.
+    pub merged_7d: Option<Count>,
+    /// Of `merged_7d`, the share the merge train landed, in percent. Absent when nothing landed.
+    pub through_fleetd_pct_7d: Option<NonNegative>,
     pub as_of: Timestamp,
     /// Set when a source the row reads (its machine, its repos on GitHub, their merge train) went quiet.
     pub stale: Option<StaleMark>,

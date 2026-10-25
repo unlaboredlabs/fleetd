@@ -2428,12 +2428,19 @@ export type ProjectStatusRow = {
   /** Blocked only: why, in one line, for the expanded row. */
   blockedReason?: string;
   lastMerged?: LastMerged;
+  /**
+   * Landed changes on its repos over the last 7 calendar days in the hub's zone, today included, by every route
+   * (metrics_get's count). Absent when the metrics know none of its repos, so nothing is read as zero.
+   */
+  merged7d?: number;
   /** The project's bar, under the drop rule of its series (status_get). Absent when it has nothing to count. */
   progress?: ProgressEstimate;
   projectRef: ProjectRef;
   /** Set when a source the row reads (its machine, its repos on GitHub, their merge train) went quiet. */
   stale?: StaleMark;
   state: ProjectRowState;
+  /** Of `merged_7d`, the share the merge train landed, in percent. Absent when nothing landed. */
+  throughFleetdPct7d?: number;
   title: string;
 };
 

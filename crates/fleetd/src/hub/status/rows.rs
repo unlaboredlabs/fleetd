@@ -6,7 +6,7 @@ use chrono_tz::Tz;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{ProjectRef, Timestamp};
 use fleetd_contracts::model::{Machine, MachineStatus};
-use fleetd_contracts::prim::{Count, Line, Text};
+use fleetd_contracts::prim::{Count, Line, NonNegative, Text};
 use fleetd_contracts::status::{CiState, LastMerged, ProjectRowState, ProjectStatusRow, StaleMark};
 use rusqlite::Connection;
 use serde_json::Value;
@@ -48,6 +48,7 @@ pub const CHANGES_A_ROW: &[HubEventType] = &[
     HubEventType::ChangeRefused,
     HubEventType::ChangeState,
     HubEventType::PrMerged,
+    HubEventType::PrMergedOutside,
     HubEventType::PlanChanged,
     HubEventType::PlanVerified,
     HubEventType::UsageBreaker,
@@ -229,6 +230,11 @@ pub fn read(hub: &Hub, fresh: &Fresh, now: i64) -> anyhow::Result<Vec<ProjectSta
     let tz = crate::hub::attention::hub_zone();
     let data = hub.db.with(|c| Ok(credit::Data::read(c, now)?))?;
     let (merges, in_flight) = hub.db.with(|c| Ok(read_changes(c)?))?;
+    // The 7-day fact counts the merge whose event this read may be answering.
+    if let Err(e) = crate::hub::metrics::project::catch_up(&hub.db, &hub.events) {
+        tracing::warn!(error = %e, "status: metrics not caught up");
+    }
+    let weeks = hub.db.with(|c| crate::hub::metrics::weeks(c, now, tz))?;
     let machines = hub.store.machines_list()?;
     let mut projects: Vec<(String, String)> = hub
         .store
@@ -320,6 +326,11 @@ pub fn read(hub: &Hub, fresh: &Fresh, now: i64) -> anyhow::Result<Vec<ProjectSta
                 pr_url: m.pr_url.as_deref().and_then(|u| Text::new(u).ok()),
                 at: ts(m.at_ms),
             }),
+            merged_7d: weeks.get(pk).map(|w| Count::unchecked(w.merged)),
+            through_fleetd_pct_7d: weeks
+                .get(pk)
+                .and_then(|w| w.through_fleetd_pct)
+                .map(NonNegative::unchecked),
             as_of: ts(now),
             stale,
         });

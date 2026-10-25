@@ -134,8 +134,8 @@ fn word(row: &ProjectStatusRow) -> String {
     }
 }
 
-/// One project: its word, its bar, agents and last merge, then whether it holds on paused work, why it last fell (at
-/// most three, newest first) and whether it is stale.
+/// One project: its word, its bar, agents and last merge, its last 7 days' merges, then whether it holds on paused
+/// work, why it last fell (at most three, newest first) and whether it is stale.
 fn render_row(row: &ProjectStatusRow, series: &[ProgressPoint], zone: Tz) -> Vec<String> {
     let now = &row.as_of;
     let mut out = vec![format!("{}: {}", row.title, word(row))];
@@ -163,6 +163,13 @@ fn render_row(row: &ProjectStatusRow, series: &[ProgressPoint], zone: Tz) -> Vec
         },
     );
     out.push(format!("  {progress} · {agents} · {merged}"));
+    if let Some(n) = row.merged_7d {
+        let share = row
+            .through_fleetd_pct_7d
+            .map(|p| format!(" · {}% through fleetd", p.get().round() as i64))
+            .unwrap_or_default();
+        out.push(format!("  {} merged in 7 days{share}", n.get()));
+    }
     if let Some(last) = series.last()
         && let Some(why) = &last.paused
     {
@@ -576,11 +583,12 @@ mod tests {
             { "at": "2026-10-18T14:00:00Z", "pct": 61, "verifiedPct": 40, "paused": "paused: an agent hit a usage limit" }
         ]))
         .unwrap();
-        let text = render(&[(row(json!({})), series)], chrono_tz::UTC);
+        let row = row(json!({ "merged7d": 12, "throughFleetdPct7d": 63.6 }));
+        let text = render(&[(row, series)], chrono_tz::UTC);
         assert_eq!(
             text,
             "Status at 14:02:07\n\nstorefront: working\n  [████████▒▒▒▒░░░░░░░░] 61% done, 40% verified · 1 agent · \
-             merged Add the login page #208 13:12:00\n  held at 61% (paused: an agent hit a usage limit)\n  \
+             merged Add the login page #208 13:12:00\n  12 merged in 7 days · 64% through fleetd\n  held at 61% (paused: an agent hit a usage limit)\n  \
              ↓ 69% → 61% 13:30:00: +3 items: time inspector added"
         );
     }
