@@ -7,7 +7,8 @@ use crate::brand;
 use crate::effort::TaskProfile;
 use crate::ids::{MachineId, ProjectRef, ThreadRef, Timestamp};
 use crate::ledger::WorkstreamId;
-use crate::prim::{Count, Line, List, NonEmpty, Positive, Text, is_http_url, js_len};
+use crate::literal;
+use crate::prim::{Count, Int, Line, List, NonEmpty, Positive, Text, is_http_url, js_len};
 use crate::sessions::{RunEnd, WorktreeBase};
 use crate::usage::UsageParked;
 
@@ -162,12 +163,30 @@ pub struct TaskRecovery {
 pub struct SlotStatePerProject {
     pub project_ref: ProjectRef,
     /// The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead is not
-    /// one. Its machine's `cap` until set.
+    /// one. Its machine's `cap` until set, and never above it: a setting above what the machine runs shows as the
+    /// machine's cap.
     pub max_agents: Count,
+    /// A person set the project's max agents; false: auto, its machine's cap.
+    #[serde(default)]
+    pub set: bool,
     /// Its agents running now. Above `maxAgents` right after the cap was lowered: nothing is stopped for it.
     pub running: Count,
     /// Its agents waiting for a slot, paused ones included.
     pub queued: Count,
+}
+
+/// What sets a machine's cap: a person (`set`), or the term of `auto` that binds. `unknown`: a node too old to
+/// report its memory, capped at 4 until it is updated; `unmeasured`: its node hasn't reported yet; `top`: the 64
+/// that auto never goes above. Disk is not a cap: it is `diskRoom`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum MachineCapSource {
+    Memory,
+    Cpu,
+    Top,
+    Unknown,
+    Unmeasured,
+    Set,
 }
 
 /// One machine's share of the board: what it fits, and what runs there.
@@ -181,8 +200,14 @@ pub struct SlotStatePerMachine {
     /// What the machine fits: one agent per CPU less a reserve, and 2 GB of memory each after the OS's share, at
     /// most 64.
     pub auto: Count,
-    /// The term that sets `auto`, e.g. "memory 18 GB" or "14 of 16 CPUs".
+    /// The term that sets `auto`, e.g. "memory 18 GB" or "14 of 16 CPUs"; "memory unknown" for a node too old to
+    /// report its memory, capped at 4.
     pub why: Text<1, 200>,
+    /// A person set `cap` (`cap_set` with `machine`, `fleetd machine set`); false: `cap` is `auto`.
+    #[serde(default)]
+    pub set: bool,
+    /// What sets `cap`; absent from older hubs.
+    pub source: Option<MachineCapSource>,
     /// Agents running there now.
     pub running: Count,
     /// New agents its free disk has room for now, above the guard's floor; absent while the node reports no disk.
@@ -202,6 +227,29 @@ pub struct SlotState {
     pub per_project: List<SlotStatePerProject, 0, 50>,
     #[serde(default)]
     pub per_machine: List<SlotStatePerMachine, 0, 50>,
+}
+
+literal!(
+    /// `"auto"`: no person's setting; the machine's own measure decides.
+    AutoLiteral = "auto"
+);
+
+/// A cap as a person sets it (`cap_set`): a number, or `"auto"` to clear their setting.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum CapSetting {
+    Auto(AutoLiteral),
+    Set(Int<1, 1000>),
+}
+
+impl CapSetting {
+    /// The number set; None: auto.
+    pub fn get(self) -> Option<i64> {
+        match self {
+            Self::Auto(_) => None,
+            Self::Set(n) => Some(n.get()),
+        }
+    }
 }
 
 /// Fields `HubEvent.data` carries on `task.*` events.

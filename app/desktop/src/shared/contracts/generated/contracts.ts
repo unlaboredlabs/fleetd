@@ -332,6 +332,9 @@ export type AttachmentRef = {
  */
 export type Attention = "loud" | "urgent";
 
+/** `"auto"`: no person's setting; the machine's own measure decides. */
+export type AutoLiteral = "auto";
+
 export type BaseError = {
   kind: BaseErrorKind;
   /** git's first line, e.g. "fatal: Authentication failed for 'https://github.com/a/b.git/'"; "offline". */
@@ -355,9 +358,22 @@ export type Brief = {
 };
 
 export type CapSetInput = {
-  /** The fleet cap: agents running at once across every project. Needs an admin key. */
-  cap?: number;
+  /**
+   * The fleet cap: agents running at once across every project. "auto": none beyond the machines' caps added
+   * up. Needs an admin key.
+   */
+  cap?: CapSetting;
+  machine?: CapSetMachine;
   project?: CapSetProject;
+};
+
+export type CapSetMachine = {
+  machineId: MachineId;
+  /**
+   * The most agents that run on the machine at once, across its projects; it may go above what the machine fits.
+   * "auto": what it fits.
+   */
+  maxAgents: CapSetting;
 };
 
 export type CapSetOutput = {
@@ -369,8 +385,8 @@ export type CapSetOutput = {
 };
 
 export type CapSetProject = {
-  /** 1 up to the fleet cap. */
-  maxAgents: number;
+  /** 1 up to the fleet cap; a number above its machine's cap counts as the machine's cap. "auto": its machine's cap. */
+  maxAgents: CapSetting;
   /**
    * Lowering: tell the agents above the new max to push their work in progress and wait; they resume when a slot
    * frees. Without it they finish their current work.
@@ -378,6 +394,9 @@ export type CapSetProject = {
   pauseExtras?: boolean;
   projectRef: ProjectRef;
 };
+
+/** A cap as a person sets it (`cap_set`): a number, or `"auto"` to clear their setting. */
+export type CapSetting = AutoLiteral | number;
 
 /** Which color a span gets in every view, and which breakdown row it adds to. */
 export type Category = "model" | "tools" | "queue" | "machine" | "human" | "pipeline" | "idle";
@@ -1492,6 +1511,13 @@ export type Machine = {
   status: MachineStatus;
   tags: string[];
 };
+
+/**
+ * What sets a machine's cap: a person (`set`), or the term of `auto` that binds. `unknown`: a node too old to
+ * report its memory, capped at 4 until it is updated; `unmeasured`: its node hasn't reported yet; `top`: the 64
+ * that auto never goes above. Disk is not a cap: it is `diskRoom`.
+ */
+export type MachineCapSource = "memory" | "cpu" | "top" | "unknown" | "unmeasured" | "set";
 
 /** `machine.guard`. */
 export type MachineGuardData = {
@@ -3012,14 +3038,22 @@ export type SlotStatePerMachine = {
   machineId: MachineId;
   /** Agents running there now. */
   running: number;
-  /** The term that sets `auto`, e.g. "memory 18 GB" or "14 of 16 CPUs". */
+  /** A person set `cap` (`cap_set` with `machine`, `fleetd machine set`); false: `cap` is `auto`. */
+  set?: boolean;
+  /** What sets `cap`; absent from older hubs. */
+  source?: MachineCapSource;
+  /**
+   * The term that sets `auto`, e.g. "memory 18 GB" or "14 of 16 CPUs"; "memory unknown" for a node too old to
+   * report its memory, capped at 4.
+   */
   why: string;
 };
 
 export type SlotStatePerProject = {
   /**
    * The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead is not
-   * one. Its machine's `cap` until set.
+   * one. Its machine's `cap` until set, and never above it: a setting above what the machine runs shows as the
+   * machine's cap.
    */
   maxAgents: number;
   projectRef: ProjectRef;
@@ -3027,6 +3061,8 @@ export type SlotStatePerProject = {
   queued: number;
   /** Its agents running now. Above `maxAgents` right after the cap was lowered: nothing is stopped for it. */
   running: number;
+  /** A person set the project's max agents; false: auto, its machine's cap. */
+  set?: boolean;
 };
 
 /** `source.fresh`. */

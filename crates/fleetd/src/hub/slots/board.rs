@@ -2,6 +2,7 @@
 //! thread events, machine facts and the time.
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadId};
 
+use super::CapInput;
 use super::sizing::{self, Auto};
 
 /// An agent started this recently still counts against its machine's disk room: its worktree hasn't grown yet.
@@ -113,16 +114,22 @@ pub struct Claim {
 pub enum Op {
     Save(Claim),
     Remove(String),
-    Cap(i64),
-    MaxAgents(ProjectRef, i64),
-    /// A machine's measure, not a person's setting.
-    Machine(MachineId, String, Auto),
+    /// None: unset.
+    Cap(Option<i64>),
+    /// None: auto, the row goes.
+    MaxAgents(ProjectRef, Option<i64>),
+    /// A machine's measure and a person's setting for it.
+    Machine(Machine),
+    /// The machine was removed: its row goes, so its cap no longer counts.
+    ForgetMachine(MachineId),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProjectRow {
     pub project_ref: ProjectRef,
     pub max_agents: i64,
+    /// A person set it.
+    pub set: bool,
     pub running: i64,
     pub queued: i64,
 }
@@ -133,6 +140,8 @@ pub struct MachineRow {
     pub cap: i64,
     pub auto: i64,
     pub why: String,
+    /// A person set `cap`.
+    pub set: bool,
     pub running: i64,
     pub disk_room: Option<i64>,
 }
@@ -265,15 +274,15 @@ impl Board {
         {
             Some(i) => i,
             None => {
-                self.machines.push(Machine {
+                let m = Machine {
                     machine_id: machine_id.clone(),
                     name: name.to_owned(),
-                    auto: auto.clone(),
+                    auto,
                     max_agents: None,
                     disk_room,
-                });
-                self.ops
-                    .push(Op::Machine(machine_id.clone(), name.to_owned(), auto));
+                };
+                self.ops.push(Op::Machine(m.clone()));
+                self.machines.push(m);
                 return self.machine_cap(machine_id) > cap_before
                     || self.disk_room(machine_id).unwrap_or(i64::MAX) > room_before;
             }
@@ -281,10 +290,9 @@ impl Board {
         let m = &mut self.machines[i];
         m.disk_room = disk_room;
         if m.auto != auto || m.name != name {
-            m.auto = auto.clone();
+            m.auto = auto;
             m.name = name.to_owned();
-            self.ops
-                .push(Op::Machine(machine_id.clone(), name.to_owned(), auto));
+            self.ops.push(Op::Machine(m.clone()));
         }
         self.machine_cap(machine_id) > cap_before
             || self.disk_room(machine_id).unwrap_or(i64::MAX) > room_before
@@ -302,16 +310,26 @@ impl Board {
         self.ops.push(Op::Save(self.claims[i].clone()));
     }
 
-    /// The project's max agents: its machine's cap until set.
-    pub fn max_agents_of(&self, r: &ProjectRef) -> i64 {
+    /// The project's max agents as a person set it, if they did.
+    pub fn setting(&self, r: &ProjectRef) -> Option<i64> {
         self.max_agents
             .iter()
             .find(|(s, _)| same(s, r))
-            .map_or_else(|| self.machine_cap(&r.machine_id), |(_, n)| *n)
+            .map(|(_, n)| *n)
     }
 
+    /// The project's max agents: its machine's cap until set, and never above it, since no more than that run there.
+    pub fn max_agents_of(&self, r: &ProjectRef) -> i64 {
+        let machine = self.machine_cap(&r.machine_id);
+        self.setting(r).map_or(machine, |n| n.min(machine))
+    }
+
+    /// What sets [`Self::max_agents_of`]: the project's setting while its machine runs that many, else the machine.
     pub fn max_source(&self, r: &ProjectRef) -> MaxSource {
-        if self.max_agents.iter().any(|(s, _)| same(s, r)) {
+        if self
+            .setting(r)
+            .is_some_and(|n| n <= self.machine_cap(&r.machine_id))
+        {
             return MaxSource::Project;
         }
         match self.machine(&r.machine_id) {
@@ -549,19 +567,58 @@ impl Board {
         }
     }
 
-    /// `cap_set`. Always counts as freeing capacity, so the caller evaluates and notifies. Lowering revokes nothing.
-    pub fn set_cap(&mut self, cap: Option<i64>, max_agents: Option<(ProjectRef, i64)>) {
-        if let Some(cap) = cap {
-            self.cap = Some(cap);
+    /// `cap_set`: each setting given, a number or auto (None). Always counts as freeing capacity, so the caller
+    /// evaluates and notifies. Lowering revokes nothing.
+    pub fn set_cap(&mut self, input: CapInput) {
+        if let Some(cap) = input.cap {
+            self.cap = cap;
             self.ops.push(Op::Cap(cap));
         }
-        if let Some((r, n)) = max_agents {
-            match self.max_agents.iter_mut().find(|(s, _)| same(s, &r)) {
-                Some(entry) => entry.1 = n,
-                None => self.max_agents.push((r.clone(), n)),
+        if let Some((r, n)) = input.max_agents {
+            let at = self.max_agents.iter().position(|(s, _)| same(s, &r));
+            match (at, n) {
+                (Some(i), Some(n)) => self.max_agents[i].1 = n,
+                (None, Some(n)) => self.max_agents.push((r.clone(), n)),
+                (Some(i), None) => {
+                    self.max_agents.remove(i);
+                }
+                (None, None) => {}
             }
             self.ops.push(Op::MaxAgents(r, n));
         }
+        if let Some((m, n)) = input.machine {
+            let i = match self.machines.iter().position(|x| x.machine_id == m) {
+                Some(i) => i,
+                // Set before its node first reported: it counts as unmeasured until then.
+                None => {
+                    self.machines.push(Machine {
+                        name: m.as_str().to_owned(),
+                        machine_id: m,
+                        auto: Auto {
+                            cap: sizing::UNMEASURED,
+                            why: sizing::UNMEASURED_WHY.to_owned(),
+                        },
+                        max_agents: None,
+                        disk_room: None,
+                    });
+                    self.machines.len() - 1
+                }
+            };
+            self.machines[i].max_agents = n;
+            self.ops.push(Op::Machine(self.machines[i].clone()));
+        }
+    }
+
+    /// The machine was removed: its cap no longer counts in the fleet's total. Its claims stay until they end.
+    pub fn forget_machine(&mut self, m: &MachineId) {
+        if let Some(i) = self.machines.iter().position(|x| x.machine_id == *m) {
+            self.machines.remove(i);
+            self.ops.push(Op::ForgetMachine(m.clone()));
+        }
+    }
+
+    pub fn machine_ids(&self) -> Vec<MachineId> {
+        self.machines.iter().map(|m| m.machine_id.clone()).collect()
     }
 
     /// The project's agents running beyond its max agents, newest first, writers and readers only: a review gates a
@@ -589,9 +646,10 @@ impl Board {
         let mut rows: Vec<ProjectRow> = self
             .max_agents
             .iter()
-            .map(|(r, n)| ProjectRow {
+            .map(|(r, _)| ProjectRow {
                 project_ref: r.clone(),
-                max_agents: *n,
+                max_agents: self.max_agents_of(r),
+                set: true,
                 running: 0,
                 queued: 0,
             })
@@ -606,6 +664,7 @@ impl Board {
                     rows.push(ProjectRow {
                         project_ref: c.project_ref.clone(),
                         max_agents: self.max_agents_of(&c.project_ref),
+                        set: false,
                         running: 0,
                         queued: 0,
                     });
@@ -631,6 +690,7 @@ impl Board {
                 cap: m.cap(),
                 auto: m.auto.cap,
                 why: m.auto.why.clone(),
+                set: m.max_agents.is_some(),
                 running: self
                     .claims
                     .iter()
@@ -752,7 +812,14 @@ mod tests {
             cap: Option<i64>,
             max_agents: Option<(ProjectRef, i64)>,
         ) -> BoardState {
-            self.board.set_cap(cap, max_agents);
+            self.set(CapInput {
+                cap: cap.map(Some),
+                max_agents: max_agents.map(|(r, n)| (r, Some(n))),
+                machine: None,
+            })
+        }
+        fn set(&mut self, input: CapInput) -> BoardState {
+            self.board.set_cap(input);
             self.freed();
             self.board.state()
         }
@@ -915,7 +982,12 @@ mod tests {
         assert_eq!((lowered.cap, lowered.used, lowered.queued), (1, 2, 1));
         k.release("T1");
         assert_eq!(k.grants, ["T2"]);
-        assert!(k.board.take_ops().iter().any(|op| matches!(op, Op::Cap(1))));
+        assert!(
+            k.board
+                .take_ops()
+                .iter()
+                .any(|op| matches!(op, Op::Cap(Some(1))))
+        );
 
         // A restarted board from the persisted rows, then the first listener's evaluate.
         let mut second = Kit {
@@ -1119,7 +1191,7 @@ mod tests {
                 .observe_machine(&mid("new"), "new-box", auto.clone(), None)
         );
         assert!(
-            matches!(k.board.take_ops().last(), Some(Op::Machine(m, _, x)) if *m == mid("new") && *x == auto)
+            matches!(k.board.take_ops().last(), Some(Op::Machine(m)) if m.machine_id == mid("new") && m.auto == auto)
         );
         k.freed();
         assert_eq!(k.board.agents(&a), (5, 0));

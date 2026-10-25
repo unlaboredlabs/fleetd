@@ -29,7 +29,7 @@ use crate::prompts::{
 use crate::secrets::{SealedSecret, SecretFingerprint};
 use crate::status::{ProgressPoint, ProjectStatusRow};
 use crate::steer::{Steer, SteerId, SteerMode, SteerTarget};
-use crate::tasks::{SlotState, Task, TaskId, TaskState};
+use crate::tasks::{CapSetting, SlotState, Task, TaskId, TaskState};
 use crate::time::{
     CategoryTotal, CiCheckStat, CommandStat, Coverage, CriticalPath, HumanWait, Insight,
     InsightRule, Period, PeriodBreakdown, ProfileTotal, RepeatStat, Span, SpanKind, TimeFilters,
@@ -596,26 +596,35 @@ output!(TasksListOutput {
 input!(TaskGetInput { task_id: TaskId });
 output!(TaskGetOutput { task: Task });
 
-// cap_set: the fleet cap, a project's max agents, or both. Lowering stops nothing; raising starts queued agents at once.
+// cap_set: the fleet cap, a project's max agents, a machine's cap, or several. Each takes a number or "auto", which
+// clears a person's setting. Lowering stops nothing; raising starts queued agents at once.
 input!(CapSetProject {
     project_ref: ProjectRef,
-    /// 1 up to the fleet cap.
-    max_agents: Int<1, 1000>,
+    /// 1 up to the fleet cap; a number above its machine's cap counts as the machine's cap. "auto": its machine's cap.
+    max_agents: CapSetting,
     /// Lowering: tell the agents above the new max to push their work in progress and wait; they resume when a slot
     /// frees. Without it they finish their current work.
     pause_extras: Option<bool>,
 });
+input!(CapSetMachine {
+    machine_id: MachineId,
+    /// The most agents that run on the machine at once, across its projects; it may go above what the machine fits.
+    /// "auto": what it fits.
+    max_agents: CapSetting,
+});
 input!(
     #[serde(remote = "Self")]
     CapSetInput {
-        /// The fleet cap: agents running at once across every project. Needs an admin key.
-        cap: Option<Int<1, 1000>>,
+        /// The fleet cap: agents running at once across every project. "auto": none beyond the machines' caps added
+        /// up. Needs an admin key.
+        cap: Option<CapSetting>,
         project: Option<CapSetProject>,
+        machine: Option<CapSetMachine>,
     }
 );
 checked!(CapSetInput, |input| {
-    if input.cap.is_none() && input.project.is_none() {
-        return Err("expected cap, project or both".into());
+    if input.cap.is_none() && input.project.is_none() && input.machine.is_none() {
+        return Err("expected cap, project, machine or several".into());
     }
     Ok(())
 });
@@ -1426,6 +1435,18 @@ mod tests {
         assert!(decode::<CapSetInput>(json!({})).is_err());
         assert!(decode::<CapSetInput>(json!({ "cap": 1001 })).is_err());
         assert!(decode::<CapSetInput>(json!({ "cap": 40 })).is_ok());
+        assert!(decode::<CapSetInput>(json!({ "cap": "auto" })).is_ok());
+        assert!(decode::<CapSetInput>(json!({ "cap": "none" })).is_err());
+        assert!(
+            decode::<CapSetInput>(
+                json!({ "machine": { "machineId": "mbp", "maxAgents": "auto" } })
+            )
+            .is_ok()
+        );
+        assert!(
+            decode::<CapSetInput>(json!({ "machine": { "machineId": "mbp", "maxAgents": 0 } }))
+                .is_err()
+        );
     }
 
     #[test]

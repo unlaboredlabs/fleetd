@@ -117,11 +117,16 @@ impl HubStore {
         })
     }
 
-    /// Drops the machine's record (`fleetd machine remove`); its projects and threads stay cached.
+    /// Drops the machine's record (`fleetd machine remove`) and its cap, so it no longer counts in the fleet's total;
+    /// its projects and threads stay cached.
     pub fn machine_remove(&self, machine_id: &MachineId) -> Result<(), StoreError> {
-        self.db.with(|conn| {
-            conn.prepare_cached("DELETE FROM machines WHERE machine_id = ?")?
-                .execute([&machine_id.as_str()])?;
+        self.db.transaction(|conn| {
+            for sql in [
+                "DELETE FROM machines WHERE machine_id = ?",
+                "DELETE FROM slot_machine_caps WHERE machine_id = ?",
+            ] {
+                conn.prepare_cached(sql)?.execute([&machine_id.as_str()])?;
+            }
             Ok(())
         })
     }

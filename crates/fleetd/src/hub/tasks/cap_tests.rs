@@ -7,7 +7,7 @@ use fleetd_contracts::sessions::RunEnd;
 use fleetd_contracts::tasks::{AgentsCapData, Task, TaskState};
 use serde_json::json;
 
-use super::cap::{CapChange, ProjectCap};
+use super::cap::{CapChange, MachineCap, ProjectCap};
 use crate::hub::api::{Hub, HubConfig};
 use crate::hub::slots::{Agents, MaxSource, SlotPriority, SlotRequest};
 use crate::hub::store::HubDb;
@@ -78,8 +78,20 @@ fn set(max_agents: i64, pause_extras: bool) -> CapChange {
         cap: None,
         project: Some(ProjectCap {
             project_ref: project(),
-            max_agents,
+            max_agents: Some(max_agents),
             pause_extras,
+        }),
+        machine: None,
+    }
+}
+
+fn machine_set(max_agents: Option<i64>) -> CapChange {
+    CapChange {
+        cap: None,
+        project: None,
+        machine: Some(MachineCap {
+            machine_id: MachineId::unchecked("lab-a"),
+            max_agents,
         }),
     }
 }
@@ -187,8 +199,9 @@ async fn max_agents_stays_within_the_fleet_cap() {
     assert_eq!(hub.slots.cap(), None);
     assert_eq!(hub.slots.state().cap.get(), 28);
     let fleet = CapChange {
-        cap: Some(20),
+        cap: Some(Some(20)),
         project: None,
+        machine: None,
     };
     let outcome = hub.tasks.set_caps(fleet).await.unwrap();
     assert_eq!(
@@ -208,12 +221,12 @@ async fn max_agents_stays_within_the_fleet_cap() {
         "Max agents 21 is above the fleet's 20 slots."
     );
     let both = CapChange {
-        cap: Some(60),
-        ..set(41, false)
+        cap: Some(Some(60)),
+        ..set(21, false)
     };
     let outcome = hub.tasks.set_caps(both).await.unwrap();
     assert_eq!(outcome.slots.cap.get(), 60);
-    assert_eq!(hub.slots.agents(&project()).max_agents, 41);
+    assert_eq!(hub.slots.agents(&project()).max_agents, 21);
     let fleet = &cap_events(&hub)[1];
     assert_eq!(
         fleet.0,

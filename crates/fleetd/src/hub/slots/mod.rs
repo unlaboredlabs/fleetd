@@ -12,7 +12,9 @@ use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadId, ThreadRe
 use fleetd_contracts::model::ThreadStatus;
 use fleetd_contracts::node_link::NodeLoad;
 use fleetd_contracts::prim::{Int, List, Text};
-use fleetd_contracts::tasks::{SlotState, SlotStatePerMachine, SlotStatePerProject, TaskKind};
+use fleetd_contracts::tasks::{
+    MachineCapSource, SlotState, SlotStatePerMachine, SlotStatePerProject, TaskKind,
+};
 use rusqlite::{OptionalExtension, params};
 
 use board::{Board, BoardState, Claim, ClaimState, Machine, Op};
@@ -44,12 +46,16 @@ pub fn priority_of(kind: TaskKind) -> SlotPriority {
 /// spawns its queue retry from it.
 pub type ReleaseListener = Arc<dyn Fn() + Send + Sync>;
 
+/// A `cap_set` change. Each field: None leaves that setting alone; Some(None) clears it back to auto (the fleet cap:
+/// unset); Some(Some(n)) sets n.
 #[derive(Clone, Debug, Default)]
 pub struct CapInput {
     /// 1..1000.
-    pub cap: Option<i64>,
+    pub cap: Option<Option<i64>>,
     /// A project's max agents, 1 up to the cap.
-    pub max_agents: Option<(ProjectRef, i64)>,
+    pub max_agents: Option<(ProjectRef, Option<i64>)>,
+    /// A machine's cap, 1..1000.
+    pub machine: Option<(MachineId, Option<i64>)>,
 }
 
 /// A project's agents as its lead is told them: "agents: 7 running of 12 (auto: memory 32 GB), 2 queued".
@@ -110,24 +116,36 @@ fn persist(db: &HubDb, ops: Vec<Op>) -> Result<(), StoreError> {
                 Op::Remove(holder) => {
                     db.prepare_cached("DELETE FROM slot_claims WHERE holder = ?")?.execute([holder])?;
                 }
-                Op::Cap(cap) => {
+                Op::Cap(Some(cap)) => {
                     db.prepare_cached("INSERT INTO slot_settings (key, value) VALUES ('cap', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value")?
                         .execute([cap])?;
                 }
+                Op::Cap(None) => {
+                    db.prepare_cached("DELETE FROM slot_settings WHERE key = 'cap'")?.execute([])?;
+                }
                 // The table keeps its name from when this was a project's share, so an older hub's database opens.
-                Op::MaxAgents(r, share) => {
+                Op::MaxAgents(r, Some(share)) => {
                     db.prepare_cached(
                         "INSERT INTO slot_shares (machine_id, project_id, share) VALUES (?, ?, ?)
                          ON CONFLICT (machine_id, project_id) DO UPDATE SET share = excluded.share",
                     )?
                     .execute(params![r.machine_id.as_str(), r.project_id.as_str(), share])?;
                 }
-                Op::Machine(m, name, auto) => {
+                Op::MaxAgents(r, None) => {
+                    db.prepare_cached("DELETE FROM slot_shares WHERE machine_id = ? AND project_id = ?")?
+                        .execute(params![r.machine_id.as_str(), r.project_id.as_str()])?;
+                }
+                Op::Machine(m) => {
                     db.prepare_cached(
-                        "INSERT INTO slot_machine_caps (machine_id, name, auto, why) VALUES (?, ?, ?, ?)
-                         ON CONFLICT (machine_id) DO UPDATE SET name = excluded.name, auto = excluded.auto, why = excluded.why",
+                        "INSERT INTO slot_machine_caps (machine_id, name, auto, why, max_agents) VALUES (?, ?, ?, ?, ?)
+                         ON CONFLICT (machine_id) DO UPDATE SET name = excluded.name, auto = excluded.auto, why = excluded.why,
+                           max_agents = excluded.max_agents",
                     )?
-                    .execute(params![m.as_str(), name, auto.cap, auto.why])?;
+                    .execute(params![m.machine_id.as_str(), m.name, m.auto.cap, m.auto.why, m.max_agents])?;
+                }
+                Op::ForgetMachine(m) => {
+                    db.prepare_cached("DELETE FROM slot_machine_caps WHERE machine_id = ?")?
+                        .execute([m.as_str()])?;
                 }
             }
         }
@@ -190,6 +208,7 @@ fn slot_state(s: BoardState) -> SlotState {
                 .map(|row| SlotStatePerProject {
                     project_ref: row.project_ref,
                     max_agents: count(row.max_agents),
+                    set: row.set,
                     running: count(row.running),
                     queued: count(row.queued),
                 })
@@ -202,7 +221,13 @@ fn slot_state(s: BoardState) -> SlotState {
                     machine_id: row.machine_id,
                     cap: count(row.cap),
                     auto: count(row.auto),
+                    source: Some(if row.set {
+                        MachineCapSource::Set
+                    } else {
+                        sizing::source(&row.why)
+                    }),
                     why: Text::new(row.why).unwrap_or_else(|_| Text::unchecked("auto".to_owned())),
+                    set: row.set,
                     running: count(row.running),
                     disk_room: row.disk_room.map(count),
                 })
@@ -378,14 +403,34 @@ impl Slots {
         Ok(())
     }
 
-    /// `cap_set`: the fleet cap, a project's max agents, or both. Persisted; applies at once, starting queued
-    /// agents that now fit before it returns.
+    /// `cap_set`: the fleet cap, a project's max agents, a machine's cap, each a number or auto. Persisted; applies
+    /// at once, starting queued agents that now fit before it returns.
     pub fn set_cap(&self, input: CapInput) -> Result<SlotState, StoreError> {
         self.locked(|b| {
-            b.set_cap(input.cap, input.max_agents);
+            b.set_cap(input);
             ((), true)
         })?;
         Ok(self.state())
+    }
+
+    /// Drops the board's machines that are no longer the hub's: `fleetd machine remove` deletes a machine's row from
+    /// the database directly, maybe while this hub runs, so their caps stop counting in the fleet's total.
+    fn forget_removed(&self) -> Result<(), StoreError> {
+        let kept: Vec<String> = self.db.with(|db| {
+            db.prepare_cached("SELECT machine_id FROM slot_machine_caps")?
+                .query_map([], |r| r.get(0))?
+                .collect::<rusqlite::Result<_>>()
+                .map_err(StoreError::from)
+        })?;
+        let mut board = self.board();
+        for m in board.machine_ids() {
+            if !kept.iter().any(|k| k == m.as_str()) {
+                board.forget_machine(&m);
+            }
+        }
+        // Already gone from the database.
+        board.take_ops();
+        Ok(())
     }
 
     pub fn agents(&self, r: &ProjectRef) -> Agents {
@@ -397,6 +442,11 @@ impl Slots {
             queued,
             source: board.max_source(r),
         }
+    }
+
+    /// The project's max agents as a person set it; None: auto.
+    pub fn max_agents_set(&self, r: &ProjectRef) -> Option<i64> {
+        self.board().setting(r)
     }
 
     /// The queued holder's place in line, from 1 ([`Board::position`]).
@@ -416,7 +466,14 @@ impl Slots {
 
     /// The fleet cap when set, else what the machines fit together.
     pub fn total(&self) -> i64 {
+        self.forget_removed_or_warn();
         self.board().total()
+    }
+
+    fn forget_removed_or_warn(&self) {
+        if let Err(e) = self.forget_removed() {
+            tracing::warn!(error = %e, "slots: removed machines not read");
+        }
     }
 
     /// The machine's cap: a person's setting, else what it fits.
@@ -430,6 +487,7 @@ impl Slots {
     }
 
     pub fn state(&self) -> SlotState {
+        self.forget_removed_or_warn();
         slot_state(self.board().state())
     }
 }
