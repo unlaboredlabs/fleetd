@@ -124,11 +124,12 @@ async fn low_disk_holds_new_agents_keeps_running_ones_and_room_again_starts_them
     assert_eq!(state(&hub, "T1").state, TaskState::Running);
 }
 
-/// `load` with one 5-hour window `used` of the way through, resetting after the test clock.
+/// `load` with one 5-hour window `used` of the way through, read at the test clock's time and resetting after it.
 fn used(used: f64) -> fleetd_contracts::node_link::NodeLoad {
     let mut l = load(500, 3.0);
     l.limits = serde_json::from_value(json!([{
         "limitType": "five_hour", "utilization": used, "resetsAt": "2026-10-30T14:00:00.000Z", "status": "allowed",
+        "observedAt": "2026-10-14T17:46:40.000Z",
     }]))
     .unwrap();
     l
@@ -145,7 +146,7 @@ async fn a_nearly_used_window_holds_new_agents_keeps_running_ones_and_below_85_s
     );
 
     hub.link.observe_load(&lab_a(), Some(used(0.91)));
-    let paused = "Paused new agents: 5-hour limit 91% on lab-a, resets Fri 14:00 UTC (pauses at 90%, lifts below 85%)";
+    let paused = "Paused new agents: 5-hour limit 91% on lab-a as of 17:46 UTC, resets Fri 14:00 UTC (pauses at 90%, lifts below 85%)";
     assert_eq!(hub.link.paused(&lab_a()).as_deref(), Some(paused));
     catch_up(&hub.tasks).await;
     let waiting = state(&hub, "T2");
