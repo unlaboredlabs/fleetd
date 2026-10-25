@@ -81,6 +81,8 @@ pub enum WakeKind {
     TaskResult,
     TaskWaiting,
     CapRaised,
+    /// A dead task resumed, or one waits for its offline machine: in the lead's next wake, never one alone.
+    Recovery,
 }
 
 pub trait TaskPorts: Send + Sync {
@@ -88,6 +90,10 @@ pub trait TaskPorts: Send + Sync {
     fn is_connected(&self, machine_id: &MachineId) -> bool;
     /// Executors.awaitLive: resolves once the machine has a live node link.
     fn await_live<'a>(&'a self, machine_id: &'a MachineId) -> BoxFut<'a, ()>;
+    /// Executors.liveSince: when the machine's current node link went live, in ms; None while it has none.
+    fn live_since(&self, _machine_id: &MachineId) -> Option<i64> {
+        None
+    }
     /// Executors.launch: the thread, and where its worktree's branch started when it has one.
     fn launch<'a>(
         &'a self,
