@@ -346,6 +346,40 @@ pub fn remove_detached(root: &Path, path: &Path) -> Result<(), GitError> {
     Ok(())
 }
 
+/// Whether the worktree at `path` has changes git hasn't committed; gitignored files don't count.
+pub fn uncommitted(path: &Path) -> Result<bool, GitError> {
+    Ok(!git(path, &["status", "--porcelain"])?.trim().is_empty())
+}
+
+/// Removes every worktree of a project that is going: each of `paths` that is still a worktree of `root`,
+/// uncommitted changes and build output included, then `dir` (fleetd's own directory under the node home) and git's
+/// records of any worktree in it that was already gone. Branches stay, so every commit stays reachable, and nothing in
+/// the checkout's working tree is touched. With the checkout itself gone, only `dir` goes. Returns how many worktrees
+/// it removed.
+pub fn remove_all(root: &Path, dir: &Path, paths: &[PathBuf]) -> Result<usize, GitError> {
+    let mut removed = 0;
+    let checkout = root.is_dir();
+    for path in paths.iter().filter(|p| checkout && p.starts_with(dir)) {
+        if worktree_branch(root, path)?.is_some() {
+            git(
+                root,
+                &["worktree", "remove", "--force", &path.to_string_lossy()],
+            )?;
+            removed += 1;
+        }
+    }
+    match std::fs::remove_dir_all(dir) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            return Err(GitError(format!("cannot remove {}: {e}", dir.display())));
+        }
+        _ => {}
+    }
+    if checkout {
+        git(root, &["worktree", "prune"])?;
+    }
+    Ok(removed)
+}
+
 /// The PR keywords that end a repo's path in a PR URL.
 const PR_SEGMENTS: [&str; 4] = ["pull", "pulls", "merge_requests", "pull-requests"];
 

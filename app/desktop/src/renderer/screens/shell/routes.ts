@@ -19,7 +19,7 @@ export type PanelTab = "agents" | "prs";
 /** What the panel beside a project's chat shows: a tab's list, or one agent's work or one PR from it. */
 export type PanelView = { readonly tab: "agents"; readonly agent: string | null } | { readonly tab: "prs"; readonly pr: PrKey | null };
 
-export const SETTINGS_TABS = ["general", "notifications", "agents", "prompts", "instructions", "memory"] as const;
+export const SETTINGS_TABS = ["general", "notifications", "agents", "projects", "prompts", "instructions", "memory"] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 export type SettingsView = "edit" | "compare" | "update";
 

@@ -1193,6 +1193,23 @@ export type Enforcement = "code" | "prompt";
 
 export type EnvName = string;
 
+export type EnvValue = string;
+
+export type EnvVarKind = "plain" | "secret";
+
+export type EnvVarName = string;
+
+/** One variable to add or replace. */
+export type EnvVarSet = {
+  kind: "plain";
+  name: EnvVarName;
+  value: EnvValue;
+} | {
+  kind: "secret";
+  name: EnvVarName;
+  sealed: SealedSecret;
+};
+
 export type ErrorCode = "machine_offline" | "not_found" | "forbidden" | "invalid" | "failed";
 
 export type EventSeq = number;
@@ -2550,6 +2567,31 @@ export type ProjectDiscoverOutput = {
   truncated?: boolean;
 };
 
+export type ProjectEnvSetInput = {
+  machineId: MachineId;
+  projectId: ProjectId;
+  remove?: EnvVarName[];
+  /** Variables to add or replace; a secret replaces a plain one of the same name and the other way round. */
+  set?: EnvVarSet[];
+};
+
+export type ProjectEnvSetOutput = {
+  env: ProjectEnvVar[];
+  next?: string;
+  truncated?: boolean;
+};
+
+/** One of a project's variables as the hub keeps it. A secret has no value here, only its fingerprint. */
+export type ProjectEnvVar = {
+  /** A secret's: the first 8 hex characters of sha256 over its value, as the node computed it. */
+  fingerprint?: SecretFingerprint;
+  kind: EnvVarKind;
+  name: EnvVarName;
+  updatedAt: Timestamp;
+  /** A plain variable's value. */
+  value?: EnvValue;
+};
+
 export type ProjectFilesInput = {
   limit?: number;
   machineId: MachineId;
@@ -2677,6 +2719,11 @@ export type ProjectRef = {
 export type ProjectRemoveInput = {
   machineId: MachineId;
   projectId: ProjectId;
+  /**
+   * Also force-remove the fleetd worktrees its agents worked in, uncommitted changes and all, once its agents have
+   * stopped. Their branches and the checkout stay as they are.
+   */
+  removeWorktrees?: boolean;
 };
 
 export type ProjectRemoveOutput = {
@@ -2699,6 +2746,49 @@ export type ProjectSetInput = {
 export type ProjectSetOutput = {
   mediumAllowed: boolean;
   next?: string;
+  truncated?: boolean;
+};
+
+export type ProjectSettings = {
+  /** Its agents' variables, by name. A secret's value is never here. */
+  env: ProjectEnvVar[];
+  /**
+   * True: a finished task's worktree stays on the machine. False (the default): a reader's goes when it finishes
+   * and a writer's once its PR merges.
+   */
+  keepWorktrees: boolean;
+  machineId: MachineId;
+  projectId: ProjectId;
+  title: string;
+  workspaceRoot: string;
+  /** From the node, now: absent while it is offline or too old to say. */
+  worktrees?: ProjectWorktrees;
+  /** Why `worktrees` is absent. */
+  worktreesUnknown?: string;
+};
+
+export type ProjectSettingsGetInput = {
+  machineId: MachineId;
+  projectId: ProjectId;
+};
+
+export type ProjectSettingsGetOutput = {
+  next?: string;
+  settings: ProjectSettings;
+  truncated?: boolean;
+};
+
+export type ProjectSettingsSetInput = {
+  keepWorktrees?: boolean;
+  machineId: MachineId;
+  projectId: ProjectId;
+  /** The project's name in fleetd; its folder keeps its own. */
+  title?: string;
+};
+
+export type ProjectSettingsSetOutput = {
+  next?: string;
+  settings: ProjectSettings;
   truncated?: boolean;
 };
 
@@ -2750,6 +2840,29 @@ export type ProjectSummary = {
   threads: ThreadCounts;
   title: string;
   workspaceRoot: string;
+};
+
+/** One fleetd worktree of the project on its node, under `<node home>/worktrees/<project>/`. */
+export type ProjectWorktree = {
+  /** A writer's branch; absent for a read or review task's detached worktree. */
+  branch?: string;
+  path: string;
+  /** The session that works in it. */
+  sessionId: ThreadId;
+  /** It has changes git hasn't committed (gitignored files don't count): deleting the project loses them. */
+  uncommitted: boolean;
+};
+
+/** Where the project's worktrees live on its node and what is there now. */
+export type ProjectWorktrees = {
+  /**
+   * The branch new worktrees start from, freshly fetched from the remote: the repo's default branch. Absent for a
+   * repo with no commit yet.
+   */
+  baseBranch?: string;
+  /** `<node home>/worktrees/<project>`: every new worktree of the project goes here, one per session. */
+  dir: string;
+  worktrees: ProjectWorktree[];
 };
 
 /** `prompt.changed`. */
@@ -4557,10 +4670,13 @@ export interface ToolMap {
   pr_list: { input: PrListInput; output: PrListOutput };
   project_add: { input: ProjectAddInput; output: ProjectAddOutput };
   project_discover: { input: ProjectDiscoverInput; output: ProjectDiscoverOutput };
+  project_env_set: { input: ProjectEnvSetInput; output: ProjectEnvSetOutput };
   project_files: { input: ProjectFilesInput; output: ProjectFilesOutput };
   project_get: { input: ProjectGetInput; output: ProjectGetOutput };
   project_remove: { input: ProjectRemoveInput; output: ProjectRemoveOutput };
   project_set: { input: ProjectSetInput; output: ProjectSetOutput };
+  project_settings_get: { input: ProjectSettingsGetInput; output: ProjectSettingsGetOutput };
+  project_settings_set: { input: ProjectSettingsSetInput; output: ProjectSettingsSetOutput };
   project_stop: { input: ProjectStopInput; output: ProjectStopOutput };
   prompt_get: { input: PromptGetInput; output: PromptGetOutput };
   prompt_set: { input: PromptSetInput; output: PromptSetOutput };

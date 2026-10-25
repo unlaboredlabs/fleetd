@@ -58,6 +58,9 @@ back.
 
 A gated command can use a stored secret as an environment variable. The node reads it from its own files.
 
+For a secret every agent of a project should have, such as a test API key, set it in the project's settings instead:
+see [Environment variables](/docs/projects#env).
+
 From an MCP client, a secret is entered with `secret_submit` and an item is answered with `approval_answer`. Both
 take only a human key. `requests_list` lists every secret and approval request with its state.
 

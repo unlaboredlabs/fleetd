@@ -1,9 +1,9 @@
-// Secret requests: the value is sealed here, in main, to the sink machine's X25519 box key with libsodium's
+// Secret requests and a project's secret environment variables: the value is sealed here, in main, to the sink machine's X25519 box key with libsodium's
 // crypto_box_seal (the same construction as the node's crypto_box_seal_open and the old app's seal.rs), so the hub
 // only relays ciphertext and the renderer never gets the plaintext back. It is never logged.
-import { SECRET_MAX_BYTES, type ToolInput } from "../shared/contracts";
+import { SECRET_MAX_BYTES, type EnvVarSet, type ToolInput } from "../shared/contracts";
 import type { CallOutcome, HubError, SecretOutcome } from "../shared/hub";
-import type { SecretRequest } from "../shared/ipc";
+import type { ProjectEnvRequest, SecretRequest } from "../shared/ipc";
 
 
 const refused = (message: string, fix?: string): { ok: false; error: HubError } => ({
@@ -44,4 +44,29 @@ export const submitSecret = async (
   if (!out.ok) return out;
   const fingerprint = (out.output as { fingerprint?: unknown } | null)?.fingerprint;
   return { ok: true, fingerprint: typeof fingerprint === "string" ? fingerprint : "" };
+};
+
+/**
+ * A project's environment changes: each secret's value sealed to the project machine's key, then project_env_set.
+ * Plain values go as typed. The hub's answer lists the variables with a secret's fingerprint, never its value.
+ */
+export const submitProjectEnv = async (
+  request: ProjectEnvRequest,
+  call: (tool: "project_env_set", input: ToolInput<"project_env_set">) => Promise<CallOutcome>,
+): Promise<CallOutcome> => {
+  const set: EnvVarSet[] = [];
+  for (const v of request.set) {
+    if (v.kind === "plain") {
+      set.push({ kind: "plain", name: v.name, value: v.value });
+      continue;
+    }
+    if (/[\r\n\0]/u.test(v.value)) return refused(`${v.name} takes a one-line value.`, "Remove the line breaks, then save.");
+    if (request.boxPubKey === undefined) {
+      return refused("The project's machine takes no secrets yet: its node has no box key.", "Update fleetd on that machine, then save.");
+    }
+    const sealed = await seal(request.boxPubKey, v.value);
+    if (!sealed.ok) return { ok: false, error: { ...sealed.error, message: `${v.name}: ${sealed.error.message}` } };
+    set.push({ kind: "secret", name: v.name, sealed: sealed.sealed });
+  }
+  return call("project_env_set", { machineId: request.machineId, projectId: request.projectId, set, remove: request.remove });
 };

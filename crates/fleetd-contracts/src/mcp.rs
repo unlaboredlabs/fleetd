@@ -858,12 +858,100 @@ output!(ProjectAddOutput {
     clone: Option<CloneTarget>,
 });
 
-// project_remove: stops the project's agent processes and forgets it. Its files, branches and worktrees stay.
+// project_remove: stops the project's agent processes and forgets it. Its files and branches stay; its worktrees too,
+// unless removeWorktrees.
 input!(ProjectRemoveInput {
+    machine_id: MachineId,
+    project_id: ProjectId,
+    /// Also force-remove the fleetd worktrees its agents worked in, uncommitted changes and all, once its agents have
+    /// stopped. Their branches and the checkout stay as they are.
+    remove_worktrees: Option<bool>,
+});
+output!(ProjectRemoveOutput { ok: True });
+
+// project_settings_get, project_settings_set, project_env_set: a project's own settings (Settings › Projects).
+input!(ProjectSettingsGetInput {
     machine_id: MachineId,
     project_id: ProjectId
 });
-output!(ProjectRemoveOutput { ok: True });
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectSettings {
+    pub machine_id: MachineId,
+    pub project_id: ProjectId,
+    pub title: String,
+    pub workspace_root: String,
+    /// True: a finished task's worktree stays on the machine. False (the default): a reader's goes when it finishes
+    /// and a writer's once its PR merges.
+    pub keep_worktrees: bool,
+    /// Its agents' variables, by name. A secret's value is never here.
+    pub env: Vec<crate::project_settings::ProjectEnvVar>,
+    /// From the node, now: absent while it is offline or too old to say.
+    pub worktrees: Option<crate::project_settings::ProjectWorktrees>,
+    /// Why `worktrees` is absent.
+    pub worktrees_unknown: Option<String>,
+}
+output!(ProjectSettingsGetOutput {
+    settings: ProjectSettings
+});
+input!(
+    #[serde(remote = "Self")]
+    ProjectSettingsSetInput {
+        machine_id: MachineId,
+        project_id: ProjectId,
+        /// The project's name in fleetd; its folder keeps its own.
+        title: Option<Line<1, 200>>,
+        keep_worktrees: Option<bool>,
+    }
+);
+checked!(ProjectSettingsSetInput, |input| {
+    if input.title.is_none() && input.keep_worktrees.is_none() {
+        return Err("expected title, keepWorktrees or both".into());
+    }
+    Ok(())
+});
+output!(ProjectSettingsSetOutput {
+    settings: ProjectSettings
+});
+input!(
+    #[serde(remote = "Self")]
+    ProjectEnvSetInput {
+        machine_id: MachineId,
+        project_id: ProjectId,
+        /// Variables to add or replace; a secret replaces a plain one of the same name and the other way round.
+        #[serde(default)]
+        set: List<crate::project_settings::EnvVarSet, 0, 100>,
+        #[serde(default)]
+        remove: UniqueList<crate::project_settings::EnvVarName, 0, 100>,
+    }
+);
+checked!(ProjectEnvSetInput, |input| {
+    if input.set.is_empty() && input.remove.is_empty() {
+        return Err("expected set, remove or both".into());
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for name in input.set.iter().map(|v| v.name()) {
+        if !seen.insert(name.as_str()) {
+            return Err(format!("{name} is set twice"));
+        }
+        if input.remove.iter().any(|r| r == name) {
+            return Err(format!("{name} is both set and removed"));
+        }
+    }
+    if let Some(name) = input
+        .set
+        .iter()
+        .map(|v| v.name())
+        .find(|n| crate::project_settings::env_name_reserved(n.as_str()))
+    {
+        return Err(format!("{name} is set by fleetd itself for every session"));
+    }
+    Ok(())
+});
+output!(ProjectEnvSetOutput {
+    env: Vec<crate::project_settings::ProjectEnvVar>
+});
 
 // prompt_get, prompt_set, session_prompt_get: every prompt fleetd sends a model.
 input!(PromptGetInput {
@@ -1385,6 +1473,10 @@ tools! {
     project_discover => ProjectDiscover, Read, ProjectDiscoverInput, ProjectDiscoverOutput;
     project_add => ProjectAdd, Operate, ProjectAddInput, ProjectAddOutput;
     project_remove => ProjectRemove, Operate, ProjectRemoveInput, ProjectRemoveOutput;
+    project_settings_get => ProjectSettingsGet, Read, ProjectSettingsGetInput, ProjectSettingsGetOutput;
+    project_settings_set => ProjectSettingsSet, Operate, ProjectSettingsSetInput, ProjectSettingsSetOutput;
+    // Human keys only (the handler checks): a person sets a project's environment.
+    project_env_set => ProjectEnvSet, Operate, ProjectEnvSetInput, ProjectEnvSetOutput;
     wake_set => WakeSet, Operate, WakeSetInput, WakeSetOutput;
     wake_list => WakeList, Read, WakeListInput, WakeListOutput;
     wake_cancel => WakeCancel, Operate, WakeCancelInput, WakeCancelOutput;

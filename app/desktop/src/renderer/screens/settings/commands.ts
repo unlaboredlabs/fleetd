@@ -38,6 +38,14 @@ const pages: Command[] = [
     run: () => go(tabHref("prompts")),
   },
   {
+    id: "go:settings.projects",
+    title: "Project settings",
+    detail: "A project's name, worktrees and environment variables, or delete it",
+    group: "settings",
+    keywords: ["env", "secrets", "worktrees", "delete project", "rename"],
+    run: () => go(tabHref("projects")),
+  },
+  {
     id: "go:settings.instructions",
     title: "Instructions",
     detail: "Your own, added to every agent's first message",

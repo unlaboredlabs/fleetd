@@ -1,7 +1,7 @@
 import type { LinkHandlerClaim, LinkHandlerStatus, NotifyRequest, OpenTarget } from "../shared/app";
 import type { MenuCommand } from "../shared/menu";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
-import type { ChatScope, ErrorReport, OrderFocus, SecretRequest } from "../shared/ipc";
+import type { ChatScope, ErrorReport, OrderFocus, ProjectEnvRequest, SecretRequest } from "../shared/ipc";
 import type { KeyStore, PairOutcome, PairRequest, PairStart, Probe, SetupOutcome } from "../shared/pairing";
 import type { UpdatesState } from "../shared/updates";
 
@@ -19,6 +19,11 @@ export interface FleetdApi {
   readonly secret: {
     /** Main seals `value` to `boxPubKey` and submits it; the value is never sent back or shown again. */
     submit(request: SecretRequest): Promise<SecretOutcome>;
+    /**
+     * A project's environment changes: main seals each secret's value to `boxPubKey` and calls project_env_set. The
+     * output lists the project's variables, a secret's by fingerprint only.
+     */
+    projectEnv(request: ProjectEnvRequest): Promise<CallOutcome>;
   };
   /**
    * Opens an https link to github.com (or a subdomain) or fleetd.sh in the user's browser. Anything else comes back

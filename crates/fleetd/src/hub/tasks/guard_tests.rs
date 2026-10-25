@@ -223,6 +223,50 @@ async fn a_merged_writer_has_the_node_remove_its_worktree() {
     }
 }
 
+/// A project that keeps its finished worktrees keeps a merged writer's: the node is asked to remove only the one
+/// merged after the setting went off again.
+#[tokio::test]
+async fn a_project_that_keeps_worktrees_keeps_a_merged_writers() {
+    let (hub, _home) = hub();
+    let mut calls = serve(&hub, Node::link(&hub).await);
+    let project = fleetd_contracts::ids::ProjectRef {
+        machine_id: lab_a(),
+        project_id: fleetd_contracts::ids::ProjectId::unchecked("p1"),
+    };
+    let merge = |thread: &str| {
+        let task = insert(
+            &hub,
+            json!({ "taskId": "T3", "title": "fix", "kind": "write", "state": "done",
+                "threadRef": { "machineId": "lab-a", "threadId": thread }, "branch": "fleetd/T3-fix",
+                "startedAt": AT, "endedAt": AT }),
+        );
+        let merged: NewEvent = serde_json::from_value(json!({
+            "at": AT, "type": "pr.merged", "machineId": "lab-a", "projectId": "p1", "summary": "merged",
+            "data": { "changeId": "X1", "taskId": task.task_id, "repo": "o/r", "prNumber": 7 },
+        }))
+        .unwrap();
+        hub.events.append(merged).unwrap();
+    };
+    hub.db
+        .project_settings()
+        .set_keep_worktrees(&project, true)
+        .unwrap();
+    merge("kept");
+    catch_up(&hub.tasks).await;
+    hub.db
+        .project_settings()
+        .set_keep_worktrees(&project, false)
+        .unwrap();
+    merge("removed");
+    catch_up(&hub.tasks).await;
+    loop {
+        if let SessionCall::Stop { session_id, .. } = calls.recv().await.unwrap() {
+            assert_eq!(session_id.as_str(), "removed");
+            break;
+        }
+    }
+}
+
 /// Tries every queued task, as a freed slot does.
 async fn start_queued(tasks: &Arc<super::Tasks>) {
     let _guard = tasks.lock.lock().await;

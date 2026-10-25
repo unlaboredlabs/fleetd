@@ -1,5 +1,5 @@
 // Machines (#/machines): every machine the hub knows, online or not, with when it was last seen, a recent sleep,
-// what it runs and its usage, the slot board, and each machine's projects (open, or remove).
+// what it runs and its usage, the slot board, and each machine's projects (open, its settings, or remove).
 
 import { MoreHorizontal } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -11,6 +11,7 @@ import { machineOrder, machineParts, slotsText, type Tone } from "./machineText"
 import { RemoveProjectDialog, type RemoveTarget } from "./RemoveProjectDialog";
 import { SetupChecks } from "./SetupChecks";
 import { HubText } from "./HubText";
+import { toHash } from "../shell/routes";
 import { tilde } from "./source";
 import { openAddProject, openProject } from "./store";
 import s from "./projects.module.css";
@@ -145,6 +146,13 @@ function ProjectRow({ project: p, onRemove }: { project: ProjectSummary; onRemov
         </MenuTrigger>
         <MenuContent align="end">
           <MenuItem onSelect={() => openProject(p.machineId, p.projectId)}>Open</MenuItem>
+          <MenuItem
+            onSelect={() => {
+              window.location.hash = toHash({ id: "settings", tab: "projects", for: `${p.machineId}/${p.projectId}` });
+            }}
+          >
+            Settings…
+          </MenuItem>
           <MenuItem danger onSelect={() => onRemove({ machineId: p.machineId, projectId: p.projectId, title: p.title, path: p.workspaceRoot })}>
             Remove project…
           </MenuItem>

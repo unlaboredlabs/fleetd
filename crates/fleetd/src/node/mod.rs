@@ -11,6 +11,7 @@ pub mod lead;
 pub mod link;
 pub mod load;
 pub mod power;
+pub mod project_env;
 pub mod repos;
 pub mod runner;
 pub mod secrets;

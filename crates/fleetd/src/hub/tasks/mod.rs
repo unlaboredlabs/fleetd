@@ -2489,11 +2489,25 @@ impl Tasks {
     }
 
     /// Has the node stop a task's agent and delete its worktree, and the build output in it, off the lock. A node that
-    /// can't (offline, a git error, or a writer's work that exists only there) leaves it, logged.
+    /// can't (offline, a git error, or a writer's work that exists only there) leaves it, logged. A project that keeps
+    /// its finished worktrees (`keep_worktrees`) keeps this one; its idle agent ends on the node's idle reap.
     fn remove_worktree(self: &Arc<Self>, task: &Task) {
         let Some(thread) = task.thread_ref.clone() else {
             return;
         };
+        match self
+            .d
+            .db
+            .project_settings()
+            .keep_worktrees(&task.project_ref)
+        {
+            Ok(false) => {}
+            Ok(true) => return,
+            Err(error) => {
+                tracing::warn!(task_id = task.task_id.as_str(), %error, "worktree kept: its project's settings can't be read");
+                return;
+            }
+        }
         let (tasks, task_id) = (self.clone(), task.task_id.clone());
         tokio::spawn(async move {
             if let Err(error) = tasks.d.ports.remove_worktree(&thread).await {

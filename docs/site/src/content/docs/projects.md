@@ -1,6 +1,6 @@
 ---
 title: Projects
-description: "Add a project, choose its branch and task profiles, and how its lead plans the work."
+description: "Add a project, choose its branch, task profiles and settings, and how its lead plans the work."
 ---
 
 You'll add a repo as a [project](/docs/glossary#project), send it work, and follow that work to merged pull requests.
@@ -57,6 +57,60 @@ fleetd project remove devbox/storefront
 ```
 
 `list` prints each project as `<machineId>/<projectId>`, its title and its folder. `remove` stops the project's agents and forgets it. Its files, branches and worktrees stay.
+To also remove the worktrees its agents worked in, delete it from the app instead: see [Delete a project](#delete).
+
+## Project settings {#settings}
+
+Open a project's settings in the desktop app: Settings → Projects, then pick the project. Machines → a project's
+**…** menu → **Settings…** opens the same page.
+
+| Setting | Does |
+|---|---|
+| Name | How fleetd shows the project. Its folder keeps its own name. |
+| Keep finished worktrees | Off (the default): a reader's worktree goes when its task finishes, and a writer's once its pull request merges. On: they stay on the machine. |
+| Environment variables | Variables every new agent of the project gets. See [Environment variables](#env). |
+| Delete project | See [Delete a project](#delete). |
+
+The page also shows where the project's worktrees live on its machine (`~/.fleetd/node/worktrees/<project>/`, one per
+agent), the branch new ones start from (the repo's default branch, freshly fetched; see [Which branch](#branches)),
+and how many are there now. That part needs the machine online.
+
+### Environment variables {#env}
+
+Add one at a time with **Add variable**, or paste a `.env` file with **Paste .env**. A pasted file may use `export`,
+quotes and `#` comments; a name that looks like a credential (`STRIPE_KEY`, `GH_TOKEN`, `DB_PASSWORD`) starts as a
+secret, and each one can be switched.
+
+| Kind | Where its value lives | Shown |
+|---|---|---|
+| Plain | The hub and the project's machine. | In the list. |
+| Secret | Only the project's machine. | Never again: only its fingerprint, the first 8 hex characters of its SHA-256. |
+
+A secret is sealed in the app to its machine's key, as a [secret request](/docs/approvals-and-secrets#secrets) is. The
+hub passes the sealed value on without storing or logging it. The node keeps the project's variables in a file of its
+own in `~/.fleetd/node/project-env/`, mode `0600`, and adds them to every claude it starts for the project from then on.
+An agent already running gets a change at its next start. To change a secret, type a new value: the old one is never
+shown.
+
+Names are letters, digits and `_`. fleetd sets `HOME`, `PATH`, `USER`, `CLAUDE_CONFIG_DIR` and every `FLEETD_`
+variable itself, so a project can't. A project takes up to 100 variables, each up to 8192 bytes; a secret is one line.
+
+:::caution
+Setting a variable needs the project's machine online. Nothing is queued.
+:::
+
+From an MCP client: `project_settings_get` reads a project's settings, `project_settings_set` renames it or sets
+`keepWorktrees`, and `project_env_set` sets and removes variables, a secret sealed to the machine's `boxPubKey`.
+`project_env_set` takes only a human key.
+
+### Delete a project {#delete}
+
+**Delete project…** stops the project's agents, removes the worktrees they worked in, and forgets the project and its
+settings. Type the project's name to confirm. If any of its worktrees has uncommitted changes, the dialog names them:
+those changes are lost.
+
+What stays: the checkout itself, untouched, every branch (so every commit stays reachable), and its pull requests on
+GitHub. Add the folder again any time; the toast after a delete has **Add it again**.
 
 ## Which branch fleetd works on {#branches}
 

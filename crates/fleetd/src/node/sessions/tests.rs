@@ -2047,6 +2047,7 @@ async fn removing_a_project_stops_its_claude_processes_first() {
 
     let remove = || SessionCall::ProjectRemove {
         project_id: ProjectId::unchecked("p1"),
+        remove_worktrees: false,
     };
     assert_eq!(hub.ok(remove()).await, SessionOutput::Done);
     let ended = hub.settled("r1").await;
@@ -2063,6 +2064,119 @@ async fn removing_a_project_stops_its_claude_processes_first() {
         panic!("removed the same project twice")
     };
     assert_eq!(gone.code, SessionErrorCode::NotFound);
+}
+
+/// A project's plain and secret variables reach the claude of its next session, with only the secret's fingerprint
+/// in the answer; the worktree list names one with uncommitted changes; and deleting the project with its worktrees
+/// removes them and its variables, keeps its branch, and leaves the checkout exactly as it was.
+#[tokio::test]
+async fn project_env_reaches_a_new_session_and_deleting_the_project_leaves_the_checkout() {
+    use fleetd_contracts::project_settings::{EnvValue, EnvVarName, EnvVarSet};
+    let dir = tempfile::tempdir().unwrap();
+    let (_, root) = cloned(dir.path(), "repo", "origin");
+    // The human's own last fetch and work in progress in the checkout.
+    git(&root, &["fetch", "-q", "origin"]);
+    std::fs::write(root.join("a.txt"), "edited\n").unwrap();
+    std::fs::write(root.join("mine.txt"), "mine\n").unwrap();
+    let home = dir.path().join("node");
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.project(&root).await;
+    let name = |n: &str| EnvVarName::new(n).unwrap();
+    let saved = hub
+        .ok(SessionCall::ProjectEnv {
+            project_id: ProjectId::unchecked("p1"),
+            set: vec![
+                EnvVarSet::Plain {
+                    name: name("API_URL"),
+                    value: EnvValue::new("https://staging.example").unwrap(),
+                },
+                EnvVarSet::Secret {
+                    name: name("STRIPE_KEY"),
+                    sealed: crate::node::project_env::seal(&home, "sk_test_4242"),
+                },
+            ],
+            remove: vec![],
+        })
+        .await;
+    let SessionOutput::ProjectEnv { secrets } = &saved else {
+        panic!("{saved:?}")
+    };
+    assert_eq!(secrets.len(), 1);
+    assert_eq!(
+        secrets[0].fingerprint.as_str(),
+        crate::node::secrets::fingerprint_of(b"sk_test_4242")
+    );
+    assert!(
+        !serde_json::to_string(&saved)
+            .unwrap()
+            .contains("sk_test_4242")
+    );
+
+    let branch = "fleetd/T1-env";
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Worktree {
+            base_ref: NonEmpty::unchecked("main"),
+            branch: NonEmpty::unchecked(branch),
+            from_session: None,
+        },
+    ))
+    .await;
+    hub.settled("r1").await;
+    let spec = hub.runner.spawned()[0].clone();
+    let var = |k: &str| {
+        spec.env
+            .iter()
+            .rev()
+            .find(|(key, _)| key == k)
+            .map(|(_, v)| v.as_str())
+    };
+    assert_eq!(var("API_URL"), Some("https://staging.example"));
+    assert_eq!(var("STRIPE_KEY"), Some("sk_test_4242"));
+    assert_eq!(var("FLEETD_THREAD_ID"), Some("s1"));
+
+    std::fs::write(spec.cwd.join("wip.txt"), "not committed\n").unwrap();
+    let listed = hub
+        .ok(SessionCall::ProjectWorktrees {
+            project_id: ProjectId::unchecked("p1"),
+        })
+        .await;
+    let SessionOutput::ProjectWorktrees(listed) = listed else {
+        panic!("{listed:?}")
+    };
+    assert_eq!(listed.dir, home.join("worktrees/p1").to_string_lossy());
+    assert_eq!(listed.base_branch.as_deref(), Some("main"));
+    assert_eq!(listed.worktrees.len(), 1);
+    assert_eq!(listed.worktrees[0].branch.as_deref(), Some(branch));
+    assert!(listed.worktrees[0].uncommitted);
+
+    let before = checkout_state(&root);
+    assert_eq!(
+        hub.ok(SessionCall::ProjectRemove {
+            project_id: ProjectId::unchecked("p1"),
+            remove_worktrees: true,
+        })
+        .await,
+        SessionOutput::Done
+    );
+    assert!(!spec.cwd.exists());
+    assert!(!home.join("worktrees/p1").exists());
+    assert_eq!(checkout_state(&root), before);
+    // Its branch stays, so its commits do; git keeps no record of the worktree.
+    git(
+        &root,
+        &["rev-parse", "--verify", &format!("refs/heads/{branch}")],
+    );
+    let worktrees =
+        crate::node::worktree::git(&root, &["worktree", "list", "--porcelain"]).unwrap();
+    assert_eq!(worktrees.matches("worktree ").count(), 1, "{worktrees}");
+    assert!(crate::node::project_env::vars(&home, "p1").is_empty());
 }
 
 #[test]

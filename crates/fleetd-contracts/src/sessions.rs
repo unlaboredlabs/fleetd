@@ -143,8 +143,29 @@ pub enum SessionCall {
         title: NonEmpty,
         workspace_root: NonEmpty,
     },
+    /// Stop the project's sessions and forget it. `removeWorktrees` also force-removes every worktree its sessions
+    /// made under the node home, once their processes have exited; no branch is deleted and the checkout itself is
+    /// left as it is. Only nodes listing [`crate::node_link::CAP_PROJECT_SETTINGS`] get it set.
     #[serde(rename_all = "camelCase")]
     ProjectRemove {
+        project_id: ProjectId,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        remove_worktrees: bool,
+    },
+    /// Add or replace (`set`) and remove (`remove`) the project's environment variables, which the node adds to every
+    /// claude it starts for the project from then on. A secret's value is opened with the node's box key and kept
+    /// only on the node; the reply has its fingerprint. All or nothing. Only nodes listing
+    /// [`crate::node_link::CAP_PROJECT_SETTINGS`] get it.
+    #[serde(rename_all = "camelCase")]
+    ProjectEnv {
+        project_id: ProjectId,
+        set: Vec<crate::project_settings::EnvVarSet>,
+        remove: Vec<crate::project_settings::EnvVarName>,
+    },
+    /// Where the project's worktrees live, the branch new ones start from, and the worktrees there now. Only nodes
+    /// listing [`crate::node_link::CAP_PROJECT_SETTINGS`] get it.
+    #[serde(rename_all = "camelCase")]
+    ProjectWorktrees {
         project_id: ProjectId,
     },
     Launch(SessionLaunch),
@@ -513,6 +534,12 @@ pub enum SessionOutput {
     GhRepos(GhRepos),
     /// Answer to `landed_log`.
     LandedLog(LandedLog),
+    /// Answer to `project_env`: each secret it saved.
+    ProjectEnv {
+        secrets: Vec<crate::project_settings::EnvSecretSaved>,
+    },
+    /// Answer to `project_worktrees`.
+    ProjectWorktrees(crate::project_settings::ProjectWorktrees),
 }
 
 /// The default branch's first-parent line, newest first, at most [`LandedLog::MAX`] commits.

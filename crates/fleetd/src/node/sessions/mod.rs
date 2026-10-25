@@ -28,6 +28,7 @@ use std::time::Duration;
 use fleetd_contracts::effort::Effort;
 use fleetd_contracts::ids::{ProjectId, ThreadId, Timestamp};
 use fleetd_contracts::prim::{NonEmpty, Text};
+use fleetd_contracts::project_settings::{ProjectWorktree, ProjectWorktrees};
 use fleetd_contracts::sessions::{
     CloneProgressFrame, FailureClass, ItemKind, ItemStatus, MachineEvent, MachineEventFrame,
     MessageRole, PendingPermission, PermissionDecision, ProjectInfo, RunEnd, RunFailure, RunInfo,
@@ -761,7 +762,59 @@ impl SessionService {
                 title,
                 workspace_root,
             } => self.project_upsert(project_id, title.to_string(), workspace_root.to_string()),
-            SessionCall::ProjectRemove { project_id } => self.project_remove(&project_id).await,
+            SessionCall::ProjectRemove {
+                project_id,
+                remove_worktrees,
+            } => self.project_remove(&project_id, remove_worktrees).await,
+            SessionCall::ProjectEnv {
+                project_id,
+                set,
+                remove,
+            } => {
+                self.project_root(&project_id)?;
+                let home = self.inner.config.home.clone();
+                let secrets = blocking(move || {
+                    let box_key = super::identity::load_or_create_box_key(&home).ok();
+                    super::project_env::apply(
+                        &home,
+                        project_id.as_str(),
+                        &set,
+                        &remove,
+                        box_key.as_ref(),
+                    )
+                })
+                .await
+                .map_err(invalid)?;
+                Ok(SessionOutput::ProjectEnv { secrets })
+            }
+            SessionCall::ProjectWorktrees { project_id } => {
+                let root = self.project_root(&project_id)?;
+                let dir = self.worktrees_dir(&project_id);
+                let held = self.worktrees_of(&project_id)?;
+                let worktrees = blocking(move || {
+                    let base_branch = worktree::has_commit(&root)
+                        .then(|| worktree::default_branch(&root))
+                        .flatten();
+                    let worktrees = held
+                        .into_iter()
+                        .filter(|(_, path, _)| path.is_dir())
+                        .map(|(session_id, path, branch)| ProjectWorktree {
+                            session_id,
+                            // A worktree git can't read is counted as holding work, so the confirm names it.
+                            uncommitted: worktree::uncommitted(&path).unwrap_or(true),
+                            path: path.to_string_lossy().into_owned(),
+                            branch,
+                        })
+                        .collect();
+                    ProjectWorktrees {
+                        dir: dir.to_string_lossy().into_owned(),
+                        base_branch,
+                        worktrees,
+                    }
+                })
+                .await;
+                Ok(SessionOutput::ProjectWorktrees(worktrees))
+            }
             SessionCall::Launch(launch) => self.launch(launch).await,
             SessionCall::Send {
                 session_id,
@@ -1695,6 +1748,10 @@ impl SessionService {
         let transcript = transcripts.join(format!("{id}.jsonl"));
 
         let mut env = config.runner_env();
+        // The project's own variables, re-read per spawn; fleetd's values below still win.
+        let project_env = super::project_env::vars(&config.home, row.summary.project_id.as_str());
+        env.retain(|(k, _)| !project_env.iter().any(|(p, _)| p == k));
+        env.extend(project_env);
         let mut role_env = config.prompt_cache_env(row.local.role, &env);
         role_env.extend(claude::role_env(row.local.role, &env));
         env.retain(|(k, _)| !role_env.iter().any(|(c, _)| c == k));
@@ -2629,7 +2686,35 @@ impl SessionService {
         ))
     }
 
-    async fn project_remove(&self, project_id: &ProjectId) -> Reply {
+    /// `<node home>/worktrees/<project>`, where every worktree of the project's sessions is made.
+    fn worktrees_dir(&self, project_id: &ProjectId) -> PathBuf {
+        self.inner
+            .config
+            .home
+            .join("worktrees")
+            .join(project_id.as_str())
+    }
+
+    /// Each session of the project that has a worktree of its own: its id, path and branch.
+    fn worktrees_of(
+        &self,
+        project_id: &ProjectId,
+    ) -> Result<Vec<(ThreadId, PathBuf, Option<String>)>, SessionError> {
+        let dir = self.worktrees_dir(project_id);
+        Ok(self
+            .store()
+            .sessions()?
+            .into_iter()
+            .filter(|r| {
+                &r.summary.project_id == project_id
+                    && r.local.base_ref.is_some()
+                    && r.local.cwd.starts_with(&dir)
+            })
+            .map(|r| (r.summary.session_id, r.local.cwd, r.local.branch))
+            .collect())
+    }
+
+    async fn project_remove(&self, project_id: &ProjectId, remove_worktrees: bool) -> Reply {
         let stopping: Vec<_> = {
             let mut st = self.st();
             let ids = self.live_in(&st, project_id);
@@ -2652,8 +2737,7 @@ impl SessionService {
             stopping
         };
         let _ = tokio::time::timeout(REMOVE_WAIT, futures_util::future::join_all(stopping)).await;
-        let st = self.st();
-        let live = self.live_in(&st, project_id);
+        let live = self.live_in(&self.st(), project_id);
         if !live.is_empty() {
             return Err(invalid(format!(
                 "project {project_id}: claude in session(s) {} was stopped but has not exited after {}s; run \
@@ -2662,11 +2746,34 @@ impl SessionService {
                 REMOVE_WAIT.as_secs()
             )));
         }
+        // Only once every process of the project has exited: none still works in a worktree that goes.
+        if remove_worktrees {
+            let root = self.project_root(project_id)?;
+            let dir = self.worktrees_dir(project_id);
+            let held = self.worktrees_of(project_id)?;
+            let home = self.inner.config.home.clone();
+            let removed = blocking(move || {
+                for (session_id, _, _) in &held {
+                    share::remove_scratch(&home, session_id.as_str());
+                }
+                let paths: Vec<PathBuf> = held.into_iter().map(|(_, path, _)| path).collect();
+                worktree::remove_all(&root, &dir, &paths)
+            })
+            .await?;
+            tracing::info!(
+                project_id = project_id.as_str(),
+                removed,
+                "project worktrees removed"
+            );
+        }
         let frame = self
             .store()
             .remove_project(project_id)?
             .ok_or_else(|| not_found(format!("no project {project_id} on this machine")))?;
-        st.machine(frame);
+        let home = self.inner.config.home.clone();
+        let id = project_id.to_string();
+        blocking(move || super::project_env::forget(&home, &id)).await;
+        self.st().machine(frame);
         Ok(SessionOutput::Done)
     }
 
