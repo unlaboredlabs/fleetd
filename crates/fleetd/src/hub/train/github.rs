@@ -632,7 +632,17 @@ impl TrainGitHub {
             return Err(GhError::failed(format!("not a full commit SHA: {shown}")));
         }
         let base_sha = self.branch_sha(repo, base).await?;
-        let path = format!("repos/{repo}/compare/{base_sha}...{sha}");
+        self.patch_id_from(repo, &base_sha, sha).await
+    }
+
+    /// The patch id of `sha` against its merge base with the commit `from`, as `patch_id` computes it.
+    pub async fn patch_id_from(
+        &self,
+        repo: &str,
+        from: &str,
+        sha: &str,
+    ) -> Result<String, GhError> {
+        let path = format!("repos/{repo}/compare/{from}...{sha}");
         let at = format!("{repo}@{}", &sha[..12]);
         let diff = self
             .exchange("GET", &path, "Accept: application/vnd.github.diff", &[])
@@ -641,6 +651,46 @@ impl TrainGitHub {
         stable_patch_id(diff)
             .await
             .map_err(|why| GhError::failed(format!("the patch id of {at}: {why}")))
+    }
+
+    /// The patch id of the commit `sha` alone: its diff against its first parent.
+    pub async fn commit_patch_id(&self, repo: &str, sha: &str) -> Result<String, GhError> {
+        let path = format!("repos/{repo}/commits/{sha}");
+        let at = format!("{repo}@{}", &sha[..sha.len().min(12)]);
+        let diff = self
+            .exchange("GET", &path, "Accept: application/vnd.github.diff", &[])
+            .await?
+            .map_err(|(_, message)| GhError::failed(format!("the diff of {at}: {message}")))?;
+        stable_patch_id(diff)
+            .await
+            .map_err(|why| GhError::failed(format!("the patch id of {at}: {why}")))
+    }
+
+    /// The commits `sha` has on its merge base with the commit `from`, oldest first, and that merge base: the range
+    /// `git range-diff` compares. None when GitHub lists only some of them.
+    pub async fn range(
+        &self,
+        repo: &str,
+        from: &str,
+        sha: &str,
+    ) -> Result<Option<(String, Vec<String>)>, GhError> {
+        #[derive(Deserialize)]
+        struct Commit {
+            sha: String,
+        }
+        #[derive(Deserialize)]
+        struct Compare {
+            merge_base_commit: Commit,
+            commits: Vec<Commit>,
+            total_commits: usize,
+        }
+        let c: Compare = self
+            .json("GET", &format!("repos/{repo}/compare/{from}...{sha}"), &[])
+            .await?;
+        Ok((c.commits.len() == c.total_commits).then(|| {
+            let commits = c.commits.into_iter().map(|c| c.sha.to_lowercase());
+            (c.merge_base_commit.sha.to_lowercase(), commits.collect())
+        }))
     }
 
     /// Comments on the PR with why, then closes it.

@@ -154,6 +154,27 @@ impl TrainHost for HubHost {
         })
     }
 
+    fn cancel_task<'a>(
+        &'a self,
+        project_ref: &'a ProjectRef,
+        by: &'static str,
+        task_id: &'a TaskId,
+        reason: String,
+    ) -> BoxFut<'a, Result<(), String>> {
+        Box::pin(async move {
+            let hub = self.hub().ok_or_else(not_bound)?;
+            let caller = TaskCaller {
+                project_ref: project_ref.clone(),
+                by: by.to_string(),
+            };
+            hub.tasks
+                .cancel(&caller, task_id, Some(&reason))
+                .await
+                .map(|_| ())
+                .map_err(|e| e.message.to_string())
+        })
+    }
+
     fn spawn_review(&self, spawn: ReviewSpawn) -> BoxFut<'_, Result<TaskView, String>> {
         Box::pin(async move {
             let hub = self.hub().ok_or_else(not_bound)?;

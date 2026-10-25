@@ -66,6 +66,14 @@ pub trait TrainHost: Send + Sync + 'static {
         task_id: &'a TaskId,
         text: String,
     ) -> BoxFut<'a, Result<(), String>>;
+    /// Tasks.cancel from `by`, with `reason` as its result; the error is its message.
+    fn cancel_task<'a>(
+        &'a self,
+        project_ref: &'a ProjectRef,
+        by: &'static str,
+        task_id: &'a TaskId,
+        reason: String,
+    ) -> BoxFut<'a, Result<(), String>>;
     /// Tasks.spawn of a review task; the error is its message.
     fn spawn_review(&self, spawn: ReviewSpawn) -> BoxFut<'_, Result<TaskView, String>>;
     fn workstream(&self, workstream_id: &WorkstreamId) -> Option<WorkstreamView>;
