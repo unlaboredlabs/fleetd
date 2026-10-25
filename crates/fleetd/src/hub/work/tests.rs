@@ -116,6 +116,17 @@ fn change(hub: &Hub, project: &ProjectRef, task: Option<&Task>, pr: u32, state: 
     hub.train.records().create(change)
 }
 
+/// A Change on `repo` (`owner/name`); the train's PR URL is GitHub's, whichever host the project's remote names.
+fn change_on(hub: &Hub, project: &ProjectRef, repo: &str, pr: u32) -> Change {
+    let change: Change = serde_json::from_value(json!({
+        "changeId": "X1", "projectRef": project, "repo": repo, "prNumber": pr,
+        "prUrl": format!("https://github.com/{repo}/pull/{pr}"), "branch": format!("pr-{pr}"),
+        "workstreamId": "W1", "headSha": SHA, "state": "queued", "reviews": [], "createdAt": AT, "updatedAt": AT,
+    }))
+    .unwrap();
+    hub.train.records().create(change)
+}
+
 fn ids(items: &[WorkItem]) -> Vec<&str> {
     let mut ids: Vec<&str> = items.iter().map(|i| i.id.as_str()).collect();
     ids.sort();
@@ -301,6 +312,7 @@ async fn the_sweep_expires_a_claim_not_renewed_and_the_view_keeps_it_a_day() {
         (ended[0]["claimId"].as_str(), ended[0]["state"].as_str()),
         (Some("C1"), Some("expired"))
     );
+    assert_eq!(ended[0]["reason"], "not renewed for 12 h");
     hub.sweep.run_once().await;
     assert_eq!(
         events_of(&hub, HubEventType::WorkEnded).len(),
@@ -624,4 +636,25 @@ async fn each_writer_carries_the_paths_it_has_changed_so_far() {
         paths(&unknown).is_empty(),
         "a node that could not say gives no paths"
     );
+}
+
+#[tokio::test]
+async fn a_change_is_matched_to_its_repo_on_any_host() {
+    let (hub, _clock, _home) = hub();
+    for (n, remote) in [
+        "git@gitlab.example.com:Acme/Shop.git",
+        "https://ghe.example.com/acme/shop",
+        "ssh://git@gitea.example.com:2222/acme/shop.git",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let app = project("devbox", &format!("app{n}"));
+        let shop = scope(remote, "main");
+        hub.work.bind_project(&app, &shop).unwrap();
+        let ours = change_on(&hub, &app, "acme/shop", 40);
+        change_on(&hub, &app, "acme/blog", 41);
+        let items = hub.work.in_flight(&shop).await.unwrap();
+        assert_eq!(ids(&items), [ours.change_id.as_str()], "{remote}");
+    }
 }

@@ -241,8 +241,8 @@ impl Work {
         let expired = self.db.transaction(|c| {
             let mut out = Vec::new();
             for claim in store::due(c, now)? {
-                let reason = "not renewed for 12 h";
-                let claim = ended(claim, ClaimState::Expired, now, reason, None);
+                let reason = format!("not renewed for {} h", CLAIM_TTL_MS / 3_600_000);
+                let claim = ended(claim, ClaimState::Expired, now, &reason, None);
                 store::put(c, &claim)?;
                 out.push(claim);
             }
@@ -300,9 +300,7 @@ impl Work {
                     ..Default::default()
                 })
             })
-            .filter(|c| {
-                RepoKey::of(&format!("github.com/{}", c.repo)).as_ref() == Some(&scope.repo_key)
-            })
+            .filter(|c| on_repo(&scope.repo_key, &c.repo))
             .filter(|c| !view::ENDED_CHANGE_STATES.contains(&c.state))
             .collect();
         let known: HashSet<&TaskId> = tasks.iter().map(|t| &t.task_id).collect();
@@ -385,6 +383,14 @@ fn ended(
         landing,
     });
     claim
+}
+
+/// Whether a Change's `owner/name` is the repo the key names, on whatever host it is: the key's path after its
+/// host (`github.com`, a GitHub Enterprise or GitLab host, `host:port` of an ssh remote).
+fn on_repo(key: &RepoKey, repo: &str) -> bool {
+    key.as_str()
+        .split_once('/')
+        .is_some_and(|(host, path)| !host.is_empty() && path == repo.to_lowercase())
 }
 
 /// Adds the claims' expiry to every sweep.
