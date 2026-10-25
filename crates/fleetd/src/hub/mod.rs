@@ -16,6 +16,7 @@ pub mod leads;
 pub mod ledger;
 pub mod link;
 pub mod mcp;
+pub mod metrics;
 pub mod orders;
 pub mod pair;
 pub mod plan;
