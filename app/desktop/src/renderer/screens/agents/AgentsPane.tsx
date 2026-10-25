@@ -12,9 +12,10 @@ import { Button, Dot, EmptyState, IdChip, PROFILE_WORD, Text, Truncate, VirtualL
 import { ActivityLine } from "../live/parts";
 import { describe } from "../live/words";
 import { useNow } from "../live/clock";
+import { useRoute } from "../shell/navigation";
 import { panelRoute, toHash, type ProjectKey } from "../shell/routes";
 import { AgentWork } from "./AgentWork";
-import { allAgents, elsewhere, nextExpiry, projectGroups, tally, type ElsewhereRow, type GroupLine, type OrderTitle } from "./model";
+import { allAgents, elsewhere, nextExpiry, onItsPr, projectGroups, tally, type ElsewhereRow, type GroupLine, type OrderTitle } from "./model";
 import { RolePill, StateDot, WorkPlaceTag } from "./parts";
 import s from "./agents.module.css";
 
@@ -266,11 +267,12 @@ function ElsewhereRowView({ row }: { row: ElsewhereRow }) {
 
 /**
  * Its state as a dot, its title and role; under them what it is doing now and where its work is (its PR, or its
- * branch). Waiting on you, it stands out gently; a lead keeps its own tint. A link, so it opens with the keyboard and
- * keeps history.
+ * branch), left out on that PR's own page. Waiting on you, it stands out gently; a lead keeps its own tint. A link,
+ * so it opens with the keyboard and keeps history.
  */
 export const AgentRowLink = memo(function AgentRowLink({ agent }: { agent: LiveAgent }) {
   const { row } = agent;
+  const onPr = onItsPr(useRoute(), row);
   const href = toHash(panelRoute(row.projectRef, { tab: "agents", agent: row.laneId }));
   return (
     <a className={cx(s.row, row.status === "waiting" && s.waiting, row.role === "lead" && s.lead)} href={href} data-state={row.status}>
@@ -290,7 +292,7 @@ export const AgentRowLink = memo(function AgentRowLink({ agent }: { agent: LiveA
       </span>
       <span className={s.doing}>
         <ActivityLine line={describe(row)} />
-        <WorkPlaceTag row={row} />
+        {onPr ? null : <WorkPlaceTag row={row} />}
       </span>
     </a>
   );

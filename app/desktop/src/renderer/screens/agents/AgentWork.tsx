@@ -137,7 +137,7 @@ export function AgentWork({ id }: { id: string }) {
   );
 }
 
-const STATE_TONE = { running: "default", queued: "quiet", waiting: "warning", done: "success", failed: "danger" } as const;
+const STATE_TONE = { working: "default", queued: "quiet", waiting: "warning", done: "success", failed: "danger" } as const;
 
 /** "PR #212 · in CI": the button that opens it in the panel's PRs. */
 const prLabel = (row: Parameters<typeof workPlace>[0]): string => {

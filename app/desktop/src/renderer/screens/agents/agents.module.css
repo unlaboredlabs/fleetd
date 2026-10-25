@@ -1,5 +1,5 @@
 /* The panel's agents: the project's agents under their orders, or one's work in their place. Calm and dense like the
-   sidebar: hierarchy from weight, grey and space; colour only for state and role; only a running dot moves, and not
+   sidebar: hierarchy from weight, grey and space; colour only for state and role; only a working dot moves, and not
    when motion is reduced. */
 
 .pane {
@@ -137,7 +137,7 @@
   line-height: var(--leading-xs);
 }
 
-/* The state dot: running is the success colour and breathes, waiting amber, failed danger, done quiet, queued an
+/* The state dot: working is the success colour and breathes, waiting amber, failed danger, done quiet, queued an
    open ring. */
 .state {
   position: relative;
@@ -152,7 +152,7 @@
   color: var(--quiet);
   background: currentColor;
 }
-.state[data-state="running"] {
+.state[data-state="working"] {
   color: var(--success);
 }
 .state[data-state="waiting"] {
@@ -169,7 +169,7 @@
   background: none;
   box-shadow: inset 0 0 0 1.5px currentColor;
 }
-.state[data-state="running"]::after {
+.state[data-state="working"]::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -188,7 +188,7 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .state[data-state="running"]::after {
+  .state[data-state="working"]::after {
     animation: none;
     opacity: 0;
   }

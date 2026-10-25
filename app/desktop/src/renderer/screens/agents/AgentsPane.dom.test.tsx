@@ -142,6 +142,14 @@ it("lists the project's agents under their orders' titles, the order waiting on 
   expect(list?.querySelector("[role='img'][aria-label='needs you']")).not.toBeNull();
 });
 
+it("leaves the PR out of an agent's row on that PR's own page", async () => {
+  const go = await mount();
+  await go(`${CHAT}/prs/12`);
+  expect(host.querySelector("[data-screen='agents']")?.textContent).not.toContain("#12 · in CI");
+  await go(`${CHAT}/prs/7`);
+  expect(host.querySelector("[data-screen='agents']")?.textContent).toContain("#12 · in CI");
+});
+
 it("links each row to the agent's panel route, which opens its live view with its order and its PR", async () => {
   const go = await mount();
   const link = [...host.querySelectorAll<HTMLAnchorElement>("[data-screen='agents'] a")].find((a) => a.textContent.includes("Lane T2"));
@@ -153,7 +161,7 @@ it("links each row to the agent's panel route, which opens its live view with it
   const work = host.querySelector("[data-screen='agents.work']");
   expect(work?.querySelector("h2")?.textContent).toBe("Lane T2");
   expect(work?.textContent).toContain("Receipts in the store's zone");
-  expect(work?.textContent).toContain("running");
+  expect(work?.textContent).toContain("working");
   const prButton = [...(work?.querySelectorAll("button") ?? [])].find((b) => b.textContent === "PR #12 · in CI");
   act(() => prButton?.click());
   expect(window.location.hash).toBe(toHash(panelRoute(project, { tab: "prs", pr: { repo: "acme/storefront", number: 12 } })));

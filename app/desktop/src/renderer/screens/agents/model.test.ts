@@ -9,6 +9,7 @@ import {
   headline,
   landedHow,
   nextExpiry,
+  onItsPr,
   projectAgents,
   projectGroups,
   STATE_WORD,
@@ -58,6 +59,8 @@ describe("the agents list", () => {
       "T3",
     ]);
     expect(projectGroups([], "devbox/api")).toEqual([]);
+    // Alone, the line heads nothing: the agents stand on their own.
+    expect(words(projectGroups([agent("api", "T1", "working", "W9"), loose], "devbox/api"))).toEqual(["T1", "T2"]);
   });
 
   it("lists every project's agents under its name and then its orders, the projects with one waiting on you first, without the leads", () => {
@@ -77,20 +80,25 @@ describe("the agents list", () => {
     );
     expect(headline([agent("api", "T1", "waiting")])).toBe("1 needs you");
     const lead: LiveAgent = { ...agent("api", "lead:devbox/api"), row: { ...agent("api", "lead:devbox/api").row, role: "lead" } };
-    expect(headline([lead, agent("api", "T1", "stalled"), agent("api", "T2")])).toBe("1 working");
+    expect(headline([lead, agent("api", "T1", "stalled"), agent("api", "T2")])).toBe("2 working");
     expect(headline([])).toBe("");
-    expect(tally([agent("api", "T1"), agent("api", "T2", "waiting"), agent("api", "T3", "parked")])).toEqual({ working: 1, waiting: 1, queued: 0 });
+    // As the dots count: stalled works, parked and idle wait their turn.
+    expect(tally([agent("api", "T1"), agent("api", "T2", "waiting"), agent("api", "T3", "parked"), agent("api", "T4", "idle"), agent("api", "T5", "stalled")])).toEqual({
+      working: 2,
+      waiting: 1,
+      queued: 2,
+    });
   });
 });
 
 describe("an agent's state and where its work is", () => {
-  it("tells five states apart: running, queued, waiting, done and failed", () => {
+  it("tells five states apart: working, queued, waiting, done and failed", () => {
     const states = Object.fromEntries((Object.keys(STATE_WORD) as AgentRow["status"][]).map((st) => [st, agentState(st)]));
     expect(states).toEqual({
       queued: "queued",
-      starting: "running",
-      working: "running",
-      stalled: "running",
+      starting: "working",
+      working: "working",
+      stalled: "working",
       idle: "queued",
       done: "done",
       failed: "failed",
@@ -98,6 +106,7 @@ describe("an agent's state and where its work is", () => {
       waiting: "waiting",
       parked: "queued",
     });
+    expect(STATE_WORD.working).toBe("working");
     expect(STATE_WORD.waiting).toBe("needs you");
     expect(STATE_WORD.parked).toBe("paused");
   });
@@ -110,6 +119,21 @@ describe("an agent's state and where its work is", () => {
     expect(workPlace({ branch: "fleetd/T1-dark-mode" })).toEqual({ kind: "branch", text: "fleetd/T1-dark-mode", tone: "quiet" });
     expect(workPlace({ branch: "" })).toBeUndefined();
     expect(workPlace({})).toBeUndefined();
+  });
+
+  it("knows when the window is on the agent's own PR, by number alone or with its repo", () => {
+    const pr = { changeId: "X1", number: 212, repo: "acme/shop", reviewsDone: 0, reviewsNeeded: 1, url: "https://github.com/acme/shop/pull/212", state: "ci" } as const;
+    const row = { projectRef: { machineId: "devbox", projectId: "api" }, pr };
+    const on = (repo: string | null, number: number, projectId = "api") =>
+      onItsPr({ id: "project", project: { machineId: "devbox", projectId }, message: null, panel: { tab: "prs", pr: { repo, number } } }, row);
+    expect(on("acme/shop", 212)).toBe(true);
+    expect(on(null, 212)).toBe(true);
+    expect(on("acme/other", 212)).toBe(false);
+    expect(on("acme/shop", 7)).toBe(false);
+    expect(on("acme/shop", 212, "web")).toBe(false);
+    expect(onItsPr({ id: "project", project: row.projectRef, message: null, panel: { tab: "agents", agent: null } }, row)).toBe(false);
+    expect(onItsPr({ id: "status" }, row)).toBe(false);
+    expect(onItsPr({ id: "project", project: row.projectRef, message: null, panel: { tab: "prs", pr: { repo: null, number: 212 } } }, { projectRef: row.projectRef })).toBe(false);
   });
 });
 

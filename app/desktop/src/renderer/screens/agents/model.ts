@@ -5,6 +5,7 @@ import type { AgentRow, ChangeState, ClaimOwner, LaneStatus, RecentLanding, Work
 import type { LiveAgent } from "../../src/data/selectors";
 import { projectKey, type ProjectKey } from "../../src/data/store";
 import { parseMs } from "../live/format";
+import { sameProject, type Screen } from "../shell/routes";
 import { agoText } from "../projects/machineText";
 
 /** A line above agents: a project's name (All projects), or the order they work on. */
@@ -46,7 +47,7 @@ export const projectAgents = (agents: readonly LiveAgent[], project: string): re
 /**
  * One project's agents under the orders they work on, each order under a line with its title: the orders with an
  * agent waiting on you first, then by their oldest agent; in each, as `projectAgents`. An agent of no order the board
- * holds goes under "Other agents".
+ * holds goes under "Other agents", a line left out when it would be the only one.
  */
 export const projectGroups = (agents: readonly LiveAgent[], project: string, titleOf: OrderTitle = noTitles): readonly (GroupLine | LiveAgent)[] => {
   const byOrder = new Map<string, LiveAgent[]>();
@@ -58,6 +59,8 @@ export const projectGroups = (agents: readonly LiveAgent[], project: string, tit
     else group.push(a);
   }
   const groups = [...byOrder].map(([id, list]) => ({ id, agents: [...list.filter(waits), ...list.filter((a) => !waits(a))] }));
+  // "Other agents" alone heads nothing worth a line: the agents stand on their own.
+  if (groups.length === 1 && groups[0]?.id === "") return groups[0].agents;
   return waitingFirst(groups).flatMap(({ id, agents: list }) => [
     {
       group: `order:${project}/${id}`,
@@ -82,7 +85,7 @@ export const allAgents = (agents: readonly LiveAgent[], titleOf: OrderTitle = no
   ]);
 };
 
-/** What works, what waits on you and what is queued, the leads not counted, so it agrees with the sidebar's count. */
+/** What works, what waits on you and what is queued, as the rows' dots say it; the leads not counted. */
 export interface Tally {
   readonly working: number;
   readonly waiting: number;
@@ -95,9 +98,10 @@ export const tally = (agents: readonly LiveAgent[]): Tally => {
   let queued = 0;
   for (const { row } of agents) {
     if (row.role === "lead") continue;
-    if (row.status === "working" || row.status === "starting") working++;
-    else if (row.status === "waiting") waiting++;
-    else if (row.status === "queued") queued++;
+    const state = agentState(row.status);
+    if (state === "working") working++;
+    else if (state === "waiting") waiting++;
+    else if (state === "queued") queued++;
   }
   return { working, waiting, queued };
 };
@@ -110,16 +114,16 @@ export const headline = (agents: readonly LiveAgent[]): string => {
     .join(" · ");
 };
 
-/** The five states a row's dot tells apart. Running is the only one that moves. */
-export type AgentState = "running" | "queued" | "waiting" | "done" | "failed";
+/** The five states a row's dot tells apart. Working is the only one that moves. */
+export type AgentState = "working" | "queued" | "waiting" | "done" | "failed";
 
-/** Stalled still runs (its line says it stalled); parked and idle wait their turn as queued does; cancelled ended. */
+/** Stalled still works (its line says it stalled); parked and idle wait their turn as queued does; cancelled ended. */
 export const agentState = (status: LaneStatus): AgentState => {
   switch (status) {
     case "starting":
     case "working":
     case "stalled":
-      return "running";
+      return "working";
     case "waiting":
       return "waiting";
     case "done":
@@ -138,7 +142,7 @@ export const agentState = (status: LaneStatus): AgentState => {
 export const STATE_WORD: Readonly<Record<LaneStatus, string>> = {
   queued: "queued",
   starting: "starting",
-  working: "running",
+  working: "working",
   stalled: "stalled",
   idle: "idle",
   done: "done",
@@ -178,6 +182,13 @@ export const workPlace = (row: Pick<AgentRow, "pr" | "branch">): WorkPlace | und
   }
   if (branch !== undefined && branch !== "") return { kind: "branch", text: branch, tone: "quiet" };
   return undefined;
+};
+
+/** The window is on this agent's own PR in the panel: its row there leaves the PR out, as the page is that PR. */
+export const onItsPr = (screen: Screen, row: Pick<AgentRow, "pr" | "projectRef">): boolean => {
+  if (screen.id !== "project" || screen.panel?.tab !== "prs" || screen.panel.pr === null || row.pr === undefined) return false;
+  const { repo, number } = screen.panel.pr;
+  return sameProject(screen.project, row.projectRef) && number === row.pr.number && (repo === null || repo === row.pr.repo);
 };
 
 export interface StepLine {
