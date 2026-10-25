@@ -8,7 +8,10 @@
 //!    children on SIGTERM and exits 143 (fixture `sigterm-mid-tool`).
 //! 3. After [`TERM_GRACE`] more: sweep again, SIGKILL every swept process group and pid, then claude's group.
 //! 4. Whenever claude exits, for any reason: sweep once more and SIGKILL whatever is left, read the rest of stdout,
-//!    reap adopted orphans, and only then emit [`RunnerEvent::Exited`]. Nothing a session started outlives it.
+//!    reap adopted orphans, and only then emit [`RunnerEvent::Exited`].
+//! 5. After [`RESWEEP_AFTER`]: sweep by the marker again and SIGKILL what it finds, once more if it found anything.
+//!    A tool mid-`exec` at the first sweep had an empty `/proc/<pid>/environ`, so its marker could not be read.
+//!    Nothing a session started outlives it.
 //!
 //! The session service escalates a plain [`SessionCommand::Interrupt`] that did not end the run in time by sending
 //! `Shutdown { grace: 0 }`, which makes the spec's interrupt → SIGTERM → SIGKILL ladder.
@@ -39,6 +42,10 @@ pub const TERM_GRACE: Duration = Duration::from_secs(5);
 const DRAIN: Duration = Duration::from_secs(2);
 /// How long to wait for killed orphans to be reaped.
 const REAP: Duration = Duration::from_secs(5);
+/// From the sweep at the exit to the next one, and between the later ones ([`resweep`]).
+const RESWEEP_AFTER: Duration = Duration::from_secs(1);
+/// Sweeps after the one at the exit, at most: each after the first only when the one before found something.
+const RESWEEPS: usize = 2;
 /// Events waiting for the session service. Past this, stdout is no longer read, so claude blocks on its own writes
 /// instead of the node buffering without bound. Kill timers and commands keep running.
 const QUEUE_MAX: usize = 1024;
@@ -220,6 +227,8 @@ impl Session {
             transcript.close().await;
         }
         self.flush_delta();
+        // In its own task, so the exit is not held up by it. A later spawn of the session has another marker.
+        tokio::spawn(resweep(self.marker.clone()));
         if events_open {
             for event in self.queue.drain(..) {
                 if ev_tx.send(event).await.is_err() {
@@ -383,6 +392,29 @@ impl Session {
         if let Some(transcript) = &self.transcript {
             transcript.record(dir, line, json);
         }
+    }
+}
+
+/// Sweeps the exited spawn marked `marker` again, after [`RESWEEP_AFTER`], for what the sweep at the exit missed: a
+/// process that was mid-`exec` then had an empty environment, so no readable marker. By the marker alone: claude's
+/// pid is reaped by now and may already be another process's.
+async fn resweep(marker: String) {
+    for _ in 0..RESWEEPS {
+        tokio::time::sleep(RESWEEP_AFTER).await;
+        let by = marker.clone();
+        let found = tokio::task::spawn_blocking(move || process::sweep_marked(&by))
+            .await
+            .unwrap_or_default();
+        if found.is_empty() {
+            return;
+        }
+        tracing::warn!(
+            marker,
+            leftover = found.len(),
+            "killing processes the sweep at claude's exit missed"
+        );
+        process::signal(&found, Signal::SIGKILL);
+        process::reap(&found, REAP).await;
     }
 }
 
