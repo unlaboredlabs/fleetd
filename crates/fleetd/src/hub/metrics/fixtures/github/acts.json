@@ -1,0 +1,91 @@
+{
+ "data": {
+  "repository": {
+   "pullRequests": {
+    "pageInfo": {
+     "hasNextPage": false,
+     "endCursor": null
+    },
+    "nodes": [
+     {
+      "number": 41,
+      "headRefName": "fix-cart",
+      "additions": 12,
+      "deletions": 3,
+      "updatedAt": "2026-10-24T10:00:00Z",
+      "reviews": {
+       "nodes": [
+        {
+         "databaseId": 9001,
+         "submittedAt": "2026-10-24T09:30:00Z",
+         "author": {
+          "__typename": "User",
+          "login": "ada-lovelace"
+         }
+        },
+        {
+         "databaseId": 9002,
+         "submittedAt": null,
+         "author": {
+          "__typename": "User",
+          "login": "ada-lovelace"
+         }
+        }
+       ]
+      },
+      "comments": {
+       "nodes": [
+        {
+         "databaseId": 7001,
+         "createdAt": "2026-10-24T09:40:00Z",
+         "author": {
+          "__typename": "User",
+          "login": "ada-lovelace"
+         }
+        },
+        {
+         "databaseId": 7002,
+         "createdAt": "2026-10-24T09:41:00Z",
+         "author": {
+          "__typename": "Bot",
+          "login": "dependabot"
+         }
+        }
+       ]
+      }
+     },
+     {
+      "number": 43,
+      "headRefName": "fleetd/T7-checkout",
+      "additions": 200,
+      "deletions": 40,
+      "updatedAt": "2026-10-23T12:00:00Z",
+      "reviews": {
+       "nodes": [
+        {
+         "databaseId": 9003,
+         "submittedAt": "2026-10-23T11:00:00Z",
+         "author": {
+          "__typename": "User",
+          "login": "ada-lovelace"
+         }
+        },
+        {
+         "databaseId": 9004,
+         "submittedAt": "2026-10-23T11:30:00Z",
+         "author": {
+          "__typename": "User",
+          "login": "grace-hopper"
+         }
+        }
+       ]
+      },
+      "comments": {
+       "nodes": []
+      }
+     }
+    ]
+   }
+  }
+ }
+}
