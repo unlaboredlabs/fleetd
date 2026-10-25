@@ -983,6 +983,66 @@ async fn deltas_reach_followers_coalesced_and_stop_at_their_message() {
 }
 
 #[tokio::test]
+async fn a_writers_commits_name_its_task_in_a_trailer() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = repo(dir.path());
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.project(&root).await;
+    let workspace = SessionWorkspace::Worktree {
+        base_ref: NonEmpty::unchecked("main"),
+        branch: NonEmpty::unchecked("fleetd/T7-docs"),
+    };
+    hub.ok(launch("s1", RuntimeMode::FullAccess, workspace))
+        .await;
+    hub.settled("r1").await;
+    let spec = hub.runner.spawned()[0].clone();
+    // The agent's git, as claude's Bash tool runs it, with the session's environment.
+    std::fs::write(spec.cwd.join("docs.md"), "d\n").unwrap();
+    git(&spec.cwd, &["add", "."]);
+    let commit = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&spec.cwd)
+        .args([
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-q",
+            "-m",
+            "docs",
+        ])
+        .envs(
+            spec.env
+                .iter()
+                .filter(|(k, _)| k.starts_with("GIT_CONFIG_"))
+                .cloned(),
+        )
+        .output()
+        .unwrap();
+    assert!(
+        commit.status.success(),
+        "{}",
+        String::from_utf8_lossy(&commit.stderr)
+    );
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&spec.cwd)
+        .args(["log", "-1", "--format=%B"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "docs\n\nFleetd-Task: T7"
+    );
+}
+
+#[tokio::test]
 async fn a_removed_worktree_comes_back_at_the_same_path_when_the_session_resumes() {
     let dir = tempfile::tempdir().unwrap();
     let root = repo(dir.path());

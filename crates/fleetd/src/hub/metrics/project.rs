@@ -387,7 +387,7 @@ fn number(id: &str) -> i64 {
     id.get(1..).and_then(|n| n.parse().ok()).unwrap_or(-1)
 }
 
-fn change(db: &HubDb, id: &str) -> Result<Option<Change>, StoreError> {
+pub(super) fn change(db: &HubDb, id: &str) -> Result<Option<Change>, StoreError> {
     let data: Option<String> = db.with(|c| {
         Ok(
             c.query_row("SELECT data FROM changes WHERE n = ?1", [number(id)], |r| {
@@ -399,7 +399,7 @@ fn change(db: &HubDb, id: &str) -> Result<Option<Change>, StoreError> {
     Ok(data.and_then(|d| serde_json::from_str(&d).ok()))
 }
 
-fn workstream(db: &HubDb, id: &str) -> Result<Option<Workstream>, StoreError> {
+pub(super) fn workstream(db: &HubDb, id: &str) -> Result<Option<Workstream>, StoreError> {
     let data: Option<String> = db.with(|c| {
         Ok(c.query_row(
             "SELECT data FROM workstreams WHERE n = ?1",
@@ -411,7 +411,7 @@ fn workstream(db: &HubDb, id: &str) -> Result<Option<Workstream>, StoreError> {
     Ok(data.and_then(|d| serde_json::from_str(&d).ok()))
 }
 
-fn task_workstream(db: &HubDb, task: &str) -> Result<Option<String>, StoreError> {
+pub(super) fn task_workstream(db: &HubDb, task: &str) -> Result<Option<String>, StoreError> {
     db.with(|c| {
         Ok(c.query_row(
             "SELECT workstream_id FROM tasks WHERE n = ?1",

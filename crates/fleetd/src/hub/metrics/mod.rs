@@ -5,10 +5,12 @@
 //! reviews and comments on the git host.
 //! Repos are keyed by their remote, host first, so nothing here assumes one git host, CI or release cadence. The
 //! projector wakes on the log's append notification; the host sweep reads every project's repo from its git host on a
-//! slow timer and when a read asks; the prune runs hourly.
+//! slow timer and when a read asks, or from git alone on a node for a host with no API fleetd reads (`no_host.rs`);
+//! the prune runs hourly.
 pub mod compute;
 pub mod host_acts;
 pub mod human;
+pub mod no_host;
 pub mod presence;
 pub mod project;
 pub mod source;
@@ -17,6 +19,8 @@ pub mod sweep;
 pub mod tools;
 pub mod touches;
 
+#[cfg(test)]
+mod no_host_tests;
 #[cfg(test)]
 pub(crate) mod presence_tests;
 #[cfg(test)]

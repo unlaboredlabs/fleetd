@@ -1,12 +1,13 @@
 //! The node calls behind adding a project: scan a machine for checkouts, look at a path, clone with progress, and
-//! `gh repo list` there.
+//! `gh repo list` there; and a checkout's default branch read from git alone, for the factory metrics.
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::Duration;
 
-use fleetd_contracts::ids::MachineId;
+use fleetd_contracts::ids::{MachineId, ProjectId};
+use fleetd_contracts::prim::Count;
 use fleetd_contracts::sessions::{
-    CloneProgressFrame, GhRepos, RepoFacts, ScannedRepo, SessionCall, SessionOutput,
+    CloneProgressFrame, GhRepos, LandedLog, RepoFacts, ScannedRepo, SessionCall, SessionOutput,
 };
 use tokio::sync::mpsc;
 
@@ -18,6 +19,8 @@ pub(super) type CloneWatchers = Mutex<HashMap<String, mpsc::UnboundedSender<Clon
 const SCAN_TIMEOUT: Duration = Duration::from_secs(10);
 /// gh lists the user's repos and each org's, one call per owner.
 const GH_TIMEOUT: Duration = Duration::from_secs(120);
+/// A fetch of the default branch (20 s at most on the node), then its log.
+const LANDED_LOG_TIMEOUT: Duration = Duration::from_secs(60);
 /// A large repository over a slow link.
 pub const CLONE_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 
@@ -60,6 +63,30 @@ impl Executors {
         match self.call(machine_id, op, call, SCAN_TIMEOUT).await? {
             SessionOutput::RepoFacts(facts) => Ok(facts),
             _ => Err(failed(machine_id, op, "the node sent no repo facts")),
+        }
+    }
+
+    /// The project's default branch from git alone: see `SessionCall::LandedLog`.
+    pub async fn landed_log(
+        &self,
+        machine_id: &MachineId,
+        project_id: &ProjectId,
+        branch: &str,
+        since_ms: i64,
+        stop_at: Option<&str>,
+    ) -> Result<LandedLog, ExecutorError> {
+        let op = NodeOperation::Read;
+        let call = SessionCall::LandedLog {
+            project_id: project_id.clone(),
+            branch: non_empty(machine_id, op, "branch", branch)?,
+            since_ms: Count::unchecked(since_ms.max(0)),
+            stop_at: stop_at
+                .map(|s| non_empty(machine_id, op, "stop at", s))
+                .transpose()?,
+        };
+        match self.call(machine_id, op, call, LANDED_LOG_TIMEOUT).await? {
+            SessionOutput::LandedLog(log) => Ok(log),
+            _ => Err(failed(machine_id, op, "the node sent no landed log")),
         }
     }
 
