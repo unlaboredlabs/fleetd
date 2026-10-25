@@ -132,6 +132,10 @@ impl From<PortError> for StartError {
 
 impl From<TaskError> for StartError {
     fn from(error: TaskError) -> Self {
+        // The policy read at launch: a node gone since the start's check queues the task, like the launch itself.
+        if error.code == ErrorCode::MachineOffline {
+            return Self::Offline;
+        }
         Self::Other(error.message)
     }
 }
@@ -968,8 +972,12 @@ impl Tasks {
                 return Err(lead_error(e.0.code, e.0.message, e.0.fix.as_deref()));
             }
         }
-        // A broken policy file refuses the spawn now, not at its launch.
-        self.d.policies.get(r).await?;
+        // A broken policy file refuses the spawn now, not at its launch. An offline machine's file can't be read: the
+        // task queues "offline", and its launch reads the file and still refuses a broken one.
+        match self.d.policies.get(r).await {
+            Err(e) if e.code != ErrorCode::MachineOffline => return Err(e),
+            _ => {}
+        }
         let profile = resolve_profile(input.profile, input.kind, self.d.ports.medium_allowed(r));
         let task = Task {
             task_id: TaskId::unchecked("T0"),
@@ -1412,18 +1420,28 @@ mod tests {
 
     const AT: &str = "2026-10-19T10:00:00.000Z";
 
-    /// A linked node that launches every thread and reports `docs/<thread>.md` as each one's change so far.
+    /// A linked node that launches every thread and reports `docs/<thread>.md` as each one's change so far. `offline`
+    /// unlinks it; `policy` is the project's policy file.
     #[derive(Default)]
     struct Node {
         launched: Mutex<Vec<Option<String>>>,
+        offline: std::sync::atomic::AtomicBool,
+        policy: Mutex<Option<String>>,
+    }
+
+    impl Node {
+        fn offline(&self) -> bool {
+            self.offline.load(std::sync::atomic::Ordering::SeqCst)
+        }
     }
 
     impl TaskPorts for Node {
         fn is_connected(&self, _: &MachineId) -> bool {
-            true
+            !self.offline()
         }
         fn await_live<'a>(&'a self, _: &'a MachineId) -> BoxFut<'a, ()> {
-            Box::pin(async {})
+            // The test runs the queue itself once it brings the node back.
+            Box::pin(std::future::pending())
         }
         fn launch<'a>(
             &'a self,
@@ -1504,12 +1522,18 @@ mod tests {
         }
     }
 
-    /// The project has no policy file.
-    struct NoPolicy;
-
-    impl PolicySource for NoPolicy {
-        fn read<'a>(&'a self, _: &'a ProjectRef) -> BoxFut<'a, Result<Option<String>, TaskError>> {
-            Box::pin(async { Ok(None) })
+    /// The policy file as the node reads it from the project's checkout: none unless the test writes one.
+    impl PolicySource for Node {
+        fn read<'a>(
+            &'a self,
+            project_ref: &'a ProjectRef,
+        ) -> BoxFut<'a, Result<Option<String>, TaskError>> {
+            let read = if self.offline() {
+                Err(PortError::Offline.to_task_error(&project_ref.machine_id))
+            } else {
+                Ok(self.policy.lock().unwrap().clone())
+            };
+            Box::pin(async move { read })
         }
     }
 
@@ -1531,7 +1555,7 @@ mod tests {
         let node = Arc::new(Node::default());
         let ports: Arc<dyn TaskPorts> = node.clone();
         let slots = Slots::new(db.clone(), &store, &events).unwrap();
-        let policies = Policies::new(Arc::new(NoPolicy), clock.clone());
+        let policies = Policies::new(node.clone(), clock.clone());
         let tasks = Tasks::new(TaskDeps {
             db,
             store,
@@ -1599,5 +1623,62 @@ mod tests {
             None,
             "only writers hear of writers"
         );
+    }
+
+    /// No policy file is needed, and an offline node doesn't fail the spawn: the task queues "offline". Back
+    /// online, its launch reads the file and still refuses a broken one, so no deny rule is ever dropped.
+    #[tokio::test]
+    async fn a_spawn_while_the_node_is_offline_queues_and_its_launch_still_reads_the_policy() {
+        let (tasks, node) = tasks();
+        let caller = TaskCaller {
+            project_ref: ProjectRef {
+                machine_id: MachineId::unchecked("lab-a"),
+                project_id: ProjectId::unchecked("p1"),
+            },
+            by: "lead".into(),
+        };
+        let first = tasks
+            .spawn(&caller, writer("no policy file"))
+            .await
+            .unwrap();
+        assert_eq!(first.state, TaskState::Running);
+
+        node.offline
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let queued = tasks.spawn(&caller, writer("while offline")).await.unwrap();
+        assert_eq!(queued.state, TaskState::Queued);
+        assert_eq!(
+            queued.queued_reason.as_ref().map(|r| r.as_str()),
+            Some("machine lab-a is offline")
+        );
+
+        *node.policy.lock().unwrap() = Some("tools:\n  deny: Bash\n".into());
+        tasks.d.policies.invalidate(&caller.project_ref);
+        node.offline
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        {
+            let _guard = tasks.lock.lock().await;
+            tasks.retry_queue().await;
+        }
+        let failed = tasks.get(&queued.task_id).unwrap().unwrap();
+        assert_eq!(failed.state, TaskState::Failed);
+        assert_eq!(
+            node.launched.lock().unwrap().len(),
+            1,
+            "only the first one launched"
+        );
+
+        let refused = tasks
+            .spawn(&caller, writer("broken file"))
+            .await
+            .unwrap_err();
+        assert_eq!(
+            refused.code,
+            ErrorCode::Invalid,
+            "online, a broken file refuses the spawn"
+        );
+        // A node lost between the start's check and the launch's read queues the task too.
+        let lost = PortError::Offline.to_task_error(&caller.project_ref.machine_id);
+        assert!(matches!(StartError::from(lost), StartError::Offline));
     }
 }

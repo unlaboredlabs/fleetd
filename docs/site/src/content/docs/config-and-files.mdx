@@ -108,7 +108,9 @@ The `env` in your `~/.claude/settings.json` outranks it, as it does for your own
 
 ## .fleetd/policy.yaml {#policy}
 
-An optional file in a project's repo. Commit it to the default branch; changes apply within a minute.
+Optional: a project with no `.fleetd/` runs at full speed with the defaults below. fleetd reads the file from the
+project's checkout on its machine (the working tree of the folder you added, committed or not), so an edit there
+applies within a minute. Commit it if your other checkouts and machines should get it too.
 
 ```yaml
 tools:
