@@ -1,7 +1,7 @@
 //! What the node reports about its machine with each heartbeat: CPUs, the 1-minute load, memory in all and in use,
-//! free disk where its worktrees live, the memory and disk to allow per agent, and the claude.ai usage windows its
-//! sessions last saw. Absent when the figures cannot be read. The hub pauses new agents on a machine whose disk or
-//! load is past its limit.
+//! swap in use and memory pressure (Linux), free disk where its worktrees live, the memory and disk to allow per agent, and the claude.ai usage windows its
+//! sessions last saw. Absent when the figures cannot be read. The hub pauses new agents on a machine whose disk,
+//! load or memory is past its limit.
 use std::path::Path;
 use std::sync::OnceLock;
 
@@ -15,11 +15,13 @@ pub const MEM_PER_AGENT_GB: u64 = 2;
 /// Disk to allow per new agent's worktree when node.json sets none: roughly a Rust worktree with sccache.
 pub const DISK_PER_AGENT_GB: u64 = 5;
 
-/// Physical memory and how much of it is available, in bytes.
-#[derive(Debug, PartialEq, Eq)]
+/// Physical memory and how much of it is available, with swap, in bytes. macOS reports no swap here.
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct Memory {
     pub total: u64,
     pub available: u64,
+    pub swap_total: u64,
+    pub swap_free: u64,
 }
 
 impl Memory {
@@ -31,6 +33,16 @@ impl Memory {
                 .clamp(0.0, 100.0) as i64
         })
     }
+
+    /// Percent of swap in use; None without swap.
+    pub fn swap_used_pct(&self) -> Option<i64> {
+        (self.swap_total > 0).then(|| {
+            ((self.swap_total.saturating_sub(self.swap_free) as f64 / self.swap_total as f64)
+                * 100.0)
+                .round()
+                .clamp(0.0, 100.0) as i64
+        })
+    }
 }
 
 /// `/proc/loadavg`'s first field.
@@ -38,7 +50,7 @@ pub fn parse_loadavg(text: &str) -> Option<f64> {
     text.split_whitespace().next()?.parse().ok()
 }
 
-/// `/proc/meminfo`'s `MemTotal` and `MemAvailable`, which it prints in kB.
+/// `/proc/meminfo`'s `MemTotal`, `MemAvailable`, `SwapTotal` and `SwapFree`, which it prints in kB.
 pub fn parse_meminfo(text: &str) -> Option<Memory> {
     let field = |name: &str| {
         text.lines()
@@ -49,7 +61,26 @@ pub fn parse_meminfo(text: &str) -> Option<Memory> {
     Some(Memory {
         total: field("MemTotal:")?,
         available: field("MemAvailable:")?,
+        swap_total: field("SwapTotal:").unwrap_or(0),
+        swap_free: field("SwapFree:").unwrap_or(0),
     })
+}
+
+/// `/proc/pressure/memory`'s `some avg10`: the share of the last 10 s some task stalled on memory, percent.
+pub fn parse_psi(text: &str) -> Option<f64> {
+    text.lines()
+        .find_map(|l| l.strip_prefix("some "))?
+        .split_whitespace()
+        .find_map(|f| f.strip_prefix("avg10="))?
+        .parse()
+        .ok()
+}
+
+fn mem_pressure() -> Option<f64> {
+    if !cfg!(target_os = "linux") {
+        return None;
+    }
+    parse_psi(&std::fs::read_to_string("/proc/pressure/memory").ok()?)
 }
 
 /// macOS's `vm_stat` with `sysctl -n hw.memsize`'s total. Available is free plus inactive pages, as psutil and
@@ -75,6 +106,7 @@ pub fn parse_vm_stat(text: &str, total: u64) -> Option<Memory> {
     Some(Memory {
         total,
         available: available.min(total),
+        ..Memory::default()
     })
 }
 
@@ -166,6 +198,11 @@ pub fn read(limits: Vec<LoginLimit>, home: &Path) -> Option<NodeLoad> {
             .and_then(Memory::used_pct)
             .and_then(|p| Int::new(p).ok()),
         mem_total_bytes: memory.as_ref().and_then(|m| count(m.total)),
+        swap_used_pct: memory
+            .as_ref()
+            .and_then(Memory::swap_used_pct)
+            .and_then(|p| Int::new(p).ok()),
+        mem_pressure_pct: mem_pressure().and_then(|p| NonNegative::new(p).ok()),
         mem_per_agent_bytes: count(per_agent_bytes(
             setting(|c| c.mem_per_agent_gb),
             MEM_PER_AGENT_GB,
@@ -198,14 +235,34 @@ mod tests {
             memory,
             Memory {
                 total: 32_768_000_000,
-                available: 19_333_120_000
+                available: 19_333_120_000,
+                ..Memory::default()
             }
         );
         assert_eq!(memory.used_pct(), Some(41));
+        assert_eq!(memory.swap_used_pct(), None, "no swap lines: no swap");
+        let swapped = parse_meminfo(&format!(
+            "{meminfo}SwapTotal:       8388604 kB\nSwapFree:             96 kB\n"
+        ))
+        .unwrap();
+        assert_eq!(swapped.swap_used_pct(), Some(100));
+        let off = parse_meminfo(&format!("{meminfo}SwapTotal: 0 kB\nSwapFree: 0 kB\n")).unwrap();
+        assert_eq!(off.swap_used_pct(), None);
         let empty = parse_meminfo("MemTotal: 0 kB\nMemAvailable: 0 kB\n").unwrap();
         assert_eq!(empty.used_pct(), None);
         // Kernels before 3.14 print no MemAvailable.
         assert_eq!(parse_meminfo("MemTotal: 1000 kB\nMemFree: 10 kB\n"), None);
+    }
+
+    #[test]
+    fn reads_memory_pressure_from_proc_pressure() {
+        let psi = "some avg10=23.45 avg60=8.10 avg300=0.88 total=183565427\nfull avg10=11.00 avg60=4.00 avg300=0.86 total=173442963\n";
+        assert_eq!(parse_psi(psi), Some(23.45));
+        assert_eq!(
+            parse_psi("full avg10=1.00 avg60=0.00 avg300=0.00 total=1\n"),
+            None
+        );
+        assert_eq!(parse_psi(""), None);
     }
 
     #[test]

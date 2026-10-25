@@ -270,9 +270,14 @@ missing or logged out runs no sessions until it is fixed. fleetd turns claude’
 <td>Close what you don’t need. New agents start once less than 81% is in use.</td>
 </tr>
 <tr>
-<td>“Paused new agents: 5-hour limit 91% on laptop, resets … (pauses at 90%, lifts below 85%)” <code dir="auto">[disk]</code></td>
+<td>“Paused new agents: memory 84% with swap 100% on laptop” or “memory pressure 23% on laptop” <code dir="auto">[disk]</code></td>
+<td>Swap is full and memory nearly so, or the kernel is stalling tasks to find memory. Files in a tmpfs <code dir="auto">/tmp</code> count as memory too.</td>
+<td>Close what you don’t need, or clear large files from <code dir="auto">/tmp</code>. Running agents keep going; new ones start once it eases.</td>
+</tr>
+<tr>
+<td>“Paused new agents: 5-hour limit 91% on laptop as of Tue 13:42 UTC, resets … (pauses at 90%, lifts below 85%)” <code dir="auto">[disk]</code></td>
 <td>Its Claude login has nearly used a usage window, your own Claude Code sessions included.</td>
-<td>Nothing: new agents start below 85% or at the reset. Running agents keep going.</td>
+<td>Nothing: new agents start below 85% or at the reset; a reading with no reset time counts for 15 minutes. Running agents keep going.</td>
 </tr>
 <tr>
 <td>“New turns on laptop are paused by the usage breaker” <code dir="auto">[usage_breaker]</code></td>

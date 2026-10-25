@@ -1660,10 +1660,17 @@ export type NodeLoad = {
    * older nodes.
    */
   memPerAgentBytes?: number;
+  /**
+   * Memory pressure: the share of the last 10 s in which some task stalled waiting for memory (PSI `some avg10`),
+   * percent. Linux only; absent on kernels without PSI and from older nodes.
+   */
+  memPressurePct?: number;
   /** Physical memory; absent from older nodes and when it can't be read. */
   memTotalBytes?: number;
   /** Memory in use (total minus available), percent. */
   memUsedPct?: number;
+  /** Swap in use, percent. Linux only; absent without swap and from older nodes. */
+  swapUsedPct?: number;
 };
 
 /**
