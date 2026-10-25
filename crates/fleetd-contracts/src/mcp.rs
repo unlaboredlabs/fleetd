@@ -1091,6 +1091,126 @@ output!(PrDiffOutput {
     head_sha: Option<crate::verification::CommitSha>,
 });
 
+// work_claim: before a code change in a repo fleetd manages, says what it is and checks it against the work in flight
+// on the repo's base (agents, the merge train, other people's sessions) in one call. Claimed: the claim is held 12 h
+// from its last renewal (work_claim again on its branch). Taken: the same issue, PR, branch or plan item is someone
+// else's. Possible duplicate: call again with `notDuplicateOf` (the ids) and `notDuplicateWhy` if it is different
+// work. The caller's own active claim on the same branch is renewed and updated instead of claimed twice. A human
+// key's claim is a person's; any other key's is an agent key's, since a fleetd agent may load the person's MCP config.
+input!(
+    #[serde(remote = "Self")]
+    WorkClaimInput {
+        /// The repo's origin remote, in any form: "git@github.com:acme/shop.git", "https://gitlab.example.com/g/shop",
+        /// "/srv/git/shop.git". Give it or projectRef.
+        repo: Option<Line<1, 500>>,
+        project_ref: Option<ProjectRef>,
+        /// The branch the work lands on. Absent: the project's, else that of a project on the repo, else "main".
+        base: Option<crate::work::BranchName>,
+        /// One line: what the change does.
+        title: Line<1, 120>,
+        keys: Option<List<crate::work::WorkKey, 0, { crate::work::CLAIM_KEYS_MAX }>>,
+        /// Files or globs it will touch.
+        paths: Option<List<crate::work::WorkPath, 0, { crate::work::CLAIM_PATHS_MAX }>>,
+        /// The branch the work is on.
+        branch: Option<crate::work::BranchName>,
+        /// `git config user.email`, for knowing its pushes.
+        author_email: Option<Line<1, 200>>,
+        /// What the branch has changed so far, against the base and uncommitted.
+        changed: Option<List<crate::work::WorkPath, 0, { crate::work::OBSERVED_PATHS_MAX }>>,
+        head_sha: Option<crate::verification::CommitSha>,
+        /// Ids from a possible_duplicate answer that this work is not.
+        not_duplicate_of: Option<List<Line<1, 300>, 1, 10>>,
+        /// Why not: needed with notDuplicateOf, and logged.
+        not_duplicate_why: Option<Line<1, 300>>,
+        /// A human key only: claim it even though it is taken, with a link to what holds it.
+        anyway: Option<bool>,
+    }
+);
+checked!(WorkClaimInput, |input| {
+    if input.repo.is_none() && input.project_ref.is_none() {
+        return Err("give repo (its origin remote) or projectRef".into());
+    }
+    if input.not_duplicate_of.is_some() && input.not_duplicate_why.is_none() {
+        return Err(
+            "notDuplicateOf needs notDuplicateWhy: one line on why it is different work".into(),
+        );
+    }
+    Ok(())
+});
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkClaimStatus {
+    Claimed,
+    /// The caller's own claim on the branch, renewed and updated.
+    Renewed,
+    /// Someone else holds the same issue, PR, branch or plan item. Not claimed.
+    Taken,
+    /// Likely the same as work in flight. Not claimed; `notDuplicateOf` says it is different.
+    PossibleDuplicate,
+    /// The branch is a fleetd task's own, and an agent key asked: the task's agent on its own work, which fleetd
+    /// already tracks. Nothing is claimed; go on.
+    Yours,
+}
+
+output!(WorkClaimOutput {
+    status: WorkClaimStatus,
+    /// Claimed or renewed.
+    claim: Option<crate::work::Claim>,
+    /// Work in flight it may repeat, strongest first.
+    matches: List<crate::work::WorkMatch, 0, 10>,
+    /// "claimed C7", "taken by T12 (an agent of devbox/shop): dark mode toggle".
+    message: String,
+    /// No project is bound to the repo yet, so fleetd's agents' work on it may be missing from the matches.
+    warning: Option<String>,
+});
+
+// work_list: the work in flight on a repo's base branch, across every project on the repo and people's own sessions:
+// tasks, Changes on the merge train and claims (expired ones last, for a day). It only reads.
+input!(
+    #[serde(remote = "Self")]
+    WorkListInput {
+        /// The repo's origin remote, in any form. Give it or projectRef.
+        repo: Option<Line<1, 500>>,
+        project_ref: Option<ProjectRef>,
+        base: Option<crate::work::BranchName>,
+    }
+);
+checked!(WorkListInput, |input| {
+    if input.repo.is_none() && input.project_ref.is_none() {
+        return Err("give repo (its origin remote) or projectRef".into());
+    }
+    Ok(())
+});
+output!(WorkListOutput {
+    scope: crate::work::WorkScope,
+    items: List<crate::work::WorkItem, 0, 100>,
+    /// No project is bound to the repo yet, so fleetd's agents' work on it may be missing from the items.
+    warning: Option<String>,
+});
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkDoneOutcome {
+    /// It reached the base.
+    Landed,
+    /// Dropped, or left to someone else.
+    Dropped,
+}
+
+// work_done: ends the caller's claim: landed when the work reached the base, dropped when it won't. A human key may end
+// anyone's.
+input!(WorkDoneInput {
+    claim_id: crate::work::ClaimId,
+    outcome: WorkDoneOutcome,
+    /// Landed: the commit on the base.
+    landing: Option<crate::verification::CommitSha>,
+    reason: Option<Line<1, 200>>,
+});
+output!(WorkDoneOutput {
+    claim: crate::work::Claim,
+});
+
 /// Declares the static tool table: `McpToolName` with each tool's minimum grant role and its input and output types.
 macro_rules! tools {
     ($($name:ident => $variant:ident, $scope:ident, $input:ty, $output:ty;)*) => {
@@ -1213,6 +1333,9 @@ tools! {
     pr_files => PrFiles, Read, PrFilesInput, PrFilesOutput;
     pr_diff => PrDiff, Read, PrDiffInput, PrDiffOutput;
     chat_stop => ChatStop, Operate, ChatStopInput, ChatStopOutput;
+    work_claim => WorkClaim, Operate, WorkClaimInput, WorkClaimOutput;
+    work_list => WorkList, Read, WorkListInput, WorkListOutput;
+    work_done => WorkDone, Operate, WorkDoneInput, WorkDoneOutput;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]

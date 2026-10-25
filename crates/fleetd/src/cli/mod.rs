@@ -17,6 +17,7 @@ pub mod steer;
 pub mod time;
 pub mod update;
 pub mod versions;
+pub mod work;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -65,7 +66,7 @@ setting up (on the hub machine):
 projects:
 {}
 running by hand:
-{}{}{}{}{}{}{}{}{}",
+{}{}{}{}{}{}{}{}{}{}",
         UPDATE_USAGE,
         setup::SETUP_USAGE,
         setup::machine::machine_usage(),
@@ -79,7 +80,8 @@ running by hand:
         metrics::METRICS_USAGE,
         status::STATUS_USAGE,
         steer::STEER_USAGE,
-        chat::CHAT_USAGE
+        chat::CHAT_USAGE,
+        work::WORK_USAGE
     )
 }
 
@@ -117,6 +119,7 @@ pub fn help_for(argv: &[String]) -> Option<String> {
         "status" => status::STATUS_USAGE.to_owned(),
         "steer" | "steers" => steer::STEER_USAGE.to_owned(),
         "chat" => chat::CHAT_USAGE.to_owned(),
+        "work" => work::WORK_USAGE.to_owned(),
         _ => return None,
     };
     Some(format!("usage:\n{text}"))
@@ -162,7 +165,7 @@ pub fn run(argv: &[String]) -> CliResult {
 }
 
 /// Commands that keep running (`node …`, `status --watch`, `steer --wait`, `chat --follow`) or wait on other processes
-/// or the hub (setup, `update`, `status`, `steer`, `chat`).
+/// or the hub (setup, `update`, `status`, `steer`, `chat`, `work`).
 fn is_long_running(argv: &[String]) -> bool {
     matches!(
         argv.first().map(String::as_str),
@@ -181,6 +184,7 @@ fn is_long_running(argv: &[String]) -> bool {
                 | "steers"
                 | "chat"
                 | "status"
+                | "work"
         )
     )
 }
@@ -198,6 +202,7 @@ async fn run_long_running(argv: &[String]) -> u8 {
         "steer" => steer::steer_command(rest, false).await,
         "steers" => steer::steer_command(rest, true).await,
         "chat" => chat::chat_command(rest).await,
+        "work" => work::work_command(rest).await,
         _ => update_command(rest).await,
     }
 }

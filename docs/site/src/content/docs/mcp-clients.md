@@ -85,12 +85,56 @@ On a new hub with no projects yet, the output starts like this:
 |---|---|
 | `fleetd status`, `fleetd time` | Nothing on the hub machine. Elsewhere, `--hub <url> --key-file <file>`. |
 | `fleetd steer`, `fleetd steers` | Always `--key-file` with a [human key](/docs/glossary#human-key). `--hub <url>` off the hub machine. |
+| `fleetd work` | `--key-file`, or `FLEETD_KEY_FILE`: any operate key, such as the one Claude Code uses. `--hub <url>` off the hub machine. |
 
 To make a human key file on the hub:
 
 ```sh
 (umask 077; fleetd hub key create --human --name terminal > ~/.fleetd/human.key)
 fleetd steers W41 --key-file ~/.fleetd/human.key
+```
+
+## Claim work before you start it {#work}
+
+fleetd keeps one ledger of the work in flight on each repo: its agents, the PRs on its merge train, and what people
+claimed from their own sessions. A session that checks it first doesn't build what an agent is already building.
+
+Claude Code needs nothing more than the connection above. The hub's MCP `instructions`, which Claude Code adds to every
+session's system prompt, tell it to call `work_claim` before a code change and `work_done` when the change lands or
+is dropped, and to tell you when the work is taken. A session might go like this:
+
+```text
+> add a dark mode toggle to settings
+● fleetd - work_claim (repo: "git@gitlab.example.com:acme/shop.git", title: "dark mode toggle in settings",
+                       branch: "ada/dark-mode", paths: ["app/theme.ts"])
+  ⎿ status: possible_duplicate. may repeat T12 (an agent of devbox/shop): dark mode toggle for settings
+    (3 shared words: dark, mode, toggle)
+● fleetd's agent T12 is already building a dark mode toggle for settings. Shall I wait for its PR, or is this
+  different work?
+```
+
+| Tool | Does | Role |
+|---|---|---|
+| `work_claim {repo \| projectRef, title, base?, branch?, keys?, paths?, changed?, authorEmail?, notDuplicateOf?, notDuplicateWhy?, anyway?}` | Checks the intent against the work in flight on the repo's base and claims it in one call. `status` is `claimed`; `renewed` (your claim on the same branch, updated); `taken` (someone else has the same issue, PR, branch or plan item); `possible_duplicate` (most of the same words, or the same words and files), or `yours` (fleetd's own agent on its task's branch: the task already holds it). Keys and paths a renewal adds are checked like a new claim's. For a likely duplicate, call again with `notDuplicateOf` and `notDuplicateWhy` if it's different work. With a taken item, `anyway: true` claims it regardless, but only with a [human key](/docs/glossary#human-key): any other key may be one of fleetd's own agents. | operate |
+| `work_list {repo \| projectRef, base?}` | What is in flight on the repo's base, newest first, with each item's keys and files. Expired claims come last. | read |
+| `work_done {claimId, outcome, landing?, reason?}` | Ends your claim: `landed` (with its commit) or `dropped`. A human key can end anyone's. | operate |
+
+`repo` is the origin remote in any form, on any host: `git@github.com:acme/shop.git`, `https://gitlab.example.com/g/shop`,
+`/srv/git/shop.git`. With no `base`, the base is the project's (or that of a project on the repo), else `main`. A claim
+lasts 12 hours after your last `work_claim` on it, then shows as expired for a day. Matches only list it once it has expired.
+When no project is known to be on the repo yet, the hub first reads the remotes of your projects that it hasn't
+matched to a repo, waiting a few seconds. If none matches, the answer's `warning` says the agents' work may be
+missing from it.
+
+From a terminal, or a session without the MCP, `fleetd work` does the same. It reads the repo, base, branch,
+`user.email` and changed paths (since the branch left the base, plus uncommitted and untracked files) from the
+checkout you run it in:
+
+```sh
+export FLEETD_KEY_FILE=~/.fleetd/agent.key
+fleetd work claim "dark mode toggle in settings" --issue SHOP-12   # exit 0 claimed, 1 taken or a likely duplicate
+fleetd work                                                        # what is in flight here
+fleetd work done                                                   # the claim on this branch landed
 ```
 
 ## Roles
