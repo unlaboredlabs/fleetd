@@ -4,10 +4,12 @@
 //! only the ones in the scope's repo and base (and landings from the last 14 days), and decide what each strength
 //! does. Nothing here assumes a language, a host or a repo layout.
 //!
-//! - exact: the same item held by another owner, or the same issue, PR or branch, each declared or written in a
-//!   title. Ids someone chose on purpose, so it is the only tier that may refuse outright.
-//! - strong: titles that share most of their words, or share words and most of their files; or a key both only
-//!   mention in passing. A one-time refusal: the caller passes the id in `notDuplicateOf` with a reason.
+//! - exact: the same item held by another owner, or the same issue, PR or branch, declared by the intent and
+//!   declared or written in a title by the other. Ids someone chose on purpose, so it is the only tier that may
+//!   refuse outright.
+//! - strong: titles that share most of their words, or share words and most of their files; or a key the intent
+//!   only writes ("fix: regression from #57"). A one-time refusal: the caller passes the id in `notDuplicateOf`
+//!   with a reason.
 //! - weak: two shared words, or one shared file. Only listed.
 use std::collections::{BTreeSet, HashSet};
 use std::sync::LazyLock;
@@ -49,14 +51,27 @@ impl std::fmt::Display for WorkKey {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Key {
     pub key: WorkKey,
-    /// Declared, or written in a title. A key only mentioned in a prompt's body (a "#333" colour, "see #12 for
-    /// context") is not firm: sharing it makes a match strong at most, never exact.
-    pub firm: bool,
+    pub from: KeyFrom,
+}
+
+/// Where a key came from, surest first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum KeyFrom {
+    /// A field the caller set: a task's item, a Change's PR, a claim's `--issue`, a landing's PR.
+    Declared,
+    /// Written in a title. Enough on the other side ("feat: dark mode (#57)" landed), not on the intent's: a
+    /// follow-up names what it follows ("fix: regression from #57").
+    Title,
+    /// Mentioned in a prompt's body: a "#333" colour, "see #12 for context".
+    Body,
 }
 
 impl Key {
     pub fn declared(key: WorkKey) -> Self {
-        Self { key, firm: true }
+        Self {
+            key,
+            from: KeyFrom::Declared,
+        }
     }
 }
 
@@ -88,16 +103,16 @@ impl Work {
             title: title.to_string(),
             ..Self::default()
         };
-        work.keys.extend(
-            keys_in(title, scope)
-                .into_iter()
-                .map(|key| Key { key, firm: true }),
-        );
-        work.keys.extend(
-            keys_in(body, scope)
-                .into_iter()
-                .map(|key| Key { key, firm: false }),
-        );
+        work.keys
+            .extend(keys_in(title, scope).into_iter().map(|key| Key {
+                key,
+                from: KeyFrom::Title,
+            }));
+        work.keys
+            .extend(keys_in(body, scope).into_iter().map(|key| Key {
+                key,
+                from: KeyFrom::Body,
+            }));
         work.paths = paths_in(title).into_iter().chain(paths_in(body)).collect();
         work
     }
@@ -153,17 +168,17 @@ fn compare(intent: &Work, words: &Words, c: &Candidate, scope: &Scope) -> Option
         if Some(&k.key) == base.as_ref() {
             continue;
         }
-        let Some(firm_there) = c
+        let Some(there) = c
             .work
             .keys
             .iter()
             .filter(|o| o.key == k.key)
-            .map(|o| o.firm)
-            .reduce(|a, b| a || b)
+            .map(|o| o.from)
+            .min()
         else {
             continue;
         };
-        if k.firm && firm_there && !same_owner {
+        if k.from == KeyFrom::Declared && there <= KeyFrom::Title && !same_owner {
             firm.insert(&k.key);
         } else {
             mentioned.insert(&k.key);
@@ -348,6 +363,10 @@ static TICKET: LazyLock<Regex> = LazyLock::new(|| {
 });
 /// Upper-case prefixes of standards and versions, not tracker keys: `UTF-8`, `SHA-256`, `RFC-3339`.
 const NOT_TICKETS: &[&str] = &[
+    // Products and their versions: `JDK-21`, `PY-3`, `GCC-14`.
+    "API", "AV", "CUDA", "DDR", "GCC", "GO", "HEVC", "IOS", "JAVA", "JDK", "JEP", "JRE", "JSR",
+    "LLVM", "LTE", "MAC", "MPEG", "NODE", "OS", "PCI", "PHP", "PY", "PYTHON", "SDK", "USB", "VP",
+    "WIN", // Standards and digests.
     "AES", "ANSI", "ARM", "CRC", "CVE", "ECMA", "ES", "GPT", "HTTP", "IEC", "IEEE", "IPV", "ISO",
     "MD", "MP", "PEP", "RFC", "RSA", "SHA", "SSL", "TLS", "UCS", "UTF", "WCAG",
 ];
@@ -548,29 +567,50 @@ fn fixed_dir(p: &str) -> String {
     head[..head.rfind('/').map_or(0, |i| i + 1)].to_string()
 }
 
-/// `**` is any number of directories; `*` and `?` stay within one.
+/// `**` is any number of directories; `*` and `?` stay within one. Neither backtracks: a prompt's paths are
+/// anyone's text, so `a/**********q` must cost no more than `a/*q`.
 fn glob(pattern: &str, path: &str) -> bool {
-    fn segments(p: &[&str], s: &[&str]) -> bool {
-        match p.split_first() {
-            None => s.is_empty(),
-            Some((&"**", rest)) => (0..=s.len()).any(|i| segments(rest, &s[i..])),
-            Some((head, rest)) => s.split_first().is_some_and(|(first, tail)| {
-                segment(
-                    &head.chars().collect::<Vec<_>>(),
-                    &first.chars().collect::<Vec<_>>(),
-                ) && segments(rest, tail)
-            }),
-        }
-    }
-    fn segment(p: &[char], s: &[char]) -> bool {
-        match p.split_first() {
-            None => s.is_empty(),
-            Some(('*', rest)) => (0..=s.len()).any(|i| segment(rest, &s[i..])),
-            Some(('?', rest)) => !s.is_empty() && segment(rest, &s[1..]),
-            Some((c, rest)) => s.first() == Some(c) && segment(rest, &s[1..]),
-        }
-    }
-    let p: Vec<&str> = pattern.split('/').collect();
     let s: Vec<&str> = path.split('/').collect();
-    segments(&p, &s)
+    // reach[j]: the pattern so far matches the path's first j directories.
+    let mut reach = vec![false; s.len() + 1];
+    reach[0] = true;
+    for seg in pattern.split('/') {
+        let mut next = vec![false; s.len() + 1];
+        if seg == "**" {
+            let mut any = false;
+            for (j, r) in reach.iter().enumerate() {
+                any |= *r;
+                next[j] = any;
+            }
+        } else {
+            for j in 0..s.len() {
+                next[j + 1] = reach[j] && segment(seg, s[j]);
+            }
+        }
+        reach = next;
+    }
+    reach[s.len()]
+}
+
+/// One directory's name against `*` and `?`: the last `*` takes one more character at each miss.
+fn segment(pattern: &str, name: &str) -> bool {
+    let (p, s): (Vec<char>, Vec<char>) = (pattern.chars().collect(), name.chars().collect());
+    let (mut i, mut j) = (0, 0);
+    let mut star: Option<(usize, usize)> = None;
+    while j < s.len() {
+        if i < p.len() && (p[i] == '?' || p[i] == s[j]) {
+            i += 1;
+            j += 1;
+        } else if i < p.len() && p[i] == '*' {
+            star = Some((i, j));
+            i += 1;
+        } else if let Some((si, sj)) = star {
+            i = si + 1;
+            j = sj + 1;
+            star = Some((si, sj + 1));
+        } else {
+            return false;
+        }
+    }
+    p[i..].iter().all(|c| *c == '*')
 }

@@ -57,12 +57,12 @@ fn the_table() {
     let cases: Vec<Case> = vec![
         // ---- true duplicates ----
         (
-            "the same issue in two titles",
+            "an issue the intent declares and a title names",
             work(
                 "lead",
-                "fix: #42 login crashes on an empty password",
+                "login crashes on an empty password",
                 "",
-                &[],
+                &["#42"],
                 &[],
             ),
             work("laptop", "login crash (#42)", "", &[], &[]),
@@ -114,7 +114,13 @@ fn the_table() {
         ),
         (
             "the same branch",
-            work("laptop", "theme work", "", &["branch:ada-lovelace/dark-mode"], &[]),
+            work(
+                "laptop",
+                "theme work",
+                "",
+                &["branch:ada-lovelace/dark-mode"],
+                &[],
+            ),
             work(
                 "lead",
                 "settings polish",
@@ -368,6 +374,42 @@ fn the_table() {
             "both mention #333",
         ),
         (
+            "a follow-up names the PR it follows",
+            work("lead", "fix: regression from #57", "", &[], &[]),
+            work("", "feat: dark mode toggle (#57)", "", &["#57"], &[]),
+            false,
+            Some(Strong),
+            "both mention #57",
+        ),
+        (
+            "the same issue in two titles",
+            work(
+                "lead",
+                "fix: #42 login crashes on an empty password",
+                "",
+                &[],
+                &[],
+            ),
+            work("laptop", "login crash (#42)", "", &[], &[]),
+            false,
+            Some(Strong),
+            "both mention #42",
+        ),
+        (
+            "a product version is not a tracker key",
+            work("lead", "Upgrade the build to JDK-21", "", &[], &[]),
+            work(
+                "laptop",
+                "JDK-21 virtual threads in the worker pool",
+                "",
+                &[],
+                &[],
+            ),
+            false,
+            None,
+            "",
+        ),
+        (
             "a key one title names and the other prompt only mentions",
             work("lead", "#42 login crash", "", &[], &[]),
             work(
@@ -488,11 +530,19 @@ fn the_table() {
         ),
         (
             "a claim of an issue only",
-            work("lead", "Retry webhooks (closes #88)", "", &[], &[]),
+            work("lead", "Retry webhooks", "", &["#88"], &[]),
             work("laptop", "", "", &["#88"], &[]),
             false,
             Some(Exact),
             "same #88",
+        ),
+        (
+            "an issue only the intent's title names refuses once, never outright",
+            work("lead", "Retry webhooks (closes #88)", "", &[], &[]),
+            work("laptop", "", "", &["#88"], &[]),
+            false,
+            Some(Strong),
+            "both mention #88",
         ),
         (
             "unrelated work in the same files' directory",
@@ -614,6 +664,7 @@ fn keys_in_text() {
         ),
         ("Merged in feature (pull request !3)", &[r("!3")]),
         ("UTF-8, SHA-256, ISO-8601-1, CVE-2024-1234, X-1.2", &[]),
+        ("JDK-21, JEP-444, PY-3, GCC-14, IOS-18, SDK-35", &[]),
         ("colour &#123; in C#12, wow!12, #0 and #12345678", &[]),
         ("P1 priority, P5", &[]),
     ];
@@ -641,6 +692,50 @@ fn paths_in_text() {
     for (text, want) in cases {
         assert_eq!(paths_in(text), *want, "{text}");
     }
+}
+
+#[test]
+fn star_runs_cost_no_more_than_one_star() {
+    // Backtracking took 17 s on ten stars and minutes on twelve; these finish at once or the suite hangs.
+    let name = "x".repeat(30);
+    let file = format!("a/{name}");
+    let stars = format!("a/{}q", "*".repeat(40));
+    let dirs = format!("{}/q", vec!["**"; 40].join("/"));
+    let deep = vec![name.as_str(); 40].join("/");
+    let mixed = format!("{}/q", vec!["*x**"; 20].join("/"));
+    for (pattern, path) in [(&stars, &file), (&dirs, &deep), (&mixed, &deep)] {
+        let intent = work(
+            "lead",
+            "picker",
+            &format!("Touch {pattern} only."),
+            &[],
+            &[],
+        );
+        assert_eq!(intent.paths, std::slice::from_ref(pattern));
+        assert_eq!(
+            one(&intent, work("laptop", "", "", &[], &[path]), false),
+            None,
+            "{pattern}"
+        );
+    }
+    let intent = work(
+        "lead",
+        "picker",
+        "",
+        &[],
+        &[&format!("a/{}x", "*".repeat(40))],
+    );
+    let got = one(&intent, work("laptop", "", "", &[], &[&file]), false);
+    assert_eq!(got.map(|m| m.strength), Some(Weak));
+    let intent = work(
+        "lead",
+        "picker",
+        "",
+        &[],
+        &[&format!("{}/x*", vec!["**"; 40].join("/"))],
+    );
+    let got = one(&intent, work("laptop", "", "", &[], &[&deep]), false);
+    assert_eq!(got.map(|m| m.strength), Some(Weak));
 }
 
 // ---- calibration on fleetd's own history ----
