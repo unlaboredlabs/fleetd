@@ -936,6 +936,120 @@ async fn a_removed_worktree_comes_back_at_the_same_path_when_the_session_resumes
 }
 
 #[tokio::test]
+async fn a_writer_starts_from_a_fresh_fetch_of_origin_not_the_stale_local_main() {
+    let dir = tempfile::tempdir().unwrap();
+    let seed = repo(dir.path());
+    let origin = dir.path().join("origin.git");
+    let checkout = dir.path().join("checkout");
+    let (o, c) = (origin.to_string_lossy(), checkout.to_string_lossy());
+    git(
+        dir.path(),
+        &["clone", "-q", "--bare", &seed.to_string_lossy(), &o],
+    );
+    git(dir.path(), &["clone", "-q", &o, &c]);
+    // Upstream moves on after the human's last pull.
+    std::fs::write(seed.join("upstream.txt"), "u\n").unwrap();
+    git(&seed, &["add", "."]);
+    git(&seed, &["commit", "-q", "-m", "upstream"]);
+    git(&seed, &["push", "-q", &o, "main"]);
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.project(&checkout).await;
+    let workspace = SessionWorkspace::Worktree {
+        base_ref: NonEmpty::unchecked("main"),
+        branch: NonEmpty::unchecked("fleetd/s1"),
+    };
+    hub.ok(launch("s1", RuntimeMode::FullAccess, workspace))
+        .await;
+    hub.settled("r1").await;
+    let path: PathBuf = dir.path().join("node/worktrees/p1/s1");
+    assert!(path.join("upstream.txt").exists());
+    assert!(!checkout.join("upstream.txt").exists());
+
+    std::fs::write(path.join("work.txt"), "w\n").unwrap();
+    git(&path, &["add", "."]);
+    git(&path, &["commit", "-q", "-m", "work"]);
+    let changes = hub
+        .ok(SessionCall::Changes {
+            session_id: ThreadId::unchecked("s1"),
+        })
+        .await;
+    // Compared with origin/main, so upstream's commit isn't the writer's.
+    assert!(matches!(changes, SessionOutput::Changes(c) if c.paths == ["work.txt"]));
+}
+
+#[tokio::test]
+async fn a_slow_fetch_never_holds_up_a_launch_in_another_project() {
+    let dir = tempfile::tempdir().unwrap();
+    let seed = repo(dir.path());
+    let slow = dir.path().join("slow");
+    git(
+        dir.path(),
+        &[
+            "clone",
+            "-q",
+            &seed.to_string_lossy(),
+            &slow.to_string_lossy(),
+        ],
+    );
+    // A remote that takes 3 s to fail.
+    git(&slow, &["config", "core.sshCommand", "sleep 3; exit 1 #"]);
+    git(&slow, &["config", "ssh.variant", "simple"]);
+    git(
+        &slow,
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "ssh://example.invalid/slow.git",
+        ],
+    );
+    let other = dir.path().join("other");
+    std::fs::create_dir_all(&other).unwrap();
+    let hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.project(&slow).await;
+    hub.ok(SessionCall::ProjectUpsert {
+        project_id: ProjectId::unchecked("p2"),
+        title: NonEmpty::unchecked("p2"),
+        workspace_root: NonEmpty::unchecked(other.to_string_lossy()),
+    })
+    .await;
+    let writer = launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Worktree {
+            base_ref: NonEmpty::unchecked("main"),
+            branch: NonEmpty::unchecked("fleetd/s1"),
+        },
+    );
+    let SessionCall::Launch(mut reader) =
+        launch("s2", RuntimeMode::FullAccess, SessionWorkspace::Root)
+    else {
+        unreachable!()
+    };
+    reader.project_id = ProjectId::unchecked("p2");
+    let (_, waited) = tokio::join!(hub.ok(writer), async {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        let started = std::time::Instant::now();
+        hub.ok(SessionCall::Launch(reader)).await;
+        started.elapsed()
+    });
+    assert!(
+        waited < Duration::from_secs(2),
+        "waited {waited:?} on p1's fetch"
+    );
+}
+
+#[tokio::test]
 async fn a_first_start_that_claude_already_knows_resumes_instead() {
     let dir = tempfile::tempdir().unwrap();
     let runner = FakeRunner::fixture("init-partial-two-turns");
