@@ -1984,21 +1984,20 @@ impl Executors {
             .map(|_| ())
     }
 
-    /// The repo's default branch at `cwd`, else its current branch.
+    /// The repo's default branch at `cwd`, else its current branch; `None` when it has neither (not a checkout) or no
+    /// commit yet (a new repo).
     pub async fn default_branch(
         &self,
         machine_id: &MachineId,
         cwd: &str,
-    ) -> Result<String, ExecutorError> {
+    ) -> Result<Option<String>, ExecutorError> {
         let op = NodeOperation::Read;
         let call = SessionCall::DefaultBranch {
             project_id: self.project_for_root(machine_id, cwd)?,
         };
         match self.call(machine_id, op, call, READ_TIMEOUT).await? {
-            SessionOutput::DefaultBranch {
-                branch: Some(branch),
-            } => Ok(branch),
-            _ => Err(failed(machine_id, op, format!("no local branch at {cwd}"))),
+            SessionOutput::DefaultBranch { branch } => Ok(branch),
+            _ => Err(failed(machine_id, op, "the node sent no default branch")),
         }
     }
 

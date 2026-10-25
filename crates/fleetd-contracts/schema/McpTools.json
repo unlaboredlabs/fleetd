@@ -10547,7 +10547,7 @@
       "type": "string"
     },
     "TaskKind": {
-      "description": "Only write tasks get a worktree.",
+      "description": "Every task gets its own worktree: a writer on its own branch, a reader or reviewer detached.",
       "enum": [
         "write",
         "read",

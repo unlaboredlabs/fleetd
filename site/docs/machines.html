@@ -234,8 +234,8 @@ every 15 seconds, with its heartbeat.</p>
 <p>The project’s status says why, for example “Paused new agents: 14 GB free on builder-1” or “Paused new agents: 5-hour
 limit 91% on builder-1 as of Tue 13:42 UTC, resets Tue 14:00 UTC (pauses at 90%, lifts below 85%)”, and <code dir="auto">fleetd doctor</code>
 shows each machine’s free space. A writer’s worktree, build output included, goes once its PR merges, unless it holds
-uncommitted or unpushed work. When <code dir="auto">sccache</code> is on the node’s <code dir="auto">PATH</code>, sessions compile through it, so a dependency
-builds once per machine rather than once per worktree.</p>
+uncommitted or unpushed work. A reader’s or reviewer’s goes when its task ends. When <code dir="auto">sccache</code> is on the node’s <code dir="auto">PATH</code>,
+sessions compile through it, so a dependency builds once per machine rather than once per worktree.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="fair-share">A fair share for each agent</h2><a class="sl-anchor-link" href="#fair-share"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “A fair share for each agent”</span></a></div>
 <p>Agents on one machine share its CPUs, memory and disk. Each session gets:</p>
 <table>

@@ -279,7 +279,7 @@ pub const ENTRIES: &[Entry] = &[
         Task,
         "Reader brief",
         "every read task attempt",
-        "taskId!=T<n>; kind=read; workstreamId=W<n>; project=the project's title; title=the task's title; task!=the lead's task text; workstream=the order's goal and done-when, or nothing",
+        "taskId!=T<n>; kind=read; workstreamId=W<n>; project=the project's title; title=the task's title; task!=the lead's task text; workstream=the order's goal and done-when, or nothing; baseBranch=the default branch; workspace!=where it works: its own worktree, or the project's checkout on an older node",
         &[READ_ONLY]
     ),
     entry!(
@@ -289,7 +289,7 @@ pub const ENTRIES: &[Entry] = &[
         Task,
         "Review task brief",
         "every attempt of a review task the lead spawns (the train's reviews use Reviewer)",
-        "taskId!=T<n>; kind=review; workstreamId=W<n>; project=the project's title; title=the task's title; task!=the lead's task text; workstream=the order's goal and done-when, or nothing",
+        "taskId!=T<n>; kind=review; workstreamId=W<n>; project=the project's title; title=the task's title; task!=the lead's task text; workstream=the order's goal and done-when, or nothing; baseBranch=the default branch; workspace!=where it works: its own worktree, or the project's checkout on an older node",
         &[READ_ONLY, VERDICT]
     ),
     entry!(

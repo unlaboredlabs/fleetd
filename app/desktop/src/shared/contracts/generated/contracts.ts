@@ -3577,7 +3577,7 @@ export type TaskGetOutput = {
 
 export type TaskId = string;
 
-/** Only write tasks get a worktree. */
+/** Every task gets its own worktree: a writer on its own branch, a reader or reviewer detached. */
 export type TaskKind = "write" | "read" | "review";
 
 /**

@@ -437,16 +437,24 @@ impl Tasks {
         let policy = self.d.policies.get(r).await?;
         let brief = self.workstream(&task.workstream_id).and_then(|w| w.brief);
         let write = task.kind == TaskKind::Write;
-        let base_branch = if write {
-            Some(
-                self.d
-                    .ports
-                    .default_branch(&r.machine_id, &project.workspace_root)
-                    .await?,
-            )
+        // Every task gets a worktree of its own from the default branch, a writer's on its branch and a reader's
+        // detached, so none works in the human's checkout. A reader still runs there, as before, on a node too old to
+        // decode a detached workspace (it would drop its link), and in a directory with no branch or a repo with no
+        // commit yet, which can't have one.
+        let base_branch = if write || self.d.ports.detached_worktrees(&r.machine_id) {
+            self.d
+                .ports
+                .default_branch(&r.machine_id, &project.workspace_root)
+                .await?
         } else {
             None
         };
+        if write && base_branch.is_none() {
+            return Err(StartError::Other(format!(
+                "no branch with a commit at {}",
+                project.workspace_root
+            )));
+        }
         let branch = write.then(|| {
             branch_for(
                 policy.branch_prefix.as_ref(),
@@ -482,9 +490,11 @@ impl Tasks {
             ),
             // The node's launch is idempotent on the request id, so a retried launch returns the same thread.
             client_request_id: request_id(task, &[&task.attempt.get().to_string()]),
-            worktree: base_branch
-                .zip(branch.clone())
-                .map(|(base_ref, branch)| Worktree { base_ref, branch }),
+            worktree: base_branch.map(|base_ref| Worktree {
+                base_ref,
+                branch: branch.clone(),
+                pr: task.pr.as_deref().map(str::to_owned),
+            }),
         };
         let (thread_id, base) = self.d.ports.launch(&r.machine_id, request).await?;
         // Every later message to this thread renders from the texts it starts with. The thread runs either way.
@@ -1076,6 +1086,10 @@ impl Tasks {
             format!("{} {verb}: {}", task.task_id.as_str(), task.title.as_str()),
             extra,
         )?;
+        // A reader's worktree holds no work, so it goes now; a writer's waits for its PR to merge.
+        if !write {
+            self.remove_worktree(&next);
+        }
         Ok(())
     }
 
@@ -1982,6 +1996,9 @@ impl Tasks {
             )
         })();
         done.map_err(store_error)?;
+        if task.kind != TaskKind::Write {
+            self.remove_worktree(&next);
+        }
         self.retry_queue().await;
         Ok(next)
     }
@@ -1998,6 +2015,7 @@ impl Tasks {
             return Ok(());
         };
         if let Some(task) = self.get(&task_id)?
+            && task.kind == TaskKind::Write
             && matches!(task.state, TaskState::Done | TaskState::Failed)
         {
             self.remove_worktree(&task);
@@ -2005,10 +2023,10 @@ impl Tasks {
         Ok(())
     }
 
-    /// Has the node delete a writer's worktree, and the build output in it, off the lock. A node that can't (offline,
-    /// a git error, or work that exists only there) leaves it, logged.
+    /// Has the node stop a task's agent and delete its worktree, and the build output in it, off the lock. A node that
+    /// can't (offline, a git error, or a writer's work that exists only there) leaves it, logged.
     fn remove_worktree(self: &Arc<Self>, task: &Task) {
-        let (TaskKind::Write, Some(thread)) = (task.kind, task.thread_ref.clone()) else {
+        let Some(thread) = task.thread_ref.clone() else {
             return;
         };
         let (tasks, task_id) = (self.clone(), task.task_id.clone());
@@ -2327,7 +2345,7 @@ mod tests {
                 .as_ref()
                 .and_then(|_| self.base.lock().unwrap().clone());
             let mut launched = self.launched.lock().unwrap();
-            launched.push(request.worktree.map(|w| w.branch));
+            launched.push(request.worktree.and_then(|w| w.branch));
             let id = ThreadId::unchecked(format!("t{}", launched.len()));
             Box::pin(async move { Ok((id, base)) })
         }
@@ -2351,6 +2369,9 @@ mod tests {
         fn paused(&self, _: &MachineId) -> Option<String> {
             None
         }
+        fn detached_worktrees(&self, _: &MachineId) -> bool {
+            true
+        }
         fn action_texts<'a>(
             &'a self,
             _: &'a ThreadRef,
@@ -2362,8 +2383,8 @@ mod tests {
             &'a self,
             _: &'a MachineId,
             _: &'a str,
-        ) -> BoxFut<'a, Result<String, PortError>> {
-            Box::pin(async { Ok("main".to_owned()) })
+        ) -> BoxFut<'a, Result<Option<String>, PortError>> {
+            Box::pin(async { Ok(Some("main".to_owned())) })
         }
         fn changes<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Option<ThreadChanges>> {
             let paths = vec![format!("docs/{}.md", thread.thread_id.as_str())];
