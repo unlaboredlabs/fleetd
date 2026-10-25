@@ -90,6 +90,41 @@ impl TaskRecords {
         Self::write(db, stored)
     }
 
+    /// An ended task, with its PR lookup marked pending (D67) or not, in one write.
+    pub fn put_ended(
+        db: &Connection,
+        stored: &StoredTask,
+        pr_lookup: bool,
+    ) -> rusqlite::Result<()> {
+        let tx = db.unchecked_transaction()?;
+        Self::write(&tx, stored)?;
+        Self::set_pr_lookup(&tx, &stored.task.task_id, pr_lookup)?;
+        tx.commit()
+    }
+
+    /// Marks the task's PR lookup pending (D67), or settled.
+    pub fn set_pr_lookup(db: &Connection, task_id: &TaskId, pending: bool) -> rusqlite::Result<()> {
+        db.prepare_cached("UPDATE tasks SET pr_lookup = ? WHERE n = ?")?
+            .execute(params![pending, number_of(task_id)])?;
+        Ok(())
+    }
+
+    pub fn pr_lookup_pending(db: &Connection, task_id: &TaskId) -> rusqlite::Result<bool> {
+        db.prepare_cached("SELECT pr_lookup FROM tasks WHERE n = ?")?
+            .query_row([number_of(task_id)], |r| r.get(0))
+            .optional()
+            .map(|p| p.unwrap_or(false))
+    }
+
+    /// The tasks whose PR lookup is pending, oldest first.
+    pub fn pr_lookups(db: &Connection) -> rusqlite::Result<Vec<Task>> {
+        let mut stmt = db.prepare_cached(
+            "SELECT data, pending_message FROM tasks WHERE pr_lookup = 1 ORDER BY n",
+        )?;
+        let rows = stmt.query_map([], stored_of)?;
+        rows.map(|r| r.map(|s| s.task)).collect()
+    }
+
     pub fn by_thread(db: &Connection, r: &ThreadRef) -> rusqlite::Result<Option<StoredTask>> {
         db.prepare_cached("SELECT data, pending_message FROM tasks WHERE machine_id = ? AND thread_id = ? ORDER BY n DESC LIMIT 1")?
             .query_row(params![r.machine_id.as_str(), r.thread_id.as_str()], stored_of)

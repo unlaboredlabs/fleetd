@@ -41,6 +41,8 @@ pub enum LineKind {
     /// fleetd resumed a dead task, or one waits for its offline machine (`tasks::recovery`): nothing for the lead to
     /// decide, so it never wakes the lead. It rides along with the next wake.
     Recovery,
+    /// A finished task's PR, found after its result line went out (D67): rides along with the next wake too.
+    Quiet,
 }
 
 #[derive(Debug, Clone)]
@@ -91,16 +93,17 @@ impl Trigger {
                 LineKind::CapRaised => "cap_raised",
                 LineKind::Request => "request",
                 LineKind::Recovery => "recovery",
+                LineKind::Quiet => "quiet",
             },
         }
     }
 
-    /// Never wakes the lead alone ([`LineKind::Recovery`]).
+    /// Never wakes the lead alone ([`LineKind::Recovery`], [`LineKind::Quiet`]).
     pub fn quiet(&self) -> bool {
         matches!(
             self,
             Trigger::Line {
-                kind: LineKind::Recovery,
+                kind: LineKind::Recovery | LineKind::Quiet,
                 ..
             }
         )

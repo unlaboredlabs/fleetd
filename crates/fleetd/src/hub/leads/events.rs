@@ -88,6 +88,10 @@ pub enum Event<'a> {
         title: &'a str,
         question: &'a str,
     },
+    /// A finished writer's PR, found after its result line went out (D67: looked up once the task ends).
+    AgentPr { task: &'a str, pr_url: &'a str },
+    /// A finished writer's PR lookup ended without one: the host refused it (D130).
+    AgentPrSkipped { task: &'a str, why: &'a str },
     /// A person steered a task directly, past the lead.
     AgentSteered {
         task: &'a str,
@@ -262,6 +266,11 @@ impl Event<'_> {
             } => (
                 format!("- {task} waiting for an answer: {}", one_line(title, 80)),
                 body(question),
+            ),
+            Event::AgentPr { task, pr_url } => (format!("- {task}'s PR: {pr_url}"), vec![]),
+            Event::AgentPrSkipped { task, why } => (
+                format!("- {task}: PR lookup skipped: {}", one_line(why, 200)),
+                vec![],
             ),
             Event::AgentSteered {
                 task,
