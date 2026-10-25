@@ -106,6 +106,8 @@ pub trait TaskPorts: Send + Sync {
     ) -> BoxFut<'a, Result<(), PortError>> {
         self.send(thread, message, client_request_id)
     }
+    /// Executors.startedRun: the run the thread is on, not a send queued behind it; None when unknown.
+    fn started_run(&self, thread: &ThreadRef) -> Option<String>;
     /// Executors.stop(ref): ends the thread's claude process; `Ok` only once the node saw it exit.
     fn stop<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Result<(), PortError>>;
     /// Executors.stop(ref, removeWorktree): the node deletes the thread's worktree and the build output in it.

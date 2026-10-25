@@ -119,6 +119,10 @@ impl TaskPorts for HubTaskPorts {
         })
     }
 
+    fn started_run(&self, thread: &ThreadRef) -> Option<String> {
+        self.executors.started_run(thread)
+    }
+
     fn send_steer<'a>(
         &'a self,
         thread: &'a ThreadRef,

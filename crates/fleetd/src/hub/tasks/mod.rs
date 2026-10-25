@@ -11,13 +11,15 @@ mod guard_tests;
 pub mod hooks;
 pub mod policy;
 pub mod ports;
+#[cfg(test)]
+mod race_tests;
 pub mod records;
 pub mod render;
 pub mod resolve;
 pub mod tools;
 pub mod wire;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use fleetd_contracts::events::{HubEvent, HubEventType};
@@ -199,6 +201,9 @@ fn state_name<T: serde::Serialize>(value: &T) -> String {
         .unwrap_or_default()
 }
 
+/// How long a run a task was continued in may take to show up before the ends of other runs count again.
+const CONTINUED_RUN_WAIT_MS: i64 = 2 * 60 * 1000;
+
 fn queued_reason(reason: &str) -> Text<1, 200> {
     Text::unchecked(js_prefix(reason, 200))
 }
@@ -213,6 +218,11 @@ pub struct Tasks {
     /// task is never paused, and a paused one that asks isn't continued until the answer is in its resume. Not kept
     /// across a hub restart: then the answer still reaches the task, only maybe after its resume.
     asking: Mutex<HashSet<TaskId>>,
+    /// Tasks continued in their thread whose new run the hub hasn't seen yet, with that run's id and when it was sent.
+    /// Until it shows up, for at most `CONTINUED_RUN_WAIT_MS`, an end event for another run is late word of an earlier
+    /// one (T19: a node back from a stop reported the run it cut off after the task had been continued), so it doesn't
+    /// end the task. Not kept across a hub restart, whose follower starts after every event appended before it.
+    continuing: Mutex<HashMap<TaskId, (String, i64)>>,
     /// Set once in `hub/serve` (`wire::wire`) to usage; unset passes through.
     pub hooks: TaskHooks,
     cursor: i64,
@@ -234,6 +244,7 @@ impl Tasks {
             lock: tokio::sync::Mutex::new(()),
             awaiting: Mutex::new(HashSet::new()),
             asking: Mutex::new(HashSet::new()),
+            continuing: Mutex::new(HashMap::new()),
             hooks: TaskHooks::default(),
             cursor,
             applied: std::sync::atomic::AtomicI64::new(cursor),
@@ -303,6 +314,7 @@ impl Tasks {
 
     fn release_all(&self, task: &Task) -> Result<(), StoreError> {
         self.asking.lock().unwrap().remove(&task.task_id);
+        self.continuing.lock().unwrap().remove(&task.task_id);
         self.d.slots.release(task.task_id.as_str())?;
         Ok(())
     }
@@ -472,6 +484,9 @@ impl Tasks {
             tasks.d.ports.await_live(&machine_id).await;
             tasks.awaiting.lock().unwrap().remove(&machine_id);
             let _guard = tasks.lock.lock().await;
+            // A node back from a stop reports the runs it cut off: apply those first, while their tasks still wait,
+            // so a task this continues isn't then ended by its previous run's end.
+            tasks.catch_up().await;
             tasks.retry_queue().await;
         });
     }
@@ -603,6 +618,15 @@ impl Tasks {
             };
             if let (Err(_), Some(steer)) = (&sent, &steer) {
                 crate::hub::steer::rehold(&self.d.db, &steer.id);
+            }
+            if sent.is_ok() {
+                // The node runs a send under the run id its request id gives.
+                let run = crate::hub::executor::Executors::send_run_id(thread, &id);
+                let at = now_ms(self.d.clock.as_ref());
+                self.continuing
+                    .lock()
+                    .unwrap()
+                    .insert(task.task_id.clone(), (run, at));
             }
             sent.map(|_| (thread.clone(), None))
                 .map_err(StartError::from)
@@ -788,7 +812,9 @@ impl Tasks {
             return Ok(());
         };
         let task = &stored.task;
-        let live = matches!(task.state, TaskState::Running | TaskState::Idle);
+        // An earlier run's end is not this run's: the task goes on.
+        let live = matches!(task.state, TaskState::Running | TaskState::Idle)
+            && !self.earlier_run(task, &thread_ref, event)?;
         match event.r#type {
             HubEventType::ThreadStarted => {
                 // Continued outside `task message`: the usage layer's continue, or a human writing to the thread.
@@ -893,6 +919,64 @@ impl Tasks {
             _ => {}
         }
         Ok(())
+    }
+
+    /// Whether a thread event's run is older than the one the task is on, so its end is not the task's: the task was
+    /// continued and that run hasn't shown up yet, or a newer run has started on the thread since (a send still queued
+    /// behind the run doesn't count). Every event of a task's thread passes here, so a continued run is seen as soon as
+    /// it starts. One that never shows up (the node took the send, then died) is given up on after a while, so the
+    /// task's next end isn't ignored for good.
+    fn earlier_run(
+        &self,
+        task: &Task,
+        thread: &ThreadRef,
+        event: &HubEvent,
+    ) -> Result<bool, StoreError> {
+        let Some(run) = event.data.as_ref().and_then(|d| d["runId"].as_str()) else {
+            return Ok(false);
+        };
+        let now = now_ms(self.d.clock.as_ref());
+        let awaited = {
+            let mut continuing = self.continuing.lock().unwrap();
+            match continuing.get(&task.task_id) {
+                // Any run that starts now is the continued one or a later one.
+                Some((sent, at))
+                    if sent != run
+                        && event.r#type != HubEventType::ThreadStarted
+                        && now - at < CONTINUED_RUN_WAIT_MS =>
+                {
+                    true
+                }
+                Some(_) => {
+                    continuing.remove(&task.task_id);
+                    false
+                }
+                None => false,
+            }
+        };
+        let ends = matches!(
+            event.r#type,
+            HubEventType::ThreadCompleted
+                | HubEventType::ThreadFailed
+                | HubEventType::ThreadInterrupted
+                | HubEventType::ThreadUsageLimited
+        );
+        let earlier = awaited
+            || (ends
+                && self
+                    .d
+                    .ports
+                    .started_run(thread)
+                    .is_some_and(|started| started != run));
+        if earlier {
+            tracing::info!(
+                task_id = task.task_id.as_str(),
+                seq = event.seq.get(),
+                run,
+                "task event for an earlier run ignored"
+            );
+        }
+        Ok(earlier)
     }
 
     async fn follow(self: Arc<Self>, from: i64) {
@@ -1478,6 +1562,9 @@ mod tests {
             _: &'a str,
         ) -> BoxFut<'a, Result<(), PortError>> {
             Box::pin(async { Ok(()) })
+        }
+        fn started_run(&self, _: &ThreadRef) -> Option<String> {
+            None
         }
         fn stop<'a>(&'a self, _: &'a ThreadRef) -> BoxFut<'a, Result<(), PortError>> {
             Box::pin(async { Ok(()) })

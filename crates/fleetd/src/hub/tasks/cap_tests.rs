@@ -16,6 +16,11 @@ use crate::hub::store::test_clock::ManualClock;
 pub(super) const AT: &str = "2026-10-19T10:00:00.000Z";
 
 pub(super) fn hub() -> (Arc<Hub>, tempfile::TempDir) {
+    hub_on(ManualClock::at(1_792_000_000_000))
+}
+
+/// A hub on a clock the test moves.
+pub(super) fn hub_on(clock: Arc<ManualClock>) -> (Arc<Hub>, tempfile::TempDir) {
     let home = tempfile::tempdir().unwrap();
     let config = HubConfig {
         home: home.path().to_path_buf(),
@@ -23,7 +28,6 @@ pub(super) fn hub() -> (Arc<Hub>, tempfile::TempDir) {
         url: None,
         queue_ttl_sec: None,
     };
-    let clock = ManualClock::at(1_792_000_000_000);
     let hub = crate::hub::serve::build_on(HubDb::open_memory().unwrap(), config, clock).unwrap();
     (hub, home)
 }
