@@ -15,11 +15,12 @@ use fleetd_contracts::mcp::{
 use fleetd_contracts::prim::{Line, List};
 use fleetd_contracts::work::{
     BranchName, Claim, ClaimId, ClaimObserved, ClaimOwner, ClaimOwnerKind, ClaimState,
-    MatchStrength, RepoKey, WorkItem, WorkItemKind, WorkKey, WorkMatch, WorkScope,
+    MatchStrength, RecentLanding, RepoKey, WorkItem, WorkItemKind, WorkKey, WorkMatch, WorkScope,
 };
 
 use super::bind::{self, NodeGit};
 use super::check::{matcher_keys, matcher_scope, matches_in};
+use super::elsewhere::Landed;
 use super::matcher::{self, Key};
 use super::{Ending, NewClaim, Work, store};
 use crate::hub::api::{
@@ -31,6 +32,8 @@ use crate::hub::store::{StoreError, iso_ms};
 const MATCHES_MAX: usize = 10;
 /// Items work_list shows.
 const ITEMS_MAX: usize = 100;
+/// Landings outside the train work_list shows.
+const LANDINGS_MAX: usize = 10;
 /// The base when nothing says otherwise.
 const DEFAULT_BASE: &str = "main";
 /// How long a call waits on the nodes to read unbound projects' remotes before it answers without them.
@@ -594,26 +597,44 @@ pub(super) async fn list_on(
         input.base.as_ref(),
     )
     .await?;
-    let items: Vec<WorkItem> = hub
-        .work
-        .in_flight(&scope)
-        .await?
-        .into_iter()
-        .filter(|i| visible(caller, i))
-        .collect();
+    let items = if input.paths == Some(false) {
+        hub.work.in_flight_stored(&scope)?
+    } else {
+        hub.work.in_flight(&scope).await?
+    };
+    let items: Vec<WorkItem> = items.into_iter().filter(|i| visible(caller, i)).collect();
     let next = if items.is_empty() {
         "Nothing is in flight here. Before a code change, call work_claim with a one-line title."
     } else {
         "Before a code change, call work_claim: it checks against these and claims in one call."
     };
+    let landings = hub
+        .work
+        .outside_landings(&scope, LANDINGS_MAX)?
+        .into_iter()
+        .map(recent_landing)
+        .collect();
     let items = cap(items, ITEMS_MAX);
     Ok(WorkListOutput {
         scope,
         items: List::unchecked(items.items),
         warning,
+        recent_landings: List::unchecked(landings),
         next: Some(next.into()),
         truncated: items.truncated,
     })
+}
+
+fn recent_landing(landed: Landed) -> RecentLanding {
+    RecentLanding {
+        sha: landed.sha,
+        at: Timestamp(iso_ms(landed.at_ms)),
+        route: landed.route,
+        pr: landed.pr,
+        subject: landed.subject,
+        author_email: landed.author_email,
+        covers: landed.covers,
+    }
 }
 
 async fn work_done(

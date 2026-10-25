@@ -49,6 +49,15 @@ const ANSWERS: Readonly<Record<string, unknown>> = {
   pr_get: detail,
   agents_list: { at: AT, agents },
   agent_work: { running: true, steps: [] },
+  // storefront's repo: its own writer (left out of Elsewhere), a person's claim, and a direct push.
+  work_list: {
+    scope: { repoKey: "github.com/acme/storefront", base: "main" },
+    items: [
+      { id: "T1", kind: "task", projectRef: { machineId: "devbox", projectId: "storefront" }, title: "Receipts show the shop's local time", state: "running", keys: [], paths: [], since: AT },
+      { id: "C3", kind: "claim", owner: { kind: "human_session", keyId: "k1", label: "laptop" }, title: "Dark mode toggle", state: "active", keys: [], paths: [], since: AT, expiresAt: AT },
+    ],
+    recentLandings: [{ sha: "a".repeat(40), at: AT, route: "direct_push", subject: "fix: the search box keeps its query", authorEmail: "ada@example.com", covers: [] }],
+  },
 };
 
 let host: HTMLDivElement;
@@ -281,4 +290,20 @@ it("lists every project's agents with All projects, remembers it across a remoun
 
   await click("This project");
   expect(rows()).toEqual(["#/project/devbox/checkout/agents/T41", "#/project/devbox/checkout/agents/T40"]);
+});
+
+it("shows the work elsewhere on the project's repo under its agents, with This project only", async () => {
+  await mount();
+  const lines = () => panel()?.querySelector("[role='list']")?.textContent ?? "";
+  const other = () => [...(panel()?.querySelectorAll<HTMLElement>("[data-elsewhere]") ?? [])].map((el) => el.dataset["elsewhere"]);
+  expect(other()).toEqual(["C3", `landing:${"a".repeat(40)}`]);
+  expect(lines().indexOf("Receipts show the shop's local time")).toBeLessThan(lines().indexOf("Elsewhere on main"));
+  expect(lines()).toContain("held by you (laptop)");
+  expect(lines()).toContain("pushed straight to main by ada@example.com");
+  expect(panel()?.querySelectorAll("[data-screen='agents'] a")).toHaveLength(1);
+  expect(panel()?.querySelector("[role='tab']")?.textContent).toBe("Agents1");
+
+  await click("All projects");
+  expect(other()).toEqual([]);
+  expect(lines()).not.toContain("Elsewhere");
 });

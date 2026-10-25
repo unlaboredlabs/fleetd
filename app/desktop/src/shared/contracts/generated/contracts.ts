@@ -2710,6 +2710,20 @@ export type QuietWindow = {
   to: Timestamp;
 };
 
+/** A commit that reached the base outside the train, as `work_list` shows it: what the hub's `Landings` reads back. */
+export type RecentLanding = {
+  /** The commit's committer time. */
+  at: Timestamp;
+  authorEmail?: string;
+  /** The work it matched exactly: "P5", "T12", "C7". */
+  covers: string[];
+  /** The PR it merged as, when its message or the host names one: "#57", or its URL. */
+  pr?: string;
+  route: LandingRoute;
+  sha: CommitSha;
+  subject: string;
+};
+
 /** How a recovering task goes on. */
 export type RecoveryMode = "resume" | "compact" | "fresh";
 
@@ -4081,6 +4095,8 @@ export type WorkEventData = {
 export type WorkItem = {
   changeId?: ChangeId;
   claimId?: ClaimId;
+  /** A claim's: when it expires, or expired. */
+  expiresAt?: Timestamp;
   /** "T12", "X4", "C7", "acme/shop#57", "P5". */
   id: string;
   keys: WorkKey[];
@@ -4138,6 +4154,11 @@ export type WorkLandedData = {
 
 export type WorkListInput = {
   base?: string;
+  /**
+   * false: leave out what each writer has changed so far, which asks its machine; a claim keeps its paths.
+   * Default true.
+   */
+  paths?: boolean;
   projectRef?: ProjectRef;
   /** The repo's origin remote, in any form. Give it or projectRef. */
   repo?: string;
@@ -4146,6 +4167,11 @@ export type WorkListInput = {
 export type WorkListOutput = {
   items: WorkItem[];
   next?: string;
+  /**
+   * Commits that reached the base outside the train (a PR merged by hand, a direct push) in the last 24 h, newest
+   * first.
+   */
+  recentLandings: RecentLanding[];
   scope: WorkScope;
   truncated?: boolean;
   /** No project is bound to the repo yet, so fleetd's agents' work on it may be missing from the items. */

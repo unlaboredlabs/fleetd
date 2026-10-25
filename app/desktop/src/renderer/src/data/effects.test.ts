@@ -53,6 +53,14 @@ describe("event effects", () => {
     expect(thread.invalidate.map((i) => i.tool)).not.toContain("agents_list");
   });
 
+  it("the Elsewhere group: work_list on claims, landings and any project's writers and PRs", () => {
+    for (const type of ["work.claimed", "work.ended", "work.landed", "task.started", "change.state", "pr.merged", "project.added"]) {
+      expect(tools(e(type)), type).toContain("work_list");
+    }
+    expect(tools(e("lead.woken"))).not.toContain("work_list");
+    expect(tools(e("thread.progress", undefined, { threadId: "t1" }))).not.toContain("work_list");
+  });
+
   it("a machine or project coming or going resyncs; an unknown type does nothing", () => {
     expect(effectsOf(e("project.added")).resync).toBe(true);
     // Add project's list marks the repos that are projects, so it is read again too.

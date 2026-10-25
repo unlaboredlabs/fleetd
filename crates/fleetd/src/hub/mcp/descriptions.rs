@@ -230,7 +230,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "work_list",
-        "What is in flight on a repo's base branch (repo, any host, or projectRef): fleetd's agents, PRs on the merge train, and claims by people's sessions (expired ones last), with their files and keys. Read-only.",
+        "What is in flight on a repo's base branch (repo, any host, or projectRef): fleetd's agents, PRs on the merge train, and claims by people's sessions (expired ones last), with their files and keys; and recentLandings, what reached the base outside the merge train (a PR merged by hand, a direct push) in the last 24 h. Read-only.",
     ),
     (
         "work_done",
