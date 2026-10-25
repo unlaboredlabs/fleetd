@@ -275,6 +275,16 @@ as stopping a project, answering an approval or entering a secret, need one.</p>
 <td>operate, human key</td>
 </tr>
 <tr>
+<td><code dir="auto">decisions_list {projectRef, limit?}</code></td>
+<td>Every decision in the project, project-wide or for one order, newest first: in force, replaced by a newer one, or revoked (by whom, when, why). <code dir="auto">orders</code> names each order by its title.</td>
+<td>read</td>
+</tr>
+<tr>
+<td><code dir="auto">decisions_overturn {decisionId, value?, why}</code></td>
+<td>Take back a decision in force. Without <code dir="auto">value</code> it is revoked and the lead asks again when it comes up; with <code dir="auto">value</code> a new decision on the same question replaces it, as yours. The lead reads the change, and your why, at its next wake.</td>
+<td>operate, human key</td>
+</tr>
+<tr>
 <td><code dir="auto">requests_list {projectRef?, state?}</code></td>
 <td>Secret and approval requests, newest first, with their state. A secret’s value is never in it, only its fingerprint.</td>
 <td>read</td>

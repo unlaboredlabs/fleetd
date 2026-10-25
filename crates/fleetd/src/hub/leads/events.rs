@@ -151,6 +151,15 @@ pub enum Event<'a> {
     },
     /// A person raised the project's max agents; queued agents have already started.
     CapRaised { max_agents: i64, free: i64 },
+    /// A person overturned a decision in the app: revoked it (`replaced_by` none), or replaced its value. Quiet.
+    DecisionOverturned {
+        decision: &'a str,
+        key: &'a str,
+        was: &'a str,
+        /// The new decision's id and value.
+        replaced_by: Option<(&'a str, &'a str)>,
+        why: &'a str,
+    },
 }
 
 fn quote(text: &str) -> String {
@@ -374,6 +383,35 @@ impl Event<'_> {
                 ),
                 vec![],
             ),
+            Event::DecisionOverturned {
+                decision,
+                key,
+                was,
+                replaced_by: None,
+                why,
+            } => (
+                format!(
+                    "- the human revoked {decision} {key} (was {}): {}; it is open again, so ask before deciding it",
+                    quote(was),
+                    quote(why)
+                ),
+                vec![],
+            ),
+            Event::DecisionOverturned {
+                decision,
+                key,
+                was,
+                replaced_by: Some((now, value)),
+                why,
+            } => (
+                format!(
+                    "- the human replaced {decision} {key} {} with {now} {}: {}; follow {now} from now on",
+                    quote(was),
+                    quote(value),
+                    quote(why)
+                ),
+                vec![],
+            ),
         };
         std::iter::once(head)
             .chain(rest)
@@ -433,6 +471,32 @@ mod tests {
             "- T23 waits for devbox, offline for 30 min: B: progress bar; it resumes on its own when devbox is back\n  > \
              Its worktree and session are on devbox, so it stays there. To have it done elsewhere, cancel it and start \
              a new task."
+        );
+    }
+
+    #[test]
+    fn an_overturned_decision_says_what_it_was_and_what_now() {
+        let revoked = r(Event::DecisionOverturned {
+            decision: "D12",
+            key: "api.health.path",
+            was: "/healthz",
+            replaced_by: None,
+            why: "the load balancer probes /livez",
+        });
+        assert_eq!(
+            revoked,
+            "- the human revoked D12 api.health.path (was \"/healthz\"): \"the load balancer probes /livez\"; it is open again, so ask before deciding it"
+        );
+        let replaced = r(Event::DecisionOverturned {
+            decision: "D12",
+            key: "api.health.path",
+            was: "/healthz",
+            replaced_by: Some(("D15", "/livez")),
+            why: "the probe",
+        });
+        assert_eq!(
+            replaced,
+            "- the human replaced D12 api.health.path \"/healthz\" with D15 \"/livez\": \"the probe\"; follow D15 from now on"
         );
     }
 

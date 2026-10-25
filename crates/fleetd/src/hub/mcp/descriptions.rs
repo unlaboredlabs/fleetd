@@ -101,6 +101,14 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "Record a decision (key = lowercase dotted slug) at global, project or workstream scope; it supersedes the active one with the same key and scope, so leads never ask it again. A project's lead is woken with it. Global decisions need an operate grant on all machines.",
     ),
     (
+        "decisions_list",
+        "Every project- and workstream-scoped decision in a project (projectRef), newest first, in every state: active, superseded by a newer one on its key and scope, or retired (revoked by a person, with who, when and why). orders names each workstream a decision belongs to by its title.",
+    ),
+    (
+        "decisions_overturn",
+        "A person's device (a human key) with operate only. Take back an active decision (decisionId, D<n>) with a short why: without value it is retired and its key goes unanswered again; with value a new decision on the same key and scope supersedes it, recorded as the human's. The project's lead reads the change with its next wake.",
+    ),
+    (
         "tasks_list",
         "Tasks (the agents leads start with spawn_agent), newest first, optionally for one projectRef and state (queued, running, idle, done, failed, cancelled). Queued tasks say why; ended ones carry their result.",
     ),

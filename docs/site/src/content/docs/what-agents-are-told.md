@@ -271,6 +271,13 @@ When the node had to rebuild a resumed agent's worktree, the line says what from
 One that fleetd did not resume wakes the lead: `- T23 failed and was not resumed: …`, with why (it died the same way
 twice, it ran out of automatic recoveries, or resuming can't fix the cause) and the lead's choices.
 
+A decision you changed or revoked goes out with the next wake too, with your why:
+
+```
+- the human revoked D12 db.engine (was "sqlite"): "we need read replicas"; it is open again, so ask before deciding it
+- the human replaced D14 payments.provider "stripe" with D19 "adyen": "the contract is signed"; follow D19 from now on
+```
+
 ### This machine {#this-machine}
 
 The node that starts a task adds a short section to the end of its brief, after your instructions:

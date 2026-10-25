@@ -15,6 +15,10 @@
         "key": {
           "$ref": "#/$defs/DecisionKey"
         },
+        "retired": {
+          "$ref": "#/$defs/DecisionRetired",
+          "description": "Who took it back, when a person revoked it (`decisions_overturn` without a value)."
+        },
         "scope": {
           "$ref": "#/$defs/DecisionScope"
         },
@@ -58,6 +62,27 @@
       "description": "Lowercase dotted slug, [a-z0-9]+(.[a-z0-9_-]+)*, at most 80",
       "pattern": "^[a-z0-9]+(\\.[a-z0-9_-]+)*$",
       "type": "string"
+    },
+    "DecisionRetired": {
+      "description": "A revoke: by \"human:<device>\", at, and the person's why.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "by": {
+          "type": "string"
+        },
+        "why": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "by",
+        "at"
+      ],
+      "type": "object"
     },
     "DecisionScope": {
       "oneOf": [
