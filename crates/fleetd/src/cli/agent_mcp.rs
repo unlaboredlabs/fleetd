@@ -172,7 +172,7 @@ static TOOLS: &[Tool] = &[
         worker: true,
         lead: false,
         description: "Record your review verdict once, before your final message: the number of blocking and \
-                      non-blocking findings and a one-paragraph summary. fleetd fills in your task and the head you \
+                      non-blocking findings and a summary of each. fleetd fills in your task and the head you \
                       reviewed.",
         schema: report_schema,
         human: None,
@@ -231,10 +231,16 @@ pub fn call_of(role: Role, name: &str, arguments: Value) -> Result<Value, String
     Ok(call)
 }
 
-/// A node answer frame as an MCP tool result.
+/// A node answer frame as an MCP tool result: compact JSON, since it stays in the caller's context for every later
+/// request. A task frame (`spawn_agent`, `message_agent`, `stop_agent`) leaves out the task's prompt, which the lead
+/// just wrote.
 pub fn tool_result(answer: &Value) -> Value {
     if let Some(result) = answer.get("result") {
-        let text = serde_json::to_string_pretty(result).unwrap_or_default();
+        let mut result = result.clone();
+        if let Some(task) = result.get_mut("task").and_then(Value::as_object_mut) {
+            task.remove("prompt");
+        }
+        let text = serde_json::to_string(&result).unwrap_or_default();
         return json!({ "content": [{ "type": "text", "text": text }], "isError": false });
     }
     let error = answer.get("error").cloned().unwrap_or_default();
@@ -547,6 +553,21 @@ mod tests {
         for field in ["taskId", "prHeadSha"] {
             assert!(schema["properties"].get(field).is_none(), "{field}");
         }
+    }
+
+    #[test]
+    fn a_result_is_compact_and_never_echoes_the_prompt_back() {
+        let answer = json!({ "t": "lead_result", "id": "x", "result": {
+            "op": "task_spawn", "task": { "taskId": "T3", "prompt": "a long brief", "state": "running" },
+            "next": "T2 is writing too." } });
+        let text = tool_result(&answer)["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert!(!text.contains('\n') && !text.contains("prompt"), "{text}");
+        let back: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(back["task"]["taskId"], "T3");
+        assert_eq!(back["next"], "T2 is writing too.");
     }
 
     #[test]

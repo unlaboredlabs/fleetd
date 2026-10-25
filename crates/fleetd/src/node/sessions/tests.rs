@@ -275,9 +275,14 @@ async fn a_launch_runs_its_turn_streams_it_and_later_sends_continue_the_session(
         serde_json::json!(["agent-mcp", "--role", "worker"])
     );
     assert_eq!(mcp["mcpServers"]["fleetd"]["env"]["FLEETD_THREAD_ID"], "s1");
-    for tool in ALWAYS_DISALLOWED {
-        assert!(spec.disallowed_tools.iter().any(|t| t == tool));
+    for tool in ALWAYS_DISALLOWED
+        .iter()
+        .chain(crate::node::runner::claude::AGENT_DISALLOWED)
+    {
+        assert!(spec.disallowed_tools.iter().any(|t| t == tool), "{tool}");
     }
+    // A task's agent edits files; only a lead is kept from it.
+    assert!(!spec.disallowed_tools.iter().any(|t| t == "Edit"));
     // claude.env is read, but fleetd's own values come last and win.
     let last = |key: &str| {
         spec.env
@@ -321,6 +326,9 @@ async fn a_launch_runs_its_turn_streams_it_and_later_sends_continue_the_session(
         assert_eq!(last(key), Some("5m"), "{key}");
         assert_eq!(overlay["env"][key], "5m", "{key}");
     }
+    // No one command outlives that cache.
+    assert_eq!(last("BASH_MAX_TIMEOUT_MS"), Some("280000"));
+    assert_eq!(overlay["env"]["BASH_MAX_TIMEOUT_MS"], "280000");
 
     // A retried launch returns the same session without a second process.
     let again = hub

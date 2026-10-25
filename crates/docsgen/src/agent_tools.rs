@@ -14,9 +14,10 @@ use fleetd::hub::tasks::policy::{
     self, CallerAgent, MAX_DEPTH, MAX_OPEN_TASKS, SPAWN_OPS, WORKER_OPS,
 };
 use fleetd::node::runner::claude::{
-    AUTO_MEMORY_OFF_ENV, AUTO_MEMORY_OFF_WHY, DEFAULT_ENV_WHY, DISALLOWED_WHY, HELPER_MODEL_ENV,
-    HELPER_MODEL_WHY, NESTING_VARS_WHY, PROMPT_CACHE_TTL_VARS, PROMPT_CACHE_TTL_WHY,
-    SESSION_ENV_WHY, SUBAGENTS_OFF_ENV_WHY, SUBAGENTS_ON_ENV_WHY,
+    AGENT_DISALLOWED_WHY, AUTO_MEMORY_OFF_ENV, AUTO_MEMORY_OFF_WHY, DEFAULT_ENV_WHY,
+    DISALLOWED_WHY, HELPER_MODEL_ENV, HELPER_MODEL_WHY, LEAD_DISALLOWED_WHY, NESTING_VARS_WHY,
+    PROMPT_CACHE_TTL_VARS, PROMPT_CACHE_TTL_WHY, SESSION_ENV_WHY, SUBAGENTS_OFF_ENV_WHY,
+    SUBAGENTS_ON_ENV_WHY, WORKER_ENV, WORKER_ENV_WHY,
 };
 use fleetd::node::runner::{conformance, version::TESTED};
 use fleetd_contracts::lead_calls::GatedRunCall;
@@ -753,7 +754,7 @@ fn builtins(root: &Path) -> Result<String, String> {
         .filter(|t| !blocked.contains(&t.as_str()) && !conformance::agent_like(t))
         .collect();
     let mut md = format!(
-        "## Claude Code tools\n\nThe same for every session. Listed for Claude Code \
+        "## Claude Code tools\n\nListed for Claude Code \
          {TESTED}, the version fleetd is tested with.\n\n**Allowed:** {}.\n\nA project's policy file can deny more \
          with `tools.deny`.\n\n**Blocked**, in `--disallowedTools` and in the \
          `permissions.deny` of fleetd's settings, so your own settings can't turn them back on:\n\n| Tool | Why \
@@ -769,8 +770,22 @@ fn builtins(root: &Path) -> Result<String, String> {
     }
     md.push_str(
         "\nfleetd also blocks any tool like these that a newer Claude Code adds: a session whose tool list still offers \
-         one is stopped, and every later session on that machine blocks it.\n\n",
+         one is stopped, and every later session on that machine blocks it.\n\n**Blocked for fleetd's agents**, in \
+         `--disallowedTools`; threads you start keep them:\n\n| Tool | Sessions | Why |\n|---|---|---|\n",
     );
+    for (list, who) in [
+        (AGENT_DISALLOWED_WHY, "Leads and task agents"),
+        (LEAD_DISALLOWED_WHY, "Leads"),
+    ] {
+        for (tools, why) in grouped(list.iter().map(|(t, why)| (format!("`{t}`"), *why))) {
+            md.push_str(&format!(
+                "| {} | {who} | {} |\n",
+                tools.join(", "),
+                cell(why)
+            ));
+        }
+    }
+    md.push('\n');
     Ok(md)
 }
 
@@ -778,6 +793,7 @@ fn switches() -> Result<String, String> {
     let all = "Every claude fleetd starts";
     let cache: Vec<(String, String)> = PROMPT_CACHE_TTL_VARS
         .iter()
+        .chain(WORKER_ENV.iter().map(|(k, _)| k))
         .map(|v| ((*v).to_owned(), String::new()))
         .collect();
     let overlay: Value = serde_json::from_str(&fleetd::node::sessions::settings_overlay(&cache))
@@ -855,6 +871,13 @@ fn switches() -> Result<String, String> {
             who,
         );
     }
+    for ((name, value), why) in WORKER_ENV_WHY {
+        rows(
+            vec![(format!("`{name}`"), why)],
+            &format!("`{value}` unless your environment or `claude.env` sets it"),
+            "Task agents",
+        );
+    }
     rows(named(NESTING_VARS_WHY), "removed", "Sessions");
     md.push('\n');
     Ok(md)
@@ -909,6 +932,9 @@ mod tests {
             .unwrap();
         for (tool, _) in DISALLOWED_WHY {
             assert!(!allowed.contains(&format!("`{tool}`")), "{tool}");
+        }
+        for (tool, _) in AGENT_DISALLOWED_WHY.iter().chain(LEAD_DISALLOWED_WHY) {
+            assert!(blocked.contains(&format!("`{tool}`")), "{tool}");
         }
         assert!(allowed.contains("`Bash`") && allowed.contains("`Edit`"));
     }

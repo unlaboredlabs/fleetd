@@ -311,7 +311,7 @@ fn mcp_config(role: SessionRole, sock: &Path, session_id: &str) -> String {
 /// fleetd's settings overlay (`--settings`). claude ranks it above the user's own settings, so a user's `env` or
 /// allow rule can't undo what sessions depend on: the pinned claude (no autoupdate), helper calls on the one model,
 /// the subagent cap, the tools fleetd never gives an agent, auto memory off ([`AUTO_MEMORY_OFF_ENV`]), and `extra_env`
-/// (the session's prompt cache TTL).
+/// (the session's prompt cache TTL and role defaults such as a task agent's command timeout).
 pub fn settings_overlay(extra_env: &[(String, String)]) -> String {
     let mut env = subagents_off_settings_env();
     env.extend(
@@ -1690,11 +1690,12 @@ impl SessionService {
         let transcript = transcripts.join(format!("{id}.jsonl"));
 
         let mut env = config.runner_env();
-        let cache = config.prompt_cache_env(row.local.role, &env);
-        env.retain(|(k, _)| !cache.iter().any(|(c, _)| c == k));
-        env.extend(cache.iter().cloned());
+        let mut role_env = config.prompt_cache_env(row.local.role, &env);
+        role_env.extend(claude::role_env(row.local.role, &env));
+        env.retain(|(k, _)| !role_env.iter().any(|(c, _)| c == k));
+        env.extend(role_env.iter().cloned());
         let settings = dir.join("settings.json");
-        std::fs::write(&settings, settings_overlay(&cache))?;
+        std::fs::write(&settings, settings_overlay(&role_env))?;
         env.extend([
             (
                 "FLEETD_NODE_SOCK".to_owned(),
@@ -1733,6 +1734,7 @@ impl SessionService {
                 .iter()
                 .map(|t| (*t).to_owned())
                 .chain(self.st().agent_tools.iter().cloned())
+                .chain(claude::role_disallowed(row.local.role).map(str::to_owned))
                 .chain(row.local.disallowed_tools.iter().cloned())
                 .collect(),
             mcp_config: Some(mcp),

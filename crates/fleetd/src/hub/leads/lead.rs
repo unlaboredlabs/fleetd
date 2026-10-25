@@ -1,6 +1,8 @@
 //! One lead per project: a thread on the project's machine, started with the lead prompt plus the digest.
 use std::sync::Arc;
+use std::time::Duration;
 
+use fleetd_contracts::chat::{ChatAuthor, ChatMessage};
 use fleetd_contracts::effort::TaskProfile;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef, Timestamp};
@@ -9,6 +11,7 @@ use fleetd_contracts::mcp::ErrorCode;
 use fleetd_contracts::model::{ProjectSummary, RuntimeMode, ThreadStatus, ThreadSummary};
 use tokio::sync::Mutex;
 
+use super::digest::clip;
 use super::error::LeadError;
 use super::prompt::render_lead_start;
 use super::records::{LeadRecords, StoredLead, WorkstreamFilter};
@@ -16,7 +19,7 @@ use super::wakes::LeadWakes;
 use super::{Ctx, now_iso};
 use crate::hub::executor::LaunchInput;
 use crate::hub::prompts::Audience;
-use crate::hub::store::{NewEvent, WaitInput, now_ms};
+use crate::hub::store::{HubDb, NewEvent, WaitInput, now_ms, parse_ms};
 
 /// What an order for a project without a lead did about the lead.
 #[derive(Debug, Clone)]
@@ -174,6 +177,55 @@ impl Leads {
         let project = self.project_of(r)?;
         self.launch(r, &project, existing.session_generation + 1, None)
             .await
+    }
+
+    /// Whether the project's lead is idle and has been since before [`LEAD_FRESH_AFTER`]: its prompt cache is gone, so
+    /// its next turn would write its whole history to the cache again.
+    pub fn cold(&self, r: &ProjectRef) -> bool {
+        let Ok(Some(lead)) = self.records.lead_get(r) else {
+            return false;
+        };
+        let thread = ThreadRef {
+            machine_id: r.machine_id.clone(),
+            thread_id: lead.thread_id,
+        };
+        let Ok(Some(thread)) = self.ctx.store.thread_get(&thread) else {
+            return false;
+        };
+        let idle_since = parse_ms(thread.thread.last_progress_at.as_str());
+        lead_state(Some(&thread.thread), false) == LeadState::Idle
+            && idle_since.is_some_and(|at| {
+                now_ms(self.ctx.clock.as_ref()) - at > LEAD_FRESH_AFTER.as_millis() as i64
+            })
+    }
+
+    /// When the lead is [`Self::cold`]: a fresh lead session instead, from the digest (and memory) like any start,
+    /// then the chat's tail and `first`. The lead coordinates from state and memory, not from an unbounded history.
+    /// None when the lead is not cold, or there is none.
+    pub async fn fresh_if_cold(
+        &self,
+        r: &ProjectRef,
+        first: &str,
+    ) -> Result<Option<Lead>, LeadError> {
+        let _guard = self.lock.lock().await;
+        let Some(existing) = self.records.lead_get(r)?.filter(|_| self.cold(r)) else {
+            return Ok(None);
+        };
+        let project = self.project_of(r)?;
+        // A digest as of no wake, as at any start: the ended tasks and their results, not only those since the old
+        // session's last wake.
+        self.records.lead_put(&StoredLead {
+            last_wake_at: None,
+            ..existing.clone()
+        })?;
+        let first = match recent_chat(&self.ctx.db, r) {
+            Some(chat) => format!("{chat}\n\n{}", first.trim()),
+            None => first.trim().to_owned(),
+        };
+        let lead = self
+            .launch(r, &project, existing.session_generation + 1, Some(&first))
+            .await?;
+        Ok(Some(lead))
     }
 
     pub fn get(&self, r: &ProjectRef) -> Result<Option<Lead>, LeadError> {
@@ -334,4 +386,58 @@ impl Leads {
         })?;
         self.with_state(lead)
     }
+}
+
+/// A lead idle this long has lost its prompt cache (1 hour for leads): starting it fresh costs a few thousand tokens,
+/// resuming it its whole history.
+pub const LEAD_FRESH_AFTER: Duration = Duration::from_secs(3600);
+/// The chat messages a fresh lead session reads, newest last; each cut to [`RECENT_CHAT_CHARS`].
+const RECENT_CHAT: usize = 12;
+const RECENT_CHAT_CHARS: usize = 500;
+
+/// The project's last few chat messages between the human, the lead and agents, for a fresh lead session; None when
+/// there are none. System lines are left out (the digest has the state), and so are held messages: the one that
+/// starts the session follows on its own.
+fn recent_chat(db: &HubDb, r: &ProjectRef) -> Option<String> {
+    let rows: Vec<String> = db
+        .with(|c| {
+            let mut stmt = c.prepare(
+                "SELECT data FROM chat_messages WHERE machine_id = ?1 AND project_id = ?2 AND held = 0
+                 ORDER BY seq DESC LIMIT 200",
+            )?;
+            let rows = stmt
+                .query_map([r.machine_id.as_str(), r.project_id.as_str()], |row| {
+                    row.get(0)
+                })?
+                .collect::<rusqlite::Result<_>>()?;
+            Ok(rows)
+        })
+        .ok()?;
+    let mut lines: Vec<String> = rows
+        .iter()
+        .filter_map(|data| serde_json::from_str::<ChatMessage>(data).ok())
+        .filter(|m| !m.text.as_str().trim().is_empty())
+        .filter_map(|m| {
+            let who = match m.author {
+                ChatAuthor::Human => "Human".to_owned(),
+                ChatAuthor::Lead => "You".to_owned(),
+                ChatAuthor::Agent => format!("Agent {}", m.by.as_ref().map_or("", |b| b.as_str())),
+                ChatAuthor::System => return None,
+            };
+            Some(format!(
+                "{}: {}",
+                who.trim(),
+                clip(m.text.as_str().trim(), RECENT_CHAT_CHARS)
+            ))
+        })
+        .take(RECENT_CHAT)
+        .collect();
+    if lines.is_empty() {
+        return None;
+    }
+    lines.reverse();
+    Some(format!(
+        "## Recent chat\nYour session started fresh; the chat before this is not in it.\n{}",
+        lines.join("\n")
+    ))
 }
