@@ -5,6 +5,7 @@ use super::ports::{NewEvent, ThreadRef};
 use super::time::plural;
 use crate::hub::store::parse_ms;
 use fleetd_contracts::events::{HubEvent, HubEventType};
+use fleetd_contracts::node_link::LoginLimit;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -480,6 +481,80 @@ pub fn resumed_event(
     })
 }
 
+/// The soft brake: new agents wait while a usage window of the machine's login is this used.
+pub const BRAKE_PAUSE: f64 = 0.90;
+/// A braked machine starts new agents again once every window is below this, or past its reset.
+pub const BRAKE_LIFT: f64 = 0.85;
+
+/// The window that holds new agents back: its name as claude sends it, how used it is (None: claude sent a warning
+/// with no figure), and when it resets.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Brake {
+    pub limit_type: String,
+    pub utilization: Option<f64>,
+    pub resets_at: Option<String>,
+}
+
+/// "5-hour", "7-day Opus"; other windows by claude's own name.
+fn window_text(limit_type: &str) -> String {
+    match limit_type {
+        "five_hour" => "5-hour".into(),
+        "seven_day" => "7-day".into(),
+        "seven_day_opus" => "7-day Opus".into(),
+        "seven_day_sonnet" => "7-day Sonnet".into(),
+        other => other.replace('_', " "),
+    }
+}
+
+impl Brake {
+    /// "Paused new agents: 5-hour limit 91% on builder-1, resets Tue 14:00 UTC (pauses at 90%, lifts below 85%)".
+    pub fn text(&self, machine: &str) -> String {
+        let used = self
+            .utilization
+            .map_or_else(|| "warning".to_string(), |u| format!("{:.0}%", u * 100.0));
+        let resets = self
+            .resets_at
+            .as_deref()
+            .map_or_else(String::new, |r| format!(", resets {}", reset_text(r)));
+        format!(
+            "Paused new agents: {} limit {used} on {machine}{resets} (pauses at {:.0}%, lifts below {:.0}%)",
+            window_text(&self.limit_type),
+            BRAKE_PAUSE * 100.0,
+            BRAKE_LIFT * 100.0
+        )
+    }
+}
+
+/// The soft brake over the windows the machine's login last reported: the most used window at `BRAKE_PAUSE` or
+/// more (`BRAKE_LIFT` once `braked`), or None. A window past its reset no longer counts. A warning or rejection
+/// with no figure counts as full; with a figure, the figure decides, so claude's own warning level never pauses
+/// early. Running agents are not its business: the caller holds new ones only.
+pub fn brake(limits: &[LoginLimit], braked: bool, now_ms: i64) -> Option<Brake> {
+    let at = if braked { BRAKE_LIFT } else { BRAKE_PAUSE };
+    limits
+        .iter()
+        .filter(|l| {
+            !l.resets_at
+                .as_ref()
+                .and_then(|r| parse_ms(r.as_str()))
+                .is_some_and(|r| r <= now_ms)
+        })
+        .filter_map(|l| {
+            let used = match &l.utilization {
+                Some(u) => u.get(),
+                None if l.status.as_str() != "allowed" => f64::INFINITY,
+                None => return None,
+            };
+            (used >= at).then_some((used, l))
+        })
+        .max_by(|a, b| a.0.total_cmp(&b.0))
+        .map(|(_, l)| Brake {
+            limit_type: l.limit_type.as_str().to_string(),
+            utilization: l.utilization.as_ref().map(|u| u.get()),
+            resets_at: l.resets_at.as_ref().map(|r| r.as_str().to_string()),
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -691,5 +766,85 @@ mod tests {
             "Usage limit reset on lab-a; sent \"continue\" to 1 parked thread"
         );
         assert!(resumed_event("lab-a", &iso_ms(HOUR), &[], false, "reset").is_none());
+    }
+
+    /// A window as the heartbeat carries it, resetting at `reset_ms`.
+    fn window(kind: &str, used: Option<f64>, status: &str, reset_ms: i64) -> LoginLimit {
+        serde_json::from_value(json!({
+            "limitType": kind, "utilization": used, "resetsAt": iso_ms(reset_ms), "status": status,
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn the_soft_brake_pauses_at_90_percent_and_lifts_below_85_or_at_the_reset() {
+        let reset = 14 * HOUR;
+        let at = |used: f64, braked: bool| {
+            brake(
+                &[window("five_hour", Some(used), "allowed", reset)],
+                braked,
+                0,
+            )
+        };
+        assert_eq!(at(0.89, false), None);
+        let paused = at(0.91, false).expect("pauses at 90%");
+        assert_eq!(
+            paused.text("builder-1"),
+            "Paused new agents: 5-hour limit 91% on builder-1, resets Thu 14:00 UTC (pauses at 90%, lifts below 85%)"
+        );
+        assert!(
+            at(0.87, true).is_some(),
+            "between the two a braked machine stays braked"
+        );
+        assert_eq!(at(0.84, true), None);
+        assert_eq!(
+            brake(
+                &[window("five_hour", Some(0.95), "allowed", reset)],
+                true,
+                reset
+            ),
+            None,
+            "a window past its reset no longer holds anyone"
+        );
+    }
+
+    #[test]
+    fn the_most_used_window_brakes_and_a_warning_counts_only_without_a_figure() {
+        let reset = 14 * HOUR;
+        let both = [
+            window("five_hour", Some(0.92), "allowed", reset),
+            window("seven_day", Some(0.97), "allowed_warning", 100 * HOUR),
+        ];
+        assert_eq!(
+            brake(&both, false, 0).unwrap().text("mbp"),
+            "Paused new agents: 7-day limit 97% on mbp, resets Mon 04:00 UTC (pauses at 90%, lifts below 85%)"
+        );
+        assert_eq!(
+            brake(
+                &[window("seven_day", Some(0.75), "allowed_warning", reset)],
+                false,
+                0
+            ),
+            None,
+            "claude's own warning level never pauses below 90%"
+        );
+        let warned = brake(
+            &[window("seven_day_opus", None, "allowed_warning", reset)],
+            true,
+            0,
+        );
+        assert_eq!(
+            warned.unwrap().text("mbp"),
+            "Paused new agents: 7-day Opus limit warning on mbp, resets Thu 14:00 UTC (pauses at 90%, lifts below 85%)"
+        );
+        assert_eq!(
+            brake(&[window("five_hour", None, "allowed", reset)], false, 0),
+            None
+        );
+        assert_eq!(
+            brake(&[], true, 0),
+            None,
+            "API keys and gateways report no windows"
+        );
     }
 }
