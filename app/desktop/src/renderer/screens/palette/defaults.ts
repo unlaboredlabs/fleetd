@@ -33,14 +33,6 @@ export const defaultCommands = (): Command[] => [
     },
   },
   {
-    id: "factory.open",
-    title: "Factory",
-    detail: "What came out: merges per day, order to merged, your minutes, share through fleetd",
-    group: "go-to",
-    keywords: ["metrics", "merged", "throughput", "lead time", "dashboard"],
-    run: () => go("#/factory"),
-  },
-  {
     id: "go:time",
     title: "Time",
     detail: "Where the time went: all work, or one piece of work's timeline",

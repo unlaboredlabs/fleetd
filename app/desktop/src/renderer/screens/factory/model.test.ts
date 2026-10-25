@@ -8,6 +8,8 @@ import {
   ROUTE_FIELD,
   columnPath,
   columnsOf,
+  csvCell,
+  dayX,
   delta,
   fmtCount,
   inDays,
@@ -92,6 +94,18 @@ describe("columns", () => {
     expect(weeks[0]?.human.get("chat")).toEqual({ ms: 7 * 120_000, touches: 14 });
   });
 
+  it("puts a stamp in its day's slot plus how far into the day it is, whatever the range's last day holds", () => {
+    // Local times: the axis is the viewer's calendar.
+    const at = (d: number, h: number) => new Date(2026, 9, d, h).toISOString();
+    const index = new Map(["2026-10-17", "2026-10-18", "2026-10-19"].map((d, i) => [d, i]));
+    expect(dayX(at(17, 0), index)).toBe(0);
+    expect(dayX(at(18, 12), index)).toBe(1.5);
+    // Today is a whole slot even when the range ends this morning: a dot at 06:00 sits a quarter into its column.
+    expect(dayX(at(19, 6), index)).toBe(2.25);
+    expect(dayX(at(10, 6), index)).toBe(0);
+    expect(dayX(at(25, 6), index)).toBe(3);
+  });
+
   it("stacks bottom up in the fixed order with a 2 px gap above each segment, and rounds only the top one", () => {
     const segs = stack(
       [
@@ -158,6 +172,19 @@ describe("the merge list", () => {
     const many = Array.from({ length: 8 }, (_, i) => merge({ prNumber: 100 + i }));
     expect(prList(many)).toBe("#100, #101, #102, #103, #104 +3 more");
     expect(prList([merge({ route: "direct" })])).toBe("a push");
+  });
+
+  it("never copies a cell a spreadsheet would run as a formula: titles come from outside fleetd", () => {
+    for (const bad of ["=HYPERLINK(\"http://x\")", "+1+1", "-2+3", "@SUM(A1)", "\tcmd", "\rcmd"]) {
+      expect(csvCell(bad).replace(/^"/u, "").startsWith("'"), JSON.stringify(bad)).toBe(true);
+    }
+    expect(csvCell("=1+1")).toBe("'=1+1");
+    expect(csvCell("\rcmd")).toBe('"\'\rcmd"');
+    // Plain text, and numbers (counts, minutes), stay as they are.
+    expect(csvCell("Fix -- the docs")).toBe("Fix -- the docs");
+    expect(csvCell(-3)).toBe("-3");
+    const row = mergesCsv([merge({ prNumber: 9, title: "=cmd|' /C calc'!A0" })]).trim().split("\n")[1] ?? "";
+    expect(row).toContain(",'=cmd|' /C calc'!A0,");
   });
 
   it("copies as CSV, quoting what needs it", () => {

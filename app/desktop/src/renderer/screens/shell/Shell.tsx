@@ -8,6 +8,7 @@ import { display } from "../../../shared/shortcuts";
 import { AppFrame, Button, TopBar } from "../../ui";
 import { openPalette, PaletteHost, useCommands, type Command } from "../palette";
 import { ProjectsHost } from "../projects";
+import { useMetricsSupport } from "../factory/support";
 import { useDockBadge, useMainProcess, useMenuState, useModHeld, useNotifications } from "./effects";
 import { useHubState } from "./hubFeed";
 import { useDataLayer } from "../../src/data/react";
@@ -108,8 +109,21 @@ export function Shell() {
     if (next !== null) go({ id: "project", project: next, message: null });
   };
 
+  // A hub from before metrics has no Factory: its entry, menu item, command and shortcut go (factory/support.ts).
+  const metrics = useMetricsSupport();
+  const factory = metrics !== false;
+
   useCommands(
     [
+      {
+        id: "factory.open",
+        title: "Factory",
+        detail: "What came out: merges per day, order to merged, your minutes, share through fleetd",
+        group: "go-to",
+        keywords: ["metrics", "merged", "throughput", "lead time", "dashboard"],
+        enabled: () => chrome && factory,
+        run: () => go({ id: "factory", project: null }),
+      },
       { id: "sidebar.toggle", title: "Toggle sidebar", group: "actions", enabled: () => chrome, run: sidebar.toggle },
       { id: "panel.toggle", title: "Toggle agents and PRs", group: "actions", keywords: ["panel", "right"], enabled: () => chrome && open !== null, run: panel.toggle },
       { id: "project.previous", title: "Previous project", group: "projects", searchOnly: true, enabled: () => chrome && (projects?.length ?? 0) > 0, run: () => step(-1) },
@@ -216,7 +230,7 @@ export function Shell() {
             </Boundary>
           ) : showSidebar ? (
             <Boundary key="sidebar" part="the sidebar">
-              <Sidebar projects={projects} machinesDown={machinesDown} screen={screen} hub={hub} jumpHints={modHeld} go={go} />
+              <Sidebar projects={projects} machinesDown={machinesDown} screen={screen} hub={hub} jumpHints={modHeld} factory={factory} go={go} />
             </Boundary>
           ) : undefined
         }
