@@ -195,6 +195,8 @@ pub struct WorkItem {
     pub claim_id: Option<ClaimId>,
     /// When it was made, or a claim last renewed.
     pub since: Timestamp,
+    /// A claim's: when it expires, or expired.
+    pub expires_at: Option<Timestamp>,
 }
 
 /// How sure the matcher is that new work repeats a piece in flight.
@@ -236,6 +238,23 @@ pub enum LandingRoute {
     PrOutside,
     /// Pushed straight to the base.
     DirectPush,
+}
+
+/// A commit that reached the base outside the train, as `work_list` shows it: what the hub's `Landings` reads back.
+#[serde_with::skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentLanding {
+    pub sha: CommitSha,
+    /// The commit's committer time.
+    pub at: Timestamp,
+    pub route: LandingRoute,
+    /// The PR it merged as, when its message or the host names one: "#57", or its URL.
+    pub pr: Option<String>,
+    pub subject: String,
+    pub author_email: Option<String>,
+    /// The work it matched exactly: "P5", "T12", "C7".
+    pub covers: Vec<String>,
 }
 
 /// `HubEvent.data` on `work.claimed` and `work.ended`.

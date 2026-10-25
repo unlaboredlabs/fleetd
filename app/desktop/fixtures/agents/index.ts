@@ -8,6 +8,7 @@ import { defineGroup } from "../kit/group.ts";
 import type { JsonObject } from "../kit/json.ts";
 import { arr, obj } from "../kit/stress.ts";
 import { AGENT } from "./route.ts";
+import { withElsewhere } from "./elsewhere.ts";
 import { agentSteers, STEER_WORDS, steer, troubleSteers, withSteers } from "./steers.ts";
 
 const CHECKOUT = { machineId: "devbox", projectId: "7a9a4d2f-7656-4a38-a750-56ac34e9f090" };
@@ -142,6 +143,9 @@ const steers = (base: Fixture): Fixture => {
   return out;
 };
 
+const elsewhere = (base: Fixture): Fixture =>
+  withElsewhere(Fixture.from(base, "agents-elsewhere", "Agents: storefront's agents, and under them the work elsewhere on its repo; checkout's, with none of its own."));
+
 export default defineGroup({
-  fixtures: (base) => [work(base("many-agents")), steers(base("many-agents"))],
+  fixtures: (base) => [work(base("many-agents")), steers(base("many-agents")), elsewhere(base("typical"))],
 });

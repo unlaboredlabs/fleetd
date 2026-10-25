@@ -100,6 +100,7 @@ fn task_item(task: &Task, observed: &HashMap<TaskId, Vec<String>>) -> WorkItem {
         change_id: None,
         claim_id: None,
         since: task.created_at.clone(),
+        expires_at: None,
     }
 }
 
@@ -138,6 +139,7 @@ fn change_item(
         change_id: Some(change.change_id.clone()),
         claim_id: None,
         since: change.created_at.clone(),
+        expires_at: None,
     }
 }
 
@@ -160,6 +162,7 @@ fn claim_item(claim: &Claim) -> WorkItem {
         change_id: None,
         claim_id: Some(claim.claim_id.clone()),
         since: claim.renewed_at.clone(),
+        expires_at: Some(claim.expires_at.clone()),
     }
 }
 

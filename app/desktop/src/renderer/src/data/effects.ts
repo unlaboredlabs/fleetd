@@ -45,6 +45,9 @@ const METRICS_TYPES = new Set(["pr.merged", "pr.merged_outside", "repo.advanced"
 const AGENT_PREFIXES = ["task.", "lead.", "change."];
 const AGENT_TYPES = new Set(["pr.merged", "project.added", "project.removed"]);
 
+// The Elsewhere group's read (work_list): claims and landings, and the writers and PRs of every project on the repo.
+const WORK_PREFIXES = ["work.", "task.", "change."];
+
 const startsWithAny = (type: string, prefixes: readonly string[]): boolean => prefixes.some((p) => type.startsWith(p));
 
 /** `machines`: the ones the store knows; a known machine's status change is patched in place, no resync. */
@@ -77,6 +80,7 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   if (type.startsWith("thread.") && event.threadId !== undefined) out.push({ tool: "agent_work", where: { threadId: event.threadId } });
   // The agents view's list: who runs, and what for. Their live status and activity come with the live feed instead.
   if (startsWithAny(type, AGENT_PREFIXES) || AGENT_TYPES.has(type)) out.push({ tool: "agents_list" });
+  if (startsWithAny(type, WORK_PREFIXES) || AGENT_TYPES.has(type)) out.push({ tool: "work_list" });
   const projectScoped = startsWithAny(type, ["workstream.", "lead.", "thread."]) || type === "project.settings";
   if (projectScoped && event.machineId !== undefined && event.projectId !== undefined) {
     out.push({ tool: "project_get", where: { machineId: event.machineId, projectId: event.projectId } });

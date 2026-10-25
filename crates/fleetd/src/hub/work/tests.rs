@@ -532,6 +532,17 @@ async fn the_view_reads_every_project_on_the_repos_base_and_nothing_else() {
         "a claim's branch is one of its keys"
     );
     assert_eq!(claim.paths.to_vec(), [WorkPath::unchecked("app/theme.ts")]);
+    let held = hub
+        .work
+        .get(claim.claim_id.as_ref().unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        claim.expires_at.as_ref(),
+        Some(&held.expires_at),
+        "a claim says when it expires"
+    );
+    assert_eq!(dark.expires_at, None);
 
     assert!(
         hub.work
@@ -685,6 +696,31 @@ async fn each_writer_carries_the_paths_it_has_changed_so_far() {
         paths(&unknown).is_empty(),
         "a node that could not say gives no paths"
     );
+
+    // Read from the hub alone, no node is asked: the writers are there, without their paths.
+    let stored = Work::new(
+        hub.db.clone(),
+        hub.events.clone(),
+        hub.clock.clone(),
+        Arc::new(NoNode),
+    )
+    .in_flight_stored(&shop)
+    .unwrap();
+    let ids: Vec<&str> = items.iter().map(|i| i.id.as_str()).collect();
+    assert_eq!(
+        stored.iter().map(|i| i.id.as_str()).collect::<Vec<_>>(),
+        ids
+    );
+    assert!(stored.iter().all(|i| i.paths.is_empty()));
+}
+
+/// A machine that must not be asked.
+struct NoNode;
+
+impl WorkPorts for NoNode {
+    fn changed_paths<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Option<Vec<String>>> {
+        panic!("asked {}'s machine what it changed", thread.thread_id)
+    }
 }
 
 #[tokio::test]
