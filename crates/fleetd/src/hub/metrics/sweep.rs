@@ -94,7 +94,9 @@ impl Sweep {
     }
 
     /// Whether a repo on a host fleetd has no name for is on a GitLab, asked once a day per host until it is. One
-    /// that is is kept as such in `metric_repos`. A hub that reads no GitLab asks nothing.
+    /// that is is kept as such in `metric_repos`. A host that gave no answer (unreachable, a server error) is asked
+    /// again on the next pass; only a clear answer that it isn't GitLab waits a day. A hub that reads no GitLab asks
+    /// nothing.
     async fn detect(&self, db: &HubDb, remote: &str, now: i64) -> bool {
         let Some(api) = lock(&self.sources).gitlab.clone() else {
             return false;
@@ -108,9 +110,13 @@ impl Sweep {
         {
             return false;
         }
-        if !gitlab::is_gitlab(api.as_ref(), instance).await {
-            lock(&self.probed).insert(instance.to_owned(), now);
-            return false;
+        match gitlab::is_gitlab(api.as_ref(), instance).await {
+            Some(true) => {}
+            Some(false) => {
+                lock(&self.probed).insert(instance.to_owned(), now);
+                return false;
+            }
+            None => return false,
         }
         let kept = db.transaction(|c| {
             c.execute(

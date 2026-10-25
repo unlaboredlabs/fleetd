@@ -48,6 +48,9 @@ struct Recorded {
     late_push: Mutex<bool>,
     runs: Mutex<Vec<String>>,
     versions: Mutex<Vec<String>>,
+    /// How many times `gitlab.flaky.example` was asked: it is unreachable the first time, then answers as a host
+    /// that isn't GitLab.
+    flaky: Mutex<usize>,
 }
 
 impl Recorded {
@@ -110,6 +113,23 @@ impl GitLabApi for Recorded {
     fn version<'a>(&'a self, instance: &'a str) -> BoxFut<'a, Result<Reply, String>> {
         self.versions.lock().unwrap().push(instance.to_owned());
         let reply = match instance {
+            "gitlab.flaky.example" => {
+                let mut asked = self.flaky.lock().unwrap();
+                *asked += 1;
+                if *asked == 1 {
+                    return Box::pin(async {
+                        Err("gitlab.flaky.example couldn't be reached".to_owned())
+                    });
+                }
+                Reply {
+                    status: 404,
+                    body: "<html>Not Found</html>".into(),
+                }
+            }
+            "gitlab.down.example" => Reply {
+                status: 502,
+                body: "<html>502 Bad Gateway</html>".into(),
+            },
             INSTANCE => ok(fixture("version")),
             "gitlab.locked.example" => Reply {
                 status: 401,
@@ -395,7 +415,7 @@ async fn a_self_hosted_gitlab_is_found_by_its_version_and_read_and_another_host_
     let (hub, clock, _home) = hub();
     checkout(&hub);
     // Both as the sweep first sees them: on a host fleetd has no name for.
-    let other = "git.internal:2222/srv/tools";
+    let other = "git.internal/srv/tools";
     for repo in [REPO, other] {
         sql(
             &hub,
@@ -421,11 +441,7 @@ async fn a_self_hosted_gitlab_is_found_by_its_version_and_read_and_another_host_
     assert_eq!(hosts[other], "git");
     assert_eq!(api.count("projects/acme%2Fweb"), 1, "read once found");
     assert!(!routes(&hub).is_empty());
-    assert_eq!(
-        *api.versions.lock().unwrap(),
-        ["git.internal", INSTANCE],
-        "the ssh port isn't the API's"
-    );
+    assert_eq!(*api.versions.lock().unwrap(), ["git.internal", INSTANCE]);
 
     // A host that isn't GitLab is asked again after a day; one known as GitLab never again.
     clock.advance(Duration::from_secs(3 * 3600));
@@ -455,19 +471,35 @@ async fn gitlab_com_needs_no_asking_and_a_locked_instance_is_still_gitlab() {
         .unwrap();
     assert_eq!(source.host(), "gitlab");
     let api = Recorded::default();
-    assert!(gitlab::is_gitlab(&api, INSTANCE).await);
-    assert!(
+    assert_eq!(gitlab::is_gitlab(&api, INSTANCE).await, Some(true));
+    assert_eq!(
         gitlab::is_gitlab(&api, "gitlab.locked.example").await,
+        Some(true),
         "GitLab's own 401 without credentials"
     );
-    assert!(!gitlab::is_gitlab(&api, "git.internal").await);
+    assert_eq!(gitlab::is_gitlab(&api, "git.internal").await, Some(false));
+    assert_eq!(
+        gitlab::is_gitlab(&api, "gitlab.down.example").await,
+        None,
+        "a server error says nothing either way"
+    );
+    assert_eq!(
+        gitlab::is_gitlab(&api, "gitlab.flaky.example").await,
+        None,
+        "unreachable"
+    );
 }
 
 #[test]
 fn gitlabs_words_are_read_as_they_come() {
     assert_eq!(
-        gitlab::split_remote("gitlab.example.com:2222/team/sub/api"),
-        Some(("gitlab.example.com", "team/sub/api"))
+        gitlab::split_remote("gitlab.example.com:8443/team/sub/api"),
+        Some(("gitlab.example.com:8443", "team/sub/api")),
+        "a key's port is the web port"
+    );
+    assert_eq!(
+        gitlab::split_remote("gitlab.example.com/team/api"),
+        Some(("gitlab.example.com", "team/api"))
     );
     assert_eq!(gitlab::split_remote("gitlab.com"), None);
     assert_eq!(
@@ -587,4 +619,70 @@ async fn a_hub_that_reads_no_host_makes_no_gitlab_calls() {
     .await
     .unwrap();
     assert!(out.coverage.stale.is_empty());
+}
+
+/// A self-hosted GitLab on its own web port is read on that port; the port of an ssh clone is the ssh server's, and
+/// is left out of the repo's key, so both clones of a repo on the default port are one repo.
+#[test]
+fn a_web_port_stays_in_the_key_and_an_ssh_port_does_not() {
+    use super::source::remote_key;
+    let key = |url: &str| remote_key(url).unwrap();
+    assert_eq!(
+        key("https://gitlab.example.com:8443/team/api.git"),
+        "gitlab.example.com:8443/team/api"
+    );
+    assert_eq!(
+        gitlab::split_remote(&key("https://gitlab.example.com:8443/team/api.git")),
+        Some(("gitlab.example.com:8443", "team/api"))
+    );
+    for ssh in [
+        "ssh://git@gitlab.example.com:2222/team/api.git",
+        "git@gitlab.example.com:team/api.git",
+        "https://gitlab.example.com/team/api.git",
+    ] {
+        assert_eq!(key(ssh), "gitlab.example.com/team/api", "{ssh}");
+    }
+}
+
+/// A host that gave no answer when asked whether it is GitLab is asked again on the next pass, not a day later; one
+/// that answered as something else waits the day.
+#[tokio::test]
+async fn an_unreachable_host_is_asked_again_and_only_a_clear_no_waits_a_day() {
+    let (hub, clock, _home) = hub();
+    let repo = "gitlab.flaky.example/team/api";
+    sql(
+        &hub,
+        "INSERT INTO metric_repos (repo, host) VALUES (?1, 'git')",
+        &[&repo],
+    );
+    let api = Arc::new(Recorded::default());
+    hub.metrics.sweep.use_gitlab(api.clone());
+    let asked = || *api.flaky.lock().unwrap();
+
+    sweep::pass(&hub).await;
+    assert_eq!(asked(), 1, "unreachable");
+    clock.advance(Duration::from_secs(61));
+    sweep::pass(&hub).await;
+    assert_eq!(
+        asked(),
+        2,
+        "asked again on the next pass: this time a clear no"
+    );
+    clock.advance(Duration::from_secs(3 * 3600));
+    sweep::pass(&hub).await;
+    assert_eq!(asked(), 2, "a clear no waits a day");
+    clock.advance(Duration::from_secs(24 * 3600));
+    sweep::pass(&hub).await;
+    assert_eq!(asked(), 3);
+    let host: String = hub
+        .db
+        .with(|c| {
+            Ok(c.query_row(
+                "SELECT host FROM metric_repos WHERE repo = ?1",
+                [repo],
+                |r| r.get(0),
+            )?)
+        })
+        .unwrap();
+    assert_eq!(host, "git");
 }

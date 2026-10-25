@@ -53,26 +53,27 @@ pub trait GitLabApi: Send + Sync {
     fn version<'a>(&'a self, instance: &'a str) -> BoxFut<'a, Result<Reply, String>>;
 }
 
-/// Whether the instance is GitLab: its version answered, or refused with GitLab's own 401.
-pub async fn is_gitlab(api: &dyn GitLabApi, instance: &str) -> bool {
-    let Ok(reply) = api.version(instance).await else {
-        return false;
-    };
-    let Ok(v) = serde_json::from_str::<Value>(&reply.body) else {
-        return false;
-    };
-    match reply.status {
+/// Whether the instance is GitLab: `Some(true)` when its version answered, or it refused with GitLab's own 401;
+/// `Some(false)` when it answered as something else; `None` when it gave no answer to go by (unreachable, timed out,
+/// or a server error, as a GitLab under maintenance gives), so it is asked again.
+pub async fn is_gitlab(api: &dyn GitLabApi, instance: &str) -> Option<bool> {
+    let reply = api.version(instance).await.ok()?;
+    if reply.status >= 500 {
+        return None;
+    }
+    let v = serde_json::from_str::<Value>(&reply.body).unwrap_or_default();
+    Some(match reply.status {
         200 => v["version"].is_string(),
         401 => v["message"].as_str() == Some("401 Unauthorized"),
         _ => false,
-    }
+    })
 }
 
-/// The instance and the project's path of a remote key: "gitlab.example.com:2222/team/api" → ("gitlab.example.com",
-/// "team/api"). An ssh port isn't the API's.
+/// The instance and the project's path of a remote key: "gitlab.example.com:8443/team/api" →
+/// ("gitlab.example.com:8443", "team/api"). A key's port is the web port ([`super::remote_key`] leaves an ssh port
+/// out), so it stays.
 pub fn split_remote(remote: &str) -> Option<(&str, &str)> {
     let (host, path) = remote.split_once('/')?;
-    let host = host.split_once(':').map_or(host, |(h, _)| h);
     (!host.is_empty() && !path.is_empty()).then_some((host, path))
 }
 

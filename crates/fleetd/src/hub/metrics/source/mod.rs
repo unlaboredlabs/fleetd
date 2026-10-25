@@ -190,9 +190,21 @@ pub fn host_of(remote: &str) -> &'static str {
     }
 }
 
-/// A checkout's origin URL as the metrics' key: host first, lowercased, no scheme, user or `.git`.
+/// A checkout's origin URL as the metrics' key: host first, lowercased, no scheme, user or `.git`. An `ssh://` URL's
+/// port is left out (it is the ssh server's, and a clone of the same repo over https has none), so a port in a key is
+/// always the host's web port: `https://gitlab.example.com:8443/team/api` keeps it.
 pub fn remote_key(url: &str) -> Option<String> {
     let key = fleetd_contracts::projects::short_remote(url).to_lowercase();
+    let key = match key.split_once('/') {
+        Some((host, path)) if url.trim_start().starts_with("ssh://") => {
+            let host = host
+                .rsplit_once(':')
+                .filter(|(_, port)| !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()))
+                .map_or(host, |(h, _)| h);
+            format!("{host}/{path}")
+        }
+        _ => key,
+    };
     fleetd_contracts::metrics::RemoteRepo::new(&key)
         .ok()
         .map(|_| key)
