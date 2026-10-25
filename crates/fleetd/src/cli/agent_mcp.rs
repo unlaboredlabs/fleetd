@@ -100,9 +100,10 @@ static TOOLS: &[Tool] = &[
     lead(
         "brief",
         "brief_create",
-        "Set a workstream's brief (goal, why, pointers, constraints, doneWhen lines) and start it, or edit it \
-         later. Without workstreamId it opens one for work you took from the chat: text is the order in the human's \
-         words.",
+        "Open and start work. Without workstreamId it opens a new order from text (the human's words) and this \
+         brief, and starts it: new work from the chat starts this way, even when every order is closed. With \
+         workstreamId it sets that workstream's brief (goal, why, pointers, constraints, doneWhen lines) and starts \
+         it, or edits it later.",
         inline_schema::<BriefCreateCall>,
     ),
     lead(

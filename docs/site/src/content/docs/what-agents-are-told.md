@@ -42,7 +42,8 @@ Each project's lead talks to you in that project's chat. It is told to:
   you, and it carries on with other approved work.
 - Read short replies by item number: "1 go, 2 rec", "go" (yes to everything open), "nvm" (drop it), and log each
   answer as a decision.
-- Start the work a reply asks for in the same turn.
+- Start the work a reply asks for in the same turn, opening a new order for it when none is open. It never asks you
+  to send it as an order.
 
 ### No time estimates {#no-time}
 
