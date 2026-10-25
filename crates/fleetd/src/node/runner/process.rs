@@ -210,6 +210,18 @@ pub fn sweep(root: i32, marker: &str) -> Vec<Proc> {
     found
 }
 
+/// What a sweep by `marker` alone finds right now, for a spawn whose root is gone and whose pid may be reused.
+/// Blocking. Nothing on macOS, where only the ppid walk from the root finds a session's processes.
+#[cfg(target_os = "linux")]
+pub fn sweep_marked(marker: &str) -> Vec<Proc> {
+    marked(&table(), marker)
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn sweep_marked(_marker: &str) -> Vec<Proc> {
+    Vec::new()
+}
+
 /// Keeps the first entry per pid.
 pub fn dedupe(procs: &mut Vec<Proc>) {
     let mut seen = HashSet::new();

@@ -37,6 +37,16 @@ echo '{"type":"system","subtype":"init","claude_code_version":"2.1.302","model":
 cat > "$STDIN_LOG"
 "#;
 
+/// Starts its tool detached and without the marker, which the tool takes on by its last `exec` only once the test
+/// writes to `$FIFO`. Until then it is what a sweep sees of a tool mid-`exec` (`/proc/<pid>/environ` reads empty):
+/// a process of the session whose marker cannot be read yet.
+const LATE_MARKER_CLAUDE: &str = r#"#!/bin/sh
+setsid env -u FLEETD_RUNNER_SESSION sh -c 'echo $$ > "$PIDFILE.tmp"; mv "$PIDFILE.tmp" "$PIDFILE"; read line < "$FIFO"; exec env FLEETD_RUNNER_SESSION="$1" sleep 300' sh "$FLEETD_RUNNER_SESSION" &
+while [ ! -s "$PIDFILE" ]; do :; done
+echo '{"type":"system","subtype":"init","claude_code_version":"2.1.302","model":"fake","cwd":"/fake"}'
+exec sleep 300
+"#;
+
 /// Waits until it has been reparented to the node, says so, then exits on its own once the test writes to `$FIFO`.
 const DETACHED_TOOL: &str = r#"#!/bin/sh
 while [ "$(cut -d' ' -f4 /proc/$$/stat)" != "$NODE_PID" ]; do :; done
@@ -337,6 +347,41 @@ async fn a_crashed_claude_leaves_no_orphan_behind() {
         (first["dir"].as_str(), first["msg"]["subtype"].as_str()),
         (Some("out"), Some("init"))
     );
+}
+
+/// Paused time: the re-sweep's delay can only elapse once the test awaits again, by when the tool has its marker.
+#[tokio::test(start_paused = true)]
+async fn a_tool_still_in_exec_when_claude_dies_is_killed_by_the_resweep() {
+    let mut fake = Fake::start("00000000-0000-4000-8000-0000000000a6", LATE_MARKER_CLAUDE).await;
+    let tool = fake.tool_pid();
+    kill(Pid::from_raw(fake.handle.pid as i32), Signal::SIGKILL).unwrap();
+    fake.until_exit().await;
+    assert!(alive(tool), "the sweep at the exit found the tool {tool}");
+
+    // Its exec completes. Blocking, so the runtime's clock stays put until the marker is readable.
+    std::fs::write(fake.dir.path().join("fifo"), "go\n").unwrap();
+    let marker = format!("{}=", process::SESSION_MARKER).into_bytes();
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        let comm = std::fs::read_to_string(format!("/proc/{tool}/comm")).unwrap_or_default();
+        let env = std::fs::read(format!("/proc/{tool}/environ")).unwrap_or_default();
+        if comm.trim() == "sleep" && env.split(|b| *b == 0).any(|var| var.starts_with(&marker)) {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the tool {tool} never took its marker"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    for _ in 0..100 {
+        if gone(tool) {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    panic!("the tool {tool} outlived the re-sweep");
 }
 
 #[test]
