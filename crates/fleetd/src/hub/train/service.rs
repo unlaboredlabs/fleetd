@@ -759,20 +759,24 @@ impl Train {
     }
 
     /// Polls the check runs of `sha` until all are done, one is red, or the timeout passes. A head with no checks is
-    /// never green: only a repo with CI reaches here (`has_ci`). `labelled_at` is when the train put `fleetd:next` on
-    /// the PR it merges alone: a check skipped before then may be one the label runs, so it holds the green for
-    /// `LABEL_GRACE_MS` after the label, and a run the label starts in that time replaces it. While some checks have
-    /// been queued for `RUNNER_WAIT_MS`, `noted` (the Changes in this CI run) say they wait for runners.
+    /// never green: only a repo with CI reaches here (`has_ci`). `lone` is a PR merged alone in a repo whose CI runs
+    /// its expensive jobs on `fleetd:next`: a skipped check the label should have run (`unproven_skips`) never counts
+    /// as green there. The train waits for the run that replaces it, puts on a label GitHub refused again every
+    /// `LABEL_HOLD_MS`, and tells the lead once when none came in that time. While some checks have been queued for
+    /// `RUNNER_WAIT_MS`, `noted` (the Changes in this CI run) say they wait for runners.
     pub(super) async fn wait_ci(
         &self,
         change: &Change,
         repo: &str,
         sha: &str,
-        labelled_at: Option<i64>,
+        lone: Option<super::next::Lone>,
         noted: &[ChangeId],
     ) -> CiOutcome {
-        let outcome = self.poll_ci(change, repo, sha, labelled_at, noted).await;
-        self.runner_note(noted, None);
+        let mut earlier = HashMap::new();
+        let outcome = self
+            .poll_ci(change, repo, sha, lone, noted, &mut earlier)
+            .await;
+        self.runner_note(noted, None, &mut earlier);
         outcome
     }
 
@@ -781,13 +785,15 @@ impl Train {
         change: &Change,
         repo: &str,
         sha: &str,
-        labelled_at: Option<i64>,
+        mut lone: Option<super::next::Lone>,
         noted: &[ChangeId],
+        earlier: &mut HashMap<ChangeId, Option<String>>,
     ) -> CiOutcome {
-        use super::next::{LABEL_GRACE_MS, RUNNER_WAIT_MS, WAITING_FOR_RUNNERS};
+        use super::next::{LABEL_HOLD_MS, Labelled, RUNNER_WAIT_MS, WAITING_FOR_RUNNERS};
         let start = self.now_ms();
         let mut last: Vec<CheckRun> = Vec::new();
         let mut queued_since: Option<i64> = None;
+        let (mut tried_label, mut told) = (start, false);
         loop {
             let runs = match self.github.check_runs(repo, sha).await {
                 Ok(runs) => Some(runs),
@@ -802,7 +808,7 @@ impl Train {
                 let note = queued_since
                     .filter(|since| now - since >= RUNNER_WAIT_MS)
                     .map(|_| format!("{WAITING_FOR_RUNNERS} ({queued} queued)"));
-                self.runner_note(noted, note.as_deref());
+                self.runner_note(noted, note.as_deref(), earlier);
             }
             let runs = runs.unwrap_or_default();
             if !runs.is_empty() {
@@ -814,10 +820,45 @@ impl Train {
                     return CiOutcome::Red(red);
                 }
                 Checks::Green
-                    if labelled_at.is_some_and(|at| {
-                        self.now_ms() - at < LABEL_GRACE_MS
-                            && super::next::skipped_before_label(&runs, at)
-                    }) => {}
+                    if let Some(lone) = lone.as_mut()
+                        && let unproven = super::next::unproven_skips(&runs, lone)
+                        && !unproven.is_empty() =>
+                {
+                    let now = self.now_ms();
+                    if lone.label == Labelled::Failed && now - tried_label >= LABEL_HOLD_MS {
+                        tried_label = now;
+                        lone.label = self.label(repo, change.pr_number.get(), false).await;
+                    }
+                    let since = match lone.label {
+                        Labelled::At(at) => at.max(start),
+                        _ => start,
+                    };
+                    if !told && now - since >= LABEL_HOLD_MS {
+                        told = true;
+                        let names: Vec<&str> = unproven.iter().map(|r| r.name.as_str()).collect();
+                        let why = if lone.label == Labelled::Failed {
+                            format!(
+                                "the train could not put `{}` on it",
+                                super::github::NEXT_LABEL
+                            )
+                        } else {
+                            "no run replaced them since the label went on".to_string()
+                        };
+                        let text = format!(
+                            "CI didn't start for the labelled PR: {} skipped, and {why}. The train keeps waiting \
+                             and won't merge it on a skipped check; check the repo's label workflow.",
+                            names.join(", ")
+                        );
+                        tracing::warn!(change_id = %change.change_id, text, "train: label run missing");
+                        let line = Event::PrNote {
+                            change: change.change_id.as_str(),
+                            pr_url: change.pr_url.as_str(),
+                            text: &text,
+                        }
+                        .render();
+                        self.wake_lead(&change.project_ref, line).await;
+                    }
+                }
                 Checks::Green => {
                     self.check_spans(change, sha, &runs);
                     return CiOutcome::Green;
@@ -859,6 +900,12 @@ impl Train {
     }
 
     pub(super) async fn has_ci(&self, repo: &str, base: &str) -> Result<bool, GhError> {
+        let ci = self.ci_info(repo, base).await?;
+        Ok(!ci.workflows.is_empty() || ci.required_checks.iter().any(|c| c != TRAIN_CONTEXT))
+    }
+
+    /// The repo's workflows and the checks `base` requires, cached per repo and base.
+    pub(super) async fn ci_info(&self, repo: &str, base: &str) -> Result<CiInfo, GhError> {
         let key = (repo.to_string(), base.to_string());
         let now = self.now_ms();
         let cached = lock(&self.ci_configs)
@@ -873,7 +920,7 @@ impl Train {
                 ci
             }
         };
-        Ok(!ci.workflows.is_empty() || ci.required_checks.iter().any(|c| c != TRAIN_CONTEXT))
+        Ok(ci)
     }
 
     /// One `ci.check` span per check run of the deciding poll, from GitHub's own stamps; a check still running when
@@ -1044,7 +1091,7 @@ impl Train {
             return Ok(());
         };
         // Before the rebase: the push it makes then starts a CI run that already sees the label.
-        let labelled_at = self
+        let label = self
             .label(
                 repo,
                 change.pr_number.get(),
@@ -1107,11 +1154,14 @@ impl Train {
         ) else {
             return Ok(());
         };
+        let lone = if self.uses_label(repo, base).await {
+            let required = self.ci_info(repo, base).await?.required_checks;
+            Some(super::next::Lone { label, required })
+        } else {
+            None
+        };
         let noted = std::slice::from_ref(&in_ci.change_id);
-        match self
-            .wait_ci(&in_ci, repo, &head_sha, labelled_at, noted)
-            .await
-        {
+        match self.wait_ci(&in_ci, repo, &head_sha, lone, noted).await {
             CiOutcome::Green => {}
             CiOutcome::Red(failing) => {
                 self.ci_failed(&in_ci, &failing, false).await;

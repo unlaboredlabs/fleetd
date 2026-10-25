@@ -31,8 +31,7 @@ permissions:
 #
 # macOS runners are few, and GitHub doesn't start queued jobs in order, so the macOS jobs (rust-macos, desktop-macos)
 # run only where they decide a merge: on main, on workflow_dispatch, on the merge train's batch PR, and on a PR labelled
-# `fleetd:next` (the train puts it on the PRs it merges next, before it rebases one to merge alone) or `macos` (by
-# hand). Adding either label runs this workflow on the PR's branch (macos-label.yml). Elsewhere they are skipped; a
+# `fleetd:next` (the train puts it on the PR it merges alone, before it rebases it) or `macos` (by hand). Adding either label runs this workflow on the PR's branch (macos-label.yml). Elsewhere they are skipped; a
 # skipped job still reports, so the required `rust (macos)` does too.
 
 jobs:

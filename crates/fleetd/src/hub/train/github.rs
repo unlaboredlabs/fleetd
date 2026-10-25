@@ -926,6 +926,56 @@ impl TrainGitHub {
         }
     }
 
+    /// Whether any workflow file in `.github/workflows` on `branch` contains `needle`; a repo without the directory
+    /// has none.
+    pub async fn workflows_mention(
+        &self,
+        repo: &str,
+        branch: &str,
+        needle: &str,
+    ) -> Result<bool, GhError> {
+        #[derive(Deserialize)]
+        struct Entry {
+            path: String,
+            #[serde(rename = "type")]
+            kind: String,
+        }
+        let entries: Vec<Entry> = match self
+            .call(
+                "GET",
+                &format!("repos/{repo}/contents/.github/workflows?ref={branch}"),
+                &[],
+            )
+            .await?
+        {
+            Reply::Ok(v) => serde_json::from_value(v).map_err(|_| {
+                GhError::failed(format!(
+                    "the workflows of {repo} came in an unexpected shape"
+                ))
+            })?,
+            Reply::Err { status: 404, .. } => return Ok(false),
+            Reply::Err { message, .. } => {
+                return Err(GhError::failed(format!(
+                    "the workflows of {repo}: {message}"
+                )));
+            }
+        };
+        for e in entries {
+            if e.kind != "file" || !(e.path.ends_with(".yml") || e.path.ends_with(".yaml")) {
+                continue;
+            }
+            let path = format!("repos/{repo}/contents/{}?ref={branch}", e.path);
+            let text = self
+                .exchange("GET", &path, "Accept: application/vnd.github.raw", &[])
+                .await?
+                .map_err(|(_, message)| GhError::failed(format!("{}: {message}", e.path)))?;
+            if text.contains(needle) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     /// The repo's open PRs that carry the label `name` (one page).
     pub async fn labelled_pulls(&self, repo: &str, name: &str) -> Result<Vec<i64>, GhError> {
         #[derive(Deserialize)]
