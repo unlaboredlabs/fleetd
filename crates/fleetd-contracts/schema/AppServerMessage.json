@@ -1261,10 +1261,24 @@
     "SlotState": {
       "properties": {
         "cap": {
-          "description": "The fleet cap: agents running at once across every project.",
+          "description": "Agents running at once across every project: `fleetCap` when set, else the sum of the machines' caps.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
+        },
+        "fleetCap": {
+          "description": "The fleet cap a person (or an older hub) saved; absent: none beyond the machines' own caps.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "perMachine": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SlotStatePerMachine"
+          },
+          "maxItems": 50,
+          "type": "array"
         },
         "perProject": {
           "items": {
@@ -1292,10 +1306,56 @@
       ],
       "type": "object"
     },
+    "SlotStatePerMachine": {
+      "description": "One machine's share of the board: what it fits, and what runs there.",
+      "properties": {
+        "auto": {
+          "description": "What the machine fits: one agent per CPU less a reserve, and 2 GB of memory each after the OS's share, at\nmost 64.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "cap": {
+          "description": "The most agents that run on it at once: a person's setting for the machine, else `auto`.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "diskRoom": {
+          "description": "New agents its free disk has room for now, above the guard's floor; absent while the node reports no disk.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "running": {
+          "description": "Agents running there now.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "why": {
+          "description": "The term that sets `auto`, e.g. \"memory 18 GB\" or \"14 of 16 CPUs\".",
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "machineId",
+        "cap",
+        "auto",
+        "why",
+        "running"
+      ],
+      "type": "object"
+    },
     "SlotStatePerProject": {
       "properties": {
         "maxAgents": {
-          "description": "The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead is not\none. The fleet `cap` until set.",
+          "description": "The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead is not\none. Its machine's `cap` until set.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"

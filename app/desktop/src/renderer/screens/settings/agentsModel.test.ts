@@ -25,6 +25,27 @@ describe("max agents", () => {
     expect(agentsLabel(projectAgents(slots, billing))).toBe("agents 2 / 12");
   });
 
+  it("holds a project to its machine's cap, and a project at that cap has no max of its own", () => {
+    const machines: SlotState = {
+      cap: 20,
+      used: 0,
+      queued: 0,
+      perMachine: [
+        { machineId: "devbox", cap: 6, auto: 6, running: 0, why: "memory 18 GB" },
+        { machineId: "builder", cap: 14, auto: 14, running: 0, why: "14 of 16 CPUs" },
+      ],
+      perProject: [
+        { projectRef: storefront, maxAgents: 6, running: 0, queued: 0 },
+        { projectRef: billing, maxAgents: 3, running: 0, queued: 0 },
+      ],
+    };
+    expect(projectAgents(machines, storefront)).toEqual({ running: 0, queued: 0, max: 6, cap: 6, own: false });
+    expect(projectAgents(machines, billing)).toEqual({ running: 0, queued: 0, max: 3, cap: 6, own: true });
+    expect(projectAgents(machines, { machineId: "builder", projectId: "new" }).max).toBe(14);
+    // A fleet cap below the machine's holds the project to it.
+    expect(projectAgents({ ...machines, cap: 4 }, storefront)).toMatchObject({ max: 4, cap: 4, own: false });
+  });
+
   it("says that lowering below the running count lets them finish and makes new ones wait", () => {
     const a = projectAgents(slots, storefront);
     expect(extrasOver(6, 4)).toBe(2);
