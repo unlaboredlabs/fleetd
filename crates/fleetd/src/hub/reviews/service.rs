@@ -20,6 +20,7 @@ use crate::hub::leads::events::Event;
 use crate::hub::train::contract::{
     Change, ChangeId, ChangeReview, ChangeState, CommitSha, Count, PatchId, TaskId,
 };
+use crate::hub::train::github::{GhError, TrainGitHub};
 use crate::hub::train::host::{BoxFut, EventView, ReviewSpawn, TrainHost};
 use crate::hub::train::records::{Db, sql};
 use crate::hub::train::service::{ReviewGate, Train, Verdict, lock, short};
@@ -29,6 +30,8 @@ pub const REVIEWS_BY: &str = "hub:reviews";
 
 /// New reviewers started for one patch after one ended without a verdict, before the gate stops and tells the lead.
 const RETRIES: usize = 2;
+/// The most commits landed on the base since an approved head whose patches are read to find its dropped commits.
+const LANDED_MAX: usize = 100;
 
 const FOLLOWED: [&str; 4] = [
     "review.verdict",
@@ -42,8 +45,8 @@ pub struct Reviews {
     db: Db,
     train: Weak<Train>,
     lock: tokio::sync::Mutex<()>,
-    /// The patches whose stalled review the lead was told about.
-    told: Mutex<HashSet<(ChangeId, String)>>,
+    /// The patches whose approval carry was checked: GitHub is read for it once per patch.
+    carry_checked: Mutex<HashSet<(ChangeId, String)>>,
 }
 
 /// A review task the gate spawned: the Change, the patch its round was for, and whether a newer patch superseded it.
@@ -64,7 +67,7 @@ impl Reviews {
             db,
             train,
             lock: tokio::sync::Mutex::new(()),
-            told: Mutex::default(),
+            carry_checked: Mutex::default(),
         }
     }
 
@@ -147,10 +150,11 @@ impl Reviews {
         })
     }
 
+    /// Not ended, or not known now: an unread task is never taken for a dead one, so it is never replaced twice.
     fn live(&self, task_id: &str) -> bool {
         self.host
             .task(&TaskId::unchecked(task_id))
-            .is_some_and(|t| !ended(&t.state))
+            .is_none_or(|t| !ended(&t.state))
     }
 
     fn put_patch(&self, change_id: &ChangeId, sha: &str, patch_id: &str) {
@@ -346,8 +350,9 @@ impl Reviews {
     /// Whether the Change's new patch keeps the approval of its last reviewed head, binding it to the new patch when
     /// it does. It does when the new head only drops commits already on the base from that head: the approved head's
     /// last commits, as many as the new head has, make the same patch on the commit below them as the new head makes
-    /// on its base, so `git range-diff` shows the PR's own commits unchanged. Any change to them, a conflict
-    /// resolution included, makes another patch and gets a review.
+    /// on its base, so `git range-diff` shows the PR's own commits unchanged, and the commits below them are on the
+    /// base (`on_base`). Any change to the PR's own commits, a conflict resolution included, or a dropped commit the
+    /// base lacks, gets a review.
     async fn carry(&self, change: &Change, patch_id: &str) -> Result<bool, String> {
         let approved: Option<(String, String, String, i64)> = sql(&self.db, |conn| {
             conn.query_row(
@@ -387,10 +392,15 @@ impl Reviews {
         if own.is_empty() || own.len() > reviewed.len() {
             return Ok(false);
         }
-        let below = match reviewed.len() - own.len() {
-            0 => reviewed_base,
-            dropped => reviewed[dropped - 1].clone(),
-        };
+        let dropped = &reviewed[..reviewed.len() - own.len()];
+        if !dropped.is_empty()
+            && !on_base(github, repo, &base, &reviewed_base, dropped)
+                .await
+                .map_err(|e| e.message)?
+        {
+            return Ok(false);
+        }
+        let below = dropped.last().cloned().unwrap_or(reviewed_base);
         let same = github
             .patch_id_from(repo, &below, &approved_head)
             .await
@@ -423,24 +433,109 @@ impl Reviews {
             },
         };
         self.put_patch(&change.change_id, &change.head_sha, &patch_id);
-        self.supersede(&change, &patch_id).await;
-        let (before, reviews) = self.gate_for(&change, &patch_id);
+        self.round(&change, &patch_id).await
+    }
+
+    /// Where the review of the Change's patch stands, starting what it lacks: a stale reviewer is stopped, a carried
+    /// approval or a new reviewer is tried when none was started, and a reviewer that ended without a verdict is
+    /// replaced up to `RETRIES` times, then the lead is told. Under the gate's lock.
+    async fn round(&self, change: &Change, patch_id: &str) -> Verdict {
+        self.supersede(change, patch_id).await;
+        let (before, reviews) = self.gate_for(change, patch_id);
         // Ready on this patch already (a carried-over patch), or held by its blocking findings until the head moves.
         if before.ready {
             return Verdict::Ready(reviews);
         }
-        if before.waiting_for_head || !self.reviewers(&change.change_id, &patch_id).is_empty() {
+        if before.waiting_for_head {
             return Verdict::Pending;
         }
-        match self.carry(&change, &patch_id).await {
-            Ok(true) => return Verdict::Ready(self.gate_for(&change, &patch_id).1),
-            Ok(false) => {}
+        let reviewers = self.reviewers(&change.change_id, patch_id);
+        // One still at work owes the verdict.
+        if reviewers.iter().any(|t| self.live(t)) {
+            return Verdict::Pending;
+        }
+        let Some(last) = reviewers.last() else {
+            if self.carried(change, patch_id).await {
+                return Verdict::Ready(self.gate_for(change, patch_id).1);
+            }
+            self.spawn_reviewer(change, patch_id).await;
+            return Verdict::Pending;
+        };
+        let tries = reviewers.len();
+        if tries > RETRIES {
+            self.stalled(change, patch_id, last, tries).await;
+        } else if let Some(next) = self.spawn_reviewer(change, patch_id).await {
+            self.note(
+                &change.change_id,
+                &format!(
+                    "the reviewer {last} ended without a review verdict; {next} reviews it again (retry {tries} of {RETRIES})"
+                ),
+            );
+        }
+        Verdict::Pending
+    }
+
+    /// `carry`, read from GitHub once per patch unless the read failed.
+    async fn carried(&self, change: &Change, patch_id: &str) -> bool {
+        let key = (change.change_id.clone(), patch_id.to_string());
+        if lock(&self.carry_checked).contains(&key) {
+            return false;
+        }
+        match self.carry(change, patch_id).await {
+            Ok(carried) => {
+                lock(&self.carry_checked).insert(key);
+                carried
+            }
             Err(e) => {
-                tracing::warn!(change_id = %change.change_id, error = %e, "reviews: approval not carried; reviewing")
+                tracing::warn!(change_id = %change.change_id, error = %e, "reviews: approval not carried; reviewing");
+                false
             }
         }
-        self.spawn_reviewer(&change, &patch_id).await;
-        Verdict::Pending
+    }
+
+    /// The lead hears once, across restarts, that the patch's reviewers keep ending without a verdict, with the last
+    /// one's final lines; no more start until a new head.
+    async fn stalled(&self, change: &Change, patch_id: &str, last: &str, tries: usize) {
+        let first = sql(&self.db, |conn| {
+            conn.execute(
+                "INSERT OR IGNORE INTO review_stalls (change_id, patch_id) VALUES (?1, ?2)",
+                params![change.change_id.as_str(), patch_id],
+            )
+            .expect("put review stall")
+        }) == 1;
+        if !first {
+            return;
+        }
+        self.note(
+            &change.change_id,
+            &format!(
+                "the reviewer {last} ended without a review verdict; {tries} reviewers of patch {} did, so no more start until a new head; the lead was told",
+                short(patch_id)
+            ),
+        );
+        let tail = self
+            .host
+            .task(&TaskId::unchecked(last))
+            .and_then(|t| t.result_tail)
+            .unwrap_or_default();
+        let line = Event::PrReviewStalled {
+            change: change.change_id.as_str(),
+            pr_url: change.pr_url.as_str(),
+            task: last,
+            tries: tries as i64,
+            tail: &tail,
+        }
+        .render();
+        self.host.wake_lead(&change.project_ref, line).await;
+    }
+
+    /// The train's pass over a Change still in reviewing at the same head.
+    async fn again_inner(&self, change: Change) -> Verdict {
+        let _held = self.lock.lock().await;
+        match change.patch_id.clone() {
+            Some(patch_id) => self.round(&change, &patch_id).await,
+            None => Verdict::Pending,
+        }
     }
 
     /// Marks the Change ready once its current patch has a clean review.
@@ -573,71 +668,29 @@ impl Reviews {
             .expect("bound")
         });
         self.evaluate(&change_id);
-        if bound.is_none() && !round.superseded {
-            let how = event
-                .event_type
-                .strip_prefix("task.")
-                .unwrap_or(&event.event_type);
-            let why = format!("the reviewer {task_id} ended ({how}) without a review verdict");
-            self.note(&change_id, &why);
-            self.retry(&round, task_id, &why).await;
+        if bound.is_some() || round.superseded {
+            return;
         }
-    }
-
-    /// The reviewer `task_id` of `round` ended with no verdict: if the Change still waits on that patch's review and
-    /// no other reviewer of it is at work, a new one starts, at most `RETRIES` times; after that the lead is told
-    /// once, with the last reviewer's final lines.
-    async fn retry(&self, round: &Round, task_id: &str, why: &str) {
-        let Some(change) = self.train().and_then(|t| t.records().get(&round.change_id)) else {
+        let how = event
+            .event_type
+            .strip_prefix("task.")
+            .unwrap_or(&event.event_type);
+        self.note(
+            &change_id,
+            &format!("the reviewer {task_id} ended ({how}) without a review verdict"),
+        );
+        // The Change still waits on this patch's review: a new reviewer, or the lead told.
+        let Some(change) = self
+            .train()
+            .and_then(|t| t.records().get(&change_id))
+            .filter(|c| c.state == ChangeState::Reviewing)
+            .filter(|c| c.patch_id.as_deref() == Some(round.patch_id.as_str()))
+        else {
             return;
         };
-        if change.state != ChangeState::Reviewing
-            || change.patch_id.as_deref() != Some(round.patch_id.as_str())
-        {
-            return;
+        if let Verdict::Ready(_) = self.round(&change, &round.patch_id).await {
+            self.evaluate(&change_id);
         }
-        let (g, _) = self.gate_for(&change, &round.patch_id);
-        if g.ready || g.waiting_for_head {
-            return;
-        }
-        let reviewers = self.reviewers(&change.change_id, &round.patch_id);
-        if reviewers.iter().any(|t| t != task_id && self.live(t)) {
-            return;
-        }
-        let tries = reviewers.len();
-        if tries <= RETRIES {
-            if let Some(next) = self.spawn_reviewer(&change, &round.patch_id).await {
-                self.note(
-                    &change.change_id,
-                    &format!("{why}; {next} reviews it again (retry {tries} of {RETRIES})"),
-                );
-            }
-            return;
-        }
-        if !lock(&self.told).insert((change.change_id.clone(), round.patch_id.clone())) {
-            return;
-        }
-        self.note(
-            &change.change_id,
-            &format!(
-                "{why}; {tries} reviewers of patch {} ended without a verdict, so no more start until a new head; the lead was told",
-                short(&round.patch_id)
-            ),
-        );
-        let tail = self
-            .host
-            .task(&TaskId::unchecked(task_id))
-            .and_then(|t| t.result_tail)
-            .unwrap_or_default();
-        let line = Event::PrReviewStalled {
-            change: change.change_id.as_str(),
-            pr_url: change.pr_url.as_str(),
-            task: task_id,
-            tries: tries as i64,
-            tail: &tail,
-        }
-        .render();
-        self.host.wake_lead(&change.project_ref, line).await;
     }
 
     async fn handle(&self, event: &EventView) {
@@ -656,6 +709,54 @@ impl ReviewGate for Reviews {
     fn review(&self, change: Change) -> BoxFut<'_, Verdict> {
         Box::pin(self.review_inner(change))
     }
+
+    fn again(&self, change: Change) -> BoxFut<'_, Verdict> {
+        Box::pin(self.again_inner(change))
+    }
+}
+
+/// Whether the approved head's commits `dropped`, below the PR's own, are on `base` already: the last is an ancestor
+/// of it (a rebase or merge landed them), or `base` gained since `from`, their merge base, one commit with their
+/// patch (a squash landed them) or a commit with each one's patch (they were picked one by one).
+async fn on_base(
+    github: &TrainGitHub,
+    repo: &str,
+    base: &str,
+    from: &str,
+    dropped: &[String],
+) -> Result<bool, GhError> {
+    let Some(last) = dropped.last() else {
+        return Ok(true);
+    };
+    if github
+        .range(repo, base, last)
+        .await?
+        .is_some_and(|(_, missing)| missing.is_empty())
+    {
+        return Ok(true);
+    }
+    let Some((_, landed)) = github.range(repo, from, base).await? else {
+        return Ok(false);
+    };
+    if landed.is_empty() || landed.len() > LANDED_MAX {
+        return Ok(false);
+    }
+    let mut patches = HashSet::new();
+    for sha in &landed {
+        // A commit with no diff of its own lands nothing.
+        if let Ok(patch) = github.commit_patch_id(repo, sha).await {
+            patches.insert(patch);
+        }
+    }
+    if patches.contains(&github.patch_id_from(repo, from, last).await?) {
+        return Ok(true);
+    }
+    for sha in dropped {
+        if !patches.contains(&github.commit_patch_id(repo, sha).await?) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 /// The train with its review gate: the gate holds the train's handle, so it can mark Changes ready.

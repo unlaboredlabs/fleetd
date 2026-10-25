@@ -688,4 +688,9 @@ pub(crate) const MIGRATIONS: &[&str] = &[
   ALTER TABLE metric_touches ADD COLUMN outside INTEGER NOT NULL DEFAULT 0;
   CREATE TABLE metric_identities (identity TEXT PRIMARY KEY, src TEXT NOT NULL);
   "#,
+    // Reviews: the patches whose reviewers kept ending without a verdict, so the lead is told of each once, across
+    // restarts.
+    r#"
+  CREATE TABLE review_stalls (change_id TEXT NOT NULL, patch_id TEXT NOT NULL, PRIMARY KEY (change_id, patch_id));
+  "#,
 ];

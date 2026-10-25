@@ -653,6 +653,19 @@ impl TrainGitHub {
             .map_err(|why| GhError::failed(format!("the patch id of {at}: {why}")))
     }
 
+    /// The patch id of the commit `sha` alone: its diff against its first parent.
+    pub async fn commit_patch_id(&self, repo: &str, sha: &str) -> Result<String, GhError> {
+        let path = format!("repos/{repo}/commits/{sha}");
+        let at = format!("{repo}@{}", &sha[..sha.len().min(12)]);
+        let diff = self
+            .exchange("GET", &path, "Accept: application/vnd.github.diff", &[])
+            .await?
+            .map_err(|(_, message)| GhError::failed(format!("the diff of {at}: {message}")))?;
+        stable_patch_id(diff)
+            .await
+            .map_err(|why| GhError::failed(format!("the patch id of {at}: {why}")))
+    }
+
     /// The commits `sha` has on its merge base with the commit `from`, oldest first, and that merge base: the range
     /// `git range-diff` compares. None when GitHub lists only some of them.
     pub async fn range(

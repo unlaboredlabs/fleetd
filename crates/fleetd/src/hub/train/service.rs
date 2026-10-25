@@ -66,6 +66,11 @@ pub enum Verdict {
 /// a clean review is already bound to this patch id, or Pending and later calls `Train::mark_ready`.
 pub trait ReviewGate: Send + Sync + 'static {
     fn review(&self, change: Change) -> BoxFut<'_, Verdict>;
+    /// Each pass over a Change still in `reviewing` at the same head, so a review that could not start, or whose
+    /// reviewer ended without a verdict and could not be replaced, starts again.
+    fn again(&self, _change: Change) -> BoxFut<'_, Verdict> {
+        Box::pin(async { Verdict::Pending })
+    }
 }
 
 #[derive(Clone)]
@@ -1142,15 +1147,20 @@ impl Train {
                 self.abandon(&change, "was merged outside the train").await;
             } else if pull.state != "open" {
                 self.abandon(&change, "was closed").await;
-            } else if (change.state == ChangeState::Queued
-                || pull.head.sha.to_lowercase() != change.head_sha.as_str())
-                && let Err(e) = self.admit(&change, &pull).await
+            } else if change.state == ChangeState::Queued
+                || pull.head.sha.to_lowercase() != change.head_sha.as_str()
             {
-                let why = error_text(&format!("GitHub: {}", e.message));
-                self.update(&change.change_id, Some(&[change.state]), |mut c| {
-                    c.last_error = Some(why);
-                    c
-                });
+                if let Err(e) = self.admit(&change, &pull).await {
+                    let why = error_text(&format!("GitHub: {}", e.message));
+                    self.update(&change.change_id, Some(&[change.state]), |mut c| {
+                        c.last_error = Some(why);
+                        c
+                    });
+                }
+            } else if change.state == ChangeState::Reviewing
+                && let Verdict::Ready(reviews) = self.gate.again(change.clone()).await
+            {
+                self.set_ready(&change, reviews);
             }
         }
     }
