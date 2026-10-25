@@ -1,29 +1,80 @@
-//! What the node reports about its machine with each heartbeat: CPUs, the 1-minute load, memory in use, free disk
-//! where its worktrees live, and the claude.ai usage windows its sessions last saw. Absent when the figures cannot be
-//! read. The hub pauses new agents on a machine whose disk or load is past its limit.
+//! What the node reports about its machine with each heartbeat: CPUs, the 1-minute load, memory in all and in use,
+//! free disk where its worktrees live, the memory and disk to allow per agent, and the claude.ai usage windows its
+//! sessions last saw. Absent when the figures cannot be read. The hub pauses new agents on a machine whose disk or
+//! load is past its limit.
 use std::path::Path;
+use std::sync::OnceLock;
 
 use fleetd_contracts::node_link::{LoginLimit, NodeDisk, NodeLoad};
 use fleetd_contracts::prim::{Count, Int, List, NonNegative};
+
+use super::config::NodeConfig;
+
+/// Memory to allow per agent when node.json sets none.
+pub const MEM_PER_AGENT_GB: u64 = 2;
+/// Disk to allow per new agent's worktree when node.json sets none: roughly a Rust worktree with sccache.
+pub const DISK_PER_AGENT_GB: u64 = 5;
+
+/// Physical memory and how much of it is available, in bytes.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Memory {
+    pub total: u64,
+    pub available: u64,
+}
+
+impl Memory {
+    /// Percent in use: total minus available.
+    pub fn used_pct(&self) -> Option<i64> {
+        (self.total > 0).then(|| {
+            ((self.total.saturating_sub(self.available) as f64 / self.total as f64) * 100.0)
+                .round()
+                .clamp(0.0, 100.0) as i64
+        })
+    }
+}
 
 /// `/proc/loadavg`'s first field.
 pub fn parse_loadavg(text: &str) -> Option<f64> {
     text.split_whitespace().next()?.parse().ok()
 }
 
-/// Percent of memory in use from `/proc/meminfo`: total minus available.
-pub fn parse_meminfo(text: &str) -> Option<i64> {
+/// `/proc/meminfo`'s `MemTotal` and `MemAvailable`, which it prints in kB.
+pub fn parse_meminfo(text: &str) -> Option<Memory> {
     let field = |name: &str| {
         text.lines()
             .find_map(|l| l.strip_prefix(name))
-            .and_then(|rest| rest.split_whitespace().next()?.parse::<f64>().ok())
+            .and_then(|rest| rest.split_whitespace().next()?.parse::<u64>().ok())
+            .map(|kb| kb.saturating_mul(1024))
     };
-    let total = field("MemTotal:")?;
-    let available = field("MemAvailable:")?;
-    (total > 0.0).then(|| {
-        (((total - available) / total) * 100.0)
-            .round()
-            .clamp(0.0, 100.0) as i64
+    Some(Memory {
+        total: field("MemTotal:")?,
+        available: field("MemAvailable:")?,
+    })
+}
+
+/// macOS's `vm_stat` with `sysctl -n hw.memsize`'s total. Available is free plus inactive pages, as psutil and
+/// Zabbix count it.
+pub fn parse_vm_stat(text: &str, total: u64) -> Option<Memory> {
+    let page = text
+        .lines()
+        .next()?
+        .split_once("page size of ")?
+        .1
+        .split_whitespace()
+        .next()?
+        .parse::<u64>()
+        .ok()?;
+    let pages = |name: &str| {
+        text.lines()
+            .find_map(|l| l.strip_prefix(name))
+            .and_then(|rest| rest.trim().trim_end_matches('.').parse::<u64>().ok())
+    };
+    let available = pages("Pages free:")?
+        .saturating_add(pages("Pages inactive:")?)
+        .saturating_mul(page);
+    Some(Memory {
+        total,
+        available: available.min(total),
     })
 }
 
@@ -41,20 +92,41 @@ fn load1() -> Option<f64> {
     if cfg!(target_os = "linux") {
         parse_loadavg(&std::fs::read_to_string("/proc/loadavg").ok()?)
     } else {
-        let out = std::process::Command::new("sysctl")
-            .args(["-n", "vm.loadavg"])
-            .output()
-            .ok()?;
-        parse_sysctl_loadavg(&String::from_utf8_lossy(&out.stdout))
+        parse_sysctl_loadavg(&output("sysctl", &["-n", "vm.loadavg"])?)
     }
 }
 
-fn mem_used_pct() -> Option<i64> {
+fn output(program: &str, args: &[&str]) -> Option<String> {
+    let out = std::process::Command::new(program)
+        .args(args)
+        .output()
+        .ok()?;
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+fn memory() -> Option<Memory> {
     if cfg!(target_os = "linux") {
         parse_meminfo(&std::fs::read_to_string("/proc/meminfo").ok()?)
     } else {
-        None
+        // Fixed while the machine is up, so asked once.
+        static TOTAL: OnceLock<Option<u64>> = OnceLock::new();
+        let total =
+            (*TOTAL.get_or_init(|| output("sysctl", &["-n", "hw.memsize"])?.trim().parse().ok()))?;
+        parse_vm_stat(&output("vm_stat", &[])?, total)
     }
+}
+
+/// node.json's per-agent figure in bytes, else the default. 0 counts as unset: the hub divides by it.
+pub fn per_agent_bytes(gb: Option<u64>, default_gb: u64) -> u64 {
+    gb.filter(|&gb| gb > 0)
+        .unwrap_or(default_gb)
+        .saturating_mul(1_000_000_000)
+}
+
+fn count(n: u64) -> Option<Count> {
+    Count::new(i64::try_from(n).ok()?).ok()
 }
 
 /// The default free-space floor: 10% of the volume or 20 GB, whichever is larger.
@@ -67,16 +139,11 @@ pub fn min_free_bytes(total: u64, min_free_gb: Option<u64>) -> u64 {
 /// The volume holding `home` (the node home: worktrees and transcripts), with node.json's `minFreeGb`.
 // The statvfs field types differ by platform.
 #[allow(clippy::unnecessary_cast)]
-fn disk(home: &Path) -> Option<NodeDisk> {
+fn disk(home: &Path, min_free_gb: Option<u64>) -> Option<NodeDisk> {
     let s = nix::sys::statvfs::statvfs(home).ok()?;
     let block = s.fragment_size() as u64;
     let total = (s.blocks() as u64).saturating_mul(block);
     let free = (s.blocks_available() as u64).saturating_mul(block);
-    let min_free_gb = super::config::read_config(home)
-        .ok()
-        .flatten()
-        .and_then(|c| c.min_free_gb);
-    let count = |n: u64| Count::new(i64::try_from(n).ok()?).ok();
     Some(NodeDisk {
         free_bytes: count(free)?,
         total_bytes: count(total)?,
@@ -84,16 +151,31 @@ fn disk(home: &Path) -> Option<NodeDisk> {
     })
 }
 
-/// Reads the machine now. Blocking (file reads, or `sysctl` on macOS): run it off the async threads.
+/// Reads the machine now. Blocking (file reads, or `sysctl` and `vm_stat` on macOS): run it off the async threads.
 pub fn read(limits: Vec<LoginLimit>, home: &Path) -> Option<NodeLoad> {
     let cpus = std::thread::available_parallelism().ok()?.get() as i64;
     let load1 = NonNegative::new(load1()?).ok()?;
+    let config = super::config::read_config(home).ok().flatten();
+    let setting = |f: fn(&NodeConfig) -> Option<u64>| config.as_ref().and_then(f);
+    let memory = memory();
     Some(NodeLoad {
         cpus: Int::new(cpus.clamp(1, 4096)).ok()?,
         load1,
-        mem_used_pct: mem_used_pct().and_then(|p| Int::new(p).ok()),
+        mem_used_pct: memory
+            .as_ref()
+            .and_then(Memory::used_pct)
+            .and_then(|p| Int::new(p).ok()),
+        mem_total_bytes: memory.as_ref().and_then(|m| count(m.total)),
+        mem_per_agent_bytes: count(per_agent_bytes(
+            setting(|c| c.mem_per_agent_gb),
+            MEM_PER_AGENT_GB,
+        )),
+        disk_per_agent_bytes: count(per_agent_bytes(
+            setting(|c| c.disk_per_agent_gb),
+            DISK_PER_AGENT_GB,
+        )),
         limits: List::unchecked(limits.into_iter().take(4).collect()),
-        disk: disk(home),
+        disk: disk(home, setting(|c| c.min_free_gb)),
     })
 }
 
@@ -104,11 +186,64 @@ mod tests {
     #[test]
     fn reads_load_and_memory_as_the_kernel_prints_them() {
         assert_eq!(parse_loadavg("3.10 2.05 1.00 2/1234 5678\n"), Some(3.1));
+        assert_eq!(parse_sysctl_loadavg("{ 1.23 1.10 0.98 }\n"), Some(1.23));
+    }
+
+    #[test]
+    fn reads_linux_memory_from_proc_meminfo() {
         let meminfo =
             "MemTotal:       32000000 kB\nMemFree:  1000 kB\nMemAvailable:   18880000 kB\n";
-        assert_eq!(parse_meminfo(meminfo), Some(41));
-        assert_eq!(parse_meminfo("MemTotal: 0 kB\nMemAvailable: 0 kB\n"), None);
-        assert_eq!(parse_sysctl_loadavg("{ 1.23 1.10 0.98 }\n"), Some(1.23));
+        let memory = parse_meminfo(meminfo).unwrap();
+        assert_eq!(
+            memory,
+            Memory {
+                total: 32_768_000_000,
+                available: 19_333_120_000
+            }
+        );
+        assert_eq!(memory.used_pct(), Some(41));
+        let empty = parse_meminfo("MemTotal: 0 kB\nMemAvailable: 0 kB\n").unwrap();
+        assert_eq!(empty.used_pct(), None);
+        // Kernels before 3.14 print no MemAvailable.
+        assert_eq!(parse_meminfo("MemTotal: 1000 kB\nMemFree: 10 kB\n"), None);
+    }
+
+    #[test]
+    fn reads_macos_memory_from_vm_stat() {
+        let vm_stat = "Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages free:                               13604.
+Pages active:                            344018.
+Pages inactive:                          339738.
+Pages speculative:                         4560.
+Pages throttled:                              0.
+Pages wired down:                        150046.
+Pages purgeable:                          16180.
+\"Translation faults\":                 812938417.
+Pages occupied by compressor:            273395.
+";
+        let total = 17_179_869_184; // 16 GB, as `sysctl -n hw.memsize` prints it
+        let memory = parse_vm_stat(vm_stat, total).unwrap();
+        assert_eq!(memory.total, total);
+        assert_eq!(memory.available, (13_604 + 339_738) * 16_384);
+        assert_eq!(memory.used_pct(), Some(66));
+        // Intel Macs use 4 KB pages.
+        let intel = "Mach Virtual Memory Statistics: (page size of 4096 bytes)\nPages free: 100.\nPages inactive: 900.\n";
+        assert_eq!(
+            parse_vm_stat(intel, 8_192_000).unwrap().used_pct(),
+            Some(50)
+        );
+        assert_eq!(
+            parse_vm_stat("Pages free: 100.\nPages inactive: 900.\n", 8_192_000),
+            None
+        );
+    }
+
+    #[test]
+    fn per_agent_sizes_default_to_2_gb_of_memory_and_5_gb_of_disk() {
+        assert_eq!(per_agent_bytes(None, MEM_PER_AGENT_GB), 2_000_000_000);
+        assert_eq!(per_agent_bytes(None, DISK_PER_AGENT_GB), 5_000_000_000);
+        assert_eq!(per_agent_bytes(Some(3), MEM_PER_AGENT_GB), 3_000_000_000);
+        assert_eq!(per_agent_bytes(Some(0), DISK_PER_AGENT_GB), 5_000_000_000);
     }
 
     #[test]

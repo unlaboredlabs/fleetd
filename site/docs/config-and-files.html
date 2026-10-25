@@ -137,6 +137,14 @@ after you change it.</p>
 <td>New agents wait while the disk holding the worktrees has less than this many GB free. Absent: 10% of the disk or 20 GB, whichever is larger. <code dir="auto">0</code> turns it off. Read with every heartbeat, no restart needed. See <a href="/docs/machines#guard">Disk and load</a>.</td>
 </tr>
 <tr>
+<td><code dir="auto">memPerAgentGb</code></td>
+<td>GB of memory to allow per agent when the hub works out how many agents this machine runs at once. Absent or <code dir="auto">0</code>: 2 GB. Read with every heartbeat.</td>
+</tr>
+<tr>
+<td><code dir="auto">diskPerAgentGb</code></td>
+<td>GB of disk to allow per new agent’s worktree when the hub works out how many more fit above <code dir="auto">minFreeGb</code>. Absent or <code dir="auto">0</code>: 5 GB, about a Rust worktree with a build cache; a JS project needs 1 to 2. Read with every heartbeat.</td>
+</tr>
+<tr>
 <td><code dir="auto">promptCacheTtl</code></td>
 <td>The prompt cache TTL per kind of session, <code dir="auto">"5m"</code> or <code dir="auto">"1h"</code>: <code dir="auto">lead</code>, <code dir="auto">worker</code> (a task’s agent) and <code dir="auto">plain</code> (a thread you start), e.g. <code dir="auto">{"worker": "1h"}</code>. Absent: an hour for leads and your threads, which sit idle between turns, and 5 minutes for task agents, which work in one burst. Read at each session start. See <a href="/docs/reference/agent-tools#settings-fleetd-forces">Settings fleetd forces</a>.</td>
 </tr>

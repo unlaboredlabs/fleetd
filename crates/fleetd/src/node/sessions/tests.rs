@@ -1103,6 +1103,8 @@ fn the_prompt_cache_ttl_follows_the_role_then_the_env_then_node_json() {
         cmd_roots: None,
         claude_config_dir: None,
         min_free_gb: None,
+        mem_per_agent_gb: None,
+        disk_per_agent_gb: None,
         prompt_cache_ttl: [(Worker, crate::node::runner::claude::CacheTtl::FiveMinutes)].into(),
         enrolled: true,
     };
