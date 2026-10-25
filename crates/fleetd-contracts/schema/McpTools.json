@@ -9870,6 +9870,18 @@
           "$ref": "#/$defs/UsageParked",
           "description": "M4: its thread hit a usage limit; the task is idle until fleetd sends \"continue\" at `resumeAt`."
         },
+        "paths": {
+          "description": "The files the lead said a writer will change (`spawn_agent` `paths`), matched against later work.",
+          "items": {
+            "maxLength": 500,
+            "minLength": 1,
+            "pattern": "^[^\\r\\n]*$",
+            "type": "string"
+          },
+          "maxItems": 50,
+          "minItems": 1,
+          "type": "array"
+        },
         "pr": {
           "description": "The PR a review task reviews. Required at spawn for review; absent on older rows (hub-spawned judges).",
           "type": "string"

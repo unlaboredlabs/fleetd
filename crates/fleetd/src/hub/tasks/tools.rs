@@ -145,7 +145,7 @@ pub async fn lead_call(
     match call {
         LeadCall::TaskSpawn(input) => {
             let asked = input.profile;
-            let task = tasks.spawn(caller, input).await?;
+            let (task, elsewhere) = tasks.spawn_noted(caller, input).await?;
             let based = task.base.as_ref().map(|b| {
                 format!(
                     "Its worktree is {}.",
@@ -156,6 +156,7 @@ pub async fn lead_call(
                 based,
                 tasks.queued_next(&task),
                 tasks.also_writing(&task).await,
+                elsewhere,
             ]
             .into_iter()
             .flatten()

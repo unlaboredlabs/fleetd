@@ -7,6 +7,9 @@ pub mod base;
 pub mod cap;
 #[cfg(test)]
 mod cap_tests;
+pub mod duplicates;
+#[cfg(test)]
+mod duplicates_tests;
 #[cfg(test)]
 mod guard_tests;
 pub mod hooks;
@@ -43,7 +46,9 @@ use crate::hub::store::parse_ms;
 use crate::hub::store::{
     EventLog, HubDb, HubStore, NewEvent, StoreError, WaitInput, iso_ms, now_ms,
 };
+use crate::hub::work::Observed;
 use fleetd_contracts::mcp::ErrorCode;
+use fleetd_contracts::work::WorkScope;
 use hooks::UsageGate;
 use ports::{LaunchRequest, PortError, TaskError, TaskPorts, WakeKind, Worktree};
 use render::{branch_for, find_pr_url, render_task_prompt, tail_of};
@@ -391,6 +396,11 @@ impl Tasks {
                 task.title.as_str(),
             )
         });
+        let elsewhere = if write {
+            self.elsewhere_for(task).await
+        } else {
+            Vec::new()
+        };
         let set = self.d.db.prompts().current(Some(r));
         let prompt = render_task_prompt(
             &set,
@@ -401,6 +411,7 @@ impl Tasks {
                 done_when: brief.as_ref().map(|b| self.d.ports.done_when_text(b)),
                 branch: branch.as_deref(),
                 base_branch: base_branch.as_deref(),
+                elsewhere: &elsewhere,
             },
         );
         let request = LaunchRequest {
@@ -1088,7 +1099,40 @@ impl Tasks {
         caller: &TaskCaller,
         input: SpawnInput,
     ) -> Result<Task, TaskError> {
+        self.spawn_noted(caller, input).await.map(|(task, _)| task)
+    }
+
+    /// `spawn`, with what a writer's duplicate check has to say: the work elsewhere it may overlap, or that it was
+    /// not checked. A writer that repeats work in flight is refused (`duplicates`).
+    pub async fn spawn_noted(
+        self: &Arc<Self>,
+        caller: &TaskCaller,
+        input: SpawnInput,
+    ) -> Result<(Task, Option<String>), TaskError> {
         let r = &caller.project_ref;
+        // Binding may ask the node, and so does each writer's changed paths: both happen before the lock, the paths
+        // within `OBSERVE_TIMEOUT`, so a slow node never holds up other task calls. Under the lock the check reads
+        // the store only.
+        let checked = if input.kind == TaskKind::Write {
+            let scope = self
+                .d
+                .ports
+                .work_scope(r, true)
+                .await
+                .map_err(store_error)?;
+            let observed = match &scope {
+                Some(scope) => self
+                    .d
+                    .ports
+                    .work_observe(scope, OBSERVE_TIMEOUT)
+                    .await
+                    .map_err(store_error)?,
+                None => Observed::default(),
+            };
+            Some((scope, observed))
+        } else {
+            None
+        };
         let _guard = self.lock.lock().await;
         let ws = match self.workstream(&input.workstream_id) {
             Some(ws) if same_project(&ws.project_ref, r) => ws,
@@ -1135,6 +1179,12 @@ impl Tasks {
                 return Err(lead_error(e.0.code, e.0.message, e.0.fix.as_deref()));
             }
         }
+        let (note, overridden) = match &checked {
+            Some((scope, observed)) => {
+                self.check_duplicates(r, scope.as_ref(), observed, &input)?
+            }
+            None => (None, Vec::new()),
+        };
         // A broken policy file refuses the spawn now, not at its launch. An offline machine's file can't be read: the
         // task queues "offline", and its launch reads the file and still refuses a broken one.
         match self.d.policies.get(r).await {
@@ -1153,6 +1203,7 @@ impl Tasks {
             qa: input.qa,
             pr: input.pr.clone(),
             item_id: input.item.clone(),
+            paths: input.paths.clone(),
             state: TaskState::Queued,
             queued_reason: None,
             thread_ref: None,
@@ -1180,7 +1231,16 @@ impl Tasks {
                 Ok(task)
             })
             .map_err(store_error)?;
-        Ok(self
+        if !overridden.is_empty() {
+            tracing::info!(
+                task = task.task_id.as_str(),
+                project = %r.project_id,
+                over = overridden.join(", "),
+                why = input.not_duplicate_why.as_ref().map_or("", |w| w.as_str()),
+                "tasks: spawned over a possible duplicate"
+            );
+        }
+        let task = self
             .try_start(
                 StoredTask {
                     task,
@@ -1188,7 +1248,58 @@ impl Tasks {
                 },
                 false,
             )
-            .await)
+            .await;
+        Ok((task, note))
+    }
+
+    /// The work in flight a writer may overlap, read again from the store as it starts, for its prompt: no node is
+    /// asked, as a launch holds the tasks lock. Nothing when it can't be read: the spawn was checked already.
+    async fn elsewhere_for(&self, task: &Task) -> Vec<String> {
+        let r = &task.project_ref;
+        let Ok(Some(scope)) = self.d.ports.work_scope(r, false).await else {
+            return Vec::new();
+        };
+        let intent = duplicates::intent(
+            r,
+            &scope,
+            task.title.as_str(),
+            task.prompt.as_str(),
+            task.item_id.as_ref(),
+            task.pr.as_ref(),
+            task.paths.iter().flatten().map(|p| p.as_str().to_owned()),
+        );
+        match self.d.ports.work_match(&scope, &intent, &HashMap::new()) {
+            Ok(matches) => duplicates::for_writer(&matches, &task.task_id),
+            Err(error) => {
+                tracing::warn!(%error, task = task.task_id.as_str(), "tasks: work elsewhere not read");
+                Vec::new()
+            }
+        }
+    }
+
+    /// A writer against the work in flight on its project's repo and base, with the writers' paths gathered before
+    /// the lock: refused when it repeats some, else what it may overlap (the result's `elsewhere:` line) and the ids
+    /// `notDuplicateOf` let it through over. Reads the store only.
+    fn check_duplicates(
+        &self,
+        r: &ProjectRef,
+        scope: Option<&WorkScope>,
+        observed: &Observed,
+        input: &SpawnInput,
+    ) -> Result<(Option<String>, Vec<String>), TaskError> {
+        let Some(scope) = scope else {
+            return Ok((Some(duplicates::UNBOUND.to_owned()), Vec::new()));
+        };
+        let intent = duplicates::spawn_intent(input, r, scope);
+        let matches = self
+            .d
+            .ports
+            .work_match(scope, &intent, &observed.paths)
+            .map_err(store_error)?;
+        let passed = duplicates::judge(&matches, input, &observed.unknown)?;
+        let note = (!passed.elsewhere.is_empty())
+            .then(|| format!("elsewhere: {}", passed.elsewhere.join("; ")));
+        Ok((note, passed.overridden))
     }
 
     /// Steers a running task; continues an ended one in the same thread, which re-takes its slot.
@@ -1441,6 +1552,8 @@ impl Tasks {
 }
 
 const ALSO_WRITING_MAX: usize = 10;
+/// How long a spawn waits for a node to say what its writers changed; one that hasn't by then is "changes unknown".
+const OBSERVE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 const ALSO_WRITING_PATHS: usize = 5;
 const LIVE_TASKS: [TaskState; 3] = [TaskState::Queued, TaskState::Running, TaskState::Idle];
 const SCAN_LIMIT: usize = 10_000;
@@ -1511,10 +1624,15 @@ impl Tasks {
         if others.is_empty() {
             return None;
         }
+        // `None`: its node didn't say, or not within `OBSERVE_TIMEOUT`.
         let changes = futures_util::future::join_all(others.iter().map(|t| async {
             match &t.thread_ref {
-                Some(thread) => self.d.ports.changes(thread).await.map(|c| c.paths),
-                None => None,
+                Some(thread) => tokio::time::timeout(OBSERVE_TIMEOUT, self.d.ports.changes(thread))
+                    .await
+                    .ok()
+                    .flatten()
+                    .map(|c| c.paths),
+                None => Some(Vec::new()),
             }
         }))
         .await;
@@ -1522,8 +1640,9 @@ impl Tasks {
             .iter()
             .zip(changes)
             .map(|(t, paths)| {
-                let paths = match paths.filter(|p| !p.is_empty()) {
-                    None => "no changes yet".to_owned(),
+                let paths = match paths {
+                    None => "changes unknown".to_owned(),
+                    Some(p) if p.is_empty() => "no changes yet".to_owned(),
                     Some(p) if p.len() > ALSO_WRITING_PATHS => format!(
                         "{}, +{} more",
                         p[..ALSO_WRITING_PATHS].join(", "),

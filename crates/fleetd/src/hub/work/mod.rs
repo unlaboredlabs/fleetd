@@ -25,6 +25,7 @@ use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{ProjectRef, ThreadRef, Timestamp};
@@ -34,13 +35,13 @@ use fleetd_contracts::train::Change;
 use fleetd_contracts::verification::CommitSha;
 use fleetd_contracts::work::{
     BranchName, CLAIM_KEYS_MAX, CLAIM_PATHS_MAX, CLAIM_TTL_MS, Claim, ClaimEnd, ClaimId,
-    ClaimObserved, ClaimOwner, ClaimState, EXPIRED_SHOWN_MS, RepoKey, WorkEventData, WorkItem,
-    WorkKey, WorkPath, WorkScope,
+    ClaimObserved, ClaimOwner, ClaimState, EXPIRED_SHOWN_MS, MatchStrength, RepoKey, WorkEventData,
+    WorkItem, WorkKey, WorkMatch, WorkPath, WorkScope,
 };
 
 use crate::clock::Clock;
 use crate::hub::api::Hub;
-use crate::hub::store::{EventLog, HubDb, NewEvent, StoreError, iso_ms, now_ms};
+use crate::hub::store::{EventLog, HubDb, NewEvent, StoreError, iso_ms, now_ms, parse_ms};
 use crate::hub::sweep::SweepCheck;
 use crate::hub::tasks::records::TaskRecords;
 use crate::hub::train::records::{ChangeRecords, ListFilter};
@@ -63,6 +64,22 @@ impl WorkPorts for TaskPaths {
     fn changed_paths<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Option<Vec<String>>> {
         Box::pin(async move { self.0.changes(thread).await.map(|c| c.paths) })
     }
+}
+
+/// Ports for a `Work` that never reads the view, such as the CLI's releasing a revoked key's claims.
+pub struct NoPorts;
+
+impl WorkPorts for NoPorts {
+    fn changed_paths<'a>(&'a self, _thread: &'a ThreadRef) -> BoxFut<'a, Option<Vec<String>>> {
+        Box::pin(async { None })
+    }
+}
+
+/// The scope's writers' changed paths, by task, and the writers whose node didn't say (or not in time).
+#[derive(Clone, Debug, Default)]
+pub struct Observed {
+    pub paths: HashMap<TaskId, Vec<String>>,
+    pub unknown: HashSet<TaskId>,
 }
 
 /// A claim as asked for; the hub numbers it and sets its state and times.
@@ -193,13 +210,34 @@ impl Work {
     }
 
     /// Extends an active or expired claim by `CLAIM_TTL_MS` from now, with what its branch changed when given. An
-    /// expired claim is active again (its work is clearly going on). `None` for an unknown, landed or released one.
+    /// expired claim is active again (its work is clearly going on), unless it has dropped out of the view and
+    /// someone else has taken the same work since: then it is released, saying who. `None` for that, and for an
+    /// unknown, landed or released one.
     pub fn renew(
         &self,
         claim_id: &ClaimId,
         observed: Option<ClaimObserved>,
     ) -> Result<Option<Claim>, StoreError> {
         let now = self.now();
+        if let Some(claim) = self.get(claim_id)?
+            && let Some(taker) = self.taken_since(&claim, now)?
+        {
+            let reason = format!("{taker} took the same work after this claim expired");
+            let released = self.db.transaction(|c| {
+                let Some(claim) =
+                    store::get(c, claim_id)?.filter(|c| c.state == ClaimState::Expired)
+                else {
+                    return Ok(None);
+                };
+                let claim = ended(claim, ClaimState::Released, now, &reason, None);
+                store::put(c, &claim)?;
+                Ok(Some(claim))
+            })?;
+            if let Some(claim) = &released {
+                self.announce_end(claim)?;
+            }
+            return Ok(None);
+        }
         let renewed = self.db.transaction(|c| {
             let Some(mut claim) = store::get(c, claim_id)? else {
                 return Ok(None);
@@ -228,6 +266,53 @@ impl Work {
             )?;
         }
         Ok(Some(claim))
+    }
+
+    /// For an expired claim no longer in the view (`EXPIRED_SHOWN_MS`): the id of work in flight that is newer than
+    /// its expiry, held by someone else, and shares one of its exact keys.
+    fn taken_since(&self, claim: &Claim, now: i64) -> Result<Option<String>, StoreError> {
+        let Some(end) = claim
+            .end
+            .as_ref()
+            .filter(|_| claim.state == ClaimState::Expired)
+        else {
+            return Ok(None);
+        };
+        if parse_ms(end.at.as_str()).is_some_and(|at| at > now - EXPIRED_SHOWN_MS) {
+            return Ok(None);
+        }
+        let scope = WorkScope {
+            repo_key: claim.repo_key.clone(),
+            base: claim.base.clone(),
+        };
+        // Timestamps are all the hub's own ISO form, so they compare as text.
+        let items: Vec<WorkItem> = view::items(&self.sources(&scope)?)
+            .into_iter()
+            .filter(|i| i.since.as_str() > end.at.as_str())
+            .filter(|i| i.claim_id.as_ref() != Some(&claim.claim_id))
+            .collect();
+        let ms = check::matcher_scope(&scope);
+        let mut intent = matcher::Work::read(
+            Some(claim.owner.key_id.as_str().to_owned()),
+            claim.title.as_str(),
+            "",
+            &ms,
+        );
+        let declared = claim
+            .keys
+            .iter()
+            .cloned()
+            .chain(claim.branch.clone().map(WorkKey::Branch))
+            .flat_map(|k| check::matcher_keys(&k, &ms));
+        for key in declared {
+            if !intent.keys.iter().any(|k| k.key == key) {
+                intent.keys.push(matcher::Key::declared(key));
+            }
+        }
+        Ok(check::matches_in(&items, &intent, &scope)
+            .into_iter()
+            .find(|m| m.strength == MatchStrength::Exact)
+            .map(|m| m.item.id.as_str().to_owned()))
     }
 
     /// Ends an active claim as landed or released, and announces it (`work.ended`). `None` when it is unknown or
@@ -301,7 +386,18 @@ impl Work {
     /// The work in flight on the scope: live write tasks and Changes of every project bound to it, and its claims
     /// (expired ones for `EXPIRED_SHOWN_MS`, last). Each writer's changed paths are asked of its node.
     pub async fn in_flight(&self, scope: &WorkScope) -> Result<Vec<WorkItem>, StoreError> {
-        let mut sources = self.sources(scope)?;
+        let observed = self.observe(scope, None).await?;
+        self.in_flight_observed(scope, &observed.paths)
+    }
+
+    /// What each of the scope's writers has changed so far, asked of their nodes at once. With `timeout`, a node
+    /// that hasn't answered by then is not waited on: its writers are `unknown`, like those whose node couldn't say.
+    pub async fn observe(
+        &self,
+        scope: &WorkScope,
+        timeout: Option<Duration>,
+    ) -> Result<Observed, StoreError> {
+        let sources = self.sources(scope)?;
         let threads: Vec<(TaskId, ThreadRef)> = sources
             .tasks
             .iter()
@@ -309,18 +405,51 @@ impl Work {
             .filter(|t| t.kind == TaskKind::Write)
             .filter_map(|t| Some((t.task_id.clone(), t.thread_ref.clone()?)))
             .collect();
-        let paths = futures_util::future::join_all(
-            threads
-                .iter()
-                .map(|(_, thread)| self.ports.changed_paths(thread)),
-        )
+        let paths = futures_util::future::join_all(threads.iter().map(|(_, thread)| async move {
+            let asked = self.ports.changed_paths(thread);
+            match timeout {
+                Some(t) => tokio::time::timeout(t, asked).await.ok().flatten(),
+                None => asked.await,
+            }
+        }))
         .await;
-        sources.observed = threads
-            .into_iter()
-            .zip(paths)
-            .filter_map(|((task_id, _), paths)| Some((task_id, paths?)))
-            .collect::<HashMap<_, _>>();
+        let mut observed = Observed::default();
+        for ((task_id, _), paths) in threads.into_iter().zip(paths) {
+            match paths {
+                Some(paths) => {
+                    observed.paths.insert(task_id, paths);
+                }
+                None => {
+                    observed.unknown.insert(task_id);
+                }
+            }
+        }
+        Ok(observed)
+    }
+
+    /// `in_flight` with the writers' changed paths already gathered (`observe`): reads the store only, asks no node.
+    pub fn in_flight_observed(
+        &self,
+        scope: &WorkScope,
+        paths: &HashMap<TaskId, Vec<String>>,
+    ) -> Result<Vec<WorkItem>, StoreError> {
+        let mut sources = self.sources(scope)?;
+        sources.observed = paths.clone();
         Ok(view::items(&sources))
+    }
+
+    /// `check` with the writers' changed paths already gathered: reads the store only, asks no node.
+    pub fn check_observed(
+        &self,
+        scope: &WorkScope,
+        intent: &matcher::Work,
+        paths: &HashMap<TaskId, Vec<String>>,
+    ) -> Result<Vec<WorkMatch>, StoreError> {
+        Ok(check::matches_in(
+            &self.in_flight_observed(scope, paths)?,
+            intent,
+            scope,
+        ))
     }
 
     fn sources(&self, scope: &WorkScope) -> Result<view::Sources, StoreError> {

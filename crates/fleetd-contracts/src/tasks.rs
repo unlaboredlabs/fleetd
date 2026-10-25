@@ -40,6 +40,9 @@ pub enum TaskState {
 pub type TaskTitle = Line<1, 80>;
 pub type TaskPrompt = Text<1, 8000>;
 
+/// Paths a writer's spawn may declare.
+pub const SPAWN_PATHS_MAX: usize = 50;
+
 /// A review task names its PR; only review tasks may be QA runs.
 pub fn task_spawn_rule(kind: TaskKind, qa: Option<bool>, pr: bool) -> Result<(), String> {
     if kind == TaskKind::Review && !pr {
@@ -105,6 +108,8 @@ pub struct Task {
     /// The plan item it was spawned for (`--item`).
     #[serde(default)]
     pub item_id: Option<crate::plan::PlanItemId>,
+    /// The files the lead said a writer will change (`spawn_agent` `paths`), matched against later work.
+    pub paths: Option<List<crate::work::WorkPath, 1, SPAWN_PATHS_MAX>>,
     pub state: TaskState,
     /// Why it is queued, e.g. "fleet cap: 40 of 40 running".
     pub queued_reason: Option<Text<1, 200>>,

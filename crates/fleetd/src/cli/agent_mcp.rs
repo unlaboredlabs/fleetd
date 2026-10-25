@@ -73,8 +73,11 @@ static TOOLS: &[Tool] = &[
         "task_spawn",
         "Start a fleetd agent (a task) with its own session, slot and lane. kind write|read|review; a writer \
          gets its own worktree and branch; a review task needs pr. profile is high by default; medium is for mechanical \
-         work only, and reviews always run high. A full slot board queues it and it starts by itself. The result names \
-         the other writers running in the project. Its result arrives in a later wake: end your turn instead of waiting.",
+         work only, and reviews always run high. A full slot board queues it and it starts by itself. A writer is \
+         checked against the work in flight on the repo: one that repeats it is refused (taken, or a possible \
+         duplicate); if it is different work, call again with notDuplicateOf and notDuplicateWhy. A person's claim is \
+         theirs: ask in chat. The result names the other writers running in the project and the work elsewhere it may \
+         overlap. Its result arrives in a later wake: end your turn instead of waiting.",
         inline_schema::<TaskSpawnCall>,
     ),
     lead(

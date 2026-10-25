@@ -3363,6 +3363,8 @@ export type Task = {
   kind: TaskKind;
   /** M4: its thread hit a usage limit; the task is idle until fleetd sends "continue" at `resumeAt`. */
   parked?: UsageParked;
+  /** The files the lead said a writer will change (`spawn_agent` `paths`), matched against later work. */
+  paths?: string[];
   /** The PR a review task reviews. Required at spawn for review; absent on older rows (hub-spawned judges). */
   pr?: string;
   /** Resolved at spawn. Rows stored with a model and effort read as `high` (the hub migrates its own). */

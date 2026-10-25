@@ -13,6 +13,7 @@ use fleetd_contracts::prim::NonEmpty;
 use fleetd_contracts::sessions::{SessionWorkspace, WorktreeBase};
 use fleetd_contracts::tasks::TaskId;
 use fleetd_contracts::usage::UsageParked;
+use fleetd_contracts::work::{WorkMatch, WorkScope};
 
 use super::hooks::UsageGate;
 use super::ports::{
@@ -26,6 +27,8 @@ use crate::hub::leads::wakes::{LineKind, Trigger};
 use crate::hub::link::commands::CommandInput;
 use crate::hub::link::lead_calls::{AgentDirectory, CallerAgent, LeadCallFuture};
 use crate::hub::link::{LeadCallHandler, LeadCaller, NodeCommands};
+use crate::hub::store::StoreError;
+use crate::hub::work::{Observed, matcher};
 
 pub(crate) fn port_error(error: ExecutorError) -> PortError {
     match error {
@@ -186,6 +189,48 @@ impl TaskPorts for HubTaskPorts {
                 .await
                 .map_err(port_error)
         })
+    }
+
+    fn work_scope<'a>(
+        &'a self,
+        project_ref: &'a ProjectRef,
+        bind: bool,
+    ) -> BoxFut<'a, Result<Option<WorkScope>, StoreError>> {
+        Box::pin(async move {
+            let Some(hub) = self.hub() else {
+                return Ok(None);
+            };
+            match hub.work.scope_of(project_ref)? {
+                Some(scope) => Ok(Some(scope)),
+                None if bind => crate::hub::work::bind_from_root(&hub, project_ref).await,
+                None => Ok(None),
+            }
+        })
+    }
+
+    fn work_observe<'a>(
+        &'a self,
+        scope: &'a WorkScope,
+        timeout: std::time::Duration,
+    ) -> BoxFut<'a, Result<Observed, StoreError>> {
+        Box::pin(async move {
+            match self.hub() {
+                Some(hub) => hub.work.observe(scope, Some(timeout)).await,
+                None => Ok(Observed::default()),
+            }
+        })
+    }
+
+    fn work_match(
+        &self,
+        scope: &WorkScope,
+        intent: &matcher::Work,
+        paths: &std::collections::HashMap<TaskId, Vec<String>>,
+    ) -> Result<Vec<WorkMatch>, StoreError> {
+        match self.hub() {
+            Some(hub) => hub.work.check_observed(scope, intent, paths),
+            None => Ok(Vec::new()),
+        }
     }
 
     fn changes<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Option<ThreadChanges>> {
