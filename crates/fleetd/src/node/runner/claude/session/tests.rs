@@ -88,12 +88,36 @@ impl Fake {
             transcript: Some(dir.path().join("transcript.jsonl")),
         };
         let mut handle = spawn_retrying(&runner, spec);
-        // Init comes once the escaping child exists, so nothing below races its start.
+        // Init comes once the escaping child has written its pid.
         match handle.events.recv().await {
             Some(RunnerEvent::Init { model, .. }) => assert_eq!(model, "fake"),
             other => panic!("expected init, got {other:?}"),
         }
-        Self { dir, handle }
+        let fake = Self { dir, handle };
+        fake.until_the_tool_settles();
+        fake
+    }
+
+    /// Blocks until the tool runs its last image (FAKE_CLAUDE's `sleep`, or DETACHED_TOOL itself) with its marker
+    /// readable. Its pid is written from `sh` just before the `exec sleep`, and mid-exec `/proc/<pid>/environ` reads
+    /// empty, so a sweep then could not find it by its marker. Real time, not tokio's: some tests pause the clock.
+    fn until_the_tool_settles(&self) {
+        let tool = self.tool_pid();
+        let marker = format!("{}=", process::SESSION_MARKER).into_bytes();
+        let settled = || {
+            let comm = std::fs::read_to_string(format!("/proc/{tool}/comm")).unwrap_or_default();
+            let env = std::fs::read(format!("/proc/{tool}/environ")).unwrap_or_default();
+            ["sleep", "tool"].contains(&comm.trim())
+                && env.split(|b| *b == 0).any(|var| var.starts_with(&marker))
+        };
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        while !settled() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the tool {tool} never started"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
     }
 
     fn tool_pid(&self) -> i32 {
