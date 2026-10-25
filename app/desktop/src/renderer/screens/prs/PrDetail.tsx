@@ -1,5 +1,6 @@
-// One PR: its title and where it stands, then Overview (the facts, the description, checks, reviews and their
-// findings, its way to main so far) or Changes (the files and their diff). Open on GitHub stays one click away.
+// One PR: its title and where it stands, then Overview (a summary of where it is and what it waits on, the
+// description, checks, reviews and their findings, its way to main so far) or Changes (the files and their diff).
+// Open on GitHub stays one click away.
 import { ExternalLink } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { useData, useToolQuery } from "../../src/data/react";
@@ -8,6 +9,7 @@ import type { PrCheck, PrGetOutput, PrReviewEntry, PrRow } from "../../../shared
 import { codeRuns, machineCode } from "../chat/format";
 import { Button, InlineCode, Markdown, StatusChip, Tab, TabList, TabPanel, Tabs, Text, Truncate, cx, toast } from "../../ui";
 import { AgentRowLink } from "../agents/AgentsPane";
+import { CheckIcon, ChecksMark } from "./Bits";
 import { DiffPane } from "./DiffPane";
 import {
   authorWords,
@@ -26,6 +28,7 @@ import {
   stat,
   verdictWord,
   when,
+  type Tone,
 } from "./words";
 import s from "./prs.module.css";
 
@@ -96,14 +99,14 @@ export function PrDetail({ repo, number, row, nowMs, tab, onTab, githubSaid }: P
               {pr.title === "" ? `#${pr.number}` : pr.title}
             </Truncate>
           </span>
-          <Button variant="secondary" icon={<ExternalLink aria-hidden />} onClick={() => openExternal(pr.url)}>
+          <Button variant="secondary" size="sm" icon={<ExternalLink aria-hidden />} onClick={() => openExternal(pr.url)}>
             Open on GitHub
           </Button>
         </div>
         <div className={s.prMeta}>
           <StatusChip tone={state.tone}>{state.word}</StatusChip>
-          <Text size="sm" tone="quiet" tabular>
-            #{pr.number} in {pr.repo}
+          <Text size="xs" tone="quiet" tabular>
+            {pr.repo}#{pr.number}
           </Text>
           {pr.branch !== undefined ? (
             <span className={s.branch} data-text="code">
@@ -113,7 +116,7 @@ export function PrDetail({ repo, number, row, nowMs, tab, onTab, githubSaid }: P
             </span>
           ) : null}
           {additions !== undefined && deletions !== undefined ? (
-            <Text size="sm" tone="quiet" tabular>
+            <Text size="xs" tone="quiet" tabular>
               <span className={s.add}>+{stat(additions)}</span> <span className={s.del}>−{stat(deletions)}</span>
             </Text>
           ) : null}
@@ -170,48 +173,52 @@ function Overview({ data, now, githubSaid }: { data: PrGetOutput; now: number; g
           </Text>
         </div>
       ) : null}
-      <dl className={s.facts}>
-        <Fact label="Status">
-          <Text size="sm">{state.sentence}</Text>
+      <div className={cx(s.summary, TONE_CLASS[state.tone])} aria-label="Summary" role="group">
+        <div className={s.summaryState}>
+          <Text size="md" strong={state.tone === "failed" || state.tone === "needs-you"}>
+            {state.sentence}
+          </Text>
           {pr.queue?.reason !== undefined && pr.queue.reason !== "" ? (
-            <Text size="xs" tone="quiet" preserveLines>
+            <Text size="sm" tone="quiet" preserveLines>
               <WithCode text={pr.queue.reason} />
             </Text>
           ) : null}
-        </Fact>
-        <Fact label="Checks">
-          {checks === undefined ? (
-            <Text size="sm" tone="quiet">
-              {pr.checks === undefined ? "Not known: GitHub wasn’t reached." : "None ran."}
+        </div>
+        <dl className={s.facts}>
+          <Fact label="Checks">
+            {checks === undefined ? (
+              <Text size="sm" tone="quiet">
+                {pr.checks === undefined ? "Not known: GitHub wasn’t reached." : "None ran."}
+              </Text>
+            ) : (
+              <ChecksMark hint={checks} size="sm" />
+            )}
+          </Fact>
+          <Fact label="Reviews">
+            <Text size="sm" tone={reviews?.tone === "failed" ? "danger" : reviews === undefined ? "quiet" : "default"}>
+              {reviews?.text ?? "None asked for."}
             </Text>
-          ) : (
-            <Text size="sm" tone={checks.tone === "failed" ? "danger" : "default"}>
-              {checks.text}
+          </Fact>
+          <Fact label="Written by">
+            <Text size="sm" tone={author === undefined ? "quiet" : "default"}>
+              {author ?? "Not known."}
             </Text>
-          )}
-        </Fact>
-        <Fact label="Reviews">
-          <Text size="sm" tone={reviews?.tone === "failed" ? "danger" : reviews === undefined ? "quiet" : "default"}>
-            {reviews?.text ?? "None asked for."}
-          </Text>
-        </Fact>
-        <Fact label="Written by">
-          <Text size="sm" tone={author === undefined ? "quiet" : "default"}>
-            {author ?? "Not known."}
-          </Text>
-          {pr.author.title !== undefined && pr.author.title !== "" ? (
-            <Text size="xs" tone="quiet">
-              Asked to: {pr.author.title}
+            {pr.author.title !== undefined && pr.author.title !== "" && pr.author.title !== pr.title ? (
+              <Text size="xs" tone="quiet">
+                Asked to: {pr.author.title}
+              </Text>
+            ) : null}
+          </Fact>
+          <Fact label="Opened">
+            <Text size="sm" tabular>
+              {when(pr.createdAt, now)}
+              <Text size="sm" tone="quiet" tabular>
+                {pr.mergedAt !== undefined ? ` · merged ${when(pr.mergedAt, now)}` : ` · updated ${when(pr.updatedAt, now)}`}
+              </Text>
             </Text>
-          ) : null}
-        </Fact>
-        <Fact label="Opened">
-          <Text size="sm" tabular>
-            {when(pr.createdAt, now)}
-            {pr.mergedAt !== undefined ? ` · merged ${when(pr.mergedAt, now)}` : ` · updated ${when(pr.updatedAt, now)}`}
-          </Text>
-        </Fact>
-      </dl>
+          </Fact>
+        </dl>
+      </div>
 
       {isOpen(pr) ? <AtWork repo={pr.repo} number={pr.number} /> : null}
 
@@ -235,7 +242,7 @@ function Overview({ data, now, githubSaid }: { data: PrGetOutput; now: number; g
         )}
       </Section>
 
-      <Section title="Reviews">
+      <Section title="Reviews" aside={data.reviews.length > 1 ? String(data.reviews.length) : undefined}>
         {data.reviews.length === 0 ? (
           <Text size="sm" tone="quiet">
             No reviews yet.
@@ -257,6 +264,9 @@ function Overview({ data, now, githubSaid }: { data: PrGetOutput; now: number; g
     </div>
   );
 }
+
+/** The summary's edge in the state's colour: only a failure or a wait on you stands out. */
+const TONE_CLASS: Partial<Record<Tone, string | undefined>> = { failed: s.summaryFailed, "needs-you": s.summaryNeedsYou, done: s.summaryDone };
 
 const ALL_AGENTS = {} as const;
 
@@ -290,7 +300,7 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className={s.fact}>
       <dt>
-        <Text size="sm" tone="quiet">
+        <Text size="xs" tone="quiet">
           {label}
         </Text>
       </dt>
@@ -303,7 +313,7 @@ function Section({ title, aside, children }: { title: string; aside?: string | u
   return (
     <section className={s.section} aria-label={title}>
       <div className={s.sectionHead}>
-        <Text as="h3" size="md" strong>
+        <Text as="h3" size="sm" strong>
           {title}
         </Text>
         {aside !== undefined && aside !== "" ? (
@@ -338,16 +348,21 @@ function Checks({ checks }: { checks: readonly PrCheck[] }) {
           const took = checkTook(c);
           return (
             <li key={`${c.name}\u0000${i}`} className={s.check}>
-              <span className={s.checkWord}>
-                <StatusChip tone={word.tone}>{word.text}</StatusChip>
-              </span>
+              <CheckIcon tone={word.tone} label={word.text} />
               <span className={s.checkName} data-text="code">
                 <Truncate size="sm">{c.name}</Truncate>
               </span>
-              {took !== undefined ? (
-                <Text size="xs" tone="quiet" tabular>
-                  {took}
+              {word.tone !== "done" || word.text !== "passed" ? (
+                <Text size="xs" tone={word.tone === "failed" ? "danger" : "quiet"}>
+                  {word.text}
                 </Text>
+              ) : null}
+              {took !== undefined ? (
+                <span className={s.checkTook}>
+                  <Text size="xs" tone="faint" tabular>
+                    {took}
+                  </Text>
+                </span>
               ) : null}
               {c.url !== undefined ? (
                 <Button variant="quiet" iconOnly aria-label={`Open ${c.name} on GitHub`} onClick={() => openExternal(c.url ?? "")}>
@@ -390,7 +405,11 @@ function Review({ review, now }: { review: PrReviewEntry; now: number }) {
           </Text>
         </span>
       </div>
-      {review.text.trim() !== "" ? <Markdown source={machineCode(review.text)} /> : null}
+      {review.text.trim() !== "" ? (
+        <div className={s.reviewBody}>
+          <Markdown source={machineCode(review.text)} />
+        </div>
+      ) : null}
     </li>
   );
 }
@@ -406,13 +425,16 @@ function History({ steps, now }: { steps: PrGetOutput["history"]; now: number })
     <>
       <ol className={s.history}>
         {shown.map((step, i) => (
-          <li key={`${step.at}\u0000${i}`}>
+          <li key={`${step.at}\u0000${i}`} className={cx(s.step, i === 0 && s.stepNow)}>
+            <span className={s.stepDot} aria-hidden />
+            <Text size="sm" tone={i === 0 ? "default" : "quiet"}>
+              {step.words}
+            </Text>
             <span className={s.historyWhen}>
-              <Text size="xs" tone="quiet" tabular>
+              <Text size="xs" tone="faint" tabular>
                 {when(step.at, now)}
               </Text>
             </span>
-            <Text size="sm">{step.words}</Text>
           </li>
         ))}
       </ol>
