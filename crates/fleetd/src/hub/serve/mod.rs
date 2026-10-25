@@ -253,6 +253,7 @@ pub fn build_on_with(
         crate::hub::executor::Executors::new(store.clone(), events.clone(), clock.clone());
     let node_commands = Arc::new(crate::hub::link::NodeCommands::default());
     let lead_calls = Arc::new(crate::hub::link::LeadCalls::default());
+    let slots = crate::hub::slots::Slots::new(db.clone(), clock.clone(), &store, &events)?;
     let link = crate::hub::link::NodeLinkServer::new(crate::hub::link::server::LinkDeps {
         hub_id: crate::hub::link::server::hub_id(),
         store: store.clone(),
@@ -263,6 +264,7 @@ pub fn build_on_with(
         lead_calls: lead_calls.clone(),
         clock: clock.clone(),
         time: time.clone(),
+        slots: slots.clone(),
     });
     executors.set_time(time.clone());
     let watchdog = crate::hub::watchdog::Watchdog::new(
@@ -305,7 +307,6 @@ pub fn build_on_with(
     let hub_task_ports =
         crate::hub::tasks::wire::HubTaskPorts::new(executors.clone(), node_commands.clone());
     let task_ports: Arc<dyn crate::hub::tasks::ports::TaskPorts> = hub_task_ports.clone();
-    let slots = crate::hub::slots::Slots::new(db.clone(), &store, &events)?;
     let source = crate::hub::policy::NodePolicySource {
         executors: executors.clone(),
     };

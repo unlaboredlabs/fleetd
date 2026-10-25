@@ -1,14 +1,20 @@
 //! Who may start and steer agents: enforced on every lead-side call by the hub, whatever a prompt says or a tool list
 //! offers. A lead is depth 0 and its tasks depth 1; nothing goes deeper, so a task's agent never starts another agent.
-//! A lead has at most [`MAX_OPEN_TASKS`] tasks open at once.
+//! A lead has at most [`max_open_tasks`] tasks open at once.
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::tasks::TaskId;
 
 /// A lead's tasks are depth 1; a call that would start an agent below that is refused.
 pub const MAX_DEPTH: u32 = 1;
-/// Open (queued, running or idle) tasks per project, the fan-out of its one lead. Slots already cap what runs at once;
-/// this caps what a runaway lead can queue.
+/// Open (queued, running or idle) tasks per project, the fan-out of its one lead, at least. Slots already cap what runs
+/// at once; this caps what a runaway lead can queue.
 pub const MAX_OPEN_TASKS: usize = 32;
+
+/// The open tasks a project's lead may have: [`MAX_OPEN_TASKS`], or twice its max agents on a machine that runs more,
+/// so a 56-agent server isn't held to 32.
+pub fn max_open_tasks(max_agents: i64) -> usize {
+    MAX_OPEN_TASKS.max(2 * max_agents.max(0) as usize)
+}
 
 /// The calls a task's agent makes: its review verdict (`report`) and a question for its lead. Only a lead closes
 /// work.
@@ -75,16 +81,15 @@ pub fn check(agent: &CallerAgent, op: &str) -> Result<(), McpToolError> {
     }
 }
 
-/// A spawn with `open` tasks already open in the project.
-pub fn check_fan_out(open: usize) -> Result<(), McpToolError> {
-    if open < MAX_OPEN_TASKS {
+/// A spawn with `open` tasks already open in the project, whose max agents is `max_agents`.
+pub fn check_fan_out(open: usize, max_agents: i64) -> Result<(), McpToolError> {
+    let most = max_open_tasks(max_agents);
+    if open < most {
         return Ok(());
     }
     Err(McpToolError::new(
         ErrorCode::Forbidden,
-        format!(
-            "This project already has {open} open tasks, the most one lead may have at once ({MAX_OPEN_TASKS})."
-        ),
+        format!("This project already has {open} open tasks, the most one lead may have at once ({most})."),
     )
     .with_fix(
         "End your turn: results arrive in wakes and free room. Or stop a task you no longer need with stop_agent.",
@@ -148,9 +153,19 @@ mod tests {
 
     #[test]
     fn spawning_stops_at_the_fan_out_limit() {
-        assert_eq!(check_fan_out(MAX_OPEN_TASKS - 1), Ok(()));
-        let refused = check_fan_out(MAX_OPEN_TASKS).unwrap_err();
+        assert_eq!(check_fan_out(MAX_OPEN_TASKS - 1, 12), Ok(()));
+        let refused = check_fan_out(MAX_OPEN_TASKS, 12).unwrap_err();
         assert_eq!(refused.code, ErrorCode::Forbidden);
         assert!(refused.fix.unwrap().contains("stop_agent"));
+    }
+
+    /// A big server's 56 agents get 112 open tasks, not 32.
+    #[test]
+    fn the_fan_out_limit_grows_with_max_agents() {
+        assert_eq!(max_open_tasks(2), 32);
+        assert_eq!(max_open_tasks(16), 32);
+        assert_eq!(max_open_tasks(56), 112);
+        assert_eq!(check_fan_out(100, 56), Ok(()));
+        assert!(check_fan_out(112, 56).is_err());
     }
 }
