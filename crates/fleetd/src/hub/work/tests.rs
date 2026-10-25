@@ -67,9 +67,9 @@ fn new_claim(scope: &WorkScope, title: &str) -> NewClaim {
         owner: human(),
         title: Line::new(title).unwrap(),
         keys: List::unchecked(vec![WorkKey::Issue(Line::unchecked("SHOP-12"))]),
-        branch: Some(Line::unchecked("wynn/dark-mode")),
+        branch: Some(Line::unchecked("ada/dark-mode")),
         paths: List::unchecked(vec![WorkPath::unchecked("app/theme.ts")]),
-        author_email: Some(Line::unchecked("wynn@example.com")),
+        author_email: Some(Line::unchecked("ada@example.com")),
     }
 }
 
@@ -466,7 +466,7 @@ async fn the_view_reads_every_project_on_the_repos_base_and_nothing_else() {
         claim.keys.to_vec(),
         [
             WorkKey::Issue(Line::unchecked("SHOP-12")),
-            WorkKey::Branch(Line::unchecked("wynn/dark-mode"))
+            WorkKey::Branch(Line::unchecked("ada/dark-mode"))
         ],
         "a claim's branch is one of its keys"
     );

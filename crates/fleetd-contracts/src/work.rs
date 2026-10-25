@@ -256,13 +256,13 @@ mod tests {
     fn a_work_key_is_one_tagged_id() {
         let keys: Vec<WorkKey> = serde_json::from_value(json!([
             { "issue": "#123" }, { "issue": "ABC-123" }, { "item": "P5" },
-            { "pr": "https://gitlab.example.com/group/shop/-/merge_requests/9" }, { "branch": "wynn/dark-mode" },
+            { "pr": "https://gitlab.example.com/group/shop/-/merge_requests/9" }, { "branch": "ada/dark-mode" },
         ]))
         .unwrap();
         assert_eq!(keys[2], WorkKey::Item(PlanItemId::unchecked("P5")));
         assert_eq!(
             serde_json::to_value(&keys[4]).unwrap(),
-            json!({ "branch": "wynn/dark-mode" })
+            json!({ "branch": "ada/dark-mode" })
         );
         assert!(serde_json::from_value::<WorkKey>(json!({ "item": "T5" })).is_err());
         assert!(serde_json::from_value::<WorkKey>(json!({ "issue": "a\nb" })).is_err());
