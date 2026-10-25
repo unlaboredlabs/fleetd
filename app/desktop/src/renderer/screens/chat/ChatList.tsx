@@ -3,7 +3,7 @@
 // (the follow rule is T3 Code's: apps/web MessagesTimeline.logic.ts). Scrolling to the top loads older pages; the
 // list keeps its place while they arrive above. Scrolled up, a button counts what arrived below and goes back to it.
 import type { Virtualizer } from "@tanstack/react-virtual";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button, cx, Text, VirtualList } from "../../ui";
 import { useData } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
@@ -13,6 +13,8 @@ import type { ChatItem } from "../../src/data/chat";
 import { shortClock } from "./format";
 import { latestLabel, newestKey, type Arrival, type Row, type TopState } from "./model";
 import { MessageView, useEnter } from "./Bubble";
+import { useBubbleActions } from "./actions";
+import { markOf, useShown } from "./shown";
 import { RememberedUndo } from "./Remembered";
 import { LiveStrip, useNow, useOnScreen } from "../live";
 import { Boundary } from "../../src/Boundary";
@@ -63,13 +65,26 @@ function Inline({ item, enter }: { item: ChatItem; enter: Arrival | undefined })
   const e = useEnter(enter);
   return (
     <div className={cx(s.message, e.className)} style={e.style} data-entry="inline">
-      {inline !== undefined ? (
-        <InlineChatItem item={inline} />
-      ) : (
-        <Text size="xs" tone="quiet">
-          {item.kind === "secret" ? "The lead needs a secret here." : "The lead wants to run a command that needs your approval."}
-        </Text>
-      )}
+      <Waited id={item.id}>
+        {inline !== undefined ? (
+          <InlineChatItem item={inline} />
+        ) : (
+          <Text size="xs" tone="quiet">
+            {item.kind === "secret" ? "The lead needs a secret here." : "The lead wants to run a command that needs your approval."}
+          </Text>
+        )}
+      </Waited>
+    </div>
+  );
+}
+
+/** An approval or a secret, ringed while it is what Show went to; its card takes the focus. */
+function Waited({ id, children }: { id: string; children: ReactNode }) {
+  const mark = markOf(useBubbleActions()?.shown, id);
+  const ref = useShown<HTMLDivElement>(mark, true);
+  return (
+    <div ref={ref} className={cx(s.waitedBox, mark !== undefined && s.waited)} tabIndex={mark === undefined ? undefined : -1}>
+      {children}
     </div>
   );
 }
