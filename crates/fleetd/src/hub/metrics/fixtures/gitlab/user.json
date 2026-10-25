@@ -1,0 +1,12 @@
+{
+ "id": 3,
+ "username": "ada-lovelace",
+ "name": "Ada Lovelace",
+ "state": "active",
+ "locked": false,
+ "avatar_url": "https://gitlab.example.com/uploads/-/system/user/avatar/3/avatar.png",
+ "web_url": "https://gitlab.example.com/ada-lovelace",
+ "bot": false,
+ "email": "ada@example.com",
+ "is_admin": false
+}

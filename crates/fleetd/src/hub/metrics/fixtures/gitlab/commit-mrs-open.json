@@ -1,0 +1,12 @@
+[
+ {
+  "id": 90052,
+  "iid": 52,
+  "project_id": 4242,
+  "state": "opened",
+  "title": "MR 52",
+  "source_branch": "x",
+  "target_branch": "main",
+  "web_url": "https://gitlab.example.com/acme/web/-/merge_requests/52"
+ }
+]

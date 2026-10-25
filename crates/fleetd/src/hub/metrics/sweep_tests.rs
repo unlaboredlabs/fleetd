@@ -451,7 +451,7 @@ async fn a_pass_reads_each_due_repo_once_and_a_metrics_read_asks_again_after_a_m
     let (hub, clock, _home) = hub();
     checkout(&hub);
     assert!(
-        hub.metrics.sweep.source("github").is_none(),
+        hub.metrics.sweep.source("github", REPO).is_none(),
         "a hub built for tests reads no git host"
     );
     let gh = Arc::new(Recorded::default());
@@ -770,6 +770,10 @@ struct CutShort {
 }
 
 impl GitHostSource for CutShort {
+    fn host(&self) -> &'static str {
+        "github"
+    }
+
     fn signed_in(&self) -> BoxFut<'_, Result<Option<String>, String>> {
         self.inner.signed_in()
     }

@@ -393,6 +393,10 @@ fn bot_identity(a: Option<&GitAuthor>) -> bool {
 }
 
 impl GitHostSource for GitHubSource {
+    fn host(&self) -> &'static str {
+        "github"
+    }
+
     fn signed_in(&self) -> BoxFut<'_, Result<Option<String>, String>> {
         Box::pin(async move {
             let v = self.run(vec!["api".into(), "user".into()]).await?;

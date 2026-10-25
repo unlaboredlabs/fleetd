@@ -25,6 +25,9 @@ mod sweep_tests;
 mod tests;
 #[cfg(test)]
 mod touch_tests;
+// The GitLab source over recorded API answers.
+#[cfg(test)]
+mod gitlab_tests;
 
 use std::collections::HashMap;
 use std::sync::Arc;

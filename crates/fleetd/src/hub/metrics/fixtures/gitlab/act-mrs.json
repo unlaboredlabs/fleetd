@@ -1,0 +1,32 @@
+[
+ {
+  "id": 90043,
+  "iid": 43,
+  "project_id": 4242,
+  "state": "merged",
+  "source_branch": "fleetd/T7-checkout",
+  "target_branch": "main",
+  "updated_at": "2026-10-23T12:00:00.000Z",
+  "web_url": "https://gitlab.example.com/acme/web/-/merge_requests/43"
+ },
+ {
+  "id": 90041,
+  "iid": 41,
+  "project_id": 4242,
+  "state": "merged",
+  "source_branch": "fix-cart",
+  "target_branch": "main",
+  "updated_at": "2026-10-24T10:00:00.000Z",
+  "web_url": "https://gitlab.example.com/acme/web/-/merge_requests/41"
+ },
+ {
+  "id": 90051,
+  "iid": 51,
+  "project_id": 4242,
+  "state": "opened",
+  "source_branch": "wip",
+  "target_branch": "main",
+  "updated_at": "2026-10-24T09:00:00.000Z",
+  "web_url": "https://gitlab.example.com/acme/web/-/merge_requests/51"
+ }
+]

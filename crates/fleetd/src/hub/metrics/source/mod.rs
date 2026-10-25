@@ -1,8 +1,9 @@
-//! What the host sweep reads from a repo's git host, one implementation per host. GitHub ships first; GitLab, Gitea,
+//! What the host sweep reads from a repo's git host, one implementation per host: GitHub and GitLab. Gitea,
 //! Bitbucket and Azure DevOps each fit the same shape (merged PRs with who opened and merged them, the default
 //! branch's first-parent commits and the PRs each belongs to, reviews and comments), and each is its own PR when a
 //! project needs it. A repo on a host with no source is still listed, with its figures marked as not read.
 pub mod github;
+pub mod gitlab;
 
 use std::sync::Arc;
 
@@ -78,6 +79,9 @@ pub struct LandedCommit {
 
 /// One git host's reads. Errors are plain words a person can act on ("GitHub isn't signed in …").
 pub trait GitHostSource: Send + Sync {
+    /// The host as `metric_repos.host` names it: "github", "gitlab".
+    fn host(&self) -> &'static str;
+
     /// The account the hub reads the host as, which is the person's own: their reviews and merges are made by it.
     fn signed_in(&self) -> BoxFut<'_, Result<Option<String>, String>>;
 
@@ -114,19 +118,23 @@ pub trait GitHostSource: Send + Sync {
 }
 
 /// The git host readers the sweep uses, one per host it can read. The shipped hub reads through the hosts' real
-/// CLIs; a test or lab hub reads none (or fakes), so it never reaches the network.
+/// CLIs; a test or lab hub reads none (or fakes), so it never reaches the network: with no GitLab reader, no `glab`
+/// runs, no host is asked for `/api/v4/version` and git's credential helper is never asked.
 #[derive(Clone, Default)]
 pub struct HostSources {
     pub github: Option<Arc<dyn GitHostSource>>,
+    /// GitLab's API, for every instance: gitlab.com and the self-hosted ones found by their version.
+    pub gitlab: Option<Arc<dyn gitlab::GitLabApi>>,
 }
 
 impl HostSources {
-    /// GitHub through the hub's `gh`.
+    /// GitHub through the hub's `gh`, GitLab through `glab` or git's credential helper.
     pub fn real() -> Self {
         Self {
             github: Some(Arc::new(github::GitHubSource::new(Arc::new(
                 crate::hub::train::github::SystemGh,
             )))),
+            gitlab: Some(Arc::new(gitlab::SystemGitLab::default())),
         }
     }
 
@@ -134,10 +142,25 @@ impl HostSources {
         Self::default()
     }
 
-    /// The source for a host as `metric_repos.host` names it.
-    pub fn get(&self, host: &str) -> Option<Arc<dyn GitHostSource>> {
+    /// A shipped hub's readers, by `FLEETD_HOST_SWEEP`: "off" (a lab hub) reads no git host, so nothing reaches the
+    /// network; anything else reads them all.
+    pub fn for_hub(sweep: Option<&str>) -> Self {
+        if sweep == Some("off") {
+            Self::none()
+        } else {
+            Self::real()
+        }
+    }
+
+    /// The source for a repo on a host as `metric_repos.host` names it.
+    pub fn get(&self, host: &str, remote: &str) -> Option<Arc<dyn GitHostSource>> {
         match host {
             "github" => self.github.clone(),
+            "gitlab" => {
+                let api = self.gitlab.clone()?;
+                let (instance, _) = gitlab::split_remote(remote)?;
+                Some(Arc::new(gitlab::GitLabSource::new(api, instance)))
+            }
             _ => None,
         }
     }
@@ -155,7 +178,7 @@ pub fn fleetd_posted(body: &str) -> bool {
 }
 
 /// The host part of a remote key ("github.com/acme/web" → "github"), as `metric_repos.host` stores it: "git" for a
-/// host fleetd has no name for.
+/// host fleetd has no name for (the sweep asks a self-hosted one whether it is GitLab).
 pub fn host_of(remote: &str) -> &'static str {
     match remote.split('/').next().unwrap_or_default() {
         "github.com" => "github",

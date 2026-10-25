@@ -159,7 +159,7 @@ fn coverage(
                     "{name} not read since {}: {why}",
                     crate::hub::status::rows::clock(ms, now, tz)
                 ),
-                None => format!("{name} not read yet: {why}"),
+                None => format!("{name} not read: {why}"),
             };
             stale.push(RepoStale {
                 repo: remote.clone(),

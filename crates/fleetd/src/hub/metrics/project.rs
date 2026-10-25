@@ -170,7 +170,7 @@ fn resolve(db: &HubDb, e: &HubEvent) -> Result<Option<Fold>, StoreError> {
                 Some(r) => default_branch(db, &store::github_remote(r.as_str()))?,
                 None => None,
             };
-            landed(db, train, &d, at, event_project, default.as_deref())?
+            landed(db, train, &d, at, event_project, default.as_deref(), None)?
                 .map(|m| Fold::Merge(Box::new(m)))
         }
         HubEventType::ChangeState => data::<ChangeStateData>(e)
@@ -218,6 +218,7 @@ pub fn actor_str(k: ActorKind) -> &'static str {
 /// sweep with the same fields read from the host. `at` stands in for a missing `mergedAt`, and `fallback` owns it
 /// when no train or Change does. A merge without the train counts only into `default_branch`; one into any other
 /// base is skipped as such. One with no `base` (an older hub's event), or before the default branch is known, counts.
+/// `remote` is the repo's key when it isn't on GitHub (the sweep of another host), else it comes from `d.repo`.
 pub fn landed(
     db: &HubDb,
     train: bool,
@@ -225,10 +226,19 @@ pub fn landed(
     at: i64,
     fallback: Option<(String, String)>,
     default_branch: Option<&str>,
+    remote: Option<&str>,
 ) -> Result<Option<MergeRow>, StoreError> {
-    let (Some(repo), Some(pr)) = (&d.repo, d.pr_number) else {
+    let Some(pr) = d.pr_number else {
         return Ok(None);
     };
+    let Some(remote) = remote
+        .map(str::to_owned)
+        .or_else(|| d.repo.as_ref().map(|r| store::github_remote(r.as_str())))
+    else {
+        return Ok(None);
+    };
+    // Only a GitHub repo has a train.
+    let train_repo = store::train_repo(&remote).map(str::to_owned);
     let change = match &d.change_id {
         Some(id) => change(db, id.as_str())?,
         None => None,
@@ -294,18 +304,20 @@ pub fn landed(
             .transpose()?,
         _ => None,
     };
-    let remote = store::github_remote(repo.as_str());
     // The project that owns it: the train's owner, else its Change's, else the reporter's.
-    let owner = train_owner(db, repo.as_str())?
-        .or_else(|| {
-            change.as_ref().map(|c| {
-                (
-                    c.project_ref.machine_id.to_string(),
-                    c.project_ref.project_id.to_string(),
-                )
-            })
+    let owner = match &train_repo {
+        Some(repo) => train_owner(db, repo)?,
+        None => None,
+    }
+    .or_else(|| {
+        change.as_ref().map(|c| {
+            (
+                c.project_ref.machine_id.to_string(),
+                c.project_ref.project_id.to_string(),
+            )
         })
-        .or(fallback);
+    })
+    .or(fallback);
     let (machine_id, project_id) = owner.unzip();
     Ok(Some(MergeRow {
         unit_key: format!("pr:{}", pr.get()),

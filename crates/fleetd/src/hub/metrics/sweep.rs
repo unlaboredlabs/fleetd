@@ -4,6 +4,9 @@
 //! person's touches. Each PR gets the projector's route from the same fields, so the train's events and the sweep
 //! agree whichever reads it first; a train batch PR counts as its members.
 //!
+//! A repo on GitHub or gitlab.com is read from its host's API; one on any other host is read as GitLab once its
+//! `/api/v4/version` answers as GitLab does (asked again daily while it doesn't).
+//!
 //! When: every 15 minutes for a repo with a merge in the last 7 days, else hourly, and within a minute of a metrics
 //! read asking for it. Repos are read one at a time. On a train's repo the train's own minute-by-minute check stays
 //! the fast path; the sweep fills what it can't see (no train yet, older PRs, other bases, pushes, reviews).
@@ -22,6 +25,7 @@ use tokio::sync::Notify;
 use super::host_acts::{self, BACKFILL_MS};
 use super::host_acts::{HostAct, HostActs};
 use super::project::{self, actor_str, skip_str};
+use super::source::gitlab::{self, GitLabApi};
 use super::source::{self, GitHostSource, HostSources, LandedCommit, MergedPr, RepoInfo, RepoRef};
 use super::store::{self, MergeRow, SKIPPED};
 use super::touches;
@@ -42,10 +46,14 @@ const OVERLAP_MS: i64 = 10 * 60_000;
 const ORIGIN_EVERY_MS: i64 = store::DAY_MS;
 const ORIGIN_RETRY_MS: i64 = 10 * 60_000;
 const TICK: Duration = Duration::from_secs(60);
+/// A host with no name fleetd knows is asked again after a day whether it is GitLab.
+const PROBE_EVERY_MS: i64 = store::DAY_MS;
 
 /// The sweep's sources and when each repo was last tried.
 pub struct Sweep {
     sources: Mutex<HostSources>,
+    /// Hosts with no name fleetd knows that were asked whether they are GitLab, and when they last said no.
+    probed: Mutex<HashMap<String, i64>>,
     /// Repos a metrics read asked for since the last pass.
     wanted: Mutex<HashSet<String>>,
     tried: Mutex<HashMap<String, i64>>,
@@ -62,6 +70,7 @@ impl Sweep {
     pub fn new(sources: HostSources) -> Self {
         Self {
             sources: Mutex::new(sources),
+            probed: Mutex::default(),
             wanted: Mutex::default(),
             tried: Mutex::default(),
             asked: Mutex::default(),
@@ -69,14 +78,51 @@ impl Sweep {
         }
     }
 
-    /// The source for a host as `metric_repos.host` names it, if the hub reads that host.
-    pub fn source(&self, host: &str) -> Option<Arc<dyn GitHostSource>> {
-        lock(&self.sources).get(host)
+    /// The source for a repo on a host as `metric_repos.host` names it, if the hub reads that host.
+    pub fn source(&self, host: &str, remote: &str) -> Option<Arc<dyn GitHostSource>> {
+        lock(&self.sources).get(host, remote)
     }
 
     #[cfg(test)]
     pub fn use_github(&self, source: Arc<dyn GitHostSource>) {
         lock(&self.sources).github = Some(source);
+    }
+
+    #[cfg(test)]
+    pub fn use_gitlab(&self, api: Arc<dyn GitLabApi>) {
+        lock(&self.sources).gitlab = Some(api);
+    }
+
+    /// Whether a repo on a host fleetd has no name for is on a GitLab, asked once a day per host until it is. One
+    /// that is is kept as such in `metric_repos`. A hub that reads no GitLab asks nothing.
+    async fn detect(&self, db: &HubDb, remote: &str, now: i64) -> bool {
+        let Some(api) = lock(&self.sources).gitlab.clone() else {
+            return false;
+        };
+        let Some((instance, _)) = gitlab::split_remote(remote) else {
+            return false;
+        };
+        if lock(&self.probed)
+            .get(instance)
+            .is_some_and(|at| now - at < PROBE_EVERY_MS)
+        {
+            return false;
+        }
+        if !gitlab::is_gitlab(api.as_ref(), instance).await {
+            lock(&self.probed).insert(instance.to_owned(), now);
+            return false;
+        }
+        let kept = db.transaction(|c| {
+            c.execute(
+                "UPDATE metric_repos SET host = 'gitlab' WHERE repo = ?1 AND host = 'git'",
+                [remote],
+            )?;
+            Ok(())
+        });
+        if let Err(e) = kept {
+            tracing::error!(error = %e, "metrics: a GitLab repo's host not kept");
+        }
+        true
     }
 
     /// A metrics read of `repos`: each is read again if its last read is over a minute old. Doesn't wait.
@@ -128,7 +174,12 @@ pub async fn pass(hub: &Hub) {
         Err(e) => return tracing::error!(error = %e, "metrics: repos not listed"),
     };
     for r in repos {
-        let Some(source) = sweep.source(&r.host) else {
+        let host = if r.host == "git" && sweep.detect(&hub.db, &r.repo, now).await {
+            "gitlab"
+        } else {
+            r.host.as_str()
+        };
+        let Some(source) = sweep.source(host, &r.repo) else {
             continue;
         };
         let tried = lock(&sweep.tried).get(&r.repo).copied();
@@ -257,7 +308,7 @@ pub async fn sweep_repo(
     let read = read_repo(hub, source, remote, now).await;
     let failed = |why: &str| {
         let kept = hub.db.transaction(|c| {
-            store::see_repo(c, remote, source::host_of(remote))?;
+            store::see_repo(c, remote, source.host())?;
             c.execute(
                 "UPDATE metric_repos SET last_error = ?2 WHERE repo = ?1",
                 params![remote, crate::hub::api::clip(why, 500)],
@@ -278,8 +329,10 @@ pub async fn sweep_repo(
     // The hub reads the host as the person: their own reviews, comments and merges are made by this account.
     match source.signed_in().await {
         Ok(Some(login)) => {
-            let host = source::host_of(remote);
-            if let Err(e) = hub.db.transaction(|c| store::add_identity(c, &login, host)) {
+            if let Err(e) = hub
+                .db
+                .transaction(|c| store::add_identity(c, &login, source.host()))
+            {
                 tracing::error!(error = %e, "metrics: the host's login not kept");
             }
         }
@@ -374,6 +427,7 @@ async fn read_repo(
         if prs.is_empty() {
             rows.push(push_row(
                 &repo,
+                source.host(),
                 c,
                 owner_of(&hub.db, remote).map_err(store_err)?,
             ));
@@ -383,7 +437,7 @@ async fn read_repo(
     let n = rows.len();
     hub.db
         .transaction(|c| {
-            store::see_repo(c, remote, source::host_of(remote))?;
+            store::see_repo(c, remote, source.host())?;
             for row in &rows {
                 write(c, row)?;
                 if let Some(t) = touches::merged_by_hand(row) {
@@ -519,7 +573,18 @@ fn pr_rows(
     pulls: &[MergedPr],
 ) -> Result<Vec<MergeRow>, StoreError> {
     let fallback = owner_of(&hub.db, &repo.remote)?;
-    let train_repo = GitHubRepo::new(repo.path.to_lowercase()).ok();
+    // Trains and Changes are GitHub's alone.
+    let on_github = store::train_repo(&repo.remote).is_some();
+    let train_repo = GitHubRepo::new(repo.path.to_lowercase())
+        .ok()
+        .filter(|_| on_github);
+    let change_for = |n: i64| {
+        if on_github {
+            change_of(&hub.db, &repo.path, n)
+        } else {
+            Ok(None)
+        }
+    };
     let mut out = Vec::new();
     for pr in pulls {
         let base = TrainEventData {
@@ -532,7 +597,7 @@ fn pr_rows(
         if !pr.batch_members.is_empty() {
             // The train's batch PR: its members landed in it, and it isn't counted itself.
             for &n in &pr.batch_members {
-                let change = change_of(&hub.db, &repo.path, n)?;
+                let change = change_for(n)?;
                 let d = TrainEventData {
                     pr_number: Some(Count::unchecked(n)),
                     batch_pr: Some(Count::unchecked(pr.number)),
@@ -547,11 +612,12 @@ fn pr_rows(
                     pr.merged_ms,
                     fallback.clone(),
                     None,
+                    Some(&repo.remote),
                 )?));
             }
             continue;
         }
-        let change = change_of(&hub.db, &repo.path, pr.number)?;
+        let change = change_for(pr.number)?;
         let train = change
             .as_ref()
             .is_some_and(|c| c.state == ChangeState::Merged);
@@ -573,6 +639,7 @@ fn pr_rows(
             pr.merged_ms,
             fallback.clone(),
             Some(&info.default_branch),
+            Some(&repo.remote),
         )?) else {
             continue;
         };
@@ -599,7 +666,12 @@ fn host_row(row: Option<MergeRow>) -> Option<MergeRow> {
 }
 
 /// A first-parent commit no PR brought in: pushed straight to the default branch.
-fn push_row(repo: &RepoRef, c: &LandedCommit, owner: Option<(String, String)>) -> MergeRow {
+fn push_row(
+    repo: &RepoRef,
+    host: &str,
+    c: &LandedCommit,
+    owner: Option<(String, String)>,
+) -> MergeRow {
     let (machine_id, project_id) = owner.unzip();
     let (route, skip) = if c.bot {
         (SKIPPED, Some(skip_str(SkipWhy::Bot)))
@@ -624,7 +696,12 @@ fn push_row(repo: &RepoRef, c: &LandedCommit, owner: Option<(String, String)>) -
             .into(),
         ),
         title: Some(c.title.clone()).filter(|t| !t.is_empty()),
-        url: Some(format!("https://{}/commit/{}", repo.remote, c.sha)),
+        url: Some(match (host, gitlab::split_remote(&repo.remote)) {
+            ("gitlab", Some((instance, path))) => {
+                format!("https://{instance}/{path}/-/commit/{}", c.sha)
+            }
+            _ => format!("https://{}/commit/{}", repo.remote, c.sha),
+        }),
         src: "host".into(),
         ..MergeRow::default()
     }
