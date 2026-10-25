@@ -143,6 +143,12 @@ impl HostSources {
     }
 }
 
+/// Whether fleetd reads a host, as `metric_repos.host` names it, through its API; a repo on any other is read from
+/// git alone (`no_host.rs`), whichever sources a hub was built with.
+pub fn has_api(host: &str) -> bool {
+    host == "github"
+}
+
 /// Whether fleetd itself posted a review or comment with this body: it posts under the person's own login, so its
 /// acts are told apart by their markers: a hidden `<!-- fleetd:… -->` line (the train's), a `Fleetd-Task:` trailer, or
 /// the wording of the train's comments from before it marked them.

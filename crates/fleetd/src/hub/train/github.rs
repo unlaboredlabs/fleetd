@@ -263,6 +263,62 @@ pub struct MergedPull {
 
 /// Pages of closed PRs `merged_pulls` reads at most per check before it stops short of its cursor: the check runs
 /// every minute, so a busy repo stays within GitHub's rate limit; the metrics' host sweep backfills past it.
+/// GitHub's squash message from the repo's settings and the PR's commit messages, oldest first. One commit gives its
+/// own subject and body; several give the PR's title and a `* ` line per commit, with their `Co-authored-by`
+/// trailers gathered once at the end, as GitHub does.
+pub fn squash_text(
+    pull: &Pull,
+    title_from: &str,
+    body_from: &str,
+    messages: &[String],
+) -> (String, String) {
+    let split = |m: &str| -> (String, String) {
+        let m = m.replace("\r\n", "\n");
+        match m.trim().split_once('\n') {
+            Some((subject, body)) => (subject.trim().to_owned(), body.trim().to_owned()),
+            None => (m.trim().to_owned(), String::new()),
+        }
+    };
+    let one = (messages.len() == 1).then(|| split(&messages[0]));
+    let title = match (&one, title_from) {
+        (Some((subject, _)), "COMMIT_OR_PR_TITLE") => subject.clone(),
+        _ => pull.title.trim().to_owned(),
+    };
+    let body = match body_from {
+        "PR_BODY" => pull
+            .body
+            .as_deref()
+            .unwrap_or_default()
+            .replace("\r\n", "\n"),
+        "BLANK" => String::new(),
+        _ => match &one {
+            Some((_, body)) => body.clone(),
+            None => {
+                let co_author = |l: &str| l.to_ascii_lowercase().starts_with("co-authored-by:");
+                let mut co_authors: Vec<String> = Vec::new();
+                let mut lines = Vec::new();
+                for m in messages {
+                    let m = m.replace("\r\n", "\n");
+                    let kept: Vec<&str> =
+                        m.trim().lines().filter(|l| !co_author(l.trim())).collect();
+                    lines.push(format!("* {}", kept.join("\n").trim()));
+                    for l in m.lines().map(str::trim).filter(|l| co_author(l)) {
+                        if !co_authors.iter().any(|c| c.eq_ignore_ascii_case(l)) {
+                            co_authors.push(l.to_owned());
+                        }
+                    }
+                }
+                let mut body = lines.join("\n\n");
+                if !co_authors.is_empty() {
+                    body = format!("{body}\n\n---------\n\n{}", co_authors.join("\n"));
+                }
+                body
+            }
+        },
+    };
+    (format!("{title} (#{})", pull.number), body)
+}
+
 pub const MERGED_PAGES: usize = 2;
 const MERGED_PAGE: usize = 100;
 
@@ -579,6 +635,58 @@ impl TrainGitHub {
                 ))),
             },
         }
+    }
+
+    /// The squash message GitHub writes for `pull` by the repo's settings (`squash_merge_commit_title` and
+    /// `squash_merge_commit_message`, GitHub's defaults when the repo doesn't say): its title and body, so the train
+    /// can add to it and keep the rest, the commits' `Co-authored-by` trailers among them.
+    pub async fn squash_message(
+        &self,
+        repo: &str,
+        pull: &Pull,
+    ) -> Result<(String, String), GhError> {
+        #[derive(Deserialize)]
+        struct Settings {
+            squash_merge_commit_title: Option<String>,
+            squash_merge_commit_message: Option<String>,
+        }
+        #[derive(Deserialize)]
+        struct PullCommit {
+            commit: CommitJson,
+        }
+        #[derive(Deserialize)]
+        struct CommitJson {
+            message: String,
+        }
+        let settings: Settings = self.json("GET", &format!("repos/{repo}"), &[]).await?;
+        let title_from = settings
+            .squash_merge_commit_title
+            .unwrap_or_else(|| "COMMIT_OR_PR_TITLE".into());
+        let body_from = settings
+            .squash_merge_commit_message
+            .unwrap_or_else(|| "COMMIT_MESSAGES".into());
+        let mut messages = Vec::new();
+        if title_from == "COMMIT_OR_PR_TITLE" || body_from == "COMMIT_MESSAGES" {
+            // GitHub lists at most 250 commits of a PR.
+            for page in 1..=3 {
+                let commits: Vec<PullCommit> = self
+                    .json(
+                        "GET",
+                        &format!(
+                            "repos/{repo}/pulls/{}/commits?per_page=100&page={page}",
+                            pull.number
+                        ),
+                        &[],
+                    )
+                    .await?;
+                let last = commits.len() < 100;
+                messages.extend(commits.into_iter().map(|c| c.commit.message));
+                if last {
+                    break;
+                }
+            }
+        }
+        Ok(squash_text(pull, &title_from, &body_from, &messages))
     }
 
     /// Rebases the PR's branch onto its base on GitHub (`gh pr update-branch --rebase`); a branch already on its base

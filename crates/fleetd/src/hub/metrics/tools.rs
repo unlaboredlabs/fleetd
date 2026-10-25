@@ -141,7 +141,7 @@ fn coverage(
             continue;
         };
         // A host the sweep has no source for is read from git alone, and says what that can't know.
-        let from_git = row.is_some_and(|r| hub.metrics.sweep.source(&r.host).is_none());
+        let from_git = row.is_some_and(|r| !super::source::has_api(&r.host));
         let host = if from_git { GitHost::Git } else { stored };
         let last_read = seen
             .as_ref()

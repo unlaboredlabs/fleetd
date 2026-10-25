@@ -134,6 +134,10 @@ pub async fn pass(hub: &Hub) {
         Err(e) => return tracing::error!(error = %e, "metrics: repos not listed"),
     };
     for r in repos {
+        // A host read through its API, on a hub built without its reader (a test or lab hub).
+        if source::has_api(&r.host) && sweep.source(&r.host).is_none() {
+            continue;
+        }
         let tried = lock(&sweep.tried).get(&r.repo).copied();
         let last = tried.max(r.last_ok_ms);
         if !due(last, r.last_merge_ms, wanted.contains(&r.repo), now) {

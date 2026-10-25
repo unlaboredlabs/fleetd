@@ -89,15 +89,28 @@ pub(super) fn change_trailer(change: &Change) -> String {
     )
 }
 
-/// A squash message's body with the trailers last, where git reads them.
+/// A squash message's body with the Changes' trailers last, where git reads them: in its own trailer block when it
+/// ends with one (the commits' `Co-authored-by` lines), so those stay trailers too.
 pub(super) fn with_trailers<'a>(
     body: &str,
     changes: impl IntoIterator<Item = &'a Change>,
 ) -> String {
     let trailers: Vec<String> = changes.into_iter().map(change_trailer).collect();
-    match body.replace("\r\n", "\n").trim() {
-        "" => trailers.join("\n"),
-        body => format!("{body}\n\n{}", trailers.join("\n")),
+    let body = body.replace("\r\n", "\n");
+    let body = body.trim();
+    let last = body.rsplit("\n\n").next().unwrap_or_default();
+    let trailer_block = !last.is_empty()
+        && last.lines().all(|l| {
+            l.split_once(": ").is_some_and(|(token, value)| {
+                !token.is_empty()
+                    && !value.trim().is_empty()
+                    && token.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+            })
+        });
+    match (body, trailer_block) {
+        ("", _) => trailers.join("\n"),
+        (body, true) => format!("{body}\n{}", trailers.join("\n")),
+        (body, false) => format!("{body}\n\n{}", trailers.join("\n")),
     }
 }
 
