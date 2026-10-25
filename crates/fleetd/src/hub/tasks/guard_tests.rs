@@ -1,5 +1,6 @@
-//! The disk and load guard over a real hub with a fake node: new agents wait while the machine is short of disk,
-//! running ones keep going, and room again starts the waiting ones. A merged writer's worktree goes.
+//! The disk and load guard and the usage soft brake over a real hub with a fake node: new agents wait while the
+//! machine is short of disk or its login's window is nearly used, running ones keep going, and room again starts the
+//! waiting ones. A merged writer's worktree goes.
 use std::sync::Arc;
 
 use fleetd_contracts::ids::MachineId;
@@ -121,6 +122,55 @@ async fn low_disk_holds_new_agents_keeps_running_ones_and_room_again_starts_them
     catch_up(&hub.tasks).await;
     assert_eq!(state(&hub, "T2").state, TaskState::Running);
     assert_eq!(state(&hub, "T1").state, TaskState::Running);
+}
+
+/// `load` with one 5-hour window `used` of the way through, resetting after the test clock.
+fn used(used: f64) -> fleetd_contracts::node_link::NodeLoad {
+    let mut l = load(500, 3.0);
+    l.limits = serde_json::from_value(json!([{
+        "limitType": "five_hour", "utilization": used, "resetsAt": "2026-10-30T14:00:00.000Z", "status": "allowed",
+    }]))
+    .unwrap();
+    l
+}
+
+#[tokio::test]
+async fn a_nearly_used_window_holds_new_agents_keeps_running_ones_and_below_85_starts_them() {
+    let (hub, _home) = hub();
+    let mut calls = serve(&hub, Node::link(&hub).await);
+    running(&hub, 1);
+    insert(
+        &hub,
+        json!({ "taskId": "T2", "title": "next slice", "state": "queued", "queuedReason": "Max agents: 1 of 1 running" }),
+    );
+
+    hub.link.observe_load(&lab_a(), Some(used(0.91)));
+    let paused = "Paused new agents: 5-hour limit 91% on lab-a, resets Fri 14:00 UTC (pauses at 90%, lifts below 85%)";
+    assert_eq!(hub.link.paused(&lab_a()).as_deref(), Some(paused));
+    catch_up(&hub.tasks).await;
+    let waiting = state(&hub, "T2");
+    assert_eq!(waiting.state, TaskState::Queued);
+    assert_eq!(waiting.queued_reason.as_ref().unwrap().as_str(), paused);
+    assert_eq!(state(&hub, "T1").state, TaskState::Running);
+    while let Ok(call) = calls.try_recv() {
+        assert!(
+            !matches!(call, SessionCall::Stop { .. }),
+            "a running agent is never stopped"
+        );
+    }
+
+    hub.link.observe_load(&lab_a(), Some(used(0.87)));
+    assert!(
+        hub.link.paused(&lab_a()).is_some(),
+        "between 85% and 90% it stays braked"
+    );
+    assert_eq!(guard_events(&hub), [true]);
+
+    hub.link.observe_load(&lab_a(), Some(used(0.84)));
+    assert_eq!(hub.link.paused(&lab_a()), None);
+    assert_eq!(guard_events(&hub), [true, false]);
+    catch_up(&hub.tasks).await;
+    assert_eq!(state(&hub, "T2").state, TaskState::Running);
 }
 
 #[tokio::test]

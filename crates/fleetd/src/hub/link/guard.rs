@@ -1,14 +1,16 @@
-//! The disk and load guard. A machine short of disk where its worktrees live (below the node's `minFreeBytes`), or
-//! with a 1-minute load above twice its CPUs, takes no new agents until it is back clear of the limit by a margin.
-//! Agents already running keep going. The node reports both figures with its heartbeat; the hub decides here.
+//! The disk, load and memory guard. A machine short of disk where its worktrees live (below the node's
+//! `minFreeBytes`), with a 1-minute load above twice its CPUs, or with 90% of its memory in use, takes no new agents
+//! until it is back clear of the limit by a margin. Agents already running keep going. The node reports both figures with its heartbeat; the hub decides here.
 use fleetd_contracts::node_link::NodeLoad;
 
 /// New agents wait above this 1-minute load per CPU.
 pub const LOAD_PER_CPU: f64 = 2.0;
+/// New agents wait with this much of the machine's memory in use, percent.
+pub const MEM_USED_PCT: f64 = 90.0;
 /// A paused machine resumes only 10% clear of a limit, so a reading at the edge doesn't flap.
 const MARGIN: f64 = 0.1;
 
-/// Why new agents wait on the machine ("14 GB free", "load 70.2 on 32 CPUs"), or None. `paused`: they already do.
+/// Why new agents wait on the machine ("14 GB free", "load 70.2 on 32 CPUs", "memory 93%"), or None. `paused`: they already do.
 pub fn why(load: &NodeLoad, paused: bool) -> Option<String> {
     let margin = if paused { MARGIN } else { 0.0 };
     if let Some(disk) = &load.disk {
@@ -18,8 +20,11 @@ pub fn why(load: &NodeLoad, paused: bool) -> Option<String> {
         }
     }
     let cpus = load.cpus.get();
-    (load.load1.get() > LOAD_PER_CPU * cpus as f64 * (1.0 - margin))
-        .then(|| format!("load {:.1} on {cpus} CPUs", load.load1.get()))
+    if load.load1.get() > LOAD_PER_CPU * cpus as f64 * (1.0 - margin) {
+        return Some(format!("load {:.1} on {cpus} CPUs", load.load1.get()));
+    }
+    let mem = load.mem_used_pct?.get();
+    (mem as f64 >= MEM_USED_PCT * (1.0 - margin)).then(|| format!("memory {mem}%"))
 }
 
 /// The line the project's status, the doctor and a waiting agent show.
@@ -69,6 +74,33 @@ pub(crate) mod tests {
         assert_eq!(why(&load(500, 60.0), false), None);
         assert!(why(&load(500, 60.0), true).is_some());
         assert_eq!(why(&load(500, 57.0), true), None);
+    }
+
+    #[test]
+    fn memory_in_use_pauses_at_90_percent_and_only_a_margin_clear_resumes() {
+        let at = |pct: i64, paused: bool| {
+            let mut l = load(500, 3.0);
+            l.mem_used_pct = Some(Int::unchecked(pct));
+            why(&l, paused)
+        };
+        assert_eq!(at(93, false).as_deref(), Some("memory 93%"));
+        assert_eq!(at(90, false).as_deref(), Some("memory 90%"));
+        assert_eq!(at(89, false), None);
+        assert_eq!(
+            at(85, true).as_deref(),
+            Some("memory 85%"),
+            "within the margin a paused machine stays paused"
+        );
+        assert_eq!(at(80, true), None);
+        assert_eq!(
+            why(&load(500, 3.0), true),
+            None,
+            "an unread figure never pauses"
+        );
+        assert_eq!(
+            paused_text(&at(93, false).unwrap(), "mbp"),
+            "Paused new agents: memory 93% on mbp"
+        );
     }
 
     #[test]

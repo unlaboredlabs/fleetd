@@ -265,6 +265,16 @@ missing or logged out runs no sessions until it is fixed. fleetd turns claude’
 <td>Nothing: new agents start once the load falls.</td>
 </tr>
 <tr>
+<td>“Paused new agents: memory 93% on laptop” <code dir="auto">[disk]</code></td>
+<td>The machine is short of memory.</td>
+<td>Close what you don’t need. New agents start once less than 81% is in use.</td>
+</tr>
+<tr>
+<td>“Paused new agents: 5-hour limit 91% on laptop, resets … (pauses at 90%, lifts below 85%)” <code dir="auto">[disk]</code></td>
+<td>Its Claude login has nearly used a usage window, your own Claude Code sessions included.</td>
+<td>Nothing: new agents start below 85% or at the reset. Running agents keep going.</td>
+</tr>
+<tr>
 <td>“New turns on laptop are paused by the usage breaker” <code dir="auto">[usage_breaker]</code></td>
 <td>Its Claude login hit a plan or rate limit.</td>
 <td>Wait for the reset (the finding says when), or, once it has capacity, call <code dir="auto">usage_resume</code> from an <a href="/docs/mcp-clients">MCP client</a>.</td>

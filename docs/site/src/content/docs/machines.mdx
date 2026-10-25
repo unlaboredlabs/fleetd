@@ -134,16 +134,20 @@ systemctl --user disable --now fleetd-node.service
 </TabItem>
 </Tabs>
 
-## Disk and load {#guard}
+## Disk, load, memory and usage {#guard}
 
-A machine short of disk or CPU takes no new agents until it has room again. Agents already running keep going.
+A machine short of disk, CPU or memory, or whose Claude login is nearly out of a usage window, takes no new agents
+until it has room again. Agents already running keep going.
 
 | New agents wait while | They start again at |
 |---|---|
 | Free space where the worktrees live is below `minFreeGb` in [`node.json`](/docs/config-and-files#node-json): 10% of the disk or 20 GB by default, whichever is larger. | 10% above it. |
 | The 1-minute load is above twice the machine's CPUs. | 10% below it. |
+| 90% of the machine's memory is in use (Linux only). | 10% below it: 81%. |
+| A usage window of the machine's Claude login is 90% used, or claude warned about it without a figure. API keys and gateways report no windows. | Below 85%, or at the window's reset. |
 
-The project's status says why, for example "Paused new agents: 14 GB free on builder-1", and `fleetd doctor` shows each
+The project's status says why, for example "Paused new agents: 14 GB free on builder-1" or "Paused new agents: 5-hour
+limit 91% on builder-1, resets Tue 14:00 UTC (pauses at 90%, lifts below 85%)", and `fleetd doctor` shows each
 machine's free space. A writer's worktree, build output included, goes once its PR merges, unless it holds
 uncommitted or unpushed work. When `sccache` is on the node's `PATH`, sessions compile through it, so a dependency
 builds once per machine rather than once per worktree.

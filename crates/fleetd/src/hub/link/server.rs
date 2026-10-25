@@ -74,10 +74,19 @@ struct State {
     next_link_id: u64,
     /// The latest load each node reported with its heartbeat; dropped when the machine goes offline.
     loads: HashMap<MachineId, NodeLoad>,
-    /// Machines the guard pauses new agents on, with the line that says why; dropped when the machine goes offline.
-    paused: HashMap<MachineId, String>,
+    /// Machines the guard or the usage soft brake pauses new agents on; dropped when the machine goes offline.
+    paused: HashMap<MachineId, Paused>,
     /// What each live link's node said it understands in its hello.
     capabilities: HashMap<MachineId, Vec<String>>,
+}
+
+/// Why a machine takes no new agents: the line that says so, and which of the two holds it (each resumes past its own
+/// margin).
+#[derive(Clone)]
+struct Paused {
+    text: String,
+    guard: bool,
+    brake: bool,
 }
 
 impl NodeLinkServer {
@@ -88,34 +97,57 @@ impl NodeLinkServer {
 
     /// Why new agents wait on the machine, e.g. "Paused new agents: 14 GB free on builder-1"; None while they start.
     pub fn paused(&self, machine_id: &MachineId) -> Option<String> {
-        self.state.lock().unwrap().paused.get(machine_id).cloned()
+        let state = self.state.lock().unwrap();
+        state.paused.get(machine_id).map(|p| p.text.clone())
     }
 
-    /// Keeps a heartbeat's load and runs the guard over it. `machine.guard` marks each pause and resume, which
-    /// starts waiting agents again and refreshes the project rows; the line's figure updates with every heartbeat.
+    /// Keeps a heartbeat's load and runs the guard and the usage soft brake over it. `machine.guard` marks each pause
+    /// and resume, which starts waiting agents again and refreshes the project rows; the line's figure updates with
+    /// every heartbeat.
     pub fn observe_load(&self, machine_id: &MachineId, load: Option<NodeLoad>) {
-        let (was, why) = {
+        let now = now_ms(self.deps.clock.as_ref());
+        let (was, why, brake) = {
             let mut state = self.state.lock().unwrap();
-            let was = state.paused.contains_key(machine_id);
-            let why = load.as_ref().and_then(|l| super::guard::why(l, was));
+            let was = state.paused.get(machine_id).cloned();
+            let why = load
+                .as_ref()
+                .and_then(|l| super::guard::why(l, was.as_ref().is_some_and(|p| p.guard)));
+            let brake = load.as_ref().and_then(|l| {
+                crate::hub::usage::state::brake(
+                    &l.limits,
+                    was.as_ref().is_some_and(|p| p.brake),
+                    now,
+                )
+            });
             match load {
                 Some(load) => state.loads.insert(machine_id.clone(), load),
                 None => state.loads.remove(machine_id),
             };
-            (was, why)
+            (was.is_some(), why, brake)
         };
-        if why.is_none() && !was {
+        if why.is_none() && brake.is_none() && !was {
             return;
         }
         let name = match self.deps.store.machine_get(machine_id) {
             Ok(Some(m)) => m.name,
             _ => machine_id.to_string(),
         };
-        let text = why.map(|why| super::guard::paused_text(&why, &name));
+        // The guard's line first: a full disk outlasts a usage window.
+        let text = why
+            .as_ref()
+            .map(|why| super::guard::paused_text(why, &name))
+            .or_else(|| brake.as_ref().map(|b| b.text(&name)));
         {
             let mut state = self.state.lock().unwrap();
             match &text {
-                Some(text) => state.paused.insert(machine_id.clone(), text.clone()),
+                Some(text) => state.paused.insert(
+                    machine_id.clone(),
+                    Paused {
+                        text: text.clone(),
+                        guard: why.is_some(),
+                        brake: brake.is_some(),
+                    },
+                ),
                 None => state.paused.remove(machine_id),
             };
         }
