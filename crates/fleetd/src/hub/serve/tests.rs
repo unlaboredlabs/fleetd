@@ -415,7 +415,7 @@ async fn app_socket_closes_on_a_refused_key_and_calls_through_the_same_checks() 
     frames.sort_by_key(|f| f["id"].as_str().unwrap_or("").to_owned());
     assert_eq!(
         frames[0],
-        json!({ "t": "ready", "protocol": 1, "version": crate::version() })
+        json!({ "t": "ready", "protocol": 1, "version": crate::version(), "features": ["presence"] })
     );
     assert_eq!(
         frames[1],
@@ -428,6 +428,90 @@ async fn app_socket_closes_on_a_refused_key_and_calls_through_the_same_checks() 
     assert_eq!(
         frames[3],
         json!({ "t": "error", "id": "c2", "code": "not_found", "message": "No tool nope.", "fix": "Use a tool name from the hub's MCP tool list." })
+    );
+}
+
+#[tokio::test]
+async fn app_presence_is_recorded_for_a_human_key_and_never_answered() {
+    let t = start().await;
+    let grants: Vec<Grant> =
+        serde_json::from_value(json!([{ "role": "read", "machines": "*" }])).unwrap();
+    let human = t
+        .hub
+        .auth
+        .create_key("desk", &grants, KeyKind::Human)
+        .unwrap()
+        .key;
+    let agent = key(&t.hub, json!([{ "role": "read", "machines": "*" }]));
+    let web = json!({ "machineId": "devbox", "projectId": "web" });
+    crate::hub::metrics::presence_tests::add_projects(&t.hub, &["web"]);
+    // A frame the hub can't read is answered with its own id.
+    let (mut app, _) = tokio_tungstenite::connect_async(format!("ws://{}/app", t.url))
+        .await
+        .unwrap();
+    for frame in [
+        json!({ "t": "auth", "key": human }),
+        json!({ "t": "presence", "id": "p1", "focused": "yes" }),
+    ] {
+        app.send(Message::text(frame.to_string())).await.unwrap();
+    }
+    let _ready = app.next().await.unwrap().unwrap();
+    let refused: Value =
+        serde_json::from_str(app.next().await.unwrap().unwrap().to_text().unwrap()).unwrap();
+    assert_eq!(
+        (
+            refused["t"].as_str(),
+            refused["id"].as_str(),
+            refused["code"].as_str()
+        ),
+        (Some("error"), Some("p1"), Some("invalid"))
+    );
+    for key in [agent, human] {
+        let (mut app, _) = tokio_tungstenite::connect_async(format!("ws://{}/app", t.url))
+            .await
+            .unwrap();
+        for frame in [
+            json!({ "t": "auth", "key": key }),
+            json!({ "t": "presence", "focused": true, "input": true, "project": web }),
+            json!({ "t": "call", "id": "c1", "tool": "events_wait", "input": { "timeoutSec": 0 } }),
+        ] {
+            app.send(Message::text(frame.to_string())).await.unwrap();
+        }
+        let ready: Value =
+            serde_json::from_str(app.next().await.unwrap().unwrap().to_text().unwrap()).unwrap();
+        assert_eq!(ready["t"], "ready");
+        // The next frame answers the call: presence has no answer.
+        let next: Value =
+            serde_json::from_str(app.next().await.unwrap().unwrap().to_text().unwrap()).unwrap();
+        assert_eq!(
+            (next["t"].as_str(), next["id"].as_str()),
+            (Some("result"), Some("c1"))
+        );
+    }
+    // Only the human key's minute is an event.
+    let page = t
+        .hub
+        .events
+        .page(
+            0,
+            Some(&[fleetd_contracts::events::HubEventType::AppPresence]),
+            None,
+        )
+        .unwrap();
+    assert_eq!(page.events.len(), 1);
+    let data = page.events[0].data.clone().unwrap();
+    let mut keys: Vec<&str> = data
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    keys.sort_unstable();
+    assert_eq!(keys, ["by", "fromMs", "toMs"]);
+    assert_eq!(data["by"], "desk");
+    assert_eq!(
+        data["toMs"].as_i64().unwrap() - data["fromMs"].as_i64().unwrap(),
+        crate::hub::metrics::presence::WINDOW_MS
     );
 }
 

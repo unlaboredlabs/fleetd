@@ -31,6 +31,7 @@ const page = (tab: Tab, keywords: ReadonlyArray<string>): SettingsOption => ({ k
 export const OPTIONS: ReadonlyArray<SettingsOption> = [
   page("general", ["preferences"]),
   { key: "general.appearance", label: "Appearance", tab: "general", keywords: ["theme", "dark", "light", "mode", "match system"] },
+  { key: "general.presence", label: "Time in the app", tab: "general", keywords: ["presence", "focus", "activity", "privacy", "minutes", "tracking"] },
   { key: "general.hub", label: "Hub", tab: "general", keywords: ["pair", "connection", "disconnect", "key", "server"] },
   page("notifications", ["alerts", "mute"]),
   { key: "notifications.kinds", label: "Notify me when", tab: "notifications", keywords: ["notifications", "alerts", "mute", "finished", "done"] },

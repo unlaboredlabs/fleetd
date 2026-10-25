@@ -213,6 +213,13 @@ export type AppClientMessage = {
 } | {
   project?: ProjectRef;
   t: "chat";
+} | {
+  focused: boolean;
+  /** Chosen by the client; the hub echoes it only on the error for a frame it can't read. */
+  id?: string;
+  input: boolean;
+  project?: ProjectRef;
+  t: "presence";
 };
 
 /** A `call` failed, or (without `id`) the session did. */
@@ -237,6 +244,8 @@ export type AppPresenceData = {
 };
 
 export type AppServerMessage = {
+  /** The newer client messages it reads ([`APP_FEATURES`]). Absent from older hubs: send them none. */
+  features?: string[];
   protocol: number;
   t: "ready";
   /** The hub's fleetd version, as hub_info reports it. Absent from older hubs. */

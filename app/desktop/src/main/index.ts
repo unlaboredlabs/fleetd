@@ -23,6 +23,7 @@ import { Notifier } from "./notify";
 import { claimOnFirstRun } from "./linkHandlerMain";
 import { listenForLinks } from "./links";
 import { Opener } from "./opener";
+import { PresenceSetting, startPresence } from "./presence";
 import { FAILURES_IN_A_ROW, guardWindow } from "./recovery";
 import { harden, isOwnPage, lockSession, pageUrl } from "./security";
 import { updates } from "./updater";
@@ -230,12 +231,23 @@ void app.whenReady().then(() => {
     return;
   }
   const updater = updates(fixtureFile);
-  registerIpc(hub, { opener, notifier: new Notifier(opener), log: appLog, updates: updater }, pairing);
+  const presence = new PresenceSetting(join(app.getPath("userData"), "presence.json"));
+  registerIpc(hub, { opener, notifier: new Notifier(opener), log: appLog, updates: updater, presence }, pairing);
   installMenu(opener, help);
   claimOnFirstRun();
   app.on("browser-window-focus", () => hub.windowFocused());
   powerMonitor.on("resume", () => hub.systemResumed());
-  app.on("will-quit", () => hub.stop());
+  const stopPresence = startPresence({
+    on: () => presence.on,
+    focused: () => BrowserWindow.getFocusedWindow() !== null,
+    active: (seconds) => powerMonitor.getSystemIdleState(seconds) === "active",
+    project: () => hub.onScreen(),
+    send: (frame) => hub.presence(frame),
+  });
+  app.on("will-quit", () => {
+    stopPresence();
+    hub.stop();
+  });
   opener.setHooks({
     create: () => void createWindow(mode),
     activateApp: () => {

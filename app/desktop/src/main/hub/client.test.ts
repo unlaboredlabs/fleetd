@@ -279,6 +279,99 @@ describe("HubClient", () => {
     expect(hub.sent.at(-1)).toEqual({ t: "chat" });
   });
 
+  it("sends presence only on a live link to a hub that reads it, as the three facts and nothing else", () => {
+    const { hub, client } = setup();
+    const project = { machineId: "devbox", projectId: "storefront" };
+    const presences = () => hub.sent.filter((m) => m["t"] === "presence");
+    client.start();
+    // Not ready yet: dropped, never sent late.
+    client.presence({ focused: true, input: true, project });
+    hub.open();
+    expect(hub.sent).toEqual([{ t: "auth", key: "k1" }]);
+    // A hub that names no features is never sent presence.
+    hub.frame({ t: "ready", protocol: 1 });
+    client.presence({ focused: true, input: true, project });
+    expect(presences()).toEqual([]);
+    hub.close(1006);
+    vi.advanceTimersByTime(500);
+    hub.open();
+    hub.frame({ t: "ready", protocol: 1, features: ["presence"] });
+    client.presence({ focused: true, input: true, project });
+    expect(hub.sent.at(-1)).toEqual({ t: "presence", id: "p1", focused: true, input: true, project });
+    expect(presences()).toHaveLength(1);
+    hub.close(1006);
+    client.presence({ focused: true, input: false });
+    expect(presences()).toHaveLength(1);
+  });
+
+  it("stops presence when the hub can't read a presence frame, without an error or a restarted stream, until the next connection", () => {
+    const { hub, frames, client, states } = setup();
+    const presences = () => hub.sent.filter((m) => m["t"] === "presence");
+    client.start();
+    hub.open();
+    hub.frame({ t: "ready", protocol: 1, features: ["presence"] });
+    hub.frame({ t: "snapshot", cursor: 10, machines: [] });
+    hub.frame({ t: "event", seq: 11, type: "x" });
+    client.presence({ focused: true, input: true });
+    const sentBefore = hub.sent.length;
+    const framesBefore = frames.length;
+    // The refusal names the presence frame's id.
+    hub.frame({ t: "error", id: "p1", code: "invalid", message: "Unknown or malformed message.", fix: "Send {t:auth|snapshot|events}." });
+    // Minutes later: no more presence, no `events` resent, nothing shown, the same connection.
+    for (let minute = 0; minute < 5; minute++) {
+      for (let ping = 0; ping < 4; ping++) {
+        vi.advanceTimersByTime(PING_EVERY_MS);
+        hub.pong();
+      }
+      client.presence({ focused: true, input: true });
+    }
+    expect(presences()).toHaveLength(1);
+    expect(hub.sent.slice(sentBefore).filter((m) => m["t"] !== "presence")).toEqual([]);
+    expect(hub.closedByClient).toBe(0);
+    expect(frames.slice(framesBefore)).toEqual([]);
+    expect(hub.urls).toHaveLength(1);
+    expect(states().at(-1)).toBe("live");
+    // Any other session error still resumes the stream.
+    hub.frame({ t: "error", code: "failed", message: "The hub failed to answer that request." });
+    vi.advanceTimersByTime(500);
+    expect(hub.sent.at(-1)).toEqual({ t: "events", cursor: 11 });
+    // A new connection asks again by what its `ready` says.
+    hub.close(1006);
+    vi.advanceTimersByTime(500);
+    hub.open();
+    hub.frame({ t: "ready", protocol: 1, features: ["presence"] });
+    client.presence({ focused: true, input: true });
+    // (The fake hub's record starts over with each connection.)
+    expect(presences()).toEqual([{ t: "presence", id: "p2", focused: true, input: true }]);
+  });
+
+  it("handles any other malformed-message error as before: the stream resumes and presence stays on", () => {
+    const { hub, frames, client } = setup();
+    const presences = () => hub.sent.filter((m) => m["t"] === "presence");
+    client.start();
+    hub.open();
+    hub.frame({ t: "ready", protocol: 1, features: ["presence"] });
+    hub.frame({ t: "snapshot", cursor: 10, machines: [] });
+    hub.frame({ t: "event", seq: 11, type: "x" });
+    client.presence({ focused: true, input: true });
+    // An error about something else, with no id, right after a presence frame.
+    const error = { code: "invalid", message: "Unknown or malformed message.", fix: "Send {t:auth|snapshot|events}." };
+    hub.frame({ t: "error", ...error });
+    expect(frames.at(-1)).toEqual({ t: "error", error });
+    vi.advanceTimersByTime(500);
+    expect(hub.sent.at(-1)).toEqual({ t: "events", cursor: 11 });
+    client.presence({ focused: true, input: false });
+    expect(presences()).toEqual([
+      { t: "presence", id: "p1", focused: true, input: true },
+      { t: "presence", id: "p2", focused: true, input: false },
+    ]);
+    // A call's error, by its own id, settles the call and leaves presence on too.
+    void client.call({ tool: "x", input: {} });
+    hub.frame({ t: "error", id: "c1", ...error });
+    client.presence({ focused: true, input: true });
+    expect(presences()).toHaveLength(3);
+  });
+
   it("forwards live frames without their tag", () => {
     const { hub, frames, client } = setup();
     client.start();

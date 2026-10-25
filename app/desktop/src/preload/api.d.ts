@@ -108,6 +108,11 @@ export interface FleetdApi {
      * main makes it the handler first when it should; a dev build never does.
      */
     linkHandler(claim: LinkHandlerClaim | null): Promise<LinkHandlerStatus>;
+    /**
+     * App presence: whether main tells the hub, once a minute, that the app is focused, the project on screen and
+     * whether there was input. Null only reads; a boolean turns it on or off. On by default.
+     */
+    presence(on: boolean | null): Promise<boolean>;
     /** The menu commands enabled now; main greys out the other menu items. */
     setMenuState(enabled: ReadonlyArray<MenuCommand>): Promise<void>;
     /** Logs an error the page caught to the app log (main scrubs it). Never rejects. */

@@ -12,12 +12,18 @@ export type ClientMessage =
   | { t: "events"; cursor: number }
   | { t: "call"; id: string; tool: string; input: unknown }
   | { t: "live"; board: true; focus?: string }
-  | { t: "chat"; project?: { machineId: string; projectId: string } };
+  | { t: "chat"; project?: { machineId: string; projectId: string } }
+  | { t: "presence"; id: string; focused: boolean; input: boolean; project?: { machineId: string; projectId: string } };
 
 const cursor = z.int().min(0);
 
 export const ServerFrame = z.discriminatedUnion("t", [
-  z.object({ t: z.literal("ready"), protocol: z.int(), version: z.string().max(200).optional() }),
+  z.object({
+    t: z.literal("ready"),
+    protocol: z.int(),
+    version: z.string().max(200).optional(),
+    features: z.array(z.string().max(64)).max(64).optional(),
+  }),
   z.looseObject({ t: z.literal("snapshot"), cursor }),
   z.looseObject({ t: z.literal("event"), seq: cursor, type: z.string() }),
   z.object({ t: z.literal("result"), id: z.string(), output: z.unknown() }),
