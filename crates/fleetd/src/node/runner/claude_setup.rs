@@ -217,6 +217,18 @@ mod tests {
     }
 
     #[test]
+    fn paths_under_the_home_dir_read_from_a_tilde() {
+        let home = crate::node::util::home_dir();
+        assert_eq!(tilde(&home), "~");
+        assert_eq!(
+            tilde(&home.join(".claude/settings.json")),
+            "~/.claude/settings.json"
+        );
+        let outside = Path::new("/nonexistent-home-sibling/settings.json");
+        assert_eq!(tilde(outside), "/nonexistent-home-sibling/settings.json");
+    }
+
+    #[test]
     fn a_proxy_in_user_settings_wins_over_the_environment_and_names_its_file() {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path().to_str().unwrap();
@@ -236,12 +248,10 @@ mod tests {
             r#"{"env":{"ANTHROPIC_BASE_URL":"http://127.0.0.1:8317/","ANTHROPIC_AUTH_TOKEN":"x"}}"#,
         )
         .unwrap();
+        // Named as messages show paths: `~/…` when the temp dir sits under the node's own home.
         assert_eq!(
             proxy_of(&base),
-            Some((
-                "http://127.0.0.1:8317".into(),
-                settings.display().to_string()
-            ))
+            Some(("http://127.0.0.1:8317".into(), tilde(&settings)))
         );
         std::fs::write(
             &settings,
