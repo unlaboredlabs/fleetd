@@ -329,6 +329,7 @@ impl TaskPorts for HubTaskPorts {
             WakeKind::TaskWaiting => LineKind::TaskWaiting,
             WakeKind::CapRaised => LineKind::CapRaised,
             WakeKind::Recovery => LineKind::Recovery,
+            WakeKind::RecoveryPaused => LineKind::RecoveryPaused,
         };
         hub.leads
             .wakes
@@ -502,6 +503,20 @@ pub fn wire(hub: &Arc<Hub>, ports: &HubTaskPorts) {
         run: Arc::new(move || {
             let result = tasks.unreachable().map_err(|e| e.to_string());
             Box::pin(async move { result })
+        }),
+    });
+    // Orphaned tasks, sessions nobody owns, and breakers whose quiet spell is over.
+    let tasks = Arc::downgrade(&hub.tasks);
+    hub.sweep.register(crate::hub::sweep::SweepCheck {
+        name: "tasks".into(),
+        run: Arc::new(move || {
+            let tasks = tasks.upgrade();
+            Box::pin(async move {
+                match tasks {
+                    Some(tasks) => tasks.sweep().await,
+                    None => Ok(()),
+                }
+            })
         }),
     });
 }

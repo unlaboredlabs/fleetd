@@ -545,6 +545,110 @@ pub fn usage_breaker(machine_id: &str, breaker: &UsageBreaker) -> Entry {
     )
 }
 
+/// An open recovery breaker (`tasks::breaker`): the agents whose deaths opened it, the ones that wait, and when it
+/// closes if nothing else dies there ("10:42 UTC").
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RecoveryPaused {
+    pub opened_by: Vec<String>,
+    pub waiting: Vec<String>,
+    pub until: String,
+}
+
+pub fn recovery_breaker(machine_id: &str, paused: Option<&RecoveryPaused>) -> Entry {
+    let Some(p) = paused else {
+        return machine_entry(
+            machine_id,
+            "recovery",
+            Pass,
+            &format!("Agents on {machine_id} whose run dies resume on their own."),
+            None,
+        );
+    };
+    let waiting = match p.waiting.len() {
+        0 => String::new(),
+        n => format!(
+            " {} wait{}: {}.",
+            n,
+            if n == 1 { "s" } else { "" },
+            p.waiting.join(", ")
+        ),
+    };
+    machine_entry(
+        machine_id,
+        "recovery",
+        Warn,
+        &format!(
+            "Automatic recovery is paused on {machine_id}: {} agents died there within 10 min ({}).{waiting} It \
+             resumes at {} if no other agent dies there, or once one there completes.",
+            p.opened_by.len(),
+            p.opened_by.join(", "),
+            p.until
+        ),
+        Some(manual(
+            &format!(
+                "Find out what kills agents on {machine_id} (its memory, its toolchain); message_agent continues one now"
+            ),
+            None,
+        )),
+    )
+}
+
+/// A session a node runs that no task or lead of this hub owns.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UnownedSession {
+    pub thread_id: String,
+    pub title: String,
+}
+
+pub fn unowned_sessions(machine_id: &str, offline: bool, sessions: &[UnownedSession]) -> Entry {
+    if offline {
+        return machine_entry(
+            machine_id,
+            "sessions",
+            Unknown,
+            &format!("{machine_id} is offline."),
+            None,
+        );
+    }
+    if sessions.is_empty() {
+        return machine_entry(
+            machine_id,
+            "sessions",
+            Pass,
+            &format!("Every session running on {machine_id} is an agent's or a lead's."),
+            None,
+        );
+    }
+    let named: Vec<String> = sessions
+        .iter()
+        .take(5)
+        .map(|s| format!("\"{}\" ({})", clip(&s.title, 60), s.thread_id))
+        .collect();
+    let more = sessions.len().saturating_sub(named.len());
+    let more = if more > 0 {
+        format!(" and {more} more")
+    } else {
+        String::new()
+    };
+    machine_entry(
+        machine_id,
+        "sessions",
+        Warn,
+        &format!(
+            "{machine_id} runs {} session{} no agent or lead of this hub owns: {}{more}. Nothing watches or counts them.",
+            sessions.len(),
+            if sessions.len() == 1 { "" } else { "s" },
+            named.join(", ")
+        ),
+        Some(manual(
+            &format!(
+                "Read it with thread_tail; if nothing should be running it, stop its claude on {machine_id}"
+            ),
+            None,
+        )),
+    )
+}
+
 /// The node's `probe` action result (node-link `NodeActionResult.probe`).
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]

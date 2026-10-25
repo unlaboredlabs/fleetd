@@ -275,6 +275,37 @@ impl DoctorFleet for OpsPorts {
             })
             .collect()
     }
+    fn recovery_paused(
+        &self,
+        machine_id: &str,
+    ) -> Option<crate::hub::doctor::checks::RecoveryPaused> {
+        let paused = self.hub().tasks.recovery_paused_on(&machine(machine_id)?)?;
+        let ids = |ids: Vec<fleetd_contracts::tasks::TaskId>| {
+            ids.into_iter().map(|t| t.as_str().to_owned()).collect()
+        };
+        Some(crate::hub::doctor::checks::RecoveryPaused {
+            opened_by: ids(paused.opened_by),
+            waiting: ids(paused.held),
+            until: crate::hub::tasks::sweep::clock_time(paused.until_ms),
+        })
+    }
+    fn unowned_sessions(
+        &self,
+        machine_id: &str,
+    ) -> Vec<crate::hub::doctor::checks::UnownedSession> {
+        let Some(m) = machine(machine_id) else {
+            return Vec::new();
+        };
+        self.hub()
+            .tasks
+            .unowned(&m)
+            .into_iter()
+            .map(|u| crate::hub::doctor::checks::UnownedSession {
+                thread_id: u.thread_id,
+                title: u.title,
+            })
+            .collect()
+    }
     fn node_action(
         &self,
         machine_id: &str,

@@ -91,6 +91,8 @@ pub enum WakeKind {
     CapRaised,
     /// A dead task resumed, or one waits for its offline machine: in the lead's next wake, never one alone.
     Recovery,
+    /// Agents on a machine kept dying, so their resumes there wait (`tasks::breaker`): once per lead.
+    RecoveryPaused,
 }
 
 pub trait TaskPorts: Send + Sync {
