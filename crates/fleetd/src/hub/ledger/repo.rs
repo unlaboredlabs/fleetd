@@ -1,7 +1,9 @@
 //! Synchronous SQL over the ledger tables. Callers compose these inside one write transaction
 //! and emit events after the commit; nothing here opens a transaction itself.
 use fleetd_contracts::ids::{ProjectRef, Timestamp};
-use fleetd_contracts::ledger::{Decision, DecisionId, DecisionKey, DecisionScope, DecisionState};
+use fleetd_contracts::ledger::{
+    Decision, DecisionId, DecisionKey, DecisionRetired, DecisionScope, DecisionState,
+};
 use rusqlite::{Connection, OptionalExtension, named_params, params};
 
 use super::{Actor, Chain, Fail, LedgerError, project_key};
@@ -173,6 +175,7 @@ pub fn record_decision(
         supersedes,
         state: DecisionState::Active,
         at: Timestamp(iso_ms(now_ms)),
+        retired: None,
     };
     put_decision(db, n, &decision)?;
     db.execute(
@@ -187,7 +190,12 @@ pub fn record_decision(
     Ok(decision)
 }
 
-pub fn retire_decision(db: &Connection, id: &str) -> Result<Decision, Fail> {
+/// `retired`: who took it back and why, for a person's revoke.
+pub fn retire_decision(
+    db: &Connection,
+    id: &str,
+    retired: Option<DecisionRetired>,
+) -> Result<Decision, Fail> {
     let Some(mut decision) = get_decision(db, id)? else {
         return Err(LedgerError::not_found(format!("No decision {id}.")).into());
     };
@@ -199,6 +207,7 @@ pub fn retire_decision(db: &Connection, id: &str) -> Result<Decision, Fail> {
         .into());
     }
     decision.state = DecisionState::Retired;
+    decision.retired = retired;
     put_decision(db, decision_n(id).expect("found by id"), &decision)?;
     Ok(decision)
 }
@@ -231,6 +240,21 @@ pub fn active_on_key(
     let mut stmt =
         db.prepare_cached("SELECT data FROM decisions WHERE key = ? AND project_key = ? AND state = 'active' ORDER BY n")?;
     let rows = stmt.query_map(params![key, project_key(project_ref)], |r| {
+        r.get::<_, String>(0)
+    })?;
+    rows.map(|row| decode(row?)).collect()
+}
+
+/// Every decision recorded in the project at project or workstream scope, in any state, newest first.
+pub fn history_in_project(
+    db: &Connection,
+    project_ref: &ProjectRef,
+    limit: i64,
+) -> Result<Vec<Decision>, Fail> {
+    let mut stmt = db.prepare_cached(
+        "SELECT data FROM decisions WHERE project_key = ? AND scope_kind IN ('project', 'workstream') ORDER BY n DESC LIMIT ?",
+    )?;
+    let rows = stmt.query_map(params![project_key(project_ref), limit], |r| {
         r.get::<_, String>(0)
     })?;
     rows.map(|row| decode(row?)).collect()

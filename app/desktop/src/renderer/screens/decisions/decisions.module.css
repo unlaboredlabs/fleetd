@@ -1,0 +1,204 @@
+/* The panel's Decisions tab: a search and two filters above one calm list. The value reads first; who, where and
+   when stay quiet under it. */
+
+.screen {
+  --pad: var(--space-4);
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+/* That the list isn't live, above it. */
+.liveness {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--pad) 0;
+}
+
+.toolbar {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--pad) var(--space-2);
+  border-bottom: 1px solid var(--hairline);
+}
+.search {
+  width: 100%;
+}
+.filters {
+  display: flex;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.filter {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--pad);
+}
+.skeleton > span {
+  height: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--selected);
+}
+.skeleton > span:nth-child(2) {
+  width: 70%;
+}
+.skeleton > span:nth-child(3) {
+  width: 55%;
+}
+.empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-8) var(--pad);
+}
+.paneNote {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--pad);
+}
+
+.listScroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-1) 0 var(--space-4);
+}
+.section + .section {
+  margin-top: var(--space-2);
+}
+.group {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--pad) var(--space-1);
+}
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.item {
+  margin: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+}
+.item.open {
+  background: var(--hover);
+}
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1-5);
+  width: 100%;
+  padding: var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.row:hover {
+  background: var(--hover);
+}
+.item.open .row:hover {
+  background: none;
+}
+.row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.chevron {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  /* On the key's line, which sits above the value. */
+  margin-top: 1px;
+  color: var(--faint);
+}
+.rowBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rowKey {
+  display: flex;
+  min-width: 0;
+}
+.value {
+  display: flex;
+  min-width: 0;
+}
+.revokedValue {
+  text-decoration: line-through;
+  text-decoration-color: var(--faint);
+}
+.rowMeta {
+  display: flex;
+  align-items: center;
+  column-gap: var(--space-2);
+  min-width: 0;
+}
+.rowWhen {
+  flex: none;
+  margin-inline-start: auto;
+}
+
+.details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  /* Under the text, past the chevron. */
+  padding: 0 var(--space-2) var(--space-3) calc(var(--space-2) + 14px + var(--space-1-5));
+}
+.note {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.earlier {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 var(--space-2);
+  border-inline-start: 1px solid var(--hairline);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.earlierItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--hairline);
+}

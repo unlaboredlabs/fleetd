@@ -1751,6 +1751,10 @@
           "$ref": "#/$defs/RememberedItem",
           "description": "A system line \"Remembered: …\": what the lead's `remember` wrote, which `memory_undo` takes back."
         },
+        "replyTo": {
+          "$ref": "#/$defs/ChatReplyTo",
+          "description": "A human message: the bubble it answers."
+        },
         "seq": {
           "maximum": 9007199254740991,
           "minimum": 0,
@@ -1823,6 +1827,24 @@
       ],
       "type": "object"
     },
+    "ChatReplyTo": {
+      "description": "The bubble a human message answers: a lead message and the bubble's place in it, as `parts` counts (0 for a\nmessage of one bubble). The lead reads that bubble whole over the reply, and when it was written.",
+      "properties": {
+        "messageId": {
+          "$ref": "#/$defs/ChatMessageId"
+        },
+        "part": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "messageId",
+        "part"
+      ],
+      "type": "object"
+    },
     "ChatRequestId": {
       "pattern": "^Q[1-9][0-9]*$",
       "type": "string"
@@ -1852,6 +1874,10 @@
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
+        },
+        "replyTo": {
+          "$ref": "#/$defs/ChatReplyTo",
+          "description": "The lead's bubble this answers. `text` still opens with its one-line quote, for clients that show text as it\nis; the lead reads the whole bubble in its place."
         },
         "session": {
           "$ref": "#/$defs/ThreadId",
@@ -2606,6 +2632,10 @@
         "key": {
           "$ref": "#/$defs/DecisionKey"
         },
+        "retired": {
+          "$ref": "#/$defs/DecisionRetired",
+          "description": "Who took it back, when a person revoked it (`decisions_overturn` without a value)."
+        },
         "scope": {
           "$ref": "#/$defs/DecisionScope"
         },
@@ -2649,6 +2679,43 @@
       "description": "Lowercase dotted slug, [a-z0-9]+(.[a-z0-9_-]+)*, at most 80",
       "pattern": "^[a-z0-9]+(\\.[a-z0-9_-]+)*$",
       "type": "string"
+    },
+    "DecisionOrder": {
+      "properties": {
+        "title": {
+          "maxLength": 200,
+          "type": "string"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "workstreamId",
+        "title"
+      ],
+      "type": "object"
+    },
+    "DecisionRetired": {
+      "description": "A revoke: by \"human:<device>\", at, and the person's why.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "by": {
+          "type": "string"
+        },
+        "why": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "by",
+        "at"
+      ],
+      "type": "object"
     },
     "DecisionScope": {
       "oneOf": [
@@ -2714,6 +2781,99 @@
         "retired"
       ],
       "type": "string"
+    },
+    "DecisionsListInput": {
+      "properties": {
+        "limit": {
+          "default": 200,
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "projectRef"
+      ],
+      "type": "object"
+    },
+    "DecisionsListOutput": {
+      "properties": {
+        "decisions": {
+          "description": "Every state: active, superseded and retired.",
+          "items": {
+            "$ref": "#/$defs/Decision"
+          },
+          "maxItems": 500,
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "orders": {
+          "description": "The order each workstream-scoped decision belongs to, by its title.",
+          "items": {
+            "$ref": "#/$defs/DecisionOrder"
+          },
+          "maxItems": 500,
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "decisions",
+        "orders"
+      ],
+      "type": "object"
+    },
+    "DecisionsOverturnInput": {
+      "properties": {
+        "decisionId": {
+          "$ref": "#/$defs/DecisionId"
+        },
+        "value": {
+          "description": "Absent: revoke, and the key goes unanswered again. Present: a new decision on the same key and scope.",
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "why": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "decisionId",
+        "why"
+      ],
+      "type": "object"
+    },
+    "DecisionsOverturnOutput": {
+      "properties": {
+        "decision": {
+          "$ref": "#/$defs/Decision",
+          "description": "The replacement, when a value was given."
+        },
+        "next": {
+          "type": "string"
+        },
+        "overturned": {
+          "$ref": "#/$defs/Decision",
+          "description": "The decision overturned: retired, or superseded by `decision`."
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "overturned"
+      ],
+      "type": "object"
     },
     "DecisionsRecordInput": {
       "properties": {
@@ -3704,6 +3864,11 @@
         {
           "const": "request.updated",
           "description": "A request changed state (stored, declined, approved, running, done, failed, denied, or open again when it could\nnot run); `data` as request.opened.",
+          "type": "string"
+        },
+        {
+          "const": "decision.retired",
+          "description": "A person revoked a decision (`decisions_overturn`); its key goes unanswered again.",
           "type": "string"
         },
         {
@@ -4734,6 +4899,18 @@
         "chat_stop.output": {
           "$ref": "#/$defs/ChatStopOutput"
         },
+        "decisions_list.input": {
+          "$ref": "#/$defs/DecisionsListInput"
+        },
+        "decisions_list.output": {
+          "$ref": "#/$defs/DecisionsListOutput"
+        },
+        "decisions_overturn.input": {
+          "$ref": "#/$defs/DecisionsOverturnInput"
+        },
+        "decisions_overturn.output": {
+          "$ref": "#/$defs/DecisionsOverturnOutput"
+        },
         "decisions_record.input": {
           "$ref": "#/$defs/DecisionsRecordInput"
         },
@@ -5064,6 +5241,10 @@
         "chat_send.output",
         "chat_stop.input",
         "chat_stop.output",
+        "decisions_list.input",
+        "decisions_list.output",
+        "decisions_overturn.input",
+        "decisions_overturn.output",
         "decisions_record.input",
         "decisions_record.output",
         "decisions_search.input",

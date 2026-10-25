@@ -194,6 +194,18 @@ pub struct Decision {
     pub supersedes: Option<DecisionId>,
     pub state: DecisionState,
     pub at: Timestamp,
+    /// Who took it back, when a person revoked it (`decisions_overturn` without a value).
+    pub retired: Option<DecisionRetired>,
+}
+
+/// A revoke: by "human:<device>", at, and the person's why.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DecisionRetired {
+    pub by: String,
+    pub at: Timestamp,
+    pub why: Option<DecisionWhy>,
 }
 
 // Asks

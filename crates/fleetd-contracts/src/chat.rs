@@ -209,6 +209,15 @@ pub struct ChatPart {
     pub block: Option<crate::blocks::ChatBlock>,
 }
 
+/// The bubble a human message answers: a lead message and the bubble's place in it, as `parts` counts (0 for a
+/// message of one bubble). The lead reads that bubble whole over the reply, and when it was written.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatReplyTo {
+    pub message_id: ChatMessageId,
+    pub part: Count,
+}
+
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -233,6 +242,8 @@ pub struct ChatMessage {
     pub by: Option<Line<1, 120>>,
     /// A human message: where it was written.
     pub client: Option<ChatClient>,
+    /// A human message: the bubble it answers.
+    pub reply_to: Option<ChatReplyTo>,
     pub item: Option<ChatItem>,
     /// From before the chat: where this history message came from.
     pub history: Option<ChatHistorySource>,

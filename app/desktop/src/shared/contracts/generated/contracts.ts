@@ -635,6 +635,8 @@ export type ChatMessage = {
   projectRef: ProjectRef;
   /** A system line "Remembered: …": what the lead's `remember` wrote, which `memory_undo` takes back. */
   remembered?: RememberedItem;
+  /** A human message: the bubble it answers. */
+  replyTo?: ChatReplyTo;
   seq: number;
   state: ChatMessageState;
   /** Markdown. Empty while a streamed message has no text yet, and for an inline `item`. */
@@ -673,6 +675,15 @@ export type ChatPart = {
   start: number;
 };
 
+/**
+ * The bubble a human message answers: a lead message and the bubble's place in it, as `parts` counts (0 for a
+ * message of one bubble). The lead reads that bubble whole over the reply, and when it was written.
+ */
+export type ChatReplyTo = {
+  messageId: ChatMessageId;
+  part: number;
+};
+
 export type ChatRequestId = string;
 
 export type ChatSendInput = {
@@ -687,6 +698,11 @@ export type ChatSendInput = {
    */
   now?: boolean;
   projectRef: ProjectRef;
+  /**
+   * The lead's bubble this answers. `text` still opens with its one-line quote, for clients that show text as it
+   * is; the lead reads the whole bubble in its place.
+   */
+  replyTo?: ChatReplyTo;
   /**
    * Sent from inside a fleetd session: its thread id (FLEETD_THREAD_ID), as the caller reports it. The project's own
    * lead and tasks are refused (they use their fleetd tools), and so is a human key. It catches mistakes; the key,
@@ -939,6 +955,8 @@ export type Decision = {
   by?: string;
   decisionId: DecisionId;
   key: DecisionKey;
+  /** Who took it back, when a person revoked it (`decisions_overturn` without a value). */
+  retired?: DecisionRetired;
   scope: DecisionScope;
   source: DecisionSource;
   state: DecisionState;
@@ -952,6 +970,18 @@ export type DecisionId = string;
 
 /** Lowercase dotted slug, [a-z0-9]+(.[a-z0-9_-]+)*, at most 80 */
 export type DecisionKey = string;
+
+export type DecisionOrder = {
+  title: string;
+  workstreamId: WorkstreamId;
+};
+
+/** A revoke: by "human:<device>", at, and the person's why. */
+export type DecisionRetired = {
+  at: Timestamp;
+  by: string;
+  why?: string;
+};
 
 export type DecisionScope = {
   kind: "global";
@@ -967,6 +997,36 @@ export type DecisionScope = {
 export type DecisionSource = "human" | "lead" | "agent";
 
 export type DecisionState = "active" | "superseded" | "retired";
+
+export type DecisionsListInput = {
+  limit?: number;
+  projectRef: ProjectRef;
+};
+
+export type DecisionsListOutput = {
+  /** Every state: active, superseded and retired. */
+  decisions: Decision[];
+  next?: string;
+  /** The order each workstream-scoped decision belongs to, by its title. */
+  orders: DecisionOrder[];
+  truncated?: boolean;
+};
+
+export type DecisionsOverturnInput = {
+  decisionId: DecisionId;
+  /** Absent: revoke, and the key goes unanswered again. Present: a new decision on the same key and scope. */
+  value?: string;
+  why: string;
+};
+
+export type DecisionsOverturnOutput = {
+  /** The replacement, when a value was given. */
+  decision?: Decision;
+  next?: string;
+  /** The decision overturned: retired, or superseded by `decision`. */
+  overturned: Decision;
+  truncated?: boolean;
+};
 
 export type DecisionsRecordInput = {
   key: DecisionKey;
@@ -1301,6 +1361,7 @@ export type KnownHubEventType =
   | "workstream.running"
   | "request.opened"
   | "request.updated"
+  | "decision.retired"
   | "task.queued"
   | "agents.cap"
   | "workstream.done"
@@ -4378,6 +4439,8 @@ export interface ToolMap {
   chat_history: { input: ChatHistoryInput; output: ChatHistoryOutput };
   chat_send: { input: ChatSendInput; output: ChatSendOutput };
   chat_stop: { input: ChatStopInput; output: ChatStopOutput };
+  decisions_list: { input: DecisionsListInput; output: DecisionsListOutput };
+  decisions_overturn: { input: DecisionsOverturnInput; output: DecisionsOverturnOutput };
   decisions_record: { input: DecisionsRecordInput; output: DecisionsRecordOutput };
   decisions_search: { input: DecisionsSearchInput; output: DecisionsSearchOutput };
   doctor_fix: { input: DoctorFixInput; output: DoctorFixOutput };

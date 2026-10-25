@@ -311,6 +311,17 @@ describe("sending", () => {
     expect(fake.of("chat_send")[2]?.input).not.toHaveProperty("now");
   });
 
+  it("a reply names the bubble it answers on every try", async () => {
+    const { fake, layer } = await connected();
+    const replyTo = { messageId: "m2", part: 1 };
+    void layer.chat.send(KEY, { text: "> Plan A\n\nthis one", replyTo }, "c1");
+    fake.of("chat_send")[0]?.answer(err("timeout"));
+    await vi.waitFor(() => expect(fake.of("chat_send")).toHaveLength(2));
+    expect(fake.of("chat_send").map((c) => c.input["replyTo"])).toEqual([replyTo, replyTo]);
+    void layer.chat.send(KEY, { text: "and the docs" }, "c2");
+    expect(fake.of("chat_send")[2]?.input).not.toHaveProperty("replyTo");
+  });
+
   it("a cut-off waits as reconnecting; a snapshot while the link stayed up resends nothing", async () => {
     const { fake, layer } = await connected();
     const out = layer.chat.send(KEY, { text: "nvm" }, "c1");

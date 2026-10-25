@@ -12,8 +12,8 @@ use crate::events::{HubEvent, HubEventType};
 use crate::hello::ProtocolVersion;
 use crate::ids::{EventSeq, MachineId, ProjectId, ProjectRef, ThreadId, Timestamp};
 use crate::ledger::{
-    Decision, DecisionKey, DecisionScope, DecisionValue, DecisionWhy, HumanRequest, IntakeText,
-    Lead, RequestState, Workstream, WorkstreamId, WorkstreamState,
+    Decision, DecisionId, DecisionKey, DecisionScope, DecisionValue, DecisionWhy, HumanRequest,
+    IntakeText, Lead, RequestState, Workstream, WorkstreamId, WorkstreamState,
 };
 use crate::live::{AgentLane, OrderCard, TrainLive};
 use crate::memory::{MemoryFile, MemoryScope, MemoryTopic, TOPIC_CAP};
@@ -580,6 +580,42 @@ output!(DecisionsSearchOutput {
 input!(DecisionsRecordInput { key: DecisionKey, value: DecisionValue, why: Option<DecisionWhy>, scope: DecisionScope });
 output!(DecisionsRecordOutput { decision: Decision });
 
+// decisions_list: the panel's Decisions tab. Every project- and workstream-scoped decision in a project, live and
+// overturned, newest first.
+input!(DecisionsListInput {
+    project_ref: ProjectRef,
+    #[serde(default)]
+    limit: IntOr<1, 500, 200>,
+});
+output!(DecisionsListOutput {
+    /// Every state: active, superseded and retired.
+    decisions: List<Decision, 0, 500>,
+    /// The order each workstream-scoped decision belongs to, by its title.
+    orders: List<DecisionOrder, 0, 500>,
+});
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DecisionOrder {
+    pub workstream_id: WorkstreamId,
+    pub title: Text<0, 200>,
+}
+
+// decisions_overturn: a person takes an active decision back (no value) or replaces its value. Human keys only; the
+// project's lead reads the change at its next wake.
+input!(DecisionsOverturnInput {
+    decision_id: DecisionId,
+    /// Absent: revoke, and the key goes unanswered again. Present: a new decision on the same key and scope.
+    value: Option<DecisionValue>,
+    why: DecisionWhy,
+});
+output!(DecisionsOverturnOutput {
+    /// The decision overturned: retired, or superseded by `decision`.
+    overturned: Decision,
+    /// The replacement, when a value was given.
+    decision: Option<Decision>,
+});
+
 // tasks_list
 input!(TasksListInput {
     project_ref: Option<ProjectRef>,
@@ -910,6 +946,9 @@ input!(ChatSendInput {
     client_request_id: RequestId,
     /// A human key: where it is written. Absent means the app.
     client: Option<crate::chat::ChatClient>,
+    /// The lead's bubble this answers. `text` still opens with its one-line quote, for clients that show text as it
+    /// is; the lead reads the whole bubble in its place.
+    reply_to: Option<crate::chat::ChatReplyTo>,
     /// Sent from inside a fleetd session: its thread id (FLEETD_THREAD_ID), as the caller reports it. The project's own
     /// lead and tasks are refused (they use their fleetd tools), and so is a human key. It catches mistakes; the key,
     /// not this field, carries authority.
@@ -1312,6 +1351,9 @@ tools! {
     requests_list => RequestsList, Read, RequestsListInput, RequestsListOutput;
     decisions_search => DecisionsSearch, Read, DecisionsSearchInput, DecisionsSearchOutput;
     decisions_record => DecisionsRecord, Operate, DecisionsRecordInput, DecisionsRecordOutput;
+    decisions_list => DecisionsList, Read, DecisionsListInput, DecisionsListOutput;
+    // Human keys only (the handler checks).
+    decisions_overturn => DecisionsOverturn, Operate, DecisionsOverturnInput, DecisionsOverturnOutput;
     tasks_list => TasksList, Read, TasksListInput, TasksListOutput;
     task_get => TaskGet, Read, TaskGetInput, TaskGetOutput;
     cap_set => CapSet, Operate, CapSetInput, CapSetOutput;

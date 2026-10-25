@@ -713,6 +713,10 @@
           "$ref": "#/$defs/RememberedItem",
           "description": "A system line \"Remembered: …\": what the lead's `remember` wrote, which `memory_undo` takes back."
         },
+        "replyTo": {
+          "$ref": "#/$defs/ChatReplyTo",
+          "description": "A human message: the bubble it answers."
+        },
         "seq": {
           "maximum": 9007199254740991,
           "minimum": 0,
@@ -815,6 +819,24 @@
       "required": [
         "start",
         "end"
+      ],
+      "type": "object"
+    },
+    "ChatReplyTo": {
+      "description": "The bubble a human message answers: a lead message and the bubble's place in it, as `parts` counts (0 for a\nmessage of one bubble). The lead reads that bubble whole over the reply, and when it was written.",
+      "properties": {
+        "messageId": {
+          "$ref": "#/$defs/ChatMessageId"
+        },
+        "part": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "messageId",
+        "part"
       ],
       "type": "object"
     },

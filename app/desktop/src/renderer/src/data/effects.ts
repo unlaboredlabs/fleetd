@@ -90,7 +90,9 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   }
   if (type === "memory.changed") out.push({ tool: "memory_get" });
   if (type === "doctor.changed") out.push({ tool: "doctor_list" });
-  if (type === "decision.recorded") out.push({ tool: "fleetd_status" });
+  // The hub's attention policy is a global decision. Only the open Decisions tab has its list mounted, so this
+  // refetches one read.
+  if (type === "decision.recorded" || type === "decision.retired") out.push({ tool: "fleetd_status" }, { tool: "decisions_list" });
 
   const newMachine = type.startsWith("machine.") && (event.machineId === undefined || !(event.machineId in machines));
   const resync = newMachine || type === "project.added" || type === "project.removed";

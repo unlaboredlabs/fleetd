@@ -2,15 +2,15 @@
 use std::sync::{Arc, RwLock};
 
 use fleetd_contracts::events::HubEventType;
-use fleetd_contracts::ids::ProjectRef;
-use fleetd_contracts::ledger::{Decision, DecisionScope};
+use fleetd_contracts::ids::{ProjectRef, Timestamp};
+use fleetd_contracts::ledger::{Decision, DecisionRetired, DecisionScope, DecisionState};
 use serde_json::json;
 
 use super::repo::{self, DecisionFilter, RecordInput};
 use super::tools::WorkstreamLookup;
 use super::{Actor, Chain, Ctx, LedgerError, project_fields};
 use crate::clock::Clock;
-use crate::hub::store::{EventLog, HubDb, NewEvent};
+use crate::hub::store::{EventLog, HubDb, NewEvent, iso_ms};
 
 pub struct Decisions {
     ctx: Ctx,
@@ -48,6 +48,35 @@ pub fn recorded_event(decision: &Decision, project: Option<&ProjectRef>) -> NewE
     }
 }
 
+/// The `decision.retired` event: a person revoked the decision, and its key goes unanswered again.
+pub fn retired_event(decision: &Decision, project: Option<&ProjectRef>) -> NewEvent {
+    let (machine_id, project_id) = project_fields(project);
+    NewEvent {
+        at: decision
+            .retired
+            .as_ref()
+            .map_or_else(|| decision.at.clone(), |r| r.at.clone()),
+        r#type: HubEventType::DecisionRetired,
+        machine_id,
+        project_id,
+        thread_id: None,
+        summary: format!("{} {} revoked", decision.decision_id, decision.key),
+        data: Some(json!({
+            "decisionId": decision.decision_id,
+            "key": decision.key,
+            "scope": decision.scope,
+        })),
+        attention: None,
+    }
+}
+
+/// What `overturn` did: the decision taken back, and the one that replaced it, if any.
+#[derive(Clone, Debug)]
+pub struct Overturned {
+    pub overturned: Decision,
+    pub replacement: Option<Decision>,
+}
+
 impl Decisions {
     pub fn new(db: Arc<HubDb>, events: Arc<EventLog>, clock: Arc<dyn Clock>) -> Self {
         Self {
@@ -69,7 +98,76 @@ impl Decisions {
 
     /// `forget Dn`: an active decision stops answering its key.
     pub fn retire(&self, decision_id: &str) -> Result<Decision, LedgerError> {
-        self.ctx.write(|db| repo::retire_decision(db, decision_id))
+        self.ctx
+            .write(|db| repo::retire_decision(db, decision_id, None))
+    }
+
+    /// A person overturns an active decision in one write: with `value`, a new decision on its key and scope
+    /// supersedes it; without, it is retired with who and why. `project` is the decision's project.
+    pub fn overturn(
+        &self,
+        decision_id: &str,
+        value: Option<&str>,
+        why: &str,
+        project: Option<&ProjectRef>,
+        actor: &Actor,
+    ) -> Result<Overturned, LedgerError> {
+        let now = self.ctx.now_ms();
+        let done = self.ctx.write(|db| {
+            let Some(old) = repo::get_decision(db, decision_id)? else {
+                return Err(LedgerError::not_found(format!("No decision {decision_id}.")).into());
+            };
+            if old.state != DecisionState::Active {
+                return Err(LedgerError::invalid_fix(
+                    format!(
+                        "{decision_id} is already {}.",
+                        repo::decision_state_text(&old.state)
+                    ),
+                    "Overturn the decision that answers its key now.",
+                )
+                .into());
+            }
+            let Some(value) = value else {
+                let retired = DecisionRetired {
+                    by: actor.by.clone(),
+                    at: Timestamp(iso_ms(now)),
+                    why: Some(super::text(why)),
+                };
+                return Ok(Overturned {
+                    overturned: repo::retire_decision(db, decision_id, Some(retired))?,
+                    replacement: None,
+                });
+            };
+            let input = RecordInput {
+                key: old.key.clone(),
+                scope: old.scope.clone(),
+                value: value.to_string(),
+                why: Some(why.to_string()),
+                project_ref: project.cloned(),
+            };
+            let replacement = repo::record_decision(db, &input, actor, now)?;
+            let overturned =
+                repo::get_decision(db, decision_id)?.expect("superseded in this write");
+            Ok(Overturned {
+                overturned,
+                replacement: Some(replacement),
+            })
+        })?;
+        self.ctx.emit(match &done.replacement {
+            Some(new) => recorded_event(new, project),
+            None => retired_event(&done.overturned, project),
+        });
+        Ok(done)
+    }
+
+    /// The project's project- and workstream-scoped decisions in every state, newest first.
+    pub fn history(
+        &self,
+        project_ref: &ProjectRef,
+        limit: i64,
+    ) -> Result<Vec<Decision>, LedgerError> {
+        self.ctx
+            .read(|db| repo::history_in_project(db, project_ref, limit))
     }
 
     pub fn get(&self, decision_id: &str) -> Result<Option<Decision>, LedgerError> {
