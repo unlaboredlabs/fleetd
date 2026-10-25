@@ -216,6 +216,10 @@ pub enum SessionCall {
         /// session last got them. The node keeps them for the session's next process start; a running claude keeps
         /// the servers it started with. An older node ignores them.
         mcp: Option<crate::mcp_servers::McpSessionConfig>,
+        /// The hub's skills for this session as they are now (see [`SessionLaunch::skills`]), sent when they changed
+        /// since the session last got them; empty when it has none left. The node keeps them for the session's next
+        /// start and refreshes its skills folder now. An older node ignores them.
+        skills: Option<Vec<crate::skills::SkillBundle>>,
     },
     /// Withdraw a send claude still holds queued (`cancel_async_message`). A no-op once it has started.
     #[serde(rename_all = "camelCase")]

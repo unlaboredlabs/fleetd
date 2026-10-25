@@ -549,8 +549,9 @@ async fn queued_writes_wait_for_the_online_verdict_not_just_the_link() {
 }
 
 /// Every launch carries the skills the hub keeps for its project: the project's, then the global ones of other names.
+/// A later send carries them again only when they changed since, so a session started long ago gets a new skill.
 #[tokio::test]
-async fn a_launch_carries_the_hubs_skills_for_its_project() {
+async fn a_launch_carries_the_hubs_skills_for_its_project_and_a_send_what_changed() {
     use fleetd_contracts::skills::{SkillName, SkillOrigin, SkillScope};
     let mut node = Node::start(None).await;
     node.subscribe(json!([])).await;
@@ -590,7 +591,7 @@ async fn a_launch_carries_the_hubs_skills_for_its_project() {
             true,
         )
         .unwrap();
-    node.executors.set_skills(db);
+    node.executors.set_skills(db.clone());
 
     let executors = node.executors.clone();
     let machine = node.machine.clone();
@@ -624,5 +625,51 @@ async fn a_launch_carries_the_hubs_skills_for_its_project() {
         &id,
         json!({ "ok": { "kind": "launched", "summary": session(l.session_id.as_str(), json!({})) } }),
     );
-    launched.await.unwrap().unwrap();
+    let (thread, _) = launched.await.unwrap().unwrap();
+    let r = node.thread(thread.as_str());
+
+    // The skills of a send: none while nothing changed, all of them once one did.
+    let mut sends = Vec::new();
+    for (i, change) in [false, true, false].into_iter().enumerate() {
+        if change {
+            skills
+                .set(
+                    SkillScope::Global,
+                    None,
+                    &SkillName::unchecked("triage"),
+                    &md("triage", "new"),
+                    true,
+                )
+                .unwrap();
+        }
+        let executors = node.executors.clone();
+        let target = r.clone();
+        let sent =
+            tokio::spawn(
+                async move { executors.send(&target, "go on", &format!("req-s{i}")).await },
+            );
+        let (id, call) = node.call().await;
+        let SessionCall::Send {
+            run_id,
+            skills: carried,
+            ..
+        } = call
+        else {
+            panic!("not a send: {call:?}")
+        };
+        node.reply(
+            &id,
+            json!({ "ok": { "kind": "sent", "runId": run_id.as_str(), "queued": false } }),
+        );
+        sent.await.unwrap().unwrap();
+        sends.push(carried.map(|b| b.iter().map(|b| b.name.to_string()).collect::<Vec<_>>()));
+    }
+    assert_eq!(
+        sends,
+        [
+            None,
+            Some(vec!["release".into(), "standup".into(), "triage".into()]),
+            None
+        ]
+    );
 }

@@ -15,8 +15,16 @@ use fleetd_contracts::skills::{
 
 /// The plugin's name: claude lists its skills as `fleetd:<name>`.
 pub const PLUGIN_NAME: &str = "fleetd";
-/// The hub's skills for a session, as its launch carried them.
+/// The hub's skills for a session, as its launch or its latest send carried them.
 const HUB_SKILLS_FILE: &str = "hub-skills.json";
+/// Set in every session: the plugin's skills folder, where a skill the hub added after the session started is read
+/// before the session's next start lists it.
+pub const DIR_ENV: &str = "FLEETD_SKILLS_DIR";
+
+/// The session's skills folder, `<session dir>/plugin/skills`.
+pub fn skills_dir(session_dir: &Path) -> PathBuf {
+    session_dir.join("plugin").join("skills")
+}
 
 /// One skill a session could get, before precedence.
 #[derive(Clone, Debug, PartialEq)]
@@ -117,7 +125,7 @@ pub fn repo_skills(root: &Path) -> Vec<RepoSkill> {
         .collect()
 }
 
-/// Keeps the hub's skills from a launch in the session's directory, for every start of it.
+/// Keeps the hub's skills from a launch or a send in the session's directory, for every start of it.
 pub fn keep(session_dir: &Path, bundles: &[SkillBundle]) -> std::io::Result<()> {
     super::config::mkdir_private(session_dir)?;
     let path = session_dir.join(HUB_SKILLS_FILE);

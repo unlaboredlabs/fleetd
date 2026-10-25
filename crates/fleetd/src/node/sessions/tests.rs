@@ -101,6 +101,7 @@ fn send(id: &str, run_id: &str) -> SessionCall {
         mode: SendMode::Plain,
         steer: None,
         mcp: None,
+        skills: None,
     }
 }
 
@@ -1866,6 +1867,7 @@ async fn a_task_session_must_resume_for_anything_but_its_first_message() {
         mode: SendMode::Plain,
         steer: None,
         mcp: None,
+        skills: None,
     })
     .await;
     let spawned: Vec<(bool, bool)> = hub
@@ -2627,6 +2629,7 @@ fn steer(id: &str, run_id: &str, mode: SendMode, tag: Option<&str>) -> SessionCa
             riders: vec![],
         }),
         mcp: None,
+        skills: None,
     }
 }
 
@@ -2821,6 +2824,7 @@ async fn each_steer_a_run_carries_gets_its_own_receipts() {
             riders: vec![SteerId::unchecked("S1")],
         }),
         mcp: None,
+        skills: None,
     })
     .await;
     let mut finals = std::collections::BTreeMap::new();
@@ -3416,4 +3420,29 @@ async fn a_new_session_gets_the_repos_and_the_hubs_skills_the_first_source_winni
             ),
         ]
     );
+    // The session reads its skills folder by name.
+    let skills_dir = plugin.join("skills");
+    assert!(
+        spec.env
+            .iter()
+            .any(|(k, v)| k == "FLEETD_SKILLS_DIR" && *v == skills_dir.to_string_lossy())
+    );
+    // A skill the hub adds later rides on the next send: in the folder at once, and kept for the next start; one
+    // the hub dropped goes.
+    let mut next = send("s1", "r2");
+    if let SessionCall::Send { skills, .. } = &mut next {
+        *skills = Some(vec![bundle(
+            "deploy-check",
+            SkillOrigin::Global,
+            "hub global, later",
+        )]);
+    }
+    hub.ok(next).await;
+    hub.settled("r2").await;
+    assert_eq!(says("deploy-check"), "hub global, later");
+    assert!(!plugin.join("skills/standup").exists());
+    assert_eq!(says("release"), "repo agents");
+    let kept =
+        std::fs::read_to_string(dir.path().join("node/sessions/s1/hub-skills.json")).unwrap();
+    assert!(kept.contains("deploy-check") && !kept.contains("standup"));
 }

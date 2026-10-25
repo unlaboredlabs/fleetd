@@ -887,9 +887,13 @@ impl SessionService {
                 mode,
                 steer,
                 mcp,
+                skills,
             } => {
                 if let Some(config) = mcp {
                     self.refresh_mcp(&session_id, config).await;
+                }
+                if let Some(skills) = skills {
+                    self.refresh_skills(&session_id, &skills).await;
                 }
                 let waiter = (mode == SendMode::Now).then(|| {
                     let (tx, rx) = oneshot::channel();
@@ -1823,6 +1827,24 @@ impl SessionService {
             .await;
     }
 
+    /// The hub's skills for a session changed: kept for its next start, and its skills folder written again now, so a
+    /// running session reads a new one there (`FLEETD_SKILLS_DIR`) before its next start lists it.
+    async fn refresh_skills(&self, id: &str, bundles: &[fleetd_contracts::skills::SkillBundle]) {
+        let Ok(Some(row)) = self.store().session(id) else {
+            return;
+        };
+        let dir = self.inner.config.home.join("sessions").join(id);
+        let (cwd, bundles) = (row.local.cwd.clone(), bundles.to_vec());
+        let done = blocking(move || {
+            super::skills::keep(&dir, &bundles)?;
+            super::skills::prepare(&dir, &cwd).map(|_| ())
+        })
+        .await;
+        if let Err(e) = done {
+            tracing::warn!(session = id, "the session's skills were not refreshed: {e}");
+        }
+    }
+
     /// Where a writer's worktree that is gone comes back from; `None` while it is there, or for a session in the root.
     async fn lost_worktree(
         &self,
@@ -1887,6 +1909,12 @@ impl SessionService {
         env.retain(|(k, _)| !role_env.iter().any(|(c, _)| c == k));
         env.extend(role_env.iter().cloned());
         let skills = super::skills::prepare(&dir, &row.local.cwd)?;
+        env.push((
+            super::skills::DIR_ENV.to_owned(),
+            super::skills::skills_dir(&dir)
+                .to_string_lossy()
+                .into_owned(),
+        ));
         let settings = dir.join("settings.json");
         std::fs::write(&settings, settings_overlay(&role_env, skills.overrides()))?;
         env.extend([

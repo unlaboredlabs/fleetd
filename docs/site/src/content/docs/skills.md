@@ -58,8 +58,9 @@ Each time a session starts, the node puts the winning skills in a plugin for tha
 the agent as `fleetd:<name>` with its description. The agent opens a skill with the Skill tool when it needs it, so the
 rest of the text costs nothing until then.
 
-A skill added, edited or installed while a session runs reaches that session at its next start. Every new agent gets
-it at once.
+Every new agent gets a skill as soon as it is added, edited or installed. A running session gets it with its next
+message: the node writes it into the session's skills folder at once (`$FLEETD_SKILLS_DIR`, where the agent can read
+it), and the session's skill list has it from its next start. A deleted skill goes the same way.
 
 ## Manage skills in the app {#app}
 

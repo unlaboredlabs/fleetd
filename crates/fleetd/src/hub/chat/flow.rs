@@ -580,7 +580,8 @@ pub(crate) fn skills_of(
         })
         .collect();
     format!(
-        "\n\nSkills the human named: use each with the Skill tool, or name it in an agent's brief.\n{}",
+        "\n\nSkills the human named: use each with the Skill tool, or name it in an agent's brief. One added since \
+         your session started isn't in your skill list yet: read $FLEETD_SKILLS_DIR/<name>/SKILL.md instead.\n{}",
         lines.join("\n")
     )
 }
