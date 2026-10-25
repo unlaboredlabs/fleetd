@@ -224,6 +224,22 @@ pub struct Spawned {
     pub observed: Observed,
 }
 
+/// A project's repo and base being read in the background: dropping it, when the read ends however it ends, takes the
+/// project out of `Tasks::binding`.
+struct Reading {
+    projects: Arc<Mutex<HashSet<ProjectRef>>>,
+    project: ProjectRef,
+}
+
+impl Drop for Reading {
+    fn drop(&mut self) {
+        self.projects
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&self.project);
+    }
+}
+
 /// Where a writer's spawn checks for duplicates.
 enum SpawnScope {
     Bound(WorkScope),
@@ -1279,13 +1295,18 @@ impl Tasks {
         if !self.binding.lock().unwrap().insert(r.clone()) {
             return Ok(SpawnScope::Binding);
         }
-        let (bind, binding, project) = (self.d.ports.work_bind(r), self.binding.clone(), r.clone());
+        let bind = self.d.ports.work_bind(r);
+        // However the read ends (done, panicked or cancelled), the project is free to be read again.
+        let reading = Reading {
+            projects: self.binding.clone(),
+            project: r.clone(),
+        };
         let mut bound = tokio::spawn(async move {
             let bound = bind.await;
-            binding.lock().unwrap().remove(&project);
             if let Err(error) = &bound {
-                tracing::warn!(%error, project = %project.project_id, "tasks: repo and base not read");
+                tracing::warn!(%error, project = %reading.project.project_id, "tasks: repo and base not read");
             }
+            drop(reading);
             bound
         });
         match tokio::time::timeout(BIND_WAIT, &mut bound).await {
@@ -1785,6 +1806,8 @@ mod tests {
         binds: Arc<std::sync::atomic::AtomicUsize>,
         bind_hangs: std::sync::atomic::AtomicBool,
         bind_gate: Arc<tokio::sync::Notify>,
+        /// A read that panics.
+        bind_panics: std::sync::atomic::AtomicBool,
     }
 
     impl Node {
@@ -1898,8 +1921,12 @@ mod tests {
             use std::sync::atomic::Ordering::SeqCst;
             self.binds.fetch_add(1, SeqCst);
             let hangs = self.bind_hangs.load(SeqCst);
+            let panics = self.bind_panics.load(SeqCst);
             let (scope, gate) = (self.scope.clone(), self.bind_gate.clone());
             Box::pin(async move {
+                if panics {
+                    panic!("the read panicked");
+                }
                 if hangs {
                     gate.notified().await;
                 }
@@ -2361,5 +2388,35 @@ mod tests {
                 "also writing: T2 fix the api (changes unknown); T1 add the docs page (app/api.ts)"
             )
         );
+    }
+
+    /// A read that panics still frees its project: the next spawn there reads again rather than skipping the check
+    /// as "being read" until the hub restarts.
+    #[tokio::test]
+    async fn a_read_that_panics_frees_its_project() {
+        use std::sync::atomic::Ordering::SeqCst;
+        let (tasks, node) = tasks();
+        node.bind_panics.store(true, SeqCst);
+        let caller = TaskCaller {
+            project_ref: ProjectRef {
+                machine_id: MachineId::unchecked("lab-a"),
+                project_id: ProjectId::unchecked("p1"),
+            },
+            by: "lead".into(),
+        };
+        let first = tasks
+            .spawn_noted(&caller, writer("add the docs page"))
+            .await
+            .unwrap();
+        assert_eq!(first.note.as_deref(), Some(duplicates::UNBOUND));
+        assert!(tasks.binding.lock().unwrap().is_empty());
+
+        node.bind_panics.store(false, SeqCst);
+        let second = tasks
+            .spawn_noted(&caller, writer("fix the api"))
+            .await
+            .unwrap();
+        assert_eq!(second.note, None, "read again, and checked");
+        assert_eq!(node.binds.load(SeqCst), 2);
     }
 }
