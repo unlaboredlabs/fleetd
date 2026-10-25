@@ -189,6 +189,14 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "How many days the hub keeps time spans (1 to 365, default 30). Pruned hourly; daily roll-ups and critical paths stay 400 days. Admin.",
     ),
     (
+        "metrics_get",
+        "Factory metrics for one project's repos, or the fleet's with each repo counted once: pull requests merged per day, time from order to merged (median, p90), the person's minutes per merged PR, and the share of merged work through fleetd, by calendar day in tz. A landed change is a PR merged into the default branch (a train batch's members one each) or a direct push; each has a route: train, fleetd_by_hand, outside or direct. coverage says which repos were read, when, and what fleetd can't see.",
+    ),
+    (
+        "metrics_retention_set",
+        "How many days the hub keeps landed changes and the person's touches for the factory metrics (30 to 400, default 400). Pruned hourly. Admin.",
+    ),
+    (
         "thread_window",
         "The items and messages around one item of a thread (before and after default 10, max 25), oldest first, from the node's own log: opens a time span's transcript by its itemId.",
     ),
