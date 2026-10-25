@@ -351,7 +351,7 @@ async fn a_launch_runs_its_turn_streams_it_and_later_sends_continue_the_session(
     let roles: Vec<_> = snapshot
         .messages
         .iter()
-        .map(|m| (m.role, m.text.as_str()))
+        .map(|m| (m.role, brief(&m.text)))
         .collect();
     assert_eq!(
         roles,
@@ -984,6 +984,13 @@ async fn deltas_reach_followers_coalesced_and_stop_at_their_message() {
 
 #[tokio::test]
 async fn a_removed_worktree_comes_back_at_the_same_path_when_the_session_resumes() {
+    let var = |spec: &crate::node::runner::SessionSpec, key: &str| {
+        spec.env
+            .iter()
+            .rev()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.clone())
+    };
     let dir = tempfile::tempdir().unwrap();
     let root = repo(dir.path());
     let mut hub = hub(
@@ -1015,6 +1022,20 @@ async fn a_removed_worktree_comes_back_at_the_same_path_when_the_session_resumes
         Some("WebFetch")
     );
     assert!(spec.disallowed_tools.iter().any(|t| t == "Task"));
+    // Its own scratch dir under the node home, and its share of the CPUs, which its brief names.
+    let scratch = super::share::scratch_dir(&dir.path().join("node"), "s1");
+    assert!(scratch.is_dir());
+    for key in ["TMPDIR", "TMP", "TEMP"] {
+        assert_eq!(var(&spec, key).as_deref(), scratch.to_str());
+    }
+    let jobs = var(&spec, "CARGO_BUILD_JOBS").unwrap();
+    assert_eq!(var(&spec, "MAKEFLAGS"), Some(format!("-j{jobs}")));
+    assert_eq!(var(&spec, "GOFLAGS"), Some(format!("-p={jobs}")));
+    let first = &sends(&hub.runner)[0].1;
+    assert!(
+        first.contains(&format!("- Builds get {jobs} parallel jobs per agent")),
+        "{first}"
+    );
 
     std::fs::write(path.join("work.txt"), "w\n").unwrap();
     git(&path, &["add", "."]);
@@ -1039,6 +1060,7 @@ async fn a_removed_worktree_comes_back_at_the_same_path_when_the_session_resumes
     })
     .await;
     assert!(!path.exists());
+    assert!(!scratch.exists());
     let stopped = hub.summary(|s| s.worktree_path.is_none()).await;
     // Unmerged work keeps its branch.
     assert_eq!(stopped.branch.as_deref(), Some("fleetd/s1"));
@@ -1050,6 +1072,7 @@ async fn a_removed_worktree_comes_back_at_the_same_path_when_the_session_resumes
     let spec = &hub.runner.spawned()[1];
     assert!(spec.resume);
     assert_eq!(spec.cwd, path);
+    assert!(scratch.is_dir());
 }
 
 #[tokio::test]
@@ -1341,8 +1364,8 @@ async fn a_first_start_that_claude_already_knows_resumes_instead() {
     let prompt = "Reply with the word OK and nothing else.";
     let sends = sends(&hub.runner);
     assert_eq!(sends.len(), 2);
-    assert_eq!(sends[0], ("r1".into(), prompt.into()));
-    assert_eq!(sends[1].1, prompt);
+    assert_eq!((sends[0].0.as_str(), brief(&sends[0].1)), ("r1", prompt));
+    assert_eq!(brief(&sends[1].1), prompt);
     assert_eq!(hub.service.store().runs("s1").unwrap().len(), 1);
 }
 
@@ -1377,8 +1400,14 @@ async fn a_retry_of_a_message_claude_never_took_in_sends_the_message_again() {
     let sends = sends(&hub.runner);
     assert_eq!(sends.len(), 2);
     assert_ne!(sends[1].0, "r1");
-    assert_eq!(sends[1].1, prompt);
+    assert_eq!(brief(&sends[1].1), prompt);
     assert_eq!(hub.service.store().runs("s1").unwrap().len(), 1);
+}
+
+/// A worker's first message without the node's note on its share of the machine.
+fn brief(text: &str) -> &str {
+    text.split_once("\n\n## This machine\n")
+        .map_or(text, |(brief, _)| brief)
 }
 
 fn sends(runner: &FakeRunner) -> Vec<(String, String)> {
