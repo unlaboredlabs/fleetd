@@ -4264,6 +4264,26 @@
       ],
       "type": "object"
     },
+    "LandingRoute": {
+      "description": "How a commit reached a base branch.",
+      "oneOf": [
+        {
+          "const": "train",
+          "description": "Merged by fleetd's merge train.",
+          "type": "string"
+        },
+        {
+          "const": "pr_outside",
+          "description": "A PR or merge request merged outside the train.",
+          "type": "string"
+        },
+        {
+          "const": "direct_push",
+          "description": "Pushed straight to the base.",
+          "type": "string"
+        }
+      ]
+    },
     "LaneStatus": {
       "oneOf": [
         {
