@@ -16,7 +16,7 @@ brand!(
     TaskId, name = "TaskId", pattern = r"^T[1-9][0-9]*$"
 );
 
-/// Only write tasks get a worktree.
+/// Every task gets its own worktree: a writer on its own branch, a reader or reviewer detached.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskKind {
