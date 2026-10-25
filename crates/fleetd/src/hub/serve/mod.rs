@@ -295,7 +295,7 @@ pub fn build_on(
         store: store.clone(),
         events: events.clone(),
         clock: clock.clone(),
-        ports: task_ports,
+        ports: task_ports.clone(),
         slots: slots.clone(),
         policies: policies.clone(),
     });
@@ -325,6 +325,12 @@ pub fn build_on(
     let chat = crate::hub::chat::Chat::new(db.clone(), events.clone(), clock.clone());
     let prs =
         crate::hub::prs::Prs::new(Arc::new(crate::hub::train::github::SystemGh), clock.clone());
+    let work = crate::hub::work::Work::new(
+        db.clone(),
+        events.clone(),
+        clock.clone(),
+        Arc::new(crate::hub::work::TaskPaths(task_ports)),
+    );
     let hub = Arc::new(Hub {
         config,
         clock,
@@ -358,6 +364,7 @@ pub fn build_on(
         plans,
         chat,
         prs,
+        work,
     });
     checks.ports.bind(&hub);
     train_host.bind(&hub);
@@ -369,6 +376,7 @@ pub fn build_on(
     crate::hub::plan::calls::register_lead_calls(&hub);
     crate::hub::steer::wire(&hub);
     crate::hub::chat::tools::extend_status(&hub);
+    crate::hub::work::register_sweep(&hub);
     Ok(hub)
 }
 

@@ -309,6 +309,16 @@
           "const": "repo.advanced",
           "description": "A node's fetch saw a remote's default branch move; `data` is `metrics::RepoAdvancedData`.",
           "type": "string"
+        },
+        {
+          "const": "work.claimed",
+          "description": "Work was claimed on a repo's base; `data` is `work::WorkEventData`.",
+          "type": "string"
+        },
+        {
+          "const": "work.ended",
+          "description": "A claim landed, was released or expired; `data` is `work::WorkEventData`.",
+          "type": "string"
         }
       ],
       "x-open": true
