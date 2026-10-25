@@ -39,9 +39,48 @@ function projectSettings(f: Fixture, off: ReadonlySet<string> = new Set()) {
   }
 }
 
+/**
+ * Settings → Memory: user.md with entries the lead remembered (each linked to its chat line), and the first project's
+ * MEMORY.md with its always-on part and a topic. Other projects remember nothing yet.
+ */
+function memory(f: Fixture) {
+  const projects = isObject(f.snapshot) && Array.isArray(f.snapshot["projects"]) ? f.snapshot["projects"].filter(isObject) : [];
+  const ref = (p: JsonObject): JsonObject => ({ machineId: asText(p["machineId"]), projectId: asText(p["projectId"]) });
+  const first = projects[0];
+  const at = "2026-10-19T10:21:00.000Z";
+  const file = (scope: string, text: string, cap: number, notes: JsonObject[] = [], topic?: string): JsonObject => ({
+    scope,
+    ...(topic ? { topic } : {}),
+    text,
+    chars: Array.from(text).length,
+    cap,
+    ...(text ? { updatedAt: at } : {}),
+    notes,
+  });
+  const note = (text: string, n: number): JsonObject[] => (first ? [{ text, at, projectRef: ref(first), messageId: `m${String(n)}` }] : []);
+  const user = file(
+    "user",
+    "- Concise. State first, then what you need from me.\n- No AI slop: plain words, no filler, no hype.\n- Never estimate time.\n",
+    4000,
+    [...note("No AI slop: plain words, no filler, no hype.", 41), ...note("Concise. State first, then what you need from me.", 12)],
+  );
+  f.answer("memory_get", undefined, { user });
+  for (const p of projects) {
+    const own = p === first;
+    const index = own ? "- Public repo: nothing private in PRs or docs.\n- No npm here: use pnpm.\n- [deploys](deploys.md)\n" : "";
+    const files = [file("project", index, 4000, own ? note("No npm here: use pnpm.", 33) : [])];
+    if (own) files.push(file("project", "- Staging first, always.\n- Releases go out Tuesdays.\n", 8000, [], "deploys"));
+    const chars = files.reduce((sum, x) => sum + (typeof x["chars"] === "number" ? x["chars"] : 0), 0);
+    f.answer("memory_get", { projectRef: ref(p) }, { user, files, projectChars: chars, projectCap: 32000 });
+  }
+  f.answer("memory_set", undefined, { file: user });
+  f.answer("memory_undo", undefined, { ok: true });
+}
+
 /** What Settings calls besides the prompt reads. */
 function basics(f: Fixture) {
   projectSettings(f);
+  memory(f);
   if (f.output("project_get") === undefined) f.answer("project_get", undefined, { projects: PROJECTS.map(projectSummary) });
   // The dry run, for any text: a fixture cannot know what will be typed, so it answers with no warnings.
   f.answer("prompt_set", { dryRun: true }, { ref: "lead.start@5e771ed000", warnings: [] });

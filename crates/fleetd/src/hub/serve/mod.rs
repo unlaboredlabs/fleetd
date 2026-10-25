@@ -238,6 +238,7 @@ pub fn build_on_with(
     clock: Arc<dyn Clock>,
     hosts: crate::hub::metrics::source::HostSources,
 ) -> anyhow::Result<Arc<Hub>> {
+    db.set_memory_dir(config.home.join("memory"));
     let store = Arc::new(HubStore::new(db.clone()));
     let events = Arc::new(EventLog::new(db.clone(), clock.clone())?);
     crate::hub::prompts::start(
@@ -398,6 +399,7 @@ pub fn build_on_with(
     wire::wire(&hub);
     crate::hub::approvals::tools::register_lead_calls(&hub);
     crate::hub::plan::calls::register_lead_calls(&hub);
+    crate::hub::memory::calls::register_lead_calls(&hub);
     crate::hub::steer::wire(&hub);
     crate::hub::chat::tools::extend_status(&hub);
     crate::hub::work::register_sweep(&hub);

@@ -55,6 +55,8 @@ Every lead gets these.
 | [`gated_run`](#gated_run) | A prod write, spend, delete or credential use: the chat shows the human exactly this argv with Approve / Deny, and the node runs it only once approved; secrets come from the node's own sinks. | A human approves the exact command in chat before the node runs it. |
 | [`plan`](#plan) | Set a workstream's plan items, in order (must or polish, size s\|m\|l, after other items, an optional milestone title), and get the plan back. | No |
 | [`decisions_search`](#decisions_search) | Search the decision log. | No |
+| [`remember`](#remember) | Keep one entry in memory, in plain words, for every later session: scope user for how the human works everywhere (tone, taste, standing rules), project for this project (MEMORY.md, or a topic file for detail). | No |
+| [`memory_read`](#memory_read) | Read one of this project's memory topic files (MEMORY.md lists them). | No |
 | [`change_enqueue`](#change_enqueue) | Put a PR no task's result put there on its repo's merge train; only the train merges. | No |
 
 ### spawn_agent
@@ -380,6 +382,49 @@ Search the decision log.
   "name": "decisions_search",
   "arguments": {
     "query": "pagination"
+  }
+}
+```
+
+### remember
+
+Keep one entry in memory, in plain words, for every later session: scope user for how the human works everywhere (tone, taste, standing rules), project for this project (MEMORY.md, or a topic file for detail). With replaces (words of one entry, quoted exactly) it takes that entry's place: never keep two versions. A write past a file's cap is refused: merge or replace entries, then call again. The chat shows the human what you remembered, with Undo. Never a secret.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `replaces` | string | no | Words of the entry this one replaces, quoted exactly; it must match one entry of the file. At most 1000 characters. |
+| `scope` | string | yes | One of `user` (`user.md`: how the human works across every project), `project` (This project's `MEMORY.md`, or one of its topic files). |
+| `text` | string | yes | One line. At most 1000 characters. |
+| `topic` | string | no | Project scope only: the topic file; absent, `MEMORY.md`. |
+
+**Who may call:** a lead, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "remember",
+  "arguments": {
+    "replaces": "Use npm",
+    "scope": "project",
+    "text": "No npm here: use pnpm."
+  }
+}
+```
+
+### memory_read
+
+Read one of this project's memory topic files (MEMORY.md lists them).
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `topic` | string | yes | Lowercase slug, [a-z0-9][a-z0-9-]{0,47}, other than memory. |
+
+**Who may call:** a lead, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "memory_read",
+  "arguments": {
+    "topic": "deploys"
   }
 }
 ```

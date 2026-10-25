@@ -512,6 +512,11 @@ impl Tasks {
             Vec::new()
         };
         let set = self.d.db.prompts().current(Some(r));
+        let memory = if write {
+            self.d.db.memory().injected(r, false)
+        } else {
+            String::new()
+        };
         let mut prompt = render_task_prompt(
             &set,
             &render::PromptInput {
@@ -522,6 +527,7 @@ impl Tasks {
                 branch: branch.as_deref(),
                 base_branch: base_branch.as_deref(),
                 elsewhere: &elsewhere,
+                memory: &memory,
             },
         );
         if let Some(handoff) = handoff {

@@ -1711,6 +1711,10 @@
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
         },
+        "remembered": {
+          "$ref": "#/$defs/RememberedItem",
+          "description": "A system line \"Remembered: …\": what the lead's `remember` wrote, which `memory_undo` takes back."
+        },
         "seq": {
           "maximum": 9007199254740991,
           "minimum": 0,
@@ -3870,6 +3874,11 @@
           "const": "work.landed",
           "description": "A commit reached a watched base, by the train, a PR merged outside it or a direct push; `data` is\n`work::WorkLandedData`.",
           "type": "string"
+        },
+        {
+          "const": "memory.changed",
+          "description": "A memory file changed (a lead's `remember`, an Undo, an edit in the app): `data.scope`, `data.projectRef`\n(project scope), `data.topic`, `data.by`. The text is not in the event; memory_get reads it.",
+          "type": "string"
         }
       ],
       "x-open": true
@@ -4803,6 +4812,24 @@
         "lead_start.output": {
           "$ref": "#/$defs/LeadStartOutput"
         },
+        "memory_get.input": {
+          "$ref": "#/$defs/MemoryGetInput"
+        },
+        "memory_get.output": {
+          "$ref": "#/$defs/MemoryGetOutput"
+        },
+        "memory_set.input": {
+          "$ref": "#/$defs/MemorySetInput"
+        },
+        "memory_set.output": {
+          "$ref": "#/$defs/MemorySetOutput"
+        },
+        "memory_undo.input": {
+          "$ref": "#/$defs/MemoryUndoInput"
+        },
+        "memory_undo.output": {
+          "$ref": "#/$defs/MemoryUndoOutput"
+        },
         "metrics_get.input": {
           "$ref": "#/$defs/MetricsGetInput"
         },
@@ -5089,6 +5116,12 @@
         "hub_info.output",
         "lead_start.input",
         "lead_start.output",
+        "memory_get.input",
+        "memory_get.output",
+        "memory_set.input",
+        "memory_set.output",
+        "memory_undo.input",
+        "memory_undo.output",
         "metrics_get.input",
         "metrics_get.output",
         "metrics_retention_set.input",
@@ -5171,6 +5204,218 @@
         "work_list.output",
         "workstream_list.input",
         "workstream_list.output"
+      ],
+      "type": "object"
+    },
+    "MemoryFile": {
+      "properties": {
+        "cap": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "chars": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "notes": {
+          "description": "Newest first.",
+          "items": {
+            "$ref": "#/$defs/MemoryNote"
+          },
+          "maxItems": 200,
+          "type": "array"
+        },
+        "scope": {
+          "$ref": "#/$defs/MemoryScope"
+        },
+        "text": {
+          "maxLength": 8000,
+          "type": "string"
+        },
+        "topic": {
+          "$ref": "#/$defs/MemoryTopic",
+          "description": "A project's topic file; absent for `user.md` and `MEMORY.md`."
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "scope",
+        "text",
+        "chars",
+        "cap",
+        "notes"
+      ],
+      "type": "object"
+    },
+    "MemoryGetInput": {
+      "properties": {
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "Also that project's MEMORY.md and topic files; absent: user.md only."
+        }
+      },
+      "type": "object"
+    },
+    "MemoryGetOutput": {
+      "properties": {
+        "files": {
+          "description": "With projectRef: MEMORY.md first, then the topic files by name.",
+          "items": {
+            "$ref": "#/$defs/MemoryFile"
+          },
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "projectCap": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "projectChars": {
+          "description": "With projectRef: the project's files together, and their cap.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "user": {
+          "$ref": "#/$defs/MemoryFile"
+        }
+      },
+      "required": [
+        "user"
+      ],
+      "type": "object"
+    },
+    "MemoryNote": {
+      "description": "An entry `remember` wrote that is still in its file: when, and the chat line that said so.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "messageId": {
+          "$ref": "#/$defs/ChatMessageId"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "text": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "at",
+        "projectRef",
+        "messageId"
+      ],
+      "type": "object"
+    },
+    "MemoryScope": {
+      "oneOf": [
+        {
+          "const": "user",
+          "description": "`user.md`: how the human works across every project.",
+          "type": "string"
+        },
+        {
+          "const": "project",
+          "description": "This project's `MEMORY.md`, or one of its topic files.",
+          "type": "string"
+        }
+      ]
+    },
+    "MemorySetInput": {
+      "properties": {
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "Required with scope project."
+        },
+        "scope": {
+          "$ref": "#/$defs/MemoryScope"
+        },
+        "text": {
+          "description": "The whole file. Empty deletes it (a topic's index line too).",
+          "maxLength": 8000,
+          "type": "string"
+        },
+        "topic": {
+          "$ref": "#/$defs/MemoryTopic",
+          "description": "Project scope: a topic file; absent, MEMORY.md."
+        }
+      },
+      "required": [
+        "scope",
+        "text"
+      ],
+      "type": "object"
+    },
+    "MemorySetOutput": {
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/MemoryFile"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "file"
+      ],
+      "type": "object"
+    },
+    "MemoryTopic": {
+      "description": "Lowercase slug, [a-z0-9][a-z0-9-]{0,47}, other than memory",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,47}$",
+      "type": "string"
+    },
+    "MemoryUndoInput": {
+      "properties": {
+        "messageId": {
+          "$ref": "#/$defs/ChatMessageId",
+          "description": "The chat line that said \"Remembered: …\"."
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "projectRef",
+        "messageId"
+      ],
+      "type": "object"
+    },
+    "MemoryUndoOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "ok": {
+          "enum": [
+            true
+          ],
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok"
       ],
       "type": "object"
     },
@@ -8519,6 +8764,38 @@
           "type": "string"
         }
       ]
+    },
+    "RememberedItem": {
+      "description": "What a `remember` call wrote, as a line in the project's chat. Undone with `memory_undo`.",
+      "properties": {
+        "replaced": {
+          "description": "The whole entry it replaced, which Undo puts back.",
+          "maxLength": 1000,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/MemoryScope"
+        },
+        "text": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "topic": {
+          "$ref": "#/$defs/MemoryTopic"
+        },
+        "undone": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "scope",
+        "text"
+      ],
+      "type": "object"
     },
     "RemoteRepo": {
       "type": "string"

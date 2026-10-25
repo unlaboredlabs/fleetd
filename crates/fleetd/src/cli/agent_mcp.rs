@@ -13,6 +13,7 @@ use fleetd_contracts::lead_calls::{
     GatedRunCall, LeadCall, LeadSocketFrame, RequestSecretCall, RequestWithdrawCall,
     TaskCancelCall, TaskListCall, TaskMessageCall, TaskSpawnCall,
 };
+use fleetd_contracts::memory::{MemoryReadCall, RememberCall};
 use fleetd_contracts::plan::PlanCall;
 use fleetd_contracts::schema::inline_schema;
 use fleetd_contracts::verification::ReviewVerdict;
@@ -159,6 +160,22 @@ static TOOLS: &[Tool] = &[
         "decisions_search",
         "Search the decision log.",
         inline_schema::<DecisionsSearchCall>,
+    ),
+    lead(
+        "remember",
+        "remember",
+        "Keep one entry in memory, in plain words, for every later session: scope user for how the human works \
+         everywhere (tone, taste, standing rules), project for this project (MEMORY.md, or a topic file for detail). \
+         With replaces (words of one entry, quoted exactly) it takes that entry's place: never keep two versions. A \
+         write past a file's cap is refused: merge or replace entries, then call again. The chat shows the human what \
+         you remembered, with Undo. Never a secret.",
+        inline_schema::<RememberCall>,
+    ),
+    lead(
+        "memory_read",
+        "memory_read",
+        "Read one of this project's memory topic files (MEMORY.md lists them).",
+        inline_schema::<MemoryReadCall>,
     ),
     lead(
         "change_enqueue",
@@ -491,6 +508,8 @@ mod tests {
             "close",
             "gated_run",
             "plan",
+            "remember",
+            "memory_read",
         ] {
             assert!(lead.contains(&tool.to_owned()), "{tool}");
         }

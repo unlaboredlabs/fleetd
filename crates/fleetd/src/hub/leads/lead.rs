@@ -277,6 +277,7 @@ impl Leads {
             &project.title,
             medium,
             &self.wakes.digest(r).await?,
+            &self.ctx.db.memory().injected(r, true),
         );
         if let Some(first) = first {
             prompt = format!("{}\n\n{}", prompt.trim_end(), first.trim_end());

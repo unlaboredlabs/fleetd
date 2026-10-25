@@ -1273,6 +1273,9 @@ export const screens: readonly Screen[] = [
     variant: "search-none",
     open: (page) => page.getByRole("searchbox", { name: "Search settings" }).fill("zebra"),
   },
+  // Memory: user.md with what the lead remembered, then one project's MEMORY.md and a topic.
+  { id: "settings.memory", route: "#/settings/memory", fixtures: ["typical", "empty", "hub-unreachable"] },
+  { id: "settings.memory", route: "#/settings/memory?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22", fixtures: ["typical", "long-text"], variant: "project" },
   // Prompts before one is picked.
   { id: "settings.prompts", route: "#/settings/prompts", fixtures: ["settings-prompts"], variant: "none" },
   { id: "settings.general", route: "#/settings/general", fixtures: ["typical", "empty", "hub-unreachable"] },

@@ -162,6 +162,7 @@ pub fn registry() -> Registry {
     crate::hub::leads::tools::register(&mut tools);
     crate::hub::orders::tools::register(&mut tools);
     crate::hub::prompts::tools::register(&mut tools);
+    crate::hub::memory::tools::register(&mut tools);
     crate::hub::time::tools::register(&mut tools);
     crate::hub::metrics::tools::register(&mut tools);
     crate::hub::plan::tools::register(&mut tools);

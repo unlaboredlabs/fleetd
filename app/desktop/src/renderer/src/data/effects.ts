@@ -88,6 +88,7 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   if (type === "prompt.changed" || type === "prompt.default_changed") {
     out.push({ tool: "prompt_get" }, { tool: "session_prompt_get" });
   }
+  if (type === "memory.changed") out.push({ tool: "memory_get" });
   if (type === "doctor.changed") out.push({ tool: "doctor_list" });
   if (type === "decision.recorded") out.push({ tool: "fleetd_status" });
 

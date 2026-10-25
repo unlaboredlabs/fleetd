@@ -75,7 +75,8 @@ Most of this is also enforced by the hub, which refuses a call that breaks it an
 ### Claude's auto memory is off {#auto-memory}
 
 Claude Code can keep its own notes per folder ("auto memory"). fleetd turns that off in every `claude` it starts, so
-what an agent knows comes from its brief, the decisions and your instructions, all of which you can read here.
+what an agent knows comes from its brief, the decisions, your instructions and fleetd's own [memory](#memory), all of
+which you can read here.
 
 ### Claude's own subagents are off {#no-subagents}
 
@@ -166,6 +167,23 @@ under "Custom instructions from the human". They are not added to wakes.
 
 They are sized for about 500 characters; past that, `edit` warns. After your editor closes, `edit` prints any
 warnings and asks `Save? [Y/n]` on the terminal. In a script, `</dev/null` takes the default, Yes.
+
+## Memory {#memory}
+
+Leads remember how you work and what each project decided, so you don't say "concise" or "no npm" twice. When you
+correct the lead or state a rule, it calls `remember` in that turn, and the chat shows "Remembered: …" with Undo.
+
+- **You** (`user.md`): how you work everywhere. Every project's lead and writers get it.
+- **Each project** (`MEMORY.md`, plus topic files for detail): only that project's sessions get it. Another project
+  never sees it.
+
+A lead gets `user.md` and its project's `MEMORY.md` at the start of each session, after your instructions; writers
+get them in their brief. A lead opens a topic file when it needs one. Something remembered mid-session reaches the
+next session.
+
+Read, edit or delete any of it in Settings → Memory. The files are plain markdown in the hub's home (`memory/`), in no
+repo. Each file has a cap (4,000 characters for `user.md` and `MEMORY.md`, 8,000 per topic, 32,000 per project): a
+write past one is refused, and the lead merges entries instead. Memory never holds a secret.
 
 ## When fleetd changes a default you edited {#updates}
 

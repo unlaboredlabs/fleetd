@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
 use crate::auth::Role;
-use crate::chat::ChatRequestId;
+use crate::chat::{ChatMessageId, ChatRequestId};
 use crate::doctor::{DoctorCheck, DoctorCheckId};
 use crate::events::{HubEvent, HubEventType};
 use crate::hello::ProtocolVersion;
@@ -16,6 +16,7 @@ use crate::ledger::{
     Lead, RequestState, Workstream, WorkstreamId, WorkstreamState,
 };
 use crate::live::{AgentLane, OrderCard, TrainLive};
+use crate::memory::{MemoryFile, MemoryScope, MemoryTopic, TOPIC_CAP};
 use crate::model::{ActionItem, Machine, ProjectOutcome, ProjectSummary, ThreadSummary};
 use crate::plan::PlanView;
 use crate::prim::{
@@ -844,6 +845,46 @@ output!(SessionPromptGetOutput {
     session: SessionPrompt
 });
 
+// memory_get, memory_set, memory_undo: what the leads remember (Settings > Memory). Writes are human keys only.
+input!(MemoryGetInput {
+    /// Also that project's MEMORY.md and topic files; absent: user.md only.
+    project_ref: Option<ProjectRef>,
+});
+output!(MemoryGetOutput {
+    user: MemoryFile,
+    /// With projectRef: MEMORY.md first, then the topic files by name.
+    files: Option<Vec<MemoryFile>>,
+    /// With projectRef: the project's files together, and their cap.
+    project_chars: Option<Count>,
+    project_cap: Option<Count>,
+});
+input!(
+    #[serde(remote = "Self")]
+    MemorySetInput {
+        scope: MemoryScope,
+        /// Required with scope project.
+        project_ref: Option<ProjectRef>,
+        /// Project scope: a topic file; absent, MEMORY.md.
+        topic: Option<MemoryTopic>,
+        /// The whole file. Empty deletes it (a topic's index line too).
+        text: Text<0, TOPIC_CAP>,
+    }
+);
+checked!(MemorySetInput, |input| {
+    match (input.scope, &input.project_ref, &input.topic) {
+        (MemoryScope::Project, None, _) => Err("scope project needs projectRef".into()),
+        (MemoryScope::User, _, Some(_)) => Err("user.md has no topics".into()),
+        _ => Ok(()),
+    }
+});
+output!(MemorySetOutput { file: MemoryFile });
+input!(MemoryUndoInput {
+    project_ref: ProjectRef,
+    /// The chat line that said "Remembered: …".
+    message_id: ChatMessageId,
+});
+output!(MemoryUndoOutput { ok: True });
+
 // status_get: without projectRef, one row per project the key reads, for the Status screen; with it, that project's
 // row and the series behind its bar.
 input!(StatusGetInput {
@@ -1316,6 +1357,10 @@ tools! {
     // with operate there. The handler checks which.
     prompt_set => PromptSet, Operate, PromptSetInput, PromptSetOutput;
     session_prompt_get => SessionPromptGet, Read, SessionPromptGetInput, SessionPromptGetOutput;
+    memory_get => MemoryGet, Read, MemoryGetInput, MemoryGetOutput;
+    // Human keys only (the handlers check): agents write memory through the lead's remember.
+    memory_set => MemorySet, Operate, MemorySetInput, MemorySetOutput;
+    memory_undo => MemoryUndo, Operate, MemoryUndoInput, MemoryUndoOutput;
     time_spans => TimeSpans, Read, TimeSpansInput, TimeSpansOutput;
     time_breakdown => TimeBreakdown, Read, TimeBreakdownInput, TimeBreakdownOutput;
     time_insights => TimeInsights, Read, TimeInsightsInput, TimeInsightsOutput;

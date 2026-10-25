@@ -22,6 +22,18 @@
         }
       ]
     },
+    "AgentBlock": {
+      "description": "An agent at work: the client fills in its live state. Exactly one of `taskId` and `threadRef`.",
+      "properties": {
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        },
+        "threadRef": {
+          "$ref": "#/$defs/ThreadRef"
+        }
+      },
+      "type": "object"
+    },
     "AgentsCapData": {
       "description": "`agents.cap` data: a project's max agents or the fleet cap changed. The event's summary is the one quiet line its\nchat shows.",
       "properties": {
@@ -92,6 +104,50 @@
       "required": [
         "fromMs",
         "toMs"
+      ],
+      "type": "object"
+    },
+    "AskBlock": {
+      "description": "A question for the human, as buttons: Approve and Deny without `options`, one of `options` with them. The\nanswer is the human's chat reply (`chat_send` with the button's label as its text), so only the human answers\nit; an agent's message never does. A command that needs approval still goes through `gated_run`.",
+      "properties": {
+        "options": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[^\\r\\n]*$",
+            "type": "string"
+          },
+          "maxItems": 6,
+          "minItems": 2,
+          "type": "array"
+        },
+        "question": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "question"
+      ],
+      "type": "object"
+    },
+    "AttachmentBlock": {
+      "description": "An image or clip already uploaded to the hub: its bytes come from `attachment_get`.",
+      "properties": {
+        "attachmentId": {
+          "$ref": "#/$defs/AttachmentId"
+        },
+        "caption": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "attachmentId"
       ],
       "type": "object"
     },
@@ -253,6 +309,84 @@
       ],
       "type": "object"
     },
+    "ChartBlock": {
+      "description": "A line, bar or area chart: `x` labels along the bottom, one value per label in each series.",
+      "properties": {
+        "chart": {
+          "$ref": "#/$defs/ChartType"
+        },
+        "series": {
+          "items": {
+            "$ref": "#/$defs/ChartSeries"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "type": "array"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "unit": {
+          "description": "The values' unit, e.g. \"min\", \"%\", \"PRs\".",
+          "maxLength": 20,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "x": {
+          "items": {
+            "maxLength": 40,
+            "pattern": "^[^\\r\\n]*$",
+            "type": "string"
+          },
+          "maxItems": 200,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "chart",
+        "title",
+        "x",
+        "series"
+      ],
+      "type": "object"
+    },
+    "ChartSeries": {
+      "properties": {
+        "name": {
+          "maxLength": 60,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "values": {
+          "description": "One per `x` label, in order.",
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 200,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "values"
+      ],
+      "type": "object"
+    },
+    "ChartType": {
+      "enum": [
+        "line",
+        "bar",
+        "area"
+      ],
+      "type": "string"
+    },
     "ChatAuthor": {
       "oneOf": [
         {
@@ -274,6 +408,139 @@
         }
       ],
       "x-open": true
+    },
+    "ChatBlock": {
+      "description": "One block: `v`, the block schema's version (`BLOCK_VERSION`), and its kind's fields. A kind or version a client\ndoesn't know shows as the part's text.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ChartBlock",
+          "properties": {
+            "kind": {
+              "const": "chart",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/TableBlock",
+          "properties": {
+            "kind": {
+              "const": "table",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/DiffBlock",
+          "properties": {
+            "kind": {
+              "const": "diff",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/PrBlock",
+          "properties": {
+            "kind": {
+              "const": "pr",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/AgentBlock",
+          "properties": {
+            "kind": {
+              "const": "agent",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/ChecklistBlock",
+          "properties": {
+            "kind": {
+              "const": "checklist",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/AttachmentBlock",
+          "properties": {
+            "kind": {
+              "const": "image",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/AttachmentBlock",
+          "properties": {
+            "kind": {
+              "const": "clip",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/AskBlock",
+          "properties": {
+            "kind": {
+              "const": "ask",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ],
+      "properties": {
+        "v": {
+          "maximum": 1,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v"
+      ],
+      "type": "object"
     },
     "ChatClient": {
       "description": "Where a human message was written.",
@@ -430,8 +697,21 @@
         "messageId": {
           "$ref": "#/$defs/ChatMessageId"
         },
+        "parts": {
+          "description": "A final lead message of more than one bubble, or with a block: its bubbles in order. Absent: `text` is one\nbubble (and while a message streams).",
+          "items": {
+            "$ref": "#/$defs/ChatPart"
+          },
+          "maxItems": 24,
+          "minItems": 1,
+          "type": "array"
+        },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
+        },
+        "remembered": {
+          "$ref": "#/$defs/RememberedItem",
+          "description": "A system line \"Remembered: …\": what the lead's `remember` wrote, which `memory_undo` takes back."
         },
         "seq": {
           "maximum": 9007199254740991,
@@ -515,9 +795,72 @@
       ],
       "x-open": true
     },
+    "ChatPart": {
+      "description": "One bubble of a lead message: `text.slice(start, end)` (UTF-16 offsets, like `ChatDelta.offset`), shown as\nmarkdown, or as `block` when it has one (the slice is then the block's fence, its readable fallback).",
+      "properties": {
+        "block": {
+          "$ref": "#/$defs/ChatBlock"
+        },
+        "end": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "start": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "type": "object"
+    },
     "ChatRequestId": {
       "pattern": "^Q[1-9][0-9]*$",
       "type": "string"
+    },
+    "ChecklistBlock": {
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/ChecklistItem"
+          },
+          "maxItems": 30,
+          "minItems": 1,
+          "type": "array"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "ChecklistItem": {
+      "properties": {
+        "done": {
+          "type": "boolean"
+        },
+        "text": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "done"
+      ],
+      "type": "object"
     },
     "CiInfo": {
       "description": "CI the repository runs.",
@@ -821,6 +1164,55 @@
           "type": "string"
         }
       ]
+    },
+    "DiffBlock": {
+      "description": "Changes to show: the files with their hunks, or a PR whose diff the client reads. Exactly one of the two.",
+      "properties": {
+        "files": {
+          "items": {
+            "$ref": "#/$defs/DiffFile"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "type": "array"
+        },
+        "pr": {
+          "$ref": "#/$defs/PrBlock"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "DiffFile": {
+      "properties": {
+        "hunks": {
+          "description": "Unified-diff hunks, each from its `@@` line.",
+          "items": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "type": "array"
+        },
+        "path": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "hunks"
+      ],
+      "type": "object"
     },
     "EnvName": {
       "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$",
@@ -1195,6 +1587,25 @@
       ],
       "type": "object"
     },
+    "MemoryScope": {
+      "oneOf": [
+        {
+          "const": "user",
+          "description": "`user.md`: how the human works across every project.",
+          "type": "string"
+        },
+        {
+          "const": "project",
+          "description": "This project's `MEMORY.md`, or one of its topic files.",
+          "type": "string"
+        }
+      ]
+    },
+    "MemoryTopic": {
+      "description": "Lowercase slug, [a-z0-9][a-z0-9-]{0,47}, other than memory",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,47}$",
+      "type": "string"
+    },
     "MergeRules": {
       "description": "How the default branch may be merged into.",
       "properties": {
@@ -1368,6 +1779,31 @@
         "itemId",
         "milestoneId",
         "evidence"
+      ],
+      "type": "object"
+    },
+    "PrBlock": {
+      "description": "A pull request: the client fills in its live state (title, checks, review, merged) from the hub.",
+      "properties": {
+        "number": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        },
+        "title": {
+          "description": "Shown until the live title is known.",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo",
+        "number"
       ],
       "type": "object"
     },
@@ -1638,6 +2074,38 @@
       },
       "required": [
         "paused"
+      ],
+      "type": "object"
+    },
+    "RememberedItem": {
+      "description": "What a `remember` call wrote, as a line in the project's chat. Undone with `memory_undo`.",
+      "properties": {
+        "replaced": {
+          "description": "The whole entry it replaced, which Undo puts back.",
+          "maxLength": 1000,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/MemoryScope"
+        },
+        "text": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "topic": {
+          "$ref": "#/$defs/MemoryTopic"
+        },
+        "undone": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "scope",
+        "text"
       ],
       "type": "object"
     },
@@ -2054,6 +2522,47 @@
         }
       ]
     },
+    "TableBlock": {
+      "description": "Rows of plain-text cells, one per column.",
+      "properties": {
+        "columns": {
+          "items": {
+            "maxLength": 60,
+            "minLength": 1,
+            "pattern": "^[^\\r\\n]*$",
+            "type": "string"
+          },
+          "maxItems": 12,
+          "minItems": 1,
+          "type": "array"
+        },
+        "rows": {
+          "items": {
+            "items": {
+              "maxLength": 200,
+              "pattern": "^[^\\r\\n]*$",
+              "type": "string"
+            },
+            "maxItems": 12,
+            "minItems": 1,
+            "type": "array"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "columns",
+        "rows"
+      ],
+      "type": "object"
+    },
     "TaskEventData": {
       "description": "Fields `HubEvent.data` carries on `task.*` events.",
       "properties": {
@@ -2133,6 +2642,21 @@
       "required": [
         "title",
         "since"
+      ],
+      "type": "object"
+    },
+    "ThreadRef": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        }
+      },
+      "required": [
+        "machineId",
+        "threadId"
       ],
       "type": "object"
     },

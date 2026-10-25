@@ -17,6 +17,7 @@ use crate::ledger::{
     WorkstreamId, WorkstreamState,
 };
 use crate::mcp::McpToolError;
+use crate::memory::{MemoryReadCall, MemoryReadResult, RememberCall, RememberResult};
 use crate::plan::{PlanCall, PlanItemId, PlanResult};
 use crate::prim::{Line, List, NonEmpty, Text};
 use crate::secrets::SecretSink;
@@ -255,6 +256,8 @@ pub enum LeadCall {
     GatedRun(GatedRunCall),
     Plan(PlanCall),
     AskLead(AskLeadCall),
+    Remember(RememberCall),
+    MemoryRead(MemoryReadCall),
 }
 
 #[skip_serializing_none]
@@ -361,6 +364,8 @@ pub enum LeadCallResult {
     GatedRun(RequestResult),
     Plan(PlanResult),
     AskLead(AskLeadResult),
+    Remember(RememberResult),
+    MemoryRead(MemoryReadResult),
 }
 
 /// CLI -> node on the local socket, and node -> hub on the link.

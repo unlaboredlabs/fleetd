@@ -227,6 +227,10 @@ pub enum HubEventType {
     /// `work::WorkLandedData`.
     #[serde(rename = "work.landed")]
     WorkLanded,
+    /// A memory file changed (a lead's `remember`, an Undo, an edit in the app): `data.scope`, `data.projectRef`
+    /// (project scope), `data.topic`, `data.by`. The text is not in the event; memory_get reads it.
+    #[serde(rename = "memory.changed")]
+    MemoryChanged,
 }
 
 impl HubEventType {
@@ -304,6 +308,7 @@ impl HubEventType {
             Self::WorkClaimed => "work.claimed",
             Self::WorkEnded => "work.ended",
             Self::WorkLanded => "work.landed",
+            Self::MemoryChanged => "memory.changed",
         }
     }
 }

@@ -134,6 +134,8 @@ pub struct PromptInput<'a> {
     pub base_branch: Option<&'a str>,
     /// Write tasks: the work in flight elsewhere they may overlap (`duplicates::for_writer`).
     pub elsewhere: &'a [String],
+    /// Write tasks: `user.md` and the project's `MEMORY.md` (`Memory::injected`), or empty.
+    pub memory: &'a str,
 }
 
 fn kind_str(kind: TaskKind) -> &'static str {
@@ -229,8 +231,12 @@ pub fn render_task_prompt(set: &PromptSet, input: &PromptInput<'_>) -> String {
         TaskKind::Read => "task.brief.read",
         TaskKind::Review => "task.brief.review",
     };
-    let text = set.render(id, vars);
-    set.with_instructions(text)
+    let text = set.with_instructions(set.render(id, vars));
+    if input.memory.is_empty() {
+        text
+    } else {
+        format!("{text}\n\n{}", input.memory)
+    }
 }
 
 /// The lead's event line for a finished task: its whole result tail, inline. `escalated`: its run died and fleetd

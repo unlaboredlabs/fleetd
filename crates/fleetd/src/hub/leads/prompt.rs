@@ -1,5 +1,5 @@
 //! The lead's first message: the `lead.start` prompt, `lead.voice`, `lead.profiles` while the project allows medium,
-//! the digest, then the human's custom instructions.
+//! the digest, the human's custom instructions, then the memory (`user.md` and the project's `MEMORY.md`).
 use fleetd_contracts::ids::ProjectRef;
 
 use crate::hub::prompts::PromptSet;
@@ -10,6 +10,7 @@ pub fn render_lead_start(
     title: &str,
     medium_allowed: bool,
     digest: &str,
+    memory: &str,
 ) -> String {
     let start = set.render(
         "lead.start",
@@ -28,11 +29,16 @@ pub fn render_lead_start(
         String::new()
     };
     let voice = set.render("lead.voice", &[]);
-    set.with_instructions(format!(
+    let first = set.with_instructions(format!(
         "{}\n\n{}{profiles}\n\n{digest}",
         start.trim_end(),
         voice.trim_end()
-    ))
+    ));
+    if memory.is_empty() {
+        first
+    } else {
+        format!("{first}\n\n{memory}")
+    }
 }
 
 #[cfg(test)]
@@ -48,13 +54,13 @@ mod tests {
             project_id: ProjectId::unchecked("p1"),
         };
         let set = PromptSet::defaults();
-        let text = render_lead_start(set, &r, "storefront", true, "DIGEST");
+        let text = render_lead_start(set, &r, "storefront", true, "DIGEST", "");
         let guide = text.find("## Task profiles").unwrap();
         assert!(
             text.find("spawn_agent").unwrap() < guide && guide < text.find("DIGEST").unwrap(),
             "{text}"
         );
-        let off = render_lead_start(set, &r, "storefront", false, "D");
+        let off = render_lead_start(set, &r, "storefront", false, "D", "");
         assert!(!off.contains("## Task profiles") && off.contains("spawn_agent"));
         let voice = off.find("## Your voice").unwrap();
         assert!(

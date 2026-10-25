@@ -13,6 +13,7 @@ import type { ChatItem } from "../../src/data/chat";
 import { shortClock } from "./format";
 import { latestLabel, newestKey, type Row, type TopState } from "./model";
 import { MessageView } from "./Bubble";
+import { RememberedUndo } from "./Remembered";
 import { LiveStrip, useNow, useOnScreen } from "../live";
 import { Boundary } from "../../src/Boundary";
 import type { ChatItem as InlineItem } from "../../../shared/contracts";
@@ -149,6 +150,7 @@ const RowView = memo(function RowView(props: {
       return (
         <div className={cx(s.quietRow, s.event)} data-entry="event">
           <InlineText size="xs" tone="quiet" text={r.item.text} project={project} />
+          {r.item.message ? <RememberedUndo project={project} message={r.item.message} /> : null}
           <span className={s.eventTime}>{shortClock(r.item.at)}</span>
         </div>
       );
