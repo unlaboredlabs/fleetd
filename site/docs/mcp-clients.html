@@ -179,8 +179,8 @@ is dropped, and to tell you when the work is taken. A session might go like this
 <td>operate</td>
 </tr>
 <tr>
-<td><code dir="auto">work_list {repo | projectRef, base?}</code></td>
-<td>What is in flight on the repo’s base, newest first, with each item’s keys and files. Expired claims come last.</td>
+<td><code dir="auto">work_list {repo | projectRef, base?, paths?}</code></td>
+<td>What is in flight on the repo’s base, newest first, with each item’s keys and files (<code dir="auto">paths: false</code> leaves out what each writer has changed so far, which asks its machine). Expired claims come last. <code dir="auto">recentLandings</code> lists what reached the base outside the merge train in the last 24 h, and how.</td>
 <td>read</td>
 </tr>
 <tr>
