@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use super::contract::{Change, ChangeState, ProjectRef, TrainState, state_str};
+use super::next::WAITING_FOR_RUNNERS;
 use super::records::{ChangeRecords, ListFilter};
 use crate::hub::store::parse_ms;
 
@@ -54,9 +55,18 @@ fn state_of(changes: &[Change], train: &TrainState) -> String {
         .collect();
     let mut parts = Vec::new();
     if let Some(head) = &train.head {
+        // A head whose checks wait for runners says so: `now X1 (ci): waiting for CI runners (2 queued)`.
         let state = by_id
             .get(head.as_str())
-            .map(|c| format!(" ({})", state_str(c.state)))
+            .map(|c| {
+                let waiting = c
+                    .last_error
+                    .as_deref()
+                    .filter(|e| c.state == ChangeState::Ci && e.starts_with(WAITING_FOR_RUNNERS))
+                    .map(|e| format!(": {e}"))
+                    .unwrap_or_default();
+                format!(" ({}){waiting}", state_str(c.state))
+            })
             .unwrap_or_default();
         parts.push(format!("now {head}{state}"));
     }

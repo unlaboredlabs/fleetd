@@ -6,7 +6,7 @@
 //! No gate is skipped: every member is ready, the batch's CI must pass, and GitHub's rules on the base decide the merge
 //! as they would for one PR. The next pass's sweep deletes the scratch branch, which closes a batch PR left open.
 use super::contract::{Change, ChangeState};
-use super::github::{BATCH_MARKER, BranchMerge, MergeOutcome, Pull, batch_heads};
+use super::github::{BATCH_MARKER, BranchMerge, MergeOutcome, NEXT_LABEL, Pull, batch_heads};
 use super::service::{Checks, CiOutcome, Train, checks, error_text, lock, short};
 
 const BATCH_MAX: usize = 8;
@@ -106,11 +106,14 @@ impl Train {
     }
 
     /// After refresh and the freeze: a batch of the ready Changes into the first one's base that are green on their
-    /// own heads, or the first one alone. True when it took or settled one.
+    /// own heads, or the first one alone. True when it took or settled one. First, `fleetd:next` goes on the one taken
+    /// alone and off every PR the train is not merging now. Never on the PRs behind it: the run the label starts would
+    /// cancel their own CI, keep them out of the next batch, and take the runners the batch needs.
     pub(super) async fn next(&self, repo: &str) -> bool {
         let ready = self.records.in_train(repo, &[ChangeState::Ready]);
         let (candidates, settled) = self.candidates(repo, ready).await;
         let Some(head) = candidates.first() else {
+            self.relabel(repo, &[], &[]).await;
             return settled;
         };
         let base = head.pull.base.ref_.clone();
@@ -125,6 +128,15 @@ impl Train {
                 }
             }
         }
+        // The batch PR gets its label once it is open (`take_batch`); its members keep one they have, as a red batch
+        // sends each alone.
+        let wanted = if members.len() >= 2 {
+            Vec::new()
+        } else {
+            vec![(head.change.pr_number.get(), head.pull.labelled(NEXT_LABEL))]
+        };
+        let kept: Vec<i64> = members.iter().map(|m| m.change.pr_number.get()).collect();
+        self.relabel(repo, &wanted, &kept).await;
         if members.len() >= 2 {
             self.take_batch(repo, &base, members).await;
         } else {
@@ -345,6 +357,8 @@ impl Train {
             Ok(pr) => pr,
             Err(e) => return self.release(&kept, &format!("GitHub: {}", e.message)),
         };
+        // Its branch already gets the expensive jobs; the label shows it is next.
+        self.label(repo, pr, false).await;
         let in_ci = self.advance(&kept, ChangeState::Rebasing, ChangeState::Ci);
         if in_ci.len() != kept.len() {
             return self.release(&kept, MEMBER_LEFT);
@@ -355,7 +369,11 @@ impl Train {
             in_ci[0].change.change_id.clone(),
             (sha.clone(), self.now_ms()),
         );
-        let red = match self.wait_ci(&in_ci[0].change, repo, &sha).await {
+        let noted: Vec<_> = in_ci.iter().map(|m| m.change.change_id.clone()).collect();
+        let red = match self
+            .wait_ci(&in_ci[0].change, repo, &sha, None, &noted)
+            .await
+        {
             CiOutcome::Green => None,
             CiOutcome::Red(_) => Some("red"),
             CiOutcome::Timeout => Some("timed out"),

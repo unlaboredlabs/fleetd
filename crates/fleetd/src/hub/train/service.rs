@@ -201,6 +201,8 @@ pub struct Train {
     pub(super) pushed: Mutex<HashMap<ChangeId, (String, i64)>>,
     /// Each repo and base branch's CI config and when it was read.
     ci_configs: Mutex<HashMap<(String, String), CiConfig>>,
+    /// The PRs that carry `fleetd:next`.
+    pub(super) next_labels: super::next::NextLabels,
     pub(super) sync: GithubSync,
     /// The follower and every repo loop, aborted by `stop`.
     tasks: Mutex<Vec<tokio::task::JoinHandle<()>>>,
@@ -245,6 +247,7 @@ impl Train {
             merge_refusals: Mutex::default(),
             pushed: Mutex::default(),
             ci_configs: Mutex::default(),
+            next_labels: Default::default(),
             sync: GithubSync::default(),
             tasks: Mutex::default(),
         })
@@ -756,10 +759,42 @@ impl Train {
     }
 
     /// Polls the check runs of `sha` until all are done, one is red, or the timeout passes. A head with no checks is
-    /// never green: only a repo with CI reaches here (`has_ci`).
-    pub(super) async fn wait_ci(&self, change: &Change, repo: &str, sha: &str) -> CiOutcome {
+    /// never green: only a repo with CI reaches here (`has_ci`). `lone` is a PR merged alone in a repo whose CI runs
+    /// checks on `fleetd:next`: a skipped check the label runs, skipped for want of it (`unproven_skips`), never counts
+    /// as green there. The train waits for the run that replaces it, puts on a label GitHub refused again every
+    /// `LABEL_HOLD_MS`, and tells the lead once when none came in that time. While the repo's workflows can't be read
+    /// (`Gate::Unknown`), any skip holds for `LABEL_HOLD_MS` only. While some checks have been queued for
+    /// `RUNNER_WAIT_MS`, `noted` (the Changes in this CI run) say they wait for runners.
+    pub(super) async fn wait_ci(
+        &self,
+        change: &Change,
+        repo: &str,
+        sha: &str,
+        lone: Option<super::next::Lone>,
+        noted: &[ChangeId],
+    ) -> CiOutcome {
+        let mut earlier = HashMap::new();
+        let outcome = self
+            .poll_ci(change, repo, sha, lone, noted, &mut earlier)
+            .await;
+        self.runner_note(noted, None, &mut earlier);
+        outcome
+    }
+
+    async fn poll_ci(
+        &self,
+        change: &Change,
+        repo: &str,
+        sha: &str,
+        mut lone: Option<super::next::Lone>,
+        noted: &[ChangeId],
+        earlier: &mut HashMap<ChangeId, Option<String>>,
+    ) -> CiOutcome {
+        use super::next::{Gate, LABEL_HOLD_MS, Labelled, RUNNER_WAIT_MS, WAITING_FOR_RUNNERS};
         let start = self.now_ms();
         let mut last: Vec<CheckRun> = Vec::new();
+        let mut queued_since: Option<i64> = None;
+        let (mut tried_label, mut told) = (start, false);
         loop {
             let runs = match self.github.check_runs(repo, sha).await {
                 Ok(runs) => Some(runs),
@@ -768,6 +803,14 @@ impl Train {
                     None
                 }
             };
+            if let Some(runs) = &runs {
+                let (now, queued) = (self.now_ms(), super::next::queued(runs));
+                queued_since = (queued > 0).then(|| queued_since.unwrap_or(now));
+                let note = queued_since
+                    .filter(|since| now - since >= RUNNER_WAIT_MS)
+                    .map(|_| format!("{WAITING_FOR_RUNNERS} ({queued} queued)"));
+                self.runner_note(noted, note.as_deref(), earlier);
+            }
             let runs = runs.unwrap_or_default();
             if !runs.is_empty() {
                 last = runs.clone();
@@ -776,6 +819,45 @@ impl Train {
                 Checks::Red(red) => {
                     self.check_spans(change, sha, &runs);
                     return CiOutcome::Red(red);
+                }
+                Checks::Green
+                    if let Some(lone) = lone.as_mut()
+                        && let unproven = super::next::unproven_skips(&runs, lone)
+                        && !unproven.is_empty()
+                        // Workflows not read yet: the hold lasts `LABEL_HOLD_MS`, then the skips count.
+                        && (lone.gate != Gate::Unknown
+                            || self.now_ms() - lone.since(start) < LABEL_HOLD_MS) =>
+                {
+                    let now = self.now_ms();
+                    if lone.label == Labelled::Failed && now - tried_label >= LABEL_HOLD_MS {
+                        tried_label = now;
+                        lone.label = self.label(repo, change.pr_number.get(), false).await;
+                    }
+                    if !told && now - lone.since(start) >= LABEL_HOLD_MS {
+                        told = true;
+                        let names: Vec<&str> = unproven.iter().map(|r| r.name.as_str()).collect();
+                        let why = if lone.label == Labelled::Failed {
+                            format!(
+                                "the train could not put `{}` on it",
+                                super::github::NEXT_LABEL
+                            )
+                        } else {
+                            "no run replaced them since the label went on".to_string()
+                        };
+                        let text = format!(
+                            "CI didn't start for the labelled PR: {} skipped, and {why}. The train keeps waiting \
+                             and won't merge it on a skipped check; check the repo's label workflow.",
+                            names.join(", ")
+                        );
+                        tracing::warn!(change_id = %change.change_id, text, "train: label run missing");
+                        let line = Event::PrNote {
+                            change: change.change_id.as_str(),
+                            pr_url: change.pr_url.as_str(),
+                            text: &text,
+                        }
+                        .render();
+                        self.wake_lead(&change.project_ref, line).await;
+                    }
                 }
                 Checks::Green => {
                     self.check_spans(change, sha, &runs);
@@ -1002,6 +1084,14 @@ impl Train {
         else {
             return Ok(());
         };
+        // Before the rebase: the push it makes then starts a CI run that already sees the label.
+        let label = self
+            .label(
+                repo,
+                change.pr_number.get(),
+                pull.labelled(super::github::NEXT_LABEL),
+            )
+            .await;
         let base = pull.base.ref_.as_str();
         let rebased = match self
             .github
@@ -1058,7 +1148,12 @@ impl Train {
         ) else {
             return Ok(());
         };
-        match self.wait_ci(&in_ci, repo, &head_sha).await {
+        let lone = match self.label_gate(repo, base).await {
+            super::next::Gate::Checks(names) if names.is_empty() => None,
+            gate => Some(super::next::Lone { label, gate }),
+        };
+        let noted = std::slice::from_ref(&in_ci.change_id);
+        match self.wait_ci(&in_ci, repo, &head_sha, lone, noted).await {
             CiOutcome::Green => {}
             CiOutcome::Red(failing) => {
                 self.ci_failed(&in_ci, &failing, false).await;

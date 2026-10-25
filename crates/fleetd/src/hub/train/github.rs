@@ -133,11 +133,19 @@ pub struct PullMerger {
 /// The label that keeps a PR off the train until someone takes it off.
 pub const HOLD_LABEL: &str = "hold";
 
+/// The label the train puts on its batch PR and on the next PRs it will merge, so a repo whose CI runners are scarce
+/// can run its expensive jobs on those PRs only.
+pub const NEXT_LABEL: &str = "fleetd:next";
+
 impl Pull {
     pub fn held(&self) -> bool {
+        self.labelled(HOLD_LABEL)
+    }
+
+    pub fn labelled(&self, name: &str) -> bool {
         self.labels
             .iter()
-            .any(|l| l.name.eq_ignore_ascii_case(HOLD_LABEL))
+            .any(|l| l.name.eq_ignore_ascii_case(name))
     }
 }
 
@@ -358,6 +366,19 @@ fn repo_of(path: &str) -> Option<String> {
     let mut parts = path.strip_prefix("repos/")?.split(['/', '?']);
     let (owner, name) = (parts.next()?, parts.next()?);
     Some(format!("{owner}/{name}").to_lowercase())
+}
+
+/// `s` percent-encoded for a URL path (`/` kept when `path`) or query value.
+fn encode_url(s: &str, path: bool) -> String {
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                (b as char).to_string()
+            }
+            b'/' if path => "/".to_string(),
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
 }
 
 fn last_line(stderr: &str) -> String {
@@ -866,6 +887,132 @@ impl TrainGitHub {
         }
     }
 
+    /// Creates the repo's label `name`; one the repo already has counts as created.
+    pub async fn create_label(
+        &self,
+        repo: &str,
+        name: &str,
+        color: &str,
+        description: &str,
+    ) -> Result<(), GhError> {
+        let fields = [
+            ("name", name),
+            ("color", color),
+            ("description", description),
+        ];
+        match self
+            .call("POST", &format!("repos/{repo}/labels"), &fields)
+            .await?
+        {
+            Reply::Ok(_) | Reply::Err { status: 422, .. } => Ok(()),
+            Reply::Err { message, .. } => Err(GhError::failed(format!(
+                "creating the label {name} on {repo} failed: {message}"
+            ))),
+        }
+    }
+
+    pub async fn add_label(&self, repo: &str, n: i64, name: &str) -> Result<(), GhError> {
+        self.json::<Value>(
+            "POST",
+            &format!("repos/{repo}/issues/{n}/labels"),
+            &[("labels[]", name)],
+        )
+        .await
+        .map(|_| ())
+    }
+
+    /// Takes `name` off the PR; one without it counts as done.
+    pub async fn remove_label(&self, repo: &str, n: i64, name: &str) -> Result<(), GhError> {
+        let name = name.replace(':', "%3A");
+        match self
+            .call(
+                "DELETE",
+                &format!("repos/{repo}/issues/{n}/labels/{name}"),
+                &[],
+            )
+            .await?
+        {
+            Reply::Ok(_) | Reply::Err { status: 404, .. } => Ok(()),
+            Reply::Err { message, .. } => Err(GhError::failed(format!(
+                "taking the label off {repo}#{n} failed: {message}"
+            ))),
+        }
+    }
+
+    /// Each workflow file in `.github/workflows` on `branch`, by path, with its text; a repo without the directory has
+    /// none.
+    pub async fn workflow_files(
+        &self,
+        repo: &str,
+        branch: &str,
+    ) -> Result<Vec<(String, String)>, GhError> {
+        #[derive(Deserialize)]
+        struct Entry {
+            path: String,
+            #[serde(rename = "type")]
+            kind: String,
+        }
+        let at = encode_url(branch, false);
+        let entries: Vec<Entry> = match self
+            .call(
+                "GET",
+                &format!("repos/{repo}/contents/.github/workflows?ref={at}"),
+                &[],
+            )
+            .await?
+        {
+            Reply::Ok(v) => serde_json::from_value(v).map_err(|_| {
+                GhError::failed(format!(
+                    "the workflows of {repo} came in an unexpected shape"
+                ))
+            })?,
+            Reply::Err { status: 404, .. } => return Ok(Vec::new()),
+            Reply::Err { message, .. } => {
+                return Err(GhError::failed(format!(
+                    "the workflows of {repo}: {message}"
+                )));
+            }
+        };
+        let mut files = Vec::new();
+        for e in entries {
+            if e.kind != "file" || !(e.path.ends_with(".yml") || e.path.ends_with(".yaml")) {
+                continue;
+            }
+            let path = format!(
+                "repos/{repo}/contents/{}?ref={at}",
+                encode_url(&e.path, true)
+            );
+            let text = self
+                .exchange("GET", &path, "Accept: application/vnd.github.raw", &[])
+                .await?
+                .map_err(|(_, message)| GhError::failed(format!("{}: {message}", e.path)))?;
+            files.push((e.path, text));
+        }
+        Ok(files)
+    }
+
+    /// The repo's open PRs that carry the label `name` (one page).
+    pub async fn labelled_pulls(&self, repo: &str, name: &str) -> Result<Vec<i64>, GhError> {
+        #[derive(Deserialize)]
+        struct Issue {
+            number: i64,
+            /// Only a PR has it.
+            pull_request: Option<Value>,
+        }
+        let issues: Vec<Issue> = self
+            .json(
+                "GET",
+                &format!("repos/{repo}/issues?state=open&labels={name}&per_page=100"),
+                &[],
+            )
+            .await?;
+        Ok(issues
+            .into_iter()
+            .filter(|i| i.pull_request.is_some())
+            .map(|i| i.number)
+            .collect())
+    }
+
     /// The repo's default branch, the base main CI is read on.
     pub async fn default_branch(&self, repo: &str) -> Result<String, GhError> {
         #[derive(Deserialize)]
@@ -998,6 +1145,18 @@ mod tests {
         let fresh = Arc::new(Fresh::default());
         let github = TrainGitHub::new(gh, fresh.clone(), Arc::new(SystemClock));
         (fresh, github)
+    }
+
+    #[test]
+    fn a_branch_and_a_path_are_percent_encoded() {
+        assert_eq!(
+            encode_url("fleetd/a b#1?x&y", false),
+            "fleetd%2Fa%20b%231%3Fx%26y"
+        );
+        assert_eq!(
+            encode_url(".github/workflows/c i.yml", true),
+            ".github/workflows/c%20i.yml"
+        );
     }
 
     #[tokio::test]
