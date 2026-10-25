@@ -1,6 +1,6 @@
 // The app's hash routes (binding for every screen; the QA harness navigates by setting location.hash). A project's
 // lead chat is the main surface, with its agents and PRs in the panel beside it (`/agents`, `/prs` after the
-// project); Status, Time and Settings are secondary. notes/electron-routes.md has the table.
+// project); Status, Factory, Time and Settings are secondary. notes/electron-routes.md has the table.
 
 /** A project is (machine, project): the same repo can be checked out on two machines. */
 export interface ProjectKey {
@@ -32,6 +32,8 @@ export type Screen =
    */
   | { readonly id: "project"; readonly project: ProjectKey; readonly message: string | null; readonly panel?: PanelView }
   | { readonly id: "status" }
+  /** Merges and what they cost the person (D33), for one project (`?project=<machine>/<project>`) or (null) all. */
+  | { readonly id: "factory"; readonly project: ProjectKey | null }
   | { readonly id: "machines" }
   /** The time inspector, for one order or (null) the fleet. */
   | { readonly id: "time"; readonly orderId: string | null }
@@ -76,6 +78,13 @@ const panelView = (rest: ReadonlyArray<string>): PanelView | null => {
   return null;
 };
 
+/** "<machine>/<project>": the project's id is everything after the first slash. */
+const projectParam = (value: string | null): ProjectKey | null => {
+  const at = value?.indexOf("/") ?? -1;
+  if (value === null || at <= 0 || at === value.length - 1) return null;
+  return { machineId: value.slice(0, at), projectId: value.slice(at + 1) };
+};
+
 const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): Screen => {
   const [head, a, b] = parts;
   switch (head) {
@@ -86,6 +95,8 @@ const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): Screen 
     }
     case "status":
       return { id: "status" };
+    case "factory":
+      return { id: "factory", project: projectParam(query.get("project")) };
     case "time":
       return { id: "time", orderId: a === "order" && b !== undefined ? b : null };
     case "machines":
@@ -145,6 +156,7 @@ const path = (screen: Screen): Array<string> => {
     case "settings":
       return ["settings", screen.tab];
     case "status":
+    case "factory":
     case "machines":
     case "onboarding":
       return [screen.id];
@@ -158,6 +170,7 @@ export const toHash = (screen: Screen): string => {
     if (screen.hub !== null) query.set("hub", screen.hub);
     if (screen.code !== null) query.set("code", screen.code);
   }
+  if (screen.id === "factory" && screen.project !== null) query.set("project", `${screen.project.machineId}/${screen.project.projectId}`);
   if (screen.id === "settings") {
     if (screen.prompt !== undefined) query.set("prompt", screen.prompt);
     if (screen.for !== undefined) query.set("for", screen.for);

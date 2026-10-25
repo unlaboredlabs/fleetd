@@ -15,6 +15,15 @@ describe("menu state", () => {
     });
   });
 
+  it("hides the Factory, rather than greying it, on a hub that reports no metrics", () => {
+    const items = new Map(["factory.open", "status.toggle"].map((id) => [id, { enabled: true, visible: true }]));
+    applyMenuState({ getMenuItemById: (id) => items.get(id) ?? null }, ["status.toggle"]);
+    expect(items.get("factory.open")).toEqual({ enabled: false, visible: false });
+    expect(items.get("status.toggle")).toEqual({ enabled: true, visible: true });
+    applyMenuState({ getMenuItemById: (id) => items.get(id) ?? null }, ["status.toggle", "factory.open"]);
+    expect(items.get("factory.open")).toEqual({ enabled: true, visible: true });
+  });
+
   it("takes only known menu command ids from the page", () => {
     expect(parseRequest(IPC.appMenuState, [["project.next", "status.toggle"]]).ok).toBe(true);
     expect(parseRequest(IPC.appMenuState, [["project.next", "rm -rf"]]).ok).toBe(false);

@@ -131,26 +131,27 @@ export function FilterBar({ filters: f, order, names, nowMs, onFilters, onOrder 
           {stampMs(since)} to {until === undefined ? "now" : stampMs(until)}
         </Text>
       ) : null}
-      <CustomRange open={custom} onOpenChange={setCustom} filters={f} nowMs={nowMs} onFilters={onFilters} />
+      <CustomRange open={custom} onOpenChange={setCustom} custom={f.custom} nowMs={nowMs} onApply={(c) => onFilters({ ...f, range: "custom", custom: c })} />
     </div>
   );
 }
 
-function CustomRange({
+/** The custom range's dialog, in the viewer's local time; the Factory's filter row opens it too. */
+export function CustomRange({
   open,
   onOpenChange,
-  filters: f,
+  custom,
   nowMs,
-  onFilters,
+  onApply,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  filters: Filters;
+  custom: Filters["custom"];
   nowMs: number;
-  onFilters: (f: Filters) => void;
+  onApply: (custom: NonNullable<Filters["custom"]>) => void;
 }) {
-  const [from, setFrom] = useState(() => fieldWhen(f.custom?.since ?? nowMs - 7 * 86_400_000));
-  const [to, setTo] = useState(() => (f.custom?.until === undefined ? "" : fieldWhen(f.custom.until)));
+  const [from, setFrom] = useState(() => fieldWhen(custom?.since ?? nowMs - 7 * 86_400_000));
+  const [to, setTo] = useState(() => (custom?.until === undefined ? "" : fieldWhen(custom.until)));
   const [error, setError] = useState<string | undefined>();
   const apply = () => {
     const since = parseWhen(from);
@@ -164,7 +165,7 @@ function CustomRange({
       return;
     }
     setError(undefined);
-    onFilters({ ...f, range: "custom", custom: { since, ...(until === undefined ? {} : { until }) } });
+    onApply({ since, ...(until === undefined ? {} : { until }) });
     onOpenChange(false);
   };
   return (
