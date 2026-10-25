@@ -38,7 +38,7 @@ const MERGED_QUERY: &str = "query($owner: String!, $name: String!, $after: Strin
   }
 }";
 
-const COMMITS_QUERY: &str = "query($owner: String!, $name: String!, $branch: String!, $since: GitTimestamp!, $after: String) {
+const COMMITS_QUERY: &str = "query($owner: String!, $name: String!, $branch: String!, $since: GitTimestamp, $after: String) {
   repository(owner: $owner, name: $name) {
     ref(qualifiedName: $branch) {
       target {
@@ -422,14 +422,21 @@ impl GitHostSource for GitHubSource {
         repo: &'a RepoRef,
         branch: &'a str,
         since_ms: i64,
+        stop_at: Option<&'a str>,
     ) -> BoxFut<'a, Result<Vec<LandedCommit>, String>> {
         Box::pin(async move {
             let (branch, since) = (format!("refs/heads/{branch}"), iso_ms(since_ms));
+            // Back to the last read's head whatever the commits' dates (one made earlier can be pushed later), else
+            // the date window.
+            let mut vars = vec![("branch", branch.as_str())];
+            if stop_at.is_none() {
+                vars.push(("since", since.as_str()));
+            }
             let mut out = Vec::new();
             self.pages(
                 repo,
                 COMMITS_QUERY,
-                &[("branch", &branch), ("since", &since)],
+                &vars,
                 COMMIT_PAGES,
                 |data| {
                     let repo: Repository<RefRepo> = decode(data)?;
@@ -442,6 +449,7 @@ impl GitHostSource for GitHubSource {
                         })
                 },
                 |c: CommitNode| {
+                    let go_on = stop_at.is_none_or(|s| !c.oid.eq_ignore_ascii_case(s));
                     out.push(LandedCommit {
                         at_ms: parse_ms(&c.committed_date).unwrap_or(0),
                         title: c.message_headline,
@@ -463,7 +471,7 @@ impl GitHostSource for GitHubSource {
                         bot: bot_identity(c.author.as_ref()),
                         sha: c.oid.to_lowercase(),
                     });
-                    true
+                    go_on
                 },
             )
             .await?;

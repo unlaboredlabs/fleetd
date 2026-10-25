@@ -245,8 +245,9 @@ pub struct MergedPull {
     pub created_at: Option<String>,
 }
 
-/// Pages of closed PRs `merged_pulls` reads at most before it stops short of its cursor.
-pub const MERGED_PAGES: usize = 5;
+/// Pages of closed PRs `merged_pulls` reads at most per check before it stops short of its cursor: the check runs
+/// every minute, so a busy repo stays within GitHub's rate limit; the metrics' host sweep backfills past it.
+pub const MERGED_PAGES: usize = 2;
 const MERGED_PAGE: usize = 100;
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -8,9 +8,12 @@ use std::time::Duration;
 use fleetd_contracts::events::HubEventType;
 use serde_json::json;
 
+use super::source::LandedCommit;
 use super::source::github::GitHubSource;
 use super::sweep::{self, ACTIVE_EVERY_MS, ON_READ_MS, QUIET_EVERY_MS};
-use super::tests::{DAY, NOW, admin, change, event, get, hub, ms, orders, project_from, rows, sql};
+use super::tests::{
+    DAY, HOUR, NOW, admin, change, event, get, hub, ms, orders, project_from, rows, sql,
+};
 use super::{human, store};
 use crate::hub::api::Hub;
 use crate::hub::store::iso_ms;
@@ -22,6 +25,7 @@ const REPO_JSON: &str = include_str!("fixtures/github/repo.json");
 const MERGED_1: &str = include_str!("fixtures/github/merged-1.json");
 const MERGED_2: &str = include_str!("fixtures/github/merged-2.json");
 const COMMITS: &str = include_str!("fixtures/github/commits.json");
+const COMMITS_LATE: &str = include_str!("fixtures/github/commits-late.json");
 const ACTS: &str = include_str!("fixtures/github/acts.json");
 const USER: &str = include_str!("fixtures/github/user.json");
 
@@ -29,6 +33,8 @@ const USER: &str = include_str!("fixtures/github/user.json");
 #[derive(Default)]
 struct Recorded {
     signed_out: Mutex<bool>,
+    /// The default branch has moved on with a commit made before the first read.
+    late_push: Mutex<bool>,
     runs: Mutex<Vec<Vec<String>>>,
 }
 
@@ -64,6 +70,9 @@ impl GhRunner for Recorded {
             let body = match () {
                 () if args.get(1).map(String::as_str) == Some("repos/acme/web") => REPO_JSON,
                 () if args.get(1).map(String::as_str) == Some("user") => USER,
+                () if joined.contains("history(") && *self.late_push.lock().unwrap() => {
+                    COMMITS_LATE
+                }
                 () if joined.contains("history(") => COMMITS,
                 () if joined.contains("reviews(last") => ACTS,
                 () if joined.contains("states: MERGED") && joined.contains(" after=") => MERGED_2,
@@ -267,6 +276,12 @@ async fn a_first_read_backfills_90_days_and_routes_every_landed_change() {
 async fn the_trains_events_and_the_sweep_route_a_pr_the_same_way() {
     let (hub, _clock, _home) = hub();
     checkout(&hub);
+    // The repo's default branch, as its project's node reported it.
+    sql(
+        &hub,
+        "INSERT INTO metric_repos (repo, host, default_branch) VALUES (?1, 'github', 'main')",
+        &[&REPO],
+    );
     // What the train now reports of PRs merged without it: a bot's, and one from a fleetd branch with no Change.
     for (n, head, author, merged) in [
         (
@@ -281,7 +296,7 @@ async fn the_trains_events_and_the_sweep_route_a_pr_the_same_way() {
             "human",
             "2026-10-23T12:00:00.000Z",
         ),
-        // Into a base the train guarded when it reported it.
+        // Merged by hand into a release branch: not the default branch, so not landed.
         (47, "backport-cart", "human", "2026-10-22T09:00:00.000Z"),
     ] {
         event(
@@ -292,10 +307,19 @@ async fn the_trains_events_and_the_sweep_route_a_pr_the_same_way() {
                     "base": if n == 47 { "release/2.0" } else { "main" } }),
         );
     }
+    // An older hub's event says no base: it counts.
+    event(
+        &hub,
+        NOW,
+        HubEventType::PrMergedOutside,
+        json!({ "repo": "acme/web", "prNumber": 41, "mergedSha": sha("41") }),
+    );
     project_from(&hub, 0);
     let from_events = routes(&hub);
     assert_eq!(from_events["pr:42"], skipped("bot"));
     assert_eq!(from_events["pr:43"], route("fleetd_by_hand"));
+    assert_eq!(from_events["pr:47"], skipped("other_base"));
+    assert_eq!(from_events["pr:41"], route("outside"));
     let by_key: BTreeMap<String, _> = rows(&hub)
         .into_iter()
         .map(|r| (r.unit_key.clone(), r))
@@ -313,11 +337,7 @@ async fn the_trains_events_and_the_sweep_route_a_pr_the_same_way() {
     let after = routes(&hub);
     assert_eq!(after["pr:42"], skipped("bot"));
     assert_eq!(after["pr:43"], route("fleetd_by_hand"));
-    assert_eq!(
-        after["pr:47"],
-        route("outside"),
-        "the train judged its base; the sweep doesn't overrule it"
-    );
+    assert_eq!(after["pr:47"], skipped("other_base"));
 
     // A second read and a replay of the log write nothing new.
     sweep::sweep_repo(&hub, &source, REPO, ms(NOW) + 60_000)
@@ -477,4 +497,79 @@ async fn the_hubs_own_login_is_the_persons_and_only_its_reviews_and_merges_count
             (Some(43), Some("ada-lovelace".into()), true),
         ]
     );
+}
+
+#[tokio::test]
+async fn a_commit_made_before_the_last_read_and_pushed_after_it_is_a_direct_push() {
+    let (hub, _clock, _home) = hub();
+    checkout(&hub);
+    let gh = Arc::new(Recorded::default());
+    let source = GitHubSource::new(gh.clone());
+    sweep::sweep_repo(&hub, &source, REPO, ms(NOW))
+        .await
+        .unwrap();
+
+    // An hour on, main has one more commit, dated 1 October: long before the last read.
+    *gh.late_push.lock().unwrap() = true;
+    sweep::sweep_repo(&hub, &source, REPO, ms(NOW) + HOUR)
+        .await
+        .unwrap();
+    let late = format!("commit:{}", sha("c7"));
+    assert_eq!(routes(&hub).get(&late), Some(&route("direct")));
+    let history = gh
+        .runs()
+        .into_iter()
+        .rfind(|r| r.contains("history("))
+        .unwrap();
+    assert!(
+        !history.contains(" since="),
+        "read back to the last head, not by date: {history}"
+    );
+    let head: Option<String> = hub
+        .db
+        .with(|c| {
+            Ok(c.query_row(
+                "SELECT commits_cursor_sha FROM metric_repos WHERE repo = ?1",
+                [REPO],
+                |r| r.get(0),
+            )?)
+        })
+        .unwrap();
+    assert_eq!(head, Some(sha("c7")));
+}
+
+#[test]
+fn the_default_branch_is_read_back_to_the_last_head_or_by_date_once_that_head_is_gone() {
+    let commit = |tag: &str, at: &str, parent: Option<&str>| LandedCommit {
+        sha: sha(tag),
+        at_ms: ms(at),
+        first_parent: parent.map(sha),
+        prs: Some(Vec::new()),
+        ..LandedCommit::default()
+    };
+    let commits = [
+        commit("c7", "2026-10-01T09:00:00Z", Some("50")),
+        commit("50", "2026-10-24T12:00:00Z", Some("41")),
+        commit("41", "2026-10-24T10:00:00Z", None),
+    ];
+    let shas = |cs: Vec<&LandedCommit>| {
+        cs.into_iter()
+            .map(|c| c.sha[..2].to_owned())
+            .collect::<Vec<_>>()
+    };
+    let since = ms("2026-10-24T11:00:00Z");
+    assert_eq!(
+        shas(sweep::landed_since(&commits, Some(&sha("50")), since)),
+        ["c7"]
+    );
+    assert!(
+        sweep::landed_since(&commits, Some(&sha("c7")), since).is_empty(),
+        "nothing new"
+    );
+    // A force push left the last head off the line: the date window it is.
+    assert_eq!(
+        shas(sweep::landed_since(&commits, Some(&sha("ff")), since)),
+        ["50"]
+    );
+    assert_eq!(shas(sweep::landed_since(&commits, None, since)), ["50"]);
 }

@@ -1258,13 +1258,6 @@ impl Train {
         lock(&self.recovered).insert(repo.to_string());
     }
 
-    /// Whether the train guards `base` on `repo`: a base its Changes' PRs target, so a merge into it is landed work.
-    pub fn guards_base(&self, repo: &str, base: &str) -> bool {
-        lock(&self.bases)
-            .get(&repo.to_lowercase())
-            .is_some_and(|b| b.contains(base))
-    }
-
     fn guard_base(&self, repo: &str, base: &str) {
         lock(&self.bases)
             .entry(repo.to_lowercase())
@@ -1315,12 +1308,14 @@ impl Train {
         let guarded = lock(&self.bases).get(repo).cloned().unwrap_or_default();
         let mut newest = watch_since_ms;
         for pr in merged {
-            if pr.base != default && !guarded.contains(&pr.base) || pr.head.starts_with(&scratch) {
-                continue;
-            }
             let Some(at) = parse_ms(&pr.merged_at).filter(|at| *at > watch_since_ms) else {
                 continue;
             };
+            // The watch moves past every merge read, the train's own too, so the next read stops at its first page.
+            newest = newest.max(at);
+            if pr.base != default && !guarded.contains(&pr.base) || pr.head.starts_with(&scratch) {
+                continue;
+            }
             let change = self.records.latest_for(repo, pr.number);
             if change
                 .as_ref()
@@ -1328,7 +1323,6 @@ impl Train {
             {
                 continue;
             }
-            newest = newest.max(at);
             let project_ref = change.as_ref().map_or(project_ref, |c| &c.project_ref);
             let mut data = json!({
                 "repo": repo, "prNumber": pr.number, "mergedAt": iso_ms(at), "head": pr.head, "base": pr.base,
