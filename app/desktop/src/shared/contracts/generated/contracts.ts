@@ -662,6 +662,12 @@ export type KnownCiState = "green" | "red" | "pending" | "unknown";
 /** KnownCiState, or a value from a newer hub. */
 export type CiState = KnownCiState | (string & {});
 
+export type ClaimId = string;
+
+export type ClaimOwnerKind = "human_session" | "agent_key" | "lead";
+
+export type ClaimState = "active" | "landed" | "released" | "expired";
+
 export type ClonePhase = "starting" | "receiving" | "resolving" | "checking_out" | "inspecting";
 
 /**
@@ -1150,7 +1156,9 @@ export type KnownHubEventType =
   | "chat.message"
   | "chat.waiting"
   | "app.presence"
-  | "repo.advanced";
+  | "repo.advanced"
+  | "work.claimed"
+  | "work.ended";
 /** KnownHubEventType, or a value from a newer hub. */
 export type HubEventType = KnownHubEventType | (string & {});
 
@@ -2449,12 +2457,19 @@ export type ProjectStatusRow = {
   /** Blocked only: why, in one line, for the expanded row. */
   blockedReason?: string;
   lastMerged?: LastMerged;
+  /**
+   * Landed changes on its repos over the last 7 calendar days in the hub's zone, today included, by every route
+   * (metrics_get's count). Absent when the metrics know none of its repos, so nothing is read as zero.
+   */
+  merged7d?: number;
   /** The project's bar, under the drop rule of its series (status_get). Absent when it has nothing to count. */
   progress?: ProgressEstimate;
   projectRef: ProjectRef;
   /** Set when a source the row reads (its machine, its repos on GitHub, their merge train) went quiet. */
   stale?: StaleMark;
   state: ProjectRowState;
+  /** Of `merged_7d`, the share the merge train landed, in percent. Absent when nothing landed. */
+  throughFleetdPct7d?: number;
   title: string;
 };
 
@@ -2651,6 +2666,8 @@ export type RepoCoverage = {
   lastRead?: Timestamp;
   repo: RemoteRepo;
 };
+
+export type RepoKey = string;
 
 /** A repo whose reads are failing: its figures stop at `since`, never a silent zero. */
 export type RepoStale = {
@@ -3836,6 +3853,19 @@ export type WorkAction = {
   id: string;
 };
 
+/** `HubEvent.data` on `work.claimed` and `work.ended`. */
+export type WorkEventData = {
+  base: string;
+  claimId: ClaimId;
+  landing?: CommitSha;
+  ownerKind: ClaimOwnerKind;
+  projectRef?: ProjectRef;
+  /** work.ended: why. */
+  reason?: string;
+  repoKey: RepoKey;
+  state: ClaimState;
+};
+
 /** A message the agent or its person wrote. Secrets are replaced by `[secret]`. */
 export type WorkMessage = {
   at: Timestamp;
@@ -4031,6 +4061,8 @@ export interface HubEventDataMap {
   "thread.waiting": ThreadEventData;
   "usage.breaker": UsageEventData;
   "usage.resumed": UsageEventData;
+  "work.claimed": WorkEventData;
+  "work.ended": WorkEventData;
   "workstream.created": WorkstreamEventData;
   "workstream.done": WorkstreamEventData;
   "workstream.running": WorkstreamEventData;

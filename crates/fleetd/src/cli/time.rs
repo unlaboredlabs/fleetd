@@ -219,7 +219,7 @@ fn path_group(kind: SpanKind, cat: Category) -> &'static str {
 }
 
 /// Columns padded to their widest cell: the first left-aligned, the numbers right-aligned.
-fn table(rows: &[Vec<String>]) -> Vec<String> {
+pub(super) fn table(rows: &[Vec<String>]) -> Vec<String> {
     let columns = rows.iter().map(Vec::len).max().unwrap_or(0);
     let widths: Vec<usize> = (0..columns)
         .map(|c| {
@@ -392,37 +392,78 @@ pub fn render(
     out.join("\n")
 }
 
-fn local(iso: &str, zone: Tz) -> String {
+pub(super) fn local(iso: &str, zone: Tz) -> String {
     DateTime::parse_from_rfc3339(iso)
         .map(|at| at.with_timezone(&zone).format("%Y-%m-%d %H:%M").to_string())
         .unwrap_or_else(|_| iso.to_owned())
 }
 
-fn unreachable(error: McpError) -> u8 {
-    eprintln!("fleetd time: {}", error.message());
-    match error {
-        McpError::Unauthorized => 3,
-        McpError::Other(_) => 4,
-    }
-}
-
-struct Hub {
+/// A connection to the hub for one command, `name` as in "fleetd <name>: …".
+pub(super) struct Hub {
     client: McpClient,
     timeout: Duration,
+    name: &'static str,
 }
 
 impl Hub {
+    /// The hub `--hub` and `--key-file` give, else the one on this machine (at `home`); on failure, what to exit with
+    /// after saying why.
+    pub(super) async fn connect(
+        hub: &Option<(String, String)>,
+        home: Option<&str>,
+        name: &'static str,
+    ) -> Result<Hub, u8> {
+        let timeout = Duration::from_secs(30);
+        let client_name = format!("fleetd-{name}");
+        let client = match hub {
+            Some((url, key_file)) => {
+                let key = match std::fs::read_to_string(key_file) {
+                    Ok(key) => key.trim().to_owned(),
+                    Err(error) => {
+                        eprintln!("fleetd {name}: cannot read --key-file: {error}");
+                        return Err(2);
+                    }
+                };
+                McpClient::connect(url, &key, &client_name, timeout)
+                    .await
+                    .map_err(|error| unreachable(name, error))?
+            }
+            None => {
+                let local = match super::hub_key::resolve_home(home) {
+                    Ok(home) => super::setup::doctor::connect_as(&home, &client_name).await,
+                    Err(message) => Err(super::setup::Failure {
+                        message,
+                        fix: String::new(),
+                    }),
+                };
+                local.map_err(|failure| {
+                    eprintln!(
+                        "fleetd {name}: {}\n  fix: run it on the hub machine, or pass --hub <url> --key-file <path>",
+                        failure.message
+                    );
+                    4
+                })?
+            }
+        };
+        Ok(Hub {
+            client,
+            timeout,
+            name,
+        })
+    }
+
     /// One tool call; on failure, what to exit with after saying why.
-    async fn call(&mut self, tool: &str, input: Value) -> Result<Value, u8> {
+    pub(super) async fn call(&mut self, tool: &str, input: Value) -> Result<Value, u8> {
         match self.client.call_tool(tool, input, self.timeout).await {
-            Err(error) => Err(unreachable(error)),
+            Err(error) => Err(unreachable(self.name, error)),
             Ok(result) if result.is_error => {
                 let text = |k: &str| result.body.get(k).and_then(Value::as_str);
                 let fix = text("fix")
                     .map(|f| format!("\n  fix: {f}"))
                     .unwrap_or_default();
                 eprintln!(
-                    "fleetd time: {}{fix}",
+                    "fleetd {}: {}{fix}",
+                    self.name,
                     text("message").unwrap_or("the hub refused")
                 );
                 Err(1)
@@ -431,12 +472,27 @@ impl Hub {
         }
     }
 
-    async fn typed<A: DeserializeOwned>(&mut self, tool: &str, input: Value) -> Result<A, u8> {
+    pub(super) async fn typed<A: DeserializeOwned>(
+        &mut self,
+        tool: &str,
+        input: Value,
+    ) -> Result<A, u8> {
         let body = self.call(tool, input).await?;
         serde_json::from_value(body).map_err(|error| {
-            eprintln!("fleetd time: {tool} answered in a shape this fleetd does not know ({error}); update fleetd");
+            eprintln!(
+                "fleetd {}: {tool} answered in a shape this fleetd does not know ({error}); update fleetd",
+                self.name
+            );
             1
         })
+    }
+}
+
+fn unreachable(name: &str, error: McpError) -> u8 {
+    eprintln!("fleetd {name}: {}", error.message());
+    match error {
+        McpError::Unauthorized => 3,
+        McpError::Other(_) => 4,
     }
 }
 
@@ -450,42 +506,10 @@ pub async fn time_command(argv: &[String]) -> u8 {
             return 2;
         }
     };
-    let timeout = Duration::from_secs(30);
-    let client = match &args.hub {
-        Some((url, key_file)) => {
-            let key = match std::fs::read_to_string(key_file) {
-                Ok(key) => key.trim().to_owned(),
-                Err(error) => {
-                    eprintln!("fleetd time: cannot read --key-file: {error}");
-                    return 2;
-                }
-            };
-            match McpClient::connect(url, &key, "fleetd-time", timeout).await {
-                Ok(client) => client,
-                Err(error) => return unreachable(error),
-            }
-        }
-        None => {
-            let local = match super::hub_key::resolve_home(args.home.as_deref()) {
-                Ok(home) => super::setup::doctor::connect_as(&home, "fleetd-time").await,
-                Err(message) => Err(super::setup::Failure {
-                    message,
-                    fix: String::new(),
-                }),
-            };
-            match local {
-                Ok(client) => client,
-                Err(failure) => {
-                    eprintln!(
-                        "fleetd time: {}\n  fix: run it on the hub machine, or pass --hub <url> --key-file <path>",
-                        failure.message
-                    );
-                    return 4;
-                }
-            }
-        }
+    let mut hub = match Hub::connect(&args.hub, args.home.as_deref(), "time").await {
+        Ok(hub) => hub,
+        Err(code) => return code,
     };
-    let mut hub = Hub { client, timeout };
     match run(&mut hub, &args).await {
         Ok(()) => 0,
         Err(code) => code,

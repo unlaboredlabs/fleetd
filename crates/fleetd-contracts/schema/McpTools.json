@@ -3239,6 +3239,16 @@
           "const": "repo.advanced",
           "description": "A node's fetch saw a remote's default branch move; `data` is `metrics::RepoAdvancedData`.",
           "type": "string"
+        },
+        {
+          "const": "work.claimed",
+          "description": "Work was claimed on a repo's base; `data` is `work::WorkEventData`.",
+          "type": "string"
+        },
+        {
+          "const": "work.ended",
+          "description": "A claim landed, was released or expired; `data` is `work::WorkEventData`.",
+          "type": "string"
         }
       ],
       "x-open": true
@@ -7234,6 +7244,12 @@
         "lastMerged": {
           "$ref": "#/$defs/LastMerged"
         },
+        "merged7d": {
+          "description": "Landed changes on its repos over the last 7 calendar days in the hub's zone, today included, by every route\n(metrics_get's count). Absent when the metrics know none of its repos, so nothing is read as zero.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
         "progress": {
           "$ref": "#/$defs/ProgressEstimate",
           "description": "The project's bar, under the drop rule of its series (status_get). Absent when it has nothing to count."
@@ -7247,6 +7263,11 @@
         },
         "state": {
           "$ref": "#/$defs/ProjectRowState"
+        },
+        "throughFleetdPct7d": {
+          "description": "Of `merged_7d`, the share the merge train landed, in percent. Absent when nothing landed.",
+          "minimum": 0,
+          "type": "number"
         },
         "title": {
           "maxLength": 120,

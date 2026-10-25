@@ -7,6 +7,7 @@ import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { live, project, snapshot } from "../../src/data/fixtures.test-util";
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
+import { parseHash } from "../shell/routes";
 import { StatusScreen } from "./StatusScreen";
 
 // 23:59 local: a merge at 23:50 is "today" now and "yesterday" a minute later.
@@ -20,6 +21,8 @@ const row: ProjectStatusRow = {
   agentsRunning: 0,
   lastMerged: { title: "Receipt dates use Intl", prNumber: 214, at: iso(new Date(2026, 9, 19, 23, 50).getTime()) },
   stale: { since: iso(START - 9 * 60_000), reason: "no heartbeat from devbox" },
+  merged7d: 12,
+  throughFleetdPct7d: 63.6,
   asOf: iso(START),
 };
 
@@ -104,4 +107,13 @@ it("reads the day and the age on the hub's clock, not this machine's", async () 
   });
   expect(label()).toContain("last merged yesterday 23:50");
   expect(label()).toContain("Out of date for 11m");
+});
+
+it("links the row's 7-day count to the project's Factory numbers", async () => {
+  await mount();
+  const week = host.querySelector("a[aria-label*='in 7 days']");
+  expect(week?.getAttribute("href")).toBe(`#/factory?project=${project.machineId}/${project.projectId}`);
+  expect(parseHash(week?.getAttribute("href") ?? "")).toEqual({ id: "factory", project: { machineId: project.machineId, projectId: project.projectId } });
+  expect(week?.getAttribute("aria-label")).toBe("storefront: 12 merged in 7 days · 64% through fleetd, in Factory");
+  expect(week?.textContent).toBe("12 in 7 days");
 });

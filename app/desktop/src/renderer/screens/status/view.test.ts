@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ProjectStatusRow } from "../../../shared/contracts";
 import type { ProjectRow } from "../../src/data/selectors";
 import { barOf, orderRows } from "./rows";
-import { age, dropLines, fullWhen, heldLine, staleWords, when } from "./view";
+import { age, dropLines, fullWhen, heldLine, staleWords, weekLine, when } from "./view";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -26,6 +26,14 @@ const project = (title: string, chat: { needsYou?: boolean; working?: boolean } 
   working: chat.working ?? false,
   running: 0,
   state: "idle",
+});
+
+describe("the 7-day fact", () => {
+  it("says the count and the share through fleetd, and nothing for repos the metrics don't read", () => {
+    expect(weekLine(12, 63.6)).toBe("12 merged in 7 days · 64% through fleetd");
+    expect(weekLine(0, undefined)).toBe("0 merged in 7 days");
+    expect(weekLine(undefined, undefined)).toBeUndefined();
+  });
 });
 
 describe("status rows", () => {

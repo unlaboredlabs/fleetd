@@ -39,9 +39,10 @@ const estimate = (pct: number, verifiedPct: number, inFlightPct: number): JsonOb
 
 /** One row per project, cycling through the states the view draws, so every fixture shows them all. */
 const ROWS: readonly ((f: Fixture) => JsonObject)[] = [
-  (f) => ({ state: "working", progress: estimate(78, 58, 20), agentsRunning: 3, lastMerged: { title: "Totals use integer minor units", prNumber: 208, at: ago(f, 21 * MIN) } }),
-  (f) => ({ state: "waiting_on_you", progress: estimate(64, 52, 12), agentsRunning: 0, lastMerged: { title: "Search index warms on deploy", prNumber: 205, at: ago(f, 3 * 1440 * MIN) } }),
-  () => ({ state: "blocked", blockedReason: "main CI is red: rust (macos)", progress: estimate(31, 31, 0), agentsRunning: 0 }),
+  (f) => ({ state: "working", progress: estimate(78, 58, 20), agentsRunning: 3, lastMerged: { title: "Totals use integer minor units", prNumber: 208, at: ago(f, 21 * MIN) }, merged7d: 12, throughFleetdPct7d: 66.7 }),
+  (f) => ({ state: "waiting_on_you", progress: estimate(64, 52, 12), agentsRunning: 0, lastMerged: { title: "Search index warms on deploy", prNumber: 205, at: ago(f, 3 * 1440 * MIN) }, merged7d: 3, throughFleetdPct7d: 33.3 }),
+  // Nothing merged this week on a repo the metrics read: a real zero, with no share. The idle row's repos aren't read.
+  () => ({ state: "blocked", blockedReason: "main CI is red: rust (macos)", progress: estimate(31, 31, 0), agentsRunning: 0, merged7d: 0 }),
   () => ({ state: "idle", agentsRunning: 0 }),
 ];
 

@@ -33,14 +33,15 @@
   /* The title takes the slack first; the bar shrinks before it does. */
   --status-cols: minmax(16ch, 3fr) 13ch minmax(80px, 2fr) 9ch 17ch;
   --status-prs: 5ch;
+  --status-week: 12ch;
 }
 
-/* A row is its chat link (title · state · bar and % · agents · last merged) and then its PRs link, side by side so
-   neither link holds the other. The column names use the row's tracks, inset by the PRs link, so each name sits over
-   its cells. */
+/* A row is its chat link (title · state · bar and % · agents · last merged), then its 7-day link and its PRs link,
+   side by side so no link holds another. The column names use the row's tracks, inset by the two links, so each name
+   sits over its cells. */
 .item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--status-prs);
+  grid-template-columns: minmax(0, 1fr) var(--status-week) var(--status-prs);
   align-items: center;
   gap: var(--space-3);
   margin: 0 calc(-1 * var(--space-2));
@@ -65,18 +66,20 @@
   text-decoration: none;
 }
 .columns {
-  padding: 0 calc(var(--space-2) + var(--space-3) + var(--status-prs)) var(--space-1) 0;
+  padding: 0 calc(var(--space-2) + 2 * var(--space-3) + var(--status-week) + var(--status-prs)) var(--space-1) 0;
   margin-bottom: var(--space-1);
   border-bottom: 1px solid var(--hairline);
 }
-.prs {
+.prs,
+.week {
   justify-self: end;
   padding: var(--space-1) var(--space-1-5);
   border-radius: var(--radius-sm);
   color: inherit;
   text-decoration: none;
 }
-.prs:hover {
+.prs:hover,
+.week:hover {
   text-decoration: underline;
 }
 

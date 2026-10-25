@@ -16,7 +16,8 @@ export interface EventEffects {
 
 const ORDER_PREFIXES = ["workstream.", "task.", "change.", "request.", "steer.", "plan."];
 const ORDER_TYPES = new Set(["pr.merged", "review.verdict", "lead.started", "lead.woken"]);
-const STATUS_TYPES = new Set(["ci.main", "source.stale", "source.fresh"]);
+// A merge made outside the train moves a row's 7-day count.
+const STATUS_TYPES = new Set(["ci.main", "source.stale", "source.fresh", "pr.merged_outside"]);
 /** Status's health strip shows machines (online, slept, last seen) and claude usage too. */
 const STATUS_PREFIXES = ["machine.", "usage."];
 // What changes an order's time, as the GPUI inspector refetched it. thread.* is left out: it fires constantly, and

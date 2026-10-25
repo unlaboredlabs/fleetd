@@ -35,7 +35,7 @@ pub struct Day {
     pub len: i64,
 }
 
-fn local_date(ms: i64, tz: Tz) -> NaiveDate {
+pub fn local_date(ms: i64, tz: Tz) -> NaiveDate {
     chrono::DateTime::from_timestamp_millis(ms)
         .unwrap_or_default()
         .with_timezone(&tz)
