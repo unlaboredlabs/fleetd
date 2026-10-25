@@ -1,8 +1,8 @@
 // A project's lead chat, the app's main surface (lead-chat spec §1): the conversation with the project's lead,
-// fleet activity quietly inside it (the live strip docked to the composer, PR and merge one-liners), the
-// two inline items chat can't carry (a secret, a gated command), and the composer, which has the cursor as soon as
-// the chat opens. Above the box, a line says what the lead waits on you for; an empty chat asks what to do. It opens
-// where you stopped reading, under a "New" divider.
+// fleet activity quietly inside it (PR and merge one-liners), the two inline items chat can't carry (a secret, a
+// gated command), and the composer, which has the cursor as soon as the chat opens, with the live strip docked to its
+// top. Above them, a line says what the lead waits on you for; an empty chat asks what to do. It opens where you
+// stopped reading, under a "New" divider.
 import { useCallback, useMemo, useState } from "react";
 import { BubbleActionsContext, type BubbleActions, type ReplyTarget } from "./actions";
 import { Button, FrameTitle, IdChip, StatusChip, Text, type StatusTone } from "../../ui";
@@ -12,6 +12,7 @@ import { useData, useDataLayer } from "../../src/data/react";
 import { selectNeedsYou } from "../../src/data/selectors";
 import { seenOf } from "../../src/data/seen";
 import { projectKey } from "../../src/data/store";
+import { Boundary } from "../../src/Boundary";
 import { LiveStrip } from "../live";
 import { AttentionLine } from "./Attention";
 import { waitingOn } from "./attentionModel";
@@ -70,8 +71,6 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
             loadingOlder: view.loadingOlder,
             held: view.held,
             offline: view.offline,
-            // The live strip is docked to the composer, not a row of the conversation.
-            strip: false,
             activity: data.leadWorking === true,
             workedSince,
             seenSeq,
@@ -195,7 +194,11 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
             which={showing >= 0 && targets !== undefined && targets.length > 1 ? `${String(showing + 1)} of ${String(targets.length)}` : undefined}
             onShow={showNext}
           />
-          {strip ? <LiveStrip project={project} /> : null}
+          {strip ? (
+            <Boundary part="the live strip">
+              <LiveStrip project={project} />
+            </Boundary>
+          ) : null}
           <ChatComposer project={project} autoFocus recall={recall} onSent={onSent} replyTo={replyTo} onCancelReply={() => setReplyTo(undefined)} />
         </div>
       )}

@@ -16,8 +16,7 @@ import { MessageView, useEnter } from "./Bubble";
 import { useBubbleActions } from "./actions";
 import { markOf, useShown } from "./shown";
 import { RememberedUndo } from "./Remembered";
-import { LiveStrip, useNow, useOnScreen } from "../live";
-import { Boundary } from "../../src/Boundary";
+import { useNow, useOnScreen } from "../live";
 import type { ChatItem as InlineItem } from "../../../shared/contracts";
 import { InlineChatItem } from "../inline";
 import type { ProjectRef } from "./slots";
@@ -182,14 +181,6 @@ const RowView = memo(function RowView(props: {
       return <Inline item={r.item} enter={props.enter} />;
     case "activity":
       return <LeadActivity project={project} />;
-    case "strip":
-      return (
-        <div className={s.strip}>
-          <Boundary part="the live strip">
-            <LiveStrip project={project} />
-          </Boundary>
-        </div>
-      );
     case "time":
       return (
         <div className={s.clock} role="separator">

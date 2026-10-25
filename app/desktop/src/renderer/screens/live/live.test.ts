@@ -154,6 +154,21 @@ describe("the strip's dots and now-line", () => {
     expect(s.now).toEqual(["hot", "edits", "thinks", "calm", "was"]);
   });
 
+  it("counts only an agent's last 16 seconds of work: a sparkline a quiet lane last sent is behind the others", () => {
+    const ago = (s: number) => new Date(Date.parse(T0) - s * 1000).toISOString();
+    const spark = (laneId: string, samples: number[], endAt: string) =>
+      lane(laneId, "working", { live: { laneId, status: "working", spark: { endAt, samples } } });
+    const s = stripOf([
+      // Very busy, but its sparkline stopped 20 seconds ago: past the window, it counts for nothing.
+      spark("old", [90, 90, 90, 90, 90, 90, 90, 90], ago(20)),
+      // 4 seconds behind: the window starts two buckets later for it, so its two busy ones are out and 6 × 5 count.
+      spark("behind", [90, 90, 5, 5, 5, 5, 5, 5], ago(4)),
+      spark("now", [4, 4, 4, 4, 4, 4, 4, 4], T0),
+      spark("none", [], T0),
+    ]);
+    expect(s.now).toEqual(["now", "behind", "old", "none"]);
+  });
+
   it("with no agent at work, says what the agent waiting on you waits for; with only queued ones, nothing", () => {
     expect(stripOf([lane("Q", "queued"), lane("W", "waiting"), lane("P", "parked")]).now).toEqual(["W"]);
     expect(stripOf([lane("Q", "queued"), lane("P", "parked")]).now).toEqual([]);

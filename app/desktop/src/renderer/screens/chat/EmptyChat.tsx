@@ -1,6 +1,5 @@
 // A chat with no messages yet: what to ask the lead, just above the box, and a few starters that fill the box
-// (never send) so the first message is yours to edit. Agents already at work show under them.
-import type { ReactNode } from "react";
+// (never send) so the first message is yours to edit.
 import { Button, Text } from "../../ui";
 import { projectKey } from "../../src/data/store";
 import { SetupChecklist } from "../onboarding";
@@ -15,7 +14,7 @@ export const STARTERS = [
   "Explain how this project is put together.",
 ] as const;
 
-export function EmptyChat({ project, title, children }: { project: ProjectRef; title: string; children?: ReactNode }) {
+export function EmptyChat({ project, title }: { project: ProjectRef; title: string }) {
   const [, setDraft] = useDraft(projectKey(project));
   return (
     <div className={s.empty} data-entry="empty">
@@ -39,7 +38,6 @@ export function EmptyChat({ project, title, children }: { project: ProjectRef; t
             </Button>
           ))}
         </div>
-        {children}
       </div>
     </div>
   );

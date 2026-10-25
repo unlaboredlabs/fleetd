@@ -1,8 +1,9 @@
 // The live strip, docked to the top of the lead chat's composer: one slim row, a dot per agent (at work they breathe,
 // waiting on you they take the attention color, queued they are hollow), "3 agents working · 1 needs you" in a quiet
-// voice, and a now-line saying what the busiest agent is doing. Hovering or clicking the row opens the lanes above
-// it, one row per agent; an agent (its row, or the now-line) opens in the panel's agents, where its live work and
-// steer box are. Nothing is drawn when no agent is shown.
+// voice, and a now-line saying what the busiest agent is doing. A click on the row (or Enter on it) opens the lanes
+// above it, one row per agent, and a second click, a press outside it or Escape closes them; an agent (its row, or
+// the now-line) opens in the panel's agents, where its live work and steer box are. Nothing is drawn when no agent is
+// shown.
 import { ChevronUp } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { useData } from "../../src/data/react";
@@ -15,9 +16,6 @@ import s from "./live.module.css";
 
 /** Dots past this many are a count: twenty dots say no more than twelve and a "+8". */
 const MAX_DOTS = 12;
-/** Hovering opens the lanes after this long, so passing over the strip on the way to the box doesn't. */
-const HOVER_OPEN_MS = 350;
-const HOVER_CLOSE_MS = 250;
 
 const agentHref = (project: ProjectRef, laneId: string | null): string => toHash(panelRoute(project, { tab: "agents", agent: laneId }));
 
@@ -27,49 +25,37 @@ export function LiveStrip({ project }: { project: ProjectRef }) {
   return <Dock project={project} strip={strip} />;
 }
 
-/** Closed, opened by the pointer resting on it (it closes as the pointer leaves), or opened by a click (it stays). */
-type Open = "closed" | "hover" | "pinned";
-
 function Dock({ project, strip }: { project: ProjectRef; strip: Strip }) {
   const headline = stripHeadline(strip);
   const lanesId = useId();
-  const [open, setOpen] = useState<Open>("closed");
-  const timer = useRef<number | undefined>(undefined);
-  const later = (next: Open, ms: number) => {
-    window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => setOpen((o) => (o === "pinned" ? o : next)), ms);
-  };
-  useEffect(() => () => window.clearTimeout(timer.current), []);
-  const close = () => {
-    window.clearTimeout(timer.current);
-    setOpen("closed");
-  };
+  const [open, setOpen] = useState(false);
+  const dock = useRef<HTMLElement>(null);
+  // Open, a press anywhere outside the strip closes it.
+  useEffect(() => {
+    if (!open) return;
+    const outside = (e: PointerEvent) => {
+      if (e.target instanceof Node && !dock.current?.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", outside);
+    return () => document.removeEventListener("pointerdown", outside);
+  }, [open]);
+  const close = () => setOpen(false);
   return (
     <section
+      ref={dock}
       className={s.dock}
       aria-label={headline}
-      data-open={open === "closed" ? undefined : open}
-      onPointerEnter={(e) => e.pointerType === "mouse" && later("hover", HOVER_OPEN_MS)}
-      onPointerLeave={(e) => e.pointerType === "mouse" && later("closed", HOVER_CLOSE_MS)}
+      data-open={open ? "" : undefined}
       onKeyDown={(e) => {
-        if (e.key === "Escape" && open !== "closed") {
+        if (e.key === "Escape" && open) {
           e.stopPropagation();
           close();
         }
       }}
     >
-      {open === "closed" ? null : <Lanes id={lanesId} project={project} strip={strip} onOpened={close} />}
+      {/* The row comes first, so Tab goes from the toggle to the lanes; the tray draws the lanes above it. */}
       <div className={s.strip}>
-        <button
-          type="button"
-          className={s.toggle}
-          aria-expanded={open !== "closed"}
-          aria-controls={open === "closed" ? undefined : lanesId}
-          onClick={() => {
-            window.clearTimeout(timer.current);
-            setOpen((o) => (o === "pinned" ? "closed" : "pinned"));
-          }}
-        >
+        <button type="button" className={s.toggle} aria-expanded={open} aria-controls={open ? lanesId : undefined} onClick={() => setOpen((o) => !o)}>
           <Dots lanes={strip.lanes} />
           <span className={s.headline}>
             <Truncate expand="none" size="xs" tone="inherit">
@@ -80,6 +66,7 @@ function Dock({ project, strip }: { project: ProjectRef; strip: Strip }) {
         <NowLine project={project} strip={strip} />
         <ChevronUp className={s.chevron} size={14} aria-hidden />
       </div>
+      {open ? <Lanes id={lanesId} project={project} strip={strip} onOpened={close} /> : null}
     </section>
   );
 }

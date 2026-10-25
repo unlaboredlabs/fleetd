@@ -1,14 +1,18 @@
 /*
  * The live strip, docked to the composer: a tray the box sits in. It runs the box's width, and two fillets carry its
  * sides down past the box's rounded top corners, so the corners show the tray behind them and the two read as one
- * piece. Opened, its lanes grow it upward. Motion: the dots of agents at work breathe slowly and a new now-line
- * rolls in; with reduced motion, neither.
+ * piece. Opened (by a click, never by hovering, so the conversation never moves under a passing pointer), its lanes
+ * grow it upward. Motion: the dots of agents at work breathe slowly and a new now-line rolls in; with reduced motion,
+ * neither.
  */
 
 .dock {
   /* The box's corner radius (chat/composer.module.css): how far the fillets reach down beside it. */
   --tuck: 18px;
   position: relative;
+  /* The lanes follow the row in the DOM (the tab order) and are drawn above it. */
+  display: flex;
+  flex-direction: column-reverse;
   border: 1px solid var(--hairline);
   border-bottom: none;
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;

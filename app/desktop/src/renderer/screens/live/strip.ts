@@ -5,6 +5,7 @@
 import { selectProjectWork, type ProjectWork } from "../../src/data/selectors";
 import type { DataState } from "../../src/data/store";
 import type { AgentLane, AgentRole, PrRef } from "./contracts";
+import { parseMs } from "./format";
 import { projectKey } from "./lanes";
 import { describe, isChecker, isFinal, isWorking, type Line } from "./words";
 
@@ -45,9 +46,24 @@ export interface StripAgent {
 
 /** The buckets of an agent's sparkline that count as now: the last 16 seconds. */
 const RECENT = 8;
+/** A sparkline bucket's length (contracts Spark). */
+const BUCKET_MS = 2000;
 
-/** How much an agent did lately: its sparkline's recent work. */
-const recentWork = (l: AgentLane): number => (l.live?.spark?.samples ?? []).slice(-RECENT).reduce((a, b) => a + b, 0);
+const sparkEnd = (l: AgentLane): number | undefined => parseMs(l.live?.spark?.endAt);
+
+/**
+ * How much an agent did lately: its sparkline's work in the last 16 seconds before `latest`, the newest sparkline's
+ * end. A frame that leaves a lane's sparkline out keeps the last one it sent, so a lane gone quiet can hold an old
+ * one: the buckets it is behind are buckets it did nothing in, and an old enough one counts for nothing.
+ */
+const recentWork = (l: AgentLane, latest: number | undefined): number => {
+  const samples = l.live?.spark?.samples ?? [];
+  const end = sparkEnd(l);
+  if (end === undefined || latest === undefined) return 0;
+  const behind = Math.max(0, Math.round((latest - end) / BUCKET_MS));
+  if (behind >= RECENT) return 0;
+  return samples.slice(-(RECENT - behind)).reduce((a, b) => a + b, 0);
+};
 
 /** Tool work reads busier than writing or planning, and those than waiting on the model. */
 const lineRank = (line: Line): number => (line.machine !== undefined ? 0 : line.tone === "loud" ? 1 : line.thinking ? 3 : 2);
@@ -57,7 +73,9 @@ const lineRank = (line: Line): number => (line.machine !== undefined ? 0 : line.
  * doing, then as the board has them. With none at work, those waiting on you, so the line says what for.
  */
 const nowOrder = (agents: readonly StripAgent[], lanes: readonly AgentLane[]): string[] => {
-  const work = new Map(lanes.map((l) => [l.laneId, recentWork(l)]));
+  const ends = lanes.map(sparkEnd).filter((t) => t !== undefined);
+  const latest = ends.length === 0 ? undefined : Math.max(...ends);
+  const work = new Map(lanes.map((l) => [l.laneId, recentWork(l, latest)]));
   const working = agents.filter((a) => a.state === "working");
   if (working.length === 0) return agents.filter((a) => a.state === "needsYou").map((a) => a.laneId);
   return working

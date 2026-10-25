@@ -1,8 +1,7 @@
 // The chat as rows: day dividers, a quiet time where the conversation picked up again after a pause, messages as
 // bubbles grouped by author (a run from one author within a few minutes draws as one stack; an agent's names it once),
-// event one-liners (fleetd's own messages among them), inline items, the live
-// strip under the lead's newest message (and the field that answers it), where you stopped reading, and the top of the
-// history.
+// event one-liners (fleetd's own messages among them), inline items, where you stopped reading, and the top of the
+// history. The live strip isn't a row: it is docked to the composer (live/LiveStrip.tsx).
 import type { ChatItem } from "../../src/data/chat";
 import { askAnswer, bubblesOf, quoted, replyOf } from "./bubbles";
 import { shortClock } from "./format";
@@ -40,7 +39,6 @@ export type Row =
   | { readonly kind: "inline"; readonly key: string; readonly item: ChatItem }
   /** Above the first message you hadn't seen when the chat opened. */
   | { readonly kind: "new"; readonly key: "new" }
-  | { readonly kind: "strip"; readonly key: "strip" }
   /**
    * What the lead is doing while its turn runs (under the newest item), and once it is over how long it worked
    * (under the reply it ended with).
@@ -107,8 +105,6 @@ export interface RowsInput {
   readonly held?: boolean;
   /** No fresh connection (ChatView.offline). */
   readonly offline?: boolean;
-  /** Show the live strip (the project has agents at work, or the strip has something to say). */
-  readonly strip: boolean;
   /** The lead's turn runs: its activity line shows after the newest item. */
   readonly activity?: boolean;
   /**
@@ -130,17 +126,6 @@ export function chatRows(i: RowsInput): Row[] {
   const out: Row[] = [{ kind: "top", key: "top", state: top }];
   let lastDay: string | undefined;
   let prev: ChatItem | undefined;
-  // The strip goes under the lead's newest message, or at the end when the lead hasn't said anything yet. A secret
-  // or command field right after that message answers it, so the strip goes after the field, never between them.
-  let leadLast = -1;
-  i.items.forEach((item, n) => {
-    if (item.author === "lead" && item.kind === "message") leadLast = n;
-  });
-  for (let n = leadLast + 1; leadLast !== -1 && n < i.items.length; n++) {
-    const kind = i.items[n]?.kind;
-    if (kind === "secret" || kind === "gated") leadLast = n;
-    else if (kind !== "event") break;
-  }
   let inHistory = false;
   // Not under a reply still streaming, which says "Still writing" itself.
   const activity = i.activity === true && i.items.at(-1)?.state !== "streaming";
@@ -192,10 +177,8 @@ export function chatRows(i: RowsInput): Row[] {
     }
     prev = item;
     if ((activity && n === i.items.length - 1) || (worked && n === reply)) out.push({ kind: "activity", key: "activity" });
-    if (i.strip && n === leadLast) out.push({ kind: "strip", key: "strip" });
   });
   if (activity && i.items.length === 0) out.push({ kind: "activity", key: "activity" });
-  if (i.strip && leadLast === -1) out.push({ kind: "strip", key: "strip" });
   // A bubble ends its stack unless the next row is the next bubble of the same run.
   out.forEach((r, n) => {
     const next = out[n + 1];

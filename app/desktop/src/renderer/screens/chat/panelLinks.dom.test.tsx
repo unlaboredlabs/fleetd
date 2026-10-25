@@ -165,6 +165,40 @@ it("opens an agent, the panel's agents and its PRs from the strip's lanes, even 
   expect(panel()?.querySelector("[data-screen='agents']")).not.toBeNull();
 });
 
+it("closes the strip's lanes on a second click, a press outside it, or Escape; Tab reaches them after the toggle", async () => {
+  await mount("");
+  const strip = host.querySelector("section[aria-label='1 agent working']");
+  const toggle = strip?.querySelector<HTMLButtonElement>("button[aria-expanded]");
+  const opened = () => strip?.querySelector("ul[aria-label='Agents at work']") != null;
+
+  act(() => toggle?.click());
+  expect(opened()).toBe(true);
+  // The toggle comes before the lanes, so Tab goes from it into them.
+  const focusable = [...(strip?.querySelectorAll<HTMLElement>("button, a") ?? [])];
+  const lanes = strip?.querySelector("ul");
+  expect(focusable.indexOf(toggle as HTMLElement)).toBeLessThan(focusable.findIndex((el) => lanes?.contains(el) === true));
+  act(() => toggle?.click());
+  expect(opened()).toBe(false);
+
+  // A press inside leaves it open; one outside closes it.
+  act(() => toggle?.click());
+  act(() => {
+    strip?.querySelector("ul")?.dispatchEvent(new window.PointerEvent("pointerdown", { bubbles: true }));
+  });
+  expect(opened()).toBe(true);
+  act(() => {
+    host.querySelector("[data-testid='message']")?.dispatchEvent(new window.PointerEvent("pointerdown", { bubbles: true }));
+  });
+  expect(opened()).toBe(false);
+
+  act(() => toggle?.click());
+  act(() => {
+    toggle?.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  });
+  expect(opened()).toBe(false);
+  expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+});
+
 it("opens a PR named in a message or an event line, by number or by its GitHub URL, in the panel", async () => {
   await mount("Opened #12, and https://github.com/acme/ui-kit/pull/7 is next.");
   for (const where of ["message", "event"]) {
