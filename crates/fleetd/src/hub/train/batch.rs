@@ -417,7 +417,7 @@ impl Train {
         {
             CiOutcome::Green => None,
             CiOutcome::Red(_) => Some("red"),
-            CiOutcome::Timeout => Some("timed out"),
+            CiOutcome::Timeout(_) => Some("timed out"),
         };
         if let Some(red) = red {
             tracing::info!(repo, pr, sha, "train: batch red, each member goes alone");

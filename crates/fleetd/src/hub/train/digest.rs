@@ -121,8 +121,13 @@ pub fn lead_train_lines(facts: &TrainFacts, since: Option<&str>) -> Vec<String> 
             .iter()
             .filter(|c| PARKED.contains(&c.state))
             .map(|c| {
+                let then = if super::service::timed_out(c) {
+                    "No push needed; the train puts it back in the queue once its checks finish green"
+                } else {
+                    "Back with its author; the train retries its next push"
+                };
                 format!(
-                    "- {} {}: {}{}; {}. Back with its author; the train retries its next push",
+                    "- {} {}: {}{}; {}. {then}",
                     c.change_id,
                     state_str(c.state),
                     pr(c),

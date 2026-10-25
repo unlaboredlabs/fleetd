@@ -77,8 +77,10 @@ pub trait ReviewGate: Send + Sync + 'static {
 pub struct TrainOptions {
     /// Between idle passes, and the longest wait between reads while the train holds a Change (`busy_wait`).
     pub poll_interval: Duration,
-    /// How long CI may take on a rebased head.
+    /// How long a head's CI may run, from when its first check started (`CI_RUNNING_TIMEOUT`).
     pub ci_timeout: Duration,
+    /// How long a head's checks may all sit queued for runners before any starts (`CI_QUEUE_CEILING`).
+    pub ci_queue_ceiling: Duration,
     /// How often merged PRs are checked for merges outside the train.
     pub bypass_every: Duration,
     /// How often a repo's open PRs are read for a writer's ready PR (a slice) when no writer reported one.
@@ -95,7 +97,8 @@ impl Default for TrainOptions {
     fn default() -> Self {
         Self {
             poll_interval: Duration::from_secs(15),
-            ci_timeout: Duration::from_secs(30 * 60),
+            ci_timeout: CI_RUNNING_TIMEOUT,
+            ci_queue_ceiling: CI_QUEUE_CEILING,
             bypass_every: Duration::from_secs(60),
             ready_every: Duration::from_secs(60),
             merge_attempts: 3,
@@ -103,6 +106,27 @@ impl Default for TrainOptions {
             fresh: Arc::default(),
         }
     }
+}
+
+/// How long a head's CI may run once a runner took its first check (D128).
+pub const CI_RUNNING_TIMEOUT: Duration = Duration::from_secs(45 * 60);
+/// How long a head's checks may all wait for runners: queued time is not running time, but it ends (D128).
+pub const CI_QUEUE_CEILING: Duration = Duration::from_secs(2 * 60 * 60);
+/// The start of `last_error` on a Change whose CI timed out rather than went red: the train keeps reading its head's
+/// checks, and puts it back in the queue when they finish green.
+pub(super) const CI_TIMED_OUT: &str = "CI timed out";
+/// What becomes of a Change whose CI timed out; it needs nothing from its author.
+pub(super) const CI_WATCHED: &str = "the train keeps watching its checks: once they finish green it goes back in the queue, with no push needed";
+/// The lead's line when a timed-out Change's CI finished green after all.
+pub(super) const CI_FINISHED_LATE: &str = "CI finished after the timeout; back in the queue";
+
+/// A Change in `ci_failed` because its CI timed out, not because a check went red.
+pub(super) fn timed_out(change: &Change) -> bool {
+    change.state == ChangeState::CiFailed
+        && change
+            .last_error
+            .as_deref()
+            .is_some_and(|e| e.starts_with(CI_TIMED_OUT))
 }
 
 /// A repo's CI config for one base as read at a time: its workflows and required checks.
@@ -167,7 +191,36 @@ pub(super) fn error_text(text: &str) -> Text<0, 2000> {
 pub(super) enum CiOutcome {
     Green,
     Red(Vec<CheckRun>),
-    Timeout,
+    Timeout(Stall),
+}
+
+/// How CI on a head ran out of time.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Stall {
+    /// No check reported within `ci_timeout`.
+    NoChecks,
+    /// Its checks, this many, all waited `ci_queue_ceiling` for runners and none started.
+    Queued(usize),
+    /// It ran for `ci_timeout` from its first check's start without finishing.
+    Running,
+}
+
+/// Whether a check run has a runner: a check still waiting for one doesn't count toward CI's running time.
+fn taken(run: &CheckRun) -> bool {
+    run.status == "in_progress" || run.status == "completed"
+}
+
+/// When a head's CI started running: the earliest start stamped on a check a runner took. None while every check
+/// still waits for a runner; `fallback` when the provider stamps no start, so its wait counts as before D128.
+pub(super) fn running_since(runs: &[CheckRun], fallback: i64) -> Option<i64> {
+    let mut taken = runs.iter().filter(|r| taken(r)).peekable();
+    taken.peek()?;
+    Some(
+        taken
+            .filter_map(|r| r.started_at.as_deref().and_then(parse_ms))
+            .min()
+            .unwrap_or(fallback),
+    )
 }
 
 type RepoLocks = Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>;
@@ -707,8 +760,14 @@ impl Train {
         .await;
     }
 
-    /// `timed_out` carries the GitHub read error that kept the train from deciding, when there was one.
-    pub(super) async fn ci_failed(&self, change: &Change, failing: &[CheckRun], timed_out: bool) {
+    /// `stall` when CI ran out of time rather than went red: the Change's `last_error` then starts `CI_TIMED_OUT`, and
+    /// `refresh` keeps reading its head's checks. A timed-out Change whose checks then go red fails here again, red.
+    pub(super) async fn ci_failed(
+        &self,
+        change: &Change,
+        failing: &[CheckRun],
+        stall: Option<Stall>,
+    ) {
         let names: Vec<String> = failing
             .iter()
             .map(|r| {
@@ -720,12 +779,24 @@ impl Train {
             })
             .collect();
         let log_url = failing.iter().find_map(|r| r.html_url.clone());
-        let why = if timed_out {
-            format!(
-                "CI on {} did not finish within {} min",
-                short(&change.head_sha),
-                (self.options.ci_timeout.as_millis() as f64 / 60_000.0).round()
-            )
+        let min = |d: Duration| (d.as_millis() as f64 / 60_000.0).round();
+        let why = if let Some(stall) = stall {
+            let what = match stall {
+                Stall::NoChecks => format!(
+                    "no check reported within {} min",
+                    min(self.options.ci_timeout)
+                ),
+                Stall::Queued(n) => format!(
+                    "{n} check{} waited {} min for a runner and none started",
+                    if n == 1 { "" } else { "s" },
+                    min(self.options.ci_queue_ceiling)
+                ),
+                Stall::Running => format!(
+                    "it did not finish within {} min of its first check starting",
+                    min(self.options.ci_timeout)
+                ),
+            };
+            format!("{CI_TIMED_OUT} on {}: {what}", short(&change.head_sha))
         } else {
             let log = log_url
                 .as_ref()
@@ -737,7 +808,8 @@ impl Train {
                 names.join(", ")
             )
         };
-        let Some(parked) = self.update(&change.change_id, Some(&[ChangeState::Ci]), |mut c| {
+        let from = [ChangeState::Ci, ChangeState::CiFailed];
+        let Some(parked) = self.update(&change.change_id, Some(&from), |mut c| {
             c.state = ChangeState::CiFailed;
             c.last_error = Some(error_text(&why));
             c
@@ -754,6 +826,18 @@ impl Train {
             format!("{} {why}", change.change_id),
             data,
         );
+        if stall.is_some() {
+            // A push would only start CI again: the lead hears of it, and the author is left to work.
+            let text = format!("{why}; {CI_WATCHED}");
+            let line = Event::PrNote {
+                change: change.change_id.as_str(),
+                pr_url: change.pr_url.as_str(),
+                text: &text,
+            }
+            .render();
+            self.wake_lead(&change.project_ref, line).await;
+            return;
+        }
         self.tell_author(&parked, &format!("the merge train did not merge it: {why}"))
             .await;
     }
@@ -865,10 +949,9 @@ impl Train {
                 }
                 Checks::None | Checks::Pending => {}
             }
-            let elapsed = self.now_ms() - start;
-            if elapsed >= self.options.ci_timeout.as_millis() as i64 {
+            if let Some(stall) = self.stalled(&last, start) {
                 self.check_spans(change, sha, &last);
-                return CiOutcome::Timeout;
+                return CiOutcome::Timeout(stall);
             }
             // A pass waiting on CI is the train running: keep its source live and main CI read.
             self.options.fresh.touch(&fresh::train(repo), self.now_ms());
@@ -876,6 +959,25 @@ impl Train {
                 self.main_ci_pass(repo, &train.project_ref).await;
             }
             self.clock.sleep(self.busy_wait(start, CI_FIRST_WAIT)).await;
+        }
+    }
+
+    /// Whether CI on a head has had its time, `runs` its last checks read and `start` when the train began waiting
+    /// (D128). Its running time counts from its first check's start, so time queued for scarce runners isn't spent;
+    /// while every check is still queued, only `ci_queue_ceiling` applies. Never from before `start`: checks that ran
+    /// before the train took the head (a run it found done, a label run it waits on) aren't its wait. A head with no
+    /// checks yet, or whose provider stamps no start times, counts from `start`.
+    fn stalled(&self, runs: &[CheckRun], start: i64) -> Option<Stall> {
+        let now = self.now_ms();
+        let over = |since: i64, limit: Duration| now - since >= limit.as_millis() as i64;
+        if runs.is_empty() {
+            return over(start, self.options.ci_timeout).then_some(Stall::NoChecks);
+        }
+        match running_since(runs, start) {
+            Some(since) => {
+                over(since.max(start), self.options.ci_timeout).then_some(Stall::Running)
+            }
+            None => over(start, self.options.ci_queue_ceiling).then_some(Stall::Queued(runs.len())),
         }
     }
 
@@ -1156,11 +1258,11 @@ impl Train {
         match self.wait_ci(&in_ci, repo, &head_sha, lone, noted).await {
             CiOutcome::Green => {}
             CiOutcome::Red(failing) => {
-                self.ci_failed(&in_ci, &failing, false).await;
+                self.ci_failed(&in_ci, &failing, None).await;
                 return Ok(());
             }
-            CiOutcome::Timeout => {
-                self.ci_failed(&in_ci, &[], true).await;
+            CiOutcome::Timeout(stall) => {
+                self.ci_failed(&in_ci, &[], Some(stall)).await;
                 return Ok(());
             }
         };
@@ -1268,7 +1370,40 @@ impl Train {
                 && let Verdict::Ready(reviews) = self.gate.again(change.clone()).await
             {
                 self.set_ready(&change, reviews);
+            } else if timed_out(&change) {
+                self.after_timeout(&change).await;
             }
+        }
+    }
+
+    /// A Change whose CI timed out, at the same head: once its checks finish green it goes back in the queue, where
+    /// the train rebases it as for any ready Change and merges on the green run it finds; once one is red, it fails
+    /// as red CI does (D128).
+    async fn after_timeout(&self, change: &Change) {
+        let runs = match self
+            .github
+            .check_runs(&change.repo, change.head_sha.as_str())
+            .await
+        {
+            Ok(runs) => runs,
+            Err(e) => {
+                return tracing::warn!(change_id = %change.change_id, error = %e.message, "train: check runs not read");
+            }
+        };
+        match checks(&runs) {
+            Checks::Green => {
+                if self.set_ready(change, Vec::new()).is_some() {
+                    let line = Event::PrNote {
+                        change: change.change_id.as_str(),
+                        pr_url: change.pr_url.as_str(),
+                        text: CI_FINISHED_LATE,
+                    }
+                    .render();
+                    self.wake_lead(&change.project_ref, line).await;
+                }
+            }
+            Checks::Red(red) => self.ci_failed(change, &red, None).await,
+            Checks::None | Checks::Pending => {}
         }
     }
 
