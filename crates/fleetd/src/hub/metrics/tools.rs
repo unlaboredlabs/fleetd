@@ -18,7 +18,8 @@ use fleetd_contracts::prim::{Count, Line, List};
 use rusqlite::Connection;
 
 use super::compute::{self, Period};
-use super::store::{self, MergeRow, RepoRow};
+use super::human;
+use super::store::{self, MergeRow, RepoRow, TouchRow};
 use crate::hub::api::{Caller, Hub, Registry, ToolError, allows, allows_everywhere, require};
 use crate::hub::status::fresh;
 use crate::hub::store::{StoreError, iso_ms, now_ms, parse_ms};
@@ -34,6 +35,9 @@ const INVISIBLE: &[&str] = &[
     "Reading on the git host's website without leaving a review or comment.",
     "How long a review took: git hosts keep only when it was submitted.",
     "Work on machines with no fleetd node, or on a phone.",
+    "Typing in your own Claude Code sessions: fleetd doesn't read their transcripts.",
+    "Reading in the app, until the app reports when it is in use.",
+    "Merges you did by hand on the git host, until fleetd knows who merged.",
 ];
 
 pub fn register(tools: &mut Registry) {
@@ -181,7 +185,14 @@ async fn metrics_get(
     }
     let since = compute::clamp_since(since, until, tz);
     let prev_since = compute::clamp_since(since - (until - since), since, tz);
-    let (projects, rows, stored, known_since) = hub.db.with(|c| {
+    // The person's identities: those recorded (the host's signed-in login) and the commit identity setup wrote.
+    let setup = crate::hub::doctor::config::read_hub_config(&hub.config.home).0;
+    let (projects, rows, touches, stored, known_since) = hub.db.with(|c| {
+        let ids = human::Identities::new(
+            store::identities(c)?
+                .into_iter()
+                .chain(setup.git_identity.as_ref().map(|g| g.email.clone())),
+        );
         let mut projects = repo_projects(c)?;
         projects.retain(|_, refs| match &input.project_ref {
             Some(p) => refs.contains(&(p.machine_id.to_string(), p.project_id.to_string())),
@@ -194,8 +205,28 @@ async fn metrics_get(
         });
         let repos: Vec<String> = projects.keys().cloned().collect();
         let rows = store::merges(c, prev_since, until, Some(&repos))?;
+        // A touch recorded up to a review's credit after `until` may have started before it.
+        let touches = store::touches(c, prev_since, until + human::REVIEW_MAX_MS)?;
+        let touches: Vec<TouchRow> = touches
+            .into_iter()
+            .filter(|t| {
+                let repo = t.repo.as_ref().is_some_and(|r| projects.contains_key(r));
+                let project = t.machine_id.as_deref().zip(t.project_id.as_deref());
+                repo || match (&input.project_ref, project) {
+                    (Some(p), Some((m, pid))) => {
+                        p.machine_id.as_str() == m && p.project_id.as_str() == pid
+                    }
+                    (Some(_), None) => false,
+                    (None, Some((m, _))) => {
+                        allows(&caller, Role::Read, Some(&MachineId::unchecked(m)))
+                    }
+                    (None, None) => allows_everywhere(&caller, Role::Read),
+                }
+            })
+            .filter(|t| human::attributed(t, &ids))
+            .collect();
         let known = crate::hub::time::store::cursor(c, store::KNOWN_SINCE)?;
-        Ok((projects, rows, store::repos(c)?, known))
+        Ok((projects, rows, touches, store::repos(c)?, known))
     })?;
     let repos: Vec<String> = projects.keys().cloned().collect();
     let (cur_rows, prev_rows): (Vec<MergeRow>, Vec<MergeRow>) =
@@ -204,10 +235,12 @@ async fn metrics_get(
     let prev_days = compute::days(prev_since, since, tz);
     let cur = Period {
         rows: &cur_rows,
+        touches: &touches,
         days: &days,
     };
     let prev = Period {
         rows: &prev_rows,
+        touches: &touches,
         days: &prev_days,
     };
     // The previous period counts only when every repo's merges were known that far back.
@@ -222,7 +255,11 @@ async fn metrics_get(
         })
         .try_fold(i64::MIN, |acc, k| k.map(|k| acc.max(k)));
     let prev_known = known_from.is_some_and(|k| k <= prev_since);
-    let items: Vec<_> = cur_rows.iter().filter_map(compute::merge_item).collect();
+    let on_prs = compute::pr_touches(&touches);
+    let items: Vec<_> = cur_rows
+        .iter()
+        .filter_map(|r| compute::merge_item(r, &on_prs))
+        .collect();
     let merges_total = items.len();
     Ok(MetricsGetOutput {
         since: Timestamp(iso_ms(since)),
@@ -246,7 +283,10 @@ async fn metrics_get(
             days: List::unchecked(compute::day_list(&prev)),
         }),
         next: Some(
-            "Your minutes per merged PR are not counted yet; merges are read from the merge train's repos.".into(),
+            "Your minutes count what fleetd sees (chat, approvals, steers, decisions, orders, and reviews and \
+             comments on the git host made by your own login); coverage.invisible lists what it can't. Merges are \
+             read from the merge train's repos."
+                .into(),
         ),
         truncated: (merges_total > MAX_MERGES).then_some(true),
     })

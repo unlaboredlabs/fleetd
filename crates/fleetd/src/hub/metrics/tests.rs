@@ -20,15 +20,15 @@ use crate::hub::serve::build_on;
 use crate::hub::store::test_clock::ManualClock;
 use crate::hub::store::{HubDb, NewEvent, iso_ms, parse_ms};
 
-const HOUR: i64 = 3_600_000;
-const DAY: i64 = 24 * HOUR;
-const NOW: &str = "2026-10-25T12:00:00.000Z";
+pub(super) const HOUR: i64 = 3_600_000;
+pub(super) const DAY: i64 = 24 * HOUR;
+pub(super) const NOW: &str = "2026-10-25T12:00:00.000Z";
 
-fn ms(t: &str) -> i64 {
+pub(super) fn ms(t: &str) -> i64 {
     parse_ms(t).unwrap()
 }
 
-fn hub() -> (Arc<Hub>, Arc<ManualClock>, tempfile::TempDir) {
+pub(super) fn hub() -> (Arc<Hub>, Arc<ManualClock>, tempfile::TempDir) {
     let clock = ManualClock::at(ms(NOW) as u64);
     let home = tempfile::tempdir().unwrap();
     let config = HubConfig {
@@ -41,7 +41,7 @@ fn hub() -> (Arc<Hub>, Arc<ManualClock>, tempfile::TempDir) {
     (hub, clock, home)
 }
 
-fn caller(grants: Value) -> Caller {
+pub(super) fn caller(grants: Value) -> Caller {
     serde_json::from_value::<Caller>(json!({
         "keyId": "k1", "name": "desk", "prefix": "fld_abcdef", "createdAt": NOW, "grants": grants,
     }))
@@ -52,11 +52,11 @@ fn caller(grants: Value) -> Caller {
     .unwrap()
 }
 
-fn admin() -> Caller {
+pub(super) fn admin() -> Caller {
     caller(json!([{ "role": "admin", "machines": "*" }]))
 }
 
-fn sql(hub: &Hub, statement: &str, args: &[&dyn rusqlite::ToSql]) {
+pub(super) fn sql(hub: &Hub, statement: &str, args: &[&dyn rusqlite::ToSql]) {
     hub.db
         .with(|c| {
             c.execute(statement, args)?;
@@ -66,7 +66,7 @@ fn sql(hub: &Hub, statement: &str, args: &[&dyn rusqlite::ToSql]) {
 }
 
 /// W1 the person submitted in the app; W2 the lead opened from the chat.
-fn orders(hub: &Hub) {
+pub(super) fn orders(hub: &Hub) {
     for (n, channel, at) in [
         (1, "app", "2026-10-20T08:00:00.000Z"),
         (2, "lead", "2026-10-21T09:00:00.000Z"),
@@ -84,7 +84,15 @@ fn orders(hub: &Hub) {
     }
 }
 
-fn change(hub: &Hub, n: i64, pr: i64, w: &str, task: Option<&str>, state: &str, created: &str) {
+pub(super) fn change(
+    hub: &Hub,
+    n: i64,
+    pr: i64,
+    w: &str,
+    task: Option<&str>,
+    state: &str,
+    created: &str,
+) {
     let mut c = json!({
         "changeId": format!("X{n}"), "projectRef": { "machineId": "devbox", "projectId": "web" }, "repo": "acme/web",
         "prNumber": pr, "prUrl": format!("https://github.com/acme/web/pull/{pr}"), "branch": format!("fleetd/T{n}-x"),
@@ -102,7 +110,7 @@ fn change(hub: &Hub, n: i64, pr: i64, w: &str, task: Option<&str>, state: &str, 
     );
 }
 
-fn event(hub: &Hub, at: &str, kind: HubEventType, data: Value) {
+pub(super) fn event(hub: &Hub, at: &str, kind: HubEventType, data: Value) {
     hub.events
         .append(NewEvent {
             at: Timestamp(at.into()),
@@ -118,7 +126,7 @@ fn event(hub: &Hub, at: &str, kind: HubEventType, data: Value) {
 }
 
 /// Projects every page from `cursor`, as the projector's loop does; the cursor it ends on.
-fn project_from(hub: &Hub, mut cursor: i64) -> i64 {
+pub(super) fn project_from(hub: &Hub, mut cursor: i64) -> i64 {
     loop {
         let (next, more) = project::step(&hub.db, &hub.events, cursor).unwrap();
         cursor = next;
@@ -128,13 +136,17 @@ fn project_from(hub: &Hub, mut cursor: i64) -> i64 {
     }
 }
 
-fn rows(hub: &Hub) -> Vec<MergeRow> {
+pub(super) fn rows(hub: &Hub) -> Vec<MergeRow> {
     hub.db
         .with(|c| store::merges(c, 0, i64::MAX, None))
         .unwrap()
 }
 
-async fn get(hub: &Arc<Hub>, who: &Caller, input: Value) -> Result<MetricsGetOutput, CallError> {
+pub(super) async fn get(
+    hub: &Arc<Hub>,
+    who: &Caller,
+    input: Value,
+) -> Result<MetricsGetOutput, CallError> {
     let out = registry().call(hub, who, "metrics_get", input).await?;
     // Decoding checks every bound the contract sets (the day list's 400 among them).
     Ok(serde_json::from_value(out).expect("metrics_get's output decodes against its contract"))
@@ -142,7 +154,7 @@ async fn get(hub: &Arc<Hub>, who: &Caller, input: Value) -> Result<MetricsGetOut
 
 /// A week on acme/web: one change through the train, two fleetd PRs merged by hand (one known by its Change, one
 /// by its `fleetd/` branch), one PR from outside, and a bot's PR.
-fn a_week(hub: &Hub) {
+pub(super) fn a_week(hub: &Hub) {
     orders(hub);
     sql(
         hub,
