@@ -234,6 +234,14 @@ pub enum HubEventType {
     /// (project scope), `data.topic`, `data.by`. The text is not in the event; memory_get reads it.
     #[serde(rename = "memory.changed")]
     MemoryChanged,
+    /// An automation was made, edited, paused, resumed, deleted or had its webhook URL rotated: `data.projectRef`,
+    /// `data.automationId`, `data.change`. automation_list reads it.
+    #[serde(rename = "automation.changed")]
+    AutomationChanged,
+    /// An automation ran (its order opened) or a trigger was skipped: `data.projectRef`, `data.automationId`,
+    /// `data.runId`, `data.trigger`, `data.state`, `data.workstreamId`. Never the webhook body.
+    #[serde(rename = "automation.run")]
+    AutomationRun,
 }
 
 impl HubEventType {
@@ -313,6 +321,8 @@ impl HubEventType {
             Self::WorkEnded => "work.ended",
             Self::WorkLanded => "work.landed",
             Self::MemoryChanged => "memory.changed",
+            Self::AutomationChanged => "automation.changed",
+            Self::AutomationRun => "automation.run",
         }
     }
 }

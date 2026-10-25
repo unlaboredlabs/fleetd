@@ -288,4 +288,36 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "work_done",
         "End your claim: outcome landed when the work reached the base (landing: its commit), dropped when you stop or leave it to someone else.",
     ),
+    (
+        "automation_list",
+        "A project's automations (a stored prompt with a cron schedule in an IANA tz, a webhook, Run now), each with its next run, paused state and last run.",
+    ),
+    (
+        "automation_create",
+        "Make an automation for a project: name, prompt, optionally a schedule {cron, tz} and webhook: true. Each run opens an order for the project's lead, which starts the work on its own; reviews, the merge train and approvals still apply. webhookUrl, when asked for, is in this result only: POST to it to run with the body (at most 16 KiB) as context. Idempotent per clientRequestId.",
+    ),
+    (
+        "automation_update",
+        "Change an automation's name, prompt or schedule (removeSchedule: true takes it off); webhook true adds a URL (in this result only), false removes it. Fields left out stay.",
+    ),
+    (
+        "automation_pause",
+        "Pause or resume an automation. Paused, its schedule and webhook start nothing (a webhook call is recorded as skipped); Run now still runs it. Resumed, the schedule goes on from now.",
+    ),
+    (
+        "automation_rotate",
+        "A new webhook URL for an automation, in this result only; the old one stops working at once.",
+    ),
+    (
+        "automation_delete",
+        "Delete an automation and its run history. Orders its runs opened stay.",
+    ),
+    (
+        "automation_run",
+        "Run an automation now: it opens its order for the lead. Skipped, and recorded, while its last run's order is open.",
+    ),
+    (
+        "automation_runs",
+        "An automation's runs, newest first: trigger, state, the order each opened, and why a run was skipped or failed.",
+    ),
 ];

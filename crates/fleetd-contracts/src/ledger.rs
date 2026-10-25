@@ -111,6 +111,8 @@ pub enum IntakeChannel {
     App,
     Mcp,
     Lead,
+    /// A run of one of the project's automations; `by` is "automation:<automationId>".
+    Automation,
 }
 
 /// The one-line intent as submitted.

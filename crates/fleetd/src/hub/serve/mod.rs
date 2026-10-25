@@ -346,6 +346,12 @@ pub fn build_on_with(
         tracing::warn!(error = %e, "projects: interrupted clones not closed");
     }
     let chat = crate::hub::chat::Chat::new(db.clone(), events.clone(), clock.clone());
+    let automations = crate::hub::automations::Automations::new(
+        db.clone(),
+        events.clone(),
+        clock.clone(),
+        leads.clone(),
+    );
     let prs =
         crate::hub::prs::Prs::new(Arc::new(crate::hub::train::github::SystemGh), clock.clone());
     let work = crate::hub::work::Work::new(
@@ -372,6 +378,7 @@ pub fn build_on_with(
         sweep,
         queue,
         wakes,
+        automations,
         verdicts: checks.verdicts,
         ops: ops.ports,
         usage: ops.usage,
@@ -398,6 +405,7 @@ pub fn build_on_with(
     wire::wire(&hub);
     crate::hub::approvals::tools::register_lead_calls(&hub);
     crate::hub::memory::calls::register_lead_calls(&hub);
+    crate::hub::automations::calls::register_lead_calls(&hub);
     crate::hub::steer::wire(&hub);
     crate::hub::chat::tools::extend_status(&hub);
     crate::hub::work::register_sweep(&hub);
@@ -436,6 +444,7 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
     ));
     loops.push(tokio::spawn(hub.tasks.clone().run(hub.shutdown.clone())));
     loops.extend(hub.leads.run());
+    loops.push(hub.automations.start());
     loops.extend(hub.time.start(hub));
     loops.extend(crate::hub::metrics::start(hub));
     loops.push(tokio::spawn(hub.status.clone().run(hub.clone())));

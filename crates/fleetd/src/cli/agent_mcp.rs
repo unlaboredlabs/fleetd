@@ -8,6 +8,10 @@ use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use fleetd_contracts::automations::{
+    AutomationCreateCall, AutomationDeleteCall, AutomationListCall, AutomationPauseCall,
+    AutomationRunCall, AutomationRunsCall, AutomationUpdateCall,
+};
 use fleetd_contracts::lead_calls::{
     AskLeadCall, BriefCreateCall, ChangeEnqueueCall, CloseCall, DecideCall, DecisionsSearchCall,
     GatedRunCall, LeadCall, LeadSocketFrame, RequestSecretCall, RequestWithdrawCall,
@@ -167,6 +171,53 @@ static TOOLS: &[Tool] = &[
         "memory_read",
         "Read one of this project's memory topic files (MEMORY.md lists them).",
         inline_schema::<MemoryReadCall>,
+    ),
+    lead(
+        "automation_create",
+        "automation_create",
+        "Make an automation for this project: a name, the prompt each run gives you as a new order, and optionally a \
+         schedule (5-field cron and an IANA tz, such as 0 9 * * 1-5 in Europe/Berlin). Runs start work on their own; \
+         reviews, the train and approvals still apply. Only a person adds a webhook, in the app.",
+        inline_schema::<AutomationCreateCall>,
+    ),
+    lead(
+        "automation_list",
+        "automation_list",
+        "This project's automations with their schedule, next run, paused state and last run.",
+        inline_schema::<AutomationListCall>,
+    ),
+    lead(
+        "automation_update",
+        "automation_update",
+        "Change an automation's name, prompt or schedule (removeSchedule: true takes it off); fields left out stay.",
+        inline_schema::<AutomationUpdateCall>,
+    ),
+    lead(
+        "automation_pause",
+        "automation_pause",
+        "Pause (paused: true) or resume an automation. Paused, its schedule and webhook start nothing; resumed, the \
+         schedule goes on from now.",
+        inline_schema::<AutomationPauseCall>,
+    ),
+    lead(
+        "automation_delete",
+        "automation_delete",
+        "Delete an automation and its run history; orders its runs opened stay.",
+        inline_schema::<AutomationDeleteCall>,
+    ),
+    lead(
+        "automation_run",
+        "automation_run",
+        "Run an automation now: it opens its order, which reaches you in a later wake. Skipped while its last run's \
+         order is still open.",
+        inline_schema::<AutomationRunCall>,
+    ),
+    lead(
+        "automation_runs",
+        "automation_runs",
+        "An automation's runs, newest first, with the order each opened; with runId, that run and its whole webhook \
+         body.",
+        inline_schema::<AutomationRunsCall>,
     ),
     lead(
         "change_enqueue",

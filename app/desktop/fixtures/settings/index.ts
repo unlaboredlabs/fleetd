@@ -77,10 +77,77 @@ function memory(f: Fixture) {
   f.answer("memory_undo", undefined, { ok: true });
 }
 
+/**
+ * Settings → Automations: the first project has a weekday schedule whose last run is done, a webhook whose run is
+ * still open (so its next trigger was skipped), and a paused monthly one. Other projects have none yet.
+ */
+function automations(f: Fixture) {
+  const projects = isObject(f.snapshot) && Array.isArray(f.snapshot["projects"]) ? f.snapshot["projects"].filter(isObject) : [];
+  const first = projects[0];
+  for (const p of projects) {
+    f.answer("automation_list", { projectRef: { machineId: asText(p["machineId"]), projectId: asText(p["projectId"]) } }, { automations: [] });
+  }
+  if (!first) return;
+  const projectRef = { machineId: asText(first["machineId"]), projectId: asText(first["projectId"]) };
+  const made = "2026-10-12T08:00:00.000Z";
+  const run = (automationId: string, n: number, extra: JsonObject): JsonObject => ({ runId: `ar_fixture${String(n)}x`, automationId, ...extra });
+  const deps = "au_fixtureDeps1";
+  const alerts = "au_fixtureHook1";
+  const notes = "au_fixtureNote1";
+  const depsRuns = [
+    run(deps, 4, { trigger: "schedule", at: "2026-10-19T07:00:00.000Z", state: "done", workstreamId: "W41", scheduledAt: "2026-10-19T07:00:00.000Z", endedAt: "2026-10-19T08:12:00.000Z" }),
+    run(deps, 3, { trigger: "manual", at: "2026-10-16T13:20:00.000Z", state: "done", workstreamId: "W36", by: "human", endedAt: "2026-10-16T14:02:00.000Z" }),
+    run(deps, 2, { trigger: "schedule", at: "2026-10-16T07:41:00.000Z", state: "stopped", workstreamId: "W35", scheduledAt: "2026-10-16T07:00:00.000Z", lateMin: 41, endedAt: "2026-10-16T09:00:00.000Z" }),
+  ];
+  const alertRuns = [
+    run(alerts, 7, { trigger: "webhook", at: "2026-10-19T10:04:00.000Z", state: "skipped", payloadBytes: 1210, why: "run ar_fixture6x is still going (W57 is open)", endedAt: "2026-10-19T10:04:00.000Z" }),
+    run(alerts, 6, { trigger: "webhook", at: "2026-10-19T09:52:00.000Z", state: "running", workstreamId: "W57", payloadBytes: 1184 }),
+  ];
+  const base = { projectRef, createdBy: "human", createdAt: made, updatedAt: made };
+  const list = [
+    {
+      ...base,
+      automationId: deps,
+      name: "Weekday dependency check",
+      prompt: "Check the dependencies for updates. Open one PR with the patch and minor bumps whose tests pass; list the major ones in the chat.",
+      schedule: { cron: "0 9 * * 1-5", tz: "Europe/Berlin" },
+      webhook: false,
+      paused: false,
+      nextRunAt: "2026-10-20T07:00:00.000Z",
+      lastRun: depsRuns[0] ?? null,
+    },
+    {
+      ...base,
+      automationId: alerts,
+      name: "Error alert triage",
+      prompt: "An error alert came in. Find the cause from the alert's body and the logs it points to, and fix it if the fix is small.",
+      webhook: true,
+      paused: false,
+      lastRun: alertRuns[0] ?? null,
+    },
+    {
+      ...base,
+      automationId: notes,
+      name: "Monthly release notes",
+      prompt: "Draft the release notes for last month's merged PRs as a PR against docs/releases.",
+      schedule: { cron: "0 8 1 * *", tz: "Europe/Berlin" },
+      webhook: false,
+      paused: true,
+    },
+  ];
+  f.answer("automation_list", { projectRef }, { automations: json(list) });
+  f.answer("automation_runs", { automationId: deps }, { runs: depsRuns });
+  f.answer("automation_runs", { automationId: alerts }, { runs: alertRuns });
+  f.answer("automation_runs", { automationId: notes }, { runs: [] });
+  f.answer("automation_run", undefined, { run: run(deps, 8, { trigger: "manual", at: f.now, state: "running", workstreamId: "W62", by: "human" }) });
+  f.answer("automation_pause", undefined, { automation: json(list[2]) });
+}
+
 /** What Settings calls besides the prompt reads. */
 function basics(f: Fixture) {
   projectSettings(f);
   memory(f);
+  automations(f);
   if (f.output("project_get") === undefined) f.answer("project_get", undefined, { projects: PROJECTS.map(projectSummary) });
   // The dry run, for any text: a fixture cannot know what will be typed, so it answers with no warnings.
   f.answer("prompt_set", { dryRun: true }, { ref: "lead.start@5e771ed000", warnings: [] });

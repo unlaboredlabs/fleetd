@@ -73,8 +73,8 @@ impl LeadPorts for Ports {
 pub(crate) struct Hub {
     pub(crate) area: Arc<Area>,
     pub(crate) node: Arc<Node>,
-    clock: Arc<ManualClock>,
-    events: Arc<EventLog>,
+    pub(crate) clock: Arc<ManualClock>,
+    pub(crate) events: Arc<EventLog>,
     pub(crate) project: ProjectRef,
     _home: tempfile::TempDir,
 }

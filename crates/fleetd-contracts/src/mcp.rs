@@ -1174,6 +1174,79 @@ output!(MemoryCapsSetOutput {
     caps: MemoryCaps,
 });
 
+// automation_list, automation_create, automation_update, automation_pause, automation_rotate, automation_delete,
+// automation_run, automation_runs: a project's automations (Settings > Automations). A webhook URL holds its secret and
+// is in the output only when it is made (create or update with webhook true) or rotated; the hub keeps a hash of it.
+input!(AutomationListInput {
+    project_ref: ProjectRef
+});
+output!(AutomationListOutput {
+    automations: crate::automations::Automations
+});
+input!(AutomationCreateInput {
+    project_ref: ProjectRef,
+    name: crate::automations::AutomationName,
+    prompt: crate::automations::AutomationPrompt,
+    schedule: Option<crate::automations::AutomationSchedule>,
+    /// Give it a webhook URL.
+    #[serde(default)]
+    webhook: bool,
+    client_request_id: RequestId,
+});
+output!(AutomationCreateOutput {
+    automation: crate::automations::Automation,
+    /// Shown once: POST to it to start a run with the body as context.
+    webhook_url: Option<String>,
+});
+input!(AutomationUpdateInput {
+    automation_id: crate::automations::AutomationId,
+    name: Option<crate::automations::AutomationName>,
+    prompt: Option<crate::automations::AutomationPrompt>,
+    schedule: Option<crate::automations::AutomationSchedule>,
+    /// true: take its schedule off.
+    remove_schedule: Option<bool>,
+    /// true adds a webhook URL (kept if it has one); false removes it.
+    webhook: Option<bool>,
+});
+output!(AutomationUpdateOutput {
+    automation: crate::automations::Automation,
+    /// Only when this update made its webhook URL.
+    webhook_url: Option<String>,
+});
+input!(AutomationPauseInput {
+    automation_id: crate::automations::AutomationId,
+    paused: bool,
+});
+output!(AutomationPauseOutput {
+    automation: crate::automations::Automation
+});
+// A new webhook URL; the old one stops working at once.
+input!(AutomationRotateInput {
+    automation_id: crate::automations::AutomationId
+});
+output!(AutomationRotateOutput {
+    automation: crate::automations::Automation,
+    webhook_url: String,
+});
+input!(AutomationDeleteInput {
+    automation_id: crate::automations::AutomationId
+});
+output!(AutomationDeleteOutput { ok: True });
+// Run now.
+input!(AutomationRunInput {
+    automation_id: crate::automations::AutomationId
+});
+output!(AutomationRunOutput {
+    run: crate::automations::AutomationRun
+});
+input!(AutomationRunsInput {
+    automation_id: crate::automations::AutomationId,
+    limit: IntOr<1, 100, 30>,
+});
+output!(AutomationRunsOutput {
+    runs: crate::automations::AutomationRuns
+});
+
 // status_get: without projectRef, one row per project the key reads, for the Status screen; with it, that project's
 // row.
 input!(StatusGetInput {
@@ -1650,6 +1723,14 @@ tools! {
     memory_set => MemorySet, Operate, MemorySetInput, MemorySetOutput;
     memory_undo => MemoryUndo, Operate, MemoryUndoInput, MemoryUndoOutput;
     memory_caps_set => MemoryCapsSet, Admin, MemoryCapsSetInput, MemoryCapsSetOutput;
+    automation_list => AutomationList, Read, AutomationListInput, AutomationListOutput;
+    automation_create => AutomationCreate, Operate, AutomationCreateInput, AutomationCreateOutput;
+    automation_update => AutomationUpdate, Operate, AutomationUpdateInput, AutomationUpdateOutput;
+    automation_pause => AutomationPause, Operate, AutomationPauseInput, AutomationPauseOutput;
+    automation_rotate => AutomationRotate, Operate, AutomationRotateInput, AutomationRotateOutput;
+    automation_delete => AutomationDelete, Operate, AutomationDeleteInput, AutomationDeleteOutput;
+    automation_run => AutomationRun, Operate, AutomationRunInput, AutomationRunOutput;
+    automation_runs => AutomationRuns, Read, AutomationRunsInput, AutomationRunsOutput;
     time_spans => TimeSpans, Read, TimeSpansInput, TimeSpansOutput;
     time_breakdown => TimeBreakdown, Read, TimeBreakdownInput, TimeBreakdownOutput;
     time_insights => TimeInsights, Read, TimeInsightsInput, TimeInsightsOutput;
