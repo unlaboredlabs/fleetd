@@ -4,8 +4,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type PointerEvent, type RefObject } from "react";
 import { Button, RoleTag, Text, Truncate, cx } from "../../ui";
 import { barCard, laneCard, pathCard, type Card } from "./cards";
-import { CAT_LABEL, SHOWN, clockMs, fmtDur, tickLabel, type Names } from "./format";
-import { hit, padded, ranOn, rowRange, ticks, type Bar, type Model, type Row } from "./model";
+import { CAT_LABEL, SHOWN, clockMs, fmtDur, type Names } from "./format";
+import { axisTicks, hit, padded, ranOn, rowRange, wholeView, type Bar, type Model, type Row } from "./model";
 import { useData } from "../../src/data/react";
 import { fmtTokens } from "../live/format";
 import { ROW_H, documentTheme, paintPath, paintRows, paletteCache, readPalette, watchDocumentTheme } from "./paint";
@@ -36,6 +36,8 @@ function LaneMeta({ row }: { row: Row }) {
   );
 }
 const MIN_VIEW_MS = 1_000;
+/** A stretch with nothing running is named once it is this wide on screen. */
+const QUIET_LABEL_PX = 160;
 
 type Hover =
   | { readonly kind: "bar"; readonly row: number; readonly bar: Bar; readonly x: number; readonly y: number }
@@ -114,8 +116,10 @@ export function Timeline({ model: m, names, nowMs, view, onView, lit, onSpan }: 
   // The canvas covers the visible rows only; the scroller's own height scrolls under it.
   const size = { width: track.width, height: Math.min(outer.height, m.rows.length * ROW_H) };
   const dpr = useSyncExternalStore(watchDpr, currentDpr);
-  const [v0, v1] = view ?? [m.startMs, m.endMs];
-  const tickList = useMemo(() => ticks(v0, v1), [v0, v1]);
+  const [w0, w1] = useMemo(() => wholeView(m, size.width), [m, size.width]);
+  const [v0, v1] = view ?? [w0, w1];
+  const tickList = useMemo(() => axisTicks(v0, v1, size.width), [v0, v1, size.width]);
+  const tickTimes = useMemo(() => tickList.map((t) => t.t), [tickList]);
   // The category colours come from the tokens, so they are read again when the theme changes; patterns are cached.
   const [palettes] = useState(() => paletteCache(readPalette));
 
@@ -128,8 +132,8 @@ export function Timeline({ model: m, names, nowMs, view, onView, lit, onSpan }: 
     if (c == null || ctx == null || root === null || size.width <= 0) return;
     sizeCanvas(c, size.width, size.height, dpr);
     const palette = palettes(theme, dpr, root);
-    barsRef.current = paintRows(ctx, { model: m, v0, v1, width: size.width, height: size.height, scrollTop, dpr, ticks: tickList, lit, drag, palette });
-  }, [m, v0, v1, size.width, size.height, scrollTop, dpr, tickList, lit, drag, palettes, theme]);
+    barsRef.current = paintRows(ctx, { model: m, v0, v1, width: size.width, height: size.height, scrollTop, dpr, ticks: tickTimes, lit, drag, palette });
+  }, [m, v0, v1, size.width, size.height, scrollTop, dpr, tickTimes, lit, drag, palettes, theme]);
 
   useLayoutEffect(() => {
     const c = pathRef.current;
@@ -148,31 +152,30 @@ export function Timeline({ model: m, names, nowMs, view, onView, lit, onSpan }: 
         const mid = (a + b) / 2;
         [a, b] = [mid - MIN_VIEW_MS / 2, mid + MIN_VIEW_MS / 2];
       }
-      onView(a <= m.startMs && b >= m.endMs ? undefined : [a, b]);
+      onView(a <= w0 && b >= w1 ? undefined : [a, b]);
     },
-    [m.startMs, m.endMs, onView],
+    [w0, w1, onView],
   );
 
   /** Zooms by `factor` around time `at`, clamped to the order. */
   const zoomAt = useCallback(
     (at: number, factor: number) => {
-      const whole = m.endMs - m.startMs;
-      const span = Math.min(whole, Math.max(MIN_VIEW_MS, (v1 - v0) * factor));
+      const span = Math.min(w1 - w0, Math.max(MIN_VIEW_MS, (v1 - v0) * factor));
       let a = at - ((at - v0) / (v1 - v0)) * span;
-      a = Math.min(Math.max(a, m.startMs), m.endMs - span);
+      a = Math.min(Math.max(a, w0), w1 - span);
       zoomTo(a, a + span);
     },
-    [m.startMs, m.endMs, v0, v1, zoomTo],
+    [w0, w1, v0, v1, zoomTo],
   );
 
   const pan = useCallback(
     (ms: number) => {
       if (view === undefined) return;
       const span = v1 - v0;
-      const a = Math.min(Math.max(v0 + ms, m.startMs), m.endMs - span);
+      const a = Math.min(Math.max(v0 + ms, w0), w1 - span);
       onView([a, a + span]);
     },
-    [view, v0, v1, m.startMs, m.endMs, onView],
+    [view, v0, v1, w0, w1, onView],
   );
 
   // Wheel zoom needs a non-passive listener to keep the page from zooming instead.
@@ -280,6 +283,12 @@ export function Timeline({ model: m, names, nowMs, view, onView, lit, onSpan }: 
           : pathCard(m, hover.seg);
 
   const total = m.endMs - m.startMs;
+  // Long stretches with nothing running, in track px, where their words fit.
+  const quiet = m.quiet.flatMap(([a, b]) => {
+    const x0 = (Math.max(a, v0) - v0) * (size.width / (v1 - v0));
+    const x1 = (Math.min(b, v1) - v0) * (size.width / (v1 - v0));
+    return x1 - x0 >= QUIET_LABEL_PX ? [{ x0, x1, ms: b - a }] : [];
+  });
   const hasGaps = m.rows.some((r) => r.gaps.length > 0);
 
   return (
@@ -287,11 +296,13 @@ export function Timeline({ model: m, names, nowMs, view, onView, lit, onSpan }: 
       <div className={cx(s.axis)} aria-hidden>
         <div style={{ width: LABEL_W, flex: "none" }} />
         <div className={cx(s.axisTicks)}>
-          {tickList.map((t) => (
-            <span key={t} className={cx(s.tick)} style={{ left: ((t - v0) / (v1 - v0)) * size.width }}>
-              {tickLabel(t, v0, v1)}
-            </span>
-          ))}
+          {tickList.map((t) =>
+            t.label === undefined ? null : (
+              <span key={t.t} className={cx(s.tick)} style={{ left: t.x }}>
+                {t.label}
+              </span>
+            ),
+          )}
         </div>
       </div>
       <div ref={scrollerRef} className={cx(s.scroller)} onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}>
@@ -341,6 +352,13 @@ export function Timeline({ model: m, names, nowMs, view, onView, lit, onSpan }: 
               onPointerLeave={() => setHover((h) => (h?.kind === "bar" ? undefined : h))}
             >
               <canvas ref={canvasRef} className={cx(s.canvas)} />
+              {quiet.map((q) => (
+                <span key={q.x0} className={cx(s.quiet)} style={{ left: q.x0, width: q.x1 - q.x0 }}>
+                  <Text size="xs" tone="quiet" className={cx(s.quietWords)}>
+                    nothing ran · {fmtDur(q.ms)}
+                  </Text>
+                </span>
+              ))}
             </div>
           </div>
         </div>

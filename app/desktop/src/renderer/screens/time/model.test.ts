@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fixtureNames, fixtureOrder } from "./fixture";
 import { NO_NAMES, categoryKinds, clockMs, tickLabel } from "./format";
-import { CAT_CODE, bars, barsFor, buildModel, hit, ranOn, ticks, type Model } from "./model";
+import { CAT_CODE, EDGE_PX, MIN_WHOLE_MS, TICK_PX, axisTicks, bars, barsFor, buildModel, hit, ranOn, ticks, wholeView, type Model } from "./model";
 import type { Category, Coverage, Span, SpanKind } from "./types";
 import { KIND_CATEGORY } from "./types";
 
@@ -191,6 +191,85 @@ describe("ticks", () => {
     expect(six.map((x) => clockMs(x).slice(0, 5))).toEqual(["12:00", "18:00", "00:00", "06:00", "12:00", "18:00", "00:00"]);
     const days = ticks(v0, v0 + 5 * 86_400_000);
     expect(days.map((x) => tickLabel(x, v0, v0 + 5 * 86_400_000))).toEqual(["Oct 19", "Oct 20", "Oct 21", "Oct 22", "Oct 23"]);
+  });
+});
+
+describe("the axis", () => {
+  const v0 = Date.parse("2026-10-07T09:03:00.000Z");
+  const DAY = 86_400_000;
+
+  it("keeps an order of many days to as many ticks as before, not one a day", () => {
+    vi.stubEnv("TZ", "UTC");
+    const t = ticks(v0, v0 + 12 * DAY);
+    expect(t.length).toBeLessThanOrEqual(8);
+    expect(t.map((x) => tickLabel(x, v0, v0 + 12 * DAY))).toEqual(["Oct 8", "Oct 10", "Oct 12", "Oct 14", "Oct 16", "Oct 18"]);
+    // Past the longest step, still about eight.
+    expect(ticks(v0, v0 + 400 * DAY).length).toBeLessThanOrEqual(8);
+  });
+
+  it("spaces ticks by the track's width, so labels never touch in a narrow window", () => {
+    vi.stubEnv("TZ", "UTC");
+    for (const [span, width] of [[12 * DAY, 590], [45_000, 590], [102 * 60_000, 470]] as const) {
+      const t = axisTicks(v0, v0 + span, width);
+      expect(t.length).toBeGreaterThanOrEqual(2);
+      for (let i = 1; i < t.length; i += 1) expect((t[i]?.x ?? 0) - (t[i - 1]?.x ?? 0)).toBeGreaterThanOrEqual(TICK_PX * 0.75);
+    }
+  });
+
+  it("drops a label that would run past the track's end, rather than cut it", () => {
+    vi.stubEnv("TZ", "UTC");
+    // 08:12 to 09:47 across 850 px: the 09:45 tick is 18 px from the end, too close for its five characters.
+    const a = Date.parse("2026-10-18T08:12:00.000Z");
+    const t = axisTicks(a, a + 95 * 60_000, 850);
+    const last = t.at(-1);
+    expect(last !== undefined && clockMs(last.t)).toBe("09:45:00");
+    expect(last?.label).toBeUndefined();
+    expect(t.slice(0, -1).every((x) => x.label !== undefined)).toBe(true);
+  });
+});
+
+describe("the whole view", () => {
+  it("shows a lone 400 ms call as a short bar on a scale of seconds, not across the whole track", () => {
+    const m = row([[1_000_000, 1_000_400, "tools"]]);
+    const [w0, w1] = wholeView(m, 850);
+    expect(w1 - w0).toBeGreaterThanOrEqual(MIN_WHOLE_MS);
+    const bar = bars(m, 0, 1, w0, w1, 850, none)[0];
+    expect((bar?.x1 ?? 0) - (bar?.x0 ?? 0)).toBeLessThan(850 / 10);
+    // Centred, with labelled ticks either side of it.
+    expect(Math.abs((bar?.x0 ?? 0) + (bar?.x1 ?? 0) - 850)).toBeLessThan(2);
+    expect(axisTicks(w0, w1, 850).filter((t) => t.label !== undefined).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("keeps the first and last bars clear of the lane labels and the window edge", () => {
+    const m = row([
+      [0, 60_000, "model"],
+      [3_600_000, 3_660_000, "tools"],
+    ]);
+    const [w0, w1] = wholeView(m, 850);
+    const list = bars(m, 0, 2, w0, w1, 850, none);
+    expect(list[0]?.x0).toBeCloseTo(EDGE_PX, 6);
+    expect(850 - (list.at(-1)?.x1 ?? 0)).toBeCloseTo(EDGE_PX, 6);
+  });
+});
+
+describe("quiet stretches", () => {
+  it("marks hours with nothing running in a sparse order, between its bursts", () => {
+    const H = 3_600_000;
+    const m = row([
+      [0, 180_000, "model"],
+      [6 * H, 6 * H + 180_000, "tools"],
+      [6 * H + 300_000, 6 * H + 420_000, "model"],
+    ]);
+    expect(m.quiet).toEqual([[180_000, 6 * H]]);
+  });
+
+  it("marks nothing in an order that kept busy, nor a pause of seconds, nor missing data", () => {
+    const { spans, path } = fixtureOrder();
+    expect(buildModel(spans, path, undefined, fixtureNames(), 0).quiet).toEqual([]);
+    expect(row([[0, 20_000, "model"], [30_000, 50_000, "tools"]]).quiet).toEqual([]);
+    const lost: Coverage = { complete: false, gaps: [{ lane: "thread:m/s-1", fromMs: 60_000, toMs: 3_600_000, why: "node_dropped" }] };
+    const m = buildModel([span(1, "model.output", 0, 60_000), span(2, "tool.bash", 3_600_000, 3_660_000)], undefined, lost, NO_NAMES, 0);
+    expect(m.quiet).toEqual([]);
   });
 });
 

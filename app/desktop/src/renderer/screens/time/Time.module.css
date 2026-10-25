@@ -137,8 +137,9 @@
   color: var(--quiet);
   white-space: nowrap;
 }
+/* As tall as its lanes, up to the room there is: the critical path sits right under the last one. */
 .scroller {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
@@ -192,6 +193,22 @@
   position: absolute;
   inset: 0;
   display: block;
+}
+/* Over a stretch where nothing ran: the words, centred, so the empty stretch reads as waiting. Never hit. */
+.quiet {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  white-space: nowrap;
+}
+/* Over the grid lines, so none runs through the words. */
+.quietWords {
+  padding: 0 var(--space-1);
+  background: var(--bg);
 }
 .pathRow {
   display: flex;
