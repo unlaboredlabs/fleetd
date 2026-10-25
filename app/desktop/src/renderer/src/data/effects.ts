@@ -37,6 +37,10 @@ export const ordersNamed = (event: HubEvent): readonly string[] => {
   return [...new Set(one === undefined ? ids : [one, ...ids])];
 };
 
+// What moves the Factory's figures: a merge (the train's, one outside it, a default branch that moved on its host), a
+// change's stage stamps, and the person's own acts. The hub folds them into its metrics as they land.
+const METRICS_TYPES = new Set(["pr.merged", "pr.merged_outside", "repo.advanced", "change.state", "chat.message", "decision.recorded", "app.presence"]);
+
 const AGENT_PREFIXES = ["task.", "lead.", "change."];
 const AGENT_TYPES = new Set(["pr.merged", "project.added", "project.removed"]);
 
@@ -68,6 +72,7 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
       out.push({ tool: "time_breakdown", where: { workstreamId: id } }, { tool: "time_insights", where: { workstreamId: id } });
     }
   }
+  if (METRICS_TYPES.has(type)) out.push({ tool: "metrics_get" });
   if (type.startsWith("thread.") && event.threadId !== undefined) out.push({ tool: "agent_work", where: { threadId: event.threadId } });
   // The agents view's list: who runs, and what for. Their live status and activity come with the live feed instead.
   if (startsWithAny(type, AGENT_PREFIXES) || AGENT_TYPES.has(type)) out.push({ tool: "agents_list" });

@@ -16,6 +16,9 @@ describe("routes", () => {
       panelRoute(storefront, { tab: "agents", agent: "lead:devbox/storefront" }),
       { id: "project", project: storefront, message: "m-42", panel: { tab: "agents", agent: "T1" } },
       { id: "status" },
+      { id: "factory", project: null },
+      { id: "factory", project: storefront },
+      { id: "factory", project: { machineId: "dev box", projectId: "a/b" } },
       { id: "machines" },
       { id: "time", orderId: null },
       { id: "time", orderId: "W14" },
@@ -37,6 +40,17 @@ describe("routes", () => {
     expect(toHash(panelRoute(storefront, { tab: "prs", pr: { repo: "acme/storefront", number: 11 } }))).toBe("#/project/devbox/storefront/prs/acme/storefront/11");
     expect(toHash(panelRoute(storefront, { tab: "prs", pr: { repo: null, number: 11 } }))).toBe("#/project/devbox/storefront/prs/11");
     expect(toHash(panelRoute(storefront, { tab: "agents", agent: "T1" }))).toBe("#/project/devbox/storefront/agents/T1");
+  });
+
+  it("opens the Factory on the project a Status row links it to, else on every project", () => {
+    expect(toHash({ id: "factory", project: null })).toBe("#/factory");
+    expect(toHash({ id: "factory", project: storefront })).toBe("#/factory?project=devbox/storefront");
+    expect(parseHash("#/factory?project=devbox/storefront")).toEqual({ id: "factory", project: storefront });
+    // A project id may hold a slash; the machine is up to the first one.
+    expect(parseHash("#/factory?project=devbox/a/b")).toEqual({ id: "factory", project: { machineId: "devbox", projectId: "a/b" } });
+    for (const q of ["", "?project=", "?project=devbox", "?project=devbox/", "?project=/storefront", "?other=1"]) {
+      expect(parseHash(`#/factory${q}`)).toEqual({ id: "factory", project: null });
+    }
   });
 
   it("sends the removed surfaces, unknown and malformed hashes home", () => {

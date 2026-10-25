@@ -1,5 +1,5 @@
 // The data layer in React: one layer per window, read through selectors.
-import { hashKey, QueryClientProvider, useInfiniteQuery, useQueries, useQuery } from "@tanstack/react-query";
+import { hashKey, keepPreviousData, QueryClientProvider, useInfiniteQuery, useQueries, useQuery } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useEffect, useSyncExternalStore, type ReactNode } from "react";
 import { useStore } from "zustand";
 import type { ToolInput, ToolName, ToolOutput } from "../../../shared/contracts";
@@ -40,12 +40,17 @@ export const useData = <T,>(selector: (s: DataState) => T): T => useStore(useDat
 
 /**
  * `tool(input)` as a query. It waits for a fresh connection (a call made before the resync would describe the
- * old one) and refetches when an event makes it stale.
+ * old one) and refetches when an event makes it stale. `keepPrevious` keeps the last input's answer on screen
+ * while a new input's is on its way (`isPlaceholderData`), for a view that holds its frame across a filter change.
  */
-export const useToolQuery = <T extends ToolName>(tool: T, input: ToolInput<T>, options?: { enabled?: boolean }) => {
+export const useToolQuery = <T extends ToolName>(tool: T, input: ToolInput<T>, options?: { enabled?: boolean; keepPrevious?: boolean }) => {
   const layer = useDataLayer();
   const fresh = useStore(layer.store, (s) => s.fresh);
-  return useQuery({ ...layer.toolQuery(tool, input), enabled: fresh && (options?.enabled ?? true) });
+  return useQuery({
+    ...layer.toolQuery(tool, input),
+    enabled: fresh && (options?.enabled ?? true),
+    ...(options?.keepPrevious === true ? { placeholderData: keepPreviousData } : {}),
+  });
 };
 
 /**

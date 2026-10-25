@@ -69,6 +69,13 @@ describe("event effects", () => {
     expect(tools(e("usage.updated"))).toContain("status_get");
   });
 
+  it("the Factory's figures: a merge, a moved default branch, a change's stage and the person's acts, not agent chatter", () => {
+    for (const type of ["pr.merged", "pr.merged_outside", "repo.advanced", "change.state", "chat.message", "decision.recorded", "app.presence"]) {
+      expect(tools(e(type)), type).toContain("metrics_get");
+    }
+    for (const type of ["thread.completed", "task.started", "machine.online"]) expect(tools(e(type)), type).not.toContain("metrics_get");
+  });
+
   it("refetches only the open order's time reads, never the paged spans whole", () => {
     const fx = effectsOf(e("task.completed", { workstreamId: "W1", taskId: "T3" }));
     expect(fx.invalidate).toContainEqual({ tool: "time_breakdown", where: { workstreamId: "W1" } });
