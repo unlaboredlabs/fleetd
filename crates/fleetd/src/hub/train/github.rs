@@ -261,8 +261,6 @@ pub struct MergedPull {
     pub created_at: Option<String>,
 }
 
-/// Pages of closed PRs `merged_pulls` reads at most per check before it stops short of its cursor: the check runs
-/// every minute, so a busy repo stays within GitHub's rate limit; the metrics' host sweep backfills past it.
 /// GitHub's squash message from the repo's settings and the PR's commit messages, oldest first. One commit gives its
 /// own subject and body; several give the PR's title and a `* ` line per commit, with their `Co-authored-by`
 /// trailers gathered once at the end, as GitHub does.
@@ -319,6 +317,8 @@ pub fn squash_text(
     (format!("{title} (#{})", pull.number), body)
 }
 
+/// Pages of closed PRs `merged_pulls` reads at most per check before it stops short of its cursor: the check runs
+/// every minute, so a busy repo stays within GitHub's rate limit; the metrics' host sweep backfills past it.
 pub const MERGED_PAGES: usize = 2;
 const MERGED_PAGE: usize = 100;
 
