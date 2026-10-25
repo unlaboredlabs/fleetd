@@ -146,8 +146,9 @@ impl Work {
         }
     }
 
-    /// The lead digest's Elsewhere lines for the project; `None` when its repo and base aren't known.
-    pub async fn elsewhere(&self, project: &ProjectRef) -> Result<Option<Vec<String>>, StoreError> {
+    /// The lead digest's Elsewhere lines for the project; `None` when its repo and base aren't known. Read from the
+    /// hub alone: the lines show no paths, so no node is asked what its writers changed.
+    pub fn elsewhere(&self, project: &ProjectRef) -> Result<Option<Vec<String>>, StoreError> {
         let Some(scope) = self.scope_of(project)? else {
             return Ok(None);
         };
@@ -159,7 +160,7 @@ impl Work {
             )?,
             None => Vec::new(),
         };
-        let in_flight = self.in_flight(&scope).await?;
+        let in_flight = view::items(&self.sources(&scope)?);
         Ok(Some(elsewhere::lines(
             project, &scope, &in_flight, &landings,
         )))

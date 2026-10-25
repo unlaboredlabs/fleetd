@@ -294,7 +294,7 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
             "Elsewhere",
             input.elsewhere.clone().unwrap_or_default(),
             8,
-            "older ones not shown",
+            crate::hub::work::elsewhere::CUT_FIRST,
             "\n",
         ),
         Section::new(
