@@ -3622,6 +3622,16 @@
           "type": "string"
         },
         {
+          "const": "machine.recovery_paused",
+          "description": "Agents on the machine kept dying (claude exited, or stalled), so fleetd stopped resuming them there, or\nresumes them again; `data` is `RecoveryPausedData`, and the summary says why.",
+          "type": "string"
+        },
+        {
+          "const": "thread.orphaned",
+          "description": "The machine's node runs a session no task or lead of this hub owns; `data` is `ThreadOrphanedData`.",
+          "type": "string"
+        },
+        {
           "const": "project.removed",
           "description": "The node no longer has the project: the hub dropped it from its cache, and its open workstreams stop. `data.title`.",
           "type": "string"

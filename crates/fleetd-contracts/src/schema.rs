@@ -12,7 +12,8 @@ use crate::blocks::ChatBlock;
 use crate::chat::{ChatMessage, ProjectChatState};
 use crate::events::{
     HubEvent, HubEventType, MachineGuardData, MachineSleptData, PromptChangedData,
-    RequestEventData, ThreadEventData, TrainEventData, WorkstreamEventData,
+    RecoveryPausedData, RequestEventData, ThreadEventData, ThreadOrphanedData, TrainEventData,
+    WorkstreamEventData,
 };
 use crate::ledger::{Decision, HumanRequest, Lead, Workstream};
 use crate::mcp::McpToolName;
@@ -82,6 +83,8 @@ fn hub_event_data_document_for(side: Side) -> Value {
         data!(UsageEventData: ThreadUsageLimited, UsageBreaker, UsageResumed);
         data!(MachineSleptData: MachineSlept);
         data!(MachineGuardData: MachineGuard);
+        data!(RecoveryPausedData: MachineRecoveryPaused);
+        data!(ThreadOrphanedData: ThreadOrphaned);
         data!(ProjectAddedData: ProjectAdded);
         data!(CloneProgressData: ProjectCloneProgress);
         data!(ProjectAddFailedData: ProjectAddFailed);
