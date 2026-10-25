@@ -124,7 +124,8 @@ function HubSetting() {
         <Button
           variant={hub ? "secondary" : "primary"}
           onClick={() => {
-            window.location.hash = "#/onboarding";
+            // A connected app's #/onboarding goes straight back to the board; `another` keeps the form up.
+            window.location.hash = hub ? "#/onboarding?another" : "#/onboarding";
           }}
         >
           {hub ? "Pair with another hub" : "Pair with a hub"}

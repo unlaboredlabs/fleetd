@@ -46,12 +46,12 @@ export const KEY_CREATE = "fleetd hub key create --human --name <device>";
 /** The form a screen opens with. A link only fills it; nothing pairs until the person clicks Connect. */
 export const initialForm = (
   state: HubState,
-  link: { hub?: string | undefined; code?: string | undefined; useKey?: boolean | undefined },
+  link: { hub?: string | undefined; code?: string | undefined; useKey?: boolean | undefined; another?: boolean | undefined },
 ): Form => {
   const linked = link.hub !== undefined && link.code !== undefined;
   return {
-    // First run fills the address once it knows whether a hub answers here (`started`).
-    hub: link.hub ?? (state.phase === "unpaired" ? "" : state.hub),
+    // First run fills the address once it knows whether a hub answers here (`started`); another hub starts empty.
+    hub: link.hub ?? (state.phase === "unpaired" || link.another === true ? "" : state.hub),
     code: link.code ?? "",
     key: "",
     useKey: link.useKey === true && link.code === undefined,
