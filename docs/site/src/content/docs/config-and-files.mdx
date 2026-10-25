@@ -70,7 +70,7 @@ after you change it.
 | `cmdRoots` | Folders the node may run commands in, and below. Absent: your home directory. |
 | `claudeConfigDir` | A dedicated claude profile for this machine's sessions. See [below](#claude-profile). |
 | `minFreeGb` | New agents wait while the disk holding the worktrees has less than this many GB free. Absent: 10% of the disk or 20 GB, whichever is larger. `0` turns it off. Read with every heartbeat, no restart needed. See [Disk and load](/docs/machines#guard). |
-| `memPerAgentGb` | GB of memory to allow per agent when the hub works out how many agents this machine runs at once. Absent or `0`: 2 GB. Read with every heartbeat. |
+| `memPerAgentGb` | GB of memory to allow per agent when the hub works out how many agents this machine runs at once by default. It sizes the default only: no agent waits for the memory it might take. Absent or `0`: 2 GB. Read with every heartbeat. |
 | `diskPerAgentGb` | GB of disk to allow per new agent's worktree when the hub works out how many more fit above `minFreeGb`. Absent or `0`: 5 GB, about a Rust worktree with a build cache; a JS project needs 1 to 2. Read with every heartbeat. |
 
 ## The Claude login {#claude}

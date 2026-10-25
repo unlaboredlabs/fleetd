@@ -253,7 +253,6 @@ pub fn read(limits: Vec<LoginLimit>, home: &Path) -> Option<NodeLoad> {
         limits: List::unchecked(limits.into_iter().take(4).collect()),
         disk: disk(home, setting(|c| c.min_free_gb)),
         // The session service's, added by the heartbeat.
-        project_memory: None,
     })
 }
 

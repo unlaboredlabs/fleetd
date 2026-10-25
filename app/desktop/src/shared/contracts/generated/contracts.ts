@@ -2480,11 +2480,6 @@ export type NodeLoad = {
   memTotalBytes?: number;
   /** Memory in use (total minus available), percent. */
   memUsedPct?: number;
-  /**
-   * What each project's agents have taken in memory here, for projects with a session measured. Absent from older
-   * nodes.
-   */
-  projectMemory?: ProjectMemory[];
   /** Swap in use, percent. Linux only; absent without swap and from older nodes. */
   swapUsedPct?: number;
 };
@@ -3046,18 +3041,6 @@ export type ProjectInspect = {
   notes: string[];
   /** Absent for a checkout without a GitHub remote. */
   repo?: GitHubRepo;
-};
-
-/**
- * One project's agents' memory on a machine: each session's peak resident memory, its whole process tree counted,
- * over the project's latest sessions there.
- */
-export type ProjectMemory = {
-  /** The 90th percentile of their peaks. */
-  p90Bytes: number;
-  projectId: ProjectId;
-  /** Sessions measured: the latest 20 at most. */
-  samples: number;
 };
 
 /** The one-call project outcome, returned as-is by project_get. */

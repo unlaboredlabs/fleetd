@@ -327,7 +327,7 @@ whole fleet. The hub enforces all of them; the lead plans to them.</p>
 <tr>
 <td>Per project: Max agents</td>
 <td>The project’s agents: writers, readers, reviewers. Not the lead.</td>
-<td>Its machine’s cap, or fewer once 5 of the project’s agents have been measured there and their memory says so (below)</td>
+<td>Its machine’s cap</td>
 <td>Click “agents 6 / 12” in the project’s chat header, or use Settings → Agents.</td>
 </tr>
 <tr>
@@ -341,16 +341,9 @@ whole fleet. The hub enforces all of them; the lead plans to them.</p>
 <p>New agents on a machine also wait for disk: 5 GB each (<code dir="auto">diskPerAgentGb</code>) above the free-space floor, with agents started
 in the last 10 minutes still counted, since their worktrees haven’t grown yet. The lead’s state line names what sets
 its cap, e.g. “agents: 4 running of 6 (auto: memory 18 GB), 2 queued”.</p>
-<p>Each machine measures what its agents take: the peak memory of each agent’s whole process tree, claude and its
-builds and tests included, that the system can’t just drop. On Linux that is the agent’s own scope’s memory less its
-file cache, or the processes’ proportional share (PSS) when it has no scope; on macOS, their resident memory. Once 5 of a project’s agents have been measured on a machine, its cap there is sized at the
-90th percentile of its latest 20 peaks instead of 2 GB, if that fits fewer. A Rust project whose agents take 4 GB each
-runs fewer at once than a docs project beside it, and its line says so: “agents: 2 running of 10 (auto: memory 4.1 GB
-per agent, seen on this project)”. The peaks are kept in <code dir="auto">~/.fleetd/node/memory.json</code>.</p>
-<p>Memory is also shared across projects. A new agent starts on a machine only if every agent running there, each at its
-project’s measured figure (or 2 GB until it has one), plus the new one, fits in the memory the cap leaves for agents.
-Otherwise it waits, saying for example “memory: 3 running need 12.3 GB of 14 GB free on builder-1”. The first agent on
-a machine always starts. This works alongside the count cap.</p>
+<p>The memory figure only sizes a machine’s default cap. No agent waits for the memory it might take: a Max agents you set
+starts that many, as far as the machine’s cap and disk allow. What does hold new agents back is memory really in use, the
+<a href="/docs/machines#guard">guard’s pause</a> at 90%.</p>
 <p>The header shows “· 2 queued” when agents wait their turn. While you move the slider it says what the change will do; it
 applies when you let go, with Undo. A fleet cap below a project’s own max gets a warning.</p>
 <p>Writers in a project run side by side, each in its own worktree and branch. The lead gives them slices that touch
