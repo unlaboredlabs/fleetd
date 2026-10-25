@@ -6,7 +6,7 @@ use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
 use fleetd_contracts::tasks::{AgentsCapData, Task, TaskState};
 use serde_json::json;
 
-use super::cap::{CapChange, ProjectCap};
+use super::cap::{CapChange, MachineCap, ProjectCap};
 use crate::hub::api::{Hub, HubConfig};
 use crate::hub::slots::{Agents, MaxSource, SlotPriority, SlotRequest};
 use crate::hub::store::HubDb;
@@ -73,8 +73,20 @@ fn set(max_agents: i64, pause_extras: bool) -> CapChange {
         cap: None,
         project: Some(ProjectCap {
             project_ref: project(),
-            max_agents,
+            max_agents: Some(max_agents),
             pause_extras,
+        }),
+        machine: None,
+    }
+}
+
+fn machine_set(max_agents: Option<i64>) -> CapChange {
+    CapChange {
+        cap: None,
+        project: None,
+        machine: Some(MachineCap {
+            machine_id: MachineId::unchecked("lab-a"),
+            max_agents,
         }),
     }
 }
@@ -182,8 +194,9 @@ async fn max_agents_stays_within_the_fleet_cap() {
     assert_eq!(hub.slots.cap(), None);
     assert_eq!(hub.slots.state().cap.get(), 28);
     let fleet = CapChange {
-        cap: Some(20),
+        cap: Some(Some(20)),
         project: None,
+        machine: None,
     };
     let outcome = hub.tasks.set_caps(fleet).await.unwrap();
     assert_eq!(
@@ -203,12 +216,12 @@ async fn max_agents_stays_within_the_fleet_cap() {
         "Max agents 21 is above the fleet's 20 slots."
     );
     let both = CapChange {
-        cap: Some(60),
-        ..set(41, false)
+        cap: Some(Some(60)),
+        ..set(21, false)
     };
     let outcome = hub.tasks.set_caps(both).await.unwrap();
     assert_eq!(outcome.slots.cap.get(), 60);
-    assert_eq!(hub.slots.agents(&project()).max_agents, 41);
+    assert_eq!(hub.slots.agents(&project()).max_agents, 21);
     let fleet = &cap_events(&hub)[1];
     assert_eq!(
         fleet.0,
@@ -216,6 +229,90 @@ async fn max_agents_stays_within_the_fleet_cap() {
     );
     assert!(fleet.1.project_ref.is_none());
     assert_eq!(cap_events(&hub)[0].1.from.get(), 28);
+}
+
+/// The fleet cap set back to auto is unset: the line says what the machines fit, and fleetCap goes.
+#[tokio::test]
+async fn the_fleet_cap_set_to_auto_is_unset() {
+    let (hub, _home) = hub();
+    let fleet = |cap| CapChange {
+        cap: Some(cap),
+        project: None,
+        machine: None,
+    };
+    hub.tasks.set_caps(fleet(Some(40))).await.unwrap();
+    let outcome = hub.tasks.set_caps(fleet(None)).await.unwrap();
+    assert_eq!(
+        outcome.next,
+        "Fleet cap 40 unset (the machines fit 28): running agents finish; new ones wait."
+    );
+    assert_eq!(
+        (outcome.slots.cap.get(), outcome.slots.fleet_cap),
+        (28, None)
+    );
+    let (_, data) = cap_events(&hub).pop().unwrap();
+    assert_eq!((data.from.get(), data.to.get()), (40, 28));
+    let again = hub.tasks.set_caps(fleet(None)).await.unwrap();
+    assert_eq!(again.next, "Nothing changed.");
+}
+
+/// A project's max above its machine's cap reads as the machine's cap, to its lead and in the open-task limit; set
+/// back to auto, it follows the machine.
+#[tokio::test]
+async fn a_projects_max_above_its_machine_counts_as_the_machines_cap() {
+    let (hub, _home) = hub();
+    hub.tasks.set_caps(set(2, false)).await.unwrap();
+    let outcome = hub.tasks.set_caps(set(40, false)).await.unwrap();
+    assert_eq!(
+        outcome.next,
+        "Max agents 2 → 28. Set to 40, but lab-a runs at most 28, so 28 is what counts."
+    );
+    let a = hub.tasks.agents(&project());
+    assert_eq!(a.cap, 28);
+    assert_eq!(hub.slots.agents(&project()).max_agents, 28);
+    let row = &outcome.slots.per_project[0];
+    assert_eq!((row.max_agents.get(), row.set), (28, true));
+    let auto = CapChange {
+        project: Some(ProjectCap {
+            project_ref: project(),
+            max_agents: None,
+            pause_extras: false,
+        }),
+        ..set(1, false)
+    };
+    let outcome = hub.tasks.set_caps(auto).await.unwrap();
+    assert_eq!(outcome.next, "Max agents 28. Back to auto: lab-a's cap.");
+    assert_eq!(hub.slots.max_agents_set(&project()), None);
+    assert!(outcome.slots.per_project.is_empty());
+}
+
+/// A machine's cap: a number replaces what it fits, above it with a warning, and auto puts the measure back.
+#[tokio::test]
+async fn a_machines_cap_is_set_and_put_back_to_auto() {
+    let (hub, _home) = hub();
+    let outcome = hub.tasks.set_caps(machine_set(Some(40))).await.unwrap();
+    assert_eq!(
+        outcome.next,
+        "Machine cap on lab-a 28 → 40, above the 28 it fits (28 of 32 CPUs): queued agents start as slots allow."
+    );
+    let row = &outcome.slots.per_machine[0];
+    assert_eq!((row.cap.get(), row.auto.get(), row.set), (40, 28, true));
+    assert_eq!(hub.slots.agents(&project()).max_agents, 40);
+    assert_eq!(hub.slots.agents(&project()).source, MaxSource::Machine);
+    let outcome = hub.tasks.set_caps(machine_set(Some(2))).await.unwrap();
+    assert_eq!(
+        outcome.next,
+        "Machine cap on lab-a 40 → 2: running agents finish; new ones wait."
+    );
+    let outcome = hub.tasks.set_caps(machine_set(None)).await.unwrap();
+    assert_eq!(
+        outcome.next,
+        "Machine cap on lab-a 2 → auto, 28 (28 of 32 CPUs): queued agents start as slots allow."
+    );
+    assert!(!outcome.slots.per_machine[0].set);
+    let (_, data) = cap_events(&hub).pop().unwrap();
+    assert!(data.project_ref.is_none());
+    assert_eq!((data.from.get(), data.to.get()), (2, 28));
 }
 
 #[tokio::test]

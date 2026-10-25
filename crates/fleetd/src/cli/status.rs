@@ -12,6 +12,7 @@ use chrono_tz::Tz;
 use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::mcp::StatusGetOutput;
 use fleetd_contracts::status::{ProgressPoint, ProjectRowState, ProjectStatusRow};
+use fleetd_contracts::tasks::{MachineCapSource, SlotState};
 use serde_json::{Value, json};
 
 use super::args::{self, Kind, Spec};
@@ -21,7 +22,8 @@ use super::time::resolve_project;
 pub const STATUS_USAGE: &str = r#"  status [<project>] [--watch] [--json] [--hub <url> --key-file <path> | --home <dir>]
              one row per project, as the app's Status screen shows it: what it is doing
              (working, waiting on you, blocked and why, idle), its bar (verified plus work in
-             flight), agents running, the last merge and why the bar last fell; one project by
+             flight), agents running, the last merge and why the bar last fell, then each
+             machine's agents of its cap and what sets the cap; one project by
              id or title (<machine>/<project> when two machines have one). --watch prints the
              rows again after each change; a stale row says so. On the hub machine it needs
              no --hub or --key-file
@@ -203,6 +205,55 @@ pub fn render(rows: &[(ProjectStatusRow, Vec<ProgressPoint>)], zone: Tz) -> Stri
     out.join("\n")
 }
 
+/// The agents running across the fleet, then each machine's of its cap and what sets that cap: a person, or the
+/// term of what the machine fits. A fleet cap someone set shows next to what the machines fit together.
+pub fn render_machines(slots: &SlotState) -> Vec<String> {
+    let fit: i64 = slots.per_machine.iter().map(|m| m.cap.get()).sum();
+    let machines = match slots.per_machine.len() {
+        1 => "the machine fits".to_owned(),
+        _ => "the machines fit".to_owned(),
+    };
+    let mut head = match slots.fleet_cap {
+        Some(cap) => format!(
+            "Agents: {} running · fleet cap {} (set) · {machines} {fit}",
+            slots.used.get(),
+            cap.get()
+        ),
+        None => format!(
+            "Agents: {} running of {}, what {machines}",
+            slots.used.get(),
+            slots.cap.get()
+        ),
+    };
+    if slots.queued.get() > 0 {
+        head.push_str(&format!(" · {} queued", slots.queued.get()));
+    }
+    let mut out = vec![head];
+    for m in slots.per_machine.iter() {
+        let what = if m.set {
+            format!("set; it fits {}: {}", m.auto.get(), m.why.as_str())
+        } else if m.source == Some(MachineCapSource::Unknown) {
+            format!(
+                "node too old to report memory: capped at {}; run `fleetd update` on it",
+                m.auto.get()
+            )
+        } else {
+            format!("auto: {}", m.why.as_str())
+        };
+        let disk = m
+            .disk_room
+            .map(|n| format!(" · disk room for {} more", n.get()))
+            .unwrap_or_default();
+        out.push(format!(
+            "  {}: {} of {} running ({what}){disk}",
+            m.machine_id.as_str(),
+            m.running.get(),
+            m.cap.get()
+        ));
+    }
+    out
+}
+
 /// What `fleetd status --watch` prints above the last rows while the hub does not answer. It is the CLI's own
 /// connection, not a judgement on the hub's data.
 fn not_live_banner(
@@ -326,8 +377,30 @@ fn fail(error: CallError) -> u8 {
 
 type Rows = Vec<(ProjectStatusRow, Vec<ProgressPoint>)>;
 
+/// One read of the hub: the rows, and the slot board (absent from a hub without one).
+#[derive(PartialEq)]
+struct Shown {
+    rows: Rows,
+    slots: Option<SlotState>,
+}
+
+async fn read(client: &mut McpClient, only: Option<&Value>) -> Result<Shown, CallError> {
+    let rows = read_rows(client, only).await?;
+    let status: Value = call(client, "fleetd_status", json!({}), Duration::from_secs(30)).await?;
+    let mut slots: Option<SlotState> = serde_json::from_value(status["slots"].clone()).ok();
+    // One project: its machine only.
+    if let (Some(slots), Some(m)) = (&mut slots, only.and_then(|o| o["machineId"].as_str())) {
+        let mine: Vec<_> = std::mem::take(&mut slots.per_machine)
+            .into_iter()
+            .filter(|x| x.machine_id.as_str() == m)
+            .collect();
+        slots.per_machine = fleetd_contracts::prim::List::unchecked(mine);
+    }
+    Ok(Shown { rows, slots })
+}
+
 /// The rows (only `only`'s when given), each with its series when it has a bar.
-async fn read(client: &mut McpClient, only: Option<&Value>) -> Result<Rows, CallError> {
+async fn read_rows(client: &mut McpClient, only: Option<&Value>) -> Result<Rows, CallError> {
     let listed: StatusGetOutput =
         call(client, "status_get", json!({}), Duration::from_secs(30)).await?;
     let mut out = Vec::new();
@@ -360,7 +433,12 @@ struct Printer {
 }
 
 impl Printer {
-    fn show(&self, rows: &Rows) {
+    fn show(&self, shown: &Shown) {
+        let rows = &shown.rows;
+        let mut text = render(rows, self.zone);
+        if let Some(slots) = shown.slots.as_ref().filter(|s| !s.per_machine.is_empty()) {
+            text = format!("{text}\n\n{}", render_machines(slots).join("\n"));
+        }
         let mut stdout = std::io::stdout().lock();
         if self.json {
             let all: Vec<Value> = rows
@@ -370,9 +448,9 @@ impl Printer {
             let _ = writeln!(stdout, "{}", Value::Array(all));
         } else if self.tty {
             // Home, clear: the new rows replace the old in place.
-            let _ = writeln!(stdout, "\x1b[H\x1b[2J{}", render(rows, self.zone));
+            let _ = writeln!(stdout, "\x1b[H\x1b[2J{text}");
         } else {
-            let _ = writeln!(stdout, "{}\n", render(rows, self.zone));
+            let _ = writeln!(stdout, "{text}\n");
         }
         let _ = stdout.flush();
     }
@@ -486,6 +564,7 @@ pub async fn status_command(argv: &[String]) -> u8 {
                 // A working project's in-flight credit moves with time and no event, so a quiet wait reads it again.
                 if got["events"].as_array().is_none_or(Vec::is_empty)
                     && !rows
+                        .rows
                         .iter()
                         .any(|(r, _)| r.state == ProjectRowState::Working)
                 {
@@ -506,7 +585,7 @@ pub async fn status_command(argv: &[String]) -> u8 {
             Err(CallError::Transport(McpError::Other(reason))) => reason,
             Err(error) => return fail(error),
         };
-        printer.banner(&not_live_banner(&rows, printer.zone, &reason));
+        printer.banner(&not_live_banner(&rows.rows, printer.zone, &reason));
         let mut attempt = 0;
         loop {
             let delay = BACKOFF[attempt.min(BACKOFF.len() - 1)];
@@ -609,6 +688,42 @@ mod tests {
         for word in ["eta", "left", "remaining", "usual", "estimate"] {
             assert!(!lower.contains(word), "{word:?} in {text}");
         }
+    }
+
+    /// Each machine's agents of its cap and what sets it; a saved fleet cap shows next to what the machines fit, and
+    /// a node too old to report memory says how to lift its cap of 4.
+    #[test]
+    fn machines_print_their_cap_and_what_sets_it() {
+        let slots: SlotState = serde_json::from_value(json!({
+            "cap": 40, "fleetCap": 40, "used": 3, "queued": 2, "perProject": [],
+            "perMachine": [
+                { "machineId": "mbp", "cap": 6, "auto": 6, "why": "memory 18 GB", "source": "memory",
+                  "running": 2, "diskRoom": 19 },
+                { "machineId": "builder-1", "cap": 80, "auto": 56, "why": "56 of 64 CPUs", "set": true,
+                  "source": "set", "running": 1 },
+                { "machineId": "old-box", "cap": 4, "auto": 4, "why": "memory unknown", "source": "unknown",
+                  "running": 0 },
+            ],
+        }))
+        .unwrap();
+        assert_eq!(
+            render_machines(&slots),
+            [
+                "Agents: 3 running · fleet cap 40 (set) · the machines fit 90 · 2 queued",
+                "  mbp: 2 of 6 running (auto: memory 18 GB) · disk room for 19 more",
+                "  builder-1: 1 of 80 running (set; it fits 56: 56 of 64 CPUs)",
+                "  old-box: 0 of 4 running (node too old to report memory: capped at 4; run `fleetd update` on it)",
+            ]
+        );
+        let unset: SlotState = serde_json::from_value(json!({
+            "cap": 6, "used": 0, "queued": 0, "perProject": [],
+            "perMachine": [{ "machineId": "mbp", "cap": 6, "auto": 6, "why": "memory 18 GB", "running": 0 }],
+        }))
+        .unwrap();
+        assert_eq!(
+            render_machines(&unset)[0],
+            "Agents: 0 running of 6, what the machine fits"
+        );
     }
 
     #[test]

@@ -60,6 +60,11 @@ pub trait DoctorFleet: Send + Sync {
     fn guard(&self, _machine_id: &str) -> (Option<NodeDisk>, Option<String>) {
         (None, None)
     }
+    /// Whether the machine's node reports its total memory, which sizes its agent cap; `None` before its first
+    /// heartbeat.
+    fn memory_reported(&self, _machine_id: &str) -> Option<bool> {
+        None
+    }
     /// The repos whose ready PRs the merge train holds for want of CI.
     fn repos_without_ci(&self) -> Vec<String> {
         Vec::new()
@@ -251,6 +256,7 @@ impl Doctor {
             disk.as_ref(),
             paused.as_deref(),
         ));
+        out.push(checks::memory_reported(id, fleet.memory_reported(id)));
         out.push(checks::usage_breaker(id, &usage.breaker));
         out
     }

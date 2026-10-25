@@ -1,4 +1,5 @@
 //! `fleetd machine add|remove`: sets up (or undoes) a worker over SSH, printing every remote command before it runs.
+//! `fleetd machine set`: the most agents a machine runs at once.
 
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -33,6 +34,10 @@ pub fn machine_usage() -> String {
              stop and remove the node's service on the machine and revoke its key on the hub; --purge
              also deletes ~/.fleetd/node and ~/.fleetd/claude.env there, and
              what an older fleetd installed for T3 Code
+  machine set <id> --max-agents <n>|auto [--home <hub home>] [--hub <url>]
+             the most agents the machine runs at once, across its projects; auto (the
+             default) is what it fits: one per CPU less a reserve, and 2 GB of memory each.
+             A number may go above that. More wait queued; lowering stops nothing
 "
     )
 }
@@ -829,11 +834,78 @@ async fn remove_command(argv: &[String]) -> u8 {
     if remote_ok { 0 } else { 1 }
 }
 
+/// `fleetd machine set <id> --max-agents <n>|auto`: `cap_set` with the machine.
+async fn set_command(argv: &[String]) -> u8 {
+    let v = match args::parse(
+        argv,
+        &Spec {
+            options: &[
+                ("max-agents", Kind::Str),
+                ("home", Kind::Str),
+                ("hub", Kind::Str),
+            ],
+            positionals: true,
+        },
+    ) {
+        Ok(v) => v,
+        Err(message) => return usage(&message),
+    };
+    let Some(machine) = v
+        .positionals
+        .first()
+        .and_then(|id| MachineId::new(id.clone()).ok())
+    else {
+        return usage("machine set takes a machine id");
+    };
+    let max_agents = match super::super::project::setting_of(&v, "max-agents") {
+        Ok(Some(n)) => n,
+        Ok(None) => return usage("give --max-agents <n> or --max-agents auto"),
+        Err(message) => return usage(&message),
+    };
+    let home = match resolve_home(v.str("home")) {
+        Ok(home) => home,
+        Err(message) => return fail(&message),
+    };
+    let mut client = match super::doctor::connect_to(&home, v.str("hub"), "fleetd-machine").await {
+        Ok(client) => client,
+        Err(f) => {
+            say(&format!(
+                "fleetd: {}
+  Fix: {}",
+                f.message, f.fix
+            ));
+            return 4;
+        }
+    };
+    let input = serde_json::json!({ "machine": { "machineId": machine, "maxAgents": max_agents } });
+    let result = match client
+        .call_tool("cap_set", input, Duration::from_secs(60))
+        .await
+    {
+        Ok(result) => result,
+        Err(error) => return fail(&format!("cap_set failed: {}", error.message())),
+    };
+    let text = |k: &str| result.body.get(k).and_then(serde_json::Value::as_str);
+    if result.is_error {
+        let fix = text("fix")
+            .map(|f| format!("\n  Fix: {f}"))
+            .unwrap_or_default();
+        say(&format!(
+            "fleetd: {}{fix}",
+            text("message").unwrap_or("the hub refused")
+        ));
+        return 3;
+    }
+    say(text("next").unwrap_or("Set."));
+    0
+}
+
 /// `fleetd machine …`.
 pub async fn machine_command(argv: &[String]) -> u8 {
     match argv.first().map(String::as_str) {
         Some("add") => add_command(&argv[1..]).await,
         Some("remove") => remove_command(&argv[1..]).await,
+        Some("set") => set_command(&argv[1..]).await,
         Some(other) => usage(&format!("unknown machine command '{other}'")),
         None => usage("missing machine command"),
     }

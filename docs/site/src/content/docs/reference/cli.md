@@ -100,6 +100,14 @@ fleetd machine remove <id> [--purge] [--home <hub home>]
 
 stop and remove the node's service on the machine and revoke its key on the hub; `--purge` also deletes `~/.fleetd/node` and `~/.fleetd/claude.env` there, and what an older fleetd installed for T3 Code
 
+### fleetd machine set {#machine-set}
+
+```text
+fleetd machine set <id> --max-agents <n>|auto [--home <hub home>] [--hub <url>]
+```
+
+the most agents the machine runs at once, across its projects; auto (the default) is what it fits: one per CPU less a reserve, and 2 GB of memory each. A number may go above that. More wait queued; lowering stops nothing
+
 ### fleetd pair {#pair}
 
 ```text
@@ -153,16 +161,16 @@ stop its agents and forget it; its files, branches and worktrees stay
 ### fleetd project set {#project-set}
 
 ```text
-fleetd project set <machine>/<project> --max-agents <n> [--pause-extras] [--home <dir>] [--hub <url>]
+fleetd project set <machine>/<project> --max-agents <n>|auto [--pause-extras] [--home <dir>] [--hub <url>]
 ```
 
 ### fleetd project set {#project-set-fleet-cap}
 
 ```text
-fleetd project set --fleet-cap <n> [--home <dir>] [--hub <url>]
+fleetd project set --fleet-cap <n>|auto [--home <dir>] [--hub <url>]
 ```
 
-the most agents the project runs at once (its lead not counted), or the fleet's cap on running agents (admin key); more wait queued and start as slots free. Lowering stops nothing; `--pause-extras` has the newest agents above the new max push their work and wait
+the most agents the project runs at once (its lead not counted; auto: its machine's cap, never above it), or the fleet's cap on running agents (admin key; auto: none beyond the machines' caps); more wait queued and start as slots free. Lowering stops nothing; `--pause-extras` has the newest agents above the new max push their work and wait
 
 ### fleetd project set {#project-set-medium}
 
@@ -316,7 +324,7 @@ keep 1-365 days of timelines (admin key); daily totals are kept 400 days
 fleetd status [<project>] [--watch] [--json] [--hub <url> --key-file <path> | --home <dir>]
 ```
 
-one row per project, as the app's Status screen shows it: what it is doing (working, waiting on you, blocked and why, idle), its bar (verified plus work in flight), agents running, the last merge and why the bar last fell; one project by id or title (\<machine\>/\<project\> when two machines have one). `--watch` prints the rows again after each change; a stale row says so. On the hub machine it needs no `--hub` or `--key-file`
+one row per project, as the app's Status screen shows it: what it is doing (working, waiting on you, blocked and why, idle), its bar (verified plus work in flight), agents running, the last merge and why the bar last fell, then each machine's agents of its cap and what sets the cap; one project by id or title (\<machine\>/\<project\> when two machines have one). `--watch` prints the rows again after each change; a stale row says so. On the hub machine it needs no `--hub` or `--key-file`
 
 ### fleetd steer {#steer}
 

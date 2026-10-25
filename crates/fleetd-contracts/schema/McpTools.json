@@ -725,6 +725,13 @@
       ],
       "type": "string"
     },
+    "AutoLiteral": {
+      "description": "`\"auto\"`: no person's setting; the machine's own measure decides.",
+      "enum": [
+        "auto"
+      ],
+      "type": "string"
+    },
     "BoxPublicKey": {
       "type": "string"
     },
@@ -789,15 +796,32 @@
     "CapSetInput": {
       "properties": {
         "cap": {
-          "description": "The fleet cap: agents running at once across every project. Needs an admin key.",
-          "maximum": 1000,
-          "minimum": 1,
-          "type": "integer"
+          "$ref": "#/$defs/CapSetting",
+          "description": "The fleet cap: agents running at once across every project. \"auto\": none beyond the machines' caps added\nup. Needs an admin key."
+        },
+        "machine": {
+          "$ref": "#/$defs/CapSetMachine"
         },
         "project": {
           "$ref": "#/$defs/CapSetProject"
         }
       },
+      "type": "object"
+    },
+    "CapSetMachine": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "maxAgents": {
+          "$ref": "#/$defs/CapSetting",
+          "description": "The most agents that run on the machine at once, across its projects; it may go above what the machine fits.\n\"auto\": what it fits."
+        }
+      },
+      "required": [
+        "machineId",
+        "maxAgents"
+      ],
       "type": "object"
     },
     "CapSetOutput": {
@@ -828,10 +852,8 @@
     "CapSetProject": {
       "properties": {
         "maxAgents": {
-          "description": "1 up to the fleet cap.",
-          "maximum": 1000,
-          "minimum": 1,
-          "type": "integer"
+          "$ref": "#/$defs/CapSetting",
+          "description": "1 up to the fleet cap; a number above its machine's cap counts as the machine's cap. \"auto\": its machine's cap."
         },
         "pauseExtras": {
           "description": "Lowering: tell the agents above the new max to push their work in progress and wait; they resume when a slot\nfrees. Without it they finish their current work.",
@@ -846,6 +868,19 @@
         "maxAgents"
       ],
       "type": "object"
+    },
+    "CapSetting": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AutoLiteral"
+        },
+        {
+          "maximum": 1000,
+          "minimum": 1,
+          "type": "integer"
+        }
+      ],
+      "description": "A cap as a person sets it (`cap_set`): a number, or `\"auto\"` to clear their setting."
     },
     "Category": {
       "description": "Which color a span gets in every view, and which breakdown row it adds to.",
@@ -3721,6 +3756,18 @@
         "nodeVersion"
       ],
       "type": "object"
+    },
+    "MachineCapSource": {
+      "description": "What sets a machine's cap: a person (`set`), or the term of `auto` that binds. `unknown`: a node too old to\nreport its memory, capped at 4 until it is updated; `unmeasured`: its node hasn't reported yet; `top`: the 64\nthat auto never goes above. Disk is not a cap: it is `diskRoom`.",
+      "enum": [
+        "memory",
+        "cpu",
+        "top",
+        "unknown",
+        "unmeasured",
+        "set"
+      ],
+      "type": "string"
     },
     "MachineId": {
       "description": "Machine slug, [a-z0-9-]{1,32}",
@@ -7528,8 +7575,17 @@
           "minimum": 0,
           "type": "integer"
         },
+        "set": {
+          "default": false,
+          "description": "A person set `cap` (`cap_set` with `machine`, `fleetd machine set`); false: `cap` is `auto`.",
+          "type": "boolean"
+        },
+        "source": {
+          "$ref": "#/$defs/MachineCapSource",
+          "description": "What sets `cap`; absent from older hubs."
+        },
         "why": {
-          "description": "The term that sets `auto`, e.g. \"memory 18 GB\" or \"14 of 16 CPUs\".",
+          "description": "The term that sets `auto`, e.g. \"memory 18 GB\" or \"14 of 16 CPUs\"; \"memory unknown\" for a node too old to\nreport its memory, capped at 4.",
           "maxLength": 200,
           "minLength": 1,
           "type": "string"
@@ -7547,7 +7603,7 @@
     "SlotStatePerProject": {
       "properties": {
         "maxAgents": {
-          "description": "The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead is not\none. Its machine's `cap` until set.",
+          "description": "The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead is not\none. Its machine's `cap` until set, and never above it: a setting above what the machine runs shows as the\nmachine's cap.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
@@ -7566,6 +7622,11 @@
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
+        },
+        "set": {
+          "default": false,
+          "description": "A person set the project's max agents; false: auto, its machine's cap.",
+          "type": "boolean"
         }
       },
       "required": [

@@ -8,6 +8,7 @@
 //!
 //! Disk is room, not a cap: the new agents its free space takes above the guard's floor, 5 GB each (`diskPerAgentGb`).
 use fleetd_contracts::node_link::NodeLoad;
+use fleetd_contracts::tasks::MachineCapSource;
 
 const GIB: i64 = 1 << 30;
 /// The most agents a machine runs at once on its own measure; a person may set more.
@@ -17,6 +18,8 @@ const UNKNOWN_MEM_TERM: i64 = 4;
 /// A machine whose node has reported nothing yet: as many as an older node's memory term allows.
 pub const UNMEASURED: i64 = UNKNOWN_MEM_TERM;
 pub const UNMEASURED_WHY: &str = "not measured yet";
+/// The memory term's reason for a node too old to report its memory.
+pub const MEMORY_UNKNOWN_WHY: &str = "memory unknown";
 /// The node applies its own default; these stand in for an older node that sends none. node.json speaks in decimal GB.
 const MEM_PER_AGENT: i64 = 2_000_000_000;
 const DISK_PER_AGENT: i64 = 5_000_000_000;
@@ -49,7 +52,7 @@ pub fn auto_cap(load: &NodeLoad) -> Auto {
             let term = (((total as f64 - reserve).max(0.0) / per_agent_gb).floor() as i64).max(1);
             (term, format!("memory {total} GB"))
         }
-        None => (UNKNOWN_MEM_TERM, "memory unknown".to_owned()),
+        None => (UNKNOWN_MEM_TERM, MEMORY_UNKNOWN_WHY.to_owned()),
     };
     // Memory first on a tie: it is the term a person can act on, and the one that fails when overrun.
     let (cap, why) = if mem_term <= cpu_term {
@@ -64,6 +67,21 @@ pub fn auto_cap(load: &NodeLoad) -> Auto {
         };
     }
     Auto { cap, why }
+}
+
+/// The term an [`Auto`]'s `why` names, as the slot state's `source` says it.
+pub fn source(why: &str) -> MachineCapSource {
+    if why == MEMORY_UNKNOWN_WHY {
+        MachineCapSource::Unknown
+    } else if why == UNMEASURED_WHY {
+        MachineCapSource::Unmeasured
+    } else if why.starts_with("memory ") {
+        MachineCapSource::Memory
+    } else if why.starts_with("top of ") {
+        MachineCapSource::Top
+    } else {
+        MachineCapSource::Cpu
+    }
 }
 
 /// New agents the machine's free disk takes above the floor, before counting the ones started in the last 10
@@ -146,6 +164,20 @@ mod tests {
     fn an_older_node_without_memory_counts_four() {
         assert_eq!(auto_cap(&machine(16, None)), auto(4, "memory unknown"));
         assert_eq!(auto_cap(&machine(2, None)), auto(1, "1 of 2 CPUs"));
+        // The slot state names it, so status and doctor can say to update the node.
+        assert_eq!(
+            source(&auto_cap(&machine(16, None)).why),
+            MachineCapSource::Unknown
+        );
+    }
+
+    #[test]
+    fn each_reason_has_its_source() {
+        let of = |cpus, mem| source(&auto_cap(&machine(cpus, mem)).why);
+        assert_eq!(of(12, Some(18)), MachineCapSource::Memory);
+        assert_eq!(of(32, Some(128)), MachineCapSource::Cpu);
+        assert_eq!(of(128, Some(512)), MachineCapSource::Top);
+        assert_eq!(source(UNMEASURED_WHY), MachineCapSource::Unmeasured);
     }
 
     #[test]

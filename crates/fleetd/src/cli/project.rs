@@ -26,10 +26,11 @@ pub const PROJECT_USAGE: &str =
              and the chat says what stopped
   project remove <machine>/<project> [--yes] [--home <dir>] [--hub <url>]
              stop its agents and forget it; its files, branches and worktrees stay
-  project set <machine>/<project> --max-agents <n> [--pause-extras] [--home <dir>] [--hub <url>]
-  project set --fleet-cap <n> [--home <dir>] [--hub <url>]
-             the most agents the project runs at once (its lead not counted), or the
-             fleet's cap on running agents (admin key); more wait queued and start as
+  project set <machine>/<project> --max-agents <n>|auto [--pause-extras] [--home <dir>] [--hub <url>]
+  project set --fleet-cap <n>|auto [--home <dir>] [--hub <url>]
+             the most agents the project runs at once (its lead not counted; auto: its
+             machine's cap, never above it), or the fleet's cap on running agents (admin
+             key; auto: none beyond the machines' caps); more wait queued and start as
              slots free. Lowering stops nothing; --pause-extras has the newest agents
              above the new max push their work and wait
   project set <machine>/<project> --medium on|off [--home <dir>] [--hub <url>]
@@ -403,15 +404,23 @@ async fn remove(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(
     Ok(())
 }
 
-fn count_of(v: &args::Parsed, name: &str) -> Result<Option<u32>, Stop> {
+/// `--<name> <n>|auto` as `cap_set` takes it: a number from 1 to 1000, or "auto".
+pub fn setting_of(v: &args::Parsed, name: &str) -> Result<Option<Value>, String> {
     v.str(name)
-        .map(|n| {
-            n.parse::<u32>()
+        .map(|n| match n {
+            "auto" => Ok(json!("auto")),
+            n => n
+                .parse::<u32>()
                 .ok()
                 .filter(|n| (1..=1000).contains(n))
-                .ok_or_else(|| Stop(2, format!("--{name} takes a number from 1 to 1000"), None))
+                .map(|n| json!(n))
+                .ok_or_else(|| format!("--{name} takes a number from 1 to 1000, or auto")),
         })
         .transpose()
+}
+
+fn count_of(v: &args::Parsed, name: &str) -> Result<Option<Value>, Stop> {
+    setting_of(v, name).map_err(|message| Stop(2, message, None))
 }
 
 async fn set(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(), Stop> {
@@ -443,7 +452,7 @@ async fn set(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(), 
         }
     }
     let mut input = json!({});
-    if let Some(cap) = fleet_cap {
+    if let Some(cap) = &fleet_cap {
         input["cap"] = json!(cap);
     }
     match (v.positionals.first(), max_agents) {

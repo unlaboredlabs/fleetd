@@ -154,7 +154,7 @@ export async function m5Tasks(lab: Lab) {
     check(capped.slots?.cap === 1, `cap_set 1: ${JSON.stringify(capped)}`);
     const reader = spawnTask({ workstreamId, title: "say ok", kind: "read", prompt: "Reply with the single word OK." });
     const readerTask = await task(reader.taskId);
-    check(readerTask.state === "queued" && /^slots: \d+\/1 in use/u.test(readerTask.queuedReason ?? ""), `the read task queued on the cap: ${JSON.stringify(readerTask)}`);
+    check(readerTask.state === "queued" && /^fleet cap: \d+ of 1 running/u.test(readerTask.queuedReason ?? ""), `the read task queued on the cap: ${JSON.stringify(readerTask)}`);
     ok(`2. cap set to 1; ${reader.taskId} queued: ${readerTask.queuedReason}`);
     const status = (await callTool("fleetd_status")).body.slots;
     check(status?.cap === 1 && status.queued >= 1, `fleetd_status shows the board: ${JSON.stringify(status)}`);
@@ -187,7 +187,9 @@ export async function m5Tasks(lab: Lab) {
     const readerStarted = await taskEvent(`task.started ${reader.taskId}`, t1Started.cursor, "task.started", reader.taskId);
     check(readerStarted.event.seq > t1Done.event.seq, `${reader.taskId} started (seq ${readerStarted.event.seq}) after T1 ended (seq ${t1Done.event.seq})`);
     ok(`2. ${reader.taskId} started only after T1's turn ended (seq ${readerStarted.event.seq} > ${t1Done.event.seq})`);
-    await admin("cap_set", { cap: 40 });
+    // Unset again, as it was before the lab: the machines' own caps are the limit.
+    const unset = (await admin("cap_set", { cap: "auto" })).body;
+    check(unset.slots?.fleetCap === undefined, `cap_set auto unsets the fleet cap: ${JSON.stringify(unset.slots)}`);
 
     // Every task ends, then the lead's wakes for them: each wake fires within WAKE_MAX_WAIT (60 s) of its trigger.
     let after = afterWake;
@@ -225,7 +227,7 @@ export async function m5Tasks(lab: Lab) {
     const total = await countLeadTurns();
     ok(`M5 used ${total} lead turns + 4 task turns = ${total + 4} claude turns (${MODEL}, tasks on medium)`);
   } finally {
-    await admin("cap_set", { cap: 40 }).catch(() => undefined);
+    await admin("cap_set", { cap: "auto" }).catch(() => undefined);
     await adminClient.close().catch(() => undefined);
   }
 }

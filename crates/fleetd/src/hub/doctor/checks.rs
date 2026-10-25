@@ -687,9 +687,52 @@ pub fn disk_space(
     machine_entry(machine_id, "disk", Warn, &message, None)
 }
 
+/// A node too old to report its memory gets an agent cap of 4 (the slot board's sizing), where the fleet's default
+/// used to be 40: updating it sizes the cap to the machine.
+pub fn memory_reported(machine_id: &str, reported: Option<bool>) -> Entry {
+    match reported {
+        None => machine_entry(
+            machine_id,
+            "memory",
+            Unknown,
+            &format!("{machine_id}'s node hasn't reported since the hub started."),
+            None,
+        ),
+        Some(true) => machine_entry(
+            machine_id,
+            "memory",
+            Pass,
+            &format!("{machine_id}'s node reports its memory; its agent cap is sized to it."),
+            None,
+        ),
+        Some(false) => machine_entry(
+            machine_id,
+            "memory",
+            Warn,
+            &format!(
+                "{machine_id}'s node is too old to report its memory, so it runs at most 4 agents at once."
+            ),
+            Some(manual(
+                &format!("Run `fleetd update` on {machine_id}"),
+                Some("fleetd update".to_owned()),
+            )),
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_node_too_old_to_report_memory_warns_with_the_update_fix() {
+        let old = memory_reported("mbp", Some(false)).check;
+        assert_eq!(old.status, Warn);
+        assert!(old.message.contains("at most 4 agents"), "{}", old.message);
+        assert_eq!(old.fix.unwrap().command.as_deref(), Some("fleetd update"));
+        assert_eq!(memory_reported("mbp", Some(true)).check.status, Pass);
+        assert_eq!(memory_reported("mbp", None).check.status, Unknown);
+    }
 
     #[test]
     fn a_repo_with_no_ci_fails_with_the_add_ci_fix() {

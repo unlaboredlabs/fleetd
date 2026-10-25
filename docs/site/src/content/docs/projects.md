@@ -95,9 +95,13 @@ whole fleet. The hub enforces all of them; the lead plans to them.
 
 | Cap | Counts | Default | Set it |
 |---|---|---|---|
-| Per machine | Every project's agents on the machine. Not the leads. | What it fits: one per CPU less one in eight, and 2 GB of memory each after a quarter of it (4 to 16 GB) is left for the system, at most 64. An 8 GB laptop fits 2, a 32 GB one 12. | node.json's `memPerAgentGb` changes the 2 GB. |
-| Per project: Max agents | The project's agents: writers, readers, reviewers. Not the lead. | Its machine's cap | Click "agents 6 / 12" in the project's chat header, or use Settings → Agents. |
-| Fleet-wide | Every project's agents together. Not the leads. | None: the machines' caps added up | Settings → Agents → Whole fleet. Needs an admin key. A fleet cap saved before stays until you change it. |
+| Per machine | Every project's agents on the machine. Not the leads. | What it fits: one per CPU less one in eight, and 2 GB of memory each after a quarter of it (4 to 16 GB) is left for the system, at most 64. An 8 GB laptop fits 2, a 32 GB one 12. | `fleetd machine set <machine> --max-agents <n>`, which may go above what it fits; `auto` goes back. node.json's `memPerAgentGb` changes the 2 GB. |
+| Per project: Max agents | The project's agents: writers, readers, reviewers. Not the lead. | Its machine's cap. A higher setting counts as the machine's cap. | Click "agents 6 / 12" in the project's chat header, or use Settings → Agents. `auto` goes back to the machine's cap. |
+| Fleet-wide | Every project's agents together. Not the leads. | None: the machines' caps added up | Settings → Agents → Whole fleet. Needs an admin key. A fleet cap saved before stays until you set it back to `auto`. |
+
+A node too old to report its memory runs at most **4** agents at once, where the fleet's default used to be 40.
+`fleetd status` and `fleetd doctor` say so: "node too old to report memory: capped at 4; run `fleetd update` on it".
+Update it, or set the machine's cap by hand. `fleetd status` lists each machine's cap and what sets it.
 
 New agents on a machine also wait for disk: 5 GB each (`diskPerAgentGb`) above the free-space floor, with agents started
 in the last 10 minutes still counted, since their worktrees haven't grown yet. The lead's state line names what sets
@@ -116,11 +120,14 @@ From a terminal:
 ```sh
 fleetd project set devbox/storefront --max-agents 3
 fleetd project set devbox/storefront --max-agents 2 --pause-extras
-fleetd project set --fleet-cap 20        # needs an admin key
+fleetd project set devbox/storefront --max-agents auto   # its machine's cap
+fleetd machine set devbox --max-agents 10                # or auto: what it fits
+fleetd project set --fleet-cap 20        # needs an admin key; auto unsets it
 ```
 
-From an [MCP client](/docs/mcp-clients): `cap_set {project: {projectRef, maxAgents, pauseExtras?}}` with an operate
-key, or `cap_set {cap}` for the fleet cap with an admin key.
+From an [MCP client](/docs/mcp-clients): `cap_set {project: {projectRef, maxAgents, pauseExtras?}}` or
+`cap_set {machine: {machineId, maxAgents}}` with an operate key, or `cap_set {cap}` for the fleet cap with an admin
+key. Each takes a number or `"auto"`.
 
 When the cap is reached:
 

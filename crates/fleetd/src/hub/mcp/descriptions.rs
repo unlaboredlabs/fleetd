@@ -110,7 +110,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "cap_set",
-        "Set the fleet cap on running agents (1-1000, admin key) and/or one project's max agents (1 up to the fleet cap). Applies at once; queued agents start as soon as they fit. Returns the slot board.",
+        "Set the fleet cap on running agents (cap, admin key), one machine's cap (machine) and/or one project's max agents (project, never above its machine's cap): each a number 1-1000, or \"auto\" to clear it (the fleet: the machines' caps added up; a machine: what it fits; a project: its machine's cap). Applies at once; queued agents start as soon as they fit. Returns the slot board.",
     ),
     (
         "usage_status",
@@ -126,7 +126,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "doctor_list",
-        "The doctor: every setup check with status (ok, warn, fail, unknown), a plain message and its fix. Hub: reachable, gh logged in, claude login, HTTPS. Each machine: online/degraded/offline, claude in the supported version range, claude logged in, the runner's conformance, commit identity, at least 5 GB free, usage breaker. Results are from the last run (every 15 min); rerun: true runs them now.",
+        "The doctor: every setup check with status (ok, warn, fail, unknown), a plain message and its fix. Hub: reachable, gh logged in, claude login, HTTPS. Each machine: online/degraded/offline, claude in the supported version range, claude logged in, the runner's conformance, commit identity, at least 5 GB free, the node reports its memory (an older one runs at most 4 agents), usage breaker. Results are from the last run (every 15 min); rerun: true runs them now.",
     ),
     (
         "doctor_fix",

@@ -918,6 +918,18 @@
       ],
       "type": "object"
     },
+    "MachineCapSource": {
+      "description": "What sets a machine's cap: a person (`set`), or the term of `auto` that binds. `unknown`: a node too old to\nreport its memory, capped at 4 until it is updated; `unmeasured`: its node hasn't reported yet; `top`: the 64\nthat auto never goes above. Disk is not a cap: it is `diskRoom`.",
+      "enum": [
+        "memory",
+        "cpu",
+        "top",
+        "unknown",
+        "unmeasured",
+        "set"
+      ],
+      "type": "string"
+    },
     "MachineId": {
       "description": "Machine slug, [a-z0-9-]{1,32}",
       "pattern": "^[a-z0-9-]{1,32}$",
@@ -1275,8 +1287,17 @@
           "minimum": 0,
           "type": "integer"
         },
+        "set": {
+          "default": false,
+          "description": "A person set `cap` (`cap_set` with `machine`, `fleetd machine set`); false: `cap` is `auto`.",
+          "type": "boolean"
+        },
+        "source": {
+          "$ref": "#/$defs/MachineCapSource",
+          "description": "What sets `cap`; absent from older hubs."
+        },
         "why": {
-          "description": "The term that sets `auto`, e.g. \"memory 18 GB\" or \"14 of 16 CPUs\".",
+          "description": "The term that sets `auto`, e.g. \"memory 18 GB\" or \"14 of 16 CPUs\"; \"memory unknown\" for a node too old to\nreport its memory, capped at 4.",
           "maxLength": 200,
           "minLength": 1,
           "type": "string"
@@ -1294,7 +1315,7 @@
     "SlotStatePerProject": {
       "properties": {
         "maxAgents": {
-          "description": "The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead is not\none. Its machine's `cap` until set.",
+          "description": "The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead is not\none. Its machine's `cap` until set, and never above it: a setting above what the machine runs shows as the\nmachine's cap.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
@@ -1313,6 +1334,11 @@
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
+        },
+        "set": {
+          "default": false,
+          "description": "A person set the project's max agents; false: auto, its machine's cap.",
+          "type": "boolean"
         }
       },
       "required": [

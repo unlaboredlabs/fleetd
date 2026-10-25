@@ -256,6 +256,11 @@ impl DoctorFleet for OpsPorts {
         let link = &self.hub().link;
         (link.load(&m).and_then(|l| l.disk), link.paused(&m))
     }
+    fn memory_reported(&self, machine_id: &str) -> Option<bool> {
+        let m = machine(machine_id)?;
+        let load = self.hub().link.load(&m)?;
+        Some(load.mem_total_bytes.is_some())
+    }
     fn repos_without_ci(&self) -> Vec<String> {
         self.hub().train.repos_without_ci()
     }
