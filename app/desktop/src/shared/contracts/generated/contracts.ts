@@ -4735,19 +4735,27 @@ export type TrainState = {
 
 export type UploadId = string;
 
-/** Open: no new turns start on the machine's login until `until` or usage_resume. */
+/**
+ * Open: no new turns start on the machine's login until `until`, a check or another turn on the login succeeds,
+ * or usage_resume.
+ */
 export type UsageBreaker = {
+  /** No reset named: when fleetd next sends one parked thread "continue" to see whether the login has capacity. */
+  checkAt?: Timestamp;
   class?: UsageClass;
   /** The plain notice, as the usage.breaker event said it. */
   message?: string;
+  /** A proxy in front of the login decided the limit. */
+  proxy?: boolean;
   since?: Timestamp;
   state: BreakerState;
-  /** Absent while open means until usage_resume. */
+  /** The reset the limits named. Absent while open: `check_at`, else until usage_resume (pool_exhausted). */
   until?: Timestamp;
 };
 
 /**
- * What stopped a turn. `usage_limit`: the plan's usage limit or a proxy cooldown, with a reset. `rate_limit`: a 429.
+ * What stopped a turn. `usage_limit`: the plan's usage limit or a proxy's quota cooldown. `rate_limit`: a 429, or a
+ * proxy resting its credentials after one.
  * `pool_exhausted`: the user's proxy has no account for the model; it waits for usage_resume.
  */
 export type UsageClass = "usage_limit" | "rate_limit" | "pool_exhausted";
@@ -4756,11 +4764,23 @@ export type UsageClass = "usage_limit" | "rate_limit" | "pool_exhausted";
 export type UsageEventData = {
   /** usage.resumed: the breaker was open and is now closed. */
   breakerCleared?: boolean;
-  /** usage.resumed: "reset", or who ran usage_resume. */
+  /**
+   * usage.resumed: "reset", "check" (fleetd tried one parked thread), "turn" (a turn on the login succeeded), or
+   * who ran usage_resume.
+   */
   by?: string;
+  /**
+   * usage.resumed: a check of an open breaker; the one thread listed is the one tried, and the breaker stays open
+   * until it gets through.
+   */
+  check?: boolean;
+  /** usage.breaker: no reset named, so fleetd checks the login at this time. */
+  checkAt?: Timestamp;
   class?: UsageClass;
   model?: string;
   parked?: ParkedCounts;
+  /** usage.breaker: a proxy in front of the login decided the limit. */
+  proxy?: boolean;
   /** usage.resumed: the threads sent "continue", in the order they were sent. */
   threads?: UsageEventThread[];
   until?: Timestamp;
@@ -4772,10 +4792,20 @@ export type UsageEventThread = {
   threadId: string;
 };
 
-/** A task or lead whose thread hit a limit; fleetd sends it one "continue" at `resume_at`. */
+/**
+ * A task or lead whose thread hit a limit; fleetd sends it one "continue" at `resume_at`, or at `check_at` to see
+ * whether the login has capacity again, or as soon as another turn on the login succeeds.
+ */
 export type UsageParked = {
+  /** A limit that named no reset: when fleetd next tries the thread, 1, 2, 5, 10 and then every 15 minutes. */
+  checkAt?: Timestamp;
   class: UsageClass;
-  /** Absent for pool_exhausted: it resumes on usage_resume. */
+  /** A proxy in front of the login decided the limit (its credentials for the model are cooling down). */
+  proxy?: boolean;
+  /**
+   * The reset the limit's message named. Absent when it named none (see `check_at`), and for pool_exhausted,
+   * which resumes on usage_resume.
+   */
   resumeAt?: Timestamp;
   since: Timestamp;
 };

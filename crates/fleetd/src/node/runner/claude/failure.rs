@@ -9,7 +9,7 @@ use fleetd_contracts::prim::Text;
 use fleetd_contracts::sessions::{FailureClass, RunFailure};
 use regex::Regex;
 
-use crate::node::runner::{ExitInfo, FALLBACK_RATE_LIMIT_MS, FALLBACK_USAGE_LIMIT_MS, RateLimit};
+use crate::node::runner::{ExitInfo, RateLimit};
 
 /// What claude left behind for one failed run.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -80,6 +80,10 @@ static NO_ACCOUNT: LazyLock<Regex> =
     LazyLock::new(|| re(r"(?i)no available account|no auth available|auth_unavailable"));
 // CLIProxyAPI: every credential for the model is cooling down; it says when in reset_seconds.
 static COOLDOWN: LazyLock<Regex> = LazyLock::new(|| re(r"(?i)model_cooldown|are cooling down"));
+// "All credentials for model claude-opus-5-5 are cooling down", in its JSON body or as claude shows it.
+static COOLDOWN_MODEL: LazyLock<Regex> = LazyLock::new(|| {
+    re(r#"(?i)credentials for model\s+["']?([^\s"'\\,}]+)["']?\s+are cooling down"#)
+});
 static RESET_SECONDS: LazyLock<Regex> = LazyLock::new(|| re(r#""reset_seconds"\s*:\s*(\d+)"#));
 static RATE: LazyLock<Regex> =
     LazyLock::new(|| re(r"(?i)rate[ _-]?limit|\[429\]|\b(?:api error|status|error)\W{0,3}429\b"));
@@ -117,9 +121,11 @@ static CONTEXT_FULL: LazyLock<Regex> = LazyLock::new(|| {
 struct TextLimit {
     /// UsageLimit, RateLimit or PoolExhausted.
     class: FailureClass,
-    /// Epoch ms to continue at; absent for PoolExhausted, which waits for a person (`usage_resume`).
+    /// Epoch ms to continue at; absent when the text says none (the hub then checks the login on a backoff) and for
+    /// PoolExhausted, which waits for a person (`usage_resume`).
     reset_ms: Option<i64>,
-    /// The model a gateway named (PoolExhausted's "unknown provider for model X").
+    /// The model a gateway named: PoolExhausted's "unknown provider for model X", a cooldown's "credentials for
+    /// model X".
     model: Option<String>,
 }
 
@@ -140,7 +146,7 @@ fn text_limit(text: &str, at_ms: i64) -> Option<TextLimit> {
     };
     Some(TextLimit {
         class,
-        reset_ms: Some(reset_ms(text, None, at_ms, class)),
+        reset_ms: reset_ms(text, None, at_ms),
         model: None,
     })
 }
@@ -160,26 +166,31 @@ fn gateway_limit(text: &str, at_ms: i64) -> Option<TextLimit> {
             model: None,
         });
     }
-    COOLDOWN.is_match(text).then(|| TextLimit {
-        class: FailureClass::UsageLimit,
-        reset_ms: Some(reset_ms(text, None, at_ms, FailureClass::UsageLimit)),
-        model: None,
-    })
-}
-
-fn fallback_ms(class: FailureClass) -> i64 {
-    match class {
-        FailureClass::RateLimit => FALLBACK_RATE_LIMIT_MS,
-        _ => FALLBACK_USAGE_LIMIT_MS,
+    // A cooldown with its reset_seconds is the account's quota; one without (claude shows only "All credentials for
+    // model X are cooling down (last error: rate_limit_error …)") is the proxy resting its credentials after a 429,
+    // usually for a minute or two.
+    if !COOLDOWN.is_match(text) {
+        return None;
     }
+    let reset_ms = reset_ms(text, None, at_ms);
+    Some(TextLimit {
+        class: if reset_ms.is_some() {
+            FailureClass::UsageLimit
+        } else {
+            FailureClass::RateLimit
+        },
+        reset_ms,
+        model: COOLDOWN_MODEL.captures(text).map(|c| c[1].to_owned()),
+    })
 }
 
 /// A reset further out than this is a garbled number, not a plan: cap it rather than park for years.
 const MAX_RESET_MS: i64 = 31 * 24 * 60 * 60_000;
 
-/// The first reset that lies after `at_ms`: the structured one, then the texts, then the class's fallback. Text
-/// numbers saturate and the result is capped at [`MAX_RESET_MS`] out, so no gateway text can overflow it.
-fn reset_ms(text: &str, structured_ms: Option<i64>, at_ms: i64, class: FailureClass) -> i64 {
+/// The first reset that lies after `at_ms`: the structured one, then the texts; `None` when none says, which the hub
+/// answers by checking the login on a backoff rather than guessing an hour. Text numbers saturate and the result is
+/// capped at [`MAX_RESET_MS`] out, so no gateway text can overflow it.
+fn reset_ms(text: &str, structured_ms: Option<i64>, at_ms: i64) -> Option<i64> {
     let after = |ms: Option<i64>| ms.filter(|ms| *ms > at_ms);
     let num = |c: &regex::Captures, i: usize| {
         c.get(i)
@@ -204,9 +215,8 @@ fn reset_ms(text: &str, structured_ms: Option<i64>, at_ms: i64, class: FailureCl
                 .map(|s| at_ms.saturating_add(s.saturating_mul(1000)))
         })
         .or_else(|| (span_ms > 0).then_some(at_ms.saturating_add(span_ms)))
-        .or_else(|| clock_reset_ms(text, at_ms))
-        .unwrap_or(at_ms + fallback_ms(class));
-    reset.min(at_ms.saturating_add(MAX_RESET_MS))
+        .or_else(|| clock_reset_ms(text, at_ms));
+    reset.map(|r| r.min(at_ms.saturating_add(MAX_RESET_MS)))
 }
 
 /// "resets 4pm (UTC)": the next such wall-clock time in that zone after `at_ms`.
@@ -261,14 +271,23 @@ pub fn classify(evidence: &FailureEvidence) -> Option<RunFailure> {
     let message = loud_message(&e.text, stderr, e.exit.as_ref());
     Some(RunFailure {
         class,
-        model: (class == FailureClass::PoolExhausted)
-            .then(|| gateway_model(message.as_str()))
-            .flatten(),
+        model: gateway_model_of(class, message.as_str()),
         message,
         api_status: e.api_error_status,
         reset_at: reset.map(timestamp),
         retries: 0,
     })
+}
+
+/// The model a gateway named in the failure: the one it has no account for, or the one whose credentials cool down.
+fn gateway_model_of(class: FailureClass, message: &str) -> Option<String> {
+    match class {
+        FailureClass::PoolExhausted => gateway_model(message),
+        FailureClass::UsageLimit | FailureClass::RateLimit if COOLDOWN.is_match(message) => {
+            COOLDOWN_MODEL.captures(message).map(|c| c[1].to_owned())
+        }
+        _ => None,
+    }
 }
 
 fn decide(e: &FailureEvidence, stderr: &str) -> (FailureClass, Option<i64>) {
@@ -305,19 +324,19 @@ fn decide(e: &FailureEvidence, stderr: &str) -> (FailureClass, Option<i64>) {
         .map(|r| r.resets_at.map(|s| s.saturating_mul(1000)));
     let limited = error == Some("rate_limit") || status == Some(429);
     if let Some(resets_at) = rejected.filter(|_| limited || reason == Some("blocking_limit")) {
-        return (UsageLimit, Some(reset_ms(text, resets_at, now, UsageLimit)));
+        return (UsageLimit, reset_ms(text, resets_at, now));
     }
     let plan_text = USAGE_LIMIT_ERROR_PREFIXES
         .iter()
         .any(|p| text.trim_start().starts_with(p));
     if reason == Some("blocking_limit") || (error == Some("rate_limit") && plan_text) {
-        return (UsageLimit, Some(reset_ms(text, None, now, UsageLimit)));
+        return (UsageLimit, reset_ms(text, None, now));
     }
     if let Some(limit) = text_limit(text, now) {
         return (limit.class, limit.reset_ms);
     }
     if limited || reason == Some("rapid_refill_breaker") {
-        return (RateLimit, Some(reset_ms(text, None, now, RateLimit)));
+        return (RateLimit, reset_ms(text, None, now));
     }
     let server = matches!(error, Some("overloaded" | "server_error"));
     if error == Some("overloaded")
@@ -501,7 +520,11 @@ mod tests {
     fn evidence(fixture: &str) -> FailureEvidence {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("src/node/runner/fixtures")
-            .join(format!("claude-2.1.302-{fixture}.jsonl"));
+            .join(if fixture.ends_with(".jsonl") {
+                fixture.to_owned()
+            } else {
+                format!("claude-2.1.302-{fixture}.jsonl")
+            });
         let mut e = FailureEvidence {
             now_ms: NOW as u64,
             ..Default::default()
@@ -596,7 +619,7 @@ mod tests {
     }
 
     #[test]
-    fn usage_limit_without_the_event_reads_the_plan_text_then_falls_back() {
+    fn usage_limit_without_the_event_reads_the_plan_text_or_names_no_reset() {
         let mut e = evidence("usage-limit-subscription.documented");
         e.rate_limit = None;
         let f = classify(&e).unwrap();
@@ -605,13 +628,10 @@ mod tests {
             (UsageLimit, "2026-10-18T16:00:00.000Z".into())
         );
 
-        // A prefix with no reset at all: +60 min.
+        // A prefix with no reset at all: none, never a made-up hour; the hub checks the login instead.
         e.text = "You're out of extra usage".into();
         let f = classify(&e).unwrap();
-        assert_eq!(
-            (f.class, f.reset_at.unwrap().0),
-            (UsageLimit, iso(NOW + 60 * MIN))
-        );
+        assert_eq!((f.class, f.reset_at), (UsageLimit, None));
 
         // An event already past is stale: the text decides.
         e.text = "You've hit your limit · resets 4pm (UTC)".into();
@@ -676,16 +696,46 @@ mod tests {
     }
 
     #[test]
-    fn request_rate_limits_park_five_minutes() {
+    fn request_rate_limits_name_no_reset() {
         for fixture in ["rate-limit-429", "usage-429-api-key"] {
             let f = classify(&evidence(fixture)).unwrap();
             assert_eq!(f.class, RateLimit, "{fixture}");
-            assert_eq!(f.reset_at.unwrap().0, iso(NOW + 5 * MIN), "{fixture}");
+            assert_eq!((f.reset_at, f.model), (None, None), "{fixture}");
             assert!(
                 f.message.starts_with("API Error: Request rejected (429)"),
                 "{fixture}"
             );
         }
+    }
+
+    /// forge, 2026-10-25 22:40 UTC: every agent behind its CLIProxyAPI gateway failed with this one text. It names
+    /// no reset, so main's made-up hour parked them all until 23:40; it is the proxy resting its credentials after
+    /// a 429, so the hub checks again from a minute on, and says the proxy did it.
+    #[test]
+    fn forges_proxy_cooldown_names_no_reset_and_its_model() {
+        let e = evidence("claude-2.1.310-proxy-cooldown-429.jsonl");
+        assert_eq!(
+            (e.assistant_error.as_deref(), e.api_error_status),
+            (Some("rate_limit"), Some(429))
+        );
+        let f = classify(&e).unwrap();
+        assert_eq!(
+            f.message.as_str(),
+            "API Error: Request rejected (429) · All credentials for model claude-opus-5-5 are cooling down (last \
+             error: rate_limit_error: This request would exceed your account's rate limit. Please try again later.)"
+        );
+        assert_eq!(
+            (f.class, f.reset_at, f.model.as_deref()),
+            (RateLimit, None, Some("claude-opus-5-5"))
+        );
+        // Its JSON form with reset_seconds is the account's quota, and parks until then.
+        let mut e = e;
+        e.text = r#"API Error: 429 {"error":{"code":"model_cooldown","message":"All credentials for model claude-opus-5-5 are cooling down","reset_seconds":90}}"#.into();
+        let f = classify(&e).unwrap();
+        assert_eq!(
+            (f.class, f.reset_at.unwrap().0, f.model.as_deref()),
+            (UsageLimit, iso(NOW + 90_000), Some("claude-opus-5-5"))
+        );
     }
 
     #[test]
@@ -874,7 +924,7 @@ mod tests {
         assert!(!retryable(Other));
     }
 
-    /// The hub's limit.rs table, unchanged by the move (gateway texts, cooldown, the CLI's epoch suffix).
+    /// The hub's limit.rs table (gateway texts, cooldown, the CLI's epoch suffix); a text with no reset names none.
     #[test]
     fn the_moved_text_rules_keep_their_answers() {
         let at = NOW;
@@ -888,7 +938,7 @@ mod tests {
         let table: Vec<(&str, Option<TextLimit>)> = vec![
             (
                 "Claude usage limit reached. Send the message again once the limit resets.",
-                limit(UsageLimit, Some(at + 60 * MIN), None),
+                limit(UsageLimit, None, None),
             ),
             (
                 "Claude AI usage limit reached|1792483200",
@@ -896,11 +946,11 @@ mod tests {
             ),
             (
                 "Claude API rate limit reached. Try again later.",
-                limit(RateLimit, Some(at + 5 * MIN), None),
+                limit(RateLimit, None, None),
             ),
             (
                 r#"API Error: 429 {"type":"error","error":{"type":"rate_limit_error","message":"Number of request tokens has exceeded your per-minute rate limit"}}"#,
-                limit(RateLimit, Some(at + 5 * MIN), None),
+                limit(RateLimit, None, None),
             ),
             (
                 r#"API Error: 503 [claude] [429]: {"type":"error","error":{"type":"rate_limit_error","message":"rate limited"}} (reset after 1h30m)"#,
@@ -920,7 +970,7 @@ mod tests {
             ),
             (
                 r#"API Error: 429 {"error":{"code":"model_cooldown","message":"All credentials for model claude-opus-5-5 are cooling down","model":"claude-opus-5-5","reset_time":"1h2m0s","reset_seconds":3720}}"#,
-                limit(UsageLimit, Some(at + 3_720_000), None),
+                limit(UsageLimit, Some(at + 3_720_000), Some("claude-opus-5-5")),
             ),
             ("Claude API is overloaded (529). Try again shortly.", None),
             (

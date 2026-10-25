@@ -595,15 +595,38 @@ fn usage_limit_is_its_own_event_with_the_reset() {
 }
 
 #[test]
-fn a_rate_limit_without_a_reset_waits_five_minutes() {
+fn a_rate_limit_without_a_reset_names_none_and_a_proxys_says_so() {
     let mut state = before_turns();
     let rate = d_failed(
         json!({ "class": "rate_limit", "message": "API Error: Request rejected (429) · slow down" }),
     );
     feed(&updated(11, rate), &mut state, &HashMap::new(), false);
-    let data = limited(&state).data.unwrap();
+    let event = limited(&state);
+    assert!(
+        event
+            .summary
+            .ends_with("hit the usage limit (checking again shortly)")
+    );
+    let data = event.data.unwrap();
     assert_eq!(data["usageClass"], "rate_limit");
-    assert_eq!(data["resumeAt"], "2026-10-17T10:13:00.000Z");
+    assert_eq!(data.get("resumeAt"), None);
+    assert_eq!(data.get("proxy"), None);
+
+    let mut state = before_turns();
+    let cooldown = d_failed(json!({
+        "class": "rate_limit", "model": "claude-opus-5-5",
+        "message": "API Error: Request rejected (429) · All credentials for model claude-opus-5-5 are cooling down",
+    }));
+    feed(&updated(11, cooldown), &mut state, &HashMap::new(), false);
+    let event = limited(&state);
+    assert!(
+        event
+            .summary
+            .ends_with("(rate-limited by your proxy, checking again shortly)"),
+        "{}",
+        event.summary
+    );
+    assert_eq!(event.data.unwrap()["proxy"], true);
 }
 
 #[test]

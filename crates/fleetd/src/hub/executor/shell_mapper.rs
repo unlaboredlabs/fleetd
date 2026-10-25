@@ -699,11 +699,11 @@ pub fn transition_event(t: &Transition, thread: &TrackedThread, machine_id: &str
                 .unwrap_or("the model");
             format!(": your proxy has no account available for {model}")
         } else {
-            limit
-                .resume_at
-                .as_ref()
-                .map(|r| format!(" (resets {r})"))
-                .unwrap_or_default()
+            match (&limit.resume_at, limit.proxy) {
+                (Some(r), _) => format!(" (resets {r})"),
+                (None, true) => " (rate-limited by your proxy, checking again shortly)".to_owned(),
+                (None, false) => " (checking again shortly)".to_owned(),
+            }
         }
     } else if let (EventType::Failed, Some(e)) = (t.kind, &s.last_error) {
         format!(": {}: {}", e.class, e.message)
@@ -714,6 +714,10 @@ pub fn transition_event(t: &Transition, thread: &TrackedThread, machine_id: &str
     };
     let mut data = Map::new();
     data.insert("status".into(), json!(s.status));
+    // The usage layer lifts a limit on a completed turn on the limit's model.
+    if let Some(model) = s.model.as_deref().filter(|m| !m.is_empty()) {
+        data.insert("model".into(), json!(model));
+    }
     if let Some(run) = thread.known_run().filter(|r| !r.is_empty()) {
         data.insert("runId".into(), json!(run));
     }

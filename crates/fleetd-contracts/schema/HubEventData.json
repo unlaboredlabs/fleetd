@@ -2714,7 +2714,7 @@
       "type": "object"
     },
     "UsageClass": {
-      "description": "What stopped a turn. `usage_limit`: the plan's usage limit or a proxy cooldown, with a reset. `rate_limit`: a 429.\n`pool_exhausted`: the user's proxy has no account for the model; it waits for usage_resume.",
+      "description": "What stopped a turn. `usage_limit`: the plan's usage limit or a proxy's quota cooldown. `rate_limit`: a 429, or a\nproxy resting its credentials after one.\n`pool_exhausted`: the user's proxy has no account for the model; it waits for usage_resume.",
       "enum": [
         "usage_limit",
         "rate_limit",
@@ -2730,8 +2730,16 @@
           "type": "boolean"
         },
         "by": {
-          "description": "usage.resumed: \"reset\", or who ran usage_resume.",
+          "description": "usage.resumed: \"reset\", \"check\" (fleetd tried one parked thread), \"turn\" (a turn on the login succeeded), or\nwho ran usage_resume.",
           "type": "string"
+        },
+        "check": {
+          "description": "usage.resumed: a check of an open breaker; the one thread listed is the one tried, and the breaker stays open\nuntil it gets through.",
+          "type": "boolean"
+        },
+        "checkAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "usage.breaker: no reset named, so fleetd checks the login at this time."
         },
         "class": {
           "$ref": "#/$defs/UsageClass"
@@ -2741,6 +2749,10 @@
         },
         "parked": {
           "$ref": "#/$defs/ParkedCounts"
+        },
+        "proxy": {
+          "description": "usage.breaker: a proxy in front of the login decided the limit.",
+          "type": "boolean"
         },
         "threads": {
           "description": "usage.resumed: the threads sent \"continue\", in the order they were sent.",

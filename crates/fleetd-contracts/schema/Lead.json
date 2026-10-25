@@ -79,7 +79,7 @@
       "type": "string"
     },
     "UsageClass": {
-      "description": "What stopped a turn. `usage_limit`: the plan's usage limit or a proxy cooldown, with a reset. `rate_limit`: a 429.\n`pool_exhausted`: the user's proxy has no account for the model; it waits for usage_resume.",
+      "description": "What stopped a turn. `usage_limit`: the plan's usage limit or a proxy's quota cooldown. `rate_limit`: a 429, or a\nproxy resting its credentials after one.\n`pool_exhausted`: the user's proxy has no account for the model; it waits for usage_resume.",
       "enum": [
         "usage_limit",
         "rate_limit",
@@ -88,14 +88,22 @@
       "type": "string"
     },
     "UsageParked": {
-      "description": "A task or lead whose thread hit a limit; fleetd sends it one \"continue\" at `resume_at`.",
+      "description": "A task or lead whose thread hit a limit; fleetd sends it one \"continue\" at `resume_at`, or at `check_at` to see\nwhether the login has capacity again, or as soon as another turn on the login succeeds.",
       "properties": {
+        "checkAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "A limit that named no reset: when fleetd next tries the thread, 1, 2, 5, 10 and then every 15 minutes."
+        },
         "class": {
           "$ref": "#/$defs/UsageClass"
         },
+        "proxy": {
+          "description": "A proxy in front of the login decided the limit (its credentials for the model are cooling down).",
+          "type": "boolean"
+        },
         "resumeAt": {
           "$ref": "#/$defs/Timestamp",
-          "description": "Absent for pool_exhausted: it resumes on usage_resume."
+          "description": "The reset the limit's message named. Absent when it named none (see `check_at`), and for pool_exhausted,\nwhich resumes on usage_resume."
         },
         "since": {
           "$ref": "#/$defs/Timestamp"

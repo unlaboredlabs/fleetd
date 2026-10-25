@@ -6,8 +6,6 @@ use fleetd_contracts::events::{HubEvent, HubEventType};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
-pub use crate::node::runner::{FALLBACK_RATE_LIMIT_MS, FALLBACK_USAGE_LIMIT_MS};
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UsageClass {
@@ -36,40 +34,50 @@ pub struct LimitInput<'a> {
     pub at: &'a str,
     /// The session's model.
     pub model: Option<&'a str>,
-    /// The model the failure names (a gateway with no account for it), which wins over the session's.
+    /// The model the failure names (a gateway with no account for it, or whose credentials cool down), which wins
+    /// over the session's. Only a gateway's words name one, so on a limit it also says a proxy decided it.
     pub failure_model: Option<&'a str>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Limit {
     pub class: UsageClass,
-    /// Absent for pool_exhausted, which waits for usage_resume.
+    /// The reset the node read off the failure. Absent when it named none, which the usage layer answers by
+    /// checking the login on a backoff, and for pool_exhausted, which waits for usage_resume.
     pub resume_at: Option<String>,
     pub model: Option<String>,
+    /// A proxy in front of the login decided it.
+    pub proxy: bool,
 }
 
 /// The limit behind a failure, or None when the node classed it an ordinary failure. A reset that isn't after the
-/// failure falls back to the class's default.
+/// failure counts as none: fleetd never makes one up.
 pub fn classify_limit(input: &LimitInput) -> Option<Limit> {
-    let model = input.model.filter(|m| !m.is_empty()).map(str::to_owned);
-    let (class, fallback_ms) = match input.error_class? {
+    let failure_model = input.failure_model.filter(|m| !m.is_empty());
+    let model = failure_model
+        .or(input.model.filter(|m| !m.is_empty()))
+        .map(str::to_owned);
+    let proxy = failure_model.is_some();
+    let class = match input.error_class? {
         "pool_exhausted" => {
             return Some(Limit {
                 class: UsageClass::PoolExhausted,
                 resume_at: None,
-                model: input.failure_model.map(str::to_owned).or(model),
+                model,
+                proxy,
             });
         }
-        "usage_limit" => (UsageClass::UsageLimit, FALLBACK_USAGE_LIMIT_MS),
-        "rate_limit" => (UsageClass::RateLimit, FALLBACK_RATE_LIMIT_MS),
+        "usage_limit" => UsageClass::UsageLimit,
+        "rate_limit" => UsageClass::RateLimit,
         _ => return None,
     };
     let at_ms = parse_ms(input.at).unwrap_or(0);
     let reset = input.reset_at.and_then(parse_ms).filter(|ms| *ms > at_ms);
     Some(Limit {
         class,
-        resume_at: Some(iso_ms(reset.unwrap_or(at_ms + fallback_ms))),
+        resume_at: reset.map(iso_ms),
         model,
+        proxy,
     })
 }
 
@@ -82,6 +90,9 @@ pub fn limit_data(limit: &Limit) -> Map<String, Value> {
     }
     if let Some(m) = &limit.model {
         data.insert("model".into(), json!(m));
+    }
+    if limit.proxy {
+        data.insert("proxy".into(), json!(true));
     }
     data
 }
@@ -108,6 +119,7 @@ pub fn limit_of_event(event: &HubEvent) -> Option<Limit> {
             class: cls,
             resume_at: str_at(&data, &["resumeAt"]).map(str::to_string),
             model: str_at(&data, &["model"]).map(str::to_string),
+            proxy: data.get("proxy") == Some(&Value::Bool(true)),
         });
     }
     // Events from before M4 carry no usageClass, and were all usage limits.
@@ -127,6 +139,11 @@ pub struct UsageParked {
     pub since: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resume_at: Option<String>,
+    /// No reset named: when the usage layer next tries the thread (it sets this, from the thread's checks so far).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub check_at: Option<String>,
+    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
+    pub proxy: bool,
 }
 
 pub fn parked_of(event: &HubEvent) -> Option<UsageParked> {
@@ -135,6 +152,8 @@ pub fn parked_of(event: &HubEvent) -> Option<UsageParked> {
         class: limit.class,
         since: event.at.to_string(),
         resume_at: limit.resume_at,
+        check_at: None,
+        proxy: limit.proxy,
     })
 }
 
@@ -158,6 +177,7 @@ mod tests {
             class,
             resume_at,
             model: model.map(str::to_string),
+            proxy: false,
         })
     }
 
@@ -190,14 +210,17 @@ mod tests {
         };
         assert_eq!(
             classify_limit(&named),
-            limit(UsageClass::PoolExhausted, None, Some("claude-opus-5-5"))
+            Some(Limit {
+                proxy: true,
+                ..limit(UsageClass::PoolExhausted, None, Some("claude-opus-5-5")).unwrap()
+            })
         );
         // A failure the node classed otherwise is not a limit, whatever its text says.
         assert_eq!(classify_limit(&input("auth")), None);
     }
 
     #[test]
-    fn ignores_a_reported_reset_that_is_not_after_the_failure() {
+    fn a_reset_not_after_the_failure_or_none_at_all_is_no_reset_never_a_made_up_hour() {
         let before = at(-1000);
         let i = LimitInput {
             reset_at: Some(&before),
@@ -205,11 +228,16 @@ mod tests {
         };
         assert_eq!(
             classify_limit(&i),
-            limit(
-                UsageClass::UsageLimit,
-                Some(at(FALLBACK_USAGE_LIMIT_MS)),
-                None
-            )
+            limit(UsageClass::UsageLimit, None, None)
         );
+        // forge, 2026-10-25 22:40: the proxy's cooldown names its model and no reset.
+        let cooldown = LimitInput {
+            model: Some("claude-opus-5-5"),
+            failure_model: Some("claude-opus-5-5"),
+            ..input("rate_limit")
+        };
+        let l = classify_limit(&cooldown).unwrap();
+        assert_eq!((l.resume_at.as_deref(), l.proxy), (None, true));
+        assert_eq!(limit_data(&l)["proxy"], json!(true));
     }
 }

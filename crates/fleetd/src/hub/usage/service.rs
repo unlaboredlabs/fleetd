@@ -1,8 +1,10 @@
 //! The usage layer (M4). A lead or task thread that hits a usage limit is parked and sent one "continue" at its
 //! reset, leads first, then reviews, then writers. When one machine's login fails the same way on two threads within
 //! 10 minutes (or its proxy has no account at all), a breaker pauses new turns there with one plain usage.breaker
-//! event, until the reset or usage_resume. The state is rebuilt from the event log at start, so a hub restart keeps
-//! it.
+//! event, until the reset or usage_resume. A limit whose message names no reset is never given a made-up one: fleetd
+//! tries one parked thread after 1, 2, 5, 10 and then every 15 minutes, and lifts the pause once that thread gets
+//! through. Any turn that completes on the login after the limit (on its model) lifts it at once, the lead's own
+//! included. The state is rebuilt from the event log at start, so a hub restart keeps it.
 use super::classify::{UsageClass, UsageParked, limit_of_event};
 use super::ports::{BoxFut, EventLog, NewEvent, ThreadRef, WaitInput};
 use super::source::{LoginKind, UsageReading};
@@ -17,10 +19,11 @@ use std::time::Duration;
 const REPLAYED: &[&str] = &[
     "thread.usage_limited",
     "thread.started",
+    "thread.completed",
     "usage.breaker",
     "usage.resumed",
 ];
-const FOLLOWED: &[&str] = &["thread.usage_limited", "thread.started"];
+const FOLLOWED: &[&str] = &["thread.usage_limited", "thread.started", "thread.completed"];
 
 /// Who owns a thread, and whether a park still stands.
 pub trait UsageOwners: Send + Sync {
@@ -50,6 +53,10 @@ pub struct UsageBreaker {
     pub since: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub until: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub check_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proxy: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
 }
@@ -125,8 +132,13 @@ impl Usage {
                 let s = self.inner.state.lock().unwrap();
                 s.machines
                     .values()
-                    .filter_map(|m| m.breaker.as_ref()?.until.clone())
-                    .chain(s.all_parked().filter_map(|p| p.parked.resume_at.clone()))
+                    .filter_map(|m| m.breaker.as_ref())
+                    .flat_map(|b| [b.until.clone(), b.check_at.clone()])
+                    .chain(
+                        s.all_parked()
+                            .flat_map(|p| [p.parked.resume_at.clone(), p.parked.check_at.clone()]),
+                    )
+                    .flatten()
                     .collect()
             };
             for at in resets {
@@ -193,13 +205,91 @@ impl Usage {
         });
     }
 
-    /// Resumes whatever is due now: everything a lapsed breaker held, and parks whose reset has passed.
+    /// Resumes whatever is due now: everything a lapsed breaker held, parks whose reset or check time has passed,
+    /// and checks of breakers with no reset.
     async fn tick(&self) {
         let due = self.inner.state.lock().unwrap().due(self.now_ms());
         for d in due {
-            self.resume_threads(&d.machine_id, d.threads, d.breaker_cleared, "reset")
+            if d.check && !d.breaker_cleared {
+                self.check(&d.machine_id, d.threads).await;
+                continue;
+            }
+            let by = if d.check || d.threads.iter().any(|p| p.parked.resume_at.is_none()) {
+                "check"
+            } else {
+                "reset"
+            };
+            let parked: Vec<_> = d.threads.iter().map(|p| p.thread.clone()).collect();
+            self.resume_threads(&d.machine_id, d.threads, d.breaker_cleared, by)
                 .await;
+            // A thread that is still limited parks again, one step further on its backoff.
+            let next: Vec<String> = {
+                let s = self.inner.state.lock().unwrap();
+                parked
+                    .iter()
+                    .filter_map(|t| s.parked(t)?.check_at.clone())
+                    .collect()
+            };
+            for at in next {
+                self.schedule(&at);
+            }
         }
+    }
+
+    /// A check of a breaker with no reset: sends the first thread still parked "continue" and names it in a
+    /// usage.resumed `check` event, which keeps the breaker open and sets the next check. Nothing else moves until
+    /// that thread gets through. With nothing left to try, the breaker clears, and the queue's next turn tries the
+    /// login itself.
+    async fn check(&self, machine_id: &str, parked: Vec<ParkedThread>) {
+        for p in UsageState::in_order(&parked) {
+            self.inner.state.lock().unwrap().take(&p.thread);
+            let Some(sent) = self.send_continue(&p).await else {
+                continue;
+            };
+            if let Some(event) =
+                resumed_event(machine_id, &iso_ms(self.now_ms()), &[sent], false, "check")
+            {
+                self.emit(event).await;
+            }
+            let next = self
+                .inner
+                .state
+                .lock()
+                .unwrap()
+                .machines
+                .get(machine_id)
+                .and_then(|m| m.breaker.as_ref()?.check_at.clone());
+            if let Some(at) = next {
+                self.schedule(&at);
+            }
+            return;
+        }
+        if let Some(event) = resumed_event(machine_id, &iso_ms(self.now_ms()), &[], true, "check") {
+            self.emit(event).await;
+        }
+    }
+
+    /// Sends one parked thread "continue", unless its task ended or its lead moved on.
+    async fn send_continue(&self, p: &ParkedThread) -> Option<Resumed> {
+        if !self.inner.deps.owners.still_parked(p).await {
+            return None;
+        }
+        // The id names this park, so a resend after a restart is delivered once.
+        let id = format!(
+            "fleetd-usage:{}/{}:{}",
+            p.thread.machine_id,
+            p.thread.thread_id,
+            parse_ms(&p.parked.since).unwrap_or(0)
+        );
+        if let Err(reason) = self.inner.deps.queue.send_continue(&p.thread, &id).await {
+            tracing::warn!(thread = %format!("{}/{}", p.thread.machine_id, p.thread.thread_id), %reason, "usage: continue not delivered");
+            return None;
+        }
+        Some(Resumed {
+            thread_id: p.thread.thread_id.clone(),
+            kind: p.kind.as_str(),
+            task_id: p.task_id.clone(),
+        })
     }
 
     /// Sends "continue" in priority order and reports it in one usage.resumed event. Returns how many went out.
@@ -213,25 +303,9 @@ impl Usage {
         let ordered = self.inner.state.lock().unwrap().take_in_order(&list);
         let mut sent = Vec::new();
         for p in ordered {
-            if !self.inner.deps.owners.still_parked(&p).await {
-                continue;
+            if let Some(r) = self.send_continue(&p).await {
+                sent.push(r);
             }
-            // The id names this park, so a resend after a restart is delivered once.
-            let id = format!(
-                "fleetd-usage:{}/{}:{}",
-                p.thread.machine_id,
-                p.thread.thread_id,
-                parse_ms(&p.parked.since).unwrap_or(0)
-            );
-            if let Err(reason) = self.inner.deps.queue.send_continue(&p.thread, &id).await {
-                tracing::warn!(thread = %format!("{}/{}", p.thread.machine_id, p.thread.thread_id), %reason, "usage: continue not delivered");
-                continue;
-            }
-            sent.push(Resumed {
-                thread_id: p.thread.thread_id.clone(),
-                kind: p.kind.as_str(),
-                task_id: p.task_id.clone(),
-            });
         }
         if let Some(event) = resumed_event(
             machine_id,
@@ -246,7 +320,13 @@ impl Usage {
     }
 
     async fn on_live(&self, event: &HubEvent) {
+        let lifted = self.inner.state.lock().unwrap().lifted_by(event);
         self.apply(event).await;
+        if let Some(l) = lifted {
+            self.resume_threads(&l.machine_id, l.threads, l.breaker_cleared, "turn")
+                .await;
+            return;
+        }
         let Some(machine_id) = event
             .machine_id
             .as_deref()
@@ -268,6 +348,22 @@ impl Usage {
         }
         if let Some(resume_at) = limit_of_event(event).and_then(|l| l.resume_at) {
             self.schedule(&resume_at);
+        }
+        let check_at = event.thread_id.as_ref().and_then(|t| {
+            let thread = ThreadRef {
+                machine_id: machine_id.to_string(),
+                thread_id: t.to_string(),
+            };
+            self.inner
+                .state
+                .lock()
+                .unwrap()
+                .parked(&thread)?
+                .check_at
+                .clone()
+        });
+        if let Some(at) = check_at {
+            self.schedule(&at);
         }
     }
 
@@ -354,6 +450,8 @@ impl Usage {
                 class: None,
                 since: None,
                 until: None,
+                check_at: None,
+                proxy: None,
                 message: None,
             },
             Some(b) => UsageBreaker {
@@ -361,6 +459,8 @@ impl Usage {
                 class: Some(b.class),
                 since: Some(b.since.clone()),
                 until: b.until.clone(),
+                check_at: b.check_at.clone(),
+                proxy: b.proxy.then_some(true),
                 message: Some(b.message.clone()),
             },
         };

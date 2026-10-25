@@ -606,6 +606,10 @@ fn recorded_failures_land_in_their_class() {
         ("network-refused", FailureClass::Network),
         ("rate-limit-429", FailureClass::RateLimit),
         (
+            "claude-2.1.310-proxy-cooldown-429.jsonl",
+            FailureClass::RateLimit,
+        ),
+        (
             "usage-limit-subscription.documented",
             FailureClass::UsageLimit,
         ),
