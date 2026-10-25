@@ -8,8 +8,9 @@ use std::time::Duration;
 use fleetd_contracts::events::HubEventType;
 use serde_json::json;
 
-use super::source::LandedCommit;
+use super::host_acts::{HostAct, HostActKind, HostActs};
 use super::source::github::GitHubSource;
+use super::source::{GitHostSource, LandedCommit, MergedPr, MergedRead, RepoInfo, RepoRef};
 use super::sweep::{self, ACTIVE_EVERY_MS, ON_READ_MS, QUIET_EVERY_MS};
 use super::tests::{
     DAY, HOUR, NOW, admin, change, event, get, hub, ms, orders, project_from, rows, sql,
@@ -115,6 +116,14 @@ fn checkout(hub: &Hub) {
         "INSERT INTO metric_project_repos (machine_id, project_id, repo, checked_ms) VALUES ('devbox', 'web', ?1, ?2)",
         &[&REPO, &ms(NOW)],
     );
+    // T7 wrote #43 (`fleetd/T7-checkout`); its run went from 10:00 to 10:45 on the 23rd.
+    sql(
+        hub,
+        "INSERT INTO tasks (n, machine_id, project_id, workstream_id, state, ended_at, data)
+         VALUES (7, 'devbox', 'web', 'W1', 'done', '2026-10-23T10:45:00.000Z', ?1)",
+        &[&json!({ "taskId": "T7", "createdAt": "2026-10-23T09:55:00.000Z", "startedAt": "2026-10-23T10:00:00.000Z" })
+            .to_string()],
+    );
 }
 
 /// unit key → (route, why skipped).
@@ -160,8 +169,9 @@ async fn a_first_read_backfills_90_days_and_routes_every_landed_change() {
         ("pr:45", route("train")),
         ("pr:46", route("train")),
         ("pr:47", skipped("other_base")),
-        // release/2.0 is the base of #47, so merging it into main is a merge-back; so is a sync from upstream.
-        ("pr:48", skipped("merge_back")),
+        // Stacked: #47 went into release/2.0, then #48 took release/2.0 into main. The work counts once, as #48,
+        // the PR that reached the default branch. A sync from upstream is a merge-back.
+        ("pr:48", route("outside")),
         ("pr:49", skipped("merge_back")),
         // Merged on 1 September: the backfill's second page. #20 is older than 90 days.
         ("pr:30", route("outside")),
@@ -227,13 +237,14 @@ async fn a_first_read_backfills_90_days_and_routes_every_landed_change() {
         [
             (43, "host.review".to_owned(), false),
             (43, "host.review".to_owned(), false),
+            (43, "host.comment".to_owned(), false),
             (41, "host.review".to_owned(), true),
             (41, "host.comment".to_owned(), true),
         ]
     );
-    assert_eq!(swept.touches, 4);
+    assert_eq!(swept.touches, 5);
 
-    // Thirty days: three through the train, one fleetd PR merged by hand, one outside, one direct push.
+    // Thirty days: three through the train, one fleetd PR merged by hand, two outside, one direct push.
     let out = get(
         &hub,
         &admin(),
@@ -249,9 +260,10 @@ async fn a_first_read_backfills_90_days_and_routes_every_landed_change() {
             merged.by_route.outside.get(),
             merged.by_route.direct.get()
         ),
-        (3, 1, 1, 1)
+        (3, 1, 2, 1)
     );
-    assert_eq!(out.tiles.through_fleetd.pct.map(|p| p.get()), Some(50.0));
+    let pct = out.tiles.through_fleetd.pct.unwrap().get();
+    assert!((pct - 300.0 / 7.0).abs() < 1e-9, "{pct}");
     // The backfill reaches past the previous 30 days, so the delta is shown: #30 on 1 September.
     assert!((merged.previous_per_day.unwrap().get() - 1.0 / 30.0).abs() < 1e-9);
     let cov = &out.coverage.repos.as_slice()[0];
@@ -391,7 +403,7 @@ async fn a_signed_out_host_keeps_the_rows_and_the_view_says_since_when() {
     );
     assert_eq!(
         out.tiles.merged.n.get(),
-        6,
+        7,
         "the figures stay, marked stale"
     );
 }
@@ -419,6 +431,10 @@ fn a_repo_is_read_every_15_minutes_while_active_else_hourly_and_within_a_minute_
 async fn a_pass_reads_each_due_repo_once_and_a_metrics_read_asks_again_after_a_minute() {
     let (hub, clock, _home) = hub();
     checkout(&hub);
+    assert!(
+        hub.metrics.sweep.source("github").is_none(),
+        "a hub built for tests reads no git host"
+    );
     let gh = Arc::new(Recorded::default());
     hub.metrics
         .sweep
@@ -486,7 +502,7 @@ async fn the_hubs_own_login_is_the_persons_and_only_its_reviews_and_merges_count
             (Some(43), Some("grace-hopper".into()), false),
         ]
     );
-    // The PRs the person merged by hand, fleetd's #43 and the outside #41 and #30, are theirs by the merger's login.
+    // The PRs the person merged by hand, fleetd's #43 and the outside #41, #30 and #48, are theirs by the merger's login.
     let mut merges = counted("merge.by_hand");
     merges.sort();
     assert_eq!(
@@ -495,6 +511,7 @@ async fn the_hubs_own_login_is_the_persons_and_only_its_reviews_and_merges_count
             (Some(30), Some("ada-lovelace".into()), true),
             (Some(41), Some("ada-lovelace".into()), true),
             (Some(43), Some("ada-lovelace".into()), true),
+            (Some(48), Some("ada-lovelace".into()), true),
         ]
     );
 }
@@ -572,4 +589,160 @@ fn the_default_branch_is_read_back_to_the_last_head_or_by_date_once_that_head_is
         ["50"]
     );
     assert_eq!(shas(sweep::landed_since(&commits, None, since)), ["50"]);
+}
+
+#[tokio::test]
+async fn fleetds_own_comments_and_an_agents_during_its_run_are_not_the_persons() {
+    let (hub, _clock, _home) = hub();
+    checkout(&hub);
+    let source = GitHubSource::new(Arc::new(Recorded::default()));
+    sweep::sweep_repo(&hub, &source, REPO, ms(NOW))
+        .await
+        .unwrap();
+    let comments: Vec<(Option<i64>, i64)> = hub
+        .db
+        .with(|c| store::touches(c, 0, i64::MAX))
+        .unwrap()
+        .into_iter()
+        .filter(|t| t.kind == "host.comment")
+        .map(|t| (t.pr_number, t.at_ms))
+        .collect();
+    // On #43, T7's agent commented at 10:30 during its run, and the person at 12:30. On #45 the train left its
+    // comment, marked, and one from before it marked them.
+    assert_eq!(
+        comments,
+        [
+            (Some(43), ms("2026-10-23T12:30:00Z")),
+            (Some(41), ms("2026-10-24T09:40:00Z")),
+        ]
+    );
+    let act = |at: &str| HostAct {
+        kind: HostActKind::Comment,
+        id: "1".into(),
+        pr_number: 43,
+        at_ms: ms(at),
+        login: Some("ada-lovelace".into()),
+        bot: false,
+        head: Some("slot/1/fleetd/T7-checkout".into()),
+        lines: None,
+    };
+    assert!(sweep::agents_act(&hub.db, "acme/web", &act("2026-10-23T10:45:00Z")).unwrap());
+    assert!(!sweep::agents_act(&hub.db, "acme/web", &act("2026-10-23T10:46:00Z")).unwrap());
+}
+
+/// GitHub's reads with the merged PRs cut short after the first page, as the page cap does to a busy repo.
+struct CutShort {
+    inner: GitHubSource,
+    afters: Mutex<Vec<Option<String>>>,
+}
+
+impl GitHostSource for CutShort {
+    fn signed_in(&self) -> BoxFut<'_, Result<Option<String>, String>> {
+        self.inner.signed_in()
+    }
+
+    fn repo_info<'a>(&'a self, repo: &'a RepoRef) -> BoxFut<'a, Result<RepoInfo, String>> {
+        self.inner.repo_info(repo)
+    }
+
+    fn merged_since<'a>(
+        &'a self,
+        repo: &'a RepoRef,
+        since_ms: i64,
+        after: Option<&'a str>,
+    ) -> BoxFut<'a, Result<MergedRead, String>> {
+        Box::pin(async move {
+            self.afters.lock().unwrap().push(after.map(str::to_owned));
+            let all = self.inner.merged_since(repo, since_ms, None).await?.pulls;
+            let first = |p: &MergedPr| p.updated_ms >= ms("2026-10-20T09:00:00Z");
+            Ok(match after {
+                // A read from the cursor of a later pass fits in a page.
+                None if since_ms >= ms("2026-10-20T09:00:00Z") => MergedRead {
+                    pulls: all,
+                    rest: None,
+                },
+                None => MergedRead {
+                    pulls: all.into_iter().filter(first).collect(),
+                    rest: Some(("page-2".into(), ms("2026-10-20T09:00:00Z"))),
+                },
+                Some(_) => MergedRead {
+                    pulls: all.into_iter().filter(|p| !first(p)).collect(),
+                    rest: None,
+                },
+            })
+        })
+    }
+
+    fn default_commits<'a>(
+        &'a self,
+        repo: &'a RepoRef,
+        branch: &'a str,
+        since_ms: i64,
+        stop_at: Option<&'a str>,
+    ) -> BoxFut<'a, Result<Vec<LandedCommit>, String>> {
+        self.inner.default_commits(repo, branch, since_ms, stop_at)
+    }
+
+    fn prs_of_commit<'a>(
+        &'a self,
+        repo: &'a RepoRef,
+        sha: &'a str,
+    ) -> BoxFut<'a, Result<Vec<i64>, String>> {
+        self.inner.prs_of_commit(repo, sha)
+    }
+
+    fn acts(&self) -> &dyn HostActs {
+        self.inner.acts()
+    }
+}
+
+#[tokio::test]
+async fn a_read_the_page_cap_cut_short_goes_on_at_the_next_and_shows_partly_read_until_done() {
+    let (hub, _clock, _home) = hub();
+    checkout(&hub);
+    let source = CutShort {
+        inner: GitHubSource::new(Arc::new(Recorded::default())),
+        afters: Mutex::default(),
+    };
+    sweep::sweep_repo(&hub, &source, REPO, ms(NOW))
+        .await
+        .unwrap();
+    assert!(
+        !routes(&hub).contains_key("pr:30"),
+        "on the page not read yet"
+    );
+    let coverage = |out: &fleetd_contracts::mcp::MetricsGetOutput| {
+        let c = &out.coverage.repos.as_slice()[0];
+        (
+            c.partly_read,
+            c.known_since.as_ref().map(|t| t.as_str().to_owned()),
+        )
+    };
+    let who = admin();
+    let read = || {
+        get(
+            &hub,
+            &who,
+            json!({ "since": iso_ms(ms(NOW) - 7 * DAY), "tz": "UTC" }),
+        )
+    };
+    assert_eq!(
+        coverage(&read().await.unwrap()),
+        (Some(true), Some(iso_ms(ms("2026-10-20T09:00:00Z")))),
+        "known only as far as the read reached"
+    );
+
+    sweep::sweep_repo(&hub, &source, REPO, ms(NOW) + HOUR)
+        .await
+        .unwrap();
+    assert_eq!(
+        source.afters.lock().unwrap().as_slice(),
+        [None, None, Some("page-2".into())],
+        "the next read goes on from where the cap stopped"
+    );
+    assert_eq!(routes(&hub).get("pr:30"), Some(&route("outside")));
+    assert_eq!(
+        coverage(&read().await.unwrap()),
+        (None, Some(iso_ms(ms(NOW) - 90 * DAY)))
+    );
 }

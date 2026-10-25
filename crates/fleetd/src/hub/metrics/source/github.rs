@@ -1,7 +1,9 @@
 //! GitHub through `gh api` on the hub's machine, under the hub's login: one GraphQL query per page of 100 merged PRs
 //! (author and merger account types, lines, the batch line), of 100 default-branch commits (each with the merged PRs
 //! that brought it in, so a direct push needs no call of its own) and of 50 recently updated PRs' reviews and
-//! comments. Pages stop once past the cursor, and at a bound so a first read of a busy repo can't run away.
+//! conversation comments. An inline comment on the diff belongs to a review, so it counts through that review, not on
+//! its own. What fleetd posted itself (`super::fleetd_posted`) is not the person's act and isn't returned. Pages stop
+//! once past the cursor, and at a bound so a first read of a busy repo can't run away.
 use std::sync::Arc;
 
 use fleetd_contracts::metrics::ActorKind;
@@ -9,7 +11,7 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use super::{GitHostSource, LandedCommit, MergedPr, RepoInfo, RepoRef};
+use super::{GitHostSource, LandedCommit, MergedPr, MergedRead, RepoInfo, RepoRef};
 use crate::hub::metrics::host_acts::{HostAct, HostActKind, HostActs};
 use crate::hub::prs::github::explain;
 use crate::hub::store::{iso_ms, parse_ms};
@@ -64,8 +66,8 @@ const ACTS_QUERY: &str = "query($owner: String!, $name: String!, $after: String)
       pageInfo { hasNextPage endCursor }
       nodes {
         number headRefName additions deletions updatedAt
-        reviews(last: 100) { nodes { databaseId submittedAt author { __typename login } } }
-        comments(last: 100) { nodes { databaseId createdAt author { __typename login } } }
+        reviews(last: 100) { nodes { databaseId submittedAt body author { __typename login } } }
+        comments(last: 100) { nodes { databaseId createdAt body author { __typename login } } }
       }
     }
   }
@@ -200,6 +202,8 @@ struct RefRepo {
 struct ReviewNode {
     database_id: Option<i64>,
     submitted_at: Option<String>,
+    #[serde(default)]
+    body: String,
     author: Option<Actor>,
 }
 
@@ -208,6 +212,8 @@ struct ReviewNode {
 struct CommentNode {
     database_id: Option<i64>,
     created_at: String,
+    #[serde(default)]
+    body: String,
     author: Option<Actor>,
 }
 
@@ -277,21 +283,37 @@ impl GitHubSource {
         Ok(v["data"].take())
     }
 
-    /// Pages of `query`'s `repository.<path>` until `stop` says one passed the cursor or `max` pages were read.
+    /// Pages of `query`'s `repository.<path>` until `keep` says one passed the cursor or `max` pages were read.
     async fn pages<T: DeserializeOwned>(
         &self,
         repo: &RepoRef,
         query: &str,
         extra: &[(&str, &str)],
         max: usize,
+        take: impl FnMut(Value) -> Result<Page<T>, String>,
+        keep: impl FnMut(T) -> bool,
+    ) -> Result<(), String> {
+        self.pages_from(repo, query, extra, None, max, take, keep)
+            .await
+            .map(|_| ())
+    }
+
+    /// [`Self::pages`] from the page after `after`: the page cursor to go on from when `max` cut it short.
+    #[allow(clippy::too_many_arguments)]
+    async fn pages_from<T: DeserializeOwned>(
+        &self,
+        repo: &RepoRef,
+        query: &str,
+        extra: &[(&str, &str)],
+        mut after: Option<String>,
+        max: usize,
         mut take: impl FnMut(Value) -> Result<Page<T>, String>,
         mut keep: impl FnMut(T) -> bool,
-    ) -> Result<(), String> {
+    ) -> Result<Option<String>, String> {
         let (owner, name) = repo
             .path
             .split_once('/')
             .ok_or_else(|| format!("{} is not owner/name", repo.path))?;
-        let mut after: Option<String> = None;
         for _ in 0..max {
             let mut vars = vec![("owner", owner), ("name", name)];
             vars.extend_from_slice(extra);
@@ -306,10 +328,10 @@ impl GitHubSource {
             }
             after = page.page_info.end_cursor;
             if !go_on || after.is_none() {
-                break;
+                return Ok(None);
             }
         }
-        Ok(())
+        Ok(after)
     }
 }
 
@@ -395,25 +417,32 @@ impl GitHostSource for GitHubSource {
         &'a self,
         repo: &'a RepoRef,
         since_ms: i64,
-    ) -> BoxFut<'a, Result<Vec<MergedPr>, String>> {
+        after: Option<&'a str>,
+    ) -> BoxFut<'a, Result<MergedRead, String>> {
         Box::pin(async move {
-            let mut out = Vec::new();
-            self.pages(
-                repo,
-                MERGED_QUERY,
-                &[],
-                MERGED_PAGES,
-                pulls_page::<MergedNode>,
-                |n| {
-                    let updated = parse_ms(&n.updated_at).unwrap_or(i64::MAX);
-                    if updated >= since_ms {
-                        out.extend(merged_pr(n));
-                    }
-                    updated >= since_ms
-                },
-            )
-            .await?;
-            Ok(out)
+            let (mut pulls, mut oldest) = (Vec::new(), i64::MAX);
+            let cut = self
+                .pages_from(
+                    repo,
+                    MERGED_QUERY,
+                    &[],
+                    after.map(str::to_owned),
+                    MERGED_PAGES,
+                    pulls_page::<MergedNode>,
+                    |n| {
+                        let updated = parse_ms(&n.updated_at).unwrap_or(i64::MAX);
+                        oldest = oldest.min(updated);
+                        if updated >= since_ms {
+                            pulls.extend(merged_pr(n));
+                        }
+                        updated >= since_ms
+                    },
+                )
+                .await?;
+            Ok(MergedRead {
+                pulls,
+                rest: cut.map(|after| (after, oldest)),
+            })
         })
     }
 
@@ -545,7 +574,14 @@ impl HostActs for GitHubSource {
                         })
                     };
                     // A pending review has no submit time yet: it is not an act.
-                    for r in n.reviews.iter().flat_map(|r| &r.nodes).flatten() {
+                    let mine = |body: &str| !super::fleetd_posted(body);
+                    for r in n
+                        .reviews
+                        .iter()
+                        .flat_map(|r| &r.nodes)
+                        .flatten()
+                        .filter(|r| mine(&r.body))
+                    {
                         out.extend(act(
                             HostActKind::Review,
                             r.database_id,
@@ -553,7 +589,13 @@ impl HostActs for GitHubSource {
                             r.author.as_ref(),
                         ));
                     }
-                    for c in n.comments.iter().flat_map(|c| &c.nodes).flatten() {
+                    for c in n
+                        .comments
+                        .iter()
+                        .flat_map(|c| &c.nodes)
+                        .flatten()
+                        .filter(|c| mine(&c.body))
+                    {
                         out.extend(act(
                             HostActKind::Comment,
                             c.database_id,

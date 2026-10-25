@@ -2726,6 +2726,11 @@ export type RepoCoverage = {
   knownSince?: Timestamp;
   /** The last good read of its host's API or its git log. */
   lastRead?: Timestamp;
+  /**
+   * The host's merged PRs are still being read back to the backfill's start: a busy repo's first read is bounded,
+   * and the next reads go on from where it stopped. `known_since` is as far as they have reached.
+   */
+  partlyRead?: boolean;
   repo: RemoteRepo;
 };
 

@@ -7,7 +7,7 @@
 //! When: every 15 minutes for a repo with a merge in the last 7 days, else hourly, and within a minute of a metrics
 //! read asking for it. Repos are read one at a time. On a train's repo the train's own minute-by-minute check stays
 //! the fast path; the sweep fills what it can't see (no train yet, older PRs, other bases, pushes, reviews).
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -20,14 +20,14 @@ use rusqlite::{Connection, OptionalExtension, params};
 use tokio::sync::Notify;
 
 use super::host_acts::{self, BACKFILL_MS};
+use super::host_acts::{HostAct, HostActs};
 use super::project::{self, actor_str, skip_str};
-use super::source::github::GitHubSource;
-use super::source::{self, GitHostSource, LandedCommit, MergedPr, RepoInfo, RepoRef};
+use super::source::{self, GitHostSource, HostSources, LandedCommit, MergedPr, RepoInfo, RepoRef};
 use super::store::{self, MergeRow, SKIPPED};
 use super::touches;
 use crate::hub::api::Hub;
 use crate::hub::store::{HubDb, StoreError, iso_ms, now_ms};
-use crate::hub::train::github::GhRunner;
+use crate::hub::usage::ports::BoxFut;
 
 /// A metrics read asks for a repo again once its last read is this old.
 pub const ON_READ_MS: i64 = 60_000;
@@ -45,7 +45,7 @@ const TICK: Duration = Duration::from_secs(60);
 
 /// The sweep's sources and when each repo was last tried.
 pub struct Sweep {
-    github: Mutex<Arc<dyn GitHostSource>>,
+    sources: Mutex<HostSources>,
     /// Repos a metrics read asked for since the last pass.
     wanted: Mutex<HashSet<String>>,
     tried: Mutex<HashMap<String, i64>>,
@@ -59,9 +59,9 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 impl Sweep {
-    pub fn new(gh: Arc<dyn GhRunner>) -> Self {
+    pub fn new(sources: HostSources) -> Self {
         Self {
-            github: Mutex::new(Arc::new(GitHubSource::new(gh))),
+            sources: Mutex::new(sources),
             wanted: Mutex::default(),
             tried: Mutex::default(),
             asked: Mutex::default(),
@@ -69,14 +69,14 @@ impl Sweep {
         }
     }
 
-    /// The source for a host as `metric_repos.host` names it; none yet for the others.
+    /// The source for a host as `metric_repos.host` names it, if the hub reads that host.
     pub fn source(&self, host: &str) -> Option<Arc<dyn GitHostSource>> {
-        (host == "github").then(|| lock(&self.github).clone())
+        lock(&self.sources).get(host)
     }
 
     #[cfg(test)]
     pub fn use_github(&self, source: Arc<dyn GitHostSource>) {
-        *lock(&self.github) = source;
+        lock(&self.sources).github = Some(source);
     }
 
     /// A metrics read of `repos`: each is read again if its last read is over a minute old. Doesn't wait.
@@ -289,7 +289,11 @@ pub async fn sweep_repo(
             return Err(why);
         }
     }
-    let touches = match host_acts::read(&hub.db, source.acts(), remote, now).await {
+    let acts = PersonActs {
+        inner: source.acts(),
+        db: &hub.db,
+    };
+    let touches = match host_acts::read(&hub.db, &acts, remote, now).await {
         Ok(n) => n,
         Err(e) => {
             let why = e.to_string();
@@ -316,13 +320,15 @@ async fn read_repo(
         path,
     };
     let store_err = |e: StoreError| format!("the hub's database: {e}");
-    let (cursor, head_seen): (Option<i64>, Option<String>) = hub
+    type Cursors = (Option<i64>, Option<String>, Option<String>, Option<i64>);
+    let (cursor, head_seen, resume, floor): Cursors = hub
         .db
         .with(|c| {
             Ok(c.query_row(
-                "SELECT merged_cursor_ms, commits_cursor_sha FROM metric_repos WHERE repo = ?1",
+                "SELECT merged_cursor_ms, commits_cursor_sha, merged_resume, merged_resume_floor FROM metric_repos
+                 WHERE repo = ?1",
                 [remote],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
             )
             .optional()?
             .unwrap_or_default())
@@ -330,7 +336,23 @@ async fn read_repo(
         .map_err(store_err)?;
     let since = cursor.unwrap_or(now - BACKFILL_MS);
     let info = source.repo_info(&repo).await?;
-    let pulls = source.merged_since(&repo, since).await?;
+    let top = source.merged_since(&repo, since, None).await?;
+    let mut pulls = top.pulls;
+    // A read the page cap cut short goes on from where it stopped, down to the oldest point any read still owes, on
+    // this pass and the next ones, so the cursor never moves past PRs not read yet.
+    let floor = floor.unwrap_or(since).min(since);
+    let (rest, read_to) = match (top.rest, resume) {
+        (Some(cut), _) => (Some(cut.0), cut.1),
+        (None, Some(after)) => {
+            let more = source.merged_since(&repo, floor, Some(&after)).await?;
+            pulls.extend(more.pulls);
+            match more.rest {
+                Some((after, oldest)) => (Some(after), oldest),
+                None => (None, floor),
+            }
+        }
+        (None, None) => (None, since),
+    };
     let commits = source
         .default_commits(&repo, &info.default_branch, since, head_seen.as_deref())
         .await?;
@@ -367,12 +389,23 @@ async fn read_repo(
                     store::upsert_touch(c, &t)?;
                 }
             }
+            // Merges are known back to where the reads have reached; a cut-short read leaves it partly read.
             c.execute(
                 "UPDATE metric_repos SET default_branch = ?2, merged_cursor_ms = ?3,
                    commits_cursor_sha = COALESCE(?4, commits_cursor_sha), last_ok_ms = ?5, last_error = NULL,
-                   backfilled_ms = COALESCE(backfilled_ms, ?6)
+                   backfilled_ms = MIN(COALESCE(backfilled_ms, ?6), ?6), merged_resume = ?7,
+                   merged_resume_floor = CASE WHEN ?7 IS NULL THEN NULL ELSE ?8 END
                  WHERE repo = ?1",
-                params![remote, info.default_branch, now - OVERLAP_MS, head, now, since],
+                params![
+                    remote,
+                    info.default_branch,
+                    now - OVERLAP_MS,
+                    head,
+                    now,
+                    read_to,
+                    rest,
+                    floor
+                ],
             )?;
             Ok(())
         })
@@ -456,14 +489,10 @@ fn actor_kind(k: ActorKind) -> Option<ActorKind> {
 }
 
 /// Why a merged PR is not a landed change, beyond the projector's bots: into a base that isn't the repo's default
-/// branch, or a merge-back (an upstream's default branch synced in, or a branch other PRs merge
-/// into, such as `release` → `main`).
-pub fn skip_why(
-    pr: &MergedPr,
-    repo_path: &str,
-    info: &RepoInfo,
-    bases: &BTreeSet<&str>,
-) -> Option<SkipWhy> {
+/// branch, or a merge-back (an upstream's default branch synced in). A branch other PRs merged into, merged into the
+/// default branch (stacked PRs, `release` → `main`), is landed: the PRs into it were not, so the work counts once, as
+/// the PR that reached the default branch.
+pub fn skip_why(pr: &MergedPr, repo_path: &str, info: &RepoInfo) -> Option<SkipWhy> {
     if pr.base != info.default_branch {
         return Some(SkipWhy::OtherBase);
     }
@@ -476,8 +505,8 @@ pub fn skip_why(
         .as_deref()
         .zip(info.upstream.as_deref())
         .is_some_and(|(h, u)| h.eq_ignore_ascii_case(u));
-    let merge_back = (upstream && pr.head_is_default)
-        || (same_repo && (pr.head == info.default_branch || bases.contains(pr.head.as_str())));
+    let merge_back =
+        (upstream && pr.head_is_default) || (same_repo && pr.head == info.default_branch);
     merge_back.then_some(SkipWhy::MergeBack)
 }
 
@@ -490,11 +519,6 @@ fn pr_rows(
 ) -> Result<Vec<MergeRow>, StoreError> {
     let fallback = owner_of(&hub.db, &repo.remote)?;
     let train_repo = GitHubRepo::new(repo.path.to_lowercase()).ok();
-    let bases: BTreeSet<&str> = pulls
-        .iter()
-        .map(|p| p.base.as_str())
-        .filter(|b| *b != info.default_branch)
-        .collect();
     let mut out = Vec::new();
     for pr in pulls {
         let base = TrainEventData {
@@ -556,7 +580,7 @@ fn pr_rows(
         row.deletions = pr.deletions;
         if !train
             && row.route != SKIPPED
-            && let Some(why) = skip_why(pr, &repo.path, info, &bases)
+            && let Some(why) = skip_why(pr, &repo.path, info)
         {
             row.route = SKIPPED.into();
             row.skip_why = Some(skip_str(why).into());
@@ -622,4 +646,68 @@ fn write(c: &Connection, row: &MergeRow) -> Result<(), StoreError> {
         )?;
     }
     Ok(())
+}
+
+/// The person's acts among a host's: fleetd's agents use `gh` under the person's login too, so an act on a fleetd
+/// task's PR made while that task was running is the agent's, not the person's.
+struct PersonActs<'a> {
+    inner: &'a dyn HostActs,
+    db: &'a HubDb,
+}
+
+impl HostActs for PersonActs<'_> {
+    fn acts_since<'a>(
+        &'a self,
+        repo: &'a str,
+        since_ms: i64,
+    ) -> BoxFut<'a, Result<Vec<HostAct>, String>> {
+        Box::pin(async move {
+            let path = repo.split_once('/').map_or(repo, |(_, p)| p);
+            let mut out = Vec::new();
+            for act in self.inner.acts_since(repo, since_ms).await? {
+                let agents = agents_act(self.db, path, &act)
+                    .map_err(|e| format!("the hub's database: {e}"))?;
+                if !agents {
+                    out.push(act);
+                }
+            }
+            Ok(out)
+        })
+    }
+}
+
+/// The task a fleetd branch names: `fleetd/T12-…`, under any prefix (`slot/1/fleetd/T12-…`).
+fn branch_task(head: &str) -> Option<i64> {
+    let (_, rest) = head.rsplit_once("fleetd/T")?;
+    let n: String = rest.chars().take_while(char::is_ascii_digit).collect();
+    n.parse().ok()
+}
+
+/// Whether an act was made while the task that wrote its PR was running: from the task's start to its end, or on.
+pub fn agents_act(db: &HubDb, repo_path: &str, act: &HostAct) -> Result<bool, StoreError> {
+    let task = change_of(db, repo_path, act.pr_number)?
+        .and_then(|c| c.task_id)
+        .and_then(|t| t.as_str().get(1..).and_then(|n| n.parse().ok()))
+        .or_else(|| act.head.as_deref().and_then(branch_task));
+    let Some(n) = task else {
+        return Ok(false);
+    };
+    let run: Option<(Option<String>, Option<String>)> = db.with(|c| {
+        Ok(c.query_row(
+            "SELECT COALESCE(json_extract(data, '$.startedAt'), json_extract(data, '$.createdAt')), ended_at
+             FROM tasks WHERE n = ?1",
+            [n],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?)
+    })?;
+    let Some((Some(start), end)) = run else {
+        return Ok(false);
+    };
+    let start = crate::hub::store::parse_ms(&start).unwrap_or(i64::MAX);
+    let end = end
+        .as_deref()
+        .and_then(crate::hub::store::parse_ms)
+        .unwrap_or(i64::MAX);
+    Ok(act.at_ms >= start && act.at_ms <= end)
 }

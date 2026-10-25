@@ -456,6 +456,9 @@ pub struct RepoCoverage {
     pub last_read: Option<Timestamp>,
     /// Merges are known from here on (the first read backfills 90 days).
     pub known_since: Option<Timestamp>,
+    /// The host's merged PRs are still being read back to the backfill's start: a busy repo's first read is bounded,
+    /// and the next reads go on from where it stopped. `known_since` is as far as they have reached.
+    pub partly_read: Option<bool>,
 }
 
 /// A repo whose reads are failing: its figures stop at `since`, never a silent zero.

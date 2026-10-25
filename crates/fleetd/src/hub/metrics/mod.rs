@@ -42,9 +42,9 @@ pub struct Metrics {
 }
 
 impl Metrics {
-    pub fn new(gh: Arc<dyn crate::hub::train::github::GhRunner>) -> Arc<Self> {
+    pub fn new(sources: source::HostSources) -> Arc<Self> {
         Arc::new(Self {
-            sweep: sweep::Sweep::new(gh),
+            sweep: sweep::Sweep::new(sources),
         })
     }
 }

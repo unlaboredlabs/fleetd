@@ -145,6 +145,10 @@ impl Pull {
 /// (`fleetd-batch: #7@<sha> #8@<sha>`), which recovery and the `pr_merged` check read.
 pub const BATCH_MARKER: &str = "fleetd-batch:";
 
+/// A hidden line on every comment the train posts: it posts under the person's own login, so the metrics' host sweep
+/// tells the train's comments from the person's by it.
+pub const TRAIN_MARK: &str = "<!-- fleetd:train -->";
+
 /// Each member a batch PR's body names on its `fleetd-batch:` line, with the head sha it was built from (None when
 /// the line names none).
 pub fn batch_heads(body: &str) -> Vec<(i64, Option<String>)> {
@@ -721,12 +725,13 @@ impl TrainGitHub {
         }))
     }
 
-    /// Comments on the PR with why, then closes it.
+    /// Comments on the PR with why (marked as the train's), then closes it.
     pub async fn close(&self, repo: &str, n: i64, comment: &str) -> Result<(), GhError> {
+        let body = format!("{comment}\n\n{TRAIN_MARK}");
         self.json::<Value>(
             "POST",
             &format!("repos/{repo}/issues/{n}/comments"),
-            &[("body", comment)],
+            &[("body", &body)],
         )
         .await?;
         self.json::<Value>(
