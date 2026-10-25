@@ -1,6 +1,7 @@
 //! Which repo and base a project's work lands on, read from its root on its machine with plain git, so it works on
 //! any host: the repo key from `remote.origin.url` as configured, the base from `origin/HEAD` (what the node branches
-//! worktrees from). Adding a project sets it once; callers that find a project unbound read it here.
+//! worktrees from). The landing scanner refreshes it every scan, adding a project sets it once, and callers that
+//! find a project unbound read it here.
 use fleetd_contracts::ids::{MachineId, ProjectRef};
 use fleetd_contracts::prim::Line;
 use fleetd_contracts::work::{RepoKey, WorkScope};

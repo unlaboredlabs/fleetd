@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::brand;
 use crate::ids::{ProjectRef, Timestamp};
 use crate::plan::PlanItemId;
-use crate::prim::{Line, List, js_len};
+use crate::prim::{Line, List, Positive, js_len};
 use crate::projects::short_remote;
 use crate::tasks::PrUrl;
 use crate::train::ChangeId;
@@ -252,6 +252,49 @@ pub struct WorkEventData {
     /// work.ended: why.
     pub reason: Option<String>,
     pub landing: Option<CommitSha>,
+}
+
+/// The most paths a landing keeps.
+pub const LANDING_PATHS_MAX: usize = 200;
+
+/// One commit on the first-parent line of a watched base, whoever made it and however it got there.
+#[serde_with::skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Landing {
+    pub repo_key: RepoKey,
+    pub base: BranchName,
+    pub sha: CommitSha,
+    /// The commit's committer time.
+    pub at: Timestamp,
+    /// When the scanner saw it.
+    pub seen_at: Timestamp,
+    pub route: LandingRoute,
+    /// The PR or merge request it came from, when the merge message or the host names one.
+    pub pr_number: Option<Positive>,
+    /// Built from the repo key on hosts whose PR URLs fleetd knows (GitHub, GitLab, Bitbucket).
+    pub pr_url: Option<PrUrl>,
+    /// The branch it came from, when the merge message or the host names one.
+    pub head_branch: Option<BranchName>,
+    pub subject: Line<0, 300>,
+    pub author_email: Option<Line<1, 200>>,
+    /// What it changed against its first parent; the first `LANDING_PATHS_MAX`, and only what the node's output kept.
+    pub paths: List<WorkPath, 0, LANDING_PATHS_MAX>,
+    /// The Change it is, or merged.
+    pub change_id: Option<ChangeId>,
+    /// The write task whose work it is: its Change's, or the one whose branch it came from.
+    pub task_id: Option<crate::tasks::TaskId>,
+    /// The claims it ended.
+    pub claim_ids: Vec<ClaimId>,
+    /// The plan item of its task.
+    pub item_ids: Vec<PlanItemId>,
+}
+
+/// `HubEvent.data` on `work.landed`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LandingEventData {
+    pub landing: Landing,
 }
 
 #[cfg(test)]
