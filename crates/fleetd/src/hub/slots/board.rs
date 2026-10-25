@@ -118,7 +118,9 @@ pub enum Op {
     Cap(Option<i64>),
     /// None: auto, the row goes.
     MaxAgents(ProjectRef, Option<i64>),
-    /// A machine's measure and a person's setting for it.
+    /// A heartbeat's measure of the machine: its name and what it fits, never the person's setting.
+    Measure(Machine),
+    /// A person's setting for the machine, with its measure.
     Machine(Machine),
     /// The machine was removed: its row goes, so its cap no longer counts.
     ForgetMachine(MachineId),
@@ -281,7 +283,7 @@ impl Board {
                     max_agents: None,
                     disk_room,
                 };
-                self.ops.push(Op::Machine(m.clone()));
+                self.ops.push(Op::Measure(m.clone()));
                 self.machines.push(m);
                 return self.machine_cap(machine_id) > cap_before
                     || self.disk_room(machine_id).unwrap_or(i64::MAX) > room_before;
@@ -292,7 +294,7 @@ impl Board {
         if m.auto != auto || m.name != name {
             m.auto = auto;
             m.name = name.to_owned();
-            self.ops.push(Op::Machine(m.clone()));
+            self.ops.push(Op::Measure(m.clone()));
         }
         self.machine_cap(machine_id) > cap_before
             || self.disk_room(machine_id).unwrap_or(i64::MAX) > room_before
@@ -1320,7 +1322,7 @@ mod tests {
                 .observe_machine(&mid("new"), "new-box", auto.clone(), None)
         );
         assert!(
-            matches!(k.board.take_ops().last(), Some(Op::Machine(m)) if m.machine_id == mid("new") && m.auto == auto)
+            matches!(k.board.take_ops().last(), Some(Op::Measure(m)) if m.machine_id == mid("new") && m.auto == auto)
         );
         k.freed();
         assert_eq!(k.board.agents(&a), (5, 0));

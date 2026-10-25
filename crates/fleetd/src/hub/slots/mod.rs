@@ -135,6 +135,14 @@ fn persist(db: &HubDb, ops: Vec<Op>) -> Result<(), StoreError> {
                     db.prepare_cached("DELETE FROM slot_shares WHERE machine_id = ? AND project_id = ?")?
                         .execute(params![r.machine_id.as_str(), r.project_id.as_str()])?;
                 }
+                // A heartbeat's measure never touches the person's setting saved beside it.
+                Op::Measure(m) => {
+                    db.prepare_cached(
+                        "INSERT INTO slot_machine_caps (machine_id, name, auto, why) VALUES (?, ?, ?, ?)
+                         ON CONFLICT (machine_id) DO UPDATE SET name = excluded.name, auto = excluded.auto, why = excluded.why",
+                    )?
+                    .execute(params![m.machine_id.as_str(), m.name, m.auto.cap, m.auto.why])?;
+                }
                 Op::Machine(m) => {
                     db.prepare_cached(
                         "INSERT INTO slot_machine_caps (machine_id, name, auto, why, max_agents) VALUES (?, ?, ?, ?, ?)
@@ -416,13 +424,15 @@ impl Slots {
     /// Drops the board's machines that are no longer the hub's: `fleetd machine remove` deletes a machine's row from
     /// the database directly, maybe while this hub runs, so their caps stop counting in the fleet's total.
     fn forget_removed(&self) -> Result<(), StoreError> {
+        // Read under the board's lock: every change persists before it lets go, so a machine first seen or first
+        // given a cap is in the table by now.
+        let mut board = self.board();
         let kept: Vec<String> = self.db.with(|db| {
             db.prepare_cached("SELECT machine_id FROM slot_machine_caps")?
                 .query_map([], |r| r.get(0))?
                 .collect::<rusqlite::Result<_>>()
                 .map_err(StoreError::from)
         })?;
-        let mut board = self.board();
         for m in board.machine_ids() {
             if !kept.iter().any(|k| k == m.as_str()) {
                 board.forget_machine(&m);
@@ -552,6 +562,67 @@ mod tests {
         assert_eq!(slots.state().per_machine.len(), 1);
         let again = Slots::new(db, clock, &store, &events).unwrap();
         assert_eq!(again.total(), fits);
+    }
+
+    fn slots_on(db: &Arc<HubDb>) -> Arc<Slots> {
+        let store = HubStore::new(db.clone());
+        let clock = ManualClock::at(1_792_000_000_000);
+        let events = EventLog::new(db.clone(), clock.clone()).unwrap();
+        Slots::new(db.clone(), clock, &store, &events).unwrap()
+    }
+
+    fn machine_set(m: &MachineId, n: i64) -> CapInput {
+        CapInput {
+            machine: Some((m.clone(), Some(n))),
+            ..CapInput::default()
+        }
+    }
+
+    /// A heartbeat saves what the machine fits, never over the cap a person saved for it, even for a machine the
+    /// board doesn't hold.
+    #[test]
+    fn a_heartbeat_never_overwrites_a_saved_machine_cap() {
+        let db = HubDb::open_memory().unwrap();
+        let slots = slots_on(&db);
+        let m = MachineId::unchecked("lab-a");
+        let load = crate::hub::link::guard::tests::load(500, 1.0);
+        slots.set_cap(machine_set(&m, 7)).unwrap();
+        {
+            let mut board = slots.board();
+            board.forget_machine(&m);
+            board.take_ops();
+        }
+        slots.observe_machine(&m, "lab-a", &load).unwrap();
+        assert_eq!(slots_on(&db).machine_cap(&m), 7);
+    }
+
+    /// Heartbeats and cap_set for machines first seen race reads of the board: every saved cap stays, on the live
+    /// board and after a restart.
+    #[test]
+    fn a_heartbeat_racing_cap_set_keeps_the_saved_cap() {
+        let db = HubDb::open_memory().unwrap();
+        let slots = slots_on(&db);
+        let load = crate::hub::link::guard::tests::load(500, 1.0);
+        let machines: Vec<MachineId> = (0..200)
+            .map(|i| MachineId::unchecked(format!("m{i}")))
+            .collect();
+        let done = std::sync::atomic::AtomicBool::new(false);
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                while !done.load(std::sync::atomic::Ordering::Relaxed) {
+                    slots.state();
+                }
+            });
+            for m in &machines {
+                slots.set_cap(machine_set(m, 7)).unwrap();
+                slots.observe_machine(m, m.as_str(), &load).unwrap();
+            }
+            done.store(true, std::sync::atomic::Ordering::Relaxed);
+        });
+        let again = slots_on(&db);
+        for m in &machines {
+            assert_eq!((slots.machine_cap(m), again.machine_cap(m)), (7, 7), "{m}");
+        }
     }
 
     /// Spawns racing from many lead calls at once take the board's lock one at a time: never past max agents.
