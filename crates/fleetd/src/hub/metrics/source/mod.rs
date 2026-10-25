@@ -4,6 +4,8 @@
 //! project needs it. A repo on a host with no source is still listed, with its figures marked as not read.
 pub mod github;
 
+use std::sync::Arc;
+
 use fleetd_contracts::metrics::ActorKind;
 
 use super::host_acts::HostActs;
@@ -52,6 +54,14 @@ pub struct MergedPr {
     pub batch_members: Vec<i64>,
 }
 
+/// One read of merged PRs.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct MergedRead {
+    pub pulls: Vec<MergedPr>,
+    /// When the page cap cut the read short: the host's page cursor to go on from, and the oldest update read.
+    pub rest: Option<(String, i64)>,
+}
+
 /// A commit on the default branch.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct LandedCommit {
@@ -74,12 +84,13 @@ pub trait GitHostSource: Send + Sync {
     fn repo_info<'a>(&'a self, repo: &'a RepoRef) -> BoxFut<'a, Result<RepoInfo, String>>;
 
     /// PRs merged into any base whose last update was at or after `since_ms`, newest update first, paged until
-    /// past it.
+    /// past it or until the host's page cap; `after` goes on from where a read the cap cut short stopped.
     fn merged_since<'a>(
         &'a self,
         repo: &'a RepoRef,
         since_ms: i64,
-    ) -> BoxFut<'a, Result<Vec<MergedPr>, String>>;
+        after: Option<&'a str>,
+    ) -> BoxFut<'a, Result<MergedRead, String>>;
 
     /// The commits reachable from `branch`, newest first: back to `stop_at` (the last read's head) when given,
     /// whatever their dates, else those made at or after `since_ms`.
@@ -100,6 +111,47 @@ pub trait GitHostSource: Send + Sync {
 
     /// Reviews and comments, for the person's touches.
     fn acts(&self) -> &dyn HostActs;
+}
+
+/// The git host readers the sweep uses, one per host it can read. The shipped hub reads through the hosts' real
+/// CLIs; a test or lab hub reads none (or fakes), so it never reaches the network.
+#[derive(Clone, Default)]
+pub struct HostSources {
+    pub github: Option<Arc<dyn GitHostSource>>,
+}
+
+impl HostSources {
+    /// GitHub through the hub's `gh`.
+    pub fn real() -> Self {
+        Self {
+            github: Some(Arc::new(github::GitHubSource::new(Arc::new(
+                crate::hub::train::github::SystemGh,
+            )))),
+        }
+    }
+
+    pub fn none() -> Self {
+        Self::default()
+    }
+
+    /// The source for a host as `metric_repos.host` names it.
+    pub fn get(&self, host: &str) -> Option<Arc<dyn GitHostSource>> {
+        match host {
+            "github" => self.github.clone(),
+            _ => None,
+        }
+    }
+}
+
+/// Whether fleetd itself posted a review or comment with this body: it posts under the person's own login, so its
+/// acts are told apart by their markers: a hidden `<!-- fleetd:… -->` line (the train's), a `Fleetd-Task:` trailer, or
+/// the wording of the train's comments from before it marked them.
+pub fn fleetd_posted(body: &str) -> bool {
+    body.contains("<!-- fleetd:")
+        || body.contains("by the fleetd merge train")
+        || body
+            .lines()
+            .any(|l| l.trim_start().starts_with("Fleetd-Task:"))
 }
 
 /// The host part of a remote key ("github.com/acme/web" → "github"), as `metric_repos.host` stores it: "git" for a

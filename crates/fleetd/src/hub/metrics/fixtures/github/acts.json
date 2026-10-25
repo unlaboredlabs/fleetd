@@ -81,7 +81,58 @@
        ]
       },
       "comments": {
+       "nodes": [
+        {
+         "databaseId": 7101,
+         "createdAt": "2026-10-23T10:30:00Z",
+         "author": {
+          "__typename": "User",
+          "login": "ada-lovelace"
+         },
+         "body": "Rebased onto main; the checkout tests pass."
+        },
+        {
+         "databaseId": 7103,
+         "createdAt": "2026-10-23T12:30:00Z",
+         "author": {
+          "__typename": "User",
+          "login": "ada-lovelace"
+         },
+         "body": "Looks good to me."
+        }
+       ]
+      }
+     },
+     {
+      "number": 45,
+      "headRefName": "fleetd/T45-x",
+      "additions": 5,
+      "deletions": 1,
+      "updatedAt": "2026-10-22T12:00:00Z",
+      "reviews": {
        "nodes": []
+      },
+      "comments": {
+       "nodes": [
+        {
+         "databaseId": 7104,
+         "createdAt": "2026-10-22T12:00:10Z",
+         "author": {
+          "__typename": "User",
+          "login": "ada-lovelace"
+         },
+         "body": "Landed in #44 (4444444) by the fleetd merge train: merged together with #46 after one CI run on the batch.\n\n<!-- fleetd:train -->"
+        },
+        {
+         "databaseId": 7105,
+         "createdAt": "2026-10-22T12:00:11Z",
+         "author": {
+          "__typename": "User",
+          "login": "ada-lovelace"
+         },
+         "body": "Landed in #44 (4444444) by the fleetd merge train: merged together with #46 after one CI run on the batch."
+        }
+       ]
       }
      }
     ]

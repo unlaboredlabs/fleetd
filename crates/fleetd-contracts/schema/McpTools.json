@@ -8047,6 +8047,10 @@
           "$ref": "#/$defs/Timestamp",
           "description": "The last good read of its host's API or its git log."
         },
+        "partlyRead": {
+          "description": "The host's merged PRs are still being read back to the backfill's start: a busy repo's first read is bounded,\nand the next reads go on from where it stopped. `known_since` is as far as they have reached.",
+          "type": "boolean"
+        },
         "repo": {
           "$ref": "#/$defs/RemoteRepo"
         }

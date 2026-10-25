@@ -179,6 +179,7 @@ fn coverage(
                 .and_then(|r| r.backfilled_ms)
                 .or(known_since)
                 .map(|ms| Timestamp(iso_ms(ms))),
+            partly_read: row.is_some_and(|r| r.partly_read).then_some(true),
         });
     }
     MetricsCoverage {

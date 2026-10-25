@@ -7,8 +7,8 @@
 //! - `steer.queued` by a human key;
 //! - `decision.recorded` with source human;
 //! - `workstream.created` submitted directly by the person (app or MCP), credited by its text's length;
-//! - a landed change a human account merged by hand (from `pr.merged_outside`). The event doesn't name the merger
-//!   yet, so it stays unattributed and out of the person's minutes until it does (`human::attributed`).
+//! - a landed change a human account merged by hand (from `pr.merged_outside` or the host sweep), keyed on the
+//!   merger's login, so it is the person's only when that login is one of theirs (`human::attributed`).
 //!
 //! The person's local Claude Code transcripts are not read, and app use comes with `app.presence` (metrics PR 7).
 use fleetd_contracts::chat::{ChatAuthor, ChatMessage, ChatMessageEventData};
