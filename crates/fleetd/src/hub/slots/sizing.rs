@@ -8,6 +8,10 @@
 //!
 //! Disk is room, not a cap: the new agents its free space takes above the guard's floor, 5 GB each (`diskPerAgentGb`).
 //!
+//! Memory is also a budget across projects: the agents running on a machine, each at its project's measured figure or
+//! the node's, must fit in what [`auto_cap`] leaves after the reserve ([`Memory`]). The count cap and the budget both
+//! hold.
+//!
 //! A project whose agents have been measured on the machine ([`MIN_SAMPLES`] sessions) is sized at its own figure, the
 //! 90th percentile of its sessions' peaks, when that fits fewer: a Rust project that takes 4 GB an agent runs fewer at
 //! once than a docs project beside it.
@@ -39,6 +43,12 @@ fn sold_gb(bytes: i64) -> i64 {
     (bytes + GIB - 1) / GIB
 }
 
+/// GB left for agents on a machine of `total` GB, after a quarter of it, 4 to 16 GB, for the OS and the human's apps.
+fn usable_gb(total: i64) -> f64 {
+    let reserve = (total as f64 / 4.0).clamp(4.0, 16.0);
+    (total as f64 - reserve).max(0.0)
+}
+
 pub fn auto_cap(load: &NodeLoad) -> Auto {
     let cpus = load.cpus.get();
     let cpu_term = (cpus - (cpus + 7) / 8).max(1);
@@ -50,8 +60,7 @@ pub fn auto_cap(load: &NodeLoad) -> Auto {
         / 1e9;
     let (mem_term, mem_why) = match load.mem_total_bytes.map(|b| sold_gb(b.get())) {
         Some(total) => {
-            let reserve = (total as f64 / 4.0).clamp(4.0, 16.0);
-            let term = (((total as f64 - reserve).max(0.0) / per_agent_gb).floor() as i64).max(1);
+            let term = ((usable_gb(total) / per_agent_gb).floor() as i64).max(1);
             (term, format!("memory {total} GB"))
         }
         None => (UNKNOWN_MEM_TERM, "memory unknown".to_owned()),
@@ -95,6 +104,44 @@ pub fn project_caps(load: &NodeLoad, machine: &Auto) -> Vec<(ProjectId, Auto)> {
             })
         })
         .collect()
+}
+
+/// A machine's memory for agents, and what each of its agents takes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Memory {
+    /// Bytes for agents: total less the reserve, in the decimal GB node.json speaks, as [`auto_cap`] counts it.
+    pub usable: i64,
+    /// What an agent of a project not yet measured takes: the node's `memPerAgentGb`, else 2 GB.
+    pub per_agent: i64,
+    /// The projects with [`MIN_SAMPLES`] sessions measured, at their sessions' 90th percentile.
+    pub projects: Vec<(ProjectId, i64)>,
+}
+
+impl Memory {
+    /// What one of the project's agents takes here.
+    pub fn per_agent_of(&self, project: &ProjectId) -> i64 {
+        self.projects
+            .iter()
+            .find(|(p, _)| p == project)
+            .map_or(self.per_agent, |(_, bytes)| *bytes)
+    }
+}
+
+/// The machine's memory budget for agents; None while its node reports no total.
+pub fn memory(load: &NodeLoad) -> Option<Memory> {
+    let total = sold_gb(load.mem_total_bytes?.get());
+    let measured = load.project_memory.iter().flat_map(|l| l.iter());
+    Some(Memory {
+        usable: (usable_gb(total) * 1e9) as i64,
+        per_agent: load
+            .mem_per_agent_bytes
+            .map_or(MEM_PER_AGENT, |b| b.get())
+            .max(1),
+        projects: measured
+            .filter(|p| p.samples.get() >= MIN_SAMPLES)
+            .map(|p| (p.project_id.clone(), p.p90_bytes.get().max(1)))
+            .collect(),
+    })
 }
 
 /// New agents the machine's free disk takes above the floor, before counting the ones started in the last 10
@@ -233,6 +280,26 @@ mod tests {
         measured(&mut old, &[("rust", 12, 4_100_000_000)]);
         assert_eq!(project_caps(&old, &auto_cap(&old)), []);
         assert_eq!(project_caps(&machine(32, Some(59)), &auto_59), []);
+    }
+
+    #[test]
+    fn the_memory_budget_is_what_the_cap_divides() {
+        // 59 GB: 44.25 GB for agents, as the cap counts it.
+        let mut load = machine(32, Some(59));
+        measured(
+            &mut load,
+            &[("rust", 12, 4_100_000_000), ("new", 4, 9 * GB)],
+        );
+        let memory = memory(&load).unwrap();
+        assert_eq!(memory.usable, 44_250_000_000);
+        assert_eq!(
+            memory.per_agent_of(&ProjectId::unchecked("rust")),
+            4_100_000_000
+        );
+        // Too few samples, or never measured: the node's figure.
+        assert_eq!(memory.per_agent_of(&ProjectId::unchecked("new")), 2 * GB);
+        assert_eq!(memory.per_agent_of(&ProjectId::unchecked("docs")), 2 * GB);
+        assert_eq!(super::memory(&machine(32, None)), None);
     }
 
     #[test]

@@ -158,6 +158,7 @@ fn load(db: &HubDb) -> Result<Board, StoreError> {
                     // Until its next heartbeat.
                     disk_room: None,
                     projects: Vec::new(),
+                    memory: None,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -334,7 +335,7 @@ impl Slots {
     }
 
     /// A heartbeat's facts about the machine (`name` for the reasons people read): what it fits, its disk room, and
-    /// what each project measured there fits. When it takes more than before, starts the queued agents that now fit
+    /// what each project measured there fits, and its memory budget. When it takes more than before, starts the queued agents that now fit
     /// and runs the listeners.
     pub fn observe_machine(
         &self,
@@ -343,10 +344,11 @@ impl Slots {
         load: &NodeLoad,
     ) -> Result<(), StoreError> {
         let (auto, disk_room) = (sizing::auto_cap(load), sizing::disk_room(load));
-        let projects = sizing::project_caps(load, &auto);
+        let (projects, memory) = (sizing::project_caps(load, &auto), sizing::memory(load));
         self.locked(|b| {
             let more = b.observe_machine(machine_id, name, auto, disk_room);
-            ((), b.observe_projects(machine_id, projects) || more)
+            let more = b.observe_projects(machine_id, projects) || more;
+            ((), b.observe_memory(machine_id, memory) || more)
         })
     }
 

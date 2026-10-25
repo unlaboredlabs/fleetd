@@ -2692,22 +2692,30 @@ impl SessionService {
             .map(|(id, l)| (id.clone(), l.pid as i32))
             .collect();
         // Task agents only: a lead or a person's thread is no agent the cap counts.
-        let agents: Vec<(String, String, i32)> = live
+        let (agents, roots): (Vec<(String, String)>, Vec<memory::Root>) = live
             .into_iter()
             .filter_map(|(id, pid)| {
                 let row = self.store().session(&id).ok().flatten()?;
-                (row.local.role == SessionRole::Worker)
-                    .then(|| (row.summary.project_id.to_string(), id, pid))
+                // The start time recorded with this pid, so a pid the kernel has since reused is never measured.
+                let start = row
+                    .local
+                    .pid_start
+                    .filter(|_| row.local.pid == Some(pid as u32));
+                (row.local.role == SessionRole::Worker).then(|| {
+                    (
+                        (row.summary.project_id.to_string(), id),
+                        memory::Root { pid, start },
+                    )
+                })
             })
-            .collect();
+            .unzip();
         if agents.is_empty() {
             return;
         }
-        let roots: Vec<i32> = agents.iter().map(|(_, _, pid)| *pid).collect();
         let bytes = blocking(move || memory::sample(&roots)).await;
         let mut peaks = self.inner.peaks.lock().unwrap_or_else(|p| p.into_inner());
         let mut changed = false;
-        for ((project, id, _), bytes) in agents.iter().zip(bytes) {
+        for ((project, id), bytes) in agents.iter().zip(bytes) {
             if bytes > 0 {
                 changed |= peaks.record(project, id, bytes);
             }

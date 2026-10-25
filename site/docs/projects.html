@@ -225,10 +225,15 @@ whole fleet. The hub enforces all of them; the lead plans to them.</p>
 in the last 10 minutes still counted, since their worktrees haven’t grown yet. The lead’s state line names what sets
 its cap, e.g. “agents: 4 running of 6 (auto: memory 18 GB), 2 queued”.</p>
 <p>Each machine measures what its agents take: the peak memory of each agent’s whole process tree, claude and its
-builds and tests included. Once 5 of a project’s agents have been measured on a machine, its cap there is sized at the
+builds and tests included, that the system can’t just drop. On Linux that is the agent’s own scope’s memory less its
+file cache, or the processes’ proportional share (PSS) when it has no scope; on macOS, their resident memory. Once 5 of a project’s agents have been measured on a machine, its cap there is sized at the
 90th percentile of its latest 20 peaks instead of 2 GB, if that fits fewer. A Rust project whose agents take 4 GB each
 runs fewer at once than a docs project beside it, and its line says so: “agents: 2 running of 10 (auto: memory 4.1 GB
 per agent, seen on this project)”. The peaks are kept in <code dir="auto">~/.fleetd/node/memory.json</code>.</p>
+<p>Memory is also shared across projects. A new agent starts on a machine only if every agent running there, each at its
+project’s measured figure (or 2 GB until it has one), plus the new one, fits in the memory the cap leaves for agents.
+Otherwise it waits, saying for example “memory: 3 running need 12.3 GB of 14 GB free on builder-1”. The first agent on
+a machine always starts. This works alongside the count cap.</p>
 <p>The header shows “· 2 queued” when agents wait their turn. While you move the slider it says what the change will do; it
 applies when you let go, with Undo. A fleet cap below a project’s own max gets a warning.</p>
 <p>Writers in a project run side by side, each in its own worktree and branch. The lead gives them slices that touch

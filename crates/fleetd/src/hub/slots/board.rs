@@ -2,7 +2,7 @@
 //! thread events, machine facts and the time.
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadId};
 
-use super::sizing::{self, Auto};
+use super::sizing::{self, Auto, Memory};
 
 /// An agent started this recently still counts against its machine's disk room: its worktree hasn't grown yet.
 pub const SETTLE_MS: i64 = 10 * 60 * 1000;
@@ -46,6 +46,8 @@ pub struct Machine {
     /// The projects that fit fewer here at their own measured memory per agent ([`sizing::project_caps`]), as of the
     /// last heartbeat.
     pub projects: Vec<(ProjectId, Auto)>,
+    /// Its memory budget for agents as of the last heartbeat; None while unknown, which sets no budget.
+    pub memory: Option<Memory>,
 }
 
 impl Machine {
@@ -170,6 +172,16 @@ enum Limit {
     Project,
 }
 
+/// Bytes as the GB a person reads: "12.3 GB", "14 GB".
+fn gb(bytes: i64) -> String {
+    let tenths = (bytes as f64 / 1e8).round() as i64;
+    if tenths % 10 == 0 {
+        format!("{} GB", tenths / 10)
+    } else {
+        format!("{}.{} GB", tenths / 10, tenths % 10)
+    }
+}
+
 fn same(a: &ProjectRef, b: &ProjectRef) -> bool {
     a.machine_id == b.machine_id && a.project_id == b.project_id
 }
@@ -275,6 +287,7 @@ impl Board {
                     max_agents: None,
                     disk_room,
                     projects: Vec::new(),
+                    memory: None,
                 });
                 self.ops
                     .push(Op::Machine(machine_id.clone(), name.to_owned(), auto));
@@ -316,6 +329,52 @@ impl Board {
         });
         m.projects = projects;
         grew
+    }
+
+    /// The machine's memory budget at a heartbeat, after [`Self::observe_machine`]. True when it changed, so the
+    /// caller evaluates and notifies.
+    pub fn observe_memory(&mut self, machine_id: &MachineId, memory: Option<Memory>) -> bool {
+        let Some(m) = self
+            .machines
+            .iter_mut()
+            .find(|x| x.machine_id == *machine_id)
+        else {
+            return false;
+        };
+        let changed = m.memory != memory;
+        m.memory = memory;
+        changed
+    }
+
+    /// The agents holding a slot on the machine, what they take in memory together, and its budget. None while the
+    /// budget is unknown.
+    fn memory_use(&self, m: &MachineId) -> Option<(i64, i64, &Memory)> {
+        let memory = self.machine(m)?.memory.as_ref()?;
+        let held = self
+            .claims
+            .iter()
+            .filter(|c| c.state == ClaimState::Held && c.project_ref.machine_id == *m);
+        let (running, need) = held.fold((0, 0), |(n, need), c| {
+            (n + 1, need + memory.per_agent_of(&c.project_ref.project_id))
+        });
+        Some((running, need, memory))
+    }
+
+    /// Whether one more of the project's agents would overrun its machine's memory budget, and if so the reason. The
+    /// first agent on a machine always fits, so a project heavier than the whole budget still runs one at a time.
+    fn over_memory(&self, r: &ProjectRef) -> Option<String> {
+        let (running, need, memory) = self.memory_use(&r.machine_id)?;
+        if running == 0 || need + memory.per_agent_of(&r.project_id) <= memory.usable {
+            return None;
+        }
+        let name = self
+            .machine(&r.machine_id)
+            .map_or(r.machine_id.as_str(), |x| x.name.as_str());
+        Some(format!(
+            "memory: {running} running need {} of {} free on {name}",
+            gb(need),
+            gb(memory.usable)
+        ))
     }
 
     /// The project's own measure on its machine, while no person set the machine's cap.
@@ -398,6 +457,8 @@ impl Board {
             Some(format!(
                 "machine cap: {on_machine} of {machine_cap} running on {name} ({why})"
             ))
+        } else if let Some(reason) = self.over_memory(r) {
+            Some(reason)
         } else if fresh && self.disk_room(m) == Some(0) {
             Some(format!(
                 "disk: no room for another agent on {name} until the new worktrees settle or space frees"
@@ -424,6 +485,7 @@ impl Board {
             Some(Limit::Project)
         } else if on_machine >= self.machine_cap(&r.machine_id)
             || self.disk_room(&r.machine_id) == Some(0)
+            || self.over_memory(r).is_some()
         {
             Some(Limit::Machine)
         } else if self.cap.is_some_and(|cap| used >= cap) {
@@ -433,14 +495,21 @@ impl Board {
         }
     }
 
-    /// How many more of the project's tasks could start now: under the fleet cap if set, its machine's cap and disk
-    /// room, and its max agents.
+    /// How many more of the project's tasks could start now: under the fleet cap if set, its machine's cap, memory
+    /// budget and disk room, and its max agents.
     pub fn room(&self, r: &ProjectRef) -> i64 {
         let (used, on_machine, running) = self.held(r);
         let fleet = self.cap.map_or(i64::MAX, |cap| cap - used);
         let disk = self.disk_room(&r.machine_id).unwrap_or(i64::MAX);
+        let memory = self
+            .memory_use(&r.machine_id)
+            .map_or(i64::MAX, |(running, need, memory)| {
+                let fits = (memory.usable - need).max(0) / memory.per_agent_of(&r.project_id);
+                if running == 0 { fits.max(1) } else { fits }
+            });
         fleet
             .min(self.machine_cap(&r.machine_id) - on_machine)
+            .min(memory)
             .min(disk)
             .min(self.max_agents_of(r) - running)
             .max(0)
@@ -742,6 +811,7 @@ mod tests {
             max_agents: None,
             disk_room,
             projects: Vec::new(),
+            memory: None,
         }
     }
 
@@ -1186,6 +1256,101 @@ mod tests {
         assert!(
             k.board.take_ops().is_empty(),
             "an unchanged measure isn't saved again"
+        );
+    }
+
+    /// A machine with 14 GB for agents, where Rust's agents take 4.1 GB, docs' 1 GB, and a project not yet measured
+    /// counts the node's 2 GB.
+    fn budget() -> Memory {
+        Memory {
+            usable: 14_000_000_000,
+            per_agent: 2_000_000_000,
+            projects: vec![
+                (ProjectId::unchecked("rust"), 4_100_000_000),
+                (ProjectId::unchecked("docs"), 1_000_000_000),
+            ],
+        }
+    }
+
+    /// Every project's agents on a machine share its memory, each at its project's figure: a lighter project still
+    /// starts where a heavier one waits, and a freed heavy agent lets the next one in.
+    #[test]
+    fn agents_of_every_project_on_a_machine_share_its_memory() {
+        let (rust, docs, new) = (
+            on_machine("big", "rust"),
+            on_machine("big", "docs"),
+            on_machine("big", "new"),
+        );
+        let mut k = Kit::on(None, vec![machine("big", 20, None)]);
+        assert!(k.board.observe_memory(&mid("big"), Some(budget())));
+        assert!(!k.board.observe_memory(&mid("big"), Some(budget())));
+        // 4.1 + 4.1 + 1 + 1 + 2 = 12.2 GB.
+        for (h, r) in [
+            ("T1", &rust),
+            ("T2", &rust),
+            ("T3", &docs),
+            ("T4", &docs),
+            ("T5", &new),
+        ] {
+            assert_eq!(k.acquire(h, r, SlotPriority::Work), Grant::Granted, "{h}");
+        }
+        assert_eq!(
+            k.acquire("T6", &rust, SlotPriority::Work),
+            queued("memory: 5 running need 12.2 GB of 14 GB free on big-box")
+        );
+        assert_eq!(k.board.room(&rust), 0);
+        assert_eq!(k.board.room(&docs), 1);
+        assert_eq!(k.acquire("T7", &docs, SlotPriority::Work), Grant::Granted);
+        // The project with no samples yet counts 2 GB: 13.2 + 2 doesn't fit.
+        assert_eq!(
+            k.acquire("T8", &new, SlotPriority::Work),
+            queued("memory: 6 running need 13.2 GB of 14 GB free on big-box")
+        );
+        assert_eq!(
+            k.board.position("T8"),
+            Some(2),
+            "behind T6 on the same machine"
+        );
+        // A Rust agent ends: 9.1 GB, so the queued Rust agent fits; the new project's still doesn't.
+        k.release("T1");
+        assert_eq!(k.grants, ["T6"]);
+        assert_eq!(k.board.agents(&new), (1, 1));
+        // Without a budget (an older node) only the counts hold.
+        assert!(k.board.observe_memory(&mid("big"), None));
+        k.freed();
+        assert_eq!(k.grants, ["T6", "T8"]);
+    }
+
+    /// The memory budget works alongside the agent-count cap, and the first agent on a machine always starts.
+    #[test]
+    fn the_count_cap_still_holds_and_one_heavy_agent_always_runs() {
+        let rust = on_machine("small", "rust");
+        let mut k = Kit::on(None, vec![machine("small", 2, None)]);
+        let roomy = Memory {
+            usable: 100_000_000_000,
+            per_agent: 2_000_000_000,
+            projects: Vec::new(),
+        };
+        k.board.observe_memory(&mid("small"), Some(roomy));
+        k.acquire("T1", &rust, SlotPriority::Work);
+        k.acquire("T2", &rust, SlotPriority::Work);
+        assert_eq!(
+            k.acquire("T3", &rust, SlotPriority::Work),
+            queued("machine cap: 2 of 2 running on small-box (memory 18 GB)")
+        );
+        let heavy = on_machine("tiny", "rust");
+        let mut k = Kit::on(None, vec![machine("tiny", 4, None)]);
+        let tight = Memory {
+            usable: 4_000_000_000,
+            per_agent: 2_000_000_000,
+            projects: vec![(ProjectId::unchecked("rust"), 9_000_000_000)],
+        };
+        k.board.observe_memory(&mid("tiny"), Some(tight));
+        assert_eq!(k.board.room(&heavy), 1);
+        assert_eq!(k.acquire("T1", &heavy, SlotPriority::Work), Grant::Granted);
+        assert_eq!(
+            k.acquire("T2", &heavy, SlotPriority::Work),
+            queued("memory: 1 running need 9 GB of 4 GB free on tiny-box")
         );
     }
 
