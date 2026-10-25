@@ -194,15 +194,23 @@ impl TaskPorts for HubTaskPorts {
     fn work_scope<'a>(
         &'a self,
         project_ref: &'a ProjectRef,
-        bind: bool,
     ) -> BoxFut<'a, Result<Option<WorkScope>, StoreError>> {
         Box::pin(async move {
-            let Some(hub) = self.hub() else {
-                return Ok(None);
-            };
-            match hub.work.scope_of(project_ref)? {
-                Some(scope) => Ok(Some(scope)),
-                None if bind => crate::hub::work::bind_from_root(&hub, project_ref).await,
+            match self.hub() {
+                Some(hub) => hub.work.scope_of(project_ref),
+                None => Ok(None),
+            }
+        })
+    }
+
+    fn work_bind(
+        &self,
+        project_ref: &ProjectRef,
+    ) -> BoxFut<'static, Result<Option<WorkScope>, StoreError>> {
+        let (hub, project) = (self.hub(), project_ref.clone());
+        Box::pin(async move {
+            match hub {
+                Some(hub) => crate::hub::work::bind_from_root(&hub, &project).await,
                 None => Ok(None),
             }
         })

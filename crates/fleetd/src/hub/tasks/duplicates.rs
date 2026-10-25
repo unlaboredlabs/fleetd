@@ -28,6 +28,8 @@ const REFUSED_MAX: usize = 5;
 
 /// The spawn's note when its project has no repo and base to check in.
 pub const UNBOUND: &str = "no repo bound; duplicate check skipped";
+/// The spawn's note while its project's repo and base are still being read, in the background.
+pub const BINDING: &str = "no repo bound yet; duplicate check skipped";
 
 /// New work as the matcher reads it: held by its project, with its item and PR declared.
 pub fn intent(

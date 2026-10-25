@@ -152,14 +152,20 @@ pub trait TaskPorts: Send + Sync {
     /// `leads::digest::done_when_text` of the brief's lines, at most 200 units each, for the task prompt's "Done
     /// when:".
     fn done_when_text(&self, brief: &Brief) -> String;
-    /// Work.scope_of; with `bind`, binding the project from its root first when it has none
-    /// (`work::bind_from_root`, which may ask its node). `None` when it isn't bound. Plain ports bind nothing, so
+    /// Work.scope_of: the repo and base the project's work lands on, as recorded. Plain ports record none, so
     /// nothing is checked.
     fn work_scope<'a>(
         &'a self,
         _project_ref: &'a ProjectRef,
-        _bind: bool,
     ) -> BoxFut<'a, Result<Option<WorkScope>, StoreError>> {
+        Box::pin(async { Ok(None) })
+    }
+    /// `work::bind_from_root`: reads and records them from the project's root, which asks its node and may wait on
+    /// its remote. `'static`, so the tasks can leave it running in the background.
+    fn work_bind(
+        &self,
+        _project_ref: &ProjectRef,
+    ) -> BoxFut<'static, Result<Option<WorkScope>, StoreError>> {
         Box::pin(async { Ok(None) })
     }
     /// Work.observe: the scope's writers' changed paths, asked of their nodes at once, none waited on past
