@@ -172,6 +172,33 @@ fn claude_env_lines_parse_like_a_shell_would_read_them() {
 }
 
 #[test]
+fn a_sessions_env_has_no_ssh_agent_even_when_the_node_has_one() {
+    let node: std::collections::HashMap<&str, &str> = [
+        ("HOME", "/home/me"),
+        ("PATH", "/usr/bin"),
+        ("GIT_AUTHOR_EMAIL", "me@example.com"),
+        ("SSH_AUTH_SOCK", "/run/user/1000/ssh-agent.sock"),
+        ("SSH_AGENT_PID", "4242"),
+        ("GIT_SSH_COMMAND", "ssh -i ~/.ssh/deploy"),
+        ("GIT_SSH", "/usr/bin/ssh"),
+        ("CLAUDE_CODE_ENTRYPOINT", "cli"),
+    ]
+    .into();
+    let env = super::session_env(|key| node.get(key).map(|v| (*v).to_owned()));
+    let keys: Vec<&str> = env.iter().map(|(k, _)| k.as_str()).collect();
+    assert_eq!(keys, ["HOME", "PATH", "GIT_AUTHOR_EMAIL"]);
+    let config = SessionConfig::for_node(Path::new("/nonexistent-node-home"));
+    assert!(
+        !config
+            .base_env
+            .iter()
+            .any(|(k, _)| k.starts_with("SSH_") || k.starts_with("GIT_SSH")),
+        "{:?}",
+        config.base_env
+    );
+}
+
+#[test]
 fn sessions_share_one_compile_cache_when_sccache_is_installed() {
     let dir = tempfile::tempdir().unwrap();
     let path = |p: &std::path::Path| ("PATH".to_owned(), p.to_string_lossy().into_owned());

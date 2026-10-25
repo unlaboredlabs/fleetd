@@ -103,6 +103,11 @@ pub trait TrainHost: Send + Sync + 'static {
     fn branch_prefix<'a>(&'a self, _project_ref: &'a ProjectRef) -> BoxFut<'a, Option<String>> {
         Box::pin(async { Some(fleetd_contracts::tasks::DEFAULT_BRANCH_PREFIX.to_string()) })
     }
+    /// Whether the work ledger's landing scanner watches `repo`'s `base`: it then tells the leads about each merge
+    /// there that didn't go through the train, so the train doesn't.
+    fn landings_watched(&self, _repo: &str, _base: &str) -> bool {
+        false
+    }
     /// Where the train's state and CI spans go; none in tests.
     fn time(&self) -> Option<crate::hub::time::TimeSink> {
         None

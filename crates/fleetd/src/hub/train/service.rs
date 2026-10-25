@@ -1266,8 +1266,9 @@ impl Train {
     }
 
     /// PRs merged without the train into the repo's default branch or a base its Changes target: each one is reported
-    /// once, as `pr.merged_outside` and a line to the lead. Others share the repo, not the train: another fleet's
-    /// namespace, or a branch fleetd never merges into. The train's own batch PRs (its scratch branches) are its merges.
+    /// once, as `pr.merged_outside`, and as a line to the lead unless the landing scanner watches that base. Others
+    /// share the repo, not the train: another fleet's namespace, or a branch fleetd never merges into. The train's own
+    /// batch PRs (its scratch branches) are its merges.
     async fn check_merged_outside(
         &self,
         repo: &str,
@@ -1349,7 +1350,10 @@ impl Train {
                 pr.number, pr.base
             );
             self.emit(project_ref, "pr.merged_outside", line.clone(), data);
-            self.wake_lead(project_ref, line).await;
+            // Where the landing scanner watches, its `work.landed` line tells the lead, once.
+            if !self.host.landings_watched(repo, &pr.base) {
+                self.wake_lead(project_ref, line).await;
+            }
         }
         if newest > watch_since_ms {
             self.records.watch_past(repo, newest);

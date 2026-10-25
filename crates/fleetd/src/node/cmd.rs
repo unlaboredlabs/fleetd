@@ -221,11 +221,14 @@ pub async fn run_confined(run: ConfinedRun<'_>, roots: &[String]) -> RunOutcome 
 /// Runs one `cmd_check` and always answers it. `exitCode` is null when the command timed out, died of a signal,
 /// could not start, or was refused; `outputTail` then says which.
 pub async fn run_cmd_check(frame: CmdCheck, roots: &[String]) -> CmdResult {
+    // Git the hub runs (the landing scanner's fetches) reaches an SSH remote through the user's agent; nothing else
+    // gets it.
+    let git = frame.argv.first().is_some_and(|c| c == "git");
     let run = ConfinedRun {
         cwd: &frame.cwd,
         argv: &frame.argv,
         timeout_sec: frame.timeout_sec.get() as u64,
-        env: None,
+        env: git.then(super::util::git_command_env),
         scrub: &[],
     };
     let outcome = run_confined(run, roots).await;

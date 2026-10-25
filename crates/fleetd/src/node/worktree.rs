@@ -558,7 +558,11 @@ impl FetchError {
     }
 
     fn of(e: &GitError) -> Self {
-        let text = e.0.as_str();
+        Self::of_text(&e.0)
+    }
+
+    /// Why a fetch failed, from what git printed (the hub's landing scanner reads it from a node command's output).
+    pub fn of_text(text: &str) -> Self {
         let has = |needles: &[&str]| needles.iter().any(|n| text.contains(n));
         // The first line git explains itself on, without our "git … failed: " prefix.
         let line = text

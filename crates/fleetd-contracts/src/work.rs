@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::brand;
 use crate::ids::{ProjectRef, Timestamp};
 use crate::plan::PlanItemId;
-use crate::prim::{Line, List, js_len};
+use crate::prim::{Line, List, Positive, js_len};
 use crate::projects::short_remote;
 use crate::tasks::PrUrl;
 use crate::train::ChangeId;
@@ -252,6 +252,31 @@ pub struct WorkEventData {
     /// work.ended: why.
     pub reason: Option<String>,
     pub landing: Option<CommitSha>,
+}
+
+/// `HubEvent.data` on `work.landed`: a commit that reached a watched base, however it got there, and the fleetd work
+/// it was.
+#[serde_with::skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkLandedData {
+    pub repo_key: RepoKey,
+    pub base: BranchName,
+    pub sha: CommitSha,
+    pub route: LandingRoute,
+    /// The PR or merge request it came from, when the merge message or the host names one.
+    pub pr_number: Option<Positive>,
+    /// The branch it came from, when the merge message or the host names one.
+    pub head_branch: Option<BranchName>,
+    pub subject: Line<0, 300>,
+    /// The claims it ended.
+    pub claim_ids: Vec<ClaimId>,
+    /// The Change it is, or merged.
+    pub change_id: Option<ChangeId>,
+    /// The write task whose work it is: its Change's, or the one whose branch it came from.
+    pub task_id: Option<crate::tasks::TaskId>,
+    /// The plan item of its task.
+    pub item_ids: Vec<PlanItemId>,
 }
 
 #[cfg(test)]
