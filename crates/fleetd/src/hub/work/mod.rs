@@ -16,9 +16,9 @@ pub mod view;
 pub use bind::bind_from_root;
 
 #[cfg(test)]
-mod matcher_tests;
-#[cfg(test)]
 mod elsewhere_tests;
+#[cfg(test)]
+mod matcher_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
