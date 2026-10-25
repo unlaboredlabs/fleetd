@@ -210,6 +210,12 @@ pub enum HubEventType {
     /// A node's fetch saw a remote's default branch move; `data` is `metrics::RepoAdvancedData`.
     #[serde(rename = "repo.advanced")]
     RepoAdvanced,
+    /// Work was claimed on a repo's base; `data` is `work::WorkEventData`.
+    #[serde(rename = "work.claimed")]
+    WorkClaimed,
+    /// A claim landed, was released or expired; `data` is `work::WorkEventData`.
+    #[serde(rename = "work.ended")]
+    WorkEnded,
 }
 
 impl HubEventType {
@@ -282,6 +288,8 @@ impl HubEventType {
             Self::ChatWaiting => "chat.waiting",
             Self::AppPresence => "app.presence",
             Self::RepoAdvanced => "repo.advanced",
+            Self::WorkClaimed => "work.claimed",
+            Self::WorkEnded => "work.ended",
         }
     }
 }

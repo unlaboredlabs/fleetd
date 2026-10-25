@@ -591,6 +591,54 @@
       ],
       "x-open": true
     },
+    "ClaimId": {
+      "pattern": "^C[1-9][0-9]*$",
+      "type": "string"
+    },
+    "ClaimOwnerKind": {
+      "oneOf": [
+        {
+          "const": "human_session",
+          "description": "A person's own session (Claude Code over MCP, or the CLI).",
+          "type": "string"
+        },
+        {
+          "const": "agent_key",
+          "description": "Anything else holding an agent key.",
+          "type": "string"
+        },
+        {
+          "const": "lead",
+          "description": "A project's lead, holding work in reserve.",
+          "type": "string"
+        }
+      ]
+    },
+    "ClaimState": {
+      "oneOf": [
+        {
+          "enum": [
+            "active"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "landed",
+          "description": "Its work reached the base.",
+          "type": "string"
+        },
+        {
+          "const": "released",
+          "description": "Its owner dropped it.",
+          "type": "string"
+        },
+        {
+          "const": "expired",
+          "description": "Not renewed for `CLAIM_TTL_MS`.",
+          "type": "string"
+        }
+      ]
+    },
     "ClonePhase": {
       "oneOf": [
         {
@@ -1004,6 +1052,12 @@
         "usage.resumed": {
           "$ref": "#/$defs/UsageEventData"
         },
+        "work.claimed": {
+          "$ref": "#/$defs/WorkEventData"
+        },
+        "work.ended": {
+          "$ref": "#/$defs/WorkEventData"
+        },
         "workstream.created": {
           "$ref": "#/$defs/WorkstreamEventData"
         },
@@ -1064,6 +1118,8 @@
         "thread.waiting",
         "usage.breaker",
         "usage.resumed",
+        "work.claimed",
+        "work.ended",
         "workstream.created",
         "workstream.done",
         "workstream.running",
@@ -1558,6 +1614,9 @@
         "to"
       ],
       "type": "object"
+    },
+    "RepoKey": {
+      "type": "string"
     },
     "RequestEventData": {
       "description": "`request.opened`, `request.updated`.",
@@ -2166,6 +2225,47 @@
       "required": [
         "threadId",
         "kind"
+      ],
+      "type": "object"
+    },
+    "WorkEventData": {
+      "description": "`HubEvent.data` on `work.claimed` and `work.ended`.",
+      "properties": {
+        "base": {
+          "maxLength": 250,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "claimId": {
+          "$ref": "#/$defs/ClaimId"
+        },
+        "landing": {
+          "$ref": "#/$defs/CommitSha"
+        },
+        "ownerKind": {
+          "$ref": "#/$defs/ClaimOwnerKind"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "reason": {
+          "description": "work.ended: why.",
+          "type": "string"
+        },
+        "repoKey": {
+          "$ref": "#/$defs/RepoKey"
+        },
+        "state": {
+          "$ref": "#/$defs/ClaimState"
+        }
+      },
+      "required": [
+        "claimId",
+        "repoKey",
+        "base",
+        "ownerKind",
+        "state"
       ],
       "type": "object"
     },

@@ -662,6 +662,12 @@ export type KnownCiState = "green" | "red" | "pending" | "unknown";
 /** KnownCiState, or a value from a newer hub. */
 export type CiState = KnownCiState | (string & {});
 
+export type ClaimId = string;
+
+export type ClaimOwnerKind = "human_session" | "agent_key" | "lead";
+
+export type ClaimState = "active" | "landed" | "released" | "expired";
+
 export type ClonePhase = "starting" | "receiving" | "resolving" | "checking_out" | "inspecting";
 
 /**
@@ -1150,7 +1156,9 @@ export type KnownHubEventType =
   | "chat.message"
   | "chat.waiting"
   | "app.presence"
-  | "repo.advanced";
+  | "repo.advanced"
+  | "work.claimed"
+  | "work.ended";
 /** KnownHubEventType, or a value from a newer hub. */
 export type HubEventType = KnownHubEventType | (string & {});
 
@@ -2652,6 +2660,8 @@ export type RepoCoverage = {
   repo: RemoteRepo;
 };
 
+export type RepoKey = string;
+
 /** A repo whose reads are failing: its figures stop at `since`, never a silent zero. */
 export type RepoStale = {
   /** "GitHub not read since 14:02: `gh` is signed out". */
@@ -3836,6 +3846,19 @@ export type WorkAction = {
   id: string;
 };
 
+/** `HubEvent.data` on `work.claimed` and `work.ended`. */
+export type WorkEventData = {
+  base: string;
+  claimId: ClaimId;
+  landing?: CommitSha;
+  ownerKind: ClaimOwnerKind;
+  projectRef?: ProjectRef;
+  /** work.ended: why. */
+  reason?: string;
+  repoKey: RepoKey;
+  state: ClaimState;
+};
+
 /** A message the agent or its person wrote. Secrets are replaced by `[secret]`. */
 export type WorkMessage = {
   at: Timestamp;
@@ -4031,6 +4054,8 @@ export interface HubEventDataMap {
   "thread.waiting": ThreadEventData;
   "usage.breaker": UsageEventData;
   "usage.resumed": UsageEventData;
+  "work.claimed": WorkEventData;
+  "work.ended": WorkEventData;
   "workstream.created": WorkstreamEventData;
   "workstream.done": WorkstreamEventData;
   "workstream.running": WorkstreamEventData;

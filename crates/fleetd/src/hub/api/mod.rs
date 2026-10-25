@@ -140,6 +140,7 @@ pub struct Hub {
     pub plans: Arc<crate::hub::plan::Plans>,
     pub chat: Arc<crate::hub::chat::Chat>,
     pub prs: Arc<crate::hub::prs::Prs>,
+    pub work: Arc<crate::hub::work::Work>,
 }
 
 /// Every MCP tool the hub serves, from every area that registers. The one place that lists them.
