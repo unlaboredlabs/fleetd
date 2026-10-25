@@ -102,6 +102,7 @@ impl TaskPorts for HubTaskPorts {
                             branch: NonEmpty::new(branch).map_err(|_| {
                                 PortError::Failed("a worktree needs a branch".into())
                             })?,
+                            from_session: w.from,
                         },
                         None => SessionWorkspace::Detached {
                             base_ref,

@@ -7,8 +7,8 @@ use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::prim::Text;
 use fleetd_contracts::sessions::{
-    FailureClass, ItemKind, PermissionDecision, RunEnd, RunFailure, RunInfo, RunStatus,
-    SessionStatus, SessionSummary, ThreadItem,
+    FailureClass, ItemKind, PermissionDecision, RESUME_REFUSED, RunEnd, RunFailure, RunInfo,
+    RunStatus, SessionStatus, SessionSummary, ThreadItem,
 };
 
 use crate::node::runner::claude::ALWAYS_DISALLOWED;
@@ -202,7 +202,7 @@ pub fn start_mode(
         && claude_session_file(&local.config_dir, &local.cwd, session_id).exists()
     {
         return Err(format!(
-            "session {session_id} was started with the claude config dir {} and cannot resume under {}: claude \
+            "{RESUME_REFUSED}session {session_id} was started with the claude config dir {} and cannot resume under {}: claude \
              keeps the conversation there. Point the machine back at it (\"claudeConfigDir\": \"{}\" in the node's \
              node.json, then restart the node), or start a new session",
             local.config_dir.display(),
@@ -525,7 +525,7 @@ mod tests {
         assert!(file.ends_with("projects/-work-my-project-x/s1.jsonl"));
         std::fs::create_dir_all(file.parent().unwrap()).unwrap();
         std::fs::write(&file, "{}\n").unwrap();
-        assert!(start_mode(&local, &new, "s1").is_err());
+        assert!(start_mode(&local, &new, "s1").is_err_and(|e| e.starts_with(RESUME_REFUSED)));
     }
 
     #[test]

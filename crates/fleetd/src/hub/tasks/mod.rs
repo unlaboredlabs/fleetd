@@ -11,6 +11,8 @@ pub mod duplicates;
 #[cfg(test)]
 mod duplicates_tests;
 #[cfg(test)]
+mod fresh_tests;
+#[cfg(test)]
 mod guard_tests;
 pub mod hooks;
 pub mod policy;
@@ -37,7 +39,8 @@ use fleetd_contracts::prim::NonEmpty;
 use fleetd_contracts::prim::{Int, Text};
 use fleetd_contracts::sessions::{RunEnd, WorktreeBase};
 use fleetd_contracts::tasks::{
-    FetchFailedData, PrUrl, Task, TaskId, TaskKind, TaskResult, TaskResultStatus, TaskState,
+    FetchFailedData, PrUrl, RecoveryMode, Task, TaskId, TaskKind, TaskRecovery, TaskResult,
+    TaskResultStatus, TaskState,
 };
 use serde_json::{Map, Value, json};
 
@@ -213,6 +216,13 @@ fn state_name<T: serde::Serialize>(value: &T) -> String {
         .unwrap_or_default()
 }
 
+/// What a task whose context is full is sent first: claude's own compaction of its conversation.
+const COMPACT: &str = "/compact";
+/// How much of the earlier thread's last words a fresh thread's handoff carries.
+const HANDOFF_TAIL: usize = 1500;
+/// The most each node read for a handoff (the thread's changes, each git command) may take.
+const HANDOFF_STEP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+
 /// How long a run a task was continued in may take to show up before the ends of other runs count again.
 const CONTINUED_RUN_WAIT_MS: i64 = 2 * 60 * 1000;
 
@@ -276,6 +286,9 @@ pub struct Tasks {
     /// rebuilt their worktree from before the resume. Their lead's line goes once the run starts, when the node has
     /// said whether it rebuilt the worktree for it. Not kept across a hub restart.
     resumed: Mutex<HashMap<TaskId, (String, Option<ports::Rebuilt>)>>,
+    /// Fresh restarts' handoffs by task, for the attempt they were gathered for: `None` while the gathering runs. Not
+    /// kept across a hub restart, after which they are gathered again.
+    handoffs: Mutex<HashMap<TaskId, (i64, Option<String>)>>,
     /// Set once in `hub/serve` (`wire::wire`) to usage; unset passes through.
     pub hooks: TaskHooks,
     cursor: i64,
@@ -301,6 +314,7 @@ impl Tasks {
             binding: Arc::new(Mutex::new(HashSet::new())),
             unreachable: Mutex::new(HashMap::new()),
             resumed: Mutex::new(HashMap::new()),
+            handoffs: Mutex::new(HashMap::new()),
             hooks: TaskHooks::default(),
             cursor,
             applied: std::sync::atomic::AtomicI64::new(cursor),
@@ -374,6 +388,7 @@ impl Tasks {
 
     fn release_all(&self, task: &Task) -> Result<(), StoreError> {
         self.asking.lock().unwrap().remove(&task.task_id);
+        self.handoffs.lock().unwrap().remove(&task.task_id);
         self.continuing.lock().unwrap().remove(&task.task_id);
         self.resumed.lock().unwrap().remove(&task.task_id);
         self.d.slots.release(task.task_id.as_str())?;
@@ -424,8 +439,9 @@ impl Tasks {
         Ok(next)
     }
 
-    /// The task's new thread, its branch, and where the branch started.
-    async fn launch(&self, task: &Task) -> Result<Launched, StartError> {
+    /// The task's new thread, its branch, and where the branch started. `handoff`: a fresh restart, which takes over
+    /// the task's thread and its worktree, and whose agent gets the handoff after its brief.
+    async fn launch(&self, task: &Task, handoff: Option<&str>) -> Result<Launched, StartError> {
         let r = &task.project_ref;
         let Some(project) = self.d.store.project_get(r)? else {
             return Err(StartError::Other(format!(
@@ -468,7 +484,7 @@ impl Tasks {
             Vec::new()
         };
         let set = self.d.db.prompts().current(Some(r));
-        let prompt = render_task_prompt(
+        let mut prompt = render_task_prompt(
             &set,
             &render::PromptInput {
                 task,
@@ -480,6 +496,12 @@ impl Tasks {
                 elsewhere: &elsewhere,
             },
         );
+        if let Some(handoff) = handoff {
+            prompt = format!("{prompt}\n\n{handoff}");
+        }
+        let from = handoff
+            .and(task.thread_ref.as_ref())
+            .map(|t| t.thread_id.clone());
         let request = LaunchRequest {
             project_id: r.project_id.clone(),
             prompt: prompt.clone(),
@@ -494,6 +516,7 @@ impl Tasks {
                 base_ref,
                 branch: branch.clone(),
                 pr: task.pr.as_deref().map(str::to_owned),
+                from,
             }),
         };
         let (thread_id, base) = self.d.ports.launch(&r.machine_id, request).await?;
@@ -653,16 +676,36 @@ impl Tasks {
         if let Some(paused) = self.hooks.usage.get().and_then(|u| u.gate(&r.machine_id)) {
             return self.queue(stored, "usage", &paused);
         }
-        // Waiting to resume after a death: it goes on in its thread with the note, and any message sent meanwhile.
+        // A recovery due now goes on as its mode says: in its thread, `/compact` first, or in a fresh thread.
         let recovering = task.thread_ref.is_some()
             && task.recovery.as_ref().is_some_and(|r| r.next_at.is_some());
+        let mode = task
+            .recovery
+            .as_ref()
+            .filter(|_| recovering)
+            .map(|r| r.mode);
+        let fresh = mode == Some(RecoveryMode::Fresh);
+        let compact = mode == Some(RecoveryMode::Compact);
         let continuing =
-            task.thread_ref.is_some() && (stored.pending_message.is_some() || recovering);
+            task.thread_ref.is_some() && !fresh && (stored.pending_message.is_some() || recovering);
         // The disk and load guard holds new agents only; machine.guard runs the queue again. One with a thread
-        // continues in the worktree it has.
-        if !continuing && let Some(paused) = self.d.ports.paused(&r.machine_id) {
+        // continues in the worktree it has, a fresh restart too.
+        if !continuing
+            && !fresh
+            && let Some(paused) = self.d.ports.paused(&r.machine_id)
+        {
             return self.queue(stored, "guard", &paused);
         }
+        // A fresh restart's handoff reads the node (git, the thread's changes), off the lock: it waits queued until that
+        // is in, and the gathering runs the queue again.
+        let handoff = if fresh {
+            match self.handoff_ready(task) {
+                Some(handoff) => Some(handoff),
+                None => return Ok(task.clone()),
+            }
+        } else {
+            None
+        };
         let slot = self.d.slots.acquire(SlotRequest {
             holder: task.task_id.as_str(),
             project_ref: r,
@@ -674,10 +717,10 @@ impl Tasks {
 
         // A paused agent's thread is still pushing its work: it continues once that turn ended, when its stop frees
         // the slot and runs the queue again. One that asked its lead meanwhile continues with the answer.
-        if continuing && self.asking.lock().unwrap().contains(&task.task_id) {
+        if (continuing || fresh) && self.asking.lock().unwrap().contains(&task.task_id) {
             return Ok(task.clone());
         }
-        if continuing
+        if (continuing || fresh)
             && let Some(thread) = &task.thread_ref
             && self
                 .d
@@ -696,18 +739,29 @@ impl Tasks {
             ),
             _ => (String::new(), None),
         };
-        let started = if continuing {
-            let thread = task.thread_ref.as_ref().expect("continuing has a thread");
-            let note = task
-                .recovery
-                .as_ref()
-                .filter(|_| recovering)
-                .map(|recovery| self.recover_note(thread, recovery, &doing));
-            let message = [note.as_deref(), stored.pending_message.as_deref()]
+        // What the recovery says goes first, then anything sent into the gap.
+        let with_pending = |text: Option<String>| {
+            [text.as_deref(), stored.pending_message.as_deref()]
                 .into_iter()
                 .flatten()
                 .collect::<Vec<_>>()
-                .join("\n\n");
+                .join("\n\n")
+        };
+        let started = if let Some(handoff) = handoff {
+            self.launch(task, Some(&with_pending(Some(handoff)))).await
+        } else if continuing {
+            let thread = task.thread_ref.as_ref().expect("continuing has a thread");
+            // A full context compacts first; the note and anything sent meanwhile follow once that run completed.
+            let message = if compact {
+                COMPACT.to_owned()
+            } else {
+                with_pending(
+                    task.recovery
+                        .as_ref()
+                        .filter(|_| recovering)
+                        .map(|recovery| self.recover_note(thread, recovery, &doing)),
+                )
+            };
             let message = message.as_str();
             let id = request_id(task, &[&task.attempt.get().to_string()]);
             let steer =
@@ -736,7 +790,7 @@ impl Tasks {
             sent.map(|_| (thread.clone(), None, None))
                 .map_err(StartError::from)
         } else {
-            self.launch(task).await
+            self.launch(task, None).await
         };
         let (thread_ref, branch, base) = match started {
             Ok(started) => started,
@@ -744,6 +798,12 @@ impl Tasks {
                 self.d.slots.release(task.task_id.as_str())?;
                 self.retry_when_live(&r.machine_id);
                 return self.queue(stored, "offline", &offline);
+            }
+            // Its thread can't go on (claude's conversation is gone, or its config dir changed): a new one takes over.
+            Err(StartError::Other(message))
+                if continuing && message.contains(fleetd_contracts::sessions::RESUME_REFUSED) =>
+            {
+                return self.refused(stored, &message, from_queue).await;
             }
             Err(StartError::Other(message)) => {
                 return self.fail_to_start(stored, &message, from_queue);
@@ -754,6 +814,10 @@ impl Tasks {
         next.queued_reason = None;
         next.ended_at = None;
         next.parked = None;
+        if fresh && let Some(earlier) = task.thread_ref.clone() {
+            next.previous_threads.push(earlier);
+            self.handoffs.lock().unwrap().remove(&task.task_id);
+        }
         next.thread_ref = Some(thread_ref.clone());
         if let Some(branch) = branch {
             next.branch = Some(NonEmpty::unchecked(branch));
@@ -771,7 +835,9 @@ impl Tasks {
             }
             _ => None,
         };
-        if !continuing {
+        // A fresh restart that took over the worktree keeps the base it has: the node reports none for a takeover. One
+        // the node gave a new worktree (the earlier session's record was gone) records where that one started.
+        if !continuing && (!fresh || base.is_some()) {
             next.base = base.clone();
         }
         next.state = TaskState::Running;
@@ -784,16 +850,21 @@ impl Tasks {
         self.d.slots.bind(task.task_id.as_str(), &thread_ref)?;
         self.put(&StoredTask {
             task: next.clone(),
-            pending_message: None,
+            // Held back until the compaction completed.
+            pending_message: stored.pending_message.clone().filter(|_| compact),
         })?;
         let now = self.now_iso();
         let summary = if let Some(recovery) = next.recovery.as_ref().filter(|_| recovering) {
+            let how = match recovery.mode {
+                RecoveryMode::Resume => "resumed automatically",
+                RecoveryMode::Compact => "compacting its full context to resume",
+                RecoveryMode::Fresh => "restarted in a fresh thread",
+            };
             format!(
-                "{} resumed automatically (attempt {}, recovery {} of {}): {}",
+                "{} {how} (attempt {}, {}): {}",
                 task.task_id.as_str(),
                 task.attempt.get(),
-                recovery.count.get(),
-                recovery.max.get(),
+                recovery::used(recovery),
                 task.title.as_str()
             )
         } else if continuing {
@@ -822,7 +893,8 @@ impl Tasks {
         if let Some(failed) = fetch_failed {
             self.fetch_failed(&next, failed, &now)?;
         }
-        if recovering {
+        // A compaction's lead line goes with the note that follows it.
+        if recovering && !compact {
             self.resumed
                 .lock()
                 .unwrap()
@@ -867,13 +939,16 @@ impl Tasks {
     }
 
     async fn last_action(&self, thread: &ThreadRef) -> Option<String> {
-        self.d
-            .ports
-            .action_texts(thread, 1)
-            .await
-            .into_iter()
-            .next()
-            .map(|(summary, _)| summary)
+        self.bounded(async {
+            self.d
+                .ports
+                .action_texts(thread, 1)
+                .await
+                .into_iter()
+                .next()
+        })
+        .await
+        .map(|(summary, _)| summary)
     }
 
     /// `last`, the thread's last action, else its headline.
@@ -1157,22 +1232,26 @@ impl Tasks {
                 )
                 .await
             }
-            recovery::Action::Resume(recovery) => self.recover(stored, recovery),
+            recovery::Action::Resume(recovery) => self.recover(stored, recovery).map(|_| ()),
         }
     }
 
-    /// Queues a dead task to resume in its thread at `recovery.next_at`; the note to continue is written when the
-    /// resume goes out, ahead of any message sent into the gap, so the agent is continued once. The lead isn't woken:
-    /// the queued reason is in its digest, and the resume in its next wake.
+    /// Queues a dead task to go on at `recovery.next_at`, as `recovery.mode` says; what it is told is rendered when it
+    /// goes (`recovery_text`), and a message sent into the gap goes with it, so the agent is continued once. The lead
+    /// isn't woken: the queued reason is in its digest, and the resume in its next one.
     fn recover(
         self: &Arc<Self>,
         stored: &StoredTask,
-        recovery: fleetd_contracts::tasks::TaskRecovery,
-    ) -> Result<(), StoreError> {
+        recovery: TaskRecovery,
+    ) -> Result<Task, StoreError> {
         let task = &stored.task;
         let reason = recovery::queued_reason(&recovery);
-        tracing::info!(task_id = task.task_id.as_str(), reason, "dead task resumes");
-        // A question it asked before it died no longer holds it back: it resumes, and the answer reaches it then.
+        tracing::info!(
+            task_id = task.task_id.as_str(),
+            reason,
+            "dead task recovers"
+        );
+        // A question it asked before it died no longer holds it back: it goes on, and the answer reaches it then.
         self.asking.lock().unwrap().remove(&task.task_id);
         let mut next = task.clone();
         next.attempt = Int::unchecked(next.attempt.get() + 1);
@@ -1186,8 +1265,185 @@ impl Tasks {
             },
             "recover",
             &reason,
-        )?;
-        Ok(())
+        )
+    }
+
+    /// The node would not resume the task's thread (`message`, its words): a fresh thread takes over, once.
+    async fn refused(
+        self: &Arc<Self>,
+        stored: &StoredTask,
+        message: &str,
+        from_queue: bool,
+    ) -> Result<Task, StoreError> {
+        let task = &stored.task;
+        let death = recovery::refused(message);
+        let action = recovery::decide(
+            &death,
+            task.recovery.as_ref(),
+            self.stopped(task)?,
+            now_ms(self.d.clock.as_ref()),
+            rand::random(),
+            recovery::max(),
+        );
+        match action {
+            recovery::Action::Resume(recovery) => self.recover(stored, recovery),
+            recovery::Action::Escalate(why) => self.fail_to_start(
+                stored,
+                &format!(
+                    "{message}. Not restarted automatically: {why}. Decide: continue it with instructions \
+                     (message_agent), split the work, or cancel it."
+                ),
+                from_queue,
+            ),
+            recovery::Action::Finish => self.fail_to_start(stored, message, from_queue),
+        }
+    }
+
+    /// The handoff gathered for the task's fresh restart at this attempt; else starts gathering it, off the lock, which
+    /// runs the queue again once it is in.
+    fn handoff_ready(self: &Arc<Self>, task: &Task) -> Option<String> {
+        let attempt = task.attempt.get();
+        {
+            let mut handoffs = self.handoffs.lock().unwrap();
+            match handoffs.get(&task.task_id) {
+                Some((at, ready)) if *at == attempt => return ready.clone(),
+                _ => handoffs.insert(task.task_id.clone(), (attempt, None)),
+            };
+        }
+        let (tasks, task) = (self.clone(), task.clone());
+        tokio::spawn(async move {
+            let (Some(thread), Some(recovery)) = (&task.thread_ref, &task.recovery) else {
+                return;
+            };
+            let handoff = tasks.handoff(&task, thread, recovery).await;
+            let mut handoffs = tasks.handoffs.lock().unwrap();
+            // Unless the task ended, or moved on to another attempt, meanwhile.
+            if handoffs
+                .get(&task.task_id)
+                .is_some_and(|(at, _)| *at == attempt)
+            {
+                handoffs.insert(task.task_id.clone(), (attempt, Some(handoff)));
+                drop(handoffs);
+                tasks.retry_later();
+            }
+        });
+        None
+    }
+
+    /// `step`, or `None` once it took HANDOFF_STEP_TIMEOUT of the hub's clock: a node that doesn't answer delays a fresh
+    /// restart by that much, and holds up nothing else.
+    async fn bounded<T>(&self, step: impl std::future::Future<Output = Option<T>>) -> Option<T> {
+        let timeout = self.d.clock.sleep(HANDOFF_STEP_TIMEOUT);
+        tokio::select! {
+            out = step => out,
+            () = timeout => None,
+        }
+    }
+
+    /// `task.handoff` from the earlier thread: its last words, and from git (any project) the branch's commits, what is
+    /// uncommitted and its PR. What the node can't tell reads as such, and the agent checks git itself.
+    async fn handoff(&self, task: &Task, thread: &ThreadRef, recovery: &TaskRecovery) -> String {
+        let tail = self
+            .d
+            .store
+            .thread_get(thread)
+            .ok()
+            .flatten()
+            .map(|t| t.thread.latest_message_tail.as_str().trim().to_owned())
+            .filter(|t| !t.is_empty())
+            .map_or_else(|| "(none)".to_owned(), |t| tail_of(&t, HANDOFF_TAIL));
+        let changes = if task.kind == TaskKind::Write {
+            self.bounded(self.d.ports.changes(thread)).await
+        } else {
+            None
+        };
+        let path = changes
+            .as_ref()
+            .and_then(|c| c.worktree_path.clone())
+            .or_else(|| task.worktree_path.as_ref().map(|p| p.as_str().to_owned()));
+        let branch = changes
+            .as_ref()
+            .and_then(|c| c.branch.clone())
+            .or_else(|| task.branch.as_ref().map(|b| b.as_str().to_owned()));
+        let git = |argv: &[&str]| {
+            let argv = argv.iter().map(|a| (*a).to_owned()).collect();
+            let path = path.clone();
+            async move {
+                let path = path?;
+                let out = self
+                    .bounded(
+                        self.d
+                            .ports
+                            .run_command(&thread.machine_id, &path, argv, 30),
+                    )
+                    .await
+                    .filter(|o| o.exit_code == Some(0))?;
+                let out = out.output_tail.trim().to_owned();
+                Some(if out.is_empty() {
+                    "none".to_owned()
+                } else {
+                    out
+                })
+            }
+        };
+        let unknown = || "(fleetd could not read them)".to_owned();
+        let (commits, uncommitted, workspace) = match (&path, &branch) {
+            (Some(path), Some(branch)) => {
+                // The branch's own commits: not on any remote's copy of another branch, so pushed ones count too.
+                let exclude = format!("--exclude=*/{branch}");
+                let commits = git(&[
+                    "git",
+                    "log",
+                    "--oneline",
+                    "-n",
+                    "20",
+                    "HEAD",
+                    "--not",
+                    &exclude,
+                    "--remotes",
+                ])
+                .await
+                .unwrap_or_else(unknown);
+                let uncommitted = git(&["git", "status", "--short"])
+                    .await
+                    .unwrap_or_else(unknown);
+                (
+                    commits,
+                    uncommitted,
+                    format!("You work in its worktree {path}, on its branch {branch}."),
+                )
+            }
+            _ => (
+                "none".to_owned(),
+                "none".to_owned(),
+                "It changed no files.".to_owned(),
+            ),
+        };
+        let pr = changes
+            .as_ref()
+            .and_then(|c| c.pull_request_urls.last().cloned())
+            .or_else(|| find_pr_url([tail.as_str()]))
+            .unwrap_or_else(|| "none".to_owned());
+        let why = match recovery.last_cause {
+            RunEnd::ContextFull => "its context filled up again after `/compact`".to_owned(),
+            _ => recovery.last_cause_text.as_str().to_owned(),
+        };
+        let set = self
+            .d
+            .db
+            .prompts()
+            .for_thread(&thread.machine_id, thread.thread_id.as_str());
+        set.render(
+            "task.handoff",
+            &[
+                ("why", &why),
+                ("workspace", &workspace),
+                ("tail", &tail),
+                ("commits", &commits),
+                ("uncommitted", &uncommitted),
+                ("pr", &pr),
+            ],
+        )
     }
 
     /// The `task.recover` note a resume starts with: why the run ended and what it was doing.
@@ -1207,8 +1463,7 @@ impl Tasks {
             &[
                 ("cause", &recovery.last_cause_text.as_str()),
                 ("doing", &doing),
-                ("count", &recovery.count.get()),
-                ("max", &recovery.max.get()),
+                ("used", &recovery::used(recovery)),
             ],
         )
     }
@@ -1315,6 +1570,15 @@ impl Tasks {
             return Ok(());
         };
         let task = &stored.task;
+        // A thread the task was restarted fresh from: whatever it reports, the task has moved on.
+        if task.thread_ref.as_ref() != Some(&thread_ref) {
+            tracing::info!(
+                task_id = task.task_id.as_str(),
+                seq = event.seq.get(),
+                "task event for an earlier thread ignored"
+            );
+            return Ok(());
+        }
         // An earlier run's end is not this run's: the task goes on.
         let live = matches!(task.state, TaskState::Running | TaskState::Idle)
             && !self.earlier_run(task, &thread_ref, event)?;
@@ -1424,6 +1688,31 @@ impl Tasks {
                 self.d
                     .ports
                     .wake(&task.project_ref, WakeKind::TaskWaiting, text);
+            }
+            // Its `/compact` completed: the note to continue goes now, as the recovery it is.
+            HubEventType::ThreadCompleted
+                if live
+                    && task.recovery.as_ref().is_some_and(|r| {
+                        r.mode == RecoveryMode::Compact && r.next_at.is_none()
+                    }) =>
+            {
+                let mut next = task.clone();
+                next.attempt = Int::unchecked(next.attempt.get() + 1);
+                if let Some(recovery) = &mut next.recovery {
+                    recovery.mode = RecoveryMode::Resume;
+                    recovery.last_cause_text =
+                        Text::unchecked("its context was full; fleetd compacted it".to_owned());
+                    recovery.next_at = Some(Timestamp(self.now_iso()));
+                }
+                tracing::info!(task_id = task.task_id.as_str(), "compacted task resumes");
+                self.try_start(
+                    StoredTask {
+                        task: next,
+                        pending_message: stored.pending_message.clone(),
+                    },
+                    true,
+                )
+                .await;
             }
             HubEventType::ThreadCompleted if live => {
                 let end = end_cause(event).or(Some(RunEnd::Completed));
@@ -1665,6 +1954,7 @@ impl Tasks {
             state: TaskState::Queued,
             queued_reason: None,
             thread_ref: None,
+            previous_threads: Vec::new(),
             branch: None,
             base: None,
             worktree_path: None,
