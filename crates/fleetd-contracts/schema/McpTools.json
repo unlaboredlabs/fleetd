@@ -163,6 +163,7 @@
           "type": "object"
         },
         {
+          "description": "Any other tool. For an MCP server's tool, `server` names the server and `name` its tool.",
           "properties": {
             "detail": {
               "maxLength": 120,
@@ -176,11 +177,46 @@
               "maxLength": 60,
               "minLength": 1,
               "type": "string"
+            },
+            "server": {
+              "maxLength": 60,
+              "minLength": 1,
+              "type": "string"
             }
           },
           "required": [
             "kind",
             "name"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A web fetch (`detail` the host) or search (`detail` the query).",
+          "properties": {
+            "detail": {
+              "maxLength": 120,
+              "type": "string"
+            },
+            "kind": {
+              "const": "web",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Updating its own todo list.",
+          "properties": {
+            "kind": {
+              "const": "planning",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
           ],
           "type": "object"
         },
@@ -994,7 +1030,7 @@
         },
         {
           "const": "machine",
-          "description": "Waiting on the machine or the provider: retries, startup, compaction, claude-local time.",
+          "description": "Waiting on the machine or the provider: retries, startup, compaction, runner-local time.",
           "type": "string"
         },
         {
@@ -3048,7 +3084,7 @@
       "type": "string"
     },
     "Effort": {
-      "description": "The `--effort` claude runs at. Only [`TaskProfile`] picks one; nothing takes an effort as input.",
+      "description": "How hard a model thinks, as a node reports a session's. Only the runner picks one, from the session's\n[`TaskProfile`]; nothing takes an effort as input.",
       "enum": [
         "low",
         "medium",
@@ -6324,9 +6360,6 @@
     "PrAuthor": {
       "description": "Who wrote the PR: fleetd's agent when one did, and the GitHub account it was opened from.",
       "properties": {
-        "effort": {
-          "$ref": "#/$defs/Effort"
-        },
         "laneId": {
           "description": "The writing agent's lane in the agents view.",
           "maxLength": 80,
@@ -6339,10 +6372,8 @@
           "minLength": 1,
           "type": "string"
         },
-        "model": {
-          "maxLength": 80,
-          "minLength": 1,
-          "type": "string"
+        "profile": {
+          "$ref": "#/$defs/TaskProfile"
         },
         "role": {
           "$ref": "#/$defs/AgentRole"
@@ -7070,7 +7101,7 @@
           "type": "integer"
         },
         "outputTokens": {
-          "description": "What claude reported for its messages.",
+          "description": "What the runner reported for its messages.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
@@ -8562,7 +8593,7 @@
       "oneOf": [
         {
           "const": "completed",
-          "description": "claude finished the turn.",
+          "description": "The agent finished the turn.",
           "type": "string"
         },
         {
@@ -8587,12 +8618,12 @@
         },
         {
           "const": "machine_slept",
-          "description": "The machine slept and claude's stream did not come back.",
+          "description": "The machine slept and the agent's stream did not come back.",
           "type": "string"
         },
         {
           "const": "exited",
-          "description": "claude exited or was killed with nobody asking; `failure` has the exit code or signal.",
+          "description": "The agent's process exited or was killed with nobody asking; `failure` has the exit code or signal.",
           "type": "string"
         },
         {
@@ -8809,7 +8840,7 @@
       "description": "`session_prompt_get`: exactly what a session was told at its start.",
       "properties": {
         "disallowedTools": {
-          "description": "Tools the claude runner never offers a fleetd session.",
+          "description": "Tools the node's runner never offers a fleetd session.",
           "items": {
             "type": "string"
           },
@@ -9151,7 +9182,7 @@
           "type": "integer"
         },
         "itemId": {
-          "description": "The item id in the thread (claude's tool_use or message id), for `thread_window`.",
+          "description": "The item id in the thread (the runner's tool call or message id), for `thread_window`.",
           "maxLength": 200,
           "minLength": 1,
           "type": "string"
@@ -9238,12 +9269,6 @@
           "minLength": 1,
           "type": "string"
         },
-        "claudeMs": {
-          "description": "`tool.*`: claude's own figure for the call, when the result carries one.",
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
         "count": {
           "description": "`gap`: how many spans were lost.",
           "maximum": 9007199254740991,
@@ -9265,7 +9290,7 @@
           "type": "integer"
         },
         "httpStatus": {
-          "description": "`wait.retry.api`: the HTTP status claude retried on.",
+          "description": "`wait.retry.api`: the HTTP status the runner retried on.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
@@ -9298,8 +9323,14 @@
           "minLength": 1,
           "type": "string"
         },
+        "runnerMs": {
+          "description": "`tool.*`: the runner's own figure for the call, when the result carries one.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
         "statedDelayMs": {
-          "description": "`wait.retry.*`: the delay claude or the node announced. The span is the real wait.",
+          "description": "`wait.retry.*`: the delay the runner or the node announced. The span is the real wait.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
@@ -9371,7 +9402,7 @@
         },
         {
           "const": "model.first_token",
-          "description": "Previous visible stream event to `message_start`: claude-local work, network, API queueing and prefill.",
+          "description": "Previous visible stream event to `message_start`: runner-local work, network, API queueing and prefill.",
           "type": "string"
         },
         {
@@ -9395,8 +9426,8 @@
           "type": "string"
         },
         {
-          "const": "claude.other",
-          "description": "Time inside a run that no other span covers: claude-local work between stream events.",
+          "const": "runner.other",
+          "description": "Time inside a run that no other span covers: the runner's own work between stream events. Nodes before the\nrename send `claude.other`.",
           "type": "string"
         },
         {
@@ -10368,7 +10399,7 @@
         },
         "recovery": {
           "$ref": "#/$defs/TaskRecovery",
-          "description": "Set once a run of it died (its node stopped, claude was killed, a stall) and fleetd resumed it or will."
+          "description": "Set once a run of it died (its node stopped, its process was killed, a stall) and fleetd resumed it or will."
         },
         "result": {
           "$ref": "#/$defs/TaskResult"
@@ -10498,7 +10529,7 @@
       "type": "string"
     },
     "TaskProfile": {
-      "description": "What an agent runs on. There are exactly two, both claude-opus-5-5: `high` (effort high) is the default and what\nthe lead, every reviewer and every helper call run; `medium` (effort medium) is for mechanical tasks the lead picks.",
+      "description": "What an agent runs on. There are exactly two: `high` is the default and what the lead, every reviewer and every\nhelper call run; `medium` is for mechanical tasks the lead picks. The node's runner picks the model and effort of\neach.",
       "enum": [
         "high",
         "medium"
@@ -10519,7 +10550,7 @@
           "description": "How its last run ended."
         },
         "lastCauseText": {
-          "description": "The same, in plain words: \"the node on devbox stopped\", \"claude was killed by signal 9\".",
+          "description": "The same, in plain words: \"the node on devbox stopped\", \"the agent was killed by signal 9\".",
           "maxLength": 200,
           "minLength": 1,
           "type": "string"
@@ -10582,7 +10613,7 @@
         },
         "endCause": {
           "$ref": "#/$defs/RunEnd",
-          "description": "Why its last run ended (the node stopped, claude exited, a limit, context full, …); absent on results an\nolder hub recorded, and when it never ran."
+          "description": "Why its last run ended (the node stopped, the agent exited, a limit, context full, …); absent on results an\nolder hub recorded, and when it never ran."
         },
         "prUrl": {
           "type": "string"
@@ -10698,6 +10729,10 @@
           "type": "string"
         },
         "message": {
+          "type": "string"
+        },
+        "model": {
+          "description": "The model the failure names, when the runner read one off it (a gateway with no account for it).",
           "type": "string"
         }
       },

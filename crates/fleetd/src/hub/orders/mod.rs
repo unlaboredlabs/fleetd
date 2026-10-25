@@ -227,8 +227,15 @@ pub fn task_lane(task: &Task, prs: &[(&Change, PrRef)], look: &dyn Lookups) -> A
             pr.as_ref().map(|p| p.number.get()),
             pr_url,
         )),
-        model: model(task.profile.model()),
-        effort: Some(task.profile.effort()),
+        // What the node's runner runs the profile on, once the hub has seen the thread.
+        model: thread
+            .as_ref()
+            .and_then(|t| t.model.as_deref())
+            .and_then(model),
+        effort: thread
+            .as_ref()
+            .and_then(|t| t.effort.as_deref())
+            .and_then(effort_of),
         profile: Some(task.profile),
         status,
         status_reason: reason_of(task, status).map(|r| text(&r)),

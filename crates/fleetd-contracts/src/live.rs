@@ -75,10 +75,18 @@ pub enum Activity {
         path: Option<Text<0, 200>>,
         pattern: Option<Text<0, 120>>,
     },
+    /// Any other tool. For an MCP server's tool, `server` names the server and `name` its tool.
     Tool {
         name: Text<1, 60>,
         detail: Option<Text<0, 120>>,
+        server: Option<Text<1, 60>>,
     },
+    /// A web fetch (`detail` the host) or search (`detail` the query).
+    Web {
+        detail: Option<Text<0, 120>>,
+    },
+    /// Updating its own todo list.
+    Planning,
     /// Assistant text streamed in the last 3 s.
     Writing,
     /// A run is active with nothing open and no text for 3 s: waiting on the model.

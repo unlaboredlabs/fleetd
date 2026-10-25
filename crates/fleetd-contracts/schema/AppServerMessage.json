@@ -61,6 +61,7 @@
           "type": "object"
         },
         {
+          "description": "Any other tool. For an MCP server's tool, `server` names the server and `name` its tool.",
           "properties": {
             "detail": {
               "maxLength": 120,
@@ -74,11 +75,46 @@
               "maxLength": 60,
               "minLength": 1,
               "type": "string"
+            },
+            "server": {
+              "maxLength": 60,
+              "minLength": 1,
+              "type": "string"
             }
           },
           "required": [
             "kind",
             "name"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A web fetch (`detail` the host) or search (`detail` the query).",
+          "properties": {
+            "detail": {
+              "maxLength": 120,
+              "type": "string"
+            },
+            "kind": {
+              "const": "web",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Updating its own todo list.",
+          "properties": {
+            "kind": {
+              "const": "planning",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
           ],
           "type": "object"
         },

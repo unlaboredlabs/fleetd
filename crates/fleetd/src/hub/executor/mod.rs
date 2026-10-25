@@ -28,7 +28,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use fleetd_contracts::effort::Effort;
+use fleetd_contracts::effort::TaskProfile;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadId, ThreadRef};
 use fleetd_contracts::mcp::McpToolError;
 use fleetd_contracts::model::RuntimeMode;
@@ -137,8 +137,7 @@ pub struct NodeSessions {
 pub struct LaunchInput {
     pub project_id: ProjectId,
     pub prompt: String,
-    pub model: String,
-    pub effort: Effort,
+    pub profile: TaskProfile,
     pub runtime_mode: RuntimeMode,
     pub title: Option<String>,
     /// The session and run ids derive from it, and the node's launch is idempotent on the session id, so a retried
@@ -1300,15 +1299,7 @@ impl Executors {
         options: LaunchOptions,
     ) -> Result<(ThreadId, Option<WorktreeBase>), ExecutorError> {
         let op = NodeOperation::Launch;
-        let runner = providers::route_model(&input.model).map_err(|message| {
-            ExecutorError::NodeRequestFailed {
-                machine_id: machine_id.clone(),
-                operation: op,
-                message,
-                fix: Some("Launch it with a claude-* model.".into()),
-            }
-        })?;
-        // No new session goes to a runner the node says can't run it (spec §3.6): an expired login, or a claude that
+        // No new session goes to a runner the node says can't run it (spec §3.6): an expired login, or a runner that
         // is missing or broke fleetd's protocol probe. Unknown (the node can't say) leaves it to the node.
         if self.cached_runner(machine_id).is_none() {
             let _ = self.runner_info(machine_id).await;
@@ -1316,6 +1307,11 @@ impl Executors {
         if let Some(refused) = self.runner_refusal(machine_id, op) {
             return Err(refused);
         }
+        // The machine's runner takes it; the node picks the model and effort for the profile.
+        let runner = self
+            .cached_runner(machine_id)
+            .map(|info| info.runner)
+            .unwrap_or_default();
         let title = match input.title.as_deref().map(str::trim) {
             Some(t) if !t.is_empty() => t.to_owned(),
             _ => js_take(input.prompt.trim().split('\n').next().unwrap_or(""), 80).to_owned(),
@@ -1346,8 +1342,9 @@ impl Executors {
             project_id: input.project_id.clone(),
             title: Some(title),
             runner,
-            model: non_empty(machine_id, op, "model", &input.model)?,
-            effort: input.effort,
+            profile: Some(input.profile),
+            model: None,
+            effort: None,
             runtime_mode: input.runtime_mode,
             workspace: options.workspace.unwrap_or(SessionWorkspace::Root),
             prompt: non_empty(machine_id, op, "prompt", &input.prompt)?,

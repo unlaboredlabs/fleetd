@@ -667,7 +667,7 @@ pub fn sweep(hub: &Hub) -> usize {
             (
                 SteerStage::Failed,
                 format!(
-                    "{machine}'s node lost it before claude took it in: it restarted, or is older than this hub"
+                    "{machine}'s node lost it before the agent took it in: it restarted, or is older than this hub"
                 ),
             )
         };

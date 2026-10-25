@@ -13,7 +13,7 @@ use tokio::time::Instant;
 
 use fleetd_contracts::sessions::{LoginStatus, RunnerInfo};
 
-use crate::node::runner::failure::login_fix;
+use crate::node::runner::claude::failure::login_fix;
 
 /// How often a runner that can't run sessions is re-probed.
 pub const RECHECK_AFTER: Duration = Duration::from_secs(15);

@@ -13,6 +13,7 @@ use fleetd_contracts::live::{
 use fleetd_contracts::prim::{List, Text};
 use fleetd_contracts::sessions::{
     ItemKind, ItemStatus, MessageRole, RunInfo, RunUsage, ThreadEvent, ThreadItem, ThreadMessage,
+    ToolClass,
 };
 
 use super::shell_mapper::js_take;
@@ -338,7 +339,7 @@ impl ActivityTracker {
         for usage in self.run_usage.values().chain(live.map(|(_, u)| u)) {
             tokens.input += usage.input_tokens;
             tokens.output += usage.output_tokens;
-            tokens.cache_read += usage.cache_read_input_tokens;
+            tokens.cache_read += usage.cache_read_tokens;
         }
         Some(tokens)
     }
@@ -410,6 +411,27 @@ fn host_of(url: &str) -> &str {
     rest.split(['/', '?', '#']).next().unwrap_or(rest)
 }
 
+fn trimmed(s: &Option<String>) -> Option<&str> {
+    s.as_deref().map(str::trim).filter(|s| !s.is_empty())
+}
+
+/// The first line of whatever the call's input says about itself.
+fn tool_detail(input: &serde_json::Value) -> Option<Text<0, 120>> {
+    input_str(
+        input,
+        &[
+            "description",
+            "query",
+            "url",
+            "command",
+            "path",
+            "file_path",
+            "prompt",
+        ],
+    )
+    .map(|d| clip(d.lines().next().unwrap_or(d)))
+}
+
 /// The live activity an open item stands for; None for items that are not work (permission prompts, errors).
 pub fn activity_of(item: &ThreadItem, root: Option<&str>) -> Option<Activity> {
     Some(match &item.kind {
@@ -420,38 +442,36 @@ pub fn activity_of(item: &ThreadItem, root: Option<&str>) -> Option<Activity> {
             path: clip(&relative(path, root)),
         },
         ItemKind::Tool {
-            tool_name, input, ..
-        } => match tool_name.as_str() {
-            "Read" | "NotebookRead" => Activity::Read {
-                path: input_str(input, &["file_path", "notebook_path", "path"])
-                    .map(|p| clip(&relative(p, root))),
+            tool_name,
+            input,
+            class,
+            ..
+        } => match class {
+            Some(ToolClass::Read { path }) => Activity::Read {
+                path: trimmed(path).map(|p| clip(&relative(p, root))),
                 pattern: None,
             },
-            "Grep" | "Glob" => Activity::Read {
+            Some(ToolClass::Search { pattern }) => Activity::Read {
                 path: None,
-                pattern: input_str(input, &["pattern"]).map(clip),
+                pattern: trimmed(pattern).map(clip),
             },
-            name => {
-                let detail = match name {
-                    "WebFetch" => input_str(input, &["url"]).map(host_of),
-                    _ => input_str(
-                        input,
-                        &[
-                            "description",
-                            "query",
-                            "url",
-                            "command",
-                            "path",
-                            "file_path",
-                            "prompt",
-                        ],
-                    ),
-                };
-                Activity::Tool {
-                    name: Text::unchecked(js_take(name, 60)),
-                    detail: detail.map(|d| clip(d.lines().next().unwrap_or(d))),
-                }
-            }
+            Some(ToolClass::Web { url, query }) => Activity::Web {
+                detail: trimmed(url)
+                    .map(host_of)
+                    .or(trimmed(query))
+                    .map(|d| clip(d.lines().next().unwrap_or(d))),
+            },
+            Some(ToolClass::Plan) => Activity::Planning,
+            Some(ToolClass::Mcp { server, tool }) => Activity::Tool {
+                name: Text::unchecked(js_take(tool, 60)),
+                detail: tool_detail(input),
+                server: Text::new(js_take(server, 60)).ok(),
+            },
+            None => Activity::Tool {
+                name: Text::unchecked(js_take(tool_name, 60)),
+                detail: tool_detail(input),
+                server: None,
+            },
         },
         ItemKind::Compaction { .. } => Activity::Compacting,
         ItemKind::ApiRetry { .. } | ItemKind::NodeRetry { .. } => retry_of(item)?,
@@ -578,6 +598,79 @@ mod tests {
         );
         let ids: Vec<&str> = t.done().iter().map(|d| d.message_id.as_str()).collect();
         assert_eq!(ids, ["new"]);
+    }
+
+    #[test]
+    fn a_tool_reads_by_its_class_never_its_name() {
+        let root = Some("/w/p");
+        let tool = |name: &str, input: serde_json::Value, class: serde_json::Value| {
+            let kind = json!({ "type": "tool", "toolName": name, "input": input, "class": class });
+            activity_of(&serde_json::from_value(json!({ "id": "i", "status": "running", "title": "",
+                "startedAt": "2026-10-19T10:00:00.000Z", "updatedAt": "2026-10-19T10:00:00.000Z", "kind": kind }))
+                .unwrap(), root)
+            .unwrap()
+        };
+        assert_eq!(
+            tool(
+                "open_file",
+                json!({}),
+                json!({ "type": "read", "path": "/w/p/src/a.rs" })
+            ),
+            Activity::Read {
+                path: Some(Text::unchecked("src/a.rs")),
+                pattern: None
+            }
+        );
+        assert_eq!(
+            tool(
+                "find",
+                json!({}),
+                json!({ "type": "search", "pattern": "fn main" })
+            ),
+            Activity::Read {
+                path: None,
+                pattern: Some(Text::unchecked("fn main"))
+            }
+        );
+        assert_eq!(
+            tool(
+                "browse",
+                json!({}),
+                json!({ "type": "web", "url": "https://docs.rs/x?y" })
+            ),
+            Activity::Web {
+                detail: Some(Text::unchecked("docs.rs"))
+            }
+        );
+        assert_eq!(
+            tool("todo", json!({}), json!({ "type": "plan" })),
+            Activity::Planning
+        );
+        assert_eq!(
+            tool(
+                "mcp__fleetd__report",
+                json!({ "description": "done" }),
+                json!({ "type": "mcp", "server": "fleetd", "tool": "report" })
+            ),
+            Activity::Tool {
+                name: Text::unchecked("report"),
+                detail: Some(Text::unchecked("done")),
+                server: Some(Text::unchecked("fleetd")),
+            }
+        );
+        // A name alone says nothing: an unclassified "Read" is just a tool.
+        assert_eq!(
+            tool(
+                "Read",
+                json!({ "file_path": "/w/p/a" }),
+                serde_json::Value::Null
+            ),
+            Activity::Tool {
+                name: Text::unchecked("Read"),
+                detail: Some(Text::unchecked("/w/p/a")),
+                server: None
+            }
+        );
     }
 
     #[test]

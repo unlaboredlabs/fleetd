@@ -19,7 +19,7 @@ use fleetd::node::runner::claude::{
     PROMPT_CACHE_TTL_VARS, PROMPT_CACHE_TTL_WHY, SESSION_ENV_WHY, SUBAGENTS_OFF_ENV_WHY,
     SUBAGENTS_ON_ENV_WHY, WORKER_ENV, WORKER_ENV_WHY,
 };
-use fleetd::node::runner::{conformance, version::TESTED};
+use fleetd::node::runner::claude::{conformance, version::TESTED};
 use fleetd_contracts::lead_calls::GatedRunCall;
 use fleetd_contracts::ledger::GatedClass;
 use fleetd_contracts::live::AgentRole;
@@ -855,16 +855,14 @@ fn switches() -> Result<String, String> {
             SessionRole::Worker => "Task agents",
             SessionRole::Plain => "Threads you start",
         };
-        let key = serde_json::to_value(role).unwrap_or_default();
         rows(
             PROMPT_CACHE_TTL_VARS
                 .iter()
                 .map(|n| (format!("`{n}`"), *why))
                 .collect(),
             &format!(
-                "`{}` unless `promptCacheTtl.{}` in node.json, your environment or `claude.env` sets it",
-                ttl.as_str(),
-                key.as_str().unwrap_or_default()
+                "`{}` unless your environment or `claude.env` sets it",
+                ttl.as_str()
             ),
             who,
         );

@@ -247,8 +247,8 @@ interface PrSpec {
   readonly files: readonly FileSpec[];
 }
 
-const implementer = (title: string, model = "claude-opus-5-5"): JsonObject => ({ role: "implementer", title, model, effort: "high", login: "acme-fleet" });
-const reviewer = (model: string, role = "reviewer"): JsonObject => ({ role, model });
+const implementer = (title: string): JsonObject => ({ role: "implementer", title, profile: "high", login: "acme-fleet" });
+const reviewer = (role = "reviewer"): JsonObject => ({ role, profile: "high" });
 
 const check = (f: Fixture, name: string, state: string, startedMin: number, tookS: number | undefined, conclusion?: string): JsonObject => ({
   name,
@@ -303,7 +303,7 @@ const specs = (f: Fixture): PrSpec[] => [
     reviews: [
       {
         verdict: "changes_requested",
-        agent: reviewer("claude-opus-5-5"),
+        agent: reviewer(),
         blocking: 1,
         nonBlocking: 1,
         text: [
@@ -356,11 +356,11 @@ const specs = (f: Fixture): PrSpec[] => [
       check(f, "e2e (webkit)", "none", 25, undefined, "cancelled"),
     ],
     reviews: [
-      { verdict: "approved", agent: reviewer("claude-opus-5-5"), blocking: 0, nonBlocking: 1, text: "Suggestion: `round_half_even` could live with the currency code, so other callers find it.", current: true, at: ago(f, 40) },
-      { verdict: "approved", agent: reviewer("claude-opus-5-5", "qa"), blocking: 0, nonBlocking: 0, text: "Checkout, refunds and the receipt email all show the same totals.", current: true, at: ago(f, 47) },
+      { verdict: "approved", agent: reviewer(), blocking: 0, nonBlocking: 1, text: "Suggestion: `round_half_even` could live with the currency code, so other callers find it.", current: true, at: ago(f, 40) },
+      { verdict: "approved", agent: reviewer("qa"), blocking: 0, nonBlocking: 0, text: "Checkout, refunds and the receipt email all show the same totals.", current: true, at: ago(f, 47) },
       {
         verdict: "changes_requested",
-        agent: reviewer("claude-opus-5-5"),
+        agent: reviewer(),
         blocking: 2,
         nonBlocking: 0,
         text: "1. `with_tax` still takes the rate as a float.\n2. No test for a negative total (a refund).",
@@ -389,13 +389,13 @@ const specs = (f: Fixture): PrSpec[] => [
     queue: { changeId: "X9", state: "ready", position: 0, length: 2 },
     checks: { state: "passing", passed: 6, failed: 0, pending: 0 },
     review: { state: "approved", done: 1, needed: 1 },
-    author: implementer("Warm the search index on deploy", "claude-opus-5-5"),
+    author: implementer("Warm the search index on deploy"),
     created: 180,
     updated: 9,
     body: "The first searches after a deploy took seconds while the index loaded. It now loads in the background during the deploy.",
     checkRuns: passing(f, 15),
     reviews: [
-      { verdict: "approved", agent: reviewer("claude-opus-5-5"), blocking: 0, nonBlocking: 0, text: "Looks right; the old index serves until the new one answers.", current: true, at: ago(f, 11) },
+      { verdict: "approved", agent: reviewer(), blocking: 0, nonBlocking: 0, text: "Looks right; the old index serves until the new one answers.", current: true, at: ago(f, 11) },
     ],
     history: [
       { at: ago(f, 9), from: "reviewing", to: "ready" },
@@ -450,7 +450,7 @@ const specs = (f: Fixture): PrSpec[] => [
     merged: 44,
     body: "First half of dropping `moment`: receipt dates go through `Intl`.",
     checkRuns: passing(f, 60),
-    reviews: [{ verdict: "approved", agent: reviewer("claude-opus-5-5"), blocking: 0, nonBlocking: 0, text: "Good.", current: true, at: ago(f, 70) }],
+    reviews: [{ verdict: "approved", agent: reviewer(), blocking: 0, nonBlocking: 0, text: "Good.", current: true, at: ago(f, 70) }],
     history: [
       { at: ago(f, 44), from: "merging", to: "merged" },
       { at: ago(f, 46), from: "ci", to: "merging" },
@@ -468,7 +468,7 @@ const specs = (f: Fixture): PrSpec[] => [
     queue: { changeId: "X7", state: "abandoned", length: 0, reason: "The lead dropped it: the provider has no refunds API." },
     checks: { state: "passing", passed: 7, failed: 0, pending: 0 },
     review: { state: "pending", done: 0, needed: 1 },
-    author: implementer("Spike a second payment provider", "claude-opus-5-5"),
+    author: implementer("Spike a second payment provider"),
     created: 2900,
     updated: 1700,
     body: "A spike: checkout can pay through a second provider behind a flag.",

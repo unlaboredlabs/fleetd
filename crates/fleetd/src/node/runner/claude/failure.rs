@@ -9,7 +9,7 @@ use fleetd_contracts::prim::Text;
 use fleetd_contracts::sessions::{FailureClass, RunFailure};
 use regex::Regex;
 
-use super::{ExitInfo, RateLimit};
+use crate::node::runner::{ExitInfo, FALLBACK_RATE_LIMIT_MS, FALLBACK_USAGE_LIMIT_MS, RateLimit};
 
 /// What claude left behind for one failed run.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -38,10 +38,6 @@ pub struct FailureEvidence {
 pub const MAX_RUN_RETRIES: u32 = 3;
 /// What a node retry sends, with `--resume`, so claude picks the turn back up.
 pub const RETRY_MESSAGE: &str = "Continue where you left off.";
-/// When nothing says when a plan limit resets.
-pub const FALLBACK_USAGE_LIMIT_MS: i64 = 60 * 60_000;
-/// When nothing says when a request-rate limit resets.
-pub const FALLBACK_RATE_LIMIT_MS: i64 = 5 * 60_000;
 const MESSAGE_MAX: usize = 4000;
 const STDERR_MARK: &str = "\n--- stderr tail ---\n";
 
@@ -127,7 +123,8 @@ struct TextLimit {
     model: Option<String>,
 }
 
-/// The model a gateway's "unknown provider for model X" names, for the hub's "no account available for X".
+/// The model a gateway's "unknown provider for model X" names, for the hub's "no account available for X"
+/// ([`RunFailure::model`]).
 pub fn gateway_model(text: &str) -> Option<String> {
     UNKNOWN_PROVIDER.captures(text).map(|c| c[1].to_owned())
 }
@@ -261,9 +258,13 @@ pub fn classify(evidence: &FailureEvidence) -> Option<RunFailure> {
         _ => e.stderr.as_str(),
     };
     let (class, reset) = decide(e, stderr);
+    let message = loud_message(&e.text, stderr, e.exit.as_ref());
     Some(RunFailure {
         class,
-        message: loud_message(&e.text, stderr, e.exit.as_ref()),
+        model: (class == FailureClass::PoolExhausted)
+            .then(|| gateway_model(message.as_str()))
+            .flatten(),
+        message,
         api_status: e.api_error_status,
         reset_at: reset.map(timestamp),
         retries: 0,
@@ -482,9 +483,9 @@ fn timestamp(ms: i64) -> Timestamp {
 
 #[cfg(test)]
 mod tests {
-    use super::super::RateLimit as RateLimitEvent;
-    use super::super::claude::protocol::{Block, Line};
     use super::*;
+    use crate::node::runner::RateLimit as RateLimitEvent;
+    use crate::node::runner::claude::protocol::{Block, Line};
     use FailureClass::*;
 
     /// 2026-10-18T10:00:00Z, before every reset in the fixtures.
@@ -745,6 +746,8 @@ mod tests {
         })
         .unwrap();
         assert_eq!((f.class, f.reset_at), (PoolExhausted, None));
+        // The hub reads the model off the failure, never the text.
+        assert_eq!(f.model.as_deref(), Some("claude-does-not-exist-9"));
         let e = FailureEvidence {
             is_error: true,
             assistant_error: Some("model_not_found".into()),

@@ -3,7 +3,7 @@
 // and never as the hub's raw states.
 import type { AgentRole, ChangeState } from "../../../shared/contracts";
 import type { ChecksSummary, PrAuthor, PrCheck, PrReviewEntry, PrRow } from "../../../shared/contracts";
-import { shortModel } from "../live/format";
+import { PROFILE_WORD } from "../../ui/primitives/profiles";
 import { ROLE_WORD } from "../../ui/primitives/roles";
 
 /** A state word's colour: the ui kit's status tones. */
@@ -161,13 +161,13 @@ const ROLE: Readonly<Partial<Record<string, string>>> = {
 const agentWords = (a: PrAuthor): string | undefined => {
   if (a.role === undefined) return undefined;
   const who = ROLE[a.role] ?? "An agent";
-  return a.model === undefined ? who : `${who} (${shortModel(a.model)})`;
+  return a.profile === undefined ? who : `${who} (${PROFILE_WORD[a.profile]})`;
 };
 
-/** To start a line: "A writer (opus)", or a login as GitHub spells it, "sam on GitHub"; undefined when the hub knows neither. */
+/** To start a line: "A writer (high)", or a login as GitHub spells it, "sam on GitHub"; undefined when the hub knows neither. */
 export const authorWords = (a: PrAuthor): string | undefined => agentWords(a) ?? (a.login === undefined ? undefined : `${a.login} on GitHub`);
 
-/** To start a line: "A reviewer (opus)", "sam on GitHub", "Someone on GitHub". */
+/** To start a line: "A reviewer (high)", "sam on GitHub", "Someone on GitHub". */
 export const reviewerWords = (r: PrReviewEntry): string =>
   (r.agent === undefined ? undefined : agentWords(r.agent)) ?? (r.login === undefined ? "Someone on GitHub" : `${r.login} on GitHub`);
 

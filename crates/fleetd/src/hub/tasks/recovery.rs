@@ -46,7 +46,7 @@ pub fn max() -> i64 {
 pub enum Kind {
     /// The node went away under it: stopped, crashed, killed or powered off. Never the task's fault.
     NodeLost,
-    /// claude exited or was killed with nobody asking.
+    /// The agent's process exited or was killed with nobody asking.
     Exited,
     /// The watchdog saw no output for too long.
     Stalled,
@@ -123,7 +123,7 @@ pub fn death(
             ),
             Some(RunEnd::MachineSlept) => (
                 (Kind::Unreachable, RunEnd::MachineSlept),
-                format!("{machine} slept and claude's stream did not come back"),
+                format!("{machine} slept and the agent's stream did not come back"),
             ),
             Some(RunEnd::Exited) => ((Kind::Exited, RunEnd::Exited), message.clone()),
             Some(RunEnd::ContextFull) => (
@@ -152,7 +152,7 @@ pub fn death(
         }
     };
     let text = match text.trim() {
-        "" if kind == Kind::Exited => "claude exited".to_owned(),
+        "" if kind == Kind::Exited => "the agent exited".to_owned(),
         "" => "it failed without saying why".to_owned(),
         t => one_line(t, 200),
     };

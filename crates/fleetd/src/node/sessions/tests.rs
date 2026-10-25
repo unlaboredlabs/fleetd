@@ -22,7 +22,7 @@ use super::{
 };
 use crate::node::runner::SessionCommand;
 use crate::node::runner::claude::ALWAYS_DISALLOWED;
-use crate::node::runner::failure::RETRY_MESSAGE;
+use crate::node::runner::claude::failure::RETRY_MESSAGE;
 use crate::node::store::NodeStore;
 use crate::node::wire::NodeToHub;
 use crate::node::worktree::tests::{cloned, repo, run as git};
@@ -76,8 +76,10 @@ fn launch(id: &str, mode: RuntimeMode, workspace: SessionWorkspace) -> SessionCa
         project_id: ProjectId::unchecked("p1"),
         title: None,
         runner: Default::default(),
-        model: NonEmpty::unchecked("claude-haiku-5-5"),
-        effort: Effort::Low,
+        // As a hub from before profiles sends it: the runner reads the profile off the model and effort.
+        profile: None,
+        model: Some(NonEmpty::unchecked("claude-haiku-5-5")),
+        effort: Some(Effort::Low),
         runtime_mode: mode,
         workspace,
         prompt: NonEmpty::unchecked("Reply with the word OK and nothing else."),
@@ -2079,7 +2081,7 @@ fn tool_search_by_default_yields_to_the_nodes_env_and_claude_env() {
 }
 
 #[test]
-fn the_prompt_cache_ttl_follows_the_role_then_the_env_then_node_json() {
+fn the_prompt_cache_ttl_follows_the_role_then_the_env() {
     use crate::node::runner::claude::PROMPT_CACHE_TTL_VARS;
     use fleetd_contracts::sessions::SessionRole::{Lead, Plain, Worker};
     let dir = tempfile::tempdir().unwrap();
@@ -2108,26 +2110,6 @@ fn the_prompt_cache_ttl_follows_the_role_then_the_env_then_node_json() {
     .unwrap();
     assert_eq!(ttls(&own, Worker), ["1h", "5m"]);
     assert_eq!(ttls(&own, Lead), ["1h", "5m"]);
-
-    // node.json's setting for a role outranks both; the roles it leaves out keep theirs.
-    let node = crate::node::config::NodeConfig {
-        hub: "http://hub".into(),
-        machine_id: "m1".into(),
-        name: "m1".into(),
-        tags: Vec::new(),
-        cmd_roots: None,
-        claude_config_dir: None,
-        min_free_gb: None,
-        mem_per_agent_gb: None,
-        disk_per_agent_gb: None,
-        prompt_cache_ttl: [(Worker, crate::node::runner::claude::CacheTtl::FiveMinutes)].into(),
-        enrolled: true,
-    };
-    crate::node::config::write_config(&own.home, &node).unwrap();
-    let written = std::fs::read_to_string(own.home.join("node.json")).unwrap();
-    assert!(written.contains(r#""promptCacheTtl": {"#) && written.contains(r#""worker": "5m""#));
-    assert_eq!(ttls(&own, Worker), ["5m", "5m"]);
-    assert_eq!(ttls(&own, Lead), ["1h", "5m"]);
 }
 
 #[test]
@@ -2141,7 +2123,7 @@ fn sessions_get_a_config_dir_only_when_the_machine_has_a_dedicated_one() {
     let own = config(dir.path());
     let env = own.runner_env();
     assert!(!env.iter().any(|(k, _)| k == "CLAUDE_CONFIG_DIR"));
-    let setup = crate::node::runner::claude_setup::proxy_of(&env).unwrap();
+    let setup = crate::node::runner::claude::setup::proxy_of(&env).unwrap();
     assert_eq!(setup.0, "http://127.0.0.1:9");
     assert!(setup.1.ends_with("claude.env"), "{}", setup.1);
 
@@ -2150,7 +2132,7 @@ fn sessions_get_a_config_dir_only_when_the_machine_has_a_dedicated_one() {
         ..own
     };
     assert_eq!(
-        crate::node::runner::claude_setup::config_dir(&dedicated.runner_env()),
+        crate::node::runner::claude::setup::config_dir(&dedicated.runner_env()),
         dir.path().join("profile")
     );
 }

@@ -1,13 +1,9 @@
 //! `<node home>/node.json`. Holds no secrets: the enroll token is used once in memory and never stored.
-use std::collections::HashMap;
 use std::io::Write;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 
-use fleetd_contracts::sessions::SessionRole;
 use serde::{Deserialize, Serialize};
-
-use super::runner::claude::CacheTtl;
 
 pub fn default_node_home() -> PathBuf {
     crate::home::fleetd_dir().join("node")
@@ -37,10 +33,6 @@ pub struct NodeConfig {
     /// GB of disk to allow per new agent's worktree when the hub decides how many more fit. Absent or 0: 5 GB.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disk_per_agent_gb: Option<u64>,
-    /// The prompt cache TTL per session role (`lead`, `worker`, `plain`), over the role's default
-    /// ([`PROMPT_CACHE_TTL`](crate::node::runner::claude::PROMPT_CACHE_TTL)). Read at each session start.
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub prompt_cache_ttl: HashMap<SessionRole, CacheTtl>,
     /// True once the hub has accepted this node's key.
     pub enrolled: bool,
 }

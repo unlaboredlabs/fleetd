@@ -114,7 +114,7 @@ pub fn family(kind: SpanKind, tool: Option<&str>, label: &str) -> String {
     if !matches!(kind, SpanKind::ToolBash | SpanKind::Git) {
         return tool.unwrap_or(kind.as_str()).to_owned();
     }
-    let Some(program) = crate::node::runner::claude::spans::program(label) else {
+    let Some(program) = crate::node::runner::shell::program(label) else {
         return String::new();
     };
     let prog = program.rsplit('/').next().unwrap_or(program);

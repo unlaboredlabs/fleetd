@@ -177,8 +177,7 @@ fn launch_input(request: &str) -> LaunchInput {
     LaunchInput {
         project_id: ProjectId::unchecked("p1"),
         prompt: "reply with the word OK".into(),
-        model: "claude-haiku-5-5".into(),
-        effort: Effort::Low,
+        profile: TaskProfile::Medium,
         runtime_mode: RuntimeMode::ApprovalRequired,
         title: None,
         client_request_id: request.into(),
@@ -220,7 +219,11 @@ async fn launch_send_interrupt_and_a_permission_answer_go_out_as_session_calls()
     let SessionCall::Launch(l) = call else {
         panic!("not a launch: {call:?}")
     };
-    assert_eq!(l.model.as_str(), "claude-haiku-5-5");
+    // The hub sends the profile; the node's runner picks the model.
+    assert_eq!(
+        (l.profile, l.model, l.effort),
+        (Some(TaskProfile::Medium), None, None)
+    );
     assert_eq!(l.prompt.as_str(), "reply with the word OK");
     assert_eq!(l.title.as_deref(), Some("reply with the word OK"));
     assert_eq!(l.workspace, SessionWorkspace::Root);

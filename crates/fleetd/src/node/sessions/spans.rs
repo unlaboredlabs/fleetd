@@ -151,7 +151,7 @@ impl SessionService {
     }
 
     /// A run's lifecycle started: the wait before it becomes `run.queued` (behind the session's previous run),
-    /// `run.startup` (claude's process had to start) or `claude.other` (claude picking the message up), and a node
+    /// `run.startup` (claude's process had to start) or `runner.other` (claude picking the message up), and a node
     /// retry's wait becomes `wait.retry.node`. Exclusive time leaves out what the previous run already covers.
     pub(super) fn run_began(
         &self,
@@ -171,7 +171,7 @@ impl SessionService {
             let kind = match (status, spawned) {
                 (RunStatus::Queued, _) => SpanKind::RunQueued,
                 (_, true) => SpanKind::RunStartup,
-                _ => SpanKind::ClaudeOther,
+                _ => SpanKind::RunnerOther,
             };
             let floor = prev_end.as_ref().and_then(iso_ms).unwrap_or(0).max(start);
             out.push(span(

@@ -64,7 +64,7 @@ export const KIND_CATEGORY = {
   "wait.retry.node": "machine",
   "run.startup": "machine",
   compaction: "machine",
-  "claude.other": "machine",
+  "runner.other": "machine",
   "wait.offline": "machine",
   "queue.slot": "queue",
   "queue.lease": "queue",

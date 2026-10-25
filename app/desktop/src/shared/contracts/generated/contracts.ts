@@ -79,6 +79,12 @@ export type Activity = {
   detail?: string;
   kind: "tool";
   name: string;
+  server?: string;
+} | {
+  detail?: string;
+  kind: "web";
+} | {
+  kind: "planning";
 } | {
   kind: "writing";
 } | {
@@ -1077,7 +1083,10 @@ export type DoctorScope = "hub" | "machine";
 /** `unknown`: the hub could not look (machine offline, nothing to read). */
 export type DoctorStatus = "ok" | "warn" | "fail" | "unknown";
 
-/** The `--effort` claude runs at. Only [`TaskProfile`] picks one; nothing takes an effort as input. */
+/**
+ * How hard a model thinks, as a node reports a session's. Only the runner picks one, from the session's
+ * [`TaskProfile`]; nothing takes an effort as input.
+ */
 export type Effort = "low" | "medium" | "high" | "max";
 
 /** Who keeps a safety rule when the prompt no longer says it. */
@@ -2066,12 +2075,11 @@ export type Placeholder = {
 
 /** Who wrote the PR: fleetd's agent when one did, and the GitHub account it was opened from. */
 export type PrAuthor = {
-  effort?: Effort;
   /** The writing agent's lane in the agents view. */
   laneId?: string;
   /** GitHub login; absent when GitHub wasn't reached. */
   login?: string;
-  model?: string;
+  profile?: TaskProfile;
   role?: AgentRole;
   taskId?: TaskId;
   /** Its session, for `agent_work`. */
@@ -2302,7 +2310,7 @@ export type ProfileTotal = {
   agentMs: number;
   /** The model's part of it. */
   modelMs: number;
-  /** What claude reported for its messages. */
+  /** What the runner reported for its messages. */
   outputTokens: number;
   profile: TaskProfile;
 };
@@ -3001,7 +3009,7 @@ export type SecretSubmitOutput = {
 
 /** `session_prompt_get`: exactly what a session was told at its start. */
 export type SessionPrompt = {
-  /** Tools the claude runner never offers a fleetd session. */
+  /** Tools the node's runner never offers a fleetd session. */
   disallowedTools: string[];
   machineId: MachineId;
   projectRef?: ProjectRef;
@@ -3124,7 +3132,7 @@ export type Span = {
   /** The program, e.g. "cargo test", "git push", "Read", "mcp__x__y". */
   family?: string;
   id: number;
-  /** The item id in the thread (claude's tool_use or message id), for `thread_window`. */
+  /** The item id in the thread (the runner's tool call or message id), for `thread_window`. */
   itemId?: string;
   kind: SpanKind;
   label?: string;
@@ -3149,15 +3157,13 @@ export type SpanExtra = {
   attempt?: number;
   /** `ci.check`: the check name and its page. */
   check?: string;
-  /** `tool.*`: claude's own figure for the call, when the result carries one. */
-  claudeMs?: number;
   /** `gap`: how many spans were lost. */
   count?: number;
   decidedBy?: DecidedBy;
   durationApiMs?: number;
   /** `run`: the result line's `duration_ms` and `duration_api_ms`. */
   durationMs?: number;
-  /** `wait.retry.api`: the HTTP status claude retried on. */
+  /** `wait.retry.api`: the HTTP status the runner retried on. */
   httpStatus?: number;
   /** `wait.request`: the secret's key. */
   key?: string;
@@ -3168,7 +3174,9 @@ export type SpanExtra = {
   reason?: string;
   /** `wait.permission`: the node's request id, joined to the hub's approval request. */
   requestId?: string;
-  /** `wait.retry.*`: the delay claude or the node announced. The span is the real wait. */
+  /** `tool.*`: the runner's own figure for the call, when the result carries one. */
+  runnerMs?: number;
+  /** `wait.retry.*`: the delay the runner or the node announced. The span is the real wait. */
   statedDelayMs?: number;
   /** `model.message`. */
   stopReason?: string;
@@ -3210,7 +3218,7 @@ export type SpanKind =
   | "tool.edit"
   | "tools.parallel"
   | "git"
-  | "claude.other"
+  | "runner.other"
   | "wait.offline"
   | "queue.lease"
   | "run.queued"
@@ -3522,7 +3530,7 @@ export type Task = {
   qa?: boolean;
   /** Why it is queued, e.g. "fleet cap: 40 of 40 running". */
   queuedReason?: string;
-  /** Set once a run of it died (its node stopped, claude was killed, a stall) and fleetd resumed it or will. */
+  /** Set once a run of it died (its node stopped, its process was killed, a stall) and fleetd resumed it or will. */
   recovery?: TaskRecovery;
   result?: TaskResult;
   startedAt?: Timestamp;
@@ -3572,8 +3580,9 @@ export type TaskId = string;
 export type TaskKind = "write" | "read" | "review";
 
 /**
- * What an agent runs on. There are exactly two, both claude-opus-5-5: `high` (effort high) is the default and what
- * the lead, every reviewer and every helper call run; `medium` (effort medium) is for mechanical tasks the lead picks.
+ * What an agent runs on. There are exactly two: `high` is the default and what the lead, every reviewer and every
+ * helper call run; `medium` is for mechanical tasks the lead picks. The node's runner picks the model and effort of
+ * each.
  */
 export type TaskProfile = "high" | "medium";
 
@@ -3586,7 +3595,7 @@ export type TaskRecovery = {
   count: number;
   /** How its last run ended. */
   lastCause: RunEnd;
-  /** The same, in plain words: "the node on devbox stopped", "claude was killed by signal 9". */
+  /** The same, in plain words: "the node on devbox stopped", "the agent was killed by signal 9". */
   lastCauseText: string;
   max: number;
   /** How it goes on. */
@@ -3613,7 +3622,7 @@ export type TaskResult = {
   at: Timestamp;
   branch?: string;
   /**
-   * Why its last run ended (the node stopped, claude exited, a limit, context full, …); absent on results an
+   * Why its last run ended (the node stopped, the agent exited, a limit, context full, …); absent on results an
    * older hub recorded, and when it never ran.
    */
   endCause?: RunEnd;
@@ -3650,6 +3659,8 @@ export type ThreadCounts = {
 export type ThreadError = {
   class: string;
   message: string;
+  /** The model the failure names, when the runner read one off it (a gateway with no account for it). */
+  model?: string;
 };
 
 /** Fields `HubEvent.data` may carry on `thread.*` events, alongside whatever else the hub adds. */

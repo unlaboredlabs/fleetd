@@ -287,7 +287,8 @@ fn failed_run_maps_class_message_and_event() {
         failed.summary.last_error,
         Some(LastError {
             class: "other".into(),
-            message: "Claude gave up after repeated API errors.".into()
+            message: "Claude gave up after repeated API errors.".into(),
+            model: None,
         })
     );
     assert_eq!(failed.summary.model.as_deref(), Some("claude-haiku-5-5"));

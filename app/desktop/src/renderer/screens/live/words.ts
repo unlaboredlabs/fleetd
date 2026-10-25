@@ -69,6 +69,10 @@ export const describe = (lane: AgentLane): Line => {
           return { ...say("reading"), tone: "loud" };
         case "tool":
           return act.detail ? doing(act.name, act.detail) : { ...say(act.name), tone: "loud" };
+        case "web":
+          return act.detail ? doing("reading the web", act.detail) : { ...say("reading the web"), tone: "loud" };
+        case "planning":
+          return { ...say("planning"), tone: "loud" };
         case "writing":
           return { ...say("writing"), tone: "loud" };
         case "compacting":

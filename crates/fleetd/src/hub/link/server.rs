@@ -696,7 +696,7 @@ impl NodeLinkServer {
         };
 
         let at = self.now_iso();
-        let hello_reason = "checking the node's claude runner";
+        let hello_reason = "checking the node's runner";
         let last_slept = match self.deps.store.machine_get(&machine_id) {
             Ok(stored) => stored.and_then(|m| m.last_slept),
             Err(_) => None,

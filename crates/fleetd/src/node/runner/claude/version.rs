@@ -2,6 +2,8 @@
 //! `SUPPORTED` the range it was tested across. fleetd never refuses a claude for its version: the probe's
 //! `initialize` and real runs decide. Outside the range the doctor and setup warn and name the fix.
 pub const TESTED: &str = "2.1.302";
+/// Claude Code's own installer, user-space; fleetd never installs claude itself.
+pub const INSTALL: &str = "curl -fsSL https://claude.ai/install.sh | bash";
 pub const SUPPORTED: &str = ">=2.1.300, <2.2.0";
 const OLDEST: Version = (2, 1, 300);
 const BELOW: Version = (2, 2, 0);

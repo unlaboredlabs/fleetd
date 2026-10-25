@@ -9,10 +9,9 @@ use serde_json::{Value, json};
 
 use super::state::{GitIdentity, git_identity_env};
 use super::units::{Dirs, Platform, Role, ServiceManager, ServiceSpec, q, render_unit, unit_path};
-use crate::node::runner::version::{self, VersionVerdict};
+use crate::node::runner::claude::version::{self, VersionVerdict};
 
-/// Claude Code's own installer, user-space; fleetd never installs claude itself.
-pub const CLAUDE_INSTALL: &str = "curl -fsSL https://claude.ai/install.sh | bash";
+pub use crate::node::runner::claude::version::INSTALL as CLAUDE_INSTALL;
 
 /// The node.json fields `machine add` sets; the rest (cmdRoots, …) are the user's or the node's and are kept.
 const NODE_CONFIG_OWNED: [&str; 5] = ["hub", "machineId", "name", "tags", "claudeConfigDir"];

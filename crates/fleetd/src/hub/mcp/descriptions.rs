@@ -42,7 +42,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "project_remove",
-        "Stop the project's claude processes and forget it. Its files, branches and worktrees stay on the machine; project_add brings it back.",
+        "Stop the project's agent processes and forget it. Its files, branches and worktrees stay on the machine; project_add brings it back.",
     ),
     (
         "thread_tail",
@@ -70,11 +70,11 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "lead_start",
-        "Start the project's lead: one thread that turns intents into briefs, asks the human in chat only about product, money, credential and irreversible calls, and never writes code. Returns the existing lead if there is one; with fresh, starts a new lead thread from the current digest instead (sessionGeneration goes up), for a lead that is stuck or whose context is full, and the old thread stays on the node. A project's first order starts its lead by itself; call this to start it earlier. The lead always runs on the high profile (Opus 5.5, effort high).",
+        "Start the project's lead: one thread that turns intents into briefs, asks the human in chat only about product, money, credential and irreversible calls, and never writes code. Returns the existing lead if there is one; with fresh, starts a new lead thread from the current digest instead (sessionGeneration goes up), for a lead that is stuck or whose context is full, and the old thread stays on the node. A project's first order starts its lead by itself; call this to start it earlier. The lead always runs on the high profile.",
     ),
     (
         "project_set",
-        "Turn a project's medium profile on or off (mediumAllowed, on by default). On: its lead may run mechanical tasks on medium (Opus 5.5, effort medium). Off: every new task runs high. The lead, reviewers and helper calls always run high.",
+        "Turn a project's medium profile on or off (mediumAllowed, on by default). On: its lead may run mechanical tasks on medium (the same model at medium effort). Off: every new task runs high. The lead, reviewers and helper calls always run high.",
     ),
     (
         "workstream_list",
@@ -114,7 +114,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "usage_status",
-        "Per machine: the fleetd Claude login kind (subscription, api_key, custom_base_url; from the node's runner, never credentials), the usage breaker (open/closed, until when, its plain message), parked lead and task counts, and the latest limit events.",
+        "Per machine: the login kind of the node's runner (claude's: subscription, api_key, custom_base_url; never credentials), the usage breaker (open/closed, until when, its plain message), parked lead and task counts, and the latest limit events.",
     ),
     (
         "usage_resume",
@@ -126,7 +126,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "doctor_list",
-        "The doctor: every setup check with status (ok, warn, fail, unknown), a plain message and its fix. Hub: reachable, gh logged in, claude login, HTTPS. Each machine: online/degraded/offline, claude in the supported version range, claude logged in, the runner's conformance, commit identity, at least 5 GB free, usage breaker. Results are from the last run (every 15 min); rerun: true runs them now.",
+        "The doctor: every setup check with status (ok, warn, fail, unknown), a plain message and its fix. Hub: reachable, gh logged in, the runner's login, HTTPS. Each machine: online/degraded/offline, the runner in its supported version range and logged in, the runner's conformance, commit identity, at least 5 GB free, usage breaker. Results are from the last run (every 15 min); rerun: true runs them now.",
     ),
     (
         "doctor_fix",

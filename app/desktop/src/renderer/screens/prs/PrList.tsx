@@ -27,7 +27,7 @@ export const listItems = (rows: readonly PrRow[], cut = false): Item[] => {
 export const prHref = (project: ProjectRef, row: Pick<PrRow, "repo" | "number">): string =>
   toHash(panelRoute(project, { tab: "prs", pr: { repo: row.repo, number: row.number } }));
 
-/** Who wrote it, and the task it was asked for when that says more than the title: "A writer (opus) · Round totals". */
+/** Who wrote it, and the task it was asked for when that says more than the title: "A writer (high) · Round totals". */
 export const byLine = (row: Pick<PrRow, "author" | "title">): string | undefined => {
   const who = authorWords(row.author);
   const task = row.author.title;

@@ -82,7 +82,7 @@ pub struct TaskResult {
     pub tail: Text<0, 2000>,
     pub branch: Option<NonEmpty>,
     pub pr_url: Option<PrUrl>,
-    /// Why its last run ended (the node stopped, claude exited, a limit, context full, …); absent on results an
+    /// Why its last run ended (the node stopped, the agent exited, a limit, context full, …); absent on results an
     /// older hub recorded, and when it never ran.
     pub end_cause: Option<RunEnd>,
     pub at: Timestamp,
@@ -126,7 +126,7 @@ pub struct Task {
     pub parked: Option<UsageParked>,
     /// 1 for the first launch.
     pub attempt: Positive,
-    /// Set once a run of it died (its node stopped, claude was killed, a stall) and fleetd resumed it or will.
+    /// Set once a run of it died (its node stopped, its process was killed, a stall) and fleetd resumed it or will.
     #[serde(default)]
     pub recovery: Option<TaskRecovery>,
     pub result: Option<TaskResult>,
@@ -150,7 +150,7 @@ pub struct TaskRecovery {
     pub node_lost: Count,
     /// How its last run ended.
     pub last_cause: RunEnd,
-    /// The same, in plain words: "the node on devbox stopped", "claude was killed by signal 9".
+    /// The same, in plain words: "the node on devbox stopped", "the agent was killed by signal 9".
     pub last_cause_text: Text<1, 200>,
     /// What tells one death from another (its cause, exit and last tool); the same one twice is not resumed again.
     /// Cleared when the lead continues the task itself.

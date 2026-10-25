@@ -12,7 +12,8 @@ use fleetd_contracts::sessions::{
 };
 
 use crate::node::runner::claude::ALWAYS_DISALLOWED;
-use crate::node::runner::{ExitInfo, RunOutcome, failure};
+use crate::node::runner::claude::failure;
+use crate::node::runner::{ExitInfo, RunOutcome};
 use crate::node::store::SessionLocal;
 use crate::node::util::{head_utf16, tail_utf16};
 
@@ -62,7 +63,7 @@ pub enum EndCause {
     NodeStopping,
     /// The node found the run active on start: it died with the previous node process.
     NodeRestarted,
-    /// claude exited or was killed with nobody asking.
+    /// The agent's process exited or was killed with nobody asking.
     Exited(ExitInfo),
 }
 
@@ -156,14 +157,15 @@ pub fn ended_by(message: String) -> RunFailure {
         api_status: None,
         reset_at: None,
         retries: 0,
+        model: None,
     }
 }
 
 fn describe_exit(exit: &ExitInfo) -> String {
     let how = match (exit.code, exit.signal) {
-        (_, Some(signal)) => format!("claude was killed by signal {signal}"),
-        (Some(code), None) => format!("claude exited with code {code}"),
-        (None, None) => "claude exited".to_owned(),
+        (_, Some(signal)) => format!("the agent was killed by signal {signal}"),
+        (Some(code), None) => format!("the agent exited with code {code}"),
+        (None, None) => "the agent exited".to_owned(),
     };
     let stderr = exit.stderr_tail.trim();
     if stderr.is_empty() {
@@ -390,7 +392,7 @@ mod tests {
         assert_eq!(failure.class, FailureClass::ProcessExited);
         assert_eq!(
             failure.message.as_str(),
-            "claude was killed by signal 9 before the run ended\n--- stderr tail ---\nboom"
+            "the agent was killed by signal 9 before the run ended\n--- stderr tail ---\nboom"
         );
     }
 
@@ -403,6 +405,7 @@ mod tests {
                 api_status: None,
                 reset_at: None,
                 retries: 0,
+                model: None,
             })
         };
         let completed = RunOutcome::Completed { text: "ok".into() };

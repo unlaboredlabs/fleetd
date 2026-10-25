@@ -8,15 +8,17 @@ use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use fleetd_contracts::effort::{Effort, TaskProfile};
 use fleetd_contracts::sessions::{LoginStatus, RunnerInfo, RunnerKind};
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 
+use crate::node::runner::claude::failure;
 use crate::node::runner::claude::mapper::{Now, StreamMapper};
 use crate::node::runner::claude::protocol::{Input, Line};
 use crate::node::runner::{
-    BoxFut, ExitInfo, Runner, RunnerError, RunnerEvent, SessionCommand, SessionHandle, SessionSpec,
-    failure,
+    BoxFut, ExitInfo, ProfileModel, Runner, RunnerError, RunnerEvent, SessionCommand,
+    SessionHandle, SessionSpec,
 };
 
 /// One recorded user turn: its message's uuid, and each stdout line with its offset from the turn's start.
@@ -156,6 +158,14 @@ impl Runner for FakeRunner {
             commands: cmd_tx,
             events: ev_rx,
         })
+    }
+
+    fn profile(&self, profile: TaskProfile) -> ProfileModel {
+        crate::node::runner::claude::guide::profile(profile)
+    }
+
+    fn profile_of(&self, model: &str, effort: Effort) -> TaskProfile {
+        crate::node::runner::claude::guide::profile_of(model, effort)
     }
 }
 

@@ -24,13 +24,13 @@ struct Piece {
     label: Option<String>,
 }
 
-/// Rows the walk may step on: leaves, plus `run` envelopes whose uncovered time is `claude.other`.
+/// Rows the walk may step on: leaves, plus `run` envelopes whose uncovered time is `runner.other`.
 fn steps_on(row: &Row) -> bool {
     row.kind == SpanKind::Run || !(is_detail(row.kind) || row.kind == SpanKind::Idle)
 }
 
 /// Cuts one lane's rows into exclusive pieces, oldest first. A run envelope ranks below every leaf, so it owns
-/// only the run's time no leaf covers, which becomes `claude.other`.
+/// only the run's time no leaf covers, which becomes `runner.other`.
 fn lane_pieces(rows: &[&Row]) -> Vec<Piece> {
     let Some(base) = rows.iter().map(|r| r.start_ms).min() else {
         return Vec::new();
@@ -54,7 +54,7 @@ fn lane_pieces(rows: &[&Row]) -> Vec<Piece> {
         .filter_map(|t| {
             let row = rows[t.owner?];
             let kind = if row.kind == SpanKind::Run {
-                SpanKind::ClaudeOther
+                SpanKind::RunnerOther
             } else {
                 row.kind
             };

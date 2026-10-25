@@ -22,7 +22,7 @@ const row = (items: [number, number, Category][]): Model => {
   const kindOf: Record<Category, SpanKind> = {
     model: "model.output",
     tools: "tool.bash",
-    machine: "claude.other",
+    machine: "runner.other",
     queue: "queue.slot",
     human: "wait.permission",
     pipeline: "change.review",
