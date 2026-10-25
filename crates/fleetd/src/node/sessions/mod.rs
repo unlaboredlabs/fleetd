@@ -28,7 +28,7 @@ use fleetd_contracts::ids::{ProjectId, ThreadId, Timestamp};
 use fleetd_contracts::prim::{NonEmpty, Text};
 use fleetd_contracts::sessions::{
     CloneProgressFrame, FailureClass, ItemKind, ItemStatus, MachineEvent, MachineEventFrame,
-    MessageRole, PendingPermission, PermissionDecision, ProjectInfo, RunFailure, RunInfo,
+    MessageRole, PendingPermission, PermissionDecision, ProjectInfo, RunEnd, RunFailure, RunInfo,
     RunStatus, RunUsage, RunnerInfo, SendAccepted, SendMode, SendNow, SessionCall,
     SessionCallFrame, SessionChanges, SessionError, SessionErrorCode, SessionLaunch, SessionOutput,
     SessionReplyFrame, SessionResult, SessionRole, SessionStatus, SessionSummary, SessionWorkspace,
@@ -422,8 +422,8 @@ struct Live {
     commands: mpsc::Sender<SessionCommand>,
     last_active: Instant,
     /// Set when someone asked the process's run to end (interrupt, stop, node shutdown): an exit then interrupts
-    /// rather than fails the run.
-    ending: Option<String>,
+    /// rather than fails the run. Always `Requested` or `NodeStopping`.
+    ending: Option<EndCause>,
     /// A shutdown was sent: a new command waits for the exit and respawns.
     closing: bool,
     /// claude's user-message uuid → fleetd run id, for node retries sent under a fresh uuid.
@@ -445,6 +445,8 @@ struct State {
     stopping: bool,
     /// Node retries done per run.
     retries: HashMap<String, u32>,
+    /// Runs the node cut after the machine woke, until they end: one that fails after its retries ended by the sleep.
+    slept: HashSet<String>,
     /// Sessions with an active run, for the sleep inhibitor.
     active: HashSet<String>,
     outbox: spans::Outbox,
@@ -1262,6 +1264,8 @@ impl SessionService {
                 superseded_by: None,
                 failure: None,
                 usage: None,
+                end: None,
+                ended_by: None,
             });
             c.put_message(ThreadMessage {
                 id: run_id.clone(),
@@ -1302,18 +1306,21 @@ impl SessionService {
     }
 
     fn fail_run(&self, id: &str, run_id: &str, class: FailureClass, message: &str) {
+        self.st().slept.remove(run_id);
         let failed = self.update(id, |c| {
             let at = c.at.clone();
             if let Some(run) = c.run_mut(run_id).filter(|r| r.status.is_active()) {
                 run.status = RunStatus::Failed;
                 run.ended_at = Some(at);
-                run.failure = Some(RunFailure {
+                let failure = RunFailure {
                     class,
                     message: Text::new(message).unwrap_or_else(|_| Text::unchecked("failed")),
                     api_status: None,
                     reset_at: None,
                     retries: 0,
-                });
+                };
+                run.end = Some(state::failure_end(&failure));
+                run.failure = Some(failure);
             }
         });
         if let Err(e) = failed {
@@ -1590,6 +1597,19 @@ impl SessionService {
                         Err(e) => tracing::warn!(error = %e.message, "session event not applied"),
                     }
                     self.steer_delivered(&started, false);
+                    // A send claude took in after its turn was cut for the node's shutdown (the withdraw lost the
+                    // race) must not run on through the drain.
+                    let cut = {
+                        let mut st = self.st();
+                        let stopping = st.stopping;
+                        st.live
+                            .get_mut(&id)
+                            .filter(|_| stopping)
+                            .map(|l| l.commands.clone())
+                    };
+                    if let Some(commands) = cut {
+                        let _ = commands.send(SessionCommand::Interrupt).await;
+                    }
                 }
                 RunnerEvent::Spans(mut spans) => {
                     for span in &mut spans {
@@ -1790,7 +1810,7 @@ impl SessionService {
                 }
             }
             st.live.get_mut(id).map(|live| {
-                live.ending = Some(why.clone());
+                live.ending = Some(EndCause::Requested(why.clone()));
                 live.closing = true;
                 live.commands.clone()
             })
@@ -1894,14 +1914,21 @@ impl SessionService {
         outcome: RunOutcome,
         usage: Option<fleetd_contracts::sessions::RunUsage>,
     ) {
-        let slept = self.st().live.get_mut(id).is_some_and(|l| {
-            let marked = l.slept.as_deref() == Some(run_id);
+        let slept = {
+            let mut st = self.st();
+            let marked = st.live.get_mut(id).is_some_and(|l| {
+                let marked = l.slept.as_deref() == Some(run_id);
+                if marked {
+                    l.slept = None;
+                    l.ending = None;
+                }
+                marked
+            });
             if marked {
-                l.slept = None;
-                l.ending = None;
+                st.slept.insert(run_id.to_owned());
             }
             marked
-        });
+        };
         let outcome = match outcome {
             RunOutcome::Interrupted | RunOutcome::Failed(_) if slept => {
                 RunOutcome::Failed(RunFailure {
@@ -1947,13 +1974,18 @@ impl SessionService {
             }
         }
         self.st().retries.remove(run_id);
+        let slept = self.st().slept.remove(run_id)
+            && (slept || matches!(&outcome, RunOutcome::Failed(f) if failure::retryable(f.class)));
         // Why someone ended it (an interrupt, a stop, a removed project): claude's own end of the run says only that
         // it was cut.
-        let asked = self
-            .st()
-            .live
-            .get_mut(id)
-            .and_then(|live| live.ending.take());
+        let asked = {
+            let mut st = self.st();
+            let asked = st.live.get_mut(id).and_then(|live| live.ending.take());
+            // The node's shutdown asks every run of the process, not only the first to end.
+            asked.or_else(|| st.stopping.then_some(EndCause::NodeStopping))
+        };
+        let end = state::run_end(&outcome, asked.as_ref(), slept);
+        let ended_by = asked.as_ref().and_then(EndCause::ended_by);
         match &outcome {
             RunOutcome::Failed(failure) if failure.class == FailureClass::Auth => {
                 self.health_changed(|h| h.auth_failed(&failure.message, Instant::now()));
@@ -1971,7 +2003,10 @@ impl SessionService {
             if let Some(run) = index.map(|i| &mut c.runs[i]) {
                 (run.status, run.failure) = match outcome {
                     RunOutcome::Completed { .. } => (RunStatus::Completed, None),
-                    RunOutcome::Interrupted => (RunStatus::Interrupted, asked.map(state::ended_by)),
+                    RunOutcome::Interrupted => (
+                        RunStatus::Interrupted,
+                        asked.map(|cause| state::ended_by(cause.message())),
+                    ),
                     RunOutcome::Superseded { by } => {
                         run.superseded_by = NonEmpty::new(by).ok();
                         (RunStatus::Interrupted, None)
@@ -1982,6 +2017,8 @@ impl SessionService {
                 };
                 run.ended_at = Some(at);
                 run.usage = usage;
+                run.end = Some(end);
+                run.ended_by = ended_by.filter(|_| end == RunEnd::Requested);
             }
             if !c.runs.iter().any(|r| r.status.is_active()) {
                 c.cancel_pending();
@@ -2107,16 +2144,13 @@ impl SessionService {
             }
             let ending = live
                 .ending
-                .or_else(|| st.stopping.then(|| "the node stopped".to_owned()));
+                .or_else(|| st.stopping.then_some(EndCause::NodeStopping));
             (live.pid, ending)
         };
-        let cause = match ending {
-            Some(why) => EndCause::Requested(why),
-            None => EndCause::Exited(exit),
-        };
-        // A run the node is retrying outlives an exit nobody asked for: the retry resumes the session. An interrupt
-        // or stop ends it, and so its retry.
-        let requested = matches!(cause, EndCause::Requested(_));
+        let cause = ending.unwrap_or(EndCause::Exited(exit));
+        // A run the node is retrying outlives an exit nobody asked for: the retry resumes the session. An interrupt,
+        // a stop or the node's shutdown ends it, and so its retry.
+        let requested = cause.asked();
         let retrying: HashSet<String> = self.st().retries.keys().cloned().collect();
         let mut closed = Vec::new();
         self.log(self.update(id, |c| {
@@ -2137,6 +2171,7 @@ impl SessionService {
         let mut st = self.st();
         for run in closed {
             st.retries.remove(&run);
+            st.slept.remove(&run);
         }
     }
 
@@ -2153,7 +2188,7 @@ impl SessionService {
             .filter(|r| !r.trim().is_empty())
             .unwrap_or_else(|| "interrupted".into());
         let target = self.st().live.get_mut(id).map(|live| {
-            live.ending = Some(reason.clone());
+            live.ending = Some(EndCause::Requested(reason.clone()));
             (live.commands.clone(), live.generation)
         });
         let Some((commands, generation)) = target else {
@@ -2200,7 +2235,7 @@ impl SessionService {
     async fn stop(&self, id: &str, remove_worktree: bool) -> Reply {
         let row = self.session(id)?;
         let target = self.st().live.get_mut(id).map(|live| {
-            live.ending = Some("stopped".into());
+            live.ending = Some(EndCause::Requested("stopped".into()));
             live.closing = true;
             (live.commands.clone(), live.exited.clone(), live.pid)
         });
@@ -2310,7 +2345,7 @@ impl SessionService {
                     continue;
                 };
                 live.ending
-                    .get_or_insert_with(|| "its project was removed".into());
+                    .get_or_insert_with(|| EndCause::Requested("its project was removed".into()));
                 live.closing = true;
                 let (commands, mut exited) = (live.commands.clone(), live.exited.clone());
                 stopping.push(async move {
@@ -2599,7 +2634,9 @@ impl SessionService {
         }
     }
 
-    /// Node SIGTERM: interrupt every active run, give them [`SHUTDOWN_DRAIN`] to end, then close every process.
+    /// Node SIGTERM: withdraw every send claude still holds, interrupt every active run, give them
+    /// [`SHUTDOWN_DRAIN`] to end, then close every process. Without the withdraw a queued send starts the moment the
+    /// interrupt ends the turn before it, and is only cut at the end of the drain.
     pub async fn shutdown(&self) {
         let targets: Vec<_> = {
             let mut st = self.st();
@@ -2607,7 +2644,7 @@ impl SessionService {
             st.live
                 .iter_mut()
                 .map(|(id, live)| {
-                    live.ending.get_or_insert_with(|| "the node stopped".into());
+                    live.ending.get_or_insert(EndCause::NodeStopping);
                     live.closing = true;
                     (id.clone(), live.commands.clone(), live.exited.clone())
                 })
@@ -2619,6 +2656,14 @@ impl SessionService {
                 .is_ok_and(|r| r.is_some_and(|r| r.summary.active_run_id.is_some()))
         };
         for (id, commands, _) in &targets {
+            let queued = self.store().runs(id).unwrap_or_default();
+            for run in queued.iter().filter(|r| r.status == RunStatus::Queued) {
+                let _ = commands
+                    .send(SessionCommand::Withdraw {
+                        run_id: run.id.to_string(),
+                    })
+                    .await;
+            }
             if active(id) {
                 let _ = commands.send(SessionCommand::Interrupt).await;
             }

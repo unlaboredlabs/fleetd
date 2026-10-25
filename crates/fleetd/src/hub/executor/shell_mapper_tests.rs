@@ -3,7 +3,7 @@
 //! by snapshot.
 use std::collections::HashMap;
 
-use fleetd_contracts::sessions::{MachineEvent, SessionSummary};
+use fleetd_contracts::sessions::{MachineEvent, RunEnd, SessionSummary};
 use serde_json::{Value, json};
 
 use super::backoff_ms;
@@ -636,6 +636,7 @@ fn transitions_between_observations() {
         latest_message_tail: String::new(),
         last_error: None,
         usage_limit_reset_at: None,
+        end_cause: None,
         last_progress_at: NOW.into(),
         model: None,
         effort: None,
@@ -694,4 +695,71 @@ fn a_runner_event_moves_the_cursor_and_nothing_else() {
     );
     assert_eq!(applied.cursor, Some(AFTER + 1));
     assert_eq!(state.threads, before);
+}
+
+#[test]
+fn an_ended_runs_cause_reaches_the_summary_and_its_event() {
+    let mut state = before_turns();
+    let stopped = row(
+        "c",
+        6,
+        Some(run(
+            "c1",
+            "interrupted",
+            1,
+            json!({ "end": "node_stopping", "failure": { "class": "process_exited", "message": "the node stopped" } }),
+        )),
+        json!({ "status": "interrupted" }),
+    );
+    let events = [
+        (11, MachineEvent::SessionUpdated(running("c", 4, "c1", 1))),
+        (12, MachineEvent::SessionUpdated(stopped)),
+    ];
+    assert_eq!(
+        feed(&events, &mut state, &HashMap::new(), false),
+        ev(&[("thread.started", "c"), ("thread.interrupted", "c")])
+    );
+    let thread = &state.threads["s-c"];
+    assert_eq!(thread.summary.end_cause, Some(RunEnd::NodeStopping));
+    let t = Transition {
+        kind: EventType::Interrupted,
+        thread_id: "s-c".into(),
+        late: false,
+    };
+    let data = transition_event(&t, thread, MACHINE).data.unwrap();
+    assert_eq!(data["endCause"], "node_stopping");
+
+    // A cause a newer node records reads as unknown; an older node's run carries none.
+    let newer = row(
+        "d",
+        8,
+        Some(run(
+            "d1",
+            "failed",
+            1,
+            json!({ "end": "moon_phase", "failure": plain_failure() }),
+        )),
+        json!({ "status": "failed" }),
+    );
+    feed(&updated(13, newer), &mut state, &HashMap::new(), false);
+    assert_eq!(
+        state.threads["s-d"].summary.end_cause,
+        Some(RunEnd::Unknown)
+    );
+    feed(
+        &updated(14, d_failed(plain_failure())),
+        &mut state,
+        &HashMap::new(),
+        false,
+    );
+    assert_eq!(state.threads["s-d"].summary.end_cause, None);
+    let t = Transition {
+        kind: EventType::Failed,
+        thread_id: "s-d".into(),
+        late: false,
+    };
+    let data = transition_event(&t, &state.threads["s-d"], MACHINE)
+        .data
+        .unwrap();
+    assert!(data.get("endCause").is_none());
 }
