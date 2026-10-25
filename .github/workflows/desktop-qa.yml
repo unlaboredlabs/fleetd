@@ -12,9 +12,13 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# As in ci.yml: a newer push to a PR cancels its run; runs on main and on the train's batch PR are never cancelled.
 concurrency:
-  group: desktop-qa-${{ github.ref }}
-  cancel-in-progress: true
+  group: >-
+    ${{ (github.ref == 'refs/heads/main' || github.head_ref == 'fleetd/train/batch')
+    && format('{0}-{1}', github.workflow, github.run_id)
+    || format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref) }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.head_ref != 'fleetd/train/batch' }}
 
 permissions:
   contents: read
@@ -23,12 +27,14 @@ jobs:
   qa:
     strategy:
       fail-fast: false
+      # The macOS leg runs only where ci.yml's macOS jobs do: main, the train's batch PR, workflow_dispatch and PRs
+      # with the `macos` label. It isn't a required check, so on other PRs it is left out of the matrix.
       matrix:
-        include:
-          - os: ubuntu-latest
-            scale: 1
-          - os: macos-latest
-            scale: 2
+        include: >-
+          ${{ fromJSON((github.event_name != 'pull_request' || github.head_ref == 'fleetd/train/batch'
+          || contains(github.event.pull_request.labels.*.name, 'macos'))
+          && '[{"os":"ubuntu-latest","scale":1},{"os":"macos-latest","scale":2}]'
+          || '[{"os":"ubuntu-latest","scale":1}]') }}
     name: qa (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
