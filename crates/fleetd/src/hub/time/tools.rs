@@ -22,7 +22,9 @@ use rusqlite::{Connection, OptionalExtension, params};
 use super::model::{PathInput, Row, RuleInput, is_detail};
 use super::store::{self, Filter, Meta};
 use super::{parse_ms, path, rules};
-use crate::hub::api::{Caller, Hub, Registry, ToolError, allows, allows_everywhere, require};
+use crate::hub::api::{
+    Caller, Hub, Registry, ToolError, admin_everywhere_fix, allows, allows_everywhere, require,
+};
 use crate::hub::store::{StoreError, iso_ms};
 
 /// Spans loaded per period for a breakdown or the rules.
@@ -1252,7 +1254,7 @@ async fn time_retention_set(
             ErrorCode::Forbidden,
             "Span retention is fleet-wide: it needs Admin on every machine.",
         )
-        .with_fix("Use an Admin key for all machines (`--machines '*'`)."));
+        .with_fix(admin_everywhere_fix(&caller)));
     }
     let days = input.retention_days.get();
     hub.db.transaction(|c| store::set_retention_days(c, days))?;

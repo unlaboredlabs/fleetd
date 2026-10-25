@@ -103,10 +103,10 @@ stop and remove the node's service on the machine and revoke its key on the hub;
 ### fleetd pair {#pair}
 
 ```text
-fleetd pair [--name <device>] [--home <dir>]
+fleetd pair [--name <device>] [--role <read|operate|admin>] [--home <dir>]
 ```
 
-print a one-time code (15 min) that pairs the desktop app with this hub; the app on this machine pairs by itself
+print a one-time code (15 min) that pairs the desktop app with this hub; the app on this machine pairs by itself. The device gets `--role` (default admin, which changes the hub's settings) on every machine
 
 ### fleetd pair {#pair-worker}
 

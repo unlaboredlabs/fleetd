@@ -1,11 +1,11 @@
 //! Device pairing: `fleetd pair` mints a one-time code, and a device trades it at `POST /pair` for a human key
-//! (the same key `fleetd hub key create --human` makes). No auth header: the code is the credential, so failed
-//! attempts are rate limited per remote address.
+//! (the same key `fleetd hub key create --human` makes) on every machine, with the role the code was minted with.
+//! No auth header: the code is the credential, so failed attempts are rate limited per remote address.
 #[cfg(test)]
 mod tests;
 
 use crate::clock::Clock;
-use crate::hub::api::Hub;
+use crate::hub::api::{Hub, role_name};
 use crate::hub::auth::CreatedKey;
 use crate::hub::store::{HubDb, NewEvent, StoreError, iso_ms, now_ms};
 use axum::http::StatusCode;
@@ -26,6 +26,9 @@ const MAX_FAILURES: usize = 5;
 const FAILURE_WINDOW_MS: i64 = 60_000;
 const MAX_DEVICE_NAME: usize = 64;
 const NEW_CODE_FIX: &str = "Run `fleetd pair` on the hub for a new code.";
+/// What `fleetd pair` grants without `--role`: the person at the hub machine pairs their own app, which changes
+/// the hub's settings.
+pub const DEFAULT_ROLE: Role = Role::Admin;
 
 /// A fresh code, `XXXX-XXXX`: 40 random bits.
 pub fn new_code() -> String {
@@ -94,16 +97,17 @@ impl PairCodes {
         Self { db, clock }
     }
 
-    /// One-time, valid for 15 minutes. `name` names the key when the device sends no name of its own.
-    pub fn create(&self, name: Option<&str>) -> Result<MintedCode, StoreError> {
+    /// One-time, valid for 15 minutes. `name` names the key when the device sends no name of its own; `role` is
+    /// what the key gets, whatever the device asks for.
+    pub fn create(&self, name: Option<&str>, role: Role) -> Result<MintedCode, StoreError> {
         let expires = now_ms(self.clock.as_ref()) + CODE_TTL_MS;
         let code = new_code();
         let canon = normalize(&code).expect("a new code normalizes");
         self.db.with(|conn| {
             conn.prepare_cached(
-                "INSERT INTO pair_codes (hash, name, expires_ms) VALUES (?, ?, ?)",
+                "INSERT INTO pair_codes (hash, name, expires_ms, role) VALUES (?, ?, ?, ?)",
             )?
-            .execute(params![hash(&canon), name, expires])?;
+            .execute(params![hash(&canon), name, expires, role_name(role)])?;
             Ok(())
         })?;
         Ok(MintedCode {
@@ -112,24 +116,27 @@ impl PairCodes {
         })
     }
 
-    /// Burns the code; returns the `--name` it was minted with.
-    pub fn redeem(&self, code: &str) -> Result<Option<String>, RedeemError> {
+    /// Burns the code; returns the `--name` and `--role` it was minted with.
+    pub fn redeem(&self, code: &str) -> Result<(Option<String>, Role), RedeemError> {
         let Some(canon) = normalize(code) else {
             return Err(RedeemError::Invalid);
         };
         let now = now_ms(self.clock.as_ref());
         let hash = hash(&canon);
         // One statement, so two devices racing on one code cannot both win.
-        let burned: Option<Option<String>> = self.db.with(|conn| {
+        let burned: Option<(Option<String>, String)> = self.db.with(|conn| {
             Ok(conn
                 .prepare_cached(
-                    "UPDATE pair_codes SET used_ms = $now WHERE hash = $hash AND used_ms IS NULL AND expires_ms > $now RETURNING name",
+                    "UPDATE pair_codes SET used_ms = $now WHERE hash = $hash AND used_ms IS NULL AND expires_ms > $now RETURNING name, role",
                 )?
-                .query_row(named_params! { "$now": now, "$hash": hash }, |row| row.get(0))
+                .query_row(named_params! { "$now": now, "$hash": hash }, |row| {
+                    Ok((row.get(0)?, row.get(1)?))
+                })
                 .optional()?)
         })?;
-        if let Some(name) = burned {
-            return Ok(name);
+        if let Some((name, role)) = burned {
+            // An unreadable role grants the least, never more.
+            return Ok((name, parse_role(&role).unwrap_or(Role::Read)));
         }
         let row: Option<(i64, Option<i64>)> = self.db.with(|conn| {
             Ok(conn
@@ -142,6 +149,11 @@ impl PairCodes {
             _ => RedeemError::Invalid,
         })
     }
+}
+
+/// `read`, `operate` or `admin`, as `fleetd pair --role` takes it.
+pub fn parse_role(text: &str) -> Option<Role> {
+    serde_json::from_value(serde_json::Value::String(text.to_owned())).ok()
 }
 
 /// Failed redeem attempts per remote address over the last minute.
@@ -245,8 +257,8 @@ pub fn handle(
         }
     };
     let codes = PairCodes::new(hub.db.clone(), hub.clock.clone());
-    let minted_name = match codes.redeem(&request.code) {
-        Ok(name) => name,
+    let (minted_name, role) = match codes.redeem(&request.code) {
+        Ok(minted) => minted,
         Err(error @ (RedeemError::Invalid | RedeemError::Expired)) => {
             limiter.failed(remote, now);
             let code = if matches!(error, RedeemError::Expired) {
@@ -265,7 +277,7 @@ pub fn handle(
     };
     let name = device_name(request.device_name.as_deref(), minted_name);
     let grant = Grant {
-        role: Role::Operate,
+        role,
         machines: GrantMachines::All(Star::Value),
     };
     let CreatedKey { key, info } = match hub.auth.create_key(&name, &[grant], KeyKind::Human) {

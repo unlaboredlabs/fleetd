@@ -9,12 +9,14 @@ use super::CliResult;
 use super::args::{self, Kind, Spec};
 use super::setup::{DEFAULT_LISTEN, mkdir_private, parse_listen, write_private};
 use crate::clock::SystemClock;
-use crate::hub::pair::PairCodes;
+use crate::hub::pair::{self as hub_pair, PairCodes};
 use crate::hub::store::HubDb;
+use fleetd_contracts::auth::Role;
 
-pub const PAIR_USAGE: &str = r#"  pair [--name <device>] [--home <dir>]
+pub const PAIR_USAGE: &str = r#"  pair [--name <device>] [--role <read|operate|admin>] [--home <dir>]
              print a one-time code (15 min) that pairs the desktop app with this hub;
-             the app on this machine pairs by itself
+             the app on this machine pairs by itself. The device gets --role (default admin,
+             which changes the hub's settings) on every machine
   pair --worker <machine-id> [--home <dir>]
              print the one command that makes another machine a worker of this hub, with
              a one-time code (15 min): for a machine the hub can't reach over SSH
@@ -31,17 +33,19 @@ pub struct Minted {
     pub deep_link: String,
     /// RFC 3339.
     pub expires_at: String,
+    /// What the paired device may do, on every machine.
+    pub role: Role,
     /// The `app-pair.json` written for the app on this machine.
     pub app_pair_file: PathBuf,
 }
 
 /// Mints a code for the hub at `home` (default `~/.fleetd/hub`) and writes `app-pair.json`. `name` names the key
-/// when the device doesn't send a name of its own.
-pub fn mint(home: Option<&str>, name: Option<&str>) -> Result<Minted, String> {
+/// when the device doesn't send a name of its own; `role` is what it may do, on every machine.
+pub fn mint(home: Option<&str>, name: Option<&str>, role: Role) -> Result<Minted, String> {
     let home = super::hub_key::resolve_home(home)?;
     let db = HubDb::open(&home).map_err(|error| error.to_string())?;
     let minted = PairCodes::new(db, Arc::new(SystemClock))
-        .create(name.filter(|n| !n.trim().is_empty()))
+        .create(name.filter(|n| !n.trim().is_empty()), role)
         .map_err(|error| error.to_string())?;
     let urls = local_hub_urls(&home)?;
     let deep_link = deep_link(&urls[0], &minted.code);
@@ -52,6 +56,7 @@ pub fn mint(home: Option<&str>, name: Option<&str>) -> Result<Minted, String> {
         urls,
         deep_link,
         expires_at: minted.expires_at,
+        role,
         app_pair_file,
     })
 }
@@ -258,6 +263,7 @@ pub fn pair_command(argv: &[String]) -> CliResult {
             options: &[
                 ("home", Kind::Str),
                 ("name", Kind::Str),
+                ("role", Kind::Str),
                 ("worker", Kind::Str),
             ],
             positionals: false,
@@ -267,6 +273,9 @@ pub fn pair_command(argv: &[String]) -> CliResult {
         Err(message) => return usage(&message),
     };
     if let Some(machine) = v.str("worker") {
+        if v.has("role") {
+            return usage("--worker joins a machine and takes no --role");
+        }
         return match worker_command(v.str("home"), machine) {
             Ok(text) => CliResult {
                 code: 0,
@@ -276,7 +285,14 @@ pub fn pair_command(argv: &[String]) -> CliResult {
             Err(message) => CliResult::err(1, format!("fleetd: {message}\n")),
         };
     }
-    match mint(v.str("home"), v.str("name")) {
+    let role = match v.str("role") {
+        None => hub_pair::DEFAULT_ROLE,
+        Some(text) => match hub_pair::parse_role(text) {
+            Some(role) => role,
+            None => return usage("--role must be read, operate or admin"),
+        },
+    };
+    match mint(v.str("home"), v.str("name"), role) {
         Ok(minted) => CliResult {
             code: 0,
             stdout: describe(&minted),
@@ -316,8 +332,11 @@ pub fn worker_command(home: Option<&str>, machine: &str) -> Result<String, Strin
 
 fn describe(minted: &Minted) -> String {
     let mut out = format!(
-        "Pairing code: {}  (single use, valid until {})\nHub address:  {}\n",
-        minted.code, minted.expires_at, minted.urls[0]
+        "Pairing code: {}  (single use, valid until {})\nGrants:       {} on every machine\nHub address:  {}\n",
+        minted.code,
+        minted.expires_at,
+        crate::hub::api::role_name(minted.role),
+        minted.urls[0]
     );
     if minted.urls.len() > 1 {
         out += &format!("  or:         {}\n", minted.urls[1..].join(", "));
@@ -406,6 +425,23 @@ mod tests {
             ),
             ["http://192.168.1.20:4790", "http://localhost:4790"]
         );
+    }
+
+    #[test]
+    fn role_takes_read_operate_or_admin_and_not_with_worker() {
+        let argv = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let out = pair_command(&argv(&["--role", "owner"]));
+        assert_eq!(out.code, 2);
+        assert!(
+            out.stderr.contains("--role must be read, operate or admin"),
+            "{}",
+            out.stderr
+        );
+        let out = pair_command(&argv(&["--worker", "lab-b", "--role", "admin"]));
+        assert_eq!(out.code, 2);
+        assert!(out.stderr.contains("takes no --role"), "{}", out.stderr);
+        assert_eq!(hub_pair::parse_role("operate"), Some(Role::Operate));
+        assert_eq!(hub_pair::DEFAULT_ROLE, Role::Admin);
     }
 
     #[test]

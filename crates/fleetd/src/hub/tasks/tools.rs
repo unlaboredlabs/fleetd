@@ -14,7 +14,7 @@ use super::cap::{CapChange, ProjectCap};
 use super::ports::TaskError;
 use super::{TaskCaller, TaskFilter, Tasks};
 use crate::hub::api::{
-    Hub, Registry, ToolError, allows, allows_everywhere, cap, forbidden, internal_error, require,
+    Hub, Registry, ToolError, allows, allows_everywhere, cap, internal_error, refused, require,
     unknown_project,
 };
 use crate::hub::store::StoreError;
@@ -86,7 +86,7 @@ pub fn register(tools: &mut Registry) {
         "cap_set",
         |hub: Arc<Hub>, caller, input: CapSetInput| async move {
             if input.cap.is_some() && !allows_everywhere(&caller, Role::Admin) {
-                return Err(forbidden(Role::Admin, None));
+                return Err(refused(&caller, Role::Admin, None));
             }
             if let Some(p) = &input.project {
                 require(&caller, Role::Operate, Some(&p.project_ref.machine_id))?;
