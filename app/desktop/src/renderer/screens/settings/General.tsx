@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Button, Dialog, Dot, Radio, RadioGroup, Separator, THEME_MODES, Truncate, useTheme } from "../../ui";
+import { useEffect, useState } from "react";
+import { Button, Dialog, Dot, Radio, RadioGroup, Separator, Switch, THEME_MODES, Truncate, useTheme } from "../../ui";
 import type { HubState } from "../../../shared/hub";
 import { useData } from "../../src/data/react";
 import { PageHead, Setting } from "./parts";
@@ -25,10 +25,36 @@ export function General() {
             ))}
           </RadioGroup>
         </Setting>
+        <PresenceSetting />
         <Separator />
         <HubSetting />
       </div>
     </div>
+  );
+}
+
+/** App presence (main/presence.ts): main reads and keeps the switch, so it holds before any window loads. */
+function PresenceSetting() {
+  const [on, setOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    let live = true;
+    void window.fleetd.app.presence(null).then((value) => {
+      if (live) setOn(value);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+  return (
+    <Setting reveal="general.presence" label="Time in the app" help="Counts toward your minutes per merged PR.">
+      <Switch
+        label="Tell the hub when I'm using the app"
+        description="Once a minute: whether fleetd is in front, which project is on screen, and whether you used it in the last minute. Never what you type or see. It stays on your hub."
+        checked={on ?? true}
+        disabled={on === null}
+        onCheckedChange={(next) => void window.fleetd.app.presence(next).then(setOn)}
+      />
+    </Setting>
   );
 }
 

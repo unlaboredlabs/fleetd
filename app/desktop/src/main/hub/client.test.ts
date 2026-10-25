@@ -279,6 +279,23 @@ describe("HubClient", () => {
     expect(hub.sent.at(-1)).toEqual({ t: "chat" });
   });
 
+  it("sends presence only on a live link, as the three facts and nothing else", () => {
+    const { hub, client } = setup();
+    const project = { machineId: "devbox", projectId: "storefront" };
+    client.start();
+    // Not ready yet: dropped, never sent late.
+    client.presence({ focused: true, input: true, project });
+    hub.open();
+    expect(hub.sent).toEqual([{ t: "auth", key: "k1" }]);
+    hub.frame({ t: "ready", protocol: 1 });
+    client.presence({ focused: true, input: true, project });
+    expect(hub.sent.at(-1)).toEqual({ t: "presence", focused: true, input: true, project });
+    expect(hub.sent.filter((m) => m["t"] === "presence")).toHaveLength(1);
+    hub.close(1006);
+    client.presence({ focused: true, input: false });
+    expect(hub.sent.filter((m) => m["t"] === "presence")).toHaveLength(1);
+  });
+
   it("forwards live frames without their tag", () => {
     const { hub, frames, client } = setup();
     client.start();

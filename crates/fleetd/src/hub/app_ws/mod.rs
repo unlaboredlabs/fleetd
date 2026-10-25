@@ -1,7 +1,8 @@
 //! The app WebSocket at /app: `auth` with a key, then `snapshot` for the
 //! fleetd_status data, `events` to stream HubEvents after a cursor as they happen, `call` to run any MCP tool
 //! with the session's key, through the same registry, grants and limits as /mcp, and `live` for ephemeral lane
-//! frames (see `live`).
+//! frames (see `live`). `presence` is the app's once-a-minute focus and input, recorded as `app.presence` and
+//! never answered (see `metrics::presence`).
 pub mod live;
 
 use crate::hub::api::{CallError, Caller, Hub, Registry, ToolError};
@@ -248,6 +249,21 @@ impl Session {
                     }
                     let _ = out.send(frame);
                 });
+            }
+            AppClientMessage::Presence {
+                focused,
+                input,
+                project,
+            } => {
+                if let Err(e) = crate::hub::metrics::presence::record(
+                    &self.hub,
+                    &info,
+                    focused,
+                    input,
+                    project.as_ref(),
+                ) {
+                    tracing::warn!(error = %e, "app presence not recorded");
+                }
             }
             AppClientMessage::Snapshot {} => match self
                 .tools

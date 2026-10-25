@@ -6,7 +6,8 @@
 //!   bot's PR is kept as skipped.
 //! - `change.state`: the first move to `ready` is when its review passed.
 //! - `workstream.created`: the order's request time, for rows that landed before it was known.
-//! - the person's acts on fleetd's surfaces, and their merges by hand, as touches (`touches.rs`).
+//! - the person's acts on fleetd's surfaces, their merges by hand and the minutes the app was in use, as touches
+//!   (`touches.rs`).
 //!
 //! What a fold needs from the other areas' tables (the Change, the order, the train) is read before the transaction,
 //! as `leads::requested` reads on its own connection.
@@ -26,7 +27,7 @@ use crate::hub::leads::requested;
 use crate::hub::store::{HubDb, StoreError, parse_ms};
 
 const CURSOR: &str = "metrics:events";
-const TYPES: [HubEventType; 8] = [
+const TYPES: [HubEventType; 9] = [
     HubEventType::PrMerged,
     HubEventType::PrMergedOutside,
     HubEventType::ChangeState,
@@ -35,6 +36,7 @@ const TYPES: [HubEventType; 8] = [
     HubEventType::RequestUpdated,
     HubEventType::SteerQueued,
     HubEventType::DecisionRecorded,
+    HubEventType::AppPresence,
 ];
 /// The branches fleetd's write tasks push: `fleetd/T<n>-…`.
 const FLEETD_BRANCH: &str = "fleetd/";

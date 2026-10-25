@@ -61,6 +61,8 @@ export const IPC = {
   appTheme: "app:theme",
   /** invoke(LinkHandlerClaim | null) → LinkHandlerStatus. Null only reads; a reason claims fleetd:// if it should. */
   appLinkHandler: "app:linkHandler",
+  /** invoke(boolean | null) → boolean. App presence (src/main/presence.ts): null only reads; a boolean turns it on or off. */
+  appPresence: "app:presence",
   /** invoke(MenuCommand[]) → void. The menu commands enabled now; main greys out the rest. */
   appMenuState: "app:menuState",
   /** invoke(ErrorReport) → void. An error the page caught (an error card, an uncaught error); main logs it, scrubbed. */

@@ -213,6 +213,11 @@ export type AppClientMessage = {
 } | {
   project?: ProjectRef;
   t: "chat";
+} | {
+  focused: boolean;
+  input: boolean;
+  project?: ProjectRef;
+  t: "presence";
 };
 
 /** A `call` failed, or (without `id`) the session did. */

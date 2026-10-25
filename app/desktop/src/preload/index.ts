@@ -113,6 +113,7 @@ const api: FleetdApi = {
     setBadge: (count) => ipcRenderer.invoke(IPC.appBadge, count) as Promise<void>,
     setTheme: (mode) => ipcRenderer.invoke(IPC.appTheme, mode) as Promise<void>,
     linkHandler: (claim) => ipcRenderer.invoke(IPC.appLinkHandler, claim) as Promise<LinkHandlerStatus>,
+    presence: (on) => ipcRenderer.invoke(IPC.appPresence, on) as Promise<boolean>,
     setMenuState: (enabled) => ipcRenderer.invoke(IPC.appMenuState, enabled) as Promise<void>,
     logError: (report) => (ipcRenderer.invoke(IPC.appLog, report) as Promise<void>).catch(() => undefined),
   },

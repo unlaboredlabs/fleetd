@@ -51,6 +51,15 @@ pub enum AppClientMessage {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         project: Option<crate::ids::ProjectRef>,
     },
+    /// Once a minute while app presence is on (Settings › General, on by default): whether a window is focused,
+    /// the project on screen, and whether there was input in the last minute. Only that: never keystrokes or
+    /// content. A human key's minute with all three becomes an `app.presence` event; anything else is dropped.
+    Presence {
+        focused: bool,
+        input: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        project: Option<crate::ids::ProjectRef>,
+    },
 }
 
 /// A `call` failed, or (without `id`) the session did.
@@ -109,5 +118,24 @@ mod tests {
             AppServerMessage::Ready { version: None, .. }
         ));
         assert_eq!(serde_json::to_value(&ready).unwrap(), older);
+    }
+
+    #[test]
+    fn a_presence_frame_holds_three_facts_and_nothing_else() {
+        let frame = json!({
+            "t": "presence",
+            "focused": true,
+            "input": true,
+            "project": { "machineId": "devbox", "projectId": "p1" },
+        });
+        let message: AppClientMessage = serde_json::from_value(frame.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&message).unwrap(), frame);
+        // Anything else a client adds is not kept.
+        let padded = json!({ "t": "presence", "focused": false, "input": false, "text": "typed" });
+        let message: AppClientMessage = serde_json::from_value(padded).unwrap();
+        assert_eq!(
+            serde_json::to_value(&message).unwrap(),
+            json!({ "t": "presence", "focused": false, "input": false })
+        );
     }
 }

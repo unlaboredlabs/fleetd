@@ -6,6 +6,7 @@
 import type { CallOutcome, HubError, HubFrame, HubState } from "../../shared/hub";
 import { MAX_CALL_INPUT_BYTES, type CallRequest, type ChatScope, type OrderFocus } from "../../shared/ipc";
 import { appUrl, backoff, CLOSE_UNAUTHORIZED, parseServerFrame, type ClientMessage, type ServerFrame } from "./protocol";
+import type { PresenceFrame } from "../presence";
 import type { HubSource } from "./source";
 import type { Connection, Transport } from "./transport";
 import { explainAbandon, explainLoss, type Loss, type SocketError } from "./explain";
@@ -136,6 +137,11 @@ export class HubClient implements HubSource {
 
   resync(): void {
     if (this.#ready) this.#send({ t: "snapshot" });
+  }
+
+  /** Dropped while the link is down: a minute missed is a minute not counted, never one sent late. */
+  presence(frame: PresenceFrame): void {
+    if (this.#ready) this.#send({ t: "presence", ...frame });
   }
 
   #connect(): void {

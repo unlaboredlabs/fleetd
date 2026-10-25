@@ -12,7 +12,8 @@ export type ClientMessage =
   | { t: "events"; cursor: number }
   | { t: "call"; id: string; tool: string; input: unknown }
   | { t: "live"; board: true; focus?: string }
-  | { t: "chat"; project?: { machineId: string; projectId: string } };
+  | { t: "chat"; project?: { machineId: string; projectId: string } }
+  | { t: "presence"; focused: boolean; input: boolean; project?: { machineId: string; projectId: string } };
 
 const cursor = z.int().min(0);
 

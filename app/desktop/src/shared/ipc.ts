@@ -160,6 +160,7 @@ export const REQUESTS = {
   [IPC.appTheme]: z.tuple([z.enum(["system", "light", "dark"])]),
   [IPC.appMenuState]: z.tuple([MenuState]),
   [IPC.appLinkHandler]: z.tuple([LinkHandlerClaim.nullable()]),
+  [IPC.appPresence]: z.tuple([z.boolean().nullable()]),
   [IPC.appLog]: z.tuple([ErrorReport]),
   [IPC.updatesState]: none,
   [IPC.updatesCheck]: none,
