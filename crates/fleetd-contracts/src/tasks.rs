@@ -120,10 +120,36 @@ pub struct Task {
     pub parked: Option<UsageParked>,
     /// 1 for the first launch.
     pub attempt: Positive,
+    /// Set once a run of it died (its node stopped, claude was killed, a stall) and fleetd resumed it or will.
+    #[serde(default)]
+    pub recovery: Option<TaskRecovery>,
     pub result: Option<TaskResult>,
     pub created_at: Timestamp,
     pub started_at: Option<Timestamp>,
     pub ended_at: Option<Timestamp>,
+}
+
+/// A task fleetd resumes on its own after its run died: in the same thread and worktree, with a note to continue.
+#[serde_with::skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskRecovery {
+    /// Automatic recoveries used of `max`; a resumed run that died again before doing anything counts twice.
+    pub count: Count,
+    pub max: Count,
+    /// How its last run ended.
+    pub last_cause: RunEnd,
+    /// The same, in plain words: "the node on devbox stopped", "claude was killed by signal 9".
+    pub last_cause_text: Text<1, 200>,
+    /// What tells one death from another (its cause, exit and last tool); the same one twice is not resumed again.
+    /// Cleared when the lead continues the task itself.
+    pub signature: Option<Text<1, 400>>,
+    /// Deaths in a row with this signature, the latest one included.
+    pub streak: Positive,
+    /// When the resume goes out; absent once it has.
+    pub next_at: Option<Timestamp>,
+    /// When the last resume went out.
+    pub resumed_at: Option<Timestamp>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]

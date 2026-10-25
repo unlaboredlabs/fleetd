@@ -19,18 +19,18 @@ use crate::hub::store::test_clock::ManualClock;
 
 const RESUME: &str = "A slot is free again; continue where you left off.";
 
-fn lab_a() -> MachineId {
+pub(super) fn lab_a() -> MachineId {
     MachineId::unchecked("lab-a")
 }
 
-fn t1() -> ThreadRef {
+pub(super) fn t1() -> ThreadRef {
     ThreadRef {
         machine_id: lab_a(),
         thread_id: ThreadId::unchecked("t1"),
     }
 }
 
-fn task(hub: &Hub) -> Task {
+pub(super) fn task(hub: &Hub) -> Task {
     hub.tasks.get(&TaskId::unchecked("T1")).unwrap().unwrap()
 }
 
@@ -54,14 +54,14 @@ fn push(hub: &Hub, seq: u64, run: &str, status: &str) {
     );
 }
 
-fn frame(hub: &Hub, frame: Value) {
+pub(super) fn frame(hub: &Hub, frame: Value) {
     hub.executors.handle_frame(
         &lab_a(),
         serde_json::from_value::<NodeToHub>(frame).unwrap(),
     );
 }
 
-fn reply(hub: &Hub, id: &str, result: Value) {
+pub(super) fn reply(hub: &Hub, id: &str, result: Value) {
     frame(
         hub,
         json!({ "t": "session_reply", "id": id, "result": result }),
@@ -69,7 +69,7 @@ fn reply(hub: &Hub, id: &str, result: Value) {
 }
 
 /// Waits until the executor has logged `kind` for t1's run `run`.
-async fn logged(hub: &Hub, kind: &str, run: &str) {
+pub(super) async fn logged(hub: &Hub, kind: &str, run: &str) {
     for _ in 0..400 {
         let n: i64 = hub
             .db
@@ -92,7 +92,7 @@ async fn logged(hub: &Hub, kind: &str, run: &str) {
 
 /// Answers every call the hub sends the node and hands each one to the test. A thread follow is refused, so reading a
 /// task's last actions when it ends gives up at once.
-fn serve(hub: &Arc<Hub>, mut node: Node) -> mpsc::UnboundedReceiver<SessionCall> {
+pub(super) fn serve(hub: &Arc<Hub>, mut node: Node) -> mpsc::UnboundedReceiver<SessionCall> {
     let (tx, calls) = mpsc::unbounded_channel();
     let hub = hub.clone();
     tokio::spawn(async move {
@@ -114,7 +114,7 @@ fn serve(hub: &Arc<Hub>, mut node: Node) -> mpsc::UnboundedReceiver<SessionCall>
 }
 
 /// The next send the node was asked for: its run id and text.
-async fn sent(calls: &mut mpsc::UnboundedReceiver<SessionCall>) -> (String, String) {
+pub(super) async fn sent(calls: &mut mpsc::UnboundedReceiver<SessionCall>) -> (String, String) {
     loop {
         if let SessionCall::Send { run_id, text, .. } = calls.recv().await.unwrap() {
             return (run_id.as_str().to_owned(), text.as_str().to_owned());
@@ -123,13 +123,13 @@ async fn sent(calls: &mut mpsc::UnboundedReceiver<SessionCall>) -> (String, Stri
 }
 
 /// The follower's work: applies every thread event appended so far.
-async fn catch_up(tasks: &Arc<super::Tasks>) {
+pub(super) async fn catch_up(tasks: &Arc<super::Tasks>) {
     let _guard = tasks.lock.lock().await;
     tasks.catch_up().await;
 }
 
 /// Every task event's summary, in order.
-fn task_lines(hub: &Hub) -> Vec<String> {
+pub(super) fn task_lines(hub: &Hub) -> Vec<String> {
     hub.db
         .with(|c| {
             let mut stmt = c.prepare(

@@ -278,6 +278,7 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 | `pr.fix` | to a PR's author when the train can't rebase it, its CI is red, or a review finds blocking findings | never merges; the train does (prompt only) |
 | `task.pause` | to each running agent above a lowered max agents, when a person pauses the extras |  |
 | `task.resume` | to a paused agent once a slot frees for it |  |
+| `task.recover` | to an agent whose run was cut off (its node stopped, claude was killed, a stall), when fleetd resumes it |  |
 | `usage.continue` | to a lead or agent a usage limit parked, once the limit resets |  |
 
 <!-- /prompt-table -->

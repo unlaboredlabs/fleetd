@@ -247,8 +247,21 @@ pub fn task_digest_lines(tasks: &[Task], since: Option<&str>, now: &str) -> Vec<
         } else {
             "running"
         };
+        // Resumed on its own after a death: the lead needn't continue it.
+        let recovered = t
+            .recovery
+            .as_ref()
+            .filter(|r| r.resumed_at.is_some())
+            .map_or_else(String::new, |r| {
+                format!(
+                    "; resumed automatically after {}, recovery {} of {}",
+                    r.last_cause_text.as_str(),
+                    r.count.get(),
+                    r.max.get()
+                )
+            });
         out.push(format!(
-            "- {} {state} ({}, {}): {}{branch}",
+            "- {} {state} ({}, {}): {}{branch}{recovered}",
             t.task_id,
             kind_str(t.kind),
             t.profile.as_str(),
