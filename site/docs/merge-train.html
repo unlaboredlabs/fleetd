@@ -90,8 +90,19 @@ refused when it is queued: once that PR merges, point it at the same base (<code
 again.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="outside">Merges outside the train</h2><a class="sl-anchor-link" href="#outside"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Merges outside the train”</span></a></div>
 <p>When a PR is merged into a branch the train guards without the train, such as by hand on GitHub, the train notices
-within a minute. It records <code dir="auto">pr.merged_outside</code> and tells the project’s lead. The next PR in line is rebased onto the
-new base as usual, so nothing else changes.</p>
+within a minute and records <code dir="auto">pr.merged_outside</code>. The next PR in line is rebased onto the new base as usual, so nothing
+else changes.</p>
+<p>Every commit that reaches a project’s base branch is also recorded as a landing (<code dir="auto">work.landed</code>), however it got there:
+by the train, from a PR merged outside it, or pushed straight to the branch. fleetd reads this with plain git on the
+project’s machine, once a minute, so it works on any git host, and on repos with no train. The base is the checkout’s
+<code dir="auto">origin/HEAD</code>. A landing ends the claims it matches: the same branch, PR or issue key, or a direct push by the claim’s
+own author whose message matches its title closely. The project’s lead is told once about each landing that didn’t
+come through the train.</p>
+<p>Each host’s default merge message names its PR: GitHub, Gitea and Forgejo (<code dir="auto">Merge pull request #12</code>, or a squash
+subject ending in <code dir="auto">(#12)</code>), GitLab (<code dir="auto">See merge request group/project!12</code>), Bitbucket (<code dir="auto">(pull request #12)</code>) and
+Azure DevOps (<code dir="auto">Merged PR 12:</code>). On GitHub, fleetd also reads the merged PRs, so a squash or rebase merge whose message
+doesn’t name its PR still counts as one. On other hosts, a merge whose message doesn’t name its PR counts as pushed
+straight to the branch.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="review">Review</h2><a class="sl-anchor-link" href="#review"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Review”</span></a></div>
 <p>Every PR gets one fresh reviewer, which reports blocking findings only. Its verdict is bound to the PR’s current
 patch: a rebase that keeps the patch keeps the review, and a new commit gets a new reviewer, who starts from what

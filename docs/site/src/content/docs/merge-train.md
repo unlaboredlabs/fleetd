@@ -28,8 +28,21 @@ again.
 ## Merges outside the train {#outside}
 
 When a PR is merged into a branch the train guards without the train, such as by hand on GitHub, the train notices
-within a minute. It records `pr.merged_outside` and tells the project's lead. The next PR in line is rebased onto the
-new base as usual, so nothing else changes.
+within a minute and records `pr.merged_outside`. The next PR in line is rebased onto the new base as usual, so nothing
+else changes.
+
+Every commit that reaches a project's base branch is also recorded as a landing (`work.landed`), however it got there:
+by the train, from a PR merged outside it, or pushed straight to the branch. fleetd reads this with plain git on the
+project's machine, once a minute, so it works on any git host, and on repos with no train. The base is the checkout's
+`origin/HEAD`. A landing ends the claims it matches: the same branch, PR or issue key, or a direct push by the claim's
+own author whose message matches its title closely. The project's lead is told once about each landing that didn't
+come through the train.
+
+Each host's default merge message names its PR: GitHub, Gitea and Forgejo (`Merge pull request #12`, or a squash
+subject ending in `(#12)`), GitLab (`See merge request group/project!12`), Bitbucket (`(pull request #12)`) and
+Azure DevOps (`Merged PR 12:`). On GitHub, fleetd also reads the merged PRs, so a squash or rebase merge whose message
+doesn't name its PR still counts as one. On other hosts, a merge whose message doesn't name its PR counts as pushed
+straight to the branch.
 
 ## Review {#review}
 

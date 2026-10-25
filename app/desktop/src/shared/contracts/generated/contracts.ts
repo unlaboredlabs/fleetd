@@ -1206,7 +1206,8 @@ export type KnownHubEventType =
   | "app.presence"
   | "repo.advanced"
   | "work.claimed"
-  | "work.ended";
+  | "work.ended"
+  | "work.landed";
 /** KnownHubEventType, or a value from a newer hub. */
 export type HubEventType = KnownHubEventType | (string & {});
 
@@ -1337,6 +1338,41 @@ export type KindTotal = {
   kind: SpanKind;
   ms: number;
   n: number;
+};
+
+/** One commit on the first-parent line of a watched base, whoever made it and however it got there. */
+export type Landing = {
+  /** The commit's committer time. */
+  at: Timestamp;
+  authorEmail?: string;
+  base: string;
+  /** The Change it is, or merged. */
+  changeId?: ChangeId;
+  /** The claims it ended. */
+  claimIds: ClaimId[];
+  /** The branch it came from, when the merge message or the host names one. */
+  headBranch?: string;
+  /** The plan item of its task. */
+  itemIds: PlanItemId[];
+  /** What it changed against its first parent; the first `LANDING_PATHS_MAX`, and only what the node's output kept. */
+  paths: string[];
+  /** The PR or merge request it came from, when the merge message or the host names one. */
+  prNumber?: number;
+  /** Built from the repo key on hosts whose PR URLs fleetd knows (GitHub, GitLab, Bitbucket). */
+  prUrl?: string;
+  repoKey: RepoKey;
+  route: LandingRoute;
+  /** When the scanner saw it. */
+  seenAt: Timestamp;
+  sha: CommitSha;
+  subject: string;
+  /** The write task whose work it is: its Change's, or the one whose branch it came from. */
+  taskId?: TaskId;
+};
+
+/** `HubEvent.data` on `work.landed`. */
+export type LandingEventData = {
+  landing: Landing;
 };
 
 /** How a commit reached a base branch. */
@@ -4289,6 +4325,7 @@ export interface HubEventDataMap {
   "usage.resumed": UsageEventData;
   "work.claimed": WorkEventData;
   "work.ended": WorkEventData;
+  "work.landed": LandingEventData;
   "workstream.created": WorkstreamEventData;
   "workstream.done": WorkstreamEventData;
   "workstream.running": WorkstreamEventData;

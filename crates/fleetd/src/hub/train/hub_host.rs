@@ -287,6 +287,14 @@ impl TrainHost for HubHost {
             .map(|p| p.workspace_root)
     }
 
+    fn landings_watched(&self, repo: &str, base: &str) -> bool {
+        let Some(hub) = self.hub() else { return false };
+        let scope = fleetd_contracts::work::RepoKey::of(&format!("github.com/{repo}"))
+            .zip(fleetd_contracts::prim::Line::new(base).ok())
+            .map(|(repo_key, base)| fleetd_contracts::work::WorkScope { repo_key, base });
+        scope.is_some_and(|s| hub.work.watches(&s).unwrap_or(false))
+    }
+
     fn wake_lead<'a>(&'a self, project_ref: &'a ProjectRef, line: String) -> BoxFut<'a, ()> {
         if let Some(hub) = self.hub() {
             hub.leads

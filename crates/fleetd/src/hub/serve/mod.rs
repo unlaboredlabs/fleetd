@@ -352,6 +352,7 @@ pub fn build_on_with(
         clock.clone(),
         Arc::new(crate::hub::work::TaskPaths(task_ports)),
     );
+
     let hub = Arc::new(Hub {
         config,
         clock,
@@ -434,6 +435,14 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
     loops.extend(hub.time.start(hub));
     loops.extend(crate::hub::metrics::start(hub));
     loops.push(tokio::spawn(hub.status.clone().run(hub.clone())));
+    hub.work
+        .set_landings(Arc::new(crate::hub::work::landings::LandingStore(
+            hub.db.clone(),
+        )));
+    loops.push(tokio::spawn(crate::hub::work::landings::run(
+        hub.clone(),
+        Arc::new(crate::hub::work::landings::HubLandingPorts(hub.clone())),
+    )));
     loops
 }
 

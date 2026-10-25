@@ -250,27 +250,55 @@ pub fn has_landing(db: &Connection, scope: &WorkScope, sha: &str) -> rusqlite::R
         .map(|found| found.is_some())
 }
 
-/// The scope's landings committed at or after `since_ms`, newest first.
+/// The scope's landings committed at or after `since_ms`, newest first; with `outside`, only those that didn't come
+/// through the train.
 pub fn landings_since(
     db: &Connection,
     scope: &WorkScope,
     since_ms: i64,
     limit: usize,
+    outside: bool,
 ) -> rusqlite::Result<Vec<Landing>> {
     db.prepare_cached(
-        "SELECT data FROM landings WHERE repo_key = ? AND base = ? AND at_ms >= ? ORDER BY at_ms DESC, rowid DESC
-         LIMIT ?",
+        "SELECT data FROM landings WHERE repo_key = ? AND base = ? AND at_ms >= ? AND (? = 0 OR route != 'train')
+         ORDER BY at_ms DESC, rowid DESC LIMIT ?",
     )?
     .query_map(
         params![
             scope.repo_key.as_str(),
             scope.base.as_str(),
             since_ms,
+            outside,
             limit as i64
         ],
         |r| decode(&r.get::<_, String>(0)?),
     )?
     .collect()
+}
+
+/// The scope's one landing whose sha starts with `prefix`; `None` when none or several do.
+pub fn landing_by_prefix(
+    db: &Connection,
+    scope: &WorkScope,
+    prefix: &str,
+) -> rusqlite::Result<Option<Landing>> {
+    let prefix = prefix.to_lowercase();
+    if prefix.is_empty() || !prefix.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Ok(None);
+    }
+    let found: Vec<Landing> = db
+        .prepare_cached(
+            "SELECT data FROM landings WHERE repo_key = ? AND base = ? AND substr(sha, 1, length(?3)) = ?3 LIMIT 2",
+        )?
+        .query_map(
+            params![scope.repo_key.as_str(), scope.base.as_str(), prefix],
+            |r| decode(&r.get::<_, String>(0)?),
+        )?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(match <[Landing; 1]>::try_from(found) {
+        Ok([one]) => Some(one),
+        Err(_) => None,
+    })
 }
 
 /// The newest write task of one of `projects` on `branch`, in any state.

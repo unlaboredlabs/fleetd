@@ -19,6 +19,8 @@ pub use bind::bind_from_root;
 #[cfg(test)]
 mod elsewhere_tests;
 #[cfg(test)]
+mod landings_tests;
+#[cfg(test)]
 mod matcher_tests;
 #[cfg(test)]
 mod tests;
@@ -39,8 +41,7 @@ use fleetd_contracts::train::Change;
 use fleetd_contracts::verification::CommitSha;
 use fleetd_contracts::work::{
     BranchName, CLAIM_KEYS_MAX, CLAIM_PATHS_MAX, CLAIM_TTL_MS, Claim, ClaimEnd, ClaimId,
-    ClaimObserved, ClaimOwner, ClaimState, EXPIRED_SHOWN_MS, MatchStrength, RepoKey, WorkEventData,
-    WorkItem, WorkKey, WorkMatch, WorkPath, WorkScope,
+    EXPIRED_SHOWN_MS, ClaimObserved, ClaimOwner, ClaimState, Landing, LandingEventData, LandingRoute, MatchStrength, RepoKey, WorkEventData, WorkItem, WorkKey, WorkMatch, WorkPath, WorkScope,
 };
 
 use crate::clock::Clock;
@@ -175,6 +176,77 @@ impl Work {
     pub fn bind_project(&self, project: &ProjectRef, scope: &WorkScope) -> Result<(), StoreError> {
         let now = self.now();
         self.db.with(|c| Ok(store::bind(c, project, scope, now)?))
+    }
+
+    /// How far the landing scanner has read the scope's base; `None` before its first scan.
+    pub fn watch(&self, scope: &WorkScope) -> Result<Option<store::Watch>, StoreError> {
+        self.db.with(|c| Ok(store::watch(c, scope)?))
+    }
+
+    /// Whether the landing scanner watches the scope's base, and so tells its leads about merges outside the train.
+    pub fn watches(&self, scope: &WorkScope) -> Result<bool, StoreError> {
+        Ok(self.watch(scope)?.is_some())
+    }
+
+    /// Starts the scope's watch at `sha`, or moves it there.
+    pub fn watch_at(&self, scope: &WorkScope, sha: &str) -> Result<(), StoreError> {
+        let now = self.now();
+        self.db.with(|c| Ok(store::watch_at(c, scope, sha, now)?))
+    }
+
+    /// The scope's active claims, oldest first.
+    pub fn active_claims(&self, scope: &WorkScope) -> Result<Vec<Claim>, StoreError> {
+        let mut claims = self.db.with(|c| Ok(store::in_scope(c, scope, i64::MAX)?))?;
+        claims.reverse();
+        Ok(claims)
+    }
+
+    /// The scope's landings committed at or after `since_ms`, newest first.
+    pub fn landings(
+        &self,
+        scope: &WorkScope,
+        since_ms: i64,
+        limit: usize,
+    ) -> Result<Vec<Landing>, StoreError> {
+        self.db
+            .with(|c| Ok(store::landings_since(c, scope, since_ms, limit, false)?))
+    }
+
+    /// Stores the landing and moves its base's watch to it, in one transaction, and announces it (`work.landed`).
+    /// False when the commit was already recorded.
+    pub fn record_landing(&self, landing: &Landing, via: &ProjectRef) -> Result<bool, StoreError> {
+        let scope = WorkScope {
+            repo_key: landing.repo_key.clone(),
+            base: landing.base.clone(),
+        };
+        let now = self.now();
+        let added = self.db.transaction(|c| {
+            let added = store::insert_landing(c, landing)?;
+            store::watch_at(c, &scope, landing.sha.as_str(), now)?;
+            Ok(added)
+        })?;
+        if !added {
+            return Ok(false);
+        }
+        let how = match landing.route {
+            LandingRoute::Train => "landed by the merge train".to_owned(),
+            LandingRoute::PrOutside => "merged without the merge train".to_owned(),
+            LandingRoute::DirectPush => format!("pushed straight to {}", landing.base),
+        };
+        let summary = format!("{} {how}: {}", &landing.sha.as_str()[..7], landing.subject);
+        self.events.append(NewEvent {
+            at: Timestamp(iso_ms(now)),
+            r#type: HubEventType::WorkLanded,
+            machine_id: Some(via.machine_id.clone()),
+            project_id: Some(via.project_id.clone()),
+            thread_id: None,
+            summary: summary.chars().take(200).collect(),
+            data: Some(serde_json::to_value(LandingEventData {
+                landing: landing.clone(),
+            })?),
+            attention: None,
+        })?;
+        Ok(true)
     }
 
     pub fn scope_of(&self, project: &ProjectRef) -> Result<Option<WorkScope>, StoreError> {
