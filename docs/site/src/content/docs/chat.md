@@ -85,6 +85,14 @@ line above the box says what it waits on, such as "2 questions, asked at 09:02" 
 to scroll to it. When nothing waits on you but the project is blocked, the line says why, such as "Blocked: main CI is
 red".
 
+## How the lead writes {#voice}
+
+The lead texts like a teammate: short messages, split into bubbles, with PR numbers, commands and errors exact. When
+words aren't the best fit it sends a block instead: a chart, a table, a diff, a live card for a PR or an agent, a
+checklist, an image, or a question with buttons. Tapping a button sends your answer as a chat message, so only you
+can answer it. To change how it talks, edit the **Voice** prompt (`lead.voice`) like any
+[prompt](/docs/what-agents-are-told). Commit messages, PR bodies and agents' briefs stay plain whatever the voice.
+
 ## Steer while it works {#steer}
 
 A message reaches the lead at once. How depends on what the lead is doing:

@@ -171,9 +171,11 @@ fn a_reflowed_default_is_not_a_changed_default() {
         .default
         .replacen(" and keep them posted", "\nand keep them posted", 1);
     assert_ne!(wrapped, e.default);
-    let older = e
-        .default
-        .replacen("a sharp engineer", "an able engineer", 1);
+    let older = e.default.replacen(
+        "Trust it over your memory",
+        "Trust it over what you recall",
+        1,
+    );
     for (base_text, stale) in [
         (e.default.to_owned(), false),
         (wrapped, false),

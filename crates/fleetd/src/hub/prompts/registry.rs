@@ -169,6 +169,21 @@ pub const ENTRIES: &[Entry] = &[
         ]
     ),
     entry!(
+        "lead.voice",
+        Start,
+        Lead,
+        Lead,
+        "Voice",
+        "after the lead prompt, at every lead start",
+        "",
+        &[(
+            "chat-only-voice",
+            "the casual voice stays out of commits, PR bodies, docs and briefs",
+            r"stay plain and precise",
+            Prompt
+        )]
+    ),
+    entry!(
         "lead.profiles",
         Start,
         Lead,
