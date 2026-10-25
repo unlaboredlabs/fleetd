@@ -11,7 +11,7 @@ use fleetd_contracts::sessions::{
     FailureClass, ItemKind, ItemStatus, MachineEvent, MessageRole, PermissionDecision, RunEnd,
     RunFailure, RunStatus, SendMode, SendNow, SessionCall, SessionCallFrame, SessionErrorCode,
     SessionLaunch, SessionOutput, SessionResult, SessionStatus, SessionSummary, SessionWorkspace,
-    ThreadEvent,
+    ThreadEvent, WorktreeSource,
 };
 use fleetd_contracts::steer::{DeliveredHow, SteerId, SteerReceipt, SteerStage, SteerTag};
 use tokio::sync::mpsc;
@@ -25,7 +25,7 @@ use crate::node::runner::claude::ALWAYS_DISALLOWED;
 use crate::node::runner::failure::RETRY_MESSAGE;
 use crate::node::store::NodeStore;
 use crate::node::wire::NodeToHub;
-use crate::node::worktree::tests::{repo, run as git};
+use crate::node::worktree::tests::{cloned, repo, run as git};
 
 struct Hub {
     service: SessionService,
@@ -1137,6 +1137,132 @@ async fn a_slow_fetch_never_holds_up_a_launch_in_another_project() {
         waited < Duration::from_secs(2),
         "waited {waited:?} on p1's fetch"
     );
+}
+
+#[tokio::test]
+async fn a_lost_worktree_and_branch_come_back_from_the_pushed_branch_and_the_agent_is_told() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, root) = cloned(dir.path(), "repo", "origin");
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.project(&root).await;
+    let workspace = SessionWorkspace::Worktree {
+        base_ref: NonEmpty::unchecked("main"),
+        branch: NonEmpty::unchecked("fleetd/s1"),
+    };
+    hub.ok(launch("s1", RuntimeMode::FullAccess, workspace))
+        .await;
+    let done = hub.settled("r1").await;
+    assert_eq!(done.recreated_from, None);
+    let path: PathBuf = dir.path().join("node/worktrees/p1/s1");
+    std::fs::write(path.join("work.txt"), "w\n").unwrap();
+    git(&path, &["add", "."]);
+    git(&path, &["commit", "-q", "-m", "work"]);
+    git(&path, &["push", "-q", "origin", "fleetd/s1"]);
+    hub.ok(SessionCall::Stop {
+        session_id: ThreadId::unchecked("s1"),
+        remove_worktree: false,
+    })
+    .await;
+    // The worktree's directory and its local branch are deleted behind the node's back.
+    std::fs::remove_dir_all(&path).unwrap();
+    git(&root, &["worktree", "prune"]);
+    git(&root, &["branch", "-q", "-D", "fleetd/s1"]);
+
+    hub.ok(send("s1", "r2")).await;
+    let resumed = hub.settled("r2").await;
+    assert_eq!(resumed.recreated_from, Some(WorktreeSource::Remote));
+    assert_eq!(resumed.worktree_path.as_deref(), path.to_str());
+    assert!(path.join("work.txt").exists());
+    let spec = &hub.runner.spawned()[1];
+    assert!(spec.resume, "same path, so claude still finds its session");
+    let sent = sends(&hub.runner);
+    let (note, message) = sent[1].1.split_once("\n\n").unwrap();
+    assert!(
+        note.contains("recreated at the same path from origin/fleetd/s1"),
+        "{note}"
+    );
+    assert_eq!(message, "Reply with the word TWO and nothing else.");
+    // The run's own message stays the hub's text.
+    let recorded = hub.service.store().message("s1", "r2").unwrap().unwrap();
+    assert_eq!(recorded.text, message);
+}
+
+#[tokio::test]
+async fn a_slow_fetch_for_a_lost_worktree_never_holds_up_another_sessions_start() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, root) = cloned(dir.path(), "repo", "origin");
+    let other = dir.path().join("other");
+    std::fs::create_dir_all(&other).unwrap();
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.project(&root).await;
+    hub.ok(SessionCall::ProjectUpsert {
+        project_id: ProjectId::unchecked("p2"),
+        title: NonEmpty::unchecked("p2"),
+        workspace_root: NonEmpty::unchecked(other.to_string_lossy()),
+    })
+    .await;
+    let workspace = SessionWorkspace::Worktree {
+        base_ref: NonEmpty::unchecked("main"),
+        branch: NonEmpty::unchecked("fleetd/s1"),
+    };
+    hub.ok(launch("s1", RuntimeMode::FullAccess, workspace))
+        .await;
+    hub.settled("r1").await;
+    let SessionCall::Launch(mut reader) =
+        launch("s2", RuntimeMode::FullAccess, SessionWorkspace::Root)
+    else {
+        unreachable!()
+    };
+    reader.project_id = ProjectId::unchecked("p2");
+    reader.run_id = NonEmpty::unchecked("q1");
+    hub.ok(SessionCall::Launch(reader)).await;
+    hub.settled("q1").await;
+    for id in ["s1", "s2"] {
+        hub.ok(SessionCall::Stop {
+            session_id: ThreadId::unchecked(id),
+            remove_worktree: false,
+        })
+        .await;
+    }
+    // s1's worktree and branch are gone, and its remote takes 3 s to fail.
+    let path: PathBuf = dir.path().join("node/worktrees/p1/s1");
+    std::fs::remove_dir_all(&path).unwrap();
+    git(&root, &["worktree", "prune"]);
+    git(&root, &["branch", "-q", "-D", "fleetd/s1"]);
+    git(&root, &["config", "core.sshCommand", "sleep 3; exit 1 #"]);
+    git(&root, &["config", "ssh.variant", "simple"]);
+    git(
+        &root,
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "ssh://example.invalid/slow.git",
+        ],
+    );
+
+    let (_, waited) = tokio::join!(hub.ok(send("s1", "r2")), async {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        let started = std::time::Instant::now();
+        hub.ok(send("s2", "q2")).await;
+        started.elapsed()
+    });
+    assert!(
+        waited < Duration::from_secs(2),
+        "s2 waited {waited:?} on s1's fetch"
+    );
+    // Offline and never pushed: s1 starts again from the last fetched origin/main.
+    assert!(path.join("a.txt").exists());
 }
 
 #[tokio::test]

@@ -12,6 +12,8 @@ use std::time::{Duration, Instant};
 use nix::sys::signal::{Signal, killpg};
 use nix::unistd::Pid;
 
+use fleetd_contracts::sessions::WorktreeSource;
+
 #[derive(Debug, thiserror::Error)]
 #[error("{0}")]
 pub struct GitError(pub String);
@@ -186,6 +188,100 @@ pub fn ensure(root: &Path, path: &Path, branch: &str, start: &str) -> Result<(),
         )?;
     }
     Ok(())
+}
+
+/// What is left of a lost worktree's branch, best first.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Source {
+    /// The local branch.
+    Local,
+    /// The local branch is gone; `<remote>/<branch>`, freshly fetched, holds what was pushed.
+    Remote(String),
+    /// Nothing of the branch is left, here or on a remote: a new branch at `sha`, as for a new task.
+    Base { base_ref: String, sha: String },
+}
+
+impl Source {
+    /// What the session's agent is told, ahead of its next message, once its worktree came back from here.
+    pub fn note(&self, branch: &str) -> String {
+        match self {
+            Source::Local => format!(
+                "fleetd: your worktree was gone, so it was recreated at the same path from your local branch {branch}. \
+                 Your commits are there; uncommitted changes from before are gone."
+            ),
+            Source::Remote(remote) => format!(
+                "fleetd: your worktree and its local branch were gone, so the worktree was recreated at the same path \
+                 from {remote}/{branch}, freshly fetched. What you pushed is there; unpushed commits and uncommitted \
+                 changes from before are gone."
+            ),
+            Source::Base { base_ref, .. } => format!(
+                "fleetd: your worktree was gone and {branch} was neither here nor pushed, so the worktree was \
+                 recreated at the same path on a new {branch} from {base_ref}. Work that is not in {base_ref} is gone."
+            ),
+        }
+    }
+
+    pub fn kind(&self) -> WorktreeSource {
+        match self {
+            Source::Local => WorktreeSource::Local,
+            Source::Remote(_) => WorktreeSource::Remote,
+            Source::Base { .. } => WorktreeSource::Base,
+        }
+    }
+}
+
+/// Where a lost worktree of `branch` comes back from: the local branch, else the branch as pushed, else a fresh fetch
+/// of the default branch `base_ref` names, as a new task starts. Everything that talks to a remote happens here, so
+/// the node calls it before taking its spawn lock.
+pub fn source(root: &Path, branch: &str, base_ref: &str) -> Result<Source, GitError> {
+    if branch_exists(root, branch) {
+        return Ok(Source::Local);
+    }
+    if let Some(remote) = pushed(root, branch) {
+        return Ok(Source::Remote(remote));
+    }
+    let name = remote(root)
+        .and_then(|r| base_ref.strip_prefix(&format!("{r}/")).map(str::to_owned))
+        .unwrap_or_else(|| base_ref.to_owned());
+    let base = fresh_base(root, &name)?;
+    if let Some(note) = &base.note {
+        tracing::warn!(root = %root.display(), branch, "rebuilt worktree {note}");
+    }
+    Ok(Source::Base {
+        base_ref: base.base_ref,
+        sha: base.sha,
+    })
+}
+
+/// The remote that holds `branch` as pushed, `origin` first, after fetching it from each: any git remote, by git
+/// alone. A remote that can't be reached keeps its last fetched copy, which still holds what was pushed by then.
+fn pushed(root: &Path, branch: &str) -> Option<String> {
+    let remotes = git(root, &["remote"]).ok()?;
+    let mut remotes: Vec<&str> = remotes.lines().filter(|r| !r.is_empty()).collect();
+    remotes.sort_by_key(|r| *r != "origin");
+    remotes.into_iter().find_map(|remote| {
+        let _ = fetch(root, remote, branch);
+        ref_sha(root, &format!("refs/remotes/{remote}/{branch}")).map(|_| remote.to_owned())
+    })
+}
+
+/// Brings back a session's worktree that is gone, at the same path so `claude --resume` still finds its session, from
+/// `from` (see [`source`]). Only local git: no remote is asked.
+pub fn restore(root: &Path, path: &Path, branch: &str, from: &Source) -> Result<(), GitError> {
+    // A worktree whose directory was deleted stays registered, holding its path and branch. Only this one record goes:
+    // the human's own worktrees on a disk that isn't mounted right now keep theirs, unlike with `git worktree prune`.
+    if !path.exists() {
+        let _ = git(
+            root,
+            &["worktree", "remove", "--force", &path.to_string_lossy()],
+        );
+    }
+    let start = match from {
+        Source::Local => branch.to_owned(),
+        Source::Remote(remote) => format!("refs/remotes/{remote}/{branch}"),
+        Source::Base { sha, .. } => sha.clone(),
+    };
+    ensure(root, path, branch, &start)
 }
 
 /// Removes the worktree, build output included, and deletes its branch only when `base_ref` already contains it, so
@@ -666,6 +762,228 @@ pub(crate) mod tests {
         let squatter = dir.path().join("wt/p1/s2");
         std::fs::create_dir_all(&squatter).unwrap();
         assert!(ensure(&root, &squatter, "fleetd/s2", "main").is_err());
+    }
+
+    /// A bare repo at `<dir>/<name>.git` holding `repo`'s `main`, and a clone of it at `<dir>/<name>` whose remote is
+    /// called `remote`.
+    pub(crate) fn cloned(dir: &Path, name: &str, remote: &str) -> (PathBuf, PathBuf) {
+        let bare = dir.join(format!("{name}.git"));
+        let clone = dir.join(name);
+        let source = repo(&dir.join(format!("{name}-source")));
+        let path = |p: &Path| p.to_string_lossy().into_owned();
+        run(
+            dir,
+            &["clone", "-q", "--bare", &path(&source), &path(&bare)],
+        );
+        run(
+            dir,
+            &["clone", "-q", "-o", remote, &path(&bare), &path(&clone)],
+        );
+        (bare, clone)
+    }
+
+    fn commit(path: &Path, file: &str) {
+        std::fs::write(path.join(file), "x\n").unwrap();
+        run(path, &["add", "."]);
+        run(path, &["commit", "-q", "-m", file]);
+    }
+
+    /// What a person or a cleanup can do to a session's worktree: delete its directory, and its branch with it.
+    fn lose(root: &Path, path: &Path, branch: Option<&str>) {
+        std::fs::remove_dir_all(path).unwrap();
+        if let Some(branch) = branch {
+            run(
+                root,
+                &["worktree", "remove", "--force", &path.to_string_lossy()],
+            );
+            run(root, &["branch", "-q", "-D", branch]);
+        }
+    }
+
+    /// What the node does for a session whose worktree is gone.
+    fn rebuild(root: &Path, path: &Path, branch: &str, base_ref: &str) -> Source {
+        let from = source(root, branch, base_ref).unwrap();
+        restore(root, path, branch, &from).unwrap();
+        from
+    }
+
+    fn registered(root: &Path, path: &Path) -> bool {
+        let list = git(root, &["worktree", "list", "--porcelain"]).unwrap();
+        let want = format!("worktree {}", path.display());
+        list.lines().any(|l| l == want)
+    }
+
+    #[test]
+    fn a_lost_worktree_comes_back_from_its_local_branch_with_its_commits() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_, root) = cloned(dir.path(), "repo", "origin");
+        let path = dir.path().join("wt/p1/s1");
+        ensure(&root, &path, "fleetd/s1", "origin/main").unwrap();
+        commit(&path, "b.txt");
+        std::fs::write(path.join("draft.txt"), "d\n").unwrap();
+        // The directory is deleted, but git still has it registered on the branch.
+        lose(&root, &path, None);
+        let from = rebuild(&root, &path, "fleetd/s1", "origin/main");
+        assert_eq!(from, Source::Local);
+        assert!(path.join("b.txt").exists());
+        assert!(!path.join("draft.txt").exists());
+        assert!(
+            from.note("fleetd/s1")
+                .contains("from your local branch fleetd/s1")
+        );
+    }
+
+    #[test]
+    fn a_rebuild_forgets_only_its_own_worktree_never_the_humans_missing_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_, root) = cloned(dir.path(), "repo", "origin");
+        let path = dir.path().join("wt/p1/s1");
+        ensure(&root, &path, "fleetd/s1", "origin/main").unwrap();
+        // The human's own worktree, on a disk that isn't mounted right now.
+        let theirs = dir.path().join("usb/feature");
+        run(
+            &root,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                "feature",
+                &theirs.to_string_lossy(),
+            ],
+        );
+        let theirs = theirs.canonicalize().unwrap();
+        std::fs::remove_dir_all(&theirs).unwrap();
+        lose(&root, &path, None);
+        assert_eq!(
+            rebuild(&root, &path, "fleetd/s1", "origin/main"),
+            Source::Local
+        );
+        assert!(
+            registered(&root, &theirs),
+            "the human's worktree keeps its record"
+        );
+        assert!(branch_exists(&root, "feature"));
+    }
+
+    #[test]
+    fn a_lost_worktree_and_branch_come_back_from_the_pushed_branch_fetched_fresh() {
+        let dir = tempfile::tempdir().unwrap();
+        let (bare, root) = cloned(dir.path(), "repo", "origin");
+        let path = dir.path().join("wt/p1/s1");
+        ensure(&root, &path, "fleetd/s1", "origin/main").unwrap();
+        commit(&path, "pushed.txt");
+        run(&path, &["push", "-q", "origin", "fleetd/s1"]);
+        commit(&path, "unpushed.txt");
+        // Someone else adds to the pushed branch: only a fetch sees it.
+        let other = dir.path().join("other");
+        run(
+            dir.path(),
+            &[
+                "clone",
+                "-q",
+                "-b",
+                "fleetd/s1",
+                &bare.to_string_lossy(),
+                &other.to_string_lossy(),
+            ],
+        );
+        commit(&other, "theirs.txt");
+        run(&other, &["push", "-q", "origin", "fleetd/s1"]);
+
+        lose(&root, &path, Some("fleetd/s1"));
+        let from = rebuild(&root, &path, "fleetd/s1", "origin/main");
+        assert_eq!(from, Source::Remote("origin".into()));
+        assert!(path.join("pushed.txt").exists());
+        assert!(
+            path.join("theirs.txt").exists(),
+            "fetched, not the stale copy"
+        );
+        assert!(!path.join("unpushed.txt").exists());
+        assert!(from.note("fleetd/s1").contains("from origin/fleetd/s1"));
+        assert_eq!(from.kind(), WorktreeSource::Remote);
+
+        // The remote is out of reach: the copy from the last fetch still holds what was pushed.
+        lose(&root, &path, Some("fleetd/s1"));
+        run(
+            &root,
+            &[
+                "remote",
+                "set-url",
+                "origin",
+                &dir.path().join("gone.git").to_string_lossy(),
+            ],
+        );
+        assert_eq!(
+            rebuild(&root, &path, "fleetd/s1", "origin/main"),
+            Source::Remote("origin".into())
+        );
+        assert!(path.join("theirs.txt").exists());
+    }
+
+    #[test]
+    fn a_branch_pushed_to_a_remote_not_called_origin_is_found_there() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_, root) = cloned(dir.path(), "repo", "upstream");
+        // An `origin` that never had the branch comes first, and is passed over.
+        let (origin, _) = cloned(dir.path(), "mirror", "origin");
+        run(
+            &root,
+            &["remote", "add", "origin", &origin.to_string_lossy()],
+        );
+        let path = dir.path().join("wt/p1/s1");
+        ensure(&root, &path, "fleetd/s1", "upstream/main").unwrap();
+        commit(&path, "pushed.txt");
+        run(&path, &["push", "-q", "upstream", "fleetd/s1"]);
+        // Only the remote has it: a lost node home leaves no remote-tracking ref either.
+        lose(&root, &path, Some("fleetd/s1"));
+        run(
+            &root,
+            &["update-ref", "-d", "refs/remotes/upstream/fleetd/s1"],
+        );
+        assert_eq!(
+            rebuild(&root, &path, "fleetd/s1", "upstream/main"),
+            Source::Remote("upstream".into())
+        );
+        assert!(path.join("pushed.txt").exists());
+    }
+
+    #[test]
+    fn a_lost_worktree_never_pushed_starts_again_from_a_fresh_base() {
+        let dir = tempfile::tempdir().unwrap();
+        let (bare, root) = cloned(dir.path(), "repo", "origin");
+        let path = dir.path().join("wt/p1/s1");
+        ensure(&root, &path, "fleetd/s1", "origin/main").unwrap();
+        commit(&path, "local-only.txt");
+        // main moves on upstream after the session started: a new task would start from it.
+        let other = dir.path().join("other");
+        run(
+            dir.path(),
+            &[
+                "clone",
+                "-q",
+                &bare.to_string_lossy(),
+                &other.to_string_lossy(),
+            ],
+        );
+        commit(&other, "upstream.txt");
+        run(&other, &["push", "-q", "origin", "main"]);
+        lose(&root, &path, Some("fleetd/s1"));
+        let from = rebuild(&root, &path, "fleetd/s1", "origin/main");
+        assert!(
+            matches!(&from, Source::Base { base_ref, .. } if base_ref == "origin/main"),
+            "{from:?}"
+        );
+        assert!(
+            path.join("upstream.txt").exists(),
+            "the fresh base, as for a new task"
+        );
+        assert!(!path.join("local-only.txt").exists());
+        let note = from.note("fleetd/s1");
+        assert!(
+            note.contains("neither here nor pushed") && note.contains("from origin/main"),
+            "{note}"
+        );
     }
 
     /// What a push leaves behind: the remote-tracking ref.

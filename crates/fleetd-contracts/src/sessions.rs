@@ -680,8 +680,27 @@ pub struct SessionSummary {
     pub latest_assistant_tail: Option<String>,
     pub branch: Option<String>,
     pub worktree_path: Option<String>,
+    /// What the node rebuilt the worktree from the last time it was gone. Absent while it never was.
+    pub recreated_from: Option<WorktreeSource>,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
+}
+
+/// Where a lost worktree came back from, best first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
+pub enum WorktreeSource {
+    /// The local branch: its commits are back, uncommitted changes are gone.
+    Local,
+    /// `<remote>/<branch>`, freshly fetched: what was pushed is back, unpushed commits and uncommitted changes are gone.
+    Remote,
+    /// Nothing of the branch was left, here or on a remote: a new branch from the base, as for a new task.
+    Base,
+    /// A source this build doesn't know (a newer node). Never sent.
+    #[serde(other)]
+    #[schemars(skip)]
+    Unknown,
 }
 
 #[skip_serializing_none]

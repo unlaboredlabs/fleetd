@@ -1208,6 +1208,7 @@ impl SessionService {
                 worktree_path: base_ref
                     .is_some()
                     .then(|| cwd.to_string_lossy().into_owned()),
+                recreated_from: None,
                 created_at: at.clone(),
                 updated_at: at,
             },
@@ -1334,7 +1335,16 @@ impl SessionService {
         command: SessionCommand,
         alias: Option<(String, String)>,
     ) -> Result<(), SessionError> {
-        let commands = self.ensure_live(id).await?;
+        let (commands, note) = self.ensure_live(id).await?;
+        // The agent hears that its worktree was rebuilt before anything else, so it checks what is left.
+        let command = match (command, note) {
+            (SessionCommand::Send { run_id, text, mode }, Some(note)) => SessionCommand::Send {
+                run_id,
+                text: format!("{note}\n\n{text}"),
+                mode,
+            },
+            (command, _) => command,
+        };
         if let Some(live) = self.st().live.get_mut(id) {
             live.last_active = Instant::now();
             if let Some((uuid, run_id)) = alias {
@@ -1349,11 +1359,22 @@ impl SessionService {
         })
     }
 
-    /// The live process's command channel, spawning (first start) or resuming the session when there is none.
-    async fn ensure_live(&self, id: &str) -> Result<mpsc::Sender<SessionCommand>, SessionError> {
+    /// The live process's command channel, spawning (first start) or resuming the session when there is none, and
+    /// the note for the agent when its worktree had to be rebuilt.
+    async fn ensure_live(
+        &self,
+        id: &str,
+    ) -> Result<(mpsc::Sender<SessionCommand>, Option<String>), SessionError> {
+        // Finding what is left of a lost worktree's branch can wait on remotes, so it runs before the spawn lock: other
+        // sessions' starts never wait on it.
+        let found = if self.st().live.contains_key(id) {
+            None
+        } else {
+            self.lost_worktree(&self.session(id)?).await?
+        };
         let _spawning = self.inner.spawning.lock().await;
         let closing = match self.st().live.get(id) {
-            Some(live) if !live.closing => return Ok(live.commands.clone()),
+            Some(live) if !live.closing => return Ok((live.commands.clone(), None)),
             Some(live) => Some(live.exited.clone()),
             None => None,
         };
@@ -1374,18 +1395,26 @@ impl SessionService {
             id,
         )
         .map_err(|m| error(SessionErrorCode::RunnerUnavailable, m))?;
-        // A worktree removed by `stop{removeWorktree}` comes back at the same path, so the session still resumes.
+        // A worktree that is gone (removed by `stop{removeWorktree}`, or deleted) comes back at the same path, so the
+        // session still resumes, from what is left of its branch.
         let mut recreated = false;
-        if let (Some(base_ref), Some(branch)) = (&row.local.base_ref, &row.local.branch)
-            && !row.local.cwd.exists()
-        {
-            let (r, p, b, base) = (
+        let mut note = None;
+        let from = match found {
+            Some(from) if !row.local.cwd.exists() => Some(from),
+            // Only when the worktree went missing meanwhile.
+            _ => self.lost_worktree(&row).await?,
+        };
+        if let (Some(from), Some(branch)) = (from, &row.local.branch) {
+            let (r, p, b, f) = (
                 row.local.workspace_root.clone(),
                 row.local.cwd.clone(),
                 branch.clone(),
-                base_ref.clone(),
+                from.clone(),
             );
-            blocking(move || worktree::ensure(&r, &p, &b, &base)).await?;
+            blocking(move || worktree::restore(&r, &p, &b, &f)).await?;
+            tracing::info!(session_id = id, ?from, "recreated a lost worktree");
+            note = Some(from.note(branch));
+            row.summary.recreated_from = Some(from.kind());
             row.summary.worktree_path = Some(row.local.cwd.to_string_lossy().into_owned());
             row.summary.branch = row.local.branch.clone();
             recreated = true;
@@ -1435,7 +1464,28 @@ impl SessionService {
             self.clone()
                 .pump(id.to_owned(), generation, handle.events, exited_tx),
         );
-        Ok(handle.commands)
+        Ok((handle.commands, note))
+    }
+
+    /// Where a writer's worktree that is gone comes back from; `None` while it is there, or for a session in the root.
+    async fn lost_worktree(
+        &self,
+        row: &SessionRow,
+    ) -> Result<Option<worktree::Source>, SessionError> {
+        let (Some(base_ref), Some(branch)) = (&row.local.base_ref, &row.local.branch) else {
+            return Ok(None);
+        };
+        if row.local.cwd.exists() {
+            return Ok(None);
+        }
+        let (r, b, base) = (
+            row.local.workspace_root.clone(),
+            branch.clone(),
+            base_ref.clone(),
+        );
+        Ok(Some(
+            blocking(move || worktree::source(&r, &b, &base)).await?,
+        ))
     }
 
     /// The process spec, after writing the session's MCP config and settings overlay. The transcript is fleetd's own

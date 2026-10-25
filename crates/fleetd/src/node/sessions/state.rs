@@ -303,6 +303,7 @@ mod tests {
             latest_assistant_tail: None,
             branch: None,
             worktree_path: None,
+            recreated_from: None,
             created_at: Timestamp::from("t0"),
             updated_at: Timestamp::from("t0"),
         }
