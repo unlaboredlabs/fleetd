@@ -171,24 +171,40 @@ fn own(item: &WorkItem, project_ref: &ProjectRef) -> bool {
     }
 }
 
-/// The digest's Elsewhere lines: landings outside the train first (newest first), then the in-flight items that
-/// aren't the project's own, in the view's order (expired claims last).
+/// What the digest says of the lines it cut: they go from the end.
+pub const CUT_FIRST: &str = "expired claims, then landings, are cut first";
+
+/// The digest's Elsewhere lines, most important first, as the digest cuts from the end: a person's active claims, then
+/// other active claims and other projects' writers and Changes (in the view's order), then landings outside the train
+/// (newest first), then expired claims.
 pub fn lines(
     project_ref: &ProjectRef,
     scope: &WorkScope,
     in_flight: &[WorkItem],
     landings: &[Landed],
 ) -> Vec<String> {
-    landings
+    let rank = |i: &WorkItem| match (i.kind, i.state.as_str()) {
+        (WorkItemKind::Claim, "expired") => 2,
+        (WorkItemKind::Claim, _)
+            if i.owner.as_ref().map(|o| o.kind) == Some(ClaimOwnerKind::HumanSession) =>
+        {
+            0
+        }
+        _ => 1,
+    };
+    let mut items: Vec<&WorkItem> = in_flight.iter().filter(|i| !own(i, project_ref)).collect();
+    items.sort_by_key(|i| rank(i));
+    let landed = landings
         .iter()
         .filter(|l| l.route != LandingRoute::Train)
         .take(LANDINGS_SHOWN)
-        .map(|l| landing_line(l, scope.base.as_str()))
-        .chain(
-            in_flight
-                .iter()
-                .filter(|i| !own(i, project_ref))
-                .map(item_line),
-        )
+        .map(|l| landing_line(l, scope.base.as_str()));
+    let line = |i: &&WorkItem| item_line(i);
+    items
+        .iter()
+        .take_while(|i| rank(i) < 2)
+        .map(line)
+        .chain(landed)
+        .chain(items.iter().skip_while(|i| rank(i) < 2).map(line))
         .collect()
 }

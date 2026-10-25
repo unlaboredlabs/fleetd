@@ -172,7 +172,7 @@ impl WorkHook for WorkForLeads {
     fn elsewhere(&self, project_ref: &ProjectRef) -> BoxFuture<Option<Vec<String>>> {
         let (hub, r) = (self.0.upgrade(), project_ref.clone());
         Box::pin(async move {
-            match hub?.work.elsewhere(&r).await {
+            match hub?.work.elsewhere(&r) {
                 Ok(lines) => lines,
                 Err(error) => {
                     tracing::warn!(%error, "the digest's Elsewhere lines");

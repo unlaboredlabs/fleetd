@@ -51,7 +51,8 @@ fn answer(
         )
         .into());
     };
-    // Every landing is looked up before anything is written, so an unknown one refuses the whole call.
+    // Every landing is looked up before anything is written, and `covered` and `items` are written in one
+    // transaction, so a refusal of either writes nothing.
     let covers = match &covered {
         Some(covered) => covers_of(hub, r, covered)?,
         None => Vec::new(),
@@ -73,14 +74,17 @@ fn answer(
                 .as_ref()
                 .map(|s| super::clip(&format!("{}: {}", s.id, s.text.as_str()), 120))
         });
-        let changes = hub
-            .plans
-            .set(r, caller.by.as_str(), ws, &items, why.as_deref())?;
+        let changes = hub.plans.apply(
+            r,
+            caller.by.as_str(),
+            Some((ws, &items)),
+            why.as_deref(),
+            &covers,
+        )?;
         if let Some(steer) = steer {
             crate::hub::steer::acknowledged_by_plan(hub, r, steer, &changes);
         }
-    }
-    if !covers.is_empty() {
+    } else if !covers.is_empty() {
         hub.plans.cover(r, &covers)?;
     }
     let plan = hub.plans.view(r, workstream_id.as_ref())?;

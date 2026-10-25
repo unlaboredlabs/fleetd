@@ -246,8 +246,6 @@ async fn the_digest_shows_work_elsewhere_on_its_repo_and_base_and_none_of_its_ow
     assert_eq!(
         lines,
         [
-            "- abc1234 pushed straight to main, outside fleetd by wynn@example.com: feat: dark mode toggle · covers P9",
-            "- fed9876 PR #57 merged outside fleetd by wynn@example.com: Search box on the catalog",
             &format!(
                 "- {human} claimed by a person (laptop): dark mode toggle in settings · on SHOP-12, P9"
             ),
@@ -256,9 +254,11 @@ async fn the_digest_shows_work_elsewhere_on_its_repo_and_base_and_none_of_its_ow
                 theirs.task_id
             ),
             "- C2 claimed by the lead of devbox/api: checkout retries",
+            "- abc1234 pushed straight to main, outside fleetd by wynn@example.com: feat: dark mode toggle · covers P9",
+            "- fed9876 PR #57 merged outside fleetd by wynn@example.com: Search box on the catalog",
             &format!("- {gone} expired claim by an agent key: an old experiment"),
         ],
-        "landings outside the train from the last day first, then claims and the other project's writer, \
+        "a person's claims first, then other projects' work, landings outside the train from the last day, and \
          expired claims last; never this project's own work, another base's, or the train's landings"
     );
     assert!(
@@ -279,19 +279,27 @@ async fn the_digest_shows_work_elsewhere_on_its_repo_and_base_and_none_of_its_ow
 }
 
 #[tokio::test]
-async fn a_long_elsewhere_keeps_the_digest_short_and_says_what_it_left_out() {
+async fn a_long_elsewhere_keeps_the_digest_short_and_cuts_landings_before_a_persons_claims() {
     let (hub, clock, _home) = hub();
     let app = project("app");
     hub.work.bind_project(&app, &shop()).unwrap();
     landings(&hub, &clock);
-    for n in 0..40 {
+    let person = ClaimOwner {
+        kind: ClaimOwnerKind::HumanSession,
+        key_id: Line::unchecked("k7"),
+        label: Some(Line::unchecked("laptop")),
+    };
+    for n in 0..6 {
+        claim(&hub, person.clone(), &format!("piece {n}"), vec![]);
+    }
+    let section = elsewhere(&hub, &app).await.unwrap();
+    assert_eq!(section.lines().count(), 8, "6 claims and 2 landings fit");
+    assert!(section.lines().nth(6).unwrap().starts_with("- abc1234 "));
+
+    for n in 6..40 {
         claim(
             &hub,
-            ClaimOwner {
-                kind: ClaimOwnerKind::HumanSession,
-                key_id: Line::unchecked("k7"),
-                label: Some(Line::unchecked("laptop")),
-            },
+            person.clone(),
             &format!("{n} {}", "a very long piece of work ".repeat(4)),
             vec![],
         );
@@ -299,12 +307,15 @@ async fn a_long_elsewhere_keeps_the_digest_short_and_says_what_it_left_out() {
     let section = elsewhere(&hub, &app).await.unwrap();
     assert_eq!(section.lines().count(), 8 + 1, "{section}");
     assert!(
-        section.ends_with("(+34 more: older ones not shown)"),
-        "{section}"
+        section
+            .lines()
+            .take(8)
+            .all(|l| l.contains("claimed by a person")),
+        "a person's claims are kept, landings cut first: {section}"
     );
     assert!(
-        section.starts_with("- abc1234 "),
-        "landings come first: {section}"
+        section.ends_with("(+34 more: expired claims, then landings, are cut first)"),
+        "{section}"
     );
     assert!(section.lines().all(|l| l.chars().count() <= 200));
     let digest = hub.leads.wakes.digest(&app).await.unwrap();
@@ -499,4 +510,69 @@ async fn plan_covered_refuses_a_commit_it_has_not_seen_land_and_writes_nothing()
         "a refused covered writes none of the call"
     );
     assert_eq!(view.plan.items[1].state, PlanItemState::Open);
+}
+
+#[tokio::test]
+async fn plan_items_and_covered_go_together_or_not_at_all() {
+    let (hub, clock, _home) = hub();
+    let app = planned(&hub).await;
+    hub.work.bind_project(&app, &shop()).unwrap();
+    landings(&hub, &clock);
+
+    let both = plan(
+        &hub,
+        json!({
+            "workstreamId": "W1", "items": [{ "id": "P2", "title": "search box" }, { "title": "checkout" }],
+            "covered": [{ "item": "P1", "landing": "abc1234" }],
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        states(&both),
+        [
+            PlanItemState::Done,
+            PlanItemState::Open,
+            PlanItemState::Open
+        ],
+        "the covered item left out of the items is done, not dropped"
+    );
+    assert!(both.plan.items[0].covered_by.is_some());
+
+    let refused = plan(
+        &hub,
+        json!({
+            "workstreamId": "W1", "items": [{ "id": "P2", "title": "search box, renamed" }],
+            "covered": [{ "item": "P1", "landing": MERGED }],
+        }),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(refused.message.as_str(), "P1 is already done.");
+    let view = plan(&hub, json!({})).await.unwrap();
+    assert_eq!(
+        (view.plan.items[1].title.as_str(), view.plan.items[2].state),
+        ("search box", PlanItemState::Open),
+        "a cover refused inside the write leaves the call's items unwritten"
+    );
+
+    let refused = plan(
+        &hub,
+        json!({
+            "workstreamId": "W1", "items": [{ "id": "P2", "title": "search box" }, { "id": "P2", "title": "again" }],
+            "covered": [{ "item": "P2", "landing": MERGED }],
+        }),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(refused.message.as_str(), "P2 is listed twice.");
+    let view = plan(&hub, json!({})).await.unwrap();
+    assert_eq!(
+        (
+            view.plan.items[1].state,
+            view.plan.items[1].covered_by.as_ref()
+        ),
+        (PlanItemState::Open, None),
+        "items refused after the cover leave it unwritten too"
+    );
 }
