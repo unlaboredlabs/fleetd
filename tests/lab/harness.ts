@@ -1,6 +1,7 @@
 // Shared plumbing for the lab scenarios (`npm run lab`): process control by captured PID, a real MCP client, the
 // lab machines (each a `fleetd node` with its own HOME, so its own ~/.fleetd and Claude config dir), and helpers that
-// wait on hub events instead of sleeping. Never used in CI.
+// wait on hub events instead of sleeping. The lab itself never runs in CI; the factory lab (factory/), which does,
+// borrows its MCP, event and process helpers.
 import { execFileSync, spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
