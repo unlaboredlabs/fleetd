@@ -38,3 +38,4 @@ pub mod train;
 pub mod usage;
 pub mod wakes;
 pub mod watchdog;
+pub mod work;
