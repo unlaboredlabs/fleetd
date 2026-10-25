@@ -19,6 +19,11 @@ const row: ProjectStatusRow = {
   title: "storefront",
   state: "idle",
   agentsRunning: 0,
+  counts: { waitingOnYou: 1, inReview: 0, working: 1, landing: 0, idle: 0, done: 0 },
+  items: [
+    { group: "waiting_on_you", title: "The lead's question in chat", at: iso(START) },
+    { group: "working", title: "Cart page", taskId: "T4", at: iso(START) },
+  ],
   lastMerged: { title: "Receipt dates use Intl", prNumber: 214, at: iso(new Date(2026, 9, 19, 23, 50).getTime()) },
   stale: { since: iso(START - 9 * 60_000), reason: "no heartbeat from devbox" },
   merged7d: 12,
@@ -116,4 +121,18 @@ it("links the row's 7-day count to the project's Factory numbers", async () => {
   expect(parseHash(week?.getAttribute("href") ?? "")).toEqual({ id: "factory", project: { machineId: project.machineId, projectId: project.projectId } });
   expect(week?.getAttribute("aria-label")).toBe("storefront: 12 merged in 7 days · 64% through fleetd, in Factory");
   expect(week?.textContent).toBe("12 in 7 days");
+});
+
+it("lists each group's items under the row, each opening its agent in the project's panel", async () => {
+  await mount();
+  expect(label()).toContain("1 waiting on you · 1 working");
+  const item = host.querySelector("a[aria-label^='Cart page']");
+  expect(item?.getAttribute("aria-label")).toBe("Cart page, working, T4");
+  expect(parseHash(item?.getAttribute("href") ?? "")).toEqual({
+    id: "project",
+    project: { machineId: project.machineId, projectId: project.projectId },
+    message: null,
+    panel: { tab: "agents", agent: "T4" },
+  });
+  expect(host.textContent).not.toContain("%");
 });

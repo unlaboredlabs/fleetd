@@ -1802,7 +1802,6 @@ impl Train {
             task_id: Some(task.task_id.clone()),
             pr_url: GitHubPrUrl::unchecked(pr_url.clone()),
             workstream_id: None,
-            item: None,
         };
         if let Err(e) = self.enqueue(&task.project_ref, input).await {
             let line = Event::PrRefused {

@@ -19,7 +19,6 @@ pub mod mcp;
 pub mod metrics;
 pub mod orders;
 pub mod pair;
-pub mod plan;
 pub mod policy;
 pub mod projects;
 pub mod prompts;

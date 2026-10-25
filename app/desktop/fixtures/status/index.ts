@@ -1,6 +1,6 @@
 // The Status view's answers (F6): status_get, one row per project the fixture's hub has, in every state the
-// view draws. Added to the shared fixtures, plus the states only Status has: rows whose source went quiet, a figure
-// that holds on paused work, and the skeleton before the first answer.
+// view draws, each with its work in groups. Added to the shared fixtures, plus the states only Status has: rows whose
+// source went quiet, and the skeleton before the first answer.
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import { at } from "../kit/ids.ts";
@@ -35,15 +35,44 @@ const projectsOf = (f: Fixture): Project[] => {
   return [...seen.values()];
 };
 
-const estimate = (pct: number, verifiedPct: number, inFlightPct: number): JsonObject => ({ pct, verifiedPct, inFlightPct });
+const pr = (n: number): JsonObject => ({ repo: "acme/storefront", number: n, url: `https://github.com/acme/storefront/pull/${String(n)}` });
+const item = (f: Fixture, group: string, title: string, minutesAgo: number, extra: JsonObject = {}): JsonObject => ({ group, title, at: ago(f, minutesAgo * MIN), ...extra });
 
 /** One row per project, cycling through the states the view draws, so every fixture shows them all. */
 const ROWS: readonly ((f: Fixture) => JsonObject)[] = [
-  (f) => ({ state: "working", progress: estimate(78, 58, 20), agentsRunning: 3, lastMerged: { title: "Totals use integer minor units", prNumber: 208, at: ago(f, 21 * MIN) }, merged7d: 12, throughFleetdPct7d: 66.7 }),
-  (f) => ({ state: "waiting_on_you", progress: estimate(64, 52, 12), agentsRunning: 0, lastMerged: { title: "Search index warms on deploy", prNumber: 205, at: ago(f, 3 * 1440 * MIN) }, merged7d: 3, throughFleetdPct7d: 33.3 }),
+  (f) => ({
+    state: "working",
+    counts: { waitingOnYou: 0, inReview: 1, working: 3, landing: 1, idle: 0, done: 11 },
+    items: [
+      item(f, "in_review", "Cart page keeps its scroll position", 6, { taskId: "T44", pr: pr(216) }),
+      item(f, "working", "Currency export for invoices", 3, { taskId: "T47" }),
+      item(f, "working", "Receipts list pages by cursor", 8, { taskId: "T46" }),
+      item(f, "working", "Checkout totals round half-even", 12, { taskId: "T45", pr: pr(212) }),
+      item(f, "landing", "Search index warms on deploy", 18, { taskId: "T41", pr: pr(210) }),
+      item(f, "done", "Totals use integer minor units", 21, { taskId: "T39", pr: pr(208) }),
+      item(f, "done", "fleetd/lead-docs", 140, { pr: pr(207) }),
+    ],
+    agentsRunning: 3, lastMerged: { title: "Totals use integer minor units", prNumber: 208, at: ago(f, 21 * MIN) }, merged7d: 12, throughFleetdPct7d: 66.7 }),
+  (f) => ({
+    state: "waiting_on_you",
+    counts: { waitingOnYou: 2, inReview: 0, working: 0, landing: 0, idle: 1, done: 2 },
+    items: [
+      item(f, "waiting_on_you", "Deploy the export job to production", 4, { why: "approval" }),
+      item(f, "waiting_on_you", "Allow writing to ~/.config/billing", 7, { taskId: "T22", why: "tool prompt" }),
+      item(f, "idle", "fleetd/T19-retry", 90, { pr: pr(204), why: "CI failed" }),
+      item(f, "done", "Search index warms on deploy", 3 * 1440, { taskId: "T18", pr: pr(205) }),
+    ],
+    agentsRunning: 0, lastMerged: { title: "Search index warms on deploy", prNumber: 205, at: ago(f, 3 * 1440 * MIN) }, merged7d: 3, throughFleetdPct7d: 33.3 }),
   // Nothing merged this week on a repo the metrics read: a real zero, with no share. The idle row's repos aren't read.
-  () => ({ state: "blocked", blockedReason: "main CI is red: rust (macos)", progress: estimate(31, 31, 0), agentsRunning: 0, merged7d: 0 }),
-  () => ({ state: "idle", agentsRunning: 0 }),
+  (f) => ({
+    state: "blocked",
+    blockedReason: "main CI is red: rust (macos)",
+    counts: { waitingOnYou: 0, inReview: 0, working: 0, landing: 1, idle: 0, done: 0 },
+    items: [item(f, "landing", "Lockfile bump for the CI image", 30, { taskId: "T9", pr: pr(88) })],
+    agentsRunning: 0,
+    merged7d: 0,
+  }),
+  () => ({ state: "idle", counts: { waitingOnYou: 0, inReview: 0, working: 0, landing: 0, idle: 0, done: 0 }, items: [], agentsRunning: 0 }),
 ];
 
 type Variant = "typical" | "stale";
@@ -73,28 +102,6 @@ const own = (what: string, note: string, base: Fixture, variant: Variant, delayM
   return f;
 };
 
-/**
- * The first row's project (storefront, working at 78%) with the series behind its bar (status_get): it climbed, fell
- * once when CI failed, and now holds because its agent hit a usage limit. The bar's hover shows the held marker.
- */
-const paused = (base: Fixture): Fixture => {
-  const f = own("paused", "Status: storefront's figure holds while its agent waits for a usage limit to reset.", base, "typical");
-  const first = projectsOf(f)[0];
-  if (first === undefined) throw new Error("status-paused: no project");
-  const point = (minutesAgo: number, pct: number, verifiedPct: number, extra: JsonObject = {}): JsonObject => ({ at: ago(f, minutesAgo * MIN), pct, verifiedPct, ...extra });
-  const series = [
-    point(90, 40, 30),
-    point(70, 61, 44),
-    point(55, 55, 44, { drop: { reason: "ci_failed", fromPct: 61, text: "CI failed on #212" } }),
-    point(30, 78, 58),
-    point(12, 78, 58, { paused: "paused: an agent hit a usage limit" }),
-  ];
-  const row = rowsFor(f, "typical")[0];
-  if (row === undefined) throw new Error("status-paused: no row");
-  f.answer("status_get", { projectRef: { machineId: first.machineId, projectId: first.projectId } }, { row, series });
-  return f;
-};
-
 export default defineGroup({
   extend: {
     typical: (f) => answer(f, "typical"),
@@ -104,7 +111,6 @@ export default defineGroup({
   },
   fixtures: (base) => [
     own("stale", "Status: half the projects' machines went quiet.", base("typical"), "stale"),
-    paused(base("typical")),
     own("skeleton", "Status: the hub is live but hasn't answered yet: row outlines, no words or numbers.", base("typical"), "typical", HOLD_MS),
   ],
 });

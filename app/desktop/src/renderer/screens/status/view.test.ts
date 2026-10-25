@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ProjectStatusRow } from "../../../shared/contracts";
 import type { ProjectRow } from "../../src/data/selectors";
-import { barOf, orderRows } from "./rows";
-import { age, dropLines, fullWhen, heldLine, staleWords, weekLine, when } from "./view";
+import { countsLine, groupsOf, itemHref, itemRefs, orderRows } from "./rows";
+import { age, fullWhen, staleWords, weekLine, when } from "./view";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -15,6 +15,8 @@ const row = (title: string, state: string, extra: Partial<ProjectStatusRow> = {}
   title,
   state,
   agentsRunning: 0,
+  counts: { waitingOnYou: 0, inReview: 0, working: 0, landing: 0, idle: 0, done: 0 },
+  items: [],
   asOf: "2026-10-19T10:07:12.000Z",
   ...extra,
 });
@@ -61,12 +63,39 @@ describe("status rows", () => {
     expect(orderRows([row("x", "paused_for_lunch")], undefined)[0]?.word).toBe("idle");
   });
 
-  it("draw the two-tone bar only when something is counted: nothing to count shows no number", () => {
-    const estimate = { pct: 78, verifiedPct: 58, inFlightPct: 20 };
-    expect(barOf(row("a", "working", { progress: estimate }))).toEqual({ pct: 78, verifiedPct: 58, inFlightPct: 20 });
-    expect(barOf(row("b", "idle"))).toBeNull();
-    // The lighter part never claims past 100, whatever rounding did.
-    expect(barOf(row("d", "working", { progress: { ...estimate, pct: 100, verifiedPct: 97, inFlightPct: 5 } }))?.inFlightPct).toBe(3);
+  it("count each group with work, in order, with the items the hub listed", () => {
+    const at = "2026-10-19T10:00:00.000Z";
+    const pr = { repo: "acme/storefront", number: 212, url: "https://github.com/acme/storefront/pull/212" };
+    const r = row("shop", "working", {
+      counts: { waitingOnYou: 1, inReview: 0, working: 2, landing: 1, idle: 0, done: 12 },
+      items: [
+        { group: "waiting_on_you", title: "Deploy to staging", why: "approval", at },
+        { group: "working", title: "Cart page", taskId: "T4", pr, at },
+        { group: "working", title: "Receipts", taskId: "T5", at },
+        { group: "landing", title: "fleetd/totals", pr, at },
+        { group: "done", title: "Login page", taskId: "T1", at },
+        // A group a newer hub sends reads as idle.
+        { group: "snoozed", title: "Later", at },
+      ],
+    });
+    expect(countsLine(r)).toBe("1 waiting on you · 2 working · 1 landing · 12 done");
+    expect(groupsOf(r).map((g) => [g.group, g.count, g.items.length])).toEqual([
+      ["waiting_on_you", 1, 1],
+      ["working", 2, 2],
+      ["landing", 1, 1],
+      ["done", 12, 1],
+    ]);
+    expect(countsLine(row("idle", "idle"))).toBe("");
+  });
+
+  it("open an item's agent, else its PR, in the project's panel, else the project's chat", () => {
+    const at = "2026-10-19T10:00:00.000Z";
+    const ref = { machineId: "devbox", projectId: "shop" };
+    const pr = { repo: "acme/storefront", number: 212, url: "https://github.com/acme/storefront/pull/212" };
+    expect(itemHref(ref, { group: "working", title: "x", taskId: "T4", pr, at })).toBe("#/project/devbox/shop/agents/T4");
+    expect(itemHref(ref, { group: "landing", title: "x", pr, at })).toBe("#/project/devbox/shop/prs/acme/storefront/212");
+    expect(itemHref(ref, { group: "waiting_on_you", title: "x", at })).toBe("#/project/devbox/shop");
+    expect(itemRefs({ group: "idle", title: "x", taskId: "T4", pr, why: "CI failed", at })).toBe("T4 · #212 · CI failed");
   });
 });
 
@@ -85,24 +114,5 @@ describe("words", () => {
     expect(when("2026-10-07T14:00:00.000Z", NOW)).toBe("Oct 7");
     expect(when("2025-12-30T14:00:00.000Z", NOW)).toBe("Dec 30, 2025");
     expect(fullWhen("2026-10-16T14:00:00.000Z")).toBe("Fri Oct 16, 14:00");
-  });
-
-  it("explain the last three drops, newest first", () => {
-    const at = "2026-10-19T10:00:00.000Z";
-    const series = [
-      { at, pct: 40, verifiedPct: 30 },
-      { at, pct: 55, verifiedPct: 30, drop: { reason: "ci_failed", fromPct: 61, text: "CI failed on #212" } },
-      { at, pct: 74, verifiedPct: 50, drop: { reason: "scope_change", fromPct: 80, text: "+3 items: currency export added" } },
-    ];
-    expect(dropLines(series)).toEqual(["↓ 80% → 74%: +3 items: currency export added", "↓ 61% → 55%: CI failed on #212"]);
-  });
-
-  it("says the figure holds only while the newest point is paused", () => {
-    const at = "2026-10-19T10:00:00.000Z";
-    const held = { at, pct: 64, verifiedPct: 52, paused: "paused: an agent hit a usage limit" };
-    expect(heldLine([{ at, pct: 60, verifiedPct: 52 }, held])).toBe("Held at 64% (paused: an agent hit a usage limit)");
-    // Resumed: the paused point is history, and the figure moves again.
-    expect(heldLine([held, { at, pct: 66, verifiedPct: 52 }])).toBeUndefined();
-    expect(heldLine([])).toBeUndefined();
   });
 });

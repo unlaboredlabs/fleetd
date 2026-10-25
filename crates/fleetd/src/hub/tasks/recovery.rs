@@ -186,8 +186,8 @@ pub enum Action {
     Finish,
 }
 
-/// `prior` is the task's recovery so far. `stopped`: it must not go on (its workstream is closed, its PR merged or
-/// its plan item done). `jitter` is in [0, 1).
+/// `prior` is the task's recovery so far. `stopped`: it must not go on (its workstream is closed or its PR merged).
+/// `jitter` is in [0, 1).
 pub fn decide(
     death: &Death,
     prior: Option<&TaskRecovery>,

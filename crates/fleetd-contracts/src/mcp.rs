@@ -17,7 +17,6 @@ use crate::ledger::{
 };
 use crate::live::{AgentLane, OrderCard, TrainLive};
 use crate::model::{ActionItem, Machine, ProjectOutcome, ProjectSummary, ThreadSummary};
-use crate::plan::PlanView;
 use crate::prim::{
     Count, Int, IntOr, Line, List, MAX_SAFE_INT, NonEmpty, Positive, Text, True, UniqueList,
 };
@@ -27,7 +26,7 @@ use crate::prompts::{
     RetiredPromptOverride, SessionPrompt,
 };
 use crate::secrets::{SealedSecret, SecretFingerprint};
-use crate::status::{ProgressPoint, ProjectStatusRow};
+use crate::status::ProjectStatusRow;
 use crate::steer::{Steer, SteerId, SteerMode, SteerTarget};
 use crate::tasks::{SlotState, Task, TaskId, TaskState};
 use crate::time::{
@@ -845,7 +844,7 @@ output!(SessionPromptGetOutput {
 });
 
 // status_get: without projectRef, one row per project the key reads, for the Status screen; with it, that project's
-// row and the series behind its bar.
+// row.
 input!(StatusGetInput {
     project_ref: Option<ProjectRef>
 });
@@ -854,28 +853,6 @@ output!(StatusGetOutput {
     rows: Option<List<ProjectStatusRow, 0, 200>>,
     /// With projectRef.
     row: Option<ProjectStatusRow>,
-    /// With projectRef: the bar over time, oldest first: why it fell (`drop`) and when it held on paused work
-    /// (`paused`).
-    series: Option<List<ProgressPoint, 0, 48>>,
-});
-
-// plan_get: one project's plan, or one order's items.
-input!(
-    #[serde(remote = "Self")]
-    PlanGetInput {
-        project_ref: Option<ProjectRef>,
-        workstream_id: Option<WorkstreamId>,
-    }
-);
-checked!(PlanGetInput, |input| {
-    if input.project_ref.is_some() == input.workstream_id.is_some() {
-        return Err("give projectRef or workstreamId".into());
-    }
-    Ok(())
-});
-output!(PlanGetOutput {
-    #[serde(flatten)]
-    plan: PlanView,
 });
 
 // chat_send: writes to a project's lead. Delivered at once: a new turn when the lead is idle, a steer when it is
@@ -1093,7 +1070,7 @@ output!(PrDiffOutput {
 
 // work_claim: before a code change in a repo fleetd manages, says what it is and checks it against the work in flight
 // on the repo's base (agents, the merge train, other people's sessions) in one call. Claimed: the claim is held 12 h
-// from its last renewal (work_claim again on its branch). Taken: the same issue, PR, branch or plan item is someone
+// from its last renewal (work_claim again on its branch). Taken: the same issue, PR or branch is someone
 // else's. Possible duplicate: call again with `notDuplicateOf` (the ids) and `notDuplicateWhy` if it is different
 // work. The caller's own active claim on the same branch is renewed and updated instead of claimed twice. A human
 // key's claim is a person's; any other key's is an agent key's, since a fleetd agent may load the person's MCP config.
@@ -1144,7 +1121,7 @@ pub enum WorkClaimStatus {
     Claimed,
     /// The caller's own claim on the branch, renewed and updated.
     Renewed,
-    /// Someone else holds the same issue, PR, branch or plan item. Not claimed.
+    /// Someone else holds the same issue, PR or branch. Not claimed.
     Taken,
     /// Likely the same as work in flight. Not claimed; `notDuplicateOf` says it is different.
     PossibleDuplicate,
@@ -1317,7 +1294,6 @@ tools! {
     metrics_retention_set => MetricsRetentionSet, Admin, MetricsRetentionSetInput, MetricsRetentionSetOutput;
     thread_window => ThreadWindow, Read, ThreadWindowInput, ThreadWindowOutput;
     status_get => StatusGet, Read, StatusGetInput, StatusGetOutput;
-    plan_get => PlanGet, Read, PlanGetInput, PlanGetOutput;
     // Human keys only (the handler checks); the lead steers its tasks with `fleetd task message`.
     steer_send => SteerSend, Operate, SteerSendInput, SteerSendOutput;
     steer_withdraw => SteerWithdraw, Operate, SteerWithdrawInput, SteerWithdrawOutput;

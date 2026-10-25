@@ -178,7 +178,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "status_get",
-        "Without projectRef: one row per project you can read, by title (rows): a state word (working, waiting_on_you, blocked with a one-line reason, idle), the two-tone progress (verified and in flight, no ETA), agents running now and the last merge, marked stale when its machine, GitHub or its merge train went quiet. With projectRef: that project's row and the series behind its bar, oldest first: each point's verified and in-flight figure, why it fell (a scope change, a failed review or CI, work that stopped, a reopened item) and when it held on paused work. Never an ETA.",
+        "Without projectRef: one row per project you can read, by title (rows): a state word (working, waiting_on_you, blocked with a one-line reason, idle), its work in groups (waiting_on_you, in_review, working, landing, idle, done: counts, and the newest items of each with their agent, PR and why), agents running now and the last merge, marked stale when its machine, GitHub or its merge train went quiet. With projectRef: that project's row. Never a percentage or an ETA.",
     ),
     (
         "time_insights",

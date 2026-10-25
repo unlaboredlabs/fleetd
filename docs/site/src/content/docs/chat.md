@@ -114,7 +114,7 @@ Everything shows up in the chat, quietly:
 | A quiet line under the lead's reply | While the lead works: how long it has been working, what it's doing now, and the orders and agents it started. When it's done: how long it worked, such as "Worked for 3m 40s". |
 | One-line events | A pull request opened, merged, or sent back. |
 
-For a project's progress at a glance, see [Status](/docs/status). For where the time went, see
+For a project's work at a glance, see [Status](/docs/status). For where the time went, see
 [Where time went](/docs/time-inspector).
 
 ## Read a pull request {#prs}

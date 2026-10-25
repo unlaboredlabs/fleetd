@@ -1,9 +1,9 @@
 ---
 title: Status
-description: Each project's state and progress at a glance, in the app and in the terminal.
+description: Each project's state and its work in groups at a glance, in the app and in the terminal.
 ---
 
-Status shows, for each project, what state it is in and how far along its work is.
+Status shows, for each project, what state it is in and where each piece of its work is.
 
 ## In the app {#app}
 
@@ -12,33 +12,48 @@ Status has one row per project:
 | Column | Shows |
 |---|---|
 | State | `waiting on you`, `blocked`, `working` or `idle`. |
-| Progress | The two-tone bar: solid is verified work, lighter is credit for work in flight. "no progress yet" while the lead plans or nothing can be counted. |
+| Work | How many pieces of work are in each group: "1 waiting on you · 2 working · 1 landing · 9 done". |
 | Agents | How many agents are running. |
 | Last merged | When the latest pull request merged, with its day: "today 09:46", "yesterday 16:40", "Fri 15:12", "Oct 7". |
 
-Rows needing you come first, then blocked, working and idle. Click a row to open that project's chat, or PRs at its
-end for the project's pull requests. Hover it for detail: why it is blocked, the verified and in-flight shares, whether
-it holds on paused work, the latest drops, and a source that has gone quiet ("out of date"). An MCP client reads the
-same rows with `status_get`, and one project's row with the history behind its bar with `status_get {projectRef}`.
-Open Status with ⌘. (Ctrl+. on Linux), or from the sidebar.
+Under each row, its work is listed group by group, newest first. Click an item to open its agent, or its pull request,
+in the panel beside the project's chat. Click a row to open that project's chat, or PRs at its end for the project's
+pull requests. Rows needing you come first, then blocked, working and idle. An MCP client reads the same rows with
+`status_get`. Open Status with ⌘. (Ctrl+. on Linux), or from the sidebar.
 
-Status never shows a finish time or an ETA. It shows state instead.
+## The groups {#groups}
+
+Each piece of work is in one group, from what fleetd saw happen, never from an agent's word:
+
+| Group | Means |
+|---|---|
+| Waiting on you | Only you can move it: the lead's question in chat, a command to approve, a secret, or an agent's tool prompt. |
+| In review | Its pull request waits for fleetd's reviewer, or is with it. |
+| Working | An agent is queued or running on it. |
+| Landing | The [merge train](/docs/merge-train) holds its pull request: review passed, rebasing, CI or merging. |
+| Idle | Nothing runs or waits on it: its agent ended or is paused, or its pull request came back with nobody on it ("CI failed"). |
+| Done | Merged in the last 7 days, or its agent finished in an order that closed. |
+
+Idle and done work drops off after 7 days. Status never scores the work or shows a finish time.
 
 ## In the terminal {#cli}
 
-`fleetd status` on the hub machine prints the same rows, with why each bar last fell.
+`fleetd status` on the hub machine prints the same rows.
 
 ```console
 $ fleetd status
 Status at 14:02:07
 
 billing: blocked: main CI is red on acme/billing
-  [████████████████░░░░] 80% done, 80% verified · 0 agents · merged Invoice export #96 Thu 16:40
+  1 idle · 3 done · 0 agents · merged Invoice export #96 Thu 16:40
+  idle: fleetd/T19-retry (#204, CI failed)
 
 storefront: working
-  [████████▒▒▒▒░░░░░░░░] 61% done, 40% verified · 2 agents · merged Webhook outbox #208 13:12:00
-  ↓ 69% → 61% 14:00:00: +3 items: checkout redesign added
-  ↓ 66% → 58% 13:20:00: CI failed on #212
+  1 in review · 2 working · 1 landing · 9 done · 2 agents · merged Webhook outbox #208 13:12:00
+  in review: Cart page keeps its scroll position (T44, #216)
+  working: Currency export for invoices (T47)
+  working: Receipts list pages by cursor (T46)
+  landing: Search index warms on deploy (T41, #210)
 ```
 
 | Command | Shows |
@@ -53,48 +68,6 @@ storefront: working
 | `--hub <url> --key-file <path>` | Use a hub on another machine. |
 
 See the [CLI reference](/docs/reference/cli#status).
-
-## What the number means {#number}
-
-The number is **verified** work plus credit for work **in flight**, as a share of the **required** work.
-
-| In the bar | Means |
-|---|---|
-| █ solid | Verified: fleetd checked it. |
-| ▒ shaded | In flight: partial credit for stages fleetd saw happen. |
-| ░ empty | Not started. |
-
-- **Verified** means the item's PRs were merged by the merge train. A PR merged by hand doesn't count. A lead saying
-  "done" moves nothing.
-- **In flight** credit comes from stages fleetd observed itself: PR open (half the item), review passed, CI green,
-  merged. Time spent inside a stage adds a little more, but only while an agent or the merge train is working on it,
-  and never the next stage's credit. While an agent waits for an answer or for a usage limit to reset, the number holds
-  what it earned, with a "held" line, and goes on from there when the agent resumes.
-- **It reaches 100%** only when every required item is verified.
-- **When it falls**, a `↓` line says why: work added, a review blocked, CI failed, a done item reopened, or work
-  stopped because an agent finished, failed or was cancelled with nothing else running for its item.
-
-Items are **must** or **polish**. Polish counts only when a project has no must items.
-
-| Size | Points |
-|---|---|
-| `s` | 1 |
-| `m` | 3 |
-| `l` | 8 |
-
-## Plans and markers {#plans}
-
-A project's plan is milestones of [plan items](/docs/glossary#plan-item). The lead sets each workstream's items with
-one `plan` call and links work to items with `--item P12`. An item is done when its linked PR merged.
-
-Scope can change, but never silently. Once a milestone has items, a change that moves its total writes a marker, and
-when the bar falls for it, the drop says so:
-
-```text
-  ↓ 80% → 72% 14:00:00: +3 items: time inspector added
-```
-
-Items the hub closes itself also get a marker, such as "−2 items: closed with W41, not separately verified".
 
 ## Stale data {#stale-data}
 

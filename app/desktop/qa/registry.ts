@@ -87,8 +87,6 @@ export const fixtures = [
   "status-rows",
   "status-stale",
   "status-skeleton",
-  // The bar's hover on a figure that holds while its work is paused (fixtures/status).
-  "status-paused",
   // E3b's shared stress fixture; the time inspector fills it with a ~15k-span order (fixtures/time).
   "time-heavy",
   // The Factory (fixtures/factory): a repo whose reads fail beside one on a plain git host, and a range with no merges.
@@ -1235,24 +1233,12 @@ export const screens: readonly Screen[] = [
   },
   { id: "settings.prompts.update", route: "#/settings/prompts?prompt=lead.start&view=update", fixtures: ["settings-prompts"] },
   { id: "settings.instructions", route: "#/settings/instructions?for=devbox/storefront", fixtures: ["settings-prompts", "typical", "empty"] },
-  // F6: Status, one row per project: every state word, long titles, no projects, quiet sources, the skeleton before
-  // the first answer, and the link down.
+  // F6: Status, one row per project: every state word, its work in groups, long titles, no projects, quiet sources,
+  // the skeleton before the first answer, and the link down.
   {
     id: "status.fleet",
     route: "#/status",
     fixtures: ["typical", "status-rows", "long-text", "empty", "many-agents", "hub-unreachable", "status-stale", "status-skeleton"],
-  },
-  // A held figure: the bar's hover marks it, with why, above the drop that came before it. Nothing moves.
-  {
-    id: "status.fleet",
-    route: "#/status",
-    fixtures: ["status-paused"],
-    variant: "paused",
-    open: async (page) => {
-      await page.getByRole("img", { name: /^78% done/u }).hover();
-      await page.getByText("Held at 78% (paused: an agent hit a usage limit)").waitFor();
-      await page.getByText("↓ 61% → 55%: CI failed on #212").waitFor();
-    },
   },
   // The Factory (D33, fixtures/factory): the four tiles, the three charts, the projects table and the merge list over
   // 30 days; long titles; eight projects with one repo on two machines; no projects; no hub; failing reads; nothing

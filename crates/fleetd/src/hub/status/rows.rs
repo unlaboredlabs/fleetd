@@ -1,23 +1,54 @@
-//! Status: one row per project, a state word, the two-tone bar, agents running and the last merge. Measured or
-//! observed only, never an ETA.
+//! Status: one row per project, a state word, its work in groups, agents running and the last merge. Observed only,
+//! never an estimate.
 use std::collections::HashMap;
 
 use chrono_tz::Tz;
 use fleetd_contracts::events::HubEventType;
-use fleetd_contracts::ids::{ProjectRef, Timestamp};
+use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, Timestamp};
 use fleetd_contracts::model::{Machine, MachineStatus};
-use fleetd_contracts::prim::{Count, Line, NonNegative, Text};
+use fleetd_contracts::prim::{Count, Line, List, NonNegative, Text};
 use fleetd_contracts::status::{CiState, LastMerged, ProjectRowState, ProjectStatusRow, StaleMark};
 use rusqlite::Connection;
 use serde_json::Value;
 
-use super::credit;
 use super::fresh::{self, Fresh};
 use crate::hub::api::Hub;
-use crate::hub::plan::{self, clip};
 use crate::hub::store::{iso_ms, parse_ms};
 
-/// Event types that can change a row or its series: `fleetd status --watch` reads the rows again after one.
+const DAY_MS: i64 = 24 * 3_600_000;
+
+pub fn pkey(r: &ProjectRef) -> String {
+    format!("{}/{}", r.machine_id, r.project_id)
+}
+
+pub fn project_ref(key: &str) -> ProjectRef {
+    let (m, p) = key.split_once('/').unwrap_or((key, ""));
+    ProjectRef {
+        machine_id: MachineId::unchecked(m),
+        project_id: ProjectId::unchecked(p),
+    }
+}
+
+/// One line of at most `max` UTF-16 units, with "…" when cut.
+pub fn clip(s: &str, max: usize) -> String {
+    let one_line: String = s
+        .chars()
+        .map(|c| if c == '\n' || c == '\r' { ' ' } else { c })
+        .collect();
+    if one_line.encode_utf16().count() <= max {
+        return one_line;
+    }
+    let mut out = String::new();
+    for ch in one_line.chars() {
+        if out.encode_utf16().count() + ch.len_utf16() + 1 > max {
+            break;
+        }
+        out.push(ch);
+    }
+    out + "…"
+}
+
+/// Event types that can change a row: `fleetd status --watch` reads the rows again after one.
 pub const CHANGES_A_ROW: &[HubEventType] = &[
     HubEventType::MachineOnline,
     HubEventType::MachineOffline,
@@ -40,6 +71,11 @@ pub const CHANGES_A_ROW: &[HubEventType] = &[
     HubEventType::ThreadWaiting,
     HubEventType::ThreadUsageLimited,
     HubEventType::ThreadStarted,
+    HubEventType::ThreadCompleted,
+    HubEventType::ThreadFailed,
+    HubEventType::ThreadInterrupted,
+    HubEventType::RequestOpened,
+    HubEventType::RequestUpdated,
     HubEventType::ReviewVerdict,
     HubEventType::ChangeQueued,
     HubEventType::ChangeReady,
@@ -49,8 +85,6 @@ pub const CHANGES_A_ROW: &[HubEventType] = &[
     HubEventType::ChangeState,
     HubEventType::PrMerged,
     HubEventType::PrMergedOutside,
-    HubEventType::PlanChanged,
-    HubEventType::PlanVerified,
     HubEventType::UsageBreaker,
     HubEventType::UsageResumed,
     HubEventType::CiMain,
@@ -75,7 +109,7 @@ pub fn clock(ms: i64, now: i64, tz: Tz) -> String {
     let n = chrono::DateTime::from_timestamp_millis(now).map(|d| d.with_timezone(&tz));
     if n.is_some_and(|n| n.date_naive() == t.date_naive()) {
         t.format("%H:%M").to_string()
-    } else if (ms - now).abs() < 6 * credit::DAY_MS {
+    } else if (ms - now).abs() < 6 * DAY_MS {
         t.format("%a %H:%M").to_string()
     } else {
         t.format("%b %-d %H:%M").to_string()
@@ -189,15 +223,6 @@ pub fn read_changes(
     Ok((merges, in_flight))
 }
 
-/// The rows read at `at` with the log at `read_head` still answer at `now` with the log at `head` only with no event
-/// since and for [`REREAD_MS`]: a read after an event always sees it, and in-flight credit, which moves with time,
-/// is never older than that.
-pub fn reusable(read_head: i64, at: i64, head: i64, now: i64) -> bool {
-    read_head == head && now - at < REREAD_MS
-}
-
-pub const REREAD_MS: i64 = 250;
-
 /// What decides a row's state word.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Facts {
@@ -225,10 +250,9 @@ pub fn state_of(f: &Facts) -> ProjectRowState {
     }
 }
 
-/// Every project's row, by title, read at `now`. Each read moves the project's series on under the drop rule.
+/// Every project's row, by title, read at `now`.
 pub fn read(hub: &Hub, fresh: &Fresh, now: i64) -> anyhow::Result<Vec<ProjectStatusRow>> {
     let tz = crate::hub::attention::hub_zone();
-    let data = hub.db.with(|c| Ok(credit::Data::read(c, now)?))?;
     let (merges, in_flight) = hub.db.with(|c| Ok(read_changes(c)?))?;
     // The 7-day fact counts the merge whose event this read may be answering.
     if let Err(e) = crate::hub::metrics::project::catch_up(&hub.db, &hub.events) {
@@ -258,11 +282,11 @@ pub fn read(hub: &Hub, fresh: &Fresh, now: i64) -> anyhow::Result<Vec<ProjectSta
         .train
         .repos()
         .into_iter()
-        .map(|(r, p)| (r.to_lowercase(), plan::store::pkey(&p)))
+        .map(|(r, p)| (r.to_lowercase(), pkey(&p)))
         .collect();
     let mut out = Vec::new();
     for (pk, title) in &projects {
-        let r: ProjectRef = plan::store::project_ref(pk);
+        let r: ProjectRef = project_ref(pk);
         let machine = machines.iter().find(|m| m.machine_id == r.machine_id);
         let mname = machine.map_or(r.machine_id.as_str(), |m| m.name.as_str());
         let repos: Vec<&String> = repos
@@ -316,16 +340,14 @@ pub fn read(hub: &Hub, fresh: &Fresh, now: i64) -> anyhow::Result<Vec<ProjectSta
                     })
             })
         });
-        let progress = match credit::bar(&data, pk) {
-            Some(bar) => Some(hub.db.with(|c| Ok(credit::advance(c, pk, &bar, now)?))?),
-            None => None,
-        };
+        let (counts, items) = super::groups::read(hub, &r, facts.needs_you, now);
         out.push(ProjectStatusRow {
             project_ref: r,
             title: line(title),
             state: state_of(&facts),
             blocked_reason: facts.blocked.as_deref().map(line),
-            progress: progress.as_ref().map(credit::estimate_of),
+            counts,
+            items: List::unchecked(items),
             agents_running: Count::unchecked(facts.agents.max(0)),
             last_merged: merges.get(pk).map(|m| LastMerged {
                 title: line(&m.title),
@@ -381,20 +403,6 @@ mod tests {
             }),
             ProjectRowState::Working,
             "a lead-only turn is work, though it is no agent"
-        );
-    }
-
-    /// Reused only within 250 ms and with no event since: an event or the time passing reads them again.
-    #[test]
-    fn rows_are_read_again_after_an_event_or_250_ms() {
-        assert!(reusable(7, 1_000, 7, 1_249), "a burst of reads costs one");
-        assert!(
-            !reusable(7, 1_000, 8, 1_000),
-            "an event, even in the same millisecond: read again"
-        );
-        assert!(
-            !reusable(7, 1_000, 7, 1_250),
-            "no event, but in-flight credit moved with time: read again"
         );
     }
 

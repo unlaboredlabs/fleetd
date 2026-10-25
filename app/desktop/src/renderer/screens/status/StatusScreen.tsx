@@ -1,7 +1,7 @@
-// Status (⌘.): one row per project under one line of column names. A state word, the two-tone progress bar (solid =
-// verified, lighter = in flight), agents running, last merged. A row opens the project's chat; its PRs link opens the
-// project's PR list, and its 7-day count opens the project's Factory numbers. Detail lives in the hovers; nothing
-// estimates time.
+// Status (⌘.): one row per project under one line of column names. A state word, its work counted by group (waiting
+// on you, in review, working, landing, idle, done), agents running, last merged; under it, the items of each group,
+// each opening its agent or PR in the project's panel. A row opens the project's chat; its PRs link opens the
+// project's PR list, and its 7-day count opens the project's Factory numbers. Nothing is scored or estimated.
 // It cannot be stale: the rows come from the data layer (status_get, refetched on events), which drops every
 // answer on a reconnect, so the view is a skeleton until this connection has answered; a row whose source went
 // quiet says so.
@@ -12,12 +12,10 @@ import { useData, useToolQuery } from "../../src/data/react";
 import { useNow } from "../live/clock";
 import { selectSkew } from "../live/strip";
 import { selectProjectList } from "../../src/data/selectors";
-import { Pause } from "lucide-react";
 import { Button, cx, Dot, FrameTitle, Text, Tooltip, Truncate } from "../../ui";
 import { toHash } from "../shell/routes";
-import { asGetOutput } from "./contracts";
-import { barOf, orderRows, STATE_WORDS, type StateWord } from "./rows";
-import { dropLines, fullWhen, heldLine, staleWords, weekLine, when } from "./view";
+import { countsLine, GROUP_WORDS, groupsOf, itemHref, itemRefs, orderRows, STATE_WORDS, type StateWord } from "./rows";
+import { fullWhen, staleWords, weekLine, when } from "./view";
 import s from "./status.module.css";
 
 const ALL = {} as const;
@@ -34,8 +32,8 @@ export const prsHref = (ref: ProjectStatusRow["projectRef"]): string => `${proje
 export const factoryHref = (ref: ProjectStatusRow["projectRef"]): string =>
   toHash({ id: "factory", project: { machineId: ref.machineId, projectId: ref.projectId } });
 
-/** One phrase wherever there is no bar yet: nothing to count. */
-const NO_PROGRESS = "no progress yet";
+/** One phrase wherever no group has work. */
+const NO_WORK = "no work yet";
 
 export function StatusScreen() {
   const fresh = useData((st) => st.fresh);
@@ -73,7 +71,7 @@ export function StatusScreen() {
           <ul className={cx(s.rows)} aria-label="Projects">
             {/* The column names, once; each row's link reads its cells as a sentence instead. */}
             <li className={cx(s.columns)} aria-hidden>
-              {["Project", "State", "Progress", "Agents", "Last merged"].map((h) => (
+              {["Project", "State", "Work", "Agents", "Last merged"].map((h) => (
                 <Text key={h} size="xs" tone="quiet" className={cx(h === "Agents" && s.agents)}>
                   {h}
                 </Text>
@@ -92,14 +90,15 @@ export function StatusScreen() {
 const TONE = { waiting_on_you: "warning", blocked: "danger", working: "default", idle: "quiet" } as const;
 
 function Row({ row, state, now }: { row: ProjectStatusRow; state: StateWord; now: number }) {
-  const bar = barOf(row);
+  const counts = countsLine(row);
+  const groups = groupsOf(row).filter((g) => g.items.length > 0);
   const merged = row.lastMerged;
   const week = weekLine(row.merged7d, row.throughFleetdPct7d);
   const mergedAt = merged === undefined ? "" : when(merged.at, now);
   const label = [
     `${row.title}: ${STATE_WORDS[state]}`,
     ...(row.stale ? [staleWords(row.stale, now)] : []),
-    bar === null ? NO_PROGRESS : `${bar.pct}% done`,
+    counts === "" ? NO_WORK : counts,
     row.agentsRunning === 1 ? "1 agent running" : `${row.agentsRunning} agents running`,
     merged === undefined ? "nothing merged yet" : `last merged ${mergedAt}`,
   ].join(", ");
@@ -134,23 +133,11 @@ function Row({ row, state, now }: { row: ProjectStatusRow; state: StateWord; now
         ) : (
           <span className={cx(s.word)}>{word}</span>
         )}
-        {bar !== null ? (
-          <Tooltip content={<Drops row={row} pct={bar} />}>
-            <span className={cx(s.progress)} tabIndex={0}>
-              <span className={cx(s.bar)} role="img" aria-label={`${bar.pct}% done, ${bar.verifiedPct}% verified`}>
-                <span className={cx(s.barVerified)} style={{ width: `${bar.verifiedPct}%` }} />
-                <span className={cx(s.barInFlight)} style={{ width: `${bar.inFlightPct}%` }} />
-              </span>
-              <Text size="sm" tabular>{`${bar.pct}%`}</Text>
-            </span>
-          </Tooltip>
-        ) : (
-          <span className={cx(s.progress)}>
-            <Text size="xs" tone="quiet">
-              {NO_PROGRESS}
-            </Text>
-          </span>
-        )}
+        <span className={cx(s.work)}>
+          <Truncate expand="none" size="xs" tone={counts === "" ? "quiet" : "default"} tabular>
+            {counts === "" ? NO_WORK : counts}
+          </Truncate>
+        </span>
         <Text size="sm" tone={row.agentsRunning > 0 ? "default" : "quiet"} tabular className={cx(s.agents)}>
           {row.agentsRunning > 0 ? String(row.agentsRunning) : "–"}
         </Text>
@@ -184,30 +171,42 @@ function Row({ row, state, now }: { row: ProjectStatusRow; state: StateWord; now
           PRs
         </Text>
       </a>
-    </li>
-  );
-}
-
-/** The bar's hover: verified and in flight, whether it holds while work is paused, then why it last fell. These are
- * in the project's series (status_get), read only while this hover is open. */
-function Drops({ row, pct }: { row: ProjectStatusRow; pct: { pct: number; verifiedPct: number; inFlightPct: number } }) {
-  const query = useToolQuery("status_get", { projectRef: row.projectRef });
-  const series = (query.data === undefined ? undefined : asGetOutput(query.data))?.series ?? [];
-  const lines = dropLines(series);
-  const held = heldLine(series);
-  return (
-    <span className={cx(s.drops)}>
-      <span>{`${pct.pct}% done: ${pct.verifiedPct}% verified, ${pct.inFlightPct}% in flight`}</span>
-      {held === undefined ? null : (
-        <span className={cx(s.held)}>
-          <Pause size={12} aria-hidden />
-          {held}
-        </span>
+      {groups.length === 0 ? null : (
+        <ul className={cx(s.groups)} aria-label={`${row.title}: work`}>
+          {groups.map((g) => (
+            <li key={g.group} className={cx(s.group)}>
+              <Text size="xs" strong tone={g.group === "waiting_on_you" ? "warning" : "quiet"}>
+                {GROUP_WORDS[g.group]}
+              </Text>
+              <ul className={cx(s.groupItems)}>
+                {g.items.map((item, i) => {
+                  const refs = itemRefs(item);
+                  return (
+                    <li key={`${item.taskId ?? item.pr?.url ?? item.title}-${String(i)}`}>
+                      <a className={cx(s.workItem)} href={itemHref(row.projectRef, item)} aria-label={`${item.title}, ${GROUP_WORDS[g.group]}${refs === "" ? "" : `, ${refs}`}`}>
+                        <Truncate expand="none" size="sm">
+                          {item.title}
+                        </Truncate>
+                        {refs === "" ? null : (
+                          <Text size="xs" tone="quiet" tabular className={cx(s.refs)}>
+                            {refs}
+                          </Text>
+                        )}
+                      </a>
+                    </li>
+                  );
+                })}
+                {g.count > g.items.length ? (
+                  <li>
+                    <Text size="xs" tone="quiet">{`+${String(g.count - g.items.length)} more`}</Text>
+                  </li>
+                ) : null}
+              </ul>
+            </li>
+          ))}
+        </ul>
       )}
-      {lines.map((l) => (
-        <span key={l}>{l}</span>
-      ))}
-    </span>
+    </li>
   );
 }
 

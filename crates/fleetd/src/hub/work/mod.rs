@@ -151,18 +151,6 @@ impl Work {
         let _ = self.landings.set(landings);
     }
 
-    /// The scope's one landing whose sha starts with `sha`.
-    pub fn landing(
-        &self,
-        scope: &WorkScope,
-        sha: &str,
-    ) -> Result<Option<elsewhere::Landed>, StoreError> {
-        match self.landings.get() {
-            Some(landings) => landings.find(scope, sha),
-            None => Ok(None),
-        }
-    }
-
     /// The lead digest's Elsewhere lines for the project; `None` when its repo and base aren't known. Read from the
     /// hub alone: the lines show no paths, so no node is asked what its writers changed.
     pub fn elsewhere(&self, project: &ProjectRef) -> Result<Option<Vec<String>>, StoreError> {

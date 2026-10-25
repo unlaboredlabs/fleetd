@@ -247,7 +247,6 @@ pub async fn send(hub: &Hub, by: By<'_>, req: SteerRequest<'_>) -> Result<Steer,
         seen_at: None,
         acked_at: None,
         ack_excerpt: None,
-        plan_change: None,
         detail: None,
     };
     let task_id = to.task.as_ref().map(|t| t.task_id.to_string());
@@ -394,88 +393,6 @@ pub fn take_held(
         id: leader.id,
         riders,
     })
-}
-
-/// A lead's `plan … --steer S12`: S12 must be a steer of this project that reached its agent.
-pub fn for_plan_call(
-    hub: &Hub,
-    r: &fleetd_contracts::ids::ProjectRef,
-    id: &SteerId,
-) -> Result<Steer, ToolError> {
-    let refused = || {
-        invalid(format!("{id} is not a delivered steer of this project.")).with_fix(
-            "Name a steer you were sent (its message starts with S<n>), or give why instead.",
-        )
-    };
-    let (steer, _) = store::get(&hub.db, id)?.ok_or_else(refused)?;
-    let ours = hub
-        .leads
-        .records
-        .workstream_get(&steer.workstream_id)?
-        .is_some_and(|w| w.project_ref == *r);
-    let delivered = matches!(
-        steer.stage,
-        SteerStage::Delivered | SteerStage::Acknowledged | SteerStage::Unacknowledged
-    );
-    if !ours || !delivered {
-        return Err(refused());
-    }
-    Ok(steer)
-}
-
-/// The plan change a steer asked for was made: the change's marker names the steer, and the steer is acknowledged
-/// (a lead call naming it counts as much as a reply).
-pub fn acknowledged_by_plan(
-    hub: &Hub,
-    r: &fleetd_contracts::ids::ProjectRef,
-    mut steer: Steer,
-    changes: &[fleetd_contracts::plan::PlanChange],
-) {
-    let change = changes.first();
-    let what = change.map_or_else(
-        || "plan updated".to_owned(),
-        |c| {
-            c.note
-                .as_str()
-                .split_once(':')
-                .map_or(c.note.as_str(), |(delta, _)| delta)
-                .to_owned()
-        },
-    );
-    // The change this call wrote, not the project's newest: same project, time and deltas.
-    if let Some(change) = change {
-        let pk = crate::hub::plan::store::pkey(r);
-        let change_at = crate::hub::store::parse_ms(change.at.as_str());
-        let tagged = hub.db.with(|c| {
-            c.execute(
-                "UPDATE plan_changes SET steer_id = ? WHERE n = (SELECT MAX(n) FROM plan_changes
-                 WHERE project_ref = ? AND at_ms = ? AND delta_items = ? AND delta_size = ?)",
-                rusqlite::params![
-                    steer.id.as_str(),
-                    pk,
-                    change_at,
-                    change.delta_items.get(),
-                    change.delta_size.get()
-                ],
-            )?;
-            Ok(())
-        });
-        if let Err(error) = tagged {
-            tracing::warn!(%error, "plan change not tagged with its steer");
-        }
-    }
-    steer.plan_change = Text::new(js_take(&what, 200)).ok();
-    let acked = steer.stage != SteerStage::Acknowledged;
-    if acked {
-        let now = now_ms(hub.clock.as_ref());
-        steer.stage = SteerStage::Acknowledged;
-        steer.acked_at = Some(iso_ms(now).into());
-        steer.ack_excerpt = Text::new(js_take(&format!("plan: {what}"), 200)).ok();
-    }
-    let acked_ms = acked.then(|| now_ms(hub.clock.as_ref()));
-    if store::put(&hub.db, &steer, None, acked_ms).is_ok() && acked {
-        emit(hub, &steer, HubEventType::SteerAcknowledged, None);
-    }
 }
 
 /// The run it was bound to never went out (the machine was away): it and its riders are held again.

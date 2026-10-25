@@ -13,7 +13,6 @@ use fleetd_contracts::lead_calls::{
     GatedRunCall, LeadCall, LeadSocketFrame, RequestSecretCall, RequestWithdrawCall,
     TaskCancelCall, TaskListCall, TaskMessageCall, TaskSpawnCall,
 };
-use fleetd_contracts::plan::PlanCall;
 use fleetd_contracts::schema::inline_schema;
 use fleetd_contracts::verification::ReviewVerdict;
 use serde_json::{Value, json};
@@ -146,14 +145,6 @@ static TOOLS: &[Tool] = &[
         inline_schema::<GatedRunCall>,
     )
     .needs("A human approves the exact command in chat before the node runs it."),
-    lead(
-        "plan",
-        "plan",
-        "Set a workstream's plan items, in order (must or polish, size s|m|l, after other items, an optional \
-         milestone title), and get the plan back. Its open items you leave out are dropped. Without items: the plan. \
-         `covered` marks open items done by a commit Elsewhere shows landed outside fleetd.",
-        inline_schema::<PlanCall>,
-    ),
     lead(
         "decisions_search",
         "decisions_search",
@@ -490,7 +481,6 @@ mod tests {
             "brief",
             "close",
             "gated_run",
-            "plan",
         ] {
             assert!(lead.contains(&tool.to_owned()), "{tool}");
         }

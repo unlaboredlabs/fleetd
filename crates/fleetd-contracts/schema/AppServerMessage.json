@@ -685,12 +685,12 @@
         },
         {
           "const": "plan.changed",
-          "description": "A plan's scope changed and a marker was written; `data` is the `PlanChange` (`status::PlanChangedData`).",
+          "description": "No longer sent (plans were removed); kept so an older log still reads.",
           "type": "string"
         },
         {
           "const": "plan.verified",
-          "description": "The hub verified a plan item done; `data.itemId`, `data.milestoneId`, `data.workstreamId`, `data.evidence`.",
+          "description": "No longer sent (plans were removed); kept so an older log still reads.",
           "type": "string"
         },
         {

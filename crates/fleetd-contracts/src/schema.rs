@@ -17,10 +17,7 @@ use crate::ledger::{Decision, HumanRequest, Lead, Workstream};
 use crate::mcp::McpToolName;
 use crate::model::{Machine, ProjectOutcome, ProjectSummary, ThreadSummary};
 use crate::projects::{CloneProgressData, ProjectAddFailedData, ProjectAddedData};
-use crate::status::{
-    ChangeStateData, CiMainData, PlanChangedData, PlanVerifiedData, SourceFreshData,
-    SourceStaleData,
-};
+use crate::status::{ChangeStateData, CiMainData, SourceFreshData, SourceStaleData};
 use crate::steer::SteerEventData;
 use crate::tasks::{AgentsCapData, FetchFailedData, TaskEventData};
 use crate::tasks::{SlotState, Task};
@@ -95,8 +92,6 @@ fn hub_event_data_document_for(side: Side) -> Value {
         data!(CiMainData: CiMain);
         data!(SourceStaleData: SourceStale);
         data!(SourceFreshData: SourceFresh);
-        data!(PlanChangedData: PlanChanged);
-        data!(PlanVerifiedData: PlanVerified);
         data!(PromptChangedData: PromptChanged);
         data!(crate::chat::ChatMessageEventData: ChatMessage);
         data!(crate::chat::ProjectChatState: ChatWaiting);

@@ -1,7 +1,7 @@
-//! `fleetd status`: the same rows as the app's Status screen, read from the hub (status_get), with why each bar
-//! last fell (status_get). With `--watch` it reads them again after each event that can change one (events_wait), and
-//! after a quiet wait while a project works, as its in-flight credit moves with time. It never shows a time estimate,
-//! and every time printed is absolute, so a block left on screen never reads as fresher than it is.
+//! `fleetd status`: the same rows as the app's Status screen, read from the hub (status_get): each project's word and
+//! its work in groups. With `--watch` it reads them again after each event that can change one (events_wait). It never
+//! shows a time estimate, and every time printed is absolute, so a block left on screen never reads as fresher than it
+//! is.
 
 use std::io::{IsTerminal, Write};
 use std::path::PathBuf;
@@ -11,7 +11,7 @@ use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::mcp::StatusGetOutput;
-use fleetd_contracts::status::{ProgressPoint, ProjectRowState, ProjectStatusRow};
+use fleetd_contracts::status::{ProjectRowState, ProjectStatusRow, StatusGroup, StatusItem};
 use serde_json::{Value, json};
 
 use super::args::{self, Kind, Spec};
@@ -20,11 +20,11 @@ use super::time::resolve_project;
 
 pub const STATUS_USAGE: &str = r#"  status [<project>] [--watch] [--json] [--hub <url> --key-file <path> | --home <dir>]
              one row per project, as the app's Status screen shows it: what it is doing
-             (working, waiting on you, blocked and why, idle), its bar (verified plus work in
-             flight), agents running, the last merge and why the bar last fell; one project by
-             id or title (<machine>/<project> when two machines have one). --watch prints the
-             rows again after each change; a stale row says so. On the hub machine it needs
-             no --hub or --key-file
+             (working, waiting on you, blocked and why, idle), its work in groups (waiting on
+             you, in review, working, landing, idle, done), agents running and the last merge;
+             one project by id or title (<machine>/<project> when two machines have one).
+             --watch prints the rows again after each change; a stale row says so. On the hub
+             machine it needs no --hub or --key-file
 "#;
 
 /// The longest events_wait the hub takes; the CLI asks again right after an empty answer.
@@ -105,21 +105,51 @@ fn at(t: &Timestamp, now: &Timestamp, zone: Tz) -> String {
     }
 }
 
-const BAR: usize = 20;
+/// A group as Status says it.
+fn group_word(g: StatusGroup) -> &'static str {
+    match g {
+        StatusGroup::WaitingOnYou => "waiting on you",
+        StatusGroup::InReview => "in review",
+        StatusGroup::Working => "working",
+        StatusGroup::Landing => "landing",
+        StatusGroup::Idle | StatusGroup::Unknown => "idle",
+        StatusGroup::Done => "done",
+    }
+}
 
-/// `[██████▒▒▒░░░░░░░░░░░]`: solid is verified, shaded is in flight.
-fn bar(verified: i64, in_flight: i64) -> String {
-    let cells = |pct: i64| (pct.clamp(0, 100) as usize * BAR + 50) / 100;
-    let solid = cells(verified);
-    let shaded = cells(verified + in_flight)
-        .saturating_sub(solid)
-        .min(BAR - solid);
-    format!(
-        "[{}{}{}]",
-        "█".repeat(solid),
-        "▒".repeat(shaded),
-        "░".repeat(BAR - solid - shaded)
-    )
+/// "1 waiting on you · 2 working · 3 done": the groups that have work, in order.
+fn counts_line(row: &ProjectStatusRow) -> String {
+    let c = &row.counts;
+    [
+        (c.waiting_on_you, StatusGroup::WaitingOnYou),
+        (c.in_review, StatusGroup::InReview),
+        (c.working, StatusGroup::Working),
+        (c.landing, StatusGroup::Landing),
+        (c.idle, StatusGroup::Idle),
+        (c.done, StatusGroup::Done),
+    ]
+    .into_iter()
+    .filter(|(n, _)| n.get() > 0)
+    .map(|(n, g)| format!("{} {}", n.get(), group_word(g)))
+    .collect::<Vec<_>>()
+    .join(" · ")
+}
+
+/// "in review: Add the cart page (T4, #212)", "waiting on you: Approve the deploy (approval)".
+fn item_line(i: &StatusItem) -> String {
+    let refs: Vec<String> = i
+        .task_id
+        .iter()
+        .map(|t| t.to_string())
+        .chain(i.pr.iter().map(|p| format!("#{}", p.number.get())))
+        .chain(i.why.iter().map(|w| w.to_string()))
+        .collect();
+    let refs = if refs.is_empty() {
+        String::new()
+    } else {
+        format!(" ({})", refs.join(", "))
+    };
+    format!("  {}: {}{refs}", group_word(i.group), i.title)
 }
 
 fn word(row: &ProjectStatusRow) -> String {
@@ -134,20 +164,12 @@ fn word(row: &ProjectStatusRow) -> String {
     }
 }
 
-/// One project: its word, its bar, agents and last merge, its last 7 days' merges, then whether it holds on paused
-/// work, why it last fell (at most three, newest first) and whether it is stale.
-fn render_row(row: &ProjectStatusRow, series: &[ProgressPoint], zone: Tz) -> Vec<String> {
+/// One project: its word, its groups' counts, agents and last merge, its last 7 days' merges, each listed item, and
+/// whether it is stale.
+fn render_row(row: &ProjectStatusRow, zone: Tz) -> Vec<String> {
     let now = &row.as_of;
     let mut out = vec![format!("{}: {}", row.title, word(row))];
-    let progress = match &row.progress {
-        Some(p) => format!(
-            "{} {}% done, {}% verified",
-            bar(p.verified_pct.get(), p.in_flight_pct.get()),
-            p.pct.get(),
-            p.verified_pct.get()
-        ),
-        None => "nothing to count yet".into(),
-    };
+    let counts = counts_line(row);
     let agents = match row.agents_running.get() {
         1 => "1 agent".to_owned(),
         n => format!("{n} agents"),
@@ -162,7 +184,11 @@ fn render_row(row: &ProjectStatusRow, series: &[ProgressPoint], zone: Tz) -> Vec
             format!("merged {}{pr} {}", m.title, at(&m.at, now, zone))
         },
     );
-    out.push(format!("  {progress} · {agents} · {merged}"));
+    let parts: Vec<&str> = [counts.as_str(), agents.as_str(), merged.as_str()]
+        .into_iter()
+        .filter(|p| !p.is_empty())
+        .collect();
+    out.push(format!("  {}", parts.join(" · ")));
     if let Some(n) = row.merged_7d {
         let share = row
             .through_fleetd_pct_7d
@@ -170,21 +196,7 @@ fn render_row(row: &ProjectStatusRow, series: &[ProgressPoint], zone: Tz) -> Vec
             .unwrap_or_default();
         out.push(format!("  {} merged in 7 days{share}", n.get()));
     }
-    if let Some(last) = series.last()
-        && let Some(why) = &last.paused
-    {
-        out.push(format!("  held at {}% ({why})", last.pct.get()));
-    }
-    for p in series.iter().rev().filter(|p| p.drop.is_some()).take(3) {
-        let Some(d) = &p.drop else { continue };
-        out.push(format!(
-            "  ↓ {}% → {}% {}: {}",
-            d.from_pct.get(),
-            p.pct.get(),
-            at(&p.at, now, zone),
-            d.text
-        ));
-    }
+    out.extend(row.items.iter().map(item_line));
     if let Some(mark) = &row.stale {
         out.push(format!(
             "  STALE since {}: {}",
@@ -195,31 +207,27 @@ fn render_row(row: &ProjectStatusRow, series: &[ProgressPoint], zone: Tz) -> Vec
     out
 }
 
-pub fn render(rows: &[(ProjectStatusRow, Vec<ProgressPoint>)], zone: Tz) -> String {
-    let Some((first, _)) = rows.first() else {
+pub fn render(rows: &[ProjectStatusRow], zone: Tz) -> String {
+    let Some(first) = rows.first() else {
         return "no projects yet".into();
     };
     let mut out = vec![format!(
         "Status at {}",
         at(&first.as_of, &first.as_of, zone)
     )];
-    for (row, series) in rows {
+    for row in rows {
         out.push(String::new());
-        out.extend(render_row(row, series, zone));
+        out.extend(render_row(row, zone));
     }
     out.join("\n")
 }
 
 /// What `fleetd status --watch` prints above the last rows while the hub does not answer. It is the CLI's own
 /// connection, not a judgement on the hub's data.
-fn not_live_banner(
-    last: &[(ProjectStatusRow, Vec<ProgressPoint>)],
-    zone: Tz,
-    reason: &str,
-) -> String {
+fn not_live_banner(last: &[ProjectStatusRow], zone: Tz, reason: &str) -> String {
     let from = last
         .first()
-        .map(|(r, _)| format!(" · rows from {}", at(&r.as_of, &r.as_of, zone)))
+        .map(|r| format!(" · rows from {}", at(&r.as_of, &r.as_of, zone)))
         .unwrap_or_default();
     format!("NOT LIVE: reconnecting to the hub ({reason}){from}")
 }
@@ -331,33 +339,21 @@ fn fail(error: CallError) -> u8 {
     }
 }
 
-type Rows = Vec<(ProjectStatusRow, Vec<ProgressPoint>)>;
+type Rows = Vec<ProjectStatusRow>;
 
-/// The rows (only `only`'s when given), each with its series when it has a bar.
+/// The rows (only `only`'s when given).
 async fn read(client: &mut McpClient, only: Option<&Value>) -> Result<Rows, CallError> {
     let listed: StatusGetOutput =
         call(client, "status_get", json!({}), Duration::from_secs(30)).await?;
-    let mut out = Vec::new();
-    for row in listed.rows.iter().flat_map(|rows| rows.iter()) {
-        let r = serde_json::to_value(&row.project_ref).unwrap_or_default();
-        if only.is_some_and(|o| *o != r) {
-            continue;
-        }
-        let series = if row.progress.is_some() {
-            let got: StatusGetOutput = call(
-                client,
-                "status_get",
-                json!({ "projectRef": r }),
-                Duration::from_secs(30),
-            )
-            .await?;
-            got.series.map(|s| s.to_vec()).unwrap_or_default()
-        } else {
-            vec![]
-        };
-        out.push((row.clone(), series));
-    }
-    Ok(out)
+    Ok(listed
+        .rows
+        .map(|rows| rows.to_vec())
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|row| {
+            only.is_none_or(|o| *o == serde_json::to_value(&row.project_ref).unwrap_or_default())
+        })
+        .collect())
 }
 
 struct Printer {
@@ -370,10 +366,7 @@ impl Printer {
     fn show(&self, rows: &Rows) {
         let mut stdout = std::io::stdout().lock();
         if self.json {
-            let all: Vec<Value> = rows
-                .iter()
-                .map(|(row, series)| json!({ "row": row, "series": series }))
-                .collect();
+            let all: Vec<Value> = rows.iter().map(|row| json!({ "row": row })).collect();
             let _ = writeln!(stdout, "{}", Value::Array(all));
         } else if self.tty {
             // Home, clear: the new rows replace the old in place.
@@ -490,12 +483,7 @@ pub async fn status_command(argv: &[String]) -> u8 {
         let reason = match answer {
             Ok(got) => {
                 cursor = got["cursor"].clone();
-                // A working project's in-flight credit moves with time and no event, so a quiet wait reads it again.
-                if got["events"].as_array().is_none_or(Vec::is_empty)
-                    && !rows
-                        .iter()
-                        .any(|(r, _)| r.state == ProjectRowState::Working)
-                {
+                if got["events"].as_array().is_none_or(Vec::is_empty) {
                     continue;
                 }
                 match read(&mut client, only.as_ref()).await {
@@ -564,7 +552,14 @@ mod tests {
     fn row(extra: Value) -> ProjectStatusRow {
         let mut v = json!({
             "projectRef": { "machineId": "devbox", "projectId": "p1" }, "title": "storefront", "state": "working",
-            "progress": { "pct": 61, "verifiedPct": 40, "inFlightPct": 21 }, "agentsRunning": 1,
+            "counts": { "waitingOnYou": 1, "inReview": 1, "working": 2, "landing": 0, "idle": 0, "done": 9 },
+            "items": [
+                { "group": "waiting_on_you", "title": "Deploy to staging", "why": "approval", "at": "2026-10-18T14:00:00Z" },
+                { "group": "in_review", "title": "Add the cart page", "taskId": "T4",
+                  "pr": { "repo": "acme/storefront", "number": 212, "url": "https://github.com/acme/storefront/pull/212" },
+                  "at": "2026-10-18T13:50:00Z" },
+            ],
+            "agentsRunning": 1,
             "lastMerged": { "title": "Add the login page", "prNumber": 208, "at": "2026-10-18T13:12:00Z" },
             "asOf": "2026-10-18T14:02:07Z",
         });
@@ -575,38 +570,30 @@ mod tests {
     }
 
     #[test]
-    fn a_row_prints_its_word_bar_agents_merge_and_why_it_fell() {
-        let series: Vec<ProgressPoint> = serde_json::from_value(json!([
-            { "at": "2026-10-18T13:00:00Z", "pct": 69, "verifiedPct": 40 },
-            { "at": "2026-10-18T13:30:00Z", "pct": 61, "verifiedPct": 40,
-              "drop": { "reason": "scope_change", "fromPct": 69, "text": "+3 items: time inspector added" } },
-            { "at": "2026-10-18T14:00:00Z", "pct": 61, "verifiedPct": 40, "paused": "paused: an agent hit a usage limit" }
-        ]))
-        .unwrap();
+    fn a_row_prints_its_word_groups_agents_merge_and_items() {
         let row = row(json!({ "merged7d": 12, "throughFleetdPct7d": 63.6 }));
-        let text = render(&[(row, series)], chrono_tz::UTC);
+        let text = render(&[row], chrono_tz::UTC);
         assert_eq!(
             text,
-            "Status at 14:02:07\n\nstorefront: working\n  [████████▒▒▒▒░░░░░░░░] 61% done, 40% verified · 1 agent · \
-             merged Add the login page #208 13:12:00\n  12 merged in 7 days · 64% through fleetd\n  held at 61% (paused: an agent hit a usage limit)\n  \
-             ↓ 69% → 61% 13:30:00: +3 items: time inspector added"
+            "Status at 14:02:07\n\nstorefront: working\n  1 waiting on you · 1 in review · 2 working · 9 done · 1 agent · \
+             merged Add the login page #208 13:12:00\n  12 merged in 7 days · 64% through fleetd\n  \
+             waiting on you: Deploy to staging (approval)\n  in review: Add the cart page (T4, #212)"
         );
     }
 
     #[test]
     fn a_blocked_stale_row_says_why_and_since_when_and_nothing_estimates_time() {
         let stale = row(json!({
-            "state": "blocked", "blockedReason": "devbox is offline", "progress": null, "agentsRunning": 0,
-            "lastMerged": null,
+            "state": "blocked", "blockedReason": "devbox is offline", "agentsRunning": 0,
+            "counts": { "waitingOnYou": 0, "inReview": 0, "working": 0, "landing": 0, "idle": 0, "done": 0 },
+            "items": [], "lastMerged": null,
             "stale": { "since": "2026-10-18T13:58:52Z", "reason": "no heartbeat from devbox since 13:58" },
         }));
-        let text = render(&[(stale, vec![])], chrono_tz::UTC);
+        let text = render(&[stale], chrono_tz::UTC);
         assert!(
-            text.contains("storefront: blocked: devbox is offline"),
-            "{text}"
-        );
-        assert!(
-            text.contains("nothing to count yet · 0 agents · nothing merged yet"),
+            text.contains(
+                "storefront: blocked: devbox is offline\n  0 agents · nothing merged yet"
+            ),
             "{text}"
         );
         assert!(
@@ -614,16 +601,9 @@ mod tests {
             "{text}"
         );
         let lower = text.to_lowercase();
-        for word in ["eta", "left", "remaining", "usual", "estimate"] {
+        for word in ["eta", "left", "remaining", "usual", "estimate", "%"] {
             assert!(!lower.contains(word), "{word:?} in {text}");
         }
-    }
-
-    #[test]
-    fn the_bar_splits_verified_from_in_flight() {
-        assert_eq!(bar(40, 21), "[████████▒▒▒▒░░░░░░░░]");
-        assert_eq!(bar(0, 0), "[░░░░░░░░░░░░░░░░░░░░]");
-        assert_eq!(bar(100, 0), "[████████████████████]");
     }
 }
 

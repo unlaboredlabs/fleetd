@@ -83,13 +83,6 @@ sees it.
 
 Once delivered, a steer can't be taken back. Send another one that says what changed.
 
-## When a steer changes the plan {#plan}
-
-If your steer changes what the work delivers, the lead updates the plan in the same turn and names your steer (S12)
-on the change.
-
-That also counts as acknowledging the steer.
-
 ## From the command line {#cli}
 
 `fleetd steer` speaks for you, so it needs a [human key](/docs/glossary#human-key).

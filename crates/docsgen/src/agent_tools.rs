@@ -629,14 +629,6 @@ fn example(role: Role, tool: &str) -> Option<Value> {
             "reason": "Ship the upload rate limit to production.",
             "workstreamId": "W3",
         }),
-        (Role::Lead, "plan") => json!({
-            "workstreamId": "W3",
-            "items": [
-                { "id": "P4", "title": "Rate-limit uploads", "size": "m" },
-                { "title": "Docs for the limit", "size": "s", "after": ["P4"], "milestone": "Public beta" },
-            ],
-            "why": "The limiter needs a shared store.",
-        }),
         (Role::Lead, "decisions_search") => json!({ "query": "pagination" }),
         (Role::Lead, "change_enqueue") => json!({
             "prUrl": "https://github.com/acme/shop/pull/42",

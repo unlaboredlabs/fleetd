@@ -465,7 +465,7 @@ async fn the_view_reads_every_project_on_the_repos_base_and_nothing_else() {
         "dark mode toggle",
         "write",
         "running",
-        json!({ "branch": "fleetd/T1-dark-mode", "itemId": "P5" }),
+        json!({ "branch": "fleetd/T1-dark-mode" }),
     );
     let theirs = task(&hub, &web, "search box", "write", "queued", json!({}));
     task(
@@ -510,10 +510,7 @@ async fn the_view_reads_every_project_on_the_repos_base_and_nothing_else() {
     assert_eq!(dark.project_ref.as_ref(), Some(&app));
     assert_eq!(
         dark.keys.to_vec(),
-        [
-            WorkKey::Item(fleetd_contracts::plan::PlanItemId::unchecked("P5")),
-            WorkKey::Branch(Line::unchecked("fleetd/T1-dark-mode"))
-        ]
+        [WorkKey::Branch(Line::unchecked("fleetd/T1-dark-mode"))]
     );
     let claim = items
         .iter()
@@ -552,7 +549,7 @@ async fn a_writer_appears_once_its_change_takes_over_until_it_merges() {
         "dark mode toggle",
         "write",
         "idle",
-        json!({ "branch": "fleetd/T1-dark-mode", "itemId": "P5" }),
+        json!({ "branch": "fleetd/T1-dark-mode" }),
     );
     let x = change(&hub, &app, Some(&enqueued), 41, "ci");
     let abandoned = task(
@@ -589,9 +586,6 @@ async fn a_writer_appears_once_its_change_takes_over_until_it_merges() {
         ("dark mode toggle", "ci")
     );
     assert_eq!(ci.task_id.as_ref(), Some(&enqueued.task_id));
-    assert!(ci.keys.contains(&WorkKey::Item(
-        fleetd_contracts::plan::PlanItemId::unchecked("P5")
-    )));
     assert!(
         ci.keys
             .contains(&WorkKey::Branch(Line::unchecked("fleetd/T1-dark-mode")))

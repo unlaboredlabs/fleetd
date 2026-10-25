@@ -198,7 +198,7 @@ Stop the hub and node with Ctrl+C. Delete `$FLEETD_HOME` to remove the test flee
 | The hub's home: `init`, `doctor`, `uninstall`, `machine`, `pair`, `project`, `hub`, `prompts`, `instructions`, and `status`, `time`, `steer`, `steers` without `--hub` | `$FLEETD_HOME/hub` |
 | The node's home: `node join`, `node run` | `$FLEETD_HOME/node` |
 | The app's hand-off from `init` and `pair` | `$FLEETD_HOME/app-pair.json`. Start the desktop app with the same `FLEETD_HOME` to pair with it. |
-| Lead-side commands (`close`, `change`, `plan`, …) | `FLEETD_NODE_SOCK`, else `$FLEETD_HOME/node/node.sock`. Sessions get it set. |
+| Lead-side commands (`close`, `change`, …) | `FLEETD_NODE_SOCK`, else `$FLEETD_HOME/node/node.sock`. Sessions get it set. |
 
 `--home <dir>` names one hub's or node's folder. Without `FLEETD_HOME`, that command keeps everything else in the
 folder above it, so `--home $T/hub` works like `FLEETD_HOME=$T`. `FLEETD_HOME` wins when both are given.

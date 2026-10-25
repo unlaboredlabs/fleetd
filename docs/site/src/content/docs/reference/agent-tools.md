@@ -52,7 +52,6 @@ Every lead gets these.
 | [`decide`](#decide) | Log a decision: one you made yourself, or the human's answer to a question you asked in chat (so you never ask it twice). | No |
 | [`close`](#close) | The workstream is done: say why in one line. | No |
 | [`gated_run`](#gated_run) | A prod write, spend, delete or credential use: the chat shows the human exactly this argv with Approve / Deny, and the node runs it only once approved; secrets come from the node's own sinks. | A human approves the exact command in chat before the node runs it. |
-| [`plan`](#plan) | Set a workstream's plan items, in order (must or polish, size s\|m\|l, after other items, an optional milestone title), and get the plan back. | No |
 | [`decisions_search`](#decisions_search) | Search the decision log. | No |
 | [`change_enqueue`](#change_enqueue) | Put a PR no task's result put there on its repo's merge train; only the train merges. | No |
 
@@ -62,7 +61,6 @@ Start a fleetd agent (a task) with its own session, slot and lane. kind write|re
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `item` | string | no | The plan item this task works on; refused when it belongs to another order. |
 | `kind` | string | no | Only write tasks get a worktree. One of `write`, `read`, `review`. Default `"write"`. |
 | `notDuplicateOf` | string[] | no | A writer refused as a possible duplicate: the ids it was refused for (`T12`, `C7`), when this is different work. Needs `notDuplicateWhy`. At most 10 items. |
 | `notDuplicateWhy` | string | no | Why it is different work, in one line; kept in the hub's log. At most 200 characters. |
@@ -317,53 +315,6 @@ A prod write, spend, delete or credential use: the chat shows the human exactly 
 }
 ```
 
-### plan
-
-Set a workstream's plan items, in order (must or polish, size s|m|l, after other items, an optional milestone title), and get the plan back. Its open items you leave out are dropped. Without items: the plan. `covered` marks open items done by a commit Elsewhere shows landed outside fleetd.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `covered` | object[] | no | Open items done by commits that landed without their own agent (from the digest's Elsewhere): each is done, with the commit and how it landed as its evidence. At most 20 items. |
-| `covered[].item` | string | yes | `P<n>`, e.g. `P1`. |
-| `covered[].landing` | string | yes | Matches `^[0-9a-f]{7,64}$`. |
-| `items` | object[] | no | At most 100 items. |
-| `items[].after` | string[] | no | Items that must be done first. At most 20 items. |
-| `items[].id` | string | no | `P<n>`, e.g. `P1`. |
-| `items[].milestone` | string | no | The milestone's title, created when new. Absent: the workstream's title. At most 120 characters. |
-| `items[].size` | string | no | One of `s`, `m`, `l`. Default `"m"`. |
-| `items[].title` | string | yes | One line. At most 120 characters. |
-| `items[].weight` | string | no | One of `must` (Counts toward the headline number), `polish` (Shown beside the number, never in it). Default `"must"`. |
-| `steer` | string | no | The change carries out steer S12, which counts as acknowledged. |
-| `why` | string | no | A note for the change's marker. At most 200 characters. |
-| `workstreamId` | string | no | `W<n>`, e.g. `W1`. |
-
-**Who may call:** a lead, checked by the hub. **Needs a human:** no.
-
-```json
-{
-  "name": "plan",
-  "arguments": {
-    "items": [
-      {
-        "id": "P4",
-        "size": "m",
-        "title": "Rate-limit uploads"
-      },
-      {
-        "after": [
-          "P4"
-        ],
-        "milestone": "Public beta",
-        "size": "s",
-        "title": "Docs for the limit"
-      }
-    ],
-    "why": "The limiter needs a shared store.",
-    "workstreamId": "W3"
-  }
-}
-```
-
 ### decisions_search
 
 Search the decision log.
@@ -389,7 +340,6 @@ Put a PR no task's result put there on its repo's merge train; only the train me
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `item` | string | no | Stores the PR as a link of that plan item (for a PR no task of the item wrote). |
 | `prUrl` | string | yes | Like `https://github.com/<owner>/<name>/pull/<n>`. |
 | `taskId` | string | no | `T<n>`, e.g. `T1`. |
 | `workstreamId` | string | no | `W<n>`, e.g. `W1`. |

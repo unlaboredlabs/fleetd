@@ -1,4 +1,5 @@
-/* Status: one row per project, in columns so the eye can run down states, bars and counts. Nothing animates. */
+/* Status: one row per project, in columns so the eye can run down states and counts, its work listed under it.
+   Nothing animates. */
 
 .screen {
   flex: 1;
@@ -30,13 +31,13 @@
   margin: 0;
   padding: 0;
   max-width: 1040px;
-  /* The title takes the slack first; the bar shrinks before it does. */
+  /* The title takes the slack first; the counts shrink before it does. */
   --status-cols: minmax(16ch, 3fr) 13ch minmax(80px, 2fr) 9ch 17ch;
   --status-prs: 5ch;
   --status-week: 12ch;
 }
 
-/* A row is its chat link (title · state · bar and % · agents · last merged), then its 7-day link and its PRs link,
+/* A row is its chat link (title · state · counts · agents · last merged), then its 7-day link and its PRs link,
    side by side so no link holds another. The column names use the row's tracks, inset by the two links, so each name
    sits over its cells. */
 .item {
@@ -96,31 +97,10 @@
 }
 .stale,
 .word,
-.progress,
+.work,
 .merged {
   min-width: 0;
   border-radius: var(--radius-sm);
-}
-
-.progress {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-.bar {
-  flex: 1;
-  display: flex;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--hairline);
-  overflow: hidden;
-}
-.barVerified {
-  background: var(--success);
-}
-/* The lighter tone: in-flight credit reads as part of the same bar, not as done. */
-.barInFlight {
-  background: color-mix(in srgb, var(--success) 38%, transparent);
 }
 
 /* Room before Last merged, so two empty cells don't read as one mark. */
@@ -129,16 +109,43 @@
   padding-right: var(--space-4);
 }
 
-.drops {
+/* The row's work under it, a group per line: its word, then its items, each opening in the project's panel. */
+.groups {
+  grid-column: 1 / -1;
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--space-2) var(--space-2);
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
 }
-/* The held point's marker: a still glyph beside its words, nothing that moves. */
-.held {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
+.group {
+  display: grid;
+  grid-template-columns: 14ch minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: baseline;
+}
+.groupItems {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.workItem {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+}
+.workItem:hover {
+  text-decoration: underline;
+}
+.refs {
+  flex: none;
+  white-space: nowrap;
 }
 
 .skeleton {

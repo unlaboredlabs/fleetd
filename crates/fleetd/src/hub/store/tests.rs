@@ -958,3 +958,49 @@ fn workstreams_are_open_done_or_stopped_on_an_older_hub() {
     }
     assert_eq!(strings("SELECT request FROM chat_messages"), ["Q2"]);
 }
+
+/// Plans went: their tables and the bar's series are dropped, and a claim stored with a plan item key keeps its other
+/// keys, so it still reads.
+#[test]
+fn plans_go_and_a_claim_keeps_its_other_keys() {
+    use super::migrations::MIGRATIONS;
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    // Found by content, not as the last migration, so later migrations don't break this test.
+    let at = MIGRATIONS
+        .iter()
+        .position(|m| m.contains("DROP TABLE plan_items"))
+        .expect("the plans migration");
+    for m in &MIGRATIONS[..at] {
+        conn.execute_batch(m).unwrap();
+    }
+    conn.execute_batch(
+        r##"INSERT INTO work_claims (repo_key, base, state, owner_key, expires_ms, data)
+             VALUES ('github.com/acme/shop', 'main', 'active', 'k1', 0,
+               '{"claimId":"C1","keys":[{"issue":"#12"},{"item":"P5"},{"branch":"ada/x"}]}'),
+                    ('github.com/acme/shop', 'main', 'active', 'k1', 0, '{"claimId":"C2","keys":[{"issue":"#13"}]}');"##,
+    )
+    .unwrap();
+    conn.execute_batch(MIGRATIONS[at]).unwrap();
+    let keys: Vec<String> = conn
+        .prepare("SELECT json_extract(data, '$.keys') FROM work_claims ORDER BY n")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    assert_eq!(
+        keys,
+        [
+            r##"[{"issue":"#12"},{"branch":"ada/x"}]"##,
+            r##"[{"issue":"#13"}]"##
+        ]
+    );
+    let left: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE name IN ('plan_items', 'plan_changes', 'plan_milestones', 'status_series')",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(left, 0);
+}
