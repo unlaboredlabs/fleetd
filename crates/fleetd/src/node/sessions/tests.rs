@@ -1003,6 +1003,7 @@ async fn a_removed_worktree_comes_back_at_the_same_path_when_the_session_resumes
     let workspace = SessionWorkspace::Worktree {
         base_ref: NonEmpty::unchecked("main"),
         branch: NonEmpty::unchecked("fleetd/s1"),
+        from_session: None,
     };
     hub.ok(launch("s1", RuntimeMode::FullAccess, workspace))
         .await;
@@ -1102,6 +1103,7 @@ async fn a_writer_starts_from_a_fresh_fetch_of_origin_not_the_stale_local_main()
     let workspace = SessionWorkspace::Worktree {
         base_ref: NonEmpty::unchecked("main"),
         branch: NonEmpty::unchecked("fleetd/s1"),
+        from_session: None,
     };
     let launched = hub
         .ok(launch("s1", RuntimeMode::FullAccess, workspace))
@@ -1193,6 +1195,7 @@ async fn a_slow_fetch_never_holds_up_a_launch_in_another_project() {
         SessionWorkspace::Worktree {
             base_ref: NonEmpty::unchecked("main"),
             branch: NonEmpty::unchecked("fleetd/s1"),
+            from_session: None,
         },
     );
     let SessionCall::Launch(mut reader) =
@@ -1628,6 +1631,7 @@ async fn a_lost_worktree_and_branch_come_back_from_the_pushed_branch_and_the_age
     let workspace = SessionWorkspace::Worktree {
         base_ref: NonEmpty::unchecked("main"),
         branch: NonEmpty::unchecked("fleetd/s1"),
+        from_session: None,
     };
     hub.ok(launch("s1", RuntimeMode::FullAccess, workspace))
         .await;
@@ -1668,6 +1672,93 @@ async fn a_lost_worktree_and_branch_come_back_from_the_pushed_branch_and_the_age
     assert_eq!(recorded.text, message);
 }
 
+/// A task restarted fresh: its new session takes over the earlier one's worktree as it was left, uncommitted work
+/// included, and starts a conversation of its own there.
+#[tokio::test]
+async fn a_session_taking_over_a_branch_works_in_the_earlier_sessions_worktree() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, root) = cloned(dir.path(), "repo", "origin");
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.project(&root).await;
+    let workspace = |from: Option<&str>| SessionWorkspace::Worktree {
+        base_ref: NonEmpty::unchecked("main"),
+        branch: NonEmpty::unchecked("fleetd/s1"),
+        from_session: from.map(ThreadId::unchecked),
+    };
+    hub.ok(launch("s1", RuntimeMode::FullAccess, workspace(None)))
+        .await;
+    hub.settled("r1").await;
+    let path: PathBuf = dir.path().join("node/worktrees/p1/s1");
+    std::fs::write(path.join("draft.txt"), "not committed\n").unwrap();
+
+    let SessionCall::Launch(mut fresh) =
+        launch("s2", RuntimeMode::FullAccess, workspace(Some("s1")))
+    else {
+        unreachable!()
+    };
+    fresh.run_id = NonEmpty::unchecked("q1");
+    hub.ok(SessionCall::Launch(fresh)).await;
+    let started = hub.settled("q1").await;
+    assert_eq!(started.worktree_path.as_deref(), path.to_str());
+    assert_eq!(started.branch.as_deref(), Some("fleetd/s1"));
+    assert_eq!(started.recreated_from, None);
+    assert!(path.join("draft.txt").exists());
+    assert!(!dir.path().join("node/worktrees/p1/s2").exists());
+    let spec = &hub.runner.spawned()[1];
+    assert_eq!((spec.cwd.as_path(), spec.resume), (path.as_path(), false));
+}
+
+/// A task's session restarted after its process went must resume its conversation for anything but its first message:
+/// without it, a recovery note alone would reach an agent that knows nothing of its task, so claude's start is refused
+/// when the conversation is gone (the hub then restarts the task with its brief). The first message again may start
+/// over.
+#[tokio::test]
+async fn a_task_session_must_resume_for_anything_but_its_first_message() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.project(dir.path()).await;
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    hub.settled("r1").await;
+    let stop = || SessionCall::Stop {
+        session_id: ThreadId::unchecked("s1"),
+        remove_worktree: false,
+    };
+    hub.ok(stop()).await;
+    hub.ok(send("s1", "r2")).await;
+    hub.settled("r2").await;
+    hub.ok(stop()).await;
+    hub.ok(SessionCall::Send {
+        session_id: ThreadId::unchecked("s1"),
+        run_id: NonEmpty::unchecked("r3"),
+        text: NonEmpty::unchecked("Reply with the word OK and nothing else."),
+        mode: SendMode::Plain,
+        steer: None,
+    })
+    .await;
+    let spawned: Vec<(bool, bool)> = hub
+        .runner
+        .spawned()
+        .iter()
+        .map(|s| (s.resume, s.must_resume))
+        .collect();
+    assert_eq!(spawned, [(false, false), (true, true), (true, false)]);
+}
+
 #[tokio::test]
 async fn a_slow_fetch_for_a_lost_worktree_never_holds_up_another_sessions_start() {
     let dir = tempfile::tempdir().unwrap();
@@ -1690,6 +1781,7 @@ async fn a_slow_fetch_for_a_lost_worktree_never_holds_up_another_sessions_start(
     let workspace = SessionWorkspace::Worktree {
         base_ref: NonEmpty::unchecked("main"),
         branch: NonEmpty::unchecked("fleetd/s1"),
+        from_session: None,
     };
     hub.ok(launch("s1", RuntimeMode::FullAccess, workspace))
         .await;

@@ -1176,11 +1176,28 @@ impl SessionService {
             )));
         }
         let root = self.project_root(&launch.project_id)?;
+        // A session taking over an earlier one of the same branch (a task restarted fresh) works in that one's
+        // worktree as it was left, uncommitted changes included; a worktree that is gone comes back first.
+        let taken = match &launch.workspace {
+            SessionWorkspace::Worktree {
+                branch,
+                from_session: Some(from),
+                ..
+            } => self.store().session(from.as_str())?.filter(|r| {
+                r.local.base_ref.is_some() && r.local.branch.as_deref() == Some(branch.as_str())
+            }),
+            _ => None,
+        };
+        let lost = match &taken {
+            Some(from) => self.lost_worktree(from).await?,
+            None => None,
+        };
         // `base_ref` names the PRs' target; the branch starts from a fresh fetch of the remote's copy of it. The fetch
         // runs outside the launch lock, so a slow remote holds up only the starts that need it, and starts that
         // arrive together share it.
         let base = match &launch.workspace {
             SessionWorkspace::Root => None,
+            SessionWorkspace::Worktree { .. } if taken.is_some() => None,
             SessionWorkspace::Worktree { base_ref, .. }
             | SessionWorkspace::Detached { base_ref, .. } => {
                 let (r, name) = (root.clone(), base_ref.to_string());
@@ -1229,14 +1246,36 @@ impl SessionService {
             .join("worktrees")
             .join(launch.project_id.as_str())
             .join(&id);
-        let (cwd, add_dirs, base_ref, branch) = match (&launch.workspace, base) {
-            (SessionWorkspace::Detached { .. }, Some(base)) => {
+        let mut recreated_from = None;
+        let mut prompt = launch.prompt.to_string();
+        let (cwd, add_dirs, base_ref, branch) = match (&launch.workspace, base, taken) {
+            (_, _, Some(from)) => {
+                let local = from.local;
+                if let (Some(lost), Some(branch)) = (lost, &local.branch) {
+                    let (r, p, b, f) = (
+                        local.workspace_root.clone(),
+                        local.cwd.clone(),
+                        branch.clone(),
+                        lost.clone(),
+                    );
+                    blocking(move || worktree::restore(&r, &p, &b, &f)).await?;
+                    tracing::info!(
+                        session_id = id.as_str(),
+                        ?lost,
+                        "recreated a lost worktree to take over"
+                    );
+                    recreated_from = Some(lost.kind());
+                    prompt = format!("{}\n\n{prompt}", lost.note(branch));
+                }
+                (local.cwd, local.add_dirs, local.base_ref, local.branch)
+            }
+            (SessionWorkspace::Detached { .. }, Some(base), None) => {
                 let sha = head.unwrap_or(base.sha);
                 let (r, p, s) = (root.clone(), path.clone(), sha.clone());
                 blocking(move || worktree::ensure_detached(&r, &p, &s)).await?;
                 (path, vec![root.clone()], Some(sha), None)
             }
-            (SessionWorkspace::Worktree { branch, .. }, Some(base)) => {
+            (SessionWorkspace::Worktree { branch, .. }, Some(base), None) => {
                 let (r, p, b, sha) = (
                     root.clone(),
                     path.clone(),
@@ -1277,8 +1316,8 @@ impl SessionService {
                 worktree_path: base_ref
                     .is_some()
                     .then(|| cwd.to_string_lossy().into_owned()),
-                recreated_from: None,
-                recreated_at: None,
+                recreated_at: recreated_from.is_some().then(|| at.clone()),
+                recreated_from,
                 created_at: at.clone(),
                 updated_at: at,
             },
@@ -1303,13 +1342,9 @@ impl SessionService {
                 let home = self.inner.config.home.clone();
                 let n = blocking(move || super::load::build_jobs_here(&home)).await;
                 let set = share::jobs_env(&self.inner.config.runner_env(), n);
-                format!(
-                    "{}\n\n{}",
-                    launch.prompt.as_str().trim_end(),
-                    share::brief_note(&set, n)
-                )
+                format!("{}\n\n{}", prompt.trim_end(), share::brief_note(&set, n))
             }
-            _ => launch.prompt.to_string(),
+            _ => prompt,
         };
         self.begin_run(&id, &launch.run_id, &prompt, SendMode::Plain, None)
             .await?;
@@ -1421,7 +1456,26 @@ impl SessionService {
         command: SessionCommand,
         alias: Option<(String, String)>,
     ) -> Result<(), SessionError> {
-        let (commands, note) = self.ensure_live(id).await?;
+        // The session's first message going (again): a start without a conversation begins with the brief itself.
+        let opening = match &command {
+            SessionCommand::Send { text, .. } => self
+                .store()
+                .runs(id)?
+                .first()
+                .map(|first| self.store().message(id, first.id.as_str()))
+                .transpose()?
+                .flatten()
+                .is_some_and(|m| {
+                    // A worker's first message is the hub's brief and then the node's build-jobs note
+                    // (`share::brief_note`), which the hub never sends back.
+                    m.text == *text
+                        || m.text
+                            .strip_prefix(text.trim_end())
+                            .is_some_and(|rest| rest.starts_with("\n\n"))
+                }),
+            _ => false,
+        };
+        let (commands, note) = self.ensure_live(id, opening).await?;
         // The agent hears that its worktree was rebuilt before anything else, so it checks what is left.
         let command = match (command, note) {
             (SessionCommand::Send { run_id, text, mode }, Some(note)) => SessionCommand::Send {
@@ -1446,10 +1500,12 @@ impl SessionService {
     }
 
     /// The live process's command channel, spawning (first start) or resuming the session when there is none, and
-    /// the note for the agent when its worktree had to be rebuilt.
+    /// the note for the agent when its worktree had to be rebuilt. `opening`: what goes first is the session's first
+    /// message.
     async fn ensure_live(
         &self,
         id: &str,
+        opening: bool,
     ) -> Result<(mpsc::Sender<SessionCommand>, Option<String>), SessionError> {
         // Finding what is left of a lost worktree's branch can wait on remotes, so it runs before the spawn lock: other
         // sessions' starts never wait on it.
@@ -1525,7 +1581,11 @@ impl SessionService {
                 row.local.cwd.display()
             )));
         }
-        let spec = self.spec(&row, resume).map_err(|e| {
+        // A task's agent can't go on without its conversation, even one whose first run died before claude answered:
+        // a later message alone (a recovery note) would leave it with no idea of its task. Refused, so the hub restarts
+        // it with its brief and a handoff. Only its first message itself may start over.
+        let must_resume = resume && !opening && row.local.role == SessionRole::Worker;
+        let spec = self.spec(&row, resume, must_resume).map_err(|e| {
             error(
                 SessionErrorCode::Internal,
                 format!("cannot prepare the session's files: {e}"),
@@ -1590,7 +1650,12 @@ impl SessionService {
 
     /// The process spec, after writing the session's MCP config and settings overlay. The transcript is fleetd's own
     /// copy (claude keeps its session in the config dir); its writer keeps it under its cap.
-    fn spec(&self, row: &SessionRow, resume: bool) -> std::io::Result<SessionSpec> {
+    fn spec(
+        &self,
+        row: &SessionRow,
+        resume: bool,
+        must_resume: bool,
+    ) -> std::io::Result<SessionSpec> {
         let config = &self.inner.config;
         let id = row.summary.session_id.as_str();
         let dir = config.home.join("sessions").join(id);
@@ -1635,6 +1700,7 @@ impl SessionService {
         Ok(SessionSpec {
             session_id: id.to_owned(),
             resume,
+            must_resume,
             cwd: row.local.cwd.clone(),
             add_dirs: row.local.add_dirs.clone(),
             model: row.summary.model.clone(),

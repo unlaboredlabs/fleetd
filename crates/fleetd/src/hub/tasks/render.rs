@@ -310,8 +310,7 @@ pub fn task_recovered_lines(
         title: task.title.as_str(),
         place: &branch_place(task),
         attempt: task.attempt.get(),
-        recovery: recovery.count.get(),
-        max: recovery.max.get(),
+        used: &super::recovery::used(recovery),
         cause: recovery.last_cause_text.as_str(),
         doing,
         worktree: &worktree_words(task, rebuilt),
@@ -383,11 +382,14 @@ pub fn task_digest_lines(
             .as_ref()
             .filter(|r| r.resumed_at.is_some())
             .map_or_else(String::new, |r| {
+                let how = match r.mode {
+                    fleetd_contracts::tasks::RecoveryMode::Fresh => "restarted fresh",
+                    _ => "resumed automatically",
+                };
                 format!(
-                    "; resumed automatically after {}, recovery {} of {}",
+                    "; {how} after {}, {}",
                     r.last_cause_text.as_str(),
-                    r.count.get(),
-                    r.max.get()
+                    super::recovery::used(r)
                 )
             });
         // Its machine is away: it resumes when that is back, so the lead needn't continue it either.

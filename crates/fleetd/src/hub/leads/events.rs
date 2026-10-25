@@ -62,8 +62,8 @@ pub enum Event<'a> {
         title: &'a str,
         place: &'a str,
         attempt: i64,
-        recovery: i64,
-        max: i64,
+        /// "1 of 3 recoveries used": a node going away uses none.
+        used: &'a str,
         cause: &'a str,
         doing: &'a str,
         worktree: &'a str,
@@ -212,14 +212,13 @@ impl Event<'_> {
                 title,
                 place,
                 attempt,
-                recovery,
-                max,
+                used,
                 cause,
                 doing,
                 worktree,
             } => (
                 format!(
-                    "- {task} resumed automatically (attempt {attempt}, recovery {recovery} of {max}): {}{place}",
+                    "- {task} resumed automatically (attempt {attempt}, {used}): {}{place}",
                     one_line(title, 80)
                 ),
                 vec![format!(
@@ -402,15 +401,14 @@ mod tests {
                 title: "B: progress bar takes in-flight credit back",
                 place: " [fleetd/T23-b-progress-bar]",
                 attempt: 2,
-                recovery: 1,
-                max: 3,
+                used: "1 of 3 recoveries used",
                 cause: "the node on devbox stopped",
                 doing: "Ran cargo test --workspace",
                 worktree: "It goes on in its own worktree; nothing for you to do.",
             }),
-            "- T23 resumed automatically (attempt 2, recovery 1 of 3): B: progress bar takes in-flight credit back \
-             [fleetd/T23-b-progress-bar]\n  > its run was cut off (the node on devbox stopped) during: Ran cargo test \
-             --workspace. It goes on in its own worktree; nothing for you to do."
+            "- T23 resumed automatically (attempt 2, 1 of 3 recoveries used): B: progress bar takes in-flight credit \
+             back [fleetd/T23-b-progress-bar]\n  > its run was cut off (the node on devbox stopped) during: Ran cargo \
+             test --workspace. It goes on in its own worktree; nothing for you to do."
         );
         assert_eq!(
             r(Event::AgentUnreachable {

@@ -40,6 +40,10 @@ pub enum SessionWorkspace {
     Worktree {
         base_ref: NonEmpty,
         branch: NonEmpty,
+        /// A session of the same branch this one takes over: it works in that session's worktree (rebuilt when it is
+        /// gone), uncommitted changes included, instead of a new one. Older nodes ignore it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        from_session: Option<ThreadId>,
     },
     /// A detached git worktree of its own, for a read or review task, so it never works in the human's checkout:
     /// at a fresh fetch of the remote's `baseRef`, or at the head of `pr` (a review's) when the remote publishes PR
@@ -270,6 +274,11 @@ pub struct SessionCallFrame {
     pub id: NonEmpty,
     pub call: SessionCall,
 }
+
+/// How a `SessionError`'s message starts when the node won't resume the session: claude's conversation is gone, or
+/// was kept under another claude config dir. Its thread can't go on; a new one has to take over. A prefix, not a code,
+/// so hubs that don't know it still read the error.
+pub const RESUME_REFUSED: &str = "the session can't resume: ";
 
 /// Why a call failed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
