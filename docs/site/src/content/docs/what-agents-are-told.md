@@ -241,7 +241,7 @@ agent whose run died (its node stopped, claude was killed, a stall) and that fle
 has been offline for 30 minutes:
 
 ```
-- T23 resumed automatically (attempt 2, recovery 1 of 3): progress bar [fleetd/T23-progress-bar]
+- T23 resumed automatically (attempt 2, 0 of 3 recoveries used): progress bar [fleetd/T23-progress-bar]
   > its run was cut off (the node on devbox stopped) during: Ran cargo test --workspace. It goes on in its own worktree; nothing for you to do.
 - T24 waits for devbox, offline for 30 min: docs [fleetd/T24-docs]; it resumes on its own when devbox is back
   > Its worktree and session are on devbox, so it stays there. To have it done elsewhere, cancel it and start a new task.
