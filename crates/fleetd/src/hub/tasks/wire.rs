@@ -72,6 +72,10 @@ impl TaskPorts for HubTaskPorts {
         Box::pin(self.executors.await_live(machine_id))
     }
 
+    fn live_since(&self, machine_id: &MachineId) -> Option<i64> {
+        self.executors.live_since(machine_id)
+    }
+
     fn launch<'a>(
         &'a self,
         machine_id: &'a MachineId,
@@ -302,6 +306,7 @@ impl TaskPorts for HubTaskPorts {
             WakeKind::TaskResult => LineKind::TaskResult,
             WakeKind::TaskWaiting => LineKind::TaskWaiting,
             WakeKind::CapRaised => LineKind::CapRaised,
+            WakeKind::Recovery => LineKind::Recovery,
         };
         hub.leads
             .wakes
@@ -469,4 +474,12 @@ pub fn wire(hub: &Arc<Hub>, ports: &HubTaskPorts) {
     let _ = lead_hooks
         .tasks
         .set(Arc::new(TasksForLeads(Arc::clone(&hub.tasks))));
+    let tasks = Arc::clone(&hub.tasks);
+    hub.sweep.register(crate::hub::sweep::SweepCheck {
+        name: "unreachable-tasks".into(),
+        run: Arc::new(move || {
+            let result = tasks.unreachable().map_err(|e| e.to_string());
+            Box::pin(async move { result })
+        }),
+    });
 }

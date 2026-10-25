@@ -1,6 +1,7 @@
 //! The stall watchdog. Every running thread gets a persistent thread stream; a run with no frame for longer than its
-//! threshold is stalled. The hub emits thread.failed{reason:"stalled"} and interrupts the run, once: the task fails, its
-//! lead is woken with the reason, and the lead decides whether to continue it. Deterministic, no LLM.
+//! threshold is stalled. The hub emits thread.failed{reason:"stalled"} and interrupts the run, once. Its task is then
+//! resumed automatically (`tasks::recovery`), and its lead sees that in its next wake; the same stall twice, or one past
+//! the recovery cap, fails the task and wakes the lead to decide. Deterministic, no LLM.
 #[cfg(test)]
 mod tests;
 

@@ -187,6 +187,16 @@ async fn resumes_about_30_s_later(
         !hub.leads.wakes.pending(&project()),
         "the lead is not woken"
     );
+    // It reads of it in its next wake.
+    let held = hub.leads.wakes.held(&project());
+    let line = held.last().expect("a line for the next wake");
+    assert!(
+        line.starts_with(&format!(
+            "- T1 resumed automatically (attempt 2, recovery 1 of 3): slice 1\n  > its run was cut off ({cause}) \
+             during: "
+        )) && line.ends_with(". It goes on in its own worktree; nothing for you to do."),
+        "{line}"
+    );
     run
 }
 
@@ -374,6 +384,135 @@ async fn a_task_killed_the_same_way_twice_is_escalated() {
     ));
     clock.advance(Duration::from_secs(3600));
     nothing_sent(&mut calls).await;
+
+    // The lead continues it: that run is the lead's, and the digest no longer says fleetd resumed it.
+    let caller = TaskCaller {
+        project_ref: project(),
+        by: "lead".into(),
+    };
+    hub.tasks
+        .message(
+            &caller,
+            &TaskId::unchecked("T1"),
+            "Run the tests one crate at a time.",
+        )
+        .await
+        .unwrap();
+    let (_, text) = sent(&mut calls).await;
+    assert_eq!(text, "Run the tests one crate at a time.");
+    let continued = task(&hub);
+    assert_eq!(continued.state, TaskState::Running);
+    assert_eq!(continued.recovery.unwrap().resumed_at, None);
+    let digest = hub.tasks.digest_lines(&project(), None, 10);
+    assert!(!digest[0].contains("resumed automatically"), "{digest:?}");
+}
+
+/// A node stopped cleanly reports its runs' ends before it goes; the hub applies T1's once the node is offline. T1
+/// doesn't resume while the node is away, nor at once when it is back: 30-40 s after its return.
+#[tokio::test]
+async fn a_death_applied_while_the_node_is_offline_resumes_30_s_after_its_return() {
+    let (hub, clock, _first, _home) = running_t1().await;
+    session(
+        &hub,
+        3,
+        "r1",
+        "interrupted",
+        json!({ "end": "node_stopping", "failure": { "class": "process_exited", "message": "the node stopped" } }),
+    );
+    logged(&hub, "thread.interrupted", "r1").await;
+    hub.executors.detach(&lab_a()).await;
+    catch_up(&hub.tasks).await;
+    assert!(reason(&hub).starts_with("recovering: the node on lab-a stopped; resumes at "));
+
+    // Its time comes while the node is away: it waits for the node.
+    clock.advance(Duration::from_secs(600));
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(reason(&hub), "machine lab-a is offline");
+
+    let mut calls = away_and_back(&hub, &clock, Duration::from_secs(1200), |_| {}).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    clock.advance(Duration::from_secs(29));
+    {
+        let _guard = hub.tasks.lock.lock().await;
+        hub.tasks.retry_queue().await;
+    }
+    nothing_sent(&mut calls).await;
+    assert_eq!(task(&hub).state, TaskState::Queued);
+    clock.advance(Duration::from_secs(12));
+    let (_, text) = sent(&mut calls).await;
+    assert!(
+        text.starts_with("fleetd: your run was cut off (the node on lab-a stopped)."),
+        "{text}"
+    );
+    assert_eq!(task(&hub).state, TaskState::Running);
+}
+
+/// T1's PR merges while it waits to resume: its work is over, so it isn't resumed and ends with its run's result.
+#[tokio::test]
+async fn a_task_whose_pr_merged_while_it_waited_is_not_resumed() {
+    let (hub, clock, mut calls, _home) = running_t1().await;
+    session(
+        &hub,
+        3,
+        "r1",
+        "interrupted",
+        json!({ "end": "node_stopping", "failure": { "class": "process_exited", "message": "the node stopped" } }),
+    );
+    logged(&hub, "thread.interrupted", "r1").await;
+    catch_up(&hub.tasks).await;
+    assert_eq!(task(&hub).state, TaskState::Queued);
+    let merged: NewEvent = serde_json::from_value(json!({
+        "at": AT, "type": "pr.merged", "machineId": "lab-a", "projectId": "p1",
+        "summary": "C1 merged: o/r#7",
+        "data": { "changeId": "C1", "workstreamId": "W1", "taskId": "T1", "repo": "o/r", "prNumber": 7 },
+    }))
+    .unwrap();
+    hub.events.append(merged).unwrap();
+
+    clock.advance(Duration::from_secs(41));
+    nothing_sent(&mut calls).await;
+    let over = task(&hub);
+    assert_eq!(over.state, TaskState::Failed, "{over:?}");
+    assert!(hub.leads.wakes.held(&project()).is_empty());
+    assert!(
+        hub.leads.wakes.pending(&project()),
+        "its end wakes the lead"
+    );
+}
+
+/// T1's machine is offline for 30 minutes: its lead reads that once in its next wake, and the digest says it until the
+/// machine is back. Nothing wakes the lead for it.
+#[tokio::test]
+async fn a_task_whose_machine_is_away_for_30_min_is_told_once() {
+    let (hub, clock, _calls, _home) = running_t1().await;
+    hub.executors.detach(&lab_a()).await;
+    let machine = json!({ "machineId": "lab-a", "name": "lab-a", "tags": [], "status": "offline",
+        "lastSeenAt": crate::hub::store::iso_ms(1_792_000_000_000), "nodeVersion": "0.0.0" });
+    hub.store
+        .machine_upsert(&serde_json::from_value(machine).unwrap(), None)
+        .unwrap();
+    clock.advance(Duration::from_secs(29 * 60));
+    hub.tasks.unreachable().unwrap();
+    assert!(hub.leads.wakes.held(&project()).is_empty());
+
+    clock.advance(Duration::from_secs(2 * 60));
+    hub.tasks.unreachable().unwrap();
+    hub.tasks.unreachable().unwrap();
+    assert_eq!(
+        hub.leads.wakes.held(&project()),
+        [
+            "- T1 waits for lab-a, offline for 31 min: slice 1; it resumes on its own when lab-a is back\n  > Its \
+          worktree and session are on lab-a, so it stays there. To have it done elsewhere, cancel it and start a new \
+          task."
+        ]
+    );
+    assert!(!hub.leads.wakes.pending(&project()));
+    assert!(
+        hub.tasks.digest_lines(&project(), None, 10)[0]
+            .ends_with("; lab-a offline since 17:46 UTC, it resumes when lab-a is back"),
+        "{:?}",
+        hub.tasks.digest_lines(&project(), None, 10)
+    );
 }
 
 /// A task waiting on a person is not dead: through its node's absence and long after, nothing is sent to it.
@@ -446,7 +585,15 @@ async fn a_run_started_while_recovering_continues_the_task_without_the_note() {
     catch_up(&hub.tasks).await;
     let continued = task(&hub);
     assert_eq!(continued.state, TaskState::Running);
-    assert_eq!(continued.recovery.unwrap().next_at, None);
+    let recovery = continued.recovery.unwrap();
+    assert_eq!((recovery.next_at, recovery.resumed_at), (None, None));
+    // A person continued it, so the digest doesn't say fleetd did.
+    assert!(
+        !hub.tasks.digest_lines(&project(), None, 10)[0].contains("resumed automatically"),
+        "{:?}",
+        hub.tasks.digest_lines(&project(), None, 10)
+    );
+    assert!(hub.leads.wakes.held(&project()).is_empty());
     clock.advance(Duration::from_secs(60));
     nothing_sent(&mut calls).await;
     completes(&hub, "r9", 5).await;

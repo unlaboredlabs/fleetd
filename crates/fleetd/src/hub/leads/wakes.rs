@@ -38,6 +38,9 @@ pub enum LineKind {
     CapRaised,
     /// A secret or approval request settled, or came back open (`approvals`).
     Request,
+    /// fleetd resumed a dead task, or one waits for its offline machine (`tasks::recovery`): nothing for the lead to
+    /// decide, so it never wakes the lead. It rides along with the next wake.
+    Recovery,
 }
 
 #[derive(Debug, Clone)]
@@ -87,8 +90,20 @@ impl Trigger {
                 LineKind::Human => "human",
                 LineKind::CapRaised => "cap_raised",
                 LineKind::Request => "request",
+                LineKind::Recovery => "recovery",
             },
         }
+    }
+
+    /// Never wakes the lead alone ([`LineKind::Recovery`]).
+    pub fn quiet(&self) -> bool {
+        matches!(
+            self,
+            Trigger::Line {
+                kind: LineKind::Recovery,
+                ..
+            }
+        )
     }
 }
 
@@ -224,6 +239,17 @@ impl<K: Clone + Eq + Hash + Send + 'static, T: Send + 'static> Debouncer<K, T> {
 }
 
 impl<K: Clone + Eq + Hash + Send + 'static, T: Send + 'static> Debouncer<K, T> {
+    /// Adds `item` to the flush already pending for `key`, without moving its time; hands it back when none is.
+    pub fn join(&self, key: &K, item: T) -> Option<T> {
+        match self.keys.lock().unwrap().pending.get_mut(key) {
+            Some(p) => {
+                p.items.push(item);
+                None
+            }
+            None => Some(item),
+        }
+    }
+
     /// Whether items for `key` wait for their window to close.
     pub fn has_pending(&self, key: &K) -> bool {
         self.keys.lock().unwrap().pending.contains_key(key)
@@ -271,6 +297,9 @@ pub struct LeadWakes {
     /// When the pending wake's first trigger came, per project: `lead.woken.firstTriggerAt`, so the time inspector
     /// sees the debounce. Kept through a usage hold, which re-triggers.
     first: std::sync::Mutex<HashMap<ProjectRef, String>>,
+    /// Quiet lines that came while no wake was on its way, per project: they go first in the next one. Lost on a
+    /// hub restart; the digest still shows the tasks' state.
+    quiet: std::sync::Mutex<HashMap<ProjectRef, Vec<Trigger>>>,
 }
 
 impl LeadWakes {
@@ -287,6 +316,7 @@ impl LeadWakes {
             debouncer,
             flushing: tokio::sync::Mutex::new(()),
             first: std::sync::Mutex::new(HashMap::new()),
+            quiet: std::sync::Mutex::new(HashMap::new()),
         })
     }
 
@@ -296,6 +326,17 @@ impl LeadWakes {
     /// pays off by batching a burst into one turn, and while the lead is busy (or a wake is still on its way) triggers
     /// coalesce as before.
     pub fn trigger(self: &Arc<Self>, r: &ProjectRef, trigger: Trigger) {
+        if trigger.quiet() {
+            if let Some(held) = self.debouncer.join(r, trigger) {
+                self.quiet
+                    .lock()
+                    .unwrap()
+                    .entry(r.clone())
+                    .or_default()
+                    .push(held);
+            }
+            return;
+        }
         self.first_trigger(r);
         let now = trigger.skips_debounce() && self.lead_idle(r);
         let this = Arc::clone(self);
@@ -321,6 +362,16 @@ impl LeadWakes {
     /// Whether a wake for the project's lead is already on its way (triggers waiting out the debounce).
     pub fn pending(&self, r: &ProjectRef) -> bool {
         self.debouncer.has_pending(r)
+    }
+
+    /// The quiet lines held for the project's next wake.
+    pub fn held(&self, r: &ProjectRef) -> Vec<String> {
+        self.quiet
+            .lock()
+            .unwrap()
+            .get(r)
+            .map(|t| trigger_lines(t))
+            .unwrap_or_default()
     }
 
     /// The lead digest as of now: the state block at the top of its first message and of every wake.
@@ -408,6 +459,9 @@ impl LeadWakes {
 
     async fn flush(self: Arc<Self>, r: ProjectRef, triggers: Vec<Trigger>) {
         let _guard = self.flushing.lock().await;
+        // Held quiet lines came before every trigger here: one that comes while a wake is pending joins it.
+        let held = self.quiet.lock().unwrap().remove(&r).unwrap_or_default();
+        let triggers = held.into_iter().chain(triggers).collect();
         if let Err(error) = self.flush_inner(&r, triggers).await {
             tracing::warn!(project = %key_of(&r), %error, "lead wake failed");
         }
@@ -660,6 +714,22 @@ mod tests {
         advance(&clock, 5).await;
         assert_eq!(flushes.lock().unwrap()[3], (1, vec![8], 34_000));
         assert_eq!(flushes.lock().unwrap().len(), 4);
+    }
+
+    /// A quiet item rides along with a pending flush, never moving it, and starts none on its own.
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_joined_item_rides_along_and_starts_no_flush() {
+        let clock = ManualClock::at(0);
+        let d = Debouncer::new(clock.clone(), WAKE_DEBOUNCE, WAKE_MAX_WAIT, WAKE_COALESCE);
+        let flushes: Flushes = Default::default();
+        assert_eq!(d.join(&1, 9), Some(9));
+        advance(&clock, 60).await;
+        assert!(flushes.lock().unwrap().is_empty());
+        push(&d, &clock, &flushes, 1, 1);
+        advance(&clock, 9).await;
+        assert_eq!(d.join(&1, 2), None);
+        advance(&clock, 1).await;
+        assert_eq!(*flushes.lock().unwrap(), vec![(1, vec![1, 2], 70_000)]);
     }
 
     #[tokio::test(flavor = "current_thread")]
