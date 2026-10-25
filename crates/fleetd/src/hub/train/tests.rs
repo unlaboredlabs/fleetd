@@ -154,6 +154,8 @@ struct FakeGh {
     repo_labels: Mutex<Vec<String>>,
     /// GitHub refuses every label call.
     fail_labels: Mutex<bool>,
+    /// GitHub fails every read of the workflow files.
+    fail_workflows: Mutex<bool>,
     /// `FakeCi::Macos`: the heads pushed while their PR had the label, and the reads of each head since the label
     /// started a run on it.
     labelled_pushes: Mutex<HashSet<String>>,
@@ -634,23 +636,28 @@ impl FakeGh {
                 }
                 _ => json!([]),
             }),
+            (["contents", ".github", "workflows", ..], "GET") if *self.fail_workflows.lock().unwrap() => {
+                http_error(500, "Server Error")
+            }
             (["contents", ".github", "workflows"], "GET") => match self.ci {
-                FakeCi::Macos { .. } => ok(
-                    json!([{ "name": "ci.yml", "path": ".github/workflows/ci.yml", "type": "file" }]),
-                ),
+                FakeCi::Macos { .. } => ok(Value::Array(
+                    self.workflows()
+                        .iter()
+                        .map(|(file, _)| json!({ "path": format!(".github/workflows/{file}"), "type": "file" }))
+                        .collect(),
+                )),
                 _ => http_error(404, "Not Found"),
             },
-            (["contents", ".github", "workflows", "ci.yml"], "GET") => GhOut {
-                exit_code: 0,
-                stdout: match self.ci {
-                    FakeCi::Macos { uses: true, .. } => {
-                        "jobs:\n  macos:\n    if: contains(github.event.pull_request.labels.*.name, 'fleetd:next')\n"
-                    }
-                    _ => "jobs:\n  macos:\n    runs-on: macos-latest\n",
+            (["contents", ".github", "workflows", file], "GET") => {
+                match self.workflows().into_iter().find(|(f, _)| f == file) {
+                    Some((_, text)) => GhOut {
+                        exit_code: 0,
+                        stdout: text.into(),
+                        stderr: String::new(),
+                    },
+                    None => http_error(404, "Not Found"),
                 }
-                .into(),
-                stderr: String::new(),
-            },
+            }
             (["statuses", sha], "POST") => {
                 let get = |k: &str| fields.get(k).copied().unwrap_or_default().to_string();
                 self.statuses
@@ -727,7 +734,40 @@ impl FakeGh {
         }
     }
 
-    /// `FakeCi::Macos`: `ci` from the head's push, and `rust (macos)` as the label left it.
+    /// `FakeCi::Macos`'s workflow files: CI, whose `rust (macos)` runs on the label where the repo `uses` it, with the
+    /// workflow that runs CI when the label is added; and the release, whose `publish (macos)` skips on every PR.
+    fn workflows(&self) -> Vec<(&'static str, &'static str)> {
+        const RELEASE: &str = "name: Release\non:\n  pull_request:\n  workflow_dispatch:\njobs:\n  publish-macos:\n    \
+             name: publish (macos)\n    if: github.event_name == 'workflow_dispatch'\n    runs-on: macos-latest\n";
+        match self.ci {
+            FakeCi::Macos { uses: true, .. } => vec![
+                (
+                    "ci.yml",
+                    "name: CI\non:\n  pull_request:\n  workflow_dispatch:\njobs:\n  ci:\n    runs-on: ubuntu-latest\n  \
+                     rust-macos:\n    name: rust (macos)\n    if: >-\n      github.event_name != 'pull_request'\n      \
+                     || contains(github.event.pull_request.labels.*.name, 'fleetd:next')\n    runs-on: macos-latest\n",
+                ),
+                (
+                    "macos-label.yml",
+                    "name: macOS label\non:\n  pull_request:\n    types: [labeled]\njobs:\n  dispatch:\n    \
+                     if: github.event.label.name == 'fleetd:next'\n    runs-on: ubuntu-latest\n    steps:\n      \
+                     - run: gh workflow run ci.yml --ref \"$BRANCH\"\n",
+                ),
+                ("build-release.yml", RELEASE),
+            ],
+            _ => vec![
+                (
+                    "ci.yml",
+                    "name: CI\non:\n  pull_request:\njobs:\n  ci:\n    runs-on: ubuntu-latest\n  rust-macos:\n    \
+                     name: rust (macos)\n    if: github.event_name != 'pull_request'\n    runs-on: macos-latest\n",
+                ),
+                ("build-release.yml", RELEASE),
+            ],
+        }
+    }
+
+    /// `FakeCi::Macos`: `ci` from the head's push, `rust (macos)` as the label left it, and `publish (macos)`, which
+    /// every PR skips.
     fn macos_runs(&self, sha: &str) -> Value {
         let ci = json!({ "id": 1, "name": "ci", "status": "completed", "conclusion": "success", "started_at": BEFORE, "completed_at": BEFORE });
         let mut label_runs = self.label_runs.lock().unwrap();
@@ -751,7 +791,8 @@ impl FakeGh {
                 json!({ "id": 2, "name": "rust (macos)", "status": "completed", "conclusion": "skipped", "started_at": BEFORE, "completed_at": BEFORE })
             }
         };
-        json!({ "check_runs": [ci, macos] })
+        let publish = json!({ "id": 4, "name": "publish (macos)", "status": "completed", "conclusion": "skipped", "started_at": BEFORE, "completed_at": BEFORE });
+        json!({ "check_runs": [ci, macos, publish] })
     }
 
     /// `FakeCi::Queued`: the batch's `ci` waits for a runner for its first `polls` reads, then runs for two.
@@ -1125,6 +1166,7 @@ impl Kit {
             stale: Mutex::default(),
             repo_labels: Mutex::default(),
             fail_labels: Mutex::default(),
+            fail_workflows: Mutex::default(),
             labelled_pushes: Mutex::default(),
             label_runs: Mutex::default(),
             batch_polls: Mutex::default(),
@@ -1210,7 +1252,11 @@ impl Kit {
         git(&self.author, &["checkout", "-q", "-B", branch, &start]);
         for (file, content) in files {
             match content {
-                Some(c) => std::fs::write(self.author.join(file), c).unwrap(),
+                Some(c) => {
+                    let path = self.author.join(file);
+                    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                    std::fs::write(path, c).unwrap()
+                }
                 None => std::fs::remove_file(self.author.join(file)).unwrap(),
             }
         }
@@ -3508,6 +3554,94 @@ async fn a_pr_merged_alone_waits_for_the_macos_run_its_label_starts() {
     assert!(!log.contains(&"rebase #7".to_string()), "already on main");
     assert!(log_at(&log, "label #7") < log_at(&log, &format!("macos green {head}")));
     assert!(log_at(&log, &format!("macos green {head}")) < log_at(&log, "merge #7"));
+}
+
+/// fleetd's own case: a PR touching `build-release.yml` and `nightly.yml`, whose release job every PR skips. That
+/// skip is the release workflow's on purpose, not the label's, so it never parks the PR: it merges once the label's
+/// macOS run is green, and the lead hears nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_skip_in_a_workflow_the_label_never_runs_never_parks_a_lone_pr() {
+    let kit = Kit::on_clock(
+        FakeCi::Macos {
+            reacts: true,
+            uses: true,
+        },
+        Arc::new(Sleeps::default()),
+    );
+    let a = kit
+        .enqueue(kit.open_pr(
+            7,
+            "release",
+            &[
+                add(".github/workflows/build-release.yml", "name: Release\n"),
+                add(".github/workflows/nightly.yml", "name: Nightly\n"),
+            ],
+        ))
+        .await;
+    let head = kit.head_of("release");
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &a), ChangeState::Merged);
+    let log = gh_log(&kit);
+    assert!(log_at(&log, &format!("macos green {head}")) < log_at(&log, "merge #7"));
+    assert!(label_run_missing(&kit).is_empty());
+}
+
+/// Workflows that can't be read, with no earlier answer for the repo, are never taken for "doesn't use the label": a
+/// skip from before the label holds the lone PR for the 3-minute hold, then counts.
+#[tokio::test(flavor = "multi_thread")]
+async fn unreadable_workflows_hold_a_lone_pr_for_the_hold_then_its_skips_count() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(
+        FakeCi::Macos {
+            reacts: false,
+            uses: true,
+        },
+        clock.clone(),
+    );
+    *kit.gh.fail_workflows.lock().unwrap() = true;
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &a), ChangeState::Merged);
+    let waited: Duration = clock.taken().iter().sum();
+    let hold = Duration::from_millis(super::next::LABEL_HOLD_MS as u64);
+    assert!(waited >= hold && waited < hold * 2, "{waited:?}");
+    assert!(label_run_missing(&kit).is_empty());
+}
+
+/// A failed read of the workflows keeps the repo's last answer: a repo known to use the label still holds its lone PR.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_workflows_read_keeps_the_last_answer() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(
+        FakeCi::Macos {
+            reacts: false,
+            uses: true,
+        },
+        clock.clone(),
+    );
+    assert!(matches!(
+        kit.train.label_gate(REPO, "main").await,
+        super::next::Gate::Checks(names) if names.contains(&"rust (macos)".to_string())
+    ));
+    *kit.gh.fail_workflows.lock().unwrap() = true;
+    // Past the cache's 10 minutes, so it is read again, and that read fails.
+    clock.0.lock().unwrap().push(Duration::from_secs(11 * 60));
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+
+    assert!(kit.train.step(REPO).await);
+    assert!(merged_prs(&kit).is_empty());
+    assert_eq!(
+        state_of(&kit, &a),
+        ChangeState::CiFailed,
+        "held to its CI timeout"
+    );
+    assert_eq!(label_run_missing(&kit).len(), 1);
 }
 
 /// Rebased for its merge alone, the PR's push already carries the label, so its CI runs macOS.
