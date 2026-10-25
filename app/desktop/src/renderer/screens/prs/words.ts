@@ -45,13 +45,20 @@ const QUEUE: Readonly<Partial<Record<string, QueueWords>>> = {
   abandoned: { word: "dropped", moved: "Dropped", tone: "idle" },
 } satisfies Record<ChangeState, QueueWords>;
 
+// The states a PR waits in line in: the list row and the PR's sentence both give its place only in these.
+const IN_LINE: ReadonlySet<string> = new Set<ChangeState>(["queued", "reviewing", "ready"]);
+
+/** Its 0-based place in line, when it is waiting in one. */
+const lineAt = (q: PrRow["queue"]): number | undefined => (q?.position === undefined || !IN_LINE.has(q.state) ? undefined : q.position);
+
 const queueSentence = (q: NonNullable<PrRow["queue"]>): string => {
-  const place = q.position === undefined ? "" : q.length > 1 ? `, ${ordinal(q.position + 1)} of ${q.length} in line` : "";
+  const at = lineAt(q);
+  const place = at === undefined ? "" : q.length > 1 ? `, ${ordinal(at + 1)} of ${q.length} in line` : ", next in line";
   switch (q.state) {
     case "queued":
       return `Waiting to merge${place}.`;
     case "reviewing":
-      return "In review. It merges once its reviews and checks pass.";
+      return `In review${place}. It merges once its reviews and checks pass.`;
     case "ready":
       return `Ready to merge${place}.`;
     case "rebasing":
@@ -118,8 +125,9 @@ export const checksShort = (c: ChecksSummary): { readonly text: string; readonly
 
 /** An open PR's place in line to merge: "next in line", "3rd in line"; undefined when it isn't waiting in it. */
 export const placeWord = (q: PrRow["queue"]): string | undefined => {
-  if (q?.position === undefined || q.state === "merged" || q.state === "abandoned") return undefined;
-  return q.position === 0 ? "next in line" : `${ordinal(q.position + 1)} in line`;
+  const at = lineAt(q);
+  if (at === undefined) return undefined;
+  return at === 0 ? "next in line" : `${ordinal(at + 1)} in line`;
 };
 
 /** "7 passed · 2 failed · 1 running". */

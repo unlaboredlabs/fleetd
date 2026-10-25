@@ -111,7 +111,11 @@
 .listEmpty {
   flex: 1;
   display: flex;
+  flex-direction: column;
   padding: var(--space-6) var(--pad);
+}
+.listEmpty .cutNote {
+  padding: var(--space-4) 0 0;
 }
 .paneEmpty {
   display: flex;

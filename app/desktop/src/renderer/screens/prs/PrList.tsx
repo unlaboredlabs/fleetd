@@ -11,8 +11,12 @@ import { PR_FILTERS, emptyWords, filterCounts, listItems, rowMeta, type PrFilter
 import { checksWord, isOpen, when } from "./words";
 import s from "./prs.module.css";
 
-// The reader's filter, kept while the app runs: back from a merged PR, the list still shows the merged ones.
-let lastFilter: PrFilter = "open";
+// The reader's filter per project, kept while the app runs: back from a merged PR, the list still shows the merged
+// ones, and another project's list opens on its own.
+const lastFilter = new Map<string, PrFilter>();
+
+/** Forgets every project's filter (tests start from the default). */
+export const forgetFilters = (): void => lastFilter.clear();
 
 export const prHref = (project: ProjectRef, row: Pick<PrRow, "repo" | "number">): string =>
   toHash(panelRoute(project, { tab: "prs", pr: { repo: row.repo, number: row.number } }));
@@ -26,9 +30,10 @@ interface PrListProps {
 }
 
 export function PrList({ rows, cut, project, nowMs }: PrListProps) {
-  const [filter, setFilterState] = useState<PrFilter>(lastFilter);
+  const key = `${project.machineId}/${project.projectId}`;
+  const [filter, setFilterState] = useState<PrFilter>(() => lastFilter.get(key) ?? "open");
   const setFilter = (next: PrFilter) => {
-    lastFilter = next;
+    lastFilter.set(key, next);
     setFilterState(next);
   };
   const counts = useMemo(() => filterCounts(rows), [rows]);
@@ -71,6 +76,7 @@ export function PrList({ rows, cut, project, nowMs }: PrListProps) {
           >
             {empty.body}
           </PaneEmpty>
+          {cut ? <CutNote count={rows.length} /> : null}
         </div>
       ) : (
         <div className={s.listScroll} onKeyDown={onKeyDown}>
@@ -90,9 +96,7 @@ export function PrList({ rows, cut, project, nowMs }: PrListProps) {
                   </Text>
                 </div>
               ) : it.kind === "cut" ? (
-                <div className={s.cutNote}>
-                  <Text size="xs" tone="faint">{`Only the ${it.count} most recent are here; the rest are on GitHub.`}</Text>
-                </div>
+                <CutNote count={it.count} />
               ) : (
                 <Row row={it.row} project={project} nowMs={nowMs} />
               )
@@ -100,6 +104,15 @@ export function PrList({ rows, cut, project, nowMs }: PrListProps) {
           />
         </div>
       )}
+    </div>
+  );
+}
+
+/** The hub sent only the most recent: said under the rows, or under an empty filter, since the rest may hold its PRs. */
+function CutNote({ count }: { count: number }) {
+  return (
+    <div className={s.cutNote}>
+      <Text size="xs" tone="faint">{`Only the ${count} most recent are here; the rest are on GitHub.`}</Text>
     </div>
   );
 }

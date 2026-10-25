@@ -32,6 +32,18 @@ describe("where a PR is on its way to main", () => {
     }
   });
 
+  it("gives a place in line in the row and the PR's sentence alike, and only while it waits in one", () => {
+    const reviewing = row({ queue: queue("reviewing", { position: 1 }) });
+    expect(stateLine(reviewing).sentence).toBe("In review, 2nd of 3 in line. It merges once its reviews and checks pass.");
+    expect(rowMeta(reviewing).place).toBe("2nd in line");
+    const alone = row({ queue: queue("queued", { position: 0, length: 1 }) });
+    expect(stateLine(alone).sentence).toBe("Waiting to merge, next in line.");
+    expect(rowMeta(alone).place).toBe("next in line");
+    const conflicted = row({ queue: queue("needs_rebase", { position: 1 }) });
+    expect(stateLine(conflicted).sentence).not.toMatch(/in line/u);
+    expect(rowMeta(conflicted).place).toBeUndefined();
+  });
+
   it("puts GitHub's state first, and reads a state from a newer hub as plain open", () => {
     expect(stateLine(row({ state: "merged", queue: queue("ci_failed") })).word).toBe("merged");
     expect(stateLine(row({ state: "closed" })).sentence).toBe("Closed without merging.");
@@ -135,6 +147,7 @@ describe("the list", () => {
     expect(checksShort({ state: "none", passed: 0, failed: 0, pending: 0 })).toBeUndefined();
     expect(placeWord(queue("queued", { position: 2 }))).toBe("3rd in line");
     expect(placeWord(queue("reviewing"))).toBeUndefined();
+    expect(placeWord(queue("needs_rebase", { position: 1 }))).toBeUndefined();
     expect(placeWord(undefined)).toBeUndefined();
   });
 

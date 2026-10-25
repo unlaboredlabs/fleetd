@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { PrRow } from "../../../shared/contracts";
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
-import { PrList } from "./PrList";
+import { PrList, forgetFilters } from "./PrList";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -37,6 +37,7 @@ beforeEach(() => {
     return h > 0 ? new DOMRect(0, 0, 400, h) : rect.call(this);
   });
   Object.defineProperty(proto, "clientHeight", { configurable: true, get: function (this: HTMLElement) { return heightOf(this); } });
+  forgetFilters();
   host = document.createElement("div");
   document.body.appendChild(host);
 });
@@ -46,12 +47,12 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const mount = async (rows: readonly PrRow[]) => {
+const mount = async (rows: readonly PrRow[], { project = PROJECT, cut = false } = {}) => {
   root = createRoot(host);
   act(() => {
     root?.render(
       <TooltipProvider>
-        <PrList rows={rows} cut={false} project={PROJECT} nowMs={NOW} />
+        <PrList rows={rows} cut={cut} project={project} nowMs={NOW} />
       </TooltipProvider>,
     );
   });
@@ -87,7 +88,11 @@ it("opens on the open PRs, filters to merged or all, and keeps the reader's filt
   unmount();
   await mount([row(11, "open"), row(8, "merged")]);
   expect(shown()).toEqual([11, 8]);
-  await click(filter("Open"));
+
+  // Another project's list opens on its own filter.
+  unmount();
+  await mount([row(11, "open"), row(8, "merged")], { project: { machineId: "devbox", projectId: "docs" } });
+  expect(shown()).toEqual([11]);
 });
 
 it("says a filter with nothing in it is empty, and offers one that has rows", async () => {
@@ -96,7 +101,12 @@ it("says a filter with nothing in it is empty, and offers one that has rows", as
   expect(host.textContent).toContain("Nothing open");
   await click([...host.querySelectorAll("button")].find((b) => b.textContent === "Show merged"));
   expect(shown()).toEqual([8]);
-  await click(filter("Open"));
+});
+
+it("still says the hub sent only the most recent when a filter is empty, since the rest may hold its PRs", async () => {
+  await mount([row(8, "merged")], { cut: true });
+  expect(host.textContent).toContain("Nothing open");
+  expect(host.textContent).toContain("Only the 1 most recent are here");
 });
 
 it("has no filter while there are no PRs at all", async () => {
