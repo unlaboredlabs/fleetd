@@ -94,7 +94,7 @@ fn landed(sha: &str, at_ms: i64, route: LandingRoute, subject: &str) -> Landed {
         route,
         pr: (route == LandingRoute::PrOutside).then(|| "#57".into()),
         subject: subject.into(),
-        author_email: Some("wynn@example.com".into()),
+        author_email: Some("ada@example.com".into()),
         covers: Vec::new(),
     }
 }
@@ -254,8 +254,8 @@ async fn the_digest_shows_work_elsewhere_on_its_repo_and_base_and_none_of_its_ow
                 theirs.task_id
             ),
             "- C2 claimed by the lead of devbox/api: checkout retries",
-            "- abc1234 pushed straight to main, outside fleetd by wynn@example.com: feat: dark mode toggle · covers P9",
-            "- fed9876 PR #57 merged outside fleetd by wynn@example.com: Search box on the catalog",
+            "- abc1234 pushed straight to main, outside fleetd by ada@example.com: feat: dark mode toggle · covers P9",
+            "- fed9876 PR #57 merged outside fleetd by ada@example.com: Search box on the catalog",
             &format!("- {gone} expired claim by an agent key: an old experiment"),
         ],
         "a person's claims first, then other projects' work, landings outside the train from the last day, and \
