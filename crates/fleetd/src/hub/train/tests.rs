@@ -164,6 +164,8 @@ struct FakeGh {
     batch_polls: Mutex<u32>,
     /// Called on every check-run read, before it is answered: the test's look at the train while CI runs.
     on_checks: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
+    /// When set, the `check_runs` of every check-run read, whatever the head and `ci`.
+    runs: Mutex<Option<Box<dyn Fn() -> Value + Send + Sync>>>,
 }
 
 fn ok(body: Value) -> GhOut {
@@ -589,6 +591,9 @@ impl FakeGh {
                     look();
                 }
                 self.moves_during_ci(sha);
+                if let Some(runs) = &*self.runs.lock().unwrap() {
+                    return ok(json!({ "check_runs": runs() }));
+                }
                 match self.ci {
                     FakeCi::Macos { .. } => return ok(self.macos_runs(sha)),
                     FakeCi::Queued { polls } => return ok(self.queued_runs(sha, polls)),
@@ -1171,6 +1176,7 @@ impl Kit {
             label_runs: Mutex::default(),
             batch_polls: Mutex::default(),
             on_checks: Mutex::default(),
+            runs: Mutex::default(),
         });
         let host = Arc::new(FakeHost {
             tasks: Mutex::default(),
@@ -1578,6 +1584,7 @@ async fn parks_a_pr_whose_ci_is_red_wakes_its_author_with_the_failing_check_and_
 /// No wait for CI that never comes: one poll decides.
 fn one_poll(options: &mut TrainOptions) {
     options.ci_timeout = Duration::ZERO;
+    options.ci_queue_ceiling = Duration::ZERO;
 }
 
 /// A reviewed, ready PR on a repo with no CI: it waits with the fix, untouched, and the doctor names the repo.
@@ -1622,6 +1629,268 @@ async fn a_workflow_whose_check_never_comes_times_out_rather_than_merging() {
     assert_eq!(kit.get(&change_id).state, ChangeState::CiFailed);
     assert!(kit.gh.merges.lock().unwrap().is_empty());
     assert!(kit.train.repos_without_ci().is_empty());
+}
+
+/// A check run as GitHub answers it; `started` when a runner took it.
+fn check(name: &str, status: &str, conclusion: Option<&str>, started: Option<&str>) -> Value {
+    json!({ "id": 1, "name": name, "status": status, "conclusion": conclusion, "started_at": started,
+        "html_url": format!("https://github.com/{REPO}/actions/runs/1") })
+}
+
+/// The answer to every check-run read from now on.
+fn answer_checks(kit: &Kit, runs: impl Fn() -> Vec<Value> + Send + Sync + 'static) {
+    *kit.gh.runs.lock().unwrap() = Some(Box::new(move || json!(runs())));
+}
+
+/// Time `clock` has slept in all.
+fn slept(clock: &Sleeps) -> Duration {
+    clock.taken().iter().sum()
+}
+
+/// D128: CI that runs past the timeout and then goes green isn't lost. The Change waits in `ci_failed` at its head,
+/// its author is not sent to push, and once the run is green it goes back in the queue and merges on that run.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_timed_out_change_whose_checks_go_green_later_merges_without_a_push() {
+    let kit = Kit::with(FakeCi::Actions, one_poll);
+    // Still running at the first read, which times it out.
+    answer_checks(&kit, || {
+        vec![check(
+            "ci",
+            "in_progress",
+            None,
+            Some("2020-01-01T00:00:00Z"),
+        )]
+    });
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let head = kit.head_of("docs");
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+
+    assert!(kit.train.step(REPO).await);
+    let parked = kit.get(&change_id);
+    assert_eq!(parked.state, ChangeState::CiFailed);
+    let why = parked.last_error.as_deref().unwrap().to_string();
+    assert!(
+        why.starts_with("CI timed out on ")
+            && why.ends_with("within 0 min of its first check starting"),
+        "{why}"
+    );
+    assert!(
+        kit.host.sends.lock().unwrap().is_empty(),
+        "the author isn't sent to push"
+    );
+    assert!(
+        kit.host
+            .wakes
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|w| w.contains("no push needed")),
+        "{:?}",
+        kit.host.wakes.lock().unwrap()
+    );
+    assert!(
+        super::digest::lead_train_lines(
+            &super::digest::train_facts(&kit.train.records, |_| true),
+            None
+        )
+        .iter()
+        .any(|l| l.contains("No push needed")),
+    );
+
+    // Still running: it stays where it is.
+    assert!(!kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::CiFailed);
+
+    answer_checks(&kit, || {
+        vec![check(
+            "ci",
+            "completed",
+            Some("success"),
+            Some("2020-01-01T00:00:00Z"),
+        )]
+    });
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::Merged);
+    assert_eq!(*kit.gh.merges.lock().unwrap(), [(7, head.clone())]);
+    assert_eq!(kit.head_of("docs"), head, "never pushed to");
+    assert!(
+        kit.host
+            .wakes
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|w| w.contains("CI finished after the timeout; back in the queue"))
+    );
+    assert!(kit.host.sends.lock().unwrap().is_empty());
+}
+
+/// D128: a timed-out Change whose checks then go red fails as red CI does, back with its author.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_timed_out_change_whose_checks_go_red_later_goes_to_its_author() {
+    let kit = Kit::with(FakeCi::Actions, one_poll);
+    answer_checks(&kit, || {
+        vec![check(
+            "ci",
+            "in_progress",
+            None,
+            Some("2020-01-01T00:00:00Z"),
+        )]
+    });
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::CiFailed);
+
+    answer_checks(&kit, || {
+        vec![check(
+            "ci",
+            "completed",
+            Some("failure"),
+            Some("2020-01-01T00:00:00Z"),
+        )]
+    });
+    assert!(!kit.train.step(REPO).await);
+    let parked = kit.get(&change_id);
+    assert_eq!(parked.state, ChangeState::CiFailed);
+    assert!(
+        parked
+            .last_error
+            .as_deref()
+            .unwrap()
+            .starts_with("CI failed on ")
+    );
+    let sends = kit.host.sends.lock().unwrap().clone();
+    assert!(
+        sends.last().unwrap().1.contains("ci (failure)"),
+        "{sends:?}"
+    );
+    // Red is final for that head: no more reads of it put it back.
+    assert!(!kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::CiFailed);
+    assert!(kit.gh.merges.lock().unwrap().is_empty());
+}
+
+/// D128: the running timeout counts from the first check's start. An hour queued for runners, then 30 min running,
+/// merges; neither alone is over its limit.
+#[tokio::test(flavor = "multi_thread")]
+async fn time_queued_for_runners_does_not_count_toward_the_running_timeout() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Actions, clock.clone());
+    let start = clock.now();
+    let at = clock.clone();
+    answer_checks(&kit, move || {
+        let waited = at.now().duration_since(start).unwrap();
+        let queued = Duration::from_secs(60 * 60);
+        if waited < queued {
+            return vec![check("ci", "queued", None, None)];
+        }
+        let started = crate::hub::store::iso_ms(crate::hub::store::system_ms(start + queued));
+        let (status, conclusion) = if waited < queued + Duration::from_secs(30 * 60) {
+            ("in_progress", None)
+        } else {
+            ("completed", Some("success"))
+        };
+        vec![check("ci", status, conclusion, Some(&started))]
+    });
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::Merged);
+    assert!(slept(&clock) >= Duration::from_secs(90 * 60));
+}
+
+/// D128: checks that never get a runner still fail, once they have waited the 2 h queue ceiling.
+#[tokio::test(flavor = "multi_thread")]
+async fn checks_queued_past_the_ceiling_still_fail() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Actions, clock.clone());
+    answer_checks(&kit, || {
+        vec![
+            check("rust (linux)", "queued", None, None),
+            check("rust (macos)", "queued", None, None),
+        ]
+    });
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+
+    assert!(kit.train.step(REPO).await);
+    let parked = kit.get(&change_id);
+    assert_eq!(parked.state, ChangeState::CiFailed);
+    assert!(
+        parked
+            .last_error
+            .as_deref()
+            .unwrap()
+            .ends_with("2 checks waited 120 min for a runner and none started"),
+        "{:?}",
+        parked.last_error
+    );
+    let waited = slept(&clock);
+    assert!(
+        waited >= Duration::from_secs(2 * 60 * 60)
+            && waited < Duration::from_secs(2 * 60 * 60 + 60),
+        "{waited:?}"
+    );
+    assert!(kit.gh.merges.lock().unwrap().is_empty());
+}
+
+/// D128: with no start times from its CI provider, a running check times out as before: 45 min from the wait's start.
+#[tokio::test(flavor = "multi_thread")]
+async fn checks_without_start_times_time_out_from_the_wait() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Actions, clock.clone());
+    answer_checks(&kit, || vec![check("ci", "in_progress", None, None)]);
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::CiFailed);
+    let waited = slept(&clock);
+    assert!(
+        waited >= Duration::from_secs(45 * 60) && waited < Duration::from_secs(46 * 60),
+        "{waited:?}"
+    );
+}
+
+/// D128: a red check fails at once, however long its other checks are queued.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_red_check_fails_at_once_while_others_are_queued() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Actions, clock.clone());
+    answer_checks(&kit, || {
+        vec![
+            check(
+                "rust (linux)",
+                "completed",
+                Some("failure"),
+                Some("2020-01-01T00:00:00Z"),
+            ),
+            check("rust (macos)", "queued", None, None),
+        ]
+    });
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+
+    assert!(kit.train.step(REPO).await);
+    let parked = kit.get(&change_id);
+    assert_eq!(parked.state, ChangeState::CiFailed);
+    assert!(
+        parked
+            .last_error
+            .as_deref()
+            .unwrap()
+            .starts_with("CI failed on ")
+    );
+    assert!(clock.taken().is_empty(), "decided on the first read");
+    let sends = kit.host.sends.lock().unwrap().clone();
+    assert!(
+        sends.last().unwrap().1.contains("rust (linux) (failure)"),
+        "{sends:?}"
+    );
+    // Red, not timed out: it waits for its author's push.
+    assert!(!kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::CiFailed);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1841,7 +2110,7 @@ async fn keeps_waiting_for_checks_a_repo_without_check_runs_requires() {
             .last_error
             .as_deref()
             .unwrap()
-            .ends_with("did not finish within 0 min"),
+            .ends_with("no check reported within 0 min"),
         "{:?}",
         parked.last_error
     );

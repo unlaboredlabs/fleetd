@@ -10,7 +10,7 @@ How fleetd merges pull requests. Only fleetd merges: each writer's PR goes on it
 
 1. Takes the next ready PR. A PR is ready once its review passes (see [Review](#review)).
 2. Has GitHub rebase it onto its base branch, as **Update branch** with rebase does.
-3. Waits for CI on that exact commit.
+3. Waits for CI on that exact commit (see [How long CI may take](#ci-time)).
 4. Posts the `fleetd/train` status and squash-merges it, pinned to that commit.
 
 A conflict or red CI goes back to the agent that wrote the PR; for red CI, with the failing checks.
@@ -20,6 +20,18 @@ fleetd merges only on green CI. A ready PR on a repo with no CI (no GitHub Actio
 exists.
 
 To keep a PR off the train, [hold it](#hold).
+
+## How long CI may take {#ci-time}
+
+The train gives a commit's CI 45 minutes of running time, counted from when its first check starts. Time the checks
+spend queued for runners doesn't count. While every check is still queued, there is a ceiling of 2 hours. If the CI
+provider gives no start times, the 45 minutes count from when the train starts waiting.
+
+A red check fails the PR at once, however long the other checks have left. CI that runs out of time is different: the
+PR shows `ci_failed` with "CI timed out", the lead is told, and the agent that wrote it isn't asked to push. The train
+keeps reading that commit's checks. If they finish green, the PR goes back in the queue ("CI finished after the
+timeout; back in the queue") and merges on that run, after the usual rebase if its base moved. If one goes red, the
+PR goes back to its agent as for any red CI. A new push starts over as usual.
 
 The train takes a PR whose base is a branch it merges into, such as `main`. A PR based on another open PR's branch is
 refused when it is queued: once that PR merges, point it at the same base (`gh pr edit <n> --base main`) and queue it

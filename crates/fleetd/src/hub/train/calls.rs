@@ -118,6 +118,10 @@ pub async fn slice_ready(
 pub fn change_next(change: &Change) -> String {
     match change.state {
         ChangeState::Merged => "nothing; it is merged.".into(),
+        ChangeState::CiFailed if super::service::timed_out(change) => format!(
+            "nothing: its CI timed out, and {}.",
+            super::service::CI_WATCHED
+        ),
         ChangeState::NeedsRebase | ChangeState::CiFailed => format!(
             "nothing unless its author is gone: the train told {} what to fix, and it retries the new head by itself.",
             change.task_id.as_ref().map_or("you", |t| t.as_str())
