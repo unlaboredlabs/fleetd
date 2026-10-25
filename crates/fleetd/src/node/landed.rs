@@ -28,7 +28,8 @@ fn quoted(text: &str) -> String {
     format!("'{}'", text.replace('\'', r"'\''"))
 }
 
-/// Git's client-side hooks, each forwarded from fleetd's hooks dir to the repo's own when it has one.
+/// Git's client-side hooks, each forwarded from fleetd's hooks dir to the repo's own when it has one, so one the repo
+/// gets later runs too. [`HOT_HOOKS`] are forwarded only when the repo has them already.
 const HOOKS: &[&str] = &[
     "applypatch-msg",
     "pre-applypatch",
@@ -42,9 +43,7 @@ const HOOKS: &[&str] = &[
     "post-merge",
     "pre-push",
     "post-rewrite",
-    "reference-transaction",
     "pre-auto-gc",
-    "post-index-change",
     "sendemail-validate",
     "p4-changelist",
     "p4-prepare-changelist",
@@ -52,13 +51,42 @@ const HOOKS: &[&str] = &[
     "p4-pre-submit",
 ];
 
+/// Hooks git runs on every ref or index write: a forwarder there would start a shell and several git processes each
+/// time, so one is set up only for a repo whose own hooks dir has the hook when the worktree's hooks are set.
+const HOT_HOOKS: &[&str] = &["reference-transaction", "post-index-change"];
+
+/// The repo's own hooks dir as [`OWN_HOOK`] finds it, seen from the worktree `cwd`.
+fn own_hooks_dir(cwd: &Path) -> Result<PathBuf, GitError> {
+    for scope in ["--local", "--global", "--system"] {
+        if let Ok(dir) = git(
+            cwd,
+            &[
+                "config",
+                "--includes",
+                "--type=path",
+                scope,
+                "core.hooksPath",
+            ],
+        ) {
+            return Ok(cwd.join(dir.trim()));
+        }
+    }
+    git(
+        cwd,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    )
+    .map(|d| PathBuf::from(d.trim()).join("hooks"))
+}
+
 /// Runs the repo's own hook `$1` with the rest of the arguments, from the hooks path the repo's own config says when
-/// it runs (husky's `core.hooksPath`, say), else `.git/hooks`, so a hook added or moved later runs too.
+/// it runs (husky's `core.hooksPath`, say, or one an `include` or `includeIf` brings in), else `.git/hooks`, so a hook
+/// added or moved later runs too.
 const OWN_HOOK: &str = r#"#!/bin/sh
 # fleetd: the repo's own hook, from its own hooks path.
 name=$1; shift
-dir=$(git config --type=path --local core.hooksPath || git config --type=path --global core.hooksPath ||
-  git config --type=path --system core.hooksPath) || dir="$(git rev-parse --git-common-dir)/hooks"
+dir=$(git config --includes --type=path --local core.hooksPath ||
+  git config --includes --type=path --global core.hooksPath ||
+  git config --includes --type=path --system core.hooksPath) || dir="$(git rev-parse --git-common-dir)/hooks"
 if [ -x "$dir/$name" ]; then exec "$dir/$name" "$@"; fi
 exit 0
 "#;
@@ -119,7 +147,9 @@ pub fn trailer_hooks(cwd: &Path, task: &str) -> Result<bool, GitError> {
         ),
     )
     .map_err(io)?;
-    for name in HOOKS {
+    let theirs = own_hooks_dir(cwd)?;
+    let hot = HOT_HOOKS.iter().filter(|name| theirs.join(name).is_file());
+    for name in HOOKS.iter().chain(hot) {
         write(name, &format!("#!/bin/sh\nexec {own} {name} \"$@\"\n")).map_err(io)?;
     }
     git(
@@ -325,6 +355,27 @@ mod tests {
             ran(&log).last().map(String::as_str),
             Some("husky-pre-commit")
         );
+
+        // A hooks path an included config file sets, such as the person's secret scanner, runs too.
+        run(&root, &["config", "--unset", "core.hooksPath"]);
+        let scanner = dir.path().join("scanner");
+        hook(&scanner.join("pre-commit"), &log, "scanner-pre-commit");
+        let included = dir.path().join("hooks.gitconfig");
+        std::fs::write(
+            &included,
+            format!("[core]\n\thooksPath = {}\n", scanner.display()),
+        )
+        .unwrap();
+        run(
+            &root,
+            &["config", "include.path", &included.to_string_lossy()],
+        );
+        commit(&wt, "d.txt", "fix: scanned");
+        assert_eq!(message(&wt), "fix: scanned\n\nFleetd-Task: T45");
+        assert_eq!(
+            ran(&log).last().map(String::as_str),
+            Some("scanner-pre-commit")
+        );
     }
 
     #[test]
@@ -371,6 +422,40 @@ mod tests {
         assert_eq!(
             git(&root, &["config", "--get", "core.hooksPath"]).ok(),
             None
+        );
+    }
+
+    #[test]
+    fn hooks_run_on_every_ref_or_index_write_are_forwarded_only_when_the_repo_has_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = crate::node::worktree::tests::repo(dir.path());
+        run(&root, &["config", "extensions.worktreeConfig", "true"]);
+        let log = dir.path().join("hooks.log");
+        hook(&root.join(".git/hooks/reference-transaction"), &log, "ref");
+        let wt = dir.path().join("wt");
+        run(
+            &root,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                "fleetd/T45-x",
+                &wt.to_string_lossy(),
+            ],
+        );
+        assert!(trailer_hooks(&wt, "T45").unwrap());
+        let ours = root.join(".git/worktrees/wt/fleetd-hooks");
+        assert!(ours.join("reference-transaction").is_file());
+        assert!(!ours.join("post-index-change").exists());
+        assert!(
+            ours.join("pre-commit").is_file(),
+            "the other hooks are always forwarded"
+        );
+        commit(&wt, "b.txt", "fix: totals");
+        assert!(
+            ran(&log).iter().any(|l| l == "ref"),
+            "the repo's own one still runs"
         );
     }
 
