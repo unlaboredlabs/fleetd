@@ -511,6 +511,145 @@ async fn an_earlier_rebuild_is_not_reported_again() {
     );
 }
 
+/// The node rebuilds the worktree again from the same source: the lead hears of this rebuild too, since what was
+/// unpushed is gone again. Only the same rebuild (the same time) is old news.
+#[tokio::test]
+async fn a_second_rebuild_from_the_same_source_is_reported() {
+    for (at, reported) in [
+        ("2026-10-25T09:30:00.000Z", true),
+        ("2026-10-25T09:00:00.000Z", false),
+    ] {
+        let (hub, clock, mut calls, _home) = running_t1().await;
+        let earlier =
+            json!({ "recreatedFrom": "remote", "recreatedAt": "2026-10-25T09:00:00.000Z" });
+        session_with(&hub, 3, "r1", "running", json!({}), earlier.clone());
+        let killed = json!({ "end": "exited", "failure": { "class": "process_exited",
+            "message": "claude was killed by signal 9" } });
+        session_with(&hub, 4, "r1", "failed", killed, earlier);
+        logged(&hub, "thread.failed", "r1").await;
+        catch_up(&hub.tasks).await;
+        clock.advance(Duration::from_secs(70));
+        let (run, _) = sent(&mut calls).await;
+        let line = resumed_line(
+            &hub,
+            &run,
+            5,
+            json!({ "recreatedFrom": "remote", "recreatedAt": at }),
+        )
+        .await;
+        assert_eq!(
+            line.contains("was rebuilt from origin/"),
+            reported,
+            "{line}"
+        );
+    }
+}
+
+/// T1 asked its lead, kept working, and its run died before the answer came. The question doesn't hold the resume
+/// back (no slot taken and kept), and the answer reaches the resumed run.
+#[tokio::test]
+async fn a_task_that_asked_before_it_died_resumes_and_gets_the_answer_later() {
+    let (hub, clock, mut calls, _home) = running_t1().await;
+    let t1 = TaskId::unchecked("T1");
+    hub.tasks
+        .ask_lead(&t1, "Which DB should the tests use?")
+        .unwrap();
+    session(
+        &hub,
+        3,
+        "r1",
+        "interrupted",
+        json!({ "end": "node_stopping", "failure": { "class": "process_exited", "message": "the node stopped" } }),
+    );
+    logged(&hub, "thread.interrupted", "r1").await;
+    catch_up(&hub.tasks).await;
+    clock.advance(Duration::from_secs(41));
+    let (run, text) = sent(&mut calls).await;
+    assert!(text.starts_with("fleetd: your run was cut off"), "{text}");
+    assert_eq!(task(&hub).state, TaskState::Running);
+    session(&hub, 4, &run, "running", json!({}));
+    logged(&hub, "thread.started", &run).await;
+    catch_up(&hub.tasks).await;
+
+    let caller = TaskCaller {
+        project_ref: project(),
+        by: "lead".into(),
+    };
+    hub.tasks
+        .message(&caller, &t1, "Use the staging DB.")
+        .await
+        .unwrap();
+    let (_, answer) = sent(&mut calls).await;
+    assert_eq!(answer, "Use the staging DB.");
+    assert_eq!(task(&hub).state, TaskState::Running);
+}
+
+/// The same, with the answer coming while T1 waits to resume: one resume goes out, with the note and the answer (once
+/// its node, just back, has settled).
+#[tokio::test]
+async fn an_answer_while_it_waits_to_resume_goes_with_the_resume() {
+    let (hub, clock, mut calls, _home) = running_t1().await;
+    let t1 = TaskId::unchecked("T1");
+    hub.tasks
+        .ask_lead(&t1, "Which DB should the tests use?")
+        .unwrap();
+    session(
+        &hub,
+        3,
+        "r1",
+        "interrupted",
+        json!({ "end": "node_stopping", "failure": { "class": "process_exited", "message": "the node stopped" } }),
+    );
+    logged(&hub, "thread.interrupted", "r1").await;
+    catch_up(&hub.tasks).await;
+    assert_eq!(task(&hub).state, TaskState::Queued);
+    let caller = TaskCaller {
+        project_ref: project(),
+        by: "lead".into(),
+    };
+    hub.tasks
+        .message(&caller, &t1, "Use the staging DB.")
+        .await
+        .unwrap();
+    clock.advance(Duration::from_secs(41));
+    let (_, text) = sent(&mut calls).await;
+    assert!(text.starts_with("fleetd: your run was cut off"), "{text}");
+    assert!(text.ends_with("\n\nUse the staging DB."), "{text}");
+    assert_eq!(task(&hub).state, TaskState::Running);
+}
+
+/// A message held for T1 while it waited to resume (its resume not out yet) reaches the run a person started in its
+/// thread instead; the note does not.
+#[tokio::test]
+async fn a_message_held_while_recovering_reaches_the_run_a_person_started() {
+    let (hub, _clock, mut calls, _home) = running_t1().await;
+    session(
+        &hub,
+        3,
+        "r1",
+        "interrupted",
+        json!({ "end": "node_stopping", "failure": { "class": "process_exited", "message": "the node stopped" } }),
+    );
+    logged(&hub, "thread.interrupted", "r1").await;
+    catch_up(&hub.tasks).await;
+    let mut stored = hub
+        .db
+        .with(|c| Ok(super::TaskRecords::get(c, &TaskId::unchecked("T1"))?))
+        .unwrap()
+        .unwrap();
+    stored.pending_message = Some("Use the staging DB.".into());
+    hub.db
+        .with(|c| Ok(super::TaskRecords::put(c, &stored)?))
+        .unwrap();
+
+    session(&hub, 4, "r9", "running", json!({}));
+    logged(&hub, "thread.started", "r9").await;
+    catch_up(&hub.tasks).await;
+    let (_, text) = sent(&mut calls).await;
+    assert_eq!(text, "Use the staging DB.");
+    assert_eq!(task(&hub).state, TaskState::Running);
+}
+
 /// A node stopped cleanly reports its runs' ends before it goes; the hub applies T1's once the node is offline. T1
 /// doesn't resume while the node is away, nor at once when it is back: 30-40 s after its return.
 #[tokio::test]
@@ -577,6 +716,9 @@ async fn a_task_whose_pr_merged_while_it_waited_is_not_resumed() {
     nothing_sent(&mut calls).await;
     let over = task(&hub);
     assert_eq!(over.state, TaskState::Failed, "{over:?}");
+    // No resume went out: a later continue by the lead is neither labelled one nor counted as one.
+    let recovery = over.recovery.unwrap();
+    assert_eq!((recovery.next_at, recovery.resumed_at), (None, None));
     assert!(hub.leads.wakes.held(&project()).is_empty());
     assert!(
         hub.leads.wakes.pending(&project()),

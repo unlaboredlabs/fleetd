@@ -76,6 +76,13 @@ pub enum Event<'a> {
         machine: &'a str,
         minutes: i64,
     },
+    /// A message for a task, held while it waited to resume, that could not be sent to the run a person started.
+    MessageNotSent {
+        task: &'a str,
+        title: &'a str,
+        why: &'a str,
+        text: &'a str,
+    },
     AgentWaiting {
         task: &'a str,
         title: &'a str,
@@ -235,6 +242,18 @@ impl Event<'_> {
                 vec![format!(
                     "  > Its worktree and session are on {machine}, so it stays there. To have it done elsewhere, cancel it and start a new task."
                 )],
+            ),
+            Event::MessageNotSent {
+                task,
+                title,
+                why,
+                text,
+            } => (
+                format!(
+                    "- {task} did not get your message ({why}): {}; it runs again, so send it again with message_agent if it still applies",
+                    one_line(title, 80)
+                ),
+                body(text),
             ),
             Event::AgentWaiting {
                 task,

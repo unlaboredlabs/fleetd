@@ -68,6 +68,9 @@ pub struct ThreadChanges {
     pub pull_request_urls: Vec<String>,
 }
 
+/// A rebuild of a thread's worktree: its source, and when the node did it.
+pub type Rebuilt = (fleetd_contracts::sessions::WorktreeSource, Option<String>);
+
 /// A node command's result (`cmd_result`).
 #[derive(Clone, Debug)]
 pub struct CmdOutput {
@@ -117,11 +120,9 @@ pub trait TaskPorts: Send + Sync {
     ) -> BoxFut<'a, Result<(), PortError>> {
         self.send(thread, message, client_request_id)
     }
-    /// Executors.recreatedFrom: what the node rebuilt the thread's worktree from the last time it was gone.
-    fn recreated_from(
-        &self,
-        _thread: &ThreadRef,
-    ) -> Option<fleetd_contracts::sessions::WorktreeSource> {
+    /// Executors.recreatedFrom: what the node rebuilt the thread's worktree from the last time it was gone, and when
+    /// (older nodes don't say).
+    fn recreated_from(&self, _thread: &ThreadRef) -> Option<Rebuilt> {
         None
     }
     /// Executors.startedRun: the run the thread is on, not a send queued behind it; None when unknown.
