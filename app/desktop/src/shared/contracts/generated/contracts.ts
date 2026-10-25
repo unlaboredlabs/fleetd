@@ -3322,6 +3322,8 @@ export type Task = {
   qa?: boolean;
   /** Why it is queued, e.g. "fleet cap: 40 of 40 running". */
   queuedReason?: string;
+  /** Set once a run of it died (its node stopped, claude was killed, a stall) and fleetd resumed it or will. */
+  recovery?: TaskRecovery;
   result?: TaskResult;
   startedAt?: Timestamp;
   state: TaskState;
@@ -3374,6 +3376,28 @@ export type TaskKind = "write" | "read" | "review";
  * the lead, every reviewer and every helper call run; `medium` (effort medium) is for mechanical tasks the lead picks.
  */
 export type TaskProfile = "high" | "medium";
+
+/** A task fleetd resumes on its own after its run died: in the same thread and worktree, with a note to continue. */
+export type TaskRecovery = {
+  /** Automatic recoveries used of `max`; a resumed run that died again before doing anything counts twice. */
+  count: number;
+  /** How its last run ended. */
+  lastCause: RunEnd;
+  /** The same, in plain words: "the node on forge stopped", "claude was killed by signal 9". */
+  lastCauseText: string;
+  max: number;
+  /** When the resume goes out; absent once it has. */
+  nextAt?: Timestamp;
+  /** When the last resume went out. */
+  resumedAt?: Timestamp;
+  /**
+   * What tells one death from another (its cause, exit and last tool); the same one twice is not resumed again.
+   * Cleared when the lead continues the task itself.
+   */
+  signature?: string;
+  /** Deaths in a row with this signature, the latest one included. */
+  streak: number;
+};
 
 export type TaskResult = {
   at: Timestamp;

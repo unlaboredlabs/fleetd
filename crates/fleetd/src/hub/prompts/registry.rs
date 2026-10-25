@@ -342,6 +342,16 @@ pub const ENTRIES: &[Entry] = &[
         &[]
     ),
     entry!(
+        "task.recover",
+        Msg,
+        Messages,
+        Task,
+        "Resume after a run died",
+        "to an agent whose run was cut off (its node stopped, claude was killed, a stall), when fleetd resumes it",
+        "cause!=why the run ended, in plain words; doing!=the last thing it did; count!=this recovery's number; max!=the most fleetd makes",
+        &[]
+    ),
+    entry!(
         "usage.continue",
         Msg,
         Messages,

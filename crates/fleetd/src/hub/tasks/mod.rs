@@ -15,6 +15,9 @@ pub mod ports;
 #[cfg(test)]
 mod race_tests;
 pub mod records;
+pub mod recovery;
+#[cfg(test)]
+mod recovery_tests;
 pub mod render;
 pub mod resolve;
 pub mod tools;
@@ -266,6 +269,10 @@ impl Tasks {
         }));
         if let Err(error) = registered {
             tracing::error!(%error, "tasks: slot listener not registered");
+        }
+        // Recoveries a restart cut short still go at their time.
+        for stored in self.db(TaskRecords::queued).unwrap_or_default() {
+            self.resume_at(stored.task.recovery.as_ref());
         }
         tokio::select! {
             () = shutdown.wait() => {}
@@ -676,6 +683,11 @@ impl Tasks {
             next.base = base.clone();
         }
         next.state = TaskState::Running;
+        let recovering = continuing && task.recovery.as_ref().is_some_and(|r| r.next_at.is_some());
+        if let Some(recovery) = next.recovery.as_mut().filter(|_| recovering) {
+            recovery.next_at = None;
+            recovery.resumed_at = Some(Timestamp(at.clone()));
+        }
         next.started_at = Some(task.started_at.clone().unwrap_or(Timestamp(at)));
         // From here the board holds the slot while the thread runs and frees it whenever it stops.
         self.d.slots.bind(task.task_id.as_str(), &thread_ref)?;
@@ -684,7 +696,16 @@ impl Tasks {
             pending_message: None,
         })?;
         let now = self.now_iso();
-        let summary = if continuing {
+        let summary = if let Some(recovery) = next.recovery.as_ref().filter(|_| recovering) {
+            format!(
+                "{} resumed automatically (attempt {}, recovery {} of {}): {}",
+                task.task_id.as_str(),
+                task.attempt.get(),
+                recovery.count.get(),
+                recovery.max.get(),
+                task.title.as_str()
+            )
+        } else if continuing {
             format!(
                 "{} continued (attempt {}): {}",
                 task.task_id.as_str(),
@@ -748,18 +769,25 @@ impl Tasks {
             Ok(queued) => queued,
             Err(error) => return tracing::warn!(%error, "tasks: queue not read"),
         };
+        let now = now_ms(self.d.clock.as_ref());
         for stored in queued {
+            // A recovering task waits out its delay; its timer runs the queue then.
+            if recovery::waiting(stored.task.recovery.as_ref(), now) {
+                continue;
+            }
             self.try_start(stored, true).await;
         }
     }
 
     /// `why` stands in for the thread's own error: the watchdog's stall, which the thread row does not hold yet.
+    /// `escalated`: why a dead run was not resumed, which its lead decides on.
     async fn finish(
         self: &Arc<Self>,
         stored: &StoredTask,
         status: TaskResultStatus,
         why: Option<String>,
         end_cause: Option<RunEnd>,
+        escalated: Option<&str>,
     ) -> Result<(), StoreError> {
         let task = &stored.task;
         let thread_ref = task.thread_ref.clone().expect("a live task has a thread");
@@ -803,12 +831,21 @@ impl Tasks {
             .and_then(|c| c.branch.clone())
             .or_else(|| task.branch.as_ref().map(|b| b.as_str().to_owned()));
         let at = self.now_iso();
-        let tail = [text.trim(), error.as_str()]
-            .iter()
-            .filter(|s| !s.is_empty())
-            .copied()
-            .collect::<Vec<_>>()
-            .join("\n\n");
+        let escalation = escalated.map(|why| {
+            format!(
+                "Not resumed automatically: {why}. Decide: continue it with instructions (message_agent), split the work, or cancel it."
+            )
+        });
+        let tail = [
+            text.trim(),
+            error.as_str(),
+            escalation.as_deref().unwrap_or(""),
+        ]
+        .iter()
+        .filter(|s| !s.is_empty())
+        .copied()
+        .collect::<Vec<_>>()
+        .join("\n\n");
         let result = TaskResult {
             status,
             tail: Text::unchecked(tail_of(&tail, render::TAIL_MAX)),
@@ -844,14 +881,204 @@ impl Tasks {
         } else {
             (HubEventType::TaskFailed, "failed")
         };
+        let mut extra = Map::new();
+        if let Some(why) = escalated {
+            extra.insert("escalated".into(), json!(why));
+        }
         self.emit(
             &next,
             r#type,
             format!("{} {verb}: {}", task.task_id.as_str(), task.title.as_str()),
-            Map::new(),
+            extra,
         )?;
         self.retry_queue().await;
         Ok(())
+    }
+
+    /// A run of a live task ended without completing: resumed, escalated or failed plainly (`recovery::decide`).
+    /// Only a run that started ends here; a task that never started, or was cancelled, has its result already.
+    async fn died(
+        self: &Arc<Self>,
+        stored: &StoredTask,
+        thread: &ThreadRef,
+        event: &HubEvent,
+    ) -> Result<(), StoreError> {
+        let task = &stored.task;
+        // Only the run the thread is on dies mid-run (`earlier_run` drops the others): one that names no run can't
+        // be told from a run that never started, so it ends the task plainly.
+        let ran = event
+            .data
+            .as_ref()
+            .and_then(|d| d["runId"].as_str())
+            .is_some_and(|run| self.d.ports.started_run(thread).is_none_or(|s| s == run));
+        let last = self
+            .d
+            .ports
+            .action_texts(thread, 1)
+            .await
+            .into_iter()
+            .next()
+            .map(|(summary, _)| summary);
+        let death = recovery::death(
+            event.r#type,
+            event.data.as_ref(),
+            thread.machine_id.as_str(),
+            last.as_deref(),
+        );
+        let action = recovery::decide(
+            &death,
+            task.recovery.as_ref(),
+            !ran || self.stopped(task)?,
+            now_ms(self.d.clock.as_ref()),
+            rand::random(),
+            recovery::max(),
+        );
+        // The watchdog's stall, which the thread row does not hold yet.
+        let stalled = event
+            .data
+            .as_ref()
+            .filter(|_| death.kind == recovery::Kind::Stalled)
+            .and_then(|d| d["error"]["message"].as_str())
+            .map(|m| format!("[stalled] {m}"));
+        match action {
+            recovery::Action::Finish => {
+                self.finish(
+                    stored,
+                    TaskResultStatus::Failed,
+                    stalled,
+                    death.reported,
+                    None,
+                )
+                .await
+            }
+            recovery::Action::Escalate(why) => {
+                tracing::info!(
+                    task_id = task.task_id.as_str(),
+                    why,
+                    "dead task not resumed"
+                );
+                self.finish(
+                    stored,
+                    TaskResultStatus::Failed,
+                    stalled,
+                    death.reported,
+                    Some(&why),
+                )
+                .await
+            }
+            recovery::Action::Resume(recovery) => {
+                let doing = last
+                    .or_else(|| {
+                        self.d
+                            .store
+                            .thread_get(thread)
+                            .ok()
+                            .flatten()
+                            .map(|t| t.thread.headline.as_str().trim().to_owned())
+                            .filter(|h| !h.is_empty())
+                    })
+                    .map_or_else(
+                        || "nothing it said".to_owned(),
+                        |d| render::one_line(&d, 200),
+                    );
+                self.recover(stored, thread, recovery, &death.text, &doing)
+            }
+        }
+    }
+
+    /// Queues a dead task to resume in its thread at `recovery.next_at`, with the note to continue. The lead isn't
+    /// woken: the queued reason is in its digest, and the resume in its next one.
+    fn recover(
+        self: &Arc<Self>,
+        stored: &StoredTask,
+        thread: &ThreadRef,
+        recovery: fleetd_contracts::tasks::TaskRecovery,
+        cause: &str,
+        doing: &str,
+    ) -> Result<(), StoreError> {
+        let task = &stored.task;
+        let set = self
+            .d
+            .db
+            .prompts()
+            .for_thread(&thread.machine_id, thread.thread_id.as_str());
+        let note = set.render(
+            "task.recover",
+            &[
+                ("cause", &cause),
+                ("doing", &doing),
+                ("count", &recovery.count.get()),
+                ("max", &recovery.max.get()),
+            ],
+        );
+        // A message sent into the gap goes out with the note, so the agent is continued once.
+        let pending = match &stored.pending_message {
+            Some(message) => format!("{note}\n\n{message}"),
+            None => note,
+        };
+        let reason = recovery::queued_reason(&recovery);
+        tracing::info!(task_id = task.task_id.as_str(), reason, "dead task resumes");
+        let mut next = task.clone();
+        next.attempt = Int::unchecked(next.attempt.get() + 1);
+        self.resume_at(Some(&recovery));
+        next.recovery = Some(recovery);
+        self.d.slots.release(task.task_id.as_str())?;
+        self.queue(
+            &StoredTask {
+                task: next,
+                pending_message: Some(pending),
+            },
+            "recover",
+            &reason,
+        )?;
+        Ok(())
+    }
+
+    /// Runs the queue once a recovery's delay is over.
+    fn resume_at(self: &Arc<Self>, recovery: Option<&fleetd_contracts::tasks::TaskRecovery>) {
+        let Some(at) = recovery
+            .and_then(|r| r.next_at.as_ref())
+            .and_then(|at| parse_ms(at.as_str()))
+        else {
+            return;
+        };
+        let wait = (at - now_ms(self.d.clock.as_ref())).max(0) as u64;
+        let (tasks, sleep) = (
+            Arc::downgrade(self),
+            self.d.clock.sleep(std::time::Duration::from_millis(wait)),
+        );
+        tokio::spawn(async move {
+            sleep.await;
+            if let Some(tasks) = tasks.upgrade() {
+                tasks.retry_later();
+            }
+        });
+    }
+
+    /// Whether the task's work is over, so a dead run of it isn't resumed: its workstream is closed, its PR merged,
+    /// or its plan item done or dropped.
+    fn stopped(&self, task: &Task) -> Result<bool, StoreError> {
+        if self
+            .workstream(&task.workstream_id)
+            .is_none_or(|w| w.state != fleetd_contracts::ledger::WorkstreamState::Open)
+        {
+            return Ok(true);
+        }
+        let merged = self.db(|c| {
+            c.prepare_cached(
+                "SELECT EXISTS (SELECT 1 FROM events WHERE type = 'pr.merged' AND json_extract(data, '$.taskId') = ?)",
+            )?
+            .query_row([task.task_id.as_str()], |r| r.get::<_, bool>(0))
+        })?;
+        let item_over = match &task.item_id {
+            Some(item) => self
+                .db(|c| {
+                    crate::hub::plan::store::item_get(c, crate::hub::plan::number(item.as_str()))
+                })?
+                .is_some_and(|i| i.state != fleetd_contracts::plan::PlanItemState::Open),
+            None => false,
+        };
+        Ok(merged || item_over)
     }
 
     async fn on_thread_event(self: &Arc<Self>, event: &HubEvent) -> Result<(), StoreError> {
@@ -879,11 +1106,16 @@ impl Tasks {
             && !self.earlier_run(task, &thread_ref, event)?;
         match event.r#type {
             HubEventType::ThreadStarted => {
-                // Continued outside `task message`: the usage layer's continue, or a human writing to the thread.
-                if !matches!(
-                    task.state,
-                    TaskState::Done | TaskState::Failed | TaskState::Idle
-                ) {
+                // Continued outside `task message`: the usage layer's continue, or a human writing to the thread. One
+                // waiting to resume after a death is continued by it, and its note isn't sent too.
+                let recovering = task.state == TaskState::Queued
+                    && task.recovery.as_ref().is_some_and(|r| r.next_at.is_some());
+                if !recovering
+                    && !matches!(
+                        task.state,
+                        TaskState::Done | TaskState::Failed | TaskState::Idle
+                    )
+                {
                     return Ok(());
                 }
                 let request = SlotRequest {
@@ -897,6 +1129,17 @@ impl Tasks {
                 next.ended_at = None;
                 next.parked = None;
                 next.state = TaskState::Running;
+                if recovering {
+                    tracing::info!(
+                        task_id = task.task_id.as_str(),
+                        "recovering task continued in its thread; its note is not sent"
+                    );
+                    next.queued_reason = None;
+                    if let Some(recovery) = &mut next.recovery {
+                        recovery.next_at = None;
+                        recovery.resumed_at = Some(Timestamp(self.now_iso()));
+                    }
+                }
                 self.put(&StoredTask {
                     task: next,
                     pending_message: None,
@@ -940,7 +1183,7 @@ impl Tasks {
             }
             HubEventType::ThreadCompleted if live => {
                 let end = end_cause(event).or(Some(RunEnd::Completed));
-                self.finish(&stored, TaskResultStatus::Done, None, end)
+                self.finish(&stored, TaskResultStatus::Done, None, end, None)
                     .await?
             }
             HubEventType::ThreadUsageLimited => {
@@ -964,19 +1207,7 @@ impl Tasks {
             }
             // A cancel interrupts the thread itself and has already ended the task.
             HubEventType::ThreadFailed | HubEventType::ThreadInterrupted if live => {
-                let stalled = event
-                    .data
-                    .as_ref()
-                    .filter(|d| d["reason"] == "stalled")
-                    .and_then(|d| d["error"]["message"].as_str())
-                    .map(|m| format!("[stalled] {m}"));
-                let end = if stalled.is_some() {
-                    Some(RunEnd::Stalled)
-                } else {
-                    end_cause(event)
-                };
-                self.finish(&stored, TaskResultStatus::Failed, stalled, end)
-                    .await?
+                self.died(&stored, &thread_ref, event).await?
             }
             _ => {}
         }
@@ -1161,6 +1392,7 @@ impl Tasks {
             worktree_path: None,
             parked: None,
             attempt: Int::unchecked(1),
+            recovery: None,
             result: None,
             created_at: Timestamp(self.now_iso()),
             started_at: None,
@@ -1225,11 +1457,22 @@ impl Tasks {
                     None => text.to_owned(),
                     Some(earlier) => format!("{earlier}\n\n{text}"),
                 };
+                // A recovering task resumes now, with the note and this: the lead's call stands.
+                let mut next = task.clone();
+                let recovering =
+                    recovery::waiting(next.recovery.as_ref(), now_ms(self.d.clock.as_ref()));
+                if let Some(recovery) = next.recovery.as_mut().filter(|_| recovering) {
+                    recovery.next_at = Some(Timestamp(self.now_iso()));
+                }
                 self.put(&StoredTask {
-                    task: task.clone(),
+                    task: next.clone(),
                     pending_message: Some(pending),
                 })
                 .map_err(store_error)?;
+                if recovering {
+                    self.retry_later();
+                    return Ok(next);
+                }
                 if self.asking.lock().unwrap().remove(task_id) {
                     // A paused agent held back for this answer can continue now, if a slot is free.
                     self.retry_later();
@@ -1254,6 +1497,10 @@ impl Tasks {
                 self.asking.lock().unwrap().remove(task_id);
                 let mut next = task;
                 next.attempt = Int::unchecked(next.attempt.get() + 1);
+                // The lead continued it: a death like the last one is resumed again, within the same cap.
+                if let Some(recovery) = &mut next.recovery {
+                    recovery.signature = None;
+                }
                 Ok(self
                     .try_start(
                         StoredTask {
