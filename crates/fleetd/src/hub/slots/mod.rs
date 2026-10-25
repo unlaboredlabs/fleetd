@@ -1,24 +1,26 @@
-//! The slot board: one queue under two caps, the fleet's and each project's max agents; reviews go first, then
-//! the oldest. A slot is held while a task's thread is running, read from the executor's thread events, and from a
-//! grant until that thread first runs. A lead is not an agent and holds none.
+//! The slot board: one queue under each machine's cap (what it fits, [`sizing`]), its disk room, each project's max
+//! agents, and the fleet cap if a person set one; reviews go first, then the oldest. A slot is held while a task's
+//! thread is running, read from the executor's thread events, and from a grant until that thread first runs. A lead
+//! is not an agent and holds none.
 mod board;
+pub mod sizing;
 
 use std::sync::{Arc, Mutex};
 
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadId, ThreadRef};
 use fleetd_contracts::model::ThreadStatus;
-use fleetd_contracts::prim::{Int, List};
-use fleetd_contracts::tasks::{SlotState, SlotStatePerProject, TaskKind};
+use fleetd_contracts::node_link::NodeLoad;
+use fleetd_contracts::prim::{Int, List, Text};
+use fleetd_contracts::tasks::{SlotState, SlotStatePerMachine, SlotStatePerProject, TaskKind};
 use rusqlite::{OptionalExtension, params};
 
-use board::{Board, BoardState, Claim, ClaimState, Op};
-pub use board::{Grant, SlotPriority};
+use board::{Board, BoardState, Claim, ClaimState, Machine, Op};
+pub use board::{Grant, MaxSource, SlotPriority};
 
+use crate::clock::Clock;
 use crate::hub::api::Shutdown;
-use crate::hub::store::{EventLog, HubDb, HubStore, StoreError, WaitInput};
-
-pub const DEFAULT_CAP: i64 = 40;
+use crate::hub::store::{EventLog, HubDb, HubStore, StoreError, WaitInput, now_ms};
 
 const RUNNING: [HubEventType; 1] = [HubEventType::ThreadStarted];
 const STOPPED: [HubEventType; 5] = [
@@ -50,12 +52,13 @@ pub struct CapInput {
     pub max_agents: Option<(ProjectRef, i64)>,
 }
 
-/// A project's agents as its lead is told them: "agents: 7 running of 12, 2 queued".
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// A project's agents as its lead is told them: "agents: 7 running of 12 (auto: memory 32 GB), 2 queued".
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Agents {
     pub running: i64,
     pub max_agents: i64,
     pub queued: i64,
+    pub source: MaxSource,
 }
 
 pub struct SlotRequest<'a> {
@@ -67,6 +70,7 @@ pub struct SlotRequest<'a> {
 
 pub struct Slots {
     db: Arc<HubDb>,
+    clock: Arc<dyn Clock>,
     board: Mutex<Board>,
     listeners: Mutex<Vec<ReleaseListener>>,
     /// The event log's head when the board was loaded; `run` follows from here.
@@ -118,19 +122,45 @@ fn persist(db: &HubDb, ops: Vec<Op>) -> Result<(), StoreError> {
                     )?
                     .execute(params![r.machine_id.as_str(), r.project_id.as_str(), share])?;
                 }
+                Op::Machine(m, name, auto) => {
+                    db.prepare_cached(
+                        "INSERT INTO slot_machine_caps (machine_id, name, auto, why) VALUES (?, ?, ?, ?)
+                         ON CONFLICT (machine_id) DO UPDATE SET name = excluded.name, auto = excluded.auto, why = excluded.why",
+                    )?
+                    .execute(params![m.as_str(), name, auto.cap, auto.why])?;
+                }
             }
         }
         Ok(())
     })
 }
 
-/// The persisted board: cap, max agents and claims as the last hub left them.
-fn load(db: &HubDb, default_cap: i64) -> Result<Board, StoreError> {
+/// The persisted board: caps, max agents, machines and claims as the last hub left them. A fleet cap is saved only
+/// once someone sets it; until then the machines' caps are the only limit across projects.
+fn load(db: &HubDb) -> Result<Board, StoreError> {
     db.with(|db| {
         let cap: Option<i64> = db.query_row("SELECT value FROM slot_settings WHERE key = 'cap'", [], |r| r.get(0)).optional()?;
         let shares = db
             .prepare("SELECT machine_id, project_id, share FROM slot_shares")?
             .query_map([], |r| Ok((project_ref(r.get(0)?, r.get(1)?), r.get(2)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let machines = db
+            .prepare("SELECT machine_id, name, auto, why, max_agents FROM slot_machine_caps ORDER BY rowid")?
+            .query_map([], |r| {
+                Ok(Machine {
+                    machine_id: MachineId::unchecked(r.get::<_, String>(0)?),
+                    name: r.get(1)?,
+                    auto: sizing::Auto {
+                        cap: r.get(2)?,
+                        why: r.get(3)?,
+                    },
+                    max_agents: r.get(4)?,
+                    // Until its next heartbeat.
+                    disk_room: None,
+                    projects: Vec::new(),
+                    memory: None,
+                })
+            })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         let claims = db
             .prepare("SELECT holder, machine_id, project_id, priority, thread_id, state, order_n FROM slot_claims")?
@@ -145,7 +175,7 @@ fn load(db: &HubDb, default_cap: i64) -> Result<Board, StoreError> {
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(Board::new(cap.unwrap_or(default_cap), shares, claims))
+        Ok(Board::new(cap, shares, machines, claims))
     })
 }
 
@@ -153,6 +183,7 @@ fn slot_state(s: BoardState) -> SlotState {
     let count = |n: i64| Int::unchecked(n.max(0));
     SlotState {
         cap: count(s.cap),
+        fleet_cap: s.fleet_cap.map(count),
         used: count(s.used),
         queued: count(s.queued),
         per_project: List::unchecked(
@@ -166,6 +197,19 @@ fn slot_state(s: BoardState) -> SlotState {
                 })
                 .collect(),
         ),
+        per_machine: List::unchecked(
+            s.per_machine
+                .into_iter()
+                .map(|row| SlotStatePerMachine {
+                    machine_id: row.machine_id,
+                    cap: count(row.cap),
+                    auto: count(row.auto),
+                    why: Text::new(row.why).unwrap_or_else(|_| Text::unchecked("auto".to_owned())),
+                    running: count(row.running),
+                    disk_room: row.disk_room.map(count),
+                })
+                .collect(),
+        ),
     }
 }
 
@@ -175,10 +219,12 @@ impl Slots {
     /// hears about slots that came free while the hub was down.
     pub fn new(
         db: Arc<HubDb>,
+        clock: Arc<dyn Clock>,
         store: &HubStore,
         events: &EventLog,
     ) -> Result<Arc<Self>, StoreError> {
-        let mut board = load(&db, DEFAULT_CAP)?;
+        let mut board = load(&db)?;
+        board.tick(now_ms(clock.as_ref()));
         let head = events.head();
         let bound: Vec<(String, ThreadRef)> = board
             .claims()
@@ -205,6 +251,7 @@ impl Slots {
         persist(&db, board.take_ops())?;
         Ok(Arc::new(Self {
             db,
+            clock,
             board: Mutex::new(board),
             listeners: Mutex::new(Vec::new()),
             cursor: head,
@@ -250,11 +297,14 @@ impl Slots {
         self.board.lock().unwrap_or_else(|p| p.into_inner())
     }
 
-    /// Runs `body` on the board; when it freed capacity, re-evaluates the queue, persists, then runs the listeners.
+    /// Runs `body` on the board at the clock's time; when that or the time freed capacity, re-evaluates the queue,
+    /// persists, then runs the listeners.
     fn locked<R>(&self, body: impl FnOnce(&mut Board) -> (R, bool)) -> Result<R, StoreError> {
         let (result, freed) = {
             let mut board = self.board();
+            let settled = board.tick(now_ms(self.clock.as_ref()));
             let (result, freed) = body(&mut board);
+            let freed = freed || settled;
             if freed {
                 board.evaluate();
             }
@@ -282,6 +332,24 @@ impl Slots {
         running: bool,
     ) -> Result<(), StoreError> {
         self.locked(|b| ((), b.observe(machine_id.as_str(), thread_id, running)))
+    }
+
+    /// A heartbeat's facts about the machine (`name` for the reasons people read): what it fits, its disk room, and
+    /// what each project measured there fits, and its memory budget. When it takes more than before, starts the queued agents that now fit
+    /// and runs the listeners.
+    pub fn observe_machine(
+        &self,
+        machine_id: &MachineId,
+        name: &str,
+        load: &NodeLoad,
+    ) -> Result<(), StoreError> {
+        let (auto, disk_room) = (sizing::auto_cap(load), sizing::disk_room(load));
+        let (projects, memory) = (sizing::project_caps(load, &auto), sizing::memory(load));
+        self.locked(|b| {
+            let more = b.observe_machine(machine_id, name, auto, disk_room);
+            let more = b.observe_projects(machine_id, projects) || more;
+            ((), b.observe_memory(machine_id, memory) || more)
+        })
     }
 
     /// Takes a slot now, or queues the request (reviews first, then the oldest) and says why. Asking again for a holder that
@@ -335,6 +403,7 @@ impl Slots {
             running,
             max_agents: board.max_agents_of(r),
             queued,
+            source: board.max_source(r),
         }
     }
 
@@ -348,8 +417,19 @@ impl Slots {
         self.board().extras(r)
     }
 
-    pub fn cap(&self) -> i64 {
+    /// The fleet cap a person set; None: the machines' caps alone.
+    pub fn cap(&self) -> Option<i64> {
         self.board().cap()
+    }
+
+    /// The fleet cap when set, else what the machines fit together.
+    pub fn total(&self) -> i64 {
+        self.board().total()
+    }
+
+    /// The machine's cap: a person's setting, else what it fits.
+    pub fn machine_cap(&self, m: &MachineId) -> i64 {
+        self.board().machine_cap(m)
     }
 
     /// Slots the project's tasks could take now ([`Board::room`]).
@@ -405,8 +485,9 @@ mod tests {
     fn concurrent_spawns_never_overshoot_max_agents() {
         let db = HubDb::open_memory().unwrap();
         let store = HubStore::new(db.clone());
-        let events = EventLog::new(db.clone(), ManualClock::at(1_792_000_000_000)).unwrap();
-        let slots = Slots::new(db, &store, &events).unwrap();
+        let clock = ManualClock::at(1_792_000_000_000);
+        let events = EventLog::new(db.clone(), clock.clone()).unwrap();
+        let slots = Slots::new(db, clock, &store, &events).unwrap();
         let r = ProjectRef {
             machine_id: MachineId::unchecked("lab-a"),
             project_id: ProjectId::unchecked("p1"),
@@ -443,7 +524,8 @@ mod tests {
             Agents {
                 running: 2,
                 max_agents: 2,
-                queued: n as i64 - 2
+                queued: n as i64 - 2,
+                source: MaxSource::Project,
             }
         );
     }

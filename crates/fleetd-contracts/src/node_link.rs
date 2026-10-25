@@ -11,7 +11,7 @@ use serde_with::skip_serializing_none;
 
 use crate::checked;
 use crate::hello::ProtocolVersion;
-use crate::ids::{MachineId, Timestamp};
+use crate::ids::{MachineId, ProjectId, Timestamp};
 use crate::lead_calls::{LeadCallFrame, LeadResultFrame};
 use crate::ledger::{DecisionKey, EnvName, GatedArgv, GatedCwd, GatedTimeoutSec, SecretEnv};
 use crate::model::SleptSpan;
@@ -125,6 +125,21 @@ pub struct NodeLoad {
     pub limits: List<LoginLimit, 0, 4>,
     /// The volume holding the node's worktrees and build cache; absent from older nodes and when it can't be read.
     pub disk: Option<NodeDisk>,
+    /// What each project's agents have taken in memory here, for projects with a session measured. Absent from older
+    /// nodes.
+    pub project_memory: Option<List<ProjectMemory, 0, 256>>,
+}
+
+/// One project's agents' memory on a machine: each session's peak resident memory, its whole process tree counted,
+/// over the project's latest sessions there.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectMemory {
+    pub project_id: ProjectId,
+    /// Sessions measured: the latest 20 at most.
+    pub samples: Int<1, 20>,
+    /// The 90th percentile of their peaks.
+    pub p90_bytes: Count,
 }
 
 /// Space on the volume holding a node's worktrees and build cache.

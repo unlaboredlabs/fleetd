@@ -80,9 +80,10 @@ pub fn paused_reason(max_agents: i64) -> String {
 impl Tasks {
     pub async fn set_caps(self: &Arc<Self>, change: CapChange) -> Result<CapOutcome, TaskError> {
         let slots = &self.d.slots;
-        let cap_before = slots.cap();
-        let cap = change.cap.unwrap_or(cap_before);
+        // Unset until someone sets it: the machines' own caps are the only limit across projects.
+        let (cap_before, total_before) = (slots.cap(), slots.total());
         if let Some(p) = &change.project
+            && let Some(cap) = change.cap.or(cap_before)
             && p.max_agents > cap
         {
             return Err(lead_error(
@@ -111,16 +112,22 @@ impl Tasks {
 
         let mut paused = Vec::new();
         let mut lines = Vec::new();
-        if cap != cap_before {
+        if let Some(cap) = change.cap
+            && Some(cap) != cap_before
+        {
             let after = slots.state();
-            let line = if cap > cap_before {
-                format!("Fleet cap {cap_before} → {cap}: queued agents start as slots allow.")
+            let change = match cap_before {
+                Some(before) => format!("Fleet cap {before} → {cap}"),
+                None => format!("Fleet cap set to {cap} (the machines fit {total_before})"),
+            };
+            let line = if cap > total_before {
+                format!("{change}: queued agents start as slots allow.")
             } else {
-                format!("Fleet cap {cap_before} → {cap}: running agents finish; new ones wait.")
+                format!("{change}: running agents finish; new ones wait.")
             };
             self.cap_event(
                 None,
-                cap_before,
+                cap_before.unwrap_or(total_before),
                 cap,
                 after.used.get(),
                 after.queued.get(),

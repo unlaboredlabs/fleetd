@@ -218,7 +218,7 @@ wake.
 
 ```
 # project lab (devbox/lab), 2026-10-19T14:02:11.000Z
-agents: 3 running of 6, 1 queued
+agents: 3 running of 6 (auto: memory 18 GB), 1 queued
 
 ## Work
 - W2 running: flaky login test

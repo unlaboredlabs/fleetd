@@ -19,20 +19,23 @@ pub enum Ended {
     Cancelled,
 }
 
-/// The project's agents against its cap, the second line of every state block.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The project's agents against its cap, the second line of every state block: "agents: 4 running of 6 (auto:
+/// memory 18 GB), 2 queued".
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentsLine {
     pub running: i64,
     pub cap: i64,
     pub queued: i64,
+    /// Where the cap comes from: "auto: memory 18 GB", "max agents set", "machine cap set".
+    pub source: String,
 }
 
 impl Display for AgentsLine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "agents: {} running of {}, {} queued",
-            self.running, self.cap, self.queued
+            "agents: {} running of {} ({}), {} queued",
+            self.running, self.cap, self.source, self.queued
         )
     }
 }
@@ -88,6 +91,10 @@ pub enum Event<'a> {
         title: &'a str,
         question: &'a str,
     },
+    /// A finished writer's PR, found after its result line went out (D67: looked up once the task ends).
+    AgentPr { task: &'a str, pr_url: &'a str },
+    /// A finished writer's PR lookup ended without one: the host refused it (D130).
+    AgentPrSkipped { task: &'a str, why: &'a str },
     /// A person steered a task directly, past the lead.
     AgentSteered {
         task: &'a str,
@@ -261,6 +268,11 @@ impl Event<'_> {
             } => (
                 format!("- {task} waiting for an answer: {}", one_line(title, 80)),
                 body(question),
+            ),
+            Event::AgentPr { task, pr_url } => (format!("- {task}'s PR: {pr_url}"), vec![]),
+            Event::AgentPrSkipped { task, why } => (
+                format!("- {task}: PR lookup skipped: {}", one_line(why, 200)),
+                vec![],
             ),
             Event::AgentSteered {
                 task,

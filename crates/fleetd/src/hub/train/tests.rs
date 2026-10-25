@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use tokio::sync::Notify;
 
 use super::contract::*;
-use super::github::{GhOut, GhRunner, TRAIN_CONTEXT, batch_heads};
+use super::github::{GhOut, GhRunner, NEXT_LABEL, TRAIN_CONTEXT, batch_heads};
 use super::host::*;
 use super::records::{Db, ListFilter};
 use super::service::{ReviewGate, Train, TrainOptions, Verdict};
@@ -109,7 +109,20 @@ enum FakeCi {
     TrainOnly,
     /// A CI workflow whose `ci` check only appears, green, from the `green_from`th check-run poll on.
     Workflow { green_from: u32 },
+    /// `ci` and `rust (macos)`, which runs only on a head pushed while its PR has `fleetd:next` and is skipped
+    /// otherwise, as this repo's CI does; main requires `rust (macos)`. Where CI `reacts`, adding the label starts a
+    /// run of it on the PR's head: GitHub shows it from the third read, queued for two reads, then green. Its workflows
+    /// name the label where it `uses` it.
+    Macos { reacts: bool, uses: bool },
+    /// `ci` on the batch's head stays queued for its first `polls` reads, runs for two more, then goes green; green
+    /// at once elsewhere.
+    Queued { polls: u32 },
 }
+
+/// When the CI runs a head's checks didn't wait on the label finished: long before any test runs.
+const BEFORE: &str = "2020-01-01T00:00:00Z";
+/// When the run the label starts begins: after any label a test puts on.
+const AFTER: &str = "2099-01-01T00:00:00Z";
 
 /// GitHub as the train sees it, answered from the origin repo.
 struct FakeGh {
@@ -137,6 +150,22 @@ struct FakeGh {
     stale_reads: Mutex<u32>,
     /// A rebased PR's old head and the reads left that show it.
     stale: Mutex<HashMap<i64, (String, u32)>>,
+    /// The labels the repo has.
+    repo_labels: Mutex<Vec<String>>,
+    /// GitHub refuses every label call.
+    fail_labels: Mutex<bool>,
+    /// GitHub fails every read of the workflow files.
+    fail_workflows: Mutex<bool>,
+    /// `FakeCi::Macos`: the heads pushed while their PR had the label, and the reads of each head since the label
+    /// started a run on it.
+    labelled_pushes: Mutex<HashSet<String>>,
+    label_runs: Mutex<HashMap<String, u32>>,
+    /// `FakeCi::Queued`: reads of the batch's head so far.
+    batch_polls: Mutex<u32>,
+    /// Called on every check-run read, before it is answered: the test's look at the train while CI runs.
+    on_checks: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
+    /// When set, the `check_runs` of every check-run read, whatever the head and `ci`.
+    runs: Mutex<Option<Box<dyn Fn() -> Value + Send + Sync>>>,
 }
 
 fn ok(body: Value) -> GhOut {
@@ -300,6 +329,14 @@ impl FakeGh {
             &self.origin,
             &["update-ref", &format!("refs/heads/{branch}"), &rebased],
         );
+        self.log.lock().unwrap().push(format!("rebase #{n}"));
+        if self.pulls.lock().unwrap()[&n]
+            .labels
+            .iter()
+            .any(|l| l == NEXT_LABEL)
+        {
+            self.labelled_pushes.lock().unwrap().insert(rebased);
+        }
         let lag = *self.stale_reads.lock().unwrap();
         if lag > 0 {
             self.stale.lock().unwrap().insert(n, (head, lag));
@@ -577,7 +614,18 @@ impl FakeGh {
                 stderr: String::new(),
             },
             (["commits", sha, "check-runs"], _) => {
+                if let Some(look) = &*self.on_checks.lock().unwrap() {
+                    look();
+                }
                 self.moves_during_ci(sha);
+                if let Some(runs) = &*self.runs.lock().unwrap() {
+                    return ok(json!({ "check_runs": runs() }));
+                }
+                match self.ci {
+                    FakeCi::Macos { .. } => return ok(self.macos_runs(sha)),
+                    FakeCi::Queued { polls } => return ok(self.queued_runs(sha, polls)),
+                    _ => {}
+                }
                 let poll = {
                     let mut polls = self.polls.lock().unwrap();
                     *polls += 1;
@@ -593,7 +641,10 @@ impl FakeGh {
                 )
             }
             (["actions", "workflows"], "GET") => match self.ci {
-                FakeCi::Actions | FakeCi::Workflow { .. } => ok(
+                FakeCi::Actions
+                | FakeCi::Workflow { .. }
+                | FakeCi::Macos { .. }
+                | FakeCi::Queued { .. } => ok(
                     json!({ "total_count": 1, "workflows": [{ "name": "CI", "path": ".github/workflows/ci.yml", "state": "active" }] }),
                 ),
                 FakeCi::Unreadable => http_error(403, "Resource not accessible by integration"),
@@ -612,8 +663,33 @@ impl FakeGh {
                 FakeCi::TrainOnly => {
                     json!([{ "type": "required_status_checks", "ruleset_id": 1, "parameters": { "required_status_checks": [{ "context": TRAIN_CONTEXT }] } }])
                 }
+                FakeCi::Macos { .. } => {
+                    json!([{ "type": "required_status_checks", "ruleset_id": 1, "parameters": { "required_status_checks": [{ "context": "rust (macos)" }] } }])
+                }
                 _ => json!([]),
             }),
+            (["contents", ".github", "workflows", ..], "GET") if *self.fail_workflows.lock().unwrap() => {
+                http_error(500, "Server Error")
+            }
+            (["contents", ".github", "workflows"], "GET") => match self.ci {
+                FakeCi::Macos { .. } => ok(Value::Array(
+                    self.workflows()
+                        .iter()
+                        .map(|(file, _)| json!({ "path": format!(".github/workflows/{file}"), "type": "file" }))
+                        .collect(),
+                )),
+                _ => http_error(404, "Not Found"),
+            },
+            (["contents", ".github", "workflows", file], "GET") => {
+                match self.workflows().into_iter().find(|(f, _)| f == file) {
+                    Some((_, text)) => GhOut {
+                        exit_code: 0,
+                        stdout: text.into(),
+                        stderr: String::new(),
+                    },
+                    None => http_error(404, "Not Found"),
+                }
+            }
             (["statuses", sha], "POST") => {
                 let get = |k: &str| fields.get(k).copied().unwrap_or_default().to_string();
                 self.statuses
@@ -627,8 +703,146 @@ impl FakeGh {
                 ));
                 ok(json!({ "state": get("state") }))
             }
+            (["labels"], "POST")
+            | (["issues", _, "labels"], "POST")
+            | (["issues", _, "labels", _], "DELETE")
+                if *self.fail_labels.lock().unwrap() =>
+            {
+                http_error(403, "Resource not accessible by integration")
+            }
+            (["labels"], "POST") => {
+                let name = fields.get("name").copied().unwrap_or_default().to_string();
+                let mut labels = self.repo_labels.lock().unwrap();
+                if labels.contains(&name) {
+                    return http_error(422, "Validation Failed");
+                }
+                labels.push(name);
+                ok(json!({}))
+            }
+            (["issues"], "GET") => {
+                let label = query
+                    .split('&')
+                    .find_map(|kv| kv.strip_prefix("labels="))
+                    .unwrap_or_default();
+                let pulls = self.pulls.lock().unwrap();
+                ok(Value::Array(
+                    pulls
+                        .iter()
+                        .filter(|(_, p)| p.state == "open" && p.labels.iter().any(|l| l == label))
+                        .map(|(n, _)| json!({ "number": n, "pull_request": {} }))
+                        .collect(),
+                ))
+            }
+            (["issues", n, "labels"], "POST") => {
+                let n = number(Some(n));
+                let label = fields.get("labels[]").copied().unwrap_or_default();
+                let mut pulls = self.pulls.lock().unwrap();
+                let Some(p) = pulls.get_mut(&n) else {
+                    return http_error(404, "Not Found");
+                };
+                if !p.labels.iter().any(|l| l == label) {
+                    p.labels.push(label.to_string());
+                }
+                self.log.lock().unwrap().push(format!("label #{n}"));
+                if matches!(self.ci, FakeCi::Macos { reacts: true, .. })
+                    && let Some(head) = self.head_of(&p.branch)
+                {
+                    self.label_runs.lock().unwrap().insert(head, 0);
+                }
+                ok(json!([{ "name": label }]))
+            }
+            (["issues", n, "labels", name], "DELETE") => {
+                let n = number(Some(n));
+                let name = name.replace("%3A", ":");
+                let mut pulls = self.pulls.lock().unwrap();
+                let Some(p) = pulls.get_mut(&n).filter(|p| p.labels.contains(&name)) else {
+                    return http_error(404, "Label does not exist");
+                };
+                p.labels.retain(|l| *l != name);
+                self.log.lock().unwrap().push(format!("unlabel #{n}"));
+                ok(json!([]))
+            }
             _ => http_error(404, "Not Found"),
         }
+    }
+
+    /// `FakeCi::Macos`'s workflow files: CI, whose `rust (macos)` runs on the label where the repo `uses` it, with the
+    /// workflow that runs CI when the label is added; and the release, whose `publish (macos)` skips on every PR.
+    fn workflows(&self) -> Vec<(&'static str, &'static str)> {
+        const RELEASE: &str = "name: Release\non:\n  pull_request:\n  workflow_dispatch:\njobs:\n  publish-macos:\n    \
+             name: publish (macos)\n    if: github.event_name == 'workflow_dispatch'\n    runs-on: macos-latest\n";
+        match self.ci {
+            FakeCi::Macos { uses: true, .. } => vec![
+                (
+                    "ci.yml",
+                    "name: CI\non:\n  pull_request:\n  workflow_dispatch:\njobs:\n  ci:\n    runs-on: ubuntu-latest\n  \
+                     rust-macos:\n    name: rust (macos)\n    if: >-\n      github.event_name != 'pull_request'\n      \
+                     || contains(github.event.pull_request.labels.*.name, 'fleetd:next')\n    runs-on: macos-latest\n",
+                ),
+                (
+                    "macos-label.yml",
+                    "name: macOS label\non:\n  pull_request:\n    types: [labeled]\njobs:\n  dispatch:\n    \
+                     if: github.event.label.name == 'fleetd:next'\n    runs-on: ubuntu-latest\n    steps:\n      \
+                     - run: gh workflow run ci.yml --ref \"$BRANCH\"\n",
+                ),
+                ("build-release.yml", RELEASE),
+            ],
+            _ => vec![
+                (
+                    "ci.yml",
+                    "name: CI\non:\n  pull_request:\njobs:\n  ci:\n    runs-on: ubuntu-latest\n  rust-macos:\n    \
+                     name: rust (macos)\n    if: github.event_name != 'pull_request'\n    runs-on: macos-latest\n",
+                ),
+                ("build-release.yml", RELEASE),
+            ],
+        }
+    }
+
+    /// `FakeCi::Macos`: `ci` from the head's push, `rust (macos)` as the label left it, and `publish (macos)`, which
+    /// every PR skips.
+    fn macos_runs(&self, sha: &str) -> Value {
+        let ci = json!({ "id": 1, "name": "ci", "status": "completed", "conclusion": "success", "started_at": BEFORE, "completed_at": BEFORE });
+        let mut label_runs = self.label_runs.lock().unwrap();
+        let reads = label_runs.get_mut(sha).map(|reads| {
+            *reads += 1;
+            *reads
+        });
+        let macos = match reads {
+            Some(5..) => {
+                self.log.lock().unwrap().push(format!("macos green {sha}"));
+                json!({ "id": 3, "name": "rust (macos)", "status": "completed", "conclusion": "success", "started_at": AFTER, "completed_at": AFTER })
+            }
+            Some(3..) => {
+                json!({ "id": 3, "name": "rust (macos)", "status": "queued", "conclusion": null, "started_at": AFTER })
+            }
+            None if self.labelled_pushes.lock().unwrap().contains(sha) => {
+                self.log.lock().unwrap().push(format!("macos green {sha}"));
+                json!({ "id": 2, "name": "rust (macos)", "status": "completed", "conclusion": "success", "started_at": AFTER, "completed_at": AFTER })
+            }
+            _ => {
+                json!({ "id": 2, "name": "rust (macos)", "status": "completed", "conclusion": "skipped", "started_at": BEFORE, "completed_at": BEFORE })
+            }
+        };
+        let publish = json!({ "id": 4, "name": "publish (macos)", "status": "completed", "conclusion": "skipped", "started_at": BEFORE, "completed_at": BEFORE });
+        json!({ "check_runs": [ci, macos, publish] })
+    }
+
+    /// `FakeCi::Queued`: the batch's `ci` waits for a runner for its first `polls` reads, then runs for two.
+    fn queued_runs(&self, sha: &str, polls: u32) -> Value {
+        let mut queued = None;
+        if self.head_of("fleetd/train/batch").as_deref() == Some(sha) {
+            let mut reads = self.batch_polls.lock().unwrap();
+            *reads += 1;
+            queued = (*reads <= polls)
+                .then_some("queued")
+                .or((*reads <= polls + 2).then_some("in_progress"));
+        }
+        let ci = if let Some(status) = queued {
+            json!({ "id": 1, "name": "ci", "status": status, "conclusion": null })
+        } else {
+            json!({ "id": 1, "name": "ci", "status": "completed", "conclusion": "success" })
+        };
+        json!({ "check_runs": [ci] })
     }
 }
 
@@ -982,6 +1196,14 @@ impl Kit {
             merge_then_fail: Mutex::default(),
             stale_reads: Mutex::default(),
             stale: Mutex::default(),
+            repo_labels: Mutex::default(),
+            fail_labels: Mutex::default(),
+            fail_workflows: Mutex::default(),
+            labelled_pushes: Mutex::default(),
+            label_runs: Mutex::default(),
+            batch_polls: Mutex::default(),
+            on_checks: Mutex::default(),
+            runs: Mutex::default(),
         });
         let host = Arc::new(FakeHost {
             tasks: Mutex::default(),
@@ -1063,7 +1285,11 @@ impl Kit {
         git(&self.author, &["checkout", "-q", "-B", branch, &start]);
         for (file, content) in files {
             match content {
-                Some(c) => std::fs::write(self.author.join(file), c).unwrap(),
+                Some(c) => {
+                    let path = self.author.join(file);
+                    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                    std::fs::write(path, c).unwrap()
+                }
                 None => std::fs::remove_file(self.author.join(file)).unwrap(),
             }
         }
@@ -1460,6 +1686,7 @@ async fn parks_a_pr_whose_ci_is_red_wakes_its_author_with_the_failing_check_and_
 /// No wait for CI that never comes: one poll decides.
 fn one_poll(options: &mut TrainOptions) {
     options.ci_timeout = Duration::ZERO;
+    options.ci_queue_ceiling = Duration::ZERO;
 }
 
 /// A reviewed, ready PR on a repo with no CI: it waits with the fix, untouched, and the doctor names the repo.
@@ -1504,6 +1731,268 @@ async fn a_workflow_whose_check_never_comes_times_out_rather_than_merging() {
     assert_eq!(kit.get(&change_id).state, ChangeState::CiFailed);
     assert!(kit.gh.merges.lock().unwrap().is_empty());
     assert!(kit.train.repos_without_ci().is_empty());
+}
+
+/// A check run as GitHub answers it; `started` when a runner took it.
+fn check(name: &str, status: &str, conclusion: Option<&str>, started: Option<&str>) -> Value {
+    json!({ "id": 1, "name": name, "status": status, "conclusion": conclusion, "started_at": started,
+        "html_url": format!("https://github.com/{REPO}/actions/runs/1") })
+}
+
+/// The answer to every check-run read from now on.
+fn answer_checks(kit: &Kit, runs: impl Fn() -> Vec<Value> + Send + Sync + 'static) {
+    *kit.gh.runs.lock().unwrap() = Some(Box::new(move || json!(runs())));
+}
+
+/// Time `clock` has slept in all.
+fn slept(clock: &Sleeps) -> Duration {
+    clock.taken().iter().sum()
+}
+
+/// D128: CI that runs past the timeout and then goes green isn't lost. The Change waits in `ci_failed` at its head,
+/// its author is not sent to push, and once the run is green it goes back in the queue and merges on that run.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_timed_out_change_whose_checks_go_green_later_merges_without_a_push() {
+    let kit = Kit::with(FakeCi::Actions, one_poll);
+    // Still running at the first read, which times it out.
+    answer_checks(&kit, || {
+        vec![check(
+            "ci",
+            "in_progress",
+            None,
+            Some("2020-01-01T00:00:00Z"),
+        )]
+    });
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let head = kit.head_of("docs");
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+
+    assert!(kit.train.step(REPO).await);
+    let parked = kit.get(&change_id);
+    assert_eq!(parked.state, ChangeState::CiFailed);
+    let why = parked.last_error.as_deref().unwrap().to_string();
+    assert!(
+        why.starts_with("CI timed out on ")
+            && why.ends_with("within 0 min of its first check starting"),
+        "{why}"
+    );
+    assert!(
+        kit.host.sends.lock().unwrap().is_empty(),
+        "the author isn't sent to push"
+    );
+    assert!(
+        kit.host
+            .wakes
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|w| w.contains("no push needed")),
+        "{:?}",
+        kit.host.wakes.lock().unwrap()
+    );
+    assert!(
+        super::digest::lead_train_lines(
+            &super::digest::train_facts(&kit.train.records, |_| true),
+            None
+        )
+        .iter()
+        .any(|l| l.contains("No push needed")),
+    );
+
+    // Still running: it stays where it is.
+    assert!(!kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::CiFailed);
+
+    answer_checks(&kit, || {
+        vec![check(
+            "ci",
+            "completed",
+            Some("success"),
+            Some("2020-01-01T00:00:00Z"),
+        )]
+    });
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::Merged);
+    assert_eq!(*kit.gh.merges.lock().unwrap(), [(7, head.clone())]);
+    assert_eq!(kit.head_of("docs"), head, "never pushed to");
+    assert!(
+        kit.host
+            .wakes
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|w| w.contains("CI finished after the timeout; back in the queue"))
+    );
+    assert!(kit.host.sends.lock().unwrap().is_empty());
+}
+
+/// D128: a timed-out Change whose checks then go red fails as red CI does, back with its author.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_timed_out_change_whose_checks_go_red_later_goes_to_its_author() {
+    let kit = Kit::with(FakeCi::Actions, one_poll);
+    answer_checks(&kit, || {
+        vec![check(
+            "ci",
+            "in_progress",
+            None,
+            Some("2020-01-01T00:00:00Z"),
+        )]
+    });
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::CiFailed);
+
+    answer_checks(&kit, || {
+        vec![check(
+            "ci",
+            "completed",
+            Some("failure"),
+            Some("2020-01-01T00:00:00Z"),
+        )]
+    });
+    assert!(!kit.train.step(REPO).await);
+    let parked = kit.get(&change_id);
+    assert_eq!(parked.state, ChangeState::CiFailed);
+    assert!(
+        parked
+            .last_error
+            .as_deref()
+            .unwrap()
+            .starts_with("CI failed on ")
+    );
+    let sends = kit.host.sends.lock().unwrap().clone();
+    assert!(
+        sends.last().unwrap().1.contains("ci (failure)"),
+        "{sends:?}"
+    );
+    // Red is final for that head: no more reads of it put it back.
+    assert!(!kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::CiFailed);
+    assert!(kit.gh.merges.lock().unwrap().is_empty());
+}
+
+/// D128: the running timeout counts from the first check's start. An hour queued for runners, then 30 min running,
+/// merges; neither alone is over its limit.
+#[tokio::test(flavor = "multi_thread")]
+async fn time_queued_for_runners_does_not_count_toward_the_running_timeout() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Actions, clock.clone());
+    let start = clock.now();
+    let at = clock.clone();
+    answer_checks(&kit, move || {
+        let waited = at.now().duration_since(start).unwrap();
+        let queued = Duration::from_secs(60 * 60);
+        if waited < queued {
+            return vec![check("ci", "queued", None, None)];
+        }
+        let started = crate::hub::store::iso_ms(crate::hub::store::system_ms(start + queued));
+        let (status, conclusion) = if waited < queued + Duration::from_secs(30 * 60) {
+            ("in_progress", None)
+        } else {
+            ("completed", Some("success"))
+        };
+        vec![check("ci", status, conclusion, Some(&started))]
+    });
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::Merged);
+    assert!(slept(&clock) >= Duration::from_secs(90 * 60));
+}
+
+/// D128: checks that never get a runner still fail, once they have waited the 2 h queue ceiling.
+#[tokio::test(flavor = "multi_thread")]
+async fn checks_queued_past_the_ceiling_still_fail() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Actions, clock.clone());
+    answer_checks(&kit, || {
+        vec![
+            check("rust (linux)", "queued", None, None),
+            check("rust (macos)", "queued", None, None),
+        ]
+    });
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+
+    assert!(kit.train.step(REPO).await);
+    let parked = kit.get(&change_id);
+    assert_eq!(parked.state, ChangeState::CiFailed);
+    assert!(
+        parked
+            .last_error
+            .as_deref()
+            .unwrap()
+            .ends_with("2 checks waited 120 min for a runner and none started"),
+        "{:?}",
+        parked.last_error
+    );
+    let waited = slept(&clock);
+    assert!(
+        waited >= Duration::from_secs(2 * 60 * 60)
+            && waited < Duration::from_secs(2 * 60 * 60 + 60),
+        "{waited:?}"
+    );
+    assert!(kit.gh.merges.lock().unwrap().is_empty());
+}
+
+/// D128: with no start times from its CI provider, a running check times out as before: 45 min from the wait's start.
+#[tokio::test(flavor = "multi_thread")]
+async fn checks_without_start_times_time_out_from_the_wait() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Actions, clock.clone());
+    answer_checks(&kit, || vec![check("ci", "in_progress", None, None)]);
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::CiFailed);
+    let waited = slept(&clock);
+    assert!(
+        waited >= Duration::from_secs(45 * 60) && waited < Duration::from_secs(46 * 60),
+        "{waited:?}"
+    );
+}
+
+/// D128: a red check fails at once, however long its other checks are queued.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_red_check_fails_at_once_while_others_are_queued() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Actions, clock.clone());
+    answer_checks(&kit, || {
+        vec![
+            check(
+                "rust (linux)",
+                "completed",
+                Some("failure"),
+                Some("2020-01-01T00:00:00Z"),
+            ),
+            check("rust (macos)", "queued", None, None),
+        ]
+    });
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+
+    assert!(kit.train.step(REPO).await);
+    let parked = kit.get(&change_id);
+    assert_eq!(parked.state, ChangeState::CiFailed);
+    assert!(
+        parked
+            .last_error
+            .as_deref()
+            .unwrap()
+            .starts_with("CI failed on ")
+    );
+    assert!(clock.taken().is_empty(), "decided on the first read");
+    let sends = kit.host.sends.lock().unwrap().clone();
+    assert!(
+        sends.last().unwrap().1.contains("rust (linux) (failure)"),
+        "{sends:?}"
+    );
+    // Red, not timed out: it waits for its author's push.
+    assert!(!kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::CiFailed);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1723,7 +2212,7 @@ async fn keeps_waiting_for_checks_a_repo_without_check_runs_requires() {
             .last_error
             .as_deref()
             .unwrap()
-            .ends_with("did not finish within 0 min"),
+            .ends_with("no check reported within 0 min"),
         "{:?}",
         parked.last_error
     );
@@ -3263,6 +3752,22 @@ async fn every_pr_a_writer_opened_is_queued_when_it_ends() {
     );
 }
 
+/// A writer's PR set after its `task.completed` (D67: looked up once the task ends) is queued as the writer's, so
+/// the plan items the task serves are linked to its Change and close when it merges.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_writers_pr_set_after_it_completed_is_queued_as_its_own() {
+    let kit = swept_kit().await;
+    kit.gate.held.lock().unwrap().insert(9);
+    let pr = kit.open_pr(9, "not-the-writers-branch", &[add("a9.txt", "a\n")]);
+    kit.host.tasks.lock().unwrap().get_mut("T1").unwrap().state = "done".into();
+    kit.train.on_task_pr("T1").await;
+    assert_eq!(writers_changes(&kit), [], "no PR in the result yet");
+
+    kit.host.tasks.lock().unwrap().get_mut("T1").unwrap().pr_url = Some(pr);
+    kit.train.on_task_pr("T1").await;
+    assert_eq!(writers_changes(&kit), [(9, Some("T1".into()))]);
+}
+
 /// The ready pass and a writer's result may enqueue one PR at once: one Change, one review round.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn racing_enqueues_of_one_pr_make_one_change_and_one_review_round() {
@@ -3331,4 +3836,410 @@ async fn a_stopped_order_takes_its_prs_off_the_train_and_leaves_them_open() {
         (pulls[&7].state.as_str(), pulls[&8].state.as_str()),
         ("open", "open")
     );
+}
+
+fn gh_log(kit: &Kit) -> Vec<String> {
+    kit.gh.log.lock().unwrap().clone()
+}
+
+/// Where `line` is in the fake GitHub's log.
+fn log_at(log: &[String], line: &str) -> usize {
+    log.iter()
+        .position(|l| l == line)
+        .unwrap_or_else(|| panic!("no {line}: {log:?}"))
+}
+
+fn labels_of(kit: &Kit, n: i64) -> Vec<String> {
+    kit.gh.pulls.lock().unwrap()[&n].labels.clone()
+}
+
+/// Only the PR merging alone carries `fleetd:next`, put on before GitHub rebases it; the PR behind it gets none (its
+/// label run would cancel its own CI and take the runners). The label comes off once the PR merges or leaves the line.
+/// The repo gets the label once.
+#[tokio::test(flavor = "multi_thread")]
+async fn only_the_pr_merging_alone_carries_fleetd_next_until_it_merges_or_leaves_the_line() {
+    let kit = Kit::new();
+    kit.enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    // Red on its own head, so no batch: a goes alone, b waits behind it.
+    let b = kit
+        .enqueue(kit.open_pr(8, "b", &[add("FAIL", "red\n")]))
+        .await;
+    kit.commit("main", &[add("other.txt", "other\n")], None);
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(merged_prs(&kit), [7]);
+    assert_eq!(state_of(&kit, &b), ChangeState::Ready);
+    assert_eq!(*kit.gh.repo_labels.lock().unwrap(), [NEXT_LABEL]);
+    let log = gh_log(&kit);
+    assert!(
+        log_at(&log, "label #7") < log_at(&log, "rebase #7"),
+        "labelled before the rebase pushes: {log:?}"
+    );
+    assert!(log_at(&log, "rebase #7") < log_at(&log, "merge #7"));
+    assert!(!log.contains(&"label #8".to_string()), "{log:?}");
+    assert!(labels_of(&kit, 8).is_empty());
+
+    // b's turn: labelled before its rebase, red alone, so it leaves the line.
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &b), ChangeState::CiFailed);
+    let log = gh_log(&kit);
+    log_at(&log, "unlabel #7");
+    assert!(log_at(&log, "label #8") < log_at(&log, "rebase #8"));
+    assert!(labels_of(&kit, 7).is_empty());
+
+    kit.train.step(REPO).await;
+    log_at(&gh_log(&kit), "unlabel #8");
+    assert!(labels_of(&kit, 8).is_empty());
+    assert_eq!(
+        gh_log(&kit)
+            .iter()
+            .filter(|l| l.starts_with("label "))
+            .count(),
+        2,
+        "nothing labelled twice"
+    );
+}
+
+/// The batch PR carries the label; neither its members (their CI isn't what merges) nor the PR left behind it get
+/// one, so no label run competes with the batch's. The next pass takes it off the merged batch.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_batch_pr_carries_fleetd_next_and_no_other_pr_gets_one() {
+    let kit = Kit::new();
+    three_ready(&kit).await;
+    // Red on its own head: not a member, next in line after the batch.
+    let behind = kit
+        .enqueue(kit.open_pr(10, "d", &[add("FAIL", "red\n")]))
+        .await;
+
+    assert!(kit.train.step(REPO).await);
+    let batch = kit.gh.merges.lock().unwrap()[0].0;
+    assert_eq!(members_of_batch(&kit), [7, 8, 9]);
+    assert_eq!(state_of(&kit, &behind), ChangeState::Ready);
+    let log = gh_log(&kit);
+    assert!(log_at(&log, &format!("label #{batch}")) < log_at(&log, &format!("merge #{batch}")));
+    for n in [7, 8, 9, 10] {
+        assert!(!log.contains(&format!("label #{n}")), "{log:?}");
+    }
+
+    kit.train.step(REPO).await;
+    log_at(&gh_log(&kit), &format!("unlabel #{batch}"));
+    assert!(labels_of(&kit, batch).is_empty());
+}
+
+/// A PR already on its base merges alone on the CI its label starts: its `rust (macos)` skipped before the label never
+/// counts as green, even in the moments before GitHub shows the label's run.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pr_merged_alone_waits_for_the_macos_run_its_label_starts() {
+    let kit = Kit::on_clock(
+        FakeCi::Macos {
+            reacts: true,
+            uses: true,
+        },
+        Arc::new(Sleeps::default()),
+    );
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    let head = kit.head_of("a");
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &a), ChangeState::Merged);
+    let log = gh_log(&kit);
+    assert!(!log.contains(&"rebase #7".to_string()), "already on main");
+    assert!(log_at(&log, "label #7") < log_at(&log, &format!("macos green {head}")));
+    assert!(log_at(&log, &format!("macos green {head}")) < log_at(&log, "merge #7"));
+}
+
+/// fleetd's own case: a PR touching `build-release.yml` and `nightly.yml`, whose release job every PR skips. That
+/// skip is the release workflow's on purpose, not the label's, so it never parks the PR: it merges once the label's
+/// macOS run is green, and the lead hears nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_skip_in_a_workflow_the_label_never_runs_never_parks_a_lone_pr() {
+    let kit = Kit::on_clock(
+        FakeCi::Macos {
+            reacts: true,
+            uses: true,
+        },
+        Arc::new(Sleeps::default()),
+    );
+    let a = kit
+        .enqueue(kit.open_pr(
+            7,
+            "release",
+            &[
+                add(".github/workflows/build-release.yml", "name: Release\n"),
+                add(".github/workflows/nightly.yml", "name: Nightly\n"),
+            ],
+        ))
+        .await;
+    let head = kit.head_of("release");
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &a), ChangeState::Merged);
+    let log = gh_log(&kit);
+    assert!(log_at(&log, &format!("macos green {head}")) < log_at(&log, "merge #7"));
+    assert!(label_run_missing(&kit).is_empty());
+}
+
+/// Workflows that can't be read, with no earlier answer for the repo, are never taken for "doesn't use the label": a
+/// skip from before the label holds the lone PR for the 3-minute hold, then counts.
+#[tokio::test(flavor = "multi_thread")]
+async fn unreadable_workflows_hold_a_lone_pr_for_the_hold_then_its_skips_count() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(
+        FakeCi::Macos {
+            reacts: false,
+            uses: true,
+        },
+        clock.clone(),
+    );
+    *kit.gh.fail_workflows.lock().unwrap() = true;
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &a), ChangeState::Merged);
+    let waited: Duration = clock.taken().iter().sum();
+    let hold = Duration::from_millis(super::next::LABEL_HOLD_MS as u64);
+    assert!(waited >= hold && waited < hold * 2, "{waited:?}");
+    assert!(label_run_missing(&kit).is_empty());
+}
+
+/// A failed read of the workflows keeps the repo's last answer: a repo known to use the label still holds its lone PR.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_workflows_read_keeps_the_last_answer() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(
+        FakeCi::Macos {
+            reacts: false,
+            uses: true,
+        },
+        clock.clone(),
+    );
+    assert!(matches!(
+        kit.train.label_gate(REPO, "main").await,
+        super::next::Gate::Checks(names) if names.contains(&"rust (macos)".to_string())
+    ));
+    *kit.gh.fail_workflows.lock().unwrap() = true;
+    // Past the cache's 10 minutes, so it is read again, and that read fails.
+    clock.0.lock().unwrap().push(Duration::from_secs(11 * 60));
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+
+    assert!(kit.train.step(REPO).await);
+    assert!(merged_prs(&kit).is_empty());
+    assert_eq!(
+        state_of(&kit, &a),
+        ChangeState::CiFailed,
+        "held to its CI timeout"
+    );
+    assert_eq!(label_run_missing(&kit).len(), 1);
+}
+
+/// Rebased for its merge alone, the PR's push already carries the label, so its CI runs macOS.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pr_rebased_for_its_merge_alone_runs_macos_on_that_push() {
+    let kit = Kit::on_clock(
+        FakeCi::Macos {
+            reacts: false,
+            uses: true,
+        },
+        Arc::new(Sleeps::default()),
+    );
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    kit.commit("main", &[add("other.txt", "other\n")], None);
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &a), ChangeState::Merged);
+    let log = gh_log(&kit);
+    let pushed = kit.gh.merges.lock().unwrap()[0].1.clone();
+    assert!(log_at(&log, "label #7") < log_at(&log, "rebase #7"));
+    assert!(log_at(&log, &format!("macos green {pushed}")) < log_at(&log, "merge #7"));
+}
+
+/// A repo whose workflows don't name the label: a skipped check counts as it always did, with no wait for a label run.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_repo_whose_workflows_dont_name_the_label_never_waits_on_it() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(
+        FakeCi::Macos {
+            reacts: false,
+            uses: false,
+        },
+        clock.clone(),
+    );
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &a), ChangeState::Merged);
+    assert_eq!(clock.taken(), [], "green on the first read");
+}
+
+/// The lead's notes about a PR whose label run never came.
+fn label_run_missing(kit: &Kit) -> Vec<String> {
+    kit.host
+        .wakes
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|w| w.contains("CI didn't start for the labelled PR"))
+        .cloned()
+        .collect()
+}
+
+/// In a repo that uses the label, a lone PR whose label run never comes never merges on its skipped macOS check: it
+/// waits, and the lead hears once.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_lone_pr_whose_label_run_never_comes_waits_and_the_lead_hears_once() {
+    let kit = Kit::on_clock(
+        FakeCi::Macos {
+            reacts: false,
+            uses: true,
+        },
+        Arc::new(Sleeps::default()),
+    );
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+
+    assert!(kit.train.step(REPO).await);
+    assert!(merged_prs(&kit).is_empty());
+    assert_eq!(state_of(&kit, &a), ChangeState::CiFailed, "it timed out");
+    let told = label_run_missing(&kit);
+    assert_eq!(told.len(), 1, "{told:?}");
+    assert!(told[0].contains("rust (macos)"), "{told:?}");
+}
+
+/// In a repo that uses the label, a label GitHub refuses keeps a lone PR from merging on its skipped required check,
+/// even on a head pushed after the refusal; the lead hears why once.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_refused_label_never_lets_a_lone_pr_merge_on_skipped_checks_where_ci_uses_it() {
+    let kit = Kit::on_clock(
+        FakeCi::Macos {
+            reacts: true,
+            uses: true,
+        },
+        Arc::new(Sleeps::default()),
+    );
+    *kit.gh.fail_labels.lock().unwrap() = true;
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    kit.commit("main", &[add("other.txt", "other\n")], None);
+
+    assert!(kit.train.step(REPO).await);
+    assert!(merged_prs(&kit).is_empty());
+    assert_eq!(state_of(&kit, &a), ChangeState::CiFailed);
+    let told = label_run_missing(&kit);
+    assert_eq!(told.len(), 1, "{told:?}");
+    assert!(told[0].contains("could not put"), "{told:?}");
+}
+
+/// In a repo that doesn't use the label, a label GitHub refuses never stops a merge.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_label_github_refuses_never_stops_a_merge_where_ci_ignores_it() {
+    let kit = Kit::new();
+    *kit.gh.fail_labels.lock().unwrap() = true;
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    kit.commit("main", &[add("other.txt", "other\n")], None);
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &a), ChangeState::Merged);
+    assert!(labels_of(&kit, 7).is_empty());
+}
+
+/// A batch whose checks sit queued: after 5 minutes its Changes' note and the lead's digest line say it waits for
+/// runners, and once a runner takes them the note before it is back.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_batch_whose_checks_wait_for_runners_says_so_after_five_minutes() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Queued { polls: 60 }, clock.clone());
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    let b = kit
+        .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]))
+        .await;
+    let earlier = "an earlier note";
+    kit.train.note(&a.change_id, earlier);
+    type Seen = (Duration, Option<String>, Option<String>, String);
+    let seen: Arc<Mutex<Vec<Seen>>> = Arc::default();
+    let start = clock.now();
+    {
+        let (train, seen, clock) = (Arc::downgrade(&kit.train), seen.clone(), clock.clone());
+        let ids = (a.change_id.clone(), b.change_id.clone());
+        *kit.gh.on_checks.lock().unwrap() = Some(Box::new(move || {
+            let Some(train) = train.upgrade() else { return };
+            let note = |id| {
+                train
+                    .get(id)
+                    .and_then(|c| c.last_error.map(|e| e.to_string()))
+            };
+            let facts = super::digest::train_facts(train.records(), |_| true);
+            let line = super::digest::lead_train_lines(&facts, None)
+                .into_iter()
+                .next()
+                .unwrap_or_default();
+            let at = clock.now().duration_since(start).unwrap();
+            seen.lock()
+                .unwrap()
+                .push((at, note(&ids.0), note(&ids.1), line));
+        }));
+    }
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(merged_prs(&kit).len(), 1, "one batch");
+    let waiting = "waiting for CI runners (1 queued)";
+    let seen = seen.lock().unwrap();
+    let noted: Vec<&Seen> = seen
+        .iter()
+        .filter(|(_, a, b, _)| a.as_deref() == Some(waiting) && b.as_deref() == Some(waiting))
+        .collect();
+    assert!(!noted.is_empty(), "{seen:?}");
+    assert!(
+        noted
+            .iter()
+            .all(|(at, ..)| *at >= Duration::from_secs(5 * 60)),
+        "{seen:?}"
+    );
+    assert!(
+        noted
+            .iter()
+            .all(|(.., line)| line.contains(&format!("(ci): {waiting}"))),
+        "{noted:?}"
+    );
+    assert!(
+        seen.iter()
+            .filter(|(at, ..)| *at < Duration::from_secs(5 * 60))
+            .all(|(_, a, b, line)| a.as_deref() == Some(earlier)
+                && b.is_none()
+                && !line.contains("waiting")),
+        "{seen:?}"
+    );
+    let last_noted = seen
+        .iter()
+        .rposition(|(_, a, ..)| a.as_deref() == Some(waiting))
+        .unwrap();
+    assert!(
+        seen[last_noted + 1..]
+            .iter()
+            .any(|(_, a, b, line)| a.as_deref() == Some(earlier)
+                && b.is_none()
+                && !line.contains("waiting")),
+        "{seen:?}"
+    );
+    for change in [&a, &b] {
+        let merged = kit.get(&change.change_id);
+        assert_eq!(merged.state, ChangeState::Merged);
+        assert_eq!(merged.last_error, None);
+    }
 }

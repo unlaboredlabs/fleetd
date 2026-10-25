@@ -9,7 +9,7 @@ use std::path::Path;
 
 use fleetd::cli::agent_mcp::{self, Role, SERVER_NAME, Tool};
 use fleetd::hub::orders::phase;
-use fleetd::hub::slots::DEFAULT_CAP;
+use fleetd::hub::slots::sizing::HARD_TOP;
 use fleetd::hub::tasks::policy::{
     self, CallerAgent, MAX_DEPTH, MAX_OPEN_TASKS, SPAWN_OPS, WORKER_OPS,
 };
@@ -284,16 +284,22 @@ fn limits(lead: &[&Tool], task: &[&Tool]) -> Result<String, String> {
         "| Depth | {MAX_DEPTH}. A lead is depth 0 and its tasks depth {MAX_DEPTH}; nothing goes deeper. |\n"
     ));
     md.push_str(&format!(
-        "| Open tasks per lead | {MAX_OPEN_TASKS} (queued, running or idle). |\n"
+        "| Open tasks per lead | {MAX_OPEN_TASKS}, or twice the project's max agents when that is more (queued, running \
+         or idle). |\n"
     ));
     md.push_str(
         "| Agents running at once, per project | The project's max agents, which a person sets (`cap_set`, the \
-         chat's Max agents); unset, the fleet cap. A spawn over it queues and starts by itself; a review goes \
+         chat's Max agents); unset, its machine's cap. A spawn over it queues and starts by itself; a review goes \
          ahead of queued writers. The lead is not an agent and doesn't count. |\n",
     );
     md.push_str(&format!(
-        "| Agents running at once, fleet-wide | The fleet cap, {DEFAULT_CAP} by default. |\n"
+        "| Agents running at once, per machine | What the machine fits: one per CPU less one in eight, and 2 GB of \
+         memory each after a quarter (4 to 16 GB) is left for the system, at most {HARD_TOP}. New agents also wait \
+         for 5 GB of disk each above the free-space floor. |\n"
     ));
+    md.push_str(
+        "| Agents running at once, fleet-wide | The machines' caps added up, unless a person set a fleet cap. |\n",
+    );
     md.push_str(&format!(
         "| Calls a task's agent may make | {}. Every other call is refused. |\n",
         code_list(worker_calls.iter().copied())
