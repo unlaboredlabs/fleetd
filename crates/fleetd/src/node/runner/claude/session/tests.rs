@@ -84,6 +84,7 @@ impl Fake {
         let spec = SessionSpec {
             session_id: session.into(),
             resume: false,
+            must_resume: false,
             cwd: dir.path().to_owned(),
             add_dirs: Vec::new(),
             model: "fake".into(),

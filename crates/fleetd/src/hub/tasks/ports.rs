@@ -57,6 +57,8 @@ pub struct LaunchRequest {
 pub struct Worktree {
     pub base_ref: String,
     pub branch: String,
+    /// The task's earlier thread, whose worktree a fresh restart takes over.
+    pub from: Option<ThreadId>,
 }
 
 /// What a finished task thread changed.

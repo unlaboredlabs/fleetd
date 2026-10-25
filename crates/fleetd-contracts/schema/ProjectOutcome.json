@@ -303,6 +303,26 @@
       ],
       "type": "object"
     },
+    "RecoveryMode": {
+      "description": "How a recovering task goes on.",
+      "oneOf": [
+        {
+          "const": "resume",
+          "description": "In its thread (`claude --resume`), with a note to continue.",
+          "type": "string"
+        },
+        {
+          "const": "compact",
+          "description": "Its context is full: `/compact` in its thread first, then the note.",
+          "type": "string"
+        },
+        {
+          "const": "fresh",
+          "description": "In a new thread on its branch and worktree, with its brief and a handoff from the last one.",
+          "type": "string"
+        }
+      ]
+    },
     "RunEnd": {
       "description": "Why a run ended, so a node going away reads apart from a person stopping it. Set once the run is no longer active.",
       "oneOf": [
@@ -413,6 +433,13 @@
         "pr": {
           "description": "The PR a review task reviews. Required at spawn for review; absent on older rows (hub-spawned judges).",
           "type": "string"
+        },
+        "previousThreads": {
+          "description": "The threads it ran in before `threadRef`, oldest first: fleetd restarted it fresh (its context filled up, or its\nthread could not resume), on the same branch and worktree.",
+          "items": {
+            "$ref": "#/$defs/ThreadRef"
+          },
+          "type": "array"
         },
         "profile": {
           "$ref": "#/$defs/TaskProfile",
@@ -552,7 +579,7 @@
       "description": "A task fleetd resumes on its own after its run died: in the same thread and worktree, with a note to continue.",
       "properties": {
         "count": {
-          "description": "Automatic recoveries used of `max`; a resumed run that died again before doing anything counts twice.",
+          "description": "Automatic recoveries used of `max`; a resumed run that died again before doing anything counts twice. A node\ngoing away never counts here.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
@@ -572,9 +599,21 @@
           "minimum": 0,
           "type": "integer"
         },
+        "mode": {
+          "$ref": "#/$defs/RecoveryMode",
+          "default": "resume",
+          "description": "How it goes on."
+        },
         "nextAt": {
           "$ref": "#/$defs/Timestamp",
           "description": "When the resume goes out; absent once it has."
+        },
+        "nodeLost": {
+          "default": 0,
+          "description": "Resumes after its node went away (stopped, upgraded, crashed, powered off): not the task's doing, so outside\n`count`, with a high ceiling of its own only so a node that keeps dying can't loop it forever.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
         },
         "resumedAt": {
           "$ref": "#/$defs/Timestamp",

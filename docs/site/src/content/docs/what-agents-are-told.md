@@ -282,6 +282,7 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 | `task.brief.write` | every write task attempt | never merges; the train does (prompt only) |
 | `task.brief.read` | every read task attempt | changes no files (prompt only) |
 | `task.brief.review` | every attempt of a review task the lead spawns (the train's reviews use Reviewer) | changes no files (prompt only); ends with one review verdict (the \`report\` tool) |
+| `task.handoff` | after the task's brief, when fleetd restarts an agent in a new thread (its context filled up again, or its thread could not resume) |  |
 
 ### Reviews and checks
 

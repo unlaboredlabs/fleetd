@@ -114,6 +114,10 @@ pub struct Task {
     /// Why it is queued, e.g. "fleet cap: 40 of 40 running".
     pub queued_reason: Option<Text<1, 200>>,
     pub thread_ref: Option<ThreadRef>,
+    /// The threads it ran in before `threadRef`, oldest first: fleetd restarted it fresh (its context filled up, or its
+    /// thread could not resume), on the same branch and worktree.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub previous_threads: Vec<ThreadRef>,
     /// `fleetd/<taskId>-<slug>`; write tasks only.
     pub branch: Option<NonEmpty>,
     /// Where its worktree's branch started, as the node reported at launch; write tasks only, absent before a launch
@@ -139,9 +143,14 @@ pub struct Task {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskRecovery {
-    /// Automatic recoveries used of `max`; a resumed run that died again before doing anything counts twice.
+    /// Automatic recoveries used of `max`; a resumed run that died again before doing anything counts twice. A node
+    /// going away never counts here.
     pub count: Count,
     pub max: Count,
+    /// Resumes after its node went away (stopped, upgraded, crashed, powered off): not the task's doing, so outside
+    /// `count`, with a high ceiling of its own only so a node that keeps dying can't loop it forever.
+    #[serde(default)]
+    pub node_lost: Count,
     /// How its last run ended.
     pub last_cause: RunEnd,
     /// The same, in plain words: "the node on devbox stopped", "claude was killed by signal 9".
@@ -155,6 +164,22 @@ pub struct TaskRecovery {
     pub next_at: Option<Timestamp>,
     /// When the last resume went out.
     pub resumed_at: Option<Timestamp>,
+    /// How it goes on.
+    #[serde(default)]
+    pub mode: RecoveryMode,
+}
+
+/// How a recovering task goes on.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RecoveryMode {
+    /// In its thread (`claude --resume`), with a note to continue.
+    #[default]
+    Resume,
+    /// Its context is full: `/compact` in its thread first, then the note.
+    Compact,
+    /// In a new thread on its branch and worktree, with its brief and a handoff from the last one.
+    Fresh,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]

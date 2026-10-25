@@ -98,6 +98,7 @@ impl TaskPorts for HubTaskPorts {
                         .map_err(|_| PortError::Failed("a worktree needs a base ref".into()))?,
                     branch: NonEmpty::new(w.branch)
                         .map_err(|_| PortError::Failed("a worktree needs a branch".into()))?,
+                    from_session: w.from,
                 }),
             };
             let options = LaunchOptions {

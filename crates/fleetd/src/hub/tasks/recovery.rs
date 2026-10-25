@@ -2,13 +2,17 @@
 //! thread and worktree with a note to continue, after a delay; one that keeps dying for a real reason is not, and
 //! fails with a line for its lead to decide on. Pure: `mod.rs` reads the facts and carries the action out.
 //!
+//! A full context is compacted in its thread, then the note follows; full again, or a thread that can't resume (its
+//! conversation is gone, or its claude config dir changed), and the task restarts fresh: a new thread on its branch and
+//! worktree, with its brief and a handoff from the last one.
+//!
 //! Waiting is not death: a run waiting on a person (`thread.waiting`), a usage limit (`thread.usage_limited`) or the
 //! node's own retry never ends here, and a write task that pushed and ended its turn for CI or the train completed.
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::prim::{Count, Int, Text};
 use fleetd_contracts::sessions::RunEnd;
-use fleetd_contracts::tasks::TaskRecovery;
+use fleetd_contracts::tasks::{RecoveryMode, TaskRecovery};
 use serde_json::Value;
 
 use crate::hub::store::{iso_ms, parse_ms};
@@ -17,6 +21,9 @@ use super::render::one_line;
 
 /// Automatic recoveries per task; the death after the last one fails it. `FLEETD_RECOVERY_MAX` sets it for the lab.
 pub const RECOVERY_MAX: i64 = 3;
+/// Resumes after the node went away, which never count toward `RECOVERY_MAX`: a planned stop or an upgrade is
+/// "resume when it's back". This ceiling only stops a node that dies over and over from looping a task forever.
+pub const NODE_LOST_MAX: i64 = 20;
 /// A node back from a stop or a crash gets this long to settle (its other runs report in) before a task resumes.
 const NODE_SETTLE_MS: i64 = 30_000;
 const NODE_JITTER_MS: i64 = 10_000;
@@ -45,8 +52,10 @@ pub enum Kind {
     Stalled,
     /// The machine slept, or the API connection kept failing after the node's own retries.
     Unreachable,
-    /// The conversation no longer fits; a resume would only fail again.
+    /// The conversation no longer fits: compacted, then restarted fresh.
     ContextFull,
+    /// The node would not resume its thread: claude's conversation is gone, or the claude config dir changed.
+    Refused,
     /// A failure a resume doesn't fix: the login, a bad request, anything else.
     Fatal,
     /// Not a death: someone stopped it, or nothing says otherwise.
@@ -176,9 +185,24 @@ pub fn death(
     }
 }
 
+/// A resume the node refused (`message` is its words): the thread can't go on, so a new one takes over.
+pub fn refused(message: &str) -> Death {
+    Death {
+        kind: Kind::Refused,
+        reported: None,
+        cause: RunEnd::Failed,
+        text: one_line(
+            &format!("its thread could not resume: {}", message.trim()),
+            200,
+        ),
+        // However the node words it, and whichever thread it was: a fresh thread refused too is the same death.
+        signature: "Refused".to_owned(),
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Action {
-    /// Queue it with the note; it resumes at `recovery.next_at`.
+    /// Queue it with the note; it goes on at `recovery.next_at`, as `recovery.mode` says.
     Resume(TaskRecovery),
     /// Fail it, with why it was not resumed, for its lead to decide.
     Escalate(String),
@@ -205,14 +229,24 @@ pub fn decide(
         }
         _ => 1,
     };
+    // A full context is compacted first; full again since (no fresh thread in between), it starts over in a new one.
+    let compacted =
+        prior.is_some_and(|p| p.last_cause == RunEnd::ContextFull && p.mode != RecoveryMode::Fresh);
+    let mode = match death.kind {
+        Kind::ContextFull if !compacted => RecoveryMode::Compact,
+        Kind::ContextFull | Kind::Refused => RecoveryMode::Fresh,
+        _ => RecoveryMode::Resume,
+    };
     let delay = match death.kind {
         Kind::NodeLost => Ok(NODE_SETTLE_MS + (jitter * NODE_JITTER_MS as f64) as i64),
+        Kind::ContextFull => Ok(0),
+        Kind::Refused if streak == 1 => Ok(0),
+        Kind::Refused => Err(format!("{}, again in a fresh thread", death.text)),
         Kind::Exited | Kind::Stalled if streak == 1 => Ok(MINUTE_MS),
         Kind::Exited | Kind::Stalled => Err(format!("it died the same way twice: {}", death.text)),
         Kind::Unreachable if streak == 1 => Ok(15 * MINUTE_MS),
         Kind::Unreachable if streak == 2 => Ok(60 * MINUTE_MS),
         Kind::Unreachable => Err(format!("{} ({streak} times in a row)", death.text)),
-        Kind::ContextFull => Err(format!("{}; resuming it would fail again", death.text)),
         Kind::Fatal | Kind::NotDead => Err(format!("{}, which resuming won't fix", death.text)),
     };
     let delay = match delay {
@@ -220,8 +254,23 @@ pub fn decide(
         Err(why) => return Action::Escalate(why),
     };
     let used = prior.map_or(0, |p| p.count.get());
-    // A node going away is never the run's doing, however soon it happens.
-    let unproductive = death.kind != Kind::NodeLost
+    let node_lost = prior.map_or(0, |p| p.node_lost.get());
+    // A node going away is never the task's doing: it uses none of the budget, however often or soon it happens.
+    if death.kind == Kind::NodeLost {
+        if node_lost >= NODE_LOST_MAX {
+            return Action::Escalate(format!(
+                "{}, and its node has gone away {} times under it",
+                death.text,
+                node_lost + 1
+            ));
+        }
+        return Action::Resume(TaskRecovery {
+            node_lost: Count::unchecked(node_lost + 1),
+            ..recovery(death, prior, streak, used, max, now_ms + delay, mode)
+        });
+    }
+    // A full context or a refused resume says nothing about whether the run got anywhere.
+    let unproductive = matches!(death.kind, Kind::Exited | Kind::Stalled | Kind::Unreachable)
         && prior
             .and_then(|p| p.resumed_at.as_ref())
             .and_then(|at| parse_ms(at.as_str()))
@@ -235,34 +284,67 @@ pub fn decide(
         ));
     }
     // The timed ones spread ±10%, so tasks a single outage cut off don't all resume at once.
-    let delay = if death.kind == Kind::NodeLost {
-        delay
-    } else {
-        (delay as f64 * (0.9 + jitter * 0.2)) as i64
-    };
-    Action::Resume(TaskRecovery {
+    let delay = (delay as f64 * (0.9 + jitter * 0.2)) as i64;
+    Action::Resume(recovery(
+        death,
+        prior,
+        streak,
+        count,
+        max,
+        now_ms + delay,
+        mode,
+    ))
+}
+
+fn recovery(
+    death: &Death,
+    prior: Option<&TaskRecovery>,
+    streak: i64,
+    count: i64,
+    max: i64,
+    at_ms: i64,
+    mode: RecoveryMode,
+) -> TaskRecovery {
+    TaskRecovery {
         count: Count::unchecked(count),
         max: Count::unchecked(max),
+        node_lost: prior.map_or_else(Count::default, |p| p.node_lost),
         last_cause: death.cause,
         last_cause_text: Text::unchecked(one_line(&death.text, 200)),
         signature: Some(Text::unchecked(death.signature.clone())),
         streak: Int::unchecked(streak),
-        next_at: Some(Timestamp(iso_ms(now_ms + delay))),
+        next_at: Some(Timestamp(iso_ms(at_ms))),
         resumed_at: prior.and_then(|p| p.resumed_at.clone()),
-    })
+        mode,
+    }
 }
 
-/// The queued reason while it waits to resume: "recovering: the node on devbox stopped; resumes at 10:12:40 UTC
-/// (recovery 1 of 3)".
+/// The queued reason while it waits to go on: "recovering: claude was killed by signal 9; resumes at 10:12:40 UTC
+/// (1 of 3 recoveries used)".
 pub fn queued_reason(recovery: &TaskRecovery) -> String {
     let at = recovery
         .next_at
         .as_ref()
         .and_then(|t| t.as_str().get(11..19))
-        .map_or_else(String::new, |t| format!("; resumes at {t} UTC"));
+        .map_or_else(String::new, |t| {
+            let how = match recovery.mode {
+                RecoveryMode::Resume => "resumes",
+                RecoveryMode::Compact => "compacts and resumes",
+                RecoveryMode::Fresh => "restarts in a fresh thread",
+            };
+            format!("; {how} at {t} UTC")
+        });
     format!(
-        "recovering: {}{at} (recovery {} of {})",
+        "recovering: {}{at} ({})",
         recovery.last_cause_text.as_str(),
+        used(recovery)
+    )
+}
+
+/// "1 of 3 recoveries used": what the budget has left. Resumes after the node went away use none of it.
+pub fn used(recovery: &TaskRecovery) -> String {
+    format!(
+        "{} of {} recoveries used",
         recovery.count.get(),
         recovery.max.get()
     )
@@ -394,12 +476,8 @@ mod tests {
                 );
                 let first = resume(decide(&d, None, false, NOW, 0.0, 3));
                 assert_eq!(due_in(&first), 30_000);
-                assert_eq!(
-                    resume(decide(&d, Some(&first), false, NOW, 0.0, 3))
-                        .count
-                        .get(),
-                    2
-                );
+                let second = resume(decide(&d, Some(&first), false, NOW, 0.0, 3));
+                assert_eq!((second.count.get(), second.node_lost.get()), (0, 2));
             }
         }
     }
@@ -418,32 +496,48 @@ mod tests {
         }
     }
 
-    /// Back from a stop: it resumes after the settle, 30 to 40 s, every time the node goes away, up to the cap.
+    /// Back from a stop: it resumes after the settle, 30 to 40 s, every time the node goes away. A planned stop or an
+    /// upgrade is "resume when it's back", so none of it uses the budget; only a node that keeps dying, 20 times, is
+    /// escalated.
     #[test]
-    fn a_node_lost_task_resumes_30_s_after_the_node_is_back_up_to_the_cap() {
+    fn a_node_lost_task_resumes_30_s_after_the_node_is_back_using_none_of_its_budget() {
         let d = interrupted(json!({ "endCause": "node_stopping" }));
         let first = resume(decide(&d, None, false, NOW, 0.0, 3));
-        assert_eq!((first.count.get(), due_in(&first)), (1, 30_000));
+        assert_eq!(
+            (first.count.get(), first.node_lost.get(), due_in(&first)),
+            (0, 1, 30_000)
+        );
         assert_eq!(
             queued_reason(&first),
-            "recovering: the node on devbox stopped; resumes at 17:47:10 UTC (recovery 1 of 3)"
+            "recovering: the node on devbox stopped; resumes at 17:47:10 UTC (0 of 3 recoveries used)"
         );
-        // Same signature, and soon after its resume: still the node's doing, so no escalation and no double count.
+        // Same signature, and soon after its resume: still the node's doing, so no escalation and no count.
         let resumed = TaskRecovery {
             next_at: None,
             resumed_at: Some(Timestamp(iso_ms(NOW))),
             ..first
         };
         let second = resume(decide(&d, Some(&resumed), false, NOW + 1_000, 0.99, 3));
-        assert_eq!(second.count.get(), 2);
+        assert_eq!((second.count.get(), second.node_lost.get()), (0, 2));
         assert!((39_000..40_000).contains(&(due_in(&second) - 1_000)));
-        let third = TaskRecovery {
+        // A budget spent on crashes doesn't stop it either.
+        let spent = TaskRecovery {
             count: Count::unchecked(3),
+            ..second.clone()
+        };
+        assert_eq!(
+            resume(decide(&d, Some(&spent), false, NOW, 0.0, 3))
+                .count
+                .get(),
+            3
+        );
+        let looping = TaskRecovery {
+            node_lost: Count::unchecked(NODE_LOST_MAX),
             ..second
         };
-        assert!(
-            escalated(decide(&d, Some(&third), false, NOW, 0.0, 3))
-                .contains("after 3 automatic recoveries of at most 3")
+        assert_eq!(
+            escalated(decide(&d, Some(&looping), false, NOW, 0.0, 3)),
+            "the node on devbox stopped, and its node has gone away 21 times under it"
         );
     }
 
@@ -578,7 +672,71 @@ mod tests {
         );
     }
 
-    /// Auth, a bad request, a full context: escalated at once. A stopped task isn't recovered at all.
+    /// A full context is compacted in its thread at once; full again since, the task restarts fresh at once, and a
+    /// fresh thread whose context fills up is compacted first again. Each uses one recovery, however soon it comes.
+    #[test]
+    fn a_full_context_compacts_then_restarts_fresh() {
+        let full = failed(
+            json!({ "endCause": "context_full", "error": { "class": "invalid_request", "message": "Prompt is too long" } }),
+            Some("Read a large file"),
+        );
+        assert_eq!(full.kind, Kind::ContextFull);
+        let compact = resume(decide(&full, None, false, NOW, 0.5, 3));
+        assert_eq!(
+            (compact.mode, compact.count.get(), due_in(&compact)),
+            (RecoveryMode::Compact, 1, 0)
+        );
+        assert_eq!(
+            queued_reason(&compact),
+            "recovering: its context is full; compacts and resumes at 17:46:40 UTC (1 of 3 recoveries used)"
+        );
+        // Compacted, the note went out (`mode` is back to resume), and a minute later it is full again.
+        let compacted = TaskRecovery {
+            mode: RecoveryMode::Resume,
+            next_at: None,
+            resumed_at: Some(fleetd_contracts::ids::Timestamp(iso_ms(NOW - 60_000))),
+            ..compact
+        };
+        let fresh = resume(decide(&full, Some(&compacted), false, NOW, 0.5, 3));
+        assert_eq!(
+            (fresh.mode, fresh.count.get(), due_in(&fresh)),
+            (RecoveryMode::Fresh, 2, 0)
+        );
+        let again = resume(decide(&full, Some(&fresh), false, NOW, 0.5, 3));
+        assert_eq!(again.mode, RecoveryMode::Compact);
+        // Another death in between doesn't make a full context look compacted.
+        let crashed = TaskRecovery {
+            last_cause: RunEnd::Exited,
+            ..compacted
+        };
+        assert_eq!(
+            resume(decide(&full, Some(&crashed), false, NOW, 0.5, 3)).mode,
+            RecoveryMode::Compact
+        );
+    }
+
+    /// A resume the node refused restarts fresh at once; refused again, it is escalated.
+    #[test]
+    fn a_refused_resume_restarts_fresh_once() {
+        let d = refused("the session can't resume: claude's conversation /c/t1.jsonl is gone");
+        assert_eq!(
+            d.text,
+            "its thread could not resume: the session can't resume: claude's conversation /c/t1.jsonl is gone"
+        );
+        let fresh = resume(decide(&d, None, false, NOW, 0.5, 3));
+        assert_eq!(
+            (fresh.mode, fresh.count.get(), due_in(&fresh)),
+            (RecoveryMode::Fresh, 1, 0)
+        );
+        let other_thread =
+            refused("the session can't resume: claude's conversation /c/t2.jsonl is gone");
+        assert!(
+            escalated(decide(&other_thread, Some(&fresh), false, NOW, 0.5, 3))
+                .ends_with(", again in a fresh thread")
+        );
+    }
+
+    /// Auth, a bad request: escalated at once. A stopped task isn't recovered at all.
     #[test]
     fn what_a_resume_cant_fix_escalates_and_a_stopped_task_finishes() {
         let auth = failed(
@@ -589,18 +747,14 @@ mod tests {
             escalated(decide(&auth, None, false, NOW, 0.0, 3)),
             "Not logged in, which resuming won't fix"
         );
-        let full = failed(
-            json!({ "endCause": "context_full", "error": { "message": "prompt is too long" } }),
-            None,
-        );
-        assert_eq!(
-            escalated(decide(&full, None, false, NOW, 0.0, 3)),
-            "its context is full; resuming it would fail again"
-        );
         let lost = interrupted(json!({ "endCause": "node_stopping" }));
         assert_eq!(decide(&lost, None, true, NOW, 0.0, 3), Action::Finish);
+        let killed = failed(
+            json!({ "endCause": "exited", "error": { "class": "process_exited", "message": "claude was killed by signal 9" } }),
+            None,
+        );
         assert!(matches!(
-            decide(&lost, None, false, NOW, 0.0, 0),
+            decide(&killed, None, false, NOW, 0.0, 0),
             Action::Escalate(_)
         ));
     }
