@@ -108,6 +108,20 @@ export const checksWord = (c: ChecksSummary): { readonly text: string; readonly 
   return undefined;
 };
 
+/** A list row's checks, short beside their icon: "2 failed", "1 running", "6 passed"; undefined when none ran. */
+export const checksShort = (c: ChecksSummary): { readonly text: string; readonly tone: Tone } | undefined => {
+  if (c.failed > 0) return { text: `${c.failed} failed`, tone: "failed" };
+  if (c.pending > 0) return { text: `${c.pending} running`, tone: "working" };
+  if (c.passed > 0) return { text: `${c.passed} passed`, tone: "done" };
+  return undefined;
+};
+
+/** An open PR's place in line to merge: "next in line", "3rd in line"; undefined when it isn't waiting in it. */
+export const placeWord = (q: PrRow["queue"]): string | undefined => {
+  if (q?.position === undefined || q.state === "merged" || q.state === "abandoned") return undefined;
+  return q.position === 0 ? "next in line" : `${ordinal(q.position + 1)} in line`;
+};
+
 /** "7 passed · 2 failed · 1 running". */
 export const checksDetail = (c: ChecksSummary): string =>
   [c.passed > 0 ? `${c.passed} passed` : "", c.failed > 0 ? `${c.failed} failed` : "", c.pending > 0 ? `${c.pending} running` : ""]
@@ -187,7 +201,6 @@ export const findingsWord = (r: PrReviewEntry): string => {
   const other = r.nonBlocking ?? 0;
   return [blocking > 0 ? `${blocking} blocking` : "", other > 0 ? `${other} ${other === 1 ? "suggestion" : "suggestions"}` : ""].filter(Boolean).join(", ");
 };
-
 
 /** "1h 05m", "14m", "40s". */
 export const duration = (ms: number): string => {

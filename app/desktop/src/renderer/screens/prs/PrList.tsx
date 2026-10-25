@@ -1,39 +1,21 @@
-// The project's PRs, open ones first, then those merged or closed lately: each row its title, where it stands, its
-// checks and reviews, and the agent that wrote it. A row opens the PR in the list's place; ↑ and ↓ move between rows.
-import { useMemo, type KeyboardEvent } from "react";
+// The project's PRs, open ones by default, merged ones or all a click away: each row its title, and under it, quietly,
+// where it stands, its place in line, its checks and reviews, and its repo and number. A row opens the PR in the list's
+// place; ↑ and ↓ move between rows.
+import { useMemo, useState, type KeyboardEvent } from "react";
 import type { ProjectRef } from "../../../shared/contracts";
 import type { PrRow } from "../../../shared/contracts";
-import { StatusChip, Text, Truncate, VirtualList } from "../../ui";
+import { Button, StatusChip, Text, Truncate, VirtualList, cx } from "../../ui";
 import { panelRoute, toHash } from "../shell/routes";
-import { authorWords, checksWord, isOpen, reviewsWord, stateLine, when } from "./words";
+import { ChecksMark, HintText, PaneEmpty, Segmented } from "./Bits";
+import { PR_FILTERS, emptyWords, filterCounts, listItems, rowMeta, type PrFilter } from "./listModel";
+import { checksWord, isOpen, when } from "./words";
 import s from "./prs.module.css";
 
-type Item =
-  | { readonly kind: "group"; readonly label: string; readonly count: number }
-  | { readonly kind: "pr"; readonly row: PrRow }
-  | { readonly kind: "cut"; readonly count: number };
-
-/** Open PRs, then the rest, each under its heading; the hub's order within each. `cut`: the hub sent only these. */
-export const listItems = (rows: readonly PrRow[], cut = false): Item[] => {
-  const open = rows.filter(isOpen);
-  const rest = rows.filter((r) => !isOpen(r));
-  return [
-    ...(open.length > 0 ? [{ kind: "group" as const, label: "Open", count: open.length }, ...open.map((row) => ({ kind: "pr" as const, row }))] : []),
-    ...(rest.length > 0 ? [{ kind: "group" as const, label: "Merged or closed", count: rest.length }, ...rest.map((row) => ({ kind: "pr" as const, row }))] : []),
-    ...(cut ? [{ kind: "cut" as const, count: rows.length }] : []),
-  ];
-};
+// The reader's filter, kept while the app runs: back from a merged PR, the list still shows the merged ones.
+let lastFilter: PrFilter = "open";
 
 export const prHref = (project: ProjectRef, row: Pick<PrRow, "repo" | "number">): string =>
   toHash(panelRoute(project, { tab: "prs", pr: { repo: row.repo, number: row.number } }));
-
-/** Who wrote it, and the task it was asked for when that says more than the title: "A writer (high) · Round totals". */
-export const byLine = (row: Pick<PrRow, "author" | "title">): string | undefined => {
-  const who = authorWords(row.author);
-  const task = row.author.title;
-  const asked = task === undefined || task === "" || task === row.title ? undefined : task;
-  return who === undefined ? asked : asked === undefined ? who : `${who} · ${asked}`;
-};
 
 interface PrListProps {
   readonly rows: readonly PrRow[];
@@ -44,14 +26,13 @@ interface PrListProps {
 }
 
 export function PrList({ rows, cut, project, nowMs }: PrListProps) {
-  const items = useMemo(() => listItems(rows, cut), [rows, cut]);
-  if (rows.length === 0) {
-    return (
-      <div className={s.paneNote}>
-        <Text tone="quiet">No pull requests open or closed in the last week.</Text>
-      </div>
-    );
-  }
+  const [filter, setFilterState] = useState<PrFilter>(lastFilter);
+  const setFilter = (next: PrFilter) => {
+    lastFilter = next;
+    setFilterState(next);
+  };
+  const counts = useMemo(() => filterCounts(rows), [rows]);
+  const items = useMemo(() => listItems(rows, filter, cut), [rows, filter, cut]);
   // ↑/↓ from a focused row moves to the row above or below; Enter opens it.
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
@@ -63,49 +44,75 @@ export function PrList({ rows, cut, project, nowMs }: PrListProps) {
     e.preventDefault();
     next.focus();
   };
+  const empty = items.length === 0 ? emptyWords(filter, counts) : undefined;
   return (
-    <div className={s.listScroll} onKeyDown={onKeyDown}>
-      <VirtualList
-        items={items}
-        getKey={(it) => (it.kind === "group" ? `group:${it.label}` : it.kind === "cut" ? "cut" : `${it.row.repo}#${it.row.number}`)}
-        estimateSize={56}
-        aria-label="Pull requests"
-        renderItem={(it) =>
-          it.kind === "group" ? (
-            <div className={s.group}>
-              <Text size="xs" tone="quiet" strong>
-                {it.label}
-              </Text>
-              <Text size="xs" tone="quiet" tabular>
-                {it.count}
-              </Text>
-            </div>
-          ) : it.kind === "cut" ? (
-            <div className={s.group}>
-              <Text size="xs" tone="quiet">{`Only the ${it.count} most recent are here; the rest are on GitHub.`}</Text>
-            </div>
-          ) : (
-            <Row row={it.row} project={project} nowMs={nowMs} />
-          )
-        }
-      />
+    <div className={s.list}>
+      {rows.length > 0 ? (
+        <div className={s.filters}>
+          <Segmented
+            label="Show"
+            value={filter}
+            onChange={setFilter}
+            options={PR_FILTERS.map((f) => ({ ...f, count: counts[f.value] > 0 ? counts[f.value] : undefined }))}
+          />
+        </div>
+      ) : null}
+      {empty !== undefined ? (
+        <div className={s.listEmpty} data-empty={filter}>
+          <PaneEmpty
+            title={empty.title}
+            action={
+              empty.offer === undefined ? undefined : (
+                <Button variant="secondary" size="sm" onClick={() => setFilter(empty.offer?.filter ?? "all")}>
+                  {empty.offer.label}
+                </Button>
+              )
+            }
+          >
+            {empty.body}
+          </PaneEmpty>
+        </div>
+      ) : (
+        <div className={s.listScroll} onKeyDown={onKeyDown}>
+          <VirtualList
+            items={items}
+            getKey={(it) => (it.kind === "group" ? `group:${it.label}` : it.kind === "cut" ? "cut" : `${it.row.repo}#${it.row.number}`)}
+            estimateSize={56}
+            aria-label="Pull requests"
+            renderItem={(it) =>
+              it.kind === "group" ? (
+                <div className={s.group}>
+                  <Text size="xs" tone="quiet" strong>
+                    {it.label}
+                  </Text>
+                  <Text size="xs" tone="faint" tabular>
+                    {it.count}
+                  </Text>
+                </div>
+              ) : it.kind === "cut" ? (
+                <div className={s.cutNote}>
+                  <Text size="xs" tone="faint">{`Only the ${it.count} most recent are here; the rest are on GitHub.`}</Text>
+                </div>
+              ) : (
+                <Row row={it.row} project={project} nowMs={nowMs} />
+              )
+            }
+          />
+        </div>
+      )}
     </div>
   );
 }
 
 function Row({ row, project, nowMs }: { row: PrRow; project: ProjectRef; nowMs: number }) {
-  const state = stateLine(row);
-  // The state word already says the checks failed or are running for the merge; a closed PR's checks don't matter.
-  const checksSaid = row.queue?.state === "ci_failed" || row.queue?.state === "ci";
-  const checks = row.checks === undefined || checksSaid || !isOpen(row) ? undefined : checksWord(row.checks);
-  const reviews = isOpen(row) ? reviewsWord(row.review) : undefined;
-  const by = byLine(row);
+  const meta = rowMeta(row);
   const at = row.mergedAt ?? row.updatedAt;
+  const full = row.checks === undefined ? undefined : checksWord(row.checks)?.text;
   return (
-    <a className={s.row} href={prHref(project, row)} data-pr={row.number}>
+    <a className={cx(s.row, !isOpen(row) && s.rowDone)} href={prHref(project, row)} data-pr={row.number}>
       <span className={s.rowTop}>
         <span className={s.rowTitle}>
-          <Truncate lines={2} expand="none">
+          <Truncate lines={2} expand="none" tone="inherit">
             {row.title === "" ? `#${row.number}` : row.title}
           </Truncate>
         </span>
@@ -116,27 +123,20 @@ function Row({ row, project, nowMs }: { row: PrRow; project: ProjectRef; nowMs: 
         </span>
       </span>
       <span className={s.rowMeta}>
-        <Text size="xs" tone="quiet" tabular>
-          #{row.number}
-        </Text>
-        <StatusChip tone={state.tone} inRow>
-          {state.word}
-        </StatusChip>
-        {[checks, reviews].map((hint) =>
-          hint === undefined ? null : (
-            <Text key={hint.text} size="xs" tone={hint.tone === "failed" ? "danger" : "quiet"}>
-              {hint.text}
-            </Text>
-          ),
-        )}
-      </span>
-      {by !== undefined ? (
-        <span className={s.rowBy}>
-          <Truncate size="xs" tone="quiet" expand="none">
-            {by}
-          </Truncate>
+        <span className={s.metaParts}>
+          <StatusChip tone={meta.state.tone} inRow>
+            {meta.state.word}
+          </StatusChip>
+          {meta.place !== undefined ? <HintText hint={{ text: meta.place, tone: "quiet" }} /> : null}
+          {meta.checks !== undefined ? <ChecksMark hint={meta.checks} label={full} /> : null}
+          {meta.review !== undefined ? <HintText hint={meta.review} /> : null}
         </span>
-      ) : null}
+        <span className={s.rowRef}>
+          <Text size="xs" tone="faint" tabular>
+            {meta.ref}
+          </Text>
+        </span>
+      </span>
     </a>
   );
 }
