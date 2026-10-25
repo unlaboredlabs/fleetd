@@ -63,13 +63,15 @@ if [ -x "$dir/$name" ]; then exec "$dir/$name" "$@"; fi
 exit 0
 "#;
 
-/// Makes every commit in the linked worktree `cwd` of a writer on `task` name it in a `Fleetd-Task: <task>` trailer,
-/// and nothing else: the worktree's own config (`git config --worktree`, which needs `extensions.worktreeConfig`)
-/// points its hooks at a dir in its own git dir, where `prepare-commit-msg` adds the trailer (git runs it for
-/// `commit -m`, merges and amends, `--no-verify` or not) and every hook then runs the repo's own. Other worktrees,
-/// the human's checkout and any other repo the agent touches keep their hooks as they are. A checkout that isn't a
-/// linked worktree is left alone.
-pub fn trailer_hooks(cwd: &Path, task: &str) -> Result<(), GitError> {
+/// Whether fleetd may name a writer's task on its commits in the linked worktree `cwd`, and if so does: only when the
+/// repo already has `extensions.worktreeConfig` on, because turning it on writes the repo's shared `.git/config`,
+/// which the human's checkout, IDEs and other git tools read too (some refuse an extension they don't know). Then the
+/// worktree's own config (`git config --worktree`) points its hooks at a dir in its own git dir, where
+/// `prepare-commit-msg` adds `Fleetd-Task: <task>` (git runs it for `commit -m`, merges and amends, `--no-verify` or
+/// not) and every hook then runs the repo's own. Other worktrees, the human's checkout and any other repo the agent
+/// touches keep their hooks as they are. Otherwise nothing is set: the work is still known by the train's
+/// `Fleetd-Change` trailers and by its `fleetd/T…` branch where git shows it. Returns whether the hooks are set.
+pub fn trailer_hooks(cwd: &Path, task: &str) -> Result<bool, GitError> {
     use std::os::unix::fs::PermissionsExt;
     let path = |what: &str| -> Result<PathBuf, GitError> {
         git(cwd, &["rev-parse", "--path-format=absolute", what]).map(|p| PathBuf::from(p.trim()))
@@ -80,6 +82,19 @@ pub fn trailer_hooks(cwd: &Path, task: &str) -> Result<(), GitError> {
             "{} is not a linked worktree",
             cwd.display()
         )));
+    }
+    let on = git(
+        cwd,
+        &[
+            "config",
+            "--local",
+            "--type=bool",
+            "extensions.worktreeConfig",
+        ],
+    )
+    .is_ok_and(|v| v.trim() == "true");
+    if !on {
+        return Ok(false);
     }
     let dir = git_dir.join("fleetd-hooks");
     let io = |e: std::io::Error| GitError(format!("cannot write {}: {e}", dir.display()));
@@ -107,22 +122,6 @@ pub fn trailer_hooks(cwd: &Path, task: &str) -> Result<(), GitError> {
     for name in HOOKS {
         write(name, &format!("#!/bin/sh\nexec {own} {name} \"$@\"\n")).map_err(io)?;
     }
-    let on = git(
-        cwd,
-        &[
-            "config",
-            "--local",
-            "--type=bool",
-            "extensions.worktreeConfig",
-        ],
-    )
-    .is_ok_and(|v| v.trim() == "true");
-    if !on {
-        git(
-            cwd,
-            &["config", "--local", "extensions.worktreeConfig", "true"],
-        )?;
-    }
     git(
         cwd,
         &[
@@ -132,7 +131,7 @@ pub fn trailer_hooks(cwd: &Path, task: &str) -> Result<(), GitError> {
             &dir.to_string_lossy(),
         ],
     )?;
-    Ok(())
+    Ok(true)
 }
 
 fn values(field: &str) -> Vec<String> {
@@ -284,6 +283,7 @@ mod tests {
         let root = crate::node::worktree::tests::repo(dir.path());
         let log = dir.path().join("hooks.log");
         hook(&root.join(".git/hooks/commit-msg"), &log, "commit-msg");
+        run(&root, &["config", "extensions.worktreeConfig", "true"]);
         let wt = dir.path().join("wt");
         run(
             &root,
@@ -296,7 +296,7 @@ mod tests {
                 &wt.to_string_lossy(),
             ],
         );
-        trailer_hooks(&wt, "T45").unwrap();
+        assert!(trailer_hooks(&wt, "T45").unwrap());
 
         commit(&wt, "b.txt", "fix: totals");
         assert_eq!(message(&wt), "fix: totals\n\nFleetd-Task: T45");
@@ -333,6 +333,7 @@ mod tests {
         let root = crate::node::worktree::tests::repo(dir.path());
         let log = dir.path().join("hooks.log");
         hook(&root.join(".git/hooks/commit-msg"), &log, "first-repo");
+        run(&root, &["config", "extensions.worktreeConfig", "true"]);
         let wt = dir.path().join("wt");
         run(
             &root,
@@ -345,7 +346,7 @@ mod tests {
                 &wt.to_string_lossy(),
             ],
         );
-        trailer_hooks(&wt, "T45").unwrap();
+        assert!(trailer_hooks(&wt, "T45").unwrap());
         let before = ran(&log);
 
         // A second repo the agent makes from inside its worktree: a scratch clone, say.
@@ -370,6 +371,41 @@ mod tests {
         assert_eq!(
             git(&root, &["config", "--get", "core.hooksPath"]).ok(),
             None
+        );
+    }
+
+    #[test]
+    fn without_worktree_config_on_nothing_is_set_and_commits_carry_no_trailer() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = crate::node::worktree::tests::repo(dir.path());
+        let log = dir.path().join("hooks.log");
+        hook(&root.join(".git/hooks/commit-msg"), &log, "commit-msg");
+        let wt = dir.path().join("wt");
+        run(
+            &root,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                "fleetd/T45-x",
+                &wt.to_string_lossy(),
+            ],
+        );
+        let shared = std::fs::read(root.join(".git/config")).unwrap();
+
+        assert!(!trailer_hooks(&wt, "T45").unwrap());
+        // The repo's shared config is as it was, and the worktree has no config or hooks of fleetd's.
+        assert_eq!(std::fs::read(root.join(".git/config")).unwrap(), shared);
+        assert_eq!(git(&wt, &["config", "--get", "core.hooksPath"]).ok(), None);
+        assert!(!root.join(".git/worktrees/wt/fleetd-hooks").exists());
+        assert!(!root.join(".git/worktrees/wt/config.worktree").exists());
+        commit(&wt, "b.txt", "fix: totals");
+        assert_eq!(message(&wt), "fix: totals");
+        assert_eq!(
+            ran(&log),
+            ["commit-msg"],
+            "the repo's own hook runs as ever"
         );
     }
 }

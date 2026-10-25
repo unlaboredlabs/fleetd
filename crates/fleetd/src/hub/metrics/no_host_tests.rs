@@ -189,7 +189,7 @@ fn project(hub: &Hub) {
         "merged",
         "2026-10-21T08:00:00.000Z",
     );
-    for n in [3, 4] {
+    for n in [3, 4, 5] {
         sql(
             hub,
             "INSERT INTO tasks (n, machine_id, project_id, workstream_id, state, data) VALUES (?1, 'devbox', 'web', 'W2', 'done', '{}')",
@@ -292,6 +292,14 @@ async fn a_repo_with_no_host_tells_the_trains_merges_hand_merges_and_direct_push
         "t4 two\n\nFleetd-Task: T4",
         "Sam",
     );
+    // An agent's branch merged by hand in a repo whose commits carry no trailer: known by the branch the merge names.
+    origin.branch("2026-10-23T10:00:00Z", "fleetd/T5-more");
+    origin.commit("2026-10-23T10:00:00Z", "t5.txt", "more totals", "Sam");
+    let by_branch = origin.merge(
+        "2026-10-23T11:00:00Z",
+        "fleetd/T5-more",
+        "Merge pull request #11 from acme/fleetd/T5-more",
+    );
     // Pushed straight to main, and a bot's push.
     let direct = origin.commit("2026-10-24T09:00:00Z", "direct.txt", "hotfix", "Sam");
     let bot = origin.commit(
@@ -335,6 +343,10 @@ async fn a_repo_with_no_host_tells_the_trains_merges_hand_merges_and_direct_push
     want.insert(
         format!("commit:{direct}"),
         routed("direct", None, None, None),
+    );
+    want.insert(
+        format!("commit:{by_branch}"),
+        routed("fleetd_by_hand", Some("T5"), Some("W2"), Some(11)),
     );
     want.insert(format!("commit:{bot}"), routed("skipped", None, None, None));
     assert_eq!(routes(&hub), want);
@@ -384,7 +396,7 @@ async fn a_repo_with_no_host_tells_the_trains_merges_hand_merges_and_direct_push
             by.outside.get(),
             by.direct.get()
         ),
-        (2, 2, 1, 2)
+        (2, 3, 1, 2)
     );
     assert!(
         out.merges
@@ -407,6 +419,13 @@ async fn a_repo_with_no_host_tells_the_trains_merges_hand_merges_and_direct_push
         .collect();
     assert_eq!(unknown, UNKNOWN);
     assert!(unknown[0].starts_with("Who merged"));
+    // fleetd's work merged by hand that git doesn't name is said to be unknowable, not silently counted as outside.
+    assert!(
+        unknown
+            .iter()
+            .any(|l| l.starts_with("fleetd's work you merged by hand")),
+        "{unknown:?}"
+    );
     assert!(
         out.coverage.stale.iter().all(|s| s.repo.as_str() != REPO),
         "{:?}",

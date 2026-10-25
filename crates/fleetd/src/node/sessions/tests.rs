@@ -984,9 +984,25 @@ async fn deltas_reach_followers_coalesced_and_stop_at_their_message() {
 
 #[tokio::test]
 async fn a_writers_commits_name_its_task_in_a_trailer_only_in_its_worktree() {
+    writer_commits(true).await;
+}
+
+/// A repo without `extensions.worktreeConfig` is never given it: its shared config stays as it was, and the agent's
+/// commits carry no trailer.
+#[tokio::test]
+async fn a_writer_in_a_repo_without_worktree_config_sets_nothing_and_names_no_task() {
+    writer_commits(false).await;
+}
+
+/// A writer on T7 commits in its worktree and in a second repo, with the repo's `extensions.worktreeConfig` on or off.
+async fn writer_commits(worktree_config: bool) {
     use std::os::unix::fs::PermissionsExt;
     let dir = tempfile::tempdir().unwrap();
     let root = repo(dir.path());
+    if worktree_config {
+        git(&root, &["config", "extensions.worktreeConfig", "true"]);
+    }
+    let shared = std::fs::read(root.join(".git/config")).unwrap();
     // The repo's own hook, which must run in the worktree and nowhere else.
     let log = dir.path().join("hooks.log");
     let hook = root.join(".git/hooks/commit-msg");
@@ -1041,7 +1057,17 @@ async fn a_writers_commits_name_its_task_in_a_trailer_only_in_its_worktree() {
         agent_git(cwd, &["commit", "-q", "-m", msg]);
         agent_git(cwd, &["log", "-1", "--format=%B"])
     };
-    assert_eq!(commit(&spec.cwd, "docs"), "docs\n\nFleetd-Task: T7");
+    let named = if worktree_config {
+        "docs\n\nFleetd-Task: T7"
+    } else {
+        "docs"
+    };
+    assert_eq!(commit(&spec.cwd, "docs"), named);
+    assert_eq!(
+        std::fs::read(root.join(".git/config")).unwrap(),
+        shared,
+        "the repo's shared config is never written"
+    );
     let ran = || {
         std::fs::read_to_string(&log)
             .unwrap_or_default()

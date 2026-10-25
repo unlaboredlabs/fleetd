@@ -9,8 +9,10 @@
 //! - any other commit: `direct`, pushed straight. A PR squash-merged on the host reads so too: git can't tell.
 //!
 //! A run of commits of one task in a row is one change (a rebase merge). A merge of the default branch into itself (a
-//! `git pull`) is skipped as a merge-back. Who merged, reviews, bots and PR open times can't be known this way, and
-//! the coverage says so (`UNKNOWN`).
+//! `git pull`) is skipped as a merge-back. Agents' commits carry `Fleetd-Task` only in a repo that already has
+//! `extensions.worktreeConfig` on (`node::landed::trailer_hooks`); elsewhere fleetd's work merged by hand is found only
+//! where a merge names its `fleetd/T…` branch. Who merged, reviews, bots, PR open times and fleetd's work merged by
+//! hand that git doesn't name can't be known this way, and the coverage says so (`UNKNOWN`).
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -34,6 +36,7 @@ use crate::node::landed::branch_task;
 pub const UNKNOWN: &[&str] = &[
     "Who merged each change: git doesn't record it.",
     "Whether a commit with no fleetd trailer was pushed straight or squash-merged from a PR on the host: it reads as pushed straight.",
+    "fleetd's work you merged by hand, when its commits carry no Fleetd-Task trailer and the merge doesn't name its fleetd/T… branch: it reads as merged outside fleetd or pushed straight.",
     "Reviews and comments on the host, so your minutes on them.",
     "When each PR was opened, so PR open to merged.",
     "Bot accounts, except commits whose author ends in [bot].",
