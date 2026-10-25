@@ -3342,20 +3342,63 @@ impl Kit {
     }
 }
 
-/// A reviewer that ends without a verdict, however it ends, is replaced by a new one for the same head, twice. When
-/// the third ends without one too, no more start and the lead is told once, with the PR and that reviewer's last lines.
+/// A reviewer that ends without a recorded verdict is no approval, even when its final text approves (its fleetd tools
+/// server down, W23): the train and the lead see "verdict not recorded" with that text, and one new reviewer starts for
+/// the same head. When that one ends without a verdict too, no more start and the lead is told once, with the PR and
+/// that reviewer's last lines.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_reviewer_that_ends_without_a_verdict_is_retried_twice_then_the_lead_is_told() {
+async fn a_reviewer_that_ends_without_a_recorded_verdict_is_no_approval_and_is_retried_once() {
     let kit = Kit::with_reviews();
     let pr = kit.open_pr(7, "slice-1", &[add("a1.txt", "a\n")]);
     let head = kit.head_of("slice-1");
     let change = kit.enqueue(pr.clone()).await;
     assert_eq!(kit.spawned(), 1);
+    let woken = |what: &str| {
+        let wakes = kit.host.wakes.lock().unwrap();
+        wakes
+            .iter()
+            .filter(|w| w.contains(what))
+            .cloned()
+            .collect::<Vec<_>>()
+    };
 
-    kit.end_task("T50", "task.completed", "Done.");
+    kit.end_task(
+        "T50",
+        "task.completed",
+        "Approved: no blocking findings.\n`report` was unavailable, so the verdict wasn't recorded.",
+    );
     eventually("a second reviewer", || kit.spawned() == 2).await;
-    kit.end_task("T51", "task.cancelled", "Cancelled by the person.");
-    eventually("a third reviewer", || kit.spawned() == 3).await;
+    eventually("the lead told", || {
+        !woken("verdict not recorded: the reviewer T50").is_empty()
+    })
+    .await;
+    let told = woken("verdict not recorded: the reviewer T50");
+    assert_eq!(told.len(), 1);
+    assert!(
+        told[0].starts_with(
+            "- PR #7 verdict not recorded: the reviewer T50 ended without one, so it counts as no approval; T51 reviews it once more"
+        ) && told[0].contains(&pr)
+            && told[0].ends_with(
+                "  > Approved: no blocking findings.\n  > `report` was unavailable, so the verdict wasn't recorded."
+            ),
+        "{told:?}"
+    );
+    let retried = kit.get(&change.change_id);
+    assert_eq!(
+        retried.state,
+        ChangeState::Reviewing,
+        "an approving text is no verdict"
+    );
+    assert!(
+        retried
+            .last_error
+            .as_ref()
+            .is_some_and(|e| e.contains("verdict not recorded")
+                && e.contains("Approved: no blocking findings.")
+                && e.contains("T51 reviews it again (retry 1 of 1)")),
+        "{:?}",
+        retried.last_error
+    );
     {
         let spawns = kit.host.review_spawns.lock().unwrap();
         assert!(
@@ -3364,23 +3407,16 @@ async fn a_reviewer_that_ends_without_a_verdict_is_retried_twice_then_the_lead_i
                 .all(|s| s.pr == pr && s.prompt.contains(&head))
         );
     }
-    let stalled = || {
-        let wakes = kit.host.wakes.lock().unwrap();
-        wakes
-            .iter()
-            .filter(|w| w.contains("not reviewed"))
-            .cloned()
-            .collect::<Vec<_>>()
-    };
+    let stalled = || woken("not reviewed");
     assert!(stalled().is_empty());
 
-    kit.end_task("T52", "task.failed", "reading the diff\nran out of turns");
+    kit.end_task("T51", "task.failed", "reading the diff\nran out of turns");
     eventually("the lead told", || !stalled().is_empty()).await;
     let told = stalled();
     assert_eq!(told.len(), 1);
     assert!(
         told[0].starts_with(
-            "- PR #7 not reviewed: 3 reviewers in a row ended without a verdict, the last T52"
+            "- PR #7 not reviewed, verdict not recorded: 2 reviewers in a row ended without one, the last T51"
         ) && told[0].contains(&pr)
             && told[0].ends_with("  > reading the diff\n  > ran out of turns"),
         "{told:?}"
@@ -3395,16 +3431,18 @@ async fn a_reviewer_that_ends_without_a_verdict_is_retried_twice_then_the_lead_i
         "{:?}",
         parked.last_error
     );
+    kit.train.step(REPO).await;
+    assert_eq!(kit.spawned(), 2, "retried at most once");
 
     // Its end seen again starts nothing and tells nobody twice; a verdict that comes after all still counts.
-    kit.end_task("T52", "task.failed", "ran out of turns");
+    kit.end_task("T51", "task.failed", "ran out of turns");
     let cursor = kit.host.events_head();
     kit.host.push_event(
         "review.verdict",
-        json!({ "taskId": "T52", "prHeadSha": head, "blocking": 0, "nonBlocking": 0 }),
+        json!({ "taskId": "T51", "prHeadSha": head, "blocking": 0, "nonBlocking": 0 }),
     );
     kit.host.next_event(cursor, "change.ready").await;
-    assert_eq!(kit.spawned(), 3);
+    assert_eq!(kit.spawned(), 2);
     assert_eq!(stalled().len(), 1);
 }
 
@@ -3416,7 +3454,7 @@ async fn a_stalled_review_is_told_once_across_a_restart() {
     let change = kit
         .enqueue(kit.open_pr(7, "slice-1", &[add("a1.txt", "a\n")]))
         .await;
-    for (n, task) in ["T50", "T51", "T52"].into_iter().enumerate() {
+    for (n, task) in ["T50", "T51"].into_iter().enumerate() {
         eventually("a reviewer", || kit.spawned() == n + 1).await;
         kit.end_task(task, "task.completed", "Done.");
     }
@@ -3434,7 +3472,7 @@ async fn a_stalled_review_is_told_once_across_a_restart() {
     let verdict = restarted.again(kit.get(&change.change_id)).await;
     assert_eq!(verdict, Verdict::Pending);
     assert_eq!(stalled(), 1);
-    assert_eq!(kit.spawned(), 3);
+    assert_eq!(kit.spawned(), 2);
 }
 
 /// A replacement reviewer the tasks' spawn path refuses (the project's fan-out limit) is started on a later pass of
@@ -3467,7 +3505,7 @@ async fn a_refused_replacement_reviewer_starts_on_a_later_pass() {
     kit.train.step(REPO).await;
     assert_eq!(kit.spawned(), 2);
     assert!(
-        error().contains("T51 reviews it again (retry 1 of 2)"),
+        error().contains("T51 reviews it again (retry 1 of 1)"),
         "{}",
         error()
     );

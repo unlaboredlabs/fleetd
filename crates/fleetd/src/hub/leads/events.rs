@@ -120,6 +120,15 @@ pub enum Event<'a> {
         why: &'a str,
         tries: i64,
     },
+    /// A PR's reviewer ended without recording a verdict, so it is no approval, and `next` reviews it once more. `tail`
+    /// is the reviewer's final lines.
+    PrReviewNotRecorded {
+        change: &'a str,
+        pr_url: &'a str,
+        task: &'a str,
+        next: &'a str,
+        tail: &'a str,
+    },
     /// A PR's reviewers kept ending without a verdict: the train stopped starting new ones. `tail` is the last
     /// reviewer's final lines.
     PrReviewStalled {
@@ -331,6 +340,19 @@ impl Event<'_> {
                 ),
                 vec![],
             ),
+            Event::PrReviewNotRecorded {
+                change,
+                pr_url,
+                task,
+                next,
+                tail,
+            } => (
+                format!(
+                    "- {} verdict not recorded: the reviewer {task} ended without one, so it counts as no approval; {next} reviews it once more ({change}, {pr_url})",
+                    pr_label(pr_url)
+                ),
+                body(tail),
+            ),
             Event::PrReviewStalled {
                 change,
                 pr_url,
@@ -339,7 +361,7 @@ impl Event<'_> {
                 tail,
             } => (
                 format!(
-                    "- {} not reviewed: {tries} reviewers in a row ended without a verdict, the last {task}; the train starts no more ({change}, {pr_url})",
+                    "- {} not reviewed, verdict not recorded: {tries} reviewers in a row ended without one, the last {task}; the train starts no more ({change}, {pr_url})",
                     pr_label(pr_url)
                 ),
                 body(tail),
