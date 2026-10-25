@@ -79,6 +79,7 @@ impl LeadPorts for HubPorts {
                     },
                 )
                 .await
+                .map(|(thread_id, _)| thread_id)
                 .map_err(from_executor)
         })
     }

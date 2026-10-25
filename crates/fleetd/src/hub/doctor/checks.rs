@@ -8,11 +8,12 @@ use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
 
 use crate::cli::setup::machine_plan::CLAUDE_INSTALL;
+use crate::hub::tasks::base;
 use crate::node::runner::claude_setup::ClaudeSetup;
 use crate::node::runner::failure::login_fix;
 use crate::node::runner::version::{self, TESTED as CLAUDE_TESTED, VersionVerdict};
 use fleetd_contracts::node_link::NodeDisk;
-use fleetd_contracts::sessions::{LoginStatus, RunnerInfo};
+use fleetd_contracts::sessions::{BaseErrorKind, LoginStatus, RunnerInfo, WorktreeBase};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -687,9 +688,217 @@ pub fn disk_space(
     machine_entry(machine_id, "disk", Warn, &message, None)
 }
 
+/// Whether git could fetch each project's remote at the last worktree started there. None until one has started.
+pub fn git_fetch(machine_id: &str, bases: &[(String, WorktreeBase)], now: &str) -> Option<Entry> {
+    if bases.is_empty() {
+        return None;
+    }
+    let failing: Vec<_> = bases
+        .iter()
+        .filter_map(|(project, b)| Some((project, b, base::doctor_alert(b)?)))
+        .collect();
+    let Some((project, first, kind)) = failing.first() else {
+        // Only what the last starts showed: a fetch that worked, an offline one, or no remote to fetch.
+        let each: Vec<String> = bases
+            .iter()
+            .map(|(project, b)| match b.error.as_ref().map(|e| e.kind) {
+                None => format!("{project} fetched its remote"),
+                Some(BaseErrorKind::NoRemote) => format!("{project} has no remote"),
+                Some(_) => format!("{project} was offline (from {})", base::start(b, now)),
+            })
+            .collect();
+        return Some(machine_entry(
+            machine_id,
+            "git_fetch",
+            Pass,
+            &format!(
+                "At each project's last start on {machine_id}: {}.",
+                each.join("; ")
+            ),
+            None,
+        ));
+    };
+    let (text, command) = base::fetch_failed_text(project, first, now);
+    let more = match failing.len() {
+        1 => String::new(),
+        n => format!(" {} more projects fail too.", n - 1),
+    };
+    let status = match kind {
+        BaseErrorKind::Auth | BaseErrorKind::NoSsh => Fail,
+        _ => Warn,
+    };
+    let label = base::fix_label(*kind, machine_id);
+    Some(machine_entry(
+        machine_id,
+        "git_fetch",
+        status,
+        &format!("{text}{more}"),
+        Some(manual(&label, command)),
+    ))
+}
+
+/// A fork's default branch behind its upstream's: agents start from the fork. None when no project is a fork.
+pub fn fork_behind(machine_id: &str, bases: &[(String, WorktreeBase)]) -> Option<Entry> {
+    let forks: Vec<_> = bases
+        .iter()
+        .filter_map(|(project, b)| Some((project, b, b.fork_behind?)))
+        .collect();
+    if forks.is_empty() {
+        return None;
+    }
+    let Some((project, b, behind)) = forks.iter().find(|(_, _, n)| *n > 0) else {
+        return Some(machine_entry(
+            machine_id,
+            "fork_behind",
+            Pass,
+            "Each fork's default branch has everything upstream's has.",
+            None,
+        ));
+    };
+    let branch = b
+        .base_ref
+        .split_once('/')
+        .map_or(b.base_ref.as_str(), |(_, b)| b);
+    Some(machine_entry(
+        machine_id,
+        "fork_behind",
+        Warn,
+        &format!(
+            "{project}: your fork's {branch} is {behind} behind upstream, and agents start from it; `gh repo sync` \
+             brings it up to date."
+        ),
+        Some(manual(
+            "Sync the fork with upstream: GitHub's Sync fork button, or `gh repo sync <owner>/<fork>`",
+            None,
+        )),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn base(error: Option<(BaseErrorKind, &str)>, fork_behind: Option<u32>) -> WorktreeBase {
+        WorktreeBase {
+            base_ref: "origin/main".into(),
+            sha: "abc1234def".into(),
+            fetched_at: Some(fleetd_contracts::ids::Timestamp(
+                "2026-10-25T06:00:00Z".into(),
+            )),
+            error: error.map(|(kind, message)| fleetd_contracts::sessions::BaseError {
+                kind,
+                message: message.into(),
+            }),
+            fork_behind,
+        }
+    }
+
+    #[test]
+    fn a_project_git_cant_fetch_fails_the_check_with_the_login_fix() {
+        let now = "2026-10-25T07:00:00Z";
+        assert_eq!(git_fetch("mbp", &[], now), None, "no worktree started yet");
+        let fine = vec![
+            ("shop".to_owned(), base(None, None)),
+            (
+                "blog".to_owned(),
+                base(Some((BaseErrorKind::Offline, "offline")), None),
+            ),
+        ];
+        let fine = git_fetch("mbp", &fine, now).unwrap().check;
+        assert_eq!(fine.status, Pass);
+        assert_eq!(
+            fine.message,
+            "At each project's last start on mbp: shop fetched its remote; blog was offline (from origin/main @abc1234 \
+             as of 06:00 UTC)."
+        );
+        let mut local = base(Some((BaseErrorKind::NoRemote, "no remote")), None);
+        local.base_ref = "main".into();
+        let local = git_fetch("mbp", &[("notes".to_owned(), local)], now)
+            .unwrap()
+            .check;
+        assert_eq!(
+            local.message,
+            "At each project's last start on mbp: notes has no remote."
+        );
+        let gone = vec![(
+            "shop".to_owned(),
+            base(
+                Some((BaseErrorKind::NoAccess, "ERROR: Repository not found.")),
+                None,
+            ),
+        )];
+        let gone = git_fetch("mbp", &gone, now).unwrap().check;
+        assert_eq!(gone.status, Warn);
+        assert!(
+            gone.message.starts_with(
+                "git can't fetch origin for shop: ERROR: Repository not found. Fix: check the remote's URL"
+            ),
+            "{}",
+            gone.message
+        );
+        assert_eq!(
+            gone.fix.unwrap().command.as_deref(),
+            Some("git remote get-url origin")
+        );
+        let no_ssh = vec![(
+            "shop".to_owned(),
+            base(
+                Some((
+                    BaseErrorKind::NoSsh,
+                    "error: cannot run ssh: No such file or directory",
+                )),
+                None,
+            ),
+        )];
+        let no_ssh = git_fetch("mbp", &no_ssh, now).unwrap().check;
+        assert_eq!(no_ssh.status, Fail);
+        assert!(
+            no_ssh
+                .message
+                .starts_with("ssh isn't installed, so git can't fetch origin for shop"),
+            "{}",
+            no_ssh.message
+        );
+        assert_eq!(no_ssh.fix.unwrap().label, "Install OpenSSH on mbp");
+        let refused = vec![(
+            "shop".to_owned(),
+            base(
+                Some((
+                    BaseErrorKind::Auth,
+                    "git@github.com: Permission denied (publickey).",
+                )),
+                None,
+            ),
+        )];
+        let check = git_fetch("mbp", &refused, now).unwrap().check;
+        assert_eq!((check.id.as_str(), check.status), ("mbp/git_fetch", Fail));
+        assert!(
+            check.message.starts_with(
+                "git can't fetch origin for shop: git@github.com: Permission denied (publickey). Fix: `gh auth login` \
+                 or your SSH key."
+            ),
+            "{}",
+            check.message
+        );
+        assert_eq!(check.fix.unwrap().command.as_deref(), Some("gh auth login"));
+    }
+
+    #[test]
+    fn a_fork_behind_upstream_warns() {
+        assert_eq!(
+            fork_behind("mbp", &[("shop".to_owned(), base(None, None))]),
+            None
+        );
+        let even = [("shop".to_owned(), base(None, Some(0)))];
+        assert_eq!(fork_behind("mbp", &even).unwrap().check.status, Pass);
+        let behind = [("shop".to_owned(), base(None, Some(31)))];
+        let check = fork_behind("mbp", &behind).unwrap().check;
+        assert_eq!((check.id.as_str(), check.status), ("mbp/fork_behind", Warn));
+        assert_eq!(
+            check.message,
+            "shop: your fork's main is 31 behind upstream, and agents start from it; `gh repo sync` brings it up to date."
+        );
+    }
 
     #[test]
     fn a_repo_with_no_ci_fails_with_the_add_ci_fix() {

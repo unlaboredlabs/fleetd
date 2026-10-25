@@ -10,7 +10,7 @@ use fleetd_contracts::ledger::{Brief, Workstream, WorkstreamId};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::prim::NonEmpty;
-use fleetd_contracts::sessions::SessionWorkspace;
+use fleetd_contracts::sessions::{SessionWorkspace, WorktreeBase};
 use fleetd_contracts::tasks::TaskId;
 use fleetd_contracts::usage::UsageParked;
 
@@ -73,7 +73,7 @@ impl TaskPorts for HubTaskPorts {
         &'a self,
         machine_id: &'a MachineId,
         request: LaunchRequest,
-    ) -> BoxFut<'a, Result<ThreadId, PortError>> {
+    ) -> BoxFut<'a, Result<(ThreadId, Option<WorktreeBase>), PortError>> {
         Box::pin(async move {
             let input = LaunchInput {
                 project_id: request.project_id,

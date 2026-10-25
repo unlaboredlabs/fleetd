@@ -3,6 +3,7 @@ use std::collections::HashSet;
 
 use fleetd_contracts::ids::{ProjectRef, ThreadRef};
 use fleetd_contracts::model::TaskCounts;
+use fleetd_contracts::sessions::WorktreeBase;
 use fleetd_contracts::tasks::{Task, TaskId, TaskState};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
@@ -103,6 +104,35 @@ impl TaskRecords {
         )?
         .query_row([thread_id], stored_of)
         .optional()
+    }
+
+    /// Where the project's newest launched worktree started.
+    pub fn latest_base(db: &Connection, r: &ProjectRef) -> rusqlite::Result<Option<WorktreeBase>> {
+        db.prepare_cached(
+            "SELECT data FROM tasks WHERE machine_id = ? AND project_id = ? AND json_extract(data, '$.base') IS NOT NULL
+             ORDER BY n DESC LIMIT 1",
+        )?
+        .query_row(params![r.machine_id.as_str(), r.project_id.as_str()], |row| {
+            decode(&row.get::<_, String>(0)?)
+        })
+        .optional()
+        .map(|task| task.and_then(|t| t.base))
+    }
+
+    /// [`Self::latest_base`] for each of the machine's projects that launched a worktree.
+    pub fn latest_bases(
+        db: &Connection,
+        machine_id: &str,
+    ) -> rusqlite::Result<Vec<(ProjectRef, WorktreeBase)>> {
+        db.prepare_cached(
+            "SELECT data FROM tasks WHERE n IN (SELECT MAX(n) FROM tasks
+               WHERE machine_id = ? AND json_extract(data, '$.base') IS NOT NULL GROUP BY project_id)
+             ORDER BY n",
+        )?
+        .query_map([machine_id], |row| decode(&row.get::<_, String>(0)?))?
+        .map(|task| task.map(|t| t.base.map(|b| (t.project_ref, b))))
+        .filter_map(Result::transpose)
+        .collect()
     }
 
     /// Oldest first, every project.

@@ -1,5 +1,61 @@
 {
   "$defs": {
+    "BaseError": {
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/BaseErrorKind"
+        },
+        "message": {
+          "description": "git's first line, e.g. \"fatal: Authentication failed for 'https://github.com/a/b.git/'\"; \"offline\".",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "message"
+      ],
+      "type": "object"
+    },
+    "BaseErrorKind": {
+      "description": "Why a worktree's base may be behind its remote's default branch.",
+      "oneOf": [
+        {
+          "const": "offline",
+          "description": "The remote can't be reached, or didn't answer in time.",
+          "type": "string"
+        },
+        {
+          "const": "auth",
+          "description": "The remote refused git's credentials; the agent's pushes will fail the same way.",
+          "type": "string"
+        },
+        {
+          "const": "no_access",
+          "description": "The remote says there is no such repository: a wrong URL or name, or credentials that can't see it.",
+          "type": "string"
+        },
+        {
+          "const": "no_ssh",
+          "description": "git can't run ssh on the machine: it isn't installed. The doctor shows it; no attention item.",
+          "type": "string"
+        },
+        {
+          "const": "no_default_branch",
+          "description": "The remote answered but names no default branch: its HEAD points at a branch it doesn't have.",
+          "type": "string"
+        },
+        {
+          "const": "no_remote",
+          "description": "The project has no remote: the base is a local branch.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "Any other fetch failure.",
+          "type": "string"
+        }
+      ]
+    },
     "Brief": {
       "properties": {
         "constraints": {
@@ -315,6 +371,10 @@
           "maximum": 9007199254740991,
           "minimum": 1,
           "type": "integer"
+        },
+        "base": {
+          "$ref": "#/$defs/WorktreeBase",
+          "description": "Where its worktree's branch started, as the node reported at launch; write tasks only, absent before a launch\nor from an older node."
         },
         "branch": {
           "description": "`fleetd/<taskId>-<slug>`; write tasks only.",
@@ -817,6 +877,36 @@
           "type": "string"
         }
       ]
+    },
+    "WorktreeBase": {
+      "description": "Where a writer's worktree branch started: the remote's default branch, freshly fetched unless `error` says why not.",
+      "properties": {
+        "error": {
+          "$ref": "#/$defs/BaseError"
+        },
+        "fetchedAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When `ref` was last fetched: by this start, else by the one whose copy it fell back to. Absent for a local\nbranch, or when git can't tell."
+        },
+        "forkBehind": {
+          "description": "A fork (an `upstream` remote beside it) only: the commits upstream's default branch has that `ref` lacks, as\nlast fetched.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "ref": {
+          "description": "\"origin/main\"; a local branch when there is no remote, or no copy of the remote's.",
+          "type": "string"
+        },
+        "sha": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "sha"
+      ],
+      "type": "object"
     }
   },
   "$ref": "#/$defs/ProjectOutcome",

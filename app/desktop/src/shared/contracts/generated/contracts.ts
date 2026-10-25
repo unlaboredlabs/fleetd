@@ -323,6 +323,15 @@ export type AttachmentRef = {
  */
 export type Attention = "loud" | "urgent";
 
+export type BaseError = {
+  kind: BaseErrorKind;
+  /** git's first line, e.g. "fatal: Authentication failed for 'https://github.com/a/b.git/'"; "offline". */
+  message: string;
+};
+
+/** Why a worktree's base may be behind its remote's default branch. */
+export type BaseErrorKind = "offline" | "auth" | "no_access" | "no_ssh" | "no_default_branch" | "no_remote" | "failed";
+
 export type BoxPublicKey = string;
 
 export type BreakerState = "closed" | "open";
@@ -925,6 +934,17 @@ export type EventsWaitOutput = {
   truncated?: boolean;
 };
 
+/** `project.fetch_failed` data: the start that found the remote unfetchable. */
+export type FetchFailedData = {
+  base: WorktreeBase;
+  /** A command for a person to run, e.g. "gh auth login". */
+  fix?: string;
+  /** The whole line, which the summary may cut: what failed, the fix, and where agents start from meanwhile. */
+  message: string;
+  projectRef: ProjectRef;
+  taskId: TaskId;
+};
+
 export type FiredIn = "current" | "compare" | "both";
 
 export type FleetStatus = {
@@ -1090,6 +1110,7 @@ export type KnownHubEventType =
   | "project.added"
   | "project.clone_progress"
   | "project.add_failed"
+  | "project.fetch_failed"
   | "project.settings"
   | "thread.waiting"
   | "wake.missed"
@@ -3260,6 +3281,11 @@ export type TailRole = "user" | "assistant" | "system";
 export type Task = {
   /** 1 for the first launch. */
   attempt: number;
+  /**
+   * Where its worktree's branch started, as the node reported at launch; write tasks only, absent before a launch
+   * or from an older node.
+   */
+  base?: WorktreeBase;
   /** `fleetd/<taskId>-<slug>`; write tasks only. */
   branch?: string;
   createdAt: Timestamp;
@@ -3301,6 +3327,8 @@ export type TaskCounts = {
 
 /** Fields `HubEvent.data` carries on `task.*` events. */
 export type TaskEventData = {
+  /** On `task.started` for a new worktree: where its branch started. */
+  base?: WorktreeBase;
   branch?: string;
   /** When the task was spawned: a `task.started` for a task spawned before a turn is not that turn's start. */
   createdAt?: Timestamp;
@@ -3876,6 +3904,24 @@ export type WorkstreamSource = {
 
 export type WorkstreamState = "done" | "stopped" | "open";
 
+/** Where a writer's worktree branch started: the remote's default branch, freshly fetched unless `error` says why not. */
+export type WorktreeBase = {
+  error?: BaseError;
+  /**
+   * When `ref` was last fetched: by this start, else by the one whose copy it fell back to. Absent for a local
+   * branch, or when git can't tell.
+   */
+  fetchedAt?: Timestamp;
+  /**
+   * A fork (an `upstream` remote beside it) only: the commits upstream's default branch has that `ref` lacks, as
+   * last fetched.
+   */
+  forkBehind?: number;
+  /** "origin/main"; a local branch when there is no remote, or no copy of the remote's. */
+  ref: string;
+  sha: string;
+};
+
 /** Every tool the app can `call`: its input and its output. */
 export interface ToolMap {
   actions_list: { input: ActionsListInput; output: ActionsListOutput };
@@ -3959,6 +4005,7 @@ export interface HubEventDataMap {
   "project.add_failed": ProjectAddFailedData;
   "project.added": ProjectAddedData;
   "project.clone_progress": CloneProgressData;
+  "project.fetch_failed": FetchFailedData;
   "prompt.changed": PromptChangedData;
   "repo.advanced": RepoAdvancedData;
   "request.opened": RequestEventData;

@@ -230,17 +230,18 @@ pub fn task_waiting_lines(task_id: &str, title: &str, question: &str) -> String 
 }
 
 /// One digest line per task: running and idle, then queued with reasons, then those that ended since `since`.
-pub fn task_digest_lines(tasks: &[Task], since: Option<&str>) -> Vec<String> {
+pub fn task_digest_lines(tasks: &[Task], since: Option<&str>, now: &str) -> Vec<String> {
     let title = |t: &Task| one_line(t.title.as_str(), 80);
     let mut out = Vec::new();
     for t in tasks
         .iter()
         .filter(|t| matches!(t.state, TaskState::Running | TaskState::Idle))
     {
-        let branch = t
-            .branch
-            .as_ref()
-            .map_or_else(String::new, |b| format!(" [{}]", b.as_str()));
+        let branch = match (&t.branch, &t.base) {
+            (Some(b), Some(base)) => format!(" [{}, {}]", b.as_str(), super::base::line(base, now)),
+            (Some(b), None) => format!(" [{}]", b.as_str()),
+            (None, _) => String::new(),
+        };
         let state = if t.state == TaskState::Idle {
             "idle, waiting for input"
         } else {

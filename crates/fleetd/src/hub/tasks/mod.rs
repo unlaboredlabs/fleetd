@@ -3,6 +3,7 @@
 //! `fleetd/` by default).
 //! The thread's status transitions, read off the event log, end the task: the result goes into the record and,
 //! inline, into one lead wake; the slot is released and the queue is tried again.
+pub mod base;
 pub mod cap;
 #[cfg(test)]
 mod cap_tests;
@@ -22,15 +23,15 @@ pub mod wire;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use fleetd_contracts::events::{HubEvent, HubEventType};
+use fleetd_contracts::events::{Attention, HubEvent, HubEventType};
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef, Timestamp};
 use fleetd_contracts::lead_calls::TaskSpawnCall;
 use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::prim::NonEmpty;
 use fleetd_contracts::prim::{Int, Text};
-use fleetd_contracts::sessions::RunEnd;
+use fleetd_contracts::sessions::{RunEnd, WorktreeBase};
 use fleetd_contracts::tasks::{
-    PrUrl, Task, TaskId, TaskKind, TaskResult, TaskResultStatus, TaskState,
+    FetchFailedData, PrUrl, Task, TaskId, TaskKind, TaskResult, TaskResultStatus, TaskState,
 };
 use serde_json::{Map, Value, json};
 
@@ -122,6 +123,9 @@ fn store_error(error: StoreError) -> TaskError {
         Some("Retry; if it keeps failing, check the hub's log."),
     )
 }
+
+/// A started task's thread, its branch, and where the branch started.
+type Launched = (ThreadRef, Option<String>, Option<WorktreeBase>);
 
 /// Why a launch or continuation did not go out: the machine went offline (the task queues), or anything else
 /// (the task fails to start with this message).
@@ -269,7 +273,7 @@ impl Tasks {
         }
     }
 
-    fn now_iso(&self) -> String {
+    pub(crate) fn now_iso(&self) -> String {
         iso_ms(now_ms(self.d.clock.as_ref()))
     }
 
@@ -357,7 +361,8 @@ impl Tasks {
         Ok(next)
     }
 
-    async fn launch(&self, task: &Task) -> Result<(ThreadRef, Option<String>), StartError> {
+    /// The task's new thread, its branch, and where the branch started.
+    async fn launch(&self, task: &Task) -> Result<Launched, StartError> {
         let r = &task.project_ref;
         let Some(project) = self.d.store.project_get(r)? else {
             return Err(StartError::Other(format!(
@@ -412,7 +417,7 @@ impl Tasks {
                 .zip(branch.clone())
                 .map(|(base_ref, branch)| Worktree { base_ref, branch }),
         };
-        let thread_id = self.d.ports.launch(&r.machine_id, request).await?;
+        let (thread_id, base) = self.d.ports.launch(&r.machine_id, request).await?;
         // Every later message to this thread renders from the texts it starts with. The thread runs either way.
         if let Err(error) = self.d.db.prompts().pin(
             &set,
@@ -430,6 +435,7 @@ impl Tasks {
                 thread_id,
             },
             branch,
+            base,
         ))
     }
 
@@ -628,12 +634,12 @@ impl Tasks {
                     .unwrap()
                     .insert(task.task_id.clone(), (run, at));
             }
-            sent.map(|_| (thread.clone(), None))
+            sent.map(|_| (thread.clone(), None, None))
                 .map_err(StartError::from)
         } else {
             self.launch(task).await
         };
-        let (thread_ref, branch) = match started {
+        let (thread_ref, branch, base) = match started {
             Ok(started) => started,
             Err(StartError::Offline) => {
                 self.d.slots.release(task.task_id.as_str())?;
@@ -653,6 +659,22 @@ impl Tasks {
         if let Some(branch) = branch {
             next.branch = Some(NonEmpty::unchecked(branch));
         }
+        // Raised once per project while git can't fetch its remote: not again while the last base failed the same way.
+        let fetch_failed = match base.as_ref().and_then(base::alert) {
+            Some(kind)
+                if self
+                    .db(|c| TaskRecords::latest_base(c, r))?
+                    .as_ref()
+                    .and_then(base::alert)
+                    != Some(kind) =>
+            {
+                base.clone()
+            }
+            _ => None,
+        };
+        if !continuing {
+            next.base = base.clone();
+        }
         next.state = TaskState::Running;
         next.started_at = Some(task.started_at.clone().unwrap_or(Timestamp(at)));
         // From here the board holds the slot while the thread runs and frees it whenever it stops.
@@ -661,6 +683,7 @@ impl Tasks {
             task: next.clone(),
             pending_message: None,
         })?;
+        let now = self.now_iso();
         let summary = if continuing {
             format!(
                 "{} continued (attempt {}): {}",
@@ -669,15 +692,54 @@ impl Tasks {
                 task.title.as_str()
             )
         } else {
+            let based = base
+                .as_ref()
+                .map_or_else(String::new, |b| format!("; {}", base::line(b, &now)));
             format!(
-                "{} started ({}): {}",
+                "{} started ({}): {}{based}",
                 task.task_id.as_str(),
                 task.profile.as_str(),
                 task.title.as_str()
             )
         };
-        self.emit(&next, HubEventType::TaskStarted, summary, Map::new())?;
+        let mut extra = Map::new();
+        if let Some(base) = &base {
+            extra.insert("base".into(), json!(base));
+        }
+        self.emit(&next, HubEventType::TaskStarted, summary, extra)?;
+        if let Some(failed) = fetch_failed {
+            self.fetch_failed(&next, failed, &now)?;
+        }
         Ok(next)
+    }
+
+    /// `project.fetch_failed`: the attention item for a start whose base git couldn't fetch, with the fix.
+    fn fetch_failed(&self, task: &Task, base: WorktreeBase, now: &str) -> Result<(), StoreError> {
+        let r = &task.project_ref;
+        let project = self
+            .d
+            .store
+            .project_get(r)?
+            .map_or_else(|| r.project_id.to_string(), |p| p.title);
+        let (message, fix) = base::fetch_failed_text(&project, &base, now);
+        let data = FetchFailedData {
+            project_ref: r.clone(),
+            task_id: task.task_id.clone(),
+            base,
+            message: message.clone(),
+            fix,
+        };
+        self.d.events.append(NewEvent {
+            at: Timestamp(now.to_owned()),
+            r#type: HubEventType::ProjectFetchFailed,
+            machine_id: Some(r.machine_id.clone()),
+            project_id: Some(r.project_id.clone()),
+            thread_id: task.thread_ref.as_ref().map(|t| t.thread_id.clone()),
+            summary: message,
+            data: Some(json!(data)),
+            attention: Some(Attention::Loud),
+        })?;
+        Ok(())
     }
 
     /// FIFO over every project's queue; each task is tried once. Call with the lock held.
@@ -1095,6 +1157,7 @@ impl Tasks {
             queued_reason: None,
             thread_ref: None,
             branch: None,
+            base: None,
             worktree_path: None,
             parked: None,
             attempt: Int::unchecked(1),
@@ -1385,6 +1448,15 @@ const SCAN_LIMIT: usize = 10_000;
 /// What leads read from tasks: digest lines, live tasks and cancels for removed projects (leads' TasksHook, set in
 /// `wire`).
 impl Tasks {
+    /// Where each of the machine's projects last started a worktree, for the doctor.
+    pub fn latest_bases(&self, machine_id: &str) -> Vec<(ProjectRef, WorktreeBase)> {
+        self.db(|c| TaskRecords::latest_bases(c, machine_id))
+            .unwrap_or_else(|error| {
+                tracing::warn!(%error, "tasks: worktree bases not read");
+                Vec::new()
+            })
+    }
+
     /// A line per task; the agents line is `agents`, at the top of the state block.
     pub fn digest_lines(
         &self,
@@ -1394,7 +1466,7 @@ impl Tasks {
     ) -> Vec<String> {
         let since = since.map(Timestamp::as_str);
         match self.db(|c| TaskRecords::for_digest(c, project_ref, since, limit)) {
-            Ok(tasks) => render::task_digest_lines(&tasks, since),
+            Ok(tasks) => render::task_digest_lines(&tasks, since, &self.now_iso()),
             Err(error) => {
                 tracing::warn!(%error, "tasks: digest lines not read");
                 Vec::new()
@@ -1511,8 +1583,10 @@ mod tests {
     use std::sync::Mutex;
 
     use fleetd_contracts::ids::{MachineId, ProjectId, ThreadId};
-    use fleetd_contracts::lead_calls::TaskSpawnCall;
+    use fleetd_contracts::lead_calls::TaskResultFrame;
+    use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult, TaskSpawnCall};
     use fleetd_contracts::ledger::{Brief, Workstream};
+    use fleetd_contracts::sessions::BaseErrorKind;
     use serde_json::json;
 
     use super::*;
@@ -1529,6 +1603,8 @@ mod tests {
         launched: Mutex<Vec<Option<String>>>,
         offline: std::sync::atomic::AtomicBool,
         policy: Mutex<Option<String>>,
+        /// Where each writer's worktree starts, as the node reports it.
+        base: Mutex<Option<WorktreeBase>>,
     }
 
     impl Node {
@@ -1549,11 +1625,15 @@ mod tests {
             &'a self,
             _: &'a MachineId,
             request: LaunchRequest,
-        ) -> BoxFut<'a, Result<ThreadId, PortError>> {
+        ) -> BoxFut<'a, Result<(ThreadId, Option<WorktreeBase>), PortError>> {
+            let base = request
+                .worktree
+                .as_ref()
+                .and_then(|_| self.base.lock().unwrap().clone());
             let mut launched = self.launched.lock().unwrap();
             launched.push(request.worktree.map(|w| w.branch));
             let id = ThreadId::unchecked(format!("t{}", launched.len()));
-            Box::pin(async move { Ok(id) })
+            Box::pin(async move { Ok((id, base)) })
         }
         fn send<'a>(
             &'a self,
@@ -1785,5 +1865,215 @@ mod tests {
         // A node lost between the start's check and the launch's read queues the task too.
         let lost = PortError::Offline.to_task_error(&caller.project_ref.machine_id);
         assert!(matches!(StartError::from(lost), StartError::Offline));
+    }
+
+    fn lead() -> TaskCaller {
+        TaskCaller {
+            project_ref: ProjectRef {
+                machine_id: MachineId::unchecked("lab-a"),
+                project_id: ProjectId::unchecked("p1"),
+            },
+            by: "lead".into(),
+        }
+    }
+
+    /// origin/main at abc1234, fetched at `at`; `error` says why it may be behind.
+    fn base(at: &str, error: Option<(BaseErrorKind, &str)>) -> WorktreeBase {
+        WorktreeBase {
+            base_ref: "origin/main".into(),
+            sha: "abc1234def5678abc1234def5678abc1234def56".into(),
+            fetched_at: Some(Timestamp(at.into())),
+            error: error.map(|(kind, message)| fleetd_contracts::sessions::BaseError {
+                kind,
+                message: message.into(),
+            }),
+            fork_behind: None,
+        }
+    }
+
+    async fn spawn_frame(tasks: &Arc<Tasks>, title: &str) -> TaskResultFrame {
+        let call = LeadCall::TaskSpawn(writer(title));
+        match tools::lead_call(tasks, &lead(), call).await.unwrap() {
+            LeadCallResult::TaskSpawn(frame) => frame,
+            other => panic!("{other:?}"),
+        }
+    }
+
+    async fn events_of(tasks: &Tasks, kind: HubEventType) -> Vec<HubEvent> {
+        let page = tasks
+            .d
+            .events
+            .wait(WaitInput {
+                cursor: Some(0),
+                types: Some(vec![kind]),
+                machine_id: None,
+                timeout_sec: 0,
+            })
+            .await
+            .unwrap();
+        page.events
+    }
+
+    /// The spawn result, the task, its digest line and `task.started` say where the worktree started. Offline, the
+    /// start says "as of" the last fetch and raises nothing: it mends itself.
+    #[tokio::test]
+    async fn a_writers_base_is_in_its_spawn_result_and_task_line_and_offline_says_as_of() {
+        let (tasks, node) = tasks();
+        // The hub's clock reads 2026-10-14 17:46.
+        let fresh = base("2026-10-14T17:46:00Z", None);
+        *node.base.lock().unwrap() = Some(fresh.clone());
+        let frame = spawn_frame(&tasks, "add the docs page").await;
+        assert_eq!(frame.task.base.as_ref(), Some(&fresh));
+        assert_eq!(
+            frame.next.as_deref(),
+            Some("Its worktree is based on origin/main @abc1234 as of 17:46 UTC.")
+        );
+        let started = events_of(&tasks, HubEventType::TaskStarted).await;
+        assert_eq!(
+            started[0].summary.as_str(),
+            "T1 started (high): add the docs page; based on origin/main @abc1234 as of 17:46 UTC"
+        );
+        assert_eq!(
+            tasks.digest_lines(&lead().project_ref, None, 10)[0],
+            "- T1 running (write, high): add the docs page [fleetd/T1-add-the-docs-page, based on origin/main \
+             @abc1234 as of 17:46 UTC]"
+        );
+
+        *node.base.lock().unwrap() = Some(base(
+            "2026-10-13T18:02:00Z",
+            Some((BaseErrorKind::Offline, "offline")),
+        ));
+        let frame = spawn_frame(&tasks, "fix the api").await;
+        let next = frame.next.unwrap();
+        assert!(
+            next.starts_with(
+                "Its worktree is based on origin/main @abc1234 as of 10-13 18:02 UTC (fetch failed: offline). "
+            ),
+            "{next}"
+        );
+        assert!(
+            events_of(&tasks, HubEventType::ProjectFetchFailed)
+                .await
+                .is_empty()
+        );
+    }
+
+    /// git refusing the credentials raises one attention item for the project, with the fix, however many writers
+    /// start meanwhile; once a fetch works again, the next refusal raises another.
+    #[tokio::test]
+    async fn an_auth_failure_raises_exactly_one_attention_item() {
+        let (tasks, node) = tasks();
+        let refused = base(
+            "2026-10-14T09:00:00Z",
+            Some((
+                BaseErrorKind::Auth,
+                "fatal: Authentication failed for 'https://github.com/acme/shop.git/'",
+            )),
+        );
+        *node.base.lock().unwrap() = Some(refused.clone());
+        for title in ["one", "two", "three"] {
+            spawn_frame(&tasks, title).await;
+        }
+        let raised = events_of(&tasks, HubEventType::ProjectFetchFailed).await;
+        assert_eq!(raised.len(), 1);
+        let item = &raised[0];
+        assert_eq!(item.attention, Some(Attention::Loud));
+        assert_eq!(item.project_id.as_ref().map(|p| p.as_str()), Some("p1"));
+        let data: FetchFailedData = serde_json::from_value(item.data.clone().unwrap()).unwrap();
+        assert_eq!(
+            data.message,
+            "git can't fetch origin for storefront: fatal: Authentication failed for \
+             'https://github.com/acme/shop.git/'. Fix: `gh auth login` or your SSH key. Agents start from origin/main \
+             @abc1234 as of 09:00 UTC; their pushes will fail the same way."
+        );
+        assert_eq!(data.fix.as_deref(), Some("gh auth login"));
+        assert_eq!(data.task_id.as_str(), "T1");
+        // The doctor reads the same base.
+        let bases = tasks.latest_bases("lab-a");
+        assert_eq!(bases.len(), 1);
+        assert_eq!(bases[0].1, refused);
+
+        *node.base.lock().unwrap() = Some(base("2026-10-14T17:00:00Z", None));
+        spawn_frame(&tasks, "four").await;
+        *node.base.lock().unwrap() = Some(refused);
+        spawn_frame(&tasks, "five").await;
+        assert_eq!(
+            events_of(&tasks, HubEventType::ProjectFetchFailed)
+                .await
+                .len(),
+            2
+        );
+    }
+
+    /// With no remote, the spawn says it starts from the local branch and raises nothing; a remote that says there is
+    /// no such repository raises the item, with what to check.
+    #[tokio::test]
+    async fn no_remote_reads_plainly_and_a_missing_repository_raises_the_item() {
+        let (tasks, node) = tasks();
+        let mut local = base(
+            "2026-10-14T17:46:00Z",
+            Some((BaseErrorKind::NoRemote, "no remote")),
+        );
+        (local.base_ref, local.fetched_at) = ("main".into(), None);
+        *node.base.lock().unwrap() = Some(local);
+        let frame = spawn_frame(&tasks, "one").await;
+        assert_eq!(
+            frame.next.as_deref(),
+            Some("Its worktree is based on local main @abc1234 (no remote).")
+        );
+        assert!(
+            events_of(&tasks, HubEventType::ProjectFetchFailed)
+                .await
+                .is_empty()
+        );
+
+        *node.base.lock().unwrap() = Some(base(
+            "2026-10-14T09:00:00Z",
+            Some((BaseErrorKind::NoAccess, "ERROR: Repository not found.")),
+        ));
+        spawn_frame(&tasks, "two").await;
+        let raised = events_of(&tasks, HubEventType::ProjectFetchFailed).await;
+        assert_eq!(raised.len(), 1);
+        let data: FetchFailedData =
+            serde_json::from_value(raised[0].data.clone().unwrap()).unwrap();
+        assert_eq!(
+            data.message,
+            "git can't fetch origin for storefront: ERROR: Repository not found. Fix: check the remote's URL (`git \
+             remote get-url origin`), the repo's name, and that your key or login can see it. Agents start from \
+             origin/main @abc1234 as of 09:00 UTC."
+        );
+    }
+
+    /// A remote that names no default branch says so in the spawn result and raises the attention item.
+    #[tokio::test]
+    async fn a_remote_with_no_default_branch_says_so() {
+        let (tasks, node) = tasks();
+        let mut headless = base(
+            "2026-10-14T17:46:00Z",
+            Some((
+                BaseErrorKind::NoDefaultBranch,
+                "origin names no default branch: its HEAD points at a branch it doesn't have",
+            )),
+        );
+        headless.base_ref = "origin/feature".into();
+        *node.base.lock().unwrap() = Some(headless);
+        let frame = spawn_frame(&tasks, "one").await;
+        assert_eq!(
+            frame.next.as_deref(),
+            Some(
+                "Its worktree is based on origin/feature @abc1234 as of 17:46 UTC (origin names no default branch: \
+                 its HEAD points at a branch it doesn't have)."
+            )
+        );
+        let raised = events_of(&tasks, HubEventType::ProjectFetchFailed).await;
+        assert_eq!(raised.len(), 1);
+        assert!(
+            raised[0].summary.as_str().starts_with(
+                "origin names no default branch: its HEAD points at a branch it doesn't have, so \
+                              storefront has no default branch to start from."
+            ),
+            "{}",
+            raised[0].summary.as_str()
+        );
     }
 }

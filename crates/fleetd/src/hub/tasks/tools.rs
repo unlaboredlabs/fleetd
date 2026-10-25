@@ -146,10 +146,20 @@ pub async fn lead_call(
         LeadCall::TaskSpawn(input) => {
             let asked = input.profile;
             let task = tasks.spawn(caller, input).await?;
-            let mut next = match (tasks.queued_next(&task), tasks.also_writing(&task).await) {
-                (Some(queued), Some(also)) => Some(format!("{queued} {also}")),
-                (queued, also) => queued.or(also),
-            };
+            let based = task.base.as_ref().map(|b| {
+                format!(
+                    "Its worktree is {}.",
+                    super::base::line(b, &tasks.now_iso())
+                )
+            });
+            let mut next = [
+                based,
+                tasks.queued_next(&task),
+                tasks.also_writing(&task).await,
+            ]
+            .into_iter()
+            .flatten()
+            .reduce(|a, b| format!("{a} {b}"));
             if asked == Some(TaskProfile::Medium) && task.profile == TaskProfile::High {
                 let why = if task.kind == TaskKind::Review {
                     "It runs high: reviews always do."

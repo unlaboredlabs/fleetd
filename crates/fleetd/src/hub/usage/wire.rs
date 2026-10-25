@@ -259,6 +259,22 @@ impl DoctorFleet for OpsPorts {
     fn repos_without_ci(&self) -> Vec<String> {
         self.hub().train.repos_without_ci()
     }
+    fn bases(&self, machine_id: &str) -> Vec<(String, fleetd_contracts::sessions::WorktreeBase)> {
+        let hub = self.hub();
+        hub.tasks
+            .latest_bases(machine_id)
+            .into_iter()
+            .map(|(r, base)| {
+                let title = hub
+                    .store
+                    .project_get(&r)
+                    .ok()
+                    .flatten()
+                    .map_or_else(|| r.project_id.to_string(), |p| p.title);
+                (title, base)
+            })
+            .collect()
+    }
     fn node_action(
         &self,
         machine_id: &str,

@@ -111,6 +111,11 @@
           "type": "string"
         },
         {
+          "const": "project.fetch_failed",
+          "description": "A writer's worktree started from a stale base because git can't fetch the project's remote, or the remote names\nno default branch. Once per project until a fetch works again; `data` is `tasks::FetchFailedData`.",
+          "type": "string"
+        },
+        {
           "const": "project.settings",
           "description": "A project's settings changed (`project_set`): `data.mediumAllowed`.",
           "type": "string"
