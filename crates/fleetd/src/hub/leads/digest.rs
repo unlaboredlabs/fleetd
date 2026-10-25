@@ -41,6 +41,9 @@ pub struct DigestInput<'a> {
     pub tasks: Option<Vec<String>>,
     /// Lines from the merge train; None leaves the section out.
     pub train: Option<Vec<String>>,
+    /// Work on the project's repo and base that isn't its own: claims, other projects' writers and Changes, and
+    /// recent landings outside the train. None leaves the section out.
+    pub elsewhere: Option<Vec<String>>,
     pub facts: &'a HashMap<WorkstreamId, WorkstreamFacts>,
 }
 
@@ -235,9 +238,10 @@ impl Section {
 const WORKSTREAMS: usize = 0;
 const TASKS: usize = 1;
 const TRAIN: usize = 2;
-const REQUESTS: usize = 3;
-const DECISIONS: usize = 4;
-const DO_NOT_RE_ASK: usize = 5;
+const ELSEWHERE: usize = 3;
+const REQUESTS: usize = 4;
+const DECISIONS: usize = 5;
+const DO_NOT_RE_ASK: usize = 6;
 
 pub fn render_lead_digest(input: &DigestInput) -> String {
     let open: HashSet<&WorkstreamId> = input.workstreams.iter().map(|w| &w.workstream_id).collect();
@@ -287,6 +291,13 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
             "\n",
         ),
         Section::new(
+            "Elsewhere",
+            input.elsewhere.clone().unwrap_or_default(),
+            8,
+            "older ones not shown",
+            "\n",
+        ),
+        Section::new(
             "Waiting on the person (in chat)",
             input.open_requests.iter().map(request_line).collect(),
             20,
@@ -316,17 +327,22 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
     if input.train.is_some() {
         shown.push(TRAIN);
     }
+    if input.elsewhere.is_some() {
+        shown.push(ELSEWHERE);
+    }
     shown.extend([REQUESTS, DECISIONS, DO_NOT_RE_ASK]);
 
     let render = |sections: &[Section]| {
         let parts: Vec<String> = shown.iter().map(|&i| sections[i].render()).collect();
         format!("{head}\n\n{}", parts.join("\n\n"))
     };
-    // Lowest value first: the key list, then decisions, requests, agents, the train, and the work last. The first pass
-    // keeps a few of each so no section vanishes while another is long; the second trims to nothing if it must.
-    let drop_order: [(usize, usize); 6] = [
+    // Lowest value first: the key list, then decisions, work elsewhere, requests, agents, the train, and the work last.
+    // The first pass keeps a few of each so no section vanishes while another is long; the second trims to nothing if
+    // it must.
+    let drop_order: [(usize, usize); 7] = [
         (DO_NOT_RE_ASK, 30),
         (DECISIONS, 3),
+        (ELSEWHERE, 3),
         (REQUESTS, 5),
         (TASKS, 5),
         (TRAIN, 4),
@@ -376,6 +392,7 @@ mod tests {
             agents: None,
             tasks: None,
             train: None,
+            elsewhere: None,
             facts: &HashMap::new(),
         });
         assert!(text.chars().count() <= DIGEST_MAX_CHARS, "{}", text.len());

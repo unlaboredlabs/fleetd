@@ -150,7 +150,8 @@ static TOOLS: &[Tool] = &[
         "plan",
         "plan",
         "Set a workstream's plan items, in order (must or polish, size s|m|l, after other items, an optional \
-         milestone title), and get the plan back. Its open items you leave out are dropped. Without items: the plan.",
+         milestone title), and get the plan back. Its open items you leave out are dropped. Without items: the plan. \
+         `covered` marks open items done by a commit Elsewhere shows landed outside fleetd.",
         inline_schema::<PlanCall>,
     ),
     lead(

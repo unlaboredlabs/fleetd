@@ -3882,6 +3882,26 @@
       ],
       "type": "object"
     },
+    "LandingRoute": {
+      "description": "How a commit reached a base branch.",
+      "oneOf": [
+        {
+          "const": "train",
+          "description": "Merged by fleetd's merge train.",
+          "type": "string"
+        },
+        {
+          "const": "pr_outside",
+          "description": "A PR or merge request merged outside the train.",
+          "type": "string"
+        },
+        {
+          "const": "direct_push",
+          "description": "Pushed straight to the base.",
+          "type": "string"
+        }
+      ]
+    },
     "LaneStatus": {
       "oneOf": [
         {
@@ -5885,6 +5905,22 @@
         }
       ]
     },
+    "PlanCoveredBy": {
+      "description": "The commit that did an item's work without its own agent, and how it reached the base.",
+      "properties": {
+        "route": {
+          "$ref": "#/$defs/LandingRoute"
+        },
+        "sha": {
+          "$ref": "#/$defs/CommitSha"
+        }
+      },
+      "required": [
+        "sha",
+        "route"
+      ],
+      "type": "object"
+    },
     "PlanGetInput": {
       "properties": {
         "projectRef": {
@@ -5958,6 +5994,10 @@
           "maxItems": 20,
           "type": "array",
           "uniqueItems": true
+        },
+        "coveredBy": {
+          "$ref": "#/$defs/PlanCoveredBy",
+          "description": "Set when a lead marked it `covered` by a landing."
         },
         "doneAt": {
           "$ref": "#/$defs/Timestamp"
@@ -6047,7 +6087,7 @@
         },
         {
           "const": "done",
-          "description": "Set only by the hub, from verification.",
+          "description": "Set only by the hub: from verification, or `covered` by a landing it saw.",
           "type": "string"
         }
       ]
