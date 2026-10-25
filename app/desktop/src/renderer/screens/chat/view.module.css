@@ -210,8 +210,8 @@
   opacity: 0;
   transition: opacity var(--dur-fast) var(--ease-out);
 }
-.message:hover .aside,
-.message:focus-within .aside {
+.line:hover > .aside,
+.line:focus-within > .aside {
   opacity: 1;
 }
 .time {
@@ -221,6 +221,18 @@
   color: var(--quiet);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+/* A block is its own card in the stack, a step wider than a bubble's words. */
+.blockBubble {
+  position: relative;
+  min-width: min(100%, 320px);
+  max-width: 100%;
+}
+/* One to three emoji: large, with no bubble. */
+.jumbo {
+  position: relative;
+  font-size: 32px;
+  line-height: 40px;
 }
 /* An image sent with a message: shown bare, as a messaging app does, in the stack's corners. */
 .mine .attachments {
@@ -320,14 +332,13 @@
   line-height: 18px;
   white-space: nowrap;
 }
-.theirs > .tapbacks {
+.theirs > .tapbacks,
+.blockBubble > .tapbacks,
+.jumbo > .tapbacks {
   right: -10px;
 }
 .mineBubble > .tapbacks {
   left: -10px;
-}
-.tapbackMine {
-  background: var(--accent-fill);
 }
 .picker {
   display: flex;
@@ -371,10 +382,14 @@
   cursor: pointer;
 }
 .mine > .quote {
+  margin-right: var(--space-2);
   border-left: none;
   border-right: 2px solid var(--border);
   padding: 2px var(--space-2) 2px 0;
   text-align: right;
+}
+.quote:disabled {
+  cursor: default;
 }
 .quote:focus-visible {
   outline: 2px solid var(--ring);

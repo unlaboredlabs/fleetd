@@ -4,10 +4,11 @@
 // the chat opens. Above the box, a line says what the lead waits on you for; an empty chat asks what to do. It opens
 // where you stopped reading, under a "New" divider.
 import { useCallback, useMemo, useState } from "react";
+import { BubbleActionsContext, type BubbleActions, type ReplyTarget } from "./actions";
 import { Button, FrameTitle, IdChip, StatusChip, Text, type StatusTone } from "../../ui";
 import { STATE_WORDS } from "../status/rows";
 import type { ProjectStateWord } from "../../src/data/selectors";
-import { useData } from "../../src/data/react";
+import { useData, useDataLayer } from "../../src/data/react";
 import { selectNeedsYou } from "../../src/data/selectors";
 import { seenOf } from "../../src/data/seen";
 import { projectKey } from "../../src/data/store";
@@ -83,11 +84,28 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const empty = view !== undefined && view.items.length === 0 && !view.hasOlder;
   const state = data.state;
   const title = data.title ?? "";
+  const [replyTo, setReplyTo] = useState<ReplyTarget>();
   const onSent = useCallback(() => {
     // Back to following the newest message.
     setShown(undefined);
+    setReplyTo(undefined);
     setSent((n) => n + 1);
   }, []);
+  const layer = useDataLayer();
+  const waitedOn = waiting?.target;
+  const actions = useMemo(
+    (): BubbleActions => ({
+      project,
+      waitedOn,
+      send: (text) => {
+        onSent();
+        void layer.chat.send(key, { text });
+      },
+      reply: setReplyTo,
+      show: (id) => setShown((p) => ({ id, n: (p?.n ?? 0) + 1 })),
+    }),
+    [project, waitedOn, onSent, layer, key],
+  );
 
   return (
     <div
@@ -143,14 +161,9 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
           {strip ? <LiveStrip project={project} /> : null}
         </EmptyChat>
       ) : (
-        <ChatList
-          rows={rows}
-          project={project}
-          onLoadOlder={data.loadOlder}
-          openAt={openAt}
-          openSeq={shown?.n}
-          sent={sent}
-        />
+        <BubbleActionsContext.Provider value={actions}>
+          <ChatList rows={rows} project={project} onLoadOlder={data.loadOlder} openAt={openAt} openSeq={shown?.n} sent={sent} />
+        </BubbleActionsContext.Provider>
       )}
       {data.missing ? null : (
         <div className={s.composer}>
@@ -163,7 +176,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
               if (id !== undefined) setShown((p) => ({ id, n: (p?.n ?? 0) + 1 }));
             }}
           />
-          <ChatComposer project={project} autoFocus recall={recall} onSent={onSent} />
+          <ChatComposer project={project} autoFocus recall={recall} onSent={onSent} replyTo={replyTo} onCancelReply={() => setReplyTo(undefined)} />
         </div>
       )}
     </div>

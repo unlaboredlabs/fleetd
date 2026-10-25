@@ -1,0 +1,232 @@
+/*
+ * Blocks in the lead's bubbles: each a card on the raised surface with a hairline edge, the bubble's corners, and
+ * its own quiet header. Words keep the text colours; only marks carry the series colours.
+ */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: var(--raised);
+  color: var(--text);
+}
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* Charts. */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+.key {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+}
+.swatch {
+  flex: none;
+  width: 10px;
+  height: 3px;
+  border-radius: 2px;
+}
+.plot {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  height: 180px;
+}
+.plot > svg {
+  display: block;
+  overflow: visible;
+}
+.grid {
+  stroke: var(--hairline);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+.cross {
+  stroke: var(--border);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+.tick {
+  fill: var(--quiet);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+.ring {
+  stroke: var(--raised);
+  stroke-width: 2;
+}
+.tip {
+  position: absolute;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 120px;
+  padding: var(--space-1-5) var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--raised);
+  box-shadow: var(--float-shadow);
+  pointer-events: none;
+  transform: translateX(8px);
+}
+
+/* Tables. */
+.tableScroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+}
+.table th,
+.table td {
+  padding: var(--space-1) var(--space-3) var(--space-1) 0;
+  border-bottom: 1px solid var(--hairline);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.table th {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-strong);
+  color: var(--quiet);
+}
+.table tr:last-child td {
+  border-bottom: none;
+}
+.table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Diffs: the PR view's lines, in the card's edge to edge. */
+.files {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0 calc(-1 * var(--space-3)) calc(-1 * var(--space-3));
+  overflow: hidden;
+  border-radius: 0 0 13px 13px;
+}
+.files:first-child {
+  margin-top: calc(-1 * var(--space-3));
+  border-radius: 13px;
+}
+.file {
+  min-width: 0;
+}
+.more {
+  display: flex;
+  padding: var(--space-1) var(--space-2);
+}
+
+/* PR and agent cards. */
+.prTop {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.prTitle {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--quiet);
+}
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1-5) var(--space-3);
+}
+.stat {
+  display: inline-flex;
+  gap: var(--space-1-5);
+  font-size: var(--text-xs);
+}
+.add {
+  color: var(--success);
+  font-variant-numeric: tabular-nums;
+}
+.del {
+  color: var(--danger);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Checklists. */
+.checklist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.checkIcon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 3px;
+  color: var(--faint);
+}
+.checked .checkIcon {
+  color: var(--success);
+}
+
+/* Images and clips: bare, in the bubble's corners. */
+.media {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  max-width: min(100%, 420px);
+}
+.mediaItem {
+  display: block;
+  max-width: 100%;
+  max-height: 320px;
+  border-radius: 14px;
+  object-fit: contain;
+}
+.mediaWait {
+  display: grid;
+  place-items: center;
+  width: 240px;
+  height: 140px;
+  border-radius: 14px;
+  background: var(--bubble);
+}

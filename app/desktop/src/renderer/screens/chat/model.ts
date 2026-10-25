@@ -4,6 +4,7 @@
 // strip under the lead's newest message (and the field that answers it), where you stopped reading, and the top of the
 // history.
 import type { ChatItem } from "../../src/data/chat";
+import { askAnswer, bubblesOf, quoted, replyOf } from "./bubbles";
 import { shortClock } from "./format";
 
 export type Row =
@@ -28,6 +29,10 @@ export type Row =
       readonly end: boolean;
       readonly head: boolean;
       readonly history: boolean;
+      /** Yours, answering a bubble: its quote, your words, and the message it is in when that is loaded. */
+      readonly reply?: { readonly quote: string; readonly body: string; readonly target: string | undefined } | undefined;
+      /** The lead's asks in it that you answered: the button's words, by bubble key. */
+      readonly answered?: Readonly<Record<string, string>> | undefined;
     }
   /** Above the first message from before the chat existed. */
   | { readonly kind: "history"; readonly key: string }
@@ -183,7 +188,7 @@ export function chatRows(i: RowsInput): Row[] {
     else {
       const run =
         prev === undefined || prev.kind !== "message" || authorLabel(prev) !== authorLabel(item) || Date.parse(item.at) - Date.parse(prev.at) > GROUP_MS;
-      out.push({ kind: "message", key: item.id, item, run, end: true, head: run && item.author !== "human", history: false });
+      out.push({ kind: "message", key: item.id, item, run, end: true, head: run && item.author !== "human", history: false, ...extras(i.items, n) });
     }
     prev = item;
     if ((activity && n === i.items.length - 1) || (worked && n === reply)) out.push({ kind: "activity", key: "activity" });
@@ -197,6 +202,24 @@ export function chatRows(i: RowsInput): Row[] {
     if (r.kind === "message" && next?.kind === "message" && !next.run) out[n] = { ...r, end: false };
   });
   return out;
+}
+
+/** A message's reply (yours) or answered asks (the lead's). */
+function extras(items: readonly ChatItem[], n: number): Pick<Extract<Row, { kind: "message" }>, "reply" | "answered"> {
+  const item = items[n];
+  if (item === undefined) return {};
+  if (item.author === "human") {
+    const r = replyOf(item.text);
+    return r === undefined ? {} : { reply: { ...r, target: quoted(items, n, r.quote) } };
+  }
+  if (item.author !== "lead") return {};
+  const answered: Record<string, string> = {};
+  for (const b of bubblesOf(item)) {
+    if (b.kind !== "block" || b.block.kind !== "ask") continue;
+    const a = askAnswer(items, n, b.block.options);
+    if (a !== undefined) answered[b.key] = a;
+  }
+  return Object.keys(answered).length === 0 ? {} : { answered };
 }
 
 /** The row to open at for a message id (a notification's ?message=), or undefined when it isn't loaded. */
