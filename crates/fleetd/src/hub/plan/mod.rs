@@ -1,5 +1,6 @@
-//! Plans: a project's milestones and items. Leads set a workstream's items with `plan`; only [`Plans::verify`]
-//! marks an item done, when a linked PR merged through the train.
+//! Plans: a project's milestones and items. Leads set a workstream's items with `plan`; only the hub marks an item
+//! done: [`Plans::verify`] when a linked PR merged through the train, and [`Plans::cover`] when a lead names a commit
+//! the hub saw land that already did it.
 pub mod calls;
 pub mod store;
 pub mod tools;
@@ -12,8 +13,8 @@ use fleetd_contracts::ids::{ProjectRef, Timestamp};
 use fleetd_contracts::ledger::{WorkstreamId, WorkstreamState};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::plan::{
-    Milestone, MilestoneId, MilestoneState, MilestoneView, PlanChange, PlanChangeKind, PlanItem,
-    PlanItemId, PlanItemSpec, PlanItemState, PlanView, Weight,
+    Milestone, MilestoneId, MilestoneState, MilestoneView, PlanChange, PlanChangeKind,
+    PlanCoveredBy, PlanItem, PlanItemId, PlanItemSpec, PlanItemState, PlanView, Weight,
 };
 use fleetd_contracts::prim::{AnyInt, Count, Int, Line, List, UniqueList};
 use fleetd_contracts::status::{Marker, Progress};
@@ -249,6 +250,7 @@ pub fn item_contract(i: &ItemRow) -> PlanItem {
             .evidence
             .as_deref()
             .map(|e| Line::unchecked(clip(e, 200))),
+        covered_by: i.data.covered_by.clone(),
         drop_reason: i
             .data
             .drop_reason
@@ -469,6 +471,7 @@ impl Plans {
                             links: Default::default(),
                             after: vec![],
                             evidence: None,
+                            covered_by: None,
                             drop_reason: None,
                             created_ms: Some(now),
                         },
@@ -764,6 +767,47 @@ impl Plans {
             tracing::error!(error = %e, ws, "plan verify");
             false
         })
+    }
+
+    /// `plan covered`: each open item of the caller's project is done by the commit that landed, with the commit and
+    /// how it landed as its evidence and the route kept. All or none: an item that isn't open refuses the call.
+    pub fn cover(
+        &self,
+        r: &ProjectRef,
+        covers: &[(PlanItemId, PlanCoveredBy, String)],
+    ) -> Result<(), PlanError> {
+        let now = self.now();
+        let pk = pkey(r);
+        let mut pending = Pending::default();
+        self.tx(|c| {
+            let mut touched = HashSet::new();
+            for (id, covered_by, evidence) in covers {
+                let mut item = Self::own_item(c, &pk, id)?;
+                if item.state != PlanItemState::Open {
+                    let state = match item.state {
+                        PlanItemState::Done => "already done",
+                        _ => "dropped",
+                    };
+                    return Err(invalid(
+                        format!("{id} is {state}."),
+                        "Cover only open items; call `plan` without items to see them.",
+                    ));
+                }
+                item.state = PlanItemState::Done;
+                item.done_ms = Some(now);
+                item.data.evidence = Some(evidence.clone());
+                item.data.covered_by = Some(covered_by.clone());
+                store::item_set(c, &item)?;
+                touched.insert(item.milestone);
+                pending.verified.push((item, evidence.clone()));
+            }
+            for m in touched {
+                Self::settle_milestone(c, m, now, &mut pending)?;
+            }
+            Ok(())
+        })?;
+        self.emit(pending);
+        Ok(())
     }
 
     /// An order ended: at done, its open items with no links are dropped (they closed with it, not separately

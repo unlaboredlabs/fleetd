@@ -1,5 +1,6 @@
 //! A project's plan: milestones `M<n>` holding items `P<n>`, each must or polish with a size. Only the hub marks an
-//! item done, when its linked PR merged; leads set the list with `plan`.
+//! item done, when its linked PR merged or when a lead marks it covered by a commit the hub saw land; leads set the
+//! list with `plan`.
 
 use crate::steer::SteerId;
 use schemars::JsonSchema;
@@ -13,6 +14,8 @@ use crate::prim::{AnyInt, Count, Int, Line, List, UniqueList};
 use crate::status::Progress;
 use crate::tasks::TaskId;
 use crate::train::GitHubPrUrl;
+use crate::verification::CommitSha;
+use crate::work::{LandingRoute, ShaPrefix};
 
 brand!(
     /// "M" plus a positive integer, unique per hub.
@@ -86,7 +89,7 @@ impl Size {
 #[serde(rename_all = "snake_case")]
 pub enum PlanItemState {
     Open,
-    /// Set only by the hub, from verification.
+    /// Set only by the hub: from verification, or `covered` by a landing it saw.
     Done,
     Dropped,
 }
@@ -97,6 +100,14 @@ pub enum MilestoneState {
     Open,
     /// Derived: at least one item done and every item done or dropped.
     Done,
+}
+
+/// The commit that did an item's work without its own agent, and how it reached the base.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanCoveredBy {
+    pub sha: CommitSha,
+    pub route: LandingRoute,
 }
 
 /// What ties work to an item. An item with no links never counts done.
@@ -149,6 +160,8 @@ pub struct PlanItem {
     pub done_at: Option<Timestamp>,
     /// What verified it, e.g. "#212 merged by the train".
     pub evidence: Option<Line<1, 200>>,
+    /// Set when a lead marked it `covered` by a landing.
+    pub covered_by: Option<PlanCoveredBy>,
     /// Why it was dropped.
     pub drop_reason: Option<Line<1, 200>>,
 }
@@ -231,6 +244,14 @@ pub struct PlanItemSpec {
     pub milestone: Option<PlanTitle>,
 }
 
+/// One `covered` entry: the item is done by work that already landed, `landing` a commit the hub saw reach the base.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanCover {
+    pub item: PlanItemId,
+    pub landing: ShaPrefix,
+}
+
 /// `plan`: sets a workstream's items, in order, and returns the plan. Its open items left out are dropped. Without
 /// `items` it only returns the plan (one workstream's with `workstreamId`).
 #[skip_serializing_none]
@@ -243,6 +264,9 @@ pub struct PlanCall {
     pub why: Option<PlanWhy>,
     /// The change carries out steer S12, which counts as acknowledged.
     pub steer: Option<SteerId>,
+    /// Open items done by commits that landed without their own agent (from the digest's Elsewhere): each is done,
+    /// with the commit and how it landed as its evidence.
+    pub covered: Option<List<PlanCover, 1, 20>>,
 }
 
 #[skip_serializing_none]

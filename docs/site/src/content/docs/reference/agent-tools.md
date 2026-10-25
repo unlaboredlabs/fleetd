@@ -319,10 +319,13 @@ A prod write, spend, delete or credential use: the chat shows the human exactly 
 
 ### plan
 
-Set a workstream's plan items, in order (must or polish, size s|m|l, after other items, an optional milestone title), and get the plan back. Its open items you leave out are dropped. Without items: the plan.
+Set a workstream's plan items, in order (must or polish, size s|m|l, after other items, an optional milestone title), and get the plan back. Its open items you leave out are dropped. Without items: the plan. `covered` marks open items done by a commit Elsewhere shows landed outside fleetd.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
+| `covered` | object[] | no | Open items done by commits that landed without their own agent (from the digest's Elsewhere): each is done, with the commit and how it landed as its evidence. At most 20 items. |
+| `covered[].item` | string | yes | `P<n>`, e.g. `P1`. |
+| `covered[].landing` | string | yes | Matches `^[0-9a-f]{7,64}$`. |
 | `items` | object[] | no | At most 100 items. |
 | `items[].after` | string[] | no | Items that must be done first. At most 20 items. |
 | `items[].id` | string | no | `P<n>`, e.g. `P1`. |

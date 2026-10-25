@@ -10,7 +10,7 @@ use fleetd_contracts::usage::UsageParked;
 
 use crate::hub::api::Hub;
 use crate::hub::leads::error::LeadError;
-use crate::hub::leads::hooks::{BoxFuture, TrainHook, UsageHook};
+use crate::hub::leads::hooks::{BoxFuture, TrainHook, UsageHook, WorkHook};
 use crate::hub::link::lead_calls::LeadCallFuture;
 use crate::hub::link::{LeadCallHandler, LeadCaller};
 use crate::hub::usage::wire::convert;
@@ -25,6 +25,7 @@ pub fn wire(hub: &Arc<Hub>) {
     let _ = hooks
         .train
         .set(Arc::new(TrainForLeads(Arc::downgrade(hub))));
+    let _ = hooks.work.set(Arc::new(WorkForLeads(Arc::downgrade(hub))));
 }
 
 /// The ledger's lead calls: `decide`, `decisions_search`.
@@ -161,6 +162,24 @@ impl TrainHook for TrainForLeads {
                 )
             })
             .collect()
+    }
+}
+
+/// Lead wakes: the section is left out when the project's repo and base aren't known, or the ledger can't be read.
+struct WorkForLeads(Weak<Hub>);
+
+impl WorkHook for WorkForLeads {
+    fn elsewhere(&self, project_ref: &ProjectRef) -> BoxFuture<Option<Vec<String>>> {
+        let (hub, r) = (self.0.upgrade(), project_ref.clone());
+        Box::pin(async move {
+            match hub?.work.elsewhere(&r).await {
+                Ok(lines) => lines,
+                Err(error) => {
+                    tracing::warn!(%error, "the digest's Elsewhere lines");
+                    None
+                }
+            }
+        })
     }
 }
 

@@ -1,6 +1,8 @@
 //! Plan rows: `plan_milestones`, `plan_items` and `plan_changes`. A project is keyed `<machineId>/<projectId>`.
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
-use fleetd_contracts::plan::{PlanChangeKind, PlanItemState, PlanLinks, Size, Weight};
+use fleetd_contracts::plan::{
+    PlanChangeKind, PlanCoveredBy, PlanItemState, PlanLinks, Size, Weight,
+};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
 
@@ -37,6 +39,9 @@ pub struct ItemData {
     pub after: Vec<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub evidence: Option<String>,
+    /// The landing a lead marked it covered by.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub covered_by: Option<PlanCoveredBy>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub drop_reason: Option<String>,
     /// When it was added (absent on items older than the progress model).
