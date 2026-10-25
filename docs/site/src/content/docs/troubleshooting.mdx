@@ -103,7 +103,7 @@ missing or logged out runs no sessions until it is fixed. fleetd turns claude's 
 | "Paused new agents: load 70.2 on 32 CPUs on laptop" `[disk]` | The machine is overloaded. | Nothing: new agents start once the load falls. |
 | "Paused new agents: memory 93% on laptop" `[disk]` | The machine is short of memory. | Close what you don't need. New agents start once less than 81% is in use. |
 | "Paused new agents: memory 84% with swap 100% on laptop" or "memory pressure 23% on laptop" `[disk]` | Swap is full and memory nearly so, or the kernel is stalling tasks to find memory. Files in a tmpfs `/tmp` count as memory too. | Close what you don't need, or clear large files from `/tmp`. Running agents keep going; new ones start once it eases. |
-| "Paused new agents: 5-hour limit 91% on laptop as of 13:42 UTC, resets … (pauses at 90%, lifts below 85%)" `[disk]` | Its Claude login has nearly used a usage window, your own Claude Code sessions included. | Nothing: new agents start below 85%, at the reset, or once the reading is 15 minutes old. Running agents keep going. |
+| "Paused new agents: 5-hour limit 91% on laptop as of Tue 13:42 UTC, resets … (pauses at 90%, lifts below 85%)" `[disk]` | Its Claude login has nearly used a usage window, your own Claude Code sessions included. | Nothing: new agents start below 85% or at the reset; a reading with no reset time counts for 15 minutes. Running agents keep going. |
 | "New turns on laptop are paused by the usage breaker" `[usage_breaker]` | Its Claude login hit a plan or rate limit. | Wait for the reset (the finding says when), or, once it has capacity, call `usage_resume` from an [MCP client](/docs/mcp-clients). |
 
 ### Keep a machine awake {#sleep}

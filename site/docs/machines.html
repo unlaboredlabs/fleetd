@@ -223,16 +223,16 @@ every 15 seconds, with its heartbeat.</p>
 </tr>
 <tr>
 <td>Memory pressure: tasks stalled waiting for memory 10% of the last 10 seconds (Linux PSI <code dir="auto">some avg10</code>). The kernel is reclaiming or swapping hard, which comes before the OOM killer.</td>
-<td>10% below it.</td>
+<td>Below 5%: the figure swings a lot from one reading to the next.</td>
 </tr>
 <tr>
 <td>A usage window of the machine’s Claude login is 90% used, or claude warned about it without a figure. API keys and gateways report no windows.</td>
-<td>Below 85%, at the window’s reset, or once the reading is 15 minutes old.</td>
+<td>Below 85% or at the window’s reset. A reading with no reset time counts for 15 minutes.</td>
 </tr>
 </tbody>
 </table>
 <p>The project’s status says why, for example “Paused new agents: 14 GB free on builder-1” or “Paused new agents: 5-hour
-limit 91% on builder-1 as of 13:42 UTC, resets Tue 14:00 UTC (pauses at 90%, lifts below 85%)”, and <code dir="auto">fleetd doctor</code>
+limit 91% on builder-1 as of Tue 13:42 UTC, resets Tue 14:00 UTC (pauses at 90%, lifts below 85%)”, and <code dir="auto">fleetd doctor</code>
 shows each machine’s free space. A writer’s worktree, build output included, goes once its PR merges, unless it holds
 uncommitted or unpushed work. When <code dir="auto">sccache</code> is on the node’s <code dir="auto">PATH</code>, sessions compile through it, so a dependency
 builds once per machine rather than once per worktree.</p>

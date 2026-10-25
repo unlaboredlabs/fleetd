@@ -147,11 +147,11 @@ every 15 seconds, with its heartbeat.
 | The 1-minute load is above twice the machine's CPUs. | 10% below it. |
 | 90% of the machine's memory is in use. | 10% below it: 81%. |
 | Swap is 90% used and memory 80% (Linux). Full swap alone doesn't pause: idle pages can sit there for days. | 10% below either. |
-| Memory pressure: tasks stalled waiting for memory 10% of the last 10 seconds (Linux PSI `some avg10`). The kernel is reclaiming or swapping hard, which comes before the OOM killer. | 10% below it. |
-| A usage window of the machine's Claude login is 90% used, or claude warned about it without a figure. API keys and gateways report no windows. | Below 85%, at the window's reset, or once the reading is 15 minutes old. |
+| Memory pressure: tasks stalled waiting for memory 10% of the last 10 seconds (Linux PSI `some avg10`). The kernel is reclaiming or swapping hard, which comes before the OOM killer. | Below 5%: the figure swings a lot from one reading to the next. |
+| A usage window of the machine's Claude login is 90% used, or claude warned about it without a figure. API keys and gateways report no windows. | Below 85% or at the window's reset. A reading with no reset time counts for 15 minutes. |
 
 The project's status says why, for example "Paused new agents: 14 GB free on builder-1" or "Paused new agents: 5-hour
-limit 91% on builder-1 as of 13:42 UTC, resets Tue 14:00 UTC (pauses at 90%, lifts below 85%)", and `fleetd doctor`
+limit 91% on builder-1 as of Tue 13:42 UTC, resets Tue 14:00 UTC (pauses at 90%, lifts below 85%)", and `fleetd doctor`
 shows each machine's free space. A writer's worktree, build output included, goes once its PR merges, unless it holds
 uncommitted or unpushed work. When `sccache` is on the node's `PATH`, sessions compile through it, so a dependency
 builds once per machine rather than once per worktree.

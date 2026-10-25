@@ -16,6 +16,9 @@ const MEM_WITH_SWAP_FULL_PCT: f64 = 80.0;
 /// New agents wait while tasks stalled on memory this share of the last 10 s (PSI `some avg10`): the kernel is
 /// reclaiming or swapping hard, which comes before the OOM killer.
 pub const MEM_PRESSURE_PCT: f64 = 10.0;
+/// A machine paused under pressure resumes only below this: avg10 swings a lot from one 15 s heartbeat to the next,
+/// more than the 10% margin covers.
+const MEM_PRESSURE_RESUME_PCT: f64 = 5.0;
 /// A paused machine resumes only 10% clear of a limit, so a reading at the edge doesn't flap.
 const MARGIN: f64 = 0.1;
 
@@ -46,7 +49,12 @@ pub fn why(load: &NodeLoad, paused: bool) -> Option<String> {
         }
     }
     let pressure = load.mem_pressure_pct?.get();
-    (pressure >= under(MEM_PRESSURE_PCT)).then(|| format!("memory pressure {pressure:.0}%"))
+    let limit = if paused {
+        MEM_PRESSURE_RESUME_PCT
+    } else {
+        MEM_PRESSURE_PCT
+    };
+    (pressure >= limit).then(|| format!("memory pressure {pressure:.0}%"))
 }
 
 /// The line the project's status, the doctor and a waiting agent show.
@@ -153,7 +161,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn memory_pressure_pauses_at_10_percent_and_only_a_margin_clear_resumes() {
+    fn memory_pressure_pauses_at_10_percent_and_resumes_below_5() {
         let at = |psi: f64, paused: bool| {
             let mut l = load(500, 3.0);
             l.mem_used_pct = Some(Int::unchecked(60));
@@ -162,8 +170,18 @@ pub(crate) mod tests {
         };
         assert_eq!(at(23.4, false).as_deref(), Some("memory pressure 23%"));
         assert_eq!(at(9.5, false), None);
-        assert!(at(9.5, true).is_some());
-        assert_eq!(at(8.9, true), None);
+        assert!(at(5.0, true).is_some());
+        assert_eq!(at(4.9, true), None);
+
+        // Heartbeat after heartbeat around the threshold: one pause, no flapping.
+        let mut paused = false;
+        let mut toggles = 0;
+        for psi in [11.0, 9.0, 12.0, 7.5, 10.5, 6.0, 13.0, 8.0] {
+            let now = at(psi, paused).is_some();
+            toggles += usize::from(now != paused);
+            paused = now;
+        }
+        assert_eq!((paused, toggles), (true, 1));
     }
 
     #[test]
