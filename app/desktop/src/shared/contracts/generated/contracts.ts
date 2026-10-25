@@ -215,6 +215,8 @@ export type AppClientMessage = {
   t: "chat";
 } | {
   focused: boolean;
+  /** Chosen by the client; the hub echoes it only on the error for a frame it can't read. */
+  id?: string;
   input: boolean;
   project?: ProjectRef;
   t: "presence";

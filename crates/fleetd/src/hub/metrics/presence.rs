@@ -62,8 +62,8 @@ pub fn event(project: &ProjectRef, by: &str, from: i64, to: i64) -> NewEvent {
     }
 }
 
-/// One `presence` frame from the app. Only a human key's focused minute on a project it may read, with input,
-/// is recorded; the frame is never answered, so an app on an older hub or with presence off loses nothing.
+/// One `presence` frame from the app. Only a human key's focused minute with input, on a project the hub knows on
+/// that machine and the key may read, is recorded; the frame is never answered.
 pub fn record(
     hub: &Hub,
     caller: &Caller,
@@ -79,10 +79,23 @@ pub fn record(
     {
         return Ok(false);
     }
+    if !known(hub, project)? {
+        return Ok(false);
+    }
     let now = now_ms(hub.clock.as_ref());
     let Some((from, to)) = hub.metrics.presence.interval(caller.key_id.as_str(), now) else {
         return Ok(false);
     };
     hub.events.append(event(project, &caller.name, from, to))?;
     Ok(true)
+}
+
+/// Whether the hub has `project` on its machine: a frame naming any other is dropped.
+fn known(hub: &Hub, project: &ProjectRef) -> Result<bool, StoreError> {
+    hub.db.with(|c| {
+        Ok(
+            c.prepare_cached("SELECT 1 FROM projects WHERE machine_id = ?1 AND project_id = ?2")?
+                .exists([project.machine_id.as_str(), project.project_id.as_str()])?,
+        )
+    })
 }

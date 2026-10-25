@@ -10,7 +10,7 @@ use crate::hub::auth::AuthError;
 use crate::hub::mcp::invalid_input;
 use crate::hub::store::now_ms;
 use axum::extract::ws::{CloseFrame, Message, WebSocket};
-use fleetd_contracts::app::AppClientMessage;
+use fleetd_contracts::app::{AppCallId, AppClientMessage};
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::hello::PROTOCOL_VERSION;
 use fleetd_contracts::mcp::ErrorCode;
@@ -154,7 +154,12 @@ impl Session {
         let Ok(message) = serde_json::from_str::<AppClientMessage>(text) else {
             let malformed = ToolError::new(ErrorCode::Invalid, "Unknown or malformed message.")
                 .with_fix("Send {t:auth|snapshot|events}.");
-            self.send(error_frame(&malformed, None));
+            // The frame's own id, when it has one, so the client knows which frame this answers.
+            let id = serde_json::from_str::<Value>(text)
+                .ok()
+                .and_then(|v| v.get("id")?.as_str().map(str::to_owned))
+                .filter(|id| AppCallId::new(id.as_str()).is_ok());
+            self.send(error_frame(&malformed, id.as_deref()));
             return After::Continue;
         };
         if let AppClientMessage::Auth { key } = &message {
@@ -257,6 +262,7 @@ impl Session {
                 focused,
                 input,
                 project,
+                ..
             } => {
                 if let Err(e) = crate::hub::metrics::presence::record(
                     &self.hub,

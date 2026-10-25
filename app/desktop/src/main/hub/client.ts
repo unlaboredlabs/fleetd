@@ -5,7 +5,7 @@
 // (Wi-Fi or tailnet gone without a sleep) must not keep showing as live.
 import type { CallOutcome, HubError, HubFrame, HubState } from "../../shared/hub";
 import { MAX_CALL_INPUT_BYTES, type CallRequest, type ChatScope, type OrderFocus } from "../../shared/ipc";
-import { appUrl, backoff, CLOSE_UNAUTHORIZED, isUnknownMessage, parseServerFrame, type ClientMessage, type ServerFrame } from "./protocol";
+import { appUrl, backoff, CLOSE_UNAUTHORIZED, parseServerFrame, type ClientMessage, type ServerFrame } from "./protocol";
 import type { PresenceFrame } from "../presence";
 import type { HubSource } from "./source";
 import type { Connection, Transport } from "./transport";
@@ -21,6 +21,8 @@ export const SILENT_DEAD_MS = 30_000;
 export const STABLE_MS = 30_000;
 /** A call frame over this is refused before it's sent. */
 export const MAX_FRAME_BYTES = MAX_CALL_INPUT_BYTES + 4096;
+/** Presence frames' ids: `p1`, `p2`… (calls' are `c1`, `c2`…). */
+const PRESENCE_ID = "p";
 
 export interface HubClientOptions {
   /** As the user typed it; shown in the state. */
@@ -62,8 +64,7 @@ export class HubClient implements HubSource {
   #heartbeat: ReturnType<typeof setInterval> | null = null;
   /** This connection's hub reads presence: its `ready` named it, and it hasn't refused a presence frame since. */
   #presence = false;
-  /** A presence frame went out on this connection, so an "unknown message" reply is about it. */
-  #presenceSent = false;
+  #nextPresenceId = 0;
 
   constructor(options: HubClientOptions) {
     this.#options = options;
@@ -149,8 +150,8 @@ export class HubClient implements HubSource {
    */
   presence(frame: PresenceFrame): void {
     if (!this.#ready || !this.#presence) return;
-    this.#presenceSent = true;
-    this.#send({ t: "presence", ...frame });
+    // Its own id, which the hub echoes only on an error for a frame it can't read; calls' ids start with "c".
+    this.#send({ t: "presence", id: `${PRESENCE_ID}${++this.#nextPresenceId}`, ...frame });
   }
 
   #connect(): void {
@@ -213,7 +214,6 @@ export class HubClient implements HubSource {
         this.#readyAt = Date.now();
         this.#cursor = null;
         this.#presence = frame.features?.includes("presence") ?? false;
-        this.#presenceSent = false;
         if (this.#readyTimer !== null) clearTimeout(this.#readyTimer);
         this.#readyTimer = null;
         this.#startHeartbeat();
@@ -256,14 +256,14 @@ export class HubClient implements HubSource {
       }
       case "error": {
         const error: HubError = { code: frame.code, message: frame.message, fix: frame.fix };
-        if (frame.id !== undefined) {
+        if (frame.id?.startsWith(PRESENCE_ID) === true) {
+          // The hub couldn't read a presence frame: none more on this connection, and the stream is fine as it is.
+          this.#presence = false;
+        } else if (frame.id !== undefined) {
           this.#settle(frame.id, { ok: false, error });
         } else if (!this.#ready) {
           // Before ready, an error can only be about the key.
           this.#refuse(frame.message);
-        } else if (this.#presenceSent && isUnknownMessage(frame.code, frame.message)) {
-          // The hub can't read presence after all: none more on this connection, and the stream is fine as it is.
-          this.#presence = false;
         } else {
           this.#options.emit({ t: "error", error });
           this.#scheduleResume();

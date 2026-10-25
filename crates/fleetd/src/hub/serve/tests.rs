@@ -444,6 +444,28 @@ async fn app_presence_is_recorded_for_a_human_key_and_never_answered() {
         .key;
     let agent = key(&t.hub, json!([{ "role": "read", "machines": "*" }]));
     let web = json!({ "machineId": "devbox", "projectId": "web" });
+    crate::hub::metrics::presence_tests::add_projects(&t.hub, &["web"]);
+    // A frame the hub can't read is answered with its own id.
+    let (mut app, _) = tokio_tungstenite::connect_async(format!("ws://{}/app", t.url))
+        .await
+        .unwrap();
+    for frame in [
+        json!({ "t": "auth", "key": human }),
+        json!({ "t": "presence", "id": "p1", "focused": "yes" }),
+    ] {
+        app.send(Message::text(frame.to_string())).await.unwrap();
+    }
+    let _ready = app.next().await.unwrap().unwrap();
+    let refused: Value =
+        serde_json::from_str(app.next().await.unwrap().unwrap().to_text().unwrap()).unwrap();
+    assert_eq!(
+        (
+            refused["t"].as_str(),
+            refused["id"].as_str(),
+            refused["code"].as_str()
+        ),
+        (Some("error"), Some("p1"), Some("invalid"))
+    );
     for key in [agent, human] {
         let (mut app, _) = tokio_tungstenite::connect_async(format!("ws://{}/app", t.url))
             .await

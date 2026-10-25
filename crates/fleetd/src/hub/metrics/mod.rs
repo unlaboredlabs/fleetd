@@ -18,9 +18,9 @@ pub mod tools;
 pub mod touches;
 
 #[cfg(test)]
-mod sweep_tests;
+pub(crate) mod presence_tests;
 #[cfg(test)]
-mod presence_tests;
+mod sweep_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

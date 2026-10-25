@@ -60,6 +60,9 @@ pub enum AppClientMessage {
     /// the project on screen, and whether there was input in the last minute. Only that: never keystrokes or
     /// content. A human key's minute with all three becomes an `app.presence` event; anything else is dropped.
     Presence {
+        /// Chosen by the client; the hub echoes it only on the error for a frame it can't read.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<AppCallId>,
         focused: bool,
         input: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -140,6 +143,7 @@ mod tests {
     fn a_presence_frame_holds_three_facts_and_nothing_else() {
         let frame = json!({
             "t": "presence",
+            "id": "p1",
             "focused": true,
             "input": true,
             "project": { "machineId": "devbox", "projectId": "p1" },

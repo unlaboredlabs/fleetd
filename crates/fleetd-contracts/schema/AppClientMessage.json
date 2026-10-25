@@ -121,6 +121,12 @@
             "focused": {
               "type": "boolean"
             },
+            "id": {
+              "description": "Chosen by the client; the hub echoes it only on the error for a frame it can't read.",
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
             "input": {
               "type": "boolean"
             },

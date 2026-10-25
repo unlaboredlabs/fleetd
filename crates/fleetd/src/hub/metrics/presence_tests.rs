@@ -4,8 +4,9 @@ use std::time::Duration;
 
 use fleetd_contracts::auth::KeyKind;
 use fleetd_contracts::events::HubEventType;
-use fleetd_contracts::ids::ProjectRef;
+use fleetd_contracts::ids::{MachineId, ProjectRef};
 use fleetd_contracts::metrics::HumanSource;
+use fleetd_contracts::model::ProjectSummary;
 use serde_json::json;
 
 use super::human::MINUTE_MS;
@@ -14,6 +15,23 @@ use super::store::{self, TouchRow};
 use super::tests::{NOW, admin, caller, get, hub, ms, project_from};
 use crate::hub::api::{Caller, Hub};
 use crate::hub::store::test_clock::ManualClock;
+
+/// The hub's projects on devbox: web, which the frames name.
+pub(crate) fn add_projects(hub: &Hub, ids: &[&str]) {
+    let projects: Vec<ProjectSummary> = ids
+        .iter()
+        .map(|id| {
+            serde_json::from_value(json!({
+                "machineId": "devbox", "projectId": id, "title": id, "workspaceRoot": format!("/srv/{id}"),
+                "threads": { "running": 0, "idle": 0, "waiting": 0, "failed": 0 }, "lastActivityAt": NOW,
+            }))
+            .unwrap()
+        })
+        .collect();
+    hub.store
+        .projects_upsert_many(&MachineId::unchecked("devbox"), &projects)
+        .unwrap();
+}
 
 fn web() -> ProjectRef {
     serde_json::from_value(json!({ "machineId": "devbox", "projectId": "web" })).unwrap()
@@ -61,6 +79,7 @@ fn a_key_records_at_most_one_interval_a_minute_from_where_its_last_ended() {
 #[test]
 fn only_a_human_keys_focused_minute_on_a_project_with_input_is_recorded() {
     let (hub, clock, _home) = hub();
+    add_projects(&hub, &["web"]);
     let me = admin();
     clock.advance(Duration::from_secs(60));
     // Each fact missing: nothing.
@@ -75,6 +94,12 @@ fn only_a_human_keys_focused_minute_on_a_project_with_input_is_recorded() {
     assert!(!presence::record(&hub, &agent, true, true, Some(&web())).unwrap());
     let elsewhere = caller(json!([{ "role": "read", "machines": ["laptop"] }]));
     assert!(!presence::record(&hub, &elsewhere, true, true, Some(&web())).unwrap());
+    // A project the hub doesn't know on that machine: nothing, and the key's minute isn't used up.
+    for (machine, project) in [("devbox", "nope"), ("laptop", "web")] {
+        let unknown: ProjectRef =
+            serde_json::from_value(json!({ "machineId": machine, "projectId": project })).unwrap();
+        assert!(!presence::record(&hub, &me, true, true, Some(&unknown)).unwrap());
+    }
     assert!(presence_events(&hub).is_empty());
 
     assert!(presence::record(&hub, &me, true, true, Some(&web())).unwrap());
@@ -99,6 +124,7 @@ fn only_a_human_keys_focused_minute_on_a_project_with_input_is_recorded() {
 #[tokio::test]
 async fn focused_minutes_become_touches_joined_into_sessions() {
     let (hub, clock, _home) = hub();
+    add_projects(&hub, &["web"]);
     let me = admin();
     let start = ms(NOW);
     // Three minutes in a row, two idle minutes, then one more: one session from start - 1 min to start + 4 min.
