@@ -1,0 +1,26 @@
+name: macOS label
+
+# Adding the `macos` label to a draft PR runs CI and Desktop QA on its branch with the macOS jobs, which drafts skip
+# otherwise. The label is caught here rather than in ci.yml: a `labeled` run there for any other label would add skipped
+# check runs that replace the PR's real results (the merge train and GitHub keep only the newest run of each check).
+
+on:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  actions: write
+
+jobs:
+  dispatch:
+    if: github.event.label.name == 'macos' && github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          gh workflow run ci.yml --ref "$BRANCH"
+          gh workflow run desktop-qa.yml --ref "$BRANCH"
