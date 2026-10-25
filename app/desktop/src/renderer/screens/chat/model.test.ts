@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ChatItem } from "../../src/data/chat";
-import { authorLabel, chatRows, dayLabel, heldLabel, latestLabel, newestKey, rowIndexOf, type Row } from "./model";
+import type { ChatMessage } from "../../src/data/chat-contract";
+import { arrivalsOf, authorLabel, chatRows, ENTER_MS, dayLabel, heldLabel, latestLabel, newestKey, rowIndexOf, type Row } from "./model";
 
 const at = (d: number, h: number, m = 0) => new Date(Date.UTC(2026, 9, d, h, m)).toISOString();
 const NOW = Date.parse(at(19, 18));
@@ -210,5 +211,70 @@ describe("the chat's rows", () => {
     expect(dayLabel(at(18, 1), NOW, "UTC")).toBe("Yesterday");
     expect(dayLabel(at(12, 1), NOW, "UTC")).toBe("Mon 12 Oct");
     expect(dayLabel(new Date(Date.UTC(2025, 2, 3)).toISOString(), NOW, "UTC")).toBe("Mon 3 Mar 2025");
+  });
+});
+
+describe("what enters with motion", () => {
+  /** A hub message at `seq`. */
+  const hub = (id: string, seq: number, author: ChatItem["author"] = "lead", over: Partial<ChatItem> = {}) =>
+    item(id, author, at(19, 9), { message: { messageId: id, seq } as ChatMessage, ...over });
+  const entering = (a: ReturnType<typeof arrivalsOf>) => Object.fromEntries([...a.entering].map(([k, v]) => [k, v.step]));
+
+  it("opens still, then a lead reply and your send each enter once, a step apart when they come together", () => {
+    const opened = arrivalsOf(undefined, [hub("a", 1), hub("b", 2, "human")], true, NOW);
+    expect(entering(opened)).toEqual({});
+    const next = arrivalsOf(opened, [hub("a", 1), hub("b", 2, "human"), hub("c", 3), hub("d", 4)], true, NOW + 10);
+    expect(entering(next)).toEqual({ c: 0, d: 1 });
+    const send = item("r1", "human", at(19, 9), { state: "pending", clientRequestId: "r1" });
+    const sent = arrivalsOf(next, [...next.items, send], true, NOW + 20);
+    expect(sent.entering.get("r1")).toEqual({ at: NOW + 20, step: 0 });
+    // Updated again (the receipt, a new strip), nothing enters twice.
+    expect(arrivalsOf(sent, [...sent.items], true, NOW + 30).entering).toEqual(sent.entering);
+  });
+
+  it("keeps your send's arrival as the hub echoes it under its own id, so it doesn't enter again", () => {
+    const opened = arrivalsOf(undefined, [hub("a", 1)], true, NOW);
+    const send = item("r1", "human", at(19, 9), { state: "pending", clientRequestId: "r1" });
+    const sent = arrivalsOf(opened, [hub("a", 1), send], true, NOW + 10);
+    const echoed = arrivalsOf(sent, [hub("a", 1), hub("m1", 2, "human", { clientRequestId: "r1" })], true, NOW + 50);
+    expect(echoed.entering.get("m1")).toBe(sent.entering.get("r1"));
+  });
+
+  it("enters a streamed reply as the lead starts writing, and its text again once written", () => {
+    const opened = arrivalsOf(undefined, [hub("a", 1)], true, NOW);
+    const writing = arrivalsOf(opened, [hub("a", 1), item("s", "lead", at(19, 9), { state: "streaming" })], true, NOW + 10);
+    expect(writing.entering.get("s")?.at).toBe(NOW + 10);
+    const more = arrivalsOf(writing, [hub("a", 1), hub("s", 2, "lead", { state: "streaming", text: "more" })], true, NOW + 20);
+    expect(more.entering.get("s")?.at).toBe(NOW + 10);
+    const done = arrivalsOf(more, [hub("a", 1), hub("s", 2)], true, NOW + 900);
+    expect(done.entering.get("s")?.at).toBe(NOW + 900);
+  });
+
+  it("shows older pages loading above, and fleetd's one-liners and history, still", () => {
+    const opened = arrivalsOf(undefined, [hub("c", 10), hub("d", 11)], true, NOW);
+    const older = arrivalsOf(opened, [hub("a", 8), hub("b", 9), hub("c", 10), hub("d", 11)], true, NOW + 10);
+    expect(entering(older)).toEqual({});
+    const quiet = arrivalsOf(
+      older,
+      [...older.items, hub("e", 12, "system", { kind: "event" }), hub("f", 13, "lead", { message: { messageId: "f", seq: 13, history: {} } as ChatMessage })],
+      true,
+      NOW + 20,
+    );
+    expect(entering(quiet)).toEqual({});
+  });
+
+  it("shows what a drop and the reconnect's page bring still, and enters what comes after", () => {
+    const opened = arrivalsOf(undefined, [hub("a", 1)], true, NOW);
+    const dropped = arrivalsOf(opened, [hub("a", 1)], false, NOW + 10);
+    const sendHeld = arrivalsOf(dropped, [hub("a", 1), item("r1", "human", at(19, 9), { state: "queued", clientRequestId: "r1" })], false, NOW + 20);
+    const back = arrivalsOf(sendHeld, [hub("a", 1), hub("b", 2), hub("c", 3), hub("m1", 4, "human", { clientRequestId: "r1" })], true, NOW + 30);
+    expect(entering(back)).toEqual({});
+    expect(entering(arrivalsOf(back, [...back.items, hub("d", 5)], true, NOW + 40))).toEqual({ d: 0 });
+  });
+
+  it("lets an arrival go once its motion is long over", () => {
+    const opened = arrivalsOf(undefined, [hub("a", 1)], true, NOW);
+    const next = arrivalsOf(opened, [hub("a", 1), hub("b", 2)], true, NOW);
+    expect(entering(arrivalsOf(next, [hub("a", 1), hub("b", 2), hub("c", 3)], true, NOW + ENTER_MS))).toEqual({ c: 0 });
   });
 });

@@ -19,7 +19,7 @@ import { leadTurnSince, leadTurnUntil } from "./activity";
 import { ChatList } from "./ChatList";
 import { useChatData } from "./data";
 import { EmptyChat } from "./EmptyChat";
-import { chatRows, heldLabel, rowIndexOf } from "./model";
+import { arrivalsOf, chatRows, heldLabel, rowIndexOf, type Arrivals } from "./model";
 import { ChatComposer } from "./Composer";
 import { AgentsCapControl } from "../settings";
 import type { ProjectRef } from "./slots";
@@ -49,6 +49,14 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const [opened, setOpened] = useState(() => ({ seen: seenOf(key), last: lastSeq }));
   if (opened.last === undefined && lastSeq !== undefined) setOpened({ ...opened, last: lastSeq });
   const seenSeq = opened.seen !== undefined && opened.last !== undefined && opened.last > opened.seen ? opened.seen : undefined;
+  // What comes in from here on enters with motion; what the chat opens with, and what a reconnect reads back, doesn't.
+  const live = view !== undefined && !view.held;
+  const [arrived, setArrived] = useState<Arrivals>();
+  if (view !== undefined && (arrived?.items !== view.items || arrived.live !== live)) {
+    // Stamped as it comes in: a row mounted much later shows still.
+    // eslint-disable-next-line react-hooks/purity
+    setArrived(arrivalsOf(arrived, view.items, live, Date.now()));
+  }
   const rows = useMemo(
     () =>
       view === undefined
@@ -162,7 +170,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
         </EmptyChat>
       ) : (
         <BubbleActionsContext.Provider value={actions}>
-          <ChatList rows={rows} project={project} onLoadOlder={data.loadOlder} openAt={openAt} openSeq={shown?.n} sent={sent} />
+          <ChatList rows={rows} project={project} onLoadOlder={data.loadOlder} openAt={openAt} openSeq={shown?.n} sent={sent} entering={arrived?.entering} />
         </BubbleActionsContext.Provider>
       )}
       {data.missing ? null : (

@@ -243,3 +243,56 @@ export function latestLabel(rows: readonly Row[], from: string | undefined): str
   const n = at === -1 ? 0 : rows.slice(at + 1).filter((r) => hasItem(r) && r.item.author !== "human").length;
   return n === 0 ? "Latest" : `${String(n)} new`;
 }
+
+/** How long after it came in a message still enters as its row mounts: its motion and the stagger, with room. */
+export const ENTER_MS = 1000;
+
+/** A message that came in while the chat was open: it enters once, `step` places after the others that came with it. */
+export interface Arrival {
+  /** When it came in (epoch ms). A bubble mounted much later (scrolled back to) shows still. */
+  readonly at: number;
+  readonly step: number;
+}
+
+/**
+ * Which messages enter with motion, carried from one chat update to the next. Only what arrives while the chat is
+ * open and current does: a lead reply, your send, a streamed reply's text once it is written. What the chat opened
+ * with, older pages loading above, and what a held chat (a drop, a reconnect not yet read back) and the page that
+ * replaces it bring all show still.
+ */
+export interface Arrivals {
+  readonly items: readonly ChatItem[];
+  readonly live: boolean;
+  /** Every message shown so far, by id, and by `id~` while it streamed. */
+  readonly known: ReadonlySet<string>;
+  /** The newest hub seq shown so far: an unknown message older than it is from an older page. */
+  readonly newest: number;
+  /** By row key. */
+  readonly entering: ReadonlyMap<string, Arrival>;
+}
+
+/** A message streaming is a different shape from the one it ends as: the typing dots, then its bubbles. */
+const phaseKey = (i: ChatItem): string => (i.state === "streaming" ? `${i.id}~` : i.id);
+const enters = (i: ChatItem): boolean => i.kind !== "event" && !isHistory(i);
+
+export function arrivalsOf(prev: Arrivals | undefined, items: readonly ChatItem[], live: boolean, nowMs: number): Arrivals {
+  const known = new Set(prev?.known);
+  const entering = new Map([...(prev?.entering ?? [])].filter(([, a]) => nowMs - a.at < ENTER_MS));
+  // Only while it was current before and still is: the first view, a held one and the page after it come in still.
+  const still = prev === undefined || !prev.live || !live;
+  let newest = prev?.newest ?? -Infinity;
+  let step = 0;
+  for (const i of items) {
+    const key = phaseKey(i);
+    const seq = i.message?.seq;
+    // Your send, once the hub echoes it, is the bubble already shown under a new id.
+    const seen = known.has(key) || (i.clientRequestId !== undefined && known.has(i.clientRequestId));
+    const newer = seq === undefined || seq > (prev?.newest ?? -Infinity) || known.has(`${i.id}~`);
+    const sent = i.clientRequestId === undefined ? undefined : entering.get(i.clientRequestId);
+    if (sent !== undefined && i.id !== i.clientRequestId) entering.set(i.id, sent);
+    else if (!still && !seen && newer && enters(i)) entering.set(i.id, { at: nowMs, step: step++ });
+    known.add(key);
+    if (seq !== undefined && seq > newest) newest = seq;
+  }
+  return { items, live, known, newest, entering };
+}
