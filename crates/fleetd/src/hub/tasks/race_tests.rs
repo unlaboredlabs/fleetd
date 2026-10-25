@@ -11,9 +11,11 @@ use fleetd_contracts::tasks::{Task, TaskId, TaskState};
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 
-use super::cap_tests::{AT, Node, hub, running};
+use super::cap_tests::{AT, Node, hub, hub_on, running};
 use super::{StoredTask, TaskRecords};
 use crate::hub::api::Hub;
+use crate::hub::store::NewEvent;
+use crate::hub::store::test_clock::ManualClock;
 
 const RESUME: &str = "A slot is free again; continue where you left off.";
 
@@ -280,4 +282,65 @@ async fn an_end_superseded_by_a_newer_run_is_not_the_tasks() {
     assert_eq!(task(&hub).state, TaskState::Failed);
     assert_eq!(task_lines(&hub), ["T1 failed: slice 1"]);
     assert_eq!(task(&hub).thread_ref, Some(t1()));
+}
+
+/// The watchdog fails a stalled run while the lead's steer waits queued behind it: the node's latest run is then the
+/// steer, but the stall is the running run's, and the task fails with it.
+#[tokio::test]
+async fn a_stall_with_a_steer_queued_behind_it_fails_the_task() {
+    let (hub, _home) = hub();
+    let _calls = serve(&hub, Node::link(&hub).await);
+    running(&hub, 1);
+    frame(
+        &hub,
+        json!({ "t": "machine_event", "seq": 3, "at": AT, "event": { "type": "session_updated", "sessionId": "t1",
+            "projectId": "p1", "title": "t1", "status": "running", "model": "claude-haiku-5-5", "effort": "low",
+            "runtimeMode": "approval-required", "activeRunId": "r1",
+            "latestRun": { "id": "r2", "status": "queued", "ordinal": 2 }, "createdAt": AT, "updatedAt": AT } }),
+    );
+    logged(&hub, "thread.started", "r2").await;
+    catch_up(&hub.tasks).await;
+
+    let stalled: NewEvent = serde_json::from_value(json!({
+        "at": AT, "type": "thread.failed", "machineId": "lab-a", "projectId": "p1", "threadId": "t1",
+        "summary": "stalled: no progress for 20 min inside a tool, so fleetd interrupted it",
+        "data": { "status": "failed", "runId": "r1", "reason": "stalled",
+            "error": { "class": "stalled", "message": "no progress for 20 min inside a tool, so fleetd interrupted it" } },
+    }))
+    .unwrap();
+    hub.events.append(stalled).unwrap();
+    catch_up(&hub.tasks).await;
+    let failed = task(&hub);
+    assert_eq!(failed.state, TaskState::Failed);
+    assert_eq!(
+        failed.result.unwrap().tail.as_str(),
+        "[stalled] no progress for 20 min inside a tool, so fleetd interrupted it"
+    );
+}
+
+/// The node takes the continue and then dies before the run starts, so that run never shows up. Ends of other runs
+/// are ignored only for a while: after that, the task's next end ends it, rather than leaving it running for good.
+#[tokio::test]
+async fn a_continued_run_that_never_shows_up_is_given_up_on() {
+    let clock = ManualClock::at(1_792_000_000_000);
+    let (hub, _home) = hub_on(clock.clone());
+    let mut calls = serve(&hub, Node::link(&hub).await);
+    paused_on_r2(&hub).await;
+    push(&hub, 4, "r2", "completed");
+    logged(&hub, "thread.completed", "r2").await;
+    let tasks = hub.tasks.clone();
+    let continued = tokio::spawn(async move {
+        let _guard = tasks.lock.lock().await;
+        tasks.retry_queue().await;
+    });
+    sent(&mut calls).await;
+    continued.await.unwrap();
+    catch_up(&hub.tasks).await;
+    assert_eq!(task(&hub).state, TaskState::Running);
+
+    clock.advance(Duration::from_secs(2 * 60));
+    push(&hub, 5, "r3", "interrupted");
+    logged(&hub, "thread.interrupted", "r3").await;
+    catch_up(&hub.tasks).await;
+    assert_eq!(task(&hub).state, TaskState::Failed);
 }

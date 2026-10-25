@@ -1676,6 +1676,18 @@ impl Executors {
         })
     }
 
+    /// The run the session is on as last seen: its active run once it has started, else its latest run. A send queued
+    /// behind the active run is not it. None while the active run is still queued or starting, or for an unknown
+    /// thread.
+    pub fn started_run(&self, r: &ThreadRef) -> Option<String> {
+        let t = self.tracked(r)?;
+        match &t.active_run_id {
+            Some(_) if t.active_run_starting => None,
+            Some(active) => Some(active.clone()),
+            None => t.known_run().map(str::to_owned),
+        }
+    }
+
     /// Follows the session if needed and keeps following until `release`.
     pub async fn follow(self: &Arc<Self>, r: &ThreadRef) -> Result<(), ExecutorError> {
         let w = self.view(r).await?;
