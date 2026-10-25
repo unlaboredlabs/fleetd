@@ -8,6 +8,7 @@ use crate::effort::TaskProfile;
 use crate::ids::{ProjectRef, ThreadRef, Timestamp};
 use crate::ledger::WorkstreamId;
 use crate::prim::{Count, Line, List, NonEmpty, Positive, Text, is_http_url, js_len};
+use crate::sessions::RunEnd;
 use crate::usage::UsageParked;
 
 brand!(
@@ -78,6 +79,9 @@ pub struct TaskResult {
     pub tail: Text<0, 2000>,
     pub branch: Option<NonEmpty>,
     pub pr_url: Option<PrUrl>,
+    /// Why its last run ended (the node stopped, claude exited, a limit, context full, …); absent on results an
+    /// older hub recorded, and when it never ran.
+    pub end_cause: Option<RunEnd>,
     pub at: Timestamp,
 }
 

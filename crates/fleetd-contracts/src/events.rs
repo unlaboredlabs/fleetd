@@ -7,6 +7,7 @@ use crate::ids::{EventSeq, MachineId, ProjectId, ProjectRef, ThreadId, Timestamp
 use crate::ledger::{RequestKind, RequestState, WorkstreamId, WorkstreamState};
 use crate::prim::{Count, Text};
 use crate::prompts::PromptScope;
+use crate::sessions::RunEnd;
 use crate::train::{ChangeId, GitHubRepo};
 
 #[derive(
@@ -315,6 +316,9 @@ pub struct ThreadEventData {
     /// The run ended while the hub was down and this event was emitted on its return.
     pub late: Option<bool>,
     pub reason: Option<ThreadEventReason>,
+    /// Why the run ended: on `thread.completed`, `.failed`, `.interrupted` and `.usage_limited` from a node that
+    /// records it.
+    pub end_cause: Option<RunEnd>,
 }
 
 // The `HubEvent.data` shapes below are what the hub's emitters write (each names its event types). Fields the hub

@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
+use fleetd_contracts::sessions::RunEnd;
 use fleetd_contracts::tasks::{AgentsCapData, Task, TaskState};
 use serde_json::json;
 
@@ -527,8 +528,68 @@ async fn a_stalled_run_fails_its_task_and_says_why() {
     hub.tasks.on_thread_event(&stalled).await.unwrap();
     let failed = hub.tasks.get(&task.task_id).unwrap().unwrap();
     assert_eq!(failed.state, TaskState::Failed);
+    let result = failed.result.unwrap();
     assert_eq!(
-        failed.result.unwrap().tail.as_str(),
+        result.tail.as_str(),
         "[stalled] no progress for 10 min outside a tool, so fleetd interrupted it"
     );
+    assert_eq!(result.end_cause, Some(RunEnd::Stalled));
+}
+
+/// The task's result says why its run ended, from the thread event: what recovery and the lead's lines read.
+#[tokio::test]
+async fn a_task_result_says_why_its_run_ended() {
+    let (hub, _home) = hub();
+    let event = |seq: i64, kind: &str, thread: &str, data: serde_json::Value| {
+        serde_json::from_value::<fleetd_contracts::events::HubEvent>(json!({
+            "seq": seq, "at": AT, "type": kind, "machineId": "lab-a", "threadId": thread,
+            "summary": "ended", "data": data,
+        }))
+        .unwrap()
+    };
+    let cases = [
+        (
+            "thread.interrupted",
+            json!({ "runId": "r1", "late": true, "endCause": "node_stopping" }),
+            TaskState::Failed,
+            Some(RunEnd::NodeStopping),
+        ),
+        (
+            "thread.failed",
+            json!({ "runId": "r1", "endCause": "exited" }),
+            TaskState::Failed,
+            Some(RunEnd::Exited),
+        ),
+        (
+            "thread.failed",
+            json!({ "runId": "r1", "endCause": "context_full" }),
+            TaskState::Failed,
+            Some(RunEnd::ContextFull),
+        ),
+        // An older node's event says nothing; a completed turn is completed all the same.
+        (
+            "thread.failed",
+            json!({ "runId": "r1" }),
+            TaskState::Failed,
+            None,
+        ),
+        (
+            "thread.completed",
+            json!({ "runId": "r1" }),
+            TaskState::Done,
+            Some(RunEnd::Completed),
+        ),
+    ];
+    for (n, (kind, data, state, end)) in cases.into_iter().enumerate() {
+        let n = n as u32 + 1;
+        let task = running(&hub, n);
+        let thread = format!("t{n}");
+        hub.tasks
+            .on_thread_event(&event(1_000_000 + i64::from(n), kind, &thread, data))
+            .await
+            .unwrap();
+        let ended = hub.tasks.get(&task.task_id).unwrap().unwrap();
+        assert_eq!(ended.state, state, "{kind} {n}");
+        assert_eq!(ended.result.unwrap().end_cause, end, "{kind} {n}");
+    }
 }

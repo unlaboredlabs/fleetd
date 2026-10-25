@@ -568,6 +568,39 @@ impl RunStatus {
     }
 }
 
+/// Why a run ended, so a node going away reads apart from a person stopping it. Set once the run is no longer active.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
+pub enum RunEnd {
+    /// claude finished the turn.
+    Completed,
+    /// Someone interrupted or stopped it: `RunInfo.endedBy` says who.
+    Requested,
+    /// A steer cut it short at a tool boundary to take its own turn (`RunInfo.supersededBy`). Not a failure.
+    Superseded,
+    /// The node was stopping (SIGTERM) and cut it.
+    NodeStopping,
+    /// The node found it active on start: it died with the node process (crash, SIGKILL, power loss).
+    NodeRestarted,
+    /// The machine slept and claude's stream did not come back.
+    MachineSlept,
+    /// claude exited or was killed with nobody asking; `failure` has the exit code or signal.
+    Exited,
+    /// A usage, rate or pool limit; `failure.resetAt` says when to continue.
+    Limited,
+    /// The conversation no longer fits in the model's context.
+    ContextFull,
+    /// Any other failure; `failure.class` says which.
+    Failed,
+    /// Set by the hub, never by a node: the watchdog saw no output for too long and ended the run.
+    Stalled,
+    /// A cause this build doesn't know (a newer node or hub). Never sent.
+    #[serde(other)]
+    #[schemars(skip)]
+    Unknown,
+}
+
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -597,6 +630,10 @@ pub struct RunInfo {
     /// A steer (`boundary` or `now`) cut this run short at a tool boundary: its status is `interrupted`, but it is
     /// not a failure. The steer's run id.
     pub superseded_by: Option<NonEmpty>,
+    /// Why it ended; absent while it is active and on runs an older node recorded.
+    pub end: Option<RunEnd>,
+    /// `end: requested`: the reason the interrupt or stop was sent with (`watchdog`, `stopped`, …).
+    pub ended_by: Option<Text<1, 200>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
