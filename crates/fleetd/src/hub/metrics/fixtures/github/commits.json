@@ -1,0 +1,138 @@
+{
+ "data": {
+  "repository": {
+   "ref": {
+    "target": {
+     "history": {
+      "pageInfo": {
+       "hasNextPage": false,
+       "endCursor": null
+      },
+      "nodes": [
+       {
+        "oid": "5050505050505050505050505050505050505050",
+        "committedDate": "2026-10-24T12:00:05Z",
+        "messageHeadline": "Checkout totals (#50)",
+        "parents": {
+         "nodes": [
+          {
+           "oid": "4141414141414141414141414141414141414141"
+          }
+         ]
+        },
+        "author": {
+         "name": "Ada Lovelace",
+         "email": "ada@example.com"
+        },
+        "associatedPullRequests": {
+         "nodes": []
+        }
+       },
+       {
+        "oid": "4141414141414141414141414141414141414141",
+        "committedDate": "2026-10-24T10:00:05Z",
+        "messageHeadline": "Fix the cart total (#41)",
+        "parents": {
+         "nodes": [
+          {
+           "oid": "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+          }
+         ]
+        },
+        "author": {
+         "name": "Ada Lovelace",
+         "email": "ada@example.com"
+        },
+        "associatedPullRequests": {
+         "nodes": [
+          {
+           "number": 41,
+           "merged": true
+          }
+         ]
+        }
+       },
+       {
+        "oid": "e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
+        "committedDate": "2026-10-24T08:00:00Z",
+        "messageHeadline": "wip on fix-cart",
+        "parents": {
+         "nodes": [
+          {
+           "oid": "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+          }
+         ]
+        },
+        "author": {
+         "name": "Ada Lovelace",
+         "email": "ada@example.com"
+        },
+        "associatedPullRequests": {
+         "nodes": []
+        }
+       },
+       {
+        "oid": "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
+        "committedDate": "2026-10-24T07:00:00Z",
+        "messageHeadline": "Bump the version to 2.1.0",
+        "parents": {
+         "nodes": [
+          {
+           "oid": "b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4"
+          }
+         ]
+        },
+        "author": {
+         "name": "Ada Lovelace",
+         "email": "ada@example.com"
+        },
+        "associatedPullRequests": {
+         "nodes": []
+        }
+       },
+       {
+        "oid": "b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4",
+        "committedDate": "2026-10-23T16:00:00Z",
+        "messageHeadline": "Update the changelog",
+        "parents": {
+         "nodes": [
+          {
+           "oid": "4444444444444444444444444444444444444444"
+          }
+         ]
+        },
+        "author": {
+         "name": "github-actions[bot]",
+         "email": "41898282+github-actions[bot]@users.noreply.github.com"
+        },
+        "associatedPullRequests": {
+         "nodes": []
+        }
+       },
+       {
+        "oid": "4444444444444444444444444444444444444444",
+        "committedDate": "2026-10-22T12:00:05Z",
+        "messageHeadline": "fleetd: batch of #45, #46 (#44)",
+        "parents": {
+         "nodes": []
+        },
+        "author": {
+         "name": "Ada Lovelace",
+         "email": "ada@example.com"
+        },
+        "associatedPullRequests": {
+         "nodes": [
+          {
+           "number": 44,
+           "merged": true
+          }
+         ]
+        }
+       }
+      ]
+     }
+    }
+   }
+  }
+ }
+}

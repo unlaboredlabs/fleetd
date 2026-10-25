@@ -93,6 +93,9 @@ pub struct MergeRow {
     pub url: Option<String>,
     pub seen_claim: Option<String>,
     pub src: String,
+    /// The merger's login on the git host, as the event or the sweep read it: the person's merge-by-hand touch is
+    /// theirs only when it is one of their identities. Not stored; reads give `None`.
+    pub merged_by: Option<String>,
 }
 
 pub const SKIPPED: &str = "skipped";
@@ -256,6 +259,7 @@ pub fn merges(
                 url: r.get(23)?,
                 seen_claim: r.get(24)?,
                 src: r.get(25)?,
+                merged_by: None,
             })
         })?
         .collect::<Result<_, _>>()?;

@@ -365,6 +365,7 @@ pub fn build_on(
         chat,
         prs,
         work,
+        metrics: crate::hub::metrics::Metrics::new(Arc::new(crate::hub::train::github::SystemGh)),
     });
     checks.ports.bind(&hub);
     train_host.bind(&hub);

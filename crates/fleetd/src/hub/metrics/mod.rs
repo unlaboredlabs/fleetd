@@ -3,16 +3,21 @@
 //! and read as merged per day, order to merged, the person's minutes per merged PR and the share through fleetd by
 //! calendar day in the viewer's zone. The person's minutes come from their touches: acts on fleetd's surfaces, and
 //! reviews and comments on the git host.
-//! Repos are keyed by their remote, host first, so nothing here assumes one git host, CI or release cadence. No
-//! polling: the projector wakes on the log's append notification, and the prune runs hourly.
+//! Repos are keyed by their remote, host first, so nothing here assumes one git host, CI or release cadence. The
+//! projector wakes on the log's append notification; the host sweep reads every project's repo from its git host on a
+//! slow timer and when a read asks; the prune runs hourly.
 pub mod compute;
 pub mod host_acts;
 pub mod human;
 pub mod project;
+pub mod source;
 pub mod store;
+pub mod sweep;
 pub mod tools;
 pub mod touches;
 
+#[cfg(test)]
+mod sweep_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -31,9 +36,25 @@ use crate::hub::store::{StoreError, now_ms};
 
 const PRUNE_EVERY: Duration = Duration::from_secs(3600);
 
-/// The projector and the hourly prune. Call once.
+/// The area's state on the hub: the host sweep's sources and schedule.
+pub struct Metrics {
+    pub sweep: sweep::Sweep,
+}
+
+impl Metrics {
+    pub fn new(gh: Arc<dyn crate::hub::train::github::GhRunner>) -> Arc<Self> {
+        Arc::new(Self {
+            sweep: sweep::Sweep::new(gh),
+        })
+    }
+}
+
+/// The projector, the host sweep and the hourly prune. Call once.
 pub fn start(hub: &Arc<Hub>) -> Vec<tokio::task::JoinHandle<()>> {
-    let mut loops = vec![tokio::spawn(project::run(hub.clone()))];
+    let mut loops = vec![
+        tokio::spawn(project::run(hub.clone())),
+        tokio::spawn(sweep::run(hub.clone())),
+    ];
     let hub = hub.clone();
     loops.push(tokio::spawn(async move {
         loop {

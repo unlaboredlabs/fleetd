@@ -37,7 +37,6 @@ const INVISIBLE: &[&str] = &[
     "Work on machines with no fleetd node, or on a phone.",
     "Typing in your own Claude Code sessions: fleetd doesn't read their transcripts.",
     "Reading in the app, until the app reports when it is in use.",
-    "Merges you did by hand on the git host, until fleetd knows who merged.",
 ];
 
 pub fn register(tools: &mut Registry) {
@@ -56,14 +55,15 @@ fn ms_of(t: &Timestamp) -> Result<i64, ToolError> {
 /// Projects by (machine, project), in order.
 pub type Projects = BTreeMap<String, BTreeSet<(String, String)>>;
 
-/// Every repo the metrics know, with the projects that have it: the trains they own, their Changes' repos and the
-/// merges they own.
+/// Every repo the metrics know, with the projects that have it: their checkouts' origins, the trains they own, their
+/// Changes' repos and the merges they own.
 pub fn repo_projects(c: &Connection) -> Result<Projects, StoreError> {
     let mut out = Projects::new();
     let mut stmt = c.prepare_cached(
         "SELECT repo, machine_id, project_id, 1 FROM trains
          UNION SELECT DISTINCT repo, machine_id, project_id, 1 FROM changes
          UNION SELECT DISTINCT repo, machine_id, project_id, 0 FROM metric_merges WHERE machine_id IS NOT NULL
+         UNION SELECT repo, machine_id, project_id, 0 FROM metric_project_repos
          UNION SELECT repo, NULL, NULL, 0 FROM metric_repos",
     )?;
     let rows = stmt.query_map([], |r| {
@@ -101,6 +101,17 @@ fn host(name: &str) -> Option<GitHost> {
     })
 }
 
+fn host_name(host: GitHost) -> &'static str {
+    match host {
+        GitHost::GitHub => "GitHub",
+        GitHost::GitLab => "GitLab",
+        GitHost::Gitea => "Gitea",
+        GitHost::Bitbucket => "Bitbucket",
+        GitHost::AzureDevOps => "Azure DevOps",
+        GitHost::Git | GitHost::Unknown => "The git host",
+    }
+}
+
 fn line(text: &str) -> Option<Line<1, 200>> {
     Line::new(crate::node::util::head_utf16(text, 200)).ok()
 }
@@ -132,13 +143,29 @@ fn coverage(
             .as_ref()
             .and_then(|v| v.as_of_ms)
             .max(row.and_then(|r| r.last_ok_ms));
-        if let Some(s) = seen.as_ref().and_then(|v| v.stale.as_ref()) {
-            let since = crate::hub::status::rows::clock(s.since_ms, now, tz);
+        // The train's reads going stale, else the sweep's last read failing.
+        let failing = seen
+            .as_ref()
+            .and_then(|v| v.stale.as_ref())
+            .map(|s| (Some(s.since_ms), s.reason.as_str()))
+            .or_else(|| {
+                row.and_then(|r| r.last_error.as_deref())
+                    .map(|why| (last_read, why))
+            });
+        if let Some((since_ms, why)) = failing {
+            let name = host_name(host);
+            let reason = match since_ms {
+                Some(ms) => format!(
+                    "{name} not read since {}: {why}",
+                    crate::hub::status::rows::clock(ms, now, tz)
+                ),
+                None => format!("{name} not read yet: {why}"),
+            };
             stale.push(RepoStale {
                 repo: remote.clone(),
-                since: Timestamp(iso_ms(s.since_ms)),
-                reason: line(&format!("GitHub not read since {since}: {}", s.reason))
-                    .unwrap_or_else(|| Line::unchecked("GitHub not read")),
+                since: Timestamp(iso_ms(since_ms.unwrap_or(now))),
+                reason: line(&reason)
+                    .unwrap_or_else(|| Line::unchecked("Not read from its git host")),
             });
         }
         covered.push(RepoCoverage {
@@ -229,6 +256,8 @@ async fn metrics_get(
         Ok((projects, rows, touches, store::repos(c)?, known))
     })?;
     let repos: Vec<String> = projects.keys().cloned().collect();
+    // A read asks the sweep for these repos' latest; it answers with what is stored now.
+    hub.metrics.sweep.want(&repos);
     let (cur_rows, prev_rows): (Vec<MergeRow>, Vec<MergeRow>) =
         rows.into_iter().partition(|r| r.merged_ms >= since);
     let days = compute::days(since, until, tz);
@@ -284,8 +313,8 @@ async fn metrics_get(
         }),
         next: Some(
             "Your minutes count what fleetd sees (chat, approvals, steers, decisions, orders, and reviews and \
-             comments on the git host made by your own login); coverage.invisible lists what it can't. Merges are \
-             read from the merge train's repos."
+             comments on the git host made by your own login); coverage.invisible lists what it can't. Each repo's \
+             git host is read again within a minute of this read."
                 .into(),
         ),
         truncated: (merges_total > MAX_MERGES).then_some(true),

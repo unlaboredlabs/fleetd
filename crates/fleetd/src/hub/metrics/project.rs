@@ -158,7 +158,13 @@ fn resolve(db: &HubDb, e: &HubEvent) -> Result<Option<Fold>, StoreError> {
             let Some(d) = data::<TrainEventData>(e) else {
                 return Ok(None);
             };
-            merge(db, e, &d, at)?.map(|m| Fold::Merge(Box::new(m)))
+            let event_project = e
+                .machine_id
+                .as_ref()
+                .zip(e.project_id.as_ref())
+                .map(|(m, p)| (m.to_string(), p.to_string()));
+            let train = e.r#type == HubEventType::PrMerged;
+            landed(db, train, &d, at, event_project)?.map(|m| Fold::Merge(Box::new(m)))
         }
         HubEventType::ChangeState => data::<ChangeStateData>(e)
             .filter(|d| d.to == ChangeState::Ready)
@@ -201,17 +207,19 @@ pub fn actor_str(k: ActorKind) -> &'static str {
     }
 }
 
-/// The row a train merge or an outside merge makes.
-fn merge(
+/// The row a merge makes, whoever reports it: the train's `pr.merged` (`train`), its `pr.merged_outside`, or the host
+/// sweep with the same fields read from the host. `at` stands in for a missing `mergedAt`, and `fallback` owns it
+/// when no train or Change does.
+pub fn landed(
     db: &HubDb,
-    e: &HubEvent,
+    train: bool,
     d: &TrainEventData,
     at: i64,
+    fallback: Option<(String, String)>,
 ) -> Result<Option<MergeRow>, StoreError> {
     let (Some(repo), Some(pr)) = (&d.repo, d.pr_number) else {
         return Ok(None);
     };
-    let train = e.r#type == HubEventType::PrMerged;
     let change = match &d.change_id {
         Some(id) => change(db, id.as_str())?,
         None => None,
@@ -271,7 +279,7 @@ fn merge(
         _ => None,
     };
     let remote = store::github_remote(repo.as_str());
-    // The project that owns it: the train's owner, else its Change's, else the event's.
+    // The project that owns it: the train's owner, else its Change's, else the reporter's.
     let owner = train_owner(db, repo.as_str())?
         .or_else(|| {
             change.as_ref().map(|c| {
@@ -281,12 +289,7 @@ fn merge(
                 )
             })
         })
-        .or_else(|| {
-            e.machine_id
-                .as_ref()
-                .zip(e.project_id.as_ref())
-                .map(|(m, p)| (m.to_string(), p.to_string()))
-        });
+        .or(fallback);
     let (machine_id, project_id) = owner.unzip();
     Ok(Some(MergeRow {
         unit_key: format!("pr:{}", pr.get()),
@@ -323,6 +326,7 @@ fn merge(
         } else {
             actor(d.merged_by_kind)
         },
+        merged_by: d.merged_by.clone().filter(|_| !train),
         url: d
             .pr_url
             .clone()

@@ -205,9 +205,8 @@ fn order(w: &Workstream) -> Option<TouchRow> {
     })
 }
 
-/// A human account merged a PR by hand: fleetd's or an outside one. It is recorded with no account, because
-/// `pr.merged_outside` doesn't name the merger yet, so `human::attributed` leaves it out of the person's minutes
-/// until the git host reader records who merged.
+/// A human account merged a PR by hand: fleetd's or an outside one. It is keyed on the merger's login, which
+/// `pr.merged_outside` and the host sweep carry, so `human::attributed` counts it only when that is the person's.
 pub fn merged_by_hand(m: &MergeRow) -> Option<TouchRow> {
     let route = MergeRoute::parse(&m.route)?;
     if m.merged_by_kind.as_deref() != Some("human")
@@ -221,6 +220,7 @@ pub fn merged_by_hand(m: &MergeRow) -> Option<TouchRow> {
         repo: Some(m.repo.clone()),
         workstream_id: m.workstream_id.clone(),
         pr_number: m.pr_number,
+        key_id: m.merged_by.clone(),
         outside: route == MergeRoute::Outside,
         ..touch(
             TouchKind::MergeByHand,
