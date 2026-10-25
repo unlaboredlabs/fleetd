@@ -1,13 +1,31 @@
 import { describe, expect, it } from "vitest";
 import type { AgentRow, RecentLanding, WorkItem, WorkListOutput } from "../../../shared/contracts";
 import type { LiveAgent } from "../../src/data/selectors";
-import { actionLine, allAgents, elsewhere, headline, landedHow, nextExpiry, projectAgents, type WorkListAnswer } from "./model";
+import {
+  actionLine,
+  agentState,
+  allAgents,
+  elsewhere,
+  headline,
+  landedHow,
+  nextExpiry,
+  projectAgents,
+  projectGroups,
+  STATE_WORD,
+  tally,
+  workPlace,
+  type GroupLine,
+  type WorkListAnswer,
+} from "./model";
 
-const agent = (project: string, laneId: string, status: AgentRow["status"] = "working"): LiveAgent => ({
+const agent = (project: string, laneId: string, status: AgentRow["status"] = "working", workstreamId = "W1"): LiveAgent => ({
   id: `devbox/${project}/${laneId}`,
   project: `devbox/${project}`,
-  row: { laneId, role: "implementer", status, title: laneId, projectRef: { machineId: "devbox", projectId: project }, projectTitle: project },
+  row: { laneId, role: "implementer", status, title: laneId, projectRef: { machineId: "devbox", projectId: project }, projectTitle: project, workstreamId },
 });
+
+/** A list as words: a line's title in brackets, an agent's lane. */
+const words = (list: readonly (GroupLine | LiveAgent)[]) => list.map((a) => ("group" in a ? `[${a.title}]` : a.row.laneId));
 
 describe("the agents list", () => {
   it("lists one project's agents, those waiting on you first, without its lead", () => {
@@ -17,10 +35,39 @@ describe("the agents list", () => {
     expect(projectAgents([], "devbox/api")).toEqual([]);
   });
 
-  it("lists every project's agents under its name, the projects with one waiting on you first, without the leads", () => {
+  it("groups one project's agents under their orders' titles, the orders with one waiting on you first", () => {
+    const titles: Record<string, string> = { W1: "Dark mode", W2: "Receipts in the store's zone" };
+    const list = projectGroups(
+      [agent("api", "T1"), agent("api", "T2", "working", "W2"), agent("api", "T3"), agent("api", "T4", "waiting", "W2"), agent("web", "T5", "waiting")],
+      "devbox/api",
+      (id) => titles[id],
+    );
+    expect(words(list)).toEqual(["[Receipts in the store's zone]", "T4", "T2", "[Dark mode]", "T1", "T3"]);
+    expect(list[0]).toEqual({ group: "order:devbox/api/W2", title: "Receipts in the store's zone", level: "order", count: 2, waiting: 1 });
+    expect(list[3]).toMatchObject({ count: 2, waiting: 0 });
+  });
+
+  it("puts the agents of an order the board doesn't hold, or of none, under Other agents", () => {
+    const { workstreamId: _, ...row } = agent("api", "T2").row;
+    const loose: LiveAgent = { ...agent("api", "T2"), row };
+    expect(words(projectGroups([agent("api", "T1", "working", "W9"), loose, agent("api", "T3", "working", "W1")], "devbox/api", (id) => (id === "W1" ? "Dark mode" : undefined)))).toEqual([
+      "[Other agents]",
+      "T1",
+      "T2",
+      "[Dark mode]",
+      "T3",
+    ]);
+    expect(projectGroups([], "devbox/api")).toEqual([]);
+  });
+
+  it("lists every project's agents under its name and then its orders, the projects with one waiting on you first, without the leads", () => {
     const lead: LiveAgent = { ...agent("web", "lead:devbox/web"), row: { ...agent("web", "lead:devbox/web").row, role: "lead" } };
-    const list = allAgents([agent("api", "T1"), agent("ops", "T5"), agent("ops", "T6", "waiting"), lead, agent("web", "T2"), agent("web", "T3", "waiting")]);
-    expect(list.map((a) => ("group" in a ? a.title : a.row.laneId))).toEqual(["ops", "T6", "T5", "web", "T3", "T2", "api", "T1"]);
+    const list = allAgents([agent("api", "T1"), agent("ops", "T5"), agent("ops", "T6", "waiting", "W7"), lead, agent("web", "T2"), agent("web", "T3", "waiting")], (id) => id);
+    expect(words(list)).toEqual(["[ops]", "[W7]", "T6", "[W1]", "T5", "[web]", "[W1]", "T3", "T2", "[api]", "[W1]", "T1"]);
+    expect(list[0]).toEqual({ group: "project:devbox/ops", title: "ops", level: "project", count: 2, waiting: 1 });
+    // Group keys stay unique across projects that share a workstream id.
+    const keys = list.filter((a): a is GroupLine => "group" in a).map((a) => a.group);
+    expect(new Set(keys).size).toBe(keys.length);
     expect(allAgents([lead])).toEqual([]);
   });
 
@@ -32,6 +79,37 @@ describe("the agents list", () => {
     const lead: LiveAgent = { ...agent("api", "lead:devbox/api"), row: { ...agent("api", "lead:devbox/api").row, role: "lead" } };
     expect(headline([lead, agent("api", "T1", "stalled"), agent("api", "T2")])).toBe("1 working");
     expect(headline([])).toBe("");
+    expect(tally([agent("api", "T1"), agent("api", "T2", "waiting"), agent("api", "T3", "parked")])).toEqual({ working: 1, waiting: 1, queued: 0 });
+  });
+});
+
+describe("an agent's state and where its work is", () => {
+  it("tells five states apart: running, queued, waiting, done and failed", () => {
+    const states = Object.fromEntries((Object.keys(STATE_WORD) as AgentRow["status"][]).map((st) => [st, agentState(st)]));
+    expect(states).toEqual({
+      queued: "queued",
+      starting: "running",
+      working: "running",
+      stalled: "running",
+      idle: "queued",
+      done: "done",
+      failed: "failed",
+      cancelled: "done",
+      waiting: "waiting",
+      parked: "queued",
+    });
+    expect(STATE_WORD.waiting).toBe("needs you");
+    expect(STATE_WORD.parked).toBe("paused");
+  });
+
+  it("shows its PR with the train's word for it, else its branch, else nothing", () => {
+    const pr = { changeId: "X1", number: 212, repo: "acme/shop", reviewsDone: 0, reviewsNeeded: 1, url: "https://github.com/acme/shop/pull/212" } as const;
+    expect(workPlace({ pr: { ...pr, state: "ci" }, branch: "fleetd/T1-dark-mode" })).toEqual({ kind: "pr", text: "#212", state: "in CI", tone: "quiet" });
+    expect(workPlace({ pr: { ...pr, state: "ci_failed" } })).toMatchObject({ state: "CI failed", tone: "danger" });
+    expect(workPlace({ pr: { ...pr, state: "merged" } })).toMatchObject({ tone: "success" });
+    expect(workPlace({ branch: "fleetd/T1-dark-mode" })).toEqual({ kind: "branch", text: "fleetd/T1-dark-mode", tone: "quiet" });
+    expect(workPlace({ branch: "" })).toBeUndefined();
+    expect(workPlace({})).toBeUndefined();
   });
 });
 

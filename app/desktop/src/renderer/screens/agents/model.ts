@@ -1,43 +1,95 @@
-// What the panel's agents show, as plain view data: one project's agents, the headline, one line per step of an
-// agent's work, and the work elsewhere on the project's repo. Pure, so it is unit-tested.
-import type { ClaimOwner, RecentLanding, WorkItem, WorkListOutput, WorkStep } from "../../../shared/contracts";
+// What the panel's agents show, as plain view data: one project's agents under the orders they work on, the
+// headline, each agent's state and where its work is, one line per step of an agent's work, and the work elsewhere
+// on the project's repo. Pure, so it is unit-tested.
+import type { AgentRow, ChangeState, ClaimOwner, LaneStatus, RecentLanding, WorkItem, WorkListOutput, WorkStep } from "../../../shared/contracts";
 import type { LiveAgent } from "../../src/data/selectors";
 import { projectKey, type ProjectKey } from "../../src/data/store";
 import { parseMs } from "../live/format";
 import { agoText } from "../projects/machineText";
 
-/**
- * One project's agents, those waiting on you first, then the data layer's order (oldest first), so a row moves only
- * when it starts or stops needing you. Not the lead: its chat is beside them.
- */
-export const projectAgents = (agents: readonly LiveAgent[], project: string): readonly LiveAgent[] => {
-  const mine = agents.filter((a) => a.project === project && a.row.role !== "lead");
-  return [...mine.filter((a) => a.row.status === "waiting"), ...mine.filter((a) => a.row.status !== "waiting")];
-};
-
-/** A project's name above its agents in the All projects list. */
-export interface ProjectLine {
+/** A line above agents: a project's name (All projects), or the order they work on. */
+export interface GroupLine {
+  /** Unique in the list: "project:<key>" or "order:<key>/<workstream>". */
   readonly group: string;
   readonly title: string;
+  readonly level: "project" | "order";
+  /** Its agents, and how many of them wait on you. */
+  readonly count: number;
+  readonly waiting: number;
 }
 
+/** An order's title by its workstream id; undefined when the board doesn't hold it. */
+export type OrderTitle = (workstreamId: string) => string | undefined;
+
+const noTitles: OrderTitle = () => undefined;
+
+const waits = (a: LiveAgent): boolean => a.row.status === "waiting";
+
+/** Those waiting on you first, then as given: a row moves only when it starts or stops needing you. */
+const waitingFirst = <T extends { readonly agents: readonly LiveAgent[] }>(groups: readonly T[]): readonly T[] => [
+  ...groups.filter((g) => g.agents.some(waits)),
+  ...groups.filter((g) => !g.agents.some(waits)),
+];
+
+/** One project's agents, in the data layer's order (oldest first). Not the lead: its chat is beside them. */
+const mineOf = (agents: readonly LiveAgent[], project: string): readonly LiveAgent[] => agents.filter((a) => a.project === project && a.row.role !== "lead");
+
 /**
- * Every project's agents, each project under a line with its name: the projects with an agent waiting on you first,
- * then the data layer's order (by name); in each, as `projectAgents`. Not the leads.
+ * One project's agents, those waiting on you first, then the data layer's order (oldest first), so a row moves only
+ * when it starts or stops needing you. Not the lead.
  */
-export const allAgents = (agents: readonly LiveAgent[]): readonly (ProjectLine | LiveAgent)[] => {
-  const groups = [...new Set(agents.map((a) => a.project))].map((key) => projectAgents(agents, key));
-  const waits = (g: readonly LiveAgent[]) => g[0]?.row.status === "waiting";
-  return [...groups.filter(waits), ...groups.filter((g) => !waits(g))].flatMap((g) =>
-    g[0] === undefined ? [] : [{ group: g[0].project, title: g[0].row.projectTitle }, ...g],
-  );
+export const projectAgents = (agents: readonly LiveAgent[], project: string): readonly LiveAgent[] => {
+  const mine = mineOf(agents, project);
+  return [...mine.filter(waits), ...mine.filter((a) => !waits(a))];
 };
 
 /**
- * "18 working · 1 needs you · 1 queued", the leads not counted, so it agrees with the sidebar's count; empty
- * when none of the three.
+ * One project's agents under the orders they work on, each order under a line with its title: the orders with an
+ * agent waiting on you first, then by their oldest agent; in each, as `projectAgents`. An agent of no order the board
+ * holds goes under "Other agents".
  */
-export const headline = (agents: readonly LiveAgent[]): string => {
+export const projectGroups = (agents: readonly LiveAgent[], project: string, titleOf: OrderTitle = noTitles): readonly (GroupLine | LiveAgent)[] => {
+  const byOrder = new Map<string, LiveAgent[]>();
+  for (const a of mineOf(agents, project)) {
+    const ws = a.row.workstreamId;
+    const id = ws !== undefined && titleOf(ws) !== undefined ? ws : "";
+    const group = byOrder.get(id);
+    if (group === undefined) byOrder.set(id, [a]);
+    else group.push(a);
+  }
+  const groups = [...byOrder].map(([id, list]) => ({ id, agents: [...list.filter(waits), ...list.filter((a) => !waits(a))] }));
+  return waitingFirst(groups).flatMap(({ id, agents: list }) => [
+    {
+      group: `order:${project}/${id}`,
+      title: (id === "" ? undefined : titleOf(id)) ?? "Other agents",
+      level: "order" as const,
+      count: list.length,
+      waiting: list.filter(waits).length,
+    },
+    ...list,
+  ]);
+};
+
+/**
+ * Every project's agents, each project under a line with its name and in it as `projectGroups`: the projects with an
+ * agent waiting on you first, then the data layer's order (by name). Not the leads.
+ */
+export const allAgents = (agents: readonly LiveAgent[], titleOf: OrderTitle = noTitles): readonly (GroupLine | LiveAgent)[] => {
+  const groups = [...new Set(agents.map((a) => a.project))].map((key) => ({ key, agents: mineOf(agents, key) })).filter((g) => g.agents.length > 0);
+  return waitingFirst(groups).flatMap(({ key, agents: mine }) => [
+    { group: `project:${key}`, title: mine[0]?.row.projectTitle ?? key, level: "project" as const, count: mine.length, waiting: mine.filter(waits).length },
+    ...projectGroups(mine, key, titleOf),
+  ]);
+};
+
+/** What works, what waits on you and what is queued, the leads not counted, so it agrees with the sidebar's count. */
+export interface Tally {
+  readonly working: number;
+  readonly waiting: number;
+  readonly queued: number;
+}
+
+export const tally = (agents: readonly LiveAgent[]): Tally => {
   let working = 0;
   let waiting = 0;
   let queued = 0;
@@ -47,9 +99,85 @@ export const headline = (agents: readonly LiveAgent[]): string => {
     else if (row.status === "waiting") waiting++;
     else if (row.status === "queued") queued++;
   }
+  return { working, waiting, queued };
+};
+
+/** "18 working · 1 needs you · 1 queued"; empty when none of the three. */
+export const headline = (agents: readonly LiveAgent[]): string => {
+  const { working, waiting, queued } = tally(agents);
   return [working > 0 ? `${String(working)} working` : "", waiting > 0 ? `${String(waiting)} ${waiting === 1 ? "needs" : "need"} you` : "", queued > 0 ? `${String(queued)} queued` : ""]
     .filter((p) => p !== "")
     .join(" · ");
+};
+
+/** The five states a row's dot tells apart. Running is the only one that moves. */
+export type AgentState = "running" | "queued" | "waiting" | "done" | "failed";
+
+/** Stalled still runs (its line says it stalled); parked and idle wait their turn as queued does; cancelled ended. */
+export const agentState = (status: LaneStatus): AgentState => {
+  switch (status) {
+    case "starting":
+    case "working":
+    case "stalled":
+      return "running";
+    case "waiting":
+      return "waiting";
+    case "done":
+    case "cancelled":
+      return "done";
+    case "failed":
+      return "failed";
+    case "queued":
+    case "parked":
+    case "idle":
+      return "queued";
+  }
+};
+
+/** Each status in one word, beside the dot in an agent's head. */
+export const STATE_WORD: Readonly<Record<LaneStatus, string>> = {
+  queued: "queued",
+  starting: "starting",
+  working: "running",
+  stalled: "stalled",
+  idle: "idle",
+  done: "done",
+  failed: "failed",
+  cancelled: "cancelled",
+  waiting: "needs you",
+  parked: "paused",
+};
+
+/** Where an agent's work is: its PR and the train's word for it, or else its branch. */
+export interface WorkPlace {
+  readonly kind: "pr" | "branch";
+  readonly text: string;
+  readonly state?: string | undefined;
+  readonly tone: "quiet" | "danger" | "success";
+}
+
+const PR_WORD: Readonly<Record<ChangeState, string>> = {
+  queued: "queued",
+  reviewing: "in review",
+  ready: "ready",
+  rebasing: "rebasing",
+  ci: "in CI",
+  merging: "merging",
+  merged: "merged",
+  needs_rebase: "needs a rebase",
+  ci_failed: "CI failed",
+  refused: "refused",
+  abandoned: "closed",
+};
+
+export const workPlace = (row: Pick<AgentRow, "pr" | "branch">): WorkPlace | undefined => {
+  const { pr, branch } = row;
+  if (pr !== undefined) {
+    const tone = pr.state === "ci_failed" || pr.state === "refused" ? "danger" : pr.state === "merged" ? "success" : "quiet";
+    return { kind: "pr", text: `#${String(pr.number)}`, state: PR_WORD[pr.state], tone };
+  }
+  if (branch !== undefined && branch !== "") return { kind: "branch", text: branch, tone: "quiet" };
+  return undefined;
 };
 
 export interface StepLine {
