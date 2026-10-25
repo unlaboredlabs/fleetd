@@ -81,7 +81,7 @@ pub struct LinkedChange {
 
 /// The done rule (§1): `Some(evidence)` when the item is verified. An item needs a link, and every linked Change that
 /// is not abandoned or refused must be merged by the train (only `finish_merged` sets Merged, so a bypass merge never
-/// counts).
+/// counts here; a lead marks work that landed outside fleetd `covered` instead, `Plans::cover`).
 pub fn verified(linked: bool, changes: &[LinkedChange]) -> Option<String> {
     if !linked {
         return None;

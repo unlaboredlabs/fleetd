@@ -1,4 +1,4 @@
-//! What leads read from areas that merge after them (tasks, train, usage). Each area sets
+//! What leads read from areas that merge after them (tasks, train, usage, work). Each area sets
 //! its hook once in `hub/serve`; an unset hook reads as "nothing to show".
 use std::future::Future;
 use std::pin::Pin;
@@ -52,6 +52,12 @@ pub trait TrainHook: Send + Sync {
     fn unlanded(&self, project_ref: &ProjectRef, workstream_id: &WorkstreamId) -> Vec<String>;
 }
 
+/// The work ledger.
+pub trait WorkHook: Send + Sync {
+    /// The digest's "Elsewhere" lines; None when the project's repo and base aren't known.
+    fn elsewhere(&self, project_ref: &ProjectRef) -> BoxFuture<Option<Vec<String>>>;
+}
+
 /// GitHub through `gh api`.
 pub trait GitHubHook: Send + Sync {
     fn api(&self, path: &str) -> BoxFuture<Result<serde_json::Value, String>>;
@@ -62,4 +68,5 @@ pub struct LeadHooks {
     pub usage: OnceLock<Arc<dyn UsageHook>>,
     pub tasks: OnceLock<Arc<dyn TasksHook>>,
     pub train: OnceLock<Arc<dyn TrainHook>>,
+    pub work: OnceLock<Arc<dyn WorkHook>>,
 }
