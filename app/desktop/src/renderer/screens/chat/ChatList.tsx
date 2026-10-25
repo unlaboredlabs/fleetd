@@ -11,8 +11,8 @@ import { leadActivity, leadTurnSince, leadTurnUntil, turnLine } from "./activity
 import type { ChatItem } from "../../src/data/chat";
 
 import { shortClock } from "./format";
-import { latestLabel, newestKey, type Row, type TopState } from "./model";
-import { MessageView } from "./Bubble";
+import { latestLabel, newestKey, type Arrival, type Row, type TopState } from "./model";
+import { MessageView, useEnter } from "./Bubble";
 import { RememberedUndo } from "./Remembered";
 import { LiveStrip, useNow, useOnScreen } from "../live";
 import { Boundary } from "../../src/Boundary";
@@ -58,13 +58,19 @@ function Top({ state, onLoadOlder }: { state: TopState; onLoadOlder: () => void 
  * A secret field or a gated command (F5). The hub's message carries the item; E1's stub contract doesn't type it
  * yet, so it is read from the message here until E1 moves to H1's generated contract.
  */
-function Inline({ item }: { item: ChatItem }) {
+function Inline({ item, enter }: { item: ChatItem; enter: Arrival | undefined }) {
   const inline = (item.message as { readonly item?: InlineItem } | undefined)?.item;
-  if (inline !== undefined) return <InlineChatItem item={inline} />;
+  const e = useEnter(enter);
   return (
-    <Text size="xs" tone="quiet">
-      {item.kind === "secret" ? "The lead needs a secret here." : "The lead wants to run a command that needs your approval."}
-    </Text>
+    <div className={cx(s.message, e.className)} style={e.style} data-entry="inline">
+      {inline !== undefined ? (
+        <InlineChatItem item={inline} />
+      ) : (
+        <Text size="xs" tone="quiet">
+          {item.kind === "secret" ? "The lead needs a secret here." : "The lead wants to run a command that needs your approval."}
+        </Text>
+      )}
+    </div>
   );
 }
 
@@ -116,6 +122,8 @@ const RowView = memo(function RowView(props: {
   project: ProjectRef;
   /** This is the person's newest message: its receipt shows even once sent. */
   mineLatest: boolean;
+  /** It came in while the chat was open: it enters. */
+  enter: Arrival | undefined;
   onLoadOlder: () => void;
 }) {
   const { row: r, project } = props;
@@ -155,11 +163,7 @@ const RowView = memo(function RowView(props: {
         </div>
       );
     case "inline":
-      return (
-        <div className={s.message} data-entry="inline">
-          <Inline item={r.item} />
-        </div>
-      );
+      return <Inline item={r.item} enter={props.enter} />;
     case "activity":
       return <LeadActivity project={project} />;
     case "strip":
@@ -179,7 +183,7 @@ const RowView = memo(function RowView(props: {
         </div>
       );
     case "message":
-      return <MessageView row={r} mineLatest={props.mineLatest} />;
+      return <MessageView row={r} mineLatest={props.mineLatest} enter={props.enter} />;
   }
 });
 
@@ -193,8 +197,10 @@ export function ChatList(props: {
   openSeq?: number | undefined;
   /** Bumped when the reader sends: back to the end. */
   sent?: number;
+  /** What came in while the chat was open, by row key (arrivalsOf). */
+  entering?: ReadonlyMap<string, Arrival> | undefined;
 }) {
-  const { rows, openAt, openSeq, sent } = props;
+  const { rows, openAt, openSeq, sent, entering } = props;
   const virtualizer = useRef<Virtualizer<HTMLDivElement, Element> | null>(null);
   const mineLatest = useMemo(() => rows.findLast((r) => r.kind === "message" && r.item.author === "human")?.key, [rows]);
 
@@ -285,6 +291,7 @@ export function ChatList(props: {
             row={r}
             project={props.project}
             mineLatest={r.key === mineLatest}
+            enter={entering?.get(r.key)}
             onLoadOlder={props.onLoadOlder}
           />
         )}

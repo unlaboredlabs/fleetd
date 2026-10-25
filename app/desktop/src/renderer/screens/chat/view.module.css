@@ -50,6 +50,10 @@
 .scroller {
   scrollbar-gutter: stable;
 }
+/* A bubble entering from below its place doesn't stretch the scroll past the end for a moment. */
+.scroller > * {
+  overflow-y: clip;
+}
 .composer {
   --gutter: 10px;
   flex: none;
@@ -104,6 +108,25 @@
 }
 .mine .line {
   flex-direction: row-reverse;
+}
+/*
+ * Just come in (a reply, your send, a streamed reply's text): it enters once, from its side's bottom corner. Only
+ * transform and opacity move, so nothing above it reflows and the list stays at the end; `--enter-since` picks a
+ * remounted row up where it was. Reduced motion leaves the fade (tokens.css).
+ */
+.enter {
+  transform-origin: bottom left;
+  animation: enter var(--dur-enter) var(--ease-enter) backwards;
+  animation-delay: calc(var(--enter-stagger) * var(--enter-step, 0) - var(--enter-since, 0ms));
+}
+.mine .enter {
+  transform-origin: bottom right;
+}
+@keyframes enter {
+  from {
+    opacity: 0;
+    transform: translateY(var(--enter-rise)) scale(var(--enter-scale));
+  }
 }
 /* In a narrow chat (a side panel) a bubble's actions and time go under it; beside it they'd squeeze it to a word. */
 @container (max-width: 480px) {
@@ -197,16 +220,6 @@
   --shiki-token-punctuation: var(--on-accent);
   background: var(--accent-fill);
   color: var(--on-accent);
-}
-/* Just sent: it rises into place once, from the box. Reduced motion zeroes --dur-base. */
-.sending {
-  animation: rise var(--dur-base) var(--ease-out);
-}
-@keyframes rise {
-  from {
-    opacity: 0.4;
-    transform: translateY(8px);
-  }
 }
 /* The quiet side of the line, shown while the row is hovered or has focus: tapback, reply, the time. */
 .aside {
