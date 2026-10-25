@@ -5,7 +5,7 @@
 // per row (`reach`), so the visible window of a row is two binary searches; spans narrower than a pixel at the
 // current zoom merge into one bar per pixel column coloured by the category with the most time in it. A 15k-span
 // order paints a few hundred rects per visible row at most, and only visible rows are painted.
-import { CAT_LABEL, KIND_WORD, agentName, fmtDur, laneName, ordinal, type Names } from "./format";
+import { CAT_LABEL, KIND_WORD, agentName, fmtDur, laneName, ordinal, tickLabel, type Names } from "./format";
 import type { TaskProfile } from "../../../shared/contracts";
 import { PROFILE_WORD } from "../../ui/primitives/profiles";
 import { shortModel } from "../live/format";
@@ -78,7 +78,16 @@ export interface Model {
   readonly hasPath: boolean;
   /** The hub sent only the first 400 steps of a longer path. */
   readonly pathTruncated: boolean;
+  /**
+   * Stretches of the order, a tenth of it or longer, where no lane has a bar or a missing-data mark: nothing ran.
+   * Marked in words, so a sparse order reads as one that waited rather than one that failed to draw.
+   */
+  readonly quiet: readonly (readonly [number, number])[];
 }
+
+/** A stretch with nothing running is marked once it is at least this share of the order, and a minute. */
+export const QUIET_SHARE = 0.1;
+export const QUIET_MIN_MS = 60_000;
 
 const rowKey = (s: Span): string => {
   if (s.kind === "ci.check" && s.extra?.check !== undefined) return `${s.lane}#ci#${s.extra.check}`;
@@ -306,6 +315,19 @@ export const buildModel = (
     startMs = total === 0 ? nowMs : Math.min(...rows.filter((r) => r.to > r.from).map((r) => itemStart[r.from] ?? nowMs));
     endMs = total === 0 ? nowMs : Math.max(...rows.filter((r) => r.to > r.from).map((r) => reach[r.to - 1] ?? nowMs));
   }
+  endMs = Math.max(endMs, startMs + 1);
+  // Everything drawn (bars and missing-data marks) by start, swept for the holes between.
+  const covered: [number, number][] = [];
+  for (let i = 0; i < total; i += 1) covered.push([itemStart[i] ?? 0, itemEnd[i] ?? 0]);
+  for (const r of rows) for (const [a, b] of r.gaps) covered.push([a, b]);
+  covered.sort((a, b) => a[0] - b[0]);
+  const quiet: [number, number][] = [];
+  let reached = startMs;
+  for (const [a, b] of total === 0 ? [] : [...covered, [endMs, endMs] as const]) {
+    const to = Math.min(a, endMs);
+    if (to - reached >= Math.max(QUIET_MIN_MS, (endMs - startMs) * QUIET_SHARE)) quiet.push([reached, to]);
+    reached = Math.max(reached, b);
+  }
   return {
     spans,
     byId,
@@ -317,13 +339,14 @@ export const buildModel = (
     itemFlags,
     reach,
     startMs,
-    endMs: Math.max(endMs, startMs + 1),
+    endMs,
     path: segs,
     parallel,
     children,
     barOf,
     hasPath: path !== undefined,
     pathTruncated: path?.segmentsTruncated === true,
+    quiet,
   };
 };
 
@@ -441,15 +464,16 @@ export const hit = (list: readonly Bar[], x: number): Bar | undefined => {
   return best;
 };
 
+const DAY = 86_400_000;
 const STEPS = [
-  1_000, 5_000, 10_000, 30_000, 60_000, 120_000, 300_000, 600_000, 900_000, 1_800_000, 3_600_000, 7_200_000, 10_800_000,
-  21_600_000, 43_200_000, 86_400_000,
+  1_000, 2_000, 5_000, 10_000, 30_000, 60_000, 120_000, 300_000, 600_000, 900_000, 1_800_000, 3_600_000, 7_200_000, 10_800_000,
+  21_600_000, 43_200_000, DAY, 2 * DAY, 7 * DAY, 14 * DAY,
 ];
 
-/** Round ticks, about `most` of them across [v0, v1). */
+/** Round ticks, at most `most` of them across [v0, v1). */
 export const ticks = (v0: number, v1: number, most = 8): number[] => {
   const span = Math.max(1, v1 - v0);
-  const step = STEPS.find((s) => span / s <= most) ?? 86_400_000;
+  const step = STEPS.find((s) => span / s <= most) ?? Math.ceil(span / most / DAY) * DAY;
   // Round marks on the viewer's clock, not on UTC's: a half-hour zone or a 6h step would otherwise read 10:30 or
   // 05:00. Stepping is in local time; each tick goes back to hub ms at its own offset, so a DST change stays round.
   const offset = (t: number) => -new Date(t).getTimezoneOffset() * 60_000;
@@ -461,6 +485,40 @@ export const ticks = (v0: number, v1: number, most = 8): number[] => {
     if (t >= v0 && t > (out.at(-1) ?? -Infinity)) out.push(t);
   }
   return out;
+};
+
+/** Track px per axis tick: room for the longest label ("10:15:30", "Oct 18") with space either side. */
+export const TICK_PX = 96;
+/** An axis label's width in px: the mono xs digits, and the tick's own padding. */
+const labelPx = (label: string): number => label.length * 7 + 4;
+
+export interface Tick {
+  readonly t: number;
+  /** Track px. */
+  readonly x: number;
+  /** Undefined where the label would run past the track's end: the grid line stays, the label isn't cut. */
+  readonly label: string | undefined;
+}
+
+/** The axis for the view [v0, v1) across `width` px: as many ticks as fit, each label whole or not at all. */
+export const axisTicks = (v0: number, v1: number, width: number): Tick[] =>
+  ticks(v0, v1, Math.max(2, Math.floor(width / TICK_PX))).map((t) => {
+    const x = ((t - v0) / (v1 - v0)) * width;
+    const label = tickLabel(t, v0, v1);
+    return { t, x, label: x + labelPx(label) <= width ? label : undefined };
+  });
+
+/** The narrowest whole-order view: a lone 400 ms call would otherwise fill the track, with no tick to read it by. */
+export const MIN_WHOLE_MS = 10_000;
+/** Track px kept clear at either end, so the first bar doesn't touch the lane labels nor the last the window edge. */
+export const EDGE_PX = 12;
+
+/** The whole order as the timeline shows it across `width` px: at least MIN_WHOLE_MS, centred, inset by EDGE_PX. */
+export const wholeView = (m: Pick<Model, "startMs" | "endMs">, width: number): [number, number] => {
+  const span = Math.max(m.endMs - m.startMs, MIN_WHOLE_MS);
+  const a = (m.startMs + m.endMs - span) / 2;
+  const pad = width > 4 * EDGE_PX ? (span * EDGE_PX) / (width - 2 * EDGE_PX) : 0;
+  return [a - pad, a + span + pad];
 };
 
 /** Per category, the time of the items in a merged bar, for its hover card. */
