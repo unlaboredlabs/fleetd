@@ -168,6 +168,10 @@
 
   /* Floating surfaces only (menus, popovers, dialogs): one soft shadow, no glow. */
   --float-shadow: 0 8px 28px var(--shadow), 0 0 0 1px var(--hairline);
+  /* What Show went to in a chat (what the lead waits on): a soft ring in the accent, fading out over --dur-shown. */
+  --shown-ring: color-mix(in srgb, var(--accent) 45%, transparent);
+  --shown-ring-width: 4px;
+  --dur-shown: 2000ms;
 
   /* Motion: enter, exit and state change only; never continuous. */
   --dur-fast: 120ms;

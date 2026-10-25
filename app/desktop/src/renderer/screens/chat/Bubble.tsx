@@ -17,6 +17,7 @@ import { bubblesOf, isWide, quoteOf, TAPBACK_WORD, TAPBACKS, tapbackSend, type B
 import { MessageReceipt } from "./Composer";
 import { shortClock } from "./format";
 import { authorLabel, ENTER_MS, type Arrival, type Row } from "./model";
+import { markOf, useShown } from "./shown";
 import type { ProjectRef } from "./slots";
 import { bubbleKey, toggleTapback, useTapbacks } from "./tapbacks";
 import { Message } from "./text";
@@ -148,6 +149,9 @@ function BubbleLine(props: {
   const block = bubble.kind === "block";
   const wide = isWide(bubble);
   const jumbo = !block && EMOJI_ONLY.test(bubble.text.trim());
+  const mark = markOf(actions?.shown, item.id, bubble.key);
+  const box = useRef<HTMLDivElement>(null);
+  const shown = useShown(box, mark);
   const pick = (t: Tapback) => {
     if (actions === undefined) return;
     const was = props.tapback;
@@ -160,6 +164,9 @@ function BubbleLine(props: {
   return (
     <div className={cx(s.line, wide && s.wide, props.tapback !== undefined && s.reacted, enter.className)} style={enter.style}>
       <div
+        ref={box}
+        // Focusable from script while it is what Show went to; not a tab stop of its own.
+        tabIndex={shown ? -1 : undefined}
         className={cx(
           !block && !jumbo && s.bubble,
           !block && !jumbo && (mine ? s.mineBubble : s.theirs),
@@ -168,8 +175,10 @@ function BubbleLine(props: {
           wide && s.wide,
           block && s.blockBubble,
           jumbo && s.jumbo,
+          shown && s.waited,
         )}
         data-bubble={block ? bubble.block.kind : "text"}
+        data-part={bubble.key}
       >
         {block ? <Block block={bubble.block} answer={props.answer} /> : jumbo ? bubble.text.trim() : <Message text={bubble.text} project={actions?.project} />}
         {props.tapback !== undefined ? (

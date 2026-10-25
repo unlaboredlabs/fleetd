@@ -221,6 +221,63 @@
   background: var(--accent-fill);
   color: var(--on-accent);
 }
+/*
+ * What Show went to: a ring in the accent, held a moment and faded (--dur-shown); with motion it opens out first,
+ * reduced it is there at once and only fades. data-shown alternates per press (shown.ts), so a second press starts
+ * it again; a bubble remounted mid-fade picks it up where it was (--shown-since).
+ */
+.waited {
+  --shown-from: 0px;
+}
+.waited[data-shown] {
+  animation: shown-a var(--dur-shown) var(--ease-out) forwards;
+  animation-delay: calc(-1 * var(--shown-since, 0ms));
+}
+.waited[data-shown="1"] {
+  animation-name: shown-b;
+}
+@keyframes shown-a {
+  0% {
+    box-shadow: 0 0 0 var(--shown-from) var(--shown-ring);
+  }
+  12%,
+  60% {
+    box-shadow: 0 0 0 var(--shown-ring-width) var(--shown-ring);
+  }
+  100% {
+    box-shadow: 0 0 0 var(--shown-ring-width) transparent;
+  }
+}
+@keyframes shown-b {
+  0% {
+    box-shadow: 0 0 0 var(--shown-from) var(--shown-ring);
+  }
+  12%,
+  60% {
+    box-shadow: 0 0 0 var(--shown-ring-width) var(--shown-ring);
+  }
+  100% {
+    box-shadow: 0 0 0 var(--shown-ring-width) transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .waited {
+    --shown-from: var(--shown-ring-width);
+  }
+}
+/* The ring follows what it rings: a block's card, emoji without a bubble, an approval's card. */
+.blockBubble.waited {
+  border-radius: 14px;
+}
+.jumbo.waited,
+.waitedBox {
+  border-radius: var(--radius-md);
+}
+/* An approval's card sits in the column at its own width, as it did before the ring had a box. */
+.waitedBox {
+  max-width: 100%;
+  min-width: 0;
+}
 /* The quiet side of the line, shown while the row is hovered or has focus: tapback, reply, the time. */
 .aside {
   display: flex;
