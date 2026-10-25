@@ -2,18 +2,20 @@ name: CI
 
 on:
   pull_request:
+    # ready_for_review: a draft's skipped macOS jobs run once it is marked ready.
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
   workflow_dispatch:
 
-# A newer push to a PR cancels its running CI. Runs on main and on the merge train's batch PR (fleetd/train/batch) are
+# A newer push to a PR cancels its running CI. Runs on main and on the merge train's batch PR (<prefix>train/batch) are
 # never cancelled: each gets a group of its own.
 concurrency:
   group: >-
-    ${{ (github.ref == 'refs/heads/main' || github.head_ref == 'fleetd/train/batch')
+    ${{ (github.ref == 'refs/heads/main' || endsWith(github.head_ref || github.ref, 'train/batch'))
     && format('{0}-{1}', github.workflow, github.run_id)
     || format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref) }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.head_ref != 'fleetd/train/batch' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !endsWith(github.head_ref || github.ref, 'train/batch') }}
 
 permissions:
   contents: read
@@ -21,10 +23,10 @@ permissions:
 # Everything runs on GitHub-hosted runners, which are free for public repos. Rust caches are saved from main only:
 # the repo's 10 GB cache quota holds one copy per job, and pull requests restore main's.
 #
-# macOS runners are few, so the macOS jobs (rust-macos, desktop-macos) run only where they gate a merge: pushes to main,
-# the merge train's batch PR, workflow_dispatch, and PRs with the `macos` label (add it, then push or dispatch CI on
-# the branch). On other PRs they are skipped, and a skipped job counts as passed, so the required `rust (macos)` still
-# reports.
+# macOS runners are few, so the macOS jobs (rust-macos, desktop-macos) are skipped on draft PRs, which the merge train
+# never takes; a skipped job still reports, so the required `rust (macos)` does too. They run on every other PR (the
+# train merges a lone PR, picks batch members and splits a red batch on each PR's own CI), on main, on
+# workflow_dispatch, and on a draft labelled `macos` (macos-label.yml dispatches this workflow when the label is added).
 
 jobs:
   rust-crates:
@@ -141,23 +143,29 @@ jobs:
     # rust (linux)'s sealed boxes on macOS, and the node's power code (IOKit).
     name: rust (macos)
     if: >-
-      github.event_name != 'pull_request' || github.head_ref == 'fleetd/train/batch'
+      github.event_name != 'pull_request' || !github.event.pull_request.draft
       || contains(github.event.pull_request.labels.*.name, 'macos')
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 2
+          # A manual run from a branch compares with its merge base on main, so it needs the history.
+          fetch-depth: ${{ github.event_name == 'workflow_dispatch' && '0' || '2' }}
       - name: Scope
         # Does the work only when the node's code, the dependency set or this workflow changed; otherwise it reports
         # success at once. HEAD^1 is the base for a PR's merge commit and the previous main for a (squash-merged)
-        # push. The rest of crates/fleetd's macOS code is cross-built and checked by darwin-deps and the nightly.
+        # push; a manual run from a branch compares with the branch's merge base on main. The rest of crates/fleetd's
+        # macOS code is cross-built and checked by darwin-deps and the nightly.
         id: scope
         run: |
           run=true
-          if git rev-parse -q --verify HEAD^1 >/dev/null &&
-            git diff --quiet HEAD^1 HEAD -- crates/fleetd/src/node Cargo.toml Cargo.lock .github/workflows/ci.yml; then
+          base=$(git rev-parse -q --verify HEAD^1 || true)
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$GITHUB_REF" != refs/heads/main ]; then
+            base=$(git merge-base origin/main HEAD || true)
+          fi
+          if [ -n "$base" ] &&
+            git diff --quiet "$base" HEAD -- crates/fleetd/src/node Cargo.toml Cargo.lock .github/workflows/ci.yml; then
             run=false
             echo "Nothing macOS-relevant changed; rust (linux) covers this."
           fi
@@ -208,13 +216,18 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 2
+          # A manual run from a branch compares with its merge base on main, so it needs the history.
+          fetch-depth: ${{ github.event_name == 'workflow_dispatch' && '0' || '2' }}
       - name: Scope
         id: scope
         working-directory: .
         run: |
           run=true
-          if git rev-parse -q --verify HEAD^1 >/dev/null && git diff --quiet HEAD^1 HEAD -- app/desktop .github/workflows/ci.yml; then
+          base=$(git rev-parse -q --verify HEAD^1 || true)
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$GITHUB_REF" != refs/heads/main ]; then
+            base=$(git merge-base origin/main HEAD || true)
+          fi
+          if [ -n "$base" ] && git diff --quiet "$base" HEAD -- app/desktop .github/workflows/ci.yml; then
             run=false
             echo "app/desktop didn't change."
           fi
@@ -288,10 +301,10 @@ jobs:
 
   desktop-macos:
     # The nightly's macOS packaged smoke (build-release.yml, desktop-macos) on an ad-hoc signed arm64 test build, so a
-    # change that breaks the packed mac app fails here rather than only in the nightly. Same scope as desktop, and runs
-    # only where rust-macos does.
+    # change that breaks the packed mac app fails here rather than only in the nightly. Same scope as desktop, and
+    # skipped where rust-macos is.
     if: >-
-      github.event_name != 'pull_request' || github.head_ref == 'fleetd/train/batch'
+      github.event_name != 'pull_request' || !github.event.pull_request.draft
       || contains(github.event.pull_request.labels.*.name, 'macos')
     runs-on: macos-latest
     timeout-minutes: 15
@@ -301,13 +314,18 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 2
+          # A manual run from a branch compares with its merge base on main, so it needs the history.
+          fetch-depth: ${{ github.event_name == 'workflow_dispatch' && '0' || '2' }}
       - name: Scope
         id: scope
         working-directory: .
         run: |
           run=true
-          if git rev-parse -q --verify HEAD^1 >/dev/null && git diff --quiet HEAD^1 HEAD -- app/desktop .github/workflows/ci.yml; then
+          base=$(git rev-parse -q --verify HEAD^1 || true)
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$GITHUB_REF" != refs/heads/main ]; then
+            base=$(git merge-base origin/main HEAD || true)
+          fi
+          if [ -n "$base" ] && git diff --quiet "$base" HEAD -- app/desktop .github/workflows/ci.yml; then
             run=false
             echo "app/desktop didn't change."
           fi
