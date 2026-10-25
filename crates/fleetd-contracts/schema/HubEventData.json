@@ -2066,7 +2066,7 @@
       "oneOf": [
         {
           "const": "completed",
-          "description": "claude finished the turn.",
+          "description": "The agent finished the turn.",
           "type": "string"
         },
         {
@@ -2091,12 +2091,12 @@
         },
         {
           "const": "machine_slept",
-          "description": "The machine slept and claude's stream did not come back.",
+          "description": "The machine slept and the agent's stream did not come back.",
           "type": "string"
         },
         {
           "const": "exited",
-          "description": "claude exited or was killed with nobody asking; `failure` has the exit code or signal.",
+          "description": "The agent's process exited or was killed with nobody asking; `failure` has the exit code or signal.",
           "type": "string"
         },
         {

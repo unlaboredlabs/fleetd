@@ -25,7 +25,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
-use fleetd_contracts::effort::TaskProfile;
+use fleetd_contracts::effort::Effort;
 use fleetd_contracts::ids::{ProjectId, ThreadId, Timestamp};
 use fleetd_contracts::prim::{NonEmpty, Text};
 use fleetd_contracts::sessions::{
@@ -40,6 +40,7 @@ use fleetd_contracts::steer::SteerTag;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::time::Instant;
 
+use super::runner::claude::{self, failure, setup};
 use super::runner::claude::{
     ALWAYS_DISALLOWED, AUTO_MEMORY_OFF_ENV, DEFAULT_ENV, HELPER_MODEL_ENV, PROMPT_CACHE_TTL_VARS,
     SESSION_ENV, default_cache_ttl, subagents_off_settings_env,
@@ -47,7 +48,6 @@ use super::runner::claude::{
 use super::runner::{
     ExitInfo, RunOutcome, Runner, RunnerError, RunnerEvent, SessionCommand, SessionSpec,
 };
-use super::runner::{claude, claude_setup, failure};
 use super::store::{NodeStore, SessionLocal, SessionRow, StoreError};
 use super::util::{now_iso, tail_utf16};
 use super::wire::{NodeToHub, head_text, to_json};
@@ -175,8 +175,8 @@ impl SessionConfig {
             let extra = parse_env_file(&text);
             if extra.iter().any(|(k, _)| k == "ANTHROPIC_BASE_URL") {
                 env.push((
-                    claude_setup::FLEETD_ENV_SOURCE.to_owned(),
-                    claude_setup::tilde(&self.claude_env),
+                    setup::FLEETD_ENV_SOURCE.to_owned(),
+                    setup::tilde(&self.claude_env),
                 ));
             }
             env.extend(extra);
@@ -200,27 +200,21 @@ impl SessionConfig {
         env
     }
 
-    /// Each of [`PROMPT_CACHE_TTL_VARS`] for a session of `role`: `promptCacheTtl` in node.json for the role, else
-    /// what `env` ([`Self::runner_env`]) sets, else the role's default. The settings overlay carries it too, since an
-    /// `env` in the user's own settings outranks the process environment.
+    /// Each of [`PROMPT_CACHE_TTL_VARS`] for a session of `role`: what `env` ([`Self::runner_env`]) sets, else the
+    /// role's default. The settings overlay carries it too, since an `env` in the user's own settings outranks the
+    /// process environment.
     pub fn prompt_cache_env(
         &self,
         role: SessionRole,
         env: &[(String, String)],
     ) -> Vec<(String, String)> {
-        let configured = super::config::read_config(&self.home)
-            .ok()
-            .flatten()
-            .and_then(|c| c.prompt_cache_ttl.get(&role).copied());
         PROMPT_CACHE_TTL_VARS
             .iter()
             .map(|var| {
-                let set = env.iter().rev().find(|(k, _)| k == var);
-                let ttl = match (configured, set) {
-                    (Some(ttl), _) => ttl.as_str().to_owned(),
-                    (None, Some((_, value))) => value.clone(),
-                    (None, None) => default_cache_ttl(role).as_str().to_owned(),
-                };
+                let ttl = env.iter().rev().find(|(k, _)| k == var).map_or_else(
+                    || default_cache_ttl(role).as_str().to_owned(),
+                    |(_, v)| v.clone(),
+                );
                 ((*var).to_owned(), ttl)
             })
             .collect()
@@ -671,7 +665,15 @@ impl SessionService {
             .filter(|r| r.local.base_ref.is_some() && r.summary.worktree_path.is_some())
             .map(|r| r.summary.session_id.to_string())
             .collect();
-        for row in rows {
+        for mut row in rows {
+            // A session stored on another model or effort resumes on its profile's: only the two run.
+            let runner = &service.inner.runner;
+            let runs_on = runner.profile(runner.profile_of(&row.summary.model, row.summary.effort));
+            if (row.summary.model.as_str(), row.summary.effort) != (runs_on.model, runs_on.effort) {
+                row.summary.model = runs_on.model.into();
+                row.summary.effort = runs_on.effort;
+                service.inner.store.commit(&row, &[], false)?;
+            }
             if let (Some(pid), Some(started)) = (row.local.pid, &row.local.pid_start) {
                 proc::kill_recorded(pid, started, &row.summary.session_id, INTERRUPT_GRACE).await;
             }
@@ -1320,15 +1322,21 @@ impl SessionService {
             first.chars().take(80).collect()
         });
         // Only the two profiles run, whatever an older hub asks for.
-        let profile = TaskProfile::of(launch.model.as_str(), launch.effort);
+        let profile = launch.profile.unwrap_or_else(|| {
+            self.inner.runner.profile_of(
+                launch.model.as_deref().unwrap_or_default(),
+                launch.effort.unwrap_or(Effort::High),
+            )
+        });
+        let runs_on = self.inner.runner.profile(profile);
         let row = SessionRow {
             summary: SessionSummary {
                 session_id: launch.session_id.clone(),
                 project_id: launch.project_id.clone(),
                 title,
                 status: SessionStatus::Idle,
-                model: profile.model().into(),
-                effort: profile.effort(),
+                model: runs_on.model.into(),
+                effort: runs_on.effort,
                 runtime_mode: launch.runtime_mode,
                 latest_run: None,
                 active_run_id: None,
@@ -1346,7 +1354,7 @@ impl SessionService {
             local: SessionLocal {
                 cwd,
                 add_dirs,
-                config_dir: claude_setup::config_dir(&self.inner.config.runner_env()),
+                config_dir: setup::config_dir(&self.inner.config.runner_env()),
                 workspace_root: root,
                 base_ref,
                 branch,
@@ -1462,6 +1470,7 @@ impl SessionService {
                     api_status: None,
                     reset_at: None,
                     retries: 0,
+                    model: None,
                 };
                 run.end = Some(state::failure_end(&failure));
                 run.failure = Some(failure);
@@ -1553,12 +1562,8 @@ impl SessionService {
         }
         let config = &self.inner.config;
         let mut row = self.session(id)?;
-        let resume = state::start_mode(
-            &row.local,
-            &claude_setup::config_dir(&config.runner_env()),
-            id,
-        )
-        .map_err(|m| error(SessionErrorCode::RunnerUnavailable, m))?;
+        let resume = state::start_mode(&row.local, &setup::config_dir(&config.runner_env()), id)
+            .map_err(|m| error(SessionErrorCode::RunnerUnavailable, m))?;
         // A worktree that is gone (removed by `stop{removeWorktree}`, or deleted) comes back at the same path, so the
         // session still resumes, from what is left of its branch.
         let mut recreated = false;
@@ -2053,12 +2058,12 @@ impl SessionService {
                  stopped the session; the next start denies them. If it happens again, install the claude fleetd was \
                  tested with: claude install {}",
                 tools.join(", "),
-                crate::node::runner::version::TESTED
+                crate::node::runner::claude::version::TESTED
             ),
             None => format!(
                 "claude's init listed no tools, so fleetd could not check that its own agent tools are off, and \
                  stopped the session. Install the claude fleetd was tested with: claude install {}",
-                crate::node::runner::version::TESTED
+                crate::node::runner::claude::version::TESTED
             ),
         };
         tracing::error!(session_id = id, "{why}");
@@ -2093,6 +2098,7 @@ impl SessionService {
                         api_status: None,
                         reset_at: None,
                         retries: 0,
+                        model: None,
                     },
                 },
             });
@@ -2199,6 +2205,7 @@ impl SessionService {
                     api_status: None,
                     reset_at: None,
                     retries: 0,
+                    model: None,
                 })
             }
             outcome => outcome,

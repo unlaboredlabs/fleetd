@@ -128,10 +128,13 @@ pub enum ThreadStatus {
     Cancelled,
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ThreadError {
     pub class: String,
     pub message: String,
+    /// The model the failure names, when the runner read one off it (a gateway with no account for it).
+    pub model: Option<String>,
 }
 
 #[skip_serializing_none]

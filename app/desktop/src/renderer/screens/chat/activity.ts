@@ -5,8 +5,6 @@ import { eventData, isEvent, type Activity, type HubEvent, type ProjectRef } fro
 import { leadLaneId, selectLeadWorking } from "../../src/data/selectors";
 import type { DataState, ProjectKey } from "../../src/data/store";
 
-const FLEETD = "mcp__fleetd__";
-
 /** The lead's fleetd calls, by name or prefix, in plain words. */
 const FLEETD_WORDS: readonly (readonly [string, string])[] = [
   ["plan", "planning"],
@@ -38,14 +36,14 @@ export const doingWords = (a: Activity): string => {
       return "compacting its context";
     case "retrying":
       return `retrying (${String(a.attempt)} of ${String(a.of)})`;
+    case "web":
+      return "reading the web";
+    case "planning":
+      return "planning";
     case "tool": {
-      if (a.name.startsWith(FLEETD)) {
-        const op = a.name.slice(FLEETD.length);
-        return FLEETD_WORDS.find(([name]) => (name.endsWith("_") ? op.startsWith(name) : op === name))?.[1] ?? "asking fleetd";
+      if (a.server === "fleetd") {
+        return FLEETD_WORDS.find(([name]) => (name.endsWith("_") ? a.name.startsWith(name) : a.name === name))?.[1] ?? "asking fleetd";
       }
-      if (a.name === "Task" || a.name === "Agent") return "running a helper";
-      if (a.name === "WebFetch" || a.name === "WebSearch") return "reading the web";
-      if (a.name === "TodoWrite") return "planning";
       return "working";
     }
   }

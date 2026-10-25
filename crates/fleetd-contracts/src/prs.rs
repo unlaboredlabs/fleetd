@@ -9,7 +9,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
-use crate::effort::Effort;
+use crate::effort::TaskProfile;
 use crate::ids::{ThreadRef, Timestamp};
 use crate::ledger::WorkstreamId;
 use crate::live::{AgentRole, LaneId};
@@ -92,8 +92,7 @@ pub struct PrAuthor {
     pub role: Option<AgentRole>,
     /// The agent's task title.
     pub title: Option<Text<0, 80>>,
-    pub model: Option<Text<1, 80>>,
-    pub effort: Option<Effort>,
+    pub profile: Option<TaskProfile>,
     /// Its session, for `agent_work`.
     pub thread_ref: Option<ThreadRef>,
     /// GitHub login; absent when GitHub wasn't reached.

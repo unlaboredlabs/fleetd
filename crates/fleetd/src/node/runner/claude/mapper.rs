@@ -13,7 +13,7 @@ use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::prim::{NonEmpty, Text};
 use fleetd_contracts::sessions::{
     FailureClass, ItemKind, ItemStatus, PermissionDecision, RunFailure, RunUsage, SendMode,
-    SendNow, ThreadItem,
+    SendNow, ThreadItem, ToolClass,
 };
 use fleetd_contracts::time::{DecidedBy, SpanStatus};
 use serde_json::{Value, json};
@@ -23,10 +23,10 @@ use super::protocol::{
     StreamEvent, System, User, UserContent,
 };
 use super::spans::SpanBuilder;
-use crate::node::runner::conformance::{
+use crate::node::runner::claude::conformance::{
     SEND_NOW_CAPABILITY, agent_like, missing_init_capabilities,
 };
-use crate::node::runner::failure::FailureEvidence;
+use crate::node::runner::claude::failure::FailureEvidence;
 use crate::node::runner::{ExitInfo, RateLimit, RunOutcome, RunnerEvent};
 use crate::node::util::{head_utf16, tail_utf16};
 
@@ -693,11 +693,8 @@ impl StreamMapper {
         for (key, field) in [
             ("input_tokens", &mut now.input_tokens),
             ("output_tokens", &mut now.output_tokens),
-            ("cache_read_input_tokens", &mut now.cache_read_input_tokens),
-            (
-                "cache_creation_input_tokens",
-                &mut now.cache_creation_input_tokens,
-            ),
+            ("cache_read_input_tokens", &mut now.cache_read_tokens),
+            ("cache_creation_input_tokens", &mut now.cache_write_tokens),
         ] {
             if let Some(n) = usage.get(key).and_then(serde_json::Value::as_u64) {
                 *field = n;
@@ -776,6 +773,7 @@ impl StreamMapper {
                         input: Value::Null,
                         output: Some(summary.to_owned()),
                         output_omitted: false,
+                        class: None,
                     };
                     let item = self.item(
                         id,
@@ -852,12 +850,16 @@ impl StreamMapper {
                     output_omitted: false,
                 },
                 ItemKind::Tool {
-                    tool_name, input, ..
+                    tool_name,
+                    input,
+                    class,
+                    ..
                 } => ItemKind::Tool {
                     tool_name,
                     input,
                     output: Some(output),
                     output_omitted: false,
+                    class,
                 },
                 other => other,
             };
@@ -935,8 +937,8 @@ impl StreamMapper {
         let usage = result.usage.as_ref().map(|u| RunUsage {
             input_tokens: u.input_tokens,
             output_tokens: u.output_tokens,
-            cache_read_input_tokens: u.cache_read_input_tokens,
-            cache_creation_input_tokens: u.cache_creation_input_tokens,
+            cache_read_tokens: u.cache_read_input_tokens,
+            cache_write_tokens: u.cache_creation_input_tokens,
             cost_usd: result.total_cost_usd,
         });
         let aborted = result
@@ -1086,6 +1088,7 @@ impl StreamMapper {
             api_status: evidence.api_error_status,
             reset_at: None,
             retries: 0,
+            model: None,
         })
     }
 
@@ -1212,6 +1215,7 @@ fn tool_kind(name: &str, input: Value) -> (ItemKind, String) {
         _ => {
             let kind = ItemKind::Tool {
                 tool_name: name.to_owned(),
+                class: tool_class(name, &input),
                 input,
                 output: None,
                 output_omitted: false,
@@ -1219,6 +1223,36 @@ fn tool_kind(name: &str, input: Value) -> (ItemKind, String) {
             (kind, name.to_owned())
         }
     }
+}
+
+/// claude's tools in fleetd's words ([`ToolClass`]), so the hub and app never read a claude tool name.
+fn tool_class(name: &str, input: &Value) -> Option<ToolClass> {
+    let field = |keys: &[&str]| {
+        keys.iter()
+            .find_map(|k| str_field(input, k))
+            .map(str::to_owned)
+    };
+    Some(match name {
+        "Read" | "NotebookRead" => ToolClass::Read {
+            path: field(&["file_path", "notebook_path", "path"]),
+        },
+        "Grep" | "Glob" => ToolClass::Search {
+            pattern: field(&["pattern"]),
+        },
+        "WebFetch" | "WebSearch" => ToolClass::Web {
+            url: field(&["url"]),
+            query: field(&["query"]),
+        },
+        "TodoWrite" => ToolClass::Plan,
+        _ => {
+            // `mcp__<server>__<tool>`, as claude names an MCP server's tools.
+            let (server, tool) = name.strip_prefix("mcp__")?.split_once("__")?;
+            ToolClass::Mcp {
+                server: server.to_owned(),
+                tool: tool.to_owned(),
+            }
+        }
+    })
 }
 
 /// One line for a person deciding: the command, the path, or the tool's own description.
@@ -1249,6 +1283,6 @@ mod tests;
 fn add_usage(total: &mut RunUsage, more: &RunUsage) {
     total.input_tokens += more.input_tokens;
     total.output_tokens += more.output_tokens;
-    total.cache_read_input_tokens += more.cache_read_input_tokens;
-    total.cache_creation_input_tokens += more.cache_creation_input_tokens;
+    total.cache_read_tokens += more.cache_read_tokens;
+    total.cache_write_tokens += more.cache_write_tokens;
 }

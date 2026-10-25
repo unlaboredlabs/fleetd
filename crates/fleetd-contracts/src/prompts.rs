@@ -216,7 +216,7 @@ pub struct SessionPrompt {
     /// The text's full git blob SHA.
     pub text_sha: String,
     pub refs: Vec<SessionPromptRef>,
-    /// Tools the claude runner never offers a fleetd session.
+    /// Tools the node's runner never offers a fleetd session.
     pub disallowed_tools: Vec<String>,
 }
 

@@ -100,7 +100,7 @@ export const barCard = (m: Model, row: number, bar: Bar, names: Names, nowMs: nu
     lines.push(`retried on HTTP ${x.httpStatus}${x.statedDelayMs === undefined ? "" : ` · claude said wait ${fmtDur(x.statedDelayMs)}`}`);
   }
   if (x?.reason !== undefined && x.reason !== "") lines.push(x.reason);
-  if (x?.claudeMs !== undefined) lines.push(`claude's own figure: ${fmtDur(x.claudeMs)}`);
+  if (x?.runnerMs !== undefined) lines.push(`the agent's own figure: ${fmtDur(x.runnerMs)}`);
   const hint =
     x?.url !== undefined
       ? "Click to open the check on GitHub."

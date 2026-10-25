@@ -180,7 +180,7 @@ export const KIND_WORD: Record<SpanKind, string> = {
   "wait.retry.node": "node retries",
   "run.startup": "startup",
   compaction: "compaction",
-  "claude.other": "claude overhead",
+  "runner.other": "agent overhead",
   "wait.offline": "machine offline",
   "queue.slot": "agent limit",
   "queue.lease": "waiting on another agent",

@@ -4,7 +4,6 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 
-use fleetd_contracts::effort::TaskProfile;
 use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::sessions::{
     MachineEvent, MachineEventFrame, ProjectInfo, RunInfo, RunnerInfo, SessionSummary, ThreadItem,
@@ -620,14 +619,9 @@ impl NodeStore {
     }
 }
 
-/// A session stored on another model or effort resumes on its profile's (`TaskProfile::of`): only the two run.
 fn decode_session(summary: &str, local: &str) -> StoreResult<SessionRow> {
-    let mut summary: SessionSummary = serde_json::from_str(summary)?;
-    let profile = TaskProfile::of(&summary.model, summary.effort);
-    summary.model = profile.model().into();
-    summary.effort = profile.effort();
     Ok(SessionRow {
-        summary,
+        summary: serde_json::from_str(summary)?,
         local: serde_json::from_str(local)?,
     })
 }

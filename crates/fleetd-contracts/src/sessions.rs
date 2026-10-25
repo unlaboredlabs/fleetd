@@ -1,4 +1,4 @@
-//! Node sessions: how the hub drives Claude sessions that `fleetd node` runs itself, over the existing node link.
+//! Node sessions: how the hub drives the agent sessions that `fleetd node` runs itself, over the existing node link.
 //!
 //! The hub sends [`SessionCallFrame`]s; the node answers each with exactly one [`SessionReplyFrame`] carrying the same
 //! `id`. Two streams flow back without being asked for, once the hub has subscribed:
@@ -7,21 +7,21 @@
 //! - [`ThreadEventFrame`]: messages, items, runs and live text deltas, only for sessions the hub follows. Deltas are
 //!   never stored or replayed.
 //!
-//! A session's id is the thread id the rest of fleetd already uses, and also the `claude --session-id`, so a session
-//! survives a node restart through `claude --resume <id>` in the same cwd and config dir.
+//! A session's id is the thread id the rest of fleetd already uses. The runner maps it onto its own conversation (the
+//! claude runner passes it as `--session-id` and resumes with `--resume <id>`), so a session survives a node restart.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_with::skip_serializing_none;
 
-use crate::effort::Effort;
+use crate::effort::{Effort, TaskProfile};
 use crate::ids::{ProjectId, ThreadId, Timestamp};
 use crate::model::RuntimeMode;
 use crate::prim::{Count, Int, NonEmpty, Text};
 use crate::steer::{SteerReceipt, SteerTag};
 
-/// Which agent runtime runs a session. Codex comes later as its own adapter.
+/// Which agent runtime runs a session. Each has its own adapter on the node; nothing else tells them apart.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RunnerKind {
@@ -61,19 +61,23 @@ pub enum SessionWorkspace {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionLaunch {
-    /// Minted by the hub (a UUID), used as the thread id and the claude session id.
+    /// Minted by the hub (a UUID), used as the thread id and the runner's conversation id.
     pub session_id: ThreadId,
     pub project_id: ProjectId,
     pub title: Option<String>,
     #[serde(default)]
     pub runner: RunnerKind,
-    pub model: NonEmpty,
-    pub effort: Effort,
+    /// The node's runner picks the model and effort it runs on. Absent from a hub before profiles, which sends
+    /// `model` and `effort` instead.
+    pub profile: Option<TaskProfile>,
+    /// A hub before profiles only: the runner reads its profile off these.
+    pub model: Option<NonEmpty>,
+    pub effort: Option<Effort>,
     pub runtime_mode: RuntimeMode,
     pub workspace: SessionWorkspace,
     /// The first user message.
     pub prompt: NonEmpty,
-    /// Minted by the hub (a UUID); the first run's id and the claude user-message uuid.
+    /// Minted by the hub (a UUID); the first run's id.
     pub run_id: NonEmpty,
     /// `--allowedTools` rules from the project's policy (`tools.allow`), in claude's own syntax: these never prompt.
     #[serde(default)]
@@ -389,25 +393,25 @@ pub enum LoginStatus {
 #[serde(rename_all = "camelCase")]
 pub struct RunnerInfo {
     pub runner: RunnerKind,
-    /// As `claude --version` prints it; absent when the binary is missing.
+    /// As the runner's CLI prints it; absent when the binary is missing.
     pub version: Option<String>,
     /// The range this fleetd supports, e.g. ">=2.1.300, <2.2.0".
     pub supported: String,
     /// Inside `supported`. Outside it sessions still run; the doctor warns.
     pub version_ok: bool,
     pub login: LoginStatus,
-    /// "subscription", "api_key", "token" (an ANTHROPIC_AUTH_TOKEN gateway) or "none".
+    /// The runner's own word for the login, e.g. claude's "subscription", "api_key", "token" or "none".
     pub login_kind: Option<String>,
     /// The last zero-cost conformance probe passed against the installed binary.
     pub conformance_ok: Option<bool>,
     pub problem: Option<String>,
     /// A person's name for the login: "Max", "API key", "gateway token", ….
     pub login_label: Option<String>,
-    /// The `ANTHROPIC_BASE_URL` sessions go through, when it is not Anthropic's own.
+    /// The proxy or gateway sessions go through, when it is not the provider's own endpoint.
     pub proxy: Option<String>,
     /// Where `proxy` is set, e.g. "~/.claude/settings.json".
     pub proxy_source: Option<String>,
-    /// The claude config dir sessions use: the user's own `~/.claude` unless the machine was given another.
+    /// The runner's config dir sessions use, when it has one: the user's own unless the machine was given another.
     pub config_dir: Option<String>,
 }
 
@@ -637,15 +641,15 @@ pub enum FailureClass {
     RateLimit,
     /// No account or provider behind a gateway can serve the model.
     PoolExhausted,
-    /// Not logged in, or the login expired: needs `claude /login` on the machine. Never retried.
+    /// Not logged in, or the login expired: needs the runner's login on the machine. Never retried.
     Auth,
-    /// 529 or 5xx after claude's own retries.
+    /// 529 or 5xx after the runner's own retries.
     Overloaded,
-    /// No HTTP response after claude's own retries.
+    /// No HTTP response after the runner's own retries.
     Network,
     /// The request itself is wrong (bad model, prompt too long). Never retried.
     InvalidRequest,
-    /// claude exited or was killed outside an interrupt.
+    /// The agent's process exited or was killed outside an interrupt.
     ProcessExited,
     Other,
 }
@@ -655,7 +659,7 @@ pub enum FailureClass {
 #[serde(rename_all = "camelCase")]
 pub struct RunFailure {
     pub class: FailureClass,
-    /// claude's own text (its result or assistant error), then the tail of its stderr. Never rewritten.
+    /// The runner's own text (its result or error), then the tail of its stderr. Never rewritten.
     pub message: Text<1, 4000>,
     pub api_status: Option<u16>,
     /// UsageLimit and RateLimit: when to continue.
@@ -663,6 +667,8 @@ pub struct RunFailure {
     /// How many times the node retried the run before giving up (Overloaded, Network).
     #[serde(default)]
     pub retries: u32,
+    /// PoolExhausted: the model the gateway has no account for, as the runner read it off the error.
+    pub model: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -692,7 +698,7 @@ impl RunStatus {
 #[serde(rename_all = "snake_case")]
 #[schemars(extend("x-open" = true))]
 pub enum RunEnd {
-    /// claude finished the turn.
+    /// The agent finished the turn.
     Completed,
     /// Someone interrupted or stopped it: `RunInfo.endedBy` says who.
     Requested,
@@ -702,9 +708,9 @@ pub enum RunEnd {
     NodeStopping,
     /// The node found it active on start: it died with the node process (crash, SIGKILL, power loss).
     NodeRestarted,
-    /// The machine slept and claude's stream did not come back.
+    /// The machine slept and the agent's stream did not come back.
     MachineSlept,
-    /// claude exited or was killed with nobody asking; `failure` has the exit code or signal.
+    /// The agent's process exited or was killed with nobody asking; `failure` has the exit code or signal.
     Exited,
     /// A usage, rate or pool limit; `failure.resetAt` says when to continue.
     Limited,
@@ -723,12 +729,20 @@ pub enum RunEnd {
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
+/// A run's tokens, the same for every provider: each runner maps its own usage onto these. `input_tokens` counts
+/// only the input no cache served or stored, so the four token counts add up to everything the model was sent and
+/// wrote. A provider that reports cached tokens inside its prompt tokens has them taken out of `input_tokens`; one
+/// that bills no cache writes reports 0 for them. The wire names stay those the first runner used.
 pub struct RunUsage {
     pub input_tokens: u64,
     pub output_tokens: u64,
-    pub cache_read_input_tokens: u64,
-    pub cache_creation_input_tokens: u64,
-    /// claude's own estimate from the result message; not a bill.
+    /// Input served from the provider's prompt cache.
+    #[serde(rename = "cacheReadInputTokens")]
+    pub cache_read_tokens: u64,
+    /// Input written to the provider's prompt cache, at whatever lifetime.
+    #[serde(rename = "cacheCreationInputTokens")]
+    pub cache_write_tokens: u64,
+    /// The runner's own estimate, when its CLI reports one; not a bill.
     pub cost_usd: Option<f64>,
 }
 
@@ -913,7 +927,7 @@ pub enum ItemKind {
         tool_name: String,
         path: String,
     },
-    /// Any other tool, MCP tools included.
+    /// Any other tool, MCP tools included. `tool_name` is the runner's own name for it; `class` says what it does.
     #[serde(rename_all = "camelCase")]
     Tool {
         tool_name: String,
@@ -921,6 +935,8 @@ pub enum ItemKind {
         output: Option<String>,
         #[serde(default)]
         output_omitted: bool,
+        /// Absent for a tool fleetd has no word for, and from older nodes.
+        class: Option<ToolClass>,
     },
     /// A permission prompt (`can_use_tool`) and how it was answered.
     #[serde(rename_all = "camelCase")]
@@ -937,17 +953,17 @@ pub enum ItemKind {
         pre_tokens: Option<u64>,
         post_tokens: Option<u64>,
     },
-    /// claude retrying an API call itself (`api_retry`).
+    /// The runner retrying an API call itself (claude's `api_retry`).
     #[serde(rename_all = "camelCase")]
     ApiRetry {
         attempt: u32,
         max_retries: u32,
         error_status: Option<u16>,
         error: String,
-        /// The wait claude announced before retrying.
+        /// The wait the runner announced before retrying.
         retry_delay_ms: Option<u64>,
     },
-    /// The node continuing a run itself after claude's own retries gave up (Overloaded, Network): `attempt` of
+    /// The node continuing a run itself after the runner's own retries gave up (Overloaded, Network): `attempt` of
     /// `of`, sent after `delay_ms`, because of `reason`.
     #[serde(rename_all = "camelCase")]
     NodeRetry {
@@ -959,6 +975,27 @@ pub enum ItemKind {
     Error {
         failure: RunFailure,
     },
+}
+
+/// What a tool call does, in fleetd's words: the runner maps its own tools onto these, so nothing past it reads a tool
+/// name.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ToolClass {
+    /// Reads a file.
+    Read { path: Option<String> },
+    /// Searches files by name or content.
+    Search { pattern: Option<String> },
+    /// Fetches a page or searches the web.
+    Web {
+        url: Option<String>,
+        query: Option<String>,
+    },
+    /// Keeps the agent's own todo list.
+    Plan,
+    /// Calls a tool of an MCP server; fleetd's own is `fleetd`.
+    Mcp { server: String, tool: String },
 }
 
 #[skip_serializing_none]

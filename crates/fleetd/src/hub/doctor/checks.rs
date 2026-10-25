@@ -7,11 +7,8 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
 
-use crate::cli::setup::machine_plan::CLAUDE_INSTALL;
 use crate::hub::tasks::base;
-use crate::node::runner::claude_setup::ClaudeSetup;
-use crate::node::runner::failure::login_fix;
-use crate::node::runner::version::{self, TESTED as CLAUDE_TESTED, VersionVerdict};
+use crate::node::runner::{RunnerGuide, guide};
 use fleetd_contracts::node_link::NodeDisk;
 use fleetd_contracts::sessions::{BaseErrorKind, LoginStatus, RunnerInfo, WorktreeBase};
 
@@ -315,20 +312,21 @@ pub struct MachineView {
     pub degraded_reason: Option<String>,
 }
 
-/// The one fix for a machine whose runner is unusable, from the cause its probe reports: claude missing, a protocol
-/// break, logged out. Two causes at once become one ordered sentence (the install first, since a login on a claude
-/// that can't run proves nothing). None when the runner reports no cause.
+/// The one fix for a machine whose runner is unusable, from the cause its probe reports: the runner missing, a
+/// protocol break, logged out. Two causes at once become one ordered sentence (the install first, since a login on a
+/// runner that can't run proves nothing). None when the runner reports no cause.
 pub fn runner_fix(machine_id: &str, info: &RunnerInfo) -> Option<DoctorFix> {
-    let claude = match &info.version {
-        None => Some(("Install Claude Code", CLAUDE_INSTALL.to_owned())),
-        Some(_) if info.conformance_ok == Some(false) => Some((
-            "Put the tested claude",
-            format!("claude install {CLAUDE_TESTED}"),
-        )),
+    let g = guide(info.runner);
+    let name = g.name();
+    let install = match &info.version {
+        None => Some((format!("Install {}", g.product()), g.install())),
+        Some(_) if info.conformance_ok == Some(false) => {
+            Some((format!("Put the tested {name}"), g.pin_tested()))
+        }
         Some(_) => None,
     };
-    let login = (info.login == LoginStatus::LoggedOut).then(|| login_fix(info.proxy.is_some()));
-    Some(match (claude, login) {
+    let login = (info.login == LoginStatus::LoggedOut).then(|| g.login_fix(info.proxy.is_some()));
+    Some(match (install, login) {
         (None, None) => return None,
         (Some((label, command)), None) => {
             manual(&format!("{label} on {machine_id}"), Some(command))
@@ -336,13 +334,13 @@ pub fn runner_fix(machine_id: &str, info: &RunnerInfo) -> Option<DoctorFix> {
         // Behind a proxy the proxy holds the login: nothing to paste.
         (None, Some(login)) if info.proxy.is_some() => manual(
             &format!(
-                "On {machine_id}, {login} (claude goes through {})",
+                "On {machine_id}, {login} ({name} goes through {})",
                 info.proxy.as_deref().unwrap_or_default()
             ),
             None,
         ),
         (None, Some(login)) => manual(
-            &format!("Log claude in on {machine_id}"),
+            &format!("Log {name} in on {machine_id}"),
             Some(login.to_owned()),
         ),
         (Some((_, command)), Some(login)) => {
@@ -351,7 +349,7 @@ pub fn runner_fix(machine_id: &str, info: &RunnerInfo) -> Option<DoctorFix> {
     })
 }
 
-/// The node's link to the hub; what it runs is checked by the claude checks.
+/// The node's link to the hub; what it runs is checked by the runner checks.
 pub fn machine_online(
     machine: &MachineView,
     setup: Option<&MachineSetup>,
@@ -382,7 +380,7 @@ pub fn machine_online(
                 Some((cause, fix)) => (cause, Some(fix.trim_end_matches('.'))),
                 None => (reason, None),
             };
-            // The cause decides the fix: a runner problem is fixed on claude, and only a node with no runner cause
+            // The cause decides the fix: a runner problem is fixed on the runner, and only a node with no runner cause
             // gets the restart.
             let fix = match (runner.and_then(|info| runner_fix(id, info)), embedded) {
                 (Some(fix), _) => Some(fix),
@@ -403,62 +401,66 @@ pub fn machine_online(
     }
 }
 
-/// `claude_version`, `claude_login` and `runner_conformance` from what the node's runner reports (`runner_info`).
+/// `<runner>_version`, `<runner>_login` and `runner_conformance` (claude's: `claude_version`, `claude_login`) from what
+/// the node's runner reports (`runner_info`).
 pub fn runner_checks(machine_id: &str, info: &RunnerInfo) -> Vec<Entry> {
-    // Sessions use the machine's own claude setup, so the fix is the login the user would do for their own claude.
-    let setup = ClaudeSetup::from_info(info);
+    let g = guide(info.runner);
+    let name = g.name();
+    let (version_check, login_check) = (format!("{name}_version"), format!("{name}_login"));
+    // Sessions use the machine's own runner setup, so the fix is the login the user would do for their own.
+    let setup = g.setup(info);
     let login_fix = || {
-        Some(if setup.proxy.is_some() {
+        Some(if info.proxy.is_some() {
             manual(
                 &format!(
-                    "On {machine_id}, {} (claude goes through {})",
-                    login_fix(true),
-                    setup.proxy.as_deref().unwrap_or_default()
+                    "On {machine_id}, {} ({name} goes through {})",
+                    g.login_fix(true),
+                    info.proxy.as_deref().unwrap_or_default()
                 ),
                 None,
             )
         } else {
             manual(
-                &format!("Log claude in on {machine_id}"),
-                Some(login_fix(false).into()),
+                &format!("Log {name} in on {machine_id}"),
+                Some(g.login_fix(false).into()),
             )
         })
     };
     let version = match &info.version {
         None => machine_entry(
             machine_id,
-            "claude_version",
+            &version_check,
             Fail,
-            &format!("claude is not installed on {machine_id}; its sessions can't start."),
+            &format!("{name} is not installed on {machine_id}; its sessions can't start."),
             Some(manual(
-                &format!("Install Claude Code on {machine_id}"),
-                Some(CLAUDE_INSTALL.into()),
+                &format!("Install {} on {machine_id}", g.product()),
+                Some(g.install()),
             )),
         ),
-        Some(found) => version_entry(found, |status, message, fix| {
-            machine_entry(machine_id, "claude_version", status, message, fix)
+        Some(found) => version_entry(g, found, |status, message, fix| {
+            machine_entry(machine_id, &version_check, status, message, fix)
         }),
     };
     let login = match info.login {
         LoginStatus::LoggedIn => machine_entry(
             machine_id,
-            "claude_login",
+            &login_check,
             Pass,
             &format!("{machine_id}: {setup}."),
             None,
         ),
         LoginStatus::LoggedOut => machine_entry(
             machine_id,
-            "claude_login",
+            &login_check,
             Fail,
             &format!("{machine_id}: {setup}, so its sessions can't start."),
             login_fix(),
         ),
         LoginStatus::Unknown => machine_entry(
             machine_id,
-            "claude_login",
+            &login_check,
             Unknown,
-            &format!("{machine_id}'s node could not tell whether its claude is logged in."),
+            &format!("{machine_id}'s node could not tell whether its {name} is logged in."),
             None,
         ),
     };
@@ -467,7 +469,7 @@ pub fn runner_checks(machine_id: &str, info: &RunnerInfo) -> Vec<Entry> {
             machine_id,
             "runner_conformance",
             Pass,
-            "claude speaks the stream-json protocol fleetd expects.",
+            &format!("{name} speaks {} fleetd expects.", g.protocol()),
             None,
         ),
         Some(false) => machine_entry(
@@ -476,19 +478,19 @@ pub fn runner_checks(machine_id: &str, info: &RunnerInfo) -> Vec<Entry> {
             Fail,
             &info.problem.clone().unwrap_or_else(|| {
                 format!(
-                    "claude on {machine_id} did not answer fleetd's protocol probe as expected."
+                    "{name} on {machine_id} did not answer fleetd's protocol probe as expected."
                 )
             }),
             Some(manual(
-                &format!("Put the tested claude on {machine_id}"),
-                Some(format!("claude install {CLAUDE_TESTED}")),
+                &format!("Put the tested {name} on {machine_id}"),
+                Some(g.pin_tested()),
             )),
         ),
         None => machine_entry(
             machine_id,
             "runner_conformance",
             Unknown,
-            &format!("{machine_id}'s node has not probed its claude yet."),
+            &format!("{machine_id}'s node has not probed its {name} yet."),
             None,
         ),
     };
@@ -497,21 +499,22 @@ pub fn runner_checks(machine_id: &str, info: &RunnerInfo) -> Vec<Entry> {
 
 /// The version verdict as a check: a warning outside the tested versions, which still run.
 fn version_entry(
+    g: &dyn RunnerGuide,
     found: &str,
     entry: impl Fn(DoctorStatus, &str, Option<DoctorFix>) -> Entry,
 ) -> Entry {
-    let v = version::check(found);
-    let fix = v
-        .fix()
-        .map(|command| manual("Change the installed claude", Some(command)));
-    let problem = v.problem(found).unwrap_or_default();
-    match v {
-        VersionVerdict::Ok => entry(
+    let name = g.name();
+    match g.version_problem(found) {
+        None => entry(
             Pass,
-            &format!("claude {} is supported.", found.trim()),
+            &format!("{name} {} is supported.", found.trim()),
             None,
         ),
-        _ => entry(Warn, &problem, fix),
+        Some((problem, fix)) => entry(
+            Warn,
+            &problem,
+            fix.map(|command| manual(&format!("Change the installed {name}"), Some(command))),
+        ),
     }
 }
 
@@ -881,6 +884,7 @@ pub fn fork_behind(machine_id: &str, bases: &[(String, WorktreeBase)]) -> Option
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cli::setup::machine_plan::CLAUDE_INSTALL;
 
     fn base(error: Option<(BaseErrorKind, &str)>, fork_behind: Option<u32>) -> WorktreeBase {
         WorktreeBase {

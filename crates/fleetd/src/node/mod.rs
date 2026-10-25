@@ -113,7 +113,6 @@ pub async fn join(args: JoinArgs) -> Result<(), NodeError> {
         min_free_gb: None,
         mem_per_agent_gb: None,
         disk_per_agent_gb: None,
-        prompt_cache_ttl: Default::default(),
         enrolled: false,
     };
     write_config(&home, &config).map_err(|_| {

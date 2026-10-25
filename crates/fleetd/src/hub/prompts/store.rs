@@ -450,7 +450,9 @@ impl Prompts<'_> {
             text,
             text_sha,
             refs: serde_json::from_str(&refs)?,
-            disallowed_tools: crate::node::runner::claude::ALWAYS_DISALLOWED
+            // The hub doesn't keep which runner a session ran on; every node runs the default one so far.
+            disallowed_tools: crate::node::runner::guide(Default::default())
+                .denied_tools()
                 .iter()
                 .map(|t| (*t).to_owned())
                 .collect(),

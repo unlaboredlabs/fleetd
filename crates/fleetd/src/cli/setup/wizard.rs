@@ -18,8 +18,8 @@ use super::{HubPlan, InitOptions, Probe, install_hub, probe_listen};
 use crate::cli::hub_key::open_hub;
 use crate::cli::pair;
 use crate::hub::doctor::checks::{self, CmdOutcome, DoctorStatus};
-use crate::node::runner::claude_setup::{ClaudeSetup, describe};
-use crate::node::runner::version::{self, VersionVerdict};
+use crate::node::runner::claude::setup::{ClaudeSetup, describe};
+use crate::node::runner::claude::version::{self, VersionVerdict};
 
 const PORT: u16 = 4790;
 const AGAIN: &str = "Run fleetd init to continue; it keeps what's done.";

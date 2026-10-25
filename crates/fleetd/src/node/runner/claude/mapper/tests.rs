@@ -74,6 +74,7 @@ fn replay_with(name: &str, before_exit: impl FnOnce(&mut StreamMapper)) -> Repla
             api_status: e.api_error_status,
             reset_at: None,
             retries: 0,
+            model: None,
         })
     });
     let mut mapper = StreamMapper::new("s", classify);
@@ -285,8 +286,8 @@ fn two_turns_in_one_process() {
         Some(RunUsage {
             input_tokens: 2,
             output_tokens: output,
-            cache_read_input_tokens: cache_read,
-            cache_creation_input_tokens: cache_creation,
+            cache_read_tokens: cache_read,
+            cache_write_tokens: cache_creation,
             cost_usd: Some(cost),
         })
     };
@@ -595,7 +596,7 @@ fn api_errors_become_failure_evidence_and_never_the_agents_reply() {
 /// The mapper's evidence through R2's real classifier: each recorded failure lands in its §3.6 class.
 #[test]
 fn recorded_failures_land_in_their_class() {
-    use crate::node::runner::failure::classify;
+    use crate::node::runner::claude::failure::classify;
     let cases = [
         ("invalid-model", FailureClass::InvalidRequest),
         ("not-logged-in", FailureClass::Auth),
@@ -724,7 +725,7 @@ fn a_refused_start_ends_the_run_with_claudes_words() {
     );
     assert_eq!(replay.evidence[0].exit.as_ref(), Some(exit));
     // What the session service reads to send the run again to a resumed process.
-    let failure = crate::node::runner::failure::classify(&replay.evidence[0]).unwrap();
+    let failure = crate::node::runner::claude::failure::classify(&replay.evidence[0]).unwrap();
     assert_eq!(failure.class, FailureClass::ProcessExited);
     assert!(crate::node::runner::claude::session_in_use(
         failure.message.as_str()
@@ -885,7 +886,7 @@ fn streamed_usage_adds_up_over_the_run_s_messages() {
                     run_id,
                     usage.input_tokens,
                     usage.output_tokens,
-                    usage.cache_read_input_tokens,
+                    usage.cache_read_tokens,
                 ));
             }
         }
@@ -1313,4 +1314,38 @@ fn a_notice_turn_on_resume_ends_no_run_of_fleetds() {
         ]
     );
     assert!(!mapper.has_open_run());
+}
+
+#[test]
+fn claudes_tools_arrive_classified() {
+    let class = |name: &str, input: Value| tool_class(name, &input);
+    assert_eq!(
+        class("Read", json!({ "file_path": "/x/a.rs" })),
+        Some(ToolClass::Read {
+            path: Some("/x/a.rs".into())
+        })
+    );
+    assert_eq!(
+        class("Glob", json!({ "pattern": "**/*.rs" })),
+        Some(ToolClass::Search {
+            pattern: Some("**/*.rs".into())
+        })
+    );
+    assert_eq!(
+        class("WebSearch", json!({ "query": "tokio" })),
+        Some(ToolClass::Web {
+            url: None,
+            query: Some("tokio".into())
+        })
+    );
+    assert_eq!(class("TodoWrite", json!({})), Some(ToolClass::Plan));
+    assert_eq!(
+        class("mcp__fleetd__spawn_agent", json!({})),
+        Some(ToolClass::Mcp {
+            server: "fleetd".into(),
+            tool: "spawn_agent".into()
+        })
+    );
+    assert_eq!(class("Skill", json!({})), None);
+    assert_eq!(class("mcp__broken", json!({})), None);
 }

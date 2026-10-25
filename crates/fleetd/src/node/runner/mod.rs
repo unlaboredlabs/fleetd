@@ -1,35 +1,49 @@
-//! The native runner: `fleetd node` runs agent sessions itself by spawning the agent's own CLI. Claude only through
-//! the `claude` binary with stream-json on stdin and stdout; never an HTTP API.
+//! The native runner: `fleetd node` runs agent sessions itself by spawning the agent's own CLI, never an HTTP API.
+//! Each provider is one adapter under its own module; [`claude`] is the only one so far.
 //!
-//! A [`Runner`] spawns one process per live session and hands back a [`SessionHandle`]: commands in, normalized
-//! [`RunnerEvent`]s out. The node session service owns everything durable (session rows, item log, worktrees,
-//! retries, the link); a runner owns only the process and its protocol. See docs/build/native-runner-spec.md in the
-//! plan repo.
+//! The boundary, which is all the hub, the train and the app may rely on:
+//! - a [`Runner`] spawns one process per live session from a [`SessionSpec`] and hands back a [`SessionHandle`]:
+//!   commands in, normalized [`RunnerEvent`]s out; it maps a [`TaskProfile`] onto its own model and effort;
+//! - a [`RunnerGuide`] ([`guide`]) says, from a [`RunnerInfo`], what a person reads and runs about that runner;
+//! - tool calls arrive classified ([`fleetd_contracts::sessions::ToolClass`]) and usage provider-neutral
+//!   ([`RunUsage`]), so no tool name, CLI flag, config path, error text or usage field crosses it.
+//!
+//! The node session service owns everything durable (session rows, item log, worktrees, retries, the link); a runner
+//! owns only the process and its protocol. docs/FOLLOWUPS.md lists what a second runner still needs.
 //!
 //! `fixtures/` holds stream-json transcripts recorded from real `claude` runs, one JSON object per line:
 //! `{"dir":"in"|"out"|"stderr"|"meta","ms":<since start>,"msg":{…}}` (`raw` instead of `msg` for non-JSON lines).
 //! Files ending `.documented.jsonl` are built from the Agent SDK's types, not recorded.
 pub mod claude;
-pub mod claude_setup;
-pub mod conformance;
-pub mod failure;
 pub mod process;
 pub mod scope;
-pub mod version;
+pub mod shell;
 
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::time::Duration;
 
-use fleetd_contracts::effort::Effort;
+use fleetd_contracts::effort::{Effort, TaskProfile};
 use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::sessions::{
-    PermissionDecision, RunFailure, RunUsage, RunnerInfo, SendMode, SendNow, ThreadItem,
+    PermissionDecision, RunFailure, RunUsage, RunnerInfo, RunnerKind, SendMode, SendNow, ThreadItem,
 };
 use tokio::sync::mpsc;
 
 pub type BoxFut<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+/// When a runner can't say when a plan limit resets.
+pub const FALLBACK_USAGE_LIMIT_MS: i64 = 60 * 60_000;
+/// When a runner can't say when a request-rate limit resets.
+pub const FALLBACK_RATE_LIMIT_MS: i64 = 5 * 60_000;
+
+/// The model and effort a runner runs one [`TaskProfile`] on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ProfileModel {
+    pub model: &'static str,
+    pub effort: Effort,
+}
 
 /// Everything a runner needs to start (or resume) one session's process.
 #[derive(Clone, Debug)]
@@ -221,7 +235,7 @@ pub enum RunnerError {
     Spawn { binary: String, message: String },
 }
 
-/// One agent runtime. Claude now; Codex later as its own adapter.
+/// One agent runtime, one per [`RunnerKind`].
 pub trait Runner: Send + Sync + 'static {
     /// Version, login and a zero-cost conformance check (an `initialize` control request, no model call).
     /// `env` is the environment a session would get now (the user's own setup, plus `claude.env`): the login it reports
@@ -229,4 +243,41 @@ pub trait Runner: Send + Sync + 'static {
     fn probe<'a>(&'a self, env: &'a [(String, String)]) -> BoxFut<'a, RunnerInfo>;
     /// Starts the process for `spec` and returns once it is running; the first run starts with a `Send`.
     fn spawn(&self, spec: SessionSpec) -> Result<SessionHandle, RunnerError>;
+    /// The model and effort a session of `profile` runs on: the runner's choice, so the hub never names a model.
+    fn profile(&self, profile: TaskProfile) -> ProfileModel;
+    /// The profile of a session stored with `model` and `effort`, or launched by a hub from before profiles.
+    fn profile_of(&self, model: &str, effort: Effort) -> TaskProfile;
+}
+
+/// What a person reads and runs about one kind of runner, from what its probe reported ([`RunnerInfo`]). The hub's
+/// routing, doctor and prompt pages use this and never a runner's own modules.
+pub trait RunnerGuide: Sync {
+    /// The runner's command as messages name it, e.g. "claude"; also the prefix of its doctor checks.
+    fn name(&self) -> &'static str;
+    /// What a person installs, e.g. "Claude Code".
+    fn product(&self) -> &'static str;
+    /// The command that installs it on a machine without it.
+    fn install(&self) -> String;
+    /// The command that installs exactly the tested version, from nothing.
+    fn install_tested(&self) -> String;
+    /// The command that puts the tested version over an installed one.
+    fn pin_tested(&self) -> String;
+    /// How to log it in; behind a proxy, the proxy holds the login.
+    fn login_fix(&self, proxy: bool) -> &'static str;
+    /// A version fleetd wasn't tested with: what to say about `found` and the command that fixes it. None when
+    /// tested.
+    fn version_problem(&self, found: &str) -> Option<(String, Option<String>)>;
+    /// The setup sessions use, in a person's words: version, login, proxy, config dir.
+    fn setup(&self, info: &RunnerInfo) -> String;
+    /// The protocol the probe checks it speaks, e.g. "the stream-json protocol".
+    fn protocol(&self) -> &'static str;
+    /// The tools no session of this runner ever gets.
+    fn denied_tools(&self) -> &'static [&'static str];
+}
+
+/// The guide for a runner `kind`: the one place the hub turns a runner kind into its words.
+pub fn guide(kind: RunnerKind) -> &'static dyn RunnerGuide {
+    match kind {
+        RunnerKind::Claude => &claude::guide::GUIDE,
+    }
 }

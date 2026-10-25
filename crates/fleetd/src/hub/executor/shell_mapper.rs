@@ -28,10 +28,10 @@ pub fn limit_of_summary(s: &Summary) -> Option<Limit> {
     let error = s.last_error.as_ref()?;
     classify_limit(&LimitInput {
         error_class: Some(&error.class),
-        message: &error.message,
         reset_at: s.usage_limit_reset_at.as_deref(),
         at: &s.last_progress_at,
         model: s.model.as_deref(),
+        failure_model: error.model.as_deref(),
     })
 }
 
@@ -74,6 +74,8 @@ pub fn keep_tail(text: &str, max: usize) -> String {
 pub struct LastError {
     pub class: String,
     pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 /// The hub's ThreadSummary, field for field (contracts `ThreadSummary` round-trips through serde).
@@ -333,6 +335,7 @@ pub fn to_thread_summary(
         last_error: failure.map(|f| LastError {
             class: failure_class(f.class),
             message: js_take(f.message.as_str(), 2000).to_owned(),
+            model: f.model.clone(),
         }),
         usage_limit_reset_at: reset_at,
         end_cause: s

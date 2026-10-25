@@ -308,7 +308,7 @@ pub fn read(hub: &Hub, fresh: &Fresh, now: i64) -> anyhow::Result<Vec<ProjectSta
             Some(MachineStatus::Degraded) => {
                 Some(format!("{mname} can't run agents (see Machines)"))
             }
-            _ if usage_hit => Some(format!("claude usage limit reached on {mname}")),
+            _ if usage_hit => Some(format!("usage limit reached on {mname}")),
             _ => hub
                 .link
                 .paused(&r.machine_id)

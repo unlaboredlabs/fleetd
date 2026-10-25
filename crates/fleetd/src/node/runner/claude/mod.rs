@@ -4,22 +4,27 @@
 //! - [`ClaudeRunner::args`]: the argv, with model, effort and thinking always explicit.
 //! - [`mapper`]: stream-json both ways, pure and fixture-tested.
 //! - [`session`]: the process task: I/O pump, stdin writer, transcript and the kill ladder.
+pub mod conformance;
+pub mod failure;
+pub mod guide;
 pub mod mapper;
 pub mod protocol;
 mod session;
+pub mod setup;
 pub mod spans;
+pub mod version;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use fleetd_contracts::effort::{Effort, MODEL};
+use fleetd_contracts::effort::{Effort, TaskProfile};
 use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::sessions::{RESUME_REFUSED, RunnerInfo, SessionRole};
 
 use super::{
-    BoxFut, Runner, RunnerError, SessionHandle, SessionSpec, claude_setup, conformance, failure,
-    process, scope,
+    BoxFut, ProfileModel, Runner, RunnerError, SessionHandle, SessionSpec, process, scope,
 };
+use guide::MODEL;
 use mapper::{Classify, StreamMapper};
 
 /// Declares `$name`, the list the launch code uses, and `$why`, the same items each with the reason the docs print
@@ -257,8 +262,8 @@ impl CacheTtl {
 }
 
 explained! {
-    /// A session's prompt cache TTL by role, unless `promptCacheTtl` in node.json names the role or the node's
-    /// environment or `claude.env` sets [`PROMPT_CACHE_TTL_VARS`] (`SessionConfig::prompt_cache_env`). A 1-hour cache
+    /// A session's prompt cache TTL by role, unless the node's environment or `claude.env` sets
+    /// [`PROMPT_CACHE_TTL_VARS`] (`SessionConfig::prompt_cache_env`). A 1-hour cache
     /// write costs 2x the input price, a 5-minute one 1.25x; reads cost the same.
     PROMPT_CACHE_TTL, PROMPT_CACHE_TTL_WHY: (SessionRole, CacheTtl) = [
         (SessionRole::Lead, CacheTtl::OneHour) =>
@@ -404,7 +409,7 @@ impl Runner for ClaudeRunner {
         if spec.model.trim().is_empty() {
             return Err(refuse("no model: fleetd always names one".into()));
         }
-        let config_dir = claude_setup::config_dir(&spec.env);
+        let config_dir = setup::config_dir(&spec.env);
         if let Some(file) = session_file(&config_dir, &spec.cwd, &spec.session_id) {
             if spec.must_resume && !file.exists() {
                 return Err(refuse(format!(
@@ -433,7 +438,7 @@ impl Runner for ClaudeRunner {
                             !NESTING_VARS.contains(&k.as_str())
                                 && !SUBAGENTS_ON_ENV.contains(&k.as_str())
                                 && k != process::SESSION_MARKER
-                                && k != claude_setup::FLEETD_ENV_SOURCE
+                                && k != setup::FLEETD_ENV_SOURCE
                                 && !SESSION_ENV.iter().any(|(set, _)| set == k)
                                 && k != HELPER_MODEL_ENV.0
                         })
@@ -472,6 +477,14 @@ impl Runner for ClaudeRunner {
         }
         let mapper = StreamMapper::new(spec.session_id.clone(), self.classify.clone());
         Ok(session::start(child, marker, mapper, spec.transcript))
+    }
+
+    fn profile(&self, profile: TaskProfile) -> ProfileModel {
+        guide::profile(profile)
+    }
+
+    fn profile_of(&self, model: &str, effort: Effort) -> TaskProfile {
+        guide::profile_of(model, effort)
     }
 }
 

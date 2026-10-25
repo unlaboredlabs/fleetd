@@ -1,5 +1,5 @@
 //! Exclusive time: which interval owns each instant of a lane. The node uses it to give a run's spans their
-//! exclusive time and fill the rest with `claude.other`; the hub uses the same rule to cut lanes into tiles for the
+//! exclusive time and fill the rest with `runner.other`; the hub uses the same rule to cut lanes into tiles for the
 //! critical path. One rule in both places, so the numbers agree.
 
 /// An interval that competes for the instants it covers.

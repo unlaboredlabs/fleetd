@@ -102,7 +102,7 @@ class Gen {
     if (b > a) leaves.push(this.span(l, kind, a, b, edit));
   }
 
-  /** An agent at work: startup, then messages and tool calls, every gap a `claude.other` filler, so the lane tiles. */
+  /** An agent at work: startup, then messages and tool calls, every gap a `runner.other` filler, so the lane tiles. */
   work(l: Lane, from: number, to: number, suiteEvery: number, page: string): Draft[] {
     const leaves: Draft[] = [];
     const k = this.dense;
@@ -130,13 +130,13 @@ class Gen {
       c = end;
       if (c >= to) break;
       const gap = Math.floor(this.r(80, 400) / k);
-      this.leaf(l, "claude.other", c, Math.min(c + gap, to), leaves);
+      this.leaf(l, "runner.other", c, Math.min(c + gap, to), leaves);
       c += gap;
       if (c >= to) break;
       c = this.tool(l, c, to, i, suiteEvery, page, leaves);
       if (c < to) {
         const g2 = Math.floor(this.r(60, 300) / k);
-        this.leaf(l, "claude.other", c, Math.min(c + g2, to), leaves);
+        this.leaf(l, "runner.other", c, Math.min(c + g2, to), leaves);
         c += g2;
       }
       i += 1;
@@ -188,7 +188,7 @@ class Gen {
       if (bash) s.exitCode = failed ? 1 : 0;
       if (bytes > 0) s.outBytes = bytes;
       if (failed) s.status = "failed";
-      if (claude !== undefined) s.extra = { claudeMs: claude };
+      if (claude !== undefined) s.extra = { runnerMs: claude };
     });
     s.itemId = `toolu_${s.id}`;
     leaves.push(s);

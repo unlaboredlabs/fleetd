@@ -343,8 +343,7 @@ impl Leads {
         let input = LaunchInput {
             project_id: r.project_id.clone(),
             prompt: prompt.clone(),
-            model: TaskProfile::High.model().into(),
-            effort: TaskProfile::High.effort(),
+            profile: TaskProfile::High,
             runtime_mode: RuntimeMode::FullAccess,
             title: Some(title),
             // The node's launch is idempotent on the id, so the id names this launch: a hub started on a fresh

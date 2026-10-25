@@ -794,7 +794,7 @@ output!(ProjectAddOutput {
     clone: Option<CloneTarget>,
 });
 
-// project_remove: stops the project's claude processes and forgets it. Its files, branches and worktrees stay.
+// project_remove: stops the project's agent processes and forgets it. Its files, branches and worktrees stay.
 input!(ProjectRemoveInput {
     machine_id: MachineId,
     project_id: ProjectId

@@ -197,11 +197,11 @@ fn lanes_are_cut_into_exclusive_tiles() {
     assert_eq!(
         segs(&p),
         vec![
-            ("a".into(), SpanKind::ClaudeOther, 0, 2),
+            ("a".into(), SpanKind::RunnerOther, 0, 2),
             ("a".into(), SpanKind::ToolBash, 2, 4),
             ("a".into(), SpanKind::WaitPermission, 4, 8),
             ("a".into(), SpanKind::ToolBash, 8, 12),
-            ("a".into(), SpanKind::ClaudeOther, 12, 20),
+            ("a".into(), SpanKind::RunnerOther, 12, 20),
         ]
     );
     assert_eq!(total(&p, Category::Human), 4);

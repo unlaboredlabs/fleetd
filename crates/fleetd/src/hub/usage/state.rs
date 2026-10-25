@@ -126,7 +126,7 @@ fn limit_word(cls: UsageClass) -> &'static str {
     if cls == UsageClass::RateLimit {
         "rate limit"
     } else {
-        "limit"
+        "usage limit"
     }
 }
 
@@ -145,7 +145,7 @@ pub fn breaker_message(
         );
     }
     format!(
-        "Claude {} reached on {machine_id}'s login; resets {}; {}",
+        "The {} was reached on {machine_id}'s login; resets {}; {}",
         limit_word(cls),
         until.map_or_else(|| "at an unknown time".to_string(), reset_text),
         parked_text(counts)
@@ -156,7 +156,7 @@ fn gate_text(machine_id: &str, b: &Breaker) -> String {
     match (&b.until, b.class) {
         (Some(until), cls) if cls != UsageClass::PoolExhausted => {
             format!(
-                "usage: paused until {} (Claude {} on {machine_id}'s login)",
+                "usage: paused until {} ({} on {machine_id}'s login)",
                 reset_text(until),
                 limit_word(cls)
             )
@@ -169,7 +169,7 @@ fn gate_text(machine_id: &str, b: &Breaker) -> String {
                     b.model.as_deref().unwrap_or("the model")
                 )
             } else {
-                format!("Claude limit on {machine_id}'s login")
+                format!("usage limit on {machine_id}'s login")
             }
         ),
     }
@@ -607,10 +607,10 @@ mod tests {
         let limit =
             crate::hub::usage::classify::classify_limit(&crate::hub::usage::classify::LimitInput {
                 error_class: Some(class),
-                message,
                 reset_at: reset.map(iso_ms).as_deref(),
                 at: &iso_ms(at_ms),
                 model: Some("claude-opus-5-5"),
+                failure_model: None,
             })
             .unwrap();
         for (k, v) in crate::hub::usage::classify::limit_data(&limit) {
@@ -656,7 +656,7 @@ mod tests {
         let (event, until) = s.trip("lab-a", &iso_ms(60_000)).expect("trips");
         assert_eq!(
             event.summary,
-            "Claude limit reached on lab-a's login; resets Thu 02:00 UTC; the lead and 1 task parked"
+            "The usage limit was reached on lab-a's login; resets Thu 02:00 UTC; the lead and 1 task parked"
         );
         assert_eq!(until, Some(iso_ms(reset)));
         assert_eq!(
@@ -672,7 +672,7 @@ mod tests {
         assert_eq!(s.counts_on("lab-a"), ParkedCounts { leads: 1, tasks: 2 });
         assert_eq!(
             s.gate("lab-a", 120_000).as_deref(),
-            Some("usage: paused until Thu 02:00 UTC (Claude limit on lab-a's login)")
+            Some("usage: paused until Thu 02:00 UTC (usage limit on lab-a's login)")
         );
         assert!(
             s.hold(

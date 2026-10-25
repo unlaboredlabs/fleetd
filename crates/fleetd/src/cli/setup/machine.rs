@@ -19,7 +19,7 @@ use super::units::unit_suffix;
 use super::{Probe, current_exe, parse_listen, probe_listen, say};
 
 pub fn machine_usage() -> String {
-    use crate::node::runner::version::SUPPORTED;
+    use crate::node::runner::claude::version::SUPPORTED;
     format!(
         "  machine add <ssh-host> | --local [--machine-id <id>] [--tags a,b] [--dry-run] [--no-service]
             [--hub-url <url>] [--ssh-config <file>] [--home <hub home>] [--unit-suffix <s>]

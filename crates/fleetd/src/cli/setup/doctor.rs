@@ -165,12 +165,16 @@ pub async fn add_project(home: &Path, machine_id: &str, path: &Path) -> Result<(
     Ok(())
 }
 
-/// What the hub says while a node's first claude check is still running (hub/link/server.rs).
-const CHECKING: &str = "checking the node's claude runner";
+/// What the hub says while a node's first runner check is still running (hub/link/server.rs), and what an older hub
+/// said.
+const CHECKING: [&str; 2] = [
+    "checking the node's runner",
+    "checking the node's claude runner",
+];
 
-/// A machine's degraded reason that only means its first claude check hasn't answered yet.
+/// A machine's degraded reason that only means its first runner check hasn't answered yet.
 pub fn still_checking(reason: &str) -> bool {
-    reason.contains(CHECKING)
+    CHECKING.iter().any(|c| reason.contains(c))
 }
 
 /// The hub answers `name` (an unknown tool comes back as "not found"; any other answer means it exists).

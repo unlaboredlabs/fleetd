@@ -21,7 +21,7 @@ use crate::tasks::TaskId;
 pub enum Category {
     Model,
     Tools,
-    /// Waiting on the machine or the provider: retries, startup, compaction, claude-local time.
+    /// Waiting on the machine or the provider: retries, startup, compaction, runner-local time.
     Machine,
     Queue,
     /// Waiting on a person.
@@ -105,7 +105,7 @@ span_kinds! {
     Run = 1, "run", Machine;
     /// One assistant message, from the previous visible stream event to `message_stop`.
     ModelMessage = 2, "model.message", Model;
-    /// Previous visible stream event to `message_start`: claude-local work, network, API queueing and prefill.
+    /// Previous visible stream event to `message_start`: runner-local work, network, API queueing and prefill.
     ModelFirstToken = 3, "model.first_token", Model;
     ModelThinking = 4, "model.thinking", Model;
     ModelOutput = 5, "model.output", Model;
@@ -125,9 +125,11 @@ span_kinds! {
     WaitRetryNode = 21, "wait.retry.node", Machine;
     RunStartup = 22, "run.startup", Machine;
     Compaction = 23, "compaction", Machine;
-    /// Time inside a run that no other span covers: claude-local work between stream events.
+    /// Time inside a run that no other span covers: the runner's own work between stream events. Nodes before the
+    /// rename send `claude.other`.
     #[default]
-    ClaudeOther = 24, "claude.other", Machine;
+    #[serde(alias = "claude.other")]
+    RunnerOther = 24, "runner.other", Machine;
     /// A write waiting in the hub's queue for an offline machine.
     WaitOffline = 25, "wait.offline", Machine;
     QueueSlot = 30, "queue.slot", Queue;
@@ -213,16 +215,17 @@ pub struct SpanExtra {
     /// Free text from the source, e.g. a queue reason or a stop reason.
     pub reason: Option<Text<0, 200>>,
     pub attempt: Option<Count>,
-    /// `wait.retry.*`: the delay claude or the node announced. The span is the real wait.
+    /// `wait.retry.*`: the delay the runner or the node announced. The span is the real wait.
     pub stated_delay_ms: Option<Count>,
-    /// `wait.retry.api`: the HTTP status claude retried on.
+    /// `wait.retry.api`: the HTTP status the runner retried on.
     pub http_status: Option<Count>,
     /// `model.message`.
     pub stop_reason: Option<Line<1, 40>>,
     pub output_tokens: Option<Count>,
     pub thinking_tokens: Option<Count>,
-    /// `tool.*`: claude's own figure for the call, when the result carries one.
-    pub claude_ms: Option<Count>,
+    /// `tool.*`: the runner's own figure for the call, when the result carries one.
+    #[serde(alias = "claudeMs")]
+    pub runner_ms: Option<Count>,
     /// `run`: the result line's `duration_ms` and `duration_api_ms`.
     pub duration_ms: Option<Count>,
     pub duration_api_ms: Option<Count>,
@@ -293,7 +296,7 @@ pub struct Span {
     pub exit_code: Option<AnyInt>,
     pub out_bytes: Option<Count>,
     pub status: SpanStatus,
-    /// The item id in the thread (claude's tool_use or message id), for `thread_window`.
+    /// The item id in the thread (the runner's tool call or message id), for `thread_window`.
     pub item_id: Option<Text<1, 200>>,
     pub extra: Option<SpanExtra>,
 }
@@ -509,7 +512,7 @@ pub struct ProfileTotal {
     pub agent_ms: Count,
     /// The model's part of it.
     pub model_ms: Count,
-    /// What claude reported for its messages.
+    /// What the runner reported for its messages.
     pub output_tokens: Count,
 }
 

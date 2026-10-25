@@ -12,7 +12,7 @@ const row = (over: Partial<PrRow> = {}): PrRow => ({
   title: "Receipts show the shop's local time",
   state: "open",
   review: { state: "pending", done: 1, needed: 3 },
-  author: { role: "implementer", model: "claude-opus-5-5" },
+  author: { role: "implementer", profile: "high" },
   createdAt: "2026-10-19T08:00:00.000Z",
   updatedAt: "2026-10-19T10:00:00.000Z",
   ...over,
@@ -109,8 +109,8 @@ describe("the list", () => {
   });
 
   it("names the agent that wrote a row, and its task only when the title doesn't already say it", () => {
-    expect(byLine(row())).toBe("A writer (opus)");
-    expect(byLine(row({ author: { role: "implementer", model: "claude-opus-5-5", title: "Round the cart totals once" } }))).toBe("A writer (opus) · Round the cart totals once");
+    expect(byLine(row())).toBe("A writer (high)");
+    expect(byLine(row({ author: { role: "implementer", profile: "high", title: "Round the cart totals once" } }))).toBe("A writer (high) · Round the cart totals once");
     expect(byLine(row({ title: "Round the cart totals once", author: { role: "implementer", title: "Round the cart totals once" } }))).toBe("A writer");
     expect(byLine(row({ author: { login: "sam" } }))).toBe("sam on GitHub");
     expect(byLine(row({ author: {} }))).toBeUndefined();

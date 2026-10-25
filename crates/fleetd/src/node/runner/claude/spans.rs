@@ -1,6 +1,6 @@
 //! Time spans from claude's stream, built beside the mapper as a pure state machine over the same lines and the same
 //! `Now`. Every span of a run is emitted when the run ends: only then is each instant's owner known, so each span
-//! carries its exclusive time and the run's uncovered time becomes `claude.other` filler. Per run, the exclusive
+//! carries its exclusive time and the run's uncovered time becomes `runner.other` filler. Per run, the exclusive
 //! times add up to the run's wall time exactly.
 //!
 //! What a stream line tells (spec §2a, §2f): a model message runs from the previous visible event to its
@@ -14,6 +14,7 @@ use fleetd_contracts::time::{DecidedBy, SpanExtra, SpanKind, SpanStatus, SpanWir
 use serde_json::Value;
 
 use crate::hub::time::model::rank;
+use crate::node::runner::shell::program;
 use crate::node::util::head_utf16;
 use crate::tiles::{Claim, exclusive};
 
@@ -276,7 +277,7 @@ impl SpanBuilder {
         let kind = tool_kind(&tool.name, &tool.label);
         let extra = SpanExtra {
             tool: Line::new(head_utf16(&tool.name, 120)).ok(),
-            claude_ms,
+            runner_ms: claude_ms,
             ..SpanExtra::default()
         };
         let mut l = leaf(
@@ -406,7 +407,7 @@ impl SpanBuilder {
     }
 
     /// The run ended at `ms`: whatever it left open is cut, every span of the run comes back with its exclusive
-    /// time, and the uncovered time is `claude.other`. Nothing when the run never started.
+    /// time, and the uncovered time is `runner.other`. Nothing when the run never started.
     pub fn run_ended(
         &mut self,
         run: &str,
@@ -497,7 +498,7 @@ fn finish(
             run,
             leaf(
                 format!("{session}/{run}/other/{fillers}"),
-                SpanKind::ClaudeOther,
+                SpanKind::RunnerOther,
                 Some(run_key.clone()),
                 t.start,
                 t.end,
@@ -697,35 +698,9 @@ fn tool_kind(name: &str, label: &str) -> SpanKind {
     }
 }
 
-/// The program a shell command runs: after any `cd x &&` and `VAR=value` prefixes.
-pub fn program(command: &str) -> Option<&str> {
-    let mut rest = command.trim();
-    loop {
-        if let Some(after) = rest.strip_prefix("cd ")
-            && let Some(i) = after.find("&&")
-        {
-            rest = after[i + 2..].trim_start();
-            continue;
-        }
-        let first = rest.split_whitespace().next()?;
-        if first.contains('=') && !first.starts_with('=') {
-            rest = rest[first.len()..].trim_start();
-            continue;
-        }
-        return Some(first);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_program_skips_cd_and_env_prefixes() {
-        assert_eq!(program("cd /x && RUST_LOG=1 cargo test"), Some("cargo"));
-        assert_eq!(program("git push origin HEAD"), Some("git"));
-        assert_eq!(program("  "), None);
-    }
 
     #[test]
     fn overlapping_tool_calls_share_one_group_and_every_run_tiles_exactly() {

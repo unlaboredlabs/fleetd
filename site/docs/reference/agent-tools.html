@@ -291,7 +291,7 @@
 <td><code dir="auto">profile</code></td>
 <td>string</td>
 <td>no</td>
-<td>What an agent runs on. There are exactly two, both claude-opus-5-5: <code dir="auto">high</code> (effort high) is the default and what the lead, every reviewer and every helper call run; <code dir="auto">medium</code> (effort medium) is for mechanical tasks the lead picks. One of <code dir="auto">high</code>, <code dir="auto">medium</code>.</td>
+<td>What an agent runs on. There are exactly two: <code dir="auto">high</code> is the default and what the lead, every reviewer and every helper call run; <code dir="auto">medium</code> is for mechanical tasks the lead picks. The node’s runner picks the model and effort of each. One of <code dir="auto">high</code>, <code dir="auto">medium</code>.</td>
 </tr>
 <tr>
 <td><code dir="auto">prompt</code></td>
@@ -1054,21 +1054,21 @@
 </tr>
 <tr>
 <td><code dir="auto">CLAUDE_CODE_PROMPT_CACHE_TTL</code>, <code dir="auto">CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL</code></td>
-<td><code dir="auto">1h</code> unless <code dir="auto">promptCacheTtl.lead</code> in node.json, your environment or <code dir="auto">claude.env</code> sets it</td>
+<td><code dir="auto">1h</code> unless your environment or <code dir="auto">claude.env</code> sets it</td>
 <td>Leads</td>
 <td>yes</td>
 <td>A lead idles between wakes, often more than 5 minutes while reviews and CI run, and would otherwise rewrite its whole context to the prompt cache on those wakes.</td>
 </tr>
 <tr>
 <td><code dir="auto">CLAUDE_CODE_PROMPT_CACHE_TTL</code>, <code dir="auto">CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL</code></td>
-<td><code dir="auto">1h</code> unless <code dir="auto">promptCacheTtl.plain</code> in node.json, your environment or <code dir="auto">claude.env</code> sets it</td>
+<td><code dir="auto">1h</code> unless your environment or <code dir="auto">claude.env</code> sets it</td>
 <td>Threads you start</td>
 <td>yes</td>
 <td>A person’s thread idles while they read and reply.</td>
 </tr>
 <tr>
 <td><code dir="auto">CLAUDE_CODE_PROMPT_CACHE_TTL</code>, <code dir="auto">CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL</code></td>
-<td><code dir="auto">5m</code> unless <code dir="auto">promptCacheTtl.worker</code> in node.json, your environment or <code dir="auto">claude.env</code> sets it</td>
+<td><code dir="auto">5m</code> unless your environment or <code dir="auto">claude.env</code> sets it</td>
 <td>Task agents</td>
 <td>yes</td>
 <td>A task’s agent (writer, reader, reviewer, CI fix) works in one burst and ends, so a 1-hour write pays for an hour it never uses.</td>

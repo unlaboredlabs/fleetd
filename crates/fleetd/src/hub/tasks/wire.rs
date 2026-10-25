@@ -86,8 +86,7 @@ impl TaskPorts for HubTaskPorts {
             let input = LaunchInput {
                 project_id: request.project_id,
                 prompt: request.prompt,
-                model: request.profile.model().into(),
-                effort: request.profile.effort(),
+                profile: request.profile,
                 runtime_mode: RuntimeMode::FullAccess,
                 title: Some(request.title),
                 client_request_id: request.client_request_id,

@@ -12,10 +12,10 @@ use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
-use super::claude::protocol::Line;
-use super::claude::{AGENT_TOOLS, AUTO_MEMORY_OFF_ENV, AUTO_MEMORY_OFF_SETTINGS};
+use super::protocol::Line;
 use super::version::{self, SUPPORTED, TESTED, VersionVerdict};
-use super::{claude_setup, failure};
+use super::{AGENT_TOOLS, AUTO_MEMORY_OFF_ENV, AUTO_MEMORY_OFF_SETTINGS};
+use super::{failure, setup};
 
 /// `system/init.capabilities` the runner relies on (interrupt receipts, cancelling queued sends, run lifecycle).
 /// They arrive only with a turn, so the runner checks them on its first `Init` rather than here.
@@ -50,7 +50,7 @@ const PROBE_ARGS: &[&str] = &[
 const TIMEOUT: Duration = Duration::from_secs(30);
 /// Bytes of the probe's stderr kept for its error.
 const STDERR_KEEP: usize = 8192;
-const INSTALL_FIX: &str = "curl -fsSL https://claude.ai/install.sh | bash";
+const INSTALL_FIX: &str = version::INSTALL;
 
 /// `initialize`'s `account`: which credential claude would use.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
@@ -78,9 +78,9 @@ pub async fn probe(binary: &Path, env: &[(String, String)]) -> RunnerInfo {
         login_label: None,
         proxy: None,
         proxy_source: None,
-        config_dir: Some(claude_setup::config_dir(env).to_string_lossy().into_owned()),
+        config_dir: Some(setup::config_dir(env).to_string_lossy().into_owned()),
     };
-    if let Some((url, source)) = claude_setup::proxy_of(env) {
+    if let Some((url, source)) = setup::proxy_of(env) {
         info.proxy = Some(url);
         info.proxy_source = Some(source);
     }
@@ -118,7 +118,7 @@ pub async fn probe(binary: &Path, env: &[(String, String)]) -> RunnerInfo {
             let (login, kind) = login_of(&answer.account);
             info.login = login;
             info.login_kind = Some(kind.to_owned());
-            info.login_label = claude_setup::login_label(&answer.account);
+            info.login_label = setup::login_label(&answer.account);
             if login == LoginStatus::LoggedOut {
                 problems.push(format!(
                     "claude is not logged in. Fix: {}",
@@ -156,7 +156,7 @@ fn command(binary: &Path, env: &[(String, String)]) -> Command {
     cmd.env_clear()
         .envs(
             env.iter()
-                .filter(|(k, _)| k != claude_setup::FLEETD_ENV_SOURCE)
+                .filter(|(k, _)| k != setup::FLEETD_ENV_SOURCE)
                 .map(|(k, v)| (k, v)),
         )
         .env(AUTO_MEMORY_OFF_ENV.0, AUTO_MEMORY_OFF_ENV.1)
