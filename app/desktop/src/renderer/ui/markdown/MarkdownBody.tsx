@@ -11,7 +11,7 @@ import s from "./Markdown.module.css";
 const REMARK = [remarkGfm];
 
 /**
- * A link that main opens in the browser (window.fleetd.openExternal decides which hosts; nothing navigates the app).
+ * A link that main opens in the browser (window.fleetd.openExternal decides which links; nothing navigates the app).
  * A refused link says why in a toast. A link without a web address (react-markdown blanks unsafe schemes) is text.
  */
 function ExternalLink({ href, children }: { href: string | undefined; children: ReactNode }) {
