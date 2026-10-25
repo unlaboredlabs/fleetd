@@ -1,0 +1,275 @@
+//! `metrics_get` and `metrics_retention_set`. A project's view covers its repos (the trains it owns, its Changes'
+//! repos and the merges it owns), with every landed change on them, whoever's they are; the fleet's covers every
+//! repo a caller can read on some machine, each counted once.
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
+
+use chrono_tz::Tz;
+use fleetd_contracts::auth::Role;
+use fleetd_contracts::ids::{MachineId, Timestamp};
+use fleetd_contracts::mcp::{
+    ErrorCode, MetricsGetInput, MetricsGetOutput, MetricsRetentionSetInput,
+    MetricsRetentionSetOutput,
+};
+use fleetd_contracts::metrics::{
+    GitHost, MetricsComparePeriod, MetricsCoverage, RemoteRepo, RepoCoverage, RepoStale,
+};
+use fleetd_contracts::prim::{Count, Line, List};
+use rusqlite::Connection;
+
+use super::compute::{self, Period};
+use super::store::{self, MergeRow, RepoRow};
+use crate::hub::api::{Caller, Hub, Registry, ToolError, allows, allows_everywhere, require};
+use crate::hub::status::fresh;
+use crate::hub::store::{StoreError, iso_ms, now_ms, parse_ms};
+
+/// Landed changes listed per read, newest first.
+pub const MAX_MERGES: usize = 1000;
+const MAX_REPOS: usize = 200;
+
+/// What fleetd can't see of the person's time (design §3.4), for the info sheet.
+const INVISIBLE: &[&str] = &[
+    "Thinking and planning away from the keyboard, meetings and chat outside fleetd.",
+    "Time in an editor or IDE, or a Claude Code session not registered with fleetd.",
+    "Reading on the git host's website without leaving a review or comment.",
+    "How long a review took: git hosts keep only when it was submitted.",
+    "Work on machines with no fleetd node, or on a phone.",
+];
+
+pub fn register(tools: &mut Registry) {
+    tools.add("metrics_get", metrics_get);
+    tools.add("metrics_retention_set", metrics_retention_set);
+}
+
+fn invalid(message: impl Into<String>) -> ToolError {
+    ToolError::new(ErrorCode::Invalid, message)
+}
+
+fn ms_of(t: &Timestamp) -> Result<i64, ToolError> {
+    parse_ms(t.as_str()).ok_or_else(|| invalid(format!("{} is not an ISO time", t.as_str())))
+}
+
+/// Projects by (machine, project), in order.
+pub type Projects = BTreeMap<String, BTreeSet<(String, String)>>;
+
+/// Every repo the metrics know, with the projects that have it: the trains they own, their Changes' repos and the
+/// merges they own.
+pub fn repo_projects(c: &Connection) -> Result<Projects, StoreError> {
+    let mut out = Projects::new();
+    let mut stmt = c.prepare_cached(
+        "SELECT repo, machine_id, project_id, 1 FROM trains
+         UNION SELECT DISTINCT repo, machine_id, project_id, 1 FROM changes
+         UNION SELECT DISTINCT repo, machine_id, project_id, 0 FROM metric_merges WHERE machine_id IS NOT NULL
+         UNION SELECT repo, NULL, NULL, 0 FROM metric_repos",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, Option<String>>(1)?,
+            r.get::<_, Option<String>>(2)?,
+            r.get::<_, bool>(3)?,
+        ))
+    })?;
+    for row in rows {
+        let (repo, m, p, github) = row?;
+        let repo = if github {
+            store::github_remote(&repo)
+        } else {
+            repo
+        };
+        let refs = out.entry(repo).or_default();
+        if let (Some(m), Some(p)) = (m, p) {
+            refs.insert((m, p));
+        }
+    }
+    Ok(out)
+}
+
+fn host(name: &str) -> Option<GitHost> {
+    Some(match name {
+        "github" => GitHost::GitHub,
+        "gitlab" => GitHost::GitLab,
+        "gitea" => GitHost::Gitea,
+        "bitbucket" => GitHost::Bitbucket,
+        "azure_devops" => GitHost::AzureDevOps,
+        "git" => GitHost::Git,
+        _ => return None,
+    })
+}
+
+fn line(text: &str) -> Option<Line<1, 200>> {
+    Line::new(crate::node::util::head_utf16(text, 200)).ok()
+}
+
+/// What each repo's figures were read from, and the repos whose reads are failing.
+fn coverage(
+    hub: &Hub,
+    repos: &[String],
+    stored: &[RepoRow],
+    known_since: Option<i64>,
+    now: i64,
+    tz: Tz,
+) -> MetricsCoverage {
+    let mut covered = Vec::new();
+    let mut stale = Vec::new();
+    for repo in repos.iter().take(MAX_REPOS) {
+        let Ok(remote) = RemoteRepo::new(repo) else {
+            continue;
+        };
+        let row = stored.iter().find(|r| &r.repo == repo);
+        // A train's repo is read by the train's GitHub calls.
+        let seen =
+            store::train_repo(repo).and_then(|r| hub.status.fresh.view(&fresh::github(r), now));
+        let Some(host) = row.map_or(seen.is_some().then_some(GitHost::GitHub), |r| host(&r.host))
+        else {
+            continue;
+        };
+        let last_read = seen
+            .as_ref()
+            .and_then(|v| v.as_of_ms)
+            .max(row.and_then(|r| r.last_ok_ms));
+        if let Some(s) = seen.as_ref().and_then(|v| v.stale.as_ref()) {
+            let since = crate::hub::status::rows::clock(s.since_ms, now, tz);
+            stale.push(RepoStale {
+                repo: remote.clone(),
+                since: Timestamp(iso_ms(s.since_ms)),
+                reason: line(&format!("GitHub not read since {since}: {}", s.reason))
+                    .unwrap_or_else(|| Line::unchecked("GitHub not read")),
+            });
+        }
+        covered.push(RepoCoverage {
+            repo: remote,
+            host,
+            default_branch: row
+                .and_then(|r| r.default_branch.as_deref())
+                .and_then(|b| Line::new(b).ok()),
+            last_read: last_read.map(|ms| Timestamp(iso_ms(ms))),
+            known_since: row
+                .and_then(|r| r.backfilled_ms)
+                .or(known_since)
+                .map(|ms| Timestamp(iso_ms(ms))),
+        });
+    }
+    MetricsCoverage {
+        repos: List::unchecked(covered),
+        stale: List::unchecked(stale),
+        invisible: List::unchecked(INVISIBLE.iter().filter_map(|l| line(l)).collect()),
+    }
+}
+
+async fn metrics_get(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: MetricsGetInput,
+) -> Result<MetricsGetOutput, ToolError> {
+    if let Some(p) = &input.project_ref {
+        require(&caller, Role::Read, Some(&p.machine_id))?;
+    }
+    let now = now_ms(hub.clock.as_ref());
+    let tz = Tz::from_str_insensitive(input.tz.as_str()).unwrap_or(Tz::UTC);
+    let until = input
+        .until
+        .as_ref()
+        .map(ms_of)
+        .transpose()?
+        .unwrap_or(now)
+        .min(now);
+    let since = ms_of(&input.since)?;
+    if since >= until {
+        return Err(invalid("since must be before until, and before now.")
+            .with_fix("Pass a since in the past, e.g. 30 days ago."));
+    }
+    let since = compute::clamp_since(since, until, tz);
+    let prev_since = compute::clamp_since(since - (until - since), since, tz);
+    let (projects, rows, stored, known_since) = hub.db.with(|c| {
+        let mut projects = repo_projects(c)?;
+        projects.retain(|_, refs| match &input.project_ref {
+            Some(p) => refs.contains(&(p.machine_id.to_string(), p.project_id.to_string())),
+            None => {
+                allows_everywhere(&caller, Role::Read)
+                    || refs
+                        .iter()
+                        .any(|(m, _)| allows(&caller, Role::Read, Some(&MachineId::unchecked(m))))
+            }
+        });
+        let repos: Vec<String> = projects.keys().cloned().collect();
+        let rows = store::merges(c, prev_since, until, Some(&repos))?;
+        let known = crate::hub::time::store::cursor(c, store::KNOWN_SINCE)?;
+        Ok((projects, rows, store::repos(c)?, known))
+    })?;
+    let repos: Vec<String> = projects.keys().cloned().collect();
+    let (cur_rows, prev_rows): (Vec<MergeRow>, Vec<MergeRow>) =
+        rows.into_iter().partition(|r| r.merged_ms >= since);
+    let days = compute::days(since, until, tz);
+    let prev_days = compute::days(prev_since, since, tz);
+    let cur = Period {
+        rows: &cur_rows,
+        days: &days,
+    };
+    let prev = Period {
+        rows: &prev_rows,
+        days: &prev_days,
+    };
+    // The previous period counts only when every repo's merges were known that far back.
+    let known_from = repos
+        .iter()
+        .map(|r| {
+            stored
+                .iter()
+                .find(|s| &s.repo == r)
+                .and_then(|s| s.backfilled_ms)
+                .or(known_since)
+        })
+        .try_fold(i64::MIN, |acc, k| k.map(|k| acc.max(k)));
+    let prev_known = known_from.is_some_and(|k| k <= prev_since);
+    let items: Vec<_> = cur_rows.iter().filter_map(compute::merge_item).collect();
+    let merges_total = items.len();
+    Ok(MetricsGetOutput {
+        since: Timestamp(iso_ms(since)),
+        until: Timestamp(iso_ms(until)),
+        tiles: compute::tiles(&cur, prev_known.then_some(&prev)),
+        days: List::unchecked(compute::day_list(&cur)),
+        merges: List::unchecked(items.into_iter().take(MAX_MERGES).collect()),
+        merges_total: Count::unchecked(merges_total as i64),
+        repos: input.project_ref.is_none().then(|| {
+            List::unchecked(
+                compute::repo_rows(&cur, &projects)
+                    .into_iter()
+                    .take(MAX_REPOS)
+                    .collect(),
+            )
+        }),
+        coverage: coverage(&hub, &repos, &stored, known_since, now, tz),
+        compare: input.compare.then(|| MetricsComparePeriod {
+            since: Timestamp(iso_ms(prev_since)),
+            until: Timestamp(iso_ms(since)),
+            days: List::unchecked(compute::day_list(&prev)),
+        }),
+        next: Some(
+            "Your minutes per merged PR are not counted yet; merges are read from the merge train's repos.".into(),
+        ),
+        truncated: (merges_total > MAX_MERGES).then_some(true),
+    })
+}
+
+async fn metrics_retention_set(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: MetricsRetentionSetInput,
+) -> Result<MetricsRetentionSetOutput, ToolError> {
+    // Retention prunes every repo's merges, so Admin on one machine is not enough.
+    if !allows_everywhere(&caller, Role::Admin) {
+        return Err(ToolError::new(
+            ErrorCode::Forbidden,
+            "Metrics retention is fleet-wide: it needs Admin on every machine.",
+        )
+        .with_fix("Use an Admin key for all machines (`--machines '*'`)."));
+    }
+    let days = input.retention_days.get();
+    hub.db.transaction(|c| store::set_retention_days(c, days))?;
+    Ok(MetricsRetentionSetOutput {
+        retention_days: input.retention_days,
+        next: Some("Landed changes older than this go at the next hourly prune.".into()),
+        truncated: None,
+    })
+}

@@ -402,6 +402,7 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
     loops.push(tokio::spawn(hub.tasks.clone().run(hub.shutdown.clone())));
     loops.extend(hub.leads.run());
     loops.extend(hub.time.start(hub));
+    loops.extend(crate::hub::metrics::start(hub));
     loops.push(tokio::spawn(hub.status.clone().run(hub.clone())));
     loops
 }
