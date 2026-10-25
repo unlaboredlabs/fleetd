@@ -3022,17 +3022,38 @@ export type SleptSpan = {
 };
 
 export type SlotState = {
-  /** The fleet cap: agents running at once across every project. */
+  /** Agents running at once across every project: `fleetCap` when set, else the sum of the machines' caps. */
   cap: number;
+  /** The fleet cap a person (or an older hub) saved; absent: none beyond the machines' own caps. */
+  fleetCap?: number;
+  perMachine?: SlotStatePerMachine[];
   perProject: SlotStatePerProject[];
   queued: number;
   used: number;
 };
 
+/** One machine's share of the board: what it fits, and what runs there. */
+export type SlotStatePerMachine = {
+  /**
+   * What the machine fits: one agent per CPU less a reserve, and 2 GB of memory each after the OS's share, at
+   * most 64.
+   */
+  auto: number;
+  /** The most agents that run on it at once: a person's setting for the machine, else `auto`. */
+  cap: number;
+  /** New agents its free disk has room for now, above the guard's floor; absent while the node reports no disk. */
+  diskRoom?: number;
+  machineId: MachineId;
+  /** Agents running there now. */
+  running: number;
+  /** The term that sets `auto`, e.g. "memory 18 GB" or "14 of 16 CPUs". */
+  why: string;
+};
+
 export type SlotStatePerProject = {
   /**
    * The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead is not
-   * one. The fleet `cap` until set.
+   * one. Its machine's `cap` until set.
    */
   maxAgents: number;
   projectRef: ProjectRef;

@@ -8,11 +8,11 @@ export interface ProjectAgents {
   readonly running: number;
   /** Agents waiting for a slot, paused ones included. */
   readonly queued: number;
-  /** The project's max; the fleet cap when the project has no limit of its own. */
+  /** The project's max; its machine's cap when the project has no limit of its own. */
   readonly max: number;
-  /** The fleet-wide cap, the slider's top. */
+  /** The most it can run, the slider's top: its machine's cap, or the fleet cap when that is lower. */
   readonly cap: number;
-  /** Whether the project has a limit of its own below the fleet cap. */
+  /** Whether the project has a limit of its own below that. */
   readonly own: boolean;
 }
 
@@ -20,9 +20,13 @@ const sameRef = (a: ProjectRef, b: ProjectRef) => a.machineId === b.machineId &&
 
 export function projectAgents(slots: SlotState, project: ProjectRef): ProjectAgents {
   const row = slots.perProject.find((p) => sameRef(p.projectRef, project));
-  // No row: the hub's default, the fleet cap, with nothing running or waiting.
-  const max = Math.min(row?.maxAgents ?? slots.cap, slots.cap);
-  return { running: row?.running ?? 0, queued: row?.queued ?? 0, max, cap: slots.cap, own: max < slots.cap };
+  // `slots.cap` is every machine's cap added up, so a project is held to its own machine's. A hub from before machine
+  // caps sends no `perMachine`, and its cap is the fleet's.
+  const machine = slots.perMachine?.find((m) => m.machineId === project.machineId)?.cap ?? slots.cap;
+  const cap = Math.min(machine, slots.cap);
+  // No row: the hub's default, the machine's cap, with nothing running or waiting.
+  const max = Math.min(row?.maxAgents ?? cap, cap);
+  return { running: row?.running ?? 0, queued: row?.queued ?? 0, max, cap, own: max < cap };
 }
 
 /** The header control's words: "agents 6 / 12", and "· 2 queued" when some wait their turn. */

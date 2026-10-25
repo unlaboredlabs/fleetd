@@ -19,20 +19,23 @@ pub enum Ended {
     Cancelled,
 }
 
-/// The project's agents against its cap, the second line of every state block.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The project's agents against its cap, the second line of every state block: "agents: 4 running of 6 (auto:
+/// memory 18 GB), 2 queued".
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentsLine {
     pub running: i64,
     pub cap: i64,
     pub queued: i64,
+    /// Where the cap comes from: "auto: memory 18 GB", "max agents set", "machine cap set".
+    pub source: String,
 }
 
 impl Display for AgentsLine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "agents: {} running of {}, {} queued",
-            self.running, self.cap, self.queued
+            "agents: {} running of {} ({}), {} queued",
+            self.running, self.cap, self.source, self.queued
         )
     }
 }

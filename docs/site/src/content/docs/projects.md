@@ -90,13 +90,18 @@ Once the worker is back with a working `claude`, the lead starts and reads every
 
 ## Max agents {#max-agents}
 
-Each project has a cap on how many agents run at once, and the fleet has one across all projects. The hub enforces
-both; the lead plans to them.
+Each machine runs as many agents at once as it fits, each project has a cap of its own, and you may set one across the
+whole fleet. The hub enforces all of them; the lead plans to them.
 
 | Cap | Counts | Default | Set it |
 |---|---|---|---|
-| Per project: Max agents | The project's agents: writers, readers, reviewers. Not the lead. | The fleet cap | Click "agents 6 / 12" in the project's chat header, or use Settings → Agents. From 1 up to the fleet cap. |
-| Fleet-wide | Every project's agents together. Not the leads. | | Settings → Agents → Whole fleet. Needs an admin key. |
+| Per machine | Every project's agents on the machine. Not the leads. | What it fits: one per CPU less one in eight, and 2 GB of memory each after a quarter of it (4 to 16 GB) is left for the system, at most 64. An 8 GB laptop fits 2, a 32 GB one 12. | node.json's `memPerAgentGb` changes the 2 GB. |
+| Per project: Max agents | The project's agents: writers, readers, reviewers. Not the lead. | Its machine's cap | Click "agents 6 / 12" in the project's chat header, or use Settings → Agents. |
+| Fleet-wide | Every project's agents together. Not the leads. | None: the machines' caps added up | Settings → Agents → Whole fleet. Needs an admin key. A fleet cap saved before stays until you change it. |
+
+New agents on a machine also wait for disk: 5 GB each (`diskPerAgentGb`) above the free-space floor, with agents started
+in the last 10 minutes still counted, since their worktrees haven't grown yet. The lead's state line names what sets
+its cap, e.g. "agents: 4 running of 6 (auto: memory 18 GB), 2 queued".
 
 The header shows "· 2 queued" when agents wait their turn. While you move the slider it says what the change will do; it
 applies when you let go, with Undo. A fleet cap below a project's own max gets a warning.

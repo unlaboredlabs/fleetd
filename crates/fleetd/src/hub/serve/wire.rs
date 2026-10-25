@@ -201,6 +201,14 @@ fn extend_tools(hub: &Arc<Hub>) {
                         .is_some_and(|m| crate::hub::api::allows(&caller, Role::Read, Some(&m)))
                 });
             }
+            if let Some(rows) = board.get_mut("perMachine").and_then(|r| r.as_array_mut()) {
+                rows.retain(|row| {
+                    row["machineId"]
+                        .as_str()
+                        .and_then(|m| MachineId::try_from(m.to_owned()).ok())
+                        .is_some_and(|m| crate::hub::api::allows(&caller, Role::Read, Some(&m)))
+                });
+            }
             let mut out = serde_json::Map::new();
             out.insert("slots".into(), board);
             Ok(out)
