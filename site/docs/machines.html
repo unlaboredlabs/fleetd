@@ -252,11 +252,11 @@ builds once per machine rather than once per worktree.</p>
 </tr>
 <tr>
 <td>Scratch space</td>
-<td><code dir="auto">TMPDIR</code>, <code dir="auto">TMP</code> and <code dir="auto">TEMP</code> point at <code dir="auto">~/.fleetd/node/tmp/&lt;8 characters of the session id&gt;</code>, on disk. Never <code dir="auto">/tmp</code>, which is often held in memory. It goes with the writer’s worktree; for a session without one, when the session is stopped or the node restarts.</td>
+<td><code dir="auto">TMPDIR</code>, <code dir="auto">TMP</code> and <code dir="auto">TEMP</code> point at <code dir="auto">~/.fleetd/node/tmp/&lt;16 hex characters, one per session&gt;</code>, on disk. Never <code dir="auto">/tmp</code>, which is often held in memory. It goes with the writer’s worktree; for a session without one, when the session is stopped or the node restarts.</td>
 </tr>
 <tr>
 <td>Its own memory scope (Linux)</td>
-<td>When the node can reach your systemd user manager, each session runs in its own transient scope (<code dir="auto">systemctl --user list-units 'run-*.scope'</code>, described as “fleetd agent …”). If memory runs out, the kernel’s kill ends that agent alone, and it resumes by itself. The node’s unit also has <code dir="auto">OOMPolicy=continue</code>, so an out-of-memory kill never fails the node. Without a user manager (macOS, containers), sessions run as before.</td>
+<td>When the node can reach your systemd user manager, each session runs in its own transient scope (<code dir="auto">systemctl --user list-units 'run-*.scope'</code>, described as “fleetd agent …”). If memory runs out, the kernel’s kill lands in one agent: the build it killed fails, and the agent sees the error and goes on. The scopes and the node’s unit have <code dir="auto">OOMPolicy=continue</code>, so an out-of-memory kill never fails an agent’s scope or the node, and stopping the node stops its agents’ scopes after its own shutdown. If a scope can’t be started, the session starts without one, and the node checks again 10 minutes later. Without a user manager (macOS, containers), sessions run as before.</td>
 </tr>
 </tbody>
 </table>

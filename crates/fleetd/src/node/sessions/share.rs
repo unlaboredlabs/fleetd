@@ -4,6 +4,8 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use sha2::{Digest, Sha256};
+
 /// The parallelism variables of the common build tools, each with its value for `n` jobs.
 fn jobs_vars(n: u64) -> [(&'static str, String); 4] {
     [
@@ -24,18 +26,17 @@ pub fn jobs_env(env: &[(String, String)], n: u64) -> Vec<(String, String)> {
         .collect()
 }
 
-/// A session's scratch dir: `<node home>/tmp/<first 8 characters of its id>`. Short, so a Unix socket a tool makes in
-/// it stays under the 104 bytes macOS allows a socket path. Never under /tmp, which is often tmpfs and counts against
-/// memory.
+/// A session's scratch dir: `<node home>/tmp/<16 hex characters of its id's SHA-256>`, one per session however alike
+/// two ids begin, so removing one session's never touches another's. Short, so a Unix socket a tool makes in it stays
+/// under the 104 bytes macOS allows a socket path. Never under /tmp, which is often tmpfs and counts against memory.
 pub fn scratch_dir(home: &Path, session_id: &str) -> PathBuf {
     home.join("tmp").join(scratch_name(session_id))
 }
 
 fn scratch_name(session_id: &str) -> String {
-    session_id
-        .chars()
-        .filter(char::is_ascii_alphanumeric)
-        .take(8)
+    Sha256::digest(session_id.as_bytes())[..8]
+        .iter()
+        .map(|b| format!("{b:02x}"))
         .collect()
 }
 
@@ -131,24 +132,24 @@ mod tests {
     fn the_scratch_dir_is_short_under_the_node_home_and_never_tmp() {
         let home = Path::new("/home/ada/.fleetd/node");
         let dir = scratch_dir(home, "7f0c1d2e-0000-4000-8000-000000000001");
-        assert_eq!(dir, Path::new("/home/ada/.fleetd/node/tmp/7f0c1d2e"));
+        let name = dir.file_name().unwrap().to_str().unwrap();
+        assert_eq!(dir.parent(), Some(Path::new("/home/ada/.fleetd/node/tmp")));
+        assert!(
+            name.len() == 16 && name.chars().all(|c| c.is_ascii_hexdigit()),
+            "{name}"
+        );
+        let path = dir.to_str().unwrap();
         assert_eq!(
             scratch_env(&dir),
-            env(&[
-                ("TMPDIR", "/home/ada/.fleetd/node/tmp/7f0c1d2e"),
-                ("TMP", "/home/ada/.fleetd/node/tmp/7f0c1d2e"),
-                ("TEMP", "/home/ada/.fleetd/node/tmp/7f0c1d2e"),
-            ])
+            env(&[("TMPDIR", path), ("TMP", path), ("TEMP", path)])
+        );
+        // The same id, the same dir, across node restarts.
+        assert_eq!(
+            scratch_dir(home, "7f0c1d2e-0000-4000-8000-000000000001"),
+            dir
         );
         // Room left for a socket: macOS allows 104 bytes, Linux 108.
-        let mac = scratch_dir(
-            Path::new("/Users/someone-long/.fleetd/node"),
-            "a-b-c-d-e-f-g-h-i",
-        );
-        assert_eq!(
-            mac,
-            Path::new("/Users/someone-long/.fleetd/node/tmp/abcdefgh")
-        );
+        let mac = scratch_dir(Path::new("/Users/someone-long/.fleetd/node"), "a-b");
         assert!(mac.as_os_str().len() + "/tmux-501/default".len() < 104);
     }
 
@@ -167,6 +168,25 @@ mod tests {
         assert!(one.contains(": GOFLAGS is set to it."), "{one}");
         // Nothing fleetd set: no jobs line.
         assert!(!brief_note(&[], 2).contains("jobs"));
+    }
+
+    /// Two sessions whose ids share their first 8 characters get dirs of their own: one's removal leaves the other's.
+    #[test]
+    fn ids_alike_at_the_start_never_share_a_scratch_dir() {
+        let home = tempfile::tempdir().unwrap();
+        let (a, b) = (
+            "7f0c1d2e-0000-4000-8000-000000000001",
+            "7f0c1d2e-0000-4000-8000-000000000002",
+        );
+        assert_ne!(scratch_dir(home.path(), a), scratch_dir(home.path(), b));
+        for id in [a, b] {
+            std::fs::create_dir_all(scratch_dir(home.path(), id)).unwrap();
+        }
+        remove_scratch(home.path(), a);
+        assert!(!scratch_dir(home.path(), a).exists());
+        assert!(scratch_dir(home.path(), b).is_dir());
+        assert_eq!(sweep_scratch(home.path(), &[b.to_owned()]), 0);
+        assert!(scratch_dir(home.path(), b).is_dir());
     }
 
     #[test]
