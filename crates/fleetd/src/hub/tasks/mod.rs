@@ -4,6 +4,7 @@
 //! The thread's status transitions, read off the event log, end the task: the result goes into the record and,
 //! inline, into one lead wake; the slot is released and the queue is tried again.
 pub mod base;
+pub mod breaker;
 pub mod cap;
 #[cfg(test)]
 mod cap_tests;
@@ -23,6 +24,9 @@ pub mod recovery;
 mod recovery_tests;
 pub mod render;
 pub mod resolve;
+pub mod sweep;
+#[cfg(test)]
+mod sweep_tests;
 pub mod tools;
 pub mod wire;
 
@@ -276,6 +280,10 @@ pub struct Tasks {
     /// rebuilt their worktree from before the resume. Their lead's line goes once the run starts, when the node has
     /// said whether it rebuilt the worktree for it. Not kept across a hub restart.
     resumed: Mutex<HashMap<TaskId, (String, Option<ports::Rebuilt>)>>,
+    /// Per machine: whether its agents keep dying, so their resumes wait (`breaker`).
+    breakers: Mutex<breaker::Breakers>,
+    /// Sessions the sweep found that no task or lead owns, with when it first did and whether it reported them.
+    unowned: Mutex<HashMap<ThreadRef, (i64, bool)>>,
     /// Set once in `hub/serve` (`wire::wire`) to usage; unset passes through.
     pub hooks: TaskHooks,
     cursor: i64,
@@ -301,6 +309,8 @@ impl Tasks {
             binding: Arc::new(Mutex::new(HashSet::new())),
             unreachable: Mutex::new(HashMap::new()),
             resumed: Mutex::new(HashMap::new()),
+            breakers: Mutex::default(),
+            unowned: Mutex::default(),
             hooks: TaskHooks::default(),
             cursor,
             applied: std::sync::atomic::AtomicI64::new(cursor),
@@ -319,7 +329,8 @@ impl Tasks {
         if let Err(error) = registered {
             tracing::error!(%error, "tasks: slot listener not registered");
         }
-        // Recoveries a restart cut short still go at their time.
+        // Recoveries a restart cut short still go at their time, unless their machine's breaker holds them.
+        self.restore_breakers();
         for stored in self.db(TaskRecords::queued).unwrap_or_default() {
             self.resume_at(stored.task.recovery.as_ref());
         }
@@ -377,6 +388,7 @@ impl Tasks {
         self.continuing.lock().unwrap().remove(&task.task_id);
         self.resumed.lock().unwrap().remove(&task.task_id);
         self.d.slots.release(task.task_id.as_str())?;
+        self.breakers.lock().unwrap().release(&task.task_id);
         Ok(())
     }
 
@@ -890,12 +902,14 @@ impl Tasks {
             Err(error) => return tracing::warn!(%error, "tasks: queue not read"),
         };
         let now = now_ms(self.d.clock.as_ref());
+        self.close_quiet_breakers(now);
         for mut stored in queued {
             if let Err(error) = self.settle(&mut stored) {
                 tracing::warn!(task_id = stored.task.task_id.as_str(), %error, "tasks: recovery not settled");
             }
-            // A recovering task waits out its delay; its timer runs the queue then.
-            if recovery::waiting(stored.task.recovery.as_ref(), now) {
+            // A recovering task waits out its delay; its timer runs the queue then. One its machine's breaker holds
+            // waits for that to close.
+            if recovery::waiting(stored.task.recovery.as_ref(), now) || self.held(&stored.task) {
                 continue;
             }
             // Its work may have ended while it waited: then it isn't resumed, and ends with its run's plain result.
@@ -1102,6 +1116,7 @@ impl Tasks {
             thread.machine_id.as_str(),
             last.as_deref(),
         );
+        let opened = ran.then(|| self.count_death(task, death.kind)).flatten();
         let action = recovery::decide(
             &death,
             task.recovery.as_ref(),
@@ -1143,8 +1158,15 @@ impl Tasks {
                 )
                 .await
             }
-            recovery::Action::Resume(recovery) => self.recover(stored, recovery),
+            recovery::Action::Resume(recovery) => {
+                self.recover(stored, recovery)?;
+                self.hold_if_paused(&task.task_id, &thread.machine_id)
+            }
+        }?;
+        if let Some(opened) = opened {
+            self.recovery_paused(&thread.machine_id, &opened)?;
         }
+        Ok(())
     }
 
     /// Queues a dead task to resume in its thread at `recovery.next_at`; the note to continue is written when the
@@ -1412,6 +1434,8 @@ impl Tasks {
                     .wake(&task.project_ref, WakeKind::TaskWaiting, text);
             }
             HubEventType::ThreadCompleted if live => {
+                // An agent there got its work done: the machine is fine again.
+                self.close_breaker(machine_id, Some(task))?;
                 let end = end_cause(event).or(Some(RunEnd::Completed));
                 self.finish(&stored, TaskResultStatus::Done, None, end, None)
                     .await?
@@ -1827,12 +1851,15 @@ impl Tasks {
                 if let Some(recovery) = next.recovery.as_mut().filter(|_| recovering) {
                     recovery.next_at = Some(Timestamp(self.now_iso()));
                 }
+                // Over the machine's breaker too.
+                let held = self.held(&task);
+                self.breakers.lock().unwrap().release(task_id);
                 self.put(&StoredTask {
                     task: next.clone(),
                     pending_message: Some(pending),
                 })
                 .map_err(store_error)?;
-                if recovering {
+                if recovering || held {
                     // An answer to its question goes with the resume.
                     self.asking.lock().unwrap().remove(task_id);
                     self.retry_later();

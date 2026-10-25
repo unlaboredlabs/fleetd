@@ -29,6 +29,13 @@ pub enum HubEventType {
     /// why. Agents already running keep going.
     #[serde(rename = "machine.guard")]
     MachineGuard,
+    /// Agents on the machine kept dying (claude exited, or stalled), so fleetd stopped resuming them there, or
+    /// resumes them again; `data` is `RecoveryPausedData`, and the summary says why.
+    #[serde(rename = "machine.recovery_paused")]
+    MachineRecoveryPaused,
+    /// The machine's node runs a session no task or lead of this hub owns; `data` is `ThreadOrphanedData`.
+    #[serde(rename = "thread.orphaned")]
+    ThreadOrphaned,
     /// The node no longer has the project: the hub dropped it from its cache, and its open workstreams stop. `data.title`.
     #[serde(rename = "project.removed")]
     ProjectRemoved,
@@ -231,6 +238,8 @@ impl HubEventType {
             Self::MachineDegraded => "machine.degraded",
             Self::MachineSlept => "machine.slept",
             Self::MachineGuard => "machine.guard",
+            Self::MachineRecoveryPaused => "machine.recovery_paused",
+            Self::ThreadOrphaned => "thread.orphaned",
             Self::ProjectRemoved => "project.removed",
             Self::ProjectAdded => "project.added",
             Self::ProjectCloneProgress => "project.clone_progress",
@@ -438,6 +447,29 @@ pub struct PromptChangedData {
 pub struct MachineGuardData {
     /// true: new agents wait; false: they start again.
     pub paused: bool,
+}
+
+/// `machine.recovery_paused`.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RecoveryPausedData {
+    /// true: dead agents there wait instead of resuming; false: they resume again.
+    pub paused: bool,
+    /// The agents whose deaths opened it, oldest first.
+    pub task_ids: Option<Vec<crate::tasks::TaskId>>,
+    /// When it closes if nothing else dies there; an agent there completing closes it sooner.
+    pub until: Option<Timestamp>,
+}
+
+/// `thread.orphaned`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadOrphanedData {
+    /// The session's title on its node.
+    pub title: String,
+    /// When the hub first saw it without an owner.
+    pub since: Timestamp,
 }
 
 /// `machine.slept`: epoch milliseconds.
