@@ -12,6 +12,7 @@ pub mod ports;
 pub mod prompt;
 pub mod records;
 pub mod removals;
+pub mod requested;
 pub mod tools;
 pub mod wakes;
 pub mod wiring;
@@ -19,6 +20,8 @@ pub mod workstreams;
 
 #[cfg(test)]
 pub(crate) mod auto_start_tests;
+#[cfg(test)]
+mod requested_tests;
 
 use std::sync::{Arc, OnceLock};
 

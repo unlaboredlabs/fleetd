@@ -634,4 +634,10 @@ pub(crate) const MIGRATIONS: &[&str] = &[
   DELETE FROM chat_messages WHERE json_valid(data) AND json_type(data, '$.item.playbook') IS NOT NULL;
   DELETE FROM requests WHERE json_valid(data) AND json_type(data, '$.playbook') IS NOT NULL;
   "#,
+    // When the human asked for an order the lead opened, and how that was found (`chat` or `opened`). Older orders
+    // and submitted ones have none: they read back from the order's own times.
+    r#"
+  ALTER TABLE workstreams ADD COLUMN requested_ms INTEGER;
+  ALTER TABLE workstreams ADD COLUMN requested_basis TEXT;
+  "#,
 ];
