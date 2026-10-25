@@ -198,8 +198,15 @@ hub passes the sealed value on without storing or logging it. The node keeps the
 own in <code dir="auto">~/.fleetd/node/project-env/</code>, mode <code dir="auto">0600</code>, and adds them to every claude it starts for the project from then on.
 An agent already running gets a change at its next start. To change a secret, type a new value: the old one is never
 shown.</p>
-<p>Names are letters, digits and <code dir="auto">_</code>. fleetd sets <code dir="auto">HOME</code>, <code dir="auto">PATH</code>, <code dir="auto">USER</code>, <code dir="auto">CLAUDE_CONFIG_DIR</code> and every <code dir="auto">FLEETD_</code>
-variable itself, so a project can’t. A project takes up to 100 variables, each up to 8192 bytes; a secret is one line.</p>
+<p>If an agent prints a secret (<code dir="auto">printenv</code>, a stack trace, a config dump), the node replaces it with <code dir="auto">***NAME***</code> before
+the output leaves the machine: the value itself, its base64 and its URL encoding, in command output, the agent’s
+replies and live text alike. The hub and the app see only the name. A value under 4 characters isn’t masked, so keep
+secrets longer than that.</p>
+<p>Names are letters, digits and <code dir="auto">_</code>. fleetd sets <code dir="auto">HOME</code>, <code dir="auto">PATH</code>, <code dir="auto">USER</code>, <code dir="auto">TMPDIR</code> (and <code dir="auto">TMP</code>, <code dir="auto">TEMP</code>) and every
+<code dir="auto">FLEETD_</code> variable itself, and a project can’t change how claude itself runs: <code dir="auto">ANTHROPIC_*</code> and <code dir="auto">CLAUDE*</code> names are
+refused. A variable the node already gives every session, from its own environment or
+<a href="/docs/config-and-files"><code dir="auto">claude.env</code></a>, keeps the node’s value. A project takes up to 100 variables, each up to 8192
+bytes; a secret is one line.</p>
 <aside aria-label="Caution" class="starlight-aside starlight-aside--caution"><p class="starlight-aside__title" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" class="starlight-aside__icon"><path d="M12 16a1 1 0 1 0 0 2 1 1 0 0 0 0-2Zm10.67 1.47-8.05-14a3 3 0 0 0-5.24 0l-8 14A3 3 0 0 0 3.94 22h16.12a3 3 0 0 0 2.61-4.53Zm-1.73 2a1 1 0 0 1-.88.51H3.94a1 1 0 0 1-.88-.51 1 1 0 0 1 0-1l8-14a1 1 0 0 1 1.78 0l8.05 14a1 1 0 0 1 .05 1.02v-.02ZM12 8a1 1 0 0 0-1 1v4a1 1 0 0 0 2 0V9a1 1 0 0 0-1-1Z"/></svg>Caution</p><div class="starlight-aside__content"><p>Setting a variable needs the project’s machine online. Nothing is queued.</p></div></aside>
 <p>From an MCP client: <code dir="auto">project_settings_get</code> reads a project’s settings, <code dir="auto">project_settings_set</code> renames it or sets
 <code dir="auto">keepWorktrees</code>, and <code dir="auto">project_env_set</code> sets and removes variables, a secret sealed to the machine’s <code dir="auto">boxPubKey</code>.
@@ -207,9 +214,10 @@ variable itself, so a project can’t. A project takes up to 100 variables, each
 <div class="sl-heading-wrapper level-h3"><h3 id="delete">Delete a project</h3><a class="sl-anchor-link" href="#delete"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Delete a project”</span></a></div>
 <p><strong>Delete project…</strong> stops the project’s agents, removes the worktrees they worked in, and forgets the project and its
 settings. Type the project’s name to confirm. If any of its worktrees has uncommitted changes, the dialog names them:
-those changes are lost.</p>
-<p>What stays: the checkout itself, untouched, every branch (so every commit stays reachable), and its pull requests on
-GitHub. Add the folder again any time; the toast after a delete has <strong>Add it again</strong>.</p>
+those changes are lost. The app lists the worktrees again when you click it, so Delete waits while the project’s
+machine is offline or can’t list them.</p>
+<p>What stays: the checkout itself, untouched, every branch (so every commit stays reachable), your own worktrees of the
+repo, and its pull requests on GitHub. Add the folder again any time; the toast after a delete has <strong>Add it again</strong>.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="branches">Which branch fleetd works on</h2><a class="sl-anchor-link" href="#branches"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Which branch fleetd works on”</span></a></div>
 <table>
 <thead>

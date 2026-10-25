@@ -7,8 +7,9 @@ export type EnvKind = "plain" | "secret";
 /** project_settings.rs EnvVarName. */
 const NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/u;
 
-/** project_settings.rs env_name_reserved: what fleetd sets itself for every session. */
-export const reservedName = (name: string): boolean => ["HOME", "PATH", "USER", "CLAUDE_CONFIG_DIR"].includes(name) || name.startsWith("FLEETD_");
+/** project_settings.rs env_name_reserved: what fleetd sets itself for every session, and claude's own. */
+export const reservedName = (name: string): boolean =>
+  ["HOME", "PATH", "USER", "TMPDIR", "TMP", "TEMP"].includes(name) || ["FLEETD_", "ANTHROPIC_", "CLAUDE"].some((p) => name.startsWith(p));
 
 /** secrets.rs SECRET_MAX_BYTES, for plain values too. */
 const MAX_BYTES = 8192;
@@ -20,7 +21,7 @@ export const ENV_MAX = 100;
 export function nameProblem(name: string): string | null {
   if (name === "") return "Name it.";
   if (!NAME.test(name)) return "A name is letters, digits and _, and doesn't start with a digit.";
-  if (reservedName(name)) return `fleetd sets ${name} itself for every session.`;
+  if (reservedName(name)) return `${name} is fleetd's or claude's own: a project can't set it.`;
   return null;
 }
 

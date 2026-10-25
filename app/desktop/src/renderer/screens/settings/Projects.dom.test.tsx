@@ -62,6 +62,8 @@ const snapshot: HubFrame = {
 let host: HTMLDivElement;
 let root: Root;
 let calls: Array<{ tool: string; input: unknown }>;
+/** What project_settings_get answers, in turn; the last one again once they run out. */
+let answers: Settings[];
 let envRequests: ProjectEnvRequest[];
 
 beforeEach(() => {
@@ -69,6 +71,7 @@ beforeEach(() => {
   document.body.appendChild(host);
   root = createRoot(host);
   calls = [];
+  answers = [settings];
   envRequests = [];
   window.location.hash = "#/settings/projects?for=devbox/p1";
   vi.stubGlobal("fleetd", {
@@ -95,7 +98,8 @@ const render = async () => {
   const hub: HubApi = {
     call: (tool, input) => {
       calls.push({ tool, input });
-      return Promise.resolve({ ok: true, output: tool === "project_settings_get" || tool === "project_settings_set" ? { settings } : { ok: true } });
+      const now = (tool === "project_settings_get" && answers.length > 1 ? answers.shift() : answers[0]) ?? settings;
+      return Promise.resolve({ ok: true, output: tool === "project_settings_get" || tool === "project_settings_set" ? { settings: now } : { ok: true } });
     },
     subscribe: (l) => ((listener = l), () => undefined),
     resync: () => Promise.resolve(),
@@ -205,5 +209,24 @@ describe("Settings → Projects", () => {
     await click(button("Delete project"));
     await settle();
     expect(calls.find((c) => c.tool === "project_remove")?.input).toEqual({ machineId: "devbox", projectId: "p1", removeWorktrees: true });
+  });
+
+  it("keeps Delete off while the machine can't list the worktrees, and refuses when a fresh listing fails", async () => {
+    const { worktrees: _, ...offline } = settings;
+    answers = [{ ...offline, worktreesUnknown: "devbox is offline." }];
+    await render();
+    expect(button("Delete project…").disabled).toBe(true);
+    expect(document.body.textContent).toContain("devbox is offline.");
+    act(() => root.unmount());
+    root = createRoot(host);
+
+    // Listed when the page loaded, gone by the time Delete is clicked: no dialog, and why.
+    answers = [settings, { ...offline, worktreesUnknown: "devbox's node did not answer." }];
+    await render();
+    await click(button("Delete project…"));
+    await settle();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.body.textContent).toContain("devbox's node did not answer.");
+    expect(calls.some((c) => c.tool === "project_remove")).toBe(false);
   });
 });

@@ -20,6 +20,9 @@ use super::secrets::{fingerprint_of, write_atomic};
 
 const DIR: &str = "project-env";
 
+/// One `apply` at a time: each reads the file, changes it and writes it back.
+static WRITING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[derive(Default, Serialize, Deserialize)]
 struct EnvFile {
     vars: BTreeMap<String, Entry>,
@@ -65,6 +68,9 @@ pub fn apply(
     box_key: Option<&NodeBoxKey>,
 ) -> Result<Vec<EnvSecretSaved>, String> {
     let shown = format!("{DIR}/{project_id}.json");
+    let _writing = WRITING
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let mut env =
         read_file(home, project_id).map_err(|e| format!("cannot read {shown}: {}", io_why(&e)))?;
     let mut saved = Vec::new();
@@ -74,7 +80,9 @@ pub fn apply(
     for change in set {
         let name = change.name();
         if env_name_reserved(name.as_str()) {
-            return Err(format!("{name} is set by fleetd itself for every session"));
+            return Err(format!(
+                "{name} is fleetd's or claude's own: a project can't set it"
+            ));
         }
         let entry = match change {
             EnvVarSet::Plain { value, .. } => Entry {
@@ -151,6 +159,19 @@ pub fn vars(home: &Path, project_id: &str) -> Vec<(String, String)> {
     }
 }
 
+/// The project's secrets, `(name, value)`, for masking what its sessions report (mask.rs).
+pub fn secrets(home: &Path, project_id: &str) -> Vec<(String, String)> {
+    read_file(home, project_id)
+        .map(|env| {
+            env.vars
+                .iter()
+                .filter(|(_, entry)| entry.secret)
+                .map(|(name, entry)| (name.clone(), entry.value.clone()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Deletes the project's file, when its project goes.
 pub fn forget(home: &Path, project_id: &str) {
     if let Err(e) = std::fs::remove_file(file(home, project_id))
@@ -212,6 +233,10 @@ mod tests {
             ]
         );
         let path = file(home.path(), "p1");
+        assert_eq!(
+            secrets(home.path(), "p1"),
+            [("STRIPE_KEY".to_owned(), "sk_test_42".to_owned())]
+        );
         let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode(&path), 0o600);
         assert_eq!(mode(&home.path().join(DIR)), 0o700);

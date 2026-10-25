@@ -84,7 +84,7 @@ export function ProjectSettings({ route }: { route: SettingsRoute }) {
           </div>
         ) : null}
         {settings && ref && settings.projectId === ref.projectId && settings.machineId === ref.machineId ? (
-          <ProjectPage key={key} settings={settings} onDeleted={() => setPicked(null)} />
+          <ProjectPage key={key} settings={settings} refresh={async () => (await read.refetch()).data?.settings} onDeleted={() => setPicked(null)} />
         ) : ref && !read.isLoadingError ? (
           <Text tone="quiet">Loading…</Text>
         ) : null}
@@ -93,9 +93,32 @@ export function ProjectSettings({ route }: { route: SettingsRoute }) {
   );
 }
 
-function ProjectPage({ settings, onDeleted }: { settings: Settings; onDeleted: () => void }) {
+/**
+ * Delete opens only on a fresh list of the project's worktrees, so the confirm names every one with uncommitted
+ * changes: while its machine is offline, too old, or can't list them, Delete is off and says why.
+ */
+function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; refresh: () => Promise<Settings | undefined>; onDeleted: () => void }) {
   const ref = { machineId: settings.machineId, projectId: settings.projectId };
   const [deleting, setDeleting] = useState<RemoveTarget | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [blocked, setBlocked] = useState<string | null>(null);
+  const unknown = settings.worktrees === undefined ? (settings.worktreesUnknown ?? "its machine hasn't listed its worktrees.") : null;
+  const open = async () => {
+    setChecking(true);
+    setBlocked(null);
+    const fresh = await refresh().catch(() => undefined);
+    setChecking(false);
+    if (fresh?.worktrees === undefined) {
+      setBlocked(`Its worktrees can't be listed now: ${fresh?.worktreesUnknown ?? "the hub didn't answer."} Delete once they can, so no uncommitted work goes unseen.`);
+      return;
+    }
+    setDeleting({
+      ...ref,
+      title: fresh.title,
+      path: fresh.workspaceRoot,
+      deleting: { unsaved: unsavedWorktrees(fresh).map((w) => ({ path: w.path, branch: w.branch })) },
+    });
+  };
   return (
     <>
       <NameSetting settings={settings} />
@@ -109,25 +132,16 @@ function ProjectPage({ settings, onDeleted }: { settings: Settings; onDeleted: (
           Its checkout, its branches and its pull requests stay as they are.
         </Text>
         <div className={s.inline}>
-          <Button
-            variant="danger"
-            onClick={() =>
-              setDeleting({
-                ...ref,
-                title: settings.title,
-                path: settings.workspaceRoot,
-                deleting: { unsaved: unsavedWorktrees(settings).map((w) => ({ path: w.path, branch: w.branch })) },
-              })
-            }
-          >
-            Delete project…
+          <Button variant="danger" disabled={unknown !== null || checking} onClick={() => void open()}>
+            {checking ? "Checking its worktrees…" : "Delete project…"}
           </Button>
         </div>
-        {settings.worktrees === undefined && settings.worktreesUnknown ? (
+        {unknown !== null ? (
           <Text size="xs" tone="quiet">
-            Deleting needs its machine online: {settings.worktreesUnknown}
+            Deleting needs its machine to list its worktrees first: {unknown}
           </Text>
         ) : null}
+        <Problem text={blocked} />
       </Setting>
       <RemoveProjectDialog project={deleting} onClose={() => setDeleting(null)} onRemoved={onDeleted} />
     </>

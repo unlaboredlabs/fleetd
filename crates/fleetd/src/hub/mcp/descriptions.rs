@@ -54,7 +54,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "project_env_set",
-        "Human keys only. Add, replace (set) and remove environment variables of a project's agents. A plain variable carries its value; a secret carries sealed: its value sealed on the client (the desktop app) with libsodium's crypto_box_seal to the project machine's boxPubKey. The project's node keeps them and adds them to every claude it starts for the project from then on; the hub keeps a plain value and a secret's fingerprint, never a secret's value. All or nothing; refused with machine_offline when the node is down.",
+        "Human keys only. Add, replace (set) and remove environment variables of a project's agents. A plain variable carries its value; a secret carries sealed: its value sealed on the client (the desktop app) with libsodium's crypto_box_seal to the project machine's boxPubKey. The project's node keeps them and adds them to every claude it starts for the project from then on, and masks a secret printed by an agent as ***NAME*** before its output leaves the machine; the hub keeps a plain value and a secret's fingerprint, never a secret's value. ANTHROPIC_*, CLAUDE* and FLEETD_* names are refused. All or nothing; refused with machine_offline when the node is down.",
     ),
     (
         "thread_tail",

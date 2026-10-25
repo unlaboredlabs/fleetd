@@ -24,10 +24,14 @@ brand!(
     pattern = r"^[A-Za-z_][A-Za-z0-9_]{0,127}$"
 );
 
-/// Names fleetd sets itself for every session, so a project can't: the session's home, `PATH` and user, the claude
-/// config dir it was given, and every `FLEETD_` variable.
+/// Names fleetd sets itself for every session, so a project can't: the session's home, `PATH`, user and scratch dir,
+/// every `FLEETD_` variable, and claude's own (`ANTHROPIC_*` and `CLAUDE*`: its login, gateway, model and config),
+/// which would change how the agent itself runs.
 pub fn env_name_reserved(name: &str) -> bool {
-    matches!(name, "HOME" | "PATH" | "USER" | "CLAUDE_CONFIG_DIR") || name.starts_with("FLEETD_")
+    matches!(name, "HOME" | "PATH" | "USER" | "TMPDIR" | "TMP" | "TEMP")
+        || ["FLEETD_", "ANTHROPIC_", "CLAUDE"]
+            .iter()
+            .any(|prefix| name.starts_with(prefix))
 }
 
 brand!(
@@ -132,6 +136,9 @@ mod tests {
         }
         assert!(env_name_reserved("FLEETD_THREAD_ID"));
         assert!(env_name_reserved("PATH"));
+        assert!(env_name_reserved("ANTHROPIC_BASE_URL"));
+        assert!(env_name_reserved("CLAUDE_CODE_USE_BEDROCK"));
+        assert!(env_name_reserved("CLAUDECODE"));
         assert!(!env_name_reserved("FLEETDX"));
         assert!(!env_name_reserved("DATABASE_URL"));
         assert!(EnvValue::new("a\0b").is_err());

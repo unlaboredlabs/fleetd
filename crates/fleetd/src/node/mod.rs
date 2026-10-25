@@ -10,6 +10,7 @@ pub mod landed;
 pub mod lead;
 pub mod link;
 pub mod load;
+pub mod mask;
 pub mod power;
 pub mod project_env;
 pub mod repos;

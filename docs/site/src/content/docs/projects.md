@@ -92,8 +92,16 @@ own in `~/.fleetd/node/project-env/`, mode `0600`, and adds them to every claude
 An agent already running gets a change at its next start. To change a secret, type a new value: the old one is never
 shown.
 
-Names are letters, digits and `_`. fleetd sets `HOME`, `PATH`, `USER`, `CLAUDE_CONFIG_DIR` and every `FLEETD_`
-variable itself, so a project can't. A project takes up to 100 variables, each up to 8192 bytes; a secret is one line.
+If an agent prints a secret (`printenv`, a stack trace, a config dump), the node replaces it with `***NAME***` before
+the output leaves the machine: the value itself, its base64 and its URL encoding, in command output, the agent's
+replies and live text alike. The hub and the app see only the name. A value under 4 characters isn't masked, so keep
+secrets longer than that.
+
+Names are letters, digits and `_`. fleetd sets `HOME`, `PATH`, `USER`, `TMPDIR` (and `TMP`, `TEMP`) and every
+`FLEETD_` variable itself, and a project can't change how claude itself runs: `ANTHROPIC_*` and `CLAUDE*` names are
+refused. A variable the node already gives every session, from its own environment or
+[`claude.env`](/docs/config-and-files), keeps the node's value. A project takes up to 100 variables, each up to 8192
+bytes; a secret is one line.
 
 :::caution
 Setting a variable needs the project's machine online. Nothing is queued.
@@ -107,10 +115,11 @@ From an MCP client: `project_settings_get` reads a project's settings, `project_
 
 **Delete project…** stops the project's agents, removes the worktrees they worked in, and forgets the project and its
 settings. Type the project's name to confirm. If any of its worktrees has uncommitted changes, the dialog names them:
-those changes are lost.
+those changes are lost. The app lists the worktrees again when you click it, so Delete waits while the project's
+machine is offline or can't list them.
 
-What stays: the checkout itself, untouched, every branch (so every commit stays reachable), and its pull requests on
-GitHub. Add the folder again any time; the toast after a delete has **Add it again**.
+What stays: the checkout itself, untouched, every branch (so every commit stays reachable), your own worktrees of the
+repo, and its pull requests on GitHub. Add the folder again any time; the toast after a delete has **Add it again**.
 
 ## Which branch fleetd works on {#branches}
 

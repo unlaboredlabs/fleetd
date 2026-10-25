@@ -1748,9 +1748,11 @@ impl SessionService {
         let transcript = transcripts.join(format!("{id}.jsonl"));
 
         let mut env = config.runner_env();
-        // The project's own variables, re-read per spawn; fleetd's values below still win.
-        let project_env = super::project_env::vars(&config.home, row.summary.project_id.as_str());
-        env.retain(|(k, _)| !project_env.iter().any(|(p, _)| p == k));
+        // The project's own variables, re-read per spawn. What the node already gives claude (its login, gateway,
+        // claude.env) keeps the node's value, and fleetd's values below still win.
+        let mut project_env =
+            super::project_env::vars(&config.home, row.summary.project_id.as_str());
+        project_env.retain(|(p, _)| !env.iter().any(|(k, _)| k == p));
         env.extend(project_env);
         let mut role_env = config.prompt_cache_env(row.local.role, &env);
         role_env.extend(claude::role_env(row.local.role, &env));
@@ -1831,6 +1833,8 @@ impl SessionService {
         let mut usage: Option<(String, RunUsage)> = None;
         let mut usage_sent: Option<Instant> = None;
         let mut run_id: Option<String> = None;
+        // The project's secrets as they are now, read again at each run's start.
+        let mut masker = self.masker(&id);
         loop {
             let delta_due = delta
                 .as_ref()
@@ -1845,7 +1849,7 @@ impl SessionService {
                         () = tokio::time::sleep_until(due) => {
                             let now = Instant::now();
                             if delta_due.is_some_and(|d| d <= now) {
-                                self.flush_delta(&id, &mut delta, &run_id);
+                                self.flush_delta(&id, &mut delta, &run_id, &masker, true);
                                 flushed = Some(now);
                             }
                             if usage_due.is_some_and(|d| d <= now) {
@@ -1871,6 +1875,17 @@ impl SessionService {
             if let Some(live) = self.st().live.get_mut(&id) {
                 live.last_active = Instant::now();
             }
+            if matches!(event, RunnerEvent::RunStarted { .. }) {
+                masker = self.masker(&id);
+            }
+            // Nothing the agent's session reports leaves this machine with a secret of its project in it.
+            let Some(event) = masker.event(event) else {
+                tracing::warn!(
+                    session_id = id.as_str(),
+                    "an event dropped: masking a secret broke its shape"
+                );
+                continue;
+            };
             match event {
                 RunnerEvent::Delta { message_id, append } => {
                     if !self.st().followed.contains(&id) {
@@ -1879,12 +1894,12 @@ impl SessionService {
                     match &mut delta {
                         Some((m, text)) if *m == message_id => text.push_str(&append),
                         _ => {
-                            self.flush_delta(&id, &mut delta, &run_id);
+                            self.flush_delta(&id, &mut delta, &run_id, &masker, false);
                             delta = Some((message_id, append));
                         }
                     }
                     if flushed.is_none_or(|at| at + DELTA_EVERY <= Instant::now()) {
-                        self.flush_delta(&id, &mut delta, &run_id);
+                        self.flush_delta(&id, &mut delta, &run_id, &masker, true);
                         flushed = Some(Instant::now());
                     }
                 }
@@ -2062,10 +2077,43 @@ impl SessionService {
         }
     }
 
-    fn flush_delta(&self, id: &str, delta: &mut Option<(String, String)>, run_id: &Option<String>) {
-        if let Some((message_id, append)) = delta.take()
-            && let Ok(message_id) = NonEmpty::new(message_id)
-        {
+    /// The session's project's secrets, for masking what it reports.
+    fn masker(&self, id: &str) -> super::mask::Masker {
+        let Ok(Some(row)) = self.store().session(id) else {
+            return super::mask::Masker::default();
+        };
+        super::mask::Masker::new(&super::project_env::secrets(
+            &self.inner.config.home,
+            row.summary.project_id.as_str(),
+        ))
+    }
+
+    /// Sends the live text so far, masked. `hold` keeps back an end that could be the start of a secret, until the
+    /// next piece (or the complete message) shows what it is.
+    fn flush_delta(
+        &self,
+        id: &str,
+        delta: &mut Option<(String, String)>,
+        run_id: &Option<String>,
+        masker: &super::mask::Masker,
+        hold: bool,
+    ) {
+        if let Some((message_id, mut append)) = delta.take() {
+            let held = if hold { masker.held(&append) } else { 0 };
+            if held > 0 {
+                let kept = append.split_off(append.len() - held);
+                *delta = Some((message_id.clone(), kept));
+                if append.is_empty() {
+                    return;
+                }
+            }
+            let append = masker.text(&append).into_owned();
+            self.send_delta(id, message_id, append, run_id);
+        }
+    }
+
+    fn send_delta(&self, id: &str, message_id: String, append: String, run_id: &Option<String>) {
+        if let Ok(message_id) = NonEmpty::new(message_id) {
             self.st().thread(
                 id,
                 ThreadEvent::Delta {
@@ -2756,8 +2804,7 @@ impl SessionService {
                 for (session_id, _, _) in &held {
                     share::remove_scratch(&home, session_id.as_str());
                 }
-                let paths: Vec<PathBuf> = held.into_iter().map(|(_, path, _)| path).collect();
-                worktree::remove_all(&root, &dir, &paths)
+                worktree::remove_all(&root, &dir)
             })
             .await?;
             tracing::info!(

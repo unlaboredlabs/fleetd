@@ -945,7 +945,9 @@ checked!(ProjectEnvSetInput, |input| {
         .map(|v| v.name())
         .find(|n| crate::project_settings::env_name_reserved(n.as_str()))
     {
-        return Err(format!("{name} is set by fleetd itself for every session"));
+        return Err(format!(
+            "{name} is fleetd's or claude's own: a project can't set it"
+        ));
     }
     Ok(())
 });

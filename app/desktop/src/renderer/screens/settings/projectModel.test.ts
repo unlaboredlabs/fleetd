@@ -33,7 +33,7 @@ describe("Settings → Projects", () => {
     // Credentials start as secrets.
     expect(byName["STRIPE_KEY"]).toMatchObject({ value: "sk_test_42", kind: "secret", problem: null });
     expect(byName["1BAD"]?.problem).toBeTruthy();
-    expect(byName["FLEETD_THREAD_ID"]?.problem).toContain("fleetd sets");
+    expect(byName["FLEETD_THREAD_ID"]?.problem).toContain("a project can't set it");
   });
 
   it("checks a secret is one line, and lets a plain value hold more", () => {
