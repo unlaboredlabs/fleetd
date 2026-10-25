@@ -268,6 +268,28 @@
       ],
       "type": "object"
     },
+    "ActorKind": {
+      "description": "Who a PR's author or merger was, by the git host's account type: git authorship can't tell, because agents commit\nunder the person's own identity.",
+      "oneOf": [
+        {
+          "enum": [
+            "human",
+            "bot"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "train",
+          "description": "The merge train (merger only).",
+          "type": "string"
+        },
+        {
+          "const": "unknown",
+          "description": "No git host to ask, or it didn't say.",
+          "type": "string"
+        }
+      ]
+    },
     "AgentLane": {
       "description": "One agent of an order: a task, or the project's lead.",
       "properties": {
@@ -2691,6 +2713,27 @@
       ],
       "type": "object"
     },
+    "GitHost": {
+      "description": "Where a repo's merges are read from.",
+      "oneOf": [
+        {
+          "enum": [
+            "github",
+            "gitlab",
+            "gitea",
+            "bitbucket",
+            "azure_devops"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "git",
+          "description": "No host API fleetd can read: landed changes come from the default branch's first-parent log, and reviews,\nbots and PR open times are absent.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
     "GitHubCandidate": {
       "description": "A repository `gh repo list` returned, for the user or one of their orgs.",
       "properties": {
@@ -3023,7 +3066,7 @@
         },
         {
           "const": "pr.merged_outside",
-          "description": "A PR was merged into a base the train guards without the train; `data.repo`, `data.prNumber`,\n`data.mergedSha`, and `data.changeId` when it had been enqueued.",
+          "description": "A PR was merged into a base the train guards without the train; `data.repo`, `data.prNumber`,\n`data.mergedSha`, and `data.changeId` when it had been enqueued. Newer hubs add `data.mergedAt`, `data.head`,\n`data.prCreatedAt`, `data.authorKind` and `data.mergedByKind`.",
           "type": "string"
         },
         {
@@ -3124,6 +3167,16 @@
         {
           "const": "chat.waiting",
           "description": "A project's chat started or stopped waiting on you, or its lead started or ended a turn; `data` is the\n`chat::ProjectChatState`.",
+          "type": "string"
+        },
+        {
+          "const": "app.presence",
+          "description": "The app was focused on a project's screen with recent input, for one interval; `data` is\n`metrics::AppPresenceData`. A human touch for the factory metrics.",
+          "type": "string"
+        },
+        {
+          "const": "repo.advanced",
+          "description": "A node's fetch saw a remote's default branch move; `data` is `metrics::RepoAdvancedData`.",
           "type": "string"
         }
       ],
@@ -3250,6 +3303,102 @@
         "text",
         "state",
         "createdAt"
+      ],
+      "type": "object"
+    },
+    "HumanSource": {
+      "description": "The minutes chart's series, at most five, in this fixed order bottom up.",
+      "oneOf": [
+        {
+          "enum": [
+            "app"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "chat",
+          "description": "Chat messages, inline approvals and secrets, and orders.",
+          "type": "string"
+        },
+        {
+          "const": "reviews",
+          "description": "Reviews and comments on the git host: estimated.",
+          "type": "string"
+        },
+        {
+          "const": "sessions",
+          "description": "The person's own Claude Code sessions registered with fleetd.",
+          "type": "string"
+        },
+        {
+          "const": "other",
+          "description": "Steers, decisions, merges by hand, commits.",
+          "type": "string"
+        }
+      ]
+    },
+    "HumanTile": {
+      "description": "The person's minutes per merged PR: a ratio of period totals, from what fleetd sees.",
+      "properties": {
+        "lowMs": {
+          "description": "The low bound: the union of the credits alone, with no bridging.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "outsidePerPrMs": {
+          "description": "Visible minutes on outside work over `outside` + `direct` landed changes. Always a bare minimum: fleetd\nsees almost none of that work.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "outsidePrs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "outsideTotalMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "perPrMs": {
+          "description": "Minutes on fleetd work over its landed changes (`train` + `fleetd_by_hand`); absent when there are none.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "previousPerPrMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "prs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "spark": {
+          "items": {
+            "$ref": "#/$defs/SparkPoint"
+          },
+          "maxItems": 12,
+          "type": "array"
+        },
+        "totalMs": {
+          "description": "The estimate: touches' credits, bridged into sessions where under 5 minutes apart, as a union.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "totalMs",
+        "lowMs",
+        "prs",
+        "outsideTotalMs",
+        "outsidePrs",
+        "spark"
       ],
       "type": "object"
     },
@@ -3642,6 +3791,10 @@
       ],
       "type": "object"
     },
+    "LocalDate": {
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "type": "string"
+    },
     "LoginKind": {
       "description": "Read from the runner's login kind, never from credentials.",
       "enum": [
@@ -3918,6 +4071,18 @@
         "lead_start.output": {
           "$ref": "#/$defs/LeadStartOutput"
         },
+        "metrics_get.input": {
+          "$ref": "#/$defs/MetricsGetInput"
+        },
+        "metrics_get.output": {
+          "$ref": "#/$defs/MetricsGetOutput"
+        },
+        "metrics_retention_set.input": {
+          "$ref": "#/$defs/MetricsRetentionSetInput"
+        },
+        "metrics_retention_set.output": {
+          "$ref": "#/$defs/MetricsRetentionSetOutput"
+        },
         "order_get.input": {
           "$ref": "#/$defs/OrderGetInput"
         },
@@ -4174,6 +4339,10 @@
         "hub_info.output",
         "lead_start.input",
         "lead_start.output",
+        "metrics_get.input",
+        "metrics_get.output",
+        "metrics_retention_set.input",
+        "metrics_retention_set.output",
         "order_get.input",
         "order_get.output",
         "orders_board.input",
@@ -4249,6 +4418,32 @@
       ],
       "type": "object"
     },
+    "MergeRoute": {
+      "description": "How a landed change reached the default branch. The fixed order, bottom up on every chart, is the order here.",
+      "oneOf": [
+        {
+          "const": "train",
+          "description": "A Change the merge train merged, batch members included: \"Through fleetd\".",
+          "type": "string"
+        },
+        {
+          "const": "fleetd_by_hand",
+          "description": "Written by fleetd (a Change, a `fleetd/T…` branch or a task's head) but landed without the train: \"Made by\nfleetd, merged by you\".",
+          "type": "string"
+        },
+        {
+          "const": "outside",
+          "description": "A merged PR with no Change and no fleetd branch: \"Merged outside fleetd\".",
+          "type": "string"
+        },
+        {
+          "const": "direct",
+          "description": "A first-parent commit on the default branch with no PR: \"Pushed straight to the default branch\". On a repo\nwith no git host fleetd can read, direct pushes and outside merges can't be told apart and both read as `outside`.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
     "MergeRules": {
       "description": "How the default branch may be merged into.",
       "properties": {
@@ -4281,6 +4476,454 @@
       "required": [
         "protected",
         "rulesets"
+      ],
+      "type": "object"
+    },
+    "MergedTile": {
+      "description": "Pull requests merged per day: landed changes of all four routes over the range's calendar days (today as a\nfraction, at least an hour).",
+      "properties": {
+        "byRoute": {
+          "$ref": "#/$defs/RouteCounts"
+        },
+        "n": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "perDay": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "previousPerDay": {
+          "description": "The previous period of the same length; absent when nothing was read that far back.",
+          "minimum": 0,
+          "type": "number"
+        },
+        "spark": {
+          "items": {
+            "$ref": "#/$defs/SparkPoint"
+          },
+          "maxItems": 12,
+          "type": "array"
+        }
+      },
+      "required": [
+        "perDay",
+        "n",
+        "byRoute",
+        "spark"
+      ],
+      "type": "object"
+    },
+    "MetricsComparePeriod": {
+      "description": "The previous period of the same length, for the compare toggle.",
+      "properties": {
+        "days": {
+          "items": {
+            "$ref": "#/$defs/MetricsDay"
+          },
+          "maxItems": 400,
+          "type": "array"
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "until": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "since",
+        "until",
+        "days"
+      ],
+      "type": "object"
+    },
+    "MetricsCoverage": {
+      "description": "What the numbers cover and what they can't.",
+      "properties": {
+        "invisible": {
+          "description": "What fleetd can't see of the person's time, one plain line each, for the info sheet.",
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[^\\r\\n]*$",
+            "type": "string"
+          },
+          "maxItems": 12,
+          "type": "array"
+        },
+        "repos": {
+          "items": {
+            "$ref": "#/$defs/RepoCoverage"
+          },
+          "maxItems": 200,
+          "type": "array"
+        },
+        "stale": {
+          "items": {
+            "$ref": "#/$defs/RepoStale"
+          },
+          "maxItems": 200,
+          "type": "array"
+        }
+      },
+      "required": [
+        "repos",
+        "stale",
+        "invisible"
+      ],
+      "type": "object"
+    },
+    "MetricsDay": {
+      "description": "One calendar day in the viewer's zone; days with nothing are present too.",
+      "properties": {
+        "day": {
+          "$ref": "#/$defs/LocalDate"
+        },
+        "human": {
+          "items": {
+            "$ref": "#/$defs/SourceMs"
+          },
+          "maxItems": 8,
+          "type": "array"
+        },
+        "merged": {
+          "$ref": "#/$defs/RouteCounts"
+        },
+        "notCounted": {
+          "description": "Bots and other merges not counted that day.",
+          "items": {
+            "$ref": "#/$defs/SkipCount"
+          },
+          "maxItems": 8,
+          "type": "array"
+        }
+      },
+      "required": [
+        "day",
+        "merged",
+        "notCounted",
+        "human"
+      ],
+      "type": "object"
+    },
+    "MetricsGetInput": {
+      "properties": {
+        "compare": {
+          "default": false,
+          "description": "Add the previous period of the same length's days (the tiles always carry its figures).",
+          "type": "boolean"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "Absent: every project you can read, each repo counted once."
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "tz": {
+          "$ref": "#/$defs/TimeZone"
+        },
+        "until": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "Absent: now."
+        }
+      },
+      "required": [
+        "since",
+        "tz"
+      ],
+      "type": "object"
+    },
+    "MetricsGetOutput": {
+      "properties": {
+        "compare": {
+          "$ref": "#/$defs/MetricsComparePeriod"
+        },
+        "coverage": {
+          "$ref": "#/$defs/MetricsCoverage"
+        },
+        "days": {
+          "description": "Every calendar day of the range in `tz`, oldest first, empty days included.",
+          "items": {
+            "$ref": "#/$defs/MetricsDay"
+          },
+          "maxItems": 400,
+          "type": "array"
+        },
+        "merges": {
+          "description": "Landed changes in the range, newest first; `truncated` when there were more than fit.",
+          "items": {
+            "$ref": "#/$defs/MetricsMerge"
+          },
+          "maxItems": 1000,
+          "type": "array"
+        },
+        "mergesTotal": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "next": {
+          "type": "string"
+        },
+        "repos": {
+          "description": "Without projectRef: one row per repo.",
+          "items": {
+            "$ref": "#/$defs/MetricsRepoRow"
+          },
+          "maxItems": 200,
+          "type": "array"
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "tiles": {
+          "$ref": "#/$defs/MetricsTiles"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "until": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "since",
+        "until",
+        "tiles",
+        "days",
+        "merges",
+        "mergesTotal",
+        "coverage"
+      ],
+      "type": "object"
+    },
+    "MetricsMerge": {
+      "description": "One landed change, for the list and the hovers.",
+      "properties": {
+        "additions": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "author": {
+          "$ref": "#/$defs/ActorKind"
+        },
+        "batchPr": {
+          "description": "The train's batch PR it landed in.",
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "changeId": {
+          "$ref": "#/$defs/ChangeId"
+        },
+        "deletions": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "firstPrAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "The stages between requested and merged: its first PR opened, its review passed."
+        },
+        "mergedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "mergedBy": {
+          "$ref": "#/$defs/ActorKind"
+        },
+        "orderToMergedMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "prCreatedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "prNumber": {
+          "description": "Absent on a direct push.",
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "prOpenToMergedMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "The project that owns it on this hub; the same repo may be checked out by others (`MetricsRepoRow`)."
+        },
+        "repo": {
+          "$ref": "#/$defs/RemoteRepo"
+        },
+        "requestedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "requestedBasis": {
+          "$ref": "#/$defs/RequestedBasis"
+        },
+        "reviewPassedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "route": {
+          "$ref": "#/$defs/MergeRoute"
+        },
+        "seenClaim": {
+          "description": "The ledger claim of a human session that saw this work before it landed.",
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "sha": {
+          "$ref": "#/$defs/CommitSha",
+          "description": "The merge, squash or pushed commit on the default branch."
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        },
+        "title": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "touches": {
+          "description": "The person's touches that belong to this PR: reviews on it, its merge by hand.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "url": {
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "required": [
+        "repo",
+        "route",
+        "mergedAt",
+        "touches"
+      ],
+      "type": "object"
+    },
+    "MetricsRepoRow": {
+      "description": "One repo's four numbers, for the cross-fleet table under \"All projects\".",
+      "properties": {
+        "humanPerPrMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "mergedPerDay": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "n": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "orderToMergedMedianMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "projects": {
+          "description": "Every project on this hub with it checked out, so the same merges show under each.",
+          "items": {
+            "$ref": "#/$defs/ProjectRef"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "repo": {
+          "$ref": "#/$defs/RemoteRepo"
+        },
+        "spark": {
+          "description": "Merged per day over slices of the range.",
+          "items": {
+            "$ref": "#/$defs/SparkPoint"
+          },
+          "maxItems": 12,
+          "type": "array"
+        },
+        "throughFleetdPct": {
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "repo",
+        "projects",
+        "mergedPerDay",
+        "n",
+        "spark"
+      ],
+      "type": "object"
+    },
+    "MetricsRetentionSetInput": {
+      "properties": {
+        "retentionDays": {
+          "maximum": 400,
+          "minimum": 30,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "retentionDays"
+      ],
+      "type": "object"
+    },
+    "MetricsRetentionSetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "retentionDays": {
+          "maximum": 400,
+          "minimum": 30,
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "retentionDays"
+      ],
+      "type": "object"
+    },
+    "MetricsTiles": {
+      "description": "The KPI row: all four, equal.",
+      "properties": {
+        "human": {
+          "$ref": "#/$defs/HumanTile"
+        },
+        "merged": {
+          "$ref": "#/$defs/MergedTile"
+        },
+        "orderToMerged": {
+          "$ref": "#/$defs/OrderToMergedTile"
+        },
+        "throughFleetd": {
+          "$ref": "#/$defs/ThroughFleetdTile"
+        }
+      },
+      "required": [
+        "merged",
+        "orderToMerged",
+        "human",
+        "throughFleetd"
       ],
       "type": "object"
     },
@@ -4576,6 +5219,64 @@
           "type": "string"
         }
       ]
+    },
+    "OrderToMergedTile": {
+      "description": "Time from order to merged, over the landed changes that belong to an order (`train` and `fleetd_by_hand`).",
+      "properties": {
+        "fromOpened": {
+          "description": "Of `n`, those timed from when the lead opened the order rather than when the person asked.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "medianMs": {
+          "description": "Absent when `n` is 0.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "n": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "noOrder": {
+          "description": "Landed changes with no order (`outside`, `direct`), shown as \"n merged with no order\".",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "p90Ms": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "prOpenMedianMs": {
+          "description": "PR opened to merged over every PR of every route, for a like-for-like comparison.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "previousMedianMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "spark": {
+          "items": {
+            "$ref": "#/$defs/SparkPoint"
+          },
+          "maxItems": 12,
+          "type": "array"
+        }
+      },
+      "required": [
+        "n",
+        "fromOpened",
+        "noOrder",
+        "spark"
+      ],
+      "type": "object"
     },
     "OrdersBoardInput": {
       "properties": {
@@ -6947,6 +7648,9 @@
       ],
       "type": "object"
     },
+    "RemoteRepo": {
+      "type": "string"
+    },
     "RepeatStat": {
       "properties": {
         "label": {
@@ -6979,6 +7683,60 @@
       ],
       "type": "object"
     },
+    "RepoCoverage": {
+      "description": "What a repo's figures were read from.",
+      "properties": {
+        "defaultBranch": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "host": {
+          "$ref": "#/$defs/GitHost"
+        },
+        "knownSince": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "Merges are known from here on (the first read backfills 90 days)."
+        },
+        "lastRead": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "The last good read of its host's API or its git log."
+        },
+        "repo": {
+          "$ref": "#/$defs/RemoteRepo"
+        }
+      },
+      "required": [
+        "repo",
+        "host"
+      ],
+      "type": "object"
+    },
+    "RepoStale": {
+      "description": "A repo whose reads are failing: its figures stop at `since`, never a silent zero.",
+      "properties": {
+        "reason": {
+          "description": "\"GitHub not read since 14:02: `gh` is signed out\".",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "repo": {
+          "$ref": "#/$defs/RemoteRepo"
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "repo",
+        "since",
+        "reason"
+      ],
+      "type": "object"
+    },
     "RequestKind": {
       "description": "What a lead needs a person for that chat can't carry safely: a secret value (entered in a masked field and sealed to\nthe sink's node, never in a transcript), or an approval of a risky command (a gated run, or a session's tool\nprompt). The lead asks everything else in chat.",
       "enum": [
@@ -6999,6 +7757,26 @@
         "failed"
       ],
       "type": "string"
+    },
+    "RequestedBasis": {
+      "description": "Where an order's `requested_at` came from.",
+      "oneOf": [
+        {
+          "const": "source",
+          "description": "The person submitted the order directly (app or MCP).",
+          "type": "string"
+        },
+        {
+          "const": "chat",
+          "description": "The earliest human chat message of the lead run that opened it.",
+          "type": "string"
+        },
+        {
+          "const": "opened",
+          "description": "When the lead opened it: later than the real request by the lead's turn, and labelled so.",
+          "type": "string"
+        }
+      ]
     },
     "RequestsListInput": {
       "properties": {
@@ -7134,6 +7912,62 @@
       ],
       "type": "string",
       "x-open": true
+    },
+    "RouteCounts": {
+      "description": "Landed changes per route.",
+      "properties": {
+        "direct": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "fleetdByHand": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "outside": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "train": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "train",
+        "fleetdByHand",
+        "outside",
+        "direct"
+      ],
+      "type": "object"
+    },
+    "RouteLines": {
+      "description": "Lines changed by one route's landed changes, for the share's tooltip (the share itself is by count).",
+      "properties": {
+        "additions": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "deletions": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "route": {
+          "$ref": "#/$defs/MergeRoute"
+        }
+      },
+      "required": [
+        "route",
+        "additions",
+        "deletions"
+      ],
+      "type": "object"
     },
     "RunEnd": {
       "description": "Why a run ended, so a node going away reads apart from a person stopping it. Set once the run is no longer active.",
@@ -7491,6 +8325,45 @@
       ],
       "type": "string"
     },
+    "SkipCount": {
+      "description": "Merges that are not landed changes, by why.",
+      "properties": {
+        "n": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "why": {
+          "$ref": "#/$defs/SkipWhy"
+        }
+      },
+      "required": [
+        "why",
+        "n"
+      ],
+      "type": "object"
+    },
+    "SkipWhy": {
+      "description": "Why a merge into the repo is not a landed change. These are counted in the tooltips, never silently dropped.",
+      "oneOf": [
+        {
+          "const": "bot",
+          "description": "Opened by a bot account (dependabot, renovate…): out of all four metrics.",
+          "type": "string"
+        },
+        {
+          "const": "other_base",
+          "description": "Merged into a base that is not the default branch and that the train doesn't guard.",
+          "type": "string"
+        },
+        {
+          "const": "merge_back",
+          "description": "A release or sync PR whose head is a default branch, or itself the base of other PRs.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
     "SleptSpan": {
       "description": "A span a machine spent asleep, epoch milliseconds; `machine.slept` carries the same fields as its data.",
       "properties": {
@@ -7574,6 +8447,30 @@
         "maxAgents",
         "running",
         "queued"
+      ],
+      "type": "object"
+    },
+    "SourceMs": {
+      "description": "The person's minutes from one source on one day.",
+      "properties": {
+        "ms": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "source": {
+          "$ref": "#/$defs/HumanSource"
+        },
+        "touches": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "source",
+        "ms",
+        "touches"
       ],
       "type": "object"
     },
@@ -7956,6 +8853,23 @@
       "required": [
         "endAt",
         "samples"
+      ],
+      "type": "object"
+    },
+    "SparkPoint": {
+      "description": "One point of a tile's sparkline: the figure over one slice of the range.",
+      "properties": {
+        "since": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "value": {
+          "description": "In the tile's unit. Absent when the slice has nothing to measure (no merges for a median).",
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "since"
       ],
       "type": "object"
     },
@@ -9110,6 +10024,50 @@
       },
       "required": [
         "items"
+      ],
+      "type": "object"
+    },
+    "ThroughFleetdTile": {
+      "description": "Share of merged work through fleetd, by count.",
+      "properties": {
+        "lines": {
+          "items": {
+            "$ref": "#/$defs/RouteLines"
+          },
+          "maxItems": 8,
+          "type": "array"
+        },
+        "madeByFleetdPct": {
+          "description": "`train` + `fleetd_by_hand` over all landed changes.",
+          "minimum": 0,
+          "type": "number"
+        },
+        "n": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pct": {
+          "description": "`train` over all landed changes; absent when there are none.",
+          "minimum": 0,
+          "type": "number"
+        },
+        "previousPct": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "spark": {
+          "items": {
+            "$ref": "#/$defs/SparkPoint"
+          },
+          "maxItems": 12,
+          "type": "array"
+        }
+      },
+      "required": [
+        "n",
+        "lines",
+        "spark"
       ],
       "type": "object"
     },

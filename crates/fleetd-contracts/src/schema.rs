@@ -99,6 +99,8 @@ fn hub_event_data_document_for(side: Side) -> Value {
         data!(PromptChangedData: PromptChanged);
         data!(crate::chat::ChatMessageEventData: ChatMessage);
         data!(crate::chat::ProjectChatState: ChatWaiting);
+        data!(crate::metrics::AppPresenceData: AppPresence);
+        data!(crate::metrics::RepoAdvancedData: RepoAdvanced);
         data!(SteerEventData: SteerQueued, SteerDelivered, SteerAcknowledged, SteerUnacknowledged, SteerWithdrawn,
             SteerFailed);
         let required: Vec<Value> = properties.keys().cloned().map(Value::String).collect();

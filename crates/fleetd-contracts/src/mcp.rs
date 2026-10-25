@@ -485,6 +485,42 @@ output!(TimeInsightsOutput { insights: List<Insight, 0, 30> });
 input!(TimeRetentionSetInput { retention_days: Int<1, 365> });
 output!(TimeRetentionSetOutput { retention_days: Int<1, 365> });
 
+// metrics_get: the factory metrics of one project's repos, or the whole fleet's deduped by repo: merged per day,
+// order to merged, the person's minutes per merged PR and the share through fleetd, by calendar day in `tz`.
+input!(MetricsGetInput {
+    /// Absent: every project you can read, each repo counted once.
+    project_ref: Option<ProjectRef>,
+    since: Timestamp,
+    /// Absent: now.
+    until: Option<Timestamp>,
+    tz: crate::wakes::TimeZone,
+    /// Add the previous period of the same length's days (the tiles always carry its figures).
+    #[serde(default)]
+    compare: bool,
+});
+output!(MetricsGetOutput {
+    since: Timestamp,
+    until: Timestamp,
+    tiles: crate::metrics::MetricsTiles,
+    /// Every calendar day of the range in `tz`, oldest first, empty days included.
+    days: List<crate::metrics::MetricsDay, 0, 400>,
+    /// Landed changes in the range, newest first; `truncated` when there were more than fit.
+    merges: List<crate::metrics::MetricsMerge, 0, 1000>,
+    merges_total: Count,
+    /// Without projectRef: one row per repo.
+    repos: Option<List<crate::metrics::MetricsRepoRow, 0, 200>>,
+    coverage: crate::metrics::MetricsCoverage,
+    compare: Option<crate::metrics::MetricsComparePeriod>,
+});
+
+// metrics_retention_set: how many days the hub keeps landed changes and the person's touches.
+input!(MetricsRetentionSetInput {
+    retention_days: crate::metrics::MetricsRetentionDays
+});
+output!(MetricsRetentionSetOutput {
+    retention_days: crate::metrics::MetricsRetentionDays
+});
+
 // thread_window: the items and messages around one item of a session, oldest first (for "click to transcript").
 input!(ThreadWindowInput {
     machine_id: MachineId,
@@ -1157,6 +1193,8 @@ tools! {
     time_breakdown => TimeBreakdown, Read, TimeBreakdownInput, TimeBreakdownOutput;
     time_insights => TimeInsights, Read, TimeInsightsInput, TimeInsightsOutput;
     time_retention_set => TimeRetentionSet, Admin, TimeRetentionSetInput, TimeRetentionSetOutput;
+    metrics_get => MetricsGet, Read, MetricsGetInput, MetricsGetOutput;
+    metrics_retention_set => MetricsRetentionSet, Admin, MetricsRetentionSetInput, MetricsRetentionSetOutput;
     thread_window => ThreadWindow, Read, ThreadWindowInput, ThreadWindowOutput;
     status_get => StatusGet, Read, StatusGetInput, StatusGetOutput;
     plan_get => PlanGet, Read, PlanGetInput, PlanGetOutput;

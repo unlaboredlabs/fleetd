@@ -43,6 +43,9 @@ fn every_live_fixture_round_trips() {
     round_trip::<SessionCallFrame>("session_call_list_files.json");
     round_trip::<SessionCallFrame>("session_call_put_file.json");
     round_trip::<SessionReplyFrame>("session_reply_files.json");
+    round_trip::<MetricsGetInput>("metrics_get.input.json");
+    round_trip::<MetricsGetOutput>("metrics_get.output.json");
+    round_trip::<fleetd_contracts::events::HubEvent>("app_presence.event.json");
 }
 
 #[test]

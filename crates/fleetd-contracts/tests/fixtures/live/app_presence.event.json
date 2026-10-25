@@ -1,0 +1,9 @@
+{
+  "at": "2026-10-20T09:31:00.000Z",
+  "data": { "by": "laptop", "fromMs": 1792488600000, "toMs": 1792488660000 },
+  "machineId": "devbox",
+  "projectId": "p1",
+  "seq": 912,
+  "summary": "app in use",
+  "type": "app.presence"
+}

@@ -605,7 +605,7 @@
         },
         {
           "const": "pr.merged_outside",
-          "description": "A PR was merged into a base the train guards without the train; `data.repo`, `data.prNumber`,\n`data.mergedSha`, and `data.changeId` when it had been enqueued.",
+          "description": "A PR was merged into a base the train guards without the train; `data.repo`, `data.prNumber`,\n`data.mergedSha`, and `data.changeId` when it had been enqueued. Newer hubs add `data.mergedAt`, `data.head`,\n`data.prCreatedAt`, `data.authorKind` and `data.mergedByKind`.",
           "type": "string"
         },
         {
@@ -706,6 +706,16 @@
         {
           "const": "chat.waiting",
           "description": "A project's chat started or stopped waiting on you, or its lead started or ended a turn; `data` is the\n`chat::ProjectChatState`.",
+          "type": "string"
+        },
+        {
+          "const": "app.presence",
+          "description": "The app was focused on a project's screen with recent input, for one interval; `data` is\n`metrics::AppPresenceData`. A human touch for the factory metrics.",
+          "type": "string"
+        },
+        {
+          "const": "repo.advanced",
+          "description": "A node's fetch saw a remote's default branch move; `data` is `metrics::RepoAdvancedData`.",
           "type": "string"
         }
       ],

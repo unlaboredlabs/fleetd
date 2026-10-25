@@ -126,7 +126,8 @@ pub enum HubEventType {
     #[serde(rename = "pr.merged")]
     PrMerged,
     /// A PR was merged into a base the train guards without the train; `data.repo`, `data.prNumber`,
-    /// `data.mergedSha`, and `data.changeId` when it had been enqueued.
+    /// `data.mergedSha`, and `data.changeId` when it had been enqueued. Newer hubs add `data.mergedAt`, `data.head`,
+    /// `data.prCreatedAt`, `data.authorKind` and `data.mergedByKind`.
     #[serde(rename = "pr.merged_outside")]
     PrMergedOutside,
     /// Refused at enqueue; `data.prUrl`, `data.fix`.
@@ -198,6 +199,13 @@ pub enum HubEventType {
     /// `chat::ProjectChatState`.
     #[serde(rename = "chat.waiting")]
     ChatWaiting,
+    /// The app was focused on a project's screen with recent input, for one interval; `data` is
+    /// `metrics::AppPresenceData`. A human touch for the factory metrics.
+    #[serde(rename = "app.presence")]
+    AppPresence,
+    /// A node's fetch saw a remote's default branch move; `data` is `metrics::RepoAdvancedData`.
+    #[serde(rename = "repo.advanced")]
+    RepoAdvanced,
 }
 
 impl HubEventType {
@@ -267,6 +275,8 @@ impl HubEventType {
             Self::SourceFresh => "source.fresh",
             Self::ChatMessage => "chat.message",
             Self::ChatWaiting => "chat.waiting",
+            Self::AppPresence => "app.presence",
+            Self::RepoAdvanced => "repo.advanced",
         }
     }
 }
@@ -368,6 +378,16 @@ pub struct TrainEventData {
     pub pr_number: Option<Count>,
     pub pr_url: Option<String>,
     pub merged_sha: Option<String>,
+    /// pr.merged, pr.merged_outside: when it landed on the git host.
+    pub merged_at: Option<Timestamp>,
+    /// pr.merged: the train's batch PR it landed in.
+    pub batch_pr: Option<Count>,
+    /// pr.merged_outside: the PR's head branch and when it was opened.
+    pub head: Option<String>,
+    pub pr_created_at: Option<Timestamp>,
+    /// pr.merged_outside: who opened and who merged it, by the git host's account type.
+    pub author_kind: Option<crate::metrics::ActorKind>,
+    pub merged_by_kind: Option<crate::metrics::ActorKind>,
     /// pr.merged on a repo with no CI: what fleetd checked instead.
     pub ci: Option<String>,
     /// change.ci_failed: the failing check names.
