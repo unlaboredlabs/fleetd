@@ -1059,7 +1059,7 @@
           "$ref": "#/$defs/WorkEventData"
         },
         "work.landed": {
-          "$ref": "#/$defs/LandingEventData"
+          "$ref": "#/$defs/WorkLandedData"
         },
         "workstream.created": {
           "$ref": "#/$defs/WorkstreamEventData"
@@ -1128,120 +1128,6 @@
         "workstream.done",
         "workstream.running",
         "workstream.state"
-      ],
-      "type": "object"
-    },
-    "Landing": {
-      "description": "One commit on the first-parent line of a watched base, whoever made it and however it got there.",
-      "properties": {
-        "at": {
-          "$ref": "#/$defs/Timestamp",
-          "description": "The commit's committer time."
-        },
-        "authorEmail": {
-          "maxLength": 200,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
-        "base": {
-          "maxLength": 250,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
-        "changeId": {
-          "$ref": "#/$defs/ChangeId",
-          "description": "The Change it is, or merged."
-        },
-        "claimIds": {
-          "description": "The claims it ended.",
-          "items": {
-            "$ref": "#/$defs/ClaimId"
-          },
-          "type": "array"
-        },
-        "headBranch": {
-          "description": "The branch it came from, when the merge message or the host names one.",
-          "maxLength": 250,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
-        "itemIds": {
-          "description": "The plan item of its task.",
-          "items": {
-            "$ref": "#/$defs/PlanItemId"
-          },
-          "type": "array"
-        },
-        "paths": {
-          "description": "What it changed against its first parent; the first `LANDING_PATHS_MAX`, and only what the node's output kept.",
-          "items": {
-            "maxLength": 500,
-            "minLength": 1,
-            "pattern": "^[^\\r\\n]*$",
-            "type": "string"
-          },
-          "maxItems": 200,
-          "type": "array"
-        },
-        "prNumber": {
-          "description": "The PR or merge request it came from, when the merge message or the host names one.",
-          "maximum": 9007199254740991,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "prUrl": {
-          "description": "Built from the repo key on hosts whose PR URLs fleetd knows (GitHub, GitLab, Bitbucket).",
-          "type": "string"
-        },
-        "repoKey": {
-          "$ref": "#/$defs/RepoKey"
-        },
-        "route": {
-          "$ref": "#/$defs/LandingRoute"
-        },
-        "seenAt": {
-          "$ref": "#/$defs/Timestamp",
-          "description": "When the scanner saw it."
-        },
-        "sha": {
-          "$ref": "#/$defs/CommitSha"
-        },
-        "subject": {
-          "maxLength": 300,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
-        "taskId": {
-          "$ref": "#/$defs/TaskId",
-          "description": "The write task whose work it is: its Change's, or the one whose branch it came from."
-        }
-      },
-      "required": [
-        "repoKey",
-        "base",
-        "sha",
-        "at",
-        "seenAt",
-        "route",
-        "subject",
-        "paths",
-        "claimIds",
-        "itemIds"
-      ],
-      "type": "object"
-    },
-    "LandingEventData": {
-      "description": "`HubEvent.data` on `work.landed`.",
-      "properties": {
-        "landing": {
-          "$ref": "#/$defs/Landing"
-        }
-      },
-      "required": [
-        "landing"
       ],
       "type": "object"
     },
@@ -2412,6 +2298,76 @@
         "base",
         "ownerKind",
         "state"
+      ],
+      "type": "object"
+    },
+    "WorkLandedData": {
+      "description": "`HubEvent.data` on `work.landed`: a commit that reached a watched base, however it got there, and the fleetd work\nit was.",
+      "properties": {
+        "base": {
+          "maxLength": 250,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "changeId": {
+          "$ref": "#/$defs/ChangeId",
+          "description": "The Change it is, or merged."
+        },
+        "claimIds": {
+          "description": "The claims it ended.",
+          "items": {
+            "$ref": "#/$defs/ClaimId"
+          },
+          "type": "array"
+        },
+        "headBranch": {
+          "description": "The branch it came from, when the merge message or the host names one.",
+          "maxLength": 250,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "itemIds": {
+          "description": "The plan item of its task.",
+          "items": {
+            "$ref": "#/$defs/PlanItemId"
+          },
+          "type": "array"
+        },
+        "prNumber": {
+          "description": "The PR or merge request it came from, when the merge message or the host names one.",
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "repoKey": {
+          "$ref": "#/$defs/RepoKey"
+        },
+        "route": {
+          "$ref": "#/$defs/LandingRoute"
+        },
+        "sha": {
+          "$ref": "#/$defs/CommitSha"
+        },
+        "subject": {
+          "maxLength": 300,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId",
+          "description": "The write task whose work it is: its Change's, or the one whose branch it came from."
+        }
+      },
+      "required": [
+        "repoKey",
+        "base",
+        "sha",
+        "route",
+        "subject",
+        "claimIds",
+        "itemIds"
       ],
       "type": "object"
     },

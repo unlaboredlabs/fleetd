@@ -1340,41 +1340,6 @@ export type KindTotal = {
   n: number;
 };
 
-/** One commit on the first-parent line of a watched base, whoever made it and however it got there. */
-export type Landing = {
-  /** The commit's committer time. */
-  at: Timestamp;
-  authorEmail?: string;
-  base: string;
-  /** The Change it is, or merged. */
-  changeId?: ChangeId;
-  /** The claims it ended. */
-  claimIds: ClaimId[];
-  /** The branch it came from, when the merge message or the host names one. */
-  headBranch?: string;
-  /** The plan item of its task. */
-  itemIds: PlanItemId[];
-  /** What it changed against its first parent; the first `LANDING_PATHS_MAX`, and only what the node's output kept. */
-  paths: string[];
-  /** The PR or merge request it came from, when the merge message or the host names one. */
-  prNumber?: number;
-  /** Built from the repo key on hosts whose PR URLs fleetd knows (GitHub, GitLab, Bitbucket). */
-  prUrl?: string;
-  repoKey: RepoKey;
-  route: LandingRoute;
-  /** When the scanner saw it. */
-  seenAt: Timestamp;
-  sha: CommitSha;
-  subject: string;
-  /** The write task whose work it is: its Change's, or the one whose branch it came from. */
-  taskId?: TaskId;
-};
-
-/** `HubEvent.data` on `work.landed`. */
-export type LandingEventData = {
-  landing: Landing;
-};
-
 /** How a commit reached a base branch. */
 export type LandingRoute = "train" | "pr_outside" | "direct_push";
 
@@ -4095,6 +4060,30 @@ export type WorkKey = {
   branch: string;
 };
 
+/**
+ * `HubEvent.data` on `work.landed`: a commit that reached a watched base, however it got there, and the fleetd work
+ * it was.
+ */
+export type WorkLandedData = {
+  base: string;
+  /** The Change it is, or merged. */
+  changeId?: ChangeId;
+  /** The claims it ended. */
+  claimIds: ClaimId[];
+  /** The branch it came from, when the merge message or the host names one. */
+  headBranch?: string;
+  /** The plan item of its task. */
+  itemIds: PlanItemId[];
+  /** The PR or merge request it came from, when the merge message or the host names one. */
+  prNumber?: number;
+  repoKey: RepoKey;
+  route: LandingRoute;
+  sha: CommitSha;
+  subject: string;
+  /** The write task whose work it is: its Change's, or the one whose branch it came from. */
+  taskId?: TaskId;
+};
+
 export type WorkListInput = {
   base?: string;
   projectRef?: ProjectRef;
@@ -4325,7 +4314,7 @@ export interface HubEventDataMap {
   "usage.resumed": UsageEventData;
   "work.claimed": WorkEventData;
   "work.ended": WorkEventData;
-  "work.landed": LandingEventData;
+  "work.landed": WorkLandedData;
   "workstream.created": WorkstreamEventData;
   "workstream.done": WorkstreamEventData;
   "workstream.running": WorkstreamEventData;

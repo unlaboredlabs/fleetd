@@ -41,11 +41,11 @@ use fleetd_contracts::train::Change;
 use fleetd_contracts::verification::CommitSha;
 use fleetd_contracts::work::{
     BranchName, CLAIM_KEYS_MAX, CLAIM_PATHS_MAX, CLAIM_TTL_MS, Claim, ClaimEnd, ClaimId,
-    ClaimObserved, ClaimOwner, ClaimState, EXPIRED_SHOWN_MS, Landing, LandingEventData,
-    LandingRoute, MatchStrength, RepoKey, WorkEventData, WorkItem, WorkKey, WorkMatch, WorkPath,
-    WorkScope,
+    ClaimObserved, ClaimOwner, ClaimState, EXPIRED_SHOWN_MS, LandingRoute, MatchStrength, RepoKey,
+    WorkEventData, WorkItem, WorkKey, WorkMatch, WorkPath, WorkScope,
 };
 
+use self::landings::Landing;
 use crate::clock::Clock;
 use crate::hub::api::Hub;
 use crate::hub::store::{EventLog, HubDb, NewEvent, StoreError, iso_ms, now_ms, parse_ms};
@@ -261,9 +261,7 @@ impl Work {
             project_id: Some(via.project_id.clone()),
             thread_id: None,
             summary: summary.chars().take(200).collect(),
-            data: Some(serde_json::to_value(LandingEventData {
-                landing: landing.clone(),
-            })?),
+            data: Some(serde_json::to_value(landing.event())?),
             attention: None,
         })?;
         Ok(true)

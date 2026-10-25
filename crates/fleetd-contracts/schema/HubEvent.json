@@ -327,7 +327,7 @@
         },
         {
           "const": "work.landed",
-          "description": "A commit reached a watched base, by the train, a PR merged outside it or a direct push; `data` is\n`work::LandingEventData`.",
+          "description": "A commit reached a watched base, by the train, a PR merged outside it or a direct push; `data` is\n`work::WorkLandedData`.",
           "type": "string"
         }
       ],

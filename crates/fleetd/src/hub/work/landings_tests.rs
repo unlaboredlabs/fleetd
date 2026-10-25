@@ -309,7 +309,7 @@ fn landed_events(hub: &Hub) -> Vec<Value> {
     page.events.into_iter().filter_map(|e| e.data).collect()
 }
 
-fn landings(hub: &Hub, scope: &WorkScope) -> Vec<fleetd_contracts::work::Landing> {
+fn landings(hub: &Hub, scope: &WorkScope) -> Vec<super::landings::Landing> {
     let mut all = hub.work.landings(scope, 0, 100).unwrap();
     all.reverse();
     all
@@ -413,7 +413,14 @@ async fn a_direct_push_on_a_gitlab_repo_is_recorded_and_ends_its_authors_claim()
 
     let events = landed_events(&hub);
     assert_eq!(events.len(), 1);
-    assert_eq!(events[0]["landing"]["route"], "direct_push");
+    assert_eq!(
+        events[0],
+        json!({
+            "repoKey": "gitlab.example.com/acme/shop", "base": "main", "sha": sha, "route": "direct_push",
+            "subject": "feat(app): dark mode toggle for settings", "claimIds": [mine.as_str()], "itemIds": [],
+        }),
+        "work.landed leaves out what it doesn't know"
+    );
     assert!(
         hub.leads.wakes.pending(&shop),
         "an outside landing wakes the lead"

@@ -4,11 +4,10 @@
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
 use fleetd_contracts::prim::Line;
 use fleetd_contracts::tasks::Task;
-use fleetd_contracts::work::{
-    Claim, ClaimId, ClaimState, Landing, LandingRoute, RepoKey, WorkScope,
-};
+use fleetd_contracts::work::{Claim, ClaimId, ClaimState, LandingRoute, RepoKey, WorkScope};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
+use super::landings::Landing;
 use crate::hub::store::parse_ms;
 
 fn number_of(claim_id: &ClaimId) -> i64 {

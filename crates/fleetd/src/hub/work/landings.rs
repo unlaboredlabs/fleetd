@@ -15,14 +15,18 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use fleetd_contracts::ids::{MachineId, ProjectRef, Timestamp};
+use fleetd_contracts::plan::PlanItemId;
 use fleetd_contracts::prim::{Line, List, Positive};
 use fleetd_contracts::projects::short_remote;
 use fleetd_contracts::tasks::PrUrl;
+use fleetd_contracts::tasks::TaskId;
+use fleetd_contracts::train::ChangeId;
 use fleetd_contracts::train::{Change, ChangeState};
 use fleetd_contracts::verification::CommitSha;
 use fleetd_contracts::work::{
-    Claim, LANDING_PATHS_MAX, Landing, LandingRoute, RepoKey, WorkKey, WorkPath, WorkScope,
+    BranchName, Claim, ClaimId, LandingRoute, RepoKey, WorkKey, WorkLandedData, WorkPath, WorkScope,
 };
+use serde::{Deserialize, Serialize};
 
 use super::bind::{GitOut, NodeGit, bind_with, git};
 use super::elsewhere::{Landed, Landings};
@@ -35,6 +39,60 @@ use crate::hub::train::github::MergedPull;
 use crate::hub::train::records::{ChangeRecords, ListFilter};
 
 pub const SCAN_EVERY_MS: u64 = 60_000;
+/// The most paths a landing keeps.
+pub const LANDING_PATHS_MAX: usize = 200;
+
+/// One commit on the first-parent line of a watched base, whoever made it and however it got there: a `landings`
+/// row. Others read it through `elsewhere::Landings` and the `work.landed` event.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Landing {
+    pub repo_key: RepoKey,
+    pub base: BranchName,
+    pub sha: CommitSha,
+    /// The commit's committer time.
+    pub at: Timestamp,
+    /// When the scanner saw it.
+    pub seen_at: Timestamp,
+    pub route: LandingRoute,
+    /// The PR or merge request it came from, when the merge message or the host names one.
+    pub pr_number: Option<Positive>,
+    /// Built from the repo key on hosts whose PR URLs fleetd knows (GitHub, GitLab, Bitbucket).
+    pub pr_url: Option<PrUrl>,
+    /// The branch it came from, when the merge message or the host names one.
+    pub head_branch: Option<BranchName>,
+    pub subject: Line<0, 300>,
+    pub author_email: Option<Line<1, 200>>,
+    /// What it changed against its first parent; the first `LANDING_PATHS_MAX`, and only what the node's output kept.
+    pub paths: List<WorkPath, 0, LANDING_PATHS_MAX>,
+    /// The Change it is, or merged.
+    pub change_id: Option<ChangeId>,
+    /// The write task whose work it is: its Change's, or the one whose branch it came from.
+    pub task_id: Option<TaskId>,
+    /// The claims it ended.
+    pub claim_ids: Vec<ClaimId>,
+    /// The plan item of its task.
+    pub item_ids: Vec<PlanItemId>,
+}
+
+impl Landing {
+    /// What `work.landed` says of it.
+    pub fn event(&self) -> WorkLandedData {
+        WorkLandedData {
+            repo_key: self.repo_key.clone(),
+            base: self.base.clone(),
+            sha: self.sha.clone(),
+            route: self.route,
+            pr_number: self.pr_number,
+            head_branch: self.head_branch.clone(),
+            subject: self.subject.clone(),
+            claim_ids: self.claim_ids.clone(),
+            change_id: self.change_id.clone(),
+            task_id: self.task_id.clone(),
+            item_ids: self.item_ids.clone(),
+        }
+    }
+}
 /// Commits read per watched base per scan; a base further behind catches up over the next scans.
 const SCAN_MAX: usize = 200;
 /// What a node's command output keeps: its last this many characters.

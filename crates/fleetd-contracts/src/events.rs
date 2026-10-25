@@ -217,7 +217,7 @@ pub enum HubEventType {
     #[serde(rename = "work.ended")]
     WorkEnded,
     /// A commit reached a watched base, by the train, a PR merged outside it or a direct push; `data` is
-    /// `work::LandingEventData`.
+    /// `work::WorkLandedData`.
     #[serde(rename = "work.landed")]
     WorkLanded,
 }
