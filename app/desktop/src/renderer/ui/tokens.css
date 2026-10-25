@@ -20,6 +20,9 @@
   --selected: #00000012;
   --hairline: #e6e6e2;
   --border: #cfcfca;
+  /* The lead's chat bubbles: a grey step under --hover's, so a bubble reads as one without a border. Yours are
+     --accent-fill. */
+  --bubble: #ececea;
   /* The only edge of a control that has no label inside it (field, checkbox, radio, switch off): 3:1 or more
      on every surface (WCAG 1.4.11). --border stays for buttons and panels, whose label or content marks them. */
   --control-border: #7a7a75;
@@ -76,6 +79,7 @@
   --selected: #ffffff17;
   --hairline: #323230;
   --border: #4a4a46;
+  --bubble: #30302e;
   --control-border: #8a8a85;
   --text: #ededea;
   --quiet: #ababa5;

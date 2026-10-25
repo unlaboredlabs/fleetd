@@ -12,7 +12,8 @@
   flex-direction: column;
   min-width: 0;
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  /* Round like the bubbles above it. */
+  border-radius: 18px;
   background: var(--raised);
 }
 .box:has(> .input:focus-visible) {
@@ -44,6 +45,27 @@
 }
 .input::placeholder {
   color: var(--faint);
+}
+
+/* The bubble you are answering, over the words. */
+.replying {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  min-width: 0;
+  margin: var(--space-2) var(--space-3) 0;
+  padding: 2px var(--space-1) 2px var(--space-2);
+  border-left: 2px solid var(--accent);
+}
+.replyIcon {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  color: var(--quiet);
+}
+.replyQuote {
+  flex: 1;
+  min-width: 0;
 }
 
 .chips {

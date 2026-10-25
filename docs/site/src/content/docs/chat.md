@@ -78,6 +78,13 @@ Reply in plain words, or tersely:
 | `nvm` | Drop it. |
 | `2: keep it for two releases` | Answer an item in your own words. |
 
+To answer one bubble, hover it and click Reply: its first line goes above the box, and your message is sent quoting
+it. When the lead asks a yes-or-no question, it shows Approve and Deny buttons, or one button per choice; a click
+sends that word as your reply.
+
+Hover any of the lead's bubbles for a tapback (👍, ❤️ and the rest). Tapbacks stay on this device and don't reach the
+lead, with one exception: 👍 on the message the lead waits on, or on an Approve and Deny question, answers it.
+
 The lead logs each answer as a [decision](/docs/glossary#decision), so it never asks the same thing twice. In the
 sidebar, a project says "reply" while the lead's last message waits for your answer, "secret" or "approve" while an
 item is open, and "blocked" when something outside the work holds it up. ⌥⌘A jumps to the next one. In the chat, a
@@ -121,6 +128,8 @@ Everything shows up in the chat, quietly:
 | The agents strip, under the lead's message | One line: how many agents are working, and on which PRs. Click it to see each agent in the panel's [Agents](/docs/desktop-app#agents) tab. |
 | A quiet line under the lead's reply | While the lead works: how long it has been working, what it's doing now, and the orders and agents it started. When it's done: how long it worked, such as "Worked for 3m 40s". |
 | One-line events | A pull request opened, merged, or sent back. |
+| Cards in the lead's messages | Charts, tables, a diff, a pull request or an agent with its live state, a checklist, an image. Click Open on a pull request or an agent to see it in the panel. |
+| Three dots | The lead is writing; its message shows when it's done. |
 
 For a project's progress at a glance, see [Status](/docs/status). For where the time went, see
 [Where time went](/docs/time-inspector).
