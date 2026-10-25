@@ -373,3 +373,36 @@ fleetd chat history <project> [--page <n>] --key-file <key> [--hub <url> | --hom
 ```
 
 the project's chat: who wrote each message, when, and what; the newest page, older ones with `--page`
+
+### fleetd work {#work}
+
+```text
+fleetd work [list] --key-file <key> [--hub <url> | --home <dir>]
+```
+
+what is in flight on this checkout's repo and base: fleetd's agents, PRs on the merge train, and people's claims
+
+### fleetd work claim {#work-claim}
+
+```text
+fleetd work claim "<intent>" [--issue <key>]... [--paths <a,b>] [--anyway]
+    [--not-duplicate-of <ids> --why "<reason>"] --key-file <key> [--hub <url> | --home <dir>]
+```
+
+check the intent against the work in flight and claim it, with the repo, branch, user.email and changed paths read from this checkout. Exit 0 claimed (or yours: a fleetd agent on its own task's branch), 1 taken or a likely duplicate (it says by what). Again on the same branch: renews it. `--anyway` (a human key only) claims taken work regardless
+
+### fleetd work done {#work-done}
+
+```text
+fleetd work done [C<n>] [--landing <sha>] --key-file <key> [--hub <url> | --home <dir>]
+```
+
+end your claim as landed (by default the one on this branch); `--landing`: the commit on the base. `--key-file` defaults to $FLEETD\_KEY\_FILE
+
+### fleetd work drop {#work-drop}
+
+```text
+fleetd work drop [C<n>] --key-file <key> [--hub <url> | --home <dir>]
+```
+
+end your claim as dropped (by default the one on this branch): you stop, or leave it to someone else

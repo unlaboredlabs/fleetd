@@ -197,6 +197,30 @@ pub struct WorkItem {
     pub since: Timestamp,
 }
 
+/// How sure the matcher is that new work repeats a piece in flight.
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum MatchStrength {
+    /// Shared words or a shared file: only listed.
+    Weak,
+    /// Most words, or words and most files: refused once; `notDuplicateOf` with a reason lets it through.
+    Strong,
+    /// The same item (held by someone else), issue, PR or branch: refused.
+    Exact,
+}
+
+/// A piece of work in flight that new work may repeat, and why the matcher thinks so.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkMatch {
+    pub strength: MatchStrength,
+    /// "same #42", "3 shared words: dark, mode, toggle; same file app/theme.ts".
+    pub why: String,
+    pub item: WorkItem,
+}
+
 /// `HubEvent.data` on `work.claimed` and `work.ended`.
 #[serde_with::skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]

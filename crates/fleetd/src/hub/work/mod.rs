@@ -5,14 +5,21 @@
 //!
 //! A claim lasts `CLAIM_TTL_MS` from its last renewal; the sweep expires it, and the view keeps an expired claim,
 //! as weak, for `EXPIRED_SHOWN_MS`.
+pub mod bind;
+pub mod check;
 pub mod matcher;
 pub mod store;
+pub mod tools;
 pub mod view;
+
+pub use bind::bind_from_root;
 
 #[cfg(test)]
 mod matcher_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tools_tests;
 
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
@@ -120,6 +127,28 @@ impl Work {
 
     /// Stores an active claim, good for `CLAIM_TTL_MS`, and announces it (`work.claimed`).
     pub fn claim(&self, new: NewClaim) -> Result<Claim, StoreError> {
+        self.claim_noted(new, None)
+    }
+
+    /// `claim`, with a note in its `work.claimed` summary: why it went ahead despite a match.
+    pub fn claim_noted(&self, new: NewClaim, note: Option<&str>) -> Result<Claim, StoreError> {
+        let note = note.map(str::to_owned);
+        match self.claim_if(new, None, |_| Ok::<_, std::convert::Infallible>((note, ())))? {
+            Ok((claim, ())) => Ok(claim),
+            Err(never) => match never {},
+        }
+    }
+
+    /// Stores an active claim, with what its branch changed when given, only if `check` passes on the scope's claims
+    /// (active ones, and those expired in the last `EXPIRED_SHOWN_MS`) as read in the same transaction. So two claims
+    /// made at once can't both pass a check that each would fail against the other. `check` returns the note for
+    /// `work.claimed`, or why the claim is refused.
+    pub fn claim_if<T, R>(
+        &self,
+        new: NewClaim,
+        observed: Option<ClaimObserved>,
+        check: impl FnOnce(Vec<Claim>) -> Result<(Option<String>, T), R>,
+    ) -> Result<Result<(Claim, T), R>, StoreError> {
         let now = self.now();
         let at = Timestamp(iso_ms(now));
         let claim = Claim {
@@ -132,7 +161,7 @@ impl Work {
             keys: new.keys,
             branch: new.branch,
             paths: new.paths,
-            observed: None,
+            observed,
             author_email: new.author_email,
             state: ClaimState::Active,
             end: None,
@@ -140,12 +169,27 @@ impl Work {
             renewed_at: at,
             expires_at: Timestamp(iso_ms(now + CLAIM_TTL_MS)),
         };
-        let claim = self.db.transaction(|c| Ok(store::insert(c, claim)?))?;
+        let scope = WorkScope {
+            repo_key: claim.repo_key.clone(),
+            base: claim.base.clone(),
+        };
+        let saved = self.db.transaction(|c| {
+            let claims = store::in_scope(c, &scope, now - EXPIRED_SHOWN_MS)?;
+            Ok(match check(claims) {
+                Ok((note, out)) => Ok((store::insert(c, claim)?, note, out)),
+                Err(refused) => Err(refused),
+            })
+        })?;
+        let (claim, note, out) = match saved {
+            Ok(saved) => saved,
+            Err(refused) => return Ok(Err(refused)),
+        };
+        let note = note.map(|n| format!(" ({n})")).unwrap_or_default();
         self.announce(
             &claim,
-            format!("{} claimed: {}", claim.claim_id, claim.title),
+            format!("{} claimed: {}{note}", claim.claim_id, claim.title),
         )?;
-        Ok(claim)
+        Ok(Ok((claim, out)))
     }
 
     /// Extends an active or expired claim by `CLAIM_TTL_MS` from now, with what its branch changed when given. An

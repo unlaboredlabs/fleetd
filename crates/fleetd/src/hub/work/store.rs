@@ -168,3 +168,12 @@ pub fn projects_in(db: &Connection, scope: &WorkScope) -> rusqlite::Result<Vec<P
     })?
     .collect()
 }
+
+/// The bases the repo's projects land on, most recently bound first.
+pub fn bases_of(db: &Connection, repo_key: &RepoKey) -> rusqlite::Result<Vec<String>> {
+    db.prepare_cached(
+        "SELECT base FROM work_projects WHERE repo_key = ? GROUP BY base ORDER BY max(updated_ms) DESC",
+    )?
+    .query_map([repo_key.as_str()], |r| r.get(0))?
+    .collect()
+}

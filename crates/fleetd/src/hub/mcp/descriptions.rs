@@ -224,4 +224,16 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "pr_diff",
         "A page of one changed file's diff as numbered lines (hunk, context, add, del; at most 400 per page). Secrets are replaced by [secret]. Read-only.",
     ),
+    (
+        "work_claim",
+        "Call before you start a code change in a repo: one line on what it does (title), the repo's origin remote (repo, any host) and, when known, branch, paths and issue keys. It checks the work in flight on the repo's base (fleetd's agents, PRs on the merge train, other people's sessions) and claims it in one call. status claimed: go ahead, and call work_done when it lands or you drop it. taken: someone else holds the same issue, PR, branch or plan item; tell the user before going on (with a human key, anyway: true claims it regardless). possible_duplicate: likely the same as matches[0]; tell the user, and if it is different work call again with notDuplicateOf and notDuplicateWhy. yours: you are fleetd's own agent on its task's branch, which the task already holds; go on. The same branch again renews your claim (keys and paths it adds are checked like a new claim's). A claim lasts 12 h from your last work_claim on it.",
+    ),
+    (
+        "work_list",
+        "What is in flight on a repo's base branch (repo, any host, or projectRef): fleetd's agents, PRs on the merge train, and claims by people's sessions (expired ones last), with their files and keys. Read-only.",
+    ),
+    (
+        "work_done",
+        "End your claim: outcome landed when the work reached the base (landing: its commit), dropped when you stop or leave it to someone else.",
+    ),
 ];

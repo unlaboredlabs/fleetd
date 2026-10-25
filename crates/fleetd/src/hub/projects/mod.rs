@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::events::HubEventType;
-use fleetd_contracts::ids::{MachineId, ProjectId};
+use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
 use fleetd_contracts::mcp::{
     ErrorCode, ProjectAddInput, ProjectAddOutput, ProjectDiscoverInput, ProjectDiscoverOutput,
 };
@@ -471,6 +471,7 @@ async fn register(
     m: &MachineId,
     path: &str,
     title: Option<&str>,
+    facts: &RepoFacts,
     inspect: ProjectInspect,
     add_id: Option<AddId>,
 ) -> Result<(ProjectId, bool, ProjectInspect), ToolError> {
@@ -487,6 +488,7 @@ async fn register(
             .await
             .map_err(crate::hub::executor::tools::from_executor)?;
     }
+    bind_scope(hub, m, &project_id, facts);
     let summary = format!("{title} added on {m}: {}", inspect.lead_needs);
     // The event log keeps at most 2 KB of data; a dry-run project_add has the whole inspect.
     let data = inspect::fit_added(ProjectAddedData {
@@ -509,6 +511,30 @@ async fn register(
     Ok((project_id, created, inspect))
 }
 
+/// Records the repo and base the project's work lands on, from what adding it read. `work::bind_from_root` reads
+/// them again for a project that has none recorded.
+fn bind_scope(hub: &Hub, m: &MachineId, project_id: &ProjectId, facts: &RepoFacts) {
+    let repo_key = facts
+        .remote
+        .as_deref()
+        .and_then(fleetd_contracts::work::RepoKey::of);
+    let base = facts
+        .default_branch
+        .as_deref()
+        .and_then(|b| fleetd_contracts::prim::Line::new(b).ok());
+    let (Some(repo_key), Some(base)) = (repo_key, base) else {
+        return;
+    };
+    let project = ProjectRef {
+        machine_id: m.clone(),
+        project_id: project_id.clone(),
+    };
+    let scope = fleetd_contracts::work::WorkScope { repo_key, base };
+    if let Err(error) = hub.work.bind_project(&project, &scope) {
+        tracing::warn!(%error, "the project's repo and base were not recorded");
+    }
+}
+
 pub async fn add(
     hub: Arc<Hub>,
     caller: &Caller,
@@ -529,7 +555,7 @@ pub async fn add(
             return Ok(dry(m, path.to_owned(), inspect, None));
         }
         let (project_id, created, inspect) =
-            register(&hub, &m, path, title.as_deref(), inspect, None).await?;
+            register(&hub, &m, path, title.as_deref(), &facts, inspect, None).await?;
         return Ok(ProjectAddOutput {
             next: Some(format!(
                 "{}. Write to its lead with chat_send; the lead starts with the first message.",
@@ -557,8 +583,16 @@ pub async fn add(
         if target.same_remote && input.use_existing == Some(true) {
             let facts = checkout(&hub, &m, &target.path).await?;
             let inspect = inspect_checkout(&facts).await?;
-            let (project_id, created, inspect) =
-                register(&hub, &m, &target.path, title.as_deref(), inspect, None).await?;
+            let (project_id, created, inspect) = register(
+                &hub,
+                &m,
+                &target.path,
+                title.as_deref(),
+                &facts,
+                inspect,
+                None,
+            )
+            .await?;
             return Ok(ProjectAddOutput {
                 next: Some(inspect.lead_needs.to_string()),
                 machine_id: m,
@@ -840,6 +874,7 @@ async fn clone_and_register(
         &m,
         &path,
         title.as_deref(),
+        &facts,
         inspect,
         Some(add_id.clone()),
     )
