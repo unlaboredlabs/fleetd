@@ -530,3 +530,21 @@ async fn the_leads_message_continues_a_held_agent() {
             .starts_with("recovering: automatic recovery is paused")
     );
 }
+
+/// T1's PR merged, then its run died: its work is in, so it ends instead of resuming.
+#[tokio::test]
+async fn a_death_after_its_pr_merged_ends_the_task() {
+    let mut lab = lab(1).await;
+    let merged: crate::hub::store::NewEvent = serde_json::from_value(json!({
+        "at": AT, "type": "pr.merged", "machineId": "lab-a", "projectId": "p1",
+        "summary": "PR #12 merged", "data": { "taskId": "T1", "changeId": "C1", "prNumber": 12 },
+    }))
+    .unwrap();
+    lab.hub.events.append(merged).unwrap();
+    lab.killed("t1", "r1").await;
+    let ended = lab.task(1);
+    assert_eq!((ended.state, ended.recovery), (TaskState::Failed, None));
+    lab.clock.advance(5 * MIN);
+    lab.retry_queue().await;
+    assert!(lab.sends().await.is_empty(), "never resumed");
+}
