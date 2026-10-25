@@ -18,7 +18,7 @@ use fleetd_contracts::sessions::{RunnerInfo, SessionRole};
 
 use super::{
     BoxFut, Runner, RunnerError, SessionHandle, SessionSpec, claude_setup, conformance, failure,
-    process,
+    process, scope,
 };
 use mapper::{Classify, StreamMapper};
 
@@ -356,33 +356,46 @@ impl Runner for ClaudeRunner {
 
         process::adopt_orphans();
         let marker = process::marker(&spec.session_id);
-        let mut cmd = tokio::process::Command::new(&self.binary);
-        cmd.args(self.args(&spec))
-            .current_dir(&spec.cwd)
-            .env_clear()
-            .envs(
-                spec.env
-                    .iter()
-                    .filter(|(k, _)| {
-                        !NESTING_VARS.contains(&k.as_str())
-                            && !SUBAGENTS_ON_ENV.contains(&k.as_str())
-                            && k != process::SESSION_MARKER
-                            && k != claude_setup::FLEETD_ENV_SOURCE
-                            && !SESSION_ENV.iter().any(|(set, _)| set == k)
-                            && k != HELPER_MODEL_ENV.0
-                    })
-                    .map(|(k, v)| (k, v)),
-            )
-            .envs(SUBAGENTS_OFF_ENV.iter().copied())
-            .envs([HELPER_MODEL_ENV])
-            .envs(SESSION_ENV.iter().copied())
-            .env(process::SESSION_MARKER, &marker)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .process_group(0)
-            .kill_on_drop(true);
-        let child = cmd.spawn().map_err(|error| {
+        // A binary that isn't there is reported as missing below, not as a scope that failed to start it.
+        let scope = scope::current().filter(|_| self.binary.exists());
+        let build = |program: PathBuf, args: Vec<String>, scope: Option<&scope::Scope>| {
+            let mut cmd = tokio::process::Command::new(program);
+            cmd.args(args)
+                .current_dir(&spec.cwd)
+                .env_clear()
+                .envs(
+                    spec.env
+                        .iter()
+                        .filter(|(k, _)| {
+                            !NESTING_VARS.contains(&k.as_str())
+                                && !SUBAGENTS_ON_ENV.contains(&k.as_str())
+                                && k != process::SESSION_MARKER
+                                && k != claude_setup::FLEETD_ENV_SOURCE
+                                && !SESSION_ENV.iter().any(|(set, _)| set == k)
+                                && k != HELPER_MODEL_ENV.0
+                        })
+                        .map(|(k, v)| (k, v)),
+                )
+                .envs(SUBAGENTS_OFF_ENV.iter().copied())
+                .envs([HELPER_MODEL_ENV])
+                .envs(SESSION_ENV.iter().copied())
+                .envs(scope.iter().flat_map(|s| s.env.iter().map(|(k, v)| (k, v))))
+                .env(process::SESSION_MARKER, &marker)
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .process_group(0)
+                .kill_on_drop(true);
+            cmd
+        };
+        let spawned = scope::spawn(
+            scope.as_ref(),
+            &self.binary,
+            self.args(&spec),
+            &spec.session_id,
+            build,
+        );
+        let (child, scope_failed) = spawned.map_err(|error| {
             if error.kind() == std::io::ErrorKind::NotFound && !self.binary.exists() {
                 RunnerError::Missing {
                     binary: binary.clone(),
@@ -391,6 +404,9 @@ impl Runner for ClaudeRunner {
                 refuse(format!("{error} (cwd {})", spec.cwd.display()))
             }
         })?;
+        if let Some(why) = scope_failed {
+            scope::failed(&why);
+        }
         let mapper = StreamMapper::new(spec.session_id.clone(), self.classify.clone());
         Ok(session::start(child, marker, mapper, spec.transcript))
     }

@@ -253,6 +253,19 @@ When the node had to rebuild a resumed agent's worktree, the line says what from
 One that fleetd did not resume wakes the lead: `- T23 failed and was not resumed: …`, with why (it died the same way
 twice, it ran out of automatic recoveries, or resuming can't fix the cause) and the lead's choices.
 
+### This machine {#this-machine}
+
+The node that starts a task adds a short section to the end of its brief, after your instructions:
+
+```
+## This machine
+- Builds get 2 parallel jobs per agent, your share of this machine's CPUs: CARGO_BUILD_JOBS, MAKEFLAGS, CMAKE_BUILD_PARALLEL_LEVEL, GOFLAGS are set to it. Keep any other build or test runner to 2 jobs too.
+- Scratch files go in $TMPDIR, a directory of your own on disk; never in /tmp, which may be held in memory.
+```
+
+The jobs line names only the variables fleetd set: one you set in `claude.env` stands, and drops out of the line. See
+[A fair share for each agent](/docs/machines#fair-share).
+
 ### Tool texts {#tool-texts}
 
 MCP tool descriptions, fleetd's agent tools included, and what the hub answers back (each `next:` and `fix:`) are
