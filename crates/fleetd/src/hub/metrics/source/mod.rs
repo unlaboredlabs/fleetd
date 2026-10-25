@@ -81,12 +81,14 @@ pub trait GitHostSource: Send + Sync {
         since_ms: i64,
     ) -> BoxFut<'a, Result<Vec<MergedPr>, String>>;
 
-    /// The commits reachable from `branch` made at or after `since_ms`, newest first.
+    /// The commits reachable from `branch`, newest first: back to `stop_at` (the last read's head) when given,
+    /// whatever their dates, else those made at or after `since_ms`.
     fn default_commits<'a>(
         &'a self,
         repo: &'a RepoRef,
         branch: &'a str,
         since_ms: i64,
+        stop_at: Option<&'a str>,
     ) -> BoxFut<'a, Result<Vec<LandedCommit>, String>>;
 
     /// The merged PRs a commit on the default branch belongs to, for a host that doesn't list them with the commit.

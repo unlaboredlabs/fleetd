@@ -1514,6 +1514,27 @@ async fn a_merge_outside_the_train_is_reported_once_and_only_into_a_base_the_tra
     );
 }
 
+/// The minute-by-minute check reads back to its watch, so the watch moves past the train's own merges too: a busy
+/// repo where only the train merges stays at one page a minute.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_outside_merge_watch_moves_past_the_trains_own_merges() {
+    let kit = Kit::new();
+    let pr = kit.open_pr(7, "a", &[add("a.txt", "a\n")]);
+    kit.enqueue(pr).await;
+    assert!(kit.train.step(REPO).await);
+    merged_outside(&kit, 11, "main");
+    let batch = FakePull {
+        branch: "fleetd/train/batch-1".into(),
+        ..kit.gh.pulls.lock().unwrap().remove(&11).unwrap()
+    };
+    let at = crate::hub::store::parse_ms(batch.merged_at.as_deref().unwrap()).unwrap();
+    kit.gh.pulls.lock().unwrap().insert(11, batch);
+
+    kit.train.step(REPO).await;
+    assert!(kit.host.events_of("pr.merged_outside").is_empty());
+    assert_eq!(kit.train.records().train(REPO).unwrap().watch_since_ms, at);
+}
+
 /// The train merges a PR into its own base, so a PR based on another open PR's branch would land in that PR: it is
 /// refused with how to go on once its parent merges.
 #[tokio::test(flavor = "multi_thread")]

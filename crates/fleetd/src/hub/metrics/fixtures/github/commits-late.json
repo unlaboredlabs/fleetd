@@ -1,0 +1,56 @@
+{
+ "data": {
+  "repository": {
+   "ref": {
+    "target": {
+     "history": {
+      "pageInfo": {
+       "hasNextPage": true,
+       "endCursor": "Y3Vyc29yOjI="
+      },
+      "nodes": [
+       {
+        "oid": "c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7",
+        "committedDate": "2026-10-01T09:00:00Z",
+        "messageHeadline": "Fix the footer links",
+        "parents": {
+         "nodes": [
+          {
+           "oid": "5050505050505050505050505050505050505050"
+          }
+         ]
+        },
+        "author": {
+         "name": "Ada Lovelace",
+         "email": "ada@example.com"
+        },
+        "associatedPullRequests": {
+         "nodes": []
+        }
+       },
+       {
+        "oid": "5050505050505050505050505050505050505050",
+        "committedDate": "2026-10-24T12:00:05Z",
+        "messageHeadline": "Checkout totals (#50)",
+        "parents": {
+         "nodes": [
+          {
+           "oid": "4141414141414141414141414141414141414141"
+          }
+         ]
+        },
+        "author": {
+         "name": "Ada Lovelace",
+         "email": "ada@example.com"
+        },
+        "associatedPullRequests": {
+         "nodes": []
+        }
+       }
+      ]
+     }
+    }
+   }
+  }
+ }
+}

@@ -316,23 +316,23 @@ async fn read_repo(
         path,
     };
     let store_err = |e: StoreError| format!("the hub's database: {e}");
-    let cursor: Option<i64> = hub
+    let (cursor, head_seen): (Option<i64>, Option<String>) = hub
         .db
         .with(|c| {
             Ok(c.query_row(
-                "SELECT merged_cursor_ms FROM metric_repos WHERE repo = ?1",
+                "SELECT merged_cursor_ms, commits_cursor_sha FROM metric_repos WHERE repo = ?1",
                 [remote],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?
-            .flatten())
+            .unwrap_or_default())
         })
         .map_err(store_err)?;
     let since = cursor.unwrap_or(now - BACKFILL_MS);
     let info = source.repo_info(&repo).await?;
     let pulls = source.merged_since(&repo, since).await?;
     let commits = source
-        .default_commits(&repo, &info.default_branch, since)
+        .default_commits(&repo, &info.default_branch, since, head_seen.as_deref())
         .await?;
     let mut rows = pr_rows(hub, &repo, &info, &pulls).map_err(store_err)?;
     let landed_shas: HashSet<String> = pulls
@@ -340,8 +340,8 @@ async fn read_repo(
         .filter_map(|p| p.merge_sha.clone())
         .chain(known_shas(&hub.db, remote).map_err(store_err)?)
         .collect();
-    for c in first_parent(&commits) {
-        if c.at_ms < since || landed_shas.contains(&c.sha) {
+    for c in landed_since(&commits, head_seen.as_deref(), since) {
+        if landed_shas.contains(&c.sha) {
             continue;
         }
         let prs = match &c.prs {
@@ -397,6 +397,21 @@ pub fn first_parent(commits: &[LandedCommit]) -> Vec<&LandedCommit> {
     out
 }
 
+/// The default branch's commits since the last read: its line back to the head that read saw, whatever their dates
+/// (a commit made earlier can be pushed later). With no head seen, or one no longer on the line (a force push), those
+/// made since `since_ms`.
+pub fn landed_since<'a>(
+    commits: &'a [LandedCommit],
+    head_seen: Option<&str>,
+    since_ms: i64,
+) -> Vec<&'a LandedCommit> {
+    let line = first_parent(commits);
+    match head_seen.and_then(|h| line.iter().position(|c| c.sha.eq_ignore_ascii_case(h))) {
+        Some(i) => line[..i].to_vec(),
+        None => line.into_iter().filter(|c| c.at_ms >= since_ms).collect(),
+    }
+}
+
 /// The commits already known as landed on the repo: merges and squashes the train or a PR left.
 fn known_shas(db: &HubDb, remote: &str) -> Result<Vec<String>, StoreError> {
     db.with(|c| {
@@ -441,16 +456,15 @@ fn actor_kind(k: ActorKind) -> Option<ActorKind> {
 }
 
 /// Why a merged PR is not a landed change, beyond the projector's bots: into a base that isn't the repo's default
-/// or one the train guards, or a merge-back (an upstream's default branch synced in, or a branch other PRs merge
+/// branch, or a merge-back (an upstream's default branch synced in, or a branch other PRs merge
 /// into, such as `release` → `main`).
 pub fn skip_why(
     pr: &MergedPr,
     repo_path: &str,
     info: &RepoInfo,
-    guarded: &dyn Fn(&str) -> bool,
     bases: &BTreeSet<&str>,
 ) -> Option<SkipWhy> {
-    if pr.base != info.default_branch && !guarded(&pr.base) {
+    if pr.base != info.default_branch {
         return Some(SkipWhy::OtherBase);
     }
     let same_repo = pr
@@ -481,7 +495,6 @@ fn pr_rows(
         .map(|p| p.base.as_str())
         .filter(|b| *b != info.default_branch)
         .collect();
-    let guarded = |base: &str| hub.train.guards_base(&repo.path, base);
     let mut out = Vec::new();
     for pr in pulls {
         let base = TrainEventData {
@@ -508,6 +521,7 @@ fn pr_rows(
                     &d,
                     pr.merged_ms,
                     fallback.clone(),
+                    None,
                 )?));
             }
             continue;
@@ -533,6 +547,7 @@ fn pr_rows(
             &d,
             pr.merged_ms,
             fallback.clone(),
+            Some(&info.default_branch),
         )?) else {
             continue;
         };
@@ -541,7 +556,7 @@ fn pr_rows(
         row.deletions = pr.deletions;
         if !train
             && row.route != SKIPPED
-            && let Some(why) = skip_why(pr, &repo.path, info, &guarded, &bases)
+            && let Some(why) = skip_why(pr, &repo.path, info, &bases)
         {
             row.route = SKIPPED.into();
             row.skip_why = Some(skip_str(why).into());
@@ -590,22 +605,9 @@ fn push_row(repo: &RepoRef, c: &LandedCommit, owner: Option<(String, String)>) -
     }
 }
 
-/// Writes a row the sweep made. A merge the train reported was into a base it guards, so the sweep's "other base"
-/// never overrides it; a PR's row replaces the direct push its commit was taken for before the host linked them.
+/// Writes a row the sweep made. A PR's row replaces the direct push its commit was taken for before the host linked
+/// them.
 fn write(c: &Connection, row: &MergeRow) -> Result<(), StoreError> {
-    if row.skip_why.as_deref() == Some(skip_str(SkipWhy::OtherBase)) {
-        let from_event: bool = c
-            .query_row(
-                "SELECT src = 'event' FROM metric_merges WHERE repo = ?1 AND unit_key = ?2",
-                params![row.repo, row.unit_key],
-                |r| r.get(0),
-            )
-            .optional()?
-            .unwrap_or(false);
-        if from_event {
-            return Ok(());
-        }
-    }
     if let Some(id) = &row.change_id {
         let mut row = row.clone();
         row.review_passed_ms = store::review_passed(c, id)?;
