@@ -2771,6 +2771,11 @@ export type RepoCoverage = {
    */
   partlyRead?: boolean;
   repo: RemoteRepo;
+  /**
+   * What can't be known of this repo's changes from what it is read from, one plain line each: on a repo read
+   * from git alone, who merged, reviews and bots. Absent when its host is read through its API.
+   */
+  unknown?: string[];
 };
 
 export type RepoKey = string;

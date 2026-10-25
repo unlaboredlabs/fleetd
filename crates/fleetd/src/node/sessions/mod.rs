@@ -871,6 +871,20 @@ impl SessionService {
             SessionCall::GhRepoList => {
                 Ok(SessionOutput::GhRepos(super::repos::gh_repo_list().await))
             }
+            SessionCall::LandedLog {
+                project_id,
+                branch,
+                since_ms,
+                stop_at,
+            } => {
+                let root = self.project_root(&project_id)?;
+                let stop_at = stop_at.map(|s| s.to_string());
+                let log = blocking(move || {
+                    super::landed::landed_log(&root, &branch, since_ms.get(), stop_at.as_deref())
+                })
+                .await?;
+                Ok(SessionOutput::LandedLog(log))
+            }
             SessionCall::DefaultBranch { project_id } => {
                 let root = self.project_root(&project_id)?;
                 // A new repo with no commit yet has nothing to start a worktree from: none, as for no checkout.

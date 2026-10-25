@@ -280,6 +280,7 @@ async fn run_link_once(
         capabilities: vec![
             fleetd_contracts::node_link::CAP_REPOS.to_owned(),
             fleetd_contracts::node_link::CAP_DETACHED.to_owned(),
+            fleetd_contracts::node_link::CAP_LANDED_LOG.to_owned(),
         ],
     }));
     let hub_id = match next_frame(&mut stream, HANDSHAKE_TIMEOUT, "welcome").await {

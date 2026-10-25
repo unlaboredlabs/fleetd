@@ -75,6 +75,9 @@ pub const CAP_REPOS: &str = "repos";
 /// `SessionWorkspace::Detached`: read and review tasks in a worktree of their own. An older node gets `Root`.
 pub const CAP_DETACHED: &str = "detached_worktree";
 
+/// `landed_log` (factory metrics for a repo whose host fleetd can't read).
+pub const CAP_LANDED_LOG: &str = "landed_log";
+
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]

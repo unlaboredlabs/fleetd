@@ -19,6 +19,7 @@ use rusqlite::Connection;
 
 use super::compute::{self, Period};
 use super::human;
+use super::no_host;
 use super::store::{self, MergeRow, RepoRow, TouchRow};
 use crate::hub::api::{Caller, Hub, Registry, ToolError, allows, allows_everywhere, require};
 use crate::hub::status::fresh;
@@ -108,7 +109,7 @@ fn host_name(host: GitHost) -> &'static str {
         GitHost::Gitea => "Gitea",
         GitHost::Bitbucket => "Bitbucket",
         GitHost::AzureDevOps => "Azure DevOps",
-        GitHost::Git | GitHost::Unknown => "The git host",
+        GitHost::Git | GitHost::Unknown => "Its git log",
     }
 }
 
@@ -135,10 +136,13 @@ fn coverage(
         // A train's repo is read by the train's GitHub calls.
         let seen =
             store::train_repo(repo).and_then(|r| hub.status.fresh.view(&fresh::github(r), now));
-        let Some(host) = row.map_or(seen.is_some().then_some(GitHost::GitHub), |r| host(&r.host))
+        let Some(stored) = row.map_or(seen.is_some().then_some(GitHost::GitHub), |r| host(&r.host))
         else {
             continue;
         };
+        // A host the sweep has no source for is read from git alone, and says what that can't know.
+        let from_git = row.is_some_and(|r| !super::source::has_api(&r.host));
+        let host = if from_git { GitHost::Git } else { stored };
         let last_read = seen
             .as_ref()
             .and_then(|v| v.as_of_ms)
@@ -180,6 +184,9 @@ fn coverage(
                 .or(known_since)
                 .map(|ms| Timestamp(iso_ms(ms))),
             partly_read: row.is_some_and(|r| r.partly_read).then_some(true),
+            unknown: from_git.then(|| {
+                List::unchecked(no_host::UNKNOWN.iter().filter_map(|l| line(l)).collect())
+            }),
         });
     }
     MetricsCoverage {
@@ -314,8 +321,9 @@ async fn metrics_get(
         }),
         next: Some(
             "Your minutes count what fleetd sees (chat, approvals, steers, decisions, orders, and reviews and \
-             comments on the git host made by your own login); coverage.invisible lists what it can't. Each repo's \
-             git host is read again within a minute of this read."
+             comments on the git host made by your own login); coverage.invisible lists what it can't. A repo read \
+             from git alone lists in coverage.repos[].unknown what git can't say, such as who merged. Each repo is \
+             read again within a minute of this read."
                 .into(),
         ),
         truncated: (merges_total > MAX_MERGES).then_some(true),

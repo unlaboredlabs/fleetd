@@ -3002,7 +3002,7 @@
         },
         {
           "const": "git",
-          "description": "No host API fleetd can read: landed changes come from the default branch's first-parent log, and reviews,\nbots and PR open times are absent.",
+          "description": "No host API fleetd can read: landed changes come from the default branch's first-parent log on a node,\nrouted by fleetd's commit trailers (`Fleetd-Change`, `Fleetd-Task`) and merge commits. Who merged, reviews,\nbots and PR open times are absent, and `RepoCoverage.unknown` says so.",
           "type": "string"
         }
       ],
@@ -4806,7 +4806,7 @@
         },
         {
           "const": "direct",
-          "description": "A first-parent commit on the default branch with no PR: \"Pushed straight to the default branch\". On a repo\nwith no git host fleetd can read, direct pushes and outside merges can't be told apart and both read as `outside`.",
+          "description": "A first-parent commit on the default branch with no PR: \"Pushed straight to the default branch\". On a repo\nwhose git host fleetd can't read, a merge commit reads as a PR merged by hand and any other commit with no\nfleetd trailer as pushed straight, so a PR squash-merged on the host reads as pushed straight there.",
           "type": "string"
         }
       ],
@@ -8168,6 +8168,18 @@
         },
         "repo": {
           "$ref": "#/$defs/RemoteRepo"
+        },
+        "unknown": {
+          "description": "What can't be known of this repo's changes from what it is read from, one plain line each: on a repo read\nfrom git alone, who merged, reviews and bots. Absent when its host is read through its API.",
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[^\\r\\n]*$",
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "type": "array"
         }
       },
       "required": [

@@ -73,6 +73,47 @@ fn member_lines(members: &[Candidate]) -> String {
         .join("\n")
 }
 
+/// The trailer that names a Change on the squash that lands it, `Fleetd-Change: X12 (T45, W9)`: the train's merges are
+/// told apart from git alone, on any host.
+pub(super) fn change_trailer(change: &Change) -> String {
+    let task = change
+        .task_id
+        .as_ref()
+        .map(|t| format!("{t}, "))
+        .unwrap_or_default();
+    format!(
+        "{}: {} ({task}{})",
+        fleetd_contracts::metrics::CHANGE_TRAILER,
+        change.change_id,
+        change.workstream_id
+    )
+}
+
+/// A squash message's body with the Changes' trailers last, where git reads them: in its own trailer block when it
+/// ends with one (the commits' `Co-authored-by` lines), so those stay trailers too.
+pub(super) fn with_trailers<'a>(
+    body: &str,
+    changes: impl IntoIterator<Item = &'a Change>,
+) -> String {
+    let trailers: Vec<String> = changes.into_iter().map(change_trailer).collect();
+    let body = body.replace("\r\n", "\n");
+    let body = body.trim();
+    let last = body.rsplit("\n\n").next().unwrap_or_default();
+    let trailer_block = !last.is_empty()
+        && last.lines().all(|l| {
+            l.split_once(": ").is_some_and(|(token, value)| {
+                !token.is_empty()
+                    && !value.trim().is_empty()
+                    && token.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+            })
+        });
+    match (body, trailer_block) {
+        ("", _) => trailers.join("\n"),
+        (body, true) => format!("{body}\n{}", trailers.join("\n")),
+        (body, false) => format!("{body}\n\n{}", trailers.join("\n")),
+    }
+}
+
 fn batch_body(base: &str, members: &[Candidate]) -> String {
     // Each member's head as built: a member counts as landed only while its PR is still at that head.
     let numbers: Vec<String> = members
@@ -416,7 +457,7 @@ impl Train {
             return self.release(&merging, &format!("GitHub: {}", e.message));
         }
         let commit_title = format!("{title} (#{pr})");
-        let commit_body = member_lines(&merging);
+        let commit_body = with_trailers(&member_lines(&merging), merging.iter().map(|m| &m.change));
         match self
             .github
             .merge(repo, pr, &sha, Some((&commit_title, &commit_body)))

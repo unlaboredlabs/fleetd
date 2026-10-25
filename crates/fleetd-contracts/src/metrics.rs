@@ -59,7 +59,8 @@ pub enum MergeRoute {
     /// A merged PR with no Change and no fleetd branch: "Merged outside fleetd".
     Outside,
     /// A first-parent commit on the default branch with no PR: "Pushed straight to the default branch". On a repo
-    /// with no git host fleetd can read, direct pushes and outside merges can't be told apart and both read as `outside`.
+    /// whose git host fleetd can't read, a merge commit reads as a PR merged by hand and any other commit with no
+    /// fleetd trailer as pushed straight, so a PR squash-merged on the host reads as pushed straight there.
     Direct,
     /// A route this build doesn't know (a newer hub). Never sent.
     #[serde(other)]
@@ -241,8 +242,9 @@ pub enum GitHost {
     Bitbucket,
     #[serde(rename = "azure_devops")]
     AzureDevOps,
-    /// No host API fleetd can read: landed changes come from the default branch's first-parent log, and reviews,
-    /// bots and PR open times are absent.
+    /// No host API fleetd can read: landed changes come from the default branch's first-parent log on a node,
+    /// routed by fleetd's commit trailers (`Fleetd-Change`, `Fleetd-Task`) and merge commits. Who merged, reviews,
+    /// bots and PR open times are absent, and `RepoCoverage.unknown` says so.
     Git,
     /// A host this build doesn't know (a newer hub). Never sent.
     #[serde(other)]
@@ -459,6 +461,9 @@ pub struct RepoCoverage {
     /// The host's merged PRs are still being read back to the backfill's start: a busy repo's first read is bounded,
     /// and the next reads go on from where it stopped. `known_since` is as far as they have reached.
     pub partly_read: Option<bool>,
+    /// What can't be known of this repo's changes from what it is read from, one plain line each: on a repo read
+    /// from git alone, who merged, reviews and bots. Absent when its host is read through its API.
+    pub unknown: Option<List<Line<1, 200>, 1, 8>>,
 }
 
 /// A repo whose reads are failing: its figures stop at `since`, never a silent zero.
@@ -489,6 +494,11 @@ pub struct MetricsComparePeriod {
     pub until: Timestamp,
     pub days: List<MetricsDay, 0, 400>,
 }
+
+/// The trailer the train adds to the squash it merges, one per Change landed: `Fleetd-Change: X12 (T45, W9)`.
+pub const CHANGE_TRAILER: &str = "Fleetd-Change";
+/// `Fleetd-Task: T45` on a commit names its task, so fleetd's work merged by hand is found from git alone.
+pub const TASK_TRAILER: &str = "Fleetd-Task";
 
 /// Days the hub keeps landed changes and touches: 400 by default, at least 30.
 pub type MetricsRetentionDays = Int<30, 400>;

@@ -18,7 +18,7 @@ use serde_with::skip_serializing_none;
 use crate::effort::Effort;
 use crate::ids::{ProjectId, ThreadId, Timestamp};
 use crate::model::RuntimeMode;
-use crate::prim::{Int, NonEmpty, Text};
+use crate::prim::{Count, Int, NonEmpty, Text};
 use crate::steer::{SteerReceipt, SteerTag};
 
 /// Which agent runtime runs a session. Codex comes later as its own adapter.
@@ -259,6 +259,16 @@ pub enum SessionCall {
     },
     /// `gh repo list` for the logged-in user and their orgs, run on this machine.
     GhRepoList,
+    /// The project's default branch `branch` as git alone records it, for a repo whose host fleetd can't read: fetched
+    /// from its remote first, then its first-parent line newest first, back to `stopAt` when that is still on it, else
+    /// to commits made since `sinceMs` (epoch ms). Only nodes listing [`crate::node_link::CAP_LANDED_LOG`] get it.
+    #[serde(rename_all = "camelCase")]
+    LandedLog {
+        project_id: ProjectId,
+        branch: NonEmpty,
+        since_ms: Count,
+        stop_at: Option<NonEmpty>,
+    },
     /// Write a file under the project's workspace root, creating its directories. `rel_path` must stay inside
     /// `.fleetd/attachments/`, which the node keeps out of git through `.git/info/exclude`.
     #[serde(rename_all = "camelCase")]
@@ -497,6 +507,46 @@ pub enum SessionOutput {
     RepoFacts(RepoFacts),
     /// Answer to `gh_repo_list`.
     GhRepos(GhRepos),
+    /// Answer to `landed_log`.
+    LandedLog(LandedLog),
+}
+
+/// The default branch's first-parent line, newest first, at most [`LandedLog::MAX`] commits.
+#[skip_serializing_none]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LandedLog {
+    /// What was read: "origin/main", or the local branch when there is no remote copy of it.
+    pub read: String,
+    /// Why the fetch before the read failed: the log is as of the last good fetch.
+    pub fetch_failed: Option<String>,
+    pub commits: Vec<GitCommit>,
+}
+
+impl LandedLog {
+    pub const MAX: usize = 5000;
+}
+
+/// One commit on the default branch's own line.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommit {
+    pub sha: String,
+    /// Two or more for a merge commit.
+    pub parents: Vec<String>,
+    /// Committer time, epoch ms: when it reached the branch.
+    pub at_ms: i64,
+    pub author_name: String,
+    pub subject: String,
+    /// The values of its own `Fleetd-Change` trailers, in order: the train's squash names each Change it landed.
+    #[serde(default)]
+    pub changes: Vec<String>,
+    /// The values of its own `Fleetd-Task` trailers: an agent's commit, or a squash that kept their messages.
+    #[serde(default)]
+    pub tasks: Vec<String>,
+    /// A merge commit's: the `Fleetd-Task` trailers of the commits it brought in.
+    #[serde(default)]
+    pub merged_tasks: Vec<String>,
 }
 
 #[skip_serializing_none]
