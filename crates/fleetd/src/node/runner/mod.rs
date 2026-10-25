@@ -14,6 +14,7 @@ pub mod claude_setup;
 pub mod conformance;
 pub mod failure;
 pub mod process;
+pub mod scope;
 pub mod version;
 
 use std::future::Future;

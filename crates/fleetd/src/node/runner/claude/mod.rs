@@ -18,7 +18,7 @@ use fleetd_contracts::sessions::{RunnerInfo, SessionRole};
 
 use super::{
     BoxFut, Runner, RunnerError, SessionHandle, SessionSpec, claude_setup, conformance, failure,
-    process,
+    process, scope,
 };
 use mapper::{Classify, StreamMapper};
 
@@ -356,8 +356,12 @@ impl Runner for ClaudeRunner {
 
         process::adopt_orphans();
         let marker = process::marker(&spec.session_id);
-        let mut cmd = tokio::process::Command::new(&self.binary);
-        cmd.args(self.args(&spec))
+        // A binary that isn't there is reported as missing below, not as a scope that failed to start it.
+        let scope = scope::current().filter(|_| self.binary.exists());
+        let (program, args) =
+            scope::command(&self.binary, self.args(&spec), scope, &spec.session_id);
+        let mut cmd = tokio::process::Command::new(program);
+        cmd.args(args)
             .current_dir(&spec.cwd)
             .env_clear()
             .envs(
@@ -376,6 +380,7 @@ impl Runner for ClaudeRunner {
             .envs(SUBAGENTS_OFF_ENV.iter().copied())
             .envs([HELPER_MODEL_ENV])
             .envs(SESSION_ENV.iter().copied())
+            .envs(scope.iter().flat_map(|s| s.env.iter().map(|(k, v)| (k, v))))
             .env(process::SESSION_MARKER, &marker)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())

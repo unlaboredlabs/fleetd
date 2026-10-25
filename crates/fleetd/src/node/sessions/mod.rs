@@ -9,6 +9,7 @@
 pub mod files;
 mod health;
 mod proc;
+mod share;
 mod spans;
 pub mod state;
 mod steers;
@@ -650,7 +651,14 @@ impl SessionService {
                 span_wake: Arc::new(tokio::sync::Notify::new()),
             }),
         };
-        for row in service.inner.store.sessions()? {
+        let rows = service.inner.store.sessions()?;
+        // Scratch dirs whose worktree is still there are kept; no other outlives a node restart.
+        let keep: Vec<String> = rows
+            .iter()
+            .filter(|r| r.local.base_ref.is_some() && r.summary.worktree_path.is_some())
+            .map(|r| r.summary.session_id.to_string())
+            .collect();
+        for row in rows {
             if let (Some(pid), Some(started)) = (row.local.pid, &row.local.pid_start) {
                 proc::kill_recorded(pid, started, &row.summary.session_id, INTERRUPT_GRACE).await;
             }
@@ -669,6 +677,11 @@ impl SessionService {
                     tracing::warn!(session_id = %id, error = %e.message, "cannot settle a session on start");
                 }
             }
+        }
+        let node_home = service.inner.config.home.clone();
+        let swept = blocking(move || share::sweep_scratch(&node_home, &keep)).await;
+        if swept > 0 {
+            tracing::info!(swept, "removed scratch dirs a previous node left");
         }
         let home = crate::node::util::home_dir();
         let removed = blocking(move || super::repos::remove_partials(&home)).await;
@@ -1250,7 +1263,20 @@ impl SessionService {
             },
         };
         self.store().commit(&row, &[], false)?;
-        self.begin_run(&id, &launch.run_id, &launch.prompt, SendMode::Plain, None)
+        let prompt = match launch.role {
+            SessionRole::Worker => {
+                let home = self.inner.config.home.clone();
+                let n = blocking(move || super::load::build_jobs_here(&home)).await;
+                let set = share::jobs_env(&self.inner.config.runner_env(), n);
+                format!(
+                    "{}\n\n{}",
+                    launch.prompt.as_str().trim_end(),
+                    share::brief_note(&set, n)
+                )
+            }
+            _ => launch.prompt.to_string(),
+        };
+        self.begin_run(&id, &launch.run_id, &prompt, SendMode::Plain, None)
             .await?;
         Ok(SessionOutput::Launched {
             summary: self.session(&id)?.summary,
@@ -1547,6 +1573,15 @@ impl SessionService {
         env.retain(|(k, _)| k != key);
         env.push((key.to_owned(), value.to_owned()));
         env.extend(compile_cache_env(&env));
+        env.extend(share::jobs_env(
+            &env,
+            super::load::build_jobs_here(&config.home),
+        ));
+        let scratch = share::scratch_dir(&config.home, id);
+        super::config::mkdir_private(&scratch)?;
+        let scratch = share::scratch_env(&scratch);
+        env.retain(|(k, _)| !scratch.iter().any(|(s, _)| s == k));
+        env.extend(scratch);
         Ok(SessionSpec {
             session_id: id.to_owned(),
             resume,
@@ -2339,6 +2374,12 @@ impl SessionService {
                     ));
                 }
             }
+        }
+        // A session's scratch goes with its worktree, or with its process when it has none.
+        if remove_worktree || row.local.base_ref.is_none() {
+            let home = self.inner.config.home.clone();
+            let id = id.to_owned();
+            blocking(move || share::remove_scratch(&home, &id)).await;
         }
         if remove_worktree
             && let (Some(base_ref), Some(branch)) = (row.local.base_ref, row.local.branch)
