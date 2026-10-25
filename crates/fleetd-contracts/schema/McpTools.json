@@ -3399,6 +3399,10 @@
         "before": {
           "$ref": "#/$defs/EventSeq"
         },
+        "hubWide": {
+          "description": "Also the hub's own events, which name no machine or project (a device paired).",
+          "type": "boolean"
+        },
         "limit": {
           "default": 50,
           "maximum": 100,

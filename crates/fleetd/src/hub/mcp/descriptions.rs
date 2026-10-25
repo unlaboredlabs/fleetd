@@ -70,7 +70,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "events_list",
-        "One project's events, newest first: the newest limit (default 50, max 100), or those before a seq, back through the log's 30 days; more says older ones remain. Filter by types. events_wait follows what comes next.",
+        "One project's events, newest first: the newest limit (default 50, max 100), or those before a seq, back through the log's 30 days; more says older ones remain. Filter by types; hubWide adds the hub's own events (a device paired). events_wait follows what comes next.",
     ),
     (
         "wake_set",

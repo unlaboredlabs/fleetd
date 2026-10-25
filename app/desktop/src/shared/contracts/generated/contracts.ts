@@ -1222,6 +1222,8 @@ export type EventSeq = number;
 
 export type EventsListInput = {
   before?: EventSeq;
+  /** Also the hub's own events, which name no machine or project (a device paired). */
+  hubWide?: boolean;
   limit?: number;
   projectRef: ProjectRef;
   /** Only these types; absent: every type. */

@@ -15,7 +15,8 @@ pub fn register(tools: &mut Registry) {
     tools.add("events_list", events_list);
 }
 
-/// One project's events, newest first, a page back from `before`. Read on the project's machine.
+/// One project's events, newest first, a page back from `before`. Read on the project's machine; the hub's own events
+/// (`hubWide`) any key reads, as in `events_wait`.
 async fn events_list(
     hub: Arc<Hub>,
     caller: Caller,
@@ -27,6 +28,7 @@ async fn events_list(
         r,
         input.before.map(|s| s.get()),
         input.types.as_deref(),
+        input.hub_wide == Some(true),
         input.limit.get() as usize,
     )?;
     Ok(EventsListOutput {

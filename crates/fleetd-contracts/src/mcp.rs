@@ -207,6 +207,8 @@ input!(EventsListInput {
     before: Option<EventSeq>,
     /// Only these types; absent: every type.
     types: Option<Vec<HubEventType>>,
+    /// Also the hub's own events, which name no machine or project (a device paired).
+    hub_wide: Option<bool>,
     #[serde(default)]
     limit: IntOr<1, 100, 50>,
 });

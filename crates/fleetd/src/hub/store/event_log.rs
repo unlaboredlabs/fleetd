@@ -223,11 +223,13 @@ impl EventLog {
     }
 
     /// One project's events before `before` (the newest without it), newest first, and whether older ones remain.
+    /// `hub_wide` adds the events that name no machine or project.
     pub fn project_page(
         &self,
         project: &ProjectRef,
         before: Option<i64>,
         types: Option<&[HubEventType]>,
+        hub_wide: bool,
         limit: usize,
     ) -> Result<(Vec<HubEvent>, bool), StoreError> {
         let types = types.map(serde_json::to_string).transpose()?;
@@ -236,8 +238,8 @@ impl EventLog {
                 "SELECT seq, data FROM events
        WHERE ($before IS NULL OR seq < $before)
          AND ($types IS NULL OR type IN (SELECT value FROM json_each($types)))
-         AND machine_id = $machine
-         AND json_extract(data, '$.projectId') = $project
+         AND ((machine_id = $machine AND json_extract(data, '$.projectId') = $project)
+           OR ($hub_wide AND machine_id IS NULL AND json_extract(data, '$.projectId') IS NULL))
        ORDER BY seq DESC LIMIT $limit",
             )?;
             let rows = stmt.query_map(
@@ -246,6 +248,7 @@ impl EventLog {
                     "$types": types,
                     "$machine": project.machine_id.as_str(),
                     "$project": project.project_id.as_str(),
+                    "$hub_wide": hub_wide,
                     "$limit": (limit + 1) as i64,
                 },
                 |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),

@@ -288,6 +288,29 @@ async fn events_list_pages_back_through_one_projects_events() {
     assert_eq!(summaries(&typed), ["T1 completed", "T1 started"]);
     assert_eq!(typed["events"][0]["seq"], newest);
 
+    hub.events
+        .append(NewEvent {
+            at: AT.into(),
+            r#type: T::KeyPaired,
+            machine_id: None,
+            project_id: None,
+            thread_id: None,
+            summary: "phone paired with the hub".into(),
+            data: None,
+            attention: None,
+        })
+        .unwrap();
+    let paired = json!({ "projectRef": app, "types": ["key.paired", "task.completed"] });
+    let own = call(&hub, "events_list", paired.clone()).await;
+    assert_eq!(summaries(&own), ["T1 completed"]);
+    let mut wide = paired;
+    wide["hubWide"] = json!(true);
+    let wide = call(&hub, "events_list", wide).await;
+    assert_eq!(
+        summaries(&wide),
+        ["phone paired with the hub", "T1 completed"]
+    );
+
     let elsewhere = serde_json::from_value::<Caller>(json!({
         "keyId": "k2", "name": "laptop only", "prefix": "fld_ghijkl", "createdAt": AT,
         "grants": [{ "role": "read", "machines": ["laptop"] }],
