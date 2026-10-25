@@ -42,10 +42,39 @@ export async function throughput(f: Factory) {
   check(!fs.existsSync(path.join(project.root, ".fleetd")), "the project has no .fleetd/");
   const w = f.workstream("Restock report.");
   const prompt = `Run the project's tests.\nlab-run: ${TEST_COMMAND} 2>&1 | tail -n 3`;
+  const spawnedAt = await f.cursor();
   const spawned = [f.spawnWriter(w, "restock tests one", prompt), f.spawnWriter(w, "restock tests two", prompt)];
   ok(`spawn_agent with no policy file: ${spawned.map((t) => `${t.taskId} ${t.state}`).join(", ")}`);
+  // The slot board, sampled until both are done: both must count against the cap at the same moment.
+  let mostRunning = 0;
+  let sampling = true;
+  const sampler = (async () => {
+    while (sampling) {
+      mostRunning = Math.max(mostRunning, await f.running());
+      await sleep(100);
+    }
+  })();
   const done: Array<Body> = [];
-  for (const t of spawned) done.push(await f.waitTask(t.taskId as string, ["idle", "done"]));
+  try {
+    for (const t of spawned) done.push(await f.waitTask(t.taskId as string, ["idle", "done"]));
+  } finally {
+    sampling = false;
+    await sampler;
+  }
+  check(mostRunning >= 2, `both writers counted as running at once on the slot board (at most ${mostRunning} seen)`);
+
+  // Each writer's run, from the hub's events: task.started to its thread's end. Both started before either ended.
+  const events = await f.eventsSince(spawnedAt, ["task.started", "thread.completed", "thread.failed", "thread.interrupted"]);
+  const runs = done.map((t) => {
+    const start = events.find((e) => e.type === "task.started" && e.data?.taskId === t.taskId);
+    const end = events.find((e) => e.type !== "task.started" && e.threadId === t.threadRef.threadId);
+    check(start && end, `${t.taskId}'s start and end are in the events: ${JSON.stringify({ start, end })}`);
+    return { taskId: t.taskId as string, start: start!, end: end! };
+  });
+  const [a, b] = runs as [(typeof runs)[0], (typeof runs)[0]];
+  check(a.start.seq < b.end.seq && b.start.seq < a.end.seq, `the two writers' runs overlap: ${JSON.stringify(runs.map((r) => [r.taskId, r.start.seq, r.end.seq]))}`);
+  const overlapMs = Math.min(Date.parse(a.end.at), Date.parse(b.end.at)) - Math.max(Date.parse(a.start.at), Date.parse(b.start.at));
+  ok(`both writers ran at once: ${runs.map((r) => `${r.taskId} ${r.start.at.slice(11, 23)}–${r.end.at.slice(11, 23)}`).join(", ")} (${(overlapMs / 1000).toFixed(1)} s together); the slot board counted ${mostRunning} running`);
 
   for (const t of done) {
     const wt = t.worktreePath as string;

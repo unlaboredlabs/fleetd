@@ -95,7 +95,8 @@ const result = (userUuid: string, startedMs: number, text: string | null, interr
     uuid: randomUUID(),
   });
 
-/** The running tool's process (its own group, as claude's Bash tool), killed with its children on an interrupt. */
+/** The running turn's user message, and its tool's process (its own group, as claude's Bash tool). */
+let current: string | undefined;
 let tool: ChildProcess | undefined;
 let interrupted = false;
 
@@ -117,19 +118,21 @@ const turn = async (msg: Msg) => {
   const text = typeof msg.message?.content === "string" ? (msg.message.content as string) : JSON.stringify(msg.message?.content);
   const startedMs = Date.now();
   interrupted = false;
+  current = userUuid;
   file({ type: "user", message: { role: "user", content: text }, uuid: userUuid });
   lifecycle(userUuid, "started");
   out(init());
   out({ type: "system", subtype: "status", status: "requesting", session_id: sessionId, uuid: randomUUID(), user_message_uuids: [userUuid] });
   const commands = [...text.matchAll(/^lab-run: (.+)$/gmu)].map((m) => m[1]!);
   for (const command of commands) {
+    if (interrupted) break;
     const id = `toolu_lab_${randomUUID().replace(/-/gu, "")}`;
     assistant([{ type: "tool_use", id, name: "Bash", input: { command } }], userUuid);
     const { code, output } = await bash(command);
     const content = interrupted ? "The user doesn't want to proceed with this tool use." : `${output}${code === 0 ? "" : `\nexit ${code}`}`;
     out({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, content, is_error: interrupted || code !== 0 }] }, parent_tool_use_id: null, session_id: sessionId, uuid: randomUUID() });
-    if (interrupted) break;
   }
+  current = undefined;
   if (interrupted) {
     result(userUuid, startedMs, null, true);
     lifecycle(userUuid, "cancelled");
@@ -157,12 +160,15 @@ lines.on("line", (line) => {
       out(initializeAnswer(msg.request_id as string));
       return;
     }
-    if (subtype === "interrupt" && tool?.pid !== undefined) {
+    // An interrupt ends the running turn as cancelled, between tool calls as well as during one.
+    if (subtype === "interrupt" && current !== undefined) {
       interrupted = true;
-      try {
-        process.kill(-tool.pid, "SIGKILL");
-      } catch {
-        // Ended on its own meanwhile.
+      if (tool?.pid !== undefined) {
+        try {
+          process.kill(-tool.pid, "SIGKILL");
+        } catch {
+          // Ended on its own meanwhile.
+        }
       }
     }
     out({ type: "control_response", response: { subtype: "success", request_id: msg.request_id, response: { still_queued: [] } } });

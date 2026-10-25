@@ -36,6 +36,10 @@ export interface Factory {
   /** Spawns a writer under `workstreamId` with spawn_agent; returns the task as spawned. */
   readonly spawnWriter: (workstreamId: string, title: string, prompt: string) => Body;
   readonly task: (taskId: string) => Promise<Body>;
+  /** Every event after `cursor` (of `types`, if given), in hub order. */
+  readonly eventsSince: (cursor: number, types?: ReadonlyArray<string>) => Promise<Array<Body>>;
+  /** The project's agents the slot board counts as running now. */
+  readonly running: () => Promise<number>;
   /** Waits until the task is in one of `states`; fails at once if it ends in another. */
   readonly waitTask: (taskId: string, states: ReadonlyArray<string>, ms?: number) => Promise<Body>;
   /** SIGKILL, a crash: its sessions are orphaned until it starts again. */
@@ -197,6 +201,19 @@ export async function withFactory(dir: string, body: (f: Factory) => Promise<voi
         return out.result!.task as Body;
       },
       task,
+      eventsSince: async (from, types) => {
+        const all: Array<Body> = [];
+        for (let c = from; ; ) {
+          const page = (await callTool("events_wait", { cursor: c, timeoutSec: 0, ...(types === undefined ? {} : { types }) })).body;
+          all.push(...(page.events as Array<Body>));
+          if (page.more !== true) return all;
+          c = page.cursor as number;
+        }
+      },
+      running: async () => {
+        const perProject = ((await callTool("fleetd_status")).body.slots?.perProject ?? []) as Array<Body>;
+        return (perProject.find((p) => p.projectRef?.machineId === MACHINE && p.projectRef?.projectId === projectId)?.running as number | undefined) ?? 0;
+      },
       waitTask: async (taskId, states, ms = 120_000) => {
         let from = await cursor();
         return until(`${taskId} ${states.join(" or ")}`, ms, async () => {
