@@ -69,6 +69,10 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "Wait for hub events after cursor instead of polling. Returns at once if any exist, otherwise long-polls up to timeoutSec (default and max 50). No cursor means from now. Filter by types and machineId.",
     ),
     (
+        "events_list",
+        "One project's events, newest first: the newest limit (default 50, max 100), or those before a seq, back through the log's 30 days; more says older ones remain. Filter by types. events_wait follows what comes next.",
+    ),
+    (
         "wake_set",
         "Have the hub send a message to a thread later: at an ISO time (no offset means wall-clock time in tz), every N seconds (>= 60), or on a 5-field cron in an IANA tz. once defaults to true. A run missed while the hub was down fires once, marked late, unless catchUp is skip. Offline machines get it queued. Emits wake.fired.",
     ),

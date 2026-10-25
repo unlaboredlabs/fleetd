@@ -176,6 +176,7 @@ as stopping a project, answering an approval or entering a secret, need one.
 | `agent_work {machineId, threadId, before?, limit?}` | A page of one agent's recent messages, commands and edits, oldest first. Secrets show as `[secret]`. | read |
 | `pr_list {projectRef, closedSince?, cursor?}`, `pr_get {repo, number}` | A project's PRs, up to 60 a page (`nextCursor`, passed as `cursor`, reads the next), and one in detail: description, checks, reviews with their findings, its place in the merge queue and the agent that wrote it. | read |
 | `pr_files {repo, number, offset?}`, `pr_diff {repo, number, path, offset?}` | A PR's changed files, and one file's diff a page at a time. | read |
+| `events_list {projectRef, before?, types?, limit?}` | A project's events, newest first, back through the last 30 days: agents started and finished, reviews, merges, requests. | read |
 | `workstream_list`, `order_get`, `thread_tail`, `fleetd_status` | Lower-level views of the lead's work. | read |
 
 `projectRef` is `{"machineId": "devbox", "projectId": "<id>"}`; `fleetd project list` prints both, as
