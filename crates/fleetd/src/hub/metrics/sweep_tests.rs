@@ -116,14 +116,33 @@ fn checkout(hub: &Hub) {
         "INSERT INTO metric_project_repos (machine_id, project_id, repo, checked_ms) VALUES ('devbox', 'web', ?1, ?2)",
         &[&REPO, &ms(NOW)],
     );
-    // T7 wrote #43 (`fleetd/T7-checkout`); its run went from 10:00 to 10:45 on the 23rd.
+    // T7 wrote #43 (`fleetd/T7-checkout`) on the 23rd: it ran from 10:00 to 10:35, was continued, and ran again from
+    // 11:40 to 11:50. The task itself started at 10:00 and ended at 11:50.
     sql(
         hub,
         "INSERT INTO tasks (n, machine_id, project_id, workstream_id, state, ended_at, data)
-         VALUES (7, 'devbox', 'web', 'W1', 'done', '2026-10-23T10:45:00.000Z', ?1)",
+         VALUES (7, 'devbox', 'web', 'W1', 'done', '2026-10-23T11:50:00.000Z', ?1)",
         &[&json!({ "taskId": "T7", "createdAt": "2026-10-23T09:55:00.000Z", "startedAt": "2026-10-23T10:00:00.000Z" })
             .to_string()],
     );
+    for (run, start, end) in [
+        ("r1", "2026-10-23T10:00:00Z", "2026-10-23T10:35:00Z"),
+        ("r2", "2026-10-23T11:40:00Z", "2026-10-23T11:50:00Z"),
+    ] {
+        sql(
+            hub,
+            "INSERT INTO time_spans (src, src_key, kind, cat, start_ms, end_ms, machine_id, project_id, task_id,
+               run_id, lane, status)
+             VALUES ('n', ?1, ?2, 0, ?3, ?4, 'devbox', 'web', 'T7', ?5, 'run', 0)",
+            &[
+                &format!("t7/{run}/run"),
+                &fleetd_contracts::time::SpanKind::Run.code(),
+                &ms(start),
+                &ms(end),
+                &run,
+            ],
+        );
+    }
 }
 
 /// unit key → (route, why skipped).
@@ -626,8 +645,47 @@ async fn fleetds_own_comments_and_an_agents_during_its_run_are_not_the_persons()
         head: Some("slot/1/fleetd/T7-checkout".into()),
         lines: None,
     };
-    assert!(sweep::agents_act(&hub.db, "acme/web", &act("2026-10-23T10:45:00Z")).unwrap());
-    assert!(!sweep::agents_act(&hub.db, "acme/web", &act("2026-10-23T10:46:00Z")).unwrap());
+    let agents = |at: &str| sweep::agents_act(&hub.db, REPO, &act(at)).unwrap();
+    assert!(agents("2026-10-23T10:35:00Z"));
+    assert!(!agents("2026-10-23T11:00:00Z"), "between its two runs");
+    assert!(agents("2026-10-23T11:45:00Z"));
+    assert!(!agents("2026-10-23T12:00:00Z"));
+    // Another fleet's `fleetd/T7-…` on a repo none of this hub's projects has is not this hub's T7.
+    assert!(
+        !sweep::agents_act(
+            &hub.db,
+            "github.com/other/web",
+            &act("2026-10-23T10:30:00Z")
+        )
+        .unwrap()
+    );
+}
+
+#[tokio::test]
+async fn a_review_between_two_runs_of_the_same_task_is_the_persons() {
+    let (hub, _clock, _home) = hub();
+    checkout(&hub);
+    let source = GitHubSource::new(Arc::new(Recorded::default()));
+    sweep::sweep_repo(&hub, &source, REPO, ms(NOW))
+        .await
+        .unwrap();
+    let reviews: Vec<(i64, Option<String>)> = hub
+        .db
+        .with(|c| store::touches(c, 0, i64::MAX))
+        .unwrap()
+        .into_iter()
+        .filter(|t| t.kind == "host.review" && t.pr_number == Some(43))
+        .map(|t| (t.at_ms, t.key_id))
+        .collect();
+    // T7 was continued: its task spans 10:00 to 11:50, but it ran only until 10:35 and from 11:40. The person's
+    // review at 11:00 and a colleague's at 11:30 fall between the runs.
+    assert_eq!(
+        reviews,
+        [
+            (ms("2026-10-23T11:00:00Z"), Some("ada-lovelace".into())),
+            (ms("2026-10-23T11:30:00Z"), Some("grace-hopper".into())),
+        ]
+    );
 }
 
 /// GitHub's reads with the merged PRs cut short after the first page, as the page cap does to a busy repo.
