@@ -16,3 +16,6 @@ export const MENU_COMMANDS = [
   "project.next",
 ] as const;
 export type MenuCommand = (typeof MENU_COMMANDS)[number];
+
+/** Menu commands that are hidden, not greyed, while off: a screen this hub doesn't have (Factory before metrics). */
+export const MENU_HIDDEN_WHEN_OFF: ReadonlySet<MenuCommand> = new Set<MenuCommand>(["factory.open"]);

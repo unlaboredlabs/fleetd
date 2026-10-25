@@ -111,3 +111,35 @@ it("asks again when a merge lands", async () => {
   });
   expect(asked.length).toBeGreaterThan(before);
 });
+
+it("on a hub without metrics_get, says to update fleetd rather than that the hub couldn't answer", async () => {
+  let send: Send = () => undefined;
+  const hub: HubApi = {
+    call: (tool) =>
+      Promise.resolve(
+        tool === "metrics_get"
+          ? { ok: false, error: { code: "not_found", message: "No tool metrics_get." } }
+          : { ok: true, output: { at: new Date(NOW).toISOString(), orders: [], trains: [] } },
+      ),
+    subscribe: (l) => ((send = l), () => undefined),
+    resync: () => Promise.resolve(),
+    focus: () => Promise.resolve(),
+    chat: () => Promise.resolve(),
+  };
+  act(() => {
+    root.render(
+      <DataProvider layer={createDataLayer(hub)}>
+        <FactoryScreen project={null} now={NOW} initialFilters={{ range: "month", compare: false }} />
+      </DataProvider>,
+    );
+  });
+  await act(async () => {
+    send(live());
+    send(snapshot(1));
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  expect(screen()).toBe("factory.unsupported");
+  expect(text()).toContain("This hub doesn't report metrics yet");
+  expect(text()).toContain("Update fleetd");
+  expect(text()).not.toContain("couldn't answer");
+});

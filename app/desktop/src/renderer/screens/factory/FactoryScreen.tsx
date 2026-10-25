@@ -21,6 +21,7 @@ import { inRange, loadFilters, previousWords, queryOf, saveFilters, type Filters
 import { MergeList } from "./MergeList";
 import { DEFAULT_SORT, WEEKLY_OVER, columnsOf, fmtAbout, inDays, sortMerges, type Column, type Sort } from "./model";
 import { Repos } from "./Repos";
+import { lacksMetrics } from "./support";
 import { Tiles } from "./Tiles";
 import s from "./Factory.module.css";
 
@@ -101,8 +102,18 @@ export function FactoryScreen(props: FactoryScreenProps) {
 
   let body: ReactNode;
   let state: string;
+  // A hub from before metrics: no error, just what to do (a link kept from a newer hub, or typed, lands here).
+  const unsupported = data === undefined && query.isError && query.error instanceof CallError && lacksMetrics(query.error.error);
   if (data === undefined) {
-    if (query.isError) {
+    if (unsupported) {
+      state = "factory.unsupported";
+      body = (
+        <div className={cx(s.empty)}>
+          <Text strong>This hub doesn&apos;t report metrics yet</Text>
+          <Text tone="quiet">Update fleetd on the hub&apos;s machine, and merges, order to merged and your minutes show here.</Text>
+        </div>
+      );
+    } else if (query.isError) {
       state = "factory.error";
       body = (
         <div className={cx(s.empty)} role="alert">
@@ -189,6 +200,7 @@ function Figures(p: FiguresProps) {
   const columns = useMemo(() => columnsOf(data.days), [data.days]);
   const previous = useMemo(() => (data.compare === undefined ? undefined : columnsOf(data.compare.days)), [data.compare]);
   const weekly = data.days.length > WEEKLY_OVER;
+  const dayKeys = useMemo(() => data.days.map((d) => d.day), [data.days]);
   const merges = useMemo(() => {
     const shown = p.picked === undefined ? data.merges : inDays(data.merges, p.picked.from, p.picked.to);
     return sortMerges(shown, p.sort);
@@ -226,8 +238,7 @@ function Figures(p: FiguresProps) {
           <MergedChart columns={columns} previous={previous} merges={data.merges} weekly={weekly} picked={p.picked} onPick={p.onPick} onHover={p.onHover} />
           <LeadChart
             merges={data.merges}
-            since={data.since}
-            until={data.until}
+            days={dayKeys}
             medianMs={data.tiles.orderToMerged.medianMs}
             coverage={coverage}
             orderTitle={p.orderTitle}

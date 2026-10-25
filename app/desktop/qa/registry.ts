@@ -1263,6 +1263,8 @@ export const screens: readonly Screen[] = [
     fixtures: ["typical", "long-text", "many-agents", "status-rows", "empty", "hub-unreachable", "factory-stale", "factory-none"],
   },
   { id: "factory", route: `#/factory?project=devbox/${CHAT.split("/").pop() ?? ""}`, fixtures: ["typical"], variant: "project" },
+  // A hub with no metrics_get (chat-empty answers none): what to do, not an error, and no Factory in the sidebar.
+  { id: "factory", route: "#/factory", fixtures: ["chat-empty"] },
   {
     id: "factory",
     route: "#/factory",

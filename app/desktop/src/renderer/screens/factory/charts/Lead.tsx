@@ -5,19 +5,17 @@
 import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import type { MetricsMerge, RepoCoverage } from "../../../../shared/contracts";
 import { Text, cx } from "../../../ui";
-import { LOG_TICKS, ROUTE_LABEL, fmtMs, knownRoute, logDomain, logScale, mergeName, stages } from "../model";
+import { LOG_TICKS, ROUTE_LABEL, dayLabel, dayX, fmtMs, knownRoute, logDomain, logScale, mergeName, stages } from "../model";
 import { BOTTOM, LEFT, PLOT_H, TOP, gutterFor, useWidth, type Hover } from "./parts";
 import s from "../Factory.module.css";
 
 /** How near the pointer must be to a dot to show it. */
 const REACH = 24;
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
-
 export interface LeadChartProps {
   readonly merges: readonly MetricsMerge[];
-  readonly since: string;
-  readonly until: string;
+  /** The range's calendar days, oldest first: the x axis the column charts share. */
+  readonly days: readonly string[];
   readonly medianMs: number | undefined;
   readonly coverage: readonly RepoCoverage[];
   /** An order's title, when the app knows it. */
@@ -25,7 +23,7 @@ export interface LeadChartProps {
   readonly onHover: (h: Hover | undefined) => void;
 }
 
-export function LeadChart({ merges, since, until, medianMs, coverage, orderTitle, onHover }: LeadChartProps) {
+export function LeadChart({ merges, days, medianMs, coverage, orderTitle, onHover }: LeadChartProps) {
   const box = useRef<HTMLDivElement>(null);
   const width = useWidth(box);
   const [active, setActive] = useState<number | undefined>();
@@ -36,15 +34,14 @@ export function LeadChart({ merges, since, until, medianMs, coverage, orderTitle
   const y = logScale(domain, TOP, baseline);
   const right = gutterFor(width);
   const plotW = Math.max(0, width - LEFT - right);
-  const t0 = Date.parse(since);
-  const t1 = Date.parse(until);
-  const x = (iso: string) => LEFT + ((Date.parse(iso) - t0) / Math.max(1, t1 - t0)) * plotW;
+  // The same x as the column charts: one equal slot per calendar day, whatever the range's last day holds so far.
+  const slot = days.length === 0 ? 0 : plotW / days.length;
+  const index = new Map(days.map((d, i) => [d, i]));
+  const x = (iso: string) => LEFT + dayX(iso, index) * slot;
   const ticks = LOG_TICKS.filter(([v]) => v >= domain[0] && v <= domain[1]);
-  // Dates along the bottom, about every 80 px, on whole days.
-  const dayMs = 86_400_000;
-  const days = Math.max(1, Math.round((t1 - t0) / dayMs));
-  const stride = Math.max(1, Math.ceil(days / Math.max(1, Math.floor(plotW / 80))));
-  const xTicks = Array.from({ length: Math.floor(days / stride) + 1 }, (_, i) => t0 + i * stride * dayMs).filter((t) => t < t1);
+  // Dates along the bottom, about every 80 px, at the start of their day's slot.
+  const stride = Math.max(1, Math.ceil(days.length / Math.max(1, Math.floor(plotW / 80))));
+  const xTicks = days.flatMap((d, i) => (i % stride === 0 ? [{ day: d, at: LEFT + i * slot }] : []));
 
   const show = (i: number, at?: { x: number; y: number }) => {
     const m = dots[i];
@@ -141,14 +138,11 @@ export function LeadChart({ merges, since, until, medianMs, coverage, orderTitle
               </g>
             ))}
             <line className={cx(s.baseline)} x1={LEFT} x2={LEFT + plotW} y1={baseline} y2={baseline} />
-            {xTicks.map((t, i) => {
-              const d = new Date(t);
-              return (
-                <text key={t} className={cx(s.tick)} x={LEFT + ((t - t0) / Math.max(1, t1 - t0)) * plotW} y={baseline + 14} textAnchor={i === 0 ? "start" : "middle"}>
-                  {`${MONTHS[d.getMonth()] ?? ""} ${d.getDate()}`}
-                </text>
-              );
-            })}
+            {xTicks.map((t, i) => (
+              <text key={t.day} className={cx(s.tick)} x={t.at} y={baseline + 14} textAnchor={i === 0 ? "start" : "middle"}>
+                {dayLabel(t.day)}
+              </text>
+            ))}
             {medianMs !== undefined ? (
               <g>
                 <line className={cx(s.median)} x1={LEFT} x2={LEFT + plotW} y1={y(medianMs)} y2={y(medianMs)} />

@@ -165,6 +165,24 @@ export const localDay = (iso: string): string => {
   return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`;
 };
 
+/**
+ * Where a stamp falls on the day axis, in day slots from the range's first day: its day's index plus how far into
+ * that day it is. Equal slots per calendar day, as the columns are, so a dot sits over its day's column even when the
+ * range ends partway through today or a day is 23 or 25 hours long. Before the range, 0; after it, its end.
+ */
+export const dayX = (iso: string, index: ReadonlyMap<string, number>): number => {
+  const at = new Date(iso);
+  const day = localDay(iso);
+  const i = index.get(day);
+  if (i === undefined) {
+    const first = [...index.keys()][0];
+    return first !== undefined && day < first ? 0 : index.size;
+  }
+  const start = new Date(at.getFullYear(), at.getMonth(), at.getDate()).getTime();
+  const end = new Date(at.getFullYear(), at.getMonth(), at.getDate() + 1).getTime();
+  return i + (at.getTime() - start) / (end - start);
+};
+
 export interface Column {
   /** Its first and last calendar day. */
   readonly from: string;
@@ -397,10 +415,14 @@ export const prList = (merges: readonly MetricsMerge[]): string | undefined => {
   return named.length > 5 ? `${head} +${named.length - 5} more` : head;
 };
 
-const csvCell = (v: string | number | undefined): string => {
+/**
+ * One cell. Titles and repos come from outside fleetd, so text that a spreadsheet would read as a formula (=, +, -,
+ * @, a tab or a carriage return first) gets a leading ' (OWASP's CSV injection advice); numbers stay numbers.
+ */
+export const csvCell = (v: string | number | undefined): string => {
   if (v === undefined) return "";
-  const s = String(v);
-  return /[",\n]/u.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
+  const s = typeof v === "number" ? String(v) : /^[=+\-@\t\r]/u.test(v) ? `'${v}` : v;
+  return /[",\n\r]/u.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
 };
 
 /** The list as CSV, every column the screen has, durations in minutes. */

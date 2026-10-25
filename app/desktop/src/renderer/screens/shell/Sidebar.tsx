@@ -27,6 +27,8 @@ export interface SidebarProps {
   readonly hub: Parameters<typeof connLine>[0];
   /** ⌘ (Ctrl) is held: show the jump numbers. */
   readonly jumpHints: boolean;
+  /** The hub reports metrics (or hasn't said yet): show the Factory. */
+  readonly factory: boolean;
   readonly go: (screen: Screen) => void;
 }
 
@@ -78,7 +80,7 @@ const trailing = (p: SidebarProject, jump: number | null, asOf: string | undefin
   );
 };
 
-export function Sidebar({ projects, machinesDown, screen, hub, jumpHints, go }: SidebarProps) {
+export function Sidebar({ projects, machinesDown, screen, hub, jumpHints, factory, go }: SidebarProps) {
   const asOf = useOfflineAsOf();
   const conn = connLine(hub, window.fleetd.fixture !== null, asOf);
   const nav = (label: string, icon: ReactNode, target: Screen, current: boolean, trailing?: ReactNode) => (
@@ -137,7 +139,7 @@ export function Sidebar({ projects, machinesDown, screen, hub, jumpHints, go }: 
 
       <SidebarSection>
         {nav("Status", <Activity />, { id: "status" }, screen.id === "status", kbd("status.toggle"))}
-        {nav("Factory", <Factory />, { id: "factory", project: null }, screen.id === "factory", kbd("factory.open"))}
+        {factory ? nav("Factory", <Factory />, { id: "factory", project: null }, screen.id === "factory", kbd("factory.open")) : null}
         {nav("Time", <Clock />, { id: "time", orderId: null }, screen.id === "time")}
         {nav(
           "Machines",
