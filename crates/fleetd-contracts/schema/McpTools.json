@@ -777,6 +777,11 @@
           "type": "string"
         },
         {
+          "const": "no_access",
+          "description": "The remote says there is no such repository: a wrong URL or name, or credentials that can't see it.",
+          "type": "string"
+        },
+        {
           "const": "no_default_branch",
           "description": "The remote answered but names no default branch: its HEAD points at a branch it doesn't have.",
           "type": "string"

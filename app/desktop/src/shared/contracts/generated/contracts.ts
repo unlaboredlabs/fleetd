@@ -330,7 +330,7 @@ export type BaseError = {
 };
 
 /** Why a worktree's base may be behind its remote's default branch. */
-export type BaseErrorKind = "offline" | "auth" | "no_default_branch" | "no_remote" | "failed";
+export type BaseErrorKind = "offline" | "auth" | "no_access" | "no_default_branch" | "no_remote" | "failed";
 
 export type BoxPublicKey = string;
 

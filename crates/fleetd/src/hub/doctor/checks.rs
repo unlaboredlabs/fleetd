@@ -698,11 +698,23 @@ pub fn git_fetch(machine_id: &str, bases: &[(String, WorktreeBase)], now: &str) 
         .filter_map(|(project, b)| Some((project, b, base::alert(b)?)))
         .collect();
     let Some((project, first, kind)) = failing.first() else {
+        // Only what the last starts showed: a fetch that worked, an offline one, or no remote to fetch.
+        let each: Vec<String> = bases
+            .iter()
+            .map(|(project, b)| match b.error.as_ref().map(|e| e.kind) {
+                None => format!("{project} fetched its remote"),
+                Some(BaseErrorKind::NoRemote) => format!("{project} has no remote"),
+                Some(_) => format!("{project} was offline (from {})", base::start(b, now)),
+            })
+            .collect();
         return Some(machine_entry(
             machine_id,
             "git_fetch",
             Pass,
-            &format!("git fetched each project's remote on {machine_id} at its last start."),
+            &format!(
+                "At each project's last start on {machine_id}: {}.",
+                each.join("; ")
+            ),
             None,
         ));
     };
@@ -711,14 +723,12 @@ pub fn git_fetch(machine_id: &str, bases: &[(String, WorktreeBase)], now: &str) 
         1 => String::new(),
         n => format!(" {} more projects fail too.", n - 1),
     };
-    let (status, label) = match kind {
-        BaseErrorKind::Auth => (
-            Fail,
-            format!("Log git in on {machine_id}: `gh auth login`, or add your SSH key"),
-        ),
-        BaseErrorKind::NoDefaultBranch => (Warn, "Set the remote's default branch".to_owned()),
-        _ => (Warn, "Run `git fetch` in the project to see why".to_owned()),
+    let status = if *kind == BaseErrorKind::Auth {
+        Fail
+    } else {
+        Warn
     };
+    let label = base::fix_label(*kind, machine_id);
     Some(machine_entry(
         machine_id,
         "git_fetch",
@@ -795,7 +805,42 @@ mod tests {
                 base(Some((BaseErrorKind::Offline, "offline")), None),
             ),
         ];
-        assert_eq!(git_fetch("mbp", &fine, now).unwrap().check.status, Pass);
+        let fine = git_fetch("mbp", &fine, now).unwrap().check;
+        assert_eq!(fine.status, Pass);
+        assert_eq!(
+            fine.message,
+            "At each project's last start on mbp: shop fetched its remote; blog was offline (from origin/main @abc1234 \
+             as of 06:00 UTC)."
+        );
+        let mut local = base(Some((BaseErrorKind::NoRemote, "no remote")), None);
+        local.base_ref = "main".into();
+        let local = git_fetch("mbp", &[("notes".to_owned(), local)], now)
+            .unwrap()
+            .check;
+        assert_eq!(
+            local.message,
+            "At each project's last start on mbp: notes has no remote."
+        );
+        let gone = vec![(
+            "shop".to_owned(),
+            base(
+                Some((BaseErrorKind::NoAccess, "ERROR: Repository not found.")),
+                None,
+            ),
+        )];
+        let gone = git_fetch("mbp", &gone, now).unwrap().check;
+        assert_eq!(gone.status, Warn);
+        assert!(
+            gone.message.starts_with(
+                "git can't fetch origin for shop: ERROR: Repository not found. Fix: check the remote's URL"
+            ),
+            "{}",
+            gone.message
+        );
+        assert_eq!(
+            gone.fix.unwrap().command.as_deref(),
+            Some("git remote get-url origin")
+        );
         let refused = vec![(
             "shop".to_owned(),
             base(

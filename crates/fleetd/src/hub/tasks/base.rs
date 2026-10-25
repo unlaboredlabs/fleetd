@@ -3,15 +3,33 @@
 use chrono::{DateTime, Utc};
 use fleetd_contracts::sessions::{BaseErrorKind, WorktreeBase};
 
-/// A fetch failure a person has to fix: credentials, a remote with no default branch, or any other refusal. Being
-/// offline, or having no remote, fixes itself or is the project's choice.
+/// A fetch failure a person has to fix: credentials, a wrong URL or a repo they can't see, a remote with no default
+/// branch, or any other refusal. Being offline, or having no remote, fixes itself or is the project's choice.
 pub fn alert(base: &WorktreeBase) -> Option<BaseErrorKind> {
     let kind = base.error.as_ref()?.kind;
     matches!(
         kind,
-        BaseErrorKind::Auth | BaseErrorKind::NoDefaultBranch | BaseErrorKind::Failed
+        BaseErrorKind::Auth
+            | BaseErrorKind::NoAccess
+            | BaseErrorKind::NoDefaultBranch
+            | BaseErrorKind::Failed
     )
     .then_some(kind)
+}
+
+/// The fix [`fetch_failed_text`] names, as a doctor fix's label.
+pub fn fix_label(kind: BaseErrorKind, machine_id: &str) -> String {
+    match kind {
+        BaseErrorKind::Auth => {
+            format!("Log git in on {machine_id}: `gh auth login`, or add your SSH key")
+        }
+        BaseErrorKind::NoAccess => {
+            "Check the remote's URL, the repo's name, and that your key or login can see it"
+                .to_owned()
+        }
+        BaseErrorKind::NoDefaultBranch => "Set the remote's default branch".to_owned(),
+        _ => "Run `git fetch` in the project to see why".to_owned(),
+    }
 }
 
 fn short(sha: &str) -> &str {
@@ -34,7 +52,7 @@ fn when(at: &str, now: &str) -> String {
 }
 
 /// "origin/main @abc1234 as of 07:41 UTC".
-fn start(base: &WorktreeBase, now: &str) -> String {
+pub fn start(base: &WorktreeBase, now: &str) -> String {
     let at = base.fetched_at.as_ref().map_or_else(String::new, |at| {
         format!(" as of {}", when(at.as_str(), now))
     });
@@ -49,7 +67,7 @@ pub fn line(base: &WorktreeBase, now: &str) -> String {
     match error.kind {
         BaseErrorKind::NoRemote => {
             format!(
-                "no remote: based on local {} @{}",
+                "based on local {} @{} (no remote)",
                 base.base_ref,
                 short(&base.sha)
             )
@@ -57,7 +75,10 @@ pub fn line(base: &WorktreeBase, now: &str) -> String {
         BaseErrorKind::NoDefaultBranch => {
             format!("based on {} ({})", start(base, now), error.message)
         }
-        BaseErrorKind::Offline | BaseErrorKind::Auth | BaseErrorKind::Failed => {
+        BaseErrorKind::Offline
+        | BaseErrorKind::Auth
+        | BaseErrorKind::NoAccess
+        | BaseErrorKind::Failed => {
             format!(
                 "based on {} (fetch failed: {})",
                 start(base, now),
@@ -90,6 +111,14 @@ pub fn fetch_failed_text(
                 error.message.trim_end_matches('.')
             ),
             Some("gh auth login".to_owned()),
+        ),
+        BaseErrorKind::NoAccess => (
+            format!(
+                "git can't fetch {remote} for {project}: {}. Fix: check the remote's URL (`git remote get-url \
+                 {remote}`), the repo's name, and that your key or login can see it. Agents start from {from}.",
+                error.message.trim_end_matches('.')
+            ),
+            Some(format!("git remote get-url {remote}")),
         ),
         BaseErrorKind::NoDefaultBranch => (
             format!(
@@ -149,7 +178,10 @@ mod tests {
         );
         let mut local = base(None, Some((BaseErrorKind::NoRemote, "no remote")));
         local.base_ref = "main".into();
-        assert_eq!(line(&local, NOW), "no remote: based on local main @abc1234");
+        assert_eq!(
+            line(&local, NOW),
+            "based on local main @abc1234 (no remote)"
+        );
     }
 
     #[test]

@@ -389,6 +389,8 @@ pub enum BaseErrorKind {
     Offline,
     /// The remote refused git's credentials; the agent's pushes will fail the same way.
     Auth,
+    /// The remote says there is no such repository: a wrong URL or name, or credentials that can't see it.
+    NoAccess,
     /// The remote answered but names no default branch: its HEAD points at a branch it doesn't have.
     NoDefaultBranch,
     /// The project has no remote: the base is a local branch.

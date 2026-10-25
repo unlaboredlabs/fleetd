@@ -2005,6 +2005,45 @@ mod tests {
         );
     }
 
+    /// With no remote, the spawn says it starts from the local branch and raises nothing; a remote that says there is
+    /// no such repository raises the item, with what to check.
+    #[tokio::test]
+    async fn no_remote_reads_plainly_and_a_missing_repository_raises_the_item() {
+        let (tasks, node) = tasks();
+        let mut local = base(
+            "2026-10-14T17:46:00Z",
+            Some((BaseErrorKind::NoRemote, "no remote")),
+        );
+        (local.base_ref, local.fetched_at) = ("main".into(), None);
+        *node.base.lock().unwrap() = Some(local);
+        let frame = spawn_frame(&tasks, "one").await;
+        assert_eq!(
+            frame.next.as_deref(),
+            Some("Its worktree is based on local main @abc1234 (no remote).")
+        );
+        assert!(
+            events_of(&tasks, HubEventType::ProjectFetchFailed)
+                .await
+                .is_empty()
+        );
+
+        *node.base.lock().unwrap() = Some(base(
+            "2026-10-14T09:00:00Z",
+            Some((BaseErrorKind::NoAccess, "ERROR: Repository not found.")),
+        ));
+        spawn_frame(&tasks, "two").await;
+        let raised = events_of(&tasks, HubEventType::ProjectFetchFailed).await;
+        assert_eq!(raised.len(), 1);
+        let data: FetchFailedData =
+            serde_json::from_value(raised[0].data.clone().unwrap()).unwrap();
+        assert_eq!(
+            data.message,
+            "git can't fetch origin for storefront: ERROR: Repository not found. Fix: check the remote's URL (`git \
+             remote get-url origin`), the repo's name, and that your key or login can see it. Agents start from \
+             origin/main @abc1234 as of 09:00 UTC."
+        );
+    }
+
     /// A remote that names no default branch says so in the spawn result and raises the attention item.
     #[tokio::test]
     async fn a_remote_with_no_default_branch_says_so() {
