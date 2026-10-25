@@ -1147,17 +1147,25 @@ impl SessionService {
                     .join("worktrees")
                     .join(launch.project_id.as_str())
                     .join(&id);
-                let (r, p, b, base) = (
+                let (r, p, b, name) = (
                     root.clone(),
                     path.clone(),
                     branch.to_string(),
                     base_ref.to_string(),
                 );
-                blocking(move || worktree::ensure(&r, &p, &b, &base)).await?;
+                // `base_ref` names the PRs' target; the branch starts from a fresh fetch of the remote's copy of it.
+                let base = blocking(move || {
+                    let base = worktree::fresh_base(&r, &name)?;
+                    worktree::ensure(&r, &p, &b, &base.sha).map(|()| base)
+                })
+                .await?;
+                if let Some(note) = &base.note {
+                    tracing::warn!(session_id = id.as_str(), "worktree {note}");
+                }
                 (
                     path,
                     vec![root.clone()],
-                    Some(base_ref.to_string()),
+                    Some(base.base_ref),
                     Some(branch.to_string()),
                 )
             }
