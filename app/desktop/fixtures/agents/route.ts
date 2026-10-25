@@ -7,3 +7,9 @@ export const AGENT = {
 } as const;
 
 export const AGENT_ROUTE = `#/project/${AGENT.machineId}/${AGENT.projectId}/agents/${AGENT.laneId}`;
+
+// A project on the same repo as storefront with no agents of its own (typical's checkout): agents-elsewhere shows its
+// Elsewhere group under a note.
+export const ELSEWHERE_IDLE = { machineId: "devbox", projectId: "7a9a4d2f-7656-4a38-a750-56ac34e9f090" } as const;
+
+export const ELSEWHERE_IDLE_ROUTE = `#/project/${ELSEWHERE_IDLE.machineId}/${ELSEWHERE_IDLE.projectId}/agents`;

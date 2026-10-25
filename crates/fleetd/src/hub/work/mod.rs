@@ -163,21 +163,29 @@ impl Work {
         }
     }
 
+    /// The scope's landings outside the train from the last `LANDINGS_SHOWN_MS`, newest first, at most `limit`; none
+    /// until the landing scanner is set.
+    pub fn outside_landings(
+        &self,
+        scope: &WorkScope,
+        limit: usize,
+    ) -> Result<Vec<elsewhere::Landed>, StoreError> {
+        match self.landings.get() {
+            Some(landings) => {
+                landings.outside(scope, self.now() - elsewhere::LANDINGS_SHOWN_MS, limit)
+            }
+            None => Ok(Vec::new()),
+        }
+    }
+
     /// The lead digest's Elsewhere lines for the project; `None` when its repo and base aren't known. Read from the
     /// hub alone: the lines show no paths, so no node is asked what its writers changed.
     pub fn elsewhere(&self, project: &ProjectRef) -> Result<Option<Vec<String>>, StoreError> {
         let Some(scope) = self.scope_of(project)? else {
             return Ok(None);
         };
-        let landings = match self.landings.get() {
-            Some(landings) => landings.outside(
-                &scope,
-                self.now() - elsewhere::LANDINGS_SHOWN_MS,
-                elsewhere::LANDINGS_SHOWN,
-            )?,
-            None => Vec::new(),
-        };
-        let in_flight = view::items(&self.sources(&scope)?);
+        let landings = self.outside_landings(&scope, elsewhere::LANDINGS_SHOWN)?;
+        let in_flight = self.in_flight_stored(&scope)?;
         Ok(Some(elsewhere::lines(
             project, &scope, &in_flight, &landings,
         )))
@@ -620,6 +628,11 @@ impl Work {
             intent,
             scope,
         ))
+    }
+
+    /// `in_flight` from the hub alone: no node is asked what its writers changed, so a writer carries no paths.
+    pub fn in_flight_stored(&self, scope: &WorkScope) -> Result<Vec<WorkItem>, StoreError> {
+        Ok(view::items(&self.sources(scope)?))
     }
 
     fn sources(&self, scope: &WorkScope) -> Result<view::Sources, StoreError> {

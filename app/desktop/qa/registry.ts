@@ -16,7 +16,7 @@
 // qa-results/index.html.
 
 import { type ElectronApplication, expect, type Locator, type Page } from "@playwright/test";
-import { AGENT_ROUTE } from "../fixtures/agents/route.ts";
+import { AGENT_ROUTE, ELSEWHERE_IDLE_ROUTE } from "../fixtures/agents/route.ts";
 import { STEER_WORDS } from "../fixtures/agents/steers.ts";
 import { CHAT_SENDS } from "../fixtures/composer/sends.ts";
 import { OFFLINE_SENDS } from "../fixtures/offline/sends.ts";
@@ -125,6 +125,8 @@ export const fixtures = [
   "agents-work",
   // ...with its steers that ended otherwise: never replied to, withdrawn, failed (fixtures/agents).
   "agents-steers",
+  // ...and the work elsewhere on storefront's repo, seen from storefront and from checkout (fixtures/agents).
+  "agents-elsewhere",
   // UX [7]: no hub, and the last launch's disk cache on screen with a message queued; back online with that chat not
   // read again yet, and with that read failed (fixtures/offline).
   "offline-held",
@@ -1030,6 +1032,43 @@ export const screens: readonly Screen[] = [
     fixtures: ["offline-held"],
     variant: "offline",
     open: (page) => expect(page.getByText("Agents show once you’re connected.")).toBeVisible(),
+  },
+  // ...and under them Elsewhere, the work on storefront's repo that isn't its agents': a person's claim (who holds it,
+  // when it expires), checkout's agent and PR, an agent key's claim, an open PR outside fleetd, a direct push and a PR
+  // merged by hand, and an expired claim last.
+  {
+    id: "agents",
+    route: `${CHAT}/agents`,
+    fixtures: ["agents-elsewhere"],
+    variant: "elsewhere",
+    open: async (page) => {
+      await expect(page.getByText("Elsewhere on main")).toBeVisible();
+      await expect(page.getByText(/^held by you \(laptop\) · expires in \d+ h$/u)).toBeVisible();
+      await expect(page.getByText(/^pushed straight to main by ada@example\.com · \d+ min ago · covers P7$/u)).toBeVisible();
+    },
+  },
+  // ...checkout's, with no agents of its own: a note, then the same work seen from checkout (storefront's agent).
+  {
+    id: "agents",
+    route: ELSEWHERE_IDLE_ROUTE,
+    fixtures: ["agents-elsewhere"],
+    variant: "elsewhere-idle",
+    open: async (page) => {
+      await expect(page.getByText("No agents are working here.")).toBeVisible();
+      await expect(page.getByText("storefront’s agent · running")).toBeVisible();
+    },
+  },
+  // ...and with All projects, Elsewhere gives way to every project's agents.
+  {
+    id: "agents",
+    route: `${CHAT}/agents`,
+    fixtures: ["agents-elsewhere"],
+    variant: "elsewhere-all",
+    open: async (page) => {
+      await expect(page.getByText("Elsewhere on main")).toBeVisible();
+      await page.getByRole("button", { name: "All projects" }).click();
+      await expect(page.getByText("Elsewhere on main")).toBeHidden();
+    },
   },
   // ...and with All projects, every project's agents under its name, checkout's first as one waits on you.
   {

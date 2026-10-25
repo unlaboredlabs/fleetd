@@ -43,6 +43,11 @@ export interface HubApi {
 
 /** How long events coalesce before their refetches go out: a burst (a merge, a batch) costs one round. */
 const INVALIDATE_EVERY_MS = 100;
+/**
+ * Reads that coalesce longer: work_list reads every project on the repo, and agents starting, finishing and opening
+ * PRs fire task and change events in runs, so a run of them costs one read every two seconds at most.
+ */
+const SLOW_EVERY_MS: Partial<Record<ToolName, number>> = { work_list: 2_000 };
 
 export interface DataLayer {
   readonly store: DataStore;
@@ -111,9 +116,27 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
   // (a steady event stream would otherwise keep restarting a slow call), and never an older answer over a newer one.
   const dirty = new Set<string>();
 
+  // One batch per wait: the first event starts its timer, and later ones join the batch until it goes out.
+  const pending = new Map<number, Invalidation[]>();
+  const timers = new Map<number, ReturnType<typeof setTimeout>>();
+  const later = (everyMs: number, invalidations: readonly Invalidation[]): void => {
+    if (invalidations.length === 0) return;
+    pending.set(everyMs, [...(pending.get(everyMs) ?? []), ...invalidations]);
+    if (timers.has(everyMs)) return;
+    timers.set(
+      everyMs,
+      setTimeout(() => {
+        timers.delete(everyMs);
+        const batch = pending.get(everyMs) ?? [];
+        pending.delete(everyMs);
+        invalidateNow(batch);
+      }, everyMs),
+    );
+  };
+
   const reset = () => {
     dirty.clear();
-    pending = [];
+    pending.clear();
     void queryClient.resetQueries();
   };
 
@@ -135,14 +158,6 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
     store.setState((s) => ingest(s, { tool, input, output: q.state.data } as Parameters<typeof ingest>[1]));
   };
 
-  let pending: Invalidation[] = [];
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const flush = () => {
-    timer = undefined;
-    const batch = pending;
-    pending = [];
-    invalidateNow(batch);
-  };
 
   /** Refetch what `batch` names; a read already in flight is marked dirty, so its (older) answer never lands. */
   function invalidateNow(batch: readonly Invalidation[]): void {
@@ -181,9 +196,12 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
     if (frame.t !== "event") return;
     const { invalidate, resync } = effectsOf(frame.event, prev.machines);
     if (resync) void hub.resync();
-    if (invalidate.length === 0) return;
-    pending.push(...invalidate);
-    timer ??= setTimeout(flush, INVALIDATE_EVERY_MS);
+    const slow = new Map<number, Invalidation[]>();
+    for (const i of invalidate) {
+      const every = SLOW_EVERY_MS[i.tool] ?? INVALIDATE_EVERY_MS;
+      slow.set(every, [...(slow.get(every) ?? []), i]);
+    }
+    for (const [every, batch] of slow) later(every, batch);
   };
 
   return {
@@ -206,7 +224,7 @@ export const createDataLayer = (hub: HubApi, now: () => number = Date.now): Data
         stopKeep();
         stop();
         stopCache();
-        if (timer !== undefined) clearTimeout(timer);
+        for (const t of timers.values()) clearTimeout(t);
       };
     },
   };
