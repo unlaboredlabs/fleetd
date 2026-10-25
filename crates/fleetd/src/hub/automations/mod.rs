@@ -38,7 +38,6 @@ use tokio::task::JoinHandle;
 
 use crate::clock::Clock;
 use crate::hub::leads::lead::AutoStart;
-use crate::hub::leads::wakes::{Trigger, trigger_lines};
 use crate::hub::leads::workstreams::IntakeInput;
 use crate::hub::leads::{Area, LeadError};
 use crate::hub::store::{EventLog, HubDb, NewEvent, StoreError, iso_ms, now_ms};
@@ -450,6 +449,27 @@ impl Automations {
         Ok(run)
     }
 
+    /// The run whose order is still open, if any: any of its runs, not only the newest, since a skipped trigger is
+    /// newer than the run it skipped for.
+    fn active(&self, id: &str) -> Result<Option<AutomationRun>, LeadError> {
+        let rows: Vec<String> = self.db.with(|c| {
+            let mut stmt = c.prepare(
+                "SELECT data FROM automation_runs WHERE automation_id = ? AND state = 'running' ORDER BY at_ms DESC",
+            )?;
+            let rows = stmt
+                .query_map([id], |r| r.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            Ok(rows)
+        })?;
+        for data in rows {
+            let run = self.settle(decode_run(&data)?)?;
+            if run.state == AutomationRunState::Running {
+                return Ok(Some(run));
+            }
+        }
+        Ok(None)
+    }
+
     fn with_last_run(&self, mut a: Automation) -> Result<Automation, LeadError> {
         a.last_run = match self
             .runs_of(a.automation_id.as_str(), 1)?
@@ -739,11 +759,8 @@ impl Automations {
         let a = self.get(id)?.ok_or_else(|| not_found(id))?;
         let now = self.now();
         let trigger = start.trigger();
-        let busy = a
-            .last_run
-            .as_ref()
-            .filter(|r| r.state == AutomationRunState::Running);
-        let skipped = match (&start, busy) {
+        let busy = self.active(id)?;
+        let skipped = match (&start, busy.as_ref()) {
             (Start::Schedule { .. } | Start::Webhook { .. }, _) if a.paused => {
                 Some("the automation is paused".to_owned())
             }
@@ -838,23 +855,14 @@ impl Automations {
         Ok((a, run))
     }
 
-    /// Starts the project's lead if it has none, its first message ending with the order as a wake would say it
-    /// (the digest names a draft by its title only); a running lead was woken by the order itself. A lead that can't
-    /// start now (machine offline, runner logged out) starts with the order waiting once it can.
+    /// Starts the project's lead if it has none; its first message carries the waiting orders in full. A running
+    /// lead was woken by the order itself. A lead that can't start now (machine offline, runner logged out) starts
+    /// once it can, and gets the order in full then.
     pub async fn wake_lead(&self, a: &Automation, run: &AutomationRun) {
         let Some(w) = &run.workstream_id else {
             return;
         };
-        let first = match self.leads.workstreams.get(w) {
-            Ok(Some(order)) => trigger_lines(&[Trigger::Intent {
-                workstream_id: w.clone(),
-                text: order.source.text.to_string(),
-            }])
-            .join("\n"),
-            _ => String::new(),
-        };
-        let first = (!first.is_empty()).then_some(first.as_str());
-        let lead = match self.leads.leads.auto_start(&a.project_ref, first).await {
+        let lead = match self.leads.leads.auto_start(&a.project_ref, None).await {
             AutoStart::Running(_) => "the lead has it".to_owned(),
             AutoStart::Started(_) => "the lead started with it".to_owned(),
             AutoStart::Held(e) => format!("it waits for the lead: {}", e.message),

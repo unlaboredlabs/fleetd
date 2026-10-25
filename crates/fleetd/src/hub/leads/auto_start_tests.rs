@@ -278,6 +278,62 @@ async fn an_unusable_runner_holds_the_order_with_its_reason_until_the_machine_is
     waiting_loop.abort();
 }
 
+/// An order that says more than its title (an automation's prompt, trigger and webhook body) waits while the lead
+/// can't start; the lead that starts later gets it in full, not just the digest's title line.
+#[tokio::test(flavor = "current_thread")]
+async fn an_order_that_waited_for_its_lead_reaches_it_in_full_when_it_starts() {
+    let hub = hub(false);
+    let waiting_loop = tokio::spawn(hub.area.leads.clone().run_waiting());
+    settle().await;
+    let text = "Error alert triage\nFrom automation au_k3Jd8sQp2xYz (run ar_Qm7tZr1vBn4w, started by its webhook).\n\n\
+                Find the cause from the alert's body.\n\nThe webhook's body (27 bytes):\n```\n{\"alert\":\"disk 91% on db-2\"}\n```";
+    let (w1, lead) = hub.order(text).await;
+    assert!(matches!(lead, AutoStart::Held(_)));
+    hub.clock.advance(Duration::from_secs(600));
+    hub.node.runner_usable.store(true, Ordering::SeqCst);
+    hub.machine_online();
+    settle().await;
+    let prompts = hub.launched_prompts();
+    assert_eq!(prompts.len(), 1);
+    for part in [
+        "Orders waiting for you, in full:",
+        w1.as_str(),
+        "Find the cause from the alert's body.",
+        "disk 91% on db-2",
+        "started by its webhook",
+    ] {
+        assert!(
+            prompts[0].contains(part),
+            "{part} missing from:\n{}",
+            prompts[0]
+        );
+    }
+    // Said once: the intent wake made before the lead started is dropped, as the first message carried it.
+    hub.after_debounce().await;
+    assert!(
+        hub.node
+            .sends
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|m| !m.contains("disk 91%"))
+    );
+    waiting_loop.abort();
+}
+
+/// An order whose text is its title is in the digest already: no second copy.
+#[tokio::test(flavor = "current_thread")]
+async fn a_one_line_order_is_not_repeated_under_waiting_orders() {
+    let hub = hub(true);
+    hub.order("add a /health endpoint").await;
+    let prompts = hub.launched_prompts();
+    assert!(
+        !prompts[0].contains("Orders waiting for you"),
+        "{}",
+        prompts[0]
+    );
+}
+
 /// The lead's thread as the shell stream last reported it.
 fn lead_thread(hub: &Hub, status: &str) {
     let at = iso_ms(T0_MS as i64);

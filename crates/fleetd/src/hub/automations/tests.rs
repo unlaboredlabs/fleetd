@@ -213,6 +213,37 @@ async fn a_trigger_while_a_run_is_open_is_skipped_and_recorded() {
         "no second order"
     );
 
+    // A third trigger while the first order is still open is skipped too: the skipped run is the newest, not the
+    // one that counts.
+    let third_while_open = autos
+        .run(
+            id,
+            Start::Schedule {
+                due_ms: 1_792_231_200_000,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(third_while_open.state, AutomationRunState::Skipped);
+    let now_too = autos
+        .run(id, Start::Manual { by: "human".into() })
+        .await
+        .unwrap();
+    assert_eq!(now_too.state, AutomationRunState::Skipped);
+    assert_eq!(
+        h.area
+            .workstreams
+            .list(&crate::hub::leads::records::WorkstreamFilter {
+                project_ref: None,
+                state: None,
+                limit: 100
+            })
+            .unwrap()
+            .len(),
+        1,
+        "still one order"
+    );
+
     // Once its order is closed the run is over, and the next trigger runs.
     h.area
         .workstreams
@@ -229,10 +260,12 @@ async fn a_trigger_while_a_run_is_open_is_skipped_and_recorded() {
         vec![
             AutomationRunState::Running,
             AutomationRunState::Skipped,
+            AutomationRunState::Skipped,
+            AutomationRunState::Skipped,
             AutomationRunState::Done
         ]
     );
-    assert!(runs[2].ended_at.is_some());
+    assert!(runs[4].ended_at.is_some());
     // The lead started with the first run; the third reaches it as a wake with the whole prompt.
     h.after_debounce().await;
     let sends = h.node.sends.lock().unwrap().clone();
@@ -692,4 +725,36 @@ async fn the_lead_makes_lists_edits_pauses_runs_and_deletes_its_projects_automat
         .await
         .unwrap_err();
     assert_eq!(gone.code, ErrorCode::NotFound);
+}
+
+#[test]
+fn a_webhook_url_starts_with_the_url_init_kept_else_the_listen_address() {
+    let home = tempfile::tempdir().unwrap();
+    assert_eq!(crate::hub::serve::configured_url(home.path()), None);
+    let setup = |url: &str| {
+        std::fs::write(
+            home.path().join("setup.json"),
+            json!({ "listen": "0.0.0.0:4790", "url": url, "unitSuffix": "", "machines": {} })
+                .to_string(),
+        )
+        .unwrap();
+        crate::hub::serve::configured_url(home.path())
+    };
+    assert_eq!(setup("http://0.0.0.0:4790"), None);
+    let url = setup("http://hub.example.com:4790").unwrap();
+    let id = AutomationId::unchecked("au_k3Jd8sQp2xYz");
+    assert_eq!(
+        webhook_url(&url, &id, "s3cr3t"),
+        "http://hub.example.com:4790/hooks/au_k3Jd8sQp2xYz/s3cr3t"
+    );
+    let fallback = crate::hub::api::HubConfig {
+        home: home.path().to_path_buf(),
+        listen: crate::hub::api::Listen::default(),
+        url: None,
+        queue_ttl_sec: None,
+    };
+    assert_eq!(
+        webhook_url(&fallback.url(), &id, "s"),
+        "http://127.0.0.1:4790/hooks/au_k3Jd8sQp2xYz/s"
+    );
 }

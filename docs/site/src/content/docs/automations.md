@@ -73,9 +73,9 @@ The body goes into the order as far as it fits, and the lead can read the whole 
 refused, and fleetd doesn't record it: no run, no event, nothing in the hub's log. The hub never logs the secret or
 the body.
 
-The URL starts with the address the hub listens on (`127.0.0.1:4790` unless you set it up otherwise), so a service
-elsewhere can't reach it as shown. Put a tunnel or a reverse proxy in front of the hub, and give the service that
-address with the same `/hooks/…` path.
+The URL starts with the hub's address as `fleetd init --url` set it, and without one, the address it listens on
+(`127.0.0.1:4790` unless you set it up otherwise). A service outside your network can't reach either as shown: put a
+tunnel or a reverse proxy in front of the hub, and give the service that address with the same `/hooks/…` path.
 
 ## From an MCP client
 

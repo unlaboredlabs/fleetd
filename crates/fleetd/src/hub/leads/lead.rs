@@ -15,7 +15,7 @@ use super::digest::clip;
 use super::error::LeadError;
 use super::prompt::render_lead_start;
 use super::records::{LeadRecords, StoredLead, WorkstreamFilter};
-use super::wakes::LeadWakes;
+use super::wakes::{LeadWakes, Trigger, trigger_lines};
 use super::{Ctx, now_iso};
 use crate::hub::executor::LaunchInput;
 use crate::hub::prompts::Audience;
@@ -298,6 +298,33 @@ impl Leads {
             .ok_or_else(|| LeadError::no_project(r))
     }
 
+    /// The drafts waiting for this lead whose order says more than its title (an automation's prompt, trigger and
+    /// body), oldest first, as a wake says a new order: the digest names a draft by its title only, and a wake for one
+    /// made before the lead started is dropped (`LeadWakes::flush`).
+    fn waiting_orders(&self, r: &ProjectRef) -> Result<Option<String>, LeadError> {
+        let open = self.records.workstreams_list(&WorkstreamFilter {
+            project_ref: Some(r.clone()),
+            state: Some(WorkstreamState::Open),
+            limit: 100,
+        })?;
+        let triggers: Vec<Trigger> = open
+            .into_iter()
+            .rev()
+            .filter(|w| w.brief.is_none() && w.source.text.trim() != w.title.trim())
+            .map(|w| Trigger::Intent {
+                workstream_id: w.workstream_id,
+                text: w.source.text.to_string(),
+            })
+            .collect();
+        if triggers.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(format!(
+            "Orders waiting for you, in full:\n{}",
+            trigger_lines(&triggers).join("\n")
+        )))
+    }
+
     async fn launch(
         &self,
         r: &ProjectRef,
@@ -331,6 +358,9 @@ impl Leads {
             &self.wakes.digest(r).await?,
             &self.ctx.db.memory().injected(r, true),
         );
+        if let Some(waiting) = self.waiting_orders(r)? {
+            prompt = format!("{}\n\n{waiting}", prompt.trim_end());
+        }
         if let Some(first) = first {
             prompt = format!("{}\n\n{}", prompt.trim_end(), first.trim_end());
         }

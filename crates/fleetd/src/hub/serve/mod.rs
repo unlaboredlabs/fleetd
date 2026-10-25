@@ -159,9 +159,9 @@ pub async fn run(options: HubOptions) -> anyhow::Result<()> {
         .unwrap_or_default();
     let home = resolve_hub_home(options.home.as_deref(), &user_home);
     let config = HubConfig {
+        url: configured_url(&home),
         home,
         listen: options.listen.clone(),
-        url: None,
         queue_ttl_sec: options.queue_ttl_sec,
     };
     let hub = build(config, Arc::new(SystemClock))?;
@@ -185,6 +185,16 @@ pub async fn run(options: HubOptions) -> anyhow::Result<()> {
         task.abort();
     }
     Ok(served?)
+}
+
+/// Where devices and services reach the hub, as `fleetd init --url` kept it in `<home>/setup.json`; None for a hub
+/// started by hand, or a URL on every interface (`0.0.0.0` reaches nothing).
+pub fn configured_url(home: &std::path::Path) -> Option<String> {
+    crate::cli::setup::state::read_setup(home)
+        .ok()
+        .flatten()
+        .map(|s| s.url)
+        .filter(|url| !url.is_empty() && !url.contains("0.0.0.0") && !url.contains("[::]"))
 }
 
 async fn stop_signal() {
