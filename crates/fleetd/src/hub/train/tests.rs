@@ -169,6 +169,8 @@ impl FakeGh {
             "number": n, "title": p.title, "state": p.state, "merged": p.merged, "merge_commit_sha": p.merge_sha, "merged_at": p.merged_at, "body": p.body,
             "head": { "ref": p.branch, "sha": self.head_of(&p.branch).unwrap_or_else(|| "0".repeat(40)), "repo": { "full_name": REPO } },
             "base": { "ref": p.base }, "labels": labels, "draft": p.draft,
+            "user": { "login": "ada-lovelace", "type": "User" }, "created_at": "2026-10-16T09:00:00Z",
+            "merged_by": p.merged.then(|| json!({ "login": "ada-lovelace", "type": "User" })),
         })
     }
 
@@ -1194,8 +1196,12 @@ async fn auto_enqueues_a_write_tasks_pr_rebases_it_onto_the_moved_base_and_merge
     );
     assert_eq!(kit.main_file("docs.md").as_deref(), Some("docs"));
     assert_eq!(kit.main_file("other.txt").as_deref(), Some("other"));
+    let mut landed = kit.host.events_of("pr.merged");
+    let merged_at = landed[0]["mergedAt"].take();
+    assert!(merged_at.is_string(), "{merged_at}");
+    landed[0].as_object_mut().unwrap().remove("mergedAt");
     assert_eq!(
-        kit.host.events_of("pr.merged"),
+        landed,
         [
             json!({ "changeId": change_id, "workstreamId": "W1", "taskId": task_id, "repo": REPO, "prNumber": 7, "mergedSha": merged.merged_sha })
         ]
@@ -1473,6 +1479,32 @@ async fn a_merge_outside_the_train_is_reported_once_and_only_into_a_base_the_tra
         .collect();
     reported.sort_unstable();
     assert_eq!(reported, [9, 10], "each once");
+    // What the metrics need of it: where it merged from and into, when, and who opened it.
+    let ten = kit
+        .host
+        .events_of("pr.merged_outside")
+        .into_iter()
+        .find(|e| e["prNumber"] == json!(10))
+        .unwrap();
+    assert_eq!(
+        (
+            &ten["head"],
+            &ten["base"],
+            &ten["authorKind"],
+            &ten["prCreatedAt"]
+        ),
+        (
+            &json!("outside-10"),
+            &json!("main"),
+            &json!("human"),
+            &json!("2026-10-16T09:00:00.000Z")
+        )
+    );
+    assert!(ten["mergedAt"].is_string());
+    assert_eq!(
+        (&ten["mergedBy"], &ten["mergedByKind"]),
+        (&json!("ada-lovelace"), &json!("human"))
+    );
     let wakes = kit.host.wakes.lock().unwrap().clone();
     assert!(
         wakes.iter().any(|w| w.contains(&format!(
@@ -1775,6 +1807,12 @@ async fn batches_three_ready_prs_into_one_ci_run_and_one_squash_and_closes_each_
     let merged_events = kit.host.events_of("pr.merged");
     assert_eq!(merged_events.len(), 3);
     assert!(merged_events.iter().all(|e| e["mergedSha"] == json!(main)));
+    assert!(
+        merged_events
+            .iter()
+            .all(|e| e["batchPr"] == json!(batch_pr) && e["mergedAt"].is_string()),
+        "{merged_events:?}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

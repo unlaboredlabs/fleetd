@@ -3728,6 +3728,8 @@ export type ToolPermission = {
 export type TrainEventData = {
   /** pr.merged_outside: who opened and who merged it, by the git host's account type. */
   authorKind?: ActorKind;
+  /** pr.merged, pr.merged_outside: the branch it merged into. */
+  base?: string;
   /** pr.merged: the train's batch PR it landed in. */
   batchPr?: number;
   changeId?: ChangeId;
@@ -3741,6 +3743,8 @@ export type TrainEventData = {
   logUrl?: string;
   /** pr.merged, pr.merged_outside: when it landed on the git host. */
   mergedAt?: Timestamp;
+  /** pr.merged_outside: the merger's login on the git host, so a merge by the person's own account is their touch. */
+  mergedBy?: string;
   mergedByKind?: ActorKind;
   mergedSha?: string;
   prCreatedAt?: Timestamp;
