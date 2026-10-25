@@ -1751,6 +1751,10 @@
           "$ref": "#/$defs/RememberedItem",
           "description": "A system line \"Remembered: …\": what the lead's `remember` wrote, which `memory_undo` takes back."
         },
+        "replyTo": {
+          "$ref": "#/$defs/ChatReplyTo",
+          "description": "A human message: the bubble it answers."
+        },
         "seq": {
           "maximum": 9007199254740991,
           "minimum": 0,
@@ -1823,6 +1827,24 @@
       ],
       "type": "object"
     },
+    "ChatReplyTo": {
+      "description": "The bubble a human message answers: a lead message and the bubble's place in it, as `parts` counts (0 for a\nmessage of one bubble). The lead reads that bubble whole over the reply, and when it was written.",
+      "properties": {
+        "messageId": {
+          "$ref": "#/$defs/ChatMessageId"
+        },
+        "part": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "messageId",
+        "part"
+      ],
+      "type": "object"
+    },
     "ChatRequestId": {
       "pattern": "^Q[1-9][0-9]*$",
       "type": "string"
@@ -1852,6 +1874,10 @@
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
+        },
+        "replyTo": {
+          "$ref": "#/$defs/ChatReplyTo",
+          "description": "The lead's bubble this answers. `text` still opens with its one-line quote, for clients that show text as it\nis; the lead reads the whole bubble in its place."
         },
         "session": {
           "$ref": "#/$defs/ThreadId",

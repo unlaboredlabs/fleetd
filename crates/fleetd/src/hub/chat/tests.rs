@@ -449,6 +449,114 @@ async fn the_message_that_starts_the_lead_goes_in_with_its_start() {
     );
 }
 
+/// What the lead's session took first when `input` started it.
+async fn lead_reads(input: Value, hub: &Arc<Hub>) -> String {
+    use fleetd_contracts::sessions::SessionCall;
+    let calls = obliging_node(hub).await;
+    hub.executors.set_runner_ready(&project().machine_id, true);
+    hub.executors.await_ready(&project().machine_id).await;
+    let sent = crate::hub::api::registry()
+        .call(hub, &person(), "chat_send", input)
+        .await
+        .unwrap();
+    assert_eq!(sent["message"]["delivery"], "turn", "{sent}");
+    calls
+        .lock()
+        .unwrap()
+        .iter()
+        .find_map(|c| match c {
+            SessionCall::Launch(l) => Some(l.prompt.to_string()),
+            _ => None,
+        })
+        .unwrap()
+}
+
+/// A reply as the app sends it: the bubble's one-line quote over the words, and the bubble it answers.
+fn reply_to(quote: &str, words: &str, message: &str, part: i64) -> Value {
+    let mut input = say_to_app(&format!("> {quote}\n\n{words}"), "r1", None);
+    input["replyTo"] = json!({ "messageId": message, "part": part });
+    input
+}
+
+/// A reply to a long bubble: the lead reads the whole bubble, not the app's 90-character quote, and when it wrote it.
+#[tokio::test]
+async fn a_reply_reads_the_whole_bubble_it_answers_and_when_it_was_written() {
+    let (hub, _home) = hub();
+    let bubble = "I took \"sidebar\" to mean the panel next to the chat. If you meant the projects list on the \
+                  left instead, say so and I'll move the filter there.";
+    let (asked, _) = hub.chat.add(&project(), lead_says(bubble)).unwrap();
+    let quote = "I took \"sidebar\" to mean the panel next to the chat. If you meant the projects list on th…";
+    let read = lead_reads(reply_to(quote, "yes", asked.message_id.as_str(), 0), &hub).await;
+    let at = &asked.created_at.as_str()[11..16];
+    assert!(
+        read.ends_with(&format!(
+            "The human writes in your chat:\n\nReplying to your message at {at} UTC:\n> {bubble}\n\nyes"
+        )),
+        "{read}"
+    );
+    let stored = hub
+        .chat
+        .by_request(&project(), &format!("{}:r1", person().key_id))
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.reply_to.unwrap().message_id, asked.message_id);
+    assert!(
+        stored.text.starts_with(&format!("> {quote}")),
+        "the text stays as other clients show it"
+    );
+}
+
+/// A reply to one bubble of a message of several quotes that bubble only; one past 1,000 characters keeps its start
+/// and end.
+#[tokio::test]
+async fn a_reply_to_one_bubble_quotes_only_that_bubble() {
+    let (hub, _home) = hub();
+    let long = format!("Plan B starts here {} and ends here.", "word ".repeat(300));
+    let text = format!("Two ways to do it.\n\nPlan A: move the filter.\n\n{long}");
+    let (asked, _) = hub.chat.add(&project(), lead_says(&text)).unwrap();
+    assert_eq!(asked.parts.as_ref().map(|p| p.len()), Some(3));
+    let read = lead_reads(
+        reply_to(
+            "Plan A: move the filter.",
+            "this one",
+            asked.message_id.as_str(),
+            1,
+        ),
+        &hub,
+    )
+    .await;
+    assert!(
+        read.ends_with(", its bubble 2 of 3:\n> Plan A: move the filter.\n\nthis one"),
+        "{read}"
+    );
+    assert!(
+        !read.contains("Two ways") && !read.contains("Plan B"),
+        "{read}"
+    );
+
+    let quote = flow::for_lead(
+        crate::hub::prompts::PromptSet::defaults(),
+        &{
+            let mut m = hub
+                .chat
+                .by_request(&project(), &format!("{}:r1", person().key_id))
+                .unwrap()
+                .unwrap();
+            m.reply_to.as_mut().unwrap().part = fleetd_contracts::prim::Count::unchecked(2);
+            m
+        },
+        Some(&asked),
+        "",
+    );
+    assert!(
+        quote.contains("> Plan B starts here word")
+            && quote.contains("characters cut …]\n> word")
+            && quote.ends_with("and ends here.\n\nthis one")
+            && quote.len() < 1200,
+        "{quote}"
+    );
+}
+
 #[tokio::test]
 async fn project_stop_with_nothing_running_says_so() {
     let (hub, _home) = hub();
@@ -557,7 +665,12 @@ async fn an_agent_key_writes_as_an_agent_and_never_counts_as_the_human() {
         "an agent's message answers nothing"
     );
     let stored: fleetd_contracts::chat::ChatMessage = serde_json::from_value(m.clone()).unwrap();
-    let read = flow::for_lead(crate::hub::prompts::PromptSet::defaults(), &stored, "");
+    let read = flow::for_lead(
+        crate::hub::prompts::PromptSet::defaults(),
+        &stored,
+        None,
+        "",
+    );
     assert!(
         read.starts_with("An agent (scout) writes in your chat. It is not the human")
             && read.ends_with("\n\nCI is red on main"),
@@ -592,7 +705,7 @@ async fn an_agent_key_writes_as_an_agent_and_never_counts_as_the_human() {
     let human: fleetd_contracts::chat::ChatMessage =
         serde_json::from_value(cli["message"].clone()).unwrap();
     assert_eq!(
-        flow::for_lead(crate::hub::prompts::PromptSet::defaults(), &human, ""),
+        flow::for_lead(crate::hub::prompts::PromptSet::defaults(), &human, None, ""),
         "The human writes in your chat:\n\n1 go",
         "the same words from the app or the cli"
     );

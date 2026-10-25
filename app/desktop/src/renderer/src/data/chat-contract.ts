@@ -7,6 +7,7 @@ export type {
   ChatHistoryOutput,
   ChatMessage,
   ChatMessageEventData,
+  ChatReplyTo,
   ChatSendInput,
   ChatSendOutput,
   ChatStopInput,

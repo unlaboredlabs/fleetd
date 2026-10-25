@@ -42,6 +42,7 @@ pub struct NewMessage {
     pub remembered: Option<fleetd_contracts::memory::RememberedItem>,
     pub by: Option<String>,
     pub client: Option<ChatClient>,
+    pub reply_to: Option<fleetd_contracts::chat::ChatReplyTo>,
     pub delivery: Option<ChatDelivery>,
     /// A human message not yet in the lead's session.
     pub held: bool,
@@ -290,6 +291,7 @@ impl Chat {
                 delivery: new.delivery,
                 by: new.by.as_deref().and_then(line),
                 client: new.client,
+                reply_to: new.reply_to,
                 item: new.item,
                 history: new.history,
                 remembered: new.remembered,

@@ -183,7 +183,7 @@ function BubbleLine(props: {
           <>
             <TapbackPicker current={props.tapback} onPick={pick} />
             <Tooltip content="Reply">
-              <Button variant="quiet" iconOnly aria-label="Reply" onClick={() => actions.reply({ id: item.id, quote: quoteOf(bubble.text) })}>
+              <Button variant="quiet" iconOnly aria-label="Reply" onClick={() => actions.reply({ id: item.id, part: Number(bubble.key), quote: quoteOf(bubble.text) })}>
                 <Reply />
               </Button>
             </Tooltip>

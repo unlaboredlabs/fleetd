@@ -635,6 +635,8 @@ export type ChatMessage = {
   projectRef: ProjectRef;
   /** A system line "Remembered: …": what the lead's `remember` wrote, which `memory_undo` takes back. */
   remembered?: RememberedItem;
+  /** A human message: the bubble it answers. */
+  replyTo?: ChatReplyTo;
   seq: number;
   state: ChatMessageState;
   /** Markdown. Empty while a streamed message has no text yet, and for an inline `item`. */
@@ -673,6 +675,15 @@ export type ChatPart = {
   start: number;
 };
 
+/**
+ * The bubble a human message answers: a lead message and the bubble's place in it, as `parts` counts (0 for a
+ * message of one bubble). The lead reads that bubble whole over the reply, and when it was written.
+ */
+export type ChatReplyTo = {
+  messageId: ChatMessageId;
+  part: number;
+};
+
 export type ChatRequestId = string;
 
 export type ChatSendInput = {
@@ -687,6 +698,11 @@ export type ChatSendInput = {
    */
   now?: boolean;
   projectRef: ProjectRef;
+  /**
+   * The lead's bubble this answers. `text` still opens with its one-line quote, for clients that show text as it
+   * is; the lead reads the whole bubble in its place.
+   */
+  replyTo?: ChatReplyTo;
   /**
    * Sent from inside a fleetd session: its thread id (FLEETD_THREAD_ID), as the caller reports it. The project's own
    * lead and tasks are refused (they use their fleetd tools), and so is a human key. It catches mistakes; the key,

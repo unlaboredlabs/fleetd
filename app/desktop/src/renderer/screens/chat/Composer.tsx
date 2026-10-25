@@ -117,8 +117,10 @@ export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCa
     // The words leave the box at once; the layer's item holds them (queued when offline, with Edit to take back).
     setDraft(() => ({ text: "", attached: [] }));
     onSent?.();
+    // The quote stays in the text for every client; the hub gives the lead the whole bubble `replyTo` names.
     const text = replyTo === undefined || replyTo.quote === "" ? checked.text : replyText(replyTo.quote, checked.text);
-    void chat.send(projectKey, { text, ...(files.length > 0 ? { attachments: files } : {}), ...(now ? { now } : {}) });
+    const reply = replyTo === undefined ? {} : { replyTo: { messageId: replyTo.id, part: replyTo.part } };
+    void chat.send(projectKey, { text, ...reply, ...(files.length > 0 ? { attachments: files } : {}), ...(now ? { now } : {}) });
   };
 
   // A reply goes to the box: the cursor follows it.

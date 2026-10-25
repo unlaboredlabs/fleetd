@@ -206,6 +206,12 @@ describe("the chat's rows", () => {
     expect(msg("a")).toMatchObject({ answered: { "0": "Approve" } });
   });
 
+  it("link a reply to the message its replyTo names, over an older one its quote matches too", () => {
+    const named = { replyTo: { messageId: "p", part: 0 } } as unknown as ChatItem["message"];
+    const r = rows([item("p", "lead", at(19, 9), { text: "same" }), item("q", "lead", at(19, 9, 1), { text: "same" }), item("b", "human", at(19, 9, 2), { text: "> same\n\nyes", message: named })]);
+    expect(r.find((x) => x.kind === "message" && x.item.id === "b")).toMatchObject({ reply: { quote: "same", body: "yes", target: "p" } });
+  });
+
   it("word days plainly", () => {
     expect(dayLabel(at(19, 1), NOW, "UTC")).toBe("Today");
     expect(dayLabel(at(18, 1), NOW, "UTC")).toBe("Yesterday");

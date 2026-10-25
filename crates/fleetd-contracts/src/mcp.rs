@@ -910,6 +910,9 @@ input!(ChatSendInput {
     client_request_id: RequestId,
     /// A human key: where it is written. Absent means the app.
     client: Option<crate::chat::ChatClient>,
+    /// The lead's bubble this answers. `text` still opens with its one-line quote, for clients that show text as it
+    /// is; the lead reads the whole bubble in its place.
+    reply_to: Option<crate::chat::ChatReplyTo>,
     /// Sent from inside a fleetd session: its thread id (FLEETD_THREAD_ID), as the caller reports it. The project's own
     /// lead and tasks are refused (they use their fleetd tools), and so is a human key. It catches mistakes; the key,
     /// not this field, carries authority.

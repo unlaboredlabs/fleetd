@@ -13,7 +13,7 @@
 // A chat outlives its connection: after a drop or a reconnect it is `cached`, still shown, until this connection's
 // latest page replaces it (or, at launch, it came from the disk cache, cache.ts).
 import type { HubError } from "../../../shared/hub";
-import type { AttachmentRef, ChatDelta, ChatHistoryOutput, ChatMessage, KnownChatAuthor } from "./chat-contract";
+import type { AttachmentRef, ChatDelta, ChatHistoryOutput, ChatMessage, ChatReplyTo, KnownChatAuthor } from "./chat-contract";
 
 /**
  * How many messages a chat keeps as live ones arrive; older ones are paged back in from history. Paging back only
@@ -191,6 +191,8 @@ export interface ChatSend {
   readonly state: SendState;
   /** Sent with ⌘Enter: chat_send's `now`, kept for every resend. */
   readonly now?: boolean;
+  /** A reply: the lead's bubble it answers, kept for every resend. */
+  readonly replyTo?: ChatReplyTo;
   /** An earlier call was cut off: the hub may hold it, so it is never called "not sent". */
   readonly reached?: boolean;
 }

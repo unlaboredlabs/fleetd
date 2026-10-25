@@ -17,7 +17,7 @@ import {
   type Chat,
   type ChatSend,
 } from "./chat";
-import type { AttachmentRef, ChatHistoryOutput, ChatSendInput, ChatStopInput, ChatStopOutput } from "./chat-contract";
+import type { AttachmentRef, ChatHistoryOutput, ChatReplyTo, ChatSendInput, ChatStopInput, ChatStopOutput } from "./chat-contract";
 import { chatOf, type DataState, type DataStore, type ProjectKey } from "./store";
 
 /** "sent": the hub has it. "pending": queued or cut off, it goes when the link is back. "failed": the hub refused
@@ -46,7 +46,11 @@ export interface ChatActions {
    * `attachments`: what attachment_put stored, so the pending row shows them before the hub's copy. `now` (⌘Enter):
    * a working lead stops its running step for it.
    */
-  send(key: ProjectKey, input: { text: string; attachments?: readonly AttachmentRef[]; now?: boolean }, clientRequestId?: string): Promise<SendOutcome>;
+  send(
+    key: ProjectKey,
+    input: { text: string; attachments?: readonly AttachmentRef[]; now?: boolean; replyTo?: ChatReplyTo },
+    clientRequestId?: string,
+  ): Promise<SendOutcome>;
   /** Sends a row again under its own id. */
   retry(key: ProjectKey, clientRequestId: string): Promise<SendOutcome | undefined>;
   discard(key: ProjectKey, clientRequestId: string): void;
@@ -174,6 +178,7 @@ export const createChatActions = (
       clientRequestId: row.clientRequestId,
       ...(row.attachments.length === 0 ? {} : { attachments: row.attachments.map((a) => a.attachmentId) }),
       ...(row.now === true ? { now: true } : {}),
+      ...(row.replyTo === undefined ? {} : { replyTo: row.replyTo }),
     };
     for (let attempt = 0; ; attempt++) {
       const r = await call("chat_send", input);
@@ -222,6 +227,7 @@ export const createChatActions = (
       at: new Date(now()).toISOString(),
       state: { t: "sending" },
       ...(input.now === true ? { now: true } : {}),
+      ...(input.replyTo === undefined ? {} : { replyTo: input.replyTo }),
     };
     return sendRow(key, row);
   };

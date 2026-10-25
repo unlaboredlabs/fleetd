@@ -2,8 +2,8 @@
 //
 // A lead message the hub split (`parts`) is one bubble per part, a block where the part has one this build knows;
 // any other text is one bubble. A reply travels as plain chat text, a one-line quote of the bubble then a blank line,
-// so the lead reads exactly what you answered and every client (the CLI too) shows it as it is. Tapbacks stay on this
-// device: a heart or a laugh isn't worth a lead's turn. Only 👍 on something waiting for you is sent: as the ask's
+// so every client (the CLI too) shows it as it is, and names the bubble (`replyTo`), which the lead reads whole.
+// Tapbacks stay on this device: a heart or a laugh isn't worth a lead's turn. Only 👍 on something waiting for you is sent: as the ask's
 // Approve when the bubble asks, as a 👍 reply to the bubble the lead waits on otherwise.
 import type { ChatBlock } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
