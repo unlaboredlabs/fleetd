@@ -2708,6 +2708,9 @@ export type QuietWindow = {
   to: Timestamp;
 };
 
+/** How a recovering task goes on. */
+export type RecoveryMode = "resume" | "compact" | "fresh";
+
 export type RemoteRepo = string;
 
 export type RepeatStat = {
@@ -3398,6 +3401,11 @@ export type Task = {
   paths?: string[];
   /** The PR a review task reviews. Required at spawn for review; absent on older rows (hub-spawned judges). */
   pr?: string;
+  /**
+   * The threads it ran in before `threadRef`, oldest first: fleetd restarted it fresh (its context filled up, or its
+   * thread could not resume), on the same branch and worktree.
+   */
+  previousThreads?: ThreadRef[];
   /** Resolved at spawn. Rows stored with a model and effort read as `high` (the hub migrates its own). */
   profile?: TaskProfile;
   projectRef: ProjectRef;
@@ -3463,15 +3471,25 @@ export type TaskProfile = "high" | "medium";
 
 /** A task fleetd resumes on its own after its run died: in the same thread and worktree, with a note to continue. */
 export type TaskRecovery = {
-  /** Automatic recoveries used of `max`; a resumed run that died again before doing anything counts twice. */
+  /**
+   * Automatic recoveries used of `max`; a resumed run that died again before doing anything counts twice. A node
+   * going away never counts here.
+   */
   count: number;
   /** How its last run ended. */
   lastCause: RunEnd;
   /** The same, in plain words: "the node on devbox stopped", "claude was killed by signal 9". */
   lastCauseText: string;
   max: number;
+  /** How it goes on. */
+  mode?: RecoveryMode;
   /** When the resume goes out; absent once it has. */
   nextAt?: Timestamp;
+  /**
+   * Resumes after its node went away (stopped, upgraded, crashed, powered off): not the task's doing, so outside
+   * `count`, with a high ceiling of its own only so a node that keeps dying can't loop it forever.
+   */
+  nodeLost?: number;
   /** When the last resume went out. */
   resumedAt?: Timestamp;
   /**

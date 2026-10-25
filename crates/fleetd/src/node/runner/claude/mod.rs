@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use fleetd_contracts::effort::{Effort, MODEL};
 use fleetd_contracts::model::RuntimeMode;
-use fleetd_contracts::sessions::{RunnerInfo, SessionRole};
+use fleetd_contracts::sessions::{RESUME_REFUSED, RunnerInfo, SessionRole};
 
 use super::{
     BoxFut, Runner, RunnerError, SessionHandle, SessionSpec, claude_setup, conformance, failure,
@@ -349,6 +349,12 @@ impl Runner for ClaudeRunner {
         }
         let config_dir = claude_setup::config_dir(&spec.env);
         if let Some(file) = session_file(&config_dir, &spec.cwd, &spec.session_id) {
+            if spec.must_resume && !file.exists() {
+                return Err(refuse(format!(
+                    "{RESUME_REFUSED}claude's conversation {} is gone",
+                    file.display()
+                )));
+            }
             // The session file decides, so a crash between spawn and the node's own record can't make claude refuse
             // ("Session ID … is already in use" / "No conversation found").
             spec.resume = file.exists();
@@ -457,6 +463,7 @@ mod tests {
         SessionSpec {
             session_id: "7f0c0000-0000-4000-8000-000000000001".into(),
             resume: false,
+            must_resume: false,
             cwd: "/work/project".into(),
             add_dirs: vec!["/work/root".into()],
             model: "claude-haiku-5-5".into(),
@@ -581,5 +588,24 @@ mod tests {
         );
         let long = format!("/nonexistent/{}", "x".repeat(200));
         assert_eq!(session_file(config, Path::new(&long), "s1"), None);
+    }
+
+    /// A task's session whose conversation is gone is refused, never started empty.
+    #[test]
+    fn a_task_session_without_its_conversation_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("config");
+        let spec = SessionSpec {
+            resume: true,
+            must_resume: true,
+            cwd: dir.path().to_owned(),
+            env: vec![("CLAUDE_CONFIG_DIR".into(), config.display().to_string())],
+            ..spec()
+        };
+        let runner = ClaudeRunner::new("/nonexistent/claude".into());
+        let Err(RunnerError::Spawn { message, .. }) = runner.spawn(spec) else {
+            panic!("a session with no conversation started");
+        };
+        assert!(message.starts_with(RESUME_REFUSED), "{message}");
     }
 }

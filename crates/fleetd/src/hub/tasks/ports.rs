@@ -60,6 +60,8 @@ pub struct Worktree {
     pub branch: Option<String>,
     /// A review's PR, whose head its detached worktree is at.
     pub pr: Option<String>,
+    /// The task's earlier thread, whose worktree a fresh restart takes over.
+    pub from: Option<ThreadId>,
 }
 
 /// What a finished task thread changed.
