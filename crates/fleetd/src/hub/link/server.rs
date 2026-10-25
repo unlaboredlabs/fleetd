@@ -166,6 +166,17 @@ impl NodeLinkServer {
         }
     }
 
+    /// As a hello listing `capabilities` leaves it.
+    #[cfg(test)]
+    pub fn set_capabilities(&self, machine_id: &MachineId, capabilities: &[&str]) {
+        let caps = capabilities.iter().map(|c| (*c).to_owned()).collect();
+        self.state
+            .lock()
+            .unwrap()
+            .capabilities
+            .insert(machine_id.clone(), caps);
+    }
+
     /// Whether the machine's live node listed `capability` in its hello.
     pub fn node_can(&self, machine_id: &MachineId, capability: &str) -> bool {
         self.state

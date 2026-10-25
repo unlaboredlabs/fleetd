@@ -1190,6 +1190,407 @@ async fn a_slow_fetch_never_holds_up_a_launch_in_another_project() {
     );
 }
 
+/// Every file of the human's checkout outside `.git`, and what git keeps that is theirs: HEAD, the index, FETCH_HEAD
+/// and their branches.
+fn checkout_state(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+    fn walk(root: &Path, dir: &Path, out: &mut Vec<(PathBuf, Vec<u8>)>) {
+        let mut entries: Vec<_> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        entries.sort();
+        for path in entries {
+            if path == root.join(".git") {
+                continue;
+            }
+            if path.is_dir() {
+                walk(root, &path, out);
+            } else {
+                let rel = path.strip_prefix(root).unwrap().to_path_buf();
+                out.push((rel, std::fs::read(&path).unwrap()));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(root, root, &mut out);
+    for file in ["HEAD", "index", "FETCH_HEAD"] {
+        let at = Path::new(".git").join(file);
+        out.push((at.clone(), std::fs::read(root.join(at)).unwrap()));
+    }
+    let heads = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["for-each-ref", "refs/heads"])
+        .output()
+        .unwrap();
+    out.push(("refs/heads".into(), heads.stdout));
+    out
+}
+
+fn rev(dir: &Path, rev: &str) -> String {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["rev-parse", rev])
+        .output()
+        .unwrap();
+    String::from_utf8(out.stdout).unwrap().trim().to_owned()
+}
+
+/// Names `remote` of `checkout` as `url` on a host, which git reaches at the local repo `at` through
+/// `url.<at>.insteadOf`, as a real remote would be named.
+fn hosted(checkout: &Path, remote: &str, url: &str, at: &Path) {
+    let has = std::process::Command::new("git")
+        .arg("-C")
+        .arg(checkout)
+        .args(["remote", "get-url", remote])
+        .output()
+        .unwrap()
+        .status
+        .success();
+    let verb = if has { "set-url" } else { "add" };
+    git(checkout, &["remote", verb, remote, url]);
+    let key = format!("url.{}.insteadOf", at.to_string_lossy());
+    git(checkout, &["config", "--add", &key, url]);
+}
+
+#[tokio::test]
+async fn readers_and_reviewers_each_get_a_worktree_of_their_own_and_the_humans_checkout_is_untouched()
+ {
+    let dir = tempfile::tempdir().unwrap();
+    let seed = repo(dir.path());
+    let origin = dir.path().join("origin.git");
+    let checkout = dir.path().join("checkout");
+    let (o, c) = (origin.to_string_lossy(), checkout.to_string_lossy());
+    git(
+        dir.path(),
+        &["clone", "-q", "--bare", &seed.to_string_lossy(), &o],
+    );
+    git(dir.path(), &["clone", "-q", &o, &c]);
+    hosted(&checkout, "origin", "https://github.com/o/r.git", &origin);
+    hosted(
+        &checkout,
+        "mirror",
+        "git@gitlab.example.com:o/r.git",
+        &origin,
+    );
+    // Upstream moves on after the human's last pull, and two PRs are open: one on a host with GitHub's PR refs, one
+    // with GitLab's.
+    std::fs::write(seed.join("upstream.txt"), "u\n").unwrap();
+    git(&seed, &["add", "."]);
+    git(&seed, &["commit", "-q", "-m", "upstream"]);
+    git(&seed, &["push", "-q", &o, "main"]);
+    let mut heads = Vec::new();
+    for (file, pr_ref) in [
+        ("pr7.txt", "refs/pull/7/head"),
+        ("mr8.txt", "refs/merge-requests/8/head"),
+    ] {
+        git(&seed, &["checkout", "-q", "-B", file, "main"]);
+        std::fs::write(seed.join(file), "pr\n").unwrap();
+        git(&seed, &["add", "."]);
+        git(&seed, &["commit", "-q", "-m", file]);
+        git(&seed, &["push", "-q", &o, &format!("HEAD:{pr_ref}")]);
+        heads.push(rev(&seed, "HEAD"));
+    }
+    let fresh = rev(&origin, "main");
+    // The human: their own last fetch, a feature branch, an edit and a new file in progress.
+    git(&checkout, &["fetch", "-q", "origin"]);
+    git(&checkout, &["checkout", "-q", "-b", "feature"]);
+    std::fs::write(checkout.join("a.txt"), "edited\n").unwrap();
+    std::fs::write(checkout.join("wip.txt"), "wip\n").unwrap();
+    let before = checkout_state(&checkout);
+
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.project(&checkout).await;
+    let tasks = [
+        ("s1", None, fresh.as_str()),
+        (
+            "s2",
+            Some("https://github.com/o/r/pull/7"),
+            heads[0].as_str(),
+        ),
+        (
+            "s3",
+            Some("https://gitlab.example.com/o/r/-/merge_requests/8/diffs"),
+            heads[1].as_str(),
+        ),
+    ];
+    for (n, (id, pr, at)) in tasks.iter().enumerate() {
+        let workspace = SessionWorkspace::Detached {
+            base_ref: NonEmpty::unchecked("main"),
+            pr: pr.map(NonEmpty::unchecked),
+        };
+        hub.ok(launch(id, RuntimeMode::FullAccess, workspace)).await;
+        let done = hub
+            .summary(|s| {
+                s.session_id.as_str() == *id && s.active_run_id.is_none() && s.latest_run.is_some()
+            })
+            .await;
+        let path = dir.path().join("node/worktrees/p1").join(id);
+        assert_eq!(done.worktree_path.as_deref(), path.to_str(), "{id}");
+        assert_eq!(done.branch, None, "{id}");
+        assert_eq!(hub.runner.spawned()[n].cwd, path, "{id}");
+        // Detached, at the fresh base or the PR's head.
+        assert_eq!(rev(&path, "HEAD"), *at, "{id}");
+        assert!(
+            !std::process::Command::new("git")
+                .arg("-C")
+                .arg(&path)
+                .args(["symbolic-ref", "-q", "HEAD"])
+                .status()
+                .unwrap()
+                .success(),
+            "{id}"
+        );
+        assert!(path.join("upstream.txt").exists(), "{id}");
+        assert!(!path.join("wip.txt").exists(), "{id}");
+        // It may build and run tests there.
+        std::fs::create_dir_all(path.join("target")).unwrap();
+        std::fs::write(path.join("target/out"), "built\n").unwrap();
+    }
+    assert_eq!(checkout_state(&checkout), before);
+
+    // The task ended: its worktree goes, build output with it.
+    for (id, ..) in &tasks {
+        hub.ok(SessionCall::Stop {
+            session_id: ThreadId::unchecked(*id),
+            remove_worktree: true,
+        })
+        .await;
+        assert!(!dir.path().join("node/worktrees/p1").join(id).exists());
+    }
+    let listed = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&checkout)
+        .args(["worktree", "list", "--porcelain"])
+        .output()
+        .unwrap();
+    let listed = String::from_utf8(listed.stdout).unwrap();
+    assert_eq!(listed.matches("worktree ").count(), 1, "{listed}");
+    assert_eq!(checkout_state(&checkout), before);
+
+    // A message after its end brings it back at the same commit, so the session resumes in it.
+    hub.ok(send("s2", "r2")).await;
+    hub.settled("r2").await;
+    let path = dir.path().join("node/worktrees/p1/s2");
+    assert_eq!(rev(&path, "HEAD"), heads[0]);
+    let spec = hub.runner.spawned().last().unwrap().clone();
+    assert!(spec.resume);
+    assert_eq!(spec.cwd, path);
+}
+
+#[tokio::test]
+async fn a_review_whose_host_publishes_no_pr_refs_reads_the_fresh_base() {
+    let dir = tempfile::tempdir().unwrap();
+    let seed = repo(dir.path());
+    let origin = dir.path().join("origin.git");
+    let checkout = dir.path().join("checkout");
+    let (o, c) = (origin.to_string_lossy(), checkout.to_string_lossy());
+    git(
+        dir.path(),
+        &["clone", "-q", "--bare", &seed.to_string_lossy(), &o],
+    );
+    git(dir.path(), &["clone", "-q", &o, &c]);
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.project(&checkout).await;
+    let workspace = SessionWorkspace::Detached {
+        base_ref: NonEmpty::unchecked("main"),
+        pr: Some(NonEmpty::unchecked(
+            "https://bitbucket.org/o/r/pull-requests/3",
+        )),
+    };
+    hub.ok(launch("s1", RuntimeMode::FullAccess, workspace))
+        .await;
+    hub.settled("r1").await;
+    let path = dir.path().join("node/worktrees/p1/s1");
+    assert_eq!(rev(&path, "HEAD"), rev(&origin, "main"));
+}
+
+/// A bare repo `name` cloned from `seed`, with a commit `file` pushed to `pr_ref`; returns it and that commit.
+fn bare_with_pr(
+    dir: &Path,
+    seed: &Path,
+    name: &str,
+    file: &str,
+    pr_ref: &str,
+) -> (PathBuf, String) {
+    let bare = dir.join(name);
+    let b = bare.to_string_lossy().into_owned();
+    git(dir, &["clone", "-q", "--bare", &seed.to_string_lossy(), &b]);
+    git(seed, &["checkout", "-q", "-B", file, "main"]);
+    std::fs::write(seed.join(file), "pr\n").unwrap();
+    git(seed, &["add", "."]);
+    git(seed, &["commit", "-q", "-m", file]);
+    git(seed, &["push", "-q", &b, &format!("HEAD:{pr_ref}")]);
+    let head = rev(seed, "HEAD");
+    git(seed, &["checkout", "-q", "main"]);
+    (bare, head)
+}
+
+/// In a fork, origin is the human's fork and the PR is upstream's: its head comes from upstream, never from a PR of the
+/// same number on the fork. A PR of a repo no remote is reads the fresh base, for the brief to have it fetch the head.
+#[tokio::test]
+async fn a_review_in_a_fork_reads_the_head_from_the_remote_the_pr_belongs_to() {
+    let dir = tempfile::tempdir().unwrap();
+    let seed = repo(dir.path());
+    let (fork, decoy) = bare_with_pr(
+        dir.path(),
+        &seed,
+        "fork.git",
+        "decoy.txt",
+        "refs/pull/7/head",
+    );
+    let (upstream, head) = bare_with_pr(
+        dir.path(),
+        &seed,
+        "upstream.git",
+        "pr.txt",
+        "refs/pull/7/head",
+    );
+    let checkout = dir.path().join("checkout");
+    git(
+        dir.path(),
+        &[
+            "clone",
+            "-q",
+            &fork.to_string_lossy(),
+            &checkout.to_string_lossy(),
+        ],
+    );
+    hosted(&checkout, "origin", "https://github.com/me/r.git", &fork);
+    hosted(&checkout, "upstream", "https://github.com/o/r", &upstream);
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.project(&checkout).await;
+    for (id, pr, at) in [
+        ("s1", "https://github.com/O/R/pull/7", head.as_str()),
+        (
+            "s2",
+            "https://github.com/someone/else/pull/7",
+            &rev(&fork, "main"),
+        ),
+    ] {
+        let workspace = SessionWorkspace::Detached {
+            base_ref: NonEmpty::unchecked("main"),
+            pr: Some(NonEmpty::unchecked(pr)),
+        };
+        hub.ok(launch(id, RuntimeMode::FullAccess, workspace)).await;
+        hub.summary(|s| s.session_id.as_str() == id && s.latest_run.is_some())
+            .await;
+        let path = dir.path().join("node/worktrees/p1").join(id);
+        assert_eq!(rev(&path, "HEAD"), at, "{id}");
+        assert_ne!(rev(&path, "HEAD"), decoy, "{id}");
+    }
+}
+
+/// A new repo has no commit to start a worktree from, so the node names no default branch: the hub then runs its
+/// readers in the project root, as before, rather than failing their start.
+#[tokio::test]
+async fn a_repo_with_no_commit_yet_has_no_default_branch() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("new");
+    std::fs::create_dir_all(&root).unwrap();
+    git(&root, &["init", "-q", "-b", "main"]);
+    let hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.project(&root).await;
+    let ask = || SessionCall::DefaultBranch {
+        project_id: ProjectId::unchecked("p1"),
+    };
+    assert!(matches!(
+        hub.ok(ask()).await,
+        SessionOutput::DefaultBranch { branch: None }
+    ));
+    std::fs::write(root.join("a.txt"), "a\n").unwrap();
+    git(&root, &["add", "."]);
+    git(&root, &["commit", "-q", "-m", "first"]);
+    assert!(matches!(
+        hub.ok(ask()).await,
+        SessionOutput::DefaultBranch { branch: Some(b) } if b == "main"
+    ));
+}
+
+/// A message to a reader right as its task ends, before or while the hub removes its worktree: either the message
+/// lands first and the worktree stays, or it waits for the removal and the worktree comes back. Its run completes,
+/// and the session never runs in a directory that is gone.
+#[tokio::test]
+async fn a_message_as_a_readers_task_ends_never_resumes_in_a_worktree_being_removed() {
+    for message_first in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let root = repo(dir.path());
+        let mut hub = hub(
+            dir.path(),
+            NodeStore::open_memory(10_000).unwrap(),
+            FakeRunner::fixture("init-partial-two-turns"),
+        )
+        .await;
+        hub.project(&root).await;
+        let workspace = SessionWorkspace::Detached {
+            base_ref: NonEmpty::unchecked("main"),
+            pr: None,
+        };
+        hub.ok(launch("s1", RuntimeMode::FullAccess, workspace))
+            .await;
+        hub.settled("r1").await;
+        let path = dir.path().join("node/worktrees/p1/s1");
+        // Build output, so the removal takes a while.
+        for n in 0..2000 {
+            let at = path.join(format!("target/{}", n % 20));
+            std::fs::create_dir_all(&at).unwrap();
+            std::fs::write(at.join(n.to_string()), "o").unwrap();
+        }
+        let remove = SessionCall::Stop {
+            session_id: ThreadId::unchecked("s1"),
+            remove_worktree: true,
+        };
+        if message_first {
+            let (sent, _) = tokio::join!(hub.call(send("s1", "r2")), async {
+                tokio::task::yield_now().await;
+                hub.call(remove).await
+            });
+            assert!(matches!(sent, SessionResult::Ok(_)), "{sent:?}");
+        } else {
+            let (_, sent) = tokio::join!(hub.call(remove), async {
+                tokio::task::yield_now().await;
+                hub.call(send("s1", "r2")).await
+            });
+            assert!(matches!(sent, SessionResult::Ok(_)), "{sent:?}");
+        }
+        let done = hub.settled("r2").await;
+        assert_eq!(
+            done.latest_run.as_ref().map(|r| r.status),
+            Some(RunStatus::Completed),
+            "message first: {message_first}"
+        );
+        let live = hub.service.st().live.contains_key("s1");
+        assert!(
+            path.is_dir() || !live,
+            "message first: {message_first}: a live session in a removed worktree"
+        );
+        for spec in hub.runner.spawned() {
+            assert_eq!(spec.cwd, path);
+        }
+    }
+}
+
 #[tokio::test]
 async fn a_lost_worktree_and_branch_come_back_from_the_pushed_branch_and_the_agent_is_told() {
     let dir = tempfile::tempdir().unwrap();

@@ -322,6 +322,16 @@
      "name": "workstream",
      "required": false,
      "description": "the order's goal and done-when, or nothing"
+    },
+    {
+     "name": "baseBranch",
+     "required": false,
+     "description": "the default branch"
+    },
+    {
+     "name": "workspace",
+     "required": true,
+     "description": "where it works: its own worktree, or the project's checkout on an older node"
     }
    ],
    "rules": [
@@ -332,7 +342,7 @@
      "enforced": "prompt"
     }
    ],
-   "text": "You are fleetd agent {{taskId}} ({{kind}}) for workstream {{workstreamId}} in project {{project}}: {{title}}\n\n## Task\n{{task}}{{workstream}}\n\n## Rules\n- This is a read-only task: do not change, commit or push any files.\n- Do the work yourself; do not hand it to subagents. To ask your lead something, use `ask_lead` and carry on with what you can; the answer arrives as a message.\n- End with a short result, answer first: what you found, how sure you are, and anything the lead must decide. If the answer suggests something to build, say what and how big (s, m or l). Never estimate how long anything will take.\n",
+   "text": "You are fleetd agent {{taskId}} ({{kind}}) for workstream {{workstreamId}} in project {{project}}: {{title}}\n\n## Task\n{{task}}{{workstream}}\n\n## Rules\n- {{workspace}}\n- This is a read-only task: do not change, commit or push the project's files.\n- Do the work yourself; do not hand it to subagents. To ask your lead something, use `ask_lead` and carry on with what you can; the answer arrives as a message.\n- End with a short result, answer first: what you found, how sure you are, and anything the lead must decide. If the answer suggests something to build, say what and how big (s, m or l). Never estimate how long anything will take.\n",
    "perProject": true
   },
   {
@@ -376,6 +386,16 @@
      "name": "workstream",
      "required": false,
      "description": "the order's goal and done-when, or nothing"
+    },
+    {
+     "name": "baseBranch",
+     "required": false,
+     "description": "the default branch"
+    },
+    {
+     "name": "workspace",
+     "required": true,
+     "description": "where it works: its own worktree, or the project's checkout on an older node"
     }
    ],
    "rules": [
@@ -392,7 +412,7 @@
      "enforced": "code"
     }
    ],
-   "text": "You are fleetd agent {{taskId}} ({{kind}}) for workstream {{workstreamId}} in project {{project}}: {{title}}\n\n## Task\n{{task}}{{workstream}}\n\n## Rules\n- This is a read-only task: do not change, commit or push any files.\n- Do the work yourself; do not hand it to subagents. To ask your lead something, use `ask_lead` and carry on with what you can; the answer arrives as a message.\n- Before your final message, record your verdict once with the `report` tool: the blocking and non-blocking counts and a one-paragraph summary. Blocking findings are the ones that must change before merge.\n- End with a short result, verdict first. Never estimate how long anything will take.\n",
+   "text": "You are fleetd agent {{taskId}} ({{kind}}) for workstream {{workstreamId}} in project {{project}}: {{title}}\n\n## Task\n{{task}}{{workstream}}\n\n## Rules\n- {{workspace}}\n- This is a read-only task: do not change, commit or push the project's files.\n- Do the work yourself; do not hand it to subagents. To ask your lead something, use `ask_lead` and carry on with what you can; the answer arrives as a message.\n- Before your final message, record your verdict once with the `report` tool: the blocking and non-blocking counts and a one-paragraph summary. Blocking findings are the ones that must change before merge.\n- End with a short result, verdict first. Never estimate how long anything will take.\n",
    "perProject": true
   },
   {
