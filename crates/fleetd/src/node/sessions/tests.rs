@@ -983,9 +983,19 @@ async fn deltas_reach_followers_coalesced_and_stop_at_their_message() {
 }
 
 #[tokio::test]
-async fn a_writers_commits_name_its_task_in_a_trailer() {
+async fn a_writers_commits_name_its_task_in_a_trailer_only_in_its_worktree() {
+    use std::os::unix::fs::PermissionsExt;
     let dir = tempfile::tempdir().unwrap();
     let root = repo(dir.path());
+    // The repo's own hook, which must run in the worktree and nowhere else.
+    let log = dir.path().join("hooks.log");
+    let hook = root.join(".git/hooks/commit-msg");
+    std::fs::write(
+        &hook,
+        format!("#!/bin/sh\necho ran >> '{}'\n", log.display()),
+    )
+    .unwrap();
+    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
     let mut hub = hub(
         dir.path(),
         NodeStore::open_memory(10_000).unwrap(),
@@ -1001,45 +1011,51 @@ async fn a_writers_commits_name_its_task_in_a_trailer() {
         .await;
     hub.settled("r1").await;
     let spec = hub.runner.spawned()[0].clone();
-    // The agent's git, as claude's Bash tool runs it, with the session's environment.
-    std::fs::write(spec.cwd.join("docs.md"), "d\n").unwrap();
-    git(&spec.cwd, &["add", "."]);
-    let commit = std::process::Command::new("git")
-        .arg("-C")
-        .arg(&spec.cwd)
-        .args([
-            "-c",
-            "user.name=t",
-            "-c",
-            "user.email=t@t",
-            "commit",
-            "-q",
-            "-m",
-            "docs",
-        ])
-        .envs(
-            spec.env
-                .iter()
-                .filter(|(k, _)| k.starts_with("GIT_CONFIG_"))
-                .cloned(),
-        )
-        .output()
-        .unwrap();
+    // Nothing in the session's environment points git anywhere.
     assert!(
-        commit.status.success(),
-        "{}",
-        String::from_utf8_lossy(&commit.stderr)
+        !spec.env.iter().any(|(k, _)| k.starts_with("GIT_CONFIG")),
+        "{:?}",
+        spec.env
     );
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(&spec.cwd)
-        .args(["log", "-1", "--format=%B"])
-        .output()
-        .unwrap();
-    assert_eq!(
-        String::from_utf8_lossy(&out.stdout).trim(),
-        "docs\n\nFleetd-Task: T7"
-    );
+    // The agent's git, as claude's Bash tool runs it, with the session's environment.
+    let agent_git = |cwd: &Path, args: &[&str]| -> String {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(cwd)
+            .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+            .args(args)
+            .env_clear()
+            .envs(spec.env.iter().cloned())
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    };
+    let commit = |cwd: &Path, msg: &str| {
+        std::fs::write(cwd.join(format!("{msg}.md")), "d\n").unwrap();
+        agent_git(cwd, &["add", "."]);
+        agent_git(cwd, &["commit", "-q", "-m", msg]);
+        agent_git(cwd, &["log", "-1", "--format=%B"])
+    };
+    assert_eq!(commit(&spec.cwd, "docs"), "docs\n\nFleetd-Task: T7");
+    let ran = || {
+        std::fs::read_to_string(&log)
+            .unwrap_or_default()
+            .lines()
+            .count()
+    };
+    assert_eq!(ran(), 1, "the repo's own hook ran in the worktree");
+
+    // A second repo from the same session: no trailer, and none of the first repo's hooks.
+    let other = dir.path().join("scratch");
+    std::fs::create_dir_all(&other).unwrap();
+    agent_git(&other, &["init", "-q", "-b", "main"]);
+    assert_eq!(commit(&other, "scratch"), "scratch");
+    assert_eq!(ran(), 1);
 }
 
 #[tokio::test]

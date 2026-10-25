@@ -1568,11 +1568,9 @@ impl SessionService {
             .as_deref()
             .and_then(super::landed::branch_task)
             && row.local.cwd.is_dir()
+            && let Err(e) = super::landed::trailer_hooks(&row.local.cwd, &task)
         {
-            match super::landed::trailer_hooks(&row.local.cwd, &dir.join("hooks"), &task) {
-                Ok((key, value)) => super::landed::with_git_config(&mut env, &key, &value),
-                Err(e) => tracing::warn!(session = id, "commits won't name their task: {e}"),
-            }
+            tracing::warn!(session = id, "commits won't name their task: {e}");
         }
         Ok(SessionSpec {
             session_id: id.to_owned(),

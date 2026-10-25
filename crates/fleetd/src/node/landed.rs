@@ -28,7 +28,7 @@ fn quoted(text: &str) -> String {
     format!("'{}'", text.replace('\'', r"'\''"))
 }
 
-/// Git's client-side hooks a repo may have, each forwarded from fleetd's hooks dir when the repo has it.
+/// Git's client-side hooks, each forwarded from fleetd's hooks dir to the repo's own when it has one.
 const HOOKS: &[&str] = &[
     "applypatch-msg",
     "pre-applypatch",
@@ -46,74 +46,93 @@ const HOOKS: &[&str] = &[
     "pre-auto-gc",
     "post-index-change",
     "sendemail-validate",
-    "fsmonitor-watchman",
+    "p4-changelist",
+    "p4-prepare-changelist",
+    "p4-post-changelist",
+    "p4-pre-submit",
 ];
 
-/// Writes `dir` as a hooks dir for a writer on `task` in the worktree `cwd`: a `prepare-commit-msg` that adds
-/// `Fleetd-Task: <task>` to every commit message (git runs it for `commit -m`, merges and amends, `--no-verify` or
-/// not), and a forwarder to each of the repo's own hooks, so they run as before. Returns the git config the session's
-/// environment sets to use it.
-pub fn trailer_hooks(cwd: &Path, dir: &Path, task: &str) -> std::io::Result<(String, String)> {
+/// Runs the repo's own hook `$1` with the rest of the arguments, from the hooks path the repo's own config says when
+/// it runs (husky's `core.hooksPath`, say), else `.git/hooks`, so a hook added or moved later runs too.
+const OWN_HOOK: &str = r#"#!/bin/sh
+# fleetd: the repo's own hook, from its own hooks path.
+name=$1; shift
+dir=$(git config --type=path --local core.hooksPath || git config --type=path --global core.hooksPath ||
+  git config --type=path --system core.hooksPath) || dir="$(git rev-parse --git-common-dir)/hooks"
+if [ -x "$dir/$name" ]; then exec "$dir/$name" "$@"; fi
+exit 0
+"#;
+
+/// Makes every commit in the linked worktree `cwd` of a writer on `task` name it in a `Fleetd-Task: <task>` trailer,
+/// and nothing else: the worktree's own config (`git config --worktree`, which needs `extensions.worktreeConfig`)
+/// points its hooks at a dir in its own git dir, where `prepare-commit-msg` adds the trailer (git runs it for
+/// `commit -m`, merges and amends, `--no-verify` or not) and every hook then runs the repo's own. Other worktrees,
+/// the human's checkout and any other repo the agent touches keep their hooks as they are. A checkout that isn't a
+/// linked worktree is left alone.
+pub fn trailer_hooks(cwd: &Path, task: &str) -> Result<(), GitError> {
     use std::os::unix::fs::PermissionsExt;
-    // The repo's own hooks: `core.hooksPath` when set (husky's, say), else `.git/hooks`.
-    let own = git(
-        cwd,
-        &["rev-parse", "--path-format=absolute", "--git-path", "hooks"],
-    )
-    .map(|p| PathBuf::from(p.trim()))
-    .map_err(std::io::Error::other)?;
-    if dir.exists() {
-        std::fs::remove_dir_all(dir)?;
+    let path = |what: &str| -> Result<PathBuf, GitError> {
+        git(cwd, &["rev-parse", "--path-format=absolute", what]).map(|p| PathBuf::from(p.trim()))
+    };
+    let git_dir = path("--git-dir")?;
+    if git_dir == path("--git-common-dir")? {
+        return Err(GitError(format!(
+            "{} is not a linked worktree",
+            cwd.display()
+        )));
     }
-    std::fs::create_dir_all(dir)?;
-    let write = |name: &str, body: String| -> std::io::Result<()> {
+    let dir = git_dir.join("fleetd-hooks");
+    let io = |e: std::io::Error| GitError(format!("cannot write {}: {e}", dir.display()));
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir).map_err(io)?;
+    }
+    std::fs::create_dir_all(&dir).map_err(io)?;
+    let write = |name: &str, body: &str| -> std::io::Result<()> {
         let path = dir.join(name);
         std::fs::write(&path, body)?;
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
     };
+    let own = quoted(&dir.join("own-hook").to_string_lossy());
     let trailer = quoted(&format!("{TASK_TRAILER}: {task}"));
-    let theirs = quoted(&own.join("prepare-commit-msg").to_string_lossy());
+    write("own-hook", OWN_HOOK).map_err(io)?;
     write(
         "prepare-commit-msg",
-        format!(
+        &format!(
             "#!/bin/sh\n# fleetd: each commit names its task, so its work is found from git alone.\n\
              git interpret-trailers --in-place --if-exists addIfDifferent --trailer {trailer} \"$1\" || true\n\
-             if [ -x {theirs} ]; then exec {theirs} \"$@\"; fi\nexit 0\n"
+             exec {own} prepare-commit-msg \"$@\"\n"
         ),
-    )?;
+    )
+    .map_err(io)?;
     for name in HOOKS {
-        let hook = own.join(name);
-        if hook.is_file() {
-            write(
-                name,
-                format!(
-                    "#!/bin/sh\nexec {} \"$@\"\n",
-                    quoted(&hook.to_string_lossy())
-                ),
-            )?;
-        }
+        write(name, &format!("#!/bin/sh\nexec {own} {name} \"$@\"\n")).map_err(io)?;
     }
-    Ok((
-        "core.hooksPath".to_owned(),
-        dir.to_string_lossy().into_owned(),
-    ))
-}
-
-/// Adds `key = value` to the git config an environment carries (`GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_<n>`, …), after
-/// any entries it already has.
-pub fn with_git_config(env: &mut Vec<(String, String)>, key: &str, value: &str) {
-    let n = env
-        .iter()
-        .rev()
-        .find(|(k, _)| k == "GIT_CONFIG_COUNT")
-        .and_then(|(_, v)| v.parse::<usize>().ok())
-        .unwrap_or(0);
-    env.retain(|(k, _)| k != "GIT_CONFIG_COUNT");
-    env.extend([
-        (format!("GIT_CONFIG_KEY_{n}"), key.to_owned()),
-        (format!("GIT_CONFIG_VALUE_{n}"), value.to_owned()),
-        ("GIT_CONFIG_COUNT".to_owned(), (n + 1).to_string()),
-    ]);
+    let on = git(
+        cwd,
+        &[
+            "config",
+            "--local",
+            "--type=bool",
+            "extensions.worktreeConfig",
+        ],
+    )
+    .is_ok_and(|v| v.trim() == "true");
+    if !on {
+        git(
+            cwd,
+            &["config", "--local", "extensions.worktreeConfig", "true"],
+        )?;
+    }
+    git(
+        cwd,
+        &[
+            "config",
+            "--worktree",
+            "core.hooksPath",
+            &dir.to_string_lossy(),
+        ],
+    )?;
+    Ok(())
 }
 
 fn values(field: &str) -> Vec<String> {
@@ -226,69 +245,131 @@ mod tests {
     }
 
     fn message(root: &Path) -> String {
-        git(root, &["log", "-1", "--format=%B"]).unwrap()
+        git(root, &["log", "-1", "--format=%B"])
+            .unwrap()
+            .trim()
+            .to_owned()
+    }
+
+    /// A commit of `file` in `dir` as the agent's own git makes it, with no fleetd environment.
+    fn commit(dir: &Path, file: &str, msg: &str) {
+        std::fs::write(dir.join(file), msg).unwrap();
+        run(dir, &["add", "."]);
+        run(dir, &["commit", "-q", "-m", msg]);
+    }
+
+    /// An executable hook that appends `tag` to `log` each time it runs.
+    fn hook(path: &Path, log: &Path, tag: &str) {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let body = format!(
+            "#!/bin/sh\necho {tag} >> {}\n",
+            quoted(&log.to_string_lossy())
+        );
+        std::fs::write(path, body).unwrap();
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    fn ran(log: &Path) -> Vec<String> {
+        std::fs::read_to_string(log)
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_owned)
+            .collect()
     }
 
     #[test]
-    fn a_writers_commits_name_its_task_and_the_repos_own_hooks_still_run() {
+    fn a_writers_commits_in_its_worktree_name_its_task_and_the_repos_own_hooks_still_run() {
         let dir = tempfile::tempdir().unwrap();
         let root = crate::node::worktree::tests::repo(dir.path());
-        // The repo's own commit-msg hook, which must still run.
-        let own = root.join(".git/hooks/commit-msg");
-        std::fs::write(
-            &own,
-            "#!/bin/sh\necho ran >> \"$(git rev-parse --git-dir)/own-hook\"\n",
-        )
-        .unwrap();
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&own, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let log = dir.path().join("hooks.log");
+        hook(&root.join(".git/hooks/commit-msg"), &log, "commit-msg");
+        let wt = dir.path().join("wt");
+        run(
+            &root,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                "fleetd/T45-x",
+                &wt.to_string_lossy(),
+            ],
+        );
+        trailer_hooks(&wt, "T45").unwrap();
 
-        let hooks = dir.path().join("hooks");
-        let (key, value) = trailer_hooks(&root, &hooks, "T45").unwrap();
-        let mut env = vec![("GIT_CONFIG_COUNT".to_owned(), "1".to_owned())];
-        with_git_config(&mut env, &key, &value);
-        assert!(env.contains(&("GIT_CONFIG_KEY_1".into(), "core.hooksPath".into())));
-        assert!(env.contains(&("GIT_CONFIG_COUNT".into(), "2".into())));
-        let commit = |msg: &str| {
-            std::fs::write(root.join("b.txt"), msg).unwrap();
-            run(&root, &["add", "."]);
-            let out = std::process::Command::new("git")
-                .arg("-C")
-                .arg(&root)
-                .args([
-                    "-c",
-                    "user.name=t",
-                    "-c",
-                    "user.email=t@t",
-                    "commit",
-                    "-q",
-                    "-m",
-                    msg,
-                ])
-                .env("GIT_CONFIG_COUNT", "1")
-                .env("GIT_CONFIG_KEY_0", &key)
-                .env("GIT_CONFIG_VALUE_0", &value)
-                .output()
-                .unwrap();
-            assert!(
-                out.status.success(),
-                "{}",
-                String::from_utf8_lossy(&out.stderr)
-            );
-        };
-        commit("fix: totals");
-        assert_eq!(message(&root).trim(), "fix: totals\n\nFleetd-Task: T45");
+        commit(&wt, "b.txt", "fix: totals");
+        assert_eq!(message(&wt), "fix: totals\n\nFleetd-Task: T45");
         // Beside the agent's own trailers, once.
-        commit("fix: more\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nFleetd-Task: T45");
+        commit(
+            &wt,
+            "b.txt",
+            "fix: more\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nFleetd-Task: T45",
+        );
         assert_eq!(
-            message(&root).trim(),
+            message(&wt),
             "fix: more\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nFleetd-Task: T45"
         );
-        let ran = std::fs::read_to_string(root.join(".git/own-hook")).unwrap();
         assert_eq!(
-            ran.lines().count(),
-            2,
-            "the repo's own hook ran on each commit"
+            ran(&log),
+            ["commit-msg", "commit-msg"],
+            "the repo's own hook ran on each"
+        );
+
+        // A hook the repo gets after the session started runs too, from wherever its hooks path says now.
+        run(&root, &["config", "core.hooksPath", ".husky"]);
+        hook(&wt.join(".husky/pre-commit"), &log, "husky-pre-commit");
+        commit(&wt, "c.txt", "fix: last");
+        assert_eq!(message(&wt), "fix: last\n\nFleetd-Task: T45");
+        assert_eq!(
+            ran(&log).last().map(String::as_str),
+            Some("husky-pre-commit")
+        );
+    }
+
+    #[test]
+    fn only_the_writers_worktree_gets_the_trailer_never_the_humans_checkout_or_another_repo() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = crate::node::worktree::tests::repo(dir.path());
+        let log = dir.path().join("hooks.log");
+        hook(&root.join(".git/hooks/commit-msg"), &log, "first-repo");
+        let wt = dir.path().join("wt");
+        run(
+            &root,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                "fleetd/T45-x",
+                &wt.to_string_lossy(),
+            ],
+        );
+        trailer_hooks(&wt, "T45").unwrap();
+        let before = ran(&log);
+
+        // A second repo the agent makes from inside its worktree: a scratch clone, say.
+        let other = wt.join("scratch");
+        std::fs::create_dir_all(&other).unwrap();
+        run(&other, &["init", "-q", "-b", "main"]);
+        commit(&other, "x.txt", "scratch");
+        assert_eq!(message(&other), "scratch");
+        assert_eq!(
+            ran(&log),
+            before,
+            "none of the first repo's hooks ran in the second"
+        );
+
+        // The human's own checkout of the same repo keeps its hooks and gets no trailer.
+        commit(&root, "h.txt", "human");
+        assert_eq!(message(&root), "human");
+        assert_eq!(ran(&log).len(), before.len() + 1);
+
+        // The human's checkout is never given fleetd's hooks.
+        assert!(trailer_hooks(&root, "T45").is_err());
+        assert_eq!(
+            git(&root, &["config", "--get", "core.hooksPath"]).ok(),
+            None
         );
     }
 }
