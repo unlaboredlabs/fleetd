@@ -5,11 +5,12 @@
 //! Every `SCAN_EVERY_MS` it reads each project's repo and base from its root (`bind`), then, once per (repo, base),
 //! `git ls-remote origin refs/heads/<base>`. When the base moved: fetch it, list its new first-parent commits and
 //! read each one. Its route: a Change's merge commit is the train's; a message that names a PR (each host's default
-//! merge message) is a PR merged outside the train; anything else is a direct push. GitHub's merged PRs only add the
-//! PR and head branch of a squash merge. Each landing ends the active claims it matches exactly (branch, PR, issue
-//! key), and a direct push ends its own author's claim when it strongly matches the claim's title; it then wakes
-//! every lead on the scope, for outside routes only. While a node is offline its watch waits: nothing is guessed,
-//! and the next scan catches up.
+//! merge message) is a PR merged outside the train; anything else is a direct push. On GitHub, its merged PRs add the
+//! PR and head branch of a squash merge, and of each commit of a rebase merge. Each landing ends the active claims it
+//! matches exactly (branch, PR, a closing reference to its issue), and a direct push ends its own author's claim when
+//! it strongly matches the claim's title; it then wakes every lead on the scope, for outside routes only. While a
+//! node is offline its watch waits: nothing is guessed, and the next scan catches up. When git there can't reach the
+//! remote, the project's lead is told once.
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -40,11 +41,20 @@ const SCAN_MAX: usize = 200;
 const OUTPUT_TAIL_MAX: usize = 2000;
 /// Merged Changes searched for a commit's sha.
 const MERGED_CHANGES: i64 = 200;
+/// A commit not yet known as the train's waits while a Change on the repo has been merging for less than this; a
+/// Change stuck merging longer never holds the scan back.
+const MERGING_GRACE_MS: i64 = 10 * 60_000;
 
-/// What the scanner asks beyond git: GitHub's merged PRs, for the PR and head branch of a squash merge.
+/// What the scanner asks beyond git: GitHub's merged PRs, for the PR and head branch of a squash or rebase merge.
 pub trait LandingPorts: NodeGit {
     /// The GitHub repo's (`owner/name`) recently merged PRs; `None` when they could not be read.
     fn merged_pulls<'a>(&'a self, repo: &'a str) -> BoxFut<'a, Option<Vec<MergedPull>>>;
+    /// The merged PRs the commit came from; `None` when they could not be read.
+    fn merged_pulls_of<'a>(
+        &'a self,
+        repo: &'a str,
+        sha: &'a str,
+    ) -> BoxFut<'a, Option<Vec<MergedPull>>>;
 }
 
 /// The hub's own: git over the node link, GitHub through the train's client.
@@ -68,6 +78,22 @@ impl LandingPorts for HubLandingPorts {
                 Ok(pulls) => Some(pulls),
                 Err(e) => {
                     tracing::warn!(repo, error = %e.message, "landings: merged PRs not read");
+                    None
+                }
+            }
+        })
+    }
+
+    fn merged_pulls_of<'a>(
+        &'a self,
+        repo: &'a str,
+        sha: &'a str,
+    ) -> BoxFut<'a, Option<Vec<MergedPull>>> {
+        Box::pin(async move {
+            match self.0.train.github().merged_pulls_of(repo, sha).await {
+                Ok(pulls) => Some(pulls),
+                Err(e) => {
+                    tracing::warn!(repo, sha, error = %e.message, "landings: a commit's PRs not read");
                     None
                 }
             }
@@ -193,7 +219,8 @@ struct Context {
     /// The scope's GitHub repo (`owner/name`), when it is on GitHub: where the train's Changes are.
     github: Option<String>,
     merged: Vec<Change>,
-    /// The train is merging a Change on the repo now: a commit the train may not have recorded yet waits.
+    /// The train has been merging a Change on the repo for under `MERGING_GRACE_MS`: a commit the train may not have
+    /// recorded yet waits.
     merging: bool,
     pulls: Option<Vec<MergedPull>>,
 }
@@ -210,8 +237,8 @@ impl Scanner<'_> {
             return Ok(false);
         };
         if !remote.ok() {
-            tracing::warn!(repo = %self.scope.repo_key, output = %remote.out, "landings: ls-remote failed");
-            return Ok(true);
+            self.unreachable(&remote);
+            return Ok(false);
         }
         let Some(head) = ls_remote_sha(&remote.out, &base_ref) else {
             return Ok(true);
@@ -223,6 +250,7 @@ impl Scanner<'_> {
             return Ok(true);
         };
         if watch.last_sha == head {
+            work.scan_ok(self.project);
             return Ok(true);
         }
         let refspec = format!("+{base_ref}:refs/remotes/origin/{}", self.scope.base);
@@ -233,14 +261,16 @@ impl Scanner<'_> {
             return Ok(false);
         };
         if !fetched.ok() {
-            tracing::warn!(repo = %self.scope.repo_key, output = %fetched.out, "landings: fetch failed");
-            return Ok(true);
+            self.unreachable(&fetched);
+            return Ok(false);
         }
+        work.scan_ok(self.project);
         let mut cx = self.context()?;
         let mut last = watch.last_sha;
         let mut read = 0;
         while read < SCAN_MAX {
-            let Some(shas) = self.new_commits(&last, &head, watch.since_ms).await? else {
+            let Some((shas, rewritten)) = self.new_commits(&last, &head, watch.since_ms).await?
+            else {
                 return Ok(false);
             };
             if shas.is_empty() {
@@ -248,19 +278,51 @@ impl Scanner<'_> {
                 break;
             }
             for sha in shas {
-                let Some((landing, body)) = self.read(&sha, &mut cx).await else {
+                let Some(read_one) = self.read(&sha, &mut cx).await else {
                     return Ok(false);
                 };
-                if cx.merging && landing.route != LandingRoute::Train {
+                if cx.merging && read_one.landing.route != LandingRoute::Train {
                     // Likely the train's own merge, not recorded yet: the next scan reads it again.
                     return Ok(true);
                 }
-                self.land(landing, &body, &cx)?;
+                // After a force push, a commit rewritten from one already recorded is not new work.
+                let seen = rewritten
+                    && self.hub.db.with(|c| {
+                        Ok(store::rewrite_of(
+                            c,
+                            self.scope,
+                            &read_one.rewrite_key,
+                            read_one.landing.pr_number.map(|n| n.get()),
+                        )?)
+                    })?;
+                if seen {
+                    work.watch_at(self.scope, &sha)?;
+                } else {
+                    self.land(read_one, &cx)?;
+                }
                 last = sha;
                 read += 1;
             }
         }
         Ok(true)
+    }
+
+    /// Git on this project's machine can't reach the remote: its lead is told once, with why, as #407 words it.
+    fn unreachable(&self, out: &GitOut) {
+        let why = crate::node::worktree::FetchError::of_text(&out.out).to_string();
+        tracing::warn!(repo = %self.scope.repo_key, project = %self.project.project_id, %why, "landings: the base was not read");
+        if !self.hub.work.scan_failed(self.project, &why) {
+            return;
+        }
+        let line = format!(
+            "fleetd can't see what lands on {} of {}: git on {} can't reach origin from {} (fetch failed: {why}). Merges \
+             and pushes made outside fleetd stay unseen until it can (an SSH key in ssh-agent, or a credential helper).",
+            self.scope.base, self.scope.repo_key, self.project.machine_id, self.root
+        );
+        self.hub
+            .leads
+            .wakes
+            .trigger(self.project, Trigger::train(&line));
     }
 
     fn context(&self) -> Result<Context, StoreError> {
@@ -289,40 +351,51 @@ impl Scanner<'_> {
                 limit: MERGED_CHANGES,
                 ..Default::default()
             }),
-            merging: !records.in_train(repo, &[ChangeState::Merging]).is_empty(),
+            merging: records
+                .in_train(repo, &[ChangeState::Merging])
+                .iter()
+                .any(|c| {
+                    crate::hub::store::parse_ms(c.updated_at.as_str())
+                        .is_some_and(|at| now_ms(self.hub.clock.as_ref()) - at < MERGING_GRACE_MS)
+                }),
             github,
             pulls: None,
         })
     }
 
-    /// The base's first-parent commits after `last`, oldest first, as many as the node's output kept. When `last`
-    /// is no longer on the base (a force push), those since the watch started that aren't recorded yet. `None` when
-    /// the node didn't answer.
+    /// The base's first-parent commits after `last` that aren't recorded yet, oldest first, as many as the node's
+    /// output kept, and whether the base was rewritten. When `last` is no longer on the base (a force push), the new
+    /// line's commits since it left the old one, never older than the watch. `None` when the node didn't answer.
     async fn new_commits(
         &self,
         last: &str,
         head: &str,
         since_ms: i64,
-    ) -> Result<Option<Vec<String>>, StoreError> {
+    ) -> Result<Option<(Vec<String>, bool)>, StoreError> {
         let Some(ancestor) = self.git(&["merge-base", "--is-ancestor", last, head]).await else {
             return Ok(None);
         };
-        let range = format!("{last}..{head}");
         let since = format!("--since={}", since_ms / 1000);
-        let args: [&str; 3] = if ancestor.ok() {
-            ["rev-list", "--first-parent", &range]
+        let range = if ancestor.ok() {
+            format!("{last}..{head}")
         } else {
-            ["rev-list", "--first-parent", &since]
+            // Rewritten: the new line from where it left the old one, if git still has the old one; and never older
+            // than the watch.
+            let fork = self.git(&["merge-base", last, head]).await;
+            match fork.filter(GitOut::ok).map(|f| f.out.trim().to_owned()) {
+                Some(fork) if fork.len() == head.len() => format!("{fork}..{head}"),
+                _ => head.to_owned(),
+            }
         };
-        let mut args = args.to_vec();
+        let mut args = vec!["rev-list", "--first-parent", range.as_str()];
         if !ancestor.ok() {
-            args.push(head);
+            args.push(&since);
         }
         let Some(listed) = self.git(&args).await else {
             return Ok(None);
         };
         if !listed.ok() {
-            return Ok(Some(Vec::new()));
+            return Ok(Some((Vec::new(), false)));
         }
         // Newest first, so the tail the node kept is the oldest; a cut first line is shorter than a sha.
         let mut shas: Vec<String> = listed
@@ -343,21 +416,13 @@ impl Scanner<'_> {
                 out.push(sha);
             }
         }
-        Ok(Some(out))
+        Ok(Some((out, !ancestor.ok())))
     }
 
-    /// The landing `sha` is, with its route and links, and what the node kept of its message body; `None` when the
-    /// node didn't answer.
-    async fn read(&self, sha: &str, cx: &mut Context) -> Option<(Landing, String)> {
+    /// The landing `sha` is, with its route and links; `None` when the node didn't answer.
+    async fn read(&self, sha: &str, cx: &mut Context) -> Option<Read> {
         // The body first: when the node keeps only the tail, the fields after it are whole.
-        let header = self
-            .git(&[
-                "show",
-                "-s",
-                "--format=%b%x1e%H%x1f%ct%x1f%ae%x1f%P%x1f%s",
-                sha,
-            ])
-            .await?;
+        let header = self.git(&["show", "-s", COMMIT_FORMAT, sha]).await?;
         let commit = Commit::parse(&header.out)?;
         let paths = match commit.parents.first() {
             Some(parent) => {
@@ -398,6 +463,18 @@ impl Scanner<'_> {
                         || p.merge_sha.as_deref().map(str::to_lowercase).as_deref()
                             == Some(commit.sha.as_str())
                 });
+                let mut pull = pull.cloned();
+                if pull.is_none() && route == LandingRoute::DirectPush {
+                    // A rebase merge's earlier commits: GitHub names only its last one as the merge commit.
+                    let base = self.scope.base.as_str();
+                    pull = self
+                        .ports
+                        .merged_pulls_of(&repo, &commit.sha)
+                        .await
+                        .unwrap_or_default()
+                        .into_iter()
+                        .find(|p| p.base == base);
+                }
                 if let Some(pull) = pull {
                     origin.pr = Some(pull.number as u64);
                     origin.head.get_or_insert_with(|| pull.head.clone());
@@ -467,11 +544,21 @@ impl Scanner<'_> {
             claim_ids: Vec::new(),
             item_ids: task.and_then(|t| t.item_id).into_iter().collect(),
         };
-        Some((landing, commit.body))
+        Some(Read {
+            landing,
+            rewrite_key: commit.rewrite_key(),
+            body: commit.body,
+        })
     }
 
     /// Records the landing, ends the claims it matches and wakes the scope's leads for an outside route.
-    fn land(&self, mut landing: Landing, body: &str, cx: &Context) -> Result<(), StoreError> {
+    fn land(&self, read: Read, cx: &Context) -> Result<(), StoreError> {
+        let Read {
+            mut landing,
+            rewrite_key,
+            body,
+        } = read;
+        let body = body.as_str();
         let work = &self.hub.work;
         let mut ending = Vec::new();
         let mut renewing = Vec::new();
@@ -483,7 +570,7 @@ impl Scanner<'_> {
             }
         }
         landing.claim_ids = ending.iter().map(|(c, _)| c.claim_id.clone()).collect();
-        if !work.record_landing(&landing, self.project)? {
+        if !work.record_landing(&landing, &rewrite_key, self.project)? {
             return Ok(());
         }
         let short = &landing.sha.as_str()[..7];
@@ -548,13 +635,27 @@ pub fn wake_line(landing: &Landing) -> String {
     line
 }
 
-/// One commit as `git show -s --format=%b%x1e%H%x1f%ct%x1f%ae%x1f%P%x1f%s` prints it.
+/// A commit read for a landing.
+struct Read {
+    landing: Landing,
+    /// What a rebase keeps of the commit (`Commit::rewrite_key`).
+    rewrite_key: String,
+    /// What the node kept of its message body.
+    body: String,
+}
+
+/// The body first: when the node keeps only the tail, the fields after it are whole.
+const COMMIT_FORMAT: &str = "--format=%b%x1e%H%x1f%ct%x1f%ae%x1f%P%x1f%at%x1f%s";
+
+/// One commit as `git show -s` prints it with `COMMIT_FORMAT`.
 #[derive(Debug, PartialEq, Eq)]
 struct Commit {
     sha: String,
     at_secs: i64,
     email: String,
     parents: Vec<String>,
+    /// Its author time, which a rebase or cherry-pick keeps.
+    authored_secs: i64,
     subject: String,
     /// What the node's output kept of it: its end.
     body: String,
@@ -563,20 +664,33 @@ struct Commit {
 impl Commit {
     fn parse(out: &str) -> Option<Self> {
         let (body, fields) = out.rsplit_once('\u{1e}')?;
-        let mut f = fields.splitn(5, '\u{1f}');
+        let mut f = fields.splitn(6, '\u{1f}');
         let sha = f.next()?.trim().to_lowercase();
         let at_secs = f.next()?.trim().parse().ok()?;
         let email = f.next()?.trim().to_owned();
         let parents = f.next()?.split_whitespace().map(str::to_owned).collect();
+        let authored_secs = f.next()?.trim().parse().ok()?;
         let subject = f.next()?.trim_end_matches('\n').to_owned();
         Some(Self {
             sha,
             at_secs,
             email,
             parents,
+            authored_secs,
             subject,
             body: body.to_owned(),
         })
+    }
+
+    /// What a rebase, an amend of the committer or a cherry-pick keeps: the author, the author time and the subject.
+    /// `git patch-id` would need a pipe, which a node command can't run.
+    fn rewrite_key(&self) -> String {
+        format!(
+            "{}\u{1f}{}\u{1f}{}",
+            self.email.to_lowercase(),
+            self.authored_secs,
+            self.subject
+        )
     }
 }
 
@@ -731,23 +845,64 @@ fn pr_number_in(url: &str, repo_key: &RepoKey) -> Option<u64> {
         .flatten()
 }
 
-/// Whether `key` ("#12", "SHOP-12", an issue URL) appears in `text` as a whole word.
-fn mentions(text: &str, key: &str) -> bool {
+/// Words that close an issue in a commit message, on GitHub, GitLab, Gitea and Bitbucket alike.
+const CLOSING: [&str; 12] = [
+    "close",
+    "closes",
+    "closed",
+    "fix",
+    "fixes",
+    "fixed",
+    "resolve",
+    "resolves",
+    "resolved",
+    "implement",
+    "implements",
+    "implemented",
+];
+
+/// Whether `text` closes `key` ("#12", "SHOP-12"): the key as a whole word right after a closing word ("Fixes #12",
+/// "closes: SHOP-12"). A mere mention ("follow-up to #12") isn't one.
+fn closes(text: &str, key: &str) -> bool {
     let (text, key) = (text.to_lowercase(), key.to_lowercase());
-    if key.contains("://") {
-        if text.contains(&key) {
-            return true;
-        }
-        // An issue URL is also its "#12" in the same repo.
-        return key
-            .rsplit_once("/issues/")
-            .is_some_and(|(_, n)| n.parse::<u64>().is_ok() && mentions(&text, &format!("#{n}")));
-    }
     text.match_indices(&key).any(|(at, _)| {
-        let before = text[..at].chars().next_back();
         let after = text[at + key.len()..].chars().next();
-        !before.is_some_and(char::is_alphanumeric) && !after.is_some_and(char::is_alphanumeric)
+        if after.is_some_and(char::is_alphanumeric) {
+            return false;
+        }
+        let before = text[..at].trim_end_matches(|c: char| c.is_whitespace() || c == ':');
+        if before.len() == text[..at].len() && !before.is_empty() {
+            return false;
+        }
+        let word = before
+            .rsplit(|c: char| !c.is_alphanumeric())
+            .next()
+            .unwrap_or_default();
+        CLOSING.contains(&word)
     })
+}
+
+/// The keys a closing reference to the claim's issue may use. An issue URL counts only on the landing's own repo,
+/// as itself or as its `#n`.
+fn issue_refs(issue: &str, repo_key: &RepoKey) -> Vec<String> {
+    if !issue.contains("://") {
+        return vec![issue.to_owned()];
+    }
+    let short = short_remote(issue).to_lowercase();
+    let Some(rest) = short
+        .strip_prefix(repo_key.as_str())
+        .and_then(|r| r.strip_prefix('/'))
+    else {
+        return Vec::new();
+    };
+    let n = rest
+        .trim_start_matches("-/")
+        .strip_prefix("issues/")
+        .map(|n| n.split('/').next().unwrap_or_default())
+        .filter(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()));
+    let mut refs = vec![issue.to_owned()];
+    refs.extend(n.map(|n| format!("#{n}")));
+    refs
 }
 
 enum Match {
@@ -781,7 +936,11 @@ fn claim_match(claim: &Claim, landing: &Landing, body: &str) -> Option<Match> {
                     return Some(Match::Ends(format!("PR {url}")));
                 }
             }
-            WorkKey::Issue(issue) if mentions(&message, issue.as_str()) => {
+            WorkKey::Issue(issue)
+                if issue_refs(issue.as_str(), &landing.repo_key)
+                    .iter()
+                    .any(|r| closes(&message, r)) =>
+            {
                 return Some(Match::Ends(format!("issue {issue}")));
             }
             _ => {}
@@ -1020,19 +1179,33 @@ mod tests {
     }
 
     #[test]
-    fn an_issue_key_matches_as_a_whole_word() {
-        assert!(mentions("fix: checkout total (SHOP-12)", "SHOP-12"));
-        assert!(mentions("fix: checkout total, closes #12", "#12"));
-        assert!(!mentions("fix: checkout total, closes #123", "#12"));
-        assert!(!mentions("BIGSHOP-12 done", "SHOP-12"));
-        assert!(mentions(
-            "fix: total, see https://github.com/acme/shop/issues/12",
-            "https://github.com/acme/shop/issues/12"
-        ));
-        assert!(mentions(
-            "fix: total (#12)",
-            "https://github.com/acme/shop/issues/12"
-        ));
+    fn only_a_closing_reference_on_the_same_repo_closes_an_issue() {
+        assert!(closes("fix: checkout total\n\nCloses SHOP-12", "SHOP-12"));
+        assert!(closes("fix: checkout total, fixes #12", "#12"));
+        assert!(closes("Resolves: #12.", "#12"));
+        assert!(!closes("fix: follow-up to #12", "#12"), "a mention");
+        assert!(
+            !closes("fix: checkout total (SHOP-12)", "SHOP-12"),
+            "a mention"
+        );
+        assert!(!closes("fix: checkout total, closes #123", "#12"));
+        assert!(!closes("closes BIGSHOP-12", "SHOP-12"));
+        let shop = RepoKey::new("github.com/acme/shop").unwrap();
+        assert_eq!(
+            issue_refs("https://github.com/acme/shop/issues/12", &shop),
+            ["https://github.com/acme/shop/issues/12", "#12"]
+        );
+        assert_eq!(
+            issue_refs(
+                "https://gitlab.example.com/acme/shop/-/issues/8",
+                &RepoKey::new("gitlab.example.com/acme/shop").unwrap()
+            ),
+            ["https://gitlab.example.com/acme/shop/-/issues/8", "#8"]
+        );
+        assert!(
+            issue_refs("https://github.com/acme/other/issues/12", &shop).is_empty(),
+            "another repo's issue"
+        );
     }
 
     #[test]
@@ -1077,11 +1250,12 @@ mod tests {
 
     #[test]
     fn a_commit_is_read_whole_even_when_the_node_kept_only_its_tail() {
-        let out = "…of a long body\nSee merge request acme/shop!12\n\u{1e}0123456789abcdef0123456789abcdef01234567\u{1f}1792922400\u{1f}wynn@example.com\u{1f}aaa bbb\u{1f}Merge branch 'x' into 'main'\n";
+        let out = "…of a long body\nSee merge request acme/shop!12\n\u{1e}0123456789abcdef0123456789abcdef01234567\u{1f}1792922400\u{1f}wynn@example.com\u{1f}aaa bbb\u{1f}1792922000\u{1f}Merge branch 'x' into 'main'\n";
         let commit = Commit::parse(out).unwrap();
         assert_eq!(commit.sha, "0123456789abcdef0123456789abcdef01234567");
         assert_eq!(commit.at_secs, 1_792_922_400);
         assert_eq!(commit.parents, ["aaa", "bbb"]);
+        assert_eq!(commit.authored_secs, 1_792_922_000);
         assert_eq!(commit.subject, "Merge branch 'x' into 'main'");
         assert!(commit.body.ends_with("acme/shop!12\n"));
         let long = format!("cut-line\n{}", "a/b.ts\n".repeat(400));

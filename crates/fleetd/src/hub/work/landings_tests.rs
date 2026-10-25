@@ -3,10 +3,11 @@
 //! landing (direct push, a PR merged outside the train on GitLab and on GitHub, the train's own merge) is recorded
 //! with its route, ends the claims it matches, and wakes the leads only for outside routes. The node's 2000-character
 //! output tail is kept, and an offline node makes the watch wait.
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
@@ -39,6 +40,8 @@ const AT: &str = "2026-10-25T10:00:00.000Z";
 struct LocalGit {
     offline: Mutex<HashSet<String>>,
     pulls: Mutex<Vec<MergedPull>>,
+    /// GitHub's answer to "which merged PRs is this commit from", by sha.
+    commit_pulls: Mutex<HashMap<String, Vec<MergedPull>>>,
 }
 
 impl NodeGit for LocalGit {
@@ -73,6 +76,25 @@ impl LandingPorts for LocalGit {
     fn merged_pulls<'a>(&'a self, _repo: &'a str) -> BoxFut<'a, Option<Vec<MergedPull>>> {
         let pulls = self.pulls.lock().unwrap().clone();
         Box::pin(async move { Some(pulls) })
+    }
+
+    fn merged_pulls_of<'a>(
+        &'a self,
+        _repo: &'a str,
+        sha: &'a str,
+    ) -> BoxFut<'a, Option<Vec<MergedPull>>> {
+        let pulls = self.commit_pulls.lock().unwrap().get(sha).cloned();
+        Box::pin(async move { Some(pulls.unwrap_or_default()) })
+    }
+}
+
+fn pull(number: i64, sha: &str, head: &str) -> MergedPull {
+    MergedPull {
+        number,
+        merged_at: AT.into(),
+        merge_sha: Some(sha.into()),
+        base: "main".into(),
+        head: head.into(),
     }
 }
 
@@ -132,10 +154,21 @@ impl Repo {
             .current_dir(cwd)
             .args(["-c", "commit.gpgsign=false", "-c", "user.name=t"])
             .args(["-c", &format!("user.email={email}")])
-            .env("GIT_AUTHOR_EMAIL", email)
             .env("GIT_COMMITTER_EMAIL", email)
-            .env("GIT_AUTHOR_DATE", &date)
             .env("GIT_COMMITTER_DATE", &date)
+            .env_remove("GIT_AUTHOR_NAME")
+            .env_remove("GIT_AUTHOR_EMAIL")
+            .env_remove("GIT_AUTHOR_DATE")
+            .envs(
+                // A cherry-pick keeps the commit's own author, as a rebase does.
+                (args.first() != Some(&"cherry-pick"))
+                    .then_some([
+                        ("GIT_AUTHOR_EMAIL", email),
+                        ("GIT_AUTHOR_DATE", date.as_str()),
+                    ])
+                    .into_iter()
+                    .flatten(),
+            )
             .args(args)
             .output()
             .unwrap();
@@ -414,7 +447,7 @@ async fn a_direct_push_on_a_gitlab_repo_is_recorded_and_ends_its_authors_claim()
 }
 
 #[tokio::test]
-async fn a_gitlab_merge_request_merged_outside_the_train_ends_the_claims_on_its_branch_pr_and_issue()
+async fn a_gitlab_merge_request_merged_outside_the_train_ends_the_claims_on_its_branch_mr_and_closed_issues()
  {
     let (hub, _clock, _home) = hub();
     let repo = Repo::new(GITLAB);
@@ -459,6 +492,19 @@ async fn a_gitlab_merge_request_merged_outside_the_train_ends_the_claims_on_its_
         ))],
         None,
     );
+    let issue = |key: &str| {
+        claim(
+            &hub,
+            &shop,
+            "an issue",
+            "sam@example.com",
+            vec![WorkKey::Issue(Line::unchecked(key))],
+            None,
+        )
+    };
+    let mentioned = issue("#3");
+    let same_repo_url = issue("https://gitlab.example.com/acme/shop/-/issues/8");
+    let other_repo_url = issue("https://gitlab.example.com/acme/other/-/issues/9");
     repo.git(&["checkout", "-q", "-b", "wynn/dark-mode"]);
     repo.commit(
         "wynn@example.com",
@@ -474,7 +520,7 @@ async fn a_gitlab_merge_request_merged_outside_the_train_ends_the_claims_on_its_
         "-m",
         "Merge branch 'wynn/dark-mode' into 'main'",
         "-m",
-        "dark mode toggle\n\nCloses SHOP-7\n\nSee merge request acme/shop!12",
+        "dark mode toggle, a follow-up to #3\n\nCloses SHOP-7\nFixes #8\nFixes https://gitlab.example.com/acme/other/-/issues/9\n\nSee merge request acme/shop!12",
     ]);
     let merge = repo.head();
     repo.push();
@@ -499,10 +545,13 @@ async fn a_gitlab_merge_request_merged_outside_the_train_ends_the_claims_on_its_
         landing.paths.iter().map(|p| p.as_str()).collect::<Vec<_>>(),
         ["app/theme.ts"]
     );
-    for id in [&on_branch, &on_mr, &on_issue] {
+    for id in [&on_branch, &on_mr, &on_issue, &same_repo_url] {
         assert_eq!(state(&hub, id), ClaimState::Landed, "{id}");
     }
-    assert_eq!(state(&hub, &other_mr), ClaimState::Active);
+    // Another MR, an issue only mentioned, and an issue of another repo stay claimed.
+    for id in [&other_mr, &mentioned, &other_repo_url] {
+        assert_eq!(state(&hub, id), ClaimState::Active, "{id}");
+    }
     let reason = hub
         .work
         .get(&on_branch)
@@ -603,7 +652,7 @@ async fn a_github_squash_merge_takes_its_branch_from_github_and_links_the_task()
 
 #[tokio::test]
 async fn the_trains_own_merge_is_a_train_landing_and_wakes_no_one() {
-    let (hub, _clock, _home) = hub();
+    let (hub, clock, _home) = hub();
     let repo = Repo::new(GITHUB);
     let shop = project(&hub, "devbox", "shop", &repo.checkout("shop"));
     let git = LocalGit::default();
@@ -627,19 +676,108 @@ async fn the_trains_own_merge_is_a_train_landing_and_wakes_no_one() {
     );
 
     // While the train is merging, a commit it may not have recorded yet waits for the next scan.
-    let mut merging = change(&hub, &shop, 8, "merging", None);
+    change(&hub, &shop, 8, "merging", None);
     let pushed = repo.commit("wynn@example.com", "fix: typo", &[("docs.md", "e\n")]);
     repo.push();
     scan(&hub, &git).await;
     assert_eq!(landings(&hub, &scope).len(), 1);
-    merging.state = fleetd_contracts::train::ChangeState::Ci;
-    hub.train.records().put(&merging);
+    // A Change stuck merging for over 10 minutes holds nothing back.
+    clock.advance(Duration::from_secs(11 * 60));
     scan(&hub, &git).await;
     let landing = &landings(&hub, &scope)[1];
     assert_eq!(
         (landing.sha.as_str(), landing.route),
         (pushed.as_str(), LandingRoute::DirectPush)
     );
+}
+
+#[tokio::test]
+async fn every_commit_of_a_github_rebase_merge_is_its_prs() {
+    let (hub, _clock, _home) = hub();
+    let repo = Repo::new(GITHUB);
+    let shop = project(&hub, "devbox", "shop", &repo.checkout("shop"));
+    let git = LocalGit::default();
+    let scope = scope(GITHUB);
+    scan(&hub, &git).await;
+
+    // GitHub rebases the PR's two commits onto main and names only the last as its merge commit.
+    let first = repo.commit(
+        "wynn@example.com",
+        "rounding: helper",
+        &[("app/round.ts", "1\n")],
+    );
+    let last = repo.commit(
+        "wynn@example.com",
+        "rounding: use it",
+        &[("app/cart.ts", "1\n")],
+    );
+    let pushed = repo.commit("sam@example.com", "docs: typo", &[("README.md", "shop!\n")]);
+    repo.push();
+    git.pulls
+        .lock()
+        .unwrap()
+        .push(pull(60, &last, "wynn/rounding"));
+    git.commit_pulls
+        .lock()
+        .unwrap()
+        .insert(first.clone(), vec![pull(60, &last, "wynn/rounding")]);
+    scan(&hub, &git).await;
+
+    let routes: Vec<(String, LandingRoute, Option<i64>, Option<String>)> = landings(&hub, &scope)
+        .iter()
+        .map(|l| {
+            (
+                l.sha.to_string(),
+                l.route,
+                l.pr_number.map(|n| n.get()),
+                l.head_branch.as_ref().map(|b| b.to_string()),
+            )
+        })
+        .collect();
+    let rounding = Some("wynn/rounding".to_owned());
+    assert_eq!(
+        routes,
+        [
+            (first, LandingRoute::PrOutside, Some(60), rounding.clone()),
+            (last, LandingRoute::PrOutside, Some(60), rounding),
+            (pushed, LandingRoute::DirectPush, None, None),
+        ]
+    );
+    assert!(hub.leads.wakes.pending(&shop));
+}
+
+#[tokio::test]
+async fn a_remote_git_cant_reach_is_told_to_the_lead_once_until_it_reads_again() {
+    let (hub, _clock, _home) = hub();
+    let repo = Repo::new(GITLAB);
+    let root = repo.checkout("shop");
+    let shop = project(&hub, "devbox", "shop", &root);
+    let git = LocalGit::default();
+    let gone = repo.path("gone.git");
+    let rewrite = format!("url.{}.insteadOf", repo.origin().display());
+    repo.run(Path::new(&root), &["config", "--unset-all", &rewrite], None);
+    let rewrite = format!("url.{}.insteadOf", gone.display());
+    repo.run(Path::new(&root), &["config", &rewrite, GITLAB], None);
+
+    scan(&hub, &git).await;
+    assert_eq!(hub.work.scope_of(&shop).unwrap(), Some(scope(GITLAB)));
+    assert_eq!(hub.work.scan_failure(&shop).as_deref(), Some("offline"));
+    assert!(hub.leads.wakes.pending(&shop), "the lead is told");
+    scan(&hub, &git).await;
+    assert!(
+        !hub.work.scan_failed(&shop, "offline"),
+        "told once: the same failure again is not news"
+    );
+
+    // Reachable again: the watch starts, and a later failure is told again.
+    repo.run(Path::new(&root), &["config", "--unset-all", &rewrite], None);
+    let rewrite = format!("url.{}.insteadOf", repo.origin().display());
+    repo.run(Path::new(&root), &["config", &rewrite, GITLAB], None);
+    scan(&hub, &git).await;
+    assert!(hub.work.watch(&scope(GITLAB)).unwrap().is_some());
+    scan(&hub, &git).await;
+    assert_eq!(hub.work.scan_failure(&shop), None);
+    assert!(hub.work.scan_failed(&shop, "offline"));
 }
 
 #[tokio::test]
@@ -701,8 +839,11 @@ async fn a_base_far_behind_is_read_from_the_nodes_output_tail_and_a_force_push_r
         .collect();
     assert_eq!(shas, pushed);
 
-    // The base is rewritten: only commits made since the watch started and not seen yet are reported.
-    repo.git(&["reset", "-q", "--hard", &before]);
+    // The base is rewritten: its last two commits are rebased (new shas, same author, author time and subject) and a
+    // new one follows. Only the new one is a landing.
+    repo.git(&["reset", "-q", "--hard", &pushed[57]]);
+    repo.git(&["cherry-pick", &pushed[58], &pushed[59]]);
+    assert_ne!(repo.head(), pushed[59]);
     let redo = repo.commit("wynn@example.com", "redo", &[("b.txt", "b\n")]);
     repo.push();
     scan(&hub, &git).await;
@@ -710,6 +851,14 @@ async fn a_base_far_behind_is_read_from_the_nodes_output_tail_and_a_force_push_r
     assert_eq!(all.len(), 61);
     assert_eq!(all[60].sha.as_str(), redo);
     assert_eq!(hub.work.watch(&scope).unwrap().unwrap().last_sha, redo);
+
+    // Rewritten back to where the watch started: nothing older than the watch is reported.
+    repo.git(&["reset", "-q", "--hard", &before]);
+    let again = repo.commit("wynn@example.com", "again", &[("c.txt", "c\n")]);
+    repo.push();
+    scan(&hub, &git).await;
+    let all = landings(&hub, &scope);
+    assert_eq!((all.len(), all[61].sha.as_str()), (62, again.as_str()));
 }
 
 #[tokio::test]

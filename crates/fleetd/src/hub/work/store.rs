@@ -222,12 +222,17 @@ pub fn route_str(route: LandingRoute) -> &'static str {
     }
 }
 
-/// Stores the landing; false when the commit was already recorded on that base.
-pub fn insert_landing(db: &Connection, landing: &Landing) -> rusqlite::Result<bool> {
+/// Stores the landing with what a rebase keeps of its commit; false when the commit was already recorded on that base.
+pub fn insert_landing(
+    db: &Connection,
+    landing: &Landing,
+    rewrite_key: &str,
+) -> rusqlite::Result<bool> {
     let at_ms = parse_ms(landing.at.as_str()).unwrap_or(0);
     let added = db
         .prepare_cached(
-            "INSERT OR IGNORE INTO landings (repo_key, base, sha, at_ms, route, data) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO landings (repo_key, base, sha, at_ms, route, pr_number, rewrite_key, data)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )?
         .execute(params![
             landing.repo_key.as_str(),
@@ -235,9 +240,29 @@ pub fn insert_landing(db: &Connection, landing: &Landing) -> rusqlite::Result<bo
             landing.sha.as_str(),
             at_ms,
             route_str(landing.route),
+            landing.pr_number.map(|n| n.get()),
+            rewrite_key,
             serde_json::to_string(landing).expect("a Landing encodes"),
         ])?;
     Ok(added == 1)
+}
+
+/// Whether a commit with this rewrite key, or from this PR, already landed on the scope's base.
+pub fn rewrite_of(
+    db: &Connection,
+    scope: &WorkScope,
+    rewrite_key: &str,
+    pr_number: Option<i64>,
+) -> rusqlite::Result<bool> {
+    db.prepare_cached(
+        "SELECT 1 FROM landings WHERE repo_key = ?1 AND base = ?2 AND (rewrite_key = ?3 OR pr_number = ?4) LIMIT 1",
+    )?
+    .query_row(
+        params![scope.repo_key.as_str(), scope.base.as_str(), rewrite_key, pr_number],
+        |_| Ok(()),
+    )
+    .optional()
+    .map(|found| found.is_some())
 }
 
 pub fn has_landing(db: &Connection, scope: &WorkScope, sha: &str) -> rusqlite::Result<bool> {

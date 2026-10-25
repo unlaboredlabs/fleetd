@@ -30,7 +30,7 @@ mod tools_tests;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use fleetd_contracts::events::HubEventType;
@@ -113,6 +113,8 @@ pub struct Work {
     clock: Arc<dyn Clock>,
     ports: Arc<dyn WorkPorts>,
     landings: OnceLock<Arc<dyn elsewhere::Landings>>,
+    /// Why the landing scanner can't read each project's base, while it can't.
+    scan_failures: Mutex<HashMap<ProjectRef, String>>,
 }
 
 impl Work {
@@ -128,6 +130,7 @@ impl Work {
             clock,
             ports,
             landings: OnceLock::new(),
+            scan_failures: Mutex::default(),
         })
     }
 
@@ -212,16 +215,21 @@ impl Work {
             .with(|c| Ok(store::landings_since(c, scope, since_ms, limit, false)?))
     }
 
-    /// Stores the landing and moves its base's watch to it, in one transaction, and announces it (`work.landed`).
-    /// False when the commit was already recorded.
-    pub fn record_landing(&self, landing: &Landing, via: &ProjectRef) -> Result<bool, StoreError> {
+    /// Stores the landing (with what a rebase keeps of its commit) and moves its base's watch to it, in one
+    /// transaction, and announces it (`work.landed`). False when the commit was already recorded.
+    pub fn record_landing(
+        &self,
+        landing: &Landing,
+        rewrite_key: &str,
+        via: &ProjectRef,
+    ) -> Result<bool, StoreError> {
         let scope = WorkScope {
             repo_key: landing.repo_key.clone(),
             base: landing.base.clone(),
         };
         let now = self.now();
         let added = self.db.transaction(|c| {
-            let added = store::insert_landing(c, landing)?;
+            let added = store::insert_landing(c, landing, rewrite_key)?;
             store::watch_at(c, &scope, landing.sha.as_str(), now)?;
             Ok(added)
         })?;
@@ -247,6 +255,23 @@ impl Work {
             attention: None,
         })?;
         Ok(true)
+    }
+
+    /// Notes why the landing scanner can't read the project's base. True the first time for that reason: then its
+    /// lead is told.
+    pub fn scan_failed(&self, project: &ProjectRef, why: &str) -> bool {
+        let mut failed = self.scan_failures.lock().unwrap();
+        failed.insert(project.clone(), why.to_owned()).as_deref() != Some(why)
+    }
+
+    /// The scanner read the project's base: a failure after this is told again.
+    pub fn scan_ok(&self, project: &ProjectRef) {
+        self.scan_failures.lock().unwrap().remove(project);
+    }
+
+    /// Why the scanner last failed to read the project's base, while it does.
+    pub fn scan_failure(&self, project: &ProjectRef) -> Option<String> {
+        self.scan_failures.lock().unwrap().get(project).cloned()
     }
 
     pub fn scope_of(&self, project: &ProjectRef) -> Result<Option<WorkScope>, StoreError> {

@@ -200,8 +200,18 @@ mod tests {
         let keys: Vec<&str> = passed.iter().map(|(k, _)| k.as_str()).collect();
         assert_eq!(
             keys,
-            ["HOME", "PATH", "SSH_AUTH_SOCK", "SSH_AGENT_PID", "GIT_SSH_COMMAND", "GIT_SSH"]
+            [
+                "HOME",
+                "PATH",
+                "SSH_AUTH_SOCK",
+                "SSH_AGENT_PID",
+                "GIT_SSH_COMMAND",
+                "GIT_SSH"
+            ]
         );
-        assert!(passed.contains(&("SSH_AUTH_SOCK".into(), "/run/user/1000/ssh-agent.sock".into())));
+        assert!(passed.contains(&(
+            "SSH_AUTH_SOCK".into(),
+            "/run/user/1000/ssh-agent.sock".into()
+        )));
     }
 }
