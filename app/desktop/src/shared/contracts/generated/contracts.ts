@@ -3383,7 +3383,7 @@ export type TaskRecovery = {
   count: number;
   /** How its last run ended. */
   lastCause: RunEnd;
-  /** The same, in plain words: "the node on forge stopped", "claude was killed by signal 9". */
+  /** The same, in plain words: "the node on devbox stopped", "claude was killed by signal 9". */
   lastCauseText: string;
   max: number;
   /** When the resume goes out; absent once it has. */

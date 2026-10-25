@@ -139,7 +139,7 @@ pub struct TaskRecovery {
     pub max: Count,
     /// How its last run ended.
     pub last_cause: RunEnd,
-    /// The same, in plain words: "the node on forge stopped", "claude was killed by signal 9".
+    /// The same, in plain words: "the node on devbox stopped", "claude was killed by signal 9".
     pub last_cause_text: Text<1, 200>,
     /// What tells one death from another (its cause, exit and last tool); the same one twice is not resumed again.
     /// Cleared when the lead continues the task itself.

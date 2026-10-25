@@ -236,7 +236,7 @@ pub fn decide(
     })
 }
 
-/// The queued reason while it waits to resume: "recovering: the node on forge stopped; resumes at 10:12:40 UTC
+/// The queued reason while it waits to resume: "recovering: the node on devbox stopped; resumes at 10:12:40 UTC
 /// (recovery 1 of 3)".
 pub fn queued_reason(recovery: &TaskRecovery) -> String {
     let at = recovery
@@ -269,11 +269,11 @@ mod tests {
     const NOW: i64 = 1_792_000_000_000;
 
     fn interrupted(data: Value) -> Death {
-        death(HubEventType::ThreadInterrupted, Some(&data), "forge", None)
+        death(HubEventType::ThreadInterrupted, Some(&data), "devbox", None)
     }
 
     fn failed(data: Value, tool: Option<&str>) -> Death {
-        death(HubEventType::ThreadFailed, Some(&data), "forge", tool)
+        death(HubEventType::ThreadFailed, Some(&data), "devbox", tool)
     }
 
     fn resume(action: Action) -> TaskRecovery {
@@ -302,27 +302,27 @@ mod tests {
             (
                 json!({ "endCause": "node_stopping" }),
                 RunEnd::NodeStopping,
-                "the node on forge stopped",
+                "the node on devbox stopped",
             ),
             (
                 json!({ "endCause": "node_restarted" }),
                 RunEnd::NodeRestarted,
-                "the node on forge restarted mid-run (a crash, a kill or a power loss)",
+                "the node on devbox restarted mid-run (a crash, a kill or a power loss)",
             ),
             (
                 json!({ "late": true }),
                 RunEnd::NodeStopping,
-                "the node on forge went away",
+                "the node on devbox went away",
             ),
             (
                 json!({ "error": { "class": "process_exited", "message": "the node stopped" } }),
                 RunEnd::NodeStopping,
-                "the node on forge stopped",
+                "the node on devbox stopped",
             ),
             (
                 json!({ "error": { "class": "process_exited", "message": "node restarted mid-run" } }),
                 RunEnd::NodeRestarted,
-                "the node on forge restarted mid-run (a crash, a kill or a power loss)",
+                "the node on devbox restarted mid-run (a crash, a kill or a power loss)",
             ),
         ] {
             let d = interrupted(data);
@@ -390,7 +390,7 @@ mod tests {
         assert_eq!((first.count.get(), due_in(&first)), (1, 30_000));
         assert_eq!(
             queued_reason(&first),
-            "recovering: the node on forge stopped; resumes at 17:47:10 UTC (recovery 1 of 3)"
+            "recovering: the node on devbox stopped; resumes at 17:47:10 UTC (recovery 1 of 3)"
         );
         // Same signature, and soon after its resume: still the node's doing, so no escalation and no double count.
         let resumed = TaskRecovery {
