@@ -416,6 +416,7 @@ pub fn build_on_with(
     crate::hub::approvals::tools::register_lead_calls(&hub);
     crate::hub::memory::calls::register_lead_calls(&hub);
     crate::hub::automations::calls::register_lead_calls(&hub);
+    crate::hub::checklist::calls::register_lead_calls(&hub);
     crate::hub::steer::wire(&hub);
     crate::hub::chat::tools::extend_status(&hub);
     crate::hub::work::register_sweep(&hub);

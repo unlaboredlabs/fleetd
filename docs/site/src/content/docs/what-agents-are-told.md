@@ -187,6 +187,14 @@ repo. Each file has a cap, by default 16,000 characters for `user.md` and each `
 Settings → Memory (an app paired with admin, or `memory_caps_set` with an admin key for every machine): 1,000 to 100,000
 per file, up to 400,000 per project. Memory never holds a secret.
 
+## The checklist {#checklist}
+
+Each project's lead keeps a checklist with its `checklist` tool: a few plain items per piece of work you approved,
+each to do, doing or done, linked to its pull request or agent. Its first message tells it to keep the list current,
+moving items along in the turn their news arrives; every wake shows it how many are done and the items still open.
+You see the list in the panel's [Checklist tab](/docs/desktop-app#checklist). Writers can't change it, and nothing
+is worked out from it: no figure, no estimate.
+
 ## When fleetd changes a default you edited {#updates}
 
 Your version stays in use.

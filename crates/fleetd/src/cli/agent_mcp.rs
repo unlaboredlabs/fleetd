@@ -12,6 +12,7 @@ use fleetd_contracts::automations::{
     AutomationCreateCall, AutomationDeleteCall, AutomationListCall, AutomationPauseCall,
     AutomationRunCall, AutomationRunsCall, AutomationUpdateCall,
 };
+use fleetd_contracts::checklist::ChecklistCall;
 use fleetd_contracts::lead_calls::{
     AskLeadCall, BriefCreateCall, ChangeEnqueueCall, CloseCall, DecideCall, DecisionsSearchCall,
     GatedRunCall, LeadCall, LeadSocketFrame, RequestSecretCall, RequestWithdrawCall,
@@ -218,6 +219,14 @@ static TOOLS: &[Tool] = &[
         "An automation's runs, newest first, with the order each opened; with runId, that run and its whole webhook \
          body.",
         inline_schema::<AutomationRunsCall>,
+    ),
+    lead(
+        "checklist",
+        "checklist",
+        "Keep the project's checklist: the to-dos the human sees beside the chat, each todo, doing or done, in plain \
+         words. Add items without an id, change one by its id (text, state, link to its PR, agent or workstream), or \
+         remove it; replace sets the whole list. Returns the list.",
+        inline_schema::<ChecklistCall>,
     ),
     lead(
         "change_enqueue",
@@ -557,6 +566,7 @@ mod tests {
             "gated_run",
             "remember",
             "memory_read",
+            "checklist",
         ] {
             assert!(lead.contains(&tool.to_owned()), "{tool}");
         }

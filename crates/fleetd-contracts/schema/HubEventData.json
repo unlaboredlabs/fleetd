@@ -866,6 +866,34 @@
       ],
       "type": "object"
     },
+    "ChecklistChangedData": {
+      "description": "`checklist.changed`. The items are not in the event; checklist_get reads them.",
+      "properties": {
+        "by": {
+          "type": "string"
+        },
+        "done": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "total": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "projectRef",
+        "done",
+        "total",
+        "by"
+      ],
+      "type": "object"
+    },
     "ChecklistItem": {
       "properties": {
         "done": {
@@ -1358,6 +1386,9 @@
         "chat.waiting": {
           "$ref": "#/$defs/ProjectChatState"
         },
+        "checklist.changed": {
+          "$ref": "#/$defs/ChecklistChangedData"
+        },
         "ci.main": {
           "$ref": "#/$defs/CiMainData"
         },
@@ -1499,6 +1530,7 @@
         "change.state",
         "chat.message",
         "chat.waiting",
+        "checklist.changed",
         "ci.main",
         "machine.guard",
         "machine.recovery_paused",

@@ -813,6 +813,11 @@
           "const": "automation.run",
           "description": "An automation ran (its order opened) or a trigger was skipped: `data.projectRef`, `data.automationId`,\n`data.runId`, `data.trigger`, `data.state`, `data.workstreamId`. Never the webhook body.",
           "type": "string"
+        },
+        {
+          "const": "checklist.changed",
+          "description": "A project's checklist changed (the lead's `checklist`); `data` is `checklist::ChecklistChangedData`.",
+          "type": "string"
         }
       ],
       "x-open": true

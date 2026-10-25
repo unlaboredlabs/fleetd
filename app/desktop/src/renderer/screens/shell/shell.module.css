@@ -96,17 +96,78 @@
   width: 55%;
 }
 
-/* The panel beside the chat (panel.tsx); its contents set its width. A container only: focus rests here between an
-   item and its list, without a ring. */
+/* The panel beside the chat (panel.tsx): as wide as you set it (--panel-size). A container only: focus rests here
+   between an item and its list, without a ring. It slides in and out by transform and opacity alone, so the chat
+   beside it never lays out mid-way; with reduced motion the durations are 0 and it just appears. */
 .panel {
+  position: relative;
   display: flex;
+  flex: none;
+  width: var(--panel-size);
   min-width: 0;
   min-height: 0;
   height: 100%;
+  animation: panel-in var(--dur-base) var(--ease-out);
 }
 .panel:focus {
   outline: none;
 }
+.panel[data-state="closed"] {
+  pointer-events: none;
+  animation: panel-out var(--dur-fast) ease-in forwards;
+}
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+}
+@keyframes panel-out {
+  to {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+}
 .panelLoading {
-  width: var(--panel-w);
+  width: 100%;
+}
+
+/* Its left edge: a hairline-wide target that shows itself on hover, focus and drag. It sits over the frame's border
+   so the edge you see is the edge you drag. */
+.resize {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.resize::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+.resize:hover::after,
+.resize[data-dragging]::after {
+  background: var(--border);
+}
+.resize:focus-visible {
+  outline: none;
+}
+.resize:focus-visible::after {
+  background: var(--accent);
+}
+/* While a drag runs, the cursor stays the resize one over the chat too, and nothing gets selected. */
+:global(html[data-panel-resizing]),
+:global(html[data-panel-resizing]) * {
+  cursor: col-resize !important;
+  user-select: none !important;
 }

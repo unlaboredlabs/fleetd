@@ -443,6 +443,7 @@ impl LeadWakes {
             tasks,
             train,
             elsewhere,
+            checklist: crate::hub::checklist::digest_lines(&ctx.db, r),
             facts: &facts,
         }))
     }

@@ -663,6 +663,13 @@ fn example(role: Role, tool: &str) -> Option<Value> {
             "automationId": "au_k3Jd8sQp2xYz",
             "runId": "ar_Qm7tZr1vBn4w",
         }),
+        (Role::Lead, "checklist") => json!({
+            "items": [
+                { "id": 2, "state": "done" },
+                { "id": 3, "state": "doing", "link": { "pr": "https://github.com/acme/shop/pull/42" } },
+                { "text": "Ship the rate limit to production" },
+            ],
+        }),
         (Role::Lead, "change_enqueue") => json!({
             "prUrl": "https://github.com/acme/shop/pull/42",
             "workstreamId": "W3",

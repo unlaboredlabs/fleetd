@@ -42,6 +42,9 @@ pub struct DigestInput<'a> {
     /// Work on the project's repo and base that isn't its own: claims, other projects' writers and Changes, and
     /// recent landings outside the train. None leaves the section out.
     pub elsewhere: Option<Vec<String>>,
+    /// The project's checklist: its progress, then the items not done (`checklist::digest_lines`). None leaves the
+    /// section out.
+    pub checklist: Option<Vec<String>>,
     pub facts: &'a HashMap<WorkstreamId, WorkstreamFacts>,
 }
 
@@ -236,6 +239,7 @@ const ELSEWHERE: usize = 3;
 const REQUESTS: usize = 4;
 const DECISIONS: usize = 5;
 const DO_NOT_RE_ASK: usize = 6;
+const CHECKLIST: usize = 7;
 
 pub fn render_lead_digest(input: &DigestInput) -> String {
     let open: HashSet<&WorkstreamId> = input.workstreams.iter().map(|w| &w.workstream_id).collect();
@@ -312,9 +316,19 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
             "check with `decisions_search`",
             ", ",
         ),
+        Section::new(
+            "Checklist",
+            input.checklist.clone().unwrap_or_default(),
+            20,
+            "the rest of the list",
+            "\n",
+        ),
     ];
 
     let mut shown: Vec<usize> = vec![WORKSTREAMS];
+    if input.checklist.is_some() {
+        shown.push(CHECKLIST);
+    }
     if input.tasks.is_some() {
         shown.push(TASKS);
     }
@@ -337,16 +351,18 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
             .collect();
         format!("{head}\n\n{}", parts.join("\n\n"))
     };
-    // Lowest value first: the key list, then decisions, work elsewhere, requests, agents, the train, and the work last.
+    // Lowest value first: the key list, then decisions, work elsewhere, requests, agents, the train, the checklist, and
+    // the work last.
     // The first pass keeps a few of each so no section vanishes while another is long; the second trims to nothing if
     // it must.
-    let drop_order: [(usize, usize); 7] = [
+    let drop_order: [(usize, usize); 8] = [
         (DO_NOT_RE_ASK, 30),
         (DECISIONS, 3),
         (ELSEWHERE, 3),
         (REQUESTS, 5),
         (TASKS, 5),
         (TRAIN, 4),
+        (CHECKLIST, 4),
         (WORKSTREAMS, 5),
     ];
     let mut text = render(&sections);
@@ -394,6 +410,7 @@ mod tests {
             tasks: None,
             train: None,
             elsewhere: None,
+            checklist: None,
             facts: &HashMap::new(),
         });
         assert!(text.chars().count() <= DIGEST_MAX_CHARS, "{}", text.len());
@@ -420,6 +437,7 @@ mod tests {
             tasks: Some(Vec::new()),
             train: Some(vec!["- #4 merged".into()]),
             elsewhere: Some(Vec::new()),
+            checklist: Some(Vec::new()),
             facts: &HashMap::new(),
         });
         assert!(
@@ -432,6 +450,7 @@ mod tests {
             "## Waiting",
             "## Decisions",
             "## Decided",
+            "## Checklist",
         ] {
             assert!(!text.contains(gone), "{gone}: {text}");
         }

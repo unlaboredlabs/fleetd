@@ -1,20 +1,116 @@
-/* The panel beside the chat: opaque, so nothing composites over the live chat, and nothing animates. Its width is
-   fixed per state (tokens.css), never measured from its content. */
+/* The panel beside the chat: opaque, so nothing composites over the live chat. The frame (shell/panel.tsx) sets its
+   width; it fills it. */
 .panel {
   display: flex;
   flex-direction: column;
-  width: var(--panel-w);
+  width: 100%;
   height: 100%;
+  min-width: 0;
   min-height: 0;
 }
-.wide {
-  width: var(--panel-wide-w);
+
+/* The tab bar: quiet segments on one hairline, the open one a soft fill; counts are small pills, never colour. Its
+   rules sit under .head so they outrank the primitive's own tab styles. */
+.head {
+  position: relative;
+  flex: none;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--hairline);
+}
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  overflow: hidden;
+}
+.head .tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  border: none;
+}
+.head .tab {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  height: var(--field);
+  padding: 0 var(--space-2);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--quiet);
+  font-size: var(--text-md);
+  line-height: var(--leading-md);
+  white-space: nowrap;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+.head .tab:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.head .tab[data-state="active"] {
+  background: var(--selected);
+  color: var(--text);
+  font-weight: var(--weight-strong);
+}
+/* The segment's fill marks the open tab; the primitive's underline would say it twice. */
+.head .tab[data-state="active"]::after {
+  display: none;
+}
+.head .tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+.label {
+  min-width: 0;
+}
+.count {
+  min-width: 16px;
+  padding: 0 var(--space-1-5);
+  border-radius: 999px;
+  background: var(--hover);
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.count:empty {
+  display: none;
+}
+.more {
+  flex: none;
+  margin-left: auto;
 }
 
-/* The tabs' own underline is the head's bottom edge. */
-.head {
-  flex: none;
-  padding-inline: var(--space-4);
+/* The bar's measuring copy: laid out, never seen. */
+.measure {
+  position: absolute;
+  top: 0;
+  left: 0;
+  visibility: hidden;
+  pointer-events: none;
+  width: max-content;
+  height: 0;
+  overflow: hidden;
+}
+.measure .tabs {
+  width: max-content;
+}
+.moreSize {
+  display: block;
+  width: var(--field);
 }
 
 .back {
@@ -34,7 +130,7 @@
   min-height: 0;
   padding-bottom: var(--space-2);
 }
-/* The other tab's panel stays in the DOM, hidden: it takes no room. */
-.body[hidden] {
-  display: none;
+/* A tab's pane, the first time it loads: nothing to read yet, nothing that moves. */
+.loading {
+  flex: 1;
 }

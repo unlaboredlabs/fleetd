@@ -7,6 +7,7 @@ pub mod attention;
 pub mod auth;
 pub mod automations;
 pub mod chat;
+pub mod checklist;
 pub mod checks;
 pub mod doctor;
 pub mod executor;

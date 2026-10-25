@@ -1,6 +1,6 @@
 // The app frame: the sidebar of projects down the left (the macOS traffic lights sit in its top row, over the window's
 // translucent material), the top row beside it (the window's drag region, where a chat puts its title), and the
-// screen the route names: a project's lead chat, with its agents and PRs in the panel on the right (panel.tsx), or
+// screen the route names: a project's lead chat, with its agents, PRs and checklist in the panel on the right (panel.tsx), or
 // Status, Time or Settings. Navigation is the hash (routes.ts); `#/` opens the project you last had open.
 import { PanelLeft, Search } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef } from "react";
@@ -15,7 +15,8 @@ import { useDataLayer } from "../../src/data/react";
 import { homeProject, nextWanting, projectId, routeOf, stepProject } from "./model";
 import { useMachinesDown, useSidebarProjects } from "./data";
 import { navigate, useRoute } from "./navigation";
-import { HOME, panelRoute, type Screen } from "./routes";
+import { PANEL_TABS } from "../panel/tabs";
+import { HOME, listView, panelRoute, type Screen } from "./routes";
 import { PanelSlot, PanelToggle, useProjectPanel } from "./panel";
 import { ConnectionBanner, GetStarted, needsOnboarding } from "../onboarding";
 import { UpdatesHost } from "../updates";
@@ -125,7 +126,7 @@ export function Shell() {
         run: () => go({ id: "factory", project: null }),
       },
       { id: "sidebar.toggle", title: "Toggle sidebar", group: "actions", enabled: () => chrome, run: sidebar.toggle },
-      { id: "panel.toggle", title: "Toggle agents and PRs", group: "actions", keywords: ["panel", "right"], enabled: () => chrome && open !== null, run: panel.toggle },
+      { id: "panel.toggle", title: "Toggle the panel", group: "actions", keywords: ["panel", "right", "agents", "prs", "checklist"], enabled: () => chrome && open !== null, run: panel.toggle },
       { id: "project.previous", title: "Previous project", group: "projects", searchOnly: true, enabled: () => chrome && (projects?.length ?? 0) > 0, run: () => step(-1) },
       { id: "project.next", title: "Next project", group: "projects", searchOnly: true, enabled: () => chrome && (projects?.length ?? 0) > 0, run: () => step(1) },
       {
@@ -139,28 +140,20 @@ export function Shell() {
           if (next !== null) go({ id: "project", project: next, message: null });
         },
       },
-      {
-        id: "go:agents",
-        title: "Agents",
-        detail: "This project’s agents at work",
-        group: "go-to",
-        keywords: ["live", "work", "running"],
-        enabled: () => chrome && panelProject !== null,
-        run: () => {
-          if (panelProject !== null) go(panelRoute(panelProject, { tab: "agents", agent: null }));
-        },
-      },
-      {
-        id: "go:prs",
-        title: "Pull requests",
-        detail: "This project’s PRs: checks, reviews and changes",
-        group: "go-to",
-        keywords: ["pr", "prs", "pull", "diff", "changes", "review"],
-        enabled: () => chrome && panelProject !== null,
-        run: () => {
-          if (panelProject !== null) go(panelRoute(panelProject, { tab: "prs", pr: null }));
-        },
-      },
+      // One per panel tab, from its list: a new tab is in the palette too.
+      ...PANEL_TABS.map(
+        (tab): Command => ({
+          id: `go:${tab.id}`,
+          title: tab.label,
+          detail: tab.detail,
+          group: "go-to",
+          keywords: [...tab.keywords],
+          enabled: () => chrome && panelProject !== null,
+          run: () => {
+            if (panelProject !== null) go(panelRoute(panelProject, listView(tab.id)));
+          },
+        }),
+      ),
       ...JUMPS.map(
         (n): Command => ({
           id: `project.open.${String(n)}`,
@@ -234,7 +227,7 @@ export function Shell() {
             </Boundary>
           ) : undefined
         }
-        aside={chrome && panel.shown ? <PanelSlot panel={panel} /> : undefined}
+        aside={chrome && panel.present ? <PanelSlot panel={panel} /> : undefined}
       >
         <div className={s.column}>
           {/* Fixture data must never pass for a live hub. */}

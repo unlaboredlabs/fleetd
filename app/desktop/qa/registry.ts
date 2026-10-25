@@ -129,6 +129,9 @@ export const fixtures = [
   "agents-work",
   // ...with its steers that ended otherwise: never replied to, withdrawn, failed (fixtures/agents).
   "agents-steers",
+  // The panel's Checklist tab: a list the lead keeps, and none yet (fixtures/checklist).
+  "checklist-listed",
+  "checklist-empty",
   // ...and the work elsewhere on storefront's repo, seen from storefront and from checkout (fixtures/agents).
   "agents-elsewhere",
   // UX [7]: no hub, and the last launch's disk cache on screen with a message queued; back online with that chat not
@@ -453,8 +456,8 @@ export const screens: readonly Screen[] = [
     fixtures: ["live-3", "live-20"],
     variant: "strip-to-panel",
     open: async (page) => {
-      const panel = page.getByRole("complementary", { name: "Agents and pull requests" });
-      await page.getByRole("button", { name: "Hide agents and PRs" }).click();
+      const panel = page.getByRole("complementary", { name: "Project panel" });
+      await page.getByRole("button", { name: "Hide the panel" }).click();
       await panel.waitFor({ state: "detached" });
       // Scoped to the strip: the sidebar's project button also says "3 agents working".
       const strip = page.getByRole("region", { name: /agents? working/u });
@@ -473,7 +476,7 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       const chat = page.getByRole("list", { name: "Conversation with the lead" });
       await chat.getByRole("link", { name: /^#10$|\/pull\/10$/u }).click();
-      await page.getByRole("complementary", { name: "Agents and pull requests" }).locator('[data-screen^="prs.detail"]').waitFor();
+      await page.getByRole("complementary", { name: "Project panel" }).locator('[data-screen^="prs.detail"]').waitFor();
       await expect(page).toHaveURL(/\/prs\/(acme\/storefront\/)?10$/u);
     },
   },
@@ -499,7 +502,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["chat-waiting", "agents-work"],
     variant: "panel",
     open: async (page) => {
-      await page.getByRole("complementary", { name: "Agents and pull requests" }).waitFor();
+      await page.getByRole("complementary", { name: "Project panel" }).waitFor();
     },
   },
   {
@@ -508,8 +511,64 @@ export const screens: readonly Screen[] = [
     fixtures: ["chat-waiting"],
     variant: "panel-closed",
     open: async (page) => {
-      await page.getByRole("button", { name: "Hide agents and PRs" }).click();
-      await page.getByRole("complementary", { name: "Agents and pull requests" }).waitFor({ state: "detached" });
+      await page.getByRole("button", { name: "Hide the panel" }).click();
+      await page.getByRole("complementary", { name: "Project panel" }).waitFor({ state: "detached" });
+    },
+  },
+  // The panel's Checklist tab: how far along, doing and to do, done folded; done unfolded; and none set yet.
+  {
+    id: "shell",
+    route: `${CHAT}/checklist`,
+    fixtures: ["checklist-listed"],
+    variant: "panel-checklist",
+    open: async (page) => {
+      await page.getByRole("complementary", { name: "Project panel" }).locator('[data-screen="checklist"]').waitFor();
+      await expect(page.getByRole("progressbar", { name: "Checklist progress" })).toHaveAttribute("aria-valuenow", "2");
+    },
+  },
+  {
+    id: "shell",
+    route: `${CHAT}/checklist`,
+    fixtures: ["checklist-listed"],
+    variant: "panel-checklist-done",
+    open: async (page) => {
+      const panel = page.getByRole("complementary", { name: "Project panel" });
+      await panel.getByRole("button", { name: /^Done/u }).click();
+      await expect(panel.getByRole("button", { name: /^Done/u })).toHaveAttribute("aria-expanded", "true");
+    },
+  },
+  {
+    id: "shell",
+    route: `${CHAT}/checklist`,
+    fixtures: ["checklist-empty"],
+    variant: "panel-checklist-empty",
+    open: async (page) => {
+      await page.getByRole("complementary", { name: "Project panel" }).getByText("No checklist yet").waitFor();
+    },
+  },
+  // Resized from its edge with the keyboard: at its widest, and at its narrowest, where the tabs fold to icons.
+  {
+    id: "shell",
+    route: CHAT,
+    fixtures: ["checklist-listed"],
+    variant: "panel-widest",
+    open: async (page) => {
+      const edge = page.getByRole("separator", { name: "Resize the panel" });
+      await edge.focus();
+      await edge.press("End");
+      await expect(edge).toHaveAttribute("aria-valuenow", (await edge.getAttribute("aria-valuemax")) ?? "");
+    },
+  },
+  {
+    id: "shell",
+    route: CHAT,
+    fixtures: ["checklist-listed"],
+    variant: "panel-narrowest",
+    open: async (page) => {
+      const edge = page.getByRole("separator", { name: "Resize the panel" });
+      await edge.focus();
+      await edge.press("Home");
+      await expect(edge).toHaveAttribute("aria-valuenow", "320");
     },
   },
   // ...and in the smallest window, where it had hidden itself, shown with its toggle beside the chat.
@@ -520,8 +579,8 @@ export const screens: readonly Screen[] = [
     variant: "panel-narrow",
     sizes: ["narrow"],
     open: async (page) => {
-      await page.getByRole("button", { name: "Show agents and PRs" }).click();
-      await page.getByRole("complementary", { name: "Agents and pull requests" }).waitFor();
+      await page.getByRole("button", { name: "Show the panel" }).click();
+      await page.getByRole("complementary", { name: "Project panel" }).waitFor();
     },
   },
   // The smallest window: the sidebar has hidden itself, its toggle and the chat's title share the top row.

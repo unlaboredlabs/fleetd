@@ -2,7 +2,7 @@
 // width in a small window; its toggle still shows it there, until the window is narrowed again. Above it, each shows
 // as you last left it.
 import { useCallback, useEffect, useState } from "react";
-import type { PanelTab } from "./routes";
+import { isPanelTab, type PanelTab } from "../panel/tabs";
 
 export const NARROW_PX = 1000;
 
@@ -67,7 +67,7 @@ const readPanel = (): SavedPanel => {
   try {
     const v: unknown = JSON.parse(window.localStorage.getItem(PANEL) ?? "null");
     if (typeof v === "object" && v !== null && "open" in v && "tab" in v) {
-      return { open: v.open === true, tab: v.tab === "prs" ? "prs" : "agents" };
+      return { open: v.open === true, tab: isPanelTab(v.tab) ? v.tab : "agents" };
     }
   } catch {
     // Unreadable: it starts open, as on a first launch.

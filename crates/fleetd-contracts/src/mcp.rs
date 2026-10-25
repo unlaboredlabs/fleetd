@@ -7,6 +7,7 @@ use serde_with::skip_serializing_none;
 
 use crate::auth::Role;
 use crate::chat::{ChatMessageId, ChatRequestId};
+use crate::checklist::{CHECKLIST_MAX, TodoItem};
 use crate::doctor::{DoctorCheck, DoctorCheckId};
 use crate::events::{HubEvent, HubEventType};
 use crate::hello::ProtocolVersion;
@@ -1247,6 +1248,18 @@ output!(AutomationRunsOutput {
     runs: crate::automations::AutomationRuns
 });
 
+// checklist_get: a project's checklist, which its lead keeps with `checklist` (the panel's Checklist tab).
+input!(ChecklistGetInput {
+    project_ref: ProjectRef
+});
+output!(ChecklistGetOutput {
+    project_ref: ProjectRef,
+    /// In the lead's order.
+    items: List<TodoItem, 0, CHECKLIST_MAX>,
+    /// The last change; absent while the lead has never set one.
+    updated_at: Option<Timestamp>,
+});
+
 // status_get: without projectRef, one row per project the key reads, for the Status screen; with it, that project's
 // row.
 input!(StatusGetInput {
@@ -1731,6 +1744,7 @@ tools! {
     automation_delete => AutomationDelete, Operate, AutomationDeleteInput, AutomationDeleteOutput;
     automation_run => AutomationRun, Operate, AutomationRunInput, AutomationRunOutput;
     automation_runs => AutomationRuns, Read, AutomationRunsInput, AutomationRunsOutput;
+    checklist_get => ChecklistGet, Read, ChecklistGetInput, ChecklistGetOutput;
     time_spans => TimeSpans, Read, TimeSpansInput, TimeSpansOutput;
     time_breakdown => TimeBreakdown, Read, TimeBreakdownInput, TimeBreakdownOutput;
     time_insights => TimeInsights, Read, TimeInsightsInput, TimeInsightsOutput;

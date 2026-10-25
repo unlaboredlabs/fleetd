@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { HOME, panelRoute, parseHash, toHash, type Screen } from "./routes";
+import { PANEL_TABS } from "../panel/tabs";
+import { HOME, hasItem, listView, panelRoute, parseHash, toHash, type Screen } from "./routes";
 
 const storefront = { machineId: "devbox", projectId: "storefront" };
 
@@ -14,6 +15,7 @@ describe("routes", () => {
       panelRoute(storefront, { tab: "prs", pr: { repo: "acme/storefront", number: 11 } }),
       panelRoute(storefront, { tab: "agents", agent: null }),
       panelRoute(storefront, { tab: "agents", agent: "lead:devbox/storefront" }),
+      panelRoute(storefront, { tab: "checklist" }),
       { id: "project", project: storefront, message: "m-42", panel: { tab: "agents", agent: "T1" } },
       { id: "status" },
       { id: "factory", project: null },
@@ -65,5 +67,18 @@ describe("routes", () => {
     }
     expect(parseHash("#/project/devbox/storefront/agents/T1/x")).toEqual(panelRoute(storefront, { tab: "agents", agent: null }));
     expect(parseHash("#/project/devbox/storefront/nope")).toEqual({ id: "project", project: storefront, message: null });
+    // A tab without items ignores what follows its name.
+    expect(parseHash("#/project/devbox/storefront/checklist/x")).toEqual(panelRoute(storefront, { tab: "checklist" }));
+  });
+
+  it("gives every tab of the panel's list a route of its own name, its list with no item", () => {
+    for (const tab of PANEL_TABS) {
+      const route = panelRoute(storefront, listView(tab.id));
+      expect(toHash(route)).toBe(`#/project/devbox/storefront/${tab.id}`);
+      expect(parseHash(toHash(route))).toEqual(route);
+      expect(hasItem(listView(tab.id))).toBe(false);
+    }
+    expect(hasItem({ tab: "prs", pr: { repo: null, number: 3 } })).toBe(true);
+    expect(hasItem({ tab: "agents", agent: "T1" })).toBe(true);
   });
 });
