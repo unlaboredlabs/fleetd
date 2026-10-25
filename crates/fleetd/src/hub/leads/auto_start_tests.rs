@@ -367,3 +367,40 @@ async fn a_merge_or_a_result_wakes_an_idle_lead_soon_and_a_busy_one_after_the_wi
     hub.after_debounce().await;
     assert_eq!(sends(), start + 4);
 }
+
+/// A quiet line wakes nobody: it goes with the next wake, before that wake's own lines, and only once.
+#[tokio::test(flavor = "current_thread")]
+async fn a_quiet_line_goes_with_the_next_wake_and_wakes_nobody() {
+    let hub = hub(true);
+    hub.order("fix the five bugs").await;
+    hub.after_debounce().await;
+    let sends = || hub.node.sends.lock().unwrap().len();
+    let wakes = &hub.area.wakes;
+    let start = sends();
+
+    wakes.trigger(
+        &hub.project,
+        line(
+            LineKind::Quiet,
+            "- T1's PR: https://github.com/acme/app/pull/9",
+        ),
+    );
+    hub.after_debounce().await;
+    hub.after_debounce().await;
+    assert_eq!(sends(), start, "a quiet line wakes nobody");
+
+    wakes.trigger(&hub.project, line(LineKind::Human, "also the docs"));
+    hub.after_debounce().await;
+    assert_eq!(sends(), start + 1);
+    let sent = hub.node.sends.lock().unwrap()[start].clone();
+    let pr = sent.find("T1's PR: https://github.com/acme/app/pull/9");
+    assert!(
+        pr.is_some_and(|at| Some(at) < sent.find("also the docs")),
+        "{sent}"
+    );
+
+    wakes.trigger(&hub.project, line(LineKind::Human, "and the tests"));
+    hub.after_debounce().await;
+    let sent = hub.node.sends.lock().unwrap()[start + 1].clone();
+    assert!(!sent.contains("T1's PR"), "once: {sent}");
+}

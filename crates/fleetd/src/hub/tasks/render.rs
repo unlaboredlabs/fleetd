@@ -108,18 +108,18 @@ pub fn tail_of(text: &str, max: usize) -> String {
 }
 
 static PR_URL: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"https?://[^\s"'<>()]+?/(?:pull|pulls|merge_requests)/[0-9]+"#).unwrap()
+    Regex::new(
+        r#"https?://[^\s"'<>()]+?/(?:pull|pulls|pull-requests|pullrequest|merge_requests)/[0-9]+"#,
+    )
+    .unwrap()
 });
 
-/// The last pull or merge request URL in `texts`, read in order.
-pub fn find_pr_url<'a>(texts: impl IntoIterator<Item = &'a str>) -> Option<String> {
-    let mut found = None;
-    for text in texts {
-        for m in PR_URL.find_iter(text) {
-            found = Some(m.as_str().to_owned());
-        }
-    }
-    found
+/// Every pull or merge request URL in `texts`, read in order.
+pub fn pr_urls<'a>(texts: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+    texts
+        .into_iter()
+        .flat_map(|text| PR_URL.find_iter(text).map(|m| m.as_str().to_owned()))
+        .collect()
 }
 
 pub struct PromptInput<'a> {
@@ -342,6 +342,20 @@ pub fn task_unreachable_lines(task: &Task, minutes: i64) -> String {
     .render()
 }
 
+/// The lead's quiet line for a finished writer whose PR lookup the host refused.
+pub fn task_pr_skipped_lines(task_id: &str, why: &str) -> String {
+    Event::AgentPrSkipped { task: task_id, why }.render()
+}
+
+/// The lead's quiet line for a finished task's PR, found after its result line went out.
+pub fn task_pr_lines(task_id: &str, pr_url: &str) -> String {
+    Event::AgentPr {
+        task: task_id,
+        pr_url,
+    }
+    .render()
+}
+
 /// The lead's event line for a task waiting on input: its question, inline.
 pub fn task_waiting_lines(task_id: &str, title: &str, question: &str) -> String {
     Event::AgentWaiting {
@@ -431,8 +445,13 @@ pub fn task_digest_lines(
         } else {
             format!(" → {first}")
         };
+        let pr = t
+            .result
+            .as_ref()
+            .and_then(|r| r.pr_url.as_ref())
+            .map_or_else(String::new, |p| format!(" [{}]", p.as_str()));
         out.push(format!(
-            "- {} {} since your last wake: {}{arrow}",
+            "- {} {} since your last wake: {}{pr}{arrow}",
             t.task_id,
             state_str(t.state),
             title(t)
