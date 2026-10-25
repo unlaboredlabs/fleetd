@@ -385,12 +385,12 @@ mod tests {
                 attempt: 2,
                 recovery: 1,
                 max: 3,
-                cause: "the node on forge stopped",
+                cause: "the node on devbox stopped",
                 doing: "Ran cargo test --workspace",
                 worktree: "It goes on in its own worktree; nothing for you to do.",
             }),
             "- T23 resumed automatically (attempt 2, recovery 1 of 3): B: progress bar takes in-flight credit back \
-             [fleetd/T23-b-progress-bar]\n  > its run was cut off (the node on forge stopped) during: Ran cargo test \
+             [fleetd/T23-b-progress-bar]\n  > its run was cut off (the node on devbox stopped) during: Ran cargo test \
              --workspace. It goes on in its own worktree; nothing for you to do."
         );
         assert_eq!(
@@ -398,11 +398,11 @@ mod tests {
                 task: "T23",
                 title: "B: progress bar",
                 place: "",
-                machine: "forge",
+                machine: "devbox",
                 minutes: 30,
             }),
-            "- T23 waits for forge, offline for 30 min: B: progress bar; it resumes on its own when forge is back\n  > \
-             Its worktree and session are on forge, so it stays there. To have it done elsewhere, cancel it and start \
+            "- T23 waits for devbox, offline for 30 min: B: progress bar; it resumes on its own when devbox is back\n  > \
+             Its worktree and session are on devbox, so it stays there. To have it done elsewhere, cancel it and start \
              a new task."
         );
     }
