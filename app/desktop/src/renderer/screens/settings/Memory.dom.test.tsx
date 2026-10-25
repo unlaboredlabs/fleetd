@@ -172,6 +172,16 @@ it("edits the whole file as text, and a cap refusal shows as before", async () =
   expect(document.body.textContent).toContain("past its cap of 4000. Nothing was written.");
 });
 
+it("shows the entry again after Undo, when the file reads exactly as it did before the delete", async () => {
+  const hub = await mount(FILE);
+  await click("Delete “No npm.”");
+  expect(cards()).toHaveLength(3);
+  await click("Undo");
+  expect(hub.text).toBe(FILE);
+  expect(cards()).toHaveLength(4);
+  expect(cards()[2]).toContain("No npm.");
+});
+
 it("applies two quick deletes one after the other, so the second never puts the first back", async () => {
   const hub = await mount(FILE);
   act(() => {

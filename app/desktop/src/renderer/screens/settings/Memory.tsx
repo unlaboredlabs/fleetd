@@ -211,7 +211,11 @@ function MemoryGroup(props: {
 
   const undo = (line: MemoryLine, key: string) =>
     write((now) => restoreLine(now, line)).then(
-      () => toast({ key, title: `Put back in ${name}`, tone: "success" }),
+      () => {
+        // Put back, the file can read exactly as it did before the delete: stop hiding the line, or it stays hidden.
+        setGone((g) => ({ ...g, raws: g.raws.filter((r) => r !== line.raw) }));
+        toast({ key, title: `Put back in ${name}`, tone: "success" });
+      },
       (e: unknown) => toast({ key, title: "Couldn't put it back", description: errorText(e), tone: "danger" }),
     );
   const remove = async (line: MemoryLine) => {
