@@ -239,9 +239,9 @@ has been offline for 30 minutes:
 
 ```
 - T23 resumed automatically (attempt 2, recovery 1 of 3): progress bar [fleetd/T23-progress-bar]
-  > its run was cut off (the node on forge stopped) during: Ran cargo test --workspace. It goes on in its own worktree; nothing for you to do.
-- T24 waits for forge, offline for 30 min: docs [fleetd/T24-docs]; it resumes on its own when forge is back
-  > Its worktree and session are on forge, so it stays there. To have it done elsewhere, cancel it and start a new task.
+  > its run was cut off (the node on devbox stopped) during: Ran cargo test --workspace. It goes on in its own worktree; nothing for you to do.
+- T24 waits for devbox, offline for 30 min: docs [fleetd/T24-docs]; it resumes on its own when devbox is back
+  > Its worktree and session are on devbox, so it stays there. To have it done elsewhere, cancel it and start a new task.
 ```
 
 When the node had to rebuild a resumed agent's worktree, the line says what from instead: its local branch,
