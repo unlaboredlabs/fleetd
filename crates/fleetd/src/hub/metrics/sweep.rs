@@ -649,7 +649,7 @@ fn write(c: &Connection, row: &MergeRow) -> Result<(), StoreError> {
 }
 
 /// The person's acts among a host's: fleetd's agents use `gh` under the person's login too, so an act on a fleetd
-/// task's PR made while that task was running is the agent's, not the person's.
+/// task's PR made during one of that task's runs is the agent's, not the person's.
 struct PersonActs<'a> {
     inner: &'a dyn HostActs,
     db: &'a HubDb,
@@ -662,10 +662,9 @@ impl HostActs for PersonActs<'_> {
         since_ms: i64,
     ) -> BoxFut<'a, Result<Vec<HostAct>, String>> {
         Box::pin(async move {
-            let path = repo.split_once('/').map_or(repo, |(_, p)| p);
             let mut out = Vec::new();
             for act in self.inner.acts_since(repo, since_ms).await? {
-                let agents = agents_act(self.db, path, &act)
+                let agents = agents_act(self.db, repo, &act)
                     .map_err(|e| format!("the hub's database: {e}"))?;
                 if !agents {
                     out.push(act);
@@ -683,31 +682,51 @@ fn branch_task(head: &str) -> Option<i64> {
     n.parse().ok()
 }
 
-/// Whether an act was made while the task that wrote its PR was running: from the task's start to its end, or on.
-pub fn agents_act(db: &HubDb, repo_path: &str, act: &HostAct) -> Result<bool, StoreError> {
-    let task = change_of(db, repo_path, act.pr_number)?
-        .and_then(|c| c.task_id)
-        .and_then(|t| t.as_str().get(1..).and_then(|n| n.parse().ok()))
-        .or_else(|| act.head.as_deref().and_then(branch_task));
+/// Whether an act on `remote` was made during a run of the fleetd task that wrote its PR: its Change's task, else the
+/// task its `fleetd/T<n>` branch names when that task is one of this hub's projects with the repo (task numbers are
+/// this hub's own; another fleet sharing the repo has its own `T<n>`). Each run counts from its start to its end, so
+/// an act between two runs of a continued task is the person's. Runs are the time area's run spans, kept as long as
+/// its retention: an act older than its task's runs records counts as the person's.
+pub fn agents_act(db: &HubDb, remote: &str, act: &HostAct) -> Result<bool, StoreError> {
+    let path = remote.split_once('/').map_or(remote, |(_, p)| p);
+    let task = match change_of(db, path, act.pr_number)?.and_then(|c| c.task_id) {
+        Some(t) => t.as_str().get(1..).and_then(|n| n.parse::<i64>().ok()),
+        None => match act.head.as_deref().and_then(branch_task) {
+            Some(n) if task_on_repo(db, n, remote, path)? => Some(n),
+            _ => None,
+        },
+    };
     let Some(n) = task else {
         return Ok(false);
     };
-    let run: Option<(Option<String>, Option<String>)> = db.with(|c| {
+    db.with(|c| {
         Ok(c.query_row(
-            "SELECT COALESCE(json_extract(data, '$.startedAt'), json_extract(data, '$.createdAt')), ended_at
-             FROM tasks WHERE n = ?1",
-            [n],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
-        .optional()?)
-    })?;
-    let Some((Some(start), end)) = run else {
-        return Ok(false);
-    };
-    let start = crate::hub::store::parse_ms(&start).unwrap_or(i64::MAX);
-    let end = end
-        .as_deref()
-        .and_then(crate::hub::store::parse_ms)
-        .unwrap_or(i64::MAX);
-    Ok(act.at_ms >= start && act.at_ms <= end)
+            "SELECT EXISTS (SELECT 1 FROM time_spans WHERE task_id = ?1 AND kind = ?2
+               AND start_ms <= ?3 AND (end_ms IS NULL OR end_ms >= ?3))",
+            params![
+                format!("T{n}"),
+                fleetd_contracts::time::SpanKind::Run.code(),
+                act.at_ms
+            ],
+            |r| r.get(0),
+        )?)
+    })
+}
+
+/// Whether task `n` belongs to a project on this hub that has the repo: checked out, owning its train, or with a
+/// Change on it.
+fn task_on_repo(db: &HubDb, n: i64, remote: &str, path: &str) -> Result<bool, StoreError> {
+    db.with(|c| {
+        Ok(c.query_row(
+            "SELECT EXISTS (SELECT 1 FROM tasks t WHERE t.n = ?1 AND (
+               EXISTS (SELECT 1 FROM metric_project_repos o WHERE o.repo = ?2
+                         AND o.machine_id = t.machine_id AND o.project_id = t.project_id)
+               OR EXISTS (SELECT 1 FROM trains r WHERE r.repo = ?3
+                            AND r.machine_id = t.machine_id AND r.project_id = t.project_id)
+               OR EXISTS (SELECT 1 FROM changes h WHERE h.repo = ?3
+                            AND h.machine_id = t.machine_id AND h.project_id = t.project_id)))",
+            params![n, remote, path.to_lowercase()],
+            |r| r.get(0),
+        )?)
+    })
 }
