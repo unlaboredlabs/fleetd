@@ -41,6 +41,8 @@ pub enum LineKind {
     /// fleetd resumed a dead task, or one waits for its offline machine (`tasks::recovery`): nothing for the lead to
     /// decide, so it never wakes the lead. It rides along with the next wake.
     Recovery,
+    /// Agents on a machine kept dying, so fleetd stopped resuming them there (`tasks::breaker`).
+    RecoveryPaused,
 }
 
 #[derive(Debug, Clone)]
@@ -91,6 +93,7 @@ impl Trigger {
                 LineKind::CapRaised => "cap_raised",
                 LineKind::Request => "request",
                 LineKind::Recovery => "recovery",
+                LineKind::RecoveryPaused => "recovery_paused",
             },
         }
     }

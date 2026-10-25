@@ -68,6 +68,14 @@ pub trait DoctorFleet: Send + Sync {
     fn repos_without_ci(&self) -> Vec<String> {
         Vec::new()
     }
+    /// The machine's recovery breaker while it is open: its agents kept dying, so their resumes wait.
+    fn recovery_paused(&self, _machine_id: &str) -> Option<checks::RecoveryPaused> {
+        None
+    }
+    /// Sessions the machine's node runs that no task or lead owns, as the sweep reported them.
+    fn unowned_sessions(&self, _machine_id: &str) -> Vec<checks::UnownedSession> {
+        Vec::new()
+    }
 }
 
 pub struct DoctorDeps {
@@ -260,6 +268,15 @@ impl Doctor {
         let now = iso_ms(self.now_ms());
         out.extend(checks::git_fetch(id, &bases, &now));
         out.extend(checks::fork_behind(id, &bases));
+        out.push(checks::recovery_breaker(
+            id,
+            fleet.recovery_paused(id).as_ref(),
+        ));
+        out.push(checks::unowned_sessions(
+            id,
+            !online,
+            &fleet.unowned_sessions(id),
+        ));
         out
     }
 

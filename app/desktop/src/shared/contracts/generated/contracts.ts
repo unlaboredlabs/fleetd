@@ -1169,6 +1169,8 @@ export type KnownHubEventType =
   | "steer.withdrawn"
   | "machine.slept"
   | "machine.guard"
+  | "machine.recovery_paused"
+  | "thread.orphaned"
   | "project.removed"
   | "project.added"
   | "project.clone_progress"
@@ -2711,6 +2713,16 @@ export type QuietWindow = {
 /** How a recovering task goes on. */
 export type RecoveryMode = "resume" | "compact" | "fresh";
 
+/** `machine.recovery_paused`. */
+export type RecoveryPausedData = {
+  /** true: dead agents there wait instead of resuming; false: they resume again. */
+  paused: boolean;
+  /** The agents whose deaths opened it, oldest first. */
+  taskIds?: TaskId[];
+  /** When it closes if nothing else dies there; an agent there completing closes it sooner. */
+  until?: Timestamp;
+};
+
 export type RemoteRepo = string;
 
 export type RepeatStat = {
@@ -3556,6 +3568,14 @@ export type ThreadEventReason = "stalled" | "usage_limit" | "interrupted";
 
 export type ThreadId = string;
 
+/** `thread.orphaned`. */
+export type ThreadOrphanedData = {
+  /** When the hub first saw it without an owner. */
+  since: Timestamp;
+  /** The session's title on its node. */
+  title: string;
+};
+
 export type ThreadRef = {
   machineId: MachineId;
   threadId: ThreadId;
@@ -4305,6 +4325,7 @@ export interface HubEventDataMap {
   "chat.waiting": ProjectChatState;
   "ci.main": CiMainData;
   "machine.guard": MachineGuardData;
+  "machine.recovery_paused": RecoveryPausedData;
   "machine.slept": MachineSleptData;
   "plan.changed": PlanChangedData;
   "plan.verified": PlanVerifiedData;
@@ -4334,6 +4355,7 @@ export interface HubEventDataMap {
   "thread.completed": ThreadEventData;
   "thread.failed": ThreadEventData;
   "thread.interrupted": ThreadEventData;
+  "thread.orphaned": ThreadOrphanedData;
   "thread.started": ThreadEventData;
   "thread.usage_limited": UsageEventData;
   "thread.waiting": ThreadEventData;
