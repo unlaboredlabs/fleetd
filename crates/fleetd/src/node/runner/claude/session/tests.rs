@@ -61,6 +61,13 @@ struct Fake {
 
 impl Fake {
     async fn start(session: &str, script: &str) -> Self {
+        let fake = Self::launch(session, script).await;
+        fake.until_the_tool_settles();
+        fake
+    }
+
+    /// [`Fake::start`] without waiting for the tool's marker, for a tool that takes it on only later.
+    async fn launch(session: &str, script: &str) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let executable = |name: &str, text: &str| {
             let file = dir.path().join(name);
@@ -103,9 +110,7 @@ impl Fake {
             Some(RunnerEvent::Init { model, .. }) => assert_eq!(model, "fake"),
             other => panic!("expected init, got {other:?}"),
         }
-        let fake = Self { dir, handle };
-        fake.until_the_tool_settles();
-        fake
+        Self { dir, handle }
     }
 
     /// Blocks until the tool runs its last image (FAKE_CLAUDE's `sleep`, or DETACHED_TOOL itself) with its marker
@@ -352,7 +357,7 @@ async fn a_crashed_claude_leaves_no_orphan_behind() {
 /// Paused time: the re-sweep's delay can only elapse once the test awaits again, by when the tool has its marker.
 #[tokio::test(start_paused = true)]
 async fn a_tool_still_in_exec_when_claude_dies_is_killed_by_the_resweep() {
-    let mut fake = Fake::start("00000000-0000-4000-8000-0000000000a6", LATE_MARKER_CLAUDE).await;
+    let mut fake = Fake::launch("00000000-0000-4000-8000-0000000000a6", LATE_MARKER_CLAUDE).await;
     let tool = fake.tool_pid();
     kill(Pid::from_raw(fake.handle.pid as i32), Signal::SIGKILL).unwrap();
     fake.until_exit().await;
