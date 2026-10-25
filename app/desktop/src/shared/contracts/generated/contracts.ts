@@ -213,6 +213,13 @@ export type AppClientMessage = {
 } | {
   project?: ProjectRef;
   t: "chat";
+} | {
+  focused: boolean;
+  /** Chosen by the client; the hub echoes it only on the error for a frame it can't read. */
+  id?: string;
+  input: boolean;
+  project?: ProjectRef;
+  t: "presence";
 };
 
 /** A `call` failed, or (without `id`) the session did. */
@@ -237,6 +244,8 @@ export type AppPresenceData = {
 };
 
 export type AppServerMessage = {
+  /** The newer client messages it reads ([`APP_FEATURES`]). Absent from older hubs: send them none. */
+  features?: string[];
   protocol: number;
   t: "ready";
   /** The hub's fleetd version, as hub_info reports it. Absent from older hubs. */
@@ -1206,7 +1215,8 @@ export type KnownHubEventType =
   | "app.presence"
   | "repo.advanced"
   | "work.claimed"
-  | "work.ended";
+  | "work.ended"
+  | "work.landed";
 /** KnownHubEventType, or a value from a newer hub. */
 export type HubEventType = KnownHubEventType | (string & {});
 
@@ -4059,6 +4069,30 @@ export type WorkKey = {
   branch: string;
 };
 
+/**
+ * `HubEvent.data` on `work.landed`: a commit that reached a watched base, however it got there, and the fleetd work
+ * it was.
+ */
+export type WorkLandedData = {
+  base: string;
+  /** The Change it is, or merged. */
+  changeId?: ChangeId;
+  /** The claims it ended. */
+  claimIds: ClaimId[];
+  /** The branch it came from, when the merge message or the host names one. */
+  headBranch?: string;
+  /** The plan item of its task. */
+  itemIds: PlanItemId[];
+  /** The PR or merge request it came from, when the merge message or the host names one. */
+  prNumber?: number;
+  repoKey: RepoKey;
+  route: LandingRoute;
+  sha: CommitSha;
+  subject: string;
+  /** The write task whose work it is: its Change's, or the one whose branch it came from. */
+  taskId?: TaskId;
+};
+
 export type WorkListInput = {
   base?: string;
   projectRef?: ProjectRef;
@@ -4289,6 +4323,7 @@ export interface HubEventDataMap {
   "usage.resumed": UsageEventData;
   "work.claimed": WorkEventData;
   "work.ended": WorkEventData;
+  "work.landed": WorkLandedData;
   "workstream.created": WorkstreamEventData;
   "workstream.done": WorkstreamEventData;
   "workstream.running": WorkstreamEventData;

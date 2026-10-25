@@ -236,6 +236,18 @@ struct ClosedPull {
     updated_at: Option<String>,
 }
 
+fn merged(p: ClosedPull) -> Option<MergedPull> {
+    p.merged_at.map(|merged_at| MergedPull {
+        number: p.number,
+        merged_at,
+        merge_sha: p.merge_commit_sha,
+        base: p.base.ref_,
+        head: p.head.ref_,
+        author_bot: p.user.map(|u| u.kind == "Bot"),
+        created_at: p.created_at,
+    })
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MergedPull {
     pub number: i64,
@@ -915,6 +927,15 @@ impl TrainGitHub {
             }
         }
         Ok(out)
+    }
+
+    /// The merged PRs a commit came from: how a rebase merge's earlier commits, which GitHub never names as the merge
+    /// commit, are matched to their PR.
+    pub async fn merged_pulls_of(&self, repo: &str, sha: &str) -> Result<Vec<MergedPull>, GhError> {
+        let pulls: Vec<ClosedPull> = self
+            .json("GET", &format!("repos/{repo}/commits/{sha}/pulls"), &[])
+            .await?;
+        Ok(pulls.into_iter().filter_map(merged).collect())
     }
 
     /// The repo's workflows and the checks `branch` requires, read as adding a project reads them; any read failing

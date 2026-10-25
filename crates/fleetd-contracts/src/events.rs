@@ -216,6 +216,10 @@ pub enum HubEventType {
     /// A claim landed, was released or expired; `data` is `work::WorkEventData`.
     #[serde(rename = "work.ended")]
     WorkEnded,
+    /// A commit reached a watched base, by the train, a PR merged outside it or a direct push; `data` is
+    /// `work::WorkLandedData`.
+    #[serde(rename = "work.landed")]
+    WorkLanded,
 }
 
 impl HubEventType {
@@ -290,6 +294,7 @@ impl HubEventType {
             Self::RepoAdvanced => "repo.advanced",
             Self::WorkClaimed => "work.claimed",
             Self::WorkEnded => "work.ended",
+            Self::WorkLanded => "work.landed",
         }
     }
 }

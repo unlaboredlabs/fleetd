@@ -7,6 +7,7 @@ import { externalUrl } from "./external";
 import type { HubService } from "./hub/service";
 import { claimLinkHandler, linkHandlerStatus } from "./linkHandlerMain";
 import type { PairingService } from "./pairing/service";
+import type { PresenceSetting } from "./presence";
 import { submitSecret } from "./secret";
 import { applyMenuState } from "./menuState";
 import type { Notifier } from "./notify";
@@ -37,7 +38,7 @@ const handle = <C extends InvokeChannel>(
 
 export const registerIpc = (
   hub: HubService,
-  frame: { opener: Opener; notifier: Notifier; log: AppLog; updates: Updates },
+  frame: { opener: Opener; notifier: Notifier; log: AppLog; updates: Updates; presence: PresenceSetting },
   pairing: PairingService,
 ): void => {
   handle(IPC.hubSubscribe, (event) => hub.subscribe(event.sender));
@@ -80,6 +81,7 @@ export const registerIpc = (
     nativeTheme.themeSource = mode;
   });
   handle(IPC.appLinkHandler, (_event, claim) => (claim === null ? linkHandlerStatus() : claimLinkHandler(claim)));
+  handle(IPC.appPresence, (_event, on) => (on === null ? frame.presence.on : frame.presence.set(on)));
   handle(IPC.appMenuState, (_event, enabled) => applyMenuState(Menu.getApplicationMenu(), enabled));
   handle(IPC.appLog, (_event, { what, route, ...error }) => {
     frame.log.write({ source: "window", what, route, error });

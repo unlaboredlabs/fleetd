@@ -6,6 +6,7 @@ import type { HubCacheFile } from "./cache";
 import { HubClient } from "./client";
 import { clearCredentials, fromEnv, loadCredentials, saveCredentials, type CredentialEnv } from "./credentials";
 import { FixtureSource, type FixtureFile } from "./fixture";
+import type { PresenceFrame } from "../presence";
 import { appUrl } from "./protocol";
 import type { HubSource } from "./source";
 import type { Transport } from "./transport";
@@ -86,6 +87,15 @@ export class HubService {
 
   resync(): void {
     this.#source?.resync();
+  }
+
+  /** The project whose chat is on screen, which is the project the app shows. */
+  onScreen(): ChatScope | null {
+    return this.#chat;
+  }
+
+  presence(frame: PresenceFrame): void {
+    this.#source?.presence(frame);
   }
 
   /** The offline banner's Retry now: dial at once rather than at the next retry. */

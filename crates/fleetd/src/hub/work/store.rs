@@ -1,10 +1,13 @@
-//! Work rows: `work_claims` (the Claim as JSON in `data`, plus the columns queries filter on) and `work_projects`
-//! (the repo and base each project's work lands on).
+//! Work rows: `work_claims` (the Claim as JSON in `data`, plus the columns queries filter on), `work_projects`
+//! (the repo and base each project's work lands on), `landings` (each commit on a watched base, as JSON) and
+//! `landing_watch` (how far each watched base has been read).
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
 use fleetd_contracts::prim::Line;
-use fleetd_contracts::work::{Claim, ClaimId, ClaimState, RepoKey, WorkScope};
+use fleetd_contracts::tasks::Task;
+use fleetd_contracts::work::{Claim, ClaimId, ClaimState, LandingRoute, RepoKey, WorkScope};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
+use super::landings::Landing;
 use crate::hub::store::parse_ms;
 
 fn number_of(claim_id: &ClaimId) -> i64 {
@@ -20,7 +23,7 @@ pub fn state_str(state: ClaimState) -> &'static str {
     }
 }
 
-fn decode(data: &str) -> rusqlite::Result<Claim> {
+fn decode<T: serde::de::DeserializeOwned>(data: &str) -> rusqlite::Result<T> {
     serde_json::from_str(data).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
     })
@@ -137,6 +140,16 @@ pub fn bind(
     Ok(())
 }
 
+/// Forgets the repo and base the project's work landed on.
+pub fn unbind(db: &Connection, project: &ProjectRef) -> rusqlite::Result<()> {
+    db.prepare_cached("DELETE FROM work_projects WHERE machine_id = ? AND project_id = ?")?
+        .execute(params![
+            project.machine_id.as_str(),
+            project.project_id.as_str()
+        ])?;
+    Ok(())
+}
+
 pub fn scope_of(db: &Connection, project: &ProjectRef) -> rusqlite::Result<Option<WorkScope>> {
     db.prepare_cached(
         "SELECT repo_key, base FROM work_projects WHERE machine_id = ? AND project_id = ?",
@@ -167,6 +180,188 @@ pub fn projects_in(db: &Connection, scope: &WorkScope) -> rusqlite::Result<Vec<P
         })
     })?
     .collect()
+}
+
+/// How far a watched base has been read: its newest commit seen, and when the watch started (nothing older is
+/// reported).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Watch {
+    pub last_sha: String,
+    pub since_ms: i64,
+}
+
+pub fn watch(db: &Connection, scope: &WorkScope) -> rusqlite::Result<Option<Watch>> {
+    db.prepare_cached(
+        "SELECT last_sha, since_ms FROM landing_watch WHERE repo_key = ? AND base = ?",
+    )?
+    .query_row(params![scope.repo_key.as_str(), scope.base.as_str()], |r| {
+        Ok(Watch {
+            last_sha: r.get(0)?,
+            since_ms: r.get(1)?,
+        })
+    })
+    .optional()
+}
+
+/// Starts the watch at `last_sha`, or moves it there.
+pub fn watch_at(
+    db: &Connection,
+    scope: &WorkScope,
+    last_sha: &str,
+    now_ms: i64,
+) -> rusqlite::Result<()> {
+    db.prepare_cached(
+        "INSERT INTO landing_watch (repo_key, base, last_sha, since_ms) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT (repo_key, base) DO UPDATE SET last_sha = ?3",
+    )?
+    .execute(params![
+        scope.repo_key.as_str(),
+        scope.base.as_str(),
+        last_sha,
+        now_ms
+    ])?;
+    Ok(())
+}
+
+pub fn route_str(route: LandingRoute) -> &'static str {
+    match route {
+        LandingRoute::Train => "train",
+        LandingRoute::PrOutside => "pr_outside",
+        LandingRoute::DirectPush => "direct_push",
+    }
+}
+
+/// Stores the landing with what a rebase keeps of its commit; false when the commit was already recorded on that base.
+pub fn insert_landing(
+    db: &Connection,
+    landing: &Landing,
+    rewrite_key: &str,
+) -> rusqlite::Result<bool> {
+    let at_ms = parse_ms(landing.at.as_str()).unwrap_or(0);
+    let added = db
+        .prepare_cached(
+            "INSERT OR IGNORE INTO landings (repo_key, base, sha, at_ms, route, pr_number, rewrite_key, data)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )?
+        .execute(params![
+            landing.repo_key.as_str(),
+            landing.base.as_str(),
+            landing.sha.as_str(),
+            at_ms,
+            route_str(landing.route),
+            landing.pr_number.map(|n| n.get()),
+            rewrite_key,
+            serde_json::to_string(landing).expect("a Landing encodes"),
+        ])?;
+    Ok(added == 1)
+}
+
+/// Whether a commit with this rewrite key, or from this PR, already landed on the scope's base.
+pub fn rewrite_of(
+    db: &Connection,
+    scope: &WorkScope,
+    rewrite_key: &str,
+    pr_number: Option<i64>,
+) -> rusqlite::Result<bool> {
+    db.prepare_cached(
+        "SELECT 1 FROM landings WHERE repo_key = ?1 AND base = ?2 AND (rewrite_key = ?3 OR pr_number = ?4) LIMIT 1",
+    )?
+    .query_row(
+        params![scope.repo_key.as_str(), scope.base.as_str(), rewrite_key, pr_number],
+        |_| Ok(()),
+    )
+    .optional()
+    .map(|found| found.is_some())
+}
+
+pub fn has_landing(db: &Connection, scope: &WorkScope, sha: &str) -> rusqlite::Result<bool> {
+    db.prepare_cached("SELECT 1 FROM landings WHERE repo_key = ? AND base = ? AND sha = ?")?
+        .query_row(
+            params![scope.repo_key.as_str(), scope.base.as_str(), sha],
+            |_| Ok(()),
+        )
+        .optional()
+        .map(|found| found.is_some())
+}
+
+/// The scope's landings committed at or after `since_ms`, newest first; with `outside`, only those that didn't come
+/// through the train.
+pub fn landings_since(
+    db: &Connection,
+    scope: &WorkScope,
+    since_ms: i64,
+    limit: usize,
+    outside: bool,
+) -> rusqlite::Result<Vec<Landing>> {
+    db.prepare_cached(
+        "SELECT data FROM landings WHERE repo_key = ? AND base = ? AND at_ms >= ? AND (? = 0 OR route != 'train')
+         ORDER BY at_ms DESC, rowid DESC LIMIT ?",
+    )?
+    .query_map(
+        params![
+            scope.repo_key.as_str(),
+            scope.base.as_str(),
+            since_ms,
+            outside,
+            limit as i64
+        ],
+        |r| decode(&r.get::<_, String>(0)?),
+    )?
+    .collect()
+}
+
+/// The scope's one landing whose sha starts with `prefix`; `None` when none or several do.
+pub fn landing_by_prefix(
+    db: &Connection,
+    scope: &WorkScope,
+    prefix: &str,
+) -> rusqlite::Result<Option<Landing>> {
+    let prefix = prefix.to_lowercase();
+    if prefix.is_empty() || !prefix.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Ok(None);
+    }
+    let found: Vec<Landing> = db
+        .prepare_cached(
+            "SELECT data FROM landings WHERE repo_key = ? AND base = ? AND substr(sha, 1, length(?3)) = ?3 LIMIT 2",
+        )?
+        .query_map(
+            params![scope.repo_key.as_str(), scope.base.as_str(), prefix],
+            |r| decode(&r.get::<_, String>(0)?),
+        )?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(match <[Landing; 1]>::try_from(found) {
+        Ok([one]) => Some(one),
+        Err(_) => None,
+    })
+}
+
+/// The newest write task of one of `projects` on `branch`, in any state.
+pub fn task_on_branch(
+    db: &Connection,
+    projects: &[ProjectRef],
+    branch: &str,
+) -> rusqlite::Result<Option<Task>> {
+    let mut stmt = db.prepare_cached(
+        "SELECT data FROM tasks WHERE machine_id = ? AND project_id = ? AND json_extract(data, '$.kind') = 'write'
+           AND json_extract(data, '$.branch') = ?
+         ORDER BY n DESC LIMIT 1",
+    )?;
+    for project in projects {
+        let task = stmt
+            .query_row(
+                params![
+                    project.machine_id.as_str(),
+                    project.project_id.as_str(),
+                    branch
+                ],
+                |r| decode::<Task>(&r.get::<_, String>(0)?),
+            )
+            .optional()?;
+        if task.is_some() {
+            return Ok(task);
+        }
+    }
+    Ok(None)
 }
 
 /// The bases the repo's projects land on, most recently bound first.

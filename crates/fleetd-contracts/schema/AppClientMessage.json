@@ -114,6 +114,36 @@
             "t"
           ],
           "type": "object"
+        },
+        {
+          "description": "Sent only to a hub whose `ready` names `presence` in its features.\nOnce a minute while app presence is on (Settings › General, on by default): whether a window is focused,\nthe project on screen, and whether there was input in the last minute. Only that: never keystrokes or\ncontent. A human key's minute with all three becomes an `app.presence` event; anything else is dropped.",
+          "properties": {
+            "focused": {
+              "type": "boolean"
+            },
+            "id": {
+              "description": "Chosen by the client; the hub echoes it only on the error for a frame it can't read.",
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            "input": {
+              "type": "boolean"
+            },
+            "project": {
+              "$ref": "#/$defs/ProjectRef"
+            },
+            "t": {
+              "const": "presence",
+              "type": "string"
+            }
+          },
+          "required": [
+            "t",
+            "focused",
+            "input"
+          ],
+          "type": "object"
         }
       ]
     },

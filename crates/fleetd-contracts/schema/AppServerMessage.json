@@ -196,6 +196,16 @@
         {
           "description": "Sent once the key is accepted.",
           "properties": {
+            "features": {
+              "description": "The newer client messages it reads ([`APP_FEATURES`]). Absent from older hubs: send them none.",
+              "items": {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[^\\r\\n]*$",
+                "type": "string"
+              },
+              "type": "array"
+            },
             "protocol": {
               "maximum": 9007199254740991,
               "minimum": 1,
@@ -731,6 +741,11 @@
         {
           "const": "work.ended",
           "description": "A claim landed, was released or expired; `data` is `work::WorkEventData`.",
+          "type": "string"
+        },
+        {
+          "const": "work.landed",
+          "description": "A commit reached a watched base, by the train, a PR merged outside it or a direct push; `data` is\n`work::WorkLandedData`.",
           "type": "string"
         }
       ],

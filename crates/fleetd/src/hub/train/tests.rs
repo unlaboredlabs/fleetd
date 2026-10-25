@@ -632,6 +632,8 @@ struct FakeHost {
     ws_closed: Mutex<bool>,
     /// Running write tasks' branches, by task id.
     branches: Mutex<HashMap<String, String>>,
+    /// Bases the landing scanner watches.
+    watched: Mutex<HashSet<String>>,
 }
 
 impl FakeHost {
@@ -695,6 +697,10 @@ impl FakeHost {
 }
 
 impl TrainHost for FakeHost {
+    fn landings_watched(&self, _repo: &str, base: &str) -> bool {
+        self.watched.lock().unwrap().contains(base)
+    }
+
     fn task(&self, task_id: &TaskId) -> Option<TaskView> {
         self.tasks.lock().unwrap().get(task_id.as_str()).cloned()
     }
@@ -961,6 +967,7 @@ impl Kit {
             cancels: Mutex::default(),
             ws_closed: Mutex::default(),
             branches: Mutex::default(),
+            watched: Mutex::default(),
         });
         let gate = Arc::new(FakeGate::default());
         let mut options = TrainOptions {
@@ -1533,6 +1540,30 @@ async fn the_outside_merge_watch_moves_past_the_trains_own_merges() {
     kit.train.step(REPO).await;
     assert!(kit.host.events_of("pr.merged_outside").is_empty());
     assert_eq!(kit.train.records().train(REPO).unwrap().watch_since_ms, at);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_merge_outside_the_train_into_a_base_the_landing_scanner_watches_wakes_the_lead_only_from_there()
+ {
+    let kit = Kit::new();
+    kit.host.watched.lock().unwrap().insert("main".into());
+    let pr = kit.open_pr_on("main", 7, "fleetd/T1-docs", &[add("docs.md", "docs\n")]);
+    kit.enqueue(pr).await;
+    assert!(kit.train.step(REPO).await);
+    merged_outside(&kit, 9, "main");
+    kit.train.step(REPO).await;
+    let reported: Vec<i64> = kit
+        .host
+        .events_of("pr.merged_outside")
+        .iter()
+        .map(|e| e["prNumber"].as_i64().unwrap())
+        .collect();
+    assert_eq!(reported, [9], "still an event");
+    let wakes = kit.host.wakes.lock().unwrap().clone();
+    assert!(
+        !wakes.iter().any(|w| w.contains("without the merge train")),
+        "the scanner's work.landed line tells the lead: {wakes:?}"
+    );
 }
 
 /// The train merges a PR into its own base, so a PR based on another open PR's branch would land in that PR: it is

@@ -9,6 +9,7 @@
 pub mod compute;
 pub mod host_acts;
 pub mod human;
+pub mod presence;
 pub mod project;
 pub mod source;
 pub mod store;
@@ -16,6 +17,8 @@ pub mod sweep;
 pub mod tools;
 pub mod touches;
 
+#[cfg(test)]
+pub(crate) mod presence_tests;
 #[cfg(test)]
 mod sweep_tests;
 #[cfg(test)]
@@ -36,15 +39,17 @@ use crate::hub::store::{StoreError, now_ms};
 
 const PRUNE_EVERY: Duration = Duration::from_secs(3600);
 
-/// The area's state on the hub: the host sweep's sources and schedule.
+/// The area's state on the hub: the host sweep's sources and schedule, and where each key's app presence ended.
 pub struct Metrics {
     pub sweep: sweep::Sweep,
+    pub presence: presence::Presence,
 }
 
 impl Metrics {
     pub fn new(sources: source::HostSources) -> Arc<Self> {
         Arc::new(Self {
             sweep: sweep::Sweep::new(sources),
+            presence: presence::Presence::default(),
         })
     }
 }

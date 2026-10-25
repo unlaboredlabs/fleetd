@@ -1,5 +1,6 @@
 import type { CallOutcome, HubState } from "../../shared/hub";
 import type { CallRequest, ChatScope, OrderFocus } from "../../shared/ipc";
+import type { PresenceFrame } from "../presence";
 
 /** Where hub frames come from: the real connection, or a fixture file. HubService fans its frames out to windows. */
 export interface HubSource {
@@ -17,4 +18,6 @@ export interface HubSource {
   resync(): void;
   /** The machine woke; the socket may be half-open. */
   reconnectNow(): void;
+  /** This minute's app presence, sent only on a live link and never answered. */
+  presence(frame: PresenceFrame): void;
 }

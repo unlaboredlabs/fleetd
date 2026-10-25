@@ -324,6 +324,11 @@
           "const": "work.ended",
           "description": "A claim landed, was released or expired; `data` is `work::WorkEventData`.",
           "type": "string"
+        },
+        {
+          "const": "work.landed",
+          "description": "A commit reached a watched base, by the train, a PR merged outside it or a direct push; `data` is\n`work::WorkLandedData`.",
+          "type": "string"
         }
       ],
       "x-open": true

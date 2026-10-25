@@ -8,13 +8,14 @@
 //! - `decision.recorded` with source human;
 //! - `workstream.created` submitted directly by the person (app or MCP), credited by its text's length;
 //! - a landed change a human account merged by hand (from `pr.merged_outside` or the host sweep), keyed on the
-//!   merger's login, so it is the person's only when that login is one of theirs (`human::attributed`).
+//!   merger's login, so it is the person's only when that login is one of theirs (`human::attributed`);
+//! - `app.presence`: an interval the app was focused on a project's screen with input, taken as it is (`presence.rs`).
 //!
-//! The person's local Claude Code transcripts are not read, and app use comes with `app.presence` (metrics PR 7).
+//! The person's local Claude Code transcripts are not read.
 use fleetd_contracts::chat::{ChatAuthor, ChatMessage, ChatMessageEventData};
 use fleetd_contracts::events::{HubEvent, HubEventType};
 use fleetd_contracts::ledger::{IntakeChannel, Workstream};
-use fleetd_contracts::metrics::{MergeRoute, TouchKind};
+use fleetd_contracts::metrics::{AppPresenceData, MergeRoute, TouchKind};
 use fleetd_contracts::steer::{SteerBy, SteerEventData};
 use rusqlite::OptionalExtension;
 use serde_json::Value;
@@ -141,6 +142,25 @@ pub fn of_event(db: &HubDb, e: &HubEvent) -> Result<Option<TouchRow>, StoreError
                 return Ok(None);
             };
             workstream(db, id)?.and_then(|w| order(&w))
+        }
+        HubEventType::AppPresence => {
+            let Some(d) = data::<AppPresenceData>(e) else {
+                return Ok(None);
+            };
+            let (from, to) = (d.from_ms.get(), d.to_ms.get());
+            (to > from && project_id.is_some()).then(|| TouchRow {
+                machine_id,
+                project_id,
+                end_ms: Some(to),
+                key_id: d.by.map(|b| b.to_string()),
+                ..touch(
+                    TouchKind::AppUse,
+                    "app",
+                    e.seq.get().to_string(),
+                    from,
+                    to - from,
+                )
+            })
         }
         _ => None,
     })

@@ -1,7 +1,8 @@
 //! The app WebSocket at /app: `auth` with a key, then `snapshot` for the
 //! fleetd_status data, `events` to stream HubEvents after a cursor as they happen, `call` to run any MCP tool
 //! with the session's key, through the same registry, grants and limits as /mcp, and `live` for ephemeral lane
-//! frames (see `live`).
+//! frames (see `live`). `presence` is the app's once-a-minute focus and input, recorded as `app.presence` and
+//! never answered (see `metrics::presence`).
 pub mod live;
 
 use crate::hub::api::{CallError, Caller, Hub, Registry, ToolError};
@@ -9,7 +10,7 @@ use crate::hub::auth::AuthError;
 use crate::hub::mcp::invalid_input;
 use crate::hub::store::now_ms;
 use axum::extract::ws::{CloseFrame, Message, WebSocket};
-use fleetd_contracts::app::AppClientMessage;
+use fleetd_contracts::app::{AppCallId, AppClientMessage};
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::hello::PROTOCOL_VERSION;
 use fleetd_contracts::mcp::ErrorCode;
@@ -153,14 +154,22 @@ impl Session {
         let Ok(message) = serde_json::from_str::<AppClientMessage>(text) else {
             let malformed = ToolError::new(ErrorCode::Invalid, "Unknown or malformed message.")
                 .with_fix("Send {t:auth|snapshot|events}.");
-            self.send(error_frame(&malformed, None));
+            // The frame's own id, when it has one, so the client knows which frame this answers.
+            let id = serde_json::from_str::<Value>(text)
+                .ok()
+                .and_then(|v| v.get("id")?.as_str().map(str::to_owned))
+                .filter(|id| AppCallId::new(id.as_str()).is_ok());
+            self.send(error_frame(&malformed, id.as_deref()));
             return After::Continue;
         };
         if let AppClientMessage::Auth { key } = &message {
             return match self.hub.auth.verify(key.as_str()) {
                 Ok(info) => {
                     self.caller = Some((key.as_str().to_owned(), info));
-                    self.send(json!({ "t": "ready", "protocol": PROTOCOL_VERSION, "version": crate::version() }));
+                    self.send(json!({
+                        "t": "ready", "protocol": PROTOCOL_VERSION, "version": crate::version(),
+                        "features": fleetd_contracts::app::APP_FEATURES,
+                    }));
                     After::Continue
                 }
                 Err(error) => {
@@ -248,6 +257,22 @@ impl Session {
                     }
                     let _ = out.send(frame);
                 });
+            }
+            AppClientMessage::Presence {
+                focused,
+                input,
+                project,
+                ..
+            } => {
+                if let Err(e) = crate::hub::metrics::presence::record(
+                    &self.hub,
+                    &info,
+                    focused,
+                    input,
+                    project.as_ref(),
+                ) {
+                    tracing::warn!(error = %e, "app presence not recorded");
+                }
             }
             AppClientMessage::Snapshot {} => match self
                 .tools
