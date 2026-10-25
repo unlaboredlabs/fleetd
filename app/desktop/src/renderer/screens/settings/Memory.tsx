@@ -4,7 +4,7 @@
 // remembered it when the hub knows), edits or deletes one, and undoes a delete from its toast. "Edit as text" is the
 // whole file in a textarea. Every change is the file's new text through memory_set, a human key's write.
 import { Pencil, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { MemoryFile, MemoryNote, MemorySetInput, ProjectRef } from "../../../shared/contracts";
 import { Button, Field, Input, Separator, Text, Textarea, toast, Tooltip } from "../../ui";
 import { useToolQuery } from "../../src/data/react";
@@ -88,7 +88,7 @@ export function Memory({ route }: { route: SettingsRoute }) {
       {...(project ? { project } : {})}
       onSave={(text) => save({ ...target, text })}
       reread={() => reread(target)}
-      {...(target.topic ? { onDelete: () => save({ ...target, text: "" }) } : {})}
+      deletable={target.topic !== undefined}
     />
   );
   return (
@@ -175,7 +175,8 @@ function MemoryGroup(props: {
   onSave: (text: string) => Promise<void>;
   /** The file's text on the hub now. */
   reread: () => Promise<string>;
-  onDelete?: () => Promise<void>;
+  /** A topic file, which Edit as text can delete whole. */
+  deletable: boolean;
 }) {
   const { file, name } = props;
   const [asText, setAsText] = useState(false);
@@ -187,29 +188,35 @@ function MemoryGroup(props: {
   );
   const searching = props.query.trim() !== "";
   const shown = searching ? lines.filter((l) => l.kind === "entry" && lineMatches(l, props.query)) : lines;
-  if (searching && !asText && shown.length === 0) return null;
 
   // The project's cap is checked with this file's new text in place of its old.
   const capOf = (next: string): CapState[] => [
     capState(next, file?.cap ?? 0),
     ...(props.project ? [projectCapState(props.project.files, { name, text: next }, props.project.cap)] : []),
   ];
-  const edit = (line: MemoryLine, next: string | null) => withLine(text, name, line, next);
+
+  // Writes to this file one at a time, each built from the hub's text read just before it, never from the text last
+  // shown: two quick deletes, or an edit right after a save, then each apply to what the one before wrote, and a line
+  // the lead added since the last read stays.
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
+  const write = (change: (now: string) => string): Promise<void> => {
+    const run = queue.current.then(async () => {
+      const now = await props.reread();
+      const next = change(now);
+      if (next !== now) await props.onSave(next);
+    });
+    queue.current = run.catch(() => undefined);
+    return run;
+  };
 
   const undo = (line: MemoryLine, key: string) =>
-    props
-      .reread()
-      .then((now) => {
-        const back = restoreLine(now, line);
-        return back === now ? undefined : props.onSave(back);
-      })
-      .then(
-        () => toast({ key, title: `Put back in ${name}`, tone: "success" }),
-        (e: unknown) => toast({ key, title: "Couldn't put it back", description: errorText(e), tone: "danger" }),
-      );
+    write((now) => restoreLine(now, line)).then(
+      () => toast({ key, title: `Put back in ${name}`, tone: "success" }),
+      (e: unknown) => toast({ key, title: "Couldn't put it back", description: errorText(e), tone: "danger" }),
+    );
   const remove = async (line: MemoryLine) => {
-    await props.onSave(edit(line, null));
-    setGone({ text, raws: [...(gone.text === text ? gone.raws : []), line.raw] });
+    await write((now) => withLine(now, name, line, null));
+    setGone((g) => ({ text, raws: [...(g.text === text ? g.raws : []), line.raw] }));
     const key = `memory-undo-${String(++undoSeq)}`;
     toast({ key, title: `Deleted from ${name}`, description: line.text, action: { label: "Undo", onClick: () => void undo(line, key) } });
   };
@@ -235,7 +242,14 @@ function MemoryGroup(props: {
         </Button>
       </div>
       {asText ? (
-        <FileEditor label={`All of ${name}`} file={file} {...(props.project ? { project: props.project } : {})} onSave={props.onSave} {...(props.onDelete ? { onDelete: props.onDelete } : {})} />
+        <FileEditor
+          label={`All of ${name}`}
+          file={file}
+          {...(props.project ? { project: props.project } : {})}
+          // The whole file as typed, in turn with the cards' writes.
+          onSave={(whole) => write(() => whole)}
+          {...(props.deletable ? { onDelete: () => write(() => "") } : {})}
+        />
       ) : (
         <>
           {file ? <CapMeter state={capState(text, file.cap)} label={`${name} against its cap`} changed={file.updatedAt} /> : null}
@@ -247,6 +261,10 @@ function MemoryGroup(props: {
             <Text size="sm" tone="quiet">
               Nothing remembered yet.
             </Text>
+          ) : shown.length === 0 ? (
+            <Text size="sm" tone="quiet">
+              No entry here matches.
+            </Text>
           ) : (
             <ul className={m.entries} aria-label={`Entries of ${name}`}>
               {shown.map((line) =>
@@ -257,7 +275,7 @@ function MemoryGroup(props: {
                     </Text>
                   </li>
                 ) : (
-                  <EntryCard key={`${String(line.at)}:${line.raw}`} line={line} name={name} capOf={(next) => capOf(edit(line, next))} onSave={(next) => props.onSave(edit(line, next))} onDelete={() => remove(line)} />
+                  <EntryCard key={`${String(line.at)}:${line.raw}`} line={line} name={name} capOf={(next) => capOf(withLine(text, name, line, next))} onSave={(next) => write((now) => withLine(now, name, line, next))} onDelete={() => remove(line)} />
                 ),
               )}
             </ul>

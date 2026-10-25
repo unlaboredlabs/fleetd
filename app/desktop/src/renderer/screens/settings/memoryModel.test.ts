@@ -69,6 +69,12 @@ describe("Settings → Memory", () => {
     if (!concise || !nested) throw new Error("no lines");
     expect(withLine(text, "MEMORY.md", concise, "  Concise; state first.\n")).toBe("# Style\n- Concise; state first.\n  * Nested one.\n- [deploys](deploys.md)\n");
     expect(withLine(text, "MEMORY.md", nested, "Still nested.")).toBe("# Style\n- Concise.\n  * Still nested.\n- [deploys](deploys.md)\n");
+    // A file saved with CRLF keeps its bullet and its line ending.
+    const crlf = "- Concise.\r\n- No npm.\r\n";
+    const [first] = memoryLines(file({ text: crlf }));
+    if (!first) throw new Error("no line");
+    expect(first.text).toBe("Concise.");
+    expect(withLine(crlf, "user.md", first, "Short.")).toBe("- Short.\r\n- No npm.\r\n");
     // Typed with line breaks, it stays one line.
     expect(entryText("one\n two \n")).toBe("one two");
   });

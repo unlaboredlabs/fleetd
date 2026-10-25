@@ -46,9 +46,14 @@ async function mount(text: string, refuse?: HubError) {
       if (tool === "memory_set") {
         if (refuse) return Promise.resolve({ ok: false, error: refuse });
         const set = input as MemorySetInput;
-        hub.sets.push(set);
-        hub.text = set.text;
-        return Promise.resolve({ ok: true, output: { file: user() } });
+        // Written a moment later, as over the link: a second click lands while the first write is out.
+        return new Promise((done) =>
+          setTimeout(() => {
+            hub.sets.push(set);
+            hub.text = set.text;
+            done({ ok: true, output: { file: user() } });
+          }, 0),
+        );
       }
       if (tool === "memory_get") return Promise.resolve({ ok: true, output: { user: user() } });
       return Promise.resolve({ ok: true, output: {} });
@@ -97,9 +102,10 @@ const click = async (name: string) => {
   await settle();
 };
 
-const type = (field: HTMLTextAreaElement, value: string) => {
+const type = (field: HTMLTextAreaElement | HTMLInputElement, value: string) => {
   act(() => {
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(field, value);
+    const proto = field instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
+    Object.getOwnPropertyDescriptor(proto, "value")?.set?.call(field, value);
     field.dispatchEvent(new Event("input", { bubbles: true }));
   });
 };
@@ -164,4 +170,36 @@ it("edits the whole file as text, and a cap refusal shows as before", async () =
   await click("Save");
   expect(hub.sets).toEqual([]);
   expect(document.body.textContent).toContain("past its cap of 4000. Nothing was written.");
+});
+
+it("applies two quick deletes one after the other, so the second never puts the first back", async () => {
+  const hub = await mount(FILE);
+  act(() => {
+    button("Delete “No npm.”").click();
+    button("Delete “Never estimate time.”").click();
+  });
+  await settle();
+  expect(hub.sets.map((x) => x.text)).toEqual(["# Style\n- Concise. State first.\n- Never estimate time.\n", "# Style\n- Concise. State first.\n"]);
+  expect(hub.text).toBe("# Style\n- Concise. State first.\n");
+});
+
+it("builds an edit from the file as the hub has it now, keeping what the lead wrote since the page read it", async () => {
+  const hub = await mount(FILE);
+  hub.text = `- Plain words.\n${FILE}`;
+  await click("Edit “No npm.”");
+  type(textarea("Edit the entry in user.md"), "No npm: use pnpm.");
+  await click("Save");
+  expect(hub.text).toBe("- Plain words.\n# Style\n- Concise. State first.\n- No npm: use pnpm.\n- Never estimate time.\n");
+});
+
+it("keeps a file's section and its Edit as text when a search matches none of its entries", async () => {
+  await mount(FILE);
+  const search = document.querySelector<HTMLInputElement>('input[aria-label="Search memory"]');
+  if (!search) throw new Error("no search");
+  type(search, "zebra");
+  expect(cards()).toEqual([]);
+  expect(document.body.textContent).toContain("No entry here matches.");
+  expect(button("Edit as text").disabled).toBe(false);
+  type(search, "npm");
+  expect(cards()).toHaveLength(1);
 });

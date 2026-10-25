@@ -125,8 +125,10 @@ export function withLine(file: string, name: string, line: Pick<MemoryLine, "at"
   if (i < 0) throw new LineGone(name);
   if (text === null) f.lines.splice(i, 1);
   else {
-    const mark = BULLET.exec(line.raw) ?? HEADING.exec(line.raw);
-    f.lines[i] = `${mark?.[1] ?? ""}${entryText(text)}`;
+    // A file saved with CRLF keeps its "\r", which would stop the bullet matching.
+    const kept = line.raw.trimEnd();
+    const mark = BULLET.exec(kept) ?? HEADING.exec(kept);
+    f.lines[i] = `${mark?.[1] ?? ""}${entryText(text)}${line.raw.endsWith("\r") ? "\r" : ""}`;
   }
   return join(f);
 }
