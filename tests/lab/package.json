@@ -2,12 +2,13 @@
   "name": "fleetd-lab",
   "private": true,
   "type": "module",
-  "description": "End-to-end lab suite for the fleetd binary: a hub and nodes that run the real claude CLI. Never run in CI.",
+  "description": "End-to-end lab suite for the fleetd binary: a hub and nodes that run the real claude CLI, never in CI; and the factory lab (factory/), offline, which runs in CI.",
   "engines": {
     "node": ">=24"
   },
   "scripts": {
     "lab": "node testLab.ts",
+    "factory": "node factory/run.ts",
     "record-fixtures": "node failure/recordFixtures.ts",
     "typecheck": "tsc -p ."
   },
