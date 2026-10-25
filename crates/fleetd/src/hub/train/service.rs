@@ -201,6 +201,8 @@ pub struct Train {
     pub(super) pushed: Mutex<HashMap<ChangeId, (String, i64)>>,
     /// Each repo and base branch's CI config and when it was read.
     ci_configs: Mutex<HashMap<(String, String), CiConfig>>,
+    /// The PRs that carry `fleetd:next`.
+    pub(super) next_labels: super::next::NextLabels,
     pub(super) sync: GithubSync,
     /// The follower and every repo loop, aborted by `stop`.
     tasks: Mutex<Vec<tokio::task::JoinHandle<()>>>,
@@ -245,6 +247,7 @@ impl Train {
             merge_refusals: Mutex::default(),
             pushed: Mutex::default(),
             ci_configs: Mutex::default(),
+            next_labels: Default::default(),
             sync: GithubSync::default(),
             tasks: Mutex::default(),
         })
@@ -756,10 +759,35 @@ impl Train {
     }
 
     /// Polls the check runs of `sha` until all are done, one is red, or the timeout passes. A head with no checks is
-    /// never green: only a repo with CI reaches here (`has_ci`).
-    pub(super) async fn wait_ci(&self, change: &Change, repo: &str, sha: &str) -> CiOutcome {
+    /// never green: only a repo with CI reaches here (`has_ci`). `labelled_at` is when the train put `fleetd:next` on
+    /// the PR it merges alone: a check skipped before then may be one the label runs, so it holds the green for
+    /// `LABEL_GRACE_MS` after the label, and a run the label starts in that time replaces it. While some checks have
+    /// been queued for `RUNNER_WAIT_MS`, `noted` (the Changes in this CI run) say they wait for runners.
+    pub(super) async fn wait_ci(
+        &self,
+        change: &Change,
+        repo: &str,
+        sha: &str,
+        labelled_at: Option<i64>,
+        noted: &[ChangeId],
+    ) -> CiOutcome {
+        let outcome = self.poll_ci(change, repo, sha, labelled_at, noted).await;
+        self.runner_note(noted, None);
+        outcome
+    }
+
+    async fn poll_ci(
+        &self,
+        change: &Change,
+        repo: &str,
+        sha: &str,
+        labelled_at: Option<i64>,
+        noted: &[ChangeId],
+    ) -> CiOutcome {
+        use super::next::{LABEL_GRACE_MS, RUNNER_WAIT_MS, WAITING_FOR_RUNNERS};
         let start = self.now_ms();
         let mut last: Vec<CheckRun> = Vec::new();
+        let mut queued_since: Option<i64> = None;
         loop {
             let runs = match self.github.check_runs(repo, sha).await {
                 Ok(runs) => Some(runs),
@@ -768,6 +796,14 @@ impl Train {
                     None
                 }
             };
+            if let Some(runs) = &runs {
+                let (now, queued) = (self.now_ms(), super::next::queued(runs));
+                queued_since = (queued > 0).then(|| queued_since.unwrap_or(now));
+                let note = queued_since
+                    .filter(|since| now - since >= RUNNER_WAIT_MS)
+                    .map(|_| format!("{WAITING_FOR_RUNNERS} ({queued} queued)"));
+                self.runner_note(noted, note.as_deref());
+            }
             let runs = runs.unwrap_or_default();
             if !runs.is_empty() {
                 last = runs.clone();
@@ -777,6 +813,11 @@ impl Train {
                     self.check_spans(change, sha, &runs);
                     return CiOutcome::Red(red);
                 }
+                Checks::Green
+                    if labelled_at.is_some_and(|at| {
+                        self.now_ms() - at < LABEL_GRACE_MS
+                            && super::next::skipped_before_label(&runs, at)
+                    }) => {}
                 Checks::Green => {
                     self.check_spans(change, sha, &runs);
                     return CiOutcome::Green;
@@ -1002,6 +1043,14 @@ impl Train {
         else {
             return Ok(());
         };
+        // Before the rebase: the push it makes then starts a CI run that already sees the label.
+        let labelled_at = self
+            .label(
+                repo,
+                change.pr_number.get(),
+                pull.labelled(super::github::NEXT_LABEL),
+            )
+            .await;
         let base = pull.base.ref_.as_str();
         let rebased = match self
             .github
@@ -1058,7 +1107,11 @@ impl Train {
         ) else {
             return Ok(());
         };
-        match self.wait_ci(&in_ci, repo, &head_sha).await {
+        let noted = std::slice::from_ref(&in_ci.change_id);
+        match self
+            .wait_ci(&in_ci, repo, &head_sha, labelled_at, noted)
+            .await
+        {
             CiOutcome::Green => {}
             CiOutcome::Red(failing) => {
                 self.ci_failed(&in_ci, &failing, false).await;

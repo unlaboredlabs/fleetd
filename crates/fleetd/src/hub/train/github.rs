@@ -133,11 +133,19 @@ pub struct PullMerger {
 /// The label that keeps a PR off the train until someone takes it off.
 pub const HOLD_LABEL: &str = "hold";
 
+/// The label the train puts on its batch PR and on the next PRs it will merge, so a repo whose CI runners are scarce
+/// can run its expensive jobs on those PRs only.
+pub const NEXT_LABEL: &str = "fleetd:next";
+
 impl Pull {
     pub fn held(&self) -> bool {
+        self.labelled(HOLD_LABEL)
+    }
+
+    pub fn labelled(&self, name: &str) -> bool {
         self.labels
             .iter()
-            .any(|l| l.name.eq_ignore_ascii_case(HOLD_LABEL))
+            .any(|l| l.name.eq_ignore_ascii_case(name))
     }
 }
 
@@ -864,6 +872,80 @@ impl TrainGitHub {
                 "deleting {branch} on {repo} failed: {message}"
             ))),
         }
+    }
+
+    /// Creates the repo's label `name`; one the repo already has counts as created.
+    pub async fn create_label(
+        &self,
+        repo: &str,
+        name: &str,
+        color: &str,
+        description: &str,
+    ) -> Result<(), GhError> {
+        let fields = [
+            ("name", name),
+            ("color", color),
+            ("description", description),
+        ];
+        match self
+            .call("POST", &format!("repos/{repo}/labels"), &fields)
+            .await?
+        {
+            Reply::Ok(_) | Reply::Err { status: 422, .. } => Ok(()),
+            Reply::Err { message, .. } => Err(GhError::failed(format!(
+                "creating the label {name} on {repo} failed: {message}"
+            ))),
+        }
+    }
+
+    pub async fn add_label(&self, repo: &str, n: i64, name: &str) -> Result<(), GhError> {
+        self.json::<Value>(
+            "POST",
+            &format!("repos/{repo}/issues/{n}/labels"),
+            &[("labels[]", name)],
+        )
+        .await
+        .map(|_| ())
+    }
+
+    /// Takes `name` off the PR; one without it counts as done.
+    pub async fn remove_label(&self, repo: &str, n: i64, name: &str) -> Result<(), GhError> {
+        let name = name.replace(':', "%3A");
+        match self
+            .call(
+                "DELETE",
+                &format!("repos/{repo}/issues/{n}/labels/{name}"),
+                &[],
+            )
+            .await?
+        {
+            Reply::Ok(_) | Reply::Err { status: 404, .. } => Ok(()),
+            Reply::Err { message, .. } => Err(GhError::failed(format!(
+                "taking the label off {repo}#{n} failed: {message}"
+            ))),
+        }
+    }
+
+    /// The repo's open PRs that carry the label `name` (one page).
+    pub async fn labelled_pulls(&self, repo: &str, name: &str) -> Result<Vec<i64>, GhError> {
+        #[derive(Deserialize)]
+        struct Issue {
+            number: i64,
+            /// Only a PR has it.
+            pull_request: Option<Value>,
+        }
+        let issues: Vec<Issue> = self
+            .json(
+                "GET",
+                &format!("repos/{repo}/issues?state=open&labels={name}&per_page=100"),
+                &[],
+            )
+            .await?;
+        Ok(issues
+            .into_iter()
+            .filter(|i| i.pull_request.is_some())
+            .map(|i| i.number)
+            .collect())
     }
 
     /// The repo's default branch, the base main CI is read on.

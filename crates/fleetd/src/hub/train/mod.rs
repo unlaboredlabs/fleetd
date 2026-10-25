@@ -9,6 +9,7 @@ pub mod github;
 pub mod host;
 pub mod hub_host;
 pub mod main_ci;
+pub mod next;
 pub mod records;
 pub mod rules;
 pub mod service;

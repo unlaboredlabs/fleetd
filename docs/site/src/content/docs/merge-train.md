@@ -71,6 +71,45 @@ A member counts as merged only while its head is still the one the batch was bui
 | The batch is red, or GitHub refuses to merge its PR | Takes each member alone, so each CI result blames only that PR. |
 | A member gets a new push, the `hold` label, or is closed during CI | Drops the batch before the merge, so untested code never lands, and builds a new one without it. |
 
+## CI runners are scarce {#scarce-runners}
+
+GitHub doesn't start queued jobs in order. When a repo has few runners of a kind, such as macOS, every agent push
+queues a full CI run, and the batch PR can wait behind them. So the train labels what it merges next with
+`fleetd:next`:
+
+- the batch PR;
+- a PR it merges alone, before it rebases that PR, so the rebase's CI run already sees the label;
+- the next 3 ready PRs in line.
+
+It takes the label off once a PR merges, leaves the queue, or falls behind others. It creates the label if the repo
+doesn't have it. Labelling never blocks a merge: if GitHub refuses it, the train logs it once and goes on.
+
+To use it, run your expensive jobs only on `main`, on the batch branch, on manual runs, and on labelled PRs:
+
+```yaml
+jobs:
+  macos:
+    runs-on: macos-latest
+    if: >-
+      github.event_name != 'pull_request'
+      || endsWith(github.head_ref, 'train/batch')
+      || contains(github.event.pull_request.labels.*.name, 'fleetd:next')
+```
+
+A skipped job still reports, so it can stay a required check.
+
+Adding the label must also start a run. Don't add `labeled` to that workflow's `pull_request` types: a run for any other
+label would replace the PR's real check results with skipped ones. Instead, use a small workflow on `labeled` that
+reacts to `fleetd:next` only and runs the CI workflow on the PR's branch (`gh workflow run ci.yml --ref <branch>`), as
+fleetd's own `.github/workflows/macos-label.yml` does.
+
+The train never counts a skipped check as passing for a PR it is about to merge alone. If that PR's CI is from before
+the label, any check skipped back then holds the merge for up to 3 minutes. If the label's run starts in that time,
+the train waits for it.
+
+When the batch's checks have been queued for more than 5 minutes, its queue entry and the lead's digest say
+"waiting for CI runners (N queued)".
+
 ## Hold a PR {#hold}
 
 Add the `hold` label to a PR to keep the train from taking it, alone or in a batch. Remove the label and it goes in

@@ -8,18 +8,24 @@ name: Desktop QA
 
 on:
   pull_request:
-    # ready_for_review: a draft's skipped macOS jobs run once it is marked ready.
     types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      pr:
+        # Set by macos-label.yml: the run shares the PR's concurrency group, so the PR's next push cancels it.
+        description: The pull request this run is for
+        type: string
+        default: ""
 
-# As in ci.yml: a newer push to a PR cancels its run; runs on main and on the train's batch PR are never cancelled.
+# As in ci.yml: a newer push to a PR, or a run macos-label.yml dispatches for it, cancels its run; runs on main and on
+# the train's batch PR are never cancelled.
 concurrency:
   group: >-
     ${{ (github.ref == 'refs/heads/main' || endsWith(github.head_ref || github.ref, 'train/batch'))
     && format('{0}-{1}', github.workflow, github.run_id)
-    || format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref) }}
+    || format('{0}-{1}', github.workflow, github.event.pull_request.number || inputs.pr || github.ref) }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !endsWith(github.head_ref || github.ref, 'train/batch') }}
 
 permissions:
@@ -29,11 +35,12 @@ jobs:
   qa:
     strategy:
       fail-fast: false
-      # The macOS leg runs where ci.yml's macOS jobs do: every PR but a draft without the `macos` label, main and
-      # workflow_dispatch. It isn't a required check, so on such a draft it is left out of the matrix.
+      # The macOS leg runs where ci.yml's macOS jobs do: main, workflow_dispatch, the train's batch PR and a PR
+      # labelled `fleetd:next` or `macos`. It isn't a required check, so elsewhere it is left out of the matrix.
       matrix:
         include: >-
-          ${{ fromJSON((github.event_name != 'pull_request' || !github.event.pull_request.draft
+          ${{ fromJSON((github.event_name != 'pull_request' || endsWith(github.head_ref, 'train/batch')
+          || contains(github.event.pull_request.labels.*.name, 'fleetd:next')
           || contains(github.event.pull_request.labels.*.name, 'macos'))
           && '[{"os":"ubuntu-latest","scale":1},{"os":"macos-latest","scale":2}]'
           || '[{"os":"ubuntu-latest","scale":1}]') }}
