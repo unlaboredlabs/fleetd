@@ -8,6 +8,7 @@ use schemars::generate::SchemaSettings;
 use serde_json::{Map, Value};
 
 use crate::app::{AppClientMessage, AppServerMessage};
+use crate::blocks::ChatBlock;
 use crate::chat::{ChatMessage, ProjectChatState};
 use crate::events::{
     HubEvent, HubEventType, MachineGuardData, MachineSleptData, PromptChangedData,
@@ -242,6 +243,7 @@ fn json_schemas_for(side: Side) -> BTreeMap<&'static str, Value> {
         Change,
         TrainState,
         ChatMessage,
+        ChatBlock,
         ProjectChatState,
     );
     out.insert("McpTools", mcp_tools_document_for(side));

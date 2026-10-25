@@ -439,6 +439,10 @@ float_wrapper!(
     /// `Schema.Finite.check(isGreaterThanOrEqualTo(0))`, e.g. minutes.
     NonNegative, |v| v >= 0.0, "expected a number of at least 0", { "type": "number", "minimum": 0 }
 );
+float_wrapper!(
+    /// `Schema.Finite`: any number but NaN and the infinities.
+    Finite, |_| true, "expected a finite number", { "type": "number" }
+);
 
 /// Writes integral floats as integers, like `JSON.stringify` (`3`, not `3.0`).
 pub fn serialize_js_number<S: Serializer>(value: f64, s: S) -> Result<S::Ok, S::Error> {

@@ -1,0 +1,464 @@
+{
+  "$defs": {
+    "AgentBlock": {
+      "description": "An agent at work: the client fills in its live state. Exactly one of `taskId` and `threadRef`.",
+      "properties": {
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        },
+        "threadRef": {
+          "$ref": "#/$defs/ThreadRef"
+        }
+      },
+      "type": "object"
+    },
+    "AskBlock": {
+      "description": "A question for the human, as buttons: Approve and Deny without `options`, one of `options` with them. The\nanswer is the human's chat reply (`chat_send` with the button's label as its text), so only the human answers\nit; an agent's message never does. A command that needs approval still goes through `gated_run`.",
+      "properties": {
+        "options": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[^\\r\\n]*$",
+            "type": "string"
+          },
+          "maxItems": 6,
+          "minItems": 2,
+          "type": "array"
+        },
+        "question": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "question"
+      ],
+      "type": "object"
+    },
+    "AttachmentBlock": {
+      "description": "An image or clip already uploaded to the hub: its bytes come from `attachment_get`.",
+      "properties": {
+        "attachmentId": {
+          "$ref": "#/$defs/AttachmentId"
+        },
+        "caption": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "attachmentId"
+      ],
+      "type": "object"
+    },
+    "AttachmentId": {
+      "pattern": "^F[1-9][0-9]*$",
+      "type": "string"
+    },
+    "ChartBlock": {
+      "description": "A line, bar or area chart: `x` labels along the bottom, one value per label in each series.",
+      "properties": {
+        "chart": {
+          "$ref": "#/$defs/ChartType"
+        },
+        "series": {
+          "items": {
+            "$ref": "#/$defs/ChartSeries"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "type": "array"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "unit": {
+          "description": "The values' unit, e.g. \"min\", \"%\", \"PRs\".",
+          "maxLength": 20,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "x": {
+          "items": {
+            "maxLength": 40,
+            "pattern": "^[^\\r\\n]*$",
+            "type": "string"
+          },
+          "maxItems": 200,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "chart",
+        "title",
+        "x",
+        "series"
+      ],
+      "type": "object"
+    },
+    "ChartSeries": {
+      "properties": {
+        "name": {
+          "maxLength": 60,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "values": {
+          "description": "One per `x` label, in order.",
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 200,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "values"
+      ],
+      "type": "object"
+    },
+    "ChartType": {
+      "enum": [
+        "line",
+        "bar",
+        "area"
+      ],
+      "type": "string"
+    },
+    "ChatBlock": {
+      "description": "One block: `v`, the block schema's version (`BLOCK_VERSION`), and its kind's fields. A kind or version a client\ndoesn't know shows as the part's text.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ChartBlock",
+          "properties": {
+            "kind": {
+              "const": "chart",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/TableBlock",
+          "properties": {
+            "kind": {
+              "const": "table",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/DiffBlock",
+          "properties": {
+            "kind": {
+              "const": "diff",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/PrBlock",
+          "properties": {
+            "kind": {
+              "const": "pr",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/AgentBlock",
+          "properties": {
+            "kind": {
+              "const": "agent",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/ChecklistBlock",
+          "properties": {
+            "kind": {
+              "const": "checklist",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/AttachmentBlock",
+          "properties": {
+            "kind": {
+              "const": "image",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/AttachmentBlock",
+          "properties": {
+            "kind": {
+              "const": "clip",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/AskBlock",
+          "properties": {
+            "kind": {
+              "const": "ask",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ],
+      "properties": {
+        "v": {
+          "maximum": 1,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "v"
+      ],
+      "type": "object"
+    },
+    "ChecklistBlock": {
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/ChecklistItem"
+          },
+          "maxItems": 30,
+          "minItems": 1,
+          "type": "array"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "ChecklistItem": {
+      "properties": {
+        "done": {
+          "type": "boolean"
+        },
+        "text": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "done"
+      ],
+      "type": "object"
+    },
+    "DiffBlock": {
+      "description": "Changes to show: the files with their hunks, or a PR whose diff the client reads. Exactly one of the two.",
+      "properties": {
+        "files": {
+          "items": {
+            "$ref": "#/$defs/DiffFile"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "type": "array"
+        },
+        "pr": {
+          "$ref": "#/$defs/PrBlock"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "DiffFile": {
+      "properties": {
+        "hunks": {
+          "description": "Unified-diff hunks, each from its `@@` line.",
+          "items": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "type": "array"
+        },
+        "path": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "hunks"
+      ],
+      "type": "object"
+    },
+    "GitHubRepo": {
+      "description": "GitHub repository as owner/name",
+      "pattern": "^([A-Za-z0-9][A-Za-z0-9-]{0,38})/([A-Za-z0-9._-]{1,100})$",
+      "type": "string"
+    },
+    "MachineId": {
+      "description": "Machine slug, [a-z0-9-]{1,32}",
+      "pattern": "^[a-z0-9-]{1,32}$",
+      "type": "string"
+    },
+    "PrBlock": {
+      "description": "A pull request: the client fills in its live state (title, checks, review, merged) from the hub.",
+      "properties": {
+        "number": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        },
+        "title": {
+          "description": "Shown until the live title is known.",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo",
+        "number"
+      ],
+      "type": "object"
+    },
+    "TableBlock": {
+      "description": "Rows of plain-text cells, one per column.",
+      "properties": {
+        "columns": {
+          "items": {
+            "maxLength": 60,
+            "minLength": 1,
+            "pattern": "^[^\\r\\n]*$",
+            "type": "string"
+          },
+          "maxItems": 12,
+          "minItems": 1,
+          "type": "array"
+        },
+        "rows": {
+          "items": {
+            "items": {
+              "maxLength": 200,
+              "pattern": "^[^\\r\\n]*$",
+              "type": "string"
+            },
+            "maxItems": 12,
+            "minItems": 1,
+            "type": "array"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "columns",
+        "rows"
+      ],
+      "type": "object"
+    },
+    "TaskId": {
+      "pattern": "^T[1-9][0-9]*$",
+      "type": "string"
+    },
+    "ThreadId": {
+      "type": "string"
+    },
+    "ThreadRef": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId"
+        }
+      },
+      "required": [
+        "machineId",
+        "threadId"
+      ],
+      "type": "object"
+    }
+  },
+  "$ref": "#/$defs/ChatBlock",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

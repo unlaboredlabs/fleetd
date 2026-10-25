@@ -281,6 +281,7 @@ impl Chat {
                 client: new.client,
                 item: new.item,
                 history: new.history,
+                parts: None,
             };
             c.execute(
                 "UPDATE chat_messages SET data = ?1 WHERE n = ?2",

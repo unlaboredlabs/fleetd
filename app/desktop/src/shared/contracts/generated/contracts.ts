@@ -19,6 +19,12 @@ export const LIVE_MAX_TEXTS = 4;
 /** Machines in one live frame. */
 export const LIVE_MAX_MACHINES = 20;
 
+/** The info string of a block's code fence in a lead message. */
+export const BLOCK_FENCE = "fleetd-block";
+
+/** The block schema this build speaks: every block's `v`. */
+export const BLOCK_VERSION = 1;
+
 /** Largest secret a secret ask takes. */
 export const SECRET_MAX_BYTES = 8192;
 
@@ -96,6 +102,12 @@ export type ActivityNow = {
  * under the person's own identity.
  */
 export type ActorKind = "human" | "bot" | "train" | "unknown";
+
+/** An agent at work: the client fills in its live state. Exactly one of `taskId` and `threadRef`. */
+export type AgentBlock = {
+  taskId?: TaskId;
+  threadRef?: ThreadRef;
+};
 
 /** One agent of an order: a task, or the project's lead. */
 export type AgentLane = {
@@ -281,6 +293,22 @@ export type ApprovalAnswerOutput = {
 
 /** The human's answer to a `command_approval`. */
 export type ApprovalDecision = "approve" | "deny";
+
+/**
+ * A question for the human, as buttons: Approve and Deny without `options`, one of `options` with them. The
+ * answer is the human's chat reply (`chat_send` with the button's label as its text), so only the human answers
+ * it; an agent's message never does. A command that needs approval still goes through `gated_run`.
+ */
+export type AskBlock = {
+  options?: string[];
+  question: string;
+};
+
+/** An image or clip already uploaded to the hub: its bytes come from `attachment_get`. */
+export type AttachmentBlock = {
+  attachmentId: AttachmentId;
+  caption?: string;
+};
 
 export type AttachmentGetInput = {
   attachmentId: AttachmentId;
@@ -472,9 +500,53 @@ export type ChangesListOutput = {
   truncated?: boolean;
 };
 
+/** A line, bar or area chart: `x` labels along the bottom, one value per label in each series. */
+export type ChartBlock = {
+  chart: ChartType;
+  series: ChartSeries[];
+  title: string;
+  /** The values' unit, e.g. "min", "%", "PRs". */
+  unit?: string;
+  x: string[];
+};
+
+export type ChartSeries = {
+  name: string;
+  /** One per `x` label, in order. */
+  values: number[];
+};
+
+export type ChartType = "line" | "bar" | "area";
+
 export type KnownChatAuthor = "human" | "lead" | "agent" | "system";
 /** KnownChatAuthor, or a value from a newer hub. */
 export type ChatAuthor = KnownChatAuthor | (string & {});
+
+/**
+ * One block: `v`, the block schema's version (`BLOCK_VERSION`), and its kind's fields. A kind or version a client
+ * doesn't know shows as the part's text.
+ */
+export type ChatBlock = (ChartBlock & {
+  kind: "chart";
+} | TableBlock & {
+  kind: "table";
+} | DiffBlock & {
+  kind: "diff";
+} | PrBlock & {
+  kind: "pr";
+} | AgentBlock & {
+  kind: "agent";
+} | ChecklistBlock & {
+  kind: "checklist";
+} | AttachmentBlock & {
+  kind: "image";
+} | AttachmentBlock & {
+  kind: "clip";
+} | AskBlock & {
+  kind: "ask";
+}) & {
+  v: number;
+};
 
 /** Where a human message was written. */
 export type KnownChatClient = "app" | "cli";
@@ -549,6 +621,11 @@ export type ChatMessage = {
   history?: ChatHistorySource;
   item?: ChatItem;
   messageId: ChatMessageId;
+  /**
+   * A final lead message of more than one bubble, or with a block: its bubbles in order. Absent: `text` is one
+   * bubble (and while a message streams).
+   */
+  parts?: ChatPart[];
   projectRef: ProjectRef;
   seq: number;
   state: ChatMessageState;
@@ -577,6 +654,16 @@ export type ChatMessageId = string;
 export type KnownChatMessageState = "final" | "streaming";
 /** KnownChatMessageState, or a value from a newer hub. */
 export type ChatMessageState = KnownChatMessageState | (string & {});
+
+/**
+ * One bubble of a lead message: `text.slice(start, end)` (UTF-16 offsets, like `ChatDelta.offset`), shown as
+ * markdown, or as `block` when it has one (the slice is then the block's fence, its readable fallback).
+ */
+export type ChatPart = {
+  block?: ChatBlock;
+  end: number;
+  start: number;
+};
 
 export type ChatRequestId = string;
 
@@ -621,6 +708,16 @@ export type ChatStopOutput = {
   /** Something was running and stopped: the lead's turn or an agent. */
   stopped: boolean;
   truncated?: boolean;
+};
+
+export type ChecklistBlock = {
+  items: ChecklistItem[];
+  title?: string;
+};
+
+export type ChecklistItem = {
+  done: boolean;
+  text: string;
 };
 
 export type Checkout = {
@@ -892,6 +989,19 @@ export type DecisionsSearchOutput = {
 
 /** How a delivered steer was taken in. */
 export type DeliveredHow = "turn" | "boundary" | "stopped" | "joined";
+
+/** Changes to show: the files with their hunks, or a PR whose diff the client reads. Exactly one of the two. */
+export type DiffBlock = {
+  files?: DiffFile[];
+  pr?: PrBlock;
+  title?: string;
+};
+
+export type DiffFile = {
+  /** Unified-diff hunks, each from its `@@` line. */
+  hunks: string[];
+  path: string;
+};
 
 /** One line of a file's diff. Secrets are replaced by `[secret]`. */
 export type DiffLine = {
@@ -2025,6 +2135,14 @@ export type PrAuthor = {
   /** Its session, for `agent_work`. */
   threadRef?: ThreadRef;
   /** The agent's task title. */
+  title?: string;
+};
+
+/** A pull request: the client fills in its live state (title, checks, review, merged) from the hub. */
+export type PrBlock = {
+  number: number;
+  repo: GitHubRepo;
+  /** Shown until the live title is known. */
   title?: string;
 };
 
@@ -3354,6 +3472,13 @@ export type SteerWithdrawOutput = {
   truncated?: boolean;
   /** The order it belongs to (a task's own order for a task steer). */
   workstreamId: WorkstreamId;
+};
+
+/** Rows of plain-text cells, one per column. */
+export type TableBlock = {
+  columns: string[];
+  rows: string[][];
+  title?: string;
 };
 
 export type TailAction = {
