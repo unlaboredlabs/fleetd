@@ -247,12 +247,23 @@ const whileLoading = (go: (page: Page) => Promise<void>, shown: (page: Page) => 
 export const label = (s: Pick<Screen, "id" | "variant">) => (s.variant === undefined ? s.id : `${s.id}~${s.variant}`);
 
 export const screens: readonly Screen[] = [
-  // F2 (A4): the live strip under the lead's latest message, in the project's chat. live-0 draws no strip.
+  // F2 (A4): the live strip docked to the top of the project's composer. live-0 draws no strip.
   {
     id: "chat",
     route: CHAT,
     fixtures: ["live-0", "live-3", "live-20"],
     variant: "strip",
+  },
+  // A click on the strip opens its lanes above it, a row per agent.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["live-3", "live-20"],
+    variant: "strip-open",
+    open: async (page) => {
+      await page.getByRole("region", { name: /agents? working/u }).getByRole("button", { name: /agents? working/u }).click();
+      await expect(page.getByRole("list", { name: "Agents at work" })).toBeVisible();
+    },
   },
   // F4 (A3): the composer under storefront's chat while the lead works. Sent from the box: refused (Resend, Edit,
   // Dismiss), cut off by the link, unanswered (Resend, Dismiss), and one still sending; then a message that found no
@@ -434,8 +445,8 @@ export const screens: readonly Screen[] = [
       await expect(page.locator("header").getByText(/^Last known, as of/u)).toBeVisible();
     },
   },
-  // The strip's headline opens the panel's agents, where each one's work is (the chat doesn't list them itself): the
-  // panel is closed first, so the shot shows the headline opening it.
+  // An agent in the strip's lanes opens in the panel's agents, where its work is (the chat doesn't draw it itself):
+  // the panel is closed first, so the shot shows the strip opening it.
   {
     id: "chat",
     route: CHAT,
@@ -446,8 +457,11 @@ export const screens: readonly Screen[] = [
       await page.getByRole("button", { name: "Hide agents and PRs" }).click();
       await panel.waitFor({ state: "detached" });
       // Scoped to the strip: the sidebar's project button also says "3 agents working".
-      await page.getByRole("region", { name: /agents? working/u }).getByRole("button", { name: /agents? working/u }).click();
-      await expect(panel.getByRole("list", { name: "Agents" })).toBeVisible();
+      const strip = page.getByRole("region", { name: /agents? working/u });
+      await strip.getByRole("button", { name: /agents? working/u }).click();
+      await strip.getByRole("list", { name: "Agents at work" }).getByRole("link").first().click();
+      await panel.locator('[data-screen^="agents.work"]').waitFor();
+      await expect(page).toHaveURL(/\/agents\/T\d+$/u);
     },
   },
   // A PR the chat names (in an event line, as "#10" in live-3 and as its GitHub URL in live-20) opens in the panel.

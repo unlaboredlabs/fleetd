@@ -4,7 +4,7 @@ import { applyFrame, ingest, initialState } from "../../src/data/store";
 import type { AgentLane, LaneStatus } from "./contracts";
 import { selectProjectRow } from "../../src/data/selectors";
 import { projectKey } from "./lanes";
-import { selectStrip, stripHeadline, stripOf, stripPrs } from "./strip";
+import { NOW_DWELL_MS, nowAgent, selectStrip, stripHeadline, stripOf, stripPrs } from "./strip";
 
 const T0 = "2026-10-18T10:00:00.000Z";
 const project = { machineId: "devbox", projectId: "storefront" } as const;
@@ -111,6 +111,78 @@ describe("the live strip", () => {
     expect(words([9, 10, 11, 12, 13])).toBe("on #9, #10, #11 and 2 more");
     // The numbers are apart from the words, so each one is a link.
     expect(stripPrs([9, 10])).toEqual(["on ", 9, " and ", 10]);
+  });
+});
+
+describe("the strip's dots and now-line", () => {
+  const busy = (laneId: string, samples: number[], activity: NonNullable<AgentLane["live"]>["activity"] = { activity: { kind: "thinking" }, since: T0 }) =>
+    lane(laneId, "working", { live: { laneId, status: "working", activity, spark: { endAt: T0, samples } } });
+
+  it("has a dot per agent: waiting on you first, then at work, on hold and queued, the board's order within", () => {
+    const s = stripOf([
+      lane("Q", "queued"),
+      lane("A", "working"),
+      lane("H", "stalled"),
+      lane("W", "waiting", { role: "reviewer", statusReason: "approve npm install" }),
+      lane("B", "starting"),
+      lane("P", "parked"),
+    ]);
+    expect(s.lanes.map((a) => [a.laneId, a.state])).toEqual([
+      ["W", "needsYou"],
+      ["A", "working"],
+      ["B", "working"],
+      ["H", "onHold"],
+      ["P", "onHold"],
+      ["Q", "queued"],
+    ]);
+    // Each agent's line is the agents view's.
+    expect(s.lanes[0]?.line).toMatchObject({ words: "waiting on you: approve npm install", tone: "warning" });
+    expect(s.lanes[0]?.role).toBe("reviewer");
+  });
+
+  it("puts the busiest agent at work first: most recent work, then tool work over thinking, then the board's order", () => {
+    const edit = { activity: { kind: "edit" as const, path: "src/a.ts" }, since: T0 };
+    const s = stripOf([
+      busy("calm", [1, 1, 1]),
+      // Old work, past the last 16 seconds, doesn't count.
+      busy("was", [90, 90, 90, 0, 0, 0, 0, 0, 0, 0, 0]),
+      busy("hot", [20, 30, 40]),
+      busy("thinks", [2, 2, 2]),
+      busy("edits", [2, 2, 2], edit),
+      lane("W", "waiting"),
+    ]);
+    expect(s.now).toEqual(["hot", "edits", "thinks", "calm", "was"]);
+  });
+
+  it("with no agent at work, says what the agent waiting on you waits for; with only queued ones, nothing", () => {
+    expect(stripOf([lane("Q", "queued"), lane("W", "waiting"), lane("P", "parked")]).now).toEqual(["W"]);
+    expect(stripOf([lane("Q", "queued"), lane("P", "parked")]).now).toEqual([]);
+  });
+
+  it("stays on the agent it shows for a while, so the line turns over gently, never flickering", () => {
+    const at = 1_000_000;
+    expect(nowAgent(["A", "B"], undefined, at)).toBe("A");
+    // B got busier a moment after A came on: A stays until its turn is up, then B takes the line.
+    expect(nowAgent(["B", "A"], { laneId: "A", since: at }, at + NOW_DWELL_MS - 1)).toBe("A");
+    expect(nowAgent(["B", "A"], { laneId: "A", since: at }, at + NOW_DWELL_MS)).toBe("B");
+    // An agent that stopped working gives the line up at once.
+    expect(nowAgent(["B"], { laneId: "A", since: at }, at + 1)).toBe("B");
+    expect(nowAgent([], { laneId: "A", since: at }, at + 1)).toBeUndefined();
+  });
+
+  it("redraws when an agent's activity changes, not when only its tokens do", () => {
+    const at = (s: number) => new Date(Date.parse(T0) + s * 1000).toISOString();
+    const base = state([card("W1", [lane("T1", "working")])], [{ at: at(1), full: true, lanes: [{ laneId: "T1", status: "working" }] }]);
+    const sel = selectStrip(project);
+    const first = sel(base);
+    const [next] = applyFrame(
+      base,
+      { t: "live", frame: { at: at(2), full: false, lanes: [{ laneId: "T1", status: "working", activity: { activity: { kind: "edit", path: "src/a.ts" }, since: at(2) } }] } },
+      Date.parse(at(2)),
+    );
+    const second = sel(next);
+    expect(second).not.toBe(first);
+    expect(second?.lanes[0]?.line).toMatchObject({ words: "editing", machine: "src/a.ts" });
   });
 });
 

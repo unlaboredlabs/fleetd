@@ -1,5 +1,5 @@
 // A project's lead chat, the app's main surface (lead-chat spec §1): the conversation with the project's lead,
-// fleet activity quietly inside it (the live strip under the lead's newest message, PR and merge one-liners), the
+// fleet activity quietly inside it (the live strip docked to the composer, PR and merge one-liners), the
 // two inline items chat can't carry (a secret, a gated command), and the composer, which has the cursor as soon as
 // the chat opens. Above the box, a line says what the lead waits on you for; an empty chat asks what to do. It opens
 // where you stopped reading, under a "New" divider.
@@ -70,7 +70,8 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
             loadingOlder: view.loadingOlder,
             held: view.held,
             offline: view.offline,
-            strip,
+            // The live strip is docked to the composer, not a row of the conversation.
+            strip: false,
             activity: data.leadWorking === true,
             workedSince,
             seenSeq,
@@ -78,7 +79,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
             // eslint-disable-next-line react-hooks/purity
             nowMs: Date.now(),
           }),
-    [view, strip, data.leadWorking, workedSince, seenSeq],
+    [view, data.leadWorking, workedSince, seenSeq],
   );
   const items = view?.items;
   const waiting = useMemo(
@@ -179,9 +180,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
           <Text tone="quiet">{view === undefined && data.title !== undefined ? "Loading the conversation…" : "Loading…"}</Text>
         </div>
       ) : empty ? (
-        <EmptyChat project={project} title={title}>
-          {strip ? <LiveStrip project={project} /> : null}
-        </EmptyChat>
+        <EmptyChat project={project} title={title} />
       ) : (
         <BubbleActionsContext.Provider value={actions}>
           <ChatList rows={rows} project={project} onLoadOlder={data.loadOlder} openAt={openAt} openSeq={shown?.n} openPart={shown?.part} sent={sent} entering={arrived?.entering} />
@@ -196,6 +195,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
             which={showing >= 0 && targets !== undefined && targets.length > 1 ? `${String(showing + 1)} of ${String(targets.length)}` : undefined}
             onShow={showNext}
           />
+          {strip ? <LiveStrip project={project} /> : null}
           <ChatComposer project={project} autoFocus recall={recall} onSent={onSent} replyTo={replyTo} onCancelReply={() => setReplyTo(undefined)} />
         </div>
       )}
