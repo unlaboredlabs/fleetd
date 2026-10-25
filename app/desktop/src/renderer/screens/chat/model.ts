@@ -210,7 +210,8 @@ function extras(items: readonly ChatItem[], n: number): Pick<Extract<Row, { kind
   if (item === undefined) return {};
   if (item.author === "human") {
     const r = replyOf(item.text);
-    return r === undefined ? {} : { reply: { ...r, target: quoted(items, n, r.quote) } };
+    // The bubble the hub was told it answers; an older app's reply is found by its quote.
+    return r === undefined ? {} : { reply: { ...r, target: item.message?.replyTo?.messageId ?? quoted(items, n, r.quote) } };
   }
   if (item.author !== "lead") return {};
   const answered: Record<string, string> = {};

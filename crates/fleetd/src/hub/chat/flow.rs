@@ -249,6 +249,10 @@ pub async fn send(
             }
             attachments::check(hub, caller, &ids)?;
             ensure(hub, &r).await.map_err(store_error)?;
+            // Only a lead message of this chat is answered; any other names nothing, and the text goes as it is.
+            let reply_to = input
+                .reply_to
+                .filter(|to| replied_in(hub, &r, to).is_some());
             let (message, created) = hub
                 .chat
                 .add(
@@ -260,6 +264,7 @@ pub async fn send(
                         request: Some(request),
                         by: Some(writer.by),
                         client: writer.client,
+                        reply_to,
                         delivery: Some(ChatDelivery::Queued),
                         held: true,
                         ..Default::default()
@@ -308,10 +313,15 @@ async fn go(
         Err(_) => false,
     };
     let first = match starts {
-        true => files_of(hub, r, &message)
-            .await
-            .ok()
-            .map(|files| for_lead(&hub.db.prompts().current(Some(r)), &message, &files)),
+        true => files_of(hub, r, &message).await.ok().map(|files| {
+            let replied = replied(hub, &message);
+            for_lead(
+                &hub.db.prompts().current(Some(r)),
+                &message,
+                replied.as_ref(),
+                &files,
+            )
+        }),
         false => None,
     };
     if let Some(first) = &first
@@ -368,13 +378,21 @@ fn sent(hub: &Hub, message: &mut fleetd_contracts::chat::ChatMessage, delivery: 
 }
 
 /// A chat message as the lead reads it: the writer's own words in the `chat.human` or `chat.agent` prompt. The
-/// human's are the human's wherever they wrote them; an agent's say plainly that they are not.
+/// human's are the human's wherever they wrote them; an agent's say plainly that they are not. A reply to one of the
+/// lead's bubbles (`replied`, the message `reply_to` names) opens with that bubble whole, in place of its one-line
+/// quote, and when the lead wrote it.
 pub fn for_lead(
     set: &PromptSet,
     message: &fleetd_contracts::chat::ChatMessage,
+    replied: Option<&fleetd_contracts::chat::ChatMessage>,
     files: &str,
 ) -> String {
-    let text = message.text.as_str();
+    let replying = message
+        .reply_to
+        .as_ref()
+        .zip(replied)
+        .and_then(|(to, replied)| replying(message, replied, to.part.get()));
+    let text = replying.as_deref().unwrap_or(message.text.as_str());
     match message.author {
         ChatAuthor::Agent => set.render(
             "chat.agent",
@@ -389,6 +407,86 @@ pub fn for_lead(
         ),
         _ => set.render("chat.human", &[("text", &text), ("files", &files)]),
     }
+}
+
+/// The longest quote of a replied bubble, in characters; a longer one keeps its start and end.
+const REPLY_QUOTE_MAX: usize = 1000;
+const REPLY_QUOTE_HEAD: usize = 600;
+const REPLY_QUOTE_TAIL: usize = 300;
+
+/// A reply's text with the bubble it answers whole: "Replying to your message at 22:05 UTC:", the bubble quoted, then
+/// the words under the app's one-line quote. None when the bubble isn't there.
+fn replying(
+    message: &fleetd_contracts::chat::ChatMessage,
+    replied: &fleetd_contracts::chat::ChatMessage,
+    part: i64,
+) -> Option<String> {
+    let bubble = super::parts::bubble(replied, usize::try_from(part).ok()?)?;
+    let chars = bubble.chars().count();
+    let bubble = if chars > REPLY_QUOTE_MAX {
+        // Cut between words.
+        let head: String = bubble.chars().take(REPLY_QUOTE_HEAD).collect();
+        let head = head
+            .rsplit_once(char::is_whitespace)
+            .map_or(&*head, |(h, _)| h);
+        let tail: String = bubble.chars().skip(chars - REPLY_QUOTE_TAIL).collect();
+        let tail = tail
+            .split_once(char::is_whitespace)
+            .map_or(&*tail, |(_, t)| t);
+        let (head, tail) = (head.trim_end(), tail.trim_start());
+        format!(
+            "{head}\n[… {} characters cut …]\n{tail}",
+            chars - head.chars().count() - tail.chars().count()
+        )
+    } else {
+        bubble
+    };
+    let quote: Vec<String> = bubble
+        .lines()
+        .map(|l| format!("> {l}").trim_end().to_owned())
+        .collect();
+    let (at, on) = (replied.created_at.as_str(), message.created_at.as_str());
+    let when = match (at.get(..10), at.get(11..16)) {
+        (Some(day), Some(time)) if on.get(..10) == Some(day) => format!("{time} UTC"),
+        (Some(day), Some(time)) => format!("{day} {time} UTC"),
+        _ => at.to_owned(),
+    };
+    let of = match replied.parts.as_ref().map_or(1, |p| p.len()) {
+        1 => String::new(),
+        n => format!(", its bubble {} of {n}", part + 1),
+    };
+    let text = message.text.as_str();
+    // The app's one-line quote ("> …" and a blank line) gives way to the whole bubble.
+    let words = text
+        .strip_prefix("> ")
+        .and_then(|rest| rest.split_once("\n\n"))
+        .filter(|(line, _)| !line.contains('\n'))
+        .map_or(text, |(_, words)| words);
+    Some(format!(
+        "Replying to your message at {when}{of}:\n{}\n\n{words}",
+        quote.join("\n")
+    ))
+}
+
+/// The lead message of the project `to` names.
+fn replied_in(
+    hub: &Hub,
+    r: &ProjectRef,
+    to: &fleetd_contracts::chat::ChatReplyTo,
+) -> Option<fleetd_contracts::chat::ChatMessage> {
+    hub.chat
+        .by_id(to.message_id.as_str())
+        .ok()
+        .flatten()
+        .filter(|m| m.project_ref == *r && m.author == ChatAuthor::Lead)
+}
+
+/// The lead message a reply answers.
+fn replied(
+    hub: &Hub,
+    message: &fleetd_contracts::chat::ChatMessage,
+) -> Option<fleetd_contracts::chat::ChatMessage> {
+    replied_in(hub, &message.project_ref, message.reply_to.as_ref()?)
 }
 
 /// Into the lead's session, with its files: a plain send, which starts a turn or joins the running one, or with `now`
@@ -406,7 +504,8 @@ async fn deliver(
         .db
         .prompts()
         .for_thread(&thread.machine_id, thread.thread_id.as_str());
-    let text = for_lead(&set, message, &files);
+    let replied = replied(hub, message);
+    let text = for_lead(&set, message, replied.as_ref(), &files);
     let crid = format!("chat:{}", message.message_id);
     let opts = SendOpts {
         mode: if now { SendMode::Now } else { SendMode::Plain },

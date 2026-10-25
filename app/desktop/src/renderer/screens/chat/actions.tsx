@@ -5,6 +5,8 @@ import type { ProjectRef } from "./slots";
 
 export interface ReplyTarget {
   readonly id: string;
+  /** The bubble's place in its message (its `parts` index; 0 for a message of one bubble). */
+  readonly part: number;
   readonly quote: string;
 }
 

@@ -5,7 +5,7 @@
 use std::sync::LazyLock;
 
 use fleetd_contracts::blocks::{BLOCK_FENCE, BLOCK_JSON_MAX, ChatBlock, MESSAGE_BLOCKS_MAX};
-use fleetd_contracts::chat::{CHAT_PARTS_MAX, ChatPart};
+use fleetd_contracts::chat::{CHAT_PARTS_MAX, ChatMessage, ChatPart};
 use fleetd_contracts::prim::{Count, List, js_len};
 use regex::Regex;
 use serde_json::Value;
@@ -183,6 +183,18 @@ pub fn parts(text: &str) -> Option<List<ChatPart, 1, CHAT_PARTS_MAX>> {
         return None;
     }
     List::new(parts).ok()
+}
+
+/// One bubble's text, trimmed: `part` of the message's `parts`, or the whole text for a message of one bubble.
+pub fn bubble(message: &ChatMessage, part: usize) -> Option<String> {
+    let text = message.text.as_str();
+    let Some(parts) = &message.parts else {
+        return (part == 0 && !text.trim().is_empty()).then(|| text.trim().to_owned());
+    };
+    let p = parts.get(part)?;
+    let units: Vec<u16> = text.encode_utf16().collect();
+    let slice = units.get(p.start.get() as usize..p.end.get() as usize)?;
+    Some(String::from_utf16_lossy(slice).trim().to_owned())
 }
 
 #[cfg(test)]
