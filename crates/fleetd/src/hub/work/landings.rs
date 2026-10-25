@@ -478,7 +478,7 @@ impl Scanner<'_> {
                 if let Some(pull) = pull {
                     origin.pr = Some(pull.number as u64);
                     origin.head.get_or_insert_with(|| pull.head.clone());
-                    origin.forge.get_or_insert(Forge::GitHub);
+                    origin.host.get_or_insert(GitHost::GitHub);
                     if route == LandingRoute::DirectPush {
                         route = LandingRoute::PrOutside;
                     }
@@ -528,7 +528,7 @@ impl Scanner<'_> {
             pr_number,
             pr_url: origin
                 .pr
-                .and_then(|n| pr_url(&self.scope.repo_key, origin.forge, n)),
+                .and_then(|n| pr_url(&self.scope.repo_key, origin.host, n)),
             head_branch: head.and_then(|h| Line::new(h).ok()),
             subject: Line::unchecked(js_take(&commit.subject, 300)),
             author_email: Line::new(js_take(&commit.email, 200)).ok(),
@@ -596,7 +596,7 @@ impl Scanner<'_> {
     }
 }
 
-/// The lead's line: "abc1234 "feat: dark mode" was pushed straight to main by wynn@example.com; it ended claim C7."
+/// The lead's line: "abc1234 "feat: dark mode" was pushed straight to main by ada@example.com; it ended claim C7."
 pub fn wake_line(landing: &Landing) -> String {
     let short = &landing.sha.as_str()[..7];
     let by = landing
@@ -716,7 +716,7 @@ pub(crate) fn ls_remote_sha(out: &str, base_ref: &str) -> Option<String> {
 
 /// The host whose merge message named the PR.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Forge {
+pub(crate) enum GitHost {
     /// GitHub, Gitea and Forgejo: "Merge pull request #12 from …", "… (#12)".
     GitHub,
     GitLab,
@@ -729,7 +729,7 @@ pub(crate) enum Forge {
 pub(crate) struct Origin {
     pub pr: Option<u64>,
     pub head: Option<String>,
-    pub forge: Option<Forge>,
+    pub host: Option<GitHost>,
 }
 
 fn number_after<'a>(text: &'a str, marker: &str) -> Option<(u64, &'a str)> {
@@ -758,7 +758,7 @@ pub(crate) fn origin_of(subject: &str, body: &str) -> Origin {
     let subject = subject.trim();
     let mut origin = Origin::default();
     if let Some(rest) = subject.strip_prefix("Merge pull request ") {
-        origin.forge = Some(Forge::GitHub);
+        origin.host = Some(GitHost::GitHub);
         origin.pr = number_after(rest, "#").map(|(n, _)| n);
         if let Some((_, from)) = rest.rsplit_once(" from ") {
             let mut words = from.split_whitespace();
@@ -775,7 +775,7 @@ pub(crate) fn origin_of(subject: &str, body: &str) -> Origin {
     if let Some(rest) = subject.strip_prefix("Merged in ")
         && let Some((n, _)) = number_after(rest, "(pull request #")
     {
-        origin.forge = Some(Forge::Bitbucket);
+        origin.host = Some(GitHost::Bitbucket);
         origin.pr = Some(n);
         origin.head = rest.split_whitespace().next().map(str::to_owned);
         return origin;
@@ -784,7 +784,7 @@ pub(crate) fn origin_of(subject: &str, body: &str) -> Origin {
         && subject.starts_with("Merged PR ")
         && rest.starts_with(':')
     {
-        origin.forge = Some(Forge::Azure);
+        origin.host = Some(GitHost::Azure);
         origin.pr = Some(n);
         return origin;
     }
@@ -794,7 +794,7 @@ pub(crate) fn origin_of(subject: &str, body: &str) -> Origin {
         n.trim().trim_end_matches('.').parse::<u64>().ok()
     });
     if let Some(n) = gitlab {
-        origin.forge = Some(Forge::GitLab);
+        origin.host = Some(GitHost::GitLab);
         origin.pr = Some(n);
     }
     for prefix in ["Merge branch ", "Merge remote-tracking branch "] {
@@ -814,21 +814,21 @@ pub(crate) fn origin_of(subject: &str, body: &str) -> Origin {
         && subject.ends_with(')')
         && let Ok(n) = subject[open + 2..subject.len() - 1].parse::<u64>()
     {
-        origin.forge = Some(Forge::GitHub);
+        origin.host = Some(GitHost::GitHub);
         origin.pr = Some(n);
     }
     origin
 }
 
 /// The PR's URL on hosts whose URLs fleetd knows: github.com, bitbucket.org, and GitLab wherever its message said so.
-pub(crate) fn pr_url(repo_key: &RepoKey, forge: Option<Forge>, n: u64) -> Option<PrUrl> {
+pub(crate) fn pr_url(repo_key: &RepoKey, host: Option<GitHost>, n: u64) -> Option<PrUrl> {
     let key = repo_key.as_str();
-    let url = match forge? {
-        Forge::GitHub if key.starts_with("github.com/") => format!("https://{key}/pull/{n}"),
-        Forge::Bitbucket if key.starts_with("bitbucket.org/") => {
+    let url = match host? {
+        GitHost::GitHub if key.starts_with("github.com/") => format!("https://{key}/pull/{n}"),
+        GitHost::Bitbucket if key.starts_with("bitbucket.org/") => {
             format!("https://{key}/pull-requests/{n}")
         }
-        Forge::GitLab if !key.starts_with('/') => format!("https://{key}/-/merge_requests/{n}"),
+        GitHost::GitLab if !key.starts_with('/') => format!("https://{key}/-/merge_requests/{n}"),
         _ => return None,
     };
     PrUrl::new(url).ok()
@@ -1059,12 +1059,12 @@ mod tests {
     fn each_hosts_default_merge_message_names_its_pr_and_branch() {
         let cases: [(&str, &str, Origin); 9] = [
             (
-                "Merge pull request #57 from acme/wynn/dark-mode",
+                "Merge pull request #57 from acme/ada/dark-mode",
                 "dark mode",
                 Origin {
                     pr: Some(57),
-                    head: Some("wynn/dark-mode".into()),
-                    forge: Some(Forge::GitHub),
+                    head: Some("ada/dark-mode".into()),
+                    host: Some(GitHost::GitHub),
                 },
             ),
             (
@@ -1073,7 +1073,7 @@ mod tests {
                 Origin {
                     pr: Some(58),
                     head: None,
-                    forge: Some(Forge::GitHub),
+                    host: Some(GitHost::GitHub),
                 },
             ),
             (
@@ -1082,7 +1082,7 @@ mod tests {
                 Origin {
                     pr: Some(9),
                     head: Some("dark-mode".into()),
-                    forge: Some(Forge::GitHub),
+                    host: Some(GitHost::GitHub),
                 },
             ),
             (
@@ -1091,16 +1091,16 @@ mod tests {
                 Origin {
                     pr: Some(12),
                     head: Some("dark-mode".into()),
-                    forge: Some(Forge::GitLab),
+                    host: Some(GitHost::GitLab),
                 },
             ),
             (
-                "Merged in wynn/dark-mode (pull request #4)",
+                "Merged in ada/dark-mode (pull request #4)",
                 "dark mode",
                 Origin {
                     pr: Some(4),
-                    head: Some("wynn/dark-mode".into()),
-                    forge: Some(Forge::Bitbucket),
+                    head: Some("ada/dark-mode".into()),
+                    host: Some(GitHost::Bitbucket),
                 },
             ),
             (
@@ -1109,7 +1109,7 @@ mod tests {
                 Origin {
                     pr: Some(31),
                     head: None,
-                    forge: Some(Forge::Azure),
+                    host: Some(GitHost::Azure),
                 },
             ),
             (
@@ -1118,7 +1118,7 @@ mod tests {
                 Origin {
                     pr: None,
                     head: Some("dark-mode".into()),
-                    forge: None,
+                    host: None,
                 },
             ),
             (
@@ -1127,7 +1127,7 @@ mod tests {
                 Origin {
                     pr: None,
                     head: Some("dark-mode".into()),
-                    forge: None,
+                    host: None,
                 },
             ),
             ("feat: dark mode toggle, closes #12", "", Origin::default()),
@@ -1140,21 +1140,24 @@ mod tests {
     #[test]
     fn a_pr_url_is_built_only_where_the_host_is_known() {
         let key = |k: &str| RepoKey::new(k).unwrap();
-        let url = |k: &str, f: Option<Forge>| pr_url(&key(k), f, 7).map(|u| u.to_string());
+        let url = |k: &str, f: Option<GitHost>| pr_url(&key(k), f, 7).map(|u| u.to_string());
         assert_eq!(
-            url("github.com/acme/shop", Some(Forge::GitHub)).as_deref(),
+            url("github.com/acme/shop", Some(GitHost::GitHub)).as_deref(),
             Some("https://github.com/acme/shop/pull/7")
         );
         assert_eq!(
-            url("gitlab.example.com/acme/shop", Some(Forge::GitLab)).as_deref(),
+            url("gitlab.example.com/acme/shop", Some(GitHost::GitLab)).as_deref(),
             Some("https://gitlab.example.com/acme/shop/-/merge_requests/7")
         );
         assert_eq!(
-            url("bitbucket.org/acme/shop", Some(Forge::Bitbucket)).as_deref(),
+            url("bitbucket.org/acme/shop", Some(GitHost::Bitbucket)).as_deref(),
             Some("https://bitbucket.org/acme/shop/pull-requests/7")
         );
-        assert_eq!(url("git.example.com/acme/shop", Some(Forge::GitHub)), None);
-        assert_eq!(url("/srv/git/shop", Some(Forge::GitLab)), None);
+        assert_eq!(
+            url("git.example.com/acme/shop", Some(GitHost::GitHub)),
+            None
+        );
+        assert_eq!(url("/srv/git/shop", Some(GitHost::GitLab)), None);
         assert_eq!(
             pr_number_in(
                 "https://gitlab.example.com/acme/shop/-/merge_requests/12",
@@ -1250,7 +1253,7 @@ mod tests {
 
     #[test]
     fn a_commit_is_read_whole_even_when_the_node_kept_only_its_tail() {
-        let out = "…of a long body\nSee merge request acme/shop!12\n\u{1e}0123456789abcdef0123456789abcdef01234567\u{1f}1792922400\u{1f}wynn@example.com\u{1f}aaa bbb\u{1f}1792922000\u{1f}Merge branch 'x' into 'main'\n";
+        let out = "…of a long body\nSee merge request acme/shop!12\n\u{1e}0123456789abcdef0123456789abcdef01234567\u{1f}1792922400\u{1f}ada@example.com\u{1f}aaa bbb\u{1f}1792922000\u{1f}Merge branch 'x' into 'main'\n";
         let commit = Commit::parse(out).unwrap();
         assert_eq!(commit.sha, "0123456789abcdef0123456789abcdef01234567");
         assert_eq!(commit.at_secs, 1_792_922_400);

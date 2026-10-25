@@ -127,7 +127,7 @@ impl Repo {
             None,
         );
         repo.run(&human, &["checkout", "-q", "-b", "main"], None);
-        repo.commit("wynn@example.com", "init", &[("README.md", "shop\n")]);
+        repo.commit("ada@example.com", "init", &[("README.md", "shop\n")]);
         repo.run(&human, &["push", "-q", "origin", "main"], None);
         repo
     }
@@ -226,7 +226,7 @@ impl Repo {
     }
 
     fn git(&self, args: &[&str]) -> String {
-        self.run(&self.human(), args, Some("wynn@example.com"))
+        self.run(&self.human(), args, Some("ada@example.com"))
     }
 }
 
@@ -357,7 +357,7 @@ async fn a_direct_push_on_a_gitlab_repo_is_recorded_and_ends_its_authors_claim()
         &hub,
         &shop_scope,
         "dark mode toggle in settings",
-        "wynn@example.com",
+        "ada@example.com",
         vec![],
         None,
     );
@@ -373,12 +373,12 @@ async fn a_direct_push_on_a_gitlab_repo_is_recorded_and_ends_its_authors_claim()
         &hub,
         &shop_scope,
         "checkout totals",
-        "wynn@example.com",
+        "ada@example.com",
         vec![],
         None,
     );
     let sha = repo.commit(
-        "Wynn@Example.com",
+        "Ada@Example.com",
         "feat(app): dark mode toggle for settings",
         &[("app/theme.ts", "dark\n")],
     );
@@ -391,7 +391,7 @@ async fn a_direct_push_on_a_gitlab_repo_is_recorded_and_ends_its_authors_claim()
     assert_eq!(landing.sha.as_str(), sha);
     assert_eq!(landing.route, LandingRoute::DirectPush);
     assert_eq!(landing.pr_number, None);
-    assert_eq!(landing.author_email.as_deref(), Some("Wynn@Example.com"));
+    assert_eq!(landing.author_email.as_deref(), Some("Ada@Example.com"));
     assert_eq!(
         landing.paths.iter().map(|p| p.as_str()).collect::<Vec<_>>(),
         ["app/theme.ts"]
@@ -421,7 +421,7 @@ async fn a_direct_push_on_a_gitlab_repo_is_recorded_and_ends_its_authors_claim()
     assert_eq!(
         wake_line(landing),
         format!(
-            "{} \"feat(app): dark mode toggle for settings\" was pushed straight to main by Wynn@Example.com; it ended claim {mine}.",
+            "{} \"feat(app): dark mode toggle for settings\" was pushed straight to main by Ada@Example.com; it ended claim {mine}.",
             &sha[..7]
         )
     );
@@ -462,7 +462,7 @@ async fn a_gitlab_merge_request_merged_outside_the_train_ends_the_claims_on_its_
         "dark mode",
         "sam@example.com",
         vec![],
-        Some("wynn/dark-mode"),
+        Some("ada/dark-mode"),
     );
     let on_mr = claim(
         &hub,
@@ -505,9 +505,9 @@ async fn a_gitlab_merge_request_merged_outside_the_train_ends_the_claims_on_its_
     let mentioned = issue("#3");
     let same_repo_url = issue("https://gitlab.example.com/acme/shop/-/issues/8");
     let other_repo_url = issue("https://gitlab.example.com/acme/other/-/issues/9");
-    repo.git(&["checkout", "-q", "-b", "wynn/dark-mode"]);
+    repo.git(&["checkout", "-q", "-b", "ada/dark-mode"]);
     repo.commit(
-        "wynn@example.com",
+        "ada@example.com",
         "dark mode toggle",
         &[("app/theme.ts", "dark\n")],
     );
@@ -516,9 +516,9 @@ async fn a_gitlab_merge_request_merged_outside_the_train_ends_the_claims_on_its_
         "merge",
         "-q",
         "--no-ff",
-        "wynn/dark-mode",
+        "ada/dark-mode",
         "-m",
-        "Merge branch 'wynn/dark-mode' into 'main'",
+        "Merge branch 'ada/dark-mode' into 'main'",
         "-m",
         "dark mode toggle, a follow-up to #3\n\nCloses SHOP-7\nFixes #8\nFixes https://gitlab.example.com/acme/other/-/issues/9\n\nSee merge request acme/shop!12",
     ]);
@@ -540,7 +540,7 @@ async fn a_gitlab_merge_request_merged_outside_the_train_ends_the_claims_on_its_
         landing.pr_url.as_ref().map(|u| u.as_str()),
         Some("https://gitlab.example.com/acme/shop/-/merge_requests/12")
     );
-    assert_eq!(landing.head_branch.as_deref(), Some("wynn/dark-mode"));
+    assert_eq!(landing.head_branch.as_deref(), Some("ada/dark-mode"));
     assert_eq!(
         landing.paths.iter().map(|p| p.as_str()).collect::<Vec<_>>(),
         ["app/theme.ts"]
@@ -562,7 +562,7 @@ async fn a_gitlab_merge_request_merged_outside_the_train_ends_the_claims_on_its_
         .reason;
     assert_eq!(
         reason.as_str(),
-        format!("{} landed on main: branch wynn/dark-mode", &merge[..7])
+        format!("{} landed on main: branch ada/dark-mode", &merge[..7])
     );
 }
 
@@ -585,7 +585,7 @@ async fn a_github_squash_merge_takes_its_branch_from_github_and_links_the_task()
     );
 
     let sha = repo.commit(
-        "wynn@example.com",
+        "ada@example.com",
         "feat: checkout totals (#58)",
         &[("app/cart.ts", "1\n")],
     );
@@ -630,7 +630,7 @@ async fn a_github_squash_merge_takes_its_branch_from_github_and_links_the_task()
 
     // A commit with no marker that GitHub says a PR merged is that PR's.
     let rebased = repo.commit(
-        "wynn@example.com",
+        "ada@example.com",
         "checkout rounding",
         &[("app/cart.ts", "2\n")],
     );
@@ -640,7 +640,7 @@ async fn a_github_squash_merge_takes_its_branch_from_github_and_links_the_task()
         merged_at: AT.into(),
         merge_sha: Some(rebased.clone()),
         base: "main".into(),
-        head: "wynn/rounding".into(),
+        head: "ada/rounding".into(),
     });
     scan(&hub, &git).await;
     let landing = &landings(&hub, &scope)[1];
@@ -677,7 +677,7 @@ async fn the_trains_own_merge_is_a_train_landing_and_wakes_no_one() {
 
     // While the train is merging, a commit it may not have recorded yet waits for the next scan.
     change(&hub, &shop, 8, "merging", None);
-    let pushed = repo.commit("wynn@example.com", "fix: typo", &[("docs.md", "e\n")]);
+    let pushed = repo.commit("ada@example.com", "fix: typo", &[("docs.md", "e\n")]);
     repo.push();
     scan(&hub, &git).await;
     assert_eq!(landings(&hub, &scope).len(), 1);
@@ -702,12 +702,12 @@ async fn every_commit_of_a_github_rebase_merge_is_its_prs() {
 
     // GitHub rebases the PR's two commits onto main and names only the last as its merge commit.
     let first = repo.commit(
-        "wynn@example.com",
+        "ada@example.com",
         "rounding: helper",
         &[("app/round.ts", "1\n")],
     );
     let last = repo.commit(
-        "wynn@example.com",
+        "ada@example.com",
         "rounding: use it",
         &[("app/cart.ts", "1\n")],
     );
@@ -716,11 +716,11 @@ async fn every_commit_of_a_github_rebase_merge_is_its_prs() {
     git.pulls
         .lock()
         .unwrap()
-        .push(pull(60, &last, "wynn/rounding"));
+        .push(pull(60, &last, "ada/rounding"));
     git.commit_pulls
         .lock()
         .unwrap()
-        .insert(first.clone(), vec![pull(60, &last, "wynn/rounding")]);
+        .insert(first.clone(), vec![pull(60, &last, "ada/rounding")]);
     scan(&hub, &git).await;
 
     let routes: Vec<(String, LandingRoute, Option<i64>, Option<String>)> = landings(&hub, &scope)
@@ -734,7 +734,7 @@ async fn every_commit_of_a_github_rebase_merge_is_its_prs() {
             )
         })
         .collect();
-    let rounding = Some("wynn/rounding".to_owned());
+    let rounding = Some("ada/rounding".to_owned());
     assert_eq!(
         routes,
         [
@@ -794,7 +794,7 @@ async fn an_offline_node_makes_the_watch_wait_and_another_checkout_of_the_repo_r
     scan(&hub, &git).await;
 
     git.offline.lock().unwrap().insert("devbox".into());
-    let first = repo.commit("wynn@example.com", "one", &[("a.txt", "1\n")]);
+    let first = repo.commit("ada@example.com", "one", &[("a.txt", "1\n")]);
     repo.push();
     scan(&hub, &git).await;
     assert!(
@@ -804,7 +804,7 @@ async fn an_offline_node_makes_the_watch_wait_and_another_checkout_of_the_repo_r
 
     // A second machine's checkout of the same repo is in the scope, and reads it.
     let laptop = project(&hub, "laptop", "shop", &repo.checkout("laptop-shop"));
-    let second = repo.commit("wynn@example.com", "two", &[("a.txt", "2\n")]);
+    let second = repo.commit("ada@example.com", "two", &[("a.txt", "2\n")]);
     repo.push();
     scan(&hub, &git).await;
     assert_eq!(hub.work.scope_of(&laptop).unwrap(), Some(scope.clone()));
@@ -830,7 +830,7 @@ async fn a_base_far_behind_is_read_from_the_nodes_output_tail_and_a_force_push_r
     let mut pushed = Vec::new();
     for n in 0..60 {
         pushed.push(repo.commit(
-            "wynn@example.com",
+            "ada@example.com",
             &format!("step {n}"),
             &[("a.txt", &format!("{n}\n"))],
         ));
@@ -848,7 +848,7 @@ async fn a_base_far_behind_is_read_from_the_nodes_output_tail_and_a_force_push_r
     repo.git(&["reset", "-q", "--hard", &pushed[57]]);
     repo.git(&["cherry-pick", &pushed[58], &pushed[59]]);
     assert_ne!(repo.head(), pushed[59]);
-    let redo = repo.commit("wynn@example.com", "redo", &[("b.txt", "b\n")]);
+    let redo = repo.commit("ada@example.com", "redo", &[("b.txt", "b\n")]);
     repo.push();
     scan(&hub, &git).await;
     let all = landings(&hub, &scope);
@@ -858,7 +858,7 @@ async fn a_base_far_behind_is_read_from_the_nodes_output_tail_and_a_force_push_r
 
     // Rewritten back to where the watch started: nothing older than the watch is reported.
     repo.git(&["reset", "-q", "--hard", &before]);
-    let again = repo.commit("wynn@example.com", "again", &[("c.txt", "c\n")]);
+    let again = repo.commit("ada@example.com", "again", &[("c.txt", "c\n")]);
     repo.push();
     scan(&hub, &git).await;
     let all = landings(&hub, &scope);
