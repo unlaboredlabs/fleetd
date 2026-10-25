@@ -983,6 +983,108 @@ async fn deltas_reach_followers_coalesced_and_stop_at_their_message() {
 }
 
 #[tokio::test]
+async fn a_writers_commits_name_its_task_in_a_trailer_only_in_its_worktree() {
+    writer_commits(true).await;
+}
+
+/// A repo without `extensions.worktreeConfig` is never given it: its shared config stays as it was, and the agent's
+/// commits carry no trailer.
+#[tokio::test]
+async fn a_writer_in_a_repo_without_worktree_config_sets_nothing_and_names_no_task() {
+    writer_commits(false).await;
+}
+
+/// A writer on T7 commits in its worktree and in a second repo, with the repo's `extensions.worktreeConfig` on or off.
+async fn writer_commits(worktree_config: bool) {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let root = repo(dir.path());
+    if worktree_config {
+        git(&root, &["config", "extensions.worktreeConfig", "true"]);
+    }
+    let shared = std::fs::read(root.join(".git/config")).unwrap();
+    // The repo's own hook, which must run in the worktree and nowhere else.
+    let log = dir.path().join("hooks.log");
+    let hook = root.join(".git/hooks/commit-msg");
+    std::fs::write(
+        &hook,
+        format!("#!/bin/sh\necho ran >> '{}'\n", log.display()),
+    )
+    .unwrap();
+    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.project(&root).await;
+    let workspace = SessionWorkspace::Worktree {
+        base_ref: NonEmpty::unchecked("main"),
+        branch: NonEmpty::unchecked("fleetd/T7-docs"),
+    };
+    hub.ok(launch("s1", RuntimeMode::FullAccess, workspace))
+        .await;
+    hub.settled("r1").await;
+    let spec = hub.runner.spawned()[0].clone();
+    // Nothing in the session's environment points git anywhere.
+    assert!(
+        !spec.env.iter().any(|(k, _)| k.starts_with("GIT_CONFIG")),
+        "{:?}",
+        spec.env
+    );
+    // The agent's git, as claude's Bash tool runs it, with the session's environment.
+    let agent_git = |cwd: &Path, args: &[&str]| -> String {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(cwd)
+            .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+            .args(args)
+            .env_clear()
+            .envs(spec.env.iter().cloned())
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    };
+    let commit = |cwd: &Path, msg: &str| {
+        std::fs::write(cwd.join(format!("{msg}.md")), "d\n").unwrap();
+        agent_git(cwd, &["add", "."]);
+        agent_git(cwd, &["commit", "-q", "-m", msg]);
+        agent_git(cwd, &["log", "-1", "--format=%B"])
+    };
+    let named = if worktree_config {
+        "docs\n\nFleetd-Task: T7"
+    } else {
+        "docs"
+    };
+    assert_eq!(commit(&spec.cwd, "docs"), named);
+    assert_eq!(
+        std::fs::read(root.join(".git/config")).unwrap(),
+        shared,
+        "the repo's shared config is never written"
+    );
+    let ran = || {
+        std::fs::read_to_string(&log)
+            .unwrap_or_default()
+            .lines()
+            .count()
+    };
+    assert_eq!(ran(), 1, "the repo's own hook ran in the worktree");
+
+    // A second repo from the same session: no trailer, and none of the first repo's hooks.
+    let other = dir.path().join("scratch");
+    std::fs::create_dir_all(&other).unwrap();
+    agent_git(&other, &["init", "-q", "-b", "main"]);
+    assert_eq!(commit(&other, "scratch"), "scratch");
+    assert_eq!(ran(), 1);
+}
+
+#[tokio::test]
 async fn a_removed_worktree_comes_back_at_the_same_path_when_the_session_resumes() {
     let dir = tempfile::tempdir().unwrap();
     let root = repo(dir.path());

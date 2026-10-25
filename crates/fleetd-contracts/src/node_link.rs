@@ -72,6 +72,9 @@ pub struct NodeHello {
 /// `repo_scan`, `repo_inspect`, `repo_clone` and `gh_repo_list` (adding a project).
 pub const CAP_REPOS: &str = "repos";
 
+/// `landed_log` (factory metrics for a repo whose host fleetd can't read).
+pub const CAP_LANDED_LOG: &str = "landed_log";
+
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]

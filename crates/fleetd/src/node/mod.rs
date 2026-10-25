@@ -6,6 +6,7 @@ pub mod actions;
 pub mod cmd;
 pub mod config;
 pub mod identity;
+pub mod landed;
 pub mod lead;
 pub mod link;
 pub mod load;

@@ -852,6 +852,20 @@ impl SessionService {
             SessionCall::GhRepoList => {
                 Ok(SessionOutput::GhRepos(super::repos::gh_repo_list().await))
             }
+            SessionCall::LandedLog {
+                project_id,
+                branch,
+                since_ms,
+                stop_at,
+            } => {
+                let root = self.project_root(&project_id)?;
+                let stop_at = stop_at.map(|s| s.to_string());
+                let log = blocking(move || {
+                    super::landed::landed_log(&root, &branch, since_ms.get(), stop_at.as_deref())
+                })
+                .await?;
+                Ok(SessionOutput::LandedLog(log))
+            }
             SessionCall::DefaultBranch { project_id } => {
                 let root = self.project_root(&project_id)?;
                 let branch = blocking(move || worktree::default_branch(&root)).await;
@@ -1547,6 +1561,17 @@ impl SessionService {
         env.retain(|(k, _)| k != key);
         env.push((key.to_owned(), value.to_owned()));
         env.extend(compile_cache_env(&env));
+        // A writer's commits name its task, so its work merged by hand is found from git alone.
+        if let Some(task) = row
+            .local
+            .branch
+            .as_deref()
+            .and_then(super::landed::branch_task)
+            && row.local.cwd.is_dir()
+            && let Err(e) = super::landed::trailer_hooks(&row.local.cwd, &task)
+        {
+            tracing::warn!(session = id, "commits won't name their task: {e}");
+        }
         Ok(SessionSpec {
             session_id: id.to_owned(),
             resume,

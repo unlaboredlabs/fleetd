@@ -53,7 +53,7 @@ fn failed(args: &[&str], stderr: &[u8]) -> GitError {
     ))
 }
 
-fn git(dir: &Path, args: &[&str]) -> Result<String, GitError> {
+pub(super) fn git(dir: &Path, args: &[&str]) -> Result<String, GitError> {
     let out = command(dir, args)
         .output()
         .map_err(|e| GitError(format!("cannot run git: {e}")))?;
@@ -412,7 +412,7 @@ type Said = (Instant, Option<String>);
 /// What each repo's remote last said its default branch is.
 static HEADS: LazyLock<Mutex<HashMap<RemoteKey, Said>>> = LazyLock::new(Default::default);
 
-fn ref_sha(root: &Path, name: &str) -> Option<String> {
+pub(super) fn ref_sha(root: &Path, name: &str) -> Option<String> {
     git(
         root,
         &[
@@ -628,7 +628,7 @@ static FETCHES: LazyLock<Mutex<HashMap<RemoteKey, Arc<Mutex<Fetched>>>>> =
 
 /// Brings `refs/remotes/<remote>/<branch>` up to date and nothing else: never the human's branches or working tree.
 /// A fetch under 30 s old is reused, failed or not, so a burst of spawns waits on the network once.
-fn fetch(root: &Path, remote: &str, branch: &str) -> Result<(), FetchError> {
+pub(super) fn fetch(root: &Path, remote: &str, branch: &str) -> Result<(), FetchError> {
     let per_root = FETCHES
         .lock()
         .unwrap()

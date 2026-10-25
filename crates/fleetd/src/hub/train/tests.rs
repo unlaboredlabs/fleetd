@@ -211,7 +211,13 @@ impl FakeGh {
 
     /// Squash onto the base: the base's head as parent, the PR head's tree. Refused like GitHub when the head or
     /// the base moved.
-    fn merge(&self, n: i64, p: &mut FakePull, sha: &str) -> GhOut {
+    fn merge(&self, n: i64, p: &mut FakePull, fields: &HashMap<&str, &str>) -> GhOut {
+        let sha = fields.get("sha").copied().unwrap_or_default();
+        let message = match (fields.get("commit_title"), fields.get("commit_message")) {
+            (Some(title), Some(body)) => format!("{title}\n\n{body}"),
+            (Some(title), None) => (*title).to_owned(),
+            _ => format!("squash #{n}"),
+        };
         if self.head_of(&p.branch).as_deref() != Some(sha) {
             return http_error(
                 409,
@@ -242,7 +248,7 @@ impl FakeGh {
                 "-p",
                 &main,
                 "-m",
-                &format!("squash #{n}"),
+                &message,
             ],
         );
         git(
@@ -519,6 +525,27 @@ impl FakeGh {
                 }
                 None => http_error(404, "Not Found"),
             },
+            (["pulls", n, "commits"], "GET") => {
+                match self.pulls.lock().unwrap().get(&number(Some(n))) {
+                    // One page: the PR's commits, oldest first.
+                    Some(p) if query.contains("page=1") => {
+                        let range = format!("{}..{}", p.base, p.branch);
+                        let log = git(
+                            &self.origin,
+                            &["log", "--reverse", "--format=%B%x1e", &range],
+                        );
+                        let commits: Vec<Value> = log
+                            .split('\u{1e}')
+                            .map(str::trim)
+                            .filter(|m| !m.is_empty())
+                            .map(|m| json!({ "commit": { "message": m } }))
+                            .collect();
+                        ok(Value::Array(commits))
+                    }
+                    Some(_) => ok(json!([])),
+                    None => http_error(404, "Not Found"),
+                }
+            }
             (["pulls", n, "merge"], "PUT") => {
                 if let Some(branch) = self.push_on_merge.lock().unwrap().take() {
                     self.push_empty(&branch);
@@ -526,7 +553,7 @@ impl FakeGh {
                 if std::mem::take(&mut *self.merge_then_fail.lock().unwrap()) {
                     let n = number(Some(n));
                     if let Some(p) = self.pulls.lock().unwrap().get_mut(&n) {
-                        self.merge(n, p, fields.get("sha").copied().unwrap_or_default());
+                        self.merge(n, p, &fields);
                     }
                     return http_error(502, "Bad Gateway");
                 }
@@ -537,7 +564,7 @@ impl FakeGh {
                 drop(scripted);
                 let n = number(Some(n));
                 match self.pulls.lock().unwrap().get_mut(&n) {
-                    Some(p) => self.merge(n, p, fields.get("sha").copied().unwrap_or_default()),
+                    Some(p) => self.merge(n, p, &fields),
                     None => http_error(404, "Not Found"),
                 }
             }
@@ -1203,6 +1230,13 @@ async fn auto_enqueues_a_write_tasks_pr_rebases_it_onto_the_moved_base_and_merge
     );
     assert_eq!(kit.main_file("docs.md").as_deref(), Some("docs"));
     assert_eq!(kit.main_file("other.txt").as_deref(), Some("other"));
+    // The squash names the Change, so git alone tells the train's merge apart.
+    let message = git(&kit.gh.origin, &["log", "-1", "--format=%B", "main"]);
+    assert!(
+        message.starts_with("change docs (#7)\n\n")
+            && message.ends_with(&format!("\n\nFleetd-Change: {change_id} ({task_id}, W1)")),
+        "{message}"
+    );
     let mut landed = kit.host.events_of("pr.merged");
     let merged_at = landed[0]["mergedAt"].take();
     assert!(merged_at.is_string(), "{merged_at}");
@@ -1246,6 +1280,74 @@ async fn auto_enqueues_a_write_tasks_pr_rebases_it_onto_the_moved_base_and_merge
         (state.repo.as_str(), state.head, state.queue.into_inner()),
         (REPO, None, vec![])
     );
+}
+
+/// The train's squash keeps GitHub's own message, here a commit's `Co-Authored-By` trailer, and adds the Change's to
+/// the same trailer block, so both stay trailers.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_squash_keeps_githubs_message_and_its_co_author_trailer_and_adds_the_changes() {
+    let kit = Kit::new();
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    git(
+        &kit.author,
+        &[
+            "commit",
+            "-q",
+            "--amend",
+            "-m",
+            "Add the docs\n\nWhat they cover.\n\nCo-Authored-By: Claude <noreply@anthropic.com>",
+        ],
+    );
+    git(&kit.author, &["push", "-q", "--force", "origin", "docs"]);
+    let (task_id, change_id) = kit.author_task(Some(&pr)).await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::Merged);
+    let message = git(&kit.gh.origin, &["log", "-1", "--format=%B", "main"]);
+    assert_eq!(
+        message,
+        format!(
+            "Add the docs (#7)\n\nWhat they cover.\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n\
+             Fleetd-Change: {change_id} ({task_id}, W1)"
+        )
+    );
+    let trailers = git(
+        &kit.gh.origin,
+        &["log", "-1", "--format=%(trailers:only,unfold)", "main"],
+    );
+    assert_eq!(
+        trailers,
+        format!(
+            "Co-Authored-By: Claude <noreply@anthropic.com>\nFleetd-Change: {change_id} ({task_id}, W1)"
+        )
+    );
+}
+
+/// Several commits squash as GitHub writes them: the PR's title, a line per commit, co-authors once at the end.
+#[test]
+fn a_squash_of_several_commits_reads_as_githubs_with_co_authors_once() {
+    let pull: super::github::Pull = serde_json::from_value(json!({
+        "number": 9, "title": "Checkout totals", "state": "open", "body": "The PR's body",
+        "head": { "ref": "t", "sha": "a" }, "base": { "ref": "main" },
+    }))
+    .unwrap();
+    let co = "Co-authored-by: Claude <noreply@anthropic.com>";
+    let messages = [format!("fix totals\n\n{co}"), format!("add a test\n\n{co}")];
+    let squash = |title, body| super::github::squash_text(&pull, title, body, &messages);
+    assert_eq!(
+        squash("COMMIT_OR_PR_TITLE", "COMMIT_MESSAGES"),
+        (
+            "Checkout totals (#9)".to_owned(),
+            format!("* fix totals\n\n* add a test\n\n---------\n\n{co}")
+        )
+    );
+    assert_eq!(
+        squash("PR_TITLE", "PR_BODY"),
+        (
+            "Checkout totals (#9)".to_owned(),
+            "The PR's body".to_owned()
+        )
+    );
+    assert_eq!(squash("PR_TITLE", "BLANK").1, "");
 }
 
 /// A repo removed and re-added as a new project keeps its train: the next Change merges and the train follows it.
@@ -1817,6 +1919,14 @@ async fn batches_three_ready_prs_into_one_ci_run_and_one_squash_and_closes_each_
         "fleetd/train only on the batch's head"
     );
     let main = kit.head_of("main");
+    // The batch's squash names each Change it landed, last.
+    let message = git(&kit.gh.origin, &["log", "-1", "--format=%B", "main"]);
+    let trailers: Vec<&str> = message.lines().rev().take(3).collect();
+    assert_eq!(
+        trailers,
+        [&c, &b, &a].map(|x| format!("Fleetd-Change: {} (W1)", x.change_id)),
+        "{message}"
+    );
     for (change, file) in [(&a, "a1.txt"), (&b, "b1.txt"), (&c, "c1.txt")] {
         let merged = kit.get(&change.change_id);
         assert_eq!(

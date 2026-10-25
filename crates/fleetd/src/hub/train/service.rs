@@ -1083,9 +1083,17 @@ impl Train {
                 &format!("{}: rebased onto {base}, CI green", change.change_id),
             )
             .await?;
+        // The squash message GitHub would write by the repo's settings, with the Change's trailer added.
+        let (title, body) = self.github.squash_message(repo, &rebased).await?;
+        let body = super::batch::with_trailers(&body, [&merging]);
         let (status, message) = match self
             .github
-            .merge(repo, change.pr_number.get(), &head_sha, None)
+            .merge(
+                repo,
+                change.pr_number.get(),
+                &head_sha,
+                Some((&title, &body)),
+            )
             .await?
         {
             MergeOutcome::Merged { sha } => {

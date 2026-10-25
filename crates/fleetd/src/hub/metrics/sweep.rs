@@ -6,7 +6,8 @@
 //!
 //! When: every 15 minutes for a repo with a merge in the last 7 days, else hourly, and within a minute of a metrics
 //! read asking for it. Repos are read one at a time. On a train's repo the train's own minute-by-minute check stays
-//! the fast path; the sweep fills what it can't see (no train yet, older PRs, other bases, pushes, reviews).
+//! the fast path; the sweep fills what it can't see (no train yet, older PRs, other bases, pushes, reviews). A repo on
+//! a host with no source here is read from git alone instead (`no_host.rs`), on the same schedule.
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -21,6 +22,7 @@ use tokio::sync::Notify;
 
 use super::host_acts::{self, BACKFILL_MS};
 use super::host_acts::{HostAct, HostActs};
+use super::no_host;
 use super::project::{self, actor_str, skip_str};
 use super::source::{self, GitHostSource, HostSources, LandedCommit, MergedPr, RepoInfo, RepoRef};
 use super::store::{self, MergeRow, SKIPPED};
@@ -46,6 +48,8 @@ const TICK: Duration = Duration::from_secs(60);
 /// The sweep's sources and when each repo was last tried.
 pub struct Sweep {
     sources: Mutex<HostSources>,
+    /// For a repo on a host with no source: its git log, read on a node with it checked out.
+    pub git: no_host::Reader,
     /// Repos a metrics read asked for since the last pass.
     wanted: Mutex<HashSet<String>>,
     tried: Mutex<HashMap<String, i64>>,
@@ -62,6 +66,7 @@ impl Sweep {
     pub fn new(sources: HostSources) -> Self {
         Self {
             sources: Mutex::new(sources),
+            git: no_host::Reader::default(),
             wanted: Mutex::default(),
             tried: Mutex::default(),
             asked: Mutex::default(),
@@ -69,7 +74,8 @@ impl Sweep {
         }
     }
 
-    /// The source for a host as `metric_repos.host` names it, if the hub reads that host.
+    /// The source for a host as `metric_repos.host` names it, if the hub reads that host; the others are read from
+    /// git.
     pub fn source(&self, host: &str) -> Option<Arc<dyn GitHostSource>> {
         lock(&self.sources).get(host)
     }
@@ -128,9 +134,10 @@ pub async fn pass(hub: &Hub) {
         Err(e) => return tracing::error!(error = %e, "metrics: repos not listed"),
     };
     for r in repos {
-        let Some(source) = sweep.source(&r.host) else {
+        // A host read through its API, on a hub built without its reader (a test or lab hub).
+        if source::has_api(&r.host) && sweep.source(&r.host).is_none() {
             continue;
-        };
+        }
         let tried = lock(&sweep.tried).get(&r.repo).copied();
         let last = tried.max(r.last_ok_ms);
         if !due(last, r.last_merge_ms, wanted.contains(&r.repo), now) {
@@ -138,8 +145,14 @@ pub async fn pass(hub: &Hub) {
         }
         lock(&sweep.tried).insert(r.repo.clone(), now);
         let now = now_ms(hub.clock.as_ref());
-        if let Err(why) = sweep_repo(hub, source.as_ref(), &r.repo, now).await {
-            tracing::warn!(repo = %r.repo, %why, "metrics: repo not read from its git host");
+        let read = match sweep.source(&r.host) {
+            Some(source) => sweep_repo(hub, source.as_ref(), &r.repo, now)
+                .await
+                .map(|_| ()),
+            None => no_host::sweep_repo(hub, &r.repo, now).await.map(|_| ()),
+        };
+        if let Err(why) = read {
+            tracing::warn!(repo = %r.repo, %why, "metrics: repo not read");
         }
     }
 }
@@ -255,19 +268,7 @@ pub async fn sweep_repo(
     now: i64,
 ) -> Result<Swept, String> {
     let read = read_repo(hub, source, remote, now).await;
-    let failed = |why: &str| {
-        let kept = hub.db.transaction(|c| {
-            store::see_repo(c, remote, source::host_of(remote))?;
-            c.execute(
-                "UPDATE metric_repos SET last_error = ?2 WHERE repo = ?1",
-                params![remote, crate::hub::api::clip(why, 500)],
-            )?;
-            Ok(())
-        });
-        if let Err(e) = kept {
-            tracing::error!(error = %e, "metrics: a repo's read error not kept");
-        }
-    };
+    let failed = |why: &str| failed(hub, remote, why);
     let rows = match read {
         Ok(rows) => rows,
         Err(why) => {
@@ -303,6 +304,21 @@ pub async fn sweep_repo(
         }
     };
     Ok(Swept { rows, touches })
+}
+
+/// Keeps why a repo's read failed; its rows stay.
+pub(super) fn failed(hub: &Hub, remote: &str, why: &str) {
+    let kept = hub.db.transaction(|c| {
+        store::see_repo(c, remote, source::host_of(remote))?;
+        c.execute(
+            "UPDATE metric_repos SET last_error = ?2 WHERE repo = ?1",
+            params![remote, crate::hub::api::clip(why, 500)],
+        )?;
+        Ok(())
+    });
+    if let Err(e) = kept {
+        tracing::error!(error = %e, "metrics: a repo's read error not kept");
+    }
 }
 
 /// The landed changes since the repo's cursor, written in one transaction with the cursor's move.
@@ -632,7 +648,7 @@ fn push_row(repo: &RepoRef, c: &LandedCommit, owner: Option<(String, String)>) -
 
 /// Writes a row the sweep made. A PR's row replaces the direct push its commit was taken for before the host linked
 /// them.
-fn write(c: &Connection, row: &MergeRow) -> Result<(), StoreError> {
+pub(super) fn write(c: &Connection, row: &MergeRow) -> Result<(), StoreError> {
     if let Some(id) = &row.change_id {
         let mut row = row.clone();
         row.review_passed_ms = store::review_passed(c, id)?;
