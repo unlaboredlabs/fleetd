@@ -645,7 +645,7 @@ async fn fleetds_own_comments_and_an_agents_during_its_run_are_not_the_persons()
         head: Some("slot/1/fleetd/T7-checkout".into()),
         lines: None,
     };
-    let agents = |at: &str| sweep::agents_act(&hub.db, REPO, &act(at)).unwrap();
+    let agents = |at: &str| sweep::agents_act(&hub.db, REPO, &act(at), ms(NOW)).unwrap();
     assert!(agents("2026-10-23T10:35:00Z"));
     assert!(!agents("2026-10-23T11:00:00Z"), "between its two runs");
     assert!(agents("2026-10-23T11:45:00Z"));
@@ -655,10 +655,85 @@ async fn fleetds_own_comments_and_an_agents_during_its_run_are_not_the_persons()
         !sweep::agents_act(
             &hub.db,
             "github.com/other/web",
-            &act("2026-10-23T10:30:00Z")
+            &act("2026-10-23T10:30:00Z"),
+            ms(NOW)
         )
         .unwrap()
     );
+}
+
+/// A task's act on its PR, through `gh` under the person's login.
+fn task_act(task: i64, at: &str) -> HostAct {
+    HostAct {
+        kind: HostActKind::Comment,
+        id: "1".into(),
+        pr_number: 90 + task,
+        at_ms: ms(at),
+        login: Some("ada-lovelace".into()),
+        bot: false,
+        head: Some(format!("fleetd/T{task}-x")),
+        lines: None,
+    }
+}
+
+fn task_row(hub: &Hub, n: i64, state: &str, started: &str, ended: Option<&str>) {
+    sql(
+        hub,
+        "INSERT INTO tasks (n, machine_id, project_id, workstream_id, state, ended_at, data)
+         VALUES (?1, 'devbox', 'web', 'W1', ?2, ?3, ?4)",
+        &[
+            &n,
+            &state,
+            &ended,
+            &json!({ "taskId": format!("T{n}"), "createdAt": started, "startedAt": started })
+                .to_string(),
+        ],
+    );
+}
+
+#[tokio::test]
+async fn an_act_during_a_run_still_open_or_past_the_span_retention_is_the_agents() {
+    let (hub, _clock, _home) = hub();
+    checkout(&hub);
+    let agents =
+        |n: i64, at: &str| sweep::agents_act(&hub.db, REPO, &task_act(n, at), ms(NOW)).unwrap();
+
+    // T8 first ran on the 20th, and was continued at 09:00 today: that run is open, and its spans come only when it
+    // ends.
+    task_row(&hub, 8, "running", "2026-10-20T08:00:00.000Z", None);
+    sql(
+        &hub,
+        "INSERT INTO events (created_ms, type, machine_id, data) VALUES (?1, 'task.started', 'devbox', ?2)",
+        &[
+            &ms("2026-10-25T09:00:00Z"),
+            &json!({ "type": "task.started", "data": { "taskId": "T8" } }).to_string(),
+        ],
+    );
+    assert!(agents(8, "2026-10-25T10:00:00Z"), "during the open run");
+    assert!(
+        !agents(8, "2026-10-25T08:30:00Z"),
+        "before this attempt, with no span for the last"
+    );
+
+    // T9 ran on 1 September, past the 30 days its spans are kept: its own start and end stand in.
+    task_row(
+        &hub,
+        9,
+        "done",
+        "2026-09-01T10:00:00.000Z",
+        Some("2026-09-01T12:00:00.000Z"),
+    );
+    assert!(agents(9, "2026-09-01T11:00:00Z"));
+    assert!(!agents(9, "2026-09-01T13:00:00Z"));
+    // A task within the retention with no span covering the act: between runs, the person's.
+    task_row(
+        &hub,
+        10,
+        "done",
+        "2026-10-24T10:00:00.000Z",
+        Some("2026-10-24T12:00:00.000Z"),
+    );
+    assert!(!agents(10, "2026-10-24T11:00:00Z"));
 }
 
 #[tokio::test]

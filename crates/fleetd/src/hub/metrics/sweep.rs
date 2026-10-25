@@ -26,7 +26,7 @@ use super::source::{self, GitHostSource, HostSources, LandedCommit, MergedPr, Re
 use super::store::{self, MergeRow, SKIPPED};
 use super::touches;
 use crate::hub::api::Hub;
-use crate::hub::store::{HubDb, StoreError, iso_ms, now_ms};
+use crate::hub::store::{HubDb, StoreError, iso_ms, now_ms, parse_ms};
 use crate::hub::usage::ports::BoxFut;
 
 /// A metrics read asks for a repo again once its last read is this old.
@@ -292,6 +292,7 @@ pub async fn sweep_repo(
     let acts = PersonActs {
         inner: source.acts(),
         db: &hub.db,
+        now_ms: now,
     };
     let touches = match host_acts::read(&hub.db, &acts, remote, now).await {
         Ok(n) => n,
@@ -653,6 +654,7 @@ fn write(c: &Connection, row: &MergeRow) -> Result<(), StoreError> {
 struct PersonActs<'a> {
     inner: &'a dyn HostActs,
     db: &'a HubDb,
+    now_ms: i64,
 }
 
 impl HostActs for PersonActs<'_> {
@@ -664,7 +666,7 @@ impl HostActs for PersonActs<'_> {
         Box::pin(async move {
             let mut out = Vec::new();
             for act in self.inner.acts_since(repo, since_ms).await? {
-                let agents = agents_act(self.db, repo, &act)
+                let agents = agents_act(self.db, repo, &act, self.now_ms)
                     .map_err(|e| format!("the hub's database: {e}"))?;
                 if !agents {
                     out.push(act);
@@ -684,10 +686,18 @@ fn branch_task(head: &str) -> Option<i64> {
 
 /// Whether an act on `remote` was made during a run of the fleetd task that wrote its PR: its Change's task, else the
 /// task its `fleetd/T<n>` branch names when that task is one of this hub's projects with the repo (task numbers are
-/// this hub's own; another fleet sharing the repo has its own `T<n>`). Each run counts from its start to its end, so
-/// an act between two runs of a continued task is the person's. Runs are the time area's run spans, kept as long as
-/// its retention: an act older than its task's runs records counts as the person's.
-pub fn agents_act(db: &HubDb, remote: &str, act: &HostAct) -> Result<bool, StoreError> {
+/// this hub's own; another fleet sharing the repo has its own `T<n>`). An act between two runs of a continued task is
+/// the person's. A run counts:
+///
+/// - from its recorded run span, which the node sends when the run ends;
+/// - while the task is running, from the start of its current attempt (its latest `task.started`) on;
+/// - older than the time area's span retention, where the spans are gone: the task's own start to its end.
+pub fn agents_act(
+    db: &HubDb,
+    remote: &str,
+    act: &HostAct,
+    now_ms: i64,
+) -> Result<bool, StoreError> {
     let path = remote.split_once('/').map_or(remote, |(_, p)| p);
     let task = match change_of(db, path, act.pr_number)?.and_then(|c| c.task_id) {
         Some(t) => t.as_str().get(1..).and_then(|n| n.parse::<i64>().ok()),
@@ -699,17 +709,47 @@ pub fn agents_act(db: &HubDb, remote: &str, act: &HostAct) -> Result<bool, Store
     let Some(n) = task else {
         return Ok(false);
     };
+    let task_id = format!("T{n}");
     db.with(|c| {
-        Ok(c.query_row(
+        let in_run: bool = c.query_row(
             "SELECT EXISTS (SELECT 1 FROM time_spans WHERE task_id = ?1 AND kind = ?2
                AND start_ms <= ?3 AND (end_ms IS NULL OR end_ms >= ?3))",
             params![
-                format!("T{n}"),
+                task_id,
                 fleetd_contracts::time::SpanKind::Run.code(),
                 act.at_ms
             ],
             |r| r.get(0),
-        )?)
+        )?;
+        if in_run {
+            return Ok(true);
+        }
+        let row: Option<(String, Option<String>, Option<String>)> = c
+            .query_row(
+                "SELECT state, json_extract(data, '$.startedAt'), ended_at FROM tasks WHERE n = ?1",
+                [n],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()?;
+        let Some((state, started, ended)) = row else {
+            return Ok(false);
+        };
+        let started = started.as_deref().and_then(parse_ms);
+        if state == "running" {
+            let attempt: Option<i64> = c.query_row(
+                "SELECT MAX(created_ms) FROM events WHERE type = 'task.started'
+                   AND json_extract(data, '$.data.taskId') = ?1",
+                [&task_id],
+                |r| r.get(0),
+            )?;
+            if attempt.or(started).is_some_and(|start| act.at_ms >= start) {
+                return Ok(true);
+            }
+        }
+        let spans_from = now_ms - crate::hub::time::store::retention_days(c)? * store::DAY_MS;
+        let end = ended.as_deref().and_then(parse_ms).unwrap_or(now_ms);
+        Ok(act.at_ms < spans_from
+            && started.is_some_and(|start| act.at_ms >= start && act.at_ms <= end))
     })
 }
 
