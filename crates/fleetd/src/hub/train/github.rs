@@ -243,6 +243,8 @@ fn merged(p: ClosedPull) -> Option<MergedPull> {
         merge_sha: p.merge_commit_sha,
         base: p.base.ref_,
         head: p.head.ref_,
+        author_bot: p.user.map(|u| u.kind == "Bot"),
+        created_at: p.created_at,
     })
 }
 

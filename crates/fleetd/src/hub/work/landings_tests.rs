@@ -95,6 +95,8 @@ fn pull(number: i64, sha: &str, head: &str) -> MergedPull {
         merge_sha: Some(sha.into()),
         base: "main".into(),
         head: head.into(),
+        author_bot: None,
+        created_at: None,
     }
 }
 
@@ -603,6 +605,8 @@ async fn a_github_squash_merge_takes_its_branch_from_github_and_links_the_task()
         merge_sha: Some(sha.to_uppercase()),
         base: "main".into(),
         head: "fleetd/T1-checkout-totals".into(),
+        author_bot: None,
+        created_at: None,
     });
     scan(&hub, &git).await;
 
@@ -648,6 +652,8 @@ async fn a_github_squash_merge_takes_its_branch_from_github_and_links_the_task()
         merge_sha: Some(rebased.clone()),
         base: "main".into(),
         head: "ada/rounding".into(),
+        author_bot: None,
+        created_at: None,
     });
     scan(&hub, &git).await;
     let landing = &landings(&hub, &scope)[1];

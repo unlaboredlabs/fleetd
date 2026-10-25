@@ -97,6 +97,8 @@ impl Landing {
 const SCAN_MAX: usize = 200;
 /// What a node's command output keeps: its last this many characters.
 const OUTPUT_TAIL_MAX: usize = 2000;
+/// How far back GitHub's merged PRs are read for a commit's PR and branch.
+const MERGED_LOOKBACK_MS: i64 = 24 * 3_600_000;
 /// Merged Changes searched for a commit's sha.
 const MERGED_CHANGES: i64 = 200;
 /// A commit not yet known as the train's waits while a Change on the repo has been merging for less than this; a
@@ -132,7 +134,8 @@ impl NodeGit for HubLandingPorts {
 impl LandingPorts for HubLandingPorts {
     fn merged_pulls<'a>(&'a self, repo: &'a str) -> BoxFut<'a, Option<Vec<MergedPull>>> {
         Box::pin(async move {
-            match self.0.train.github().merged_pulls(repo).await {
+            let since = now_ms(self.0.clock.as_ref()) - MERGED_LOOKBACK_MS;
+            match self.0.train.github().merged_pulls(repo, since).await {
                 Ok(pulls) => Some(pulls),
                 Err(e) => {
                     tracing::warn!(repo, error = %e.message, "landings: merged PRs not read");
