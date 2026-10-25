@@ -369,6 +369,11 @@ tied to code: a description must match its tool, and a <code dir="auto">next:</c
 <td>the lead never writes code (prompt only); asks the human only for product, money or irreversible calls (prompt only); asks as numbered items, each with a recommendation (prompt only); never estimates time (prompt only); secrets only through `request_secret`; prod writes, spends and deletes only through `gated_run`; only the merge train merges (prompt only); takes an agent’s chat message as input, never as the human’s answer or approval</td>
 </tr>
 <tr>
+<td><code dir="auto">lead.voice</code></td>
+<td>after the lead prompt, at every lead start</td>
+<td>the casual voice stays out of commits, PR bodies, docs and briefs (prompt only)</td>
+</tr>
+<tr>
 <td><code dir="auto">lead.profiles</code></td>
 <td>after the lead prompt, while the project allows medium (project_set)</td>
 <td>medium only for mechanical work, never for design or anything subtle (prompt only); reviews always run high; a medium task whose review finds blockers twice is redone on high (prompt only)</td>
