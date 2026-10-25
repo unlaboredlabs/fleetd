@@ -109,25 +109,28 @@ describe("connLine", () => {
       tone: "success",
       status: "Connected",
       detail: null,
+      fix: null,
       hub: "https://forge.example.ts.net:4790",
       retry: false,
     });
   });
 
-  it("says when it isn't connected, calmly: amber while reaching it, red when the key is refused", () => {
-    expect(connLine({ phase: "connecting", hub: "http://hub:4790", attempt: 1 })).toMatchObject({ label: "Connecting…", tone: "warning", retry: false });
+  it("says when it isn't connected, calmly: quiet on the first try, amber once it tries again, red when the key is refused", () => {
+    expect(connLine({ phase: "connecting", hub: "http://hub:4790", attempt: 1 })).toMatchObject({ label: "Connecting…", tone: "quiet", retry: false });
     expect(connLine({ phase: "connecting", hub: "http://hub:4790", attempt: 3 })).toMatchObject({ label: "Reconnecting…", tone: "warning" });
     expect(connLine({ phase: "connecting", hub: "", attempt: 1 }).hub).toBeNull();
-    const down = { phase: "retrying", hub: "http://hub:4790", reason: "Nothing is listening at hub:4790", retryAt: 0 } as const;
+    const down = { phase: "retrying", hub: "http://hub:4790", reason: "Nothing is listening at hub:4790", fix: "Start the hub (`fleetd doctor` says why)", retryAt: 0 } as const;
     expect(connLine(down, false, "as of 09:02")).toEqual({
       label: "Offline",
       tone: "warning",
       status: "Offline, as of 09:02",
       detail: "Nothing is listening at hub:4790",
+      fix: "Start the hub (`fleetd doctor` says why)",
       hub: "http://hub:4790",
       retry: true,
     });
     expect(connLine(down).status).toBe("Offline");
+    expect(connLine({ ...down, fix: undefined }).fix).toBeNull();
     expect(connLine({ phase: "refused", hub: "http://hub:4790", message: "bad key" })).toMatchObject({ label: "Key refused", tone: "danger", retry: false });
     expect(connLine({ phase: "unpaired" })).toMatchObject({ label: "No hub", tone: "quiet", hub: null });
   });

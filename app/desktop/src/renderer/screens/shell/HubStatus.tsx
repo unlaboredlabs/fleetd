@@ -1,22 +1,26 @@
 // The sidebar's last line: a small chip naming the hub ("forge") with a soft dot, quiet while all is well and saying
 // so when it isn't ("Reconnecting…", "Offline", "Key refused"). Hovering shows the hub's address; clicking (or Enter)
 // opens the details: the address in full, the machines online, protocol and version, and what can be done from here
-// (Retry, Switch hub, Disconnect), each only when it applies.
+// (Retry now, Hub settings, Disconnect), each only when it applies. A paired app switches hub from Settings' Hub
+// section, not #/onboarding: that page sends a connected app straight back to the board.
 import { useState } from "react";
 import type { HubState } from "../../../shared/hub";
 import { useData, useDataLayer } from "../../src/data/react";
 import { selectMachines } from "../../src/data/selectors";
 import { Button, Dot, Popover, PopoverContent, PopoverTrigger, Text, Tooltip } from "../../ui";
-import { ForgetHubDialog } from "../settings";
+import { Prose } from "../onboarding/Prose";
+import { ForgetHubDialog, OPTIONS, openOption } from "../settings";
 import { connLine, type ConnTone } from "./model";
 import { useOfflineAsOf } from "./offline";
 import h from "./hubStatus.module.css";
 
 const TONE: Record<ConnTone, string> = { success: "var(--success)", warning: "var(--warning)", danger: "var(--danger)", quiet: "var(--faint)" };
 
-const pairAgain = () => {
+const pair = () => {
   window.location.hash = "#/onboarding";
 };
+
+const HUB_OPTION = OPTIONS.find((o) => o.key === "general.hub");
 
 /** A dot with a faint ring of its own color. */
 const SoftDot = ({ tone }: { tone: ConnTone }) => (
@@ -31,6 +35,9 @@ export function HubStatus({ hub }: { hub: HubState }) {
   const layer = useDataLayer();
   const machines = useData(selectMachines);
   const [open, setOpen] = useState(false);
+  // Controlled, so its content never changes (an empty one would drop the Tooltip and remount the chip): it just
+  // stays shut while the popover is open.
+  const [tip, setTip] = useState(false);
   const [forget, setForget] = useState(false);
   const live = hub.phase === "live" ? hub : null;
   const paired = hub.phase !== "unpaired" && window.fleetd.fixture === null;
@@ -39,7 +46,7 @@ export function HubStatus({ hub }: { hub: HubState }) {
   return (
     <div className={h.row}>
       <Popover open={open} onOpenChange={setOpen}>
-        <Tooltip content={open ? null : (conn.hub ?? conn.detail)} side="right">
+        <Tooltip content={conn.hub ?? conn.detail ?? conn.status} side="right" open={tip && !open} onOpenChange={setTip}>
           <PopoverTrigger asChild>
             <button type="button" className={h.chip} data-hub-status={hub.phase} data-tone={conn.tone} aria-label={`Hub: ${name}`}>
               <SoftDot tone={conn.tone} />
@@ -60,6 +67,8 @@ export function HubStatus({ hub }: { hub: HubState }) {
                 {conn.detail}
               </Text>
             )}
+            {/* The hub's fix may name a command in backticks: shown as code. */}
+            {conn.fix === null ? null : <Prose size="xs" tone="quiet" text={conn.fix} />}
             <dl className={h.facts}>
               {conn.hub === null ? null : (
                 <>
@@ -87,22 +96,30 @@ export function HubStatus({ hub }: { hub: HubState }) {
             {window.fleetd.fixture !== null ? null : (
               <div className={h.actions}>
                 {conn.retry ? (
-                  <Button
-                    variant="primary"
-                    onClick={() => layer.retryNow()}
-                  >
+                  <Button variant="primary" onClick={() => layer.retryNow()}>
                     Retry now
                   </Button>
                 ) : null}
-                <Button
-                  variant={hub.phase === "unpaired" || hub.phase === "refused" ? "primary" : "secondary"}
-                  onClick={() => {
-                    setOpen(false);
-                    pairAgain();
-                  }}
-                >
-                  {paired ? "Switch hub" : "Pair with a hub"}
-                </Button>
+                {paired ? (
+                  <Button
+                    onClick={() => {
+                      setOpen(false);
+                      if (HUB_OPTION !== undefined) openOption(HUB_OPTION);
+                    }}
+                  >
+                    Hub settings
+                  </Button>
+                ) : (
+                  <Button
+                    variant="primary"
+                    onClick={() => {
+                      setOpen(false);
+                      pair();
+                    }}
+                  >
+                    Pair with a hub
+                  </Button>
+                )}
                 {paired ? (
                   <Button
                     variant="ghost"

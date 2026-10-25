@@ -131,6 +131,8 @@ export interface ConnLine {
   readonly status: string;
   /** What is going on, in a sentence without a final period; null when the status says it all. */
   readonly detail: string | null;
+  /** What to do about it, from the hub's own error (may name a command in backticks); null when there's nothing to say. */
+  readonly fix: string | null;
   /** The hub's address in full, when there is one. */
   readonly hub: string | null;
   /** Waiting out a retry: Retry dials now. */
@@ -143,12 +145,14 @@ export interface ConnLine {
  * counts down.
  */
 export const connLine = (state: HubState, fixture = false, asOf?: string): ConnLine => {
-  const none = { detail: null, hub: null, retry: false };
+  const none = { detail: null, fix: null, hub: null, retry: false };
   if (fixture) return { ...none, label: "Sample data", tone: "quiet", status: "Sample data", detail: "Sample data, no hub" };
   switch (state.phase) {
+    // The first attempt is the usual start: quiet. Amber once it is trying again.
     case "connecting": {
-      const status = state.attempt > 1 ? "Reconnecting…" : "Connecting…";
-      return { ...none, label: status, tone: "warning", status, hub: state.hub === "" ? null : state.hub };
+      const again = state.attempt > 1;
+      const status = again ? "Reconnecting…" : "Connecting…";
+      return { ...none, label: status, tone: again ? "warning" : "quiet", status, hub: state.hub === "" ? null : state.hub };
     }
     case "unpaired":
       return { ...none, label: "No hub", tone: "quiet", status: "Not connected", detail: state.note ?? "This app isn't paired with a hub" };
@@ -160,10 +164,11 @@ export const connLine = (state: HubState, fixture = false, asOf?: string): ConnL
         tone: "warning",
         status: asOf === undefined ? "Offline" : `Offline, ${asOf}`,
         detail: state.reason,
+        fix: state.fix ?? null,
         hub: state.hub,
         retry: true,
       };
     case "refused":
-      return { label: "Key refused", tone: "danger", status: "Key refused", detail: `The hub refused this app's key: ${state.message}`, hub: state.hub, retry: false };
+      return { label: "Key refused", tone: "danger", status: "Key refused", detail: `The hub refused this app's key: ${state.message}`, fix: null, hub: state.hub, retry: false };
   }
 };
