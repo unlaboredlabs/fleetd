@@ -296,6 +296,18 @@ pub fn task_recovered_lines(
     .render()
 }
 
+/// The lead's line for a message to a task that never reached it: a person continued the task while it waited to
+/// resume, and sending it into that run failed.
+pub fn task_message_not_sent_lines(task: &Task, why: &str, text: &str) -> String {
+    Event::MessageNotSent {
+        task: task.task_id.as_str(),
+        title: task.title.as_str(),
+        why,
+        text,
+    }
+    .render()
+}
+
 /// The lead's quiet line for a running task whose machine has been offline for `minutes`.
 pub fn task_unreachable_lines(task: &Task, minutes: i64) -> String {
     Event::AgentUnreachable {

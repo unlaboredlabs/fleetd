@@ -1695,8 +1695,8 @@ impl Executors {
         })
     }
 
-    /// What the node rebuilt the session's worktree from the last time it was gone, as last seen.
-    pub fn recreated_from(&self, r: &ThreadRef) -> Option<WorktreeSource> {
+    /// What the node rebuilt the session's worktree from the last time it was gone, and when, as last seen.
+    pub fn recreated_from(&self, r: &ThreadRef) -> Option<(WorktreeSource, Option<String>)> {
         self.tracked(r)?.recreated_from
     }
 

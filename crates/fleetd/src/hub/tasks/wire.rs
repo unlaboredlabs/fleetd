@@ -130,10 +130,7 @@ impl TaskPorts for HubTaskPorts {
         self.executors.started_run(thread)
     }
 
-    fn recreated_from(
-        &self,
-        thread: &ThreadRef,
-    ) -> Option<fleetd_contracts::sessions::WorktreeSource> {
+    fn recreated_from(&self, thread: &ThreadRef) -> Option<super::ports::Rebuilt> {
         self.executors.recreated_from(thread)
     }
 

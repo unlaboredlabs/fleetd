@@ -1223,6 +1223,7 @@ impl SessionService {
                     .is_some()
                     .then(|| cwd.to_string_lossy().into_owned()),
                 recreated_from: None,
+                recreated_at: None,
                 created_at: at.clone(),
                 updated_at: at,
             },
@@ -1430,6 +1431,7 @@ impl SessionService {
             tracing::info!(session_id = id, ?from, "recreated a lost worktree");
             note = Some(from.note(branch));
             row.summary.recreated_from = Some(from.kind());
+            row.summary.recreated_at = Some(now());
             row.summary.worktree_path = Some(row.local.cwd.to_string_lossy().into_owned());
             row.summary.branch = row.local.branch.clone();
             recreated = true;
