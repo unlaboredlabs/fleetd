@@ -7,7 +7,7 @@ use fleetd_contracts::sessions::RunEnd;
 use fleetd_contracts::tasks::{AgentsCapData, Task, TaskState};
 use serde_json::json;
 
-use super::cap::{CapChange, MachineCap, ProjectCap};
+use super::cap::{CapChange, ProjectCap};
 use crate::hub::api::{Hub, HubConfig};
 use crate::hub::slots::{Agents, MaxSource, SlotPriority, SlotRequest};
 use crate::hub::store::HubDb;
@@ -82,17 +82,6 @@ fn set(max_agents: i64, pause_extras: bool) -> CapChange {
             pause_extras,
         }),
         machine: None,
-    }
-}
-
-fn machine_set(max_agents: Option<i64>) -> CapChange {
-    CapChange {
-        cap: None,
-        project: None,
-        machine: Some(MachineCap {
-            machine_id: MachineId::unchecked("lab-a"),
-            max_agents,
-        }),
     }
 }
 

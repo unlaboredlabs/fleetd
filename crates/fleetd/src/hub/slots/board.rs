@@ -887,12 +887,14 @@ mod tests {
                 ProjectRow {
                     project_ref: b.clone(),
                     max_agents: sizing::HARD_TOP,
+                    set: false,
                     running: 2,
                     queued: 1
                 },
                 ProjectRow {
                     project_ref: a.clone(),
                     max_agents: 1,
+                    set: true,
                     running: 1,
                     queued: 1
                 },

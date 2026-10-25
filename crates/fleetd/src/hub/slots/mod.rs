@@ -544,8 +544,8 @@ mod tests {
         };
         slots
             .set_cap(CapInput {
-                cap: None,
-                max_agents: Some((r.clone(), 2)),
+                max_agents: Some((r.clone(), Some(2))),
+                ..CapInput::default()
             })
             .unwrap();
         let n = 24;

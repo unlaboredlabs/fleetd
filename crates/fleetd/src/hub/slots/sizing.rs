@@ -109,6 +109,8 @@ mod tests {
             cpus: Int::unchecked(cpus),
             load1: NonNegative::new(0.5).unwrap(),
             mem_used_pct: None,
+            mem_pressure_pct: None,
+            swap_used_pct: None,
             limits: List::unchecked(Vec::new()),
             disk: None,
             mem_total_bytes: mem_gib.map(|g| Count::unchecked(g * GIB)),
