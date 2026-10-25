@@ -25,7 +25,7 @@ use tokio::sync::Notify;
 use super::host_acts::{self, BACKFILL_MS};
 use super::host_acts::{HostAct, HostActs};
 use super::project::{self, actor_str, skip_str};
-use super::source::gitlab::{self, GitLabApi};
+use super::source::gitlab;
 use super::source::{self, GitHostSource, HostSources, LandedCommit, MergedPr, RepoInfo, RepoRef};
 use super::store::{self, MergeRow, SKIPPED};
 use super::touches;
@@ -89,7 +89,7 @@ impl Sweep {
     }
 
     #[cfg(test)]
-    pub fn use_gitlab(&self, api: Arc<dyn GitLabApi>) {
+    pub fn use_gitlab(&self, api: Arc<dyn gitlab::GitLabApi>) {
         lock(&self.sources).gitlab = Some(api);
     }
 

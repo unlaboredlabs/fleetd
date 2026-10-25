@@ -1003,12 +1003,18 @@ fn a_hub_on_the_shipped_metrics_migration_gets_outside_and_identities() {
     let (touches, ids) = db
         .with(|c| Ok((metrics::touches(c, 0, i64::MAX)?, metrics::identities(c)?)))
         .unwrap();
-    let outside: Vec<(String, bool)> = touches.into_iter().map(|t| (t.src_key, t.outside)).collect();
+    let outside: Vec<(String, bool)> = touches
+        .into_iter()
+        .map(|t| (t.src_key, t.outside))
+        .collect();
     assert_eq!(
         outside,
         [
             ("m1".to_owned(), false),
-            ("gitlab.example.com/acme/web#host.review:9003".to_owned(), true)
+            (
+                "gitlab.example.com/acme/web#host.review:9003".to_owned(),
+                true
+            )
         ]
     );
     assert_eq!(ids, ["ada-lovelace"]);
