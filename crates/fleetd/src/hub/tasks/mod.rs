@@ -35,7 +35,7 @@ use fleetd_contracts::lead_calls::TaskSpawnCall;
 use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::prim::NonEmpty;
 use fleetd_contracts::prim::{Int, Text};
-use fleetd_contracts::sessions::{RunEnd, WorktreeBase};
+use fleetd_contracts::sessions::{RunEnd, WorktreeBase, WorktreeSource};
 use fleetd_contracts::tasks::{
     FetchFailedData, PrUrl, Task, TaskId, TaskKind, TaskResult, TaskResultStatus, TaskState,
 };
@@ -272,6 +272,10 @@ pub struct Tasks {
     /// Running tasks whose lead was told their machine is away, with the machine and the start of that offline spell:
     /// once per spell. Not kept across a hub restart, after which a spell may be told once more.
     unreachable: Mutex<HashMap<TaskId, (MachineId, String)>>,
+    /// Tasks fleetd resumed whose new run hasn't started yet: what the dead run was doing, and what the node had last
+    /// rebuilt their worktree from before the resume. Their lead's line goes once the run starts, when the node has
+    /// said whether it rebuilt the worktree for it. Not kept across a hub restart.
+    resumed: Mutex<HashMap<TaskId, (String, Option<WorktreeSource>)>>,
     /// Set once in `hub/serve` (`wire::wire`) to usage; unset passes through.
     pub hooks: TaskHooks,
     cursor: i64,
@@ -296,6 +300,7 @@ impl Tasks {
             continuing: Mutex::new(HashMap::new()),
             binding: Arc::new(Mutex::new(HashSet::new())),
             unreachable: Mutex::new(HashMap::new()),
+            resumed: Mutex::new(HashMap::new()),
             hooks: TaskHooks::default(),
             cursor,
             applied: std::sync::atomic::AtomicI64::new(cursor),
@@ -370,6 +375,7 @@ impl Tasks {
     fn release_all(&self, task: &Task) -> Result<(), StoreError> {
         self.asking.lock().unwrap().remove(&task.task_id);
         self.continuing.lock().unwrap().remove(&task.task_id);
+        self.resumed.lock().unwrap().remove(&task.task_id);
         self.d.slots.release(task.task_id.as_str())?;
         Ok(())
     }
@@ -668,10 +674,14 @@ impl Tasks {
             return Ok(task.clone());
         }
         let recovering = continuing && task.recovery.as_ref().is_some_and(|r| r.next_at.is_some());
-        // What the dead run did last, for the lead's line; read before the resume adds to it.
-        let doing = match &task.thread_ref {
-            Some(thread) if recovering => self.last_doing(thread).await,
-            _ => String::new(),
+        // What the dead run did last and what its worktree was last rebuilt from, for the lead's line: read before
+        // the resume adds to them.
+        let (doing, rebuilt_before) = match &task.thread_ref {
+            Some(thread) if recovering => (
+                self.last_doing(thread).await,
+                self.d.ports.recreated_from(thread),
+            ),
+            _ => (String::new(), None),
         };
         let started = if continuing {
             let thread = task.thread_ref.as_ref().expect("continuing has a thread");
@@ -792,11 +802,11 @@ impl Tasks {
         if let Some(failed) = fetch_failed {
             self.fetch_failed(&next, failed, &now)?;
         }
-        if let Some(recovery) = next.recovery.as_ref().filter(|_| recovering) {
-            let line = render::task_recovered_lines(&next, recovery, &doing);
-            self.d
-                .ports
-                .wake(&task.project_ref, WakeKind::Recovery, line);
+        if recovering {
+            self.resumed
+                .lock()
+                .unwrap()
+                .insert(task.task_id.clone(), (doing, rebuilt_before));
         }
         Ok(next)
     }
@@ -1245,6 +1255,26 @@ impl Tasks {
         let live = matches!(task.state, TaskState::Running | TaskState::Idle)
             && !self.earlier_run(task, &thread_ref, event)?;
         match event.r#type {
+            HubEventType::ThreadStarted if live && task.state == TaskState::Running => {
+                // The run fleetd resumed it in: its lead reads of it in its next wake. A node that had to rebuild the
+                // worktree for it has said so by now.
+                let Some((doing, before)) = self.resumed.lock().unwrap().remove(&task.task_id)
+                else {
+                    return Ok(());
+                };
+                let Some(recovery) = &task.recovery else {
+                    return Ok(());
+                };
+                let rebuilt = self
+                    .d
+                    .ports
+                    .recreated_from(&thread_ref)
+                    .filter(|now| Some(*now) != before);
+                let line = render::task_recovered_lines(task, recovery, &doing, rebuilt);
+                self.d
+                    .ports
+                    .wake(&task.project_ref, WakeKind::Recovery, line);
+            }
             HubEventType::ThreadStarted => {
                 // Continued outside `task message`: the usage layer's continue, or a human writing to the thread. One
                 // waiting to resume after a death is continued by it, and its note isn't sent too.

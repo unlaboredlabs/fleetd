@@ -117,6 +117,13 @@ pub trait TaskPorts: Send + Sync {
     ) -> BoxFut<'a, Result<(), PortError>> {
         self.send(thread, message, client_request_id)
     }
+    /// Executors.recreatedFrom: what the node rebuilt the thread's worktree from the last time it was gone.
+    fn recreated_from(
+        &self,
+        _thread: &ThreadRef,
+    ) -> Option<fleetd_contracts::sessions::WorktreeSource> {
+        None
+    }
     /// Executors.startedRun: the run the thread is on, not a send queued behind it; None when unknown.
     fn started_run(&self, thread: &ThreadRef) -> Option<String>;
     /// Executors.stop(ref): ends the thread's claude process; `Ok` only once the node saw it exit.
