@@ -4,7 +4,7 @@
 use std::collections::{HashMap, HashSet};
 
 use fleetd_contracts::sessions::{
-    FailureClass, MachineEvent, PendingPermission, ProjectInfo, RunStatus, SessionStatus,
+    FailureClass, MachineEvent, PendingPermission, ProjectInfo, RunEnd, RunStatus, SessionStatus,
     SessionSummary,
 };
 use serde::{Deserialize, Serialize};
@@ -91,6 +91,8 @@ pub struct Summary {
     pub last_error: Option<LastError>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage_limit_reset_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_cause: Option<RunEnd>,
     pub last_progress_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
@@ -331,6 +333,11 @@ pub fn to_thread_summary(
             message: js_take(f.message.as_str(), 2000).to_owned(),
         }),
         usage_limit_reset_at: reset_at,
+        end_cause: s
+            .latest_run
+            .as_ref()
+            .filter(|r| !r.status.is_active())
+            .and_then(|r| r.end),
         last_progress_at: normalize_iso(s.updated_at.as_str()),
         model: Some(s.model.clone()),
         effort,
@@ -712,6 +719,13 @@ pub fn transition_event(t: &Transition, thread: &TrackedThread, machine_id: &str
     }
     if let Some(r) = &s.usage_limit_reset_at {
         data.insert("usageLimitResetAt".into(), json!(r));
+    }
+    // Why the run ended: what tells a node going away from a person stopping it.
+    if let Some(end) = s
+        .end_cause
+        .filter(|_| !matches!(t.kind, EventType::Started | EventType::Waiting))
+    {
+        data.insert("endCause".into(), json!(end));
     }
     // What the approvals area opens an approval request from.
     if let (EventType::Waiting, Some(p)) = (t.kind, &thread.pending) {

@@ -26,6 +26,7 @@ use fleetd_contracts::lead_calls::TaskSpawnCall;
 use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::prim::NonEmpty;
 use fleetd_contracts::prim::{Int, Text};
+use fleetd_contracts::sessions::RunEnd;
 use fleetd_contracts::tasks::{
     PrUrl, Task, TaskId, TaskKind, TaskResult, TaskResultStatus, TaskState,
 };
@@ -91,6 +92,12 @@ const THREAD_EVENTS: [HubEventType; 9] = [
     // A merged writer's worktree goes.
     HubEventType::PrMerged,
 ];
+
+/// The run's end cause a `thread.*` event carries; absent from events of nodes that don't record it.
+fn end_cause(event: &HubEvent) -> Option<RunEnd> {
+    let end = event.data.as_ref()?.get("endCause")?;
+    serde_json::from_value(end.clone()).ok()
+}
 
 fn same_project(a: &ProjectRef, b: &ProjectRef) -> bool {
     a.machine_id == b.machine_id && a.project_id == b.project_id
@@ -430,6 +437,7 @@ impl Tasks {
             )),
             branch: task.branch.clone(),
             pr_url: None,
+            end_cause: Some(RunEnd::Failed),
             at: Timestamp(at.clone()),
         };
         let mut next = task.clone();
@@ -665,6 +673,7 @@ impl Tasks {
         stored: &StoredTask,
         status: TaskResultStatus,
         why: Option<String>,
+        end_cause: Option<RunEnd>,
     ) -> Result<(), StoreError> {
         let task = &stored.task;
         let thread_ref = task.thread_ref.clone().expect("a live task has a thread");
@@ -719,6 +728,7 @@ impl Tasks {
             tail: Text::unchecked(tail_of(&tail, render::TAIL_MAX)),
             branch: branch.clone().map(NonEmpty::unchecked),
             pr_url: pr_url.map(PrUrl::unchecked),
+            end_cause,
             at: Timestamp(at.clone()),
         };
         let mut next = task.clone();
@@ -841,7 +851,9 @@ impl Tasks {
                     .wake(&task.project_ref, WakeKind::TaskWaiting, text);
             }
             HubEventType::ThreadCompleted if live => {
-                self.finish(&stored, TaskResultStatus::Done, None).await?
+                let end = end_cause(event).or(Some(RunEnd::Completed));
+                self.finish(&stored, TaskResultStatus::Done, None, end)
+                    .await?
             }
             HubEventType::ThreadUsageLimited => {
                 // M4 usage: parked, not failed. The board freed the slot, and the usage layer sends
@@ -870,7 +882,12 @@ impl Tasks {
                     .filter(|d| d["reason"] == "stalled")
                     .and_then(|d| d["error"]["message"].as_str())
                     .map(|m| format!("[stalled] {m}"));
-                self.finish(&stored, TaskResultStatus::Failed, stalled)
+                let end = if stalled.is_some() {
+                    Some(RunEnd::Stalled)
+                } else {
+                    end_cause(event)
+                };
+                self.finish(&stored, TaskResultStatus::Failed, stalled, end)
                     .await?
             }
             _ => {}
@@ -1182,6 +1199,7 @@ impl Tasks {
             tail: Text::unchecked(tail_of(&reason, render::TAIL_MAX)),
             branch: task.branch.clone(),
             pr_url: None,
+            end_cause: Some(RunEnd::Requested),
             at: Timestamp(at.clone()),
         };
         let mut next = task.clone();

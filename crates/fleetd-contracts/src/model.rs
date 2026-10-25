@@ -6,6 +6,7 @@ use crate::ids::{MachineId, ProjectId, ThreadId, Timestamp};
 use crate::ledger::{Lead, Workstream};
 use crate::prim::{AnyInt, Count, List, Text};
 use crate::secrets::BoxPublicKey;
+use crate::sessions::RunEnd;
 use crate::tasks::Task;
 use crate::train::TrainState;
 
@@ -147,6 +148,8 @@ pub struct ThreadSummary {
     pub latest_message_tail: Text<0, 4096>,
     pub last_error: Option<ThreadError>,
     pub usage_limit_reset_at: Option<Timestamp>,
+    /// Why its latest run ended; absent while it runs and from older nodes.
+    pub end_cause: Option<RunEnd>,
     pub last_progress_at: Timestamp,
     pub model: Option<String>,
     /// As reported by the runner; not narrowed to Effort because it may report other levels.
