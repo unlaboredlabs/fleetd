@@ -34,6 +34,7 @@
   min-height: 0;
   /* The containing block for the Latest button, fixed over the conversation like any bar content scrolls under. */
   contain: layout;
+  container-type: inline-size;
 }
 .latest {
   position: fixed;
@@ -103,6 +104,12 @@
 }
 .mine .line {
   flex-direction: row-reverse;
+}
+/* In a narrow chat (a side panel) a bubble's actions and time go under it; beside it they'd squeeze it to a word. */
+@container (max-width: 480px) {
+  .line {
+    flex-wrap: wrap;
+  }
 }
 .wide {
   width: 100%;
