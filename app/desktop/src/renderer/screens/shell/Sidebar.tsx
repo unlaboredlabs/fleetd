@@ -1,14 +1,16 @@
 // The sidebar: the projects first (alphabetical, so none moves), each opening its lead chat and saying why it wants
 // you ("reply", "approve", "secret", "blocked") or how many agents work; a chat with a message you haven't seen is
 // bold. Then Status, Factory, Time, Machines and Settings (a project's agents and PRs are in the panel beside its chat); then
-// any update to make, and the connection. Holding ⌘ (Ctrl) shows jump numbers
+// any update to make, and the hub (HubStatus). Holding ⌘ (Ctrl) shows jump numbers
 // on the first nine projects, which ⌘1..9 open.
 import { Activity, Clock, Factory, Plus, Server, Settings } from "lucide-react";
 import type { ReactNode } from "react";
+import type { HubState } from "../../../shared/hub";
 import { display, type ShortcutId } from "../../../shared/shortcuts";
-import { Button, Dot, Kbd, Sidebar as Frame, SidebarItem, SidebarSection, Text, Tooltip, Truncate } from "../../ui";
+import { Button, Dot, Kbd, Sidebar as Frame, SidebarItem, SidebarSection, Text, Tooltip } from "../../ui";
 import { UpdatesLine } from "../updates";
-import { connLine, routeOf, type SidebarProject } from "./model";
+import { HubStatus } from "./HubStatus";
+import { routeOf, type SidebarProject } from "./model";
 import { useOfflineAsOf } from "./offline";
 import { sameProject, type Screen } from "./routes";
 import s from "./shell.module.css";
@@ -17,14 +19,12 @@ const platform = window.fleetd.platform;
 
 const kbd = (id: ShortcutId): ReactNode => <Kbd>{display(id, platform)}</Kbd>;
 
-const TONE = { success: "var(--success)", warning: "var(--warning)", danger: "var(--danger)", quiet: "var(--faint)" } as const;
-
 export interface SidebarProps {
   readonly projects: ReadonlyArray<SidebarProject> | undefined;
   /** Machines not online; undefined until known. */
   readonly machinesDown: number | undefined;
   readonly screen: Screen;
-  readonly hub: Parameters<typeof connLine>[0];
+  readonly hub: HubState;
   /** ⌘ (Ctrl) is held: show the jump numbers. */
   readonly jumpHints: boolean;
   /** The hub reports metrics (or hasn't said yet): show the Factory. */
@@ -82,7 +82,6 @@ const trailing = (p: SidebarProject, jump: number | null, asOf: string | undefin
 
 export function Sidebar({ projects, machinesDown, screen, hub, jumpHints, factory, go }: SidebarProps) {
   const asOf = useOfflineAsOf();
-  const conn = connLine(hub, window.fleetd.fixture !== null, asOf);
   const nav = (label: string, icon: ReactNode, target: Screen, current: boolean, trailing?: ReactNode) => (
     <SidebarItem label={label} icon={icon} current={current} trailing={trailing} onClick={() => go(target)} />
   );
@@ -94,12 +93,7 @@ export function Sidebar({ projects, machinesDown, screen, hub, jumpHints, factor
       footer={
         <div className={s.footer}>
           <UpdatesLine />
-          <button type="button" className={s.conn} onClick={() => go({ id: "settings", tab: "general" })}>
-            <Dot color={TONE[conn.tone]} />
-            <Truncate size="xs" tone="quiet" expand="none">
-              {conn.label}
-            </Truncate>
-          </button>
+          <HubStatus hub={hub} />
         </div>
       }
     >

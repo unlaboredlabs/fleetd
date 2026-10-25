@@ -75,6 +75,32 @@ function phaseLine(state: HubState): { tone: string; text: string } {
   }
 }
 
+/** Disconnect and forget the key, once confirmed: from here and from the sidebar's hub chip. */
+export function ForgetHubDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Disconnect and forget the key?"
+      description="This app stops showing the hub's work until you pair it again with a code from fleetd pair, and drops messages still waiting to send. Agents keep running."
+      footer={
+        <>
+          <Button onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button
+            variant="danger"
+            onClick={() => {
+              onOpenChange(false);
+              void window.fleetd.hub.forget();
+            }}
+          >
+            Disconnect
+          </Button>
+        </>
+      }
+    />
+  );
+}
+
 function HubSetting() {
   const state = useData((s) => s.hub);
   const store = useKeyStore();
@@ -109,26 +135,7 @@ function HubSetting() {
           </Button>
         ) : null}
       </div>
-      <Dialog
-        open={confirm}
-        onOpenChange={setConfirm}
-        title="Disconnect and forget the key?"
-        description="This app stops showing the hub's work until you pair it again with a code from fleetd pair, and drops messages still waiting to send. Agents keep running."
-        footer={
-          <>
-            <Button onClick={() => setConfirm(false)}>Cancel</Button>
-            <Button
-              variant="danger"
-              onClick={() => {
-                setConfirm(false);
-                void window.fleetd.hub.forget();
-              }}
-            >
-              Disconnect
-            </Button>
-          </>
-        }
-      />
+      <ForgetHubDialog open={confirm} onOpenChange={setConfirm} />
     </Setting>
   );
 }

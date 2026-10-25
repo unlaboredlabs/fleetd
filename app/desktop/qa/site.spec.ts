@@ -27,13 +27,13 @@ for (const shot of siteShots.filter((s) => only === undefined || only.includes(s
       const { open } = entry;
       await show(page, entry.id, entry.route, open && ((p) => open(p, app)));
       await settled();
-      // The fixture chrome (the banner, and the sidebar's "Sample data, no hub" line) keeps sample data from passing
+      // The fixture chrome (the banner, and the sidebar's "Sample data" chip) keeps sample data from passing
       // for a live hub inside the app; on the site the caption says what the picture is. Hidden by a stylesheet rule on
       // each one's class, so a re-render can't bring it back; found by CSS, since an open sheet hides the page from the
       // accessibility tree.
-      // The banner takes its row with it; the sidebar line keeps its place.
+      // The banner takes its row with it; the sidebar chip keeps its place.
       await hideByClass(page, '[role="status"]', "Sample data, not connected", "display: none");
-      await hideByClass(page, "button", "Sample data, no hub", "visibility: hidden");
+      await hideByClass(page, "[data-hub-status]", "Sample data", "visibility: hidden");
       await settle(page);
       await page.screenshot({ path: path.join(repo, shot.file), animations: "disabled", caret: "hide" });
     } finally {
