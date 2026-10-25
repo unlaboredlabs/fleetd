@@ -103,8 +103,10 @@ fn spawn_within(
         None => None,
         Some(scope) => {
             let (program, argv) = command(binary, args.clone(), Some(scope), session_id);
+            // A new child carries this thread's name until its own exec renames it.
+            let spawner = std::fs::read_to_string("/proc/thread-self/comm").unwrap_or_default();
             match build(program, argv, Some(scope)).spawn() {
-                Ok(mut child) => match exec_of(&mut child, &scope.program, timeout) {
+                Ok(mut child) => match exec_of(&mut child, &scope.program, &spawner, timeout) {
                     Ok(()) => return Ok((child, None)),
                     Err(why) => {
                         let _ = child.start_kill();
@@ -122,11 +124,13 @@ fn spawn_within(
     Ok((build(program, argv, None).spawn()?, failed))
 }
 
-/// Waits until `child`, started as `program`, has exec'd something else. A process's `comm` names the program it
-/// runs now, and a zombie keeps its last one, so a command that ran and exited at once still counts as started.
+/// Waits until `child`, started as `program` from a thread named `spawner`, has exec'd something else. A process's
+/// `comm` names the program it runs now, and a zombie keeps its last one, so a command that ran and exited at once
+/// still counts as started.
 fn exec_of(
     child: &mut tokio::process::Child,
     program: &Path,
+    spawner: &str,
     timeout: Duration,
 ) -> Result<(), String> {
     let Some(pid) = child.id() else {
@@ -140,7 +144,7 @@ fn exec_of(
     let deadline = Instant::now() + timeout;
     loop {
         let comm = std::fs::read_to_string(format!("/proc/{pid}/comm")).unwrap_or_default();
-        if !comm.is_empty() && comm.trim_end() != name {
+        if handed_over(&comm, &name, spawner) {
             return Ok(());
         }
         if let Ok(Some(status)) = child.try_wait() {
@@ -154,6 +158,14 @@ fn exec_of(
         }
         std::thread::sleep(Duration::from_millis(2));
     }
+}
+
+/// Whether a child's `comm` shows that `systemd-run` (named `name`) has exec'd the session's command. Neither its own
+/// name nor `spawner`'s counts: the kernel lets the parent of a spawn run on before the child's exec renames it, so
+/// right after a spawn the child may still read as the thread that started it.
+fn handed_over(comm: &str, name: &str, spawner: &str) -> bool {
+    let comm = comm.trim_end();
+    !comm.is_empty() && comm != name && comm != spawner.trim_end()
 }
 
 /// The unit the node runs as in its user manager, from `/proc/self/cgroup`'s cgroup v2 line, e.g.
@@ -310,6 +322,7 @@ fn starts(scope: &Scope) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "linux")]
     use std::os::unix::fs::PermissionsExt;
 
     use super::*;
@@ -417,6 +430,7 @@ mod tests {
     }
 
     /// A stand-in `systemd-run` running `body`, and a claude that prints whether it ran in the stand-in's scope.
+    #[cfg(target_os = "linux")]
     fn fakes(body: &str) -> (tempfile::TempDir, Scope, PathBuf) {
         let dir = tempfile::tempdir().unwrap();
         let script = |name: &str, text: &str| {
@@ -436,14 +450,26 @@ mod tests {
         (dir, scope, claude)
     }
 
+    #[cfg(target_os = "linux")]
     async fn run(scope: &Scope, claude: &Path, timeout: Duration) -> (String, Option<String>) {
         let build = |program: PathBuf, args: Vec<String>, _: Option<&Scope>| {
             let mut cmd = tokio::process::Command::new(program);
             cmd.args(args).stdout(Stdio::piped()).kill_on_drop(true);
             cmd
         };
-        let (child, failed) =
-            spawn_within(Some(scope), claude, vec!["-p".into()], "s1", build, timeout).unwrap();
+        // Retried through ETXTBSY: a test that forks while these scripts' write fds are still open holds them until
+        // its child execs, and a file open for writing can't be exec'd. A test-harness race, not the node's.
+        let mut spawned = None;
+        for _ in 0..1000 {
+            match spawn_within(Some(scope), claude, vec!["-p".into()], "s1", build, timeout) {
+                Err(e) if e.to_string().contains("Text file busy") => std::thread::yield_now(),
+                other => {
+                    spawned = Some(other.unwrap());
+                    break;
+                }
+            }
+        }
+        let (child, failed) = spawned.expect("the stand-in scripts stayed busy");
         let out = child.wait_with_output().await.unwrap();
         (
             String::from_utf8_lossy(&out.stdout).trim().to_owned(),
@@ -451,6 +477,27 @@ mod tests {
         )
     }
 
+    #[test]
+    fn a_child_still_named_after_its_spawner_has_not_been_handed_over() {
+        // Right after the spawn, before systemd-run's exec renamed it.
+        assert!(!handed_over(
+            "tokio-runtime-w\n",
+            "systemd-run",
+            "tokio-runtime-w\n"
+        ));
+        assert!(!handed_over(
+            "systemd-run\n",
+            "systemd-run",
+            "tokio-runtime-w\n"
+        ));
+        assert!(!handed_over("", "systemd-run", "tokio-runtime-w\n"));
+        // claude, or what claude's launcher execs next.
+        assert!(handed_over("claude\n", "systemd-run", "tokio-runtime-w\n"));
+        assert!(handed_over("node\n", "systemd-run", "tokio-runtime-w\n"));
+    }
+
+    // They watch the child through /proc, as only Linux, where scopes exist, needs to.
+    #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn a_session_starts_in_its_scope_when_systemd_run_execs_it() {
         let exec = "while [ \"$1\" != -- ]; do shift; done; shift; IN_SCOPE=yes exec \"$@\"";
@@ -461,6 +508,8 @@ mod tests {
         );
     }
 
+    // They watch the child through /proc, as only Linux, where scopes exist, needs to.
+    #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn a_scope_that_fails_never_fails_the_session() {
         // The user manager went away.
