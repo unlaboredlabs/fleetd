@@ -36,11 +36,13 @@ const row: ProjectStatusRow = {
 let host: HTMLDivElement;
 let root: Root;
 const calls: string[] = [];
+const inputs: [string, unknown][] = [];
 
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(START);
   calls.length = 0;
+  inputs.length = 0;
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
@@ -54,12 +56,19 @@ afterEach(() => {
 type Send = Parameters<HubApi["subscribe"]>[0];
 
 /** Status on a hub that answers once, already showing the row. Returns the hub's sender. */
-const mount = async (): Promise<Send> => {
+const mount = async (shown: ProjectStatusRow = row): Promise<Send> => {
   let send: Send = () => undefined;
   const hub: HubApi = {
-    call: (tool) => {
+    call: (tool, input) => {
       calls.push(tool);
-      return Promise.resolve({ ok: true, output: tool === "status_get" ? { rows: [row] } : { at: iso(START), orders: [], trains: [] } });
+      inputs.push([tool, input]);
+      const output =
+        tool === "status_get"
+          ? { rows: [shown] }
+          : tool === "usage_resume"
+            ? { resumed: 3, status: { machineId: project.machineId, login: "custom_base_url", breaker: { state: "closed" }, parked: { leads: 0, tasks: 0 }, lastEvents: [] } }
+            : { at: iso(START), orders: [], trains: [] };
+      return Promise.resolve({ ok: true, output } as never);
     },
     subscribe: (l) => ((send = l), () => undefined),
     resync: () => Promise.resolve(),
@@ -135,4 +144,28 @@ it("lists each group's items under the row, each opening its agent in the projec
     panel: { tab: "agents", agent: "T4" },
   });
   expect(host.textContent).not.toContain("%");
+});
+
+it("says when its machine's usage pause blocks it, and Resume lifts the pause through usage_resume", async () => {
+  await mount({
+    ...row,
+    state: "blocked",
+    blockedReason: "paused until Sun 23:40 UTC (usage limit on devbox's login)",
+    usagePausedOn: project.machineId,
+  });
+  const paused = host.querySelector(`[data-paused='${project.machineId}']`);
+  expect(paused?.textContent).toContain("Usage paused: paused until Sun 23:40 UTC (usage limit on devbox's login)");
+  const resume = paused?.querySelector("button");
+  expect(resume?.textContent).toBe("Resume");
+  await act(async () => {
+    resume?.click();
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  expect(inputs.filter(([tool]) => tool === "usage_resume")).toEqual([["usage_resume", { machineId: project.machineId }]]);
+});
+
+it("offers no Resume on a row no usage pause blocks", async () => {
+  await mount();
+  expect(host.querySelector("[data-paused]")).toBeNull();
+  expect(host.textContent).not.toContain("Resume");
 });

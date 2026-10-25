@@ -343,7 +343,8 @@ impl Leads {
             return Err(LeadError::new(
                 ErrorCode::Invalid,
                 format!("The lead was not started: {paused}."),
-                "Wait for the reset, or run usage_resume once the login has capacity again.",
+                "It goes on by itself at the reset. Once the login has capacity, the human can press Resume in the app \
+                 or run fleetd usage resume on the hub machine.",
             ));
         }
         // Taken before the digest is read: every intent made before it is in the first message (`LeadWakes::flush`).

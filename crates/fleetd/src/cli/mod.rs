@@ -16,6 +16,7 @@ pub mod status;
 pub mod steer;
 pub mod time;
 pub mod update;
+pub mod usage;
 pub mod versions;
 pub mod work;
 
@@ -66,7 +67,7 @@ setting up (on the hub machine):
 projects:
 {}
 running by hand:
-{}{}{}{}{}{}{}{}{}{}",
+{}{}{}{}{}{}{}{}{}{}{}",
         UPDATE_USAGE,
         setup::SETUP_USAGE,
         setup::machine::machine_usage(),
@@ -79,6 +80,7 @@ running by hand:
         time::TIME_USAGE,
         metrics::METRICS_USAGE,
         status::STATUS_USAGE,
+        usage::USAGE_USAGE,
         steer::STEER_USAGE,
         chat::CHAT_USAGE,
         work::WORK_USAGE
@@ -117,6 +119,7 @@ pub fn help_for(argv: &[String]) -> Option<String> {
         "metrics" => metrics::METRICS_USAGE.to_owned(),
         "update" => UPDATE_USAGE.to_owned(),
         "status" => status::STATUS_USAGE.to_owned(),
+        "usage" => usage::USAGE_USAGE.to_owned(),
         "steer" | "steers" => steer::STEER_USAGE.to_owned(),
         "chat" => chat::CHAT_USAGE.to_owned(),
         "work" => work::WORK_USAGE.to_owned(),
@@ -184,6 +187,7 @@ fn is_long_running(argv: &[String]) -> bool {
                 | "steers"
                 | "chat"
                 | "status"
+                | "usage"
                 | "work"
         )
     )
@@ -199,6 +203,7 @@ async fn run_long_running(argv: &[String]) -> u8 {
         "time" => time::time_command(rest).await,
         "metrics" => metrics::metrics_command(rest).await,
         "status" => status::status_command(rest).await,
+        "usage" => usage::usage_command(rest).await,
         "steer" => steer::steer_command(rest, false).await,
         "steers" => steer::steer_command(rest, true).await,
         "chat" => chat::chat_command(rest).await,

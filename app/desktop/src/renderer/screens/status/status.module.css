@@ -109,6 +109,16 @@
   padding-right: var(--space-4);
 }
 
+/* Its machine's usage pause, under the row: why, and Resume. */
+.paused {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 0 var(--space-2);
+}
+
 /* The row's work under it, a group per line: its word, then its items, each opening in the project's panel. */
 .groups {
   grid-column: 1 / -1;

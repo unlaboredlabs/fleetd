@@ -1,9 +1,11 @@
 // The quiet line above the composer while the lead waits on you: what for, and Show, which brings it into view and
 // marks it; with more than one place to go, each press goes to the next and the line says which ("1 of 2").
 // The palette and the live strip's "waiting on you" row reach the same Show through the chat.showWaiting command.
-// Otherwise, while the project is blocked, why: the hub's reason, so you know before sending into it.
+// Otherwise, while the project is blocked, why: the hub's reason, so you know before sending into it, and Resume when
+// its machine's usage pause is the reason.
 import { Button, Dot, Text } from "../../ui";
 import { useCommands } from "../palette";
+import { ResumeButton } from "../status/Resume";
 import type { Waiting } from "./attentionModel";
 import s from "./view.module.css";
 
@@ -11,12 +13,15 @@ export function AttentionLine({
   waiting,
   blocked,
   which,
+  resume,
   onShow,
 }: {
   waiting: Waiting | undefined;
   blocked: string | undefined;
   /** "1 of 2": the one Show last went to, when there is more than one. */
   which?: string | undefined;
+  /** The machine whose usage pause blocks the project. */
+  resume?: string | undefined;
   onShow: () => void;
 }) {
   const canShow = waiting !== undefined && waiting.targets.length > 0;
@@ -34,6 +39,7 @@ export function AttentionLine({
           </Text>
           {blocked === "" ? null : ` ${blocked}`}
         </Text>
+        {resume === undefined ? null : <ResumeButton machineId={resume} />}
       </div>
     );
   }

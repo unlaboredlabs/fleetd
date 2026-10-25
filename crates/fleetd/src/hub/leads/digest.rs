@@ -35,6 +35,9 @@ pub struct DigestInput<'a> {
     pub decisions: &'a [Decision],
     /// The agents line; None leaves it out.
     pub agents: Option<AgentsLine>,
+    /// The usage layer's pause on the project's machine, as it holds new turns ("usage: paused until …"); None
+    /// when there is none.
+    pub usage: Option<String>,
     /// Lines from the tasks area; None leaves the section out.
     pub tasks: Option<Vec<String>>,
     /// Lines from the merge train; None leaves the section out.
@@ -46,6 +49,17 @@ pub struct DigestInput<'a> {
     /// section out.
     pub checklist: Option<Vec<String>>,
     pub facts: &'a HashMap<WorkstreamId, WorkstreamFacts>,
+}
+
+/// The pause, when it ends, and who can lift it: "Usage pause on forge: paused until Thu 02:00 UTC (usage limit on
+/// forge's login). …".
+pub fn usage_line(machine: &str, paused: &str) -> String {
+    let why = paused.strip_prefix("usage: ").unwrap_or(paused);
+    format!(
+        "Usage pause on {machine}: {why}. Its parked agents go on by themselves when it ends. The human can press Resume in \
+         the app or run `fleetd usage resume {machine}`; once you know the login has capacity again, `usage_resume` \
+         lifts it (once per 10 min)."
+    )
 }
 
 /// Whitespace runs collapsed, trimmed, and cut to `max` with "…".
@@ -261,6 +275,12 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
     if let Some(agents) = &input.agents {
         head.push_str(&format!("\n{agents}"));
     }
+    if let Some(paused) = &input.usage {
+        head.push_str(&format!(
+            "\n{}",
+            usage_line(input.project_ref.machine_id.as_str(), paused)
+        ));
+    }
 
     let mut sections = vec![
         Section::new(
@@ -407,6 +427,7 @@ mod tests {
             open_requests: &[],
             decisions: &decisions,
             agents: None,
+            usage: None,
             tasks: None,
             train: None,
             elsewhere: None,
@@ -418,6 +439,36 @@ mod tests {
         assert!(
             text.contains("more: check with `decisions_search`)"),
             "{text}"
+        );
+    }
+
+    /// forge's pause: the lead reads it in every wake, when it ends, and that the human can press Resume.
+    #[test]
+    fn a_usage_pause_says_when_it_ends_and_who_can_resume() {
+        let project_ref: ProjectRef =
+            serde_json::from_value(serde_json::json!({ "machineId": "forge", "projectId": "p1" }))
+                .unwrap();
+        let text = render_lead_digest(&DigestInput {
+            project_ref: &project_ref,
+            title: "app",
+            at: "2026-10-25T22:45:00.000Z",
+            workstreams: &[],
+            open_requests: &[],
+            decisions: &[],
+            agents: None,
+            usage: Some("usage: paused until Sun 23:40 UTC (usage limit on forge's login)".into()),
+            tasks: None,
+            train: None,
+            elsewhere: None,
+            facts: &HashMap::new(),
+        });
+        assert_eq!(
+            text.lines().nth(1),
+            Some(
+                "Usage pause on forge: paused until Sun 23:40 UTC (usage limit on forge's login). Its parked agents \
+                 go on by themselves when it ends. The human can press Resume in the app or run `fleetd usage resume \
+                 forge`; once you know the login has capacity again, `usage_resume` lifts it (once per 10 min)."
+            )
         );
     }
 
@@ -434,6 +485,7 @@ mod tests {
             open_requests: &[],
             decisions: &[],
             agents: None,
+            usage: None,
             tasks: Some(Vec::new()),
             train: Some(vec!["- #4 merged".into()]),
             elsewhere: Some(Vec::new()),

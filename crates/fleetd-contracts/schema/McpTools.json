@@ -9758,6 +9758,10 @@
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
           "type": "string"
+        },
+        "usagePausedOn": {
+          "$ref": "#/$defs/MachineId",
+          "description": "Blocked by a usage pause on this machine's login: the app offers Resume (usage_resume) for it."
         }
       },
       "required": [

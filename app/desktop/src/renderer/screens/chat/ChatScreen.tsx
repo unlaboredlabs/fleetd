@@ -192,6 +192,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
             // As the header chip: a held chat doesn't say what the project is now.
             blocked={view?.held === true ? undefined : data.blocked}
             which={showing >= 0 && targets !== undefined && targets.length > 1 ? `${String(showing + 1)} of ${String(targets.length)}` : undefined}
+            resume={view?.held === true ? undefined : data.usagePausedOn}
             onShow={showNext}
           />
           {strip ? (
