@@ -11,6 +11,8 @@
 // - gated:   a gated command is an inline chat item; nothing runs, and its state stays open, until a human Approve.
 // - build:   bug (a): a research result that offers a build, then "build it", starts a writer; the research order does
 //            not just close.
+// - anew:    with every order closed, new work asked for in chat: the lead opens an order with `brief` and starts a
+//            writer by itself, never asking the person to send it as an order (live, 2026-10-25).
 // - fixes:   bug (b), W1/T4: closing a workstream records why and cancels nothing: a fix still running keeps going.
 // - cap1:    at max agents 1, the review that gates a merge gets the slot before a queued agent; the train merges.
 // - tools:   no session (lead, writer, reviewer, reader) has an ask tool, and the hub has no inbox tools.
@@ -51,9 +53,9 @@ const STOP_REPO = path.join(LAB, "repo-stop");
 const HISTORY_PORT = slotPort(4782);
 /** For a lead the harness keeps out of the way. */
 const QUIET = "Lab run: the harness does everything for this order. Reply to each wake about it with one short line; run no commands and start no agents for it.";
-const PARTS = ["work", "terse", "secret", "gated", "build", "fixes", "cap1", "tools", "plain", "history", "cap", "stop"] as const;
+const PARTS = ["work", "terse", "secret", "gated", "build", "anew", "fixes", "cap1", "tools", "plain", "history", "cap", "stop"] as const;
 type Part = (typeof PARTS)[number];
-const LAB_REPO_PARTS: ReadonlyArray<Part> = ["work", "terse", "secret", "gated", "build", "fixes", "cap1", "tools", "plain"];
+const LAB_REPO_PARTS: ReadonlyArray<Part> = ["work", "terse", "secret", "gated", "build", "anew", "fixes", "cap1", "tools", "plain"];
 
 /** The hub tools the chat model brings, with the slice that brings each. */
 const TOOL_FROM: Readonly<Record<string, string>> = {
@@ -356,6 +358,7 @@ export async function chatLead(lab: Lab) {
       await part("secret", () => secretPart(lab, chat, ref, lab.humanCall, need));
       await part("gated", () => gatedPart(lab, chat, ref, lab.humanCall, need));
       await part("build", () => buildPart(lab, chat, ref));
+      await part("anew", () => anewPart(lab, chat, ref, fleetd));
       await part("fixes", () => fixesPart(lab, ref, fleetd));
       await part("cap1", () => cap1Part(lab, ref, fleetd, need));
       await part("tools", async () => {
@@ -613,6 +616,37 @@ async function buildPart(lab: Lab, chat: Chat, ref: Ref) {
   check(early.length === 0, `${buildOrder} closed before its build started: ${JSON.stringify(early.map((e) => e.summary))}`);
   const how = buildOrder === workstreamId ? "on the research order (brief edited)" : "as a new order";
   ok(`research agent → offer → "build it" → writer "${writer.task.title}" ${how}, which stays open until the build ran`);
+}
+
+// ---- anew: every order closed, then new work in chat; the lead opens an order itself ----
+async function anewPart(lab: Lab, chat: Chat, ref: Ref, fleetd: Shell) {
+  const { check, ok } = lab;
+  if ((await chat.leadThread()) === undefined) {
+    const from = await lab.cursor();
+    const started = await lab.callTool("lead_start", ref);
+    check(!started.isError, `lead_start: ${JSON.stringify(started.body)}`);
+    await lab.waitEvent("the lead's start turn", TURN_MS, { cursor: from, machineId: LEAD_MACHINE, match: (e) => e.threadId === started.body.threadId && ENDED.includes(e.type) });
+  }
+  // The lead has a closed order behind it and none open, as after its last order's close.
+  const open = ((await lab.callTool("orders_board", { projectRef: ref })).body.orders as Array<Body>).map((o) => o.workstreamId as string);
+  const closed = [...open, await quietOrder(lab, ref, fleetd, "chat lab: an order that is done", ["it is closed"])];
+  for (const w of closed) check(fleetd("close", { workstreamId: w, why: "lab: done before the new work" }).code === 0, `close ${w}`);
+  const left = (await lab.callTool("orders_board", { projectRef: ref })).body.orders as Array<Body>;
+  check(left.length === 0, `no order is open: ${JSON.stringify(left.map((o) => o.workstreamId))}`);
+  await lab.until("the lead settles after the closes", TURN_MS, async () =>
+    (await chat.state()).leadWorking === true ? (await new Promise((r) => setTimeout(r, 2_000)), undefined) : true,
+  );
+  const file = `${DIR}/anew.md`;
+  const sent = await chat.send(`New work, approved: add ${file} with the single line "new work from chat". One small PR is plenty.`);
+  const writer = await nextTask(lab, ref, sent.cursor, "the lead starts a writer for the new work", TURN_MS * 2, (t) => t.kind === "write");
+  const said = await chat.reply(sent, "the new work");
+  const w = writer.task.workstreamId as string;
+  check(!closed.includes(w), `the writer runs in a new order, not closed ${w}`);
+  const source = (await lab.callTool("order_get", { workstreamId: w })).body.workstream?.source as Body | undefined;
+  check(source?.channel === "lead", `the lead opened ${w} with brief: ${JSON.stringify(source)}`);
+  const resend = said.filter((m) => /\bas an order\b|\bsend (it|this|me)\b/iu.test(m.text));
+  check(resend.length === 0, `the lead never asks for it as an order: ${JSON.stringify(resend.map((m) => m.text))}`);
+  ok(`every order closed → "new work" in chat → the lead opened ${w} with brief and started "${writer.task.title}"`);
 }
 
 // ---- fixes: bug (b), W1/T4: a fix survives its workstream closing ----

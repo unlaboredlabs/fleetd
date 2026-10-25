@@ -46,7 +46,7 @@ Every lead gets these.
 | [`message_agent`](#message_agent) | Steer a task: a running one takes the message at its next tool boundary (now: true stops its current step first), a waiting one gets it as its answer, and an ended one continues in its own thread. | No |
 | [`agents`](#agents) | The project's tasks as stored (state, queued reason, thread, result), newest first: one by taskId, or filtered by state or workstream. | No |
 | [`stop_agent`](#stop_agent) | Stop a task: interrupts its thread and releases its slot. | No |
-| [`brief`](#brief) | Set a workstream's brief (goal, why, pointers, constraints, doneWhen lines) and start it, or edit it later. | No |
+| [`brief`](#brief) | Open and start work. | No |
 | [`request_secret`](#request_secret) | Ask the human for a secret (a key, a token, a password). | The human enters the value in chat; you see only its fingerprint. |
 | [`request_withdraw`](#request_withdraw) | Take back a secret request or a command approval you no longer need (the human said so in chat). | No |
 | [`decide`](#decide) | Log a decision: one you made yourself, or the human's answer to a question you asked in chat (so you never ask it twice). | No |
@@ -151,7 +151,7 @@ Stop a task: interrupts its thread and releases its slot.
 
 ### brief
 
-Set a workstream's brief (goal, why, pointers, constraints, doneWhen lines) and start it, or edit it later. Without workstreamId it opens one for work you took from the chat: text is the order in the human's words.
+Open and start work. Without workstreamId it opens a new order from text (the human's words) and this brief, and starts it: new work from the chat starts this way, even when every order is closed. With workstreamId it sets that workstream's brief (goal, why, pointers, constraints, doneWhen lines) and starts it, or edits it later.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
