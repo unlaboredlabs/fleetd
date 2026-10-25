@@ -32,7 +32,7 @@ use fleetd_contracts::sessions::{
     RunStatus, RunUsage, RunnerInfo, SendAccepted, SendMode, SendNow, SessionCall,
     SessionCallFrame, SessionChanges, SessionError, SessionErrorCode, SessionLaunch, SessionOutput,
     SessionReplyFrame, SessionResult, SessionRole, SessionStatus, SessionSummary, SessionWorkspace,
-    ThreadEvent, ThreadEventFrame, ThreadItem, ThreadMessage, ThreadSnapshot,
+    ThreadEvent, ThreadEventFrame, ThreadItem, ThreadMessage, ThreadSnapshot, WorktreeBase,
 };
 use fleetd_contracts::steer::SteerTag;
 use tokio::sync::{mpsc, oneshot, watch};
@@ -1130,6 +1130,7 @@ impl SessionService {
         if let Some(row) = self.store().session(&id)? {
             return Ok(SessionOutput::Launched {
                 summary: row.summary,
+                base: None,
             });
         }
         if !path_safe(&id) {
@@ -1157,8 +1158,16 @@ impl SessionService {
         if let Some(row) = self.store().session(&id)? {
             return Ok(SessionOutput::Launched {
                 summary: row.summary,
+                base: None,
             });
         }
+        let reported = base.as_ref().map(|b| WorktreeBase {
+            base_ref: b.base_ref.clone(),
+            sha: b.sha.clone(),
+            fetched_at: b.fetched_at.clone().map(Timestamp),
+            error: b.error.clone(),
+            fork_behind: b.fork_behind,
+        });
         let (cwd, add_dirs, base_ref, branch) = match (&launch.workspace, base) {
             (SessionWorkspace::Worktree { branch, .. }, Some(base)) => {
                 let path = self
@@ -1232,6 +1241,7 @@ impl SessionService {
             .await?;
         Ok(SessionOutput::Launched {
             summary: self.session(&id)?.summary,
+            base: reported,
         })
     }
 

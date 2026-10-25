@@ -9,7 +9,7 @@ use crate::hub::usage::ports::{BoxFut, EventLog, NewEvent};
 use crate::hub::usage::service::UsageStatus;
 use crate::hub::usage::time::clip;
 use fleetd_contracts::node_link::NodeDisk;
-use fleetd_contracts::sessions::RunnerInfo;
+use fleetd_contracts::sessions::{RunnerInfo, WorktreeBase};
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap};
@@ -59,6 +59,10 @@ pub trait DoctorFleet: Send + Sync {
     /// holds new agents there, if it does.
     fn guard(&self, _machine_id: &str) -> (Option<NodeDisk>, Option<String>) {
         (None, None)
+    }
+    /// Where each of the machine's projects last started a worktree, by project title.
+    fn bases(&self, _machine_id: &str) -> Vec<(String, WorktreeBase)> {
+        Vec::new()
     }
     /// The repos whose ready PRs the merge train holds for want of CI.
     fn repos_without_ci(&self) -> Vec<String> {
@@ -252,6 +256,10 @@ impl Doctor {
             paused.as_deref(),
         ));
         out.push(checks::usage_breaker(id, &usage.breaker));
+        let bases = fleet.bases(id);
+        let now = iso_ms(self.now_ms());
+        out.extend(checks::git_fetch(id, &bases, &now));
+        out.extend(checks::fork_behind(id, &bases));
         out
     }
 

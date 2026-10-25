@@ -42,6 +42,10 @@ pub enum HubEventType {
     /// A clone `project_add` accepted failed: `data` is `ProjectAddFailedData`, with the fix.
     #[serde(rename = "project.add_failed")]
     ProjectAddFailed,
+    /// A writer's worktree started from a stale base because git can't fetch the project's remote, or the remote names
+    /// no default branch. Once per project until a fetch works again; `data` is `tasks::FetchFailedData`.
+    #[serde(rename = "project.fetch_failed")]
+    ProjectFetchFailed,
     /// A project's settings changed (`project_set`): `data.mediumAllowed`.
     #[serde(rename = "project.settings")]
     ProjectSettings,
@@ -221,6 +225,7 @@ impl HubEventType {
             Self::ProjectAdded => "project.added",
             Self::ProjectCloneProgress => "project.clone_progress",
             Self::ProjectAddFailed => "project.add_failed",
+            Self::ProjectFetchFailed => "project.fetch_failed",
             Self::ProjectSettings => "project.settings",
             Self::ThreadStarted => "thread.started",
             Self::ThreadCompleted => "thread.completed",

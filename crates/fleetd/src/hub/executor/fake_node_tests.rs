@@ -237,7 +237,7 @@ async fn launch_send_interrupt_and_a_permission_answer_go_out_as_session_calls()
         &id,
         json!({ "ok": { "kind": "launched", "summary": session(&session_id, json!({})) } }),
     );
-    assert_eq!(launched.await.unwrap().unwrap().as_str(), session_id);
+    assert_eq!(launched.await.unwrap().unwrap().0.as_str(), session_id);
     let executors = node.executors.clone();
     let machine = node.machine.clone();
     let again = tokio::spawn(async move {

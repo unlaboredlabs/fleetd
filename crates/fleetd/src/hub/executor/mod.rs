@@ -38,6 +38,7 @@ use fleetd_contracts::sessions::{
     ItemKind, ItemStatus, MachineEvent, MachineEventFrame, RunnerInfo, SessionCall,
     SessionCallFrame, SessionError, SessionErrorCode, SessionLaunch, SessionOutput, SessionResult,
     SessionStatus, SessionSummary, SessionWorkspace, ThreadEvent, ThreadEventFrame, ThreadItem,
+    WorktreeBase,
 };
 use fleetd_contracts::steer::{SteerReceipt, SteerTag};
 use futures_util::StreamExt;
@@ -1284,7 +1285,7 @@ impl Executors {
         machine_id: &MachineId,
         input: &LaunchInput,
         options: LaunchOptions,
-    ) -> Result<ThreadId, ExecutorError> {
+    ) -> Result<(ThreadId, Option<WorktreeBase>), ExecutorError> {
         let op = NodeOperation::Launch;
         let runner = providers::route_model(&input.model).map_err(|message| {
             ExecutorError::NodeRequestFailed {
@@ -1342,9 +1343,14 @@ impl Executors {
             disallowed_tools: rules.deny,
             role: options.role,
         };
-        self.call(machine_id, op, SessionCall::Launch(launch), LAUNCH_TIMEOUT)
-            .await?;
-        Ok(session_id)
+        let base = match self
+            .call(machine_id, op, SessionCall::Launch(launch), LAUNCH_TIMEOUT)
+            .await?
+        {
+            SessionOutput::Launched { base, .. } => base,
+            _ => None,
+        };
+        Ok((session_id, base))
     }
 
     pub async fn send(

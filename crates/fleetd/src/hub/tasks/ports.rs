@@ -7,6 +7,7 @@ use fleetd_contracts::effort::TaskProfile;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadId, ThreadRef};
 use fleetd_contracts::ledger::{Brief, Workstream, WorkstreamId};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
+use fleetd_contracts::sessions::WorktreeBase;
 
 pub type BoxFut<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
@@ -83,12 +84,12 @@ pub trait TaskPorts: Send + Sync {
     fn is_connected(&self, machine_id: &MachineId) -> bool;
     /// Executors.awaitLive: resolves once the machine has a live node link.
     fn await_live<'a>(&'a self, machine_id: &'a MachineId) -> BoxFut<'a, ()>;
-    /// Executors.launch.
+    /// Executors.launch: the thread, and where its worktree's branch started when it has one.
     fn launch<'a>(
         &'a self,
         machine_id: &'a MachineId,
         request: LaunchRequest,
-    ) -> BoxFut<'a, Result<ThreadId, PortError>>;
+    ) -> BoxFut<'a, Result<(ThreadId, Option<WorktreeBase>), PortError>>;
     /// Executors.send.
     fn send<'a>(
         &'a self,

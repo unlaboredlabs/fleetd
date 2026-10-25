@@ -381,6 +381,48 @@ pub struct RunnerInfo {
     pub config_dir: Option<String>,
 }
 
+/// Why a worktree's base may be behind its remote's default branch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BaseErrorKind {
+    /// The remote can't be reached, or didn't answer in time.
+    Offline,
+    /// The remote refused git's credentials; the agent's pushes will fail the same way.
+    Auth,
+    /// The remote answered but names no default branch: its HEAD points at a branch it doesn't have.
+    NoDefaultBranch,
+    /// The project has no remote: the base is a local branch.
+    NoRemote,
+    /// Any other fetch failure.
+    Failed,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct BaseError {
+    pub kind: BaseErrorKind,
+    /// git's first line, e.g. "fatal: Authentication failed for 'https://github.com/a/b.git/'"; "offline".
+    pub message: String,
+}
+
+/// Where a writer's worktree branch started: the remote's default branch, freshly fetched unless `error` says why not.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeBase {
+    /// "origin/main"; a local branch when there is no remote, or no copy of the remote's.
+    #[serde(rename = "ref")]
+    pub base_ref: String,
+    pub sha: String,
+    /// When `ref` was last fetched: by this start, else by the one whose copy it fell back to. Absent for a local
+    /// branch, or when git can't tell.
+    pub fetched_at: Option<Timestamp>,
+    pub error: Option<BaseError>,
+    /// A fork (an `upstream` remote beside it) only: the commits upstream's default branch has that `ref` lacks, as
+    /// last fetched.
+    pub fork_behind: Option<u32>,
+}
+
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -388,6 +430,9 @@ pub enum SessionOutput {
     Done,
     Launched {
         summary: SessionSummary,
+        /// Where a new worktree's branch started; absent for a session in the project root, from an older node, or
+        /// on a retried launch.
+        base: Option<WorktreeBase>,
     },
     Sent(SendAccepted),
     Snapshot(ThreadSnapshot),

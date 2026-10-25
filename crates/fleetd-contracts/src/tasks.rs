@@ -8,7 +8,7 @@ use crate::effort::TaskProfile;
 use crate::ids::{ProjectRef, ThreadRef, Timestamp};
 use crate::ledger::WorkstreamId;
 use crate::prim::{Count, Line, List, NonEmpty, Positive, Text, is_http_url, js_len};
-use crate::sessions::RunEnd;
+use crate::sessions::{RunEnd, WorktreeBase};
 use crate::usage::UsageParked;
 
 brand!(
@@ -111,6 +111,10 @@ pub struct Task {
     pub thread_ref: Option<ThreadRef>,
     /// `fleetd/<taskId>-<slug>`; write tasks only.
     pub branch: Option<NonEmpty>,
+    /// Where its worktree's branch started, as the node reported at launch; write tasks only, absent before a launch
+    /// or from an older node.
+    #[serde(default)]
+    pub base: Option<WorktreeBase>,
     pub worktree_path: Option<AbsolutePath>,
     /// M4: its thread hit a usage limit; the task is idle until fleetd sends "continue" at `resumeAt`.
     pub parked: Option<UsageParked>,
@@ -156,6 +160,22 @@ pub struct TaskEventData {
     pub created_at: Option<Timestamp>,
     pub queued_reason: Option<String>,
     pub branch: Option<String>,
+    /// On `task.started` for a new worktree: where its branch started.
+    pub base: Option<WorktreeBase>,
+}
+
+/// `project.fetch_failed` data: the start that found the remote unfetchable.
+#[serde_with::skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct FetchFailedData {
+    pub project_ref: ProjectRef,
+    pub task_id: TaskId,
+    pub base: WorktreeBase,
+    /// The whole line, which the summary may cut: what failed, the fix, and where agents start from meanwhile.
+    pub message: String,
+    /// A command for a person to run, e.g. "gh auth login".
+    pub fix: Option<String>,
 }
 
 /// `agents.cap` data: a project's max agents or the fleet cap changed. The event's summary is the one quiet line its

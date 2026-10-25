@@ -220,7 +220,7 @@ async fn a_launch_runs_its_turn_streams_it_and_later_sends_continue_the_session(
     assert!(matches!(missing, SessionResult::Err(e) if e.code == SessionErrorCode::NotFound));
     hub.project(&root).await;
 
-    let SessionOutput::Launched { summary } = hub
+    let SessionOutput::Launched { summary, .. } = hub
         .ok(launch(
             "s1",
             RuntimeMode::FullAccess,
@@ -304,7 +304,7 @@ async fn a_launch_runs_its_turn_streams_it_and_later_sends_continue_the_session(
         ))
         .await;
     assert!(
-        matches!(again, SessionOutput::Launched { summary } if summary.latest_run.as_ref().unwrap().id == "r1")
+        matches!(again, SessionOutput::Launched { summary, .. } if summary.latest_run.as_ref().unwrap().id == "r1")
     );
     assert_eq!(hub.runner.spawned().len(), 1);
 
@@ -1053,8 +1053,32 @@ async fn a_writer_starts_from_a_fresh_fetch_of_origin_not_the_stale_local_main()
         base_ref: NonEmpty::unchecked("main"),
         branch: NonEmpty::unchecked("fleetd/s1"),
     };
-    hub.ok(launch("s1", RuntimeMode::FullAccess, workspace))
+    let launched = hub
+        .ok(launch("s1", RuntimeMode::FullAccess, workspace))
         .await;
+    // The launch says where the branch started.
+    let SessionOutput::Launched {
+        base: Some(base), ..
+    } = launched
+    else {
+        panic!("no base in {launched:?}")
+    };
+    let upstream = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&seed)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .unwrap()
+        .stdout;
+    assert_eq!(
+        (base.base_ref.as_str(), base.sha.as_str(), &base.error),
+        (
+            "origin/main",
+            String::from_utf8_lossy(&upstream).trim(),
+            &None
+        )
+    );
+    assert!(base.fetched_at.is_some());
     hub.settled("r1").await;
     let path: PathBuf = dir.path().join("node/worktrees/p1/s1");
     assert!(path.join("upstream.txt").exists());
