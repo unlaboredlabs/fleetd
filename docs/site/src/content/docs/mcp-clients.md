@@ -163,6 +163,8 @@ as stopping a project, answering an approval or entering a secret, need one.
 | `chat_history {projectRef, before?, after?, limit?}` | A page of a project's chat, oldest first; up to 100 messages. Without `before` or `after`, the newest. | read |
 | `approval_answer {requestId, decision, message?}` | Approve or deny an approval item: `decision` is `approve` or `deny`; `message` is a denial's reason for the lead. | operate, human key |
 | `secret_submit {requestId, sealed}` | Answer a secret item with a value sealed to the target machine. | operate, human key |
+| `decisions_list {projectRef, limit?}` | Every decision in the project, project-wide or for one order, newest first: in force, replaced by a newer one, or revoked (by whom, when, why). `orders` names each order by its title. | read |
+| `decisions_overturn {decisionId, value?, why}` | Take back a decision in force. Without `value` it is revoked and the lead asks again when it comes up; with `value` a new decision on the same question replaces it, as yours. The lead reads the change, and your why, at its next wake. | operate, human key |
 | `requests_list {projectRef?, state?}` | Secret and approval requests, newest first, with their state. A secret's value is never in it, only its fingerprint. | read |
 | `project_stop {projectRef, reason?}` | Stop every running and queued agent of the project and tell the lead in its chat. Merged PRs, the lead and the chat stay. | operate, human key |
 | `attachment_put {name, mime, dataB64}` | Upload a file (image, text or PDF, at most 5 MiB) for a message. | operate |

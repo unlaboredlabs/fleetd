@@ -955,6 +955,8 @@ export type Decision = {
   by?: string;
   decisionId: DecisionId;
   key: DecisionKey;
+  /** Who took it back, when a person revoked it (`decisions_overturn` without a value). */
+  retired?: DecisionRetired;
   scope: DecisionScope;
   source: DecisionSource;
   state: DecisionState;
@@ -968,6 +970,18 @@ export type DecisionId = string;
 
 /** Lowercase dotted slug, [a-z0-9]+(.[a-z0-9_-]+)*, at most 80 */
 export type DecisionKey = string;
+
+export type DecisionOrder = {
+  title: string;
+  workstreamId: WorkstreamId;
+};
+
+/** A revoke: by "human:<device>", at, and the person's why. */
+export type DecisionRetired = {
+  at: Timestamp;
+  by: string;
+  why?: string;
+};
 
 export type DecisionScope = {
   kind: "global";
@@ -983,6 +997,36 @@ export type DecisionScope = {
 export type DecisionSource = "human" | "lead" | "agent";
 
 export type DecisionState = "active" | "superseded" | "retired";
+
+export type DecisionsListInput = {
+  limit?: number;
+  projectRef: ProjectRef;
+};
+
+export type DecisionsListOutput = {
+  /** Every state: active, superseded and retired. */
+  decisions: Decision[];
+  next?: string;
+  /** The order each workstream-scoped decision belongs to, by its title. */
+  orders: DecisionOrder[];
+  truncated?: boolean;
+};
+
+export type DecisionsOverturnInput = {
+  decisionId: DecisionId;
+  /** Absent: revoke, and the key goes unanswered again. Present: a new decision on the same key and scope. */
+  value?: string;
+  why: string;
+};
+
+export type DecisionsOverturnOutput = {
+  /** The replacement, when a value was given. */
+  decision?: Decision;
+  next?: string;
+  /** The decision overturned: retired, or superseded by `decision`. */
+  overturned: Decision;
+  truncated?: boolean;
+};
 
 export type DecisionsRecordInput = {
   key: DecisionKey;
@@ -1317,6 +1361,7 @@ export type KnownHubEventType =
   | "workstream.running"
   | "request.opened"
   | "request.updated"
+  | "decision.retired"
   | "task.queued"
   | "agents.cap"
   | "workstream.done"
@@ -4394,6 +4439,8 @@ export interface ToolMap {
   chat_history: { input: ChatHistoryInput; output: ChatHistoryOutput };
   chat_send: { input: ChatSendInput; output: ChatSendOutput };
   chat_stop: { input: ChatStopInput; output: ChatStopOutput };
+  decisions_list: { input: DecisionsListInput; output: DecisionsListOutput };
+  decisions_overturn: { input: DecisionsOverturnInput; output: DecisionsOverturnOutput };
   decisions_record: { input: DecisionsRecordInput; output: DecisionsRecordOutput };
   decisions_search: { input: DecisionsSearchInput; output: DecisionsSearchOutput };
   doctor_fix: { input: DoctorFixInput; output: DoctorFixOutput };

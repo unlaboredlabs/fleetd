@@ -1,4 +1,5 @@
-//! The ledger's MCP tools (decisions_search, decisions_record) and lead calls (decide, decisions_search).
+//! The ledger's MCP tools (decisions_search, decisions_record, and the app's decisions_list and decisions_overturn) and
+//! lead calls (decide, decisions_search).
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
@@ -8,8 +9,9 @@ use fleetd_contracts::lead_calls::{
 };
 use fleetd_contracts::ledger::{Decision, DecisionScope, DecisionSource, WorkstreamId};
 use fleetd_contracts::mcp::{
-    DecisionsRecordInput, DecisionsRecordOutput, DecisionsSearchInput, DecisionsSearchOutput,
-    ErrorCode,
+    DecisionOrder, DecisionsListInput, DecisionsListOutput, DecisionsOverturnInput,
+    DecisionsOverturnOutput, DecisionsRecordInput, DecisionsRecordOutput, DecisionsSearchInput,
+    DecisionsSearchOutput, ErrorCode,
 };
 use fleetd_contracts::prim::List;
 
@@ -17,6 +19,9 @@ use super::{Actor, DecisionFilter, LedgerCode, LedgerError, RecordInput};
 use crate::hub::api::{
     Caller, Hub, Registry, ToolError, allows, allows_everywhere, is_human, require, unknown_project,
 };
+use crate::hub::leads::events::Event;
+use crate::hub::leads::wakes::{LineKind, Trigger};
+use crate::hub::orders::notes::require_human;
 
 const SEARCH_LIMIT: i64 = 20;
 
@@ -169,6 +174,124 @@ pub fn register(tools: &mut Registry) {
         );
         Ok::<_, ToolError>(DecisionsRecordOutput { decision, next: Some(next), truncated: None })
     });
+
+    tools.add("decisions_list", decisions_list);
+    tools.add("decisions_overturn", decisions_overturn);
+}
+
+async fn decisions_list(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: DecisionsListInput,
+) -> Result<DecisionsListOutput, ToolError> {
+    let r = &input.project_ref;
+    require(&caller, Role::Read, Some(&r.machine_id))?;
+    if hub.store.project_get(r)?.is_none() {
+        return Err(unknown_project(r));
+    }
+    let limit = input.limit.get();
+    let decisions = hub.decisions.history(r, limit).map_err(refusal)?;
+    let mut orders: Vec<DecisionOrder> = Vec::new();
+    for d in &decisions {
+        let DecisionScope::Workstream { workstream_id } = &d.scope else {
+            continue;
+        };
+        if orders.iter().any(|o| &o.workstream_id == workstream_id) {
+            continue;
+        }
+        if let Some(w) = hub.leads.records.workstream_get(workstream_id)? {
+            orders.push(DecisionOrder {
+                workstream_id: w.workstream_id,
+                title: w.title,
+            });
+        }
+    }
+    let truncated = (decisions.len() as i64 >= limit).then_some(true);
+    Ok(DecisionsListOutput {
+        decisions: List::unchecked(decisions),
+        orders: List::unchecked(orders),
+        next: None,
+        truncated,
+    })
+}
+
+/// A person's revoke or new value. Never an agent's key: agents and leads record decisions, only a person overturns
+/// one. The project's lead reads the change with its next wake: the line below, and its state's active decisions.
+async fn decisions_overturn(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: DecisionsOverturnInput,
+) -> Result<DecisionsOverturnOutput, ToolError> {
+    require_human(&caller, "decisions_overturn")?;
+    let id = input.decision_id.as_str();
+    let unknown = || ToolError {
+        code: ErrorCode::NotFound,
+        message: format!("No decision {id}."),
+        fix: Some("Call decisions_list for the project's decisions.".into()),
+    };
+    let old = hub
+        .decisions
+        .get(id)
+        .map_err(refusal)?
+        .filter(|d| can_read_decision(&hub, &caller, d))
+        .ok_or_else(unknown)?;
+    let project = decision_project(&hub, &old.scope)?;
+    match &project {
+        Some(r) => require(&caller, Role::Operate, Some(&r.machine_id))?,
+        None if !allows_everywhere(&caller, Role::Operate) => {
+            return Err(ToolError {
+                code: ErrorCode::Forbidden,
+                message: "A global decision applies to every machine; this key has no operate grant on all of them.".into(),
+                fix: Some("Use a key with an operate grant on * machines.".into()),
+            });
+        }
+        None => {}
+    }
+    let done = hub
+        .decisions
+        .overturn(
+            id,
+            input.value.as_deref(),
+            input.why.as_ref(),
+            project.as_ref(),
+            &actor_of(&caller),
+        )
+        .map_err(refusal)?;
+    if let Some(r) = &project {
+        let line = Event::DecisionOverturned {
+            decision: id,
+            key: old.key.as_str(),
+            was: old.value.as_ref(),
+            replaced_by: done
+                .replacement
+                .as_ref()
+                .map(|d| (d.decision_id.as_str(), d.value.as_ref())),
+            why: input.why.as_ref(),
+        };
+        hub.leads.wakes.trigger(
+            r,
+            Trigger::Line {
+                kind: LineKind::Quiet,
+                text: line.render(),
+            },
+        );
+    }
+    let next = match &done.replacement {
+        Some(d) => format!(
+            "{} answers {} now; the lead reads it at its next wake.",
+            d.decision_id, d.key
+        ),
+        None => format!(
+            "{} is unanswered again; the lead asks before deciding it.",
+            old.key
+        ),
+    };
+    Ok(DecisionsOverturnOutput {
+        overturned: done.overturned,
+        decision: done.replacement,
+        next: Some(next),
+        truncated: None,
+    })
 }
 
 /// The ledger's lead-side calls (`decide`, `decisions_search`) for a caller already attributed to `project_ref` by its

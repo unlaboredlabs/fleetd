@@ -96,6 +96,9 @@ pub enum HubEventType {
     RequestUpdated,
     #[serde(rename = "decision.recorded")]
     DecisionRecorded,
+    /// A person revoked a decision (`decisions_overturn`); its key goes unanswered again.
+    #[serde(rename = "decision.retired")]
+    DecisionRetired,
     #[serde(rename = "lead.started")]
     LeadStarted,
     #[serde(rename = "lead.woken")]
@@ -266,6 +269,7 @@ impl HubEventType {
             Self::RequestOpened => "request.opened",
             Self::RequestUpdated => "request.updated",
             Self::DecisionRecorded => "decision.recorded",
+            Self::DecisionRetired => "decision.retired",
             Self::LeadStarted => "lead.started",
             Self::LeadWoken => "lead.woken",
             Self::TaskQueued => "task.queued",

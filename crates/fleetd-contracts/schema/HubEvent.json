@@ -166,6 +166,11 @@
           "type": "string"
         },
         {
+          "const": "decision.retired",
+          "description": "A person revoked a decision (`decisions_overturn`); its key goes unanswered again.",
+          "type": "string"
+        },
+        {
           "const": "task.queued",
           "description": "`data.queuedReason`.",
           "type": "string"

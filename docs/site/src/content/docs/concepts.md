@@ -96,7 +96,8 @@ Its tools are listed in [Agent tools](/docs/reference/agent-tools).
 
 A lead asks only about product calls, money and irreversible steps, in the chat, as numbered items with a
 recommendation each. You reply tersely (`1 go, 2 rec`) or in your own words. The lead logs each answer with `decide`,
-into a searchable decision log, so it never asks the same question twice.
+into a searchable decision log, so it never asks the same question twice. You can change a decision or revoke it, with
+a short why (`decisions_overturn`); the lead reads that at its next wake, and asks again about a revoked one.
 
 ### Secrets and approvals {#inline-items}
 

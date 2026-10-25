@@ -87,6 +87,11 @@ describe("event effects", () => {
     for (const type of ["thread.completed", "task.started", "machine.online"]) expect(tools(e(type)), type).not.toContain("metrics_get");
   });
 
+  it("the Decisions tab: a decision recorded or revoked, nothing else", () => {
+    for (const type of ["decision.recorded", "decision.retired"]) expect(tools(e(type)), type).toContain("decisions_list");
+    for (const type of ["chat.message", "task.completed", "workstream.state"]) expect(tools(e(type)), type).not.toContain("decisions_list");
+  });
+
   it("refetches only the open order's time reads, never the paged spans whole", () => {
     const fx = effectsOf(e("task.completed", { workstreamId: "W1", taskId: "T3" }));
     expect(fx.invalidate).toContainEqual({ tool: "time_breakdown", where: { workstreamId: "W1" } });
