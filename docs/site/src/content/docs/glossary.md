@@ -94,7 +94,7 @@ items.
 
 ## Policy file {#policy-file}
 
-`.fleetd/policy.yaml` in a project's repo. It sets the tasks' model, tool rules and the branch prefix. See
+An optional `.fleetd/policy.yaml` in a project's checkout. It sets tool rules and the branch prefix. See
 [Config & files](/docs/config-and-files#policy).
 
 ## Project {#project}

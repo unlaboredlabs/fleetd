@@ -1,6 +1,7 @@
-//! The repo policy file `.fleetd/policy.yaml`, read from the project's workspace through the node. Cached per
-//! project for 60 s; `invalidate` drops an entry at once (say, after a merge that touched the file). No file is the
-//! default policy. A broken file is an error with a fix, never a silent fallback, so a typo can't drop a deny rule.
+//! The optional repo policy file `.fleetd/policy.yaml`, read from the working tree of the project's checkout through
+//! the node (not from the default branch, so an uncommitted file counts). Cached per project for 60 s; `invalidate`
+//! drops an entry at once (say, after a merge that touched the file). No file is the default policy. A broken file
+//! is an error with a fix, never a silent fallback, so a typo can't drop a deny rule.
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::UNIX_EPOCH;
@@ -22,7 +23,7 @@ fn invalid(problem: &str) -> LeadError {
         .take(1000)
         .collect();
     LeadError::new(ErrorCode::Invalid, message).with_fix(format!(
-        "Fix {POLICY_FILE_PATH} on the project's default branch. For example:\n{EXAMPLE}"
+        "Fix {POLICY_FILE_PATH} in the project's checkout on its machine. For example:\n{EXAMPLE}"
     ))
 }
 
@@ -165,7 +166,7 @@ mod tests {
                 error
                     .fix
                     .unwrap()
-                    .contains("Fix .fleetd/policy.yaml on the project's default branch.")
+                    .contains("Fix .fleetd/policy.yaml in the project's checkout on its machine.")
             );
         }
     }
