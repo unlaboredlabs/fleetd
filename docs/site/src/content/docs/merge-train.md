@@ -71,6 +71,53 @@ A member counts as merged only while its head is still the one the batch was bui
 | The batch is red, or GitHub refuses to merge its PR | Takes each member alone, so each CI result blames only that PR. |
 | A member gets a new push, the `hold` label, or is closed during CI | Drops the batch before the merge, so untested code never lands, and builds a new one without it. |
 
+## CI runners are scarce {#scarce-runners}
+
+GitHub doesn't start queued jobs in order. When a repo has few runners of a kind, such as macOS, every agent push
+queues a full CI run, and the batch PR can wait behind them. So the train labels what it is merging now with
+`fleetd:next`:
+
+- the batch PR;
+- or a PR it merges alone, before it rebases that PR, so the rebase's CI run already sees the label.
+
+PRs waiting behind it get no label: the run the label starts would cancel their own CI and take the runners the batch
+needs. The train takes the label off once a PR merges or leaves the queue, and creates the label if the repo doesn't
+have it.
+
+To use it, run your expensive jobs only on `main`, on the batch branch, on manual runs, and on labelled PRs:
+
+```yaml
+jobs:
+  macos:
+    runs-on: macos-latest
+    if: >-
+      github.event_name != 'pull_request'
+      || endsWith(github.head_ref, 'train/batch')
+      || contains(github.event.pull_request.labels.*.name, 'fleetd:next')
+```
+
+A skipped job still reports, so it can stay a required check.
+
+Adding the label must also start a run. Don't add `labeled` to that workflow's `pull_request` types: a run for any other
+label would replace the PR's real check results with skipped ones. Instead, use a small workflow on `labeled` that
+reacts to `fleetd:next` only and runs the CI workflow on the PR's branch (`gh workflow run ci.yml --ref <branch>`), as
+fleetd's own `.github/workflows/macos-label.yml` does.
+
+The train reads the repo's workflows to see which checks the label runs. It looks for jobs whose `if:` names
+`fleetd:next`, in a workflow that reacts to the label being added, or in one that such a workflow starts with
+`gh workflow run`. For a PR it merges alone, such a check skipped before the label went on never counts as passing.
+The train waits for the run the label starts. If GitHub refuses the label, or no run replaces the skipped check within
+3 minutes, the train keeps waiting, retries the label, and tells the lead once: "CI didn't start for the labelled PR".
+
+Every other skipped check counts as GitHub counts it: as passing. That covers checks in workflows the label never
+runs, and jobs a workflow skips on purpose. In a repo whose workflows don't run anything on the label, nothing waits,
+and a refused label is only one line in the hub's log. If the workflows can't be read, the train uses the last answer
+it had for the repo; with none, any skipped check holds the PR for 3 minutes, then counts.
+
+When the checks of the batch, or of a PR merging alone, have been queued for more than 5 minutes, its queue entry and
+the lead's digest say "waiting for CI runners (N queued)". Once a runner takes them, the entry's earlier note comes
+back.
+
 ## Hold a PR {#hold}
 
 Add the `hold` label to a PR to keep the train from taking it, alone or in a batch. Remove the label and it goes in

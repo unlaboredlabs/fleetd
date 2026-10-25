@@ -1,8 +1,11 @@
 name: macOS label
 
-# Adding the `macos` label to a draft PR runs CI and Desktop QA on its branch with the macOS jobs, which drafts skip
-# otherwise. The label is caught here rather than in ci.yml: a `labeled` run there for any other label would add skipped
-# check runs that replace the PR's real results (the merge train and GitHub keep only the newest run of each check).
+# Adding `fleetd:next` (the merge train's: it merges the PR next) or `macos` (by hand) to a PR runs CI and Desktop QA on
+# its branch with the macOS jobs, which ci.yml runs only on labelled PRs. The label is caught here rather than in
+# ci.yml: a `labeled` run there for any other label would add skipped check runs that replace the PR's real results (the
+# merge train and GitHub keep only the newest run of each check). The dispatched runs join the PR's concurrency group,
+# so they replace its running CI and its next push replaces them. Nothing is dispatched for the train's batch PR, whose
+# CI runs the macOS jobs anyway, nor for a PR that already had the other label.
 
 on:
   pull_request:
@@ -13,7 +16,10 @@ permissions:
 
 jobs:
   dispatch:
-    if: github.event.label.name == 'macos' && github.event.pull_request.draft
+    if: >-
+      !endsWith(github.head_ref, 'train/batch')
+      && ((github.event.label.name == 'fleetd:next' && !contains(github.event.pull_request.labels.*.name, 'macos'))
+      || (github.event.label.name == 'macos' && !contains(github.event.pull_request.labels.*.name, 'fleetd:next')))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -21,6 +27,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           BRANCH: ${{ github.head_ref }}
+          PR: ${{ github.event.pull_request.number }}
         run: |
-          gh workflow run ci.yml --ref "$BRANCH"
-          gh workflow run desktop-qa.yml --ref "$BRANCH"
+          gh workflow run ci.yml --ref "$BRANCH" -f pr="$PR"
+          gh workflow run desktop-qa.yml --ref "$BRANCH" -f pr="$PR"
