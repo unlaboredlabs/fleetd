@@ -1,5 +1,27 @@
 {
   "$defs": {
+    "ActorKind": {
+      "description": "Who a PR's author or merger was, by the forge's account type: git authorship can't tell, because agents commit\nunder the person's own identity.",
+      "oneOf": [
+        {
+          "enum": [
+            "human",
+            "bot"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "train",
+          "description": "The merge train (merger only).",
+          "type": "string"
+        },
+        {
+          "const": "unknown",
+          "description": "No forge, or the forge didn't say.",
+          "type": "string"
+        }
+      ]
+    },
     "AgentsCapData": {
       "description": "`agents.cap` data: a project's max agents or the fleet cap changed. The event's summary is the one quiet line its\nchat shows.",
       "properties": {
@@ -42,6 +64,34 @@
         "to",
         "running",
         "queued"
+      ],
+      "type": "object"
+    },
+    "AppPresenceData": {
+      "description": "`app.presence`: the app was focused on a project's screen (the event's machine and project) with input in the\nlast 60 s, for one interval. Only that: never keystrokes or content. At most one per minute per key.",
+      "properties": {
+        "by": {
+          "description": "The human key's name.",
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "fromMs": {
+          "description": "Epoch milliseconds on the hub clock.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "toMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "fromMs",
+        "toMs"
       ],
       "type": "object"
     },
@@ -633,6 +683,11 @@
       ],
       "x-open": true
     },
+    "CommitSha": {
+      "description": "Full lowercase hex commit SHA, 40 or 64 characters",
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+      "type": "string"
+    },
     "DecisionKey": {
       "description": "Lowercase dotted slug, [a-z0-9]+(.[a-z0-9_-]+)*, at most 80",
       "pattern": "^[a-z0-9]+(\\.[a-z0-9_-]+)*$",
@@ -729,6 +784,9 @@
         "agents.cap": {
           "$ref": "#/$defs/AgentsCapData"
         },
+        "app.presence": {
+          "$ref": "#/$defs/AppPresenceData"
+        },
         "change.ci_failed": {
           "$ref": "#/$defs/TrainEventData"
         },
@@ -785,6 +843,9 @@
         },
         "prompt.changed": {
           "$ref": "#/$defs/PromptChangedData"
+        },
+        "repo.advanced": {
+          "$ref": "#/$defs/RepoAdvancedData"
         },
         "request.opened": {
           "$ref": "#/$defs/RequestEventData"
@@ -870,6 +931,7 @@
       },
       "required": [
         "agents.cap",
+        "app.presence",
         "change.ci_failed",
         "change.needs_rebase",
         "change.queued",
@@ -889,6 +951,7 @@
         "project.added",
         "project.clone_progress",
         "prompt.changed",
+        "repo.advanced",
         "request.opened",
         "request.updated",
         "source.fresh",
@@ -1377,6 +1440,36 @@
       ],
       "type": "string"
     },
+    "RemoteRepo": {
+      "type": "string"
+    },
+    "RepoAdvancedData": {
+      "description": "`repo.advanced`: a node's fetch saw the remote's default branch move, so the hub reads the repo's merges now.",
+      "properties": {
+        "branch": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "from": {
+          "$ref": "#/$defs/CommitSha",
+          "description": "Absent on the first fetch the node saw."
+        },
+        "repo": {
+          "$ref": "#/$defs/RemoteRepo"
+        },
+        "to": {
+          "$ref": "#/$defs/CommitSha"
+        }
+      },
+      "required": [
+        "repo",
+        "branch",
+        "to"
+      ],
+      "type": "object"
+    },
     "RequestEventData": {
       "description": "`request.opened`, `request.updated`.",
       "properties": {
@@ -1852,6 +1945,16 @@
     "TrainEventData": {
       "description": "The merge train's events: `change.queued`, `change.ready`, `change.needs_rebase`, `change.ci_failed`,\n`change.refused`, `pr.merged`, `pr.merged_outside`. Which fields each carries is in\n`HubEventType`'s docs.",
       "properties": {
+        "authorKind": {
+          "$ref": "#/$defs/ActorKind",
+          "description": "pr.merged_outside: who opened and who merged it, by the forge's account type."
+        },
+        "batchPr": {
+          "description": "pr.merged: the train's batch PR it landed in.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
         "changeId": {
           "$ref": "#/$defs/ChangeId"
         },
@@ -1869,11 +1972,25 @@
         "fix": {
           "type": "string"
         },
+        "head": {
+          "description": "pr.merged_outside: the PR's head branch and when it was opened.",
+          "type": "string"
+        },
         "logUrl": {
           "type": "string"
         },
+        "mergedAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "pr.merged, pr.merged_outside: when it landed on the forge."
+        },
+        "mergedByKind": {
+          "$ref": "#/$defs/ActorKind"
+        },
         "mergedSha": {
           "type": "string"
+        },
+        "prCreatedAt": {
+          "$ref": "#/$defs/Timestamp"
         },
         "prNumber": {
           "maximum": 9007199254740991,

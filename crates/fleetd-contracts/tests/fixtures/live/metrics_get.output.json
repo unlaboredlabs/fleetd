@@ -1,0 +1,156 @@
+{
+  "compare": {
+    "days": [
+      {
+        "day": "2026-10-17",
+        "human": [],
+        "merged": { "direct": 0, "fleetdByHand": 0, "outside": 1, "train": 0 },
+        "notCounted": []
+      },
+      {
+        "day": "2026-10-18",
+        "human": [],
+        "merged": { "direct": 0, "fleetdByHand": 0, "outside": 0, "train": 0 },
+        "notCounted": []
+      }
+    ],
+    "since": "2026-10-17T00:00:00.000Z",
+    "until": "2026-10-19T00:00:00.000Z"
+  },
+  "coverage": {
+    "invisible": [
+      "Thinking and planning away from the keyboard",
+      "Time in an editor, or a Claude Code session not registered with fleetd"
+    ],
+    "repos": [
+      {
+        "defaultBranch": "main",
+        "forge": "github",
+        "knownSince": "2026-07-21T00:00:00.000Z",
+        "lastRead": "2026-10-20T23:59:00.000Z",
+        "repo": "github.com/acme/web"
+      },
+      {
+        "defaultBranch": "trunk",
+        "forge": "git",
+        "lastRead": "2026-10-20T14:02:00.000Z",
+        "repo": "git.internal/srv/tools"
+      }
+    ],
+    "stale": [
+      {
+        "reason": "git.internal not read since 14:02: the node is offline",
+        "repo": "git.internal/srv/tools",
+        "since": "2026-10-20T14:02:00.000Z"
+      }
+    ]
+  },
+  "days": [
+    {
+      "day": "2026-10-19",
+      "human": [
+        { "ms": 540000, "source": "chat", "touches": 4 },
+        { "ms": 240000, "source": "reviews", "touches": 1 }
+      ],
+      "merged": { "direct": 0, "fleetdByHand": 1, "outside": 0, "train": 2 },
+      "notCounted": [{ "n": 1, "why": "bot" }]
+    },
+    {
+      "day": "2026-10-20",
+      "human": [],
+      "merged": { "direct": 1, "fleetdByHand": 0, "outside": 0, "train": 0 },
+      "notCounted": []
+    }
+  ],
+  "merges": [
+    {
+      "mergedAt": "2026-10-20T09:30:00.000Z",
+      "repo": "git.internal/srv/tools",
+      "route": "direct",
+      "sha": "5c4cc175aa00000000000000000000000000beef",
+      "touches": 0
+    },
+    {
+      "additions": 120,
+      "author": "human",
+      "batchPr": 252,
+      "changeId": "X41",
+      "deletions": 8,
+      "firstPrAt": "2026-10-19T11:00:00.000Z",
+      "mergedAt": "2026-10-19T13:10:00.000Z",
+      "mergedBy": "train",
+      "orderToMergedMs": 11400000,
+      "prCreatedAt": "2026-10-19T11:00:00.000Z",
+      "prNumber": 249,
+      "prOpenToMergedMs": 7800000,
+      "projectRef": { "machineId": "devbox", "projectId": "p1" },
+      "repo": "github.com/acme/web",
+      "requestedAt": "2026-10-19T10:00:00.000Z",
+      "requestedBasis": "opened",
+      "reviewPassedAt": "2026-10-19T12:40:00.000Z",
+      "route": "train",
+      "taskId": "T45",
+      "title": "fleetd status says 1 item",
+      "touches": 1,
+      "url": "https://github.com/acme/web/pull/249",
+      "workstreamId": "W9"
+    }
+  ],
+  "mergesTotal": 2,
+  "repos": [
+    {
+      "mergedPerDay": 1.5,
+      "n": 3,
+      "orderToMergedMedianMs": 11400000,
+      "humanPerPrMs": 260000,
+      "projects": [
+        { "machineId": "devbox", "projectId": "p1" },
+        { "machineId": "devbox-2", "projectId": "p7" }
+      ],
+      "repo": "github.com/acme/web",
+      "spark": [{ "since": "2026-10-19T00:00:00.000Z", "value": 3 }, { "since": "2026-10-20T00:00:00.000Z" }],
+      "throughFleetdPct": 66.7
+    }
+  ],
+  "since": "2026-10-19T00:00:00.000Z",
+  "tiles": {
+    "human": {
+      "lowMs": 600000,
+      "outsidePerPrMs": 0,
+      "outsidePrs": 1,
+      "outsideTotalMs": 0,
+      "perPrMs": 260000,
+      "prs": 3,
+      "spark": [],
+      "totalMs": 780000
+    },
+    "merged": {
+      "byRoute": { "direct": 1, "fleetdByHand": 1, "outside": 0, "train": 2 },
+      "n": 4,
+      "perDay": 2,
+      "previousPerDay": 0.5,
+      "spark": [{ "since": "2026-10-19T00:00:00.000Z", "value": 3 }, { "since": "2026-10-20T00:00:00.000Z", "value": 1 }]
+    },
+    "orderToMerged": {
+      "fromOpened": 3,
+      "medianMs": 11400000,
+      "n": 3,
+      "noOrder": 1,
+      "p90Ms": 30000000,
+      "prOpenMedianMs": 7800000,
+      "spark": []
+    },
+    "throughFleetd": {
+      "lines": [
+        { "additions": 300, "deletions": 20, "route": "train" },
+        { "additions": 4, "deletions": 1, "route": "direct" }
+      ],
+      "madeByFleetdPct": 75,
+      "n": 4,
+      "pct": 50,
+      "previousPct": 0,
+      "spark": []
+    }
+  },
+  "until": "2026-10-21T00:00:00.000Z"
+}

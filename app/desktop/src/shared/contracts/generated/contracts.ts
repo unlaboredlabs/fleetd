@@ -91,6 +91,12 @@ export type ActivityNow = {
   since: Timestamp;
 };
 
+/**
+ * Who a PR's author or merger was, by the forge's account type: git authorship can't tell, because agents commit
+ * under the person's own identity.
+ */
+export type ActorKind = "human" | "bot" | "train" | "unknown";
+
 /** One agent of an order: a task, or the project's lead. */
 export type AgentLane = {
   branch?: string;
@@ -216,6 +222,18 @@ export type AppError = {
   /** Present when this answers a `call`. */
   id?: string;
   message: string;
+};
+
+/**
+ * `app.presence`: the app was focused on a project's screen (the event's machine and project) with input in the
+ * last 60 s, for one interval. Only that: never keystrokes or content. At most one per minute per key.
+ */
+export type AppPresenceData = {
+  /** The human key's name. */
+  by?: string;
+  /** Epoch milliseconds on the hub clock. */
+  fromMs: number;
+  toMs: number;
 };
 
 export type AppServerMessage = {
@@ -941,6 +959,11 @@ export type FleetdStatusOutput = {
   truncated?: boolean;
 };
 
+/** Where a repo's merges are read from. */
+export type KnownForge = "github" | "gitlab" | "gitea" | "bitbucket" | "azure_devops" | "git";
+/** KnownForge, or a value from a newer hub. */
+export type Forge = KnownForge | (string & {});
+
 /** A git checkout found on a machine (under ~/src, ~/code, ~/projects, ~/dev and similar, at most two levels down). */
 export type FoundRepo = {
   /** The directory's name. */
@@ -1104,7 +1127,9 @@ export type KnownHubEventType =
   | "source.stale"
   | "source.fresh"
   | "chat.message"
-  | "chat.waiting";
+  | "chat.waiting"
+  | "app.presence"
+  | "repo.advanced";
 /** KnownHubEventType, or a value from a newer hub. */
 export type HubEventType = KnownHubEventType | (string & {});
 
@@ -1158,6 +1183,29 @@ export type HumanRequest = {
   /** One line on why the lead needs it. */
   text: string;
   workstreamId?: WorkstreamId;
+};
+
+/** The minutes chart's series, at most five, in this fixed order bottom up. */
+export type HumanSource = "app" | "chat" | "reviews" | "sessions" | "other";
+
+/** The person's minutes per merged PR: a ratio of period totals, from what fleetd sees. */
+export type HumanTile = {
+  /** The low bound: the union of the credits alone, with no bridging. */
+  lowMs: number;
+  /**
+   * Visible minutes on outside work over `outside` + `direct` landed changes. Always a bare minimum: fleetd
+   * sees almost none of that work.
+   */
+  outsidePerPrMs?: number;
+  outsidePrs: number;
+  outsideTotalMs: number;
+  /** Minutes on fleetd work over its landed changes (`train` + `fleetd_by_hand`); absent when there are none. */
+  perPrMs?: number;
+  previousPerPrMs?: number;
+  prs: number;
+  spark: SparkPoint[];
+  /** The estimate: touches' credits, bridged into sessions where under 5 minutes apart, as a union. */
+  totalMs: number;
 };
 
 export type HumanWait = {
@@ -1312,6 +1360,8 @@ export type LiveText = {
   messageId: string;
 };
 
+export type LocalDate = string;
+
 /** Read from the runner's login kind, never from credentials. */
 export type LoginKind = "subscription" | "api_key" | "custom_base_url" | "unknown";
 
@@ -1408,6 +1458,11 @@ export type Marker = {
   text: string;
 };
 
+/** How a landed change reached the default branch. The fixed order, bottom up on every chart, is the order here. */
+export type KnownMergeRoute = "train" | "fleetd_by_hand" | "outside" | "direct";
+/** KnownMergeRoute, or a value from a newer hub. */
+export type MergeRoute = KnownMergeRoute | (string & {});
+
 /** How the default branch may be merged into. */
 export type MergeRules = {
   /** Branch protection or an active ruleset applies to the default branch. */
@@ -1420,6 +1475,139 @@ export type MergeRules = {
   squashAllowed?: boolean;
   /** Pull requests must be up to date with the base before merging. */
   strict?: boolean;
+};
+
+/**
+ * Pull requests merged per day: landed changes of all four routes over the range's calendar days (today as a
+ * fraction, at least an hour).
+ */
+export type MergedTile = {
+  byRoute: RouteCounts;
+  n: number;
+  perDay: number;
+  /** The previous period of the same length; absent when nothing was read that far back. */
+  previousPerDay?: number;
+  spark: SparkPoint[];
+};
+
+/** The previous period of the same length, for the compare toggle. */
+export type MetricsComparePeriod = {
+  days: MetricsDay[];
+  since: Timestamp;
+  until: Timestamp;
+};
+
+/** What the numbers cover and what they can't. */
+export type MetricsCoverage = {
+  /** What fleetd can't see of the person's time, one plain line each, for the info sheet. */
+  invisible: string[];
+  repos: RepoCoverage[];
+  stale: RepoStale[];
+};
+
+/** One calendar day in the viewer's zone; days with nothing are present too. */
+export type MetricsDay = {
+  day: LocalDate;
+  human: SourceMs[];
+  merged: RouteCounts;
+  /** Bots and other merges not counted that day. */
+  notCounted: SkipCount[];
+};
+
+export type MetricsGetInput = {
+  /** Add the previous period of the same length's days (the tiles always carry its figures). */
+  compare?: boolean;
+  /** Absent: every project you can read, each repo counted once. */
+  projectRef?: ProjectRef;
+  since: Timestamp;
+  tz: TimeZone;
+  /** Absent: now. */
+  until?: Timestamp;
+};
+
+export type MetricsGetOutput = {
+  compare?: MetricsComparePeriod;
+  coverage: MetricsCoverage;
+  /** Every calendar day of the range in `tz`, oldest first, empty days included. */
+  days: MetricsDay[];
+  /** Landed changes in the range, newest first; `truncated` when there were more than fit. */
+  merges: MetricsMerge[];
+  mergesTotal: number;
+  next?: string;
+  /** Without projectRef: one row per repo. */
+  repos?: MetricsRepoRow[];
+  since: Timestamp;
+  tiles: MetricsTiles;
+  truncated?: boolean;
+  until: Timestamp;
+};
+
+/** One landed change, for the list and the hovers. */
+export type MetricsMerge = {
+  additions?: number;
+  author?: ActorKind;
+  /** The train's batch PR it landed in. */
+  batchPr?: number;
+  changeId?: ChangeId;
+  deletions?: number;
+  /** The stages between requested and merged: its first PR opened, its review passed. */
+  firstPrAt?: Timestamp;
+  mergedAt: Timestamp;
+  mergedBy?: ActorKind;
+  orderToMergedMs?: number;
+  prCreatedAt?: Timestamp;
+  /** Absent on a direct push. */
+  prNumber?: number;
+  prOpenToMergedMs?: number;
+  /** The project that owns it on this hub; the same repo may be checked out by others (`MetricsRepoRow`). */
+  projectRef?: ProjectRef;
+  repo: RemoteRepo;
+  requestedAt?: Timestamp;
+  requestedBasis?: RequestedBasis;
+  reviewPassedAt?: Timestamp;
+  route: MergeRoute;
+  /** The ledger claim of a human session that saw this work before it landed. */
+  seenClaim?: string;
+  /** The merge, squash or pushed commit on the default branch. */
+  sha?: CommitSha;
+  taskId?: TaskId;
+  title?: string;
+  /** The person's touches that belong to this PR: reviews on it, its merge by hand. */
+  touches: number;
+  url?: string;
+  workstreamId?: WorkstreamId;
+};
+
+/** One repo's four numbers, for the cross-fleet table under "All projects". */
+export type MetricsRepoRow = {
+  humanPerPrMs?: number;
+  mergedPerDay: number;
+  n: number;
+  orderToMergedMedianMs?: number;
+  /** Every project on this hub with it checked out, so the same merges show under each. */
+  projects: ProjectRef[];
+  repo: RemoteRepo;
+  /** Merged per day over slices of the range. */
+  spark: SparkPoint[];
+  throughFleetdPct?: number;
+};
+
+export type MetricsRetentionSetInput = {
+  retentionDays: number;
+};
+
+export type MetricsRetentionSetOutput = {
+  next?: string;
+  retentionDays: number;
+  truncated?: boolean;
+};
+
+/** The KPI row: all four, equal. */
+export type MetricsTiles = {
+  human: HumanTile;
+  merged: MergedTile;
+  orderToMerged: OrderToMergedTile;
+  throughFleetd: ThroughFleetdTile;
 };
 
 export type MilestoneId = string;
@@ -1548,6 +1736,22 @@ export type OrderPhase =
   | "queued"
   | "planning"
   | "idle";
+
+/** Time from order to merged, over the landed changes that belong to an order (`train` and `fleetd_by_hand`). */
+export type OrderToMergedTile = {
+  /** Of `n`, those timed from when the lead opened the order rather than when the person asked. */
+  fromOpened: number;
+  /** Absent when `n` is 0. */
+  medianMs?: number;
+  n: number;
+  /** Landed changes with no order (`outside`, `direct`), shown as "n merged with no order". */
+  noOrder: number;
+  p90Ms?: number;
+  /** PR opened to merged over every PR of every route, for a like-for-like comparison. */
+  prOpenMedianMs?: number;
+  previousMedianMs?: number;
+  spark: SparkPoint[];
+};
 
 export type OrdersBoardInput = {
   includeDoneSince?: Timestamp;
@@ -2389,6 +2593,8 @@ export type QuietWindow = {
   to: Timestamp;
 };
 
+export type RemoteRepo = string;
+
 export type RepeatStat = {
   label: string;
   /** Runs in a row with no edit between them. */
@@ -2396,6 +2602,34 @@ export type RepeatStat = {
   taskId?: TaskId;
   threadId: ThreadId;
   totalMs: number;
+};
+
+/** `repo.advanced`: a node's fetch saw the remote's default branch move, so the hub reads the repo's merges now. */
+export type RepoAdvancedData = {
+  branch: string;
+  /** Absent on the first fetch the node saw. */
+  from?: CommitSha;
+  repo: RemoteRepo;
+  to: CommitSha;
+};
+
+/** What a repo's figures were read from. */
+export type RepoCoverage = {
+  defaultBranch?: string;
+  forge: Forge;
+  /** Merges are known from here on (the first read backfills 90 days). */
+  knownSince?: Timestamp;
+  /** The last good read of its forge or its git log. */
+  lastRead?: Timestamp;
+  repo: RemoteRepo;
+};
+
+/** A repo whose reads are failing: its figures stop at `since`, never a silent zero. */
+export type RepoStale = {
+  /** "GitHub not read since 14:02: `gh` is signed out". */
+  reason: string;
+  repo: RemoteRepo;
+  since: Timestamp;
 };
 
 /** `request.opened`, `request.updated`. */
@@ -2422,6 +2656,9 @@ export type RequestKind = "secret" | "approval";
  * goes back to open with the reason in `evidence`.
  */
 export type RequestState = "open" | "stored" | "withdrawn" | "approved" | "denied" | "ran" | "failed";
+
+/** Where an order's `requested_at` came from. */
+export type RequestedBasis = "source" | "chat" | "opened";
 
 export type RequestsListInput = {
   limit?: number;
@@ -2470,6 +2707,21 @@ export type ReviewSummary = {
 export type KnownReviewVerdictKind = "approved" | "changes_requested" | "commented" | "dismissed";
 /** KnownReviewVerdictKind, or a value from a newer hub. */
 export type ReviewVerdictKind = KnownReviewVerdictKind | (string & {});
+
+/** Landed changes per route. */
+export type RouteCounts = {
+  direct: number;
+  fleetdByHand: number;
+  outside: number;
+  train: number;
+};
+
+/** Lines changed by one route's landed changes, for the share's tooltip (the share itself is by count). */
+export type RouteLines = {
+  additions: number;
+  deletions: number;
+  route: MergeRoute;
+};
 
 /** Why a run ended, so a node going away reads apart from a person stopping it. Set once the run is no longer active. */
 export type KnownRunEnd =
@@ -2596,6 +2848,17 @@ export type SessionPromptRef = {
 
 export type Size = "s" | "m" | "l";
 
+/** Merges that are not landed changes, by why. */
+export type SkipCount = {
+  n: number;
+  why: SkipWhy;
+};
+
+/** Why a merge into the repo is not a landed change. These are counted in the tooltips, never silently dropped. */
+export type KnownSkipWhy = "bot" | "other_base" | "merge_back";
+/** KnownSkipWhy, or a value from a newer hub. */
+export type SkipWhy = KnownSkipWhy | (string & {});
+
 /** A span a machine spent asleep, epoch milliseconds; `machine.slept` carries the same fields as its data. */
 export type SleptSpan = {
   fromMs: number;
@@ -2628,6 +2891,13 @@ export type SourceFreshData = {
   source: string;
   /** How long it was stale. */
   staleMs: number;
+};
+
+/** The person's minutes from one source on one day. */
+export type SourceMs = {
+  ms: number;
+  source: HumanSource;
+  touches: number;
 };
 
 /** `source.stale`. */
@@ -2758,6 +3028,13 @@ export type SpanStatus = "ok" | "failed" | "cancelled" | "incomplete";
 export type Spark = {
   endAt: Timestamp;
   samples: number[];
+};
+
+/** One point of a tile's sparkline: the figure over one slice of the range. */
+export type SparkPoint = {
+  since: Timestamp;
+  /** In the tile's unit. Absent when the slice has nothing to measure (no merges for a median). */
+  value?: number;
 };
 
 /** Why a part is not live: its source went quiet past its cadence. */
@@ -3166,6 +3443,18 @@ export type ThreadWindowOutput = {
   truncated?: boolean;
 };
 
+/** Share of merged work through fleetd, by count. */
+export type ThroughFleetdTile = {
+  lines: RouteLines[];
+  /** `train` + `fleetd_by_hand` over all landed changes. */
+  madeByFleetdPct?: number;
+  n: number;
+  /** `train` over all landed changes; absent when there are none. */
+  pct?: number;
+  previousPct?: number;
+  spark: SparkPoint[];
+};
+
 export type TimeBreakdownInput = {
   compare?: Period;
   filters?: TimeFilters;
@@ -3297,14 +3586,24 @@ export type ToolPermission = {
  * `HubEventType`'s docs.
  */
 export type TrainEventData = {
+  /** pr.merged_outside: who opened and who merged it, by the forge's account type. */
+  authorKind?: ActorKind;
+  /** pr.merged: the train's batch PR it landed in. */
+  batchPr?: number;
   changeId?: ChangeId;
   /** change.ci_failed: the failing check names. */
   checks?: string[];
   /** pr.merged on a repo with no CI: what fleetd checked instead. */
   ci?: string;
   fix?: string;
+  /** pr.merged_outside: the PR's head branch and when it was opened. */
+  head?: string;
   logUrl?: string;
+  /** pr.merged, pr.merged_outside: when it landed on the forge. */
+  mergedAt?: Timestamp;
+  mergedByKind?: ActorKind;
   mergedSha?: string;
+  prCreatedAt?: Timestamp;
   prNumber?: number;
   prUrl?: string;
   reason?: string;
@@ -3591,6 +3890,8 @@ export interface ToolMap {
   fleetd_status: { input: FleetdStatusInput; output: FleetdStatusOutput };
   hub_info: { input: HubInfoInput; output: HubInfoOutput };
   lead_start: { input: LeadStartInput; output: LeadStartOutput };
+  metrics_get: { input: MetricsGetInput; output: MetricsGetOutput };
+  metrics_retention_set: { input: MetricsRetentionSetInput; output: MetricsRetentionSetOutput };
   order_get: { input: OrderGetInput; output: OrderGetOutput };
   orders_board: { input: OrdersBoardInput; output: OrdersBoardOutput };
   plan_get: { input: PlanGetInput; output: PlanGetOutput };
@@ -3632,6 +3933,7 @@ export interface ToolMap {
 /** `HubEvent.data` by event type, for the types whose data has a declared shape. */
 export interface HubEventDataMap {
   "agents.cap": AgentsCapData;
+  "app.presence": AppPresenceData;
   "change.ci_failed": TrainEventData;
   "change.needs_rebase": TrainEventData;
   "change.queued": TrainEventData;
@@ -3651,6 +3953,7 @@ export interface HubEventDataMap {
   "project.added": ProjectAddedData;
   "project.clone_progress": CloneProgressData;
   "prompt.changed": PromptChangedData;
+  "repo.advanced": RepoAdvancedData;
   "request.opened": RequestEventData;
   "request.updated": RequestEventData;
   "source.fresh": SourceFreshData;
