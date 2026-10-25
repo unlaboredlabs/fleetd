@@ -1,16 +1,26 @@
 //! The disk, load and memory guard. A machine short of disk where its worktrees live (below the node's
-//! `minFreeBytes`), with a 1-minute load above twice its CPUs, or with 90% of its memory in use, takes no new agents
-//! until it is back clear of the limit by a margin. Agents already running keep going. The node reports both figures with its heartbeat; the hub decides here.
+//! `minFreeBytes`), with a 1-minute load above twice its CPUs, with 90% of its memory in use, with swap full and 80%
+//! of memory in use, or under memory pressure (Linux PSI), takes no new agents until it is back clear of the limit by
+//! a margin. Agents already running keep going: this guard can't stop them growing, only keep new ones off a machine
+//! already short. The node reports the figures with its heartbeat; the hub decides here.
 use fleetd_contracts::node_link::NodeLoad;
 
 /// New agents wait above this 1-minute load per CPU.
 pub const LOAD_PER_CPU: f64 = 2.0;
 /// New agents wait with this much of the machine's memory in use, percent.
 pub const MEM_USED_PCT: f64 = 90.0;
+/// With swap this full, memory this used pauses: the rest of RAM is all the headroom left. Full swap alone doesn't:
+/// idle pages sit there for days.
+const SWAP_FULL_PCT: f64 = 90.0;
+const MEM_WITH_SWAP_FULL_PCT: f64 = 80.0;
+/// New agents wait while tasks stalled on memory this share of the last 10 s (PSI `some avg10`): the kernel is
+/// reclaiming or swapping hard, which comes before the OOM killer.
+pub const MEM_PRESSURE_PCT: f64 = 10.0;
 /// A paused machine resumes only 10% clear of a limit, so a reading at the edge doesn't flap.
 const MARGIN: f64 = 0.1;
 
-/// Why new agents wait on the machine ("14 GB free", "load 70.2 on 32 CPUs", "memory 93%"), or None. `paused`: they already do.
+/// Why new agents wait on the machine ("14 GB free", "load 70.2 on 32 CPUs", "memory 93%", "memory 84% with swap
+/// 100%", "memory pressure 23%"), or None. `paused`: they already do.
 pub fn why(load: &NodeLoad, paused: bool) -> Option<String> {
     let margin = if paused { MARGIN } else { 0.0 };
     if let Some(disk) = &load.disk {
@@ -23,8 +33,20 @@ pub fn why(load: &NodeLoad, paused: bool) -> Option<String> {
     if load.load1.get() > LOAD_PER_CPU * cpus as f64 * (1.0 - margin) {
         return Some(format!("load {:.1} on {cpus} CPUs", load.load1.get()));
     }
-    let mem = load.mem_used_pct?.get();
-    (mem as f64 >= MEM_USED_PCT * (1.0 - margin)).then(|| format!("memory {mem}%"))
+    let under = |limit: f64| limit * (1.0 - margin);
+    if let Some(mem) = load.mem_used_pct.map(|m| m.get()) {
+        if mem as f64 >= under(MEM_USED_PCT) {
+            return Some(format!("memory {mem}%"));
+        }
+        if let Some(swap) = load.swap_used_pct.map(|s| s.get())
+            && swap as f64 >= under(SWAP_FULL_PCT)
+            && mem as f64 >= under(MEM_WITH_SWAP_FULL_PCT)
+        {
+            return Some(format!("memory {mem}% with swap {swap}%"));
+        }
+    }
+    let pressure = load.mem_pressure_pct?.get();
+    (pressure >= under(MEM_PRESSURE_PCT)).then(|| format!("memory pressure {pressure:.0}%"))
 }
 
 /// The line the project's status, the doctor and a waiting agent show.
@@ -45,6 +67,8 @@ pub(crate) mod tests {
             load1: NonNegative::new(load1).unwrap(),
             mem_used_pct: None,
             mem_total_bytes: None,
+            swap_used_pct: None,
+            mem_pressure_pct: None,
             mem_per_agent_bytes: None,
             disk_per_agent_bytes: None,
             limits: List::unchecked(Vec::new()),
@@ -101,6 +125,45 @@ pub(crate) mod tests {
             paused_text(&at(93, false).unwrap(), "mbp"),
             "Paused new agents: memory 93% on mbp"
         );
+    }
+
+    #[test]
+    fn full_swap_pauses_only_with_memory_80_percent_used() {
+        let at = |mem: i64, swap: i64, paused: bool| {
+            let mut l = load(500, 3.0);
+            l.mem_used_pct = Some(Int::unchecked(mem));
+            l.swap_used_pct = Some(Int::unchecked(swap));
+            why(&l, paused)
+        };
+        assert_eq!(
+            at(84, 100, false).as_deref(),
+            Some("memory 84% with swap 100%")
+        );
+        assert_eq!(
+            at(55, 100, false),
+            None,
+            "idle pages in swap alone never pause"
+        );
+        assert_eq!(at(84, 80, false), None);
+        assert!(
+            at(75, 95, true).is_some(),
+            "within the margin it stays paused"
+        );
+        assert_eq!(at(71, 95, true), None);
+    }
+
+    #[test]
+    fn memory_pressure_pauses_at_10_percent_and_only_a_margin_clear_resumes() {
+        let at = |psi: f64, paused: bool| {
+            let mut l = load(500, 3.0);
+            l.mem_used_pct = Some(Int::unchecked(60));
+            l.mem_pressure_pct = Some(NonNegative::new(psi).unwrap());
+            why(&l, paused)
+        };
+        assert_eq!(at(23.4, false).as_deref(), Some("memory pressure 23%"));
+        assert_eq!(at(9.5, false), None);
+        assert!(at(9.5, true).is_some());
+        assert_eq!(at(8.9, true), None);
     }
 
     #[test]

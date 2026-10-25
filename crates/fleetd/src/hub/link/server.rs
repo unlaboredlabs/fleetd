@@ -104,8 +104,10 @@ impl NodeLinkServer {
     /// Keeps a heartbeat's load and runs the guard and the usage soft brake over it. `machine.guard` marks each pause
     /// and resume, which starts waiting agents again and refreshes the project rows; the line's figure updates with
     /// every heartbeat.
-    pub fn observe_load(&self, machine_id: &MachineId, load: Option<NodeLoad>) {
+    /// `node_at` is the heartbeat's time on the node's clock: the soft brake ages a usage reading by it.
+    pub fn observe_load(&self, machine_id: &MachineId, load: Option<NodeLoad>, node_at: &str) {
         let now = now_ms(self.deps.clock.as_ref());
+        let node_now = crate::hub::store::parse_ms(node_at).unwrap_or(now);
         let (was, why, brake) = {
             let mut state = self.state.lock().unwrap();
             let was = state.paused.get(machine_id).cloned();
@@ -117,6 +119,7 @@ impl NodeLinkServer {
                     &l.limits,
                     was.as_ref().is_some_and(|p| p.brake),
                     now,
+                    node_now,
                 )
             });
             match load {
@@ -781,7 +784,7 @@ impl NodeLinkServer {
                     self.deps
                         .time
                         .heartbeat(machine_id.as_str(), beat.at.as_str());
-                    self.observe_load(&machine_id, beat.load);
+                    self.observe_load(&machine_id, beat.load, beat.at.as_str());
                     let status = {
                         let state = self.state.lock().unwrap();
                         match state.announced.get(&machine_id) {

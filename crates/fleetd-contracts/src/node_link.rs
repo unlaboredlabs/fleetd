@@ -103,6 +103,11 @@ pub struct NodeLoad {
     pub mem_used_pct: Option<Int<0, 100>>,
     /// Physical memory; absent from older nodes and when it can't be read.
     pub mem_total_bytes: Option<Count>,
+    /// Swap in use, percent. Linux only; absent without swap and from older nodes.
+    pub swap_used_pct: Option<Int<0, 100>>,
+    /// Memory pressure: the share of the last 10 s in which some task stalled waiting for memory (PSI `some avg10`),
+    /// percent. Linux only; absent on kernels without PSI and from older nodes.
+    pub mem_pressure_pct: Option<NonNegative>,
     /// Memory to allow per agent when sizing the machine's cap: node.json's `memPerAgentGb`, else 2 GB. Absent from
     /// older nodes.
     pub mem_per_agent_bytes: Option<Count>,

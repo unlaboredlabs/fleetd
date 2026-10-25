@@ -137,13 +137,17 @@ systemctl --user disable --now fleetd-node.service
 ## Disk, load, memory and usage {#guard}
 
 A machine short of disk, CPU or memory, or whose Claude login is nearly out of a usage window, takes no new agents
-until it has room again. Agents already running keep going.
+until it has room again. Agents already running keep going. That also means the guard can't stop running agents from
+growing: it keeps new ones off a machine that is already short, it doesn't shrink what runs. The node reads the figures
+every 15 seconds, with its heartbeat.
 
 | New agents wait while | They start again at |
 |---|---|
 | Free space where the worktrees live is below `minFreeGb` in [`node.json`](/docs/config-and-files#node-json): 10% of the disk or 20 GB by default, whichever is larger. | 10% above it. |
 | The 1-minute load is above twice the machine's CPUs. | 10% below it. |
 | 90% of the machine's memory is in use. | 10% below it: 81%. |
+| Swap is 90% used and memory 80% (Linux). Full swap alone doesn't pause: idle pages can sit there for days. | 10% below either. |
+| Memory pressure: tasks stalled waiting for memory 10% of the last 10 seconds (Linux PSI `some avg10`). The kernel is reclaiming or swapping hard, which comes before the OOM killer. | 10% below it. |
 | A usage window of the machine's Claude login is 90% used, or claude warned about it without a figure. API keys and gateways report no windows. | Below 85%, at the window's reset, or once the reading is 15 minutes old. |
 
 The project's status says why, for example "Paused new agents: 14 GB free on builder-1" or "Paused new agents: 5-hour

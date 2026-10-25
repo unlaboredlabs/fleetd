@@ -1048,6 +1048,11 @@
           "minimum": 0,
           "type": "integer"
         },
+        "memPressurePct": {
+          "description": "Memory pressure: the share of the last 10 s in which some task stalled waiting for memory (PSI `some avg10`),\npercent. Linux only; absent on kernels without PSI and from older nodes.",
+          "minimum": 0,
+          "type": "number"
+        },
         "memTotalBytes": {
           "description": "Physical memory; absent from older nodes and when it can't be read.",
           "maximum": 9007199254740991,
@@ -1056,6 +1061,12 @@
         },
         "memUsedPct": {
           "description": "Memory in use (total minus available), percent.",
+          "maximum": 100,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "swapUsedPct": {
+          "description": "Swap in use, percent. Linux only; absent without swap and from older nodes.",
           "maximum": 100,
           "minimum": 0,
           "type": "integer"
