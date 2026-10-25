@@ -354,16 +354,21 @@ fn remote_default(root: &Path, remote: &str) -> Option<String> {
     }
 }
 
-/// The repo's default branch as a short name: the remote's (see [`remote_default`]); with no remote, the branch
-/// checked out at `root`. Never the root's current branch while a remote exists, since that may be a feature branch.
+/// The branch checked out at `root`.
+fn current_branch(root: &Path) -> Option<String> {
+    git(root, &["symbolic-ref", "--short", "HEAD"])
+        .ok()
+        .map(|b| b.trim().to_owned())
+        .filter(|b| !b.is_empty())
+}
+
+/// The repo's default branch as a short name: the remote's (see [`remote_default`]). The branch checked out at
+/// `root` only when there is no remote, or the remote can't be asked and has never said: a writer then starts from
+/// that local branch, as offline, rather than not at all.
 pub fn default_branch(root: &Path) -> Option<String> {
-    match remote(root) {
-        Some(remote) => remote_default(root, &remote),
-        None => git(root, &["symbolic-ref", "--short", "HEAD"])
-            .ok()
-            .map(|b| b.trim().to_owned())
-            .filter(|b| !b.is_empty()),
-    }
+    remote(root)
+        .and_then(|remote| remote_default(root, &remote))
+        .or_else(|| current_branch(root))
 }
 
 /// Why a fetch failed, from git's stderr.
@@ -450,7 +455,14 @@ fn fetch(root: &Path, remote: &str, branch: &str) -> Result<(), FetchError> {
         return result.clone();
     }
     let refspec = format!("+refs/heads/{branch}:refs/remotes/{remote}/{branch}");
-    let args = ["fetch", "--no-tags", remote, refspec.as_str()];
+    // FETCH_HEAD is the human's: their `git pull` or `git merge FETCH_HEAD` reads it.
+    let args = [
+        "fetch",
+        "--no-tags",
+        "--no-write-fetch-head",
+        remote,
+        refspec.as_str(),
+    ];
     let mut result = git_remote(root, &args, FETCH_TIMEOUT);
     // The human's own fetch racing ours.
     if result
@@ -529,7 +541,7 @@ pub fn fresh_base(root: &Path, name: &str) -> Result<Base, GitError> {
         let name = if ref_sha(root, &format!("refs/heads/{name}")).is_some() {
             name.to_owned()
         } else {
-            default_branch(root).ok_or_else(|| {
+            current_branch(root).ok_or_else(|| {
                 GitError(format!("{} has no branch to start from", root.display()))
             })?
         };
@@ -815,6 +827,9 @@ pub(crate) mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (origin, checkout) = origin_and_checkout(dir.path());
         let stale = sha(&checkout, "main");
+        // The human's own last fetch, which their `git pull` reads back.
+        run(&checkout, &["fetch", "-q", "origin"]);
+        let fetch_head = std::fs::read_to_string(checkout.join(".git/FETCH_HEAD")).unwrap();
         let fresh = land(&origin, "main", "upstream.txt");
         // The human is on a feature branch with work in progress.
         run(&checkout, &["checkout", "-q", "-b", "feature"]);
@@ -844,6 +859,10 @@ pub(crate) mod tests {
             "feature"
         );
         assert!(checkout.join("wip.txt").exists());
+        assert_eq!(
+            std::fs::read_to_string(checkout.join(".git/FETCH_HEAD")).unwrap(),
+            fetch_head
+        );
         // Changes compare against the remote, so upstream's commits aren't the session's.
         std::fs::write(path.join("mine.txt"), "m\n").unwrap();
         assert_eq!(changes(&path, Some(&base.base_ref)).unwrap(), ["mine.txt"]);
@@ -982,6 +1001,25 @@ pub(crate) mod tests {
             assert!(note.ends_with("(fetch failed: offline)"), "{note}");
         }
         assert_eq!(std::fs::read_to_string(&count).unwrap().lines().count(), 1);
+    }
+
+    #[test]
+    fn offline_with_a_remote_that_never_said_its_default_branch_the_local_branch_is_used() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = repo(dir.path());
+        let gone = dir.path().join("gone.git");
+        run(&root, &["remote", "add", "origin", &gone.to_string_lossy()]);
+        assert_eq!(cached_head(&root, "origin"), None);
+
+        assert_eq!(default_branch(&root).as_deref(), Some("main"));
+        assert_eq!(
+            fresh_base(&root, "main").unwrap(),
+            Base {
+                base_ref: "main".into(),
+                sha: sha(&root, "main"),
+                note: Some("based on local main (fetch failed: offline)".into())
+            }
+        );
     }
 
     #[test]

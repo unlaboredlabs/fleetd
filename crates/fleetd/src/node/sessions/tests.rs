@@ -983,6 +983,73 @@ async fn a_writer_starts_from_a_fresh_fetch_of_origin_not_the_stale_local_main()
 }
 
 #[tokio::test]
+async fn a_slow_fetch_never_holds_up_a_launch_in_another_project() {
+    let dir = tempfile::tempdir().unwrap();
+    let seed = repo(dir.path());
+    let slow = dir.path().join("slow");
+    git(
+        dir.path(),
+        &[
+            "clone",
+            "-q",
+            &seed.to_string_lossy(),
+            &slow.to_string_lossy(),
+        ],
+    );
+    // A remote that takes 3 s to fail.
+    git(&slow, &["config", "core.sshCommand", "sleep 3; exit 1 #"]);
+    git(&slow, &["config", "ssh.variant", "simple"]);
+    git(
+        &slow,
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "ssh://example.invalid/slow.git",
+        ],
+    );
+    let other = dir.path().join("other");
+    std::fs::create_dir_all(&other).unwrap();
+    let hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.project(&slow).await;
+    hub.ok(SessionCall::ProjectUpsert {
+        project_id: ProjectId::unchecked("p2"),
+        title: NonEmpty::unchecked("p2"),
+        workspace_root: NonEmpty::unchecked(other.to_string_lossy()),
+    })
+    .await;
+    let writer = launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Worktree {
+            base_ref: NonEmpty::unchecked("main"),
+            branch: NonEmpty::unchecked("fleetd/s1"),
+        },
+    );
+    let SessionCall::Launch(mut reader) =
+        launch("s2", RuntimeMode::FullAccess, SessionWorkspace::Root)
+    else {
+        unreachable!()
+    };
+    reader.project_id = ProjectId::unchecked("p2");
+    let (_, waited) = tokio::join!(hub.ok(writer), async {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        let started = std::time::Instant::now();
+        hub.ok(SessionCall::Launch(reader)).await;
+        started.elapsed()
+    });
+    assert!(
+        waited < Duration::from_secs(2),
+        "waited {waited:?} on p1's fetch"
+    );
+}
+
+#[tokio::test]
 async fn a_first_start_that_claude_already_knows_resumes_instead() {
     let dir = tempfile::tempdir().unwrap();
     let runner = FakeRunner::fixture("init-partial-two-turns");
