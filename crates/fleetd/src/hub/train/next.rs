@@ -25,6 +25,9 @@ pub(super) const RUNNER_WAIT_MS: i64 = 5 * 60_000;
 /// The start of the note on a Change in CI whose checks have waited `RUNNER_WAIT_MS` for runners.
 pub const WAITING_FOR_RUNNERS: &str = "waiting for CI runners";
 
+/// The checks the label runs in a repo's CI on one base, and when they were read.
+type GatedRead = (i64, Vec<String>);
+
 #[derive(Default)]
 pub(super) struct NextLabels {
     /// Per repo, the PRs that carry the label and when the train put it on (None: found on it, as after a restart).
@@ -33,8 +36,8 @@ pub(super) struct NextLabels {
     known: Mutex<HashSet<String>>,
     /// The repos whose labelling failure is logged; a success clears it, so the next failure is logged again.
     warned: Mutex<HashSet<String>>,
-    /// Per repo and base, whether its workflows name the label, and when that was read.
-    uses: Mutex<HashMap<(String, String), (i64, bool)>>,
+    /// Per repo and base, the checks the label runs (`label_gated`), and when they were read.
+    gated: Mutex<HashMap<(String, String), GatedRead>>,
 }
 
 /// What putting the label on a PR came to.
@@ -48,28 +51,138 @@ pub(super) enum Labelled {
     Failed,
 }
 
-/// A PR the train merges alone in a repo whose CI runs its expensive jobs on the label.
-pub(super) struct Lone {
-    pub label: Labelled,
-    /// The checks its base requires.
-    pub required: Vec<String>,
+/// The checks the label runs in a repo's CI.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum Gate {
+    /// By name (`gated_name`); none in a repo whose CI doesn't use the label.
+    Checks(Vec<String>),
+    /// Its workflows could not be read yet: any skipped check may be one, for `LABEL_HOLD_MS` after the label.
+    Unknown,
 }
 
-/// The skipped checks that don't count as passing for a PR merged alone in a repo that uses the label: a required
-/// one, and one its CI may have skipped for want of the label: by the label's second (GitHub stamps whole seconds), or
-/// any while the PR has no label.
+/// A PR the train merges alone in a repo whose CI may run checks on the label.
+pub(super) struct Lone {
+    pub label: Labelled,
+    pub gate: Gate,
+}
+
+impl Lone {
+    /// Since when the run the label starts is waited for: the label, or `start` (the wait's) when it is older or the
+    /// train doesn't know when it went on.
+    pub fn since(&self, start: i64) -> i64 {
+        match self.label {
+            Labelled::At(at) => at.max(start),
+            _ => start,
+        }
+    }
+}
+
+/// The skipped checks that don't count as passing for a PR merged alone: one the label runs, skipped for want of it,
+/// by the label's second (GitHub stamps whole seconds) or while the PR has no label. Any other skip counts as GitHub
+/// counts it.
 pub(super) fn unproven_skips<'a>(runs: &'a [CheckRun], lone: &Lone) -> Vec<&'a CheckRun> {
     runs.iter()
         .filter(|r| r.conclusion.as_deref() == Some("skipped"))
-        .filter(|r| {
-            lone.required.contains(&r.name)
-                || match lone.label {
-                    Labelled::At(at) => skipped_by(r, at),
-                    Labelled::Before => false,
-                    Labelled::Failed => true,
-                }
+        .filter(|r| match &lone.gate {
+            Gate::Checks(names) => names.iter().any(|n| gated_name(n, &r.name)),
+            Gate::Unknown => true,
+        })
+        .filter(|r| match lone.label {
+            Labelled::At(at) => skipped_by(r, at),
+            Labelled::Before => false,
+            Labelled::Failed => true,
         })
         .collect()
+}
+
+/// Whether the check `name` is the job `pattern` names; an expression in it (`qa (${{ matrix.os }})`) matches any text.
+fn gated_name(pattern: &str, name: &str) -> bool {
+    match pattern.split_once("${{") {
+        None => pattern == name,
+        Some((head, rest)) => {
+            let tail = rest.split_once("}}").map_or("", |(_, t)| t);
+            name.len() >= head.len() + tail.len() && name.starts_with(head) && name.ends_with(tail)
+        }
+    }
+}
+
+/// The names of the checks the label runs, from the repo's workflow files (path, text): in a workflow the label
+/// triggers, each job whose `if:` names the label. A workflow the label triggers reacts to `labeled` on pull requests
+/// and names the label, or is one such a workflow starts (`gh workflow run <file or name>`). A job skipped for any other
+/// reason, and every job of other workflows, is not the label's.
+pub(super) fn label_gated(files: &[(String, String)]) -> Vec<String> {
+    use serde_yaml_ng::Value;
+    let parsed: Vec<(&str, &str, Value)> = files
+        .iter()
+        .filter_map(|(path, text)| {
+            Some((
+                path.as_str(),
+                text.as_str(),
+                serde_yaml_ng::from_str(text).ok()?,
+            ))
+        })
+        .collect();
+    let on = |doc: &Value| -> Option<Value> {
+        let map = doc.as_mapping()?;
+        map.get("on")
+            .or_else(|| map.get(Value::Bool(true)))
+            .cloned()
+    };
+    let reacts = |doc: &Value, text: &str| {
+        text.contains(NEXT_LABEL)
+            && on(doc).is_some_and(|on| {
+                ["pull_request", "pull_request_target"].iter().any(|event| {
+                    on.get(event)
+                        .and_then(|e| e.get("types"))
+                        .and_then(Value::as_sequence)
+                        .is_some_and(|types| types.iter().any(|t| t.as_str() == Some("labeled")))
+                })
+            })
+    };
+    let started: Vec<String> = parsed
+        .iter()
+        .filter(|(_, text, doc)| reacts(doc, text))
+        .flat_map(|(_, text, _)| {
+            text.match_indices("workflow run ").filter_map(|(i, m)| {
+                let rest = &text[i + m.len()..];
+                let word = rest.split_whitespace().next()?;
+                Some(word.trim_matches(|c| c == '"' || c == '\'').to_string())
+            })
+        })
+        .collect();
+    let triggered = |path: &str, text: &str, doc: &Value| {
+        let file = path.rsplit('/').next().unwrap_or(path);
+        let name = doc.get("name").and_then(Value::as_str);
+        reacts(doc, text)
+            || started
+                .iter()
+                .any(|s| s == file || Some(s.as_str()) == name)
+    };
+    let mut names = Vec::new();
+    for (path, text, doc) in &parsed {
+        if !triggered(path, text, doc) {
+            continue;
+        }
+        let Some(jobs) = doc.get("jobs").and_then(Value::as_mapping) else {
+            continue;
+        };
+        for (id, job) in jobs {
+            let gated = job
+                .get("if")
+                .and_then(Value::as_str)
+                .is_some_and(|cond| cond.contains(NEXT_LABEL));
+            let name = job
+                .get("name")
+                .and_then(Value::as_str)
+                .or_else(|| id.as_str());
+            if let Some(name) = name.filter(|_| gated)
+                && !names.iter().any(|n| n == name)
+            {
+                names.push(name.to_string());
+            }
+        }
+    }
+    names
 }
 
 fn skipped_by(run: &CheckRun, at: i64) -> bool {
@@ -132,25 +245,33 @@ impl Train {
         }
     }
 
-    /// Whether the repo's workflows on `base` name the label: its CI runs expensive jobs on labelled PRs only. Read
-    /// once per `USES_TTL_MS`; a failed read keeps the last answer (none yet: no).
-    pub(super) async fn uses_label(&self, repo: &str, base: &str) -> bool {
+    /// The checks the label runs in the repo's CI on `base`, read once per `USES_TTL_MS`. A failed read keeps the last
+    /// answer for the repo; with none yet, they are not known.
+    pub(super) async fn label_gate(&self, repo: &str, base: &str) -> Gate {
         let key = (repo.to_string(), base.to_string());
         let now = self.now_ms();
-        let known = lock(&self.next_labels.uses).get(&key).copied();
-        if let Some((at, uses)) = known
+        let known = lock(&self.next_labels.gated).get(&key).cloned();
+        if let Some((at, names)) = &known
             && now - at < USES_TTL_MS
         {
-            return uses;
+            return Gate::Checks(names.clone());
         }
-        match self.github.workflows_mention(repo, base, NEXT_LABEL).await {
-            Ok(uses) => {
-                lock(&self.next_labels.uses).insert(key, (now, uses));
-                uses
+        match self.github.workflow_files(repo, base).await {
+            Ok(files) => {
+                let names = label_gated(&files);
+                lock(&self.next_labels.gated).insert(key, (now, names.clone()));
+                Gate::Checks(names)
             }
             Err(e) => {
                 tracing::warn!(repo, error = %e.message, "train: workflows not read for {NEXT_LABEL}");
-                known.is_some_and(|(_, uses)| uses)
+                let last = known.or_else(|| {
+                    lock(&self.next_labels.gated)
+                        .iter()
+                        .filter(|((r, _), _)| r == repo)
+                        .max_by_key(|(_, (at, _))| *at)
+                        .map(|(_, known)| known.clone())
+                });
+                last.map_or(Gate::Unknown, |(_, names)| Gate::Checks(names))
             }
         }
     }
@@ -278,12 +399,13 @@ mod tests {
     }
 
     #[test]
-    fn a_skip_by_the_labels_second_a_required_one_or_any_without_the_label_is_unproven() {
+    fn only_a_skip_of_a_check_the_label_runs_by_the_labels_second_or_without_the_label_is_unproven()
+    {
         let at = parse_ms("2026-10-25T12:00:00.400Z").unwrap();
         let skipped = |name, when| run(name, "completed", Some("skipped"), Some(when));
-        let lone = |label, required: &[&str]| Lone {
+        let gated = |label| Lone {
             label,
-            required: required.iter().map(|r| r.to_string()).collect(),
+            gate: Gate::Checks(vec!["before".into(), "same second".into(), "after".into()]),
         };
         let names = |runs: &[CheckRun], lone: &Lone| -> Vec<String> {
             unproven_skips(runs, lone)
@@ -295,6 +417,7 @@ mod tests {
             skipped("before", "2026-10-25T11:59:00Z"),
             skipped("same second", "2026-10-25T12:00:00Z"),
             skipped("after", "2026-10-25T12:00:01Z"),
+            skipped("not the label's", "2026-10-25T11:59:00Z"),
             run(
                 "ci",
                 "completed",
@@ -303,18 +426,53 @@ mod tests {
             ),
         ];
         assert_eq!(
-            names(&runs, &lone(Labelled::At(at), &[])),
+            names(&runs, &gated(Labelled::At(at))),
             ["before", "same second"]
         );
+        assert!(names(&runs, &gated(Labelled::Before)).is_empty());
         assert_eq!(
-            names(&runs, &lone(Labelled::At(at), &["after"])),
+            names(&runs, &gated(Labelled::Failed)),
             ["before", "same second", "after"]
         );
-        assert_eq!(names(&runs, &lone(Labelled::Before, &["after"])), ["after"]);
+        let unknown = Lone {
+            label: Labelled::At(at),
+            gate: Gate::Unknown,
+        };
         assert_eq!(
-            names(&runs, &lone(Labelled::Failed, &[])),
-            ["before", "same second", "after"]
+            names(&runs, &unknown),
+            ["before", "same second", "not the label's"]
         );
+    }
+
+    /// fleetd's own workflows: the label runs macOS in CI (through macos-label.yml) and the dispatch job; the release
+    /// and nightly jobs it never runs, so their skips are never the label's.
+    #[test]
+    fn fleetds_workflows_gate_its_macos_jobs_and_nothing_of_the_release() {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../.github/workflows");
+        let mut files: Vec<(String, String)> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.extension().is_some_and(|x| x == "yml"))
+            .map(|p| {
+                let name = p.file_name().unwrap().to_string_lossy().into_owned();
+                (
+                    format!(".github/workflows/{name}"),
+                    std::fs::read_to_string(&p).unwrap(),
+                )
+            })
+            .collect();
+        files.sort();
+        let mut gated = label_gated(&files);
+        gated.sort();
+        assert_eq!(gated, ["desktop-macos", "dispatch", "rust (macos)"]);
+    }
+
+    #[test]
+    fn a_job_name_with_an_expression_matches_each_of_its_checks() {
+        assert!(gated_name("qa (${{ matrix.os }})", "qa (macos-latest)"));
+        assert!(!gated_name("qa (${{ matrix.os }})", "lint (macos-latest)"));
+        assert!(gated_name("rust (macos)", "rust (macos)"));
+        assert!(!gated_name("rust (macos)", "rust (linux)"));
     }
 
     #[test]

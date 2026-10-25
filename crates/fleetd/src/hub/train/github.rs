@@ -356,6 +356,19 @@ fn repo_of(path: &str) -> Option<String> {
     Some(format!("{owner}/{name}").to_lowercase())
 }
 
+/// `s` percent-encoded for a URL path (`/` kept when `path`) or query value.
+fn encode_url(s: &str, path: bool) -> String {
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                (b as char).to_string()
+            }
+            b'/' if path => "/".to_string(),
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
 fn last_line(stderr: &str) -> String {
     let last = stderr.trim().split('\n').next_back().unwrap_or_default();
     last.strip_prefix("gh: ")
@@ -914,24 +927,24 @@ impl TrainGitHub {
         }
     }
 
-    /// Whether any workflow file in `.github/workflows` on `branch` contains `needle`; a repo without the directory
-    /// has none.
-    pub async fn workflows_mention(
+    /// Each workflow file in `.github/workflows` on `branch`, by path, with its text; a repo without the directory has
+    /// none.
+    pub async fn workflow_files(
         &self,
         repo: &str,
         branch: &str,
-        needle: &str,
-    ) -> Result<bool, GhError> {
+    ) -> Result<Vec<(String, String)>, GhError> {
         #[derive(Deserialize)]
         struct Entry {
             path: String,
             #[serde(rename = "type")]
             kind: String,
         }
+        let at = encode_url(branch, false);
         let entries: Vec<Entry> = match self
             .call(
                 "GET",
-                &format!("repos/{repo}/contents/.github/workflows?ref={branch}"),
+                &format!("repos/{repo}/contents/.github/workflows?ref={at}"),
                 &[],
             )
             .await?
@@ -941,27 +954,29 @@ impl TrainGitHub {
                     "the workflows of {repo} came in an unexpected shape"
                 ))
             })?,
-            Reply::Err { status: 404, .. } => return Ok(false),
+            Reply::Err { status: 404, .. } => return Ok(Vec::new()),
             Reply::Err { message, .. } => {
                 return Err(GhError::failed(format!(
                     "the workflows of {repo}: {message}"
                 )));
             }
         };
+        let mut files = Vec::new();
         for e in entries {
             if e.kind != "file" || !(e.path.ends_with(".yml") || e.path.ends_with(".yaml")) {
                 continue;
             }
-            let path = format!("repos/{repo}/contents/{}?ref={branch}", e.path);
+            let path = format!(
+                "repos/{repo}/contents/{}?ref={at}",
+                encode_url(&e.path, true)
+            );
             let text = self
                 .exchange("GET", &path, "Accept: application/vnd.github.raw", &[])
                 .await?
                 .map_err(|(_, message)| GhError::failed(format!("{}: {message}", e.path)))?;
-            if text.contains(needle) {
-                return Ok(true);
-            }
+            files.push((e.path, text));
         }
-        Ok(false)
+        Ok(files)
     }
 
     /// The repo's open PRs that carry the label `name` (one page).
@@ -1109,6 +1124,18 @@ mod tests {
         let fresh = Arc::new(Fresh::default());
         let github = TrainGitHub::new(gh, fresh.clone(), Arc::new(SystemClock));
         (fresh, github)
+    }
+
+    #[test]
+    fn a_branch_and_a_path_are_percent_encoded() {
+        assert_eq!(
+            encode_url("fleetd/a b#1?x&y", false),
+            "fleetd%2Fa%20b%231%3Fx%26y"
+        );
+        assert_eq!(
+            encode_url(".github/workflows/c i.yml", true),
+            ".github/workflows/c%20i.yml"
+        );
     }
 
     #[tokio::test]

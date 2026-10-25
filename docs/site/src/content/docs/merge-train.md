@@ -88,12 +88,16 @@ label would replace the PR's real check results with skipped ones. Instead, use 
 reacts to `fleetd:next` only and runs the CI workflow on the PR's branch (`gh workflow run ci.yml --ref <branch>`), as
 fleetd's own `.github/workflows/macos-label.yml` does.
 
-The train treats a repo as using the label when one of its workflows names `fleetd:next`. There, a PR it merges
-alone never merges on a skipped required check, or on a check skipped before the label went on. The train waits for
-the run the label starts. If GitHub refuses the label, or no run replaces the skipped check within 3 minutes, the
-train keeps waiting, retries the label, and tells the lead once: "CI didn't start for the labelled PR". In a repo
-that doesn't use the label, a skipped check counts as passing, and a refused label changes nothing beyond one line in
-the hub's log.
+The train reads the repo's workflows to see which checks the label runs. It looks for jobs whose `if:` names
+`fleetd:next`, in a workflow that reacts to the label being added, or in one that such a workflow starts with
+`gh workflow run`. For a PR it merges alone, such a check skipped before the label went on never counts as passing.
+The train waits for the run the label starts. If GitHub refuses the label, or no run replaces the skipped check within
+3 minutes, the train keeps waiting, retries the label, and tells the lead once: "CI didn't start for the labelled PR".
+
+Every other skipped check counts as GitHub counts it: as passing. That covers checks in workflows the label never
+runs, and jobs a workflow skips on purpose. In a repo whose workflows don't run anything on the label, nothing waits,
+and a refused label is only one line in the hub's log. If the workflows can't be read, the train uses the last answer
+it had for the repo; with none, any skipped check holds the PR for 3 minutes, then counts.
 
 When the checks of the batch, or of a PR merging alone, have been queued for more than 5 minutes, its queue entry and
 the lead's digest say "waiting for CI runners (N queued)". Once a runner takes them, the entry's earlier note comes
