@@ -958,3 +958,58 @@ fn workstreams_are_open_done_or_stopped_on_an_older_hub() {
     }
     assert_eq!(strings("SELECT request FROM chat_messages"), ["Q2"]);
 }
+
+/// A hub that ran the metrics migration as it shipped (#416) gets the touches' `outside` column and the person's
+/// identities from a later one, so the projector's touches and `metrics_get` work on it.
+#[test]
+fn a_hub_on_the_shipped_metrics_migration_gets_outside_and_identities() {
+    use super::migrations::MIGRATIONS;
+    use crate::hub::metrics::store as metrics;
+    let home = tempfile::tempdir().unwrap();
+    let shipped = MIGRATIONS
+        .iter()
+        .position(|m| m.contains("CREATE TABLE metric_merges"))
+        .unwrap();
+    {
+        let conn = rusqlite::Connection::open(home.path().join("hub.sqlite")).unwrap();
+        for m in &MIGRATIONS[..=shipped] {
+            conn.execute_batch(m).unwrap();
+        }
+        conn.execute_batch(&format!("PRAGMA user_version = {}", shipped + 1))
+            .unwrap();
+        conn.execute_batch(
+            "INSERT INTO metric_touches (src, src_key, kind, at_ms, credit_ms) VALUES ('chat', 'm1', 'chat.message', 1, 60000)",
+        )
+        .unwrap();
+    }
+
+    let db = HubDb::open(home.path()).unwrap();
+    db.transaction(|c| {
+        metrics::upsert_touch(
+            c,
+            &metrics::TouchRow {
+                src: "host".into(),
+                src_key: "gitlab.example.com/acme/web#host.review:9003".into(),
+                kind: "host.review".into(),
+                at_ms: 2,
+                credit_ms: 180_000,
+                outside: true,
+                ..metrics::TouchRow::default()
+            },
+        )?;
+        metrics::add_identity(c, "Ada-Lovelace", "gitlab")
+    })
+    .unwrap();
+    let (touches, ids) = db
+        .with(|c| Ok((metrics::touches(c, 0, i64::MAX)?, metrics::identities(c)?)))
+        .unwrap();
+    let outside: Vec<(String, bool)> = touches.into_iter().map(|t| (t.src_key, t.outside)).collect();
+    assert_eq!(
+        outside,
+        [
+            ("m1".to_owned(), false),
+            ("gitlab.example.com/acme/web#host.review:9003".to_owned(), true)
+        ]
+    );
+    assert_eq!(ids, ["ada-lovelace"]);
+}
