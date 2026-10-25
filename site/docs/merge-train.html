@@ -131,15 +131,15 @@ line that go into the same base branch and are green on their own commit. Then:<
 </table>
 <div class="sl-heading-wrapper level-h2"><h2 id="scarce-runners">CI runners are scarce</h2><a class="sl-anchor-link" href="#scarce-runners"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “CI runners are scarce”</span></a></div>
 <p>GitHub doesn’t start queued jobs in order. When a repo has few runners of a kind, such as macOS, every agent push
-queues a full CI run, and the batch PR can wait behind them. So the train labels what it merges next with
+queues a full CI run, and the batch PR can wait behind them. So the train labels what it is merging now with
 <code dir="auto">fleetd:next</code>:</p>
 <ul>
 <li>the batch PR;</li>
-<li>a PR it merges alone, before it rebases that PR, so the rebase’s CI run already sees the label;</li>
-<li>the next 3 ready PRs in line.</li>
+<li>or a PR it merges alone, before it rebases that PR, so the rebase’s CI run already sees the label.</li>
 </ul>
-<p>It takes the label off once a PR merges, leaves the queue, or falls behind others. It creates the label if the repo
-doesn’t have it. Labelling never blocks a merge: if GitHub refuses it, the train logs it once and goes on.</p>
+<p>PRs waiting behind it get no label: the run the label starts would cancel their own CI and take the runners the batch
+needs. The train takes the label off once a PR merges or leaves the queue, and creates the label if the repo doesn’t
+have it.</p>
 <p>To use it, run your expensive jobs only on <code dir="auto">main</code>, on the batch branch, on manual runs, and on labelled PRs:</p>
 <div class="expressive-code"><link rel="stylesheet" href="/docs/_astro/ec.83jdg.css"><script type="module" src="/docs/_astro/ec.0vx5m.js"></script><figure class="frame not-content"><figcaption class="header"></figcaption><pre data-language="yaml"><code><div class="ec-line"><div class="code"><span style="--0:#85E89D;--1:#1E7734">jobs</span><span style="--0:#E1E4E8;--1:#24292E">:</span></div></div><div class="ec-line"><div class="code"><span class="indent">  </span><span style="--0:#85E89D;--1:#1E7734">macos</span><span style="--0:#E1E4E8;--1:#24292E">:</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#85E89D;--1:#1E7734">runs-on</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#9ECBFF;--1:#032F62">macos-latest</span></div></div><div class="ec-line"><div class="code"><span class="indent">    </span><span style="--0:#85E89D;--1:#1E7734">if</span><span style="--0:#E1E4E8;--1:#24292E">: </span><span style="--0:#F97583;--1:#BF3441">&gt;-</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#9ECBFF;--1:#032F62">      </span></span><span style="--0:#9ECBFF;--1:#032F62">github.event_name != 'pull_request'</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#9ECBFF;--1:#032F62">      </span></span><span style="--0:#9ECBFF;--1:#032F62">|| endsWith(github.head_ref, 'train/batch')</span></div></div><div class="ec-line"><div class="code"><span class="indent"><span style="--0:#9ECBFF;--1:#032F62">      </span></span><span style="--0:#9ECBFF;--1:#032F62">|| contains(github.event.pull_request.labels.*.name, 'fleetd:next')</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="jobs:  macos:    runs-on: macos-latest    if: >-      github.event_name != &#x27;pull_request&#x27;      || endsWith(github.head_ref, &#x27;train/batch&#x27;)      || contains(github.event.pull_request.labels.*.name, &#x27;fleetd:next&#x27;)"><div></div></button></div></figure></div>
 <p>A skipped job still reports, so it can stay a required check.</p>
@@ -147,11 +147,15 @@ doesn’t have it. Labelling never blocks a merge: if GitHub refuses it, the tra
 label would replace the PR’s real check results with skipped ones. Instead, use a small workflow on <code dir="auto">labeled</code> that
 reacts to <code dir="auto">fleetd:next</code> only and runs the CI workflow on the PR’s branch (<code dir="auto">gh workflow run ci.yml --ref &lt;branch&gt;</code>), as
 fleetd’s own <code dir="auto">.github/workflows/macos-label.yml</code> does.</p>
-<p>The train never counts a skipped check as passing for a PR it is about to merge alone. If that PR’s CI is from before
-the label, any check skipped back then holds the merge for up to 3 minutes. If the label’s run starts in that time,
-the train waits for it.</p>
-<p>When the batch’s checks have been queued for more than 5 minutes, its queue entry and the lead’s digest say
-“waiting for CI runners (N queued)”.</p>
+<p>The train treats a repo as using the label when one of its workflows names <code dir="auto">fleetd:next</code>. There, a PR it merges
+alone never merges on a skipped required check, or on a check skipped before the label went on. The train waits for
+the run the label starts. If GitHub refuses the label, or no run replaces the skipped check within 3 minutes, the
+train keeps waiting, retries the label, and tells the lead once: “CI didn’t start for the labelled PR”. In a repo
+that doesn’t use the label, a skipped check counts as passing, and a refused label changes nothing beyond one line in
+the hub’s log.</p>
+<p>When the checks of the batch, or of a PR merging alone, have been queued for more than 5 minutes, its queue entry and
+the lead’s digest say “waiting for CI runners (N queued)”. Once a runner takes them, the entry’s earlier note comes
+back.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="hold">Hold a PR</h2><a class="sl-anchor-link" href="#hold"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Hold a PR”</span></a></div>
 <p>Add the <code dir="auto">hold</code> label to a PR to keep the train from taking it, alone or in a batch. Remove the label and it goes in
 its turn. To hold every PR of a repo, label each one.</p>

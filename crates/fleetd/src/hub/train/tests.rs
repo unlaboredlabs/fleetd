@@ -110,10 +110,12 @@ enum FakeCi {
     /// A CI workflow whose `ci` check only appears, green, from the `green_from`th check-run poll on.
     Workflow { green_from: u32 },
     /// `ci` and `rust (macos)`, which runs only on a head pushed while its PR has `fleetd:next` and is skipped
-    /// otherwise, as this repo's CI does. Where CI `reacts`, adding the label starts a run of it on the PR's head:
-    /// GitHub shows it from the third read, queued for two reads, then green.
-    Macos { reacts: bool },
-    /// `ci` on the batch's head stays queued for its first `polls` reads, then goes green; green at once elsewhere.
+    /// otherwise, as this repo's CI does; main requires `rust (macos)`. Where CI `reacts`, adding the label starts a
+    /// run of it on the PR's head: GitHub shows it from the third read, queued for two reads, then green. Its workflows
+    /// name the label where it `uses` it.
+    Macos { reacts: bool, uses: bool },
+    /// `ci` on the batch's head stays queued for its first `polls` reads, runs for two more, then goes green; green
+    /// at once elsewhere.
     Queued { polls: u32 },
 }
 
@@ -627,8 +629,28 @@ impl FakeGh {
                 FakeCi::TrainOnly => {
                     json!([{ "type": "required_status_checks", "ruleset_id": 1, "parameters": { "required_status_checks": [{ "context": TRAIN_CONTEXT }] } }])
                 }
+                FakeCi::Macos { .. } => {
+                    json!([{ "type": "required_status_checks", "ruleset_id": 1, "parameters": { "required_status_checks": [{ "context": "rust (macos)" }] } }])
+                }
                 _ => json!([]),
             }),
+            (["contents", ".github", "workflows"], "GET") => match self.ci {
+                FakeCi::Macos { .. } => ok(
+                    json!([{ "name": "ci.yml", "path": ".github/workflows/ci.yml", "type": "file" }]),
+                ),
+                _ => http_error(404, "Not Found"),
+            },
+            (["contents", ".github", "workflows", "ci.yml"], "GET") => GhOut {
+                exit_code: 0,
+                stdout: match self.ci {
+                    FakeCi::Macos { uses: true, .. } => {
+                        "jobs:\n  macos:\n    if: contains(github.event.pull_request.labels.*.name, 'fleetd:next')\n"
+                    }
+                    _ => "jobs:\n  macos:\n    runs-on: macos-latest\n",
+                }
+                .into(),
+                stderr: String::new(),
+            },
             (["statuses", sha], "POST") => {
                 let get = |k: &str| fields.get(k).copied().unwrap_or_default().to_string();
                 self.statuses
@@ -683,7 +705,7 @@ impl FakeGh {
                     p.labels.push(label.to_string());
                 }
                 self.log.lock().unwrap().push(format!("label #{n}"));
-                if self.ci == (FakeCi::Macos { reacts: true })
+                if matches!(self.ci, FakeCi::Macos { reacts: true, .. })
                     && let Some(head) = self.head_of(&p.branch)
                 {
                     self.label_runs.lock().unwrap().insert(head, 0);
@@ -732,16 +754,18 @@ impl FakeGh {
         json!({ "check_runs": [ci, macos] })
     }
 
-    /// `FakeCi::Queued`: the batch's `ci` waits for a runner for its first `polls` reads.
+    /// `FakeCi::Queued`: the batch's `ci` waits for a runner for its first `polls` reads, then runs for two.
     fn queued_runs(&self, sha: &str, polls: u32) -> Value {
-        let mut queued = false;
+        let mut queued = None;
         if self.head_of("fleetd/train/batch").as_deref() == Some(sha) {
             let mut reads = self.batch_polls.lock().unwrap();
             *reads += 1;
-            queued = *reads <= polls;
+            queued = (*reads <= polls)
+                .then_some("queued")
+                .or((*reads <= polls + 2).then_some("in_progress"));
         }
-        let ci = if queued {
-            json!({ "id": 1, "name": "ci", "status": "queued", "conclusion": null })
+        let ci = if let Some(status) = queued {
+            json!({ "id": 1, "name": "ci", "status": status, "conclusion": null })
         } else {
             json!({ "id": 1, "name": "ci", "status": "completed", "conclusion": "success" })
         };
@@ -3357,14 +3381,15 @@ fn labels_of(kit: &Kit, n: i64) -> Vec<String> {
     kit.gh.pulls.lock().unwrap()[&n].labels.clone()
 }
 
-/// The PR taken alone gets `fleetd:next` before GitHub rebases it, and the next one in line gets it too; the label
-/// comes off once a PR merges or leaves the line (here, held). The repo gets the label once.
+/// Only the PR merging alone carries `fleetd:next`, put on before GitHub rebases it; the PR behind it gets none (its
+/// label run would cancel its own CI and take the runners). The label comes off once the PR merges or leaves the line.
+/// The repo gets the label once.
 #[tokio::test(flavor = "multi_thread")]
-async fn the_next_prs_carry_fleetd_next_until_they_merge_or_leave_the_line() {
+async fn only_the_pr_merging_alone_carries_fleetd_next_until_it_merges_or_leaves_the_line() {
     let kit = Kit::new();
     kit.enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
         .await;
-    // Red on its own head, so no batch: a goes alone, b is next.
+    // Red on its own head, so no batch: a goes alone, b waits behind it.
     let b = kit
         .enqueue(kit.open_pr(8, "b", &[add("FAIL", "red\n")]))
         .await;
@@ -3380,42 +3405,48 @@ async fn the_next_prs_carry_fleetd_next_until_they_merge_or_leave_the_line() {
         "labelled before the rebase pushes: {log:?}"
     );
     assert!(log_at(&log, "rebase #7") < log_at(&log, "merge #7"));
-    log_at(&log, "label #8");
-    assert_eq!(labels_of(&kit, 8), [NEXT_LABEL]);
+    assert!(!log.contains(&"label #8".to_string()), "{log:?}");
+    assert!(labels_of(&kit, 8).is_empty());
 
-    kit.gh
-        .pulls
-        .lock()
-        .unwrap()
-        .get_mut(&8)
-        .unwrap()
-        .labels
-        .push("hold".into());
-    kit.train.step(REPO).await;
+    // b's turn: labelled before its rebase, red alone, so it leaves the line.
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &b), ChangeState::CiFailed);
     let log = gh_log(&kit);
     log_at(&log, "unlabel #7");
-    log_at(&log, "unlabel #8");
+    assert!(log_at(&log, "label #8") < log_at(&log, "rebase #8"));
     assert!(labels_of(&kit, 7).is_empty());
-    assert_eq!(labels_of(&kit, 8), ["hold"]);
+
+    kit.train.step(REPO).await;
+    log_at(&gh_log(&kit), "unlabel #8");
+    assert!(labels_of(&kit, 8).is_empty());
     assert_eq!(
-        log.iter().filter(|l| l.starts_with("label ")).count(),
+        gh_log(&kit)
+            .iter()
+            .filter(|l| l.starts_with("label "))
+            .count(),
         2,
-        "nothing labelled twice: {log:?}"
+        "nothing labelled twice"
     );
 }
 
-/// The batch PR carries the label; its members get none of their own (their CI isn't what merges), and the next pass
-/// takes it off the merged batch.
+/// The batch PR carries the label; neither its members (their CI isn't what merges) nor the PR left behind it get
+/// one, so no label run competes with the batch's. The next pass takes it off the merged batch.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_batch_pr_carries_fleetd_next_and_its_members_get_none() {
+async fn a_batch_pr_carries_fleetd_next_and_no_other_pr_gets_one() {
     let kit = Kit::new();
     three_ready(&kit).await;
+    // Red on its own head: not a member, next in line after the batch.
+    let behind = kit
+        .enqueue(kit.open_pr(10, "d", &[add("FAIL", "red\n")]))
+        .await;
 
     assert!(kit.train.step(REPO).await);
     let batch = kit.gh.merges.lock().unwrap()[0].0;
+    assert_eq!(members_of_batch(&kit), [7, 8, 9]);
+    assert_eq!(state_of(&kit, &behind), ChangeState::Ready);
     let log = gh_log(&kit);
     assert!(log_at(&log, &format!("label #{batch}")) < log_at(&log, &format!("merge #{batch}")));
-    for n in [7, 8, 9] {
+    for n in [7, 8, 9, 10] {
         assert!(!log.contains(&format!("label #{n}")), "{log:?}");
     }
 
@@ -3428,7 +3459,13 @@ async fn a_batch_pr_carries_fleetd_next_and_its_members_get_none() {
 /// counts as green, even in the moments before GitHub shows the label's run.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_pr_merged_alone_waits_for_the_macos_run_its_label_starts() {
-    let kit = Kit::on_clock(FakeCi::Macos { reacts: true }, Arc::new(Sleeps::default()));
+    let kit = Kit::on_clock(
+        FakeCi::Macos {
+            reacts: true,
+            uses: true,
+        },
+        Arc::new(Sleeps::default()),
+    );
     let a = kit
         .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
         .await;
@@ -3445,7 +3482,13 @@ async fn a_pr_merged_alone_waits_for_the_macos_run_its_label_starts() {
 /// Rebased for its merge alone, the PR's push already carries the label, so its CI runs macOS.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_pr_rebased_for_its_merge_alone_runs_macos_on_that_push() {
-    let kit = Kit::on_clock(FakeCi::Macos { reacts: false }, Arc::new(Sleeps::default()));
+    let kit = Kit::on_clock(
+        FakeCi::Macos {
+            reacts: false,
+            uses: true,
+        },
+        Arc::new(Sleeps::default()),
+    );
     let a = kit
         .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
         .await;
@@ -3459,26 +3502,89 @@ async fn a_pr_rebased_for_its_merge_alone_runs_macos_on_that_push() {
     assert!(log_at(&log, &format!("macos green {pushed}")) < log_at(&log, "merge #7"));
 }
 
-/// A repo whose CI doesn't react to the label: a check skipped before it stands once the grace has passed.
+/// A repo whose workflows don't name the label: a skipped check counts as it always did, with no wait for a label run.
 #[tokio::test(flavor = "multi_thread")]
-async fn where_ci_ignores_the_label_a_skip_from_before_it_stands_after_the_grace() {
+async fn a_repo_whose_workflows_dont_name_the_label_never_waits_on_it() {
     let clock = Arc::new(Sleeps::default());
-    let kit = Kit::on_clock(FakeCi::Macos { reacts: false }, clock.clone());
+    let kit = Kit::on_clock(
+        FakeCi::Macos {
+            reacts: false,
+            uses: false,
+        },
+        clock.clone(),
+    );
     let a = kit
         .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
         .await;
 
     assert!(kit.train.step(REPO).await);
     assert_eq!(state_of(&kit, &a), ChangeState::Merged);
-    let waited: Duration = clock.taken().iter().sum();
-    let grace = Duration::from_millis(super::next::LABEL_GRACE_MS as u64);
-    assert!(waited >= grace, "{waited:?}");
-    assert!(waited < grace * 2, "{waited:?}");
+    assert_eq!(clock.taken(), [], "green on the first read");
 }
 
-/// Labelling GitHub refuses never stops a merge.
+/// The lead's notes about a PR whose label run never came.
+fn label_run_missing(kit: &Kit) -> Vec<String> {
+    kit.host
+        .wakes
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|w| w.contains("CI didn't start for the labelled PR"))
+        .cloned()
+        .collect()
+}
+
+/// In a repo that uses the label, a lone PR whose label run never comes never merges on its skipped macOS check: it
+/// waits, and the lead hears once.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_label_github_refuses_never_stops_a_merge() {
+async fn a_lone_pr_whose_label_run_never_comes_waits_and_the_lead_hears_once() {
+    let kit = Kit::on_clock(
+        FakeCi::Macos {
+            reacts: false,
+            uses: true,
+        },
+        Arc::new(Sleeps::default()),
+    );
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+
+    assert!(kit.train.step(REPO).await);
+    assert!(merged_prs(&kit).is_empty());
+    assert_eq!(state_of(&kit, &a), ChangeState::CiFailed, "it timed out");
+    let told = label_run_missing(&kit);
+    assert_eq!(told.len(), 1, "{told:?}");
+    assert!(told[0].contains("rust (macos)"), "{told:?}");
+}
+
+/// In a repo that uses the label, a label GitHub refuses keeps a lone PR from merging on its skipped required check,
+/// even on a head pushed after the refusal; the lead hears why once.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_refused_label_never_lets_a_lone_pr_merge_on_skipped_checks_where_ci_uses_it() {
+    let kit = Kit::on_clock(
+        FakeCi::Macos {
+            reacts: true,
+            uses: true,
+        },
+        Arc::new(Sleeps::default()),
+    );
+    *kit.gh.fail_labels.lock().unwrap() = true;
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    kit.commit("main", &[add("other.txt", "other\n")], None);
+
+    assert!(kit.train.step(REPO).await);
+    assert!(merged_prs(&kit).is_empty());
+    assert_eq!(state_of(&kit, &a), ChangeState::CiFailed);
+    let told = label_run_missing(&kit);
+    assert_eq!(told.len(), 1, "{told:?}");
+    assert!(told[0].contains("could not put"), "{told:?}");
+}
+
+/// In a repo that doesn't use the label, a label GitHub refuses never stops a merge.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_label_github_refuses_never_stops_a_merge_where_ci_ignores_it() {
     let kit = Kit::new();
     *kit.gh.fail_labels.lock().unwrap() = true;
     let a = kit
@@ -3492,7 +3598,7 @@ async fn a_label_github_refuses_never_stops_a_merge() {
 }
 
 /// A batch whose checks sit queued: after 5 minutes its Changes' note and the lead's digest line say it waits for
-/// runners, and the note goes once CI is done.
+/// runners, and once a runner takes them the note before it is back.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_batch_whose_checks_wait_for_runners_says_so_after_five_minutes() {
     let clock = Arc::new(Sleeps::default());
@@ -3503,6 +3609,8 @@ async fn a_batch_whose_checks_wait_for_runners_says_so_after_five_minutes() {
     let b = kit
         .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]))
         .await;
+    let earlier = "an earlier note";
+    kit.train.note(&a.change_id, earlier);
     type Seen = (Duration, Option<String>, Option<String>, String);
     let seen: Arc<Mutex<Vec<Seen>>> = Arc::default();
     let start = clock.now();
@@ -3552,7 +3660,21 @@ async fn a_batch_whose_checks_wait_for_runners_says_so_after_five_minutes() {
     assert!(
         seen.iter()
             .filter(|(at, ..)| *at < Duration::from_secs(5 * 60))
-            .all(|(_, a, _, line)| a.is_none() && !line.contains("waiting")),
+            .all(|(_, a, b, line)| a.as_deref() == Some(earlier)
+                && b.is_none()
+                && !line.contains("waiting")),
+        "{seen:?}"
+    );
+    let last_noted = seen
+        .iter()
+        .rposition(|(_, a, ..)| a.as_deref() == Some(waiting))
+        .unwrap();
+    assert!(
+        seen[last_noted + 1..]
+            .iter()
+            .any(|(_, a, b, line)| a.as_deref() == Some(earlier)
+                && b.is_none()
+                && !line.contains("waiting")),
         "{seen:?}"
     );
     for change in [&a, &b] {

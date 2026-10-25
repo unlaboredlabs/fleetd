@@ -7,7 +7,6 @@
 //! as they would for one PR. The next pass's sweep deletes the scratch branch, which closes a batch PR left open.
 use super::contract::{Change, ChangeState};
 use super::github::{BATCH_MARKER, BranchMerge, MergeOutcome, NEXT_LABEL, Pull, batch_heads};
-use super::next::NEXT_READY;
 use super::service::{Checks, CiOutcome, Train, checks, error_text, lock, short};
 
 const BATCH_MAX: usize = 8;
@@ -108,7 +107,8 @@ impl Train {
 
     /// After refresh and the freeze: a batch of the ready Changes into the first one's base that are green on their
     /// own heads, or the first one alone. True when it took or settled one. First, `fleetd:next` goes on the one taken
-    /// alone or the first ones after the batch's members, and off the PRs that merged or left the line.
+    /// alone and off every PR the train is not merging now. Never on the PRs behind it: the run the label starts would
+    /// cancel their own CI, keep them out of the next batch, and take the runners the batch needs.
     pub(super) async fn next(&self, repo: &str) -> bool {
         let ready = self.records.in_train(repo, &[ChangeState::Ready]);
         let (candidates, settled) = self.candidates(repo, ready).await;
@@ -128,18 +128,13 @@ impl Train {
                 }
             }
         }
-        let batched = |c: &Candidate| {
-            members.len() >= 2
-                && members
-                    .iter()
-                    .any(|m| m.change.change_id == c.change.change_id)
+        // The batch PR gets its label once it is open (`take_batch`); its members keep one they have, as a red batch
+        // sends each alone.
+        let wanted = if members.len() >= 2 {
+            Vec::new()
+        } else {
+            vec![(head.change.pr_number.get(), head.pull.labelled(NEXT_LABEL))]
         };
-        let wanted: Vec<(i64, bool)> = candidates
-            .iter()
-            .filter(|c| !batched(c))
-            .take(NEXT_READY)
-            .map(|c| (c.change.pr_number.get(), c.pull.labelled(NEXT_LABEL)))
-            .collect();
         let kept: Vec<i64> = members.iter().map(|m| m.change.pr_number.get()).collect();
         self.relabel(repo, &wanted, &kept).await;
         if members.len() >= 2 {
