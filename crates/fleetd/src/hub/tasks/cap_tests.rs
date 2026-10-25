@@ -8,7 +8,7 @@ use serde_json::json;
 
 use super::cap::{CapChange, ProjectCap};
 use crate::hub::api::{Hub, HubConfig};
-use crate::hub::slots::{Agents, SlotPriority, SlotRequest};
+use crate::hub::slots::{Agents, MaxSource, SlotPriority, SlotRequest};
 use crate::hub::store::HubDb;
 use crate::hub::store::test_clock::ManualClock;
 
@@ -24,6 +24,12 @@ pub(super) fn hub() -> (Arc<Hub>, tempfile::TempDir) {
     };
     let clock = ManualClock::at(1_792_000_000_000);
     let hub = crate::hub::serve::build_on(HubDb::open_memory().unwrap(), config, clock).unwrap();
+    // A 32-CPU, 128 GB machine: it fits 28.
+    let mut load = crate::hub::link::guard::tests::load(500, 1.0);
+    load.mem_total_bytes = Some(fleetd_contracts::prim::Count::unchecked(128 << 30));
+    hub.slots
+        .observe_machine(&MachineId::unchecked("lab-a"), "lab-a", &load)
+        .unwrap();
     (hub, home)
 }
 
@@ -116,7 +122,8 @@ async fn lowering_stops_no_agent_and_raising_starts_queued_ones_at_once() {
         Agents {
             running: 3,
             max_agents: 1,
-            queued: 1
+            queued: 1,
+            source: MaxSource::Project,
         }
     );
 
@@ -126,7 +133,8 @@ async fn lowering_stops_no_agent_and_raising_starts_queued_ones_at_once() {
         Agents {
             running: 4,
             max_agents: 5,
-            queued: 0
+            queued: 0,
+            source: MaxSource::Project,
         },
         "the queued agent took its slot before set_caps returned"
     );
@@ -139,7 +147,7 @@ async fn lowering_stops_no_agent_and_raising_starts_queued_ones_at_once() {
     assert_eq!(
         lines,
         [
-            "Max agents 40 → 1: 3 running finish their work; new agents wait.",
+            "Max agents 28 → 1: 3 running finish their work; new agents wait.",
             "Max agents 1 → 5: 1 queued agent starts now, 1 slot free."
         ],
         "one quiet line per change"
@@ -162,7 +170,7 @@ async fn pausing_the_extras_leaves_an_agent_it_cannot_reach_running() {
     let (_, data) = cap_events(&hub).pop().unwrap();
     assert_eq!(
         (data.from.get(), data.to.get(), data.running.get()),
-        (40, 1, 3)
+        (28, 1, 3)
     );
     assert!(data.paused.is_none());
 }
@@ -170,10 +178,29 @@ async fn pausing_the_extras_leaves_an_agent_it_cannot_reach_running() {
 #[tokio::test]
 async fn max_agents_stays_within_the_fleet_cap() {
     let (hub, _home) = hub();
-    let refused = hub.tasks.set_caps(set(41, false)).await.unwrap_err();
+    // No fleet cap until someone sets one: the machines' caps are the limit.
+    assert_eq!(hub.slots.cap(), None);
+    assert_eq!(hub.slots.state().cap.get(), 28);
+    let fleet = CapChange {
+        cap: Some(20),
+        project: None,
+    };
+    let outcome = hub.tasks.set_caps(fleet).await.unwrap();
+    assert_eq!(
+        outcome.next,
+        "Fleet cap set to 20 (the machines fit 28): running agents finish; new ones wait."
+    );
+    assert_eq!(
+        (
+            outcome.slots.cap.get(),
+            outcome.slots.fleet_cap.map(|c| c.get())
+        ),
+        (20, Some(20))
+    );
+    let refused = hub.tasks.set_caps(set(21, false)).await.unwrap_err();
     assert_eq!(
         refused.message,
-        "Max agents 41 is above the fleet's 40 slots."
+        "Max agents 21 is above the fleet's 20 slots."
     );
     let both = CapChange {
         cap: Some(60),
@@ -182,12 +209,13 @@ async fn max_agents_stays_within_the_fleet_cap() {
     let outcome = hub.tasks.set_caps(both).await.unwrap();
     assert_eq!(outcome.slots.cap.get(), 60);
     assert_eq!(hub.slots.agents(&project()).max_agents, 41);
-    let fleet = &cap_events(&hub)[0];
+    let fleet = &cap_events(&hub)[1];
     assert_eq!(
         fleet.0,
-        "Fleet cap 40 → 60: queued agents start as slots allow."
+        "Fleet cap 20 → 60: queued agents start as slots allow."
     );
     assert!(fleet.1.project_ref.is_none());
+    assert_eq!(cap_events(&hub)[0].1.from.get(), 28);
 }
 
 #[tokio::test]
@@ -199,6 +227,19 @@ async fn every_digest_says_how_many_agents_run_of_the_max_and_wait() {
     }
     let a = hub.tasks.agents(&project());
     assert_eq!((a.running, a.cap, a.queued), (2, 2, 1));
+    assert_eq!(
+        a.to_string(),
+        "agents: 2 running of 2 (max agents set), 1 queued"
+    );
+    // A project nobody set a max for runs what its machine fits, and the line names the term that binds.
+    let other = ProjectRef {
+        project_id: ProjectId::unchecked("p2"),
+        ..project()
+    };
+    assert_eq!(
+        hub.tasks.agents(&other).to_string(),
+        "agents: 0 running of 28 (auto: 28 of 32 CPUs), 0 queued"
+    );
     let mut queued = hub
         .tasks
         .get(&fleetd_contracts::tasks::TaskId::unchecked("T3"))
@@ -322,7 +363,7 @@ async fn pausing_the_extras_parks_the_newest_and_continues_them_in_their_thread(
     );
     assert_eq!(
         outcome.next,
-        "Max agents 40 → 1: 2 agents push their work and wait; 1 keeps running."
+        "Max agents 28 → 1: 2 agents push their work and wait; 1 keeps running."
     );
 
     let t3 = super::TaskId::unchecked("T3");

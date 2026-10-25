@@ -48,6 +48,8 @@ pub struct LinkDeps {
     pub lead_calls: Arc<LeadCalls>,
     pub clock: Arc<dyn Clock>,
     pub time: Arc<crate::hub::time::Time>,
+    /// Sizes each machine's cap from its heartbeat's facts.
+    pub slots: Arc<crate::hub::slots::Slots>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -91,9 +93,19 @@ impl NodeLinkServer {
         self.state.lock().unwrap().paused.get(machine_id).cloned()
     }
 
-    /// Keeps a heartbeat's load and runs the guard over it. `machine.guard` marks each pause and resume, which
-    /// starts waiting agents again and refreshes the project rows; the line's figure updates with every heartbeat.
+    /// Keeps a heartbeat's load, hands its facts to the slot board, and runs the guard over it. `machine.guard` marks
+    /// each pause and resume, which starts waiting agents again and refreshes the project rows; the line's figure
+    /// updates with every heartbeat.
     pub fn observe_load(&self, machine_id: &MachineId, load: Option<NodeLoad>) {
+        if let Some(load) = &load {
+            let name = match self.deps.store.machine_get(machine_id) {
+                Ok(Some(m)) => m.name,
+                _ => machine_id.to_string(),
+            };
+            if let Err(e) = self.deps.slots.observe_machine(machine_id, &name, load) {
+                tracing::warn!(error = %e, "node link: machine facts not applied to the slot board");
+            }
+        }
         let (was, why) = {
             let mut state = self.state.lock().unwrap();
             let was = state.paused.contains_key(machine_id);

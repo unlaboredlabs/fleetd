@@ -256,7 +256,7 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
         input.project_ref.project_id,
         input.at
     );
-    if let Some(agents) = input.agents {
+    if let Some(agents) = &input.agents {
         head.push_str(&format!("\n{agents}"));
     }
 

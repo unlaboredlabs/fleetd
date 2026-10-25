@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::brand;
 use crate::effort::TaskProfile;
-use crate::ids::{ProjectRef, ThreadRef, Timestamp};
+use crate::ids::{MachineId, ProjectRef, ThreadRef, Timestamp};
 use crate::ledger::WorkstreamId;
 use crate::prim::{Count, Line, List, NonEmpty, Positive, Text, is_http_url, js_len};
 use crate::usage::UsageParked;
@@ -123,7 +123,7 @@ pub struct Task {
 pub struct SlotStatePerProject {
     pub project_ref: ProjectRef,
     /// The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead is not
-    /// one. The fleet `cap` until set.
+    /// one. Its machine's `cap` until set.
     pub max_agents: Count,
     /// Its agents running now. Above `maxAgents` right after the cap was lowered: nothing is stopped for it.
     pub running: Count,
@@ -131,14 +131,38 @@ pub struct SlotStatePerProject {
     pub queued: Count,
 }
 
+/// One machine's share of the board: what it fits, and what runs there.
+#[serde_with::skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SlotStatePerMachine {
+    pub machine_id: MachineId,
+    /// The most agents that run on it at once: a person's setting for the machine, else `auto`.
+    pub cap: Count,
+    /// What the machine fits: one agent per CPU less a reserve, and 2 GB of memory each after the OS's share, at
+    /// most 64.
+    pub auto: Count,
+    /// The term that sets `auto`, e.g. "memory 18 GB" or "14 of 16 CPUs".
+    pub why: Text<1, 200>,
+    /// Agents running there now.
+    pub running: Count,
+    /// New agents its free disk has room for now, above the guard's floor; absent while the node reports no disk.
+    pub disk_room: Option<Count>,
+}
+
+#[serde_with::skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SlotState {
-    /// The fleet cap: agents running at once across every project.
+    /// Agents running at once across every project: `fleetCap` when set, else the sum of the machines' caps.
     pub cap: Count,
+    /// The fleet cap a person (or an older hub) saved; absent: none beyond the machines' own caps.
+    pub fleet_cap: Option<Count>,
     pub used: Count,
     pub queued: Count,
     pub per_project: List<SlotStatePerProject, 0, 50>,
+    #[serde(default)]
+    pub per_machine: List<SlotStatePerMachine, 0, 50>,
 }
 
 /// Fields `HubEvent.data` carries on `task.*` events.
