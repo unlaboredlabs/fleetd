@@ -313,10 +313,19 @@ async fn run_link_once(
             loop {
                 tokio::time::sleep(HEARTBEAT_EVERY).await;
                 let (limits, home) = (sessions.login_limits(), sessions.home());
+                let memory = sessions.project_memory();
                 let load = tokio::task::spawn_blocking(move || super::load::read(limits, &home))
                     .await
                     .ok()
-                    .flatten();
+                    .flatten()
+                    .map(|mut load| {
+                        load.project_memory = (!memory.is_empty()).then(|| {
+                            fleetd_contracts::prim::List::unchecked(
+                                memory.into_iter().take(256).collect(),
+                            )
+                        });
+                        load
+                    });
                 if tx
                     .send(to_json(&NodeToHub::Heartbeat(Heartbeat {
                         at: Timestamp::from(now_iso()),

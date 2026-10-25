@@ -157,6 +157,8 @@ fn load(db: &HubDb) -> Result<Board, StoreError> {
                     max_agents: r.get(4)?,
                     // Until its next heartbeat.
                     disk_room: None,
+                    projects: Vec::new(),
+                    memory: None,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -332,8 +334,9 @@ impl Slots {
         self.locked(|b| ((), b.observe(machine_id.as_str(), thread_id, running)))
     }
 
-    /// A heartbeat's facts about the machine (`name` for the reasons people read): what it fits and its disk room.
-    /// When it takes more than before, starts the queued agents that now fit and runs the listeners.
+    /// A heartbeat's facts about the machine (`name` for the reasons people read): what it fits, its disk room, and
+    /// what each project measured there fits, and its memory budget. When it takes more than before, starts the queued agents that now fit
+    /// and runs the listeners.
     pub fn observe_machine(
         &self,
         machine_id: &MachineId,
@@ -341,7 +344,12 @@ impl Slots {
         load: &NodeLoad,
     ) -> Result<(), StoreError> {
         let (auto, disk_room) = (sizing::auto_cap(load), sizing::disk_room(load));
-        self.locked(|b| ((), b.observe_machine(machine_id, name, auto, disk_room)))
+        let (projects, memory) = (sizing::project_caps(load, &auto), sizing::memory(load));
+        self.locked(|b| {
+            let more = b.observe_machine(machine_id, name, auto, disk_room);
+            let more = b.observe_projects(machine_id, projects) || more;
+            ((), b.observe_memory(machine_id, memory) || more)
+        })
     }
 
     /// Takes a slot now, or queues the request (reviews first, then the oldest) and says why. Asking again for a holder that
