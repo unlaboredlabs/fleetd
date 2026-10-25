@@ -174,6 +174,11 @@
           "type": "string"
         },
         {
+          "const": "no_ssh",
+          "description": "git can't run ssh on the machine: it isn't installed. The doctor shows it; no attention item.",
+          "type": "string"
+        },
+        {
           "const": "no_default_branch",
           "description": "The remote answered but names no default branch: its HEAD points at a branch it doesn't have.",
           "type": "string"

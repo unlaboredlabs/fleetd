@@ -695,7 +695,7 @@ pub fn git_fetch(machine_id: &str, bases: &[(String, WorktreeBase)], now: &str) 
     }
     let failing: Vec<_> = bases
         .iter()
-        .filter_map(|(project, b)| Some((project, b, base::alert(b)?)))
+        .filter_map(|(project, b)| Some((project, b, base::doctor_alert(b)?)))
         .collect();
     let Some((project, first, kind)) = failing.first() else {
         // Only what the last starts showed: a fetch that worked, an offline one, or no remote to fetch.
@@ -723,10 +723,9 @@ pub fn git_fetch(machine_id: &str, bases: &[(String, WorktreeBase)], now: &str) 
         1 => String::new(),
         n => format!(" {} more projects fail too.", n - 1),
     };
-    let status = if *kind == BaseErrorKind::Auth {
-        Fail
-    } else {
-        Warn
+    let status = match kind {
+        BaseErrorKind::Auth | BaseErrorKind::NoSsh => Fail,
+        _ => Warn,
     };
     let label = base::fix_label(*kind, machine_id);
     Some(machine_entry(
@@ -841,6 +840,26 @@ mod tests {
             gone.fix.unwrap().command.as_deref(),
             Some("git remote get-url origin")
         );
+        let no_ssh = vec![(
+            "shop".to_owned(),
+            base(
+                Some((
+                    BaseErrorKind::NoSsh,
+                    "error: cannot run ssh: No such file or directory",
+                )),
+                None,
+            ),
+        )];
+        let no_ssh = git_fetch("mbp", &no_ssh, now).unwrap().check;
+        assert_eq!(no_ssh.status, Fail);
+        assert!(
+            no_ssh
+                .message
+                .starts_with("ssh isn't installed, so git can't fetch origin for shop"),
+            "{}",
+            no_ssh.message
+        );
+        assert_eq!(no_ssh.fix.unwrap().label, "Install OpenSSH on mbp");
         let refused = vec![(
             "shop".to_owned(),
             base(

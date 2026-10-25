@@ -17,6 +17,15 @@ pub fn alert(base: &WorktreeBase) -> Option<BaseErrorKind> {
     .then_some(kind)
 }
 
+/// What the doctor's `git_fetch` flags: every [`alert`], plus a machine with no ssh, which is the machine's to fix and
+/// raises no attention item.
+pub fn doctor_alert(base: &WorktreeBase) -> Option<BaseErrorKind> {
+    alert(base).or_else(|| {
+        let kind = base.error.as_ref()?.kind;
+        (kind == BaseErrorKind::NoSsh).then_some(kind)
+    })
+}
+
 /// The fix [`fetch_failed_text`] names, as a doctor fix's label.
 pub fn fix_label(kind: BaseErrorKind, machine_id: &str) -> String {
     match kind {
@@ -28,6 +37,7 @@ pub fn fix_label(kind: BaseErrorKind, machine_id: &str) -> String {
                 .to_owned()
         }
         BaseErrorKind::NoDefaultBranch => "Set the remote's default branch".to_owned(),
+        BaseErrorKind::NoSsh => format!("Install OpenSSH on {machine_id}"),
         _ => "Run `git fetch` in the project to see why".to_owned(),
     }
 }
@@ -78,6 +88,7 @@ pub fn line(base: &WorktreeBase, now: &str) -> String {
         BaseErrorKind::Offline
         | BaseErrorKind::Auth
         | BaseErrorKind::NoAccess
+        | BaseErrorKind::NoSsh
         | BaseErrorKind::Failed => {
             format!(
                 "based on {} (fetch failed: {})",
@@ -119,6 +130,14 @@ pub fn fetch_failed_text(
                 error.message.trim_end_matches('.')
             ),
             Some(format!("git remote get-url {remote}")),
+        ),
+        BaseErrorKind::NoSsh => (
+            format!(
+                "ssh isn't installed, so git can't fetch {remote} for {project}: {}. Fix: install OpenSSH. Agents \
+                 start from {from}; their pushes will fail the same way.",
+                error.message.trim_end_matches('.')
+            ),
+            None,
         ),
         BaseErrorKind::NoDefaultBranch => (
             format!(
@@ -203,6 +222,10 @@ mod tests {
             alert(&base(None, Some((BaseErrorKind::NoDefaultBranch, "none")))),
             Some(BaseErrorKind::NoDefaultBranch)
         );
+        // No ssh is the machine's to fix: the doctor says so, and no attention item is raised.
+        let no_ssh = base(None, Some((BaseErrorKind::NoSsh, "ssh: not found")));
+        assert_eq!(alert(&no_ssh), None);
+        assert_eq!(doctor_alert(&no_ssh), Some(BaseErrorKind::NoSsh));
     }
 
     #[test]

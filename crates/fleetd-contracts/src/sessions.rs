@@ -391,6 +391,8 @@ pub enum BaseErrorKind {
     Auth,
     /// The remote says there is no such repository: a wrong URL or name, or credentials that can't see it.
     NoAccess,
+    /// git can't run ssh on the machine: it isn't installed. The doctor shows it; no attention item.
+    NoSsh,
     /// The remote answered but names no default branch: its HEAD points at a branch it doesn't have.
     NoDefaultBranch,
     /// The project has no remote: the base is a local branch.

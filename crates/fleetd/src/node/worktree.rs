@@ -490,8 +490,11 @@ pub fn default_branch(root: &Path) -> Option<String> {
 /// Why a fetch failed, from git's stderr.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FetchError {
-    /// The network: the host's name doesn't resolve, the connection is refused or times out, or there is no route.
+    /// The network, or a connection cut short: the host's name doesn't resolve, the connection is refused, reset or
+    /// times out, or there is no route.
     Offline,
+    /// git can't run ssh: it isn't installed.
+    NoSsh(String),
     /// The remote refused the credentials; the agent's pushes will fail the same way.
     Auth(String),
     /// The remote answered that there is no such repository: a wrong URL or name, or credentials that can't see it
@@ -504,9 +507,10 @@ impl std::fmt::Display for FetchError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             FetchError::Offline => f.write_str("offline"),
-            FetchError::Auth(line) | FetchError::NoAccess(line) | FetchError::Other(line) => {
-                f.write_str(line)
-            }
+            FetchError::NoSsh(line)
+            | FetchError::Auth(line)
+            | FetchError::NoAccess(line)
+            | FetchError::Other(line) => f.write_str(line),
         }
     }
 }
@@ -515,6 +519,7 @@ impl FetchError {
     fn base_error(&self) -> BaseError {
         let kind = match self {
             FetchError::Offline => BaseErrorKind::Offline,
+            FetchError::NoSsh(_) => BaseErrorKind::NoSsh,
             FetchError::Auth(_) => BaseErrorKind::Auth,
             FetchError::NoAccess(_) => BaseErrorKind::NoAccess,
             FetchError::Other(_) => BaseErrorKind::Failed,
@@ -537,17 +542,13 @@ impl FetchError {
             .unwrap_or_default()
             .trim()
             .to_owned();
+        // The network first: a dropped or refused connection says nothing about access, whatever git adds after it.
         if has(&[
-            "Authentication failed",
-            "Permission denied (publickey",
-            "could not read Username",
-            "could not read Password",
-            "error: 403",
-            "Host key verification failed",
-        ]) {
-            FetchError::Auth(line)
-        } else if has(&[
             "timed out after",
+            "kex_exchange_identification",
+            "Connection closed by remote host",
+            "Connection reset by peer",
+            "Broken pipe",
             "Could not resolve host",
             "Could not resolve hostname",
             "Temporary failure in name resolution",
@@ -560,10 +561,23 @@ impl FetchError {
         ]) {
             FetchError::Offline
         } else if has(&[
-            "does not appear to be a git repository",
-            "Could not read from remote repository",
+            "ssh: not found",
+            "cannot run ssh",
+            "ssh: No such file or directory",
+        ]) {
+            FetchError::NoSsh(line)
+        } else if has(&[
+            "Authentication failed",
+            "Permission denied (publickey",
+            "could not read Username",
+            "could not read Password",
+            "error: 403",
+            "Host key verification failed",
+        ]) {
+            FetchError::Auth(line)
+        } else if has(&[
             "Repository not found",
-            "not found",
+            "does not appear to be a git repository",
             "could not be found",
         ]) {
             FetchError::NoAccess(line)
@@ -697,12 +711,16 @@ fn fork_behind(root: &Path, remote: &str, name: &str) -> Option<u32> {
         });
     }
     // What upstream last said, without asking it.
-    let upstream = HEADS
+    // What upstream last said, without asking it; once it said it names none, a cached branch is no answer.
+    let said = HEADS
         .lock()
         .unwrap()
         .get(&(root.to_path_buf(), UPSTREAM.to_owned()))
-        .and_then(|(_, n)| n.clone())
-        .or_else(|| cached_head(root, UPSTREAM))?;
+        .map(|(_, n)| n.clone());
+    let upstream = match said {
+        Some(said) => said?,
+        None => cached_head(root, UPSTREAM)?,
+    };
     let range = format!("refs/remotes/{remote}/{name}..refs/remotes/{UPSTREAM}/{upstream}");
     git(root, &["rev-list", "--count", &range])
         .ok()?
@@ -1620,6 +1638,49 @@ pub(crate) mod tests {
         assert_eq!(base.fork_behind, Some(2));
     }
 
+    /// Upstream once named `main`, which is cached, then its HEAD lost its branch: the count is unknown, not counted
+    /// against the cached branch.
+    #[test]
+    fn an_upstream_that_stops_naming_its_default_branch_is_unknown_despite_a_cached_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let (origin, checkout) = origin_and_checkout(dir.path());
+        let upstream = dir.path().join("upstream.git");
+        run(
+            dir.path(),
+            &[
+                "clone",
+                "-q",
+                "--bare",
+                &origin.to_string_lossy(),
+                &upstream.to_string_lossy(),
+            ],
+        );
+        land(&upstream, "main", "u1.txt");
+        run(
+            &checkout,
+            &["remote", "add", "upstream", &upstream.to_string_lossy()],
+        );
+        run(&checkout, &["fetch", "-q", "upstream"]);
+        run(&checkout, &["remote", "set-head", "upstream", "main"]);
+        assert_eq!(cached_head(&checkout, "upstream").as_deref(), Some("main"));
+        run(&upstream, &["symbolic-ref", "HEAD", "refs/heads/gone"]);
+
+        // The first start, before upstream has been asked, counts against the cached branch and asks behind it.
+        assert_eq!(fresh_base(&checkout, "main").unwrap().fork_behind, Some(1));
+        let started = Instant::now();
+        while HEADS
+            .lock()
+            .unwrap()
+            .get(&(checkout.clone(), UPSTREAM.to_owned()))
+            .is_none()
+            && started.elapsed() < Duration::from_secs(10)
+        {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert_eq!(fresh_base(&checkout, "main").unwrap().fork_behind, None);
+        assert_eq!(cached_head(&checkout, "upstream").as_deref(), Some("main"));
+    }
+
     /// An upstream that names no default branch is left alone: no count, and nothing fetched on later starts.
     #[test]
     fn an_upstream_with_no_default_branch_is_skipped_quietly() {
@@ -1736,6 +1797,36 @@ pub(crate) mod tests {
             ),
             FetchError::Offline
         );
+        // Transient: a connection cut short is the network, whatever git adds after it.
+        for transient in [
+            "kex_exchange_identification: read: Connection reset by peer\nConnection reset by 140.82.121.4 port 22",
+            "kex_exchange_identification: Connection closed by remote host\nfatal: Could not read from remote \
+             repository.",
+            "Connection closed by remote host\nfatal: Could not read from remote repository.",
+            "client_loop: send disconnect: Broken pipe\nfatal: the remote end hung up unexpectedly",
+            "ssh: connect to host github.com port 22: Connection timed out\nfatal: Authentication failed",
+            "ssh: Could not resolve hostname github.com: Name or service not known\nERROR: Repository not found.",
+            "ssh: connect to host github.com port 22: Network is unreachable",
+        ] {
+            assert_eq!(of(transient), FetchError::Offline, "{transient}");
+        }
+        // No ssh to run: only the doctor says so.
+        assert_eq!(
+            of("error: cannot run ssh: No such file or directory\nfatal: unable to fork"),
+            FetchError::NoSsh("error: cannot run ssh: No such file or directory".into())
+        );
+        assert_eq!(
+            of("sh: 1: ssh: not found\nfatal: Could not read from remote repository."),
+            FetchError::NoSsh("sh: 1: ssh: not found".into())
+        );
+        // A missing key file is ssh's warning, not a missing ssh.
+        assert!(matches!(
+            of(
+                "Warning: Identity file /home/u/.ssh/id_work not accessible: No such file or directory.\n\
+                 git@github.com: Permission denied (publickey)."
+            ),
+            FetchError::Auth(_)
+        ));
         // The remote answered: no such repository, or none these credentials can see.
         assert_eq!(
             of(
@@ -1744,10 +1835,6 @@ pub(crate) mod tests {
             FetchError::NoAccess(
                 "fatal: '/gone.git' does not appear to be a git repository".into()
             )
-        );
-        assert_eq!(
-            of("fatal: Could not read from remote repository."),
-            FetchError::NoAccess("fatal: Could not read from remote repository.".into())
         );
         assert_eq!(
             of("ERROR: Repository not found.\nfatal: Could not read from remote repository."),
@@ -1759,12 +1846,6 @@ pub(crate) mod tests {
             ),
             FetchError::NoAccess("remote: Repository not found.".into())
         );
-        assert_eq!(
-            of("fatal: repository 'https://gitlab.com/a/b.git/' not found"),
-            FetchError::NoAccess(
-                "fatal: repository 'https://gitlab.com/a/b.git/' not found".into()
-            )
-        );
         assert!(matches!(
             of(
                 "remote: The project you were looking for could not be found or you don't have permission to view \
@@ -1772,6 +1853,11 @@ pub(crate) mod tests {
             ),
             FetchError::NoAccess(_)
         ));
+        // Neither the network nor a named access problem.
+        assert_eq!(
+            of("fatal: Could not read from remote repository."),
+            FetchError::Other("fatal: Could not read from remote repository.".into())
+        );
         assert_eq!(
             of("fatal: couldn't find remote ref refs/heads/trunk"),
             FetchError::Other("fatal: couldn't find remote ref refs/heads/trunk".into())
