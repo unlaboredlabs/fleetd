@@ -299,6 +299,11 @@ impl Work {
             .map(|f| f.why.clone())
     }
 
+    /// Forgets the project's repo and base: its origin went away.
+    pub fn unbind_project(&self, project: &ProjectRef) -> Result<(), StoreError> {
+        self.db.with(|c| Ok(store::unbind(c, project)?))
+    }
+
     pub fn scope_of(&self, project: &ProjectRef) -> Result<Option<WorkScope>, StoreError> {
         self.db.with(|c| Ok(store::scope_of(c, project)?))
     }

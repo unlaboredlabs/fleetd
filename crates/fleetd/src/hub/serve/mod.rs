@@ -439,6 +439,7 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
         .set_landings(Arc::new(crate::hub::work::landings::LandingStore(
             hub.db.clone(),
         )));
+    loops.push(tokio::spawn(crate::hub::work::bind::run(hub.clone())));
     loops.push(tokio::spawn(crate::hub::work::landings::run(
         hub.clone(),
         Arc::new(crate::hub::work::landings::HubLandingPorts(hub.clone())),

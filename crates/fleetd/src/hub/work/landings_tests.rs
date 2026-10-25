@@ -20,13 +20,13 @@ use fleetd_contracts::work::{
 };
 use serde_json::{Value, json};
 
-use super::bind::{GitOut, NodeGit, bind_with};
+use super::bind::{GitOut, NodeGit, bind_unbound, bind_with, machines_online};
 use super::elsewhere::Landings;
 use super::landings::{LandingPorts, LandingStore, scan, wake_line};
 use super::{BoxFut, NewClaim};
 use crate::hub::api::{Hub, HubConfig, Listen};
 use crate::hub::store::test_clock::ManualClock;
-use crate::hub::store::{HubDb, WaitInput};
+use crate::hub::store::{HubDb, NewEvent, WaitInput};
 use crate::hub::tasks::records::TaskRecords;
 use crate::hub::train::github::MergedPull;
 
@@ -923,4 +923,52 @@ async fn a_project_is_bound_from_its_root_on_any_host_and_not_without_a_remote()
         None
     );
     assert_eq!(hub.work.scope_of(&local).unwrap(), None);
+
+    // Its origin removed, a bound project is unbound: its work no longer lands anywhere fleetd can see.
+    repo.run(Path::new(&root), &["remote", "remove", "origin"], None);
+    assert_eq!(bind_with(&hub, &git, &shop, &root).await.unwrap(), None);
+    assert_eq!(hub.work.scope_of(&shop).unwrap(), None);
+}
+
+#[tokio::test]
+async fn a_project_from_before_the_ledger_is_bound_once_its_node_connects() {
+    let (hub, _clock, _home) = hub();
+    let repo = Repo::new(GITLAB);
+    let git = LocalGit::default();
+    // Projects the hub already had, never bound: one on the machine that connects, one on another.
+    let shop = project(&hub, "devbox", "shop", &repo.checkout("shop"));
+    let other = project(&hub, "laptop", "shop", &repo.checkout("laptop-shop"));
+    let cursor = hub.events.head();
+    hub.events
+        .append(NewEvent {
+            at: fleetd_contracts::ids::Timestamp(AT.into()),
+            r#type: HubEventType::MachineOnline,
+            machine_id: Some(MachineId::unchecked("devbox")),
+            project_id: None,
+            thread_id: None,
+            summary: "devbox is online".into(),
+            data: None,
+            attention: None,
+        })
+        .unwrap();
+
+    let (machines, next) = machines_online(&hub, cursor, 0).await;
+    assert_eq!(machines, [MachineId::unchecked("devbox")]);
+    assert!(next > cursor);
+    for machine in &machines {
+        assert_eq!(bind_unbound(&hub, &git, Some(machine)).await, 1);
+    }
+    assert_eq!(hub.work.scope_of(&shop).unwrap(), Some(scope(GITLAB)));
+    assert_eq!(
+        hub.work.scope_of(&other).unwrap(),
+        None,
+        "its node hasn't connected"
+    );
+    // A bound project is skipped; the hub-start pass takes the rest.
+    assert_eq!(
+        bind_unbound(&hub, &git, Some(&MachineId::unchecked("devbox"))).await,
+        0
+    );
+    assert_eq!(bind_unbound(&hub, &git, None).await, 1);
+    assert_eq!(hub.work.scope_of(&other).unwrap(), Some(scope(GITLAB)));
 }

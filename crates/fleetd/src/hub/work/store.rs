@@ -141,6 +141,16 @@ pub fn bind(
     Ok(())
 }
 
+/// Forgets the repo and base the project's work landed on.
+pub fn unbind(db: &Connection, project: &ProjectRef) -> rusqlite::Result<()> {
+    db.prepare_cached("DELETE FROM work_projects WHERE machine_id = ? AND project_id = ?")?
+        .execute(params![
+            project.machine_id.as_str(),
+            project.project_id.as_str()
+        ])?;
+    Ok(())
+}
+
 pub fn scope_of(db: &Connection, project: &ProjectRef) -> rusqlite::Result<Option<WorkScope>> {
     db.prepare_cached(
         "SELECT repo_key, base FROM work_projects WHERE machine_id = ? AND project_id = ?",
