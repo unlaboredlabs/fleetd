@@ -89,9 +89,19 @@ pub fn step(
         for fold in folds.iter().flatten() {
             write(c, fold)?;
         }
-        crate::hub::time::store::set_cursor(c, CURSOR, page.cursor)
+        // A catch-up beside the loop may have saved a later cursor: never move it back.
+        let saved = crate::hub::time::store::cursor(c, CURSOR)?.unwrap_or(0);
+        crate::hub::time::store::set_cursor(c, CURSOR, page.cursor.max(saved))
     })?;
     Ok((page.cursor, page.more))
+}
+
+/// Folds one page past the stored cursor now, for a reader that must not lag the event that woke it: Status reads
+/// its row right after `pr.merged`, maybe before [`run`] has folded it. Safe beside [`run`], as a replay writes the
+/// same rows; a longer backlog is left to [`run`].
+pub fn catch_up(db: &HubDb, events: &crate::hub::store::EventLog) -> Result<(), StoreError> {
+    let cursor = db.with(|c| crate::hub::time::store::cursor(c, CURSOR))?;
+    step(db, events, cursor.unwrap_or(0)).map(drop)
 }
 
 /// Merges are known from the oldest event the projector's first pass found (the log keeps 30 days).

@@ -65,6 +65,7 @@ describe("event effects", () => {
     // Status's health strip: a machine going quiet or sleeping, a usage reading.
     expect(tools(e("machine.slept", undefined, { machineId: "devbox" }))).toContain("status_get");
     expect(tools(e("pr.merged", { workstreamId: "W1" }))).toContain("status_get");
+    expect(tools(e("pr.merged_outside", { repo: "acme/web", prNumber: 12 }))).toContain("status_get");
     expect(tools(e("machine.offline", undefined, { machineId: "devbox" }))).toContain("status_get");
     expect(tools(e("usage.updated"))).toContain("status_get");
   });

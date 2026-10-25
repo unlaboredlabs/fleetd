@@ -310,6 +310,22 @@ fleetd time --retention <days> [--hub <url> --key-file <path> | --home <dir>]
 
 keep 1-365 days of timelines (admin key); daily totals are kept 400 days
 
+### fleetd metrics {#metrics}
+
+```text
+fleetd metrics [--project <p>] [--days 30] [--json] [--hub <url> --key-file <path> | --home <dir>]
+```
+
+what the factory turned out: PRs merged per day by route, time from order to merged, your minutes per merged PR and the share through fleetd, over the last `--days` calendar days (1-400, today included) in this machine's zone; one project by id or title (\<machine\>/\<project\> when two machines have one), the whole fleet without one. On the hub machine it needs no `--hub` or `--key-file`
+
+### fleetd metrics {#metrics-retention}
+
+```text
+fleetd metrics --retention <days> [--hub <url> --key-file <path> | --home <dir>]
+```
+
+keep 30-400 days of landed changes (admin key on every machine)
+
 ### fleetd status {#status}
 
 ```text

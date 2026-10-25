@@ -670,3 +670,116 @@ async fn an_order_the_lead_opened_is_timed_from_the_message_that_asked_for_it() 
     assert_eq!(merge.order_to_merged_ms.map(|m| m.get()), Some(4 * HOUR));
     assert_eq!(out.tiles.order_to_merged.from_opened.get(), 0);
 }
+
+/// The Status row's fact is its project's last 7 calendar days as `metrics_get` counts them, a merge whose event the
+/// read answers included before the projector's loop folds it. A project whose repos the metrics don't know has
+/// none, rather than a zero.
+#[tokio::test]
+async fn the_status_row_counts_the_last_7_days_and_a_merge_just_reported() {
+    let (hub, _clock, _home) = hub();
+    let project = |id: &str| {
+        serde_json::from_value(json!({
+            "machineId": "devbox", "projectId": id, "title": id, "workspaceRoot": format!("/work/{id}"),
+            "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 },
+            "lastActivityAt": NOW,
+        }))
+        .unwrap()
+    };
+    hub.store
+        .projects_upsert_many(
+            &MachineId::unchecked("devbox"),
+            &[project("web"), project("docs")],
+        )
+        .unwrap();
+    a_week(&hub);
+    let fact = |hub: &Hub| {
+        let rows = crate::hub::status::rows::read(hub, &Default::default(), ms(NOW)).unwrap();
+        rows.iter()
+            .map(|r| {
+                (
+                    r.project_ref.project_id.to_string(),
+                    r.merged_7d.map(|n| n.get()),
+                    r.through_fleetd_pct_7d.map(|p| p.get()),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    // Nothing projected yet: the read folds the log itself.
+    assert_eq!(
+        fact(&hub),
+        [
+            ("docs".to_owned(), None, None),
+            ("web".to_owned(), Some(4), Some(25.0))
+        ]
+    );
+    let zone = crate::hub::attention::hub_zone();
+    let since = compute::day_start(
+        compute::local_date(ms(NOW), zone)
+            .checked_sub_days(chrono::Days::new(6))
+            .unwrap(),
+        zone,
+    );
+    let out = get(
+        &hub,
+        &admin(),
+        json!({ "projectRef": { "machineId": "devbox", "projectId": "web" }, "since": iso_ms(since),
+                "tz": zone.name() }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        out.tiles.merged.n.get(),
+        4,
+        "the same count as the Factory's"
+    );
+
+    event(
+        &hub,
+        "2026-10-24T09:00:00.000Z",
+        HubEventType::PrMergedOutside,
+        json!({ "repo": "acme/web", "prNumber": 13, "authorKind": "human" }),
+    );
+    assert_eq!(fact(&hub)[1], ("web".to_owned(), Some(5), Some(20.0)));
+}
+
+/// Status never breaks on the metrics: with them unreadable, every row still comes back, its 7-day fact left out.
+#[tokio::test]
+async fn status_reads_its_rows_when_the_metrics_cannot_be_read() {
+    let (hub, _clock, _home) = hub();
+    hub.store
+        .projects_upsert_many(
+            &MachineId::unchecked("devbox"),
+            &[serde_json::from_value(json!({
+                "machineId": "devbox", "projectId": "web", "title": "web", "workspaceRoot": "/work/web",
+                "threads": { "running": 0, "waiting": 0, "idle": 0, "failed": 0 }, "lastActivityAt": NOW,
+            }))
+            .unwrap()],
+        )
+        .unwrap();
+    a_week(&hub);
+    sql(&hub, "DROP TABLE metric_merges", &[]);
+    let rows = crate::hub::status::rows::read(&hub, &Default::default(), ms(NOW)).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        (rows[0].merged_7d, rows[0].through_fleetd_pct_7d),
+        (None, None)
+    );
+}
+
+/// A step from an older cursor (a catch-up racing the loop) folds again but never moves the saved cursor back.
+#[tokio::test]
+async fn the_saved_cursor_only_moves_forward() {
+    let (hub, _clock, _home) = hub();
+    a_week(&hub);
+    let end = project_from(&hub, 0);
+    let saved = |hub: &Hub| {
+        hub.db
+            .with(|c| crate::hub::time::store::cursor(c, "metrics:events"))
+            .unwrap()
+    };
+    assert_eq!(saved(&hub), Some(end));
+    let before = rows(&hub);
+    project::step(&hub.db, &hub.events, 0).unwrap();
+    assert_eq!(saved(&hub), Some(end));
+    assert_eq!(rows(&hub), before, "a replay writes the same rows");
+}

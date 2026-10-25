@@ -6,6 +6,7 @@ pub mod args;
 pub mod chat;
 pub mod hub_key;
 pub mod mcp_client;
+pub mod metrics;
 pub mod node;
 pub mod pair;
 pub mod project;
@@ -64,7 +65,7 @@ setting up (on the hub machine):
 projects:
 {}
 running by hand:
-{}{}{}{}{}{}{}{}",
+{}{}{}{}{}{}{}{}{}",
         UPDATE_USAGE,
         setup::SETUP_USAGE,
         setup::machine::machine_usage(),
@@ -75,6 +76,7 @@ running by hand:
         node::NODE_USAGE,
         prompts::PROMPTS_USAGE,
         time::TIME_USAGE,
+        metrics::METRICS_USAGE,
         status::STATUS_USAGE,
         steer::STEER_USAGE,
         chat::CHAT_USAGE
@@ -110,6 +112,7 @@ pub fn help_for(argv: &[String]) -> Option<String> {
         "node" => node::NODE_USAGE.to_owned(),
         "prompts" | "instructions" => prompts::PROMPTS_USAGE.to_owned(),
         "time" => time::TIME_USAGE.to_owned(),
+        "metrics" => metrics::METRICS_USAGE.to_owned(),
         "update" => UPDATE_USAGE.to_owned(),
         "status" => status::STATUS_USAGE.to_owned(),
         "steer" | "steers" => steer::STEER_USAGE.to_owned(),
@@ -172,6 +175,7 @@ fn is_long_running(argv: &[String]) -> bool {
                 | "projects"
                 | "node"
                 | "time"
+                | "metrics"
                 | "update"
                 | "steer"
                 | "steers"
@@ -189,6 +193,7 @@ async fn run_long_running(argv: &[String]) -> u8 {
         "project" | "projects" => project::project_command(rest).await,
         "node" => node::node_command(rest).await,
         "time" => time::time_command(rest).await,
+        "metrics" => metrics::metrics_command(rest).await,
         "status" => status::status_command(rest).await,
         "steer" => steer::steer_command(rest, false).await,
         "steers" => steer::steer_command(rest, true).await,
@@ -347,6 +352,12 @@ mod tests {
                 .contains("update [--check]")
         );
         assert!(help(&["status", "--help"]).is_some());
+        assert!(
+            help(&["metrics", "-h"])
+                .unwrap()
+                .contains("metrics [--project <p>] [--days 30]")
+        );
+        assert!(usage_text().contains("  metrics --retention <days>"));
         // After `--` it is an argument, and unknown commands keep their error.
         assert_eq!(help(&["task", "--", "-h"]), None);
         assert_eq!(help(&["frobnicate", "--help"]), None);

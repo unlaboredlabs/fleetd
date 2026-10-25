@@ -67,3 +67,10 @@ export const dropLines = (series: readonly ProgressPoint[]): string[] =>
     .flatMap((p) => (p.drop ? [`↓ ${p.drop.fromPct}% → ${p.pct}%: ${p.drop.text}`] : []))
     .reverse()
     .slice(0, 3);
+
+/**
+ * The row's 7-day fact: "12 merged in 7 days · 64% through fleetd". Undefined while the hub's metrics know none of the
+ * project's repos: no count is shown as if it were a zero.
+ */
+export const weekLine = (merged: number | undefined, throughPct: number | undefined): string | undefined =>
+  merged === undefined ? undefined : `${merged} merged in 7 days${throughPct === undefined ? "" : ` · ${Math.round(throughPct)}% through fleetd`}`;
