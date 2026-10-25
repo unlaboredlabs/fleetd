@@ -2039,3 +2039,76 @@ async fn a_missed_lead_reply_is_redelivered_once() {
     assert_eq!(hub.chat.page(&r, None, None, 50).unwrap().0.len(), 3);
     assert_eq!(events_of(&hub, HubEventType::ChatMessage).len(), announced);
 }
+
+/// A reply in bubbles is one message with ordered parts: none while it streams, its bubbles and block once final, and
+/// the same message (parts and all) however often it is landed again by its source. An ask block waits on the human.
+#[tokio::test]
+async fn a_reply_in_bubbles_lands_once_with_its_parts_and_its_ask_waits_on_you() {
+    let (hub, _home) = hub();
+    give_lead(&hub);
+    let r = project();
+    hub.chat
+        .read_history(&r, || async { Vec::new() })
+        .await
+        .unwrap();
+    let full = "nice, #412 is green\n\n```fleetd-block\n{\"v\":1,\"kind\":\"ask\",\"question\":\"merge it tonight?\"}\n```";
+    let mut sent = HashMap::new();
+    let tick = |sent: &mut HashMap<String, u64>, parts: crate::hub::executor::LiveParts| {
+        flow::stream_pass_with(&hub, sent, |_| Some(parts.clone()));
+    };
+    let latest = || hub.chat.page(&r, None, None, 10).unwrap().0;
+
+    tick(
+        &mut sent,
+        lead_parts(Some(("m1", "nice, #412 is green\n\n")), &[]),
+    );
+    assert_eq!(latest()[0].state, ChatMessageState::Streaming);
+    assert!(latest()[0].parts.is_none(), "no parts while it streams");
+
+    let done = lead_parts(Some(("m1", "nice, #412 is green\n\n")), &[("m1", full)]);
+    tick(&mut sent, done.clone());
+    let m = latest().remove(0);
+    let parts = m.parts.clone().expect("a final reply in bubbles has parts");
+    assert_eq!(parts.len(), 2);
+    assert_eq!((parts[0].start.get(), parts[0].end.get()), (0, 19));
+    assert!(parts[0].block.is_none());
+    assert!(matches!(
+        parts[1].block.as_ref().map(|b| &b.body),
+        Some(fleetd_contracts::blocks::BlockBody::Ask(_))
+    ));
+    assert!(hub.chat.state(&r, false).unwrap().needs_you);
+
+    // Landed again: by the stream pass, and by a re-read of the thread (the missed-reply path adds by source).
+    let announced = events_of(&hub, HubEventType::ChatMessage).len();
+    tick(&mut sent, done);
+    let source = history::lead_source("lead-thread", "m1");
+    let (again, new) = hub
+        .chat
+        .add(
+            &r,
+            NewMessage {
+                author: Some(ChatAuthor::Lead),
+                text: full.into(),
+                source: Some(source),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(!new);
+    assert_eq!((again.message_id, again.parts), (m.message_id, m.parts));
+    assert_eq!(latest().len(), 1);
+    assert_eq!(events_of(&hub, HubEventType::ChatMessage).len(), announced);
+
+    // The human's tap is a chat reply, and it answers.
+    hub.chat
+        .add(
+            &r,
+            NewMessage {
+                author: Some(ChatAuthor::Human),
+                text: "Approve".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(!hub.chat.state(&r, false).unwrap().needs_you);
+}

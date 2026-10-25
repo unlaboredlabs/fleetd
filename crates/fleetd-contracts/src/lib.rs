@@ -7,6 +7,7 @@ pub mod prim;
 pub mod agents;
 pub mod app;
 pub mod auth;
+pub mod blocks;
 pub mod chat;
 pub mod doctor;
 pub mod effort;

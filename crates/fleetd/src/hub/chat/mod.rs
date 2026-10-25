@@ -4,6 +4,7 @@
 //! before the chat (orders, steers, the retired asks) into it once per project; `tools` serves the MCP tools.
 pub mod flow;
 pub mod history;
+pub mod parts;
 pub mod tools;
 
 use std::collections::HashMap;
@@ -80,6 +81,14 @@ pub fn asks_question(text: &str) -> bool {
     })
 }
 
+fn asks_in_a_block(m: &ChatMessage) -> bool {
+    m.parts.iter().flat_map(|p| p.iter()).any(|p| {
+        p.block
+            .as_ref()
+            .is_some_and(|b| matches!(b.body, fleetd_contracts::blocks::BlockBody::Ask(_)))
+    })
+}
+
 fn item_open(item: &ChatItem) -> bool {
     match item {
         ChatItem::SecretRequest(s) => s.state == SecretRequestState::Open,
@@ -105,7 +114,7 @@ pub fn needs_you(messages: &[ChatMessage]) -> bool {
         m.author == ChatAuthor::Lead
             && m.history.is_none()
             && m.state == ChatMessageState::Final
-            && asks_question(&m.text)
+            && (asks_question(&m.text) || asks_in_a_block(m))
     })
 }
 
@@ -258,12 +267,13 @@ impl Chat {
                 ],
             )?;
             let n = c.last_insert_rowid();
+            let author = new.author.unwrap_or(ChatAuthor::System);
+            let text = text_of(&new.text);
             let message = ChatMessage {
                 message_id: ChatMessageId::unchecked(format!("m{n}")),
                 project_ref: r.clone(),
                 seq: Count::unchecked(seq),
-                author: new.author.unwrap_or(ChatAuthor::System),
-                text: text_of(&new.text),
+                author,
                 attachments: List::unchecked(new.attachments.into_iter().take(8).collect()),
                 created_at: iso_ms(created_ms).into(),
                 updated_at: None,
@@ -281,6 +291,10 @@ impl Chat {
                 client: new.client,
                 item: new.item,
                 history: new.history,
+                parts: (author == ChatAuthor::Lead && !new.streaming)
+                    .then(|| parts::parts(&text))
+                    .flatten(),
+                text,
             };
             c.execute(
                 "UPDATE chat_messages SET data = ?1 WHERE n = ?2",
@@ -577,6 +591,9 @@ impl Chat {
     pub fn finish(&self, message: &mut ChatMessage, text: &str) -> Result<(), StoreError> {
         message.text = text_of(text);
         message.state = ChatMessageState::Final;
+        if message.author == ChatAuthor::Lead {
+            message.parts = parts::parts(&message.text);
+        }
         message.updated_at = Some(self.now_ts());
         self.put(message)?;
         self.announce(message)

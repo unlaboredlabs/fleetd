@@ -1,5 +1,5 @@
-//! The lead's first message: the `lead.start` prompt, `lead.profiles` while the project allows medium, the digest,
-//! then the human's custom instructions.
+//! The lead's first message: the `lead.start` prompt, `lead.voice`, `lead.profiles` while the project allows medium,
+//! the digest, then the human's custom instructions.
 use fleetd_contracts::ids::ProjectRef;
 
 use crate::hub::prompts::PromptSet;
@@ -27,7 +27,12 @@ pub fn render_lead_start(
     } else {
         String::new()
     };
-    set.with_instructions(format!("{}{profiles}\n\n{digest}", start.trim_end()))
+    let voice = set.render("lead.voice", &[]);
+    set.with_instructions(format!(
+        "{}\n\n{}{profiles}\n\n{digest}",
+        start.trim_end(),
+        voice.trim_end()
+    ))
 }
 
 #[cfg(test)]
@@ -51,5 +56,10 @@ mod tests {
         );
         let off = render_lead_start(set, &r, "storefront", false, "D");
         assert!(!off.contains("## Task profiles") && off.contains("spawn_agent"));
+        let voice = off.find("## Your voice").unwrap();
+        assert!(
+            off.find("spawn_agent").unwrap() < voice
+                && voice < off.find("```fleetd-block").unwrap()
+        );
     }
 }

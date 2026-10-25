@@ -195,6 +195,20 @@ pub enum ChatItem {
     CommandApproval(CommandApprovalItem),
 }
 
+/// The most bubbles one message splits into; the rest of its text stays in the last.
+pub const CHAT_PARTS_MAX: usize = 24;
+
+/// One bubble of a lead message: `text.slice(start, end)` (UTF-16 offsets, like `ChatDelta.offset`), shown as
+/// markdown, or as `block` when it has one (the slice is then the block's fence, its readable fallback).
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatPart {
+    pub start: Count,
+    pub end: Count,
+    pub block: Option<crate::blocks::ChatBlock>,
+}
+
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -222,6 +236,9 @@ pub struct ChatMessage {
     pub item: Option<ChatItem>,
     /// From before the chat: where this history message came from.
     pub history: Option<ChatHistorySource>,
+    /// A final lead message of more than one bubble, or with a block: its bubbles in order. Absent: `text` is one
+    /// bubble (and while a message streams).
+    pub parts: Option<List<ChatPart, 1, CHAT_PARTS_MAX>>,
 }
 
 /// One chat's state, for the sidebar and the status row.

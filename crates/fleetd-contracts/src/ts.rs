@@ -74,6 +74,16 @@ fn constants() -> Vec<(&'static str, &'static str, Value)> {
             live::LIVE_MAX_MACHINES.into(),
         ),
         (
+            "BLOCK_FENCE",
+            "The info string of a block's code fence in a lead message.",
+            crate::blocks::BLOCK_FENCE.into(),
+        ),
+        (
+            "BLOCK_VERSION",
+            "The block schema this build speaks: every block's `v`.",
+            crate::blocks::BLOCK_VERSION.into(),
+        ),
+        (
             "SECRET_MAX_BYTES",
             "Largest secret a secret ask takes.",
             crate::secrets::SECRET_MAX_BYTES.into(),
