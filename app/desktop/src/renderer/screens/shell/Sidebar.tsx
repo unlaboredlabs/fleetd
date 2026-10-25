@@ -1,9 +1,9 @@
 // The sidebar: the projects first (alphabetical, so none moves), each opening its lead chat and saying why it wants
 // you ("reply", "approve", "secret", "blocked") or how many agents work; a chat with a message you haven't seen is
-// bold. Then Status, Time, Machines and Settings (a project's agents and PRs are in the panel beside its chat); then
+// bold. Then Status, Factory, Time, Machines and Settings (a project's agents and PRs are in the panel beside its chat); then
 // any update to make, and the connection. Holding ⌘ (Ctrl) shows jump numbers
 // on the first nine projects, which ⌘1..9 open.
-import { Activity, Clock, Plus, Server, Settings } from "lucide-react";
+import { Activity, Clock, Factory, Plus, Server, Settings } from "lucide-react";
 import type { ReactNode } from "react";
 import { display, type ShortcutId } from "../../../shared/shortcuts";
 import { Button, Dot, Kbd, Sidebar as Frame, SidebarItem, SidebarSection, Text, Tooltip, Truncate } from "../../ui";
@@ -137,6 +137,7 @@ export function Sidebar({ projects, machinesDown, screen, hub, jumpHints, go }: 
 
       <SidebarSection>
         {nav("Status", <Activity />, { id: "status" }, screen.id === "status", kbd("status.toggle"))}
+        {nav("Factory", <Factory />, { id: "factory", project: null }, screen.id === "factory", kbd("factory.open"))}
         {nav("Time", <Clock />, { id: "time", orderId: null }, screen.id === "time")}
         {nav(
           "Machines",

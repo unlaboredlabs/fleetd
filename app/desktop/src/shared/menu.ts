@@ -6,6 +6,7 @@ export const MENU_COMMANDS = [
   "go:projects.add",
   "composer.focus",
   "status.toggle",
+  "factory.open",
   "go:time",
   "palette.toggle",
   "shortcuts.show",

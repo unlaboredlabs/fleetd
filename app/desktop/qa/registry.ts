@@ -91,6 +91,9 @@ export const fixtures = [
   "status-paused",
   // E3b's shared stress fixture; the time inspector fills it with a ~15k-span order (fixtures/time).
   "time-heavy",
+  // The Factory (fixtures/factory): a repo whose reads fail beside one on a plain git host, and a range with no merges.
+  "factory-stale",
+  "factory-none",
   // The lead chat (fixtures/chat, E3b): a long conversation with migrated order history, a reply streaming in,
   // attachments, the two inline items (secret entry, gated command), the lead waiting on you, a first message.
   "chat-long",
@@ -1249,6 +1252,46 @@ export const screens: readonly Screen[] = [
       await page.getByRole("img", { name: /^78% done/u }).hover();
       await page.getByText("Held at 78% (paused: an agent hit a usage limit)").waitFor();
       await page.getByText("↓ 61% → 55%: CI failed on #212").waitFor();
+    },
+  },
+  // The Factory (D33, fixtures/factory): the four tiles, the three charts, the projects table and the merge list over
+  // 30 days; long titles; eight projects with one repo on two machines; no projects; no hub; failing reads; nothing
+  // merged. Then one project, the last 90 days in weekly columns, the period before, and a column's hover card.
+  {
+    id: "factory",
+    route: "#/factory",
+    fixtures: ["typical", "long-text", "many-agents", "status-rows", "empty", "hub-unreachable", "factory-stale", "factory-none"],
+  },
+  { id: "factory", route: `#/factory?project=devbox/${CHAT.split("/").pop() ?? ""}`, fixtures: ["typical"], variant: "project" },
+  {
+    id: "factory",
+    route: "#/factory",
+    fixtures: ["typical"],
+    variant: "quarter",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Last 30 days" }).click();
+      await page.getByRole("menuitemradio", { name: "Last 90 days" }).click();
+      await page.getByRole("heading", { name: "Merged per week, by route" }).waitFor();
+    },
+  },
+  {
+    id: "factory",
+    route: "#/factory",
+    fixtures: ["typical"],
+    variant: "compare",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Compare with the period before" }).click();
+      await page.getByText("The period before").first().waitFor();
+    },
+  },
+  {
+    id: "factory",
+    route: "#/factory",
+    fixtures: ["typical"],
+    variant: "hover",
+    open: async (page) => {
+      await page.getByRole("img", { name: /^Merged per day, by route/u }).hover();
+      await page.getByRole("tooltip").waitFor();
     },
   },
   // F7: the time inspector (fixtures/time): an order's timeline, ~15k spans in time-heavy; the fleet's breakdown;

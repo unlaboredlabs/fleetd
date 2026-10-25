@@ -85,6 +85,7 @@ export const installMenu = (opener: Opener, help: { readonly revealLogs: () => v
       label: "View",
       submenu: [
         item(opener, "status.toggle", "Status"),
+        item(opener, "factory.open", "Factory"),
         item(opener, "go:time", "Time"),
         separator,
         item(opener, "palette.toggle", "Command Palette"),

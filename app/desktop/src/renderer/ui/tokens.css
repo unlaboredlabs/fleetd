@@ -40,6 +40,15 @@
   --role-reviewer: #6244bd;
   --role-verifier: #9b2f78;
   --role-lead: #6e5a27;
+  /* Chart series, in their fixed order (charts take slots 1, 2, 3… and never skip or cycle one). The dataviz
+     palette's first five, run through its validate_palette.js against --bg in each theme: marks only, never text.
+     Slots 3 to 5 sit under 3:1 on the light background, so every chart that uses them labels its marks or has a
+     table of the same numbers. */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
 
   /* Syntax colours for Shiki's css-variables theme: muted, so code reads as machine text, not decoration. */
   --shiki-foreground: var(--text);
@@ -84,6 +93,11 @@
   --role-reviewer: #bba8f5;
   --role-verifier: #e79bcd;
   --role-lead: #d2bd95;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
 
   --shiki-token-comment: #8f8f88;
   --shiki-token-keyword: #d7a0d9;
