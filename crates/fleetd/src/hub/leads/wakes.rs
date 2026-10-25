@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::Duration;
 
 use fleetd_contracts::events::HubEventType;
@@ -14,6 +14,7 @@ use super::digest::{DigestInput, WorkstreamFacts, render_lead_digest};
 use super::error::LeadError;
 use super::events::Event;
 use super::hooks::BoxFuture;
+use super::lead::Leads;
 use super::records::{LeadRecords, WorkstreamFilter};
 use super::{Ctx, now_iso};
 use crate::clock::Clock;
@@ -306,6 +307,8 @@ pub struct LeadWakes {
     /// Quiet lines that came while no wake was on its way, per project: they go first in the next one. Lost on a
     /// hub restart; the digest still shows the tasks' state.
     quiet: std::sync::Mutex<HashMap<ProjectRef, Vec<Trigger>>>,
+    /// Set once by `Area::new`: a wake to a cold lead starts a fresh session (`Leads::fresh_if_cold`).
+    pub leads: OnceLock<Weak<Leads>>,
 }
 
 impl LeadWakes {
@@ -323,6 +326,7 @@ impl LeadWakes {
             flushing: tokio::sync::Mutex::new(()),
             first: std::sync::Mutex::new(HashMap::new()),
             quiet: std::sync::Mutex::new(HashMap::new()),
+            leads: OnceLock::new(),
         })
     }
 
@@ -509,15 +513,38 @@ impl LeadWakes {
             .db
             .prompts()
             .for_thread(&r.machine_id, lead.thread_id.as_str());
-        let message = render_wake(&set, &self.digest(r).await?, &triggers);
+        // A cold lead gets its events in the first message of a fresh session, which carries the state block itself.
+        let fresh = match self.leads.get().and_then(Weak::upgrade) {
+            Some(leads) => leads
+                .fresh_if_cold(
+                    r,
+                    &render_wake(&self.ctx.db.prompts().current(Some(r)), "", &triggers),
+                )
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::warn!(project = %key_of(r), %error, "fresh lead not started; resuming it");
+                    None
+                }),
+            None => None,
+        };
         let at = now_iso(&self.ctx);
-        let crid = format!("fleetd-wake:{}:{}:{at}", key_of(r), lead.session_generation);
-        // Through the offline write queue, so a wake to an offline machine waits for it instead of being dropped.
-        let queued = match self.ctx.ports().send(thread, message, crid).await {
-            Ok(queued) => queued,
-            Err(reason) => {
-                tracing::warn!(project = %key_of(r), %reason, "lead wake not delivered");
-                return Ok(());
+        let fresh = match fresh {
+            Some(_) => self.records.lead_get(r)?,
+            None => None,
+        };
+        let (lead, queued) = match fresh {
+            Some(fresh) => (fresh, false),
+            None => {
+                let message = render_wake(&set, &self.digest(r).await?, &triggers);
+                let crid = format!("fleetd-wake:{}:{}:{at}", key_of(r), lead.session_generation);
+                // Through the offline write queue, so a wake to an offline machine waits for it instead of being dropped.
+                match self.ctx.ports().send(thread, message, crid).await {
+                    Ok(queued) => (lead, queued),
+                    Err(reason) => {
+                        tracing::warn!(project = %key_of(r), %reason, "lead wake not delivered");
+                        return Ok(());
+                    }
+                }
             }
         };
         let n = triggers.len();

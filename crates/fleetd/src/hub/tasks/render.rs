@@ -127,7 +127,7 @@ pub struct PromptInput<'a> {
     pub project_title: &'a str,
     /// Absent while the workstream is a draft.
     pub brief: Option<&'a Brief>,
-    /// The brief's done-when lines as text (leads' `done_when_text` with max 200).
+    /// The brief's done-when lines as text, whole (leads' `done_when_text` with the lines' own max).
     pub done_when: Option<String>,
     /// Write tasks: their branch. Every task's worktree starts from the remote's copy of `base_branch`.
     pub branch: Option<&'a str>,
@@ -442,10 +442,16 @@ pub fn task_digest_lines(
             TaskState::Done | TaskState::Failed | TaskState::Cancelled
         ) && since.is_none_or(|s| t.ended_at.as_ref().map_or("", |e| e.as_str()) > s)
     }) {
-        let first = t.result.as_ref().map_or_else(String::new, |r| {
-            let tail = r.tail.as_str();
-            one_line(tail.strip_prefix('…').unwrap_or(tail), 160)
-        });
+        // A wake's event lines carry the result of a task that ended since the last one; only a lead's first message
+        // has no such line.
+        let first = t
+            .result
+            .as_ref()
+            .filter(|_| since.is_none())
+            .map_or_else(String::new, |r| {
+                let tail = r.tail.as_str();
+                one_line(tail.strip_prefix('…').unwrap_or(tail), 160)
+            });
         let arrow = if first.is_empty() {
             String::new()
         } else {
@@ -484,6 +490,21 @@ mod tests {
              it died the same way twice."
         );
         assert!(task_result_lines("T23", "B", &result, false).starts_with("- T23 failed: B"));
+    }
+
+    #[test]
+    fn an_ended_tasks_result_shows_in_a_first_message_but_not_beside_its_wake_line() {
+        let task: Task = serde_json::from_value(serde_json::json!({
+            "taskId": "T4", "projectRef": { "machineId": "lab-a", "projectId": "p1" }, "workstreamId": "W1",
+            "title": "B", "kind": "write", "prompt": "do it", "state": "done", "attempt": 1,
+            "createdAt": "2026-10-25T09:00:00.000Z", "endedAt": "2026-10-25T10:00:00.000Z",
+            "result": { "status": "done", "tail": "Fixed it.", "at": "2026-10-25T10:00:00.000Z" },
+        }))
+        .unwrap();
+        let lines = |since| task_digest_lines(std::slice::from_ref(&task), since, "", &|_| None);
+        assert!(lines(None)[0].ends_with("→ Fixed it."), "{:?}", lines(None));
+        let wake = lines(Some("2026-10-25T09:30:00.000Z"));
+        assert!(wake[0].ends_with(": B"), "{wake:?}");
     }
 
     #[test]

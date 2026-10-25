@@ -404,3 +404,78 @@ async fn a_quiet_line_goes_with_the_next_wake_and_wakes_nobody() {
     let sent = hub.node.sends.lock().unwrap()[start + 1].clone();
     assert!(!sent.contains("T1's PR"), "once: {sent}");
 }
+
+/// A lead idle past its prompt cache restarts fresh on its next wake, from the state block and the chat's tail,
+/// instead of resuming its whole history; a warm one is resumed.
+#[tokio::test(flavor = "current_thread")]
+async fn a_wake_to_a_lead_idle_past_its_cache_starts_a_fresh_session_with_the_chats_tail() {
+    use fleetd_contracts::chat::ChatAuthor;
+
+    use crate::hub::chat::{Chat, NewMessage};
+    use crate::hub::leads::lead::LEAD_FRESH_AFTER;
+
+    let hub = hub(true);
+    hub.order("fix the five bugs").await;
+    hub.after_debounce().await;
+    let chat = Chat::new(
+        Arc::clone(&hub.area.ctx.db),
+        Arc::clone(&hub.events),
+        hub.clock.clone(),
+    );
+    for (author, text) in [
+        (ChatAuthor::Human, "keep the old API"),
+        (ChatAuthor::System, "PR #9 merged"),
+        (ChatAuthor::Lead, "Will do, the old API stays."),
+    ] {
+        let new = NewMessage {
+            author: Some(author),
+            text: text.into(),
+            ..Default::default()
+        };
+        chat.add(&hub.project, new).unwrap();
+    }
+    let sends = || hub.node.sends.lock().unwrap().len();
+    let start = sends();
+
+    // Warm: resumed as ever.
+    lead_thread(&hub, "idle");
+    hub.area
+        .wakes
+        .trigger(&hub.project, line(LineKind::TaskResult, "T1 done"));
+    hub.after_debounce().await;
+    assert_eq!((sends(), hub.launched_prompts().len()), (start + 1, 1));
+
+    // Cold: a fresh session, and nothing sent to the old one.
+    hub.clock.advance(LEAD_FRESH_AFTER);
+    hub.area
+        .wakes
+        .trigger(&hub.project, line(LineKind::TaskResult, "T2 done"));
+    hub.after_debounce().await;
+    assert_eq!(sends(), start + 1);
+    let prompts = hub.launched_prompts();
+    assert_eq!(prompts.len(), 2);
+    let fresh = &prompts[1];
+    assert!(
+        fresh.starts_with("You are the lead of project repo-a"),
+        "{fresh}"
+    );
+    let tail = fresh.split("## Recent chat\n").nth(1).unwrap();
+    assert!(
+        tail.contains("Human: keep the old API\nYou: Will do, the old API stays.")
+            && !tail.contains("PR #9")
+            && tail.ends_with("T2 done"),
+        "{tail}"
+    );
+    let lead = hub.area.leads.get(&hub.project).unwrap().unwrap();
+    assert_eq!(
+        (lead.thread_id.as_str(), lead.session_generation.get()),
+        ("lead-2", 1)
+    );
+
+    // The fresh session takes the next wake as any lead does.
+    hub.area
+        .wakes
+        .trigger(&hub.project, line(LineKind::TaskResult, "T3 done"));
+    hub.after_debounce().await;
+    assert_eq!((sends(), hub.launched_prompts().len()), (start + 2, 2));
+}

@@ -16,6 +16,7 @@ Ask only about product, money or irreversible calls; decide the rest yourself.
 
 ## Running the work
 - Every agent is a fleetd agent, started with `spawn_agent`. Its result arrives in a later wake: end your turn instead of waiting.
+- A follow-up in the part a writer finished under 5 minutes ago goes to that writer with `message_agent`; otherwise spawn a fresh one with a 5-line handoff: done, left, blockers, branch, PR.
 - Each wake starts with the project's state, then what happened since. Trust it over your memory.
 - When the work is done, `close` it and say why. Close in the wake that reports its last merge: CI passed on that exact tree, so never spawn an agent to rerun CI's checks. List the reviews' non-blocking findings in your closing message; they become work only if the order or the human asks.
 - Secrets only through `request_secret`; prod writes, spends, deletes and credential use only through `gated_run`, which the human approves. Never handle a secret value.

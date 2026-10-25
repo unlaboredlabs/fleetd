@@ -89,6 +89,41 @@ explained! {
     ]
 }
 
+const WHY_UNUSED: &str = "Unused by fleetd's agents, and tool schemas ride on every request.";
+const WHY_LEAD_FILES: &str = "The lead never changes files: its agents do.";
+const WHY_LEAD_WEB: &str = "The lead's agents read the web; the lead routes.";
+
+explained! {
+    /// Denied to fleetd's agents (leads and task agents), on top of [`ALWAYS_DISALLOWED`]; threads a person starts
+    /// keep them. Names from claude 2.1.302's `system/init`.
+    AGENT_DISALLOWED, AGENT_DISALLOWED_WHY: &str = [
+        "ReportFindings" => "Agents report a review with fleetd's own `report`.",
+        "DesignSync" => WHY_UNUSED,
+        "Skill" => WHY_UNUSED,
+        "NotebookEdit" => WHY_UNUSED,
+    ]
+}
+
+explained! {
+    /// Denied to a lead, on top of [`AGENT_DISALLOWED`].
+    LEAD_DISALLOWED, LEAD_DISALLOWED_WHY: &str = [
+        "Edit" => WHY_LEAD_FILES,
+        "Write" => WHY_LEAD_FILES,
+        "WebFetch" => WHY_LEAD_WEB,
+        "WebSearch" => WHY_LEAD_WEB,
+    ]
+}
+
+/// The tools denied to a session of `role` beyond [`ALWAYS_DISALLOWED`].
+pub fn role_disallowed(role: SessionRole) -> impl Iterator<Item = &'static str> {
+    let (agent, lead): (&[&str], &[&str]) = match role {
+        SessionRole::Plain => (&[], &[]),
+        SessionRole::Worker => (AGENT_DISALLOWED, &[]),
+        SessionRole::Lead => (AGENT_DISALLOWED, LEAD_DISALLOWED),
+    };
+    agent.iter().chain(lead).copied()
+}
+
 /// The agent tools of claude 2.1.302, all in [`ALWAYS_DISALLOWED`].
 pub const AGENT_TOOLS: &[&str] = &[
     "Task",
@@ -171,6 +206,28 @@ explained! {
         ("ENABLE_TOOL_SEARCH", "true") =>
             "Tool schemas load when a tool is used, not on every request. fleetd's own tools always load at start.",
     ]
+}
+
+explained! {
+    /// Defaults for a task's agent, like [`DEFAULT_ENV`]: the node's own environment or `claude.env` sets any of them
+    /// otherwise. Also in its settings overlay, which outranks the `env` in the user's own settings.
+    WORKER_ENV, WORKER_ENV_WHY: (&str, &str) = [
+        ("BASH_MAX_TIMEOUT_MS", "280000") =>
+            "No one command outlives a task agent's 5-minute prompt cache: past it, the agent's next request writes its \
+             whole context to the cache again. A longer suite is CI's job.",
+    ]
+}
+
+/// [`WORKER_ENV`] for a task's agent, each unless `env` sets it; nothing for other roles.
+pub fn role_env(role: SessionRole, env: &[(String, String)]) -> Vec<(String, String)> {
+    if role != SessionRole::Worker {
+        return Vec::new();
+    }
+    WORKER_ENV
+        .iter()
+        .filter(|(key, _)| !env.iter().any(|(k, _)| k == key))
+        .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+        .collect()
 }
 
 /// claude's prompt cache TTL variables: a session's own turns, then the helper requests beside them. On 2.1.302 either
@@ -458,6 +515,33 @@ pub fn session_in_use(text: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_lead_loses_file_and_web_tools_a_task_agent_keeps_and_a_persons_thread_loses_nothing() {
+        let denied = |role| role_disallowed(role).collect::<Vec<_>>();
+        assert!(denied(SessionRole::Plain).is_empty());
+        let worker = denied(SessionRole::Worker);
+        assert!(worker.contains(&"Skill") && !worker.contains(&"Edit"));
+        let lead = denied(SessionRole::Lead);
+        assert!(lead.contains(&"Skill") && lead.contains(&"Edit") && lead.contains(&"WebFetch"));
+        // Every name is a tool claude 2.1.302 offers, and none overlaps the list every session gets.
+        let init = include_str!("../fixtures/claude-2.1.302-interrupt-mid-tool.jsonl");
+        for tool in lead {
+            assert!(init.contains(&format!("\"{tool}\"")), "{tool}");
+            assert!(!ALWAYS_DISALLOWED.contains(&tool), "{tool}");
+        }
+    }
+
+    #[test]
+    fn only_a_task_agent_gets_the_command_cap_and_its_own_setting_wins() {
+        assert!(role_env(SessionRole::Lead, &[]).is_empty());
+        assert_eq!(
+            role_env(SessionRole::Worker, &[]),
+            [("BASH_MAX_TIMEOUT_MS".to_owned(), "280000".to_owned())]
+        );
+        let set = [("BASH_MAX_TIMEOUT_MS".to_owned(), "900000".to_owned())];
+        assert!(role_env(SessionRole::Worker, &set).is_empty());
+    }
 
     fn spec() -> SessionSpec {
         SessionSpec {

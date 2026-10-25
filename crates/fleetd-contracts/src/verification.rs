@@ -27,7 +27,7 @@ pub struct ReviewVerdict {
     pub pr_head_sha: Option<CommitSha>,
     pub blocking: Count,
     pub non_blocking: Count,
-    pub summary: Text<1, 1000>,
+    pub summary: Text<1, 4000>,
 }
 
 #[cfg(test)]
@@ -53,6 +53,6 @@ mod tests {
         }
         assert!(!accepts(json!({ "blocking": -1 })));
         assert!(!accepts(json!({ "summary": "" })));
-        assert!(!accepts(json!({ "summary": "x".repeat(1001) })));
+        assert!(!accepts(json!({ "summary": "x".repeat(4001) })));
     }
 }

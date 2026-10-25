@@ -32,6 +32,9 @@ Words you haven't sent stay in each project's box, even after you quit the app.
 
 The lead keeps its own plan and bookkeeping. You never file tasks or orders yourself.
 
+After an hour idle, the lead starts fresh with your next message: from the project's state, its decisions and the
+last few chat messages, not the whole conversation. If it should know something older, say it again.
+
 ## From a terminal {#terminal}
 
 `fleetd chat` sends the same message as the box, and `fleetd chat history` reads the chat:

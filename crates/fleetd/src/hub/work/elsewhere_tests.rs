@@ -177,7 +177,11 @@ async fn the_digest_shows_work_elsewhere_on_its_repo_and_base_and_none_of_its_ow
         "a project whose repo and base aren't known has no section"
     );
     hub.work.bind_project(&app, &shop()).unwrap();
-    assert_eq!(elsewhere(&hub, &app).await.as_deref(), Some("none"));
+    assert_eq!(
+        elsewhere(&hub, &app).await,
+        None,
+        "nor one with nothing elsewhere"
+    );
 
     hub.work.bind_project(&api, &shop()).unwrap();
     let other_base = WorkScope {

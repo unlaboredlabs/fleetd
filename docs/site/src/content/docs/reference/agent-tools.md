@@ -458,18 +458,18 @@ Every task's agent gets these: implementers, readers, reviewers and QA.
 
 | Tool | What it does | Needs a human |
 |---|---|---|
-| [`report`](#report) | Record your review verdict once, before your final message: the number of blocking and non-blocking findings and a one-paragraph summary. | No |
+| [`report`](#report) | Record your review verdict once, before your final message: the number of blocking and non-blocking findings and a summary of each. | No |
 | [`ask_lead`](#ask_lead) | Ask your lead a question. | No |
 
 ### report
 
-Record your review verdict once, before your final message: the number of blocking and non-blocking findings and a one-paragraph summary. fleetd fills in your task and the head you reviewed.
+Record your review verdict once, before your final message: the number of blocking and non-blocking findings and a summary of each. fleetd fills in your task and the head you reviewed.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `blocking` | integer | yes |  |
 | `nonBlocking` | integer | yes |  |
-| `summary` | string | yes | At most 1000 characters. |
+| `summary` | string | yes | At most 4000 characters. |
 
 **Who may call:** a task's agent, checked by the hub. **Needs a human:** no.
 
@@ -505,7 +505,7 @@ Ask your lead a question. Carry on with what you can; the answer arrives as a me
 
 ## Claude Code tools
 
-The same for every session. Listed for Claude Code 2.1.302, the version fleetd is tested with.
+Listed for Claude Code 2.1.302, the version fleetd is tested with.
 
 **Allowed:** `Bash`, `DesignSync`, `Edit`, `NotebookEdit`, `Read`, `ReportFindings`, `Skill`, `ToolSearch`, `WebFetch`, `WebSearch`, `Write`.
 
@@ -523,6 +523,15 @@ A project's policy file can deny more with `tools.deny`.
 | `Bash(claude *)`, `Bash(*bin/claude)`, `Bash(*bin/claude *)`, `Bash(*/claude -*)`, `Bash(*claude/versions/*)`, `Bash(npx *claude*)`, `Bash(bunx *claude*)`, `Bash(*@anthropic-ai/claude-code*)`, `Bash(*sh -*c *claude*)`, `Bash(env *claude*)`, `Bash(exec *claude*)`, `Bash(xargs *claude*)` | A claude started inside a session runs outside fleetd's slots, with its own subagents and any model. Agents start agents with spawn_agent. |
 
 fleetd also blocks any tool like these that a newer Claude Code adds: a session whose tool list still offers one is stopped, and every later session on that machine blocks it.
+
+**Blocked for fleetd's agents**, in `--disallowedTools`; threads you start keep them:
+
+| Tool | Sessions | Why |
+|---|---|---|
+| `ReportFindings` | Leads and task agents | Agents report a review with fleetd's own `report`. |
+| `DesignSync`, `Skill`, `NotebookEdit` | Leads and task agents | Unused by fleetd's agents, and tool schemas ride on every request. |
+| `Edit`, `Write` | Leads | The lead never changes files: its agents do. |
+| `WebFetch`, `WebSearch` | Leads | The lead's agents read the web; the lead routes. |
 
 ## Settings fleetd forces
 
@@ -544,6 +553,7 @@ Set in the claude process's environment. "In settings" marks the ones also in fl
 | `CLAUDE_CODE_PROMPT_CACHE_TTL`, `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL` | `1h` unless `promptCacheTtl.lead` in node.json, your environment or `claude.env` sets it | Leads | yes | A lead idles between wakes, often more than 5 minutes while reviews and CI run, and would otherwise rewrite its whole context to the prompt cache on those wakes. |
 | `CLAUDE_CODE_PROMPT_CACHE_TTL`, `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL` | `1h` unless `promptCacheTtl.plain` in node.json, your environment or `claude.env` sets it | Threads you start | yes | A person's thread idles while they read and reply. |
 | `CLAUDE_CODE_PROMPT_CACHE_TTL`, `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL` | `5m` unless `promptCacheTtl.worker` in node.json, your environment or `claude.env` sets it | Task agents | yes | A task's agent (writer, reader, reviewer, CI fix) works in one burst and ends, so a 1-hour write pays for an hour it never uses. |
+| `BASH_MAX_TIMEOUT_MS` | `280000` unless your environment or `claude.env` sets it | Task agents | yes | No one command outlives a task agent's 5-minute prompt cache: past it, the agent's next request writes its whole context to the cache again. A longer suite is CI's job. |
 | `CLAUDECODE`, `CLAUDE_CODE_ENTRYPOINT`, `CLAUDE_CODE_SSE_PORT` | removed | Sessions | no | claude sets it for its own children and treats a process that has it as nested inside another session. |
 
 ## What your own setup adds
