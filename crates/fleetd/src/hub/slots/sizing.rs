@@ -7,6 +7,11 @@
 //! - At most [`HARD_TOP`] without a person's setting: past that the login's rate limit binds anyway.
 //!
 //! Disk is room, not a cap: the new agents its free space takes above the guard's floor, 5 GB each (`diskPerAgentGb`).
+//!
+//! A project whose agents have been measured on the machine ([`MIN_SAMPLES`] sessions) is sized at its own figure, the
+//! 90th percentile of its sessions' peaks, when that fits fewer: a Rust project that takes 4 GB an agent runs fewer at
+//! once than a docs project beside it.
+use fleetd_contracts::ids::ProjectId;
 use fleetd_contracts::node_link::NodeLoad;
 
 const GIB: i64 = 1 << 30;
@@ -66,6 +71,32 @@ pub fn auto_cap(load: &NodeLoad) -> Auto {
     Auto { cap, why }
 }
 
+/// Sessions of a project the node must have measured before the project's own memory figure counts.
+pub const MIN_SAMPLES: i64 = 5;
+
+/// The projects that fit fewer agents on the machine at their own measured memory per agent than `machine` (its
+/// [`auto_cap`]) does at the node's figure, each with that cap, e.g. "memory 4.1 GB per agent, seen on this project".
+/// Needs the machine's total memory.
+pub fn project_caps(load: &NodeLoad, machine: &Auto) -> Vec<(ProjectId, Auto)> {
+    if load.mem_total_bytes.is_none() {
+        return Vec::new();
+    }
+    let measured = load.project_memory.iter().flat_map(|l| l.iter());
+    measured
+        .filter(|p| p.samples.get() >= MIN_SAMPLES)
+        .filter_map(|p| {
+            let mut own = load.clone();
+            own.mem_per_agent_bytes = Some(p.p90_bytes);
+            let cap = auto_cap(&own).cap;
+            (cap < machine.cap).then(|| {
+                let gb = p.p90_bytes.get() as f64 / 1e9;
+                let why = format!("memory {gb:.1} GB per agent, seen on this project");
+                (p.project_id.clone(), Auto { cap, why })
+            })
+        })
+        .collect()
+}
+
 /// New agents the machine's free disk takes above the floor, before counting the ones started in the last 10
 /// minutes, whose worktrees haven't grown yet. None while the node reports no disk.
 pub fn disk_room(load: &NodeLoad) -> Option<i64> {
@@ -79,7 +110,7 @@ pub fn disk_room(load: &NodeLoad) -> Option<i64> {
 
 #[cfg(test)]
 mod tests {
-    use fleetd_contracts::node_link::NodeDisk;
+    use fleetd_contracts::node_link::{NodeDisk, ProjectMemory};
     use fleetd_contracts::prim::{Count, Int, List, NonNegative};
 
     use super::*;
@@ -98,6 +129,7 @@ mod tests {
             mem_total_bytes: mem_gib.map(|g| Count::unchecked(g * GIB)),
             mem_per_agent_bytes: None,
             disk_per_agent_bytes: None,
+            project_memory: None,
         }
     }
 
@@ -159,6 +191,48 @@ mod tests {
         let mut load = machine(16, Some(32));
         load.mem_per_agent_bytes = Some(Count::unchecked(4 * GB));
         assert_eq!(auto_cap(&load), auto(6, "memory 32 GB"));
+    }
+
+    fn measured(load: &mut NodeLoad, projects: &[(&str, i64, i64)]) {
+        let rows = projects
+            .iter()
+            .map(|(p, samples, p90)| ProjectMemory {
+                project_id: ProjectId::unchecked(*p),
+                samples: Int::unchecked(*samples),
+                p90_bytes: Count::unchecked(*p90),
+            })
+            .collect();
+        load.project_memory = Some(List::unchecked(rows));
+    }
+
+    #[test]
+    fn a_project_measured_bigger_than_the_machines_figure_fits_fewer() {
+        // 32 threads, 59 GB at 2 GB an agent: 22.
+        let mut load = machine(32, Some(59));
+        let auto_59 = auto_cap(&load);
+        assert_eq!(auto_59, auto(22, "memory 59 GB"));
+        measured(
+            &mut load,
+            &[
+                ("rust", 12, 4_100_000_000),
+                ("docs", 20, 400_000_000),
+                ("new", 4, 9 * GB),
+            ],
+        );
+        // (59 − 14.75) / 4.1 = 10 for the Rust project. The docs project fits more than the machine at 2 GB, so the
+        // machine's cap stands for it, and a project with 4 sessions measured isn't sized on them yet.
+        assert_eq!(
+            project_caps(&load, &auto_59),
+            [(
+                ProjectId::unchecked("rust"),
+                auto(10, "memory 4.1 GB per agent, seen on this project")
+            )]
+        );
+        // Without the machine's memory there is nothing to divide.
+        let mut old = machine(32, None);
+        measured(&mut old, &[("rust", 12, 4_100_000_000)]);
+        assert_eq!(project_caps(&old, &auto_cap(&old)), []);
+        assert_eq!(project_caps(&machine(32, Some(59)), &auto_59), []);
     }
 
     #[test]

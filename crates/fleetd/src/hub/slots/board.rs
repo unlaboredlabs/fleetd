@@ -1,6 +1,6 @@
 //! The slot board's rules, without I/O: the service in `mod.rs` persists what `take_ops` hands it and feeds it
 //! thread events, machine facts and the time.
-use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadId};
+use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadId};
 
 use super::sizing::{self, Auto};
 
@@ -43,6 +43,9 @@ pub struct Machine {
     pub max_agents: Option<i64>,
     /// New agents its free disk took at the last heartbeat; None while its node reports no disk.
     pub disk_room: Option<i64>,
+    /// The projects that fit fewer here at their own measured memory per agent ([`sizing::project_caps`]), as of the
+    /// last heartbeat.
+    pub projects: Vec<(ProjectId, Auto)>,
 }
 
 impl Machine {
@@ -271,6 +274,7 @@ impl Board {
                     auto: auto.clone(),
                     max_agents: None,
                     disk_room,
+                    projects: Vec::new(),
                 });
                 self.ops
                     .push(Op::Machine(machine_id.clone(), name.to_owned(), auto));
@@ -290,6 +294,41 @@ impl Board {
             || self.disk_room(machine_id).unwrap_or(i64::MAX) > room_before
     }
 
+    /// The projects measured on a machine at its heartbeat, after [`Self::observe_machine`]. True when one of them
+    /// now takes more than before, so the caller evaluates and notifies.
+    pub fn observe_projects(
+        &mut self,
+        machine_id: &MachineId,
+        projects: Vec<(ProjectId, Auto)>,
+    ) -> bool {
+        let Some(m) = self
+            .machines
+            .iter_mut()
+            .find(|x| x.machine_id == *machine_id)
+        else {
+            return false;
+        };
+        let grew = m.projects.iter().any(|(p, before)| {
+            projects
+                .iter()
+                .find(|(q, _)| q == p)
+                .is_none_or(|(_, now)| now.cap > before.cap)
+        });
+        m.projects = projects;
+        grew
+    }
+
+    /// The project's own measure on its machine, while no person set the machine's cap.
+    fn project_auto(&self, r: &ProjectRef) -> Option<&Auto> {
+        let m = self
+            .machine(&r.machine_id)
+            .filter(|m| m.max_agents.is_none())?;
+        m.projects
+            .iter()
+            .find(|(p, _)| *p == r.project_id)
+            .map(|(_, auto)| auto)
+    }
+
     pub fn claims(&self) -> &[Claim] {
         &self.claims
     }
@@ -302,17 +341,27 @@ impl Board {
         self.ops.push(Op::Save(self.claims[i].clone()));
     }
 
-    /// The project's max agents: its machine's cap until set.
+    /// The project's max agents: until set, its machine's cap, or fewer at the project's own measured memory.
     pub fn max_agents_of(&self, r: &ProjectRef) -> i64 {
+        let machine_cap = self.machine_cap(&r.machine_id);
         self.max_agents
             .iter()
             .find(|(s, _)| same(s, r))
-            .map_or_else(|| self.machine_cap(&r.machine_id), |(_, n)| *n)
+            .map_or_else(
+                || {
+                    self.project_auto(r)
+                        .map_or(machine_cap, |a| a.cap.min(machine_cap))
+                },
+                |(_, n)| *n,
+            )
     }
 
     pub fn max_source(&self, r: &ProjectRef) -> MaxSource {
         if self.max_agents.iter().any(|(s, _)| same(s, r)) {
             return MaxSource::Project;
+        }
+        if let Some(auto) = self.project_auto(r) {
+            return MaxSource::Auto(auto.why.clone());
         }
         match self.machine(&r.machine_id) {
             Some(m) if m.max_agents.is_some() => MaxSource::Machine,
@@ -354,7 +403,15 @@ impl Board {
                 "disk: no room for another agent on {name} until the new worktrees settle or space frees"
             ))
         } else if running >= max {
-            Some(format!("Max agents: {running} of {max} running"))
+            Some(
+                match self
+                    .project_auto(r)
+                    .filter(|_| !self.max_agents.iter().any(|(s, _)| same(s, r)))
+                {
+                    Some(auto) => format!("Max agents: {running} of {max} running ({})", auto.why),
+                    None => format!("Max agents: {running} of {max} running"),
+                },
+            )
         } else {
             None
         }
@@ -684,6 +741,7 @@ mod tests {
             },
             max_agents: None,
             disk_room,
+            projects: Vec::new(),
         }
     }
 
@@ -1128,6 +1186,53 @@ mod tests {
         assert!(
             k.board.take_ops().is_empty(),
             "an unchanged measure isn't saved again"
+        );
+    }
+
+    /// A project measured at 4.1 GB an agent runs fewer than the machine fits at 2 GB, and its lead's line and its
+    /// queued agents say which figure it is; the others on the machine keep the machine's cap.
+    #[test]
+    fn a_project_measured_bigger_runs_fewer_and_says_why() {
+        let (rust, docs) = (on_machine("big", "rust"), on_machine("big", "docs"));
+        let mut k = Kit::on(None, vec![machine("big", 6, None)]);
+        let why = "memory 4.1 GB per agent, seen on this project";
+        let own = |cap: i64| {
+            vec![(
+                ProjectId::unchecked("rust"),
+                Auto {
+                    cap,
+                    why: why.to_owned(),
+                },
+            )]
+        };
+        assert!(!k.board.observe_projects(&mid("big"), own(2)));
+        assert_eq!(k.board.max_agents_of(&rust), 2);
+        assert_eq!(k.board.max_source(&rust), MaxSource::Auto(why.to_owned()));
+        assert_eq!(k.board.max_agents_of(&docs), 6);
+        k.acquire("T1", &rust, SlotPriority::Work);
+        k.acquire("T2", &rust, SlotPriority::Work);
+        assert_eq!(
+            k.acquire("T3", &rust, SlotPriority::Work),
+            queued(&format!("Max agents: 2 of 2 running ({why})"))
+        );
+        assert_eq!(k.acquire("T4", &docs, SlotPriority::Work), Grant::Granted);
+        // Measured lighter later: it takes more, so the queue moves.
+        assert!(k.board.observe_projects(&mid("big"), own(3)));
+        k.freed();
+        assert_eq!(k.grants, ["T3"]);
+        assert!(!k.board.observe_projects(&mid("big"), own(3)));
+        // No longer below the machine's cap: the machine's figure again.
+        assert!(k.board.observe_projects(&mid("big"), Vec::new()));
+        assert_eq!(
+            k.board.max_source(&rust),
+            MaxSource::Auto("memory 18 GB".to_owned())
+        );
+        // A person's setting for the project, or the machine, wins over the measure.
+        k.board.observe_projects(&mid("big"), own(2));
+        k.board.set_cap(None, Some((rust.clone(), 5)));
+        assert_eq!(
+            (k.board.max_agents_of(&rust), k.board.max_source(&rust)),
+            (5, MaxSource::Project)
         );
     }
 }
