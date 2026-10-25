@@ -569,6 +569,11 @@
           "type": "string"
         },
         {
+          "const": "agents.held",
+          "description": "A cap a person set holds queued agents back while the machines have room, or no longer does; `data` is\n`tasks::AgentsHeldData`. The hold is marked loud; its clear is not.",
+          "type": "string"
+        },
+        {
           "const": "workstream.done",
           "description": "The lead closed it. `data.workstreamId`, `data.reason` (why) and `data.by`.",
           "type": "string"

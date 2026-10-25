@@ -8,6 +8,8 @@ pub mod cap;
 mod cap_tests;
 #[cfg(test)]
 mod guard_tests;
+#[cfg(test)]
+mod held_tests;
 pub mod hooks;
 pub mod policy;
 pub mod ports;

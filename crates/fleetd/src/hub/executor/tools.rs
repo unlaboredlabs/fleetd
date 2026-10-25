@@ -7,8 +7,8 @@ use std::pin::Pin;
 use std::sync::{Arc, RwLock};
 
 use fleetd_contracts::auth::Role;
-use fleetd_contracts::events::HubEventType;
-use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
+use fleetd_contracts::events::{HubEvent, HubEventType};
+use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadRef};
 use fleetd_contracts::mcp::{
     ActionsListInput, ErrorCode, FleetdStatusInput, ProjectGetInput, TailKind, ThreadTailInput,
 };
@@ -56,13 +56,14 @@ impl ToolHooks {
     }
 }
 
-const ATTENTION_TYPES: [&str; 6] = [
+const ATTENTION_TYPES: [&str; 7] = [
     "thread.failed",
     "thread.waiting",
     "thread.usage_limited",
     "usage.breaker",
     "change.needs_rebase",
     "change.ci_failed",
+    "agents.held",
 ];
 /// How far back fleetd_status looks for attention events.
 const ATTENTION_LOOKBACK: i64 = 1000;
@@ -128,24 +129,41 @@ fn with_truncated(out: &mut Value, truncated: Option<bool>) {
     }
 }
 
-/// The latest attention events the caller may see, oldest first, scanned forward from a bounded lookback.
+/// Which cap an `agents.held` event is about: its scope, machine and project.
+fn held_scope(e: &HubEvent) -> (Option<&Value>, Option<&MachineId>, Option<&ProjectId>) {
+    let scope = e.data.as_ref().and_then(|d| d.get("scope"));
+    (scope, e.machine_id.as_ref(), e.project_id.as_ref())
+}
+
+/// The latest attention events the caller may see, oldest first, scanned forward from a bounded lookback. An
+/// `agents.held` item stands until its cap's next one: a clear, which is not listed, or a raise for a new value.
 fn attention(hub: &Hub, caller: &Caller, head: i64) -> Result<Vec<Value>, ToolError> {
     let types: Vec<HubEventType> = ATTENTION_TYPES
         .iter()
         .filter_map(|t| serde_json::from_value(json!(t)).ok())
         .collect();
     let mut cursor = (head - ATTENTION_LOOKBACK).max(0);
-    let mut latest: Vec<Value> = vec![];
+    let mut latest: Vec<HubEvent> = vec![];
     loop {
         let page = hub.events.page(cursor, Some(&types), None)?;
-        for e in page.events.iter().filter(|e| can_read(caller, e)) {
-            latest.push(serde_json::to_value(e).unwrap_or_default());
+        for e in page.events.into_iter().filter(|e| can_read(caller, e)) {
+            if e.r#type == HubEventType::AgentsHeld {
+                let scope = held_scope(&e);
+                latest.retain(|x| x.r#type != HubEventType::AgentsHeld || held_scope(x) != scope);
+                if e.attention.is_none() {
+                    continue;
+                }
+            }
+            latest.push(e);
         }
         if latest.len() > limits::ATTENTION {
             latest.drain(..latest.len() - limits::ATTENTION);
         }
         if !page.more || page.cursor <= cursor {
-            return Ok(latest);
+            return Ok(latest
+                .iter()
+                .map(|e| serde_json::to_value(e).unwrap_or_default())
+                .collect());
         }
         cursor = page.cursor;
     }

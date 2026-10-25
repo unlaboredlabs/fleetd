@@ -370,6 +370,15 @@ pub fn build_on(
     crate::hub::plan::calls::register_lead_calls(&hub);
     crate::hub::steer::wire(&hub);
     crate::hub::chat::tools::extend_status(&hub);
+    // A set cap's hold can outlast the board's changes: the sweep raises its nudge once it has lasted.
+    let slots = hub.slots.clone();
+    hub.sweep.register(crate::hub::sweep::SweepCheck {
+        name: "slots nudge".into(),
+        run: Arc::new(move || {
+            let checked = slots.check_nudges().map_err(|e| e.to_string());
+            Box::pin(async move { checked })
+        }),
+    });
     Ok(hub)
 }
 

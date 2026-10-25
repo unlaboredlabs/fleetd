@@ -243,6 +243,38 @@ pub struct AgentsCapData {
     pub paused: Option<List<TaskId, 0, 1000>>,
 }
 
+/// Where a cap a person set applies.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CapScope {
+    Fleet,
+    Machine,
+    Project,
+}
+
+/// `agents.held` data: a cap a person set holds queued agents back while its machines have room on their own
+/// measure (`held`, the attention item), or no longer does (the cap changed, or nothing waits behind it). The summary
+/// names the cap, the agents waiting, what the machines could run and how to raise it.
+#[serde_with::skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentsHeldData {
+    pub held: bool,
+    pub scope: CapScope,
+    /// For a machine's cap or a project's max agents.
+    pub machine_id: Option<MachineId>,
+    /// For a project's max agents.
+    pub project_ref: Option<ProjectRef>,
+    /// The cap the item was raised for.
+    pub cap: Count,
+    /// Agents waiting behind it; 0 once nothing does.
+    pub queued: Count,
+    /// New agents its machines could start now on their own measure; absent on a clear.
+    pub room: Option<Count>,
+    /// The command that raises it; absent on a clear.
+    pub fix: Option<String>,
+}
+
 /// Repo-relative.
 pub const POLICY_FILE_PATH: &str = ".fleetd/policy.yaml";
 

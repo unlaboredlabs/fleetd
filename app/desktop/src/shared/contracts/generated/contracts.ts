@@ -174,6 +174,28 @@ export type AgentsCapData = {
   to: number;
 };
 
+/**
+ * `agents.held` data: a cap a person set holds queued agents back while its machines have room on their own
+ * measure (`held`, the attention item), or no longer does (the cap changed, or nothing waits behind it). The summary
+ * names the cap, the agents waiting, what the machines could run and how to raise it.
+ */
+export type AgentsHeldData = {
+  /** The cap the item was raised for. */
+  cap: number;
+  /** The command that raises it; absent on a clear. */
+  fix?: string;
+  held: boolean;
+  /** For a machine's cap or a project's max agents. */
+  machineId?: MachineId;
+  /** For a project's max agents. */
+  projectRef?: ProjectRef;
+  /** Agents waiting behind it; 0 once nothing does. */
+  queued: number;
+  /** New agents its machines could start now on their own measure; absent on a clear. */
+  room?: number;
+  scope: CapScope;
+};
+
 export type AgentsListInput = {
   endedSince?: Timestamp;
   projectRef?: ProjectRef;
@@ -320,6 +342,9 @@ export type Brief = {
   pointers: string[];
   why: string;
 };
+
+/** Where a cap a person set applies. */
+export type CapScope = "fleet" | "machine" | "project";
 
 export type CapSetInput = {
   /**
@@ -1096,6 +1121,7 @@ export type KnownHubEventType =
   | "request.updated"
   | "task.queued"
   | "agents.cap"
+  | "agents.held"
   | "workstream.done"
   | "review.verdict"
   | "change.queued"
@@ -3661,6 +3687,7 @@ export interface ToolMap {
 /** `HubEvent.data` by event type, for the types whose data has a declared shape. */
 export interface HubEventDataMap {
   "agents.cap": AgentsCapData;
+  "agents.held": AgentsHeldData;
   "change.ci_failed": TrainEventData;
   "change.needs_rebase": TrainEventData;
   "change.queued": TrainEventData;

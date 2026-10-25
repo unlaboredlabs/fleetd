@@ -102,6 +102,10 @@ pub enum HubEventType {
     /// A project's max agents or the fleet cap changed; `data` is `tasks::AgentsCapData`, `summary` the chat's line.
     #[serde(rename = "agents.cap")]
     AgentsCap,
+    /// A cap a person set holds queued agents back while the machines have room, or no longer does; `data` is
+    /// `tasks::AgentsHeldData`. The hold is marked loud; its clear is not.
+    #[serde(rename = "agents.held")]
+    AgentsHeld,
     /// The lead closed it. `data.workstreamId`, `data.reason` (why) and `data.by`.
     #[serde(rename = "workstream.done")]
     WorkstreamDone,
@@ -237,6 +241,7 @@ impl HubEventType {
             Self::TaskFailed => "task.failed",
             Self::TaskCancelled => "task.cancelled",
             Self::AgentsCap => "agents.cap",
+            Self::AgentsHeld => "agents.held",
             Self::WorkstreamDone => "workstream.done",
             Self::ReviewVerdict => "review.verdict",
             Self::ChangeQueued => "change.queued",

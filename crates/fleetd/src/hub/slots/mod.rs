@@ -3,26 +3,30 @@
 //! thread is running, read from the executor's thread events, and from a grant until that thread first runs. A lead
 //! is not an agent and holds none.
 mod board;
+pub mod nudge;
 pub mod sizing;
 
 use std::sync::{Arc, Mutex};
 
-use fleetd_contracts::events::HubEventType;
+use fleetd_contracts::events::{Attention, HubEventType};
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadId, ThreadRef};
 use fleetd_contracts::model::ThreadStatus;
 use fleetd_contracts::node_link::NodeLoad;
-use fleetd_contracts::prim::{Int, List, Text};
+use fleetd_contracts::prim::{Count, Int, List, Text};
 use fleetd_contracts::tasks::{
-    MachineCapSource, SlotState, SlotStatePerMachine, SlotStatePerProject, TaskKind,
+    AgentsHeldData, MachineCapSource, SlotState, SlotStatePerMachine, SlotStatePerProject, TaskKind,
 };
 use rusqlite::{OptionalExtension, params};
 
 use board::{Board, BoardState, Claim, ClaimState, Machine, Op};
-pub use board::{Grant, MaxSource, SlotPriority};
+pub use board::{Grant, Hold, MaxSource, Scope, SlotPriority};
+use nudge::{Change, Nudge};
 
 use crate::clock::Clock;
 use crate::hub::api::Shutdown;
-use crate::hub::store::{EventLog, HubDb, HubStore, StoreError, WaitInput, now_ms};
+use crate::hub::store::{
+    EventLog, HubDb, HubStore, NewEvent, StoreError, WaitInput, iso_ms, now_ms,
+};
 
 const RUNNING: [HubEventType; 1] = [HubEventType::ThreadStarted];
 const STOPPED: [HubEventType; 5] = [
@@ -78,6 +82,9 @@ pub struct Slots {
     db: Arc<HubDb>,
     clock: Arc<dyn Clock>,
     board: Mutex<Board>,
+    /// Taken while the board's lock is held.
+    nudge: Mutex<Nudge>,
+    events: Arc<EventLog>,
     listeners: Mutex<Vec<ReleaseListener>>,
     /// The event log's head when the board was loaded; `run` follows from here.
     cursor: i64,
@@ -236,6 +243,101 @@ fn slot_state(s: BoardState) -> SlotState {
     }
 }
 
+/// The `agents.held` items a previous hub raised and never cleared: each scope's latest event, where it holds.
+fn raised(db: &HubDb) -> Result<Vec<(Scope, i64)>, StoreError> {
+    db.with(|db| {
+        let rows = db
+            .prepare(
+                "SELECT json_extract(data, '$.data.held'), json_extract(data, '$.data.scope'), machine_id,
+                   json_extract(data, '$.data.projectRef.projectId'), json_extract(data, '$.data.cap')
+                 FROM events WHERE seq IN (
+                   SELECT MAX(seq) FROM events WHERE type = 'agents.held'
+                   GROUP BY json_extract(data, '$.data.scope'), IFNULL(machine_id, ''),
+                     IFNULL(json_extract(data, '$.data.projectRef.projectId'), ''))",
+            )?
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, Option<bool>>(0)?,
+                    r.get::<_, Option<String>>(1)?,
+                    r.get::<_, Option<String>>(2)?,
+                    r.get::<_, Option<String>>(3)?,
+                    r.get::<_, Option<i64>>(4)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|(held, scope, m, p, cap)| {
+                let scope = match (scope?.as_str(), m, p) {
+                    ("fleet", _, _) => Scope::Fleet,
+                    ("machine", Some(m), _) => Scope::Machine(MachineId::unchecked(m)),
+                    ("project", Some(m), Some(p)) => Scope::Project(project_ref(m, p)),
+                    _ => return None,
+                };
+                (held? && cap.is_some()).then(|| (scope, cap.unwrap_or_default()))
+            })
+            .collect())
+    })
+}
+
+/// The `agents.held` event for a nudge raised or cleared: the raise is loud, the clear quiet.
+fn held_event(change: Change, at: &str) -> NewEvent {
+    let count = |n: i64| Count::unchecked(n.max(0));
+    let (scope, data, summary, attention) = match change {
+        Change::Raise(h) => {
+            let summary = nudge::held_line(&h);
+            let data = AgentsHeldData {
+                held: true,
+                scope: nudge::cap_scope(&h.scope),
+                machine_id: None,
+                project_ref: None,
+                cap: count(h.cap),
+                queued: count(h.queued),
+                room: Some(count(h.room)),
+                fix: Some(nudge::fix(&h.scope)),
+            };
+            (h.scope, data, summary, Some(Attention::Loud))
+        }
+        Change::Clear {
+            scope,
+            cap,
+            name,
+            why,
+        } => {
+            let summary = nudge::cleared_line(&scope, cap, &name, &why);
+            let data = AgentsHeldData {
+                held: false,
+                scope: nudge::cap_scope(&scope),
+                machine_id: None,
+                project_ref: None,
+                cap: count(cap),
+                queued: count(0),
+                room: None,
+                fix: None,
+            };
+            (scope, data, summary, None)
+        }
+    };
+    let data = AgentsHeldData {
+        machine_id: nudge::machine_of(&scope).cloned(),
+        project_ref: match &scope {
+            Scope::Project(r) => Some(r.clone()),
+            _ => None,
+        },
+        ..data
+    };
+    NewEvent {
+        at: at.into(),
+        r#type: HubEventType::AgentsHeld,
+        machine_id: data.machine_id.clone(),
+        project_id: data.project_ref.as_ref().map(|r| r.project_id.clone()),
+        thread_id: None,
+        summary,
+        data: serde_json::to_value(&data).ok(),
+        attention,
+    }
+}
+
 impl Slots {
     /// Loads the board and rebuilds held claims from each bound thread's stored status; `run` then follows thread
     /// events from the log's head as of now. The queue is re-evaluated when the first listener registers, so it
@@ -244,7 +346,7 @@ impl Slots {
         db: Arc<HubDb>,
         clock: Arc<dyn Clock>,
         store: &HubStore,
-        events: &EventLog,
+        events: &Arc<EventLog>,
     ) -> Result<Arc<Self>, StoreError> {
         let mut board = load(&db)?;
         board.tick(now_ms(clock.as_ref()));
@@ -272,10 +374,13 @@ impl Slots {
             board.restore(&holder, running);
         }
         persist(&db, board.take_ops())?;
+        let nudge = Nudge::new(raised(&db)?);
         Ok(Arc::new(Self {
             db,
             clock,
             board: Mutex::new(board),
+            nudge: Mutex::new(nudge),
+            events: events.clone(),
             listeners: Mutex::new(Vec::new()),
             cursor: head,
         }))
@@ -321,23 +426,33 @@ impl Slots {
     }
 
     /// Runs `body` on the board at the clock's time; when that or the time freed capacity, re-evaluates the queue,
-    /// persists, then runs the listeners.
+    /// persists, raises or clears the nudges, then runs the listeners.
     fn locked<R>(&self, body: impl FnOnce(&mut Board) -> (R, bool)) -> Result<R, StoreError> {
+        let now = now_ms(self.clock.as_ref());
         let (result, freed) = {
             let mut board = self.board();
-            let settled = board.tick(now_ms(self.clock.as_ref()));
+            let settled = board.tick(now);
             let (result, freed) = body(&mut board);
             let freed = freed || settled;
             if freed {
                 board.evaluate();
             }
             persist(&self.db, board.take_ops())?;
+            // Logged under the board's lock, so a raise and its clear reach the log in the order they happened.
+            for change in self.nudge.lock().unwrap().update(&board, now) {
+                self.events.append(held_event(change, &iso_ms(now)))?;
+            }
             (result, freed)
         };
         if freed {
             self.notify();
         }
         Ok(result)
+    }
+
+    /// The sweep's check: raises a nudge whose hold has lasted long enough with nothing else changing.
+    pub fn check_nudges(&self) -> Result<(), StoreError> {
+        self.locked(|_| ((), false))
     }
 
     fn notify(&self) {
@@ -501,6 +616,71 @@ mod tests {
     use super::*;
     use crate::hub::store::test_clock::ManualClock;
 
+    /// A nudge is logged before the board's lock is let go: a change behind it can't log its clear first. The test
+    /// holds the database so the raise's append waits, and the board must still be locked meanwhile.
+    #[test]
+    fn a_nudge_is_logged_while_the_board_is_still_locked() {
+        let db = HubDb::open_memory().unwrap();
+        let store = HubStore::new(db.clone());
+        let clock = ManualClock::at(1_792_000_000_000);
+        let events = Arc::new(EventLog::new(db.clone(), clock.clone()).unwrap());
+        let slots = Slots::new(db.clone(), clock.clone(), &store, &events).unwrap();
+        let m = MachineId::unchecked("lab-a");
+        let mut load = crate::hub::link::guard::tests::load(500, 1.0);
+        load.mem_total_bytes = Some(Count::unchecked(128 << 30));
+        slots.observe_machine(&m, "builder-1", &load).unwrap();
+        let r = ProjectRef {
+            machine_id: m,
+            project_id: ProjectId::unchecked("p1"),
+        };
+        slots
+            .set_cap(CapInput {
+                max_agents: Some((r.clone(), Some(1))),
+                ..CapInput::default()
+            })
+            .unwrap();
+        for holder in ["T1", "T2"] {
+            slots
+                .acquire(SlotRequest {
+                    holder,
+                    project_ref: &r,
+                    priority: SlotPriority::Work,
+                })
+                .unwrap();
+        }
+        slots.check_nudges().unwrap();
+        clock.advance(std::time::Duration::from_millis(nudge::HOLD_MS as u64));
+
+        let (held, release) = (Barrier::new(2), Barrier::new(2));
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                db.with(|_| {
+                    held.wait();
+                    release.wait();
+                    Ok(())
+                })
+                .unwrap();
+            });
+            held.wait();
+            let raise = s.spawn(|| slots.check_nudges().unwrap());
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            let locked = slots.board.try_lock().is_err();
+            release.wait();
+            raise.join().unwrap();
+            assert!(locked, "the board was let go before the raise was logged");
+        });
+        let n: i64 = db
+            .with(|c| {
+                Ok(c.query_row(
+                    "SELECT COUNT(*) FROM events WHERE type = 'agents.held'",
+                    [],
+                    |r| r.get(0),
+                )?)
+            })
+            .unwrap();
+        assert_eq!(n, 1);
+    }
+
     /// A hub from when leads held slots: their claims go, a task's stays.
     #[test]
     fn stored_lead_claims_go_on_an_older_hub() {
@@ -537,7 +717,7 @@ mod tests {
         let db = HubDb::open_memory().unwrap();
         let store = HubStore::new(db.clone());
         let clock = ManualClock::at(1_792_000_000_000);
-        let events = EventLog::new(db.clone(), clock.clone()).unwrap();
+        let events = Arc::new(EventLog::new(db.clone(), clock.clone()).unwrap());
         let slots = Slots::new(db.clone(), clock.clone(), &store, &events).unwrap();
         let load = crate::hub::link::guard::tests::load(500, 1.0);
         for m in ["lab-a", "old"] {
@@ -560,7 +740,7 @@ mod tests {
         let db = HubDb::open_memory().unwrap();
         let store = HubStore::new(db.clone());
         let clock = ManualClock::at(1_792_000_000_000);
-        let events = EventLog::new(db.clone(), clock.clone()).unwrap();
+        let events = Arc::new(EventLog::new(db.clone(), clock.clone()).unwrap());
         let slots = Slots::new(db, clock, &store, &events).unwrap();
         let r = ProjectRef {
             machine_id: MachineId::unchecked("lab-a"),

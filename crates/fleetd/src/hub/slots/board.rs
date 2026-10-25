@@ -168,6 +168,27 @@ pub enum MaxSource {
     Auto(String),
 }
 
+/// Where a cap a person set applies.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Scope {
+    Fleet,
+    Machine(MachineId),
+    Project(ProjectRef),
+}
+
+/// A cap a person set holding queued agents back while the machines behind it have room on their own measure.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Hold {
+    pub scope: Scope,
+    pub cap: i64,
+    /// Agents waiting behind it.
+    pub queued: i64,
+    /// New agents its machines could start now on their own measure.
+    pub room: i64,
+    /// The machine's name, for the line people read; for the fleet, the first machine's.
+    pub name: String,
+}
+
 /// The narrowest limit a queued claim waits behind; its place in line is counted among the claims it shares it with.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Limit {
@@ -242,6 +263,12 @@ impl Board {
 
     fn machine(&self, m: &MachineId) -> Option<&Machine> {
         self.machines.iter().find(|x| x.machine_id == *m)
+    }
+
+    /// The machine's name, for the lines people read; its id until its node reports.
+    pub fn name_of(&self, m: &MachineId) -> String {
+        self.machine(m)
+            .map_or_else(|| m.to_string(), |x| x.name.clone())
     }
 
     /// The machine's cap: a person's setting, else what it fits; [`sizing::UNMEASURED`] until its node reports.
@@ -405,6 +432,95 @@ impl Board {
             .min(disk)
             .min(self.max_agents_of(r) - running)
             .max(0)
+    }
+
+    /// New agents the machine could start now on its own measure, whatever a person set: what it fits less what
+    /// runs there, within its disk room. 0 until its node reports.
+    fn free(&self, m: &MachineId) -> i64 {
+        let Some(machine) = self.machine(m) else {
+            return 0;
+        };
+        let on_machine = self
+            .claims
+            .iter()
+            .filter(|c| c.state == ClaimState::Held && c.project_ref.machine_id == *m)
+            .count() as i64;
+        let disk = self.disk_room(m).unwrap_or(i64::MAX);
+        (machine.auto.cap - on_machine).min(disk).max(0)
+    }
+
+    /// The caps a person set that hold queued agents back while their machines have room on their own measure:
+    /// for each project with agents queued, the first set cap it is at in the order the board grants (the fleet's,
+    /// its machine's, its max agents), once its machine has room. Fleet holds add up their machines' room.
+    pub fn holds(&self) -> Vec<Hold> {
+        let mut holds: Vec<Hold> = Vec::new();
+        let mut fleet_machines: Vec<&MachineId> = Vec::new();
+        for c in self.claims.iter().filter(|c| c.state == ClaimState::Queued) {
+            let r = &c.project_ref;
+            let free = self.free(&r.machine_id);
+            if free == 0 {
+                continue;
+            }
+            let (used, on_machine, running) = self.held(r);
+            let project = self
+                .max_agents
+                .iter()
+                .find(|(s, _)| same(s, r))
+                .map(|(_, n)| *n);
+            let machine = self.machine(&r.machine_id).and_then(|m| m.max_agents);
+            // In `blocker`'s order: the cap named is the one whose raise would start them.
+            let (scope, cap) = if let Some(cap) = self.cap.filter(|cap| used >= *cap) {
+                if !fleet_machines.contains(&&r.machine_id) {
+                    fleet_machines.push(&r.machine_id);
+                }
+                (Scope::Fleet, cap)
+            } else if let Some(cap) = machine.filter(|cap| on_machine >= *cap) {
+                (Scope::Machine(r.machine_id.clone()), cap)
+            } else if let Some(max) = project.filter(|max| running >= *max) {
+                (Scope::Project(r.clone()), max)
+            } else {
+                continue;
+            };
+            match holds.iter_mut().find(|h| h.scope == scope) {
+                Some(h) => h.queued += 1,
+                None => holds.push(Hold {
+                    room: free,
+                    name: self.name_of(&r.machine_id),
+                    scope,
+                    cap,
+                    queued: 1,
+                }),
+            }
+        }
+        if let Some(h) = holds.iter_mut().find(|h| h.scope == Scope::Fleet) {
+            h.room = fleet_machines.iter().map(|m| self.free(m)).sum();
+        }
+        holds
+    }
+
+    /// The cap a person set at the scope now; None: none is set there.
+    pub fn set_cap_at(&self, scope: &Scope) -> Option<i64> {
+        match scope {
+            Scope::Fleet => self.cap,
+            Scope::Machine(m) => self.machine(m).and_then(|x| x.max_agents),
+            Scope::Project(r) => self
+                .max_agents
+                .iter()
+                .find(|(s, _)| same(s, r))
+                .map(|(_, n)| *n),
+        }
+    }
+
+    /// Agents queued within the scope: the project's, the machine's, or every one.
+    pub fn queued_at(&self, scope: &Scope) -> i64 {
+        let queued = self.claims.iter().filter(|c| c.state == ClaimState::Queued);
+        queued
+            .filter(|c| match scope {
+                Scope::Fleet => true,
+                Scope::Machine(m) => c.project_ref.machine_id == *m,
+                Scope::Project(r) => same(&c.project_ref, r),
+            })
+            .count() as i64
     }
 
     /// The queued holder's place in line, from 1: among its project's queued agents when its max agents holds it

@@ -45,6 +45,54 @@
       ],
       "type": "object"
     },
+    "AgentsHeldData": {
+      "description": "`agents.held` data: a cap a person set holds queued agents back while its machines have room on their own\nmeasure (`held`, the attention item), or no longer does (the cap changed, or nothing waits behind it). The summary\nnames the cap, the agents waiting, what the machines could run and how to raise it.",
+      "properties": {
+        "cap": {
+          "description": "The cap the item was raised for.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "fix": {
+          "description": "The command that raises it; absent on a clear.",
+          "type": "string"
+        },
+        "held": {
+          "type": "boolean"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId",
+          "description": "For a machine's cap or a project's max agents."
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "For a project's max agents."
+        },
+        "queued": {
+          "description": "Agents waiting behind it; 0 once nothing does.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "room": {
+          "description": "New agents its machines could start now on their own measure; absent on a clear.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "scope": {
+          "$ref": "#/$defs/CapScope"
+        }
+      },
+      "required": [
+        "held",
+        "scope",
+        "cap",
+        "queued"
+      ],
+      "type": "object"
+    },
     "AttachmentId": {
       "pattern": "^F[1-9][0-9]*$",
       "type": "string"
@@ -88,6 +136,15 @@
         "bytes"
       ],
       "type": "object"
+    },
+    "CapScope": {
+      "description": "Where a cap a person set applies.",
+      "enum": [
+        "fleet",
+        "machine",
+        "project"
+      ],
+      "type": "string"
     },
     "ChangeId": {
       "pattern": "^X[1-9][0-9]*$",
@@ -729,6 +786,9 @@
         "agents.cap": {
           "$ref": "#/$defs/AgentsCapData"
         },
+        "agents.held": {
+          "$ref": "#/$defs/AgentsHeldData"
+        },
         "change.ci_failed": {
           "$ref": "#/$defs/TrainEventData"
         },
@@ -870,6 +930,7 @@
       },
       "required": [
         "agents.cap",
+        "agents.held",
         "change.ci_failed",
         "change.needs_rebase",
         "change.queued",

@@ -137,6 +137,11 @@ When the cap is reached:
 - Reviewers count toward the cap, but a review that gates a merge goes first, so a low cap never stalls
   the merge train.
 
+When a cap you set (a project's max agents, a machine's or the fleet's) keeps agents queued for 10 minutes while their
+machine has room for more, fleetd raises one item that needs you, for example: "Max agents 1 on devbox/storefront is
+holding 3 agents back; devbox has room for 9 more. Raise it: fleetd project set devbox/storefront --max-agents auto".
+It shows once per value of the cap, and clears itself once you change the cap or nothing waits behind it.
+
 Changing it while work runs:
 
 | You | What happens | The line in the chat |
