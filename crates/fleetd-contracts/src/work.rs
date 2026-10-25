@@ -221,6 +221,23 @@ pub struct WorkMatch {
     pub item: WorkItem,
 }
 
+brand!(
+    /// A commit's sha or its first 7 or more characters, lowercase hex: "abc1234".
+    ShaPrefix, name = "ShaPrefix", pattern = r"^[0-9a-f]{7,64}$"
+);
+
+/// How a commit reached a base branch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LandingRoute {
+    /// Merged by fleetd's merge train.
+    Train,
+    /// A PR or merge request merged outside the train.
+    PrOutside,
+    /// Pushed straight to the base.
+    DirectPush,
+}
+
 /// `HubEvent.data` on `work.claimed` and `work.ended`.
 #[serde_with::skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -274,6 +291,16 @@ mod tests {
             RepoKey::new("github.com/Acme/shop").is_err(),
             "lowercase only"
         );
+    }
+
+    #[test]
+    fn a_sha_prefix_is_7_to_64_lowercase_hex() {
+        for sha in ["abc1234", "0123456789abcdef0123456789abcdef01234567"] {
+            assert!(ShaPrefix::new(sha).is_ok(), "{sha}");
+        }
+        for sha in ["abc123", "ABC1234", "abc123g", ""] {
+            assert!(ShaPrefix::new(sha).is_err(), "{sha}");
+        }
     }
 
     #[test]

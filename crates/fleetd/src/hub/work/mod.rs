@@ -7,6 +7,7 @@
 //! as weak, for `EXPIRED_SHOWN_MS`.
 pub mod bind;
 pub mod check;
+pub mod elsewhere;
 pub mod matcher;
 pub mod store;
 pub mod tools;
@@ -14,6 +15,8 @@ pub mod view;
 
 pub use bind::bind_from_root;
 
+#[cfg(test)]
+mod elsewhere_tests;
 #[cfg(test)]
 mod matcher_tests;
 #[cfg(test)]
@@ -24,7 +27,7 @@ mod tools_tests;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use fleetd_contracts::events::HubEventType;
@@ -107,6 +110,7 @@ pub struct Work {
     events: Arc<EventLog>,
     clock: Arc<dyn Clock>,
     ports: Arc<dyn WorkPorts>,
+    landings: OnceLock<Arc<dyn elsewhere::Landings>>,
 }
 
 impl Work {
@@ -121,7 +125,45 @@ impl Work {
             events,
             clock,
             ports,
+            landings: OnceLock::new(),
         })
+    }
+
+    /// Where landings are read from; set once, by the landing scanner. Until then there are none.
+    pub fn set_landings(&self, landings: Arc<dyn elsewhere::Landings>) {
+        let _ = self.landings.set(landings);
+    }
+
+    /// The scope's one landing whose sha starts with `sha`.
+    pub fn landing(
+        &self,
+        scope: &WorkScope,
+        sha: &str,
+    ) -> Result<Option<elsewhere::Landed>, StoreError> {
+        match self.landings.get() {
+            Some(landings) => landings.find(scope, sha),
+            None => Ok(None),
+        }
+    }
+
+    /// The lead digest's Elsewhere lines for the project; `None` when its repo and base aren't known. Read from the
+    /// hub alone: the lines show no paths, so no node is asked what its writers changed.
+    pub fn elsewhere(&self, project: &ProjectRef) -> Result<Option<Vec<String>>, StoreError> {
+        let Some(scope) = self.scope_of(project)? else {
+            return Ok(None);
+        };
+        let landings = match self.landings.get() {
+            Some(landings) => landings.outside(
+                &scope,
+                self.now() - elsewhere::LANDINGS_SHOWN_MS,
+                elsewhere::LANDINGS_SHOWN,
+            )?,
+            None => Vec::new(),
+        };
+        let in_flight = view::items(&self.sources(&scope)?);
+        Ok(Some(elsewhere::lines(
+            project, &scope, &in_flight, &landings,
+        )))
     }
 
     fn now(&self) -> i64 {

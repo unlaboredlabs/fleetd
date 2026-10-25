@@ -347,6 +347,10 @@ impl LeadWakes {
             .train
             .get()
             .and_then(|t| t.lead_lines(r, since.as_ref()));
+        let elsewhere = match ctx.hooks.work.get() {
+            Some(work) => work.elsewhere(r).await,
+            None => None,
+        };
         let facts = self.workstream_facts(&workstreams);
         let at = now_iso(ctx);
         Ok(render_lead_digest(&DigestInput {
@@ -361,6 +365,7 @@ impl LeadWakes {
             agents,
             tasks,
             train,
+            elsewhere,
             facts: &facts,
         }))
     }

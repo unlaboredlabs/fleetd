@@ -1,5 +1,6 @@
-//! Plans: a project's milestones and items. Leads set a workstream's items with `plan`; only [`Plans::verify`]
-//! marks an item done, when a linked PR merged through the train.
+//! Plans: a project's milestones and items. Leads set a workstream's items with `plan`; only the hub marks an item
+//! done: [`Plans::verify`] when a linked PR merged through the train, and [`Plans::cover`] when a lead names a commit
+//! the hub saw land that already did it.
 pub mod calls;
 pub mod store;
 pub mod tools;
@@ -12,8 +13,8 @@ use fleetd_contracts::ids::{ProjectRef, Timestamp};
 use fleetd_contracts::ledger::{WorkstreamId, WorkstreamState};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::plan::{
-    Milestone, MilestoneId, MilestoneState, MilestoneView, PlanChange, PlanChangeKind, PlanItem,
-    PlanItemId, PlanItemSpec, PlanItemState, PlanView, Weight,
+    Milestone, MilestoneId, MilestoneState, MilestoneView, PlanChange, PlanChangeKind,
+    PlanCoveredBy, PlanItem, PlanItemId, PlanItemSpec, PlanItemState, PlanView, Weight,
 };
 use fleetd_contracts::prim::{AnyInt, Count, Int, Line, List, UniqueList};
 use fleetd_contracts::status::{Marker, Progress};
@@ -249,6 +250,7 @@ pub fn item_contract(i: &ItemRow) -> PlanItem {
             .evidence
             .as_deref()
             .map(|e| Line::unchecked(clip(e, 200))),
+        covered_by: i.data.covered_by.clone(),
         drop_reason: i
             .data
             .drop_reason
@@ -413,117 +415,157 @@ impl Plans {
         specs: &[PlanItemSpec],
         why: Option<&str>,
     ) -> Result<Vec<PlanChange>, PlanError> {
+        self.apply(r, by, Some((ws, specs)), why, &[])
+    }
+
+    /// One `plan` call in one transaction: `covers` first (`cover`), then `items` (`set`), so an item covered and
+    /// left out of the items stays done, and a refusal of either writes nothing.
+    pub fn apply(
+        &self,
+        r: &ProjectRef,
+        by: &str,
+        items: Option<(&WorkstreamId, &[PlanItemSpec])>,
+        why: Option<&str>,
+        covers: &[(PlanItemId, PlanCoveredBy, String)],
+    ) -> Result<Vec<PlanChange>, PlanError> {
         let now = self.now();
         let pk = pkey(r);
         let mut pending = Pending::default();
         let result = self.tx(|c| {
-            let order = Self::own_order(c, &pk, ws)?;
-            let mut milestones: HashMap<String, i64> = store::milestones_of(c, &pk)?
-                .into_iter()
-                .map(|m| (m.title, m.n))
-                .collect();
-            let mut before: HashMap<i64, Figure> = HashMap::new();
-            let mut touch = |c: &Connection, m: i64| -> rusqlite::Result<()> {
-                if let std::collections::hash_map::Entry::Vacant(e) = before.entry(m) {
-                    e.insert(figure_of(&store::items_of_milestone(c, m)?));
-                }
-                Ok(())
-            };
-            let mut listed = HashSet::new();
-            for (position, spec) in specs.iter().enumerate() {
-                let title = spec.milestone.as_ref().map_or(order.title.as_str(), |t| t.as_str());
-                let milestone = match milestones.get(title) {
-                    Some(n) => *n,
-                    None => {
-                        let n = store::milestone_insert(c, &pk, title, None, now)?;
-                        milestones.insert(title.to_owned(), n);
-                        n
-                    }
-                };
-                let mut item = match &spec.id {
-                    Some(id) => {
-                        let item = Self::own_item(c, &pk, id)?;
-                        if let Some(own) = &item.workstream_id
-                            && own != ws.as_str()
-                        {
-                            return Err(forbidden(
-                                format!("{id} belongs to {own}, not {ws}."),
-                                format!("Plan it with workstreamId {own}, or leave out its id to add a new item."),
-                            ));
-                        }
-                        item
-                    }
-                    None => ItemRow {
-                        n: 0,
-                        pkey: pk.clone(),
-                        milestone,
-                        workstream_id: None,
-                        state: PlanItemState::Open,
-                        weight: spec.weight,
-                        size: spec.size,
-                        position: 0,
-                        started_ms: None,
-                        done_ms: None,
-                        data: ItemData {
-                            title: String::new(),
-                            links: Default::default(),
-                            after: vec![],
-                            evidence: None,
-                            drop_reason: None,
-                            created_ms: Some(now),
-                        },
-                    },
-                };
-                if !listed.insert(item.n) && item.n != 0 {
-                    return Err(invalid(
-                        format!("P{} is listed twice.", item.n),
-                        "List each item once.",
-                    ));
-                }
-                if item.state == PlanItemState::Done {
-                    continue;
-                }
-                touch(c, item.milestone)?;
-                touch(c, milestone)?;
-                let me = (item.n != 0).then_some(item.n);
-                item.data.after = Self::own_after(c, &pk, &spec.after, me)?;
-                item.data.title = spec.title.to_string();
-                item.data.drop_reason = None;
-                item.state = PlanItemState::Open;
-                item.workstream_id = Some(ws.to_string());
-                item.milestone = milestone;
-                item.weight = spec.weight;
-                item.size = spec.size;
-                item.position = position as i64;
-                if item.n == 0 {
-                    listed.insert(store::item_insert(c, &item)?);
-                } else {
-                    store::item_set(c, &item)?;
-                }
+            Self::cover_in(c, &pk, covers, now, &mut pending)?;
+            match items {
+                Some((ws, specs)) => Self::set_in(c, &pk, by, ws, specs, why, now, &mut pending),
+                None => Ok(Vec::new()),
             }
-            for mut item in store::items_of_workstream(c, ws.as_str())? {
-                if item.state != PlanItemState::Open || listed.contains(&item.n) {
-                    continue;
-                }
-                touch(c, item.milestone)?;
-                item.state = PlanItemState::Dropped;
-                item.data.drop_reason = Some(why.unwrap_or("left out of the plan").to_owned());
-                store::item_set(c, &item)?;
-            }
-            let mut changes = vec![];
-            let mut touched: Vec<(i64, Figure)> = before.into_iter().collect();
-            touched.sort_by_key(|(m, _)| *m);
-            for (milestone, before) in touched {
-                if let Some(row) = Self::scope_change(c, milestone, before, why, by, ws, now)? {
-                    changes.push(change_contract(&row));
-                    pending.changes.push(row);
-                }
-                Self::settle_milestone(c, milestone, now, &mut pending)?;
-            }
-            Ok(changes)
         })?;
         self.emit(pending);
         Ok(result)
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one plan call's parts, inside its transaction"
+    )]
+    fn set_in(
+        c: &Connection,
+        pk: &str,
+        by: &str,
+        ws: &WorkstreamId,
+        specs: &[PlanItemSpec],
+        why: Option<&str>,
+        now: i64,
+        pending: &mut Pending,
+    ) -> Result<Vec<PlanChange>, PlanError> {
+        let order = Self::own_order(c, pk, ws)?;
+        let mut milestones: HashMap<String, i64> = store::milestones_of(c, pk)?
+            .into_iter()
+            .map(|m| (m.title, m.n))
+            .collect();
+        let mut before: HashMap<i64, Figure> = HashMap::new();
+        let mut touch = |c: &Connection, m: i64| -> rusqlite::Result<()> {
+            if let std::collections::hash_map::Entry::Vacant(e) = before.entry(m) {
+                e.insert(figure_of(&store::items_of_milestone(c, m)?));
+            }
+            Ok(())
+        };
+        let mut listed = HashSet::new();
+        for (position, spec) in specs.iter().enumerate() {
+            let title = spec
+                .milestone
+                .as_ref()
+                .map_or(order.title.as_str(), |t| t.as_str());
+            let milestone = match milestones.get(title) {
+                Some(n) => *n,
+                None => {
+                    let n = store::milestone_insert(c, pk, title, None, now)?;
+                    milestones.insert(title.to_owned(), n);
+                    n
+                }
+            };
+            let mut item = match &spec.id {
+                Some(id) => {
+                    let item = Self::own_item(c, pk, id)?;
+                    if let Some(own) = &item.workstream_id
+                        && own != ws.as_str()
+                    {
+                        return Err(forbidden(
+                            format!("{id} belongs to {own}, not {ws}."),
+                            format!(
+                                "Plan it with workstreamId {own}, or leave out its id to add a new item."
+                            ),
+                        ));
+                    }
+                    item
+                }
+                None => ItemRow {
+                    n: 0,
+                    pkey: pk.to_owned(),
+                    milestone,
+                    workstream_id: None,
+                    state: PlanItemState::Open,
+                    weight: spec.weight,
+                    size: spec.size,
+                    position: 0,
+                    started_ms: None,
+                    done_ms: None,
+                    data: ItemData {
+                        title: String::new(),
+                        links: Default::default(),
+                        after: vec![],
+                        evidence: None,
+                        covered_by: None,
+                        drop_reason: None,
+                        created_ms: Some(now),
+                    },
+                },
+            };
+            if !listed.insert(item.n) && item.n != 0 {
+                return Err(invalid(
+                    format!("P{} is listed twice.", item.n),
+                    "List each item once.",
+                ));
+            }
+            if item.state == PlanItemState::Done {
+                continue;
+            }
+            touch(c, item.milestone)?;
+            touch(c, milestone)?;
+            let me = (item.n != 0).then_some(item.n);
+            item.data.after = Self::own_after(c, pk, &spec.after, me)?;
+            item.data.title = spec.title.to_string();
+            item.data.drop_reason = None;
+            item.state = PlanItemState::Open;
+            item.workstream_id = Some(ws.to_string());
+            item.milestone = milestone;
+            item.weight = spec.weight;
+            item.size = spec.size;
+            item.position = position as i64;
+            if item.n == 0 {
+                listed.insert(store::item_insert(c, &item)?);
+            } else {
+                store::item_set(c, &item)?;
+            }
+        }
+        for mut item in store::items_of_workstream(c, ws.as_str())? {
+            if item.state != PlanItemState::Open || listed.contains(&item.n) {
+                continue;
+            }
+            touch(c, item.milestone)?;
+            item.state = PlanItemState::Dropped;
+            item.data.drop_reason = Some(why.unwrap_or("left out of the plan").to_owned());
+            store::item_set(c, &item)?;
+        }
+        let mut changes = vec![];
+        let mut touched: Vec<(i64, Figure)> = before.into_iter().collect();
+        touched.sort_by_key(|(m, _)| *m);
+        for (milestone, before) in touched {
+            if let Some(row) = Self::scope_change(c, milestone, before, why, by, ws, now)? {
+                changes.push(change_contract(&row));
+                pending.changes.push(row);
+            }
+            Self::settle_milestone(c, milestone, now, pending)?;
+        }
+        Ok(changes)
     }
 
     /// The marker for a milestone whose total moved; none while it is first filled.
@@ -764,6 +806,50 @@ impl Plans {
             tracing::error!(error = %e, ws, "plan verify");
             false
         })
+    }
+
+    /// `plan covered`: each open item of the caller's project is done by the commit that landed, with the commit and
+    /// how it landed as its evidence and the route kept. All or none: an item that isn't open refuses the call.
+    pub fn cover(
+        &self,
+        r: &ProjectRef,
+        covers: &[(PlanItemId, PlanCoveredBy, String)],
+    ) -> Result<(), PlanError> {
+        self.apply(r, "", None, None, covers).map(|_| ())
+    }
+
+    fn cover_in(
+        c: &Connection,
+        pk: &str,
+        covers: &[(PlanItemId, PlanCoveredBy, String)],
+        now: i64,
+        pending: &mut Pending,
+    ) -> Result<(), PlanError> {
+        let mut touched = HashSet::new();
+        for (id, covered_by, evidence) in covers {
+            let mut item = Self::own_item(c, pk, id)?;
+            if item.state != PlanItemState::Open {
+                let state = match item.state {
+                    PlanItemState::Done => "already done",
+                    _ => "dropped",
+                };
+                return Err(invalid(
+                    format!("{id} is {state}."),
+                    "Cover only open items; call `plan` without items to see them.",
+                ));
+            }
+            item.state = PlanItemState::Done;
+            item.done_ms = Some(now);
+            item.data.evidence = Some(evidence.clone());
+            item.data.covered_by = Some(covered_by.clone());
+            store::item_set(c, &item)?;
+            touched.insert(item.milestone);
+            pending.verified.push((item, evidence.clone()));
+        }
+        for m in touched {
+            Self::settle_milestone(c, m, now, pending)?;
+        }
+        Ok(())
     }
 
     /// An order ended: at done, its open items with no links are dropped (they closed with it, not separately

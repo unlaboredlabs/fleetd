@@ -1339,6 +1339,9 @@ export type KindTotal = {
   n: number;
 };
 
+/** How a commit reached a base branch. */
+export type LandingRoute = "train" | "pr_outside" | "direct_push";
+
 export type LaneStatus =
   | "queued"
   | "starting"
@@ -1930,6 +1933,12 @@ export type PlanChangedData = {
   workstreamId?: WorkstreamId;
 };
 
+/** The commit that did an item's work without its own agent, and how it reached the base. */
+export type PlanCoveredBy = {
+  route: LandingRoute;
+  sha: CommitSha;
+};
+
 export type PlanGetInput = {
   projectRef?: ProjectRef;
   workstreamId?: WorkstreamId;
@@ -1952,6 +1961,8 @@ export type PlanGetOutput = {
 export type PlanItem = {
   /** Items that must be done before this one starts: serial gates. */
   after?: PlanItemId[];
+  /** Set when a lead marked it `covered` by a landing. */
+  coveredBy?: PlanCoveredBy;
   doneAt?: Timestamp;
   /** Why it was dropped. */
   dropReason?: string;
