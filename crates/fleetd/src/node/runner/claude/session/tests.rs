@@ -88,12 +88,36 @@ impl Fake {
             transcript: Some(dir.path().join("transcript.jsonl")),
         };
         let mut handle = spawn_retrying(&runner, spec);
-        // Init comes once the escaping child exists, so nothing below races its start.
+        // Init comes once the escaping child has written its pid.
         match handle.events.recv().await {
             Some(RunnerEvent::Init { model, .. }) => assert_eq!(model, "fake"),
             other => panic!("expected init, got {other:?}"),
         }
-        Self { dir, handle }
+        let fake = Self { dir, handle };
+        fake.until_the_tool_settles();
+        fake
+    }
+
+    /// Blocks until the tool runs its last image (FAKE_CLAUDE's `sleep`, or DETACHED_TOOL itself) with its marker
+    /// readable. Its pid is written from `sh` just before the `exec sleep`, and mid-exec `/proc/<pid>/environ` reads
+    /// empty, so a sweep then could not find it by its marker. Real time, not tokio's: some tests pause the clock.
+    fn until_the_tool_settles(&self) {
+        let tool = self.tool_pid();
+        let marker = format!("{}=", process::SESSION_MARKER).into_bytes();
+        let settled = || {
+            let comm = std::fs::read_to_string(format!("/proc/{tool}/comm")).unwrap_or_default();
+            let env = std::fs::read(format!("/proc/{tool}/environ")).unwrap_or_default();
+            ["sleep", "tool"].contains(&comm.trim())
+                && env.split(|b| *b == 0).any(|var| var.starts_with(&marker))
+        };
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        while !settled() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the tool {tool} never started"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
     }
 
     fn tool_pid(&self) -> i32 {
@@ -253,6 +277,19 @@ async fn shutdown_interrupts_the_run_then_escalates_to_sigkill_and_takes_escaped
         grace: Duration::from_secs(1),
     };
     fake.handle.commands.send(shutdown).await.unwrap();
+    // The clock is paused, so the grace periods pass as soon as the runtime idles, and under load the SIGKILL then
+    // comes before the fake claude (a real process) has read its stdin. Yielding keeps the runtime busy, so the clock
+    // stands still until both lines are logged.
+    let stdin_log = fake.dir.path().join("stdin.log");
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    while std::fs::read_to_string(&stdin_log).map_or(0, |s| s.matches('\n').count()) < 2 {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the fake claude never logged its stdin"
+        );
+        tokio::task::yield_now().await;
+        std::thread::sleep(Duration::from_millis(1));
+    }
 
     let (events, exit) = fake.until_exit().await;
     // SIGTERM is ignored by both, so only the SIGKILL step ends them.

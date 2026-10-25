@@ -136,11 +136,14 @@ mod tests {
     use tokio::io::AsyncBufReadExt;
 
     /// A stand-in for claude that starts a "tool" in its own process group (as claude's Bash tool does), prints the
-    /// tool's pid and waits.
+    /// tool's pid and waits. Returns once the tool runs `sleep` with its marker readable: `$!` is printed right after
+    /// the fork, and while the tool is still exec'ing `setsid` and `sleep`, `/proc/<pid>/environ` reads empty, so a
+    /// sweep then could not find it by its marker.
     async fn claude_with_tool(session: &str) -> (tokio::process::Child, u32) {
+        let marker = process::marker(session);
         let mut child = tokio::process::Command::new("sh")
             .args(["-c", "setsid sleep 30 & echo $!; wait"])
-            .env(process::SESSION_MARKER, process::marker(session))
+            .env(process::SESSION_MARKER, &marker)
             .stdout(std::process::Stdio::piped())
             .process_group(0)
             .kill_on_drop(true)
@@ -150,20 +153,47 @@ mod tests {
         process::track(child.id().unwrap() as i32);
         let mut lines = tokio::io::BufReader::new(child.stdout.take().unwrap()).lines();
         let tool: u32 = lines.next_line().await.unwrap().unwrap().parse().unwrap();
+        let var = format!("{}={marker}", process::SESSION_MARKER).into_bytes();
+        let settled = || {
+            let comm = std::fs::read_to_string(format!("/proc/{tool}/comm")).unwrap_or_default();
+            let env = std::fs::read(format!("/proc/{tool}/environ")).unwrap_or_default();
+            comm.trim() == "sleep" && env.split(|b| *b == 0).any(|v| v == var.as_slice())
+        };
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+        while !settled() {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "the tool never started"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
         (child, tool)
+    }
+
+    /// A session id no other test run on the machine uses: a sweep takes every process whose marker names the
+    /// session, so two runs of this suite at once (two worktrees) would otherwise kill each other's processes.
+    fn own_session(name: &str) -> String {
+        format!("{name}-{}", std::process::id())
     }
 
     #[tokio::test]
     async fn a_restart_kills_the_recorded_claude_and_its_tool_children_only() {
-        let (mut child, tool) = claude_with_tool("restart-a").await;
+        let session = own_session("restart-a");
+        let (mut child, tool) = claude_with_tool(&session).await;
         let pid = child.id().unwrap();
         let started = start_time(pid).unwrap();
         // A pid reused by another process (another start time) is left alone, and so are its descendants.
-        kill_recorded(pid, "not-its-start-time", "restart-other", Duration::ZERO).await;
+        kill_recorded(
+            pid,
+            "not-its-start-time",
+            &own_session("restart-other"),
+            Duration::ZERO,
+        )
+        .await;
         assert_eq!(start_time(pid).as_deref(), Some(started.as_str()));
         assert!(start_time(tool).is_some());
 
-        kill_recorded(pid, &started, "restart-a", Duration::from_secs(5)).await;
+        kill_recorded(pid, &started, &session, Duration::from_secs(5)).await;
         let status = child.wait().await.unwrap();
         assert_eq!(
             std::os::unix::process::ExitStatusExt::signal(&status),
@@ -175,13 +205,14 @@ mod tests {
 
     #[tokio::test]
     async fn a_restart_finds_tool_children_orphaned_by_a_claude_that_already_died() {
-        let (mut child, tool) = claude_with_tool("restart-b").await;
+        let session = own_session("restart-b");
+        let (mut child, tool) = claude_with_tool(&session).await;
         let pid = child.id().unwrap();
         let started = start_time(pid).unwrap();
         child.kill().await.unwrap();
         assert!(start_time(tool).is_some());
 
-        kill_recorded(pid, &started, "restart-b", Duration::from_secs(5)).await;
+        kill_recorded(pid, &started, &session, Duration::from_secs(5)).await;
         assert_eq!(start_time(tool), None);
     }
 
