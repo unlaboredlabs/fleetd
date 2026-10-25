@@ -49,14 +49,17 @@ pub struct LaunchRequest {
     pub profile: TaskProfile,
     pub title: String,
     pub client_request_id: String,
-    /// Write tasks: `{ type: "worktree", baseRef, branch }`.
+    /// Write tasks: `{ type: "worktree", baseRef, branch }`; read and review tasks: `{ type: "detached", baseRef, pr }`.
     pub worktree: Option<Worktree>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Worktree {
     pub base_ref: String,
-    pub branch: String,
+    /// None: a detached worktree, for a read or review task.
+    pub branch: Option<String>,
+    /// A review's PR, whose head its detached worktree is at.
+    pub pr: Option<String>,
 }
 
 /// What a finished task thread changed.
@@ -133,18 +136,20 @@ pub trait TaskPorts: Send + Sync {
     fn remove_worktree<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Result<(), PortError>>;
     /// NodeLinkServer.paused: why the disk and load guard holds new agents on the machine.
     fn paused(&self, machine_id: &MachineId) -> Option<String>;
+    /// NodeLinkServer.node_can(CAP_DETACHED): the machine's node runs read and review tasks in worktrees of their own.
+    fn detached_worktrees(&self, machine_id: &MachineId) -> bool;
     /// Executors.actions(ref, limit): each action's summary and output tail, newest first; empty when unreadable.
     fn action_texts<'a>(
         &'a self,
         thread: &'a ThreadRef,
         limit: usize,
     ) -> BoxFut<'a, Vec<(String, Option<String>)>>;
-    /// ThreadWorkspace.defaultBranch.
+    /// ThreadWorkspace.defaultBranch; `None` when `cwd` has no branch with a commit (not a checkout, or a new repo).
     fn default_branch<'a>(
         &'a self,
         machine_id: &'a MachineId,
         cwd: &'a str,
-    ) -> BoxFut<'a, Result<String, PortError>>;
+    ) -> BoxFut<'a, Result<Option<String>, PortError>>;
     /// ThreadWorkspace.changes; `None` when the node could not say.
     fn changes<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Option<ThreadChanges>>;
     /// ThreadWorkspace.pendingQuestion; `None` when there is none or the node could not say.

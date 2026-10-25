@@ -279,6 +279,7 @@ async fn run_link_once(
             .map(|s| fleetd_contracts::secrets::BoxPublicKey::unchecked(s.box_key.public_key())),
         capabilities: vec![
             fleetd_contracts::node_link::CAP_REPOS.to_owned(),
+            fleetd_contracts::node_link::CAP_DETACHED.to_owned(),
             fleetd_contracts::node_link::CAP_LANDED_LOG.to_owned(),
         ],
     }));

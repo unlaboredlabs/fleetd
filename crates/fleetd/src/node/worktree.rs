@@ -1,7 +1,8 @@
-//! Git worktrees for writer sessions, made with `git` directly: one per writer session, never shared, at
+//! Git worktrees for task sessions, made with `git` directly: one per session, never shared, at
 //! `<node home>/worktrees/<project>/<session>` on its own branch. A session's worktree path never changes once claude
 //! has a session file for it, because `claude --resume` finds sessions by cwd. A new branch starts from a fresh fetch
-//! of the remote's default branch, never from the human's local checkout.
+//! of the remote's default branch, never from the human's local checkout. A read or review session gets a detached
+//! worktree at the same place, at that base or at its PR's head, so it never works in the human's checkout either.
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -290,6 +291,170 @@ pub fn restore(root: &Path, path: &Path, branch: &str, from: &Source) -> Result<
     ensure(root, path, branch, &start)
 }
 
+/// Makes `path` a detached worktree of `root` at `start`, a commit, for a read or review session: reuses it when it
+/// already is one.
+pub fn ensure_detached(root: &Path, path: &Path, start: &str) -> Result<(), GitError> {
+    match worktree_branch(root, path)? {
+        Some(None) if path.exists() => return Ok(()),
+        // Its directory was deleted: only this one record goes, as in `restore`.
+        Some(None) => {
+            git(
+                root,
+                &["worktree", "remove", "--force", &path.to_string_lossy()],
+            )?;
+        }
+        Some(Some(on)) => {
+            return Err(GitError(format!(
+                "{} is already a worktree on {on}, not detached",
+                path.display()
+            )));
+        }
+        None => {}
+    }
+    if path.exists() {
+        return Err(GitError(format!(
+            "{} exists and is not a worktree of {}",
+            path.display(),
+            root.display()
+        )));
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| GitError(e.to_string()))?;
+    }
+    git(
+        root,
+        &[
+            "worktree",
+            "add",
+            "--detach",
+            &path.to_string_lossy(),
+            start,
+        ],
+    )?;
+    Ok(())
+}
+
+/// Removes a read or review session's detached worktree, build output and any stray edits included: it holds no work
+/// of its own.
+pub fn remove_detached(root: &Path, path: &Path) -> Result<(), GitError> {
+    if worktree_branch(root, path)?.is_some() {
+        git(
+            root,
+            &["worktree", "remove", "--force", &path.to_string_lossy()],
+        )?;
+    }
+    Ok(())
+}
+
+/// The PR keywords that end a repo's path in a PR URL.
+const PR_SEGMENTS: [&str; 4] = ["pull", "pulls", "merge_requests", "pull-requests"];
+
+/// A PR's number from its URL on any host: `…/pull/7` (GitHub, Gitea, Forgejo), `…/-/merge_requests/7` (GitLab),
+/// `…/pull-requests/7` (Bitbucket).
+fn pr_number(url: &str) -> Option<u64> {
+    let path = url.split(['?', '#']).next()?;
+    let segments: Vec<&str> = path.split('/').collect();
+    segments.windows(2).find_map(|w| {
+        PR_SEGMENTS
+            .contains(&w[0])
+            .then(|| w[1].parse().ok())
+            .flatten()
+    })
+}
+
+/// The repo a PR belongs to, as `host/owner/name` in lowercase: `https://github.com/o/r/pull/7` is `github.com/o/r`,
+/// `https://gitlab.com/g/sub/r/-/merge_requests/8` is `gitlab.com/g/sub/r`.
+fn pr_repo(url: &str) -> Option<String> {
+    let (_, rest) = url.split_once("://")?;
+    let mut segments: Vec<&str> = rest.split(['?', '#']).next()?.split('/').collect();
+    let at = segments.iter().position(|s| PR_SEGMENTS.contains(s))?;
+    segments.truncate(at);
+    if segments.last() == Some(&"-") {
+        segments.pop();
+    }
+    repo_key(&segments.join("/"))
+}
+
+/// A remote's repo as `host/owner/name` in lowercase, from any of git's URL forms: `https://host/o/r.git`,
+/// `ssh://git@host:22/o/r`, `git@host:o/r.git`. `None` for a local path.
+fn remote_repo(url: &str) -> Option<String> {
+    let rest = match url.split_once("://") {
+        Some((_, rest)) => rest.to_owned(),
+        // scp-like `[user@]host:path`, which has a colon before any slash.
+        None => {
+            let (host, path) = url.split_once(':')?;
+            if host.contains('/') {
+                return None;
+            }
+            format!("{host}/{path}")
+        }
+    };
+    repo_key(&rest)
+}
+
+/// `[user@]host[:port]/path[.git][/]` as `host/path`, lowercased; `None` without both.
+fn repo_key(rest: &str) -> Option<String> {
+    let (host, path) = rest.split_once('/')?;
+    let host = host.rsplit('@').next()?.split(':').next()?;
+    let path = path.trim_matches('/');
+    let path = path.strip_suffix(".git").unwrap_or(path);
+    (!host.is_empty() && !path.is_empty()).then(|| format!("{host}/{path}").to_lowercase())
+}
+
+/// The remote whose URL is `repo`'s: `origin` first, then `upstream` (a fork's PRs are often upstream's), then any
+/// other. `None` when none is, rather than a guess.
+fn pr_remote(root: &Path, repo: &str) -> Option<String> {
+    let remotes = git(root, &["remote"]).ok()?;
+    let mut remotes: Vec<&str> = remotes.lines().filter(|r| !r.is_empty()).collect();
+    remotes.sort_by_key(|r| match *r {
+        "origin" => 0,
+        "upstream" => 1,
+        _ => 2,
+    });
+    remotes.into_iter().find_map(|remote| {
+        // As configured: `url.<base>.insteadOf` rewrites only where git connects.
+        let url = git(root, &["config", "--get", &format!("remote.{remote}.url")]).ok()?;
+        (remote_repo(url.trim()).as_deref() == Some(repo)).then(|| remote.to_owned())
+    })
+}
+
+/// The head commit of the PR at `url`, fetched from the remote the PR belongs to (its URL is the PR's repo), from
+/// whichever of GitHub's, GitLab's or Bitbucket's PR refs it publishes, into the object store alone: no ref, no
+/// FETCH_HEAD, nothing of the human's moves. An error when no remote is the PR's repo.
+pub fn pr_head(root: &Path, url: &str) -> Result<String, String> {
+    let n = pr_number(url).ok_or_else(|| format!("no PR number in {url}"))?;
+    let repo = pr_repo(url).ok_or_else(|| format!("no repo in {url}"))?;
+    let remote = pr_remote(root, &repo).ok_or_else(|| format!("no remote is {repo}"))?;
+    let refs = [
+        format!("refs/pull/{n}/head"),
+        format!("refs/merge-requests/{n}/head"),
+        format!("refs/pull-requests/{n}/from"),
+    ];
+    let mut args = vec!["ls-remote", remote.as_str()];
+    args.extend(refs.iter().map(String::as_str));
+    let listed = git_remote(root, &args, LS_REMOTE_TIMEOUT).map_err(|e| e.0)?;
+    let (sha, name) = listed
+        .lines()
+        .find_map(|l| l.split_once('\t'))
+        .ok_or_else(|| format!("{remote} publishes no ref for PR {n}"))?;
+    let (sha, name) = (sha.trim().to_owned(), name.trim().to_owned());
+    if ref_sha(root, &sha).is_none() {
+        git_remote(
+            root,
+            &[
+                "fetch",
+                "--no-tags",
+                "--no-write-fetch-head",
+                &remote,
+                &name,
+            ],
+            FETCH_TIMEOUT,
+        )
+        .map_err(|e| e.0)?;
+    }
+    ref_sha(root, &sha).ok_or_else(|| format!("{name} fetched without its commit {sha}"))
+}
+
 /// Removes the worktree, build output included, and deletes its branch only when `base_ref` already contains it, so
 /// unmerged work stays reachable. Refuses, keeping it, while it holds work that exists nowhere else: uncommitted
 /// changes (gitignored files don't count) or commits on neither a remote branch nor `base_ref`. Returns whether the
@@ -495,6 +660,11 @@ fn asked_head(root: &Path, remote: &str) -> Option<Option<String>> {
             None
         }
     }
+}
+
+/// Whether the repo at `root` has any commit, on any branch or remote-tracking ref: a new repo has none.
+pub fn has_commit(root: &Path) -> bool {
+    git(root, &["rev-list", "-n", "1", "--all"]).is_ok_and(|out| !out.trim().is_empty())
 }
 
 /// The branch checked out at `root`.
@@ -1840,6 +2010,59 @@ pub(crate) mod tests {
         assert!(e.0.ends_with("timed out after 1 s"), "{e}");
         assert!(started.elapsed() < Duration::from_secs(10), "{e}");
         assert_eq!(FetchError::of(&e), FetchError::Offline);
+    }
+
+    #[test]
+    fn a_pr_number_is_read_from_any_hosts_url() {
+        for (url, n) in [
+            ("https://github.com/o/r/pull/7", Some(7)),
+            ("https://github.com/o/r/pull/7/files#diff", Some(7)),
+            ("https://gitea.example.com/o/r/pulls/12", Some(12)),
+            (
+                "https://gitlab.com/g/sub/r/-/merge_requests/8/diffs",
+                Some(8),
+            ),
+            (
+                "https://bitbucket.org/o/r/pull-requests/3?tab=diff",
+                Some(3),
+            ),
+            ("https://git.example.com/o/r/commit/abc", None),
+        ] {
+            assert_eq!(pr_number(url), n, "{url}");
+        }
+    }
+
+    #[test]
+    fn a_prs_repo_and_a_remotes_are_read_from_any_hosts_urls() {
+        for (url, repo) in [
+            (
+                "https://github.com/O/R/pull/7/files",
+                Some("github.com/o/r"),
+            ),
+            (
+                "https://gitlab.com/g/sub/r/-/merge_requests/8",
+                Some("gitlab.com/g/sub/r"),
+            ),
+            (
+                "https://bitbucket.org/o/r/pull-requests/3",
+                Some("bitbucket.org/o/r"),
+            ),
+            ("https://github.com/o/r/commit/abc", None),
+        ] {
+            assert_eq!(pr_repo(url).as_deref(), repo, "{url}");
+        }
+        for (url, repo) in [
+            ("https://github.com/o/r.git", Some("github.com/o/r")),
+            ("https://user@github.com/o/r/", Some("github.com/o/r")),
+            ("git@github.com:o/r.git", Some("github.com/o/r")),
+            (
+                "ssh://git@gitlab.com:2222/g/sub/r.git",
+                Some("gitlab.com/g/sub/r"),
+            ),
+            ("/srv/git/r.git", None),
+        ] {
+            assert_eq!(remote_repo(url).as_deref(), repo, "{url}");
+        }
     }
 
     #[test]

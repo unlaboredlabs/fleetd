@@ -503,6 +503,11 @@ struct Inner {
     /// One spawn at a time, so two sends never start two processes for a session.
     spawning: tokio::sync::Mutex<()>,
     launching: tokio::sync::Mutex<()>,
+    /// Per session: a send holds it while it records its run and hands it to the process, and `stop{removeWorktree}`
+    /// while it stops the process and removes the worktree. So a message either lands first, and the removal leaves
+    /// the session at work, or waits for the removal and then brings the worktree back; it never resumes in a
+    /// directory being deleted.
+    workspaces: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     health: Mutex<Health>,
     /// One probe at a time; a caller that waited answers from the probe it waited for.
     probing: tokio::sync::Mutex<()>,
@@ -642,6 +647,7 @@ impl SessionService {
                 state: Mutex::new(State::default()),
                 spawning: tokio::sync::Mutex::new(()),
                 launching: tokio::sync::Mutex::new(()),
+                workspaces: Mutex::default(),
                 health: Mutex::new(Health::default()),
                 probing: tokio::sync::Mutex::new(()),
                 health_changed: Arc::new(tokio::sync::Notify::new()),
@@ -881,7 +887,13 @@ impl SessionService {
             }
             SessionCall::DefaultBranch { project_id } => {
                 let root = self.project_root(&project_id)?;
-                let branch = blocking(move || worktree::default_branch(&root)).await;
+                // A new repo with no commit yet has nothing to start a worktree from: none, as for no checkout.
+                let branch = blocking(move || {
+                    worktree::has_commit(&root)
+                        .then(|| worktree::default_branch(&root))
+                        .flatten()
+                })
+                .await;
                 Ok(SessionOutput::DefaultBranch { branch })
             }
             SessionCall::Changes { session_id } => {
@@ -1183,7 +1195,8 @@ impl SessionService {
         // arrive together share it.
         let base = match &launch.workspace {
             SessionWorkspace::Root => None,
-            SessionWorkspace::Worktree { base_ref, .. } => {
+            SessionWorkspace::Worktree { base_ref, .. }
+            | SessionWorkspace::Detached { base_ref, .. } => {
                 let (r, name) = (root.clone(), base_ref.to_string());
                 let base = blocking(move || worktree::fresh_base(&r, &name)).await?;
                 if let Some(note) = &base.note {
@@ -1191,6 +1204,22 @@ impl SessionService {
                 }
                 Some(base)
             }
+        };
+        // A review reads its PR's head when the remote publishes it, else the base; its prompt has it check.
+        let head = match &launch.workspace {
+            SessionWorkspace::Detached { pr: Some(pr), .. } => {
+                let (r, url) = (root.clone(), pr.to_string());
+                blocking(move || worktree::pr_head(&r, &url))
+                    .await
+                    .inspect_err(|e| {
+                        tracing::warn!(
+                            session_id = id.as_str(),
+                            "worktree at the base, not {pr}'s head: {e}"
+                        );
+                    })
+                    .ok()
+            }
+            _ => None,
         };
         let _launching = self.inner.launching.lock().await;
         // A retry that arrived while this one fetched.
@@ -1207,15 +1236,21 @@ impl SessionService {
             error: b.error.clone(),
             fork_behind: b.fork_behind,
         });
+        let path = self
+            .inner
+            .config
+            .home
+            .join("worktrees")
+            .join(launch.project_id.as_str())
+            .join(&id);
         let (cwd, add_dirs, base_ref, branch) = match (&launch.workspace, base) {
+            (SessionWorkspace::Detached { .. }, Some(base)) => {
+                let sha = head.unwrap_or(base.sha);
+                let (r, p, s) = (root.clone(), path.clone(), sha.clone());
+                blocking(move || worktree::ensure_detached(&r, &p, &s)).await?;
+                (path, vec![root.clone()], Some(sha), None)
+            }
             (SessionWorkspace::Worktree { branch, .. }, Some(base)) => {
-                let path = self
-                    .inner
-                    .config
-                    .home
-                    .join("worktrees")
-                    .join(launch.project_id.as_str())
-                    .join(&id);
                 let (r, p, b, sha) = (
                     root.clone(),
                     path.clone(),
@@ -1308,6 +1343,8 @@ impl SessionService {
         mode: SendMode,
         steer: Option<SteerTag>,
     ) -> Result<bool, SessionError> {
+        let workspace = self.workspace_lock(id);
+        let _workspace = workspace.lock().await;
         let recorded = self.update(id, |c| {
             if let Some(run) = c.runs.iter().find(|r| r.id == *run_id) {
                 return Err(run.status == RunStatus::Queued);
@@ -1481,6 +1518,19 @@ impl SessionService {
             row.summary.recreated_at = Some(now());
             row.summary.worktree_path = Some(row.local.cwd.to_string_lossy().into_owned());
             row.summary.branch = row.local.branch.clone();
+            recreated = true;
+        }
+        // A reader's detached worktree, removed at its task's end, comes back at the same commit.
+        if let (Some(at), None) = (&row.local.base_ref, &row.local.branch)
+            && !row.local.cwd.exists()
+        {
+            let (r, p, a) = (
+                row.local.workspace_root.clone(),
+                row.local.cwd.clone(),
+                at.clone(),
+            );
+            blocking(move || worktree::ensure_detached(&r, &p, &a)).await?;
+            row.summary.worktree_path = Some(row.local.cwd.to_string_lossy().into_owned());
             recreated = true;
         }
         if !row.local.cwd.is_dir() {
@@ -2366,7 +2416,27 @@ impl SessionService {
         Ok(SessionOutput::Done)
     }
 
+    fn workspace_lock(&self, id: &str) -> Arc<tokio::sync::Mutex<()>> {
+        let mut locks = self.inner.workspaces.lock().unwrap();
+        locks.entry(id.to_owned()).or_default().clone()
+    }
+
     async fn stop(&self, id: &str, remove_worktree: bool) -> Reply {
+        let workspace = self.workspace_lock(id);
+        let _workspace = if remove_worktree {
+            let held = workspace.lock().await;
+            // A message reached the session first: it is at work again, so its process and worktree stay.
+            if self.store().runs(id)?.iter().any(|r| r.status.is_active()) {
+                tracing::info!(
+                    session_id = id,
+                    "worktree kept: the session is at work again"
+                );
+                return Ok(SessionOutput::Done);
+            }
+            Some(held)
+        } else {
+            None
+        };
         let row = self.session(id)?;
         let target = self.st().live.get_mut(id).map(|live| {
             live.ending = Some(EndCause::Requested("stopped".into()));
@@ -2406,13 +2476,14 @@ impl SessionService {
             let id = id.to_owned();
             blocking(move || share::remove_scratch(&home, &id)).await;
         }
-        if remove_worktree
-            && let (Some(base_ref), Some(branch)) = (row.local.base_ref, row.local.branch)
-        {
-            let (root, path) = (row.local.workspace_root, row.local.cwd);
-            let deleted = blocking(move || worktree::remove(&root, &path, &branch, &base_ref))
-                .await
-                .inspect_err(|e| tracing::warn!(session_id = id, "worktree not removed: {e:?}"))?;
+        if remove_worktree && let Some(base_ref) = row.local.base_ref {
+            let (root, path, branch) = (row.local.workspace_root, row.local.cwd, row.local.branch);
+            let deleted = blocking(move || match branch {
+                Some(branch) => worktree::remove(&root, &path, &branch, &base_ref),
+                None => worktree::remove_detached(&root, &path).map(|()| false),
+            })
+            .await
+            .inspect_err(|e| tracing::warn!(session_id = id, "worktree not removed: {e:?}"))?;
             self.update(id, |c| {
                 c.row.summary.worktree_path = None;
                 if deleted {

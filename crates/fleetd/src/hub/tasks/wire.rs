@@ -93,12 +93,22 @@ impl TaskPorts for HubTaskPorts {
             };
             let workspace = match request.worktree {
                 None => None,
-                Some(w) => Some(SessionWorkspace::Worktree {
-                    base_ref: NonEmpty::new(w.base_ref)
-                        .map_err(|_| PortError::Failed("a worktree needs a base ref".into()))?,
-                    branch: NonEmpty::new(w.branch)
-                        .map_err(|_| PortError::Failed("a worktree needs a branch".into()))?,
-                }),
+                Some(w) => {
+                    let base_ref = NonEmpty::new(w.base_ref)
+                        .map_err(|_| PortError::Failed("a worktree needs a base ref".into()))?;
+                    Some(match w.branch {
+                        Some(branch) => SessionWorkspace::Worktree {
+                            base_ref,
+                            branch: NonEmpty::new(branch).map_err(|_| {
+                                PortError::Failed("a worktree needs a branch".into())
+                            })?,
+                        },
+                        None => SessionWorkspace::Detached {
+                            base_ref,
+                            pr: w.pr.and_then(|pr| NonEmpty::new(pr).ok()),
+                        },
+                    })
+                }
             };
             let options = LaunchOptions {
                 workspace,
@@ -167,6 +177,13 @@ impl TaskPorts for HubTaskPorts {
         self.hub()?.link.paused(machine_id)
     }
 
+    fn detached_worktrees(&self, machine_id: &MachineId) -> bool {
+        self.hub().is_some_and(|hub| {
+            hub.link
+                .node_can(machine_id, fleetd_contracts::node_link::CAP_DETACHED)
+        })
+    }
+
     fn action_texts<'a>(
         &'a self,
         thread: &'a ThreadRef,
@@ -190,7 +207,7 @@ impl TaskPorts for HubTaskPorts {
         &'a self,
         machine_id: &'a MachineId,
         cwd: &'a str,
-    ) -> BoxFut<'a, Result<String, PortError>> {
+    ) -> BoxFut<'a, Result<Option<String>, PortError>> {
         Box::pin(async move {
             self.executors
                 .default_branch(machine_id, cwd)

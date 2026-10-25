@@ -129,7 +129,7 @@ pub struct PromptInput<'a> {
     pub brief: Option<&'a Brief>,
     /// The brief's done-when lines as text (leads' `done_when_text` with max 200).
     pub done_when: Option<String>,
-    /// Write tasks: their branch and the branch it starts from.
+    /// Write tasks: their branch. Every task's worktree starts from the remote's copy of `base_branch`.
     pub branch: Option<&'a str>,
     pub base_branch: Option<&'a str>,
     /// Write tasks: the work in flight elsewhere they may overlap (`duplicates::for_writer`).
@@ -152,6 +152,28 @@ fn state_str(state: TaskState) -> &'static str {
         TaskState::Done => "done",
         TaskState::Failed => "failed",
         TaskState::Cancelled => "cancelled",
+    }
+}
+
+/// Where a read or review task works, for its brief's `{{workspace}}`: a worktree of its own when it has a base, else
+/// (a node older than detached worktrees, or a directory with no branch) the project's checkout, left as it is.
+fn workspace_line(kind: TaskKind, base_branch: Option<&str>) -> String {
+    let own = "You may build and run tests there; fleetd removes it when the task ends. Never work in the project's \
+               own checkout, which is the human's.";
+    match (kind, base_branch) {
+        (TaskKind::Review, Some(base)) => format!(
+            "Your current directory is a detached git worktree of your own, at the PR's head when fleetd could fetch \
+             it from the remote the PR belongs to, else at origin/{base}. Check with `git log -1` against the PR's \
+             head commit; if it isn't that, fetch the PR's head yourself and check it out in this worktree. \
+             origin/{base} is fresh, to diff against. {own}"
+        ),
+        (_, Some(base)) => format!(
+            "Your current directory is a detached git worktree of your own, at origin/{base} as fetched at your \
+             start. {own}"
+        ),
+        (_, None) => "Your current directory is the project's own checkout, which is the human's: read it as it \
+                      is, and never check out, build or write anything there."
+            .to_owned(),
     }
 }
 
@@ -200,6 +222,7 @@ pub fn render_task_prompt(set: &PromptSet, input: &PromptInput<'_>) -> String {
             "baseBranch",
             &input.base_branch.unwrap_or("<default branch>"),
         ),
+        ("workspace", &workspace_line(task.kind, input.base_branch)),
     ];
     let id = match task.kind {
         TaskKind::Write => "task.brief.write",

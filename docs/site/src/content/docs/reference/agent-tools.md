@@ -63,7 +63,7 @@ Start a fleetd agent (a task) with its own session, slot and lane. kind write|re
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `item` | string | no | The plan item this task works on; refused when it belongs to another order. |
-| `kind` | string | no | Only write tasks get a worktree. One of `write`, `read`, `review`. Default `"write"`. |
+| `kind` | string | no | Every task gets its own worktree: a writer on its own branch, a reader or reviewer detached. One of `write`, `read`, `review`. Default `"write"`. |
 | `notDuplicateOf` | string[] | no | A writer refused as a possible duplicate: the ids it was refused for (`T12`, `C7`), when this is different work. Needs `notDuplicateWhy`. At most 10 items. |
 | `notDuplicateWhy` | string | no | Why it is different work, in one line; kept in the hub's log. At most 200 characters. |
 | `paths` | string[] | no | The files a writer will change, repo-relative (`app/theme.ts`, `app/settings/**`): matched against the work in flight. At most 50 items. |

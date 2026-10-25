@@ -72,6 +72,9 @@ pub struct NodeHello {
 /// `repo_scan`, `repo_inspect`, `repo_clone` and `gh_repo_list` (adding a project).
 pub const CAP_REPOS: &str = "repos";
 
+/// `SessionWorkspace::Detached`: read and review tasks in a worktree of their own. An older node gets `Root`.
+pub const CAP_DETACHED: &str = "detached_worktree";
+
 /// `landed_log` (factory metrics for a repo whose host fleetd can't read).
 pub const CAP_LANDED_LOG: &str = "landed_log";
 

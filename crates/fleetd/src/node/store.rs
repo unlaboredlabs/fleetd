@@ -69,7 +69,7 @@ pub struct SessionLocal {
     /// the machine's dedicated one); resuming needs the same one.
     pub config_dir: PathBuf,
     pub workspace_root: PathBuf,
-    /// Set for worktree sessions.
+    /// Set for worktree sessions. A detached one (read and review) has no `branch`, and this is the commit it is at.
     pub base_ref: Option<String>,
     pub branch: Option<String>,
     /// claude has been started with `--session-id` at least once: later starts use `--resume`.
