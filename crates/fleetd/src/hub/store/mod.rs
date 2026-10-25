@@ -8,7 +8,6 @@ mod hub_store;
 pub(crate) mod migrations;
 
 #[cfg(test)]
-pub(crate) use migrations::MIGRATIONS;
 #[cfg(test)]
 pub(crate) mod test_clock;
 #[cfg(test)]

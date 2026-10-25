@@ -9,7 +9,7 @@ fn scope() -> Scope {
     }
 }
 
-/// A piece of work: `owner`, title, prompt body, declared keys (any text form, or `branch:x` / `item:P5`) and
+/// A piece of work: `owner`, title, prompt body, declared keys (any text form, or `branch:x`) and
 /// declared paths.
 fn work(owner: &str, title: &str, body: &str, keys: &[&str], paths: &[&str]) -> Work {
     let owner = (!owner.is_empty()).then(|| owner.to_string());
@@ -17,8 +17,6 @@ fn work(owner: &str, title: &str, body: &str, keys: &[&str], paths: &[&str]) -> 
     for k in keys {
         let key = if let Some(b) = k.strip_prefix("branch:") {
             vec![WorkKey::Branch(b.into())]
-        } else if let Some(i) = k.strip_prefix("item:") {
-            vec![WorkKey::Item(i.into())]
         } else {
             keys_in(k, &scope())
         };
@@ -131,14 +129,6 @@ fn the_table() {
             false,
             Some(Exact),
             "same branch ada-lovelace/dark-mode",
-        ),
-        (
-            "the same plan item held by another lead",
-            work("lead-a", "export invoices", "", &["item:P5"], &[]),
-            work("lead-b", "invoice export", "", &["item:P5"], &[]),
-            false,
-            Some(Exact),
-            "same item P5",
         ),
         (
             "near-identical titles",
@@ -466,15 +456,27 @@ fn the_table() {
             "2 shared words: read, write",
         ),
         (
-            "a lead splitting its own item",
-            work("lead", "export invoices as CSV", "", &["item:P5"], &[]),
-            work("lead", "export invoices as PDF", "", &["item:P5"], &[]),
+            "a lead splitting its own branch",
+            work(
+                "lead",
+                "export invoices as CSV",
+                "",
+                &["branch:invoices"],
+                &[],
+            ),
+            work(
+                "lead",
+                "export invoices as PDF",
+                "",
+                &["branch:invoices"],
+                &[],
+            ),
             false,
             Some(Weak),
-            "same item P5 (yours)",
+            "same branch invoices (yours)",
         ),
         (
-            "a planned item is listed, never more",
+            "an expired claim is listed, never more",
             work(
                 "lead",
                 "feat(settings): dark mode toggle in settings",

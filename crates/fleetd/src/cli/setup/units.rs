@@ -149,8 +149,11 @@ pub fn render_systemd_unit(spec: &ServiceSpec) -> String {
             .join(" ")
     ));
     // The node's claude processes get its SIGTERM first and their own grace, rather than the whole group at once.
+    // An agent's process the kernel kills for memory is that agent's loss: the node and the other agents keep running,
+    // and the hub resumes the one that died. systemd's default fails the whole unit on any oom-kill in it.
     if spec.role == Role::Node {
         lines.push("KillMode=mixed".into());
+        lines.push("OOMPolicy=continue".into());
     }
     lines.extend([
         "Restart=always".to_owned(),

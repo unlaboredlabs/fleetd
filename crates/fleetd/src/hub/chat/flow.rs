@@ -300,18 +300,26 @@ async fn go(
     mut message: fleetd_contracts::chat::ChatMessage,
     now: bool,
 ) -> (fleetd_contracts::chat::ChatMessage, Option<String>) {
-    // Files that can't be placed yet leave the message to `deliver`, which says why it waits.
-    let first = match hub.leads.leads.get(r) {
-        Ok(None) => match files_of(hub, r, &message).await {
-            Ok(files) => Some(for_lead(
-                &hub.db.prompts().current(Some(r)),
-                &message,
-                &files,
-            )),
-            Err(_) => None,
-        },
-        _ => None,
+    // Files that can't be placed yet leave the message to `deliver`, which says why it waits. A cold lead takes it as
+    // the first message of a fresh session, as a lead that doesn't exist yet does.
+    let starts = match hub.leads.leads.get(r) {
+        Ok(None) => true,
+        Ok(Some(_)) => hub.leads.leads.cold(r),
+        Err(_) => false,
     };
+    let first = match starts {
+        true => files_of(hub, r, &message)
+            .await
+            .ok()
+            .map(|files| for_lead(&hub.db.prompts().current(Some(r)), &message, &files)),
+        false => None,
+    };
+    if let Some(first) = &first
+        && let Ok(Some(_)) = hub.leads.leads.fresh_if_cold(r, first).await
+    {
+        sent(hub, &mut message, ChatDelivery::Turn);
+        return (message, None);
+    }
     let lead = match hub.leads.leads.auto_start(r, first.as_deref()).await {
         AutoStart::Started(_) if first.is_some() => {
             sent(hub, &mut message, ChatDelivery::Turn);

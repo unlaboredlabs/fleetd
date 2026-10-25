@@ -5,14 +5,14 @@
 // attach by the box's clip, drop or paste (images included); a long paste becomes a file. While the lead works,
 // Stop beside Send ends its turn now. The words, the files and an unsent message's error stay per project across
 // navigation, and the words across quitting (drafts.ts). Sent with no hub, a message is queued and goes when the
-// link is back.
+// link is back. Replying to a bubble puts its quote over the box; what you send then answers it (Esc lets go).
 
 interface ProjectRef {
   readonly machineId: string;
   readonly projectId: string;
 }
 
-import { ArrowUp, Paperclip, Square, X } from "lucide-react";
+import { ArrowUp, Paperclip, Reply, Square, X } from "lucide-react";
 import { useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
 import type { AttachmentRef } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
@@ -26,6 +26,8 @@ import { composerSendOn } from "../live/steerModel";
 import { fmtBytes, PASTE_AS_FILE, pastedName } from "./attachments";
 import { ACT_LABEL, checkMessage, placeholder, receiptFor, recallsOn, stopFailed, type Act } from "./composerModel";
 import { useDraft, useDrafts } from "./drafts";
+import type { ReplyTarget } from "./actions";
+import { replyText } from "./bubbles";
 import c from "./composer.module.css";
 
 const IN_CHAT = '[data-screen="chat"], [data-screen^="chat."]';
@@ -41,9 +43,12 @@ export interface ChatComposerProps {
   autoFocus?: boolean;
   /** Your newest message's words, which ↑ brings back into an empty box. */
   recall?: string | undefined;
+  /** The bubble your next message answers. */
+  replyTo?: ReplyTarget | undefined;
+  onCancelReply?: () => void;
 }
 
-export function ChatComposer({ project, onSent, autoFocus, recall }: ChatComposerProps) {
+export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCancelReply }: ChatComposerProps) {
   const projectKey = keyOf(project);
   const [draft, setDraft, drafts] = useDraft(projectKey);
   const working = useData(selectLeadWorking(projectKey));
@@ -112,11 +117,22 @@ export function ChatComposer({ project, onSent, autoFocus, recall }: ChatCompose
     // The words leave the box at once; the layer's item holds them (queued when offline, with Edit to take back).
     setDraft(() => ({ text: "", attached: [] }));
     onSent?.();
-    void chat.send(projectKey, { text: checked.text, ...(files.length > 0 ? { attachments: files } : {}), ...(now ? { now } : {}) });
+    const text = replyTo === undefined || replyTo.quote === "" ? checked.text : replyText(replyTo.quote, checked.text);
+    void chat.send(projectKey, { text, ...(files.length > 0 ? { attachments: files } : {}), ...(now ? { now } : {}) });
   };
+
+  // A reply goes to the box: the cursor follows it.
+  useEffect(() => {
+    if (replyTo !== undefined) box.current?.focus();
+  }, [replyTo]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     const key = { ...e, isComposing: e.nativeEvent.isComposing };
+    if (e.key === "Escape" && replyTo !== undefined) {
+      e.preventDefault();
+      onCancelReply?.();
+      return;
+    }
     if (recall !== undefined && recallsOn(key, draft)) {
       e.preventDefault();
       setDraft((d) => ({ ...d, text: recall }));
@@ -186,6 +202,19 @@ export function ChatComposer({ project, onSent, autoFocus, recall }: ChatCompose
   return (
     <div className={c.composer} data-composer data-screen="chat.composer">
       <div className={c.box}>
+        {replyTo !== undefined ? (
+          <div className={c.replying}>
+            <Reply className={c.replyIcon} aria-hidden />
+            <span className={c.replyQuote}>
+              <Truncate size="xs" tone="quiet" expand="none">
+                {replyTo.quote === "" ? "Replying to the lead" : replyTo.quote}
+              </Truncate>
+            </span>
+            <button type="button" className={c.remove} aria-label="Don’t reply to it" onClick={onCancelReply}>
+              <X className={c.removeIcon} aria-hidden />
+            </button>
+          </div>
+        ) : null}
         <textarea
           ref={box}
           className={c.input}

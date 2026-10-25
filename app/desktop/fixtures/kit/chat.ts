@@ -21,6 +21,10 @@ export interface Draft {
   readonly state?: "streaming" | "final";
   readonly item?: JsonObject;
   readonly history?: "order" | "note" | "steer" | "lead_message" | "order_outcome";
+  /** A lead message's bubbles, as the hub splits it (ChatPart: start, end, block). */
+  readonly parts?: ReadonlyArray<JsonObject>;
+  /** Written this many minutes before the fixture's now, rather than spaced evenly back from it. */
+  readonly minutesAgo?: number;
 }
 
 /** A file sent with a message; `data` is what attachment_get returns for it. */
@@ -92,7 +96,7 @@ export const writeChat = (f: Fixture, ref: Ref, drafts: ReadonlyArray<Draft>, op
   let file = 0;
   const messages = drafts.map((d, i): JsonObject => {
     const seq = i + 1;
-    const createdAt = new Date(end - (drafts.length - seq) * step).toISOString();
+    const createdAt = new Date(d.minutesAgo === undefined ? end - (drafts.length - seq) * step : Date.parse(f.now) - d.minutesAgo * 60_000).toISOString();
     const item = d.item === undefined ? undefined : { ...d.item, requestId: d.item["requestId"] ?? `Q${String(++request)}` };
     const attachments = (d.attachments ?? []).map((a) => {
       const attachmentId = `F${String(++file)}`;
@@ -113,6 +117,7 @@ export const writeChat = (f: Fixture, ref: Ref, drafts: ReadonlyArray<Draft>, op
       ...(d.author === "human" && d.history === undefined ? { delivery: "turn", by: "laptop", clientRequestId: `c-${sha(`${ref.projectId} ${String(seq)}`).slice(0, 12)}` } : {}),
       ...(d.history === undefined ? {} : { history: d.history }),
       ...(item === undefined ? {} : { item }),
+      ...(d.parts === undefined ? {} : { parts: d.parts.map((p) => ({ ...p })) }),
     };
   });
   const last = messages.at(-1);
@@ -228,20 +233,33 @@ export const agentsAt = (f: Fixture, projects: ReadonlyArray<{ ref: Ref; n: numb
 
 export type RowState = "working" | "waiting_on_you" | "blocked" | "idle";
 
-export const statusRow = (f: Fixture, ref: Ref, title: string, state: RowState, extra: { agents?: number; pct?: [number, number]; blocked?: string; merged?: string; mergedAgoMs?: number; stale?: string } = {}): JsonObject => ({
+/** A row's work for its state, as the hub groups it: what each state usually has in flight. */
+const workOf = (f: Fixture, state: RowState, agents: number): JsonObject => {
+  const item = (group: string, title: string, minutesAgo: number, extra: JsonObject = {}): JsonObject => ({ group, title, at: at(f.now, -minutesAgo * 60_000), ...extra });
+  const pr = (n: number): JsonObject => ({ repo: "acme/storefront", number: n, url: `https://github.com/acme/storefront/pull/${String(n)}` });
+  const titles = ["Checkout totals use integer minor units", "Receipt dates use Intl", "Search index warms on deploy", "Nightly export resumes after a crash"];
+  const working = Array.from({ length: Math.min(agents, 3) }, (_, i) => item("working", titles[i % titles.length] ?? "Work", 4 + i, { taskId: `T${String(41 + i)}` }));
+  const items: JsonObject[] =
+    state === "working"
+      ? [...working, item("in_review", "Cart page keeps its scroll", 9, { taskId: "T38", pr: pr(212) }), item("landing", "fleetd/T35-totals", 14, { pr: pr(209) }), item("done", "Receipt dates use Intl", 50, { taskId: "T30", pr: pr(214) })]
+      : state === "waiting_on_you"
+        ? [item("waiting_on_you", "The lead's question in chat", 2), ...working, item("idle", "Read the export job's logs", 40, { taskId: "T27" })]
+        : state === "blocked"
+          ? [item("idle", "fleetd/T31-ci", 25, { pr: pr(207), why: "CI failed" })]
+          : [item("done", "Quick start opens a project's chat", 300, { taskId: "T12", pr: pr(198) })];
+  const count = (g: string) => items.filter((i) => i["group"] === g).length;
+  return {
+    counts: { waitingOnYou: count("waiting_on_you"), inReview: count("in_review"), working: Math.max(count("working"), agents), landing: count("landing"), idle: count("idle"), done: count("done") },
+    items,
+  };
+};
+
+export const statusRow = (f: Fixture, ref: Ref, title: string, state: RowState, extra: { agents?: number; blocked?: string; merged?: string; mergedAgoMs?: number; stale?: string } = {}): JsonObject => ({
   projectRef: { ...ref },
   title,
   state,
   ...(extra.blocked === undefined ? {} : { blockedReason: extra.blocked }),
-  ...(extra.pct === undefined
-    ? {}
-    : {
-        progress: {
-          pct: extra.pct[0] + extra.pct[1],
-          verifiedPct: extra.pct[0],
-          inFlightPct: extra.pct[1],
-        },
-      }),
+  ...workOf(f, state, extra.agents ?? 0),
   agentsRunning: extra.agents ?? 0,
   ...(extra.merged === undefined ? {} : { lastMerged: { title: extra.merged, prNumber: 214, prUrl: "https://github.com/acme/storefront/pull/214", at: at(f.now, -(extra.mergedAgoMs ?? 2_700_000)) } }),
   asOf: f.now,

@@ -33,13 +33,26 @@ pub enum RunnerKind {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SessionWorkspace {
-    /// The project's workspace root (leads, read-only tasks).
+    /// The project's workspace root (leads).
     Root,
     /// A new git worktree on a new branch, one per writer, created by the node with `git worktree add`.
     #[serde(rename_all = "camelCase")]
     Worktree {
         base_ref: NonEmpty,
         branch: NonEmpty,
+        /// A session of the same branch this one takes over: it works in that session's worktree (rebuilt when it is
+        /// gone), uncommitted changes included, instead of a new one. Older nodes ignore it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        from_session: Option<ThreadId>,
+    },
+    /// A detached git worktree of its own, for a read or review task, so it never works in the human's checkout:
+    /// at a fresh fetch of the remote's `baseRef`, or at the head of `pr` (a review's) when the remote publishes PR
+    /// refs. `stop{removeWorktree}` removes it; a resume makes it again at the same commit.
+    #[serde(rename_all = "camelCase")]
+    Detached {
+        base_ref: NonEmpty,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pr: Option<NonEmpty>,
     },
 }
 
@@ -156,7 +169,9 @@ pub enum SessionCall {
         run_id: Option<NonEmpty>,
         reason: Option<String>,
     },
-    /// End the session's process; the session stays resumable. `removeWorktree` also deletes its worktree.
+    /// End the session's process; the session stays resumable. `removeWorktree` also deletes its worktree (a
+    /// writer's only once nothing would be lost; a detached one always), and does nothing while a run is active: a
+    /// message that came first keeps the session at work.
     #[serde(rename_all = "camelCase")]
     Stop {
         session_id: ThreadId,
@@ -269,6 +284,11 @@ pub struct SessionCallFrame {
     pub id: NonEmpty,
     pub call: SessionCall,
 }
+
+/// How a `SessionError`'s message starts when the node won't resume the session: claude's conversation is gone, or
+/// was kept under another claude config dir. Its thread can't go on; a new one has to take over. A prefix, not a code,
+/// so hubs that don't know it still read the error.
+pub const RESUME_REFUSED: &str = "the session can't resume: ";
 
 /// Why a call failed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]

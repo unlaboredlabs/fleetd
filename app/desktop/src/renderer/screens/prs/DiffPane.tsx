@@ -226,13 +226,7 @@ const Row = memo(function Row({ row, mode, want, retry, failed, toggle, more }: 
     case "file":
       return <FileHeader f={row.f} open={row.open} toggle={toggle} />;
     case "hunk":
-      return (
-        <div className={s.hunk}>
-          <Truncate size="xs" tone="quiet" expand="none">
-            {hunkText(row.line)}
-          </Truncate>
-        </div>
-      );
+      return <HunkRow line={row.line} />;
     case "line":
       return <LineRow page={row.page} line={row.line} />;
     case "pair":
@@ -252,7 +246,8 @@ const Row = memo(function Row({ row, mode, want, retry, failed, toggle, more }: 
   }
 });
 
-function FileHeader({ f, open, toggle }: { f: PrFile; open: boolean; toggle: (path: string) => void }) {
+/** A file's header: its path, what happened to it, and its line counts; pressed, it folds. Also a chat diff block's. */
+export function FileHeader({ f, open, toggle }: { f: PrFile; open: boolean; toggle: (path: string) => void }) {
   const words = statusWords(f);
   return (
     <button type="button" className={s.fileHead} aria-expanded={open} onClick={() => toggle(f.path)}>
@@ -277,6 +272,17 @@ function FileHeader({ f, open, toggle }: { f: PrFile; open: boolean; toggle: (pa
   );
 }
 
+/** A hunk's start: "Line 120 · fn main". */
+export function HunkRow({ line }: { line: DiffLine }) {
+  return (
+    <div className={s.hunk}>
+      <Truncate size="xs" tone="quiet" expand="none">
+        {hunkText(line)}
+      </Truncate>
+    </div>
+  );
+}
+
 const mark = (l: DiffLine | null) => (l === null ? "" : l.kind === "add" ? "+" : l.kind === "del" ? "−" : "");
 const tone = (l: DiffLine | null) => (l === null ? s.empty : l.kind === "add" ? s.isAdd : l.kind === "del" ? s.isDel : undefined);
 
@@ -293,7 +299,8 @@ function Code({ page, line, side }: { page: Page; line: DiffLine; side: "old" | 
   );
 }
 
-function LineRow({ page, line }: { page: Page; line: DiffLine }) {
+/** One line of a unified diff, coloured once its page is highlighted. Also a chat diff block's. */
+export function LineRow({ page, line }: { page: Page; line: DiffLine }) {
   return (
     <div className={cx(s.line, s.unified)}>
       <span className={cx(s.num, tone(line))}>{line.old ?? ""}</span>

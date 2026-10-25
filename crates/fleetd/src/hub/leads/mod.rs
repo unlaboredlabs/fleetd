@@ -97,6 +97,7 @@ impl Area {
         let records = LeadRecords::new(Arc::clone(&ctx.db));
         let wakes = LeadWakes::new(Arc::clone(&ctx), Arc::clone(&records));
         let leads = Leads::new(Arc::clone(&ctx), Arc::clone(&records), Arc::clone(&wakes));
+        let _ = wakes.leads.set(Arc::downgrade(&leads));
         let workstreams =
             Workstreams::new(Arc::clone(&ctx), Arc::clone(&records), Arc::clone(&wakes));
         let removals = removals::ProjectRemovals::new(Arc::clone(&ctx), Arc::clone(&records));

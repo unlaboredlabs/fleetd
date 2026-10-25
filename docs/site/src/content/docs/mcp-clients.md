@@ -76,7 +76,7 @@ FLEETD_HUB=http://hub.your-tailnet.ts.net:4790 FLEETD_KEY_FILE=~/.fleetd/agent.k
 On a new hub with no projects yet, the output starts like this:
 
 ```text
-{"id":1,"jsonrpc":"2.0","result":{"content":[{"text":"{\"next\":\"status_get with a row's projectRef for the series behind its bar\",\"rows\":[]}", …
+{"id":1,"jsonrpc":"2.0","result":{"content":[{"text":"{\"rows\":[]}", …
 ```
 
 ## Use a key from the CLI {#key-file}
@@ -116,7 +116,7 @@ is dropped, and to tell you when the work is taken. A session might go like this
 | Tool | Does | Role |
 |---|---|---|
 | `work_claim {repo \| projectRef, title, base?, branch?, keys?, paths?, changed?, authorEmail?, notDuplicateOf?, notDuplicateWhy?, anyway?}` | Checks the intent against the work in flight on the repo's base and claims it in one call. `status` is `claimed`; `renewed` (your claim on the same branch, updated); `taken` (someone else has the same issue, PR, branch or plan item); `possible_duplicate` (most of the same words, or the same words and files), or `yours` (fleetd's own agent on its task's branch: the task already holds it). Keys and paths a renewal adds are checked like a new claim's. For a likely duplicate, call again with `notDuplicateOf` and `notDuplicateWhy` if it's different work. With a taken item, `anyway: true` claims it regardless, but only with a [human key](/docs/glossary#human-key): any other key may be one of fleetd's own agents. | operate |
-| `work_list {repo \| projectRef, base?}` | What is in flight on the repo's base, newest first, with each item's keys and files. Expired claims come last. | read |
+| `work_list {repo \| projectRef, base?, paths?}` | What is in flight on the repo's base, newest first, with each item's keys and files (`paths: false` leaves out what each writer has changed so far, which asks its machine). Expired claims come last. `recentLandings` lists what reached the base outside the merge train in the last 24 h, and how. | read |
 | `work_done {claimId, outcome, landing?, reason?}` | Ends your claim: `landed` (with its commit) or `dropped`. A human key can end anyone's. | operate |
 
 `repo` is the origin remote in any form, on any host: `git@github.com:acme/shop.git`, `https://gitlab.example.com/g/shop`,
@@ -168,7 +168,7 @@ as stopping a project, answering an approval or entering a secret, need one.
 | `attachment_put {name, mime, dataB64}` | Upload a file (image, text or PDF, at most 5 MiB) for a message. | operate |
 | `attachment_get {projectRef, attachmentId}` | Read a file attached to a project's chat. | read |
 | `project_files {machineId, projectId, query}` | A project's files, for `@`-mentions. | read |
-| `status_get` | One row per project: its state word, verified and in-flight progress, agents running and the last merge. | read |
+| `status_get` | One row per project: its state word, its work in groups, agents running and the last merge. | read |
 | `agents_list {projectRef?, endedSince?}` | Every agent of your projects: its role, task, what it's doing now, when it started and its PR. | read |
 | `agent_work {machineId, threadId, before?, limit?}` | A page of one agent's recent messages, commands and edits, oldest first. Secrets show as `[secret]`. | read |
 | `pr_list {projectRef, closedSince?}`, `pr_get {repo, number}` | A project's PRs, and one in detail: description, checks, reviews with their findings, its place in the merge queue and the agent that wrote it. | read |

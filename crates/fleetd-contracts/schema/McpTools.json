@@ -1711,6 +1711,10 @@
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
         },
+        "remembered": {
+          "$ref": "#/$defs/RememberedItem",
+          "description": "A system line \"Remembered: …\": what the lead's `remember` wrote, which `memory_undo` takes back."
+        },
         "seq": {
           "maximum": 9007199254740991,
           "minimum": 0,
@@ -3043,36 +3047,6 @@
       ],
       "type": "string"
     },
-    "DropReason": {
-      "oneOf": [
-        {
-          "const": "scope_change",
-          "description": "Work was added (a scope-change marker).",
-          "type": "string"
-        },
-        {
-          "const": "review_failed",
-          "description": "A review blocked: the item fell back to \"PR open\".",
-          "type": "string"
-        },
-        {
-          "const": "ci_failed",
-          "description": "CI failed: the item fell back a stage.",
-          "type": "string"
-        },
-        {
-          "const": "reopened",
-          "description": "A done item reopened when a later check failed.",
-          "type": "string"
-        },
-        {
-          "const": "work_stopped",
-          "description": "An agent ended with nothing else in flight for its item: the item's in-stage credit is taken back.",
-          "type": "string"
-        }
-      ],
-      "x-open": true
-    },
     "Effort": {
       "description": "The `--effort` claude runs at. Only [`TaskProfile`] picks one; nothing takes an effort as input.",
       "enum": [
@@ -3622,6 +3596,16 @@
           "type": "string"
         },
         {
+          "const": "machine.recovery_paused",
+          "description": "Agents on the machine kept dying (claude exited, or stalled), so fleetd stopped resuming them there, or\nresumes them again; `data` is `RecoveryPausedData`, and the summary says why.",
+          "type": "string"
+        },
+        {
+          "const": "thread.orphaned",
+          "description": "The machine's node runs a session no task or lead of this hub owns; `data` is `ThreadOrphanedData`.",
+          "type": "string"
+        },
+        {
           "const": "project.removed",
           "description": "The node no longer has the project: the hub dropped it from its cache, and its open workstreams stop. `data.title`.",
           "type": "string"
@@ -3798,12 +3782,12 @@
         },
         {
           "const": "plan.changed",
-          "description": "A plan's scope changed and a marker was written; `data` is the `PlanChange` (`status::PlanChangedData`).",
+          "description": "No longer sent (plans were removed); kept so an older log still reads.",
           "type": "string"
         },
         {
           "const": "plan.verified",
-          "description": "The hub verified a plan item done; `data.itemId`, `data.milestoneId`, `data.workstreamId`, `data.evidence`.",
+          "description": "No longer sent (plans were removed); kept so an older log still reads.",
           "type": "string"
         },
         {
@@ -3859,6 +3843,11 @@
         {
           "const": "work.landed",
           "description": "A commit reached a watched base, by the train, a PR merged outside it or a direct push; `data` is\n`work::WorkLandedData`.",
+          "type": "string"
+        },
+        {
+          "const": "memory.changed",
+          "description": "A memory file changed (a lead's `remember`, an Undo, an edit in the app): `data.scope`, `data.projectRef`\n(project scope), `data.topic`, `data.by`. The text is not in the event; memory_get reads it.",
           "type": "string"
         }
       ],
@@ -4621,42 +4610,6 @@
       ],
       "type": "string"
     },
-    "Marker": {
-      "description": "A change to a figure's denominator, shown next to it.",
-      "properties": {
-        "at": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "deltaItems": {
-          "maximum": 9007199254740991,
-          "minimum": -9007199254740991,
-          "type": "integer"
-        },
-        "pctAfter": {
-          "maximum": 100,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "pctBefore": {
-          "maximum": 100,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "text": {
-          "description": "\"+3 items: time inspector added\".",
-          "maxLength": 200,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        }
-      },
-      "required": [
-        "at",
-        "text",
-        "deltaItems"
-      ],
-      "type": "object"
-    },
     "MatchStrength": {
       "description": "How sure the matcher is that new work repeats a piece in flight.",
       "oneOf": [
@@ -4793,6 +4746,24 @@
         "lead_start.output": {
           "$ref": "#/$defs/LeadStartOutput"
         },
+        "memory_get.input": {
+          "$ref": "#/$defs/MemoryGetInput"
+        },
+        "memory_get.output": {
+          "$ref": "#/$defs/MemoryGetOutput"
+        },
+        "memory_set.input": {
+          "$ref": "#/$defs/MemorySetInput"
+        },
+        "memory_set.output": {
+          "$ref": "#/$defs/MemorySetOutput"
+        },
+        "memory_undo.input": {
+          "$ref": "#/$defs/MemoryUndoInput"
+        },
+        "memory_undo.output": {
+          "$ref": "#/$defs/MemoryUndoOutput"
+        },
         "metrics_get.input": {
           "$ref": "#/$defs/MetricsGetInput"
         },
@@ -4816,12 +4787,6 @@
         },
         "orders_board.output": {
           "$ref": "#/$defs/OrdersBoardOutput"
-        },
-        "plan_get.input": {
-          "$ref": "#/$defs/PlanGetInput"
-        },
-        "plan_get.output": {
-          "$ref": "#/$defs/PlanGetOutput"
         },
         "pr_diff.input": {
           "$ref": "#/$defs/PrDiffInput"
@@ -5079,6 +5044,12 @@
         "hub_info.output",
         "lead_start.input",
         "lead_start.output",
+        "memory_get.input",
+        "memory_get.output",
+        "memory_set.input",
+        "memory_set.output",
+        "memory_undo.input",
+        "memory_undo.output",
         "metrics_get.input",
         "metrics_get.output",
         "metrics_retention_set.input",
@@ -5087,8 +5058,6 @@
         "order_get.output",
         "orders_board.input",
         "orders_board.output",
-        "plan_get.input",
-        "plan_get.output",
         "pr_diff.input",
         "pr_diff.output",
         "pr_files.input",
@@ -5161,6 +5130,218 @@
         "work_list.output",
         "workstream_list.input",
         "workstream_list.output"
+      ],
+      "type": "object"
+    },
+    "MemoryFile": {
+      "properties": {
+        "cap": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "chars": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "notes": {
+          "description": "Newest first.",
+          "items": {
+            "$ref": "#/$defs/MemoryNote"
+          },
+          "maxItems": 200,
+          "type": "array"
+        },
+        "scope": {
+          "$ref": "#/$defs/MemoryScope"
+        },
+        "text": {
+          "maxLength": 8000,
+          "type": "string"
+        },
+        "topic": {
+          "$ref": "#/$defs/MemoryTopic",
+          "description": "A project's topic file; absent for `user.md` and `MEMORY.md`."
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "scope",
+        "text",
+        "chars",
+        "cap",
+        "notes"
+      ],
+      "type": "object"
+    },
+    "MemoryGetInput": {
+      "properties": {
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "Also that project's MEMORY.md and topic files; absent: user.md only."
+        }
+      },
+      "type": "object"
+    },
+    "MemoryGetOutput": {
+      "properties": {
+        "files": {
+          "description": "With projectRef: MEMORY.md first, then the topic files by name.",
+          "items": {
+            "$ref": "#/$defs/MemoryFile"
+          },
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "projectCap": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "projectChars": {
+          "description": "With projectRef: the project's files together, and their cap.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "user": {
+          "$ref": "#/$defs/MemoryFile"
+        }
+      },
+      "required": [
+        "user"
+      ],
+      "type": "object"
+    },
+    "MemoryNote": {
+      "description": "An entry `remember` wrote that is still in its file: when, and the chat line that said so.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "messageId": {
+          "$ref": "#/$defs/ChatMessageId"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "text": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "at",
+        "projectRef",
+        "messageId"
+      ],
+      "type": "object"
+    },
+    "MemoryScope": {
+      "oneOf": [
+        {
+          "const": "user",
+          "description": "`user.md`: how the human works across every project.",
+          "type": "string"
+        },
+        {
+          "const": "project",
+          "description": "This project's `MEMORY.md`, or one of its topic files.",
+          "type": "string"
+        }
+      ]
+    },
+    "MemorySetInput": {
+      "properties": {
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "Required with scope project."
+        },
+        "scope": {
+          "$ref": "#/$defs/MemoryScope"
+        },
+        "text": {
+          "description": "The whole file. Empty deletes it (a topic's index line too).",
+          "maxLength": 8000,
+          "type": "string"
+        },
+        "topic": {
+          "$ref": "#/$defs/MemoryTopic",
+          "description": "Project scope: a topic file; absent, MEMORY.md."
+        }
+      },
+      "required": [
+        "scope",
+        "text"
+      ],
+      "type": "object"
+    },
+    "MemorySetOutput": {
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/MemoryFile"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "file"
+      ],
+      "type": "object"
+    },
+    "MemoryTopic": {
+      "description": "Lowercase slug, [a-z0-9][a-z0-9-]{0,47}, other than memory",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,47}$",
+      "type": "string"
+    },
+    "MemoryUndoInput": {
+      "properties": {
+        "messageId": {
+          "$ref": "#/$defs/ChatMessageId",
+          "description": "The chat line that said \"Remembered: …\"."
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "projectRef",
+        "messageId"
+      ],
+      "type": "object"
+    },
+    "MemoryUndoOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "ok": {
+          "enum": [
+            true
+          ],
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok"
       ],
       "type": "object"
     },
@@ -5673,73 +5854,6 @@
       ],
       "type": "object"
     },
-    "MilestoneId": {
-      "pattern": "^M[1-9][0-9]*$",
-      "type": "string"
-    },
-    "MilestoneState": {
-      "oneOf": [
-        {
-          "enum": [
-            "open"
-          ],
-          "type": "string"
-        },
-        {
-          "const": "done",
-          "description": "Derived: at least one item done and every item done or dropped.",
-          "type": "string"
-        }
-      ]
-    },
-    "MilestoneView": {
-      "description": "A milestone with its derived figure.",
-      "properties": {
-        "createdAt": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "doneAt": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "firstItemAt": {
-          "$ref": "#/$defs/Timestamp",
-          "description": "The first item's time."
-        },
-        "milestoneId": {
-          "$ref": "#/$defs/MilestoneId"
-        },
-        "position": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "progress": {
-          "$ref": "#/$defs/Progress"
-        },
-        "projectRef": {
-          "$ref": "#/$defs/ProjectRef"
-        },
-        "state": {
-          "$ref": "#/$defs/MilestoneState"
-        },
-        "title": {
-          "maxLength": 120,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        }
-      },
-      "required": [
-        "milestoneId",
-        "projectRef",
-        "title",
-        "position",
-        "state",
-        "createdAt",
-        "progress"
-      ],
-      "type": "object"
-    },
     "NotifyPolicy": {
       "description": "When a client may interrupt the human with an event marked `attention`. Quiet windows are absolute times the\nhub computes from `policy.quiet_hours` in `policy.tz`: the one under way (if any) and the next.",
       "properties": {
@@ -6205,310 +6319,6 @@
         "required",
         "description"
       ],
-      "type": "object"
-    },
-    "PlanChange": {
-      "description": "One marker: a recorded change to a figure's denominator, never a silent jump.",
-      "properties": {
-        "at": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "by": {
-          "description": "`lead:<projectRef>`, a key id, or `hub`.",
-          "maxLength": 120,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
-        "deltaItems": {
-          "maximum": 9007199254740991,
-          "minimum": -9007199254740991,
-          "type": "integer"
-        },
-        "deltaSize": {
-          "description": "In points.",
-          "maximum": 9007199254740991,
-          "minimum": -9007199254740991,
-          "type": "integer"
-        },
-        "kind": {
-          "$ref": "#/$defs/PlanChangeKind"
-        },
-        "milestoneId": {
-          "$ref": "#/$defs/MilestoneId"
-        },
-        "note": {
-          "description": "\"+3 items: time inspector added\".",
-          "maxLength": 200,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
-        "pctAfter": {
-          "maximum": 100,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "pctBefore": {
-          "maximum": 100,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "workstreamId": {
-          "$ref": "#/$defs/WorkstreamId"
-        }
-      },
-      "required": [
-        "kind",
-        "milestoneId",
-        "at",
-        "by",
-        "deltaItems",
-        "deltaSize",
-        "note"
-      ],
-      "type": "object"
-    },
-    "PlanChangeKind": {
-      "oneOf": [
-        {
-          "const": "scope",
-          "description": "A lead's `plan` call that moved a milestone's total after it had items.",
-          "type": "string"
-        },
-        {
-          "const": "reopened",
-          "description": "Older markers only: a later claim failed a check a done item listed.",
-          "type": "string"
-        },
-        {
-          "const": "closed",
-          "description": "Items dropped by the hub when their order finished, stopped or failed.",
-          "type": "string"
-        },
-        {
-          "const": "milestone_done",
-          "description": "A milestone finished and left the project's figure.",
-          "type": "string"
-        },
-        {
-          "const": "milestone_reopened",
-          "description": "An item was added to a done milestone.",
-          "type": "string"
-        }
-      ]
-    },
-    "PlanCoveredBy": {
-      "description": "The commit that did an item's work without its own agent, and how it reached the base.",
-      "properties": {
-        "route": {
-          "$ref": "#/$defs/LandingRoute"
-        },
-        "sha": {
-          "$ref": "#/$defs/CommitSha"
-        }
-      },
-      "required": [
-        "sha",
-        "route"
-      ],
-      "type": "object"
-    },
-    "PlanGetInput": {
-      "properties": {
-        "projectRef": {
-          "$ref": "#/$defs/ProjectRef"
-        },
-        "workstreamId": {
-          "$ref": "#/$defs/WorkstreamId"
-        }
-      },
-      "type": "object"
-    },
-    "PlanGetOutput": {
-      "description": "A plan as `plan show` and `plan_get` return it: derived state, figures and markers.",
-      "properties": {
-        "items": {
-          "items": {
-            "$ref": "#/$defs/PlanItem"
-          },
-          "maxItems": 500,
-          "type": "array"
-        },
-        "markers": {
-          "description": "Newest first.",
-          "items": {
-            "$ref": "#/$defs/PlanChange"
-          },
-          "maxItems": 50,
-          "type": "array"
-        },
-        "milestones": {
-          "items": {
-            "$ref": "#/$defs/MilestoneView"
-          },
-          "maxItems": 50,
-          "type": "array"
-        },
-        "next": {
-          "type": "string"
-        },
-        "progress": {
-          "$ref": "#/$defs/Progress"
-        },
-        "projectRef": {
-          "$ref": "#/$defs/ProjectRef"
-        },
-        "truncated": {
-          "type": "boolean"
-        },
-        "workstreamId": {
-          "$ref": "#/$defs/WorkstreamId",
-          "description": "Set when the view is one order's items."
-        }
-      },
-      "required": [
-        "projectRef",
-        "progress",
-        "milestones",
-        "items",
-        "markers"
-      ],
-      "type": "object"
-    },
-    "PlanItem": {
-      "properties": {
-        "after": {
-          "default": [],
-          "description": "Items that must be done before this one starts: serial gates.",
-          "items": {
-            "$ref": "#/$defs/PlanItemId"
-          },
-          "maxItems": 20,
-          "type": "array",
-          "uniqueItems": true
-        },
-        "coveredBy": {
-          "$ref": "#/$defs/PlanCoveredBy",
-          "description": "Set when a lead marked it `covered` by a landing."
-        },
-        "doneAt": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "dropReason": {
-          "description": "Why it was dropped.",
-          "maxLength": 200,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
-        "evidence": {
-          "description": "What verified it, e.g. \"#212 merged by the train\".",
-          "maxLength": 200,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
-        "itemId": {
-          "$ref": "#/$defs/PlanItemId"
-        },
-        "links": {
-          "$ref": "#/$defs/PlanLinks",
-          "default": {
-            "prs": [],
-            "tasks": []
-          }
-        },
-        "milestoneId": {
-          "$ref": "#/$defs/MilestoneId"
-        },
-        "position": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "projectRef": {
-          "$ref": "#/$defs/ProjectRef"
-        },
-        "size": {
-          "$ref": "#/$defs/Size"
-        },
-        "startedAt": {
-          "$ref": "#/$defs/Timestamp",
-          "description": "The first linked `task.started`."
-        },
-        "state": {
-          "$ref": "#/$defs/PlanItemState"
-        },
-        "title": {
-          "maxLength": 120,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
-        "weight": {
-          "$ref": "#/$defs/Weight"
-        },
-        "workstreamId": {
-          "$ref": "#/$defs/WorkstreamId"
-        }
-      },
-      "required": [
-        "itemId",
-        "projectRef",
-        "milestoneId",
-        "title",
-        "weight",
-        "size",
-        "position",
-        "state"
-      ],
-      "type": "object"
-    },
-    "PlanItemId": {
-      "pattern": "^P[1-9][0-9]*$",
-      "type": "string"
-    },
-    "PlanItemState": {
-      "oneOf": [
-        {
-          "enum": [
-            "open",
-            "dropped"
-          ],
-          "type": "string"
-        },
-        {
-          "const": "done",
-          "description": "Set only by the hub: from verification, or `covered` by a landing it saw.",
-          "type": "string"
-        }
-      ]
-    },
-    "PlanLinks": {
-      "description": "What ties work to an item. An item with no links never counts done.",
-      "properties": {
-        "prs": {
-          "default": [],
-          "description": "PRs listed on the item (`--pr`, or `change enqueue --item`).",
-          "items": {
-            "$ref": "#/$defs/GitHubPrUrl"
-          },
-          "maxItems": 20,
-          "type": "array",
-          "uniqueItems": true
-        },
-        "tasks": {
-          "default": [],
-          "description": "Tasks spawned with `--item`; their Changes count through `Change.task_id`.",
-          "items": {
-            "$ref": "#/$defs/TaskId"
-          },
-          "maxItems": 50,
-          "type": "array",
-          "uniqueItems": true
-        }
-      },
       "type": "object"
     },
     "PrAuthor": {
@@ -7277,150 +7087,6 @@
       ],
       "type": "object"
     },
-    "Progress": {
-      "description": "A figure. `pct` counts verified must items by size only; polish shows beside it.",
-      "properties": {
-        "asOf": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "done": {
-          "description": "Must items done and in the figure.",
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "marker": {
-          "$ref": "#/$defs/Marker",
-          "description": "The latest scope change, e.g. \"↓ from 80% · +3 items: time inspector added\"."
-        },
-        "pct": {
-          "description": "floor(100 · must points done / must points open or done); the polish figure when there are no must items.",
-          "maximum": 100,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "polishDone": {
-          "description": "Polish items done and in the figure (\"polish 2/5\").",
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "polishPct": {
-          "maximum": 100,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "polishTotal": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "total": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "pct",
-        "done",
-        "total",
-        "polishDone",
-        "polishTotal",
-        "asOf"
-      ],
-      "type": "object"
-    },
-    "ProgressDrop": {
-      "description": "Why the figure fell.",
-      "properties": {
-        "fromPct": {
-          "maximum": 100,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "reason": {
-          "$ref": "#/$defs/DropReason"
-        },
-        "text": {
-          "description": "\"CI failed on #212\", \"+2 items: time inspector added\".",
-          "maxLength": 200,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        }
-      },
-      "required": [
-        "reason",
-        "fromPct",
-        "text"
-      ],
-      "type": "object"
-    },
-    "ProgressEstimate": {
-      "description": "A project's two-tone bar: solid is what fleetd verified, lighter is credit for work in flight. Every stage it\ncredits is one fleetd observed (an event, a PR or a CI state), never an agent's word, and nothing in it is a time.",
-      "properties": {
-        "inFlightPct": {
-          "description": "The lighter part: credit for open units' reached stages, plus in-stage credit for the time work on them ran.",
-          "maximum": 100,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "pct": {
-          "description": "verified + in flight, floored; 100 only when everything is verified.",
-          "maximum": 100,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "verifiedPct": {
-          "description": "The solid part: points verified over points counted.",
-          "maximum": 100,
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "pct",
-        "verifiedPct",
-        "inFlightPct"
-      ],
-      "type": "object"
-    },
-    "ProgressPoint": {
-      "description": "One point of a project's series: its bar over time, oldest first.",
-      "properties": {
-        "at": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "drop": {
-          "$ref": "#/$defs/ProgressDrop",
-          "description": "Set when the figure fell at this point; it never falls without one."
-        },
-        "paused": {
-          "description": "Set while the figure holds because the work in flight paused, waiting for an answer or for a usage limit to\nreset (\"paused: an agent hit a usage limit\"). A marker, not a drop: what was earned stays.",
-          "maxLength": 200,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
-        "pct": {
-          "maximum": 100,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "verifiedPct": {
-          "maximum": 100,
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "at",
-        "pct",
-        "verifiedPct"
-      ],
-      "type": "object"
-    },
     "ProjectAddInput": {
       "properties": {
         "dest": {
@@ -7943,7 +7609,7 @@
       "type": "object"
     },
     "ProjectStatusRow": {
-      "description": "One project on the Status screen: a state word, the two-tone bar, agents running and the last merge.",
+      "description": "One project on the Status screen: a state word, its work in groups, agents running and the last merge.",
       "properties": {
         "agentsRunning": {
           "description": "Its task agents holding a slot now (the lead's own turn is not one).",
@@ -7961,6 +7627,17 @@
           "pattern": "^[^\\r\\n]*$",
           "type": "string"
         },
+        "counts": {
+          "$ref": "#/$defs/StatusCounts"
+        },
+        "items": {
+          "description": "Group by group in `StatusGroup` order, newest first in each, at most `STATUS_ITEMS_PER_GROUP` per group.",
+          "items": {
+            "$ref": "#/$defs/StatusItem"
+          },
+          "maxItems": 48,
+          "type": "array"
+        },
         "lastMerged": {
           "$ref": "#/$defs/LastMerged"
         },
@@ -7969,10 +7646,6 @@
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
-        },
-        "progress": {
-          "$ref": "#/$defs/ProgressEstimate",
-          "description": "The project's bar, under the drop rule of its series (status_get). Absent when it has nothing to count."
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
@@ -8000,6 +7673,8 @@
         "projectRef",
         "title",
         "state",
+        "counts",
+        "items",
         "agentsRunning",
         "asOf"
       ],
@@ -8447,6 +8122,98 @@
       "required": [
         "from",
         "to"
+      ],
+      "type": "object"
+    },
+    "RecentLanding": {
+      "description": "A commit that reached the base outside the train, as `work_list` shows it: what the hub's `Landings` reads back.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "The commit's committer time."
+        },
+        "authorEmail": {
+          "type": "string"
+        },
+        "covers": {
+          "description": "The work it matched exactly: \"P5\", \"T12\", \"C7\".",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "pr": {
+          "description": "The PR it merged as, when its message or the host names one: \"#57\", or its URL.",
+          "type": "string"
+        },
+        "route": {
+          "$ref": "#/$defs/LandingRoute"
+        },
+        "sha": {
+          "$ref": "#/$defs/CommitSha"
+        },
+        "subject": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sha",
+        "at",
+        "route",
+        "subject",
+        "covers"
+      ],
+      "type": "object"
+    },
+    "RecoveryMode": {
+      "description": "How a recovering task goes on.",
+      "oneOf": [
+        {
+          "const": "resume",
+          "description": "In its thread (`claude --resume`), with a note to continue.",
+          "type": "string"
+        },
+        {
+          "const": "compact",
+          "description": "Its context is full: `/compact` in its thread first, then the note.",
+          "type": "string"
+        },
+        {
+          "const": "fresh",
+          "description": "In a new thread on its branch and worktree, with its brief and a handoff from the last one.",
+          "type": "string"
+        }
+      ]
+    },
+    "RememberedItem": {
+      "description": "What a `remember` call wrote, as a line in the project's chat. Undone with `memory_undo`.",
+      "properties": {
+        "replaced": {
+          "description": "The whole entry it replaced, which Undo puts back.",
+          "maxLength": 1000,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/MemoryScope"
+        },
+        "text": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "topic": {
+          "$ref": "#/$defs/MemoryTopic"
+        },
+        "undone": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "scope",
+        "text"
       ],
       "type": "object"
     },
@@ -9138,14 +8905,6 @@
       ],
       "type": "object"
     },
-    "Size": {
-      "enum": [
-        "s",
-        "m",
-        "l"
-      ],
-      "type": "string"
-    },
     "SkipCount": {
       "description": "Merges that are not landed changes, by why.",
       "properties": {
@@ -9208,10 +8967,24 @@
     "SlotState": {
       "properties": {
         "cap": {
-          "description": "The fleet cap: agents running at once across every project.",
+          "description": "Agents running at once across every project: `fleetCap` when set, else the sum of the machines' caps.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
+        },
+        "fleetCap": {
+          "description": "The fleet cap a person (or an older hub) saved; absent: none beyond the machines' own caps.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "perMachine": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SlotStatePerMachine"
+          },
+          "maxItems": 50,
+          "type": "array"
         },
         "perProject": {
           "items": {
@@ -9239,10 +9012,56 @@
       ],
       "type": "object"
     },
+    "SlotStatePerMachine": {
+      "description": "One machine's share of the board: what it fits, and what runs there.",
+      "properties": {
+        "auto": {
+          "description": "What the machine fits: one agent per CPU less a reserve, and 2 GB of memory each after the OS's share, at\nmost 64.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "cap": {
+          "description": "The most agents that run on it at once: a person's setting for the machine, else `auto`.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "diskRoom": {
+          "description": "New agents its free disk has room for now, above the guard's floor; absent while the node reports no disk.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "running": {
+          "description": "Agents running there now.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "why": {
+          "description": "The term that sets `auto`, e.g. \"memory 18 GB\" or \"14 of 16 CPUs\".",
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "machineId",
+        "cap",
+        "auto",
+        "why",
+        "running"
+      ],
+      "type": "object"
+    },
     "SlotStatePerProject": {
       "properties": {
         "maxAgents": {
-          "description": "The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead is not\none. The fleet `cap` until set.",
+          "description": "The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead is not\none. Its machine's `cap` until set.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
@@ -9748,6 +9567,50 @@
       ],
       "type": "object"
     },
+    "StatusCounts": {
+      "description": "A project's items per group. Complete: the rows' `items` may stop at a cap; these never do.",
+      "properties": {
+        "done": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "idle": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "inReview": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "landing": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "waitingOnYou": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "working": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "waitingOnYou",
+        "inReview",
+        "working",
+        "landing",
+        "idle",
+        "done"
+      ],
+      "type": "object"
+    },
     "StatusGetInput": {
       "properties": {
         "projectRef": {
@@ -9773,18 +9636,109 @@
           "maxItems": 200,
           "type": "array"
         },
-        "series": {
-          "description": "With projectRef: the bar over time, oldest first: why it fell (`drop`) and when it held on paused work\n(`paused`).",
-          "items": {
-            "$ref": "#/$defs/ProgressPoint"
-          },
-          "maxItems": 48,
-          "type": "array"
-        },
         "truncated": {
           "type": "boolean"
         }
       },
+      "type": "object"
+    },
+    "StatusGroup": {
+      "description": "Which group a piece of work is in. Each follows from state the hub observed (a task's run, its thread, its PR on\nthe train, an open request), never from an agent's word.",
+      "oneOf": [
+        {
+          "const": "waiting_on_you",
+          "description": "Only you can move it: the lead's question, an approval or secret request, an agent's permission prompt.",
+          "type": "string"
+        },
+        {
+          "const": "in_review",
+          "description": "Its PR waits for or is with fleetd's reviewer.",
+          "type": "string"
+        },
+        {
+          "const": "working",
+          "description": "An agent is queued or running on it, or fleetd sent its PR back to its running writer.",
+          "type": "string"
+        },
+        {
+          "const": "landing",
+          "description": "The merge train holds its PR: review passed, rebasing, CI, merging.",
+          "type": "string"
+        },
+        {
+          "const": "idle",
+          "description": "Nothing runs or waits on it: its agent ended or paused, or its PR came back with nobody on it.",
+          "type": "string"
+        },
+        {
+          "const": "done",
+          "description": "Merged in the last 7 days, or its agent finished in an order that closed in the last 7 days.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "StatusItem": {
+      "description": "One piece of a project's work: an agent and its PR, a PR no listed agent wrote, or something waiting on you.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When it last moved: its PR's or its agent's latest change, a request's creation."
+        },
+        "group": {
+          "$ref": "#/$defs/StatusGroup"
+        },
+        "pr": {
+          "$ref": "#/$defs/StatusPr",
+          "description": "Its PR, when it has one: the app opens it in the project's panel when there is no agent."
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId",
+          "description": "The agent that does it: the app opens it in the project's panel."
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "why": {
+          "description": "What the group alone doesn't say: \"CI failed\", \"usage limit: resumes 14:05\", a request's text.",
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "group",
+        "title",
+        "at"
+      ],
+      "type": "object"
+    },
+    "StatusPr": {
+      "description": "An item's PR.",
+      "properties": {
+        "number": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        },
+        "url": {
+          "maxLength": 300,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo",
+        "number",
+        "url"
+      ],
       "type": "object"
     },
     "Steer": {
@@ -9817,11 +9771,6 @@
         },
         "mode": {
           "$ref": "#/$defs/SteerMode"
-        },
-        "planChange": {
-          "description": "A plan change the steer made, e.g. \"−1 item\".",
-          "maxLength": 200,
-          "type": "string"
         },
         "queuedAt": {
           "$ref": "#/$defs/Timestamp"
@@ -10000,11 +9949,6 @@
         "next": {
           "type": "string"
         },
-        "planChange": {
-          "description": "A plan change the steer made, e.g. \"−1 item\".",
-          "maxLength": 200,
-          "type": "string"
-        },
         "queuedAt": {
           "$ref": "#/$defs/Timestamp"
         },
@@ -10170,11 +10114,6 @@
           "$ref": "#/$defs/SteerMode"
         },
         "next": {
-          "type": "string"
-        },
-        "planChange": {
-          "description": "A plan change the steer made, e.g. \"−1 item\".",
-          "maxLength": 200,
           "type": "string"
         },
         "queuedAt": {
@@ -10374,10 +10313,6 @@
         "endedAt": {
           "$ref": "#/$defs/Timestamp"
         },
-        "itemId": {
-          "$ref": "#/$defs/PlanItemId",
-          "description": "The plan item it was spawned for (`--item`)."
-        },
         "kind": {
           "$ref": "#/$defs/TaskKind"
         },
@@ -10400,6 +10335,13 @@
         "pr": {
           "description": "The PR a review task reviews. Required at spawn for review; absent on older rows (hub-spawned judges).",
           "type": "string"
+        },
+        "previousThreads": {
+          "description": "The threads it ran in before `threadRef`, oldest first: fleetd restarted it fresh (its context filled up, or its\nthread could not resume), on the same branch and worktree.",
+          "items": {
+            "$ref": "#/$defs/ThreadRef"
+          },
+          "type": "array"
         },
         "profile": {
           "$ref": "#/$defs/TaskProfile",
@@ -10547,7 +10489,7 @@
       "type": "string"
     },
     "TaskKind": {
-      "description": "Only write tasks get a worktree.",
+      "description": "Every task gets its own worktree: a writer on its own branch, a reader or reviewer detached.",
       "enum": [
         "write",
         "read",
@@ -10567,7 +10509,7 @@
       "description": "A task fleetd resumes on its own after its run died: in the same thread and worktree, with a note to continue.",
       "properties": {
         "count": {
-          "description": "Automatic recoveries used of `max`; a resumed run that died again before doing anything counts twice.",
+          "description": "Automatic recoveries used of `max`; a resumed run that died again before doing anything counts twice. A node\ngoing away never counts here.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
@@ -10587,9 +10529,21 @@
           "minimum": 0,
           "type": "integer"
         },
+        "mode": {
+          "$ref": "#/$defs/RecoveryMode",
+          "default": "resume",
+          "description": "How it goes on."
+        },
         "nextAt": {
           "$ref": "#/$defs/Timestamp",
           "description": "When the resume goes out; absent once it has."
+        },
+        "nodeLost": {
+          "default": 0,
+          "description": "Resumes after its node went away (stopped, upgraded, crashed, powered off): not the task's doing, so outside\n`count`, with a high ceiling of its own only so a node that keeps dying can't loop it forever.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
         },
         "resumedAt": {
           "$ref": "#/$defs/Timestamp",
@@ -11961,20 +11915,6 @@
       ],
       "type": "object"
     },
-    "Weight": {
-      "oneOf": [
-        {
-          "const": "must",
-          "description": "Counts toward the headline number.",
-          "type": "string"
-        },
-        {
-          "const": "polish",
-          "description": "Shown beside the number, never in it.",
-          "type": "string"
-        }
-      ]
-    },
     "WorkAction": {
       "description": "A command, file edit or tool call. Secrets in its summary and output are replaced by `[secret]`.",
       "properties": {
@@ -12151,7 +12091,7 @@
         },
         {
           "const": "taken",
-          "description": "Someone else holds the same issue, PR, branch or plan item. Not claimed.",
+          "description": "Someone else holds the same issue, PR or branch. Not claimed.",
           "type": "string"
         },
         {
@@ -12231,8 +12171,12 @@
         "claimId": {
           "$ref": "#/$defs/ClaimId"
         },
+        "expiresAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "A claim's: when it expires, or expired."
+        },
         "id": {
-          "description": "\"T12\", \"X4\", \"C7\", \"acme/shop#57\", \"P5\".",
+          "description": "\"T12\", \"X4\", \"C7\", \"acme/shop#57\".",
           "maxLength": 300,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
@@ -12319,11 +12263,6 @@
           "const": "pr",
           "description": "An open PR that isn't fleetd's.",
           "type": "string"
-        },
-        {
-          "const": "planned",
-          "description": "An open plan item with no live task.",
-          "type": "string"
         }
       ]
     },
@@ -12343,18 +12282,6 @@
           },
           "required": [
             "issue"
-          ],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "properties": {
-            "item": {
-              "$ref": "#/$defs/PlanItemId"
-            }
-          },
-          "required": [
-            "item"
           ],
           "type": "object"
         },
@@ -12395,6 +12322,10 @@
           "pattern": "^[^\\r\\n]*$",
           "type": "string"
         },
+        "paths": {
+          "description": "false: leave out what each writer has changed so far, which asks its machine; a claim keeps its paths.\nDefault true.",
+          "type": "boolean"
+        },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
         },
@@ -12420,6 +12351,14 @@
         "next": {
           "type": "string"
         },
+        "recentLandings": {
+          "description": "Commits that reached the base outside the train (a PR merged by hand, a direct push) in the last 24 h, newest\nfirst.",
+          "items": {
+            "$ref": "#/$defs/RecentLanding"
+          },
+          "maxItems": 10,
+          "type": "array"
+        },
         "scope": {
           "$ref": "#/$defs/WorkScope"
         },
@@ -12433,7 +12372,8 @@
       },
       "required": [
         "scope",
-        "items"
+        "items",
+        "recentLandings"
       ],
       "type": "object"
     },

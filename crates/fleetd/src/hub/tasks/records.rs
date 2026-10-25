@@ -48,6 +48,16 @@ pub struct TaskRecords;
 impl TaskRecords {
     fn write(db: &Connection, stored: &StoredTask) -> rusqlite::Result<()> {
         let t = &stored.task;
+        for r in &t.previous_threads {
+            db.prepare_cached(
+                "INSERT OR IGNORE INTO task_threads (machine_id, thread_id, n) VALUES (?, ?, ?)",
+            )?
+            .execute(params![
+                r.machine_id.as_str(),
+                r.thread_id.as_str(),
+                number_of(&t.task_id)
+            ])?;
+        }
         db.prepare_cached("UPDATE tasks SET state = ?, thread_id = ?, ended_at = ?, pending_message = ?, data = ? WHERE n = ?")?.execute(params![
             state_str(t.state),
             t.thread_ref.as_ref().map(|r| r.thread_id.as_str().to_owned()),
@@ -90,17 +100,76 @@ impl TaskRecords {
         Self::write(db, stored)
     }
 
-    pub fn by_thread(db: &Connection, r: &ThreadRef) -> rusqlite::Result<Option<StoredTask>> {
-        db.prepare_cached("SELECT data, pending_message FROM tasks WHERE machine_id = ? AND thread_id = ? ORDER BY n DESC LIMIT 1")?
-            .query_row(params![r.machine_id.as_str(), r.thread_id.as_str()], stored_of)
-            .optional()
+    /// An ended task, with its PR lookup marked pending (D67) or not, in one write.
+    pub fn put_ended(
+        db: &Connection,
+        stored: &StoredTask,
+        pr_lookup: bool,
+    ) -> rusqlite::Result<()> {
+        let tx = db.unchecked_transaction()?;
+        Self::write(&tx, stored)?;
+        Self::set_pr_lookup(&tx, &stored.task.task_id, pr_lookup)?;
+        tx.commit()
     }
 
-    /// The task whose session is `thread_id` on any machine: what a session's FLEETD_THREAD_ID names without its
-    /// machine.
-    pub fn by_thread_id(db: &Connection, thread_id: &str) -> rusqlite::Result<Option<StoredTask>> {
+    /// Marks the task's PR lookup pending (D67), or settled.
+    pub fn set_pr_lookup(db: &Connection, task_id: &TaskId, pending: bool) -> rusqlite::Result<()> {
+        db.prepare_cached("UPDATE tasks SET pr_lookup = ? WHERE n = ?")?
+            .execute(params![pending, number_of(task_id)])?;
+        Ok(())
+    }
+
+    pub fn pr_lookup_pending(db: &Connection, task_id: &TaskId) -> rusqlite::Result<bool> {
+        db.prepare_cached("SELECT pr_lookup FROM tasks WHERE n = ?")?
+            .query_row([number_of(task_id)], |r| r.get(0))
+            .optional()
+            .map(|p| p.unwrap_or(false))
+    }
+
+    /// The tasks whose PR lookup is pending, oldest first.
+    pub fn pr_lookups(db: &Connection) -> rusqlite::Result<Vec<Task>> {
+        let mut stmt = db.prepare_cached(
+            "SELECT data, pending_message FROM tasks WHERE pr_lookup = 1 ORDER BY n",
+        )?;
+        let rows = stmt.query_map([], stored_of)?;
+        rows.map(|r| r.map(|s| s.task)).collect()
+    }
+
+    /// The task that runs in the thread, or ran in it before a fresh restart (`previousThreads`): late word of an
+    /// earlier thread still finds its task, which tells it from the thread it is on now.
+    pub fn by_thread(db: &Connection, r: &ThreadRef) -> rusqlite::Result<Option<StoredTask>> {
+        let current = db.prepare_cached("SELECT data, pending_message FROM tasks WHERE machine_id = ? AND thread_id = ? ORDER BY n DESC LIMIT 1")?
+            .query_row(params![r.machine_id.as_str(), r.thread_id.as_str()], stored_of)
+            .optional()?;
+        if current.is_some() {
+            return Ok(current);
+        }
         db.prepare_cached(
-            "SELECT data, pending_message FROM tasks WHERE thread_id = ? ORDER BY n DESC LIMIT 1",
+            "SELECT t.data, t.pending_message FROM task_threads p JOIN tasks t ON t.n = p.n
+             WHERE p.machine_id = ? AND p.thread_id = ?",
+        )?
+        .query_row(
+            params![r.machine_id.as_str(), r.thread_id.as_str()],
+            stored_of,
+        )
+        .optional()
+    }
+
+    /// The task whose session is `thread_id` on any machine, now or before a fresh restart: what a session's
+    /// FLEETD_THREAD_ID names without its machine.
+    pub fn by_thread_id(db: &Connection, thread_id: &str) -> rusqlite::Result<Option<StoredTask>> {
+        let current = db
+            .prepare_cached(
+                "SELECT data, pending_message FROM tasks WHERE thread_id = ? ORDER BY n DESC LIMIT 1",
+            )?
+            .query_row([thread_id], stored_of)
+            .optional()?;
+        if current.is_some() {
+            return Ok(current);
+        }
+        db.prepare_cached(
+            "SELECT t.data, t.pending_message FROM task_threads p JOIN tasks t ON t.n = p.n
+             WHERE p.thread_id = ? ORDER BY t.n DESC LIMIT 1",
         )?
         .query_row([thread_id], stored_of)
         .optional()
@@ -237,10 +306,14 @@ impl TaskRecords {
         Ok(serde_json::from_value(serde_json::Value::Object(counts)).expect("TaskCounts decodes"))
     }
 
-    /// Every thread a task of the project ran in, so thread lists can leave them out.
+    /// Every thread a task of the project ran in, earlier ones included, so thread lists can leave them out.
     pub fn thread_ids(db: &Connection, r: &ProjectRef) -> rusqlite::Result<HashSet<String>> {
-        db.prepare_cached("SELECT thread_id FROM tasks WHERE machine_id = ? AND project_id = ? AND thread_id IS NOT NULL")?
-            .query_map(params![r.machine_id.as_str(), r.project_id.as_str()], |row| row.get(0))?
-            .collect()
+        db.prepare_cached(
+            "SELECT thread_id FROM tasks WHERE machine_id = ?1 AND project_id = ?2 AND thread_id IS NOT NULL
+             UNION SELECT p.thread_id FROM tasks t JOIN task_threads p ON p.n = t.n
+               WHERE t.machine_id = ?1 AND t.project_id = ?2",
+        )?
+        .query_map(params![r.machine_id.as_str(), r.project_id.as_str()], |row| row.get(0))?
+        .collect()
     }
 }

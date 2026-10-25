@@ -709,6 +709,10 @@
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
         },
+        "remembered": {
+          "$ref": "#/$defs/RememberedItem",
+          "description": "A system line \"Remembered: …\": what the lead's `remember` wrote, which `memory_undo` takes back."
+        },
         "seq": {
           "maximum": 9007199254740991,
           "minimum": 0,
@@ -1338,14 +1342,11 @@
         "machine.guard": {
           "$ref": "#/$defs/MachineGuardData"
         },
+        "machine.recovery_paused": {
+          "$ref": "#/$defs/RecoveryPausedData"
+        },
         "machine.slept": {
           "$ref": "#/$defs/MachineSleptData"
-        },
-        "plan.changed": {
-          "$ref": "#/$defs/PlanChangedData"
-        },
-        "plan.verified": {
-          "$ref": "#/$defs/PlanVerifiedData"
         },
         "pr.merged": {
           "$ref": "#/$defs/TrainEventData"
@@ -1425,6 +1426,9 @@
         "thread.interrupted": {
           "$ref": "#/$defs/ThreadEventData"
         },
+        "thread.orphaned": {
+          "$ref": "#/$defs/ThreadOrphanedData"
+        },
         "thread.started": {
           "$ref": "#/$defs/ThreadEventData"
         },
@@ -1475,9 +1479,8 @@
         "chat.waiting",
         "ci.main",
         "machine.guard",
+        "machine.recovery_paused",
         "machine.slept",
-        "plan.changed",
-        "plan.verified",
         "pr.merged",
         "pr.merged_outside",
         "project.add_failed",
@@ -1504,6 +1507,7 @@
         "thread.completed",
         "thread.failed",
         "thread.interrupted",
+        "thread.orphaned",
         "thread.started",
         "thread.usage_limited",
         "thread.waiting",
@@ -1575,6 +1579,25 @@
       ],
       "type": "object"
     },
+    "MemoryScope": {
+      "oneOf": [
+        {
+          "const": "user",
+          "description": "`user.md`: how the human works across every project.",
+          "type": "string"
+        },
+        {
+          "const": "project",
+          "description": "This project's `MEMORY.md`, or one of its topic files.",
+          "type": "string"
+        }
+      ]
+    },
+    "MemoryTopic": {
+      "description": "Lowercase slug, [a-z0-9][a-z0-9-]{0,47}, other than memory",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,47}$",
+      "type": "string"
+    },
     "MergeRules": {
       "description": "How the default branch may be merged into.",
       "properties": {
@@ -1610,10 +1633,6 @@
       ],
       "type": "object"
     },
-    "MilestoneId": {
-      "pattern": "^M[1-9][0-9]*$",
-      "type": "string"
-    },
     "ParkedCounts": {
       "properties": {
         "leads": {
@@ -1630,124 +1649,6 @@
       "required": [
         "leads",
         "tasks"
-      ],
-      "type": "object"
-    },
-    "PlanChangeKind": {
-      "oneOf": [
-        {
-          "const": "scope",
-          "description": "A lead's `plan` call that moved a milestone's total after it had items.",
-          "type": "string"
-        },
-        {
-          "const": "reopened",
-          "description": "Older markers only: a later claim failed a check a done item listed.",
-          "type": "string"
-        },
-        {
-          "const": "closed",
-          "description": "Items dropped by the hub when their order finished, stopped or failed.",
-          "type": "string"
-        },
-        {
-          "const": "milestone_done",
-          "description": "A milestone finished and left the project's figure.",
-          "type": "string"
-        },
-        {
-          "const": "milestone_reopened",
-          "description": "An item was added to a done milestone.",
-          "type": "string"
-        }
-      ]
-    },
-    "PlanChangedData": {
-      "description": "`plan.changed`: a marker was written.",
-      "properties": {
-        "at": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "by": {
-          "description": "`lead:<projectRef>`, a key id, or `hub`.",
-          "maxLength": 120,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
-        "deltaItems": {
-          "maximum": 9007199254740991,
-          "minimum": -9007199254740991,
-          "type": "integer"
-        },
-        "deltaSize": {
-          "description": "In points.",
-          "maximum": 9007199254740991,
-          "minimum": -9007199254740991,
-          "type": "integer"
-        },
-        "kind": {
-          "$ref": "#/$defs/PlanChangeKind"
-        },
-        "milestoneId": {
-          "$ref": "#/$defs/MilestoneId"
-        },
-        "note": {
-          "description": "\"+3 items: time inspector added\".",
-          "maxLength": 200,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
-        "pctAfter": {
-          "maximum": 100,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "pctBefore": {
-          "maximum": 100,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "workstreamId": {
-          "$ref": "#/$defs/WorkstreamId"
-        }
-      },
-      "required": [
-        "kind",
-        "milestoneId",
-        "at",
-        "by",
-        "deltaItems",
-        "deltaSize",
-        "note"
-      ],
-      "type": "object"
-    },
-    "PlanItemId": {
-      "pattern": "^P[1-9][0-9]*$",
-      "type": "string"
-    },
-    "PlanVerifiedData": {
-      "description": "`plan.verified`: the hub marked an item done.",
-      "properties": {
-        "evidence": {
-          "type": "string"
-        },
-        "itemId": {
-          "$ref": "#/$defs/PlanItemId"
-        },
-        "milestoneId": {
-          "$ref": "#/$defs/MilestoneId"
-        },
-        "workstreamId": {
-          "$ref": "#/$defs/WorkstreamId"
-        }
-      },
-      "required": [
-        "itemId",
-        "milestoneId",
-        "evidence"
       ],
       "type": "object"
     },
@@ -2021,6 +1922,62 @@
         "project"
       ],
       "type": "string"
+    },
+    "RecoveryPausedData": {
+      "description": "`machine.recovery_paused`.",
+      "properties": {
+        "paused": {
+          "description": "true: dead agents there wait instead of resuming; false: they resume again.",
+          "type": "boolean"
+        },
+        "taskIds": {
+          "description": "The agents whose deaths opened it, oldest first.",
+          "items": {
+            "$ref": "#/$defs/TaskId"
+          },
+          "type": "array"
+        },
+        "until": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When it closes if nothing else dies there; an agent there completing closes it sooner."
+        }
+      },
+      "required": [
+        "paused"
+      ],
+      "type": "object"
+    },
+    "RememberedItem": {
+      "description": "What a `remember` call wrote, as a line in the project's chat. Undone with `memory_undo`.",
+      "properties": {
+        "replaced": {
+          "description": "The whole entry it replaced, which Undo puts back.",
+          "maxLength": 1000,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/MemoryScope"
+        },
+        "text": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "topic": {
+          "$ref": "#/$defs/MemoryTopic"
+        },
+        "undone": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "scope",
+        "text"
+      ],
+      "type": "object"
     },
     "RemoteRepo": {
       "type": "string"
@@ -2540,6 +2497,24 @@
     "ThreadId": {
       "type": "string"
     },
+    "ThreadOrphanedData": {
+      "description": "`thread.orphaned`.",
+      "properties": {
+        "since": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When the hub first saw it without an owner."
+        },
+        "title": {
+          "description": "The session's title on its node.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "since"
+      ],
+      "type": "object"
+    },
     "ThreadRef": {
       "properties": {
         "machineId": {
@@ -2797,13 +2772,6 @@
           "pattern": "^[^\\r\\n]*$",
           "type": "string"
         },
-        "itemIds": {
-          "description": "The plan item of its task.",
-          "items": {
-            "$ref": "#/$defs/PlanItemId"
-          },
-          "type": "array"
-        },
         "prNumber": {
           "description": "The PR or merge request it came from, when the merge message or the host names one.",
           "maximum": 9007199254740991,
@@ -2835,8 +2803,7 @@
         "sha",
         "route",
         "subject",
-        "claimIds",
-        "itemIds"
+        "claimIds"
       ],
       "type": "object"
     },

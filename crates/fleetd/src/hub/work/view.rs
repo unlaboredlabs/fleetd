@@ -68,9 +68,6 @@ fn claim_state_str(state: ClaimState) -> &'static str {
 
 fn task_keys(task: &Task) -> Vec<WorkKey> {
     let mut keys = Vec::new();
-    if let Some(item) = &task.item_id {
-        push_key(&mut keys, WorkKey::Item(item.clone()));
-    }
     if let Some(key) = task.branch.as_deref().and_then(branch_key) {
         push_key(&mut keys, key);
     }
@@ -100,6 +97,7 @@ fn task_item(task: &Task, observed: &HashMap<TaskId, Vec<String>>) -> WorkItem {
         change_id: None,
         claim_id: None,
         since: task.created_at.clone(),
+        expires_at: None,
     }
 }
 
@@ -111,9 +109,6 @@ fn change_item(
     let mut keys = vec![WorkKey::Pr(PrUrl::unchecked(change.pr_url.as_str()))];
     if let Some(key) = branch_key(&change.branch) {
         push_key(&mut keys, key);
-    }
-    if let Some(item) = task.and_then(|t| t.item_id.clone()) {
-        push_key(&mut keys, WorkKey::Item(item));
     }
     let title = match task {
         Some(task) => task.title.as_str().to_owned(),
@@ -138,6 +133,7 @@ fn change_item(
         change_id: Some(change.change_id.clone()),
         claim_id: None,
         since: change.created_at.clone(),
+        expires_at: None,
     }
 }
 
@@ -160,6 +156,7 @@ fn claim_item(claim: &Claim) -> WorkItem {
         change_id: None,
         claim_id: Some(claim.claim_id.clone()),
         since: claim.renewed_at.clone(),
+        expires_at: Some(claim.expires_at.clone()),
     }
 }
 

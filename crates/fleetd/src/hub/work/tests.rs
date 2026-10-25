@@ -465,7 +465,7 @@ async fn the_view_reads_every_project_on_the_repos_base_and_nothing_else() {
         "dark mode toggle",
         "write",
         "running",
-        json!({ "branch": "fleetd/T1-dark-mode", "itemId": "P5" }),
+        json!({ "branch": "fleetd/T1-dark-mode" }),
     );
     let theirs = task(&hub, &web, "search box", "write", "queued", json!({}));
     task(
@@ -510,10 +510,7 @@ async fn the_view_reads_every_project_on_the_repos_base_and_nothing_else() {
     assert_eq!(dark.project_ref.as_ref(), Some(&app));
     assert_eq!(
         dark.keys.to_vec(),
-        [
-            WorkKey::Item(fleetd_contracts::plan::PlanItemId::unchecked("P5")),
-            WorkKey::Branch(Line::unchecked("fleetd/T1-dark-mode"))
-        ]
+        [WorkKey::Branch(Line::unchecked("fleetd/T1-dark-mode"))]
     );
     let claim = items
         .iter()
@@ -532,6 +529,17 @@ async fn the_view_reads_every_project_on_the_repos_base_and_nothing_else() {
         "a claim's branch is one of its keys"
     );
     assert_eq!(claim.paths.to_vec(), [WorkPath::unchecked("app/theme.ts")]);
+    let held = hub
+        .work
+        .get(claim.claim_id.as_ref().unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        claim.expires_at.as_ref(),
+        Some(&held.expires_at),
+        "a claim says when it expires"
+    );
+    assert_eq!(dark.expires_at, None);
 
     assert!(
         hub.work
@@ -552,7 +560,7 @@ async fn a_writer_appears_once_its_change_takes_over_until_it_merges() {
         "dark mode toggle",
         "write",
         "idle",
-        json!({ "branch": "fleetd/T1-dark-mode", "itemId": "P5" }),
+        json!({ "branch": "fleetd/T1-dark-mode" }),
     );
     let x = change(&hub, &app, Some(&enqueued), 41, "ci");
     let abandoned = task(
@@ -589,9 +597,6 @@ async fn a_writer_appears_once_its_change_takes_over_until_it_merges() {
         ("dark mode toggle", "ci")
     );
     assert_eq!(ci.task_id.as_ref(), Some(&enqueued.task_id));
-    assert!(ci.keys.contains(&WorkKey::Item(
-        fleetd_contracts::plan::PlanItemId::unchecked("P5")
-    )));
     assert!(
         ci.keys
             .contains(&WorkKey::Branch(Line::unchecked("fleetd/T1-dark-mode")))
@@ -685,6 +690,31 @@ async fn each_writer_carries_the_paths_it_has_changed_so_far() {
         paths(&unknown).is_empty(),
         "a node that could not say gives no paths"
     );
+
+    // Read from the hub alone, no node is asked: the writers are there, without their paths.
+    let stored = Work::new(
+        hub.db.clone(),
+        hub.events.clone(),
+        hub.clock.clone(),
+        Arc::new(NoNode),
+    )
+    .in_flight_stored(&shop)
+    .unwrap();
+    let ids: Vec<&str> = items.iter().map(|i| i.id.as_str()).collect();
+    assert_eq!(
+        stored.iter().map(|i| i.id.as_str()).collect::<Vec<_>>(),
+        ids
+    );
+    assert!(stored.iter().all(|i| i.paths.is_empty()));
+}
+
+/// A machine that must not be asked.
+struct NoNode;
+
+impl WorkPorts for NoNode {
+    fn changed_paths<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Option<Vec<String>>> {
+        panic!("asked {}'s machine what it changed", thread.thread_id)
+    }
 }
 
 #[tokio::test]

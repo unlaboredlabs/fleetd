@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::brand;
 use crate::ids::{ProjectRef, Timestamp};
-use crate::plan::PlanItemId;
 use crate::prim::{Line, List, Positive, js_len};
 use crate::projects::short_remote;
 use crate::tasks::PrUrl;
@@ -59,7 +58,6 @@ pub struct WorkScope {
 pub enum WorkKey {
     /// "#123", "ABC-123", or an issue URL.
     Issue(Line<1, 300>),
-    Item(PlanItemId),
     Pr(PrUrl),
     Branch(BranchName),
 }
@@ -168,8 +166,6 @@ pub enum WorkItemKind {
     /// An open PR that isn't fleetd's.
     Pr,
     Claim,
-    /// An open plan item with no live task.
-    Planned,
 }
 
 /// One piece of work in flight, from whichever source holds it.
@@ -177,7 +173,7 @@ pub enum WorkItemKind {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkItem {
-    /// "T12", "X4", "C7", "acme/shop#57", "P5".
+    /// "T12", "X4", "C7", "acme/shop#57".
     pub id: Line<1, 300>,
     pub kind: WorkItemKind,
     /// The project whose lead runs it; absent for a claim not tied to one, and for outside PRs.
@@ -195,6 +191,8 @@ pub struct WorkItem {
     pub claim_id: Option<ClaimId>,
     /// When it was made, or a claim last renewed.
     pub since: Timestamp,
+    /// A claim's: when it expires, or expired.
+    pub expires_at: Option<Timestamp>,
 }
 
 /// How sure the matcher is that new work repeats a piece in flight.
@@ -238,6 +236,23 @@ pub enum LandingRoute {
     DirectPush,
 }
 
+/// A commit that reached the base outside the train, as `work_list` shows it: what the hub's `Landings` reads back.
+#[serde_with::skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentLanding {
+    pub sha: CommitSha,
+    /// The commit's committer time.
+    pub at: Timestamp,
+    pub route: LandingRoute,
+    /// The PR it merged as, when its message or the host names one: "#57", or its URL.
+    pub pr: Option<String>,
+    pub subject: String,
+    pub author_email: Option<String>,
+    /// The work it matched exactly: "P5", "T12", "C7".
+    pub covers: Vec<String>,
+}
+
 /// `HubEvent.data` on `work.claimed` and `work.ended`.
 #[serde_with::skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -275,8 +290,6 @@ pub struct WorkLandedData {
     pub change_id: Option<ChangeId>,
     /// The write task whose work it is: its Change's, or the one whose branch it came from.
     pub task_id: Option<crate::tasks::TaskId>,
-    /// The plan item of its task.
-    pub item_ids: Vec<PlanItemId>,
 }
 
 #[cfg(test)]
@@ -331,16 +344,15 @@ mod tests {
     #[test]
     fn a_work_key_is_one_tagged_id() {
         let keys: Vec<WorkKey> = serde_json::from_value(json!([
-            { "issue": "#123" }, { "issue": "ABC-123" }, { "item": "P5" },
+            { "issue": "#123" }, { "issue": "ABC-123" },
             { "pr": "https://gitlab.example.com/group/shop/-/merge_requests/9" }, { "branch": "ada/dark-mode" },
         ]))
         .unwrap();
-        assert_eq!(keys[2], WorkKey::Item(PlanItemId::unchecked("P5")));
         assert_eq!(
-            serde_json::to_value(&keys[4]).unwrap(),
+            serde_json::to_value(&keys[3]).unwrap(),
             json!({ "branch": "ada/dark-mode" })
         );
-        assert!(serde_json::from_value::<WorkKey>(json!({ "item": "T5" })).is_err());
+        assert!(serde_json::from_value::<WorkKey>(json!({ "item": "P5" })).is_err());
         assert!(serde_json::from_value::<WorkKey>(json!({ "issue": "a\nb" })).is_err());
     }
 }

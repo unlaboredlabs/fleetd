@@ -13,7 +13,7 @@ use fleetd_contracts::lead_calls::{
     GatedRunCall, LeadCall, LeadSocketFrame, RequestSecretCall, RequestWithdrawCall,
     TaskCancelCall, TaskListCall, TaskMessageCall, TaskSpawnCall,
 };
-use fleetd_contracts::plan::PlanCall;
+use fleetd_contracts::memory::{MemoryReadCall, RememberCall};
 use fleetd_contracts::schema::inline_schema;
 use fleetd_contracts::verification::ReviewVerdict;
 use serde_json::{Value, json};
@@ -147,18 +147,26 @@ static TOOLS: &[Tool] = &[
     )
     .needs("A human approves the exact command in chat before the node runs it."),
     lead(
-        "plan",
-        "plan",
-        "Set a workstream's plan items, in order (must or polish, size s|m|l, after other items, an optional \
-         milestone title), and get the plan back. Its open items you leave out are dropped. Without items: the plan. \
-         `covered` marks open items done by a commit Elsewhere shows landed outside fleetd.",
-        inline_schema::<PlanCall>,
-    ),
-    lead(
         "decisions_search",
         "decisions_search",
         "Search the decision log.",
         inline_schema::<DecisionsSearchCall>,
+    ),
+    lead(
+        "remember",
+        "remember",
+        "Keep one entry in memory, in plain words, for every later session: scope user for how the human works \
+         everywhere (tone, taste, standing rules), project for this project (MEMORY.md, or a topic file for detail). \
+         With replaces (words of one entry, quoted exactly) it takes that entry's place: never keep two versions. A \
+         write past a file's cap is refused: merge or replace entries, then call again. The chat shows the human what \
+         you remembered, with Undo. Never a secret.",
+        inline_schema::<RememberCall>,
+    ),
+    lead(
+        "memory_read",
+        "memory_read",
+        "Read one of this project's memory topic files (MEMORY.md lists them).",
+        inline_schema::<MemoryReadCall>,
     ),
     lead(
         "change_enqueue",
@@ -172,7 +180,7 @@ static TOOLS: &[Tool] = &[
         worker: true,
         lead: false,
         description: "Record your review verdict once, before your final message: the number of blocking and \
-                      non-blocking findings and a one-paragraph summary. fleetd fills in your task and the head you \
+                      non-blocking findings and a summary of each. fleetd fills in your task and the head you \
                       reviewed.",
         schema: report_schema,
         human: None,
@@ -231,10 +239,16 @@ pub fn call_of(role: Role, name: &str, arguments: Value) -> Result<Value, String
     Ok(call)
 }
 
-/// A node answer frame as an MCP tool result.
+/// A node answer frame as an MCP tool result: compact JSON, since it stays in the caller's context for every later
+/// request. A task frame (`spawn_agent`, `message_agent`, `stop_agent`) leaves out the task's prompt, which the lead
+/// just wrote.
 pub fn tool_result(answer: &Value) -> Value {
     if let Some(result) = answer.get("result") {
-        let text = serde_json::to_string_pretty(result).unwrap_or_default();
+        let mut result = result.clone();
+        if let Some(task) = result.get_mut("task").and_then(Value::as_object_mut) {
+            task.remove("prompt");
+        }
+        let text = serde_json::to_string(&result).unwrap_or_default();
         return json!({ "content": [{ "type": "text", "text": text }], "isError": false });
     }
     let error = answer.get("error").cloned().unwrap_or_default();
@@ -490,7 +504,8 @@ mod tests {
             "brief",
             "close",
             "gated_run",
-            "plan",
+            "remember",
+            "memory_read",
         ] {
             assert!(lead.contains(&tool.to_owned()), "{tool}");
         }
@@ -547,6 +562,21 @@ mod tests {
         for field in ["taskId", "prHeadSha"] {
             assert!(schema["properties"].get(field).is_none(), "{field}");
         }
+    }
+
+    #[test]
+    fn a_result_is_compact_and_never_echoes_the_prompt_back() {
+        let answer = json!({ "t": "lead_result", "id": "x", "result": {
+            "op": "task_spawn", "task": { "taskId": "T3", "prompt": "a long brief", "state": "running" },
+            "next": "T2 is writing too." } });
+        let text = tool_result(&answer)["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert!(!text.contains('\n') && !text.contains("prompt"), "{text}");
+        let back: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(back["task"]["taskId"], "T3");
+        assert_eq!(back["next"], "T2 is writing too.");
     }
 
     #[test]

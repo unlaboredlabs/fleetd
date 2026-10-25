@@ -1,6 +1,6 @@
 /*
- * The lead chat. One column, inset like the rest of the app; messages read like a conversation (author and time
- * once per run, none on yours), fleet activity and fleetd's own lines stay quiet and one line high.
+ * The lead chat. One column, inset like the rest of the app; messages are bubbles, the lead's on the left and yours on
+ * the right, a run drawn as one stack; fleet activity and fleetd's own lines stay quiet and one line high.
  */
 .screen {
   --pad: var(--space-4);
@@ -34,6 +34,7 @@
   min-height: 0;
   /* The containing block for the Latest button, fixed over the conversation like any bar content scrolls under. */
   contain: layout;
+  container-type: inline-size;
 }
 .latest {
   position: fixed;
@@ -66,6 +67,7 @@
 .message,
 .quietRow,
 .day,
+.clock,
 .top,
 .strip {
   max-width: calc(var(--measure) + 2 * var(--pad));
@@ -75,29 +77,173 @@
 .message {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
-  padding-top: var(--space-1-5);
+  align-items: flex-start;
+  gap: 2px;
+  padding-top: 2px;
   min-width: 0;
 }
 .messageHead {
-  padding-top: var(--space-4);
+  padding-top: var(--space-3);
 }
-/* Yours: no header, a rule in the accent at the left, in the gutter so the text lines up with the lead's. */
+/* Yours, on the right. */
 .mine {
-  position: relative;
+  align-items: flex-end;
 }
-.mine::before {
+
+/*
+ * A bubble with what goes beside it: the tapbacks and reply on hover, the time on hover. Three quarters of the
+ * column at most, like a messaging app's; a rich block takes the column.
+ */
+.line {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 80%;
+  min-width: 0;
+}
+.mine .line {
+  flex-direction: row-reverse;
+}
+/* In a narrow chat (a side panel) a bubble's actions and time go under it; beside it they'd squeeze it to a word. */
+@container (max-width: 480px) {
+  .line {
+    flex-wrap: wrap;
+  }
+}
+.wide {
+  width: 100%;
+  max-width: 100%;
+}
+.bubble {
+  --tight: 5px;
+  position: relative;
+  /* The tail's pseudo-elements paint under the text, over the bubble's own fill. */
+  isolation: isolate;
+  min-width: 0;
+  max-width: 100%;
+  padding: 6px 12px 7px;
+  border-radius: 17px;
+  background: var(--bubble);
+}
+.bubble.wide {
+  box-sizing: border-box;
+}
+/* A run reads as one stack: its inner corners tighten, and its last bubble has the tail. */
+.theirs:not(.first) {
+  border-top-left-radius: var(--tight);
+}
+.theirs:not(.last) {
+  border-bottom-left-radius: var(--tight);
+}
+.mineBubble:not(.first) {
+  border-top-right-radius: var(--tight);
+}
+.mineBubble:not(.last) {
+  border-bottom-right-radius: var(--tight);
+}
+.last.theirs::before,
+.last.mineBubble::before,
+.last.theirs::after,
+.last.mineBubble::after {
   content: "";
   position: absolute;
-  top: var(--space-1-5);
+  z-index: -1;
   bottom: 0;
-  left: calc(var(--pad) - var(--space-3));
-  width: 2px;
-  border-radius: 1px;
-  background: var(--accent);
+  height: 18px;
 }
-.messageHead.mine::before {
-  top: var(--space-4);
+.last.theirs::before {
+  left: -6px;
+  width: 18px;
+  background: var(--bubble);
+  border-bottom-right-radius: 14px;
+}
+.last.theirs::after {
+  left: -9px;
+  width: 9px;
+  background: var(--bg);
+  border-bottom-right-radius: 9px;
+}
+.last.mineBubble::before {
+  right: -6px;
+  width: 18px;
+  background: var(--accent-fill);
+  border-bottom-left-radius: 14px;
+}
+.last.mineBubble::after {
+  right: -9px;
+  width: 9px;
+  background: var(--bg);
+  border-bottom-left-radius: 9px;
+}
+/*
+ * Yours, in the accent. The prose inside reads its colours from the tokens, so they are set again for the fill:
+ * text, links and code in white.
+ */
+.mineBubble {
+  --text: var(--on-accent);
+  --quiet: color-mix(in srgb, var(--on-accent) 82%, transparent);
+  --accent: var(--on-accent);
+  --hairline: color-mix(in srgb, var(--on-accent) 35%, transparent);
+  --sidebar: color-mix(in srgb, #000 16%, var(--accent-fill));
+  --shiki-foreground: var(--on-accent);
+  --shiki-token-comment: var(--on-accent);
+  --shiki-token-keyword: var(--on-accent);
+  --shiki-token-string: var(--on-accent);
+  --shiki-token-string-expression: var(--on-accent);
+  --shiki-token-constant: var(--on-accent);
+  --shiki-token-function: var(--on-accent);
+  --shiki-token-parameter: var(--on-accent);
+  --shiki-token-punctuation: var(--on-accent);
+  background: var(--accent-fill);
+  color: var(--on-accent);
+}
+/* Just sent: it rises into place once, from the box. Reduced motion zeroes --dur-base. */
+.sending {
+  animation: rise var(--dur-base) var(--ease-out);
+}
+@keyframes rise {
+  from {
+    opacity: 0.4;
+    transform: translateY(8px);
+  }
+}
+/* The quiet side of the line, shown while the row is hovered or has focus: tapback, reply, the time. */
+.aside {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.line:hover > .aside,
+.line:focus-within > .aside {
+  opacity: 1;
+}
+.time {
+  padding: 0 var(--space-1);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--quiet);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* A block is its own card in the stack, a step wider than a bubble's words. */
+.blockBubble {
+  position: relative;
+  min-width: min(100%, 320px);
+  max-width: 100%;
+}
+/* One to three emoji: large, with no bubble. */
+.jumbo {
+  position: relative;
+  font-size: 32px;
+  line-height: 40px;
+}
+/* An image sent with a message: shown bare, as a messaging app does, in the stack's corners. */
+.mine .attachments {
+  justify-content: flex-end;
 }
 .head {
   display: flex;
@@ -110,12 +256,13 @@
 }
 .event {
   display: flex;
+  justify-content: center;
   align-items: baseline;
   gap: var(--space-2);
+  text-align: center;
 }
 .eventTime {
   flex: none;
-  margin-left: auto;
   font-size: var(--text-xs);
   color: var(--quiet);
   font-variant-numeric: tabular-nums;
@@ -133,6 +280,11 @@
   height: 1px;
   background: var(--hairline);
 }
+.clock {
+  display: flex;
+  justify-content: center;
+  padding-top: var(--space-4);
+}
 .top {
   display: flex;
   justify-content: center;
@@ -147,8 +299,109 @@
 }
 /* A message from before the chat existed (an old order's conversation), or from an agent's key: the same message, a
    step quieter. */
-.quietMessage {
-  color: var(--quiet);
+.quietMessage .theirs {
+  --text: var(--quiet);
+}
+
+/* The lead writing: three dots in its bubble, one lit at a time, stepping once a second (never a running animation). */
+.typing {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: var(--leading-md);
+}
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--quiet);
+  opacity: 0.45;
+}
+.lit {
+  opacity: 1;
+}
+
+/* Tapbacks: a small badge on the bubble's upper outer corner, and room above the bubble for it. */
+.reacted {
+  margin-top: 12px;
+}
+.tapbacks {
+  position: absolute;
+  z-index: 1;
+  top: -14px;
+  display: flex;
+  gap: 1px;
+  padding: 1px 5px;
+  border: 2px solid var(--bg);
+  border-radius: 12px;
+  background: var(--bubble);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.theirs > .tapbacks,
+.blockBubble > .tapbacks,
+.jumbo > .tapbacks {
+  right: -10px;
+}
+.mineBubble > .tapbacks {
+  left: -10px;
+}
+.picker {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+}
+.pick {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  font-size: 17px;
+  cursor: pointer;
+}
+.pick:hover {
+  background: var(--hover);
+}
+.pick[aria-pressed="true"] {
+  background: var(--selected);
+}
+.pick:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 0;
+}
+
+/* The bubble a message answers, quoted small above it; pressed, the chat goes to it. */
+.quote {
+  display: flex;
+  max-width: 80%;
+  min-width: 0;
+  padding: 2px 0 2px var(--space-2);
+  border: none;
+  border-left: 2px solid var(--border);
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.mine > .quote {
+  margin-right: var(--space-2);
+  border-left: none;
+  border-right: 2px solid var(--border);
+  padding: 2px var(--space-2) 2px 0;
+  text-align: right;
+}
+.quote:disabled {
+  cursor: default;
+}
+.quote:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
 }
 .attachments {
   display: flex;

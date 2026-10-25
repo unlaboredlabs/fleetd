@@ -28,9 +28,10 @@ The hub checks these on every fleetd call a session makes, through its MCP tools
 |---|---|
 | Who can start agents | A lead, with `spawn_agent`. A task's agent can't. |
 | Depth | 1. A lead is depth 0 and its tasks depth 1; nothing goes deeper. |
-| Open tasks per lead | 32 (queued, running or idle). |
-| Agents running at once, per project | The project's max agents, which a person sets (`cap_set`, the chat's Max agents); unset, the fleet cap. A spawn over it queues and starts by itself; a review goes ahead of queued writers. The lead is not an agent and doesn't count. |
-| Agents running at once, fleet-wide | The fleet cap, 40 by default. |
+| Open tasks per lead | 32, or twice the project's max agents when that is more (queued, running or idle). |
+| Agents running at once, per project | The project's max agents, which a person sets (`cap_set`, the chat's Max agents); unset, its machine's cap. A spawn over it queues and starts by itself; a review goes ahead of queued writers. The lead is not an agent and doesn't count. |
+| Agents running at once, per machine | What the machine fits: one per CPU less one in eight, and 2 GB of memory each after a quarter (4 to 16 GB) is left for the system, at most 64. New agents also wait for 5 GB of disk each above the free-space floor. |
+| Agents running at once, fleet-wide | The machines' caps added up, unless a person set a fleet cap. |
 | Calls a task's agent may make | `report`, `ask_lead`. Every other call is refused. |
 | Gated commands (`gated_run`) | Classes `irreversible`, `money`, `credential`. Run only after a human approves; at most 1800 s. |
 
@@ -52,8 +53,9 @@ Every lead gets these.
 | [`decide`](#decide) | Log a decision: one you made yourself, or the human's answer to a question you asked in chat (so you never ask it twice). | No |
 | [`close`](#close) | The workstream is done: say why in one line. | No |
 | [`gated_run`](#gated_run) | A prod write, spend, delete or credential use: the chat shows the human exactly this argv with Approve / Deny, and the node runs it only once approved; secrets come from the node's own sinks. | A human approves the exact command in chat before the node runs it. |
-| [`plan`](#plan) | Set a workstream's plan items, in order (must or polish, size s\|m\|l, after other items, an optional milestone title), and get the plan back. | No |
 | [`decisions_search`](#decisions_search) | Search the decision log. | No |
+| [`remember`](#remember) | Keep one entry in memory, in plain words, for every later session: scope user for how the human works everywhere (tone, taste, standing rules), project for this project (MEMORY.md, or a topic file for detail). | No |
+| [`memory_read`](#memory_read) | Read one of this project's memory topic files (MEMORY.md lists them). | No |
 | [`change_enqueue`](#change_enqueue) | Put a PR no task's result put there on its repo's merge train; only the train merges. | No |
 
 ### spawn_agent
@@ -62,8 +64,7 @@ Start a fleetd agent (a task) with its own session, slot and lane. kind write|re
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `item` | string | no | The plan item this task works on; refused when it belongs to another order. |
-| `kind` | string | no | Only write tasks get a worktree. One of `write`, `read`, `review`. Default `"write"`. |
+| `kind` | string | no | Every task gets its own worktree: a writer on its own branch, a reader or reviewer detached. One of `write`, `read`, `review`. Default `"write"`. |
 | `notDuplicateOf` | string[] | no | A writer refused as a possible duplicate: the ids it was refused for (`T12`, `C7`), when this is different work. Needs `notDuplicateWhy`. At most 10 items. |
 | `notDuplicateWhy` | string | no | Why it is different work, in one line; kept in the hub's log. At most 200 characters. |
 | `paths` | string[] | no | The files a writer will change, repo-relative (`app/theme.ts`, `app/settings/**`): matched against the work in flight. At most 50 items. |
@@ -317,53 +318,6 @@ A prod write, spend, delete or credential use: the chat shows the human exactly 
 }
 ```
 
-### plan
-
-Set a workstream's plan items, in order (must or polish, size s|m|l, after other items, an optional milestone title), and get the plan back. Its open items you leave out are dropped. Without items: the plan. `covered` marks open items done by a commit Elsewhere shows landed outside fleetd.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `covered` | object[] | no | Open items done by commits that landed without their own agent (from the digest's Elsewhere): each is done, with the commit and how it landed as its evidence. At most 20 items. |
-| `covered[].item` | string | yes | `P<n>`, e.g. `P1`. |
-| `covered[].landing` | string | yes | Matches `^[0-9a-f]{7,64}$`. |
-| `items` | object[] | no | At most 100 items. |
-| `items[].after` | string[] | no | Items that must be done first. At most 20 items. |
-| `items[].id` | string | no | `P<n>`, e.g. `P1`. |
-| `items[].milestone` | string | no | The milestone's title, created when new. Absent: the workstream's title. At most 120 characters. |
-| `items[].size` | string | no | One of `s`, `m`, `l`. Default `"m"`. |
-| `items[].title` | string | yes | One line. At most 120 characters. |
-| `items[].weight` | string | no | One of `must` (Counts toward the headline number), `polish` (Shown beside the number, never in it). Default `"must"`. |
-| `steer` | string | no | The change carries out steer S12, which counts as acknowledged. |
-| `why` | string | no | A note for the change's marker. At most 200 characters. |
-| `workstreamId` | string | no | `W<n>`, e.g. `W1`. |
-
-**Who may call:** a lead, checked by the hub. **Needs a human:** no.
-
-```json
-{
-  "name": "plan",
-  "arguments": {
-    "items": [
-      {
-        "id": "P4",
-        "size": "m",
-        "title": "Rate-limit uploads"
-      },
-      {
-        "after": [
-          "P4"
-        ],
-        "milestone": "Public beta",
-        "size": "s",
-        "title": "Docs for the limit"
-      }
-    ],
-    "why": "The limiter needs a shared store.",
-    "workstreamId": "W3"
-  }
-}
-```
-
 ### decisions_search
 
 Search the decision log.
@@ -383,13 +337,55 @@ Search the decision log.
 }
 ```
 
+### remember
+
+Keep one entry in memory, in plain words, for every later session: scope user for how the human works everywhere (tone, taste, standing rules), project for this project (MEMORY.md, or a topic file for detail). With replaces (words of one entry, quoted exactly) it takes that entry's place: never keep two versions. A write past a file's cap is refused: merge or replace entries, then call again. The chat shows the human what you remembered, with Undo. Never a secret.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `replaces` | string | no | Words of the entry this one replaces, quoted exactly; it must match one entry of the file. At most 1000 characters. |
+| `scope` | string | yes | One of `user` (`user.md`: how the human works across every project), `project` (This project's `MEMORY.md`, or one of its topic files). |
+| `text` | string | yes | One line. At most 1000 characters. |
+| `topic` | string | no | Project scope only: the topic file; absent, `MEMORY.md`. |
+
+**Who may call:** a lead, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "remember",
+  "arguments": {
+    "replaces": "Use npm",
+    "scope": "project",
+    "text": "No npm here: use pnpm."
+  }
+}
+```
+
+### memory_read
+
+Read one of this project's memory topic files (MEMORY.md lists them).
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `topic` | string | yes | Lowercase slug, [a-z0-9][a-z0-9-]{0,47}, other than memory. |
+
+**Who may call:** a lead, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "memory_read",
+  "arguments": {
+    "topic": "deploys"
+  }
+}
+```
+
 ### change_enqueue
 
 Put a PR no task's result put there on its repo's merge train; only the train merges.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `item` | string | no | Stores the PR as a link of that plan item (for a PR no task of the item wrote). |
 | `prUrl` | string | yes | Like `https://github.com/<owner>/<name>/pull/<n>`. |
 | `taskId` | string | no | `T<n>`, e.g. `T1`. |
 | `workstreamId` | string | no | `W<n>`, e.g. `W1`. |
@@ -412,18 +408,18 @@ Every task's agent gets these: implementers, readers, reviewers and QA.
 
 | Tool | What it does | Needs a human |
 |---|---|---|
-| [`report`](#report) | Record your review verdict once, before your final message: the number of blocking and non-blocking findings and a one-paragraph summary. | No |
+| [`report`](#report) | Record your review verdict once, before your final message: the number of blocking and non-blocking findings and a summary of each. | No |
 | [`ask_lead`](#ask_lead) | Ask your lead a question. | No |
 
 ### report
 
-Record your review verdict once, before your final message: the number of blocking and non-blocking findings and a one-paragraph summary. fleetd fills in your task and the head you reviewed.
+Record your review verdict once, before your final message: the number of blocking and non-blocking findings and a summary of each. fleetd fills in your task and the head you reviewed.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `blocking` | integer | yes |  |
 | `nonBlocking` | integer | yes |  |
-| `summary` | string | yes | At most 1000 characters. |
+| `summary` | string | yes | At most 4000 characters. |
 
 **Who may call:** a task's agent, checked by the hub. **Needs a human:** no.
 
@@ -459,7 +455,7 @@ Ask your lead a question. Carry on with what you can; the answer arrives as a me
 
 ## Claude Code tools
 
-The same for every session. Listed for Claude Code 2.1.302, the version fleetd is tested with.
+Listed for Claude Code 2.1.302, the version fleetd is tested with.
 
 **Allowed:** `Bash`, `DesignSync`, `Edit`, `NotebookEdit`, `Read`, `ReportFindings`, `Skill`, `ToolSearch`, `WebFetch`, `WebSearch`, `Write`.
 
@@ -477,6 +473,15 @@ A project's policy file can deny more with `tools.deny`.
 | `Bash(claude *)`, `Bash(*bin/claude)`, `Bash(*bin/claude *)`, `Bash(*/claude -*)`, `Bash(*claude/versions/*)`, `Bash(npx *claude*)`, `Bash(bunx *claude*)`, `Bash(*@anthropic-ai/claude-code*)`, `Bash(*sh -*c *claude*)`, `Bash(env *claude*)`, `Bash(exec *claude*)`, `Bash(xargs *claude*)` | A claude started inside a session runs outside fleetd's slots, with its own subagents and any model. Agents start agents with spawn_agent. |
 
 fleetd also blocks any tool like these that a newer Claude Code adds: a session whose tool list still offers one is stopped, and every later session on that machine blocks it.
+
+**Blocked for fleetd's agents**, in `--disallowedTools`; threads you start keep them:
+
+| Tool | Sessions | Why |
+|---|---|---|
+| `ReportFindings` | Leads and task agents | Agents report a review with fleetd's own `report`. |
+| `DesignSync`, `Skill`, `NotebookEdit` | Leads and task agents | Unused by fleetd's agents, and tool schemas ride on every request. |
+| `Edit`, `Write` | Leads | The lead never changes files: its agents do. |
+| `WebFetch`, `WebSearch` | Leads | The lead's agents read the web; the lead routes. |
 
 ## Settings fleetd forces
 
@@ -498,6 +503,7 @@ Set in the claude process's environment. "In settings" marks the ones also in fl
 | `CLAUDE_CODE_PROMPT_CACHE_TTL`, `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL` | `1h` unless `promptCacheTtl.lead` in node.json, your environment or `claude.env` sets it | Leads | yes | A lead idles between wakes, often more than 5 minutes while reviews and CI run, and would otherwise rewrite its whole context to the prompt cache on those wakes. |
 | `CLAUDE_CODE_PROMPT_CACHE_TTL`, `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL` | `1h` unless `promptCacheTtl.plain` in node.json, your environment or `claude.env` sets it | Threads you start | yes | A person's thread idles while they read and reply. |
 | `CLAUDE_CODE_PROMPT_CACHE_TTL`, `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL` | `5m` unless `promptCacheTtl.worker` in node.json, your environment or `claude.env` sets it | Task agents | yes | A task's agent (writer, reader, reviewer, CI fix) works in one burst and ends, so a 1-hour write pays for an hour it never uses. |
+| `BASH_MAX_TIMEOUT_MS` | `280000` unless your environment or `claude.env` sets it | Task agents | yes | No one command outlives a task agent's 5-minute prompt cache: past it, the agent's next request writes its whole context to the cache again. A longer suite is CI's job. |
 | `CLAUDECODE`, `CLAUDE_CODE_ENTRYPOINT`, `CLAUDE_CODE_SSE_PORT` | removed | Sessions | no | claude sets it for its own children and treats a process that has it as nested inside another session. |
 
 ## What your own setup adds

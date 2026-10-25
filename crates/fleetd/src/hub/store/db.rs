@@ -1,7 +1,7 @@
 use super::migrations::MIGRATIONS;
 use rusqlite::{Connection, TransactionBehavior};
 use std::path::{Component, Path, PathBuf};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
@@ -18,6 +18,8 @@ pub struct HubDb {
     conn: Mutex<Connection>,
     /// `<home>/prompts`, where prompt overrides live; None for an in-memory database, which has the shipped prompts only.
     prompts_dir: Option<PathBuf>,
+    /// `<home>/memory`, the leads' memory (`hub::memory`); set by `open`, or by the hub built over an in-memory one.
+    memory_dir: OnceLock<PathBuf>,
 }
 
 impl HubDb {
@@ -29,10 +31,12 @@ impl HubDb {
         #[cfg(unix)]
         std::os::unix::fs::DirBuilderExt::mode(&mut dir, 0o700);
         dir.create(home)?;
-        Self::from_connection(
+        let db = Self::from_connection(
             Connection::open(home.join("hub.sqlite"))?,
             Some(home.join("prompts")),
-        )
+        )?;
+        db.set_memory_dir(home.join("memory"));
+        Ok(db)
     }
 
     /// A private in-memory database, for tests.
@@ -52,6 +56,7 @@ impl HubDb {
         let db = Self {
             conn: Mutex::new(conn),
             prompts_dir,
+            memory_dir: OnceLock::new(),
         };
         db.migrate()?;
         Ok(Arc::new(db))
@@ -86,6 +91,15 @@ impl HubDb {
 
     pub fn prompts_dir(&self) -> Option<&Path> {
         self.prompts_dir.as_deref()
+    }
+
+    pub fn memory_dir(&self) -> Option<&Path> {
+        self.memory_dir.get().map(PathBuf::as_path)
+    }
+
+    /// The first one set stays.
+    pub fn set_memory_dir(&self, dir: PathBuf) {
+        let _ = self.memory_dir.set(dir);
     }
 
     pub fn user_version(&self) -> Result<i64, StoreError> {

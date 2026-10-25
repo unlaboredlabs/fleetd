@@ -10,7 +10,7 @@ How fleetd merges pull requests. Only fleetd merges: each writer's PR goes on it
 
 1. Takes the next ready PR. A PR is ready once its review passes (see [Review](#review)).
 2. Has GitHub rebase it onto its base branch, as **Update branch** with rebase does.
-3. Waits for CI on that exact commit.
+3. Waits for CI on that exact commit (see [How long CI may take](#ci-time)).
 4. Posts the `fleetd/train` status and squash-merges it, pinned to that commit.
 
 A conflict or red CI goes back to the agent that wrote the PR; for red CI, with the failing checks.
@@ -20,6 +20,18 @@ fleetd merges only on green CI. A ready PR on a repo with no CI (no GitHub Actio
 exists.
 
 To keep a PR off the train, [hold it](#hold).
+
+## How long CI may take {#ci-time}
+
+The train gives a commit's CI 45 minutes of running time, counted from when its first check starts. Time the checks
+spend queued for runners doesn't count. While every check is still queued, there is a ceiling of 2 hours. If the CI
+provider gives no start times, the 45 minutes count from when the train starts waiting.
+
+A red check fails the PR at once, however long the other checks have left. CI that runs out of time is different: the
+PR shows `ci_failed` with "CI timed out", the lead is told, and the agent that wrote it isn't asked to push. The train
+keeps reading that commit's checks. If they finish green, the PR goes back in the queue ("CI finished after the
+timeout; back in the queue") and merges on that run, after the usual rebase if its base moved. If one goes red, the
+PR goes back to its agent as for any red CI. A new push starts over as usual.
 
 The train takes a PR whose base is a branch it merges into, such as `main`. A PR based on another open PR's branch is
 refused when it is queued: once that PR merges, point it at the same base (`gh pr edit <n> --base main`) and queue it
@@ -70,6 +82,53 @@ A member counts as merged only while its head is still the one the batch was bui
 | A PR conflicts with the base or the PRs ahead of it | Leaves it out and sends it back to the agent that wrote it. |
 | The batch is red, or GitHub refuses to merge its PR | Takes each member alone, so each CI result blames only that PR. |
 | A member gets a new push, the `hold` label, or is closed during CI | Drops the batch before the merge, so untested code never lands, and builds a new one without it. |
+
+## CI runners are scarce {#scarce-runners}
+
+GitHub doesn't start queued jobs in order. When a repo has few runners of a kind, such as macOS, every agent push
+queues a full CI run, and the batch PR can wait behind them. So the train labels what it is merging now with
+`fleetd:next`:
+
+- the batch PR;
+- or a PR it merges alone, before it rebases that PR, so the rebase's CI run already sees the label.
+
+PRs waiting behind it get no label: the run the label starts would cancel their own CI and take the runners the batch
+needs. The train takes the label off once a PR merges or leaves the queue, and creates the label if the repo doesn't
+have it.
+
+To use it, run your expensive jobs only on `main`, on the batch branch, on manual runs, and on labelled PRs:
+
+```yaml
+jobs:
+  macos:
+    runs-on: macos-latest
+    if: >-
+      github.event_name != 'pull_request'
+      || endsWith(github.head_ref, 'train/batch')
+      || contains(github.event.pull_request.labels.*.name, 'fleetd:next')
+```
+
+A skipped job still reports, so it can stay a required check.
+
+Adding the label must also start a run. Don't add `labeled` to that workflow's `pull_request` types: a run for any other
+label would replace the PR's real check results with skipped ones. Instead, use a small workflow on `labeled` that
+reacts to `fleetd:next` only and runs the CI workflow on the PR's branch (`gh workflow run ci.yml --ref <branch>`), as
+fleetd's own `.github/workflows/macos-label.yml` does.
+
+The train reads the repo's workflows to see which checks the label runs. It looks for jobs whose `if:` names
+`fleetd:next`, in a workflow that reacts to the label being added, or in one that such a workflow starts with
+`gh workflow run`. For a PR it merges alone, such a check skipped before the label went on never counts as passing.
+The train waits for the run the label starts. If GitHub refuses the label, or no run replaces the skipped check within
+3 minutes, the train keeps waiting, retries the label, and tells the lead once: "CI didn't start for the labelled PR".
+
+Every other skipped check counts as GitHub counts it: as passing. That covers checks in workflows the label never
+runs, and jobs a workflow skips on purpose. In a repo whose workflows don't run anything on the label, nothing waits,
+and a refused label is only one line in the hub's log. If the workflows can't be read, the train uses the last answer
+it had for the repo; with none, any skipped check holds the PR for 3 minutes, then counts.
+
+When the checks of the batch, or of a PR merging alone, have been queued for more than 5 minutes, its queue entry and
+the lead's digest say "waiting for CI runners (N queued)". Once a runner takes them, the entry's earlier note comes
+back.
 
 ## Hold a PR {#hold}
 

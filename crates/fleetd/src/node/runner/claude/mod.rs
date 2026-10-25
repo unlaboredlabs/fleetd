@@ -14,11 +14,11 @@ use std::sync::Arc;
 
 use fleetd_contracts::effort::{Effort, MODEL};
 use fleetd_contracts::model::RuntimeMode;
-use fleetd_contracts::sessions::{RunnerInfo, SessionRole};
+use fleetd_contracts::sessions::{RESUME_REFUSED, RunnerInfo, SessionRole};
 
 use super::{
     BoxFut, Runner, RunnerError, SessionHandle, SessionSpec, claude_setup, conformance, failure,
-    process,
+    process, scope,
 };
 use mapper::{Classify, StreamMapper};
 
@@ -87,6 +87,41 @@ explained! {
         "Bash(exec *claude*)" => WHY_NESTED,
         "Bash(xargs *claude*)" => WHY_NESTED,
     ]
+}
+
+const WHY_UNUSED: &str = "Unused by fleetd's agents, and tool schemas ride on every request.";
+const WHY_LEAD_FILES: &str = "The lead never changes files: its agents do.";
+const WHY_LEAD_WEB: &str = "The lead's agents read the web; the lead routes.";
+
+explained! {
+    /// Denied to fleetd's agents (leads and task agents), on top of [`ALWAYS_DISALLOWED`]; threads a person starts
+    /// keep them. Names from claude 2.1.302's `system/init`.
+    AGENT_DISALLOWED, AGENT_DISALLOWED_WHY: &str = [
+        "ReportFindings" => "Agents report a review with fleetd's own `report`.",
+        "DesignSync" => WHY_UNUSED,
+        "Skill" => WHY_UNUSED,
+        "NotebookEdit" => WHY_UNUSED,
+    ]
+}
+
+explained! {
+    /// Denied to a lead, on top of [`AGENT_DISALLOWED`].
+    LEAD_DISALLOWED, LEAD_DISALLOWED_WHY: &str = [
+        "Edit" => WHY_LEAD_FILES,
+        "Write" => WHY_LEAD_FILES,
+        "WebFetch" => WHY_LEAD_WEB,
+        "WebSearch" => WHY_LEAD_WEB,
+    ]
+}
+
+/// The tools denied to a session of `role` beyond [`ALWAYS_DISALLOWED`].
+pub fn role_disallowed(role: SessionRole) -> impl Iterator<Item = &'static str> {
+    let (agent, lead): (&[&str], &[&str]) = match role {
+        SessionRole::Plain => (&[], &[]),
+        SessionRole::Worker => (AGENT_DISALLOWED, &[]),
+        SessionRole::Lead => (AGENT_DISALLOWED, LEAD_DISALLOWED),
+    };
+    agent.iter().chain(lead).copied()
 }
 
 /// The agent tools of claude 2.1.302, all in [`ALWAYS_DISALLOWED`].
@@ -171,6 +206,28 @@ explained! {
         ("ENABLE_TOOL_SEARCH", "true") =>
             "Tool schemas load when a tool is used, not on every request. fleetd's own tools always load at start.",
     ]
+}
+
+explained! {
+    /// Defaults for a task's agent, like [`DEFAULT_ENV`]: the node's own environment or `claude.env` sets any of them
+    /// otherwise. Also in its settings overlay, which outranks the `env` in the user's own settings.
+    WORKER_ENV, WORKER_ENV_WHY: (&str, &str) = [
+        ("BASH_MAX_TIMEOUT_MS", "280000") =>
+            "No one command outlives a task agent's 5-minute prompt cache: past it, the agent's next request writes its \
+             whole context to the cache again. A longer suite is CI's job.",
+    ]
+}
+
+/// [`WORKER_ENV`] for a task's agent, each unless `env` sets it; nothing for other roles.
+pub fn role_env(role: SessionRole, env: &[(String, String)]) -> Vec<(String, String)> {
+    if role != SessionRole::Worker {
+        return Vec::new();
+    }
+    WORKER_ENV
+        .iter()
+        .filter(|(key, _)| !env.iter().any(|(k, _)| k == key))
+        .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+        .collect()
 }
 
 /// claude's prompt cache TTL variables: a session's own turns, then the helper requests beside them. On 2.1.302 either
@@ -349,6 +406,12 @@ impl Runner for ClaudeRunner {
         }
         let config_dir = claude_setup::config_dir(&spec.env);
         if let Some(file) = session_file(&config_dir, &spec.cwd, &spec.session_id) {
+            if spec.must_resume && !file.exists() {
+                return Err(refuse(format!(
+                    "{RESUME_REFUSED}claude's conversation {} is gone",
+                    file.display()
+                )));
+            }
             // The session file decides, so a crash between spawn and the node's own record can't make claude refuse
             // ("Session ID … is already in use" / "No conversation found").
             spec.resume = file.exists();
@@ -356,33 +419,46 @@ impl Runner for ClaudeRunner {
 
         process::adopt_orphans();
         let marker = process::marker(&spec.session_id);
-        let mut cmd = tokio::process::Command::new(&self.binary);
-        cmd.args(self.args(&spec))
-            .current_dir(&spec.cwd)
-            .env_clear()
-            .envs(
-                spec.env
-                    .iter()
-                    .filter(|(k, _)| {
-                        !NESTING_VARS.contains(&k.as_str())
-                            && !SUBAGENTS_ON_ENV.contains(&k.as_str())
-                            && k != process::SESSION_MARKER
-                            && k != claude_setup::FLEETD_ENV_SOURCE
-                            && !SESSION_ENV.iter().any(|(set, _)| set == k)
-                            && k != HELPER_MODEL_ENV.0
-                    })
-                    .map(|(k, v)| (k, v)),
-            )
-            .envs(SUBAGENTS_OFF_ENV.iter().copied())
-            .envs([HELPER_MODEL_ENV])
-            .envs(SESSION_ENV.iter().copied())
-            .env(process::SESSION_MARKER, &marker)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .process_group(0)
-            .kill_on_drop(true);
-        let child = cmd.spawn().map_err(|error| {
+        // A binary that isn't there is reported as missing below, not as a scope that failed to start it.
+        let scope = scope::current().filter(|_| self.binary.exists());
+        let build = |program: PathBuf, args: Vec<String>, scope: Option<&scope::Scope>| {
+            let mut cmd = tokio::process::Command::new(program);
+            cmd.args(args)
+                .current_dir(&spec.cwd)
+                .env_clear()
+                .envs(
+                    spec.env
+                        .iter()
+                        .filter(|(k, _)| {
+                            !NESTING_VARS.contains(&k.as_str())
+                                && !SUBAGENTS_ON_ENV.contains(&k.as_str())
+                                && k != process::SESSION_MARKER
+                                && k != claude_setup::FLEETD_ENV_SOURCE
+                                && !SESSION_ENV.iter().any(|(set, _)| set == k)
+                                && k != HELPER_MODEL_ENV.0
+                        })
+                        .map(|(k, v)| (k, v)),
+                )
+                .envs(SUBAGENTS_OFF_ENV.iter().copied())
+                .envs([HELPER_MODEL_ENV])
+                .envs(SESSION_ENV.iter().copied())
+                .envs(scope.iter().flat_map(|s| s.env.iter().map(|(k, v)| (k, v))))
+                .env(process::SESSION_MARKER, &marker)
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .process_group(0)
+                .kill_on_drop(true);
+            cmd
+        };
+        let spawned = scope::spawn(
+            scope.as_ref(),
+            &self.binary,
+            self.args(&spec),
+            &spec.session_id,
+            build,
+        );
+        let (child, scope_failed) = spawned.map_err(|error| {
             if error.kind() == std::io::ErrorKind::NotFound && !self.binary.exists() {
                 RunnerError::Missing {
                     binary: binary.clone(),
@@ -391,6 +467,9 @@ impl Runner for ClaudeRunner {
                 refuse(format!("{error} (cwd {})", spec.cwd.display()))
             }
         })?;
+        if let Some(why) = scope_failed {
+            scope::failed(&why);
+        }
         let mapper = StreamMapper::new(spec.session_id.clone(), self.classify.clone());
         Ok(session::start(child, marker, mapper, spec.transcript))
     }
@@ -437,10 +516,38 @@ pub fn session_in_use(text: &str) -> bool {
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_lead_loses_file_and_web_tools_a_task_agent_keeps_and_a_persons_thread_loses_nothing() {
+        let denied = |role| role_disallowed(role).collect::<Vec<_>>();
+        assert!(denied(SessionRole::Plain).is_empty());
+        let worker = denied(SessionRole::Worker);
+        assert!(worker.contains(&"Skill") && !worker.contains(&"Edit"));
+        let lead = denied(SessionRole::Lead);
+        assert!(lead.contains(&"Skill") && lead.contains(&"Edit") && lead.contains(&"WebFetch"));
+        // Every name is a tool claude 2.1.302 offers, and none overlaps the list every session gets.
+        let init = include_str!("../fixtures/claude-2.1.302-interrupt-mid-tool.jsonl");
+        for tool in lead {
+            assert!(init.contains(&format!("\"{tool}\"")), "{tool}");
+            assert!(!ALWAYS_DISALLOWED.contains(&tool), "{tool}");
+        }
+    }
+
+    #[test]
+    fn only_a_task_agent_gets_the_command_cap_and_its_own_setting_wins() {
+        assert!(role_env(SessionRole::Lead, &[]).is_empty());
+        assert_eq!(
+            role_env(SessionRole::Worker, &[]),
+            [("BASH_MAX_TIMEOUT_MS".to_owned(), "280000".to_owned())]
+        );
+        let set = [("BASH_MAX_TIMEOUT_MS".to_owned(), "900000".to_owned())];
+        assert!(role_env(SessionRole::Worker, &set).is_empty());
+    }
+
     fn spec() -> SessionSpec {
         SessionSpec {
             session_id: "7f0c0000-0000-4000-8000-000000000001".into(),
             resume: false,
+            must_resume: false,
             cwd: "/work/project".into(),
             add_dirs: vec!["/work/root".into()],
             model: "claude-haiku-5-5".into(),
@@ -565,5 +672,24 @@ mod tests {
         );
         let long = format!("/nonexistent/{}", "x".repeat(200));
         assert_eq!(session_file(config, Path::new(&long), "s1"), None);
+    }
+
+    /// A task's session whose conversation is gone is refused, never started empty.
+    #[test]
+    fn a_task_session_without_its_conversation_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("config");
+        let spec = SessionSpec {
+            resume: true,
+            must_resume: true,
+            cwd: dir.path().to_owned(),
+            env: vec![("CLAUDE_CONFIG_DIR".into(), config.display().to_string())],
+            ..spec()
+        };
+        let runner = ClaudeRunner::new("/nonexistent/claude".into());
+        let Err(RunnerError::Spawn { message, .. }) = runner.spawn(spec) else {
+            panic!("a session with no conversation started");
+        };
+        assert!(message.starts_with(RESUME_REFUSED), "{message}");
     }
 }

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
 use crate::auth::Role;
-use crate::chat::ChatRequestId;
+use crate::chat::{ChatMessageId, ChatRequestId};
 use crate::doctor::{DoctorCheck, DoctorCheckId};
 use crate::events::{HubEvent, HubEventType};
 use crate::hello::ProtocolVersion;
@@ -16,8 +16,8 @@ use crate::ledger::{
     Lead, RequestState, Workstream, WorkstreamId, WorkstreamState,
 };
 use crate::live::{AgentLane, OrderCard, TrainLive};
+use crate::memory::{MemoryFile, MemoryScope, MemoryTopic, TOPIC_CAP};
 use crate::model::{ActionItem, Machine, ProjectOutcome, ProjectSummary, ThreadSummary};
-use crate::plan::PlanView;
 use crate::prim::{
     Count, Int, IntOr, Line, List, MAX_SAFE_INT, NonEmpty, Positive, Text, True, UniqueList,
 };
@@ -27,7 +27,7 @@ use crate::prompts::{
     RetiredPromptOverride, SessionPrompt,
 };
 use crate::secrets::{SealedSecret, SecretFingerprint};
-use crate::status::{ProgressPoint, ProjectStatusRow};
+use crate::status::ProjectStatusRow;
 use crate::steer::{Steer, SteerId, SteerMode, SteerTarget};
 use crate::tasks::{SlotState, Task, TaskId, TaskState};
 use crate::time::{
@@ -844,8 +844,48 @@ output!(SessionPromptGetOutput {
     session: SessionPrompt
 });
 
+// memory_get, memory_set, memory_undo: what the leads remember (Settings > Memory). Writes are human keys only.
+input!(MemoryGetInput {
+    /// Also that project's MEMORY.md and topic files; absent: user.md only.
+    project_ref: Option<ProjectRef>,
+});
+output!(MemoryGetOutput {
+    user: MemoryFile,
+    /// With projectRef: MEMORY.md first, then the topic files by name.
+    files: Option<Vec<MemoryFile>>,
+    /// With projectRef: the project's files together, and their cap.
+    project_chars: Option<Count>,
+    project_cap: Option<Count>,
+});
+input!(
+    #[serde(remote = "Self")]
+    MemorySetInput {
+        scope: MemoryScope,
+        /// Required with scope project.
+        project_ref: Option<ProjectRef>,
+        /// Project scope: a topic file; absent, MEMORY.md.
+        topic: Option<MemoryTopic>,
+        /// The whole file. Empty deletes it (a topic's index line too).
+        text: Text<0, TOPIC_CAP>,
+    }
+);
+checked!(MemorySetInput, |input| {
+    match (input.scope, &input.project_ref, &input.topic) {
+        (MemoryScope::Project, None, _) => Err("scope project needs projectRef".into()),
+        (MemoryScope::User, _, Some(_)) => Err("user.md has no topics".into()),
+        _ => Ok(()),
+    }
+});
+output!(MemorySetOutput { file: MemoryFile });
+input!(MemoryUndoInput {
+    project_ref: ProjectRef,
+    /// The chat line that said "Remembered: …".
+    message_id: ChatMessageId,
+});
+output!(MemoryUndoOutput { ok: True });
+
 // status_get: without projectRef, one row per project the key reads, for the Status screen; with it, that project's
-// row and the series behind its bar.
+// row.
 input!(StatusGetInput {
     project_ref: Option<ProjectRef>
 });
@@ -854,28 +894,6 @@ output!(StatusGetOutput {
     rows: Option<List<ProjectStatusRow, 0, 200>>,
     /// With projectRef.
     row: Option<ProjectStatusRow>,
-    /// With projectRef: the bar over time, oldest first: why it fell (`drop`) and when it held on paused work
-    /// (`paused`).
-    series: Option<List<ProgressPoint, 0, 48>>,
-});
-
-// plan_get: one project's plan, or one order's items.
-input!(
-    #[serde(remote = "Self")]
-    PlanGetInput {
-        project_ref: Option<ProjectRef>,
-        workstream_id: Option<WorkstreamId>,
-    }
-);
-checked!(PlanGetInput, |input| {
-    if input.project_ref.is_some() == input.workstream_id.is_some() {
-        return Err("give projectRef or workstreamId".into());
-    }
-    Ok(())
-});
-output!(PlanGetOutput {
-    #[serde(flatten)]
-    plan: PlanView,
 });
 
 // chat_send: writes to a project's lead. Delivered at once: a new turn when the lead is idle, a steer when it is
@@ -1093,7 +1111,7 @@ output!(PrDiffOutput {
 
 // work_claim: before a code change in a repo fleetd manages, says what it is and checks it against the work in flight
 // on the repo's base (agents, the merge train, other people's sessions) in one call. Claimed: the claim is held 12 h
-// from its last renewal (work_claim again on its branch). Taken: the same issue, PR, branch or plan item is someone
+// from its last renewal (work_claim again on its branch). Taken: the same issue, PR or branch is someone
 // else's. Possible duplicate: call again with `notDuplicateOf` (the ids) and `notDuplicateWhy` if it is different
 // work. The caller's own active claim on the same branch is renewed and updated instead of claimed twice. A human
 // key's claim is a person's; any other key's is an agent key's, since a fleetd agent may load the person's MCP config.
@@ -1144,7 +1162,7 @@ pub enum WorkClaimStatus {
     Claimed,
     /// The caller's own claim on the branch, renewed and updated.
     Renewed,
-    /// Someone else holds the same issue, PR, branch or plan item. Not claimed.
+    /// Someone else holds the same issue, PR or branch. Not claimed.
     Taken,
     /// Likely the same as work in flight. Not claimed; `notDuplicateOf` says it is different.
     PossibleDuplicate,
@@ -1166,7 +1184,8 @@ output!(WorkClaimOutput {
 });
 
 // work_list: the work in flight on a repo's base branch, across every project on the repo and people's own sessions:
-// tasks, Changes on the merge train and claims (expired ones last, for a day). It only reads.
+// tasks, Changes on the merge train and claims (expired ones last, for a day), and what landed there outside the train
+// in the last 24 h. It only reads.
 input!(
     #[serde(remote = "Self")]
     WorkListInput {
@@ -1174,6 +1193,9 @@ input!(
         repo: Option<Line<1, 500>>,
         project_ref: Option<ProjectRef>,
         base: Option<crate::work::BranchName>,
+        /// false: leave out what each writer has changed so far, which asks its machine; a claim keeps its paths.
+        /// Default true.
+        paths: Option<bool>,
     }
 );
 checked!(WorkListInput, |input| {
@@ -1187,6 +1209,9 @@ output!(WorkListOutput {
     items: List<crate::work::WorkItem, 0, 100>,
     /// No project is bound to the repo yet, so fleetd's agents' work on it may be missing from the items.
     warning: Option<String>,
+    /// Commits that reached the base outside the train (a PR merged by hand, a direct push) in the last 24 h, newest
+    /// first.
+    recent_landings: List<crate::work::RecentLanding, 0, 10>,
 });
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -1309,6 +1334,10 @@ tools! {
     // with operate there. The handler checks which.
     prompt_set => PromptSet, Operate, PromptSetInput, PromptSetOutput;
     session_prompt_get => SessionPromptGet, Read, SessionPromptGetInput, SessionPromptGetOutput;
+    memory_get => MemoryGet, Read, MemoryGetInput, MemoryGetOutput;
+    // Human keys only (the handlers check): agents write memory through the lead's remember.
+    memory_set => MemorySet, Operate, MemorySetInput, MemorySetOutput;
+    memory_undo => MemoryUndo, Operate, MemoryUndoInput, MemoryUndoOutput;
     time_spans => TimeSpans, Read, TimeSpansInput, TimeSpansOutput;
     time_breakdown => TimeBreakdown, Read, TimeBreakdownInput, TimeBreakdownOutput;
     time_insights => TimeInsights, Read, TimeInsightsInput, TimeInsightsOutput;
@@ -1317,7 +1346,6 @@ tools! {
     metrics_retention_set => MetricsRetentionSet, Admin, MetricsRetentionSetInput, MetricsRetentionSetOutput;
     thread_window => ThreadWindow, Read, ThreadWindowInput, ThreadWindowOutput;
     status_get => StatusGet, Read, StatusGetInput, StatusGetOutput;
-    plan_get => PlanGet, Read, PlanGetInput, PlanGetOutput;
     // Human keys only (the handler checks); the lead steers its tasks with `fleetd task message`.
     steer_send => SteerSend, Operate, SteerSendInput, SteerSendOutput;
     steer_withdraw => SteerWithdraw, Operate, SteerWithdrawInput, SteerWithdrawOutput;

@@ -29,6 +29,13 @@ pub enum HubEventType {
     /// why. Agents already running keep going.
     #[serde(rename = "machine.guard")]
     MachineGuard,
+    /// Agents on the machine kept dying (claude exited, or stalled), so fleetd stopped resuming them there, or
+    /// resumes them again; `data` is `RecoveryPausedData`, and the summary says why.
+    #[serde(rename = "machine.recovery_paused")]
+    MachineRecoveryPaused,
+    /// The machine's node runs a session no task or lead of this hub owns; `data` is `ThreadOrphanedData`.
+    #[serde(rename = "thread.orphaned")]
+    ThreadOrphaned,
     /// The node no longer has the project: the hub dropped it from its cache, and its open workstreams stop. `data.title`.
     #[serde(rename = "project.removed")]
     ProjectRemoved,
@@ -176,10 +183,10 @@ pub enum HubEventType {
     /// `data.reason`.
     #[serde(rename = "steer.failed")]
     SteerFailed,
-    /// A plan's scope changed and a marker was written; `data` is the `PlanChange` (`status::PlanChangedData`).
+    /// No longer sent (plans were removed); kept so an older log still reads.
     #[serde(rename = "plan.changed")]
     PlanChanged,
-    /// The hub verified a plan item done; `data.itemId`, `data.milestoneId`, `data.workstreamId`, `data.evidence`.
+    /// No longer sent (plans were removed); kept so an older log still reads.
     #[serde(rename = "plan.verified")]
     PlanVerified,
     /// A merge-train Change moved between states; `data.changeId`, `data.workstreamId`, `data.repo`, `data.prNumber`,
@@ -220,6 +227,10 @@ pub enum HubEventType {
     /// `work::WorkLandedData`.
     #[serde(rename = "work.landed")]
     WorkLanded,
+    /// A memory file changed (a lead's `remember`, an Undo, an edit in the app): `data.scope`, `data.projectRef`
+    /// (project scope), `data.topic`, `data.by`. The text is not in the event; memory_get reads it.
+    #[serde(rename = "memory.changed")]
+    MemoryChanged,
 }
 
 impl HubEventType {
@@ -231,6 +242,8 @@ impl HubEventType {
             Self::MachineDegraded => "machine.degraded",
             Self::MachineSlept => "machine.slept",
             Self::MachineGuard => "machine.guard",
+            Self::MachineRecoveryPaused => "machine.recovery_paused",
+            Self::ThreadOrphaned => "thread.orphaned",
             Self::ProjectRemoved => "project.removed",
             Self::ProjectAdded => "project.added",
             Self::ProjectCloneProgress => "project.clone_progress",
@@ -295,6 +308,7 @@ impl HubEventType {
             Self::WorkClaimed => "work.claimed",
             Self::WorkEnded => "work.ended",
             Self::WorkLanded => "work.landed",
+            Self::MemoryChanged => "memory.changed",
         }
     }
 }
@@ -438,6 +452,29 @@ pub struct PromptChangedData {
 pub struct MachineGuardData {
     /// true: new agents wait; false: they start again.
     pub paused: bool,
+}
+
+/// `machine.recovery_paused`.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RecoveryPausedData {
+    /// true: dead agents there wait instead of resuming; false: they resume again.
+    pub paused: bool,
+    /// The agents whose deaths opened it, oldest first.
+    pub task_ids: Option<Vec<crate::tasks::TaskId>>,
+    /// When it closes if nothing else dies there; an agent there completing closes it sooner.
+    pub until: Option<Timestamp>,
+}
+
+/// `thread.orphaned`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadOrphanedData {
+    /// The session's title on its node.
+    pub title: String,
+    /// When the hub first saw it without an owner.
+    pub since: Timestamp,
 }
 
 /// `machine.slept`: epoch milliseconds.

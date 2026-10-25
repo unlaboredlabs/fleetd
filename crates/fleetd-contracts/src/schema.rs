@@ -12,16 +12,14 @@ use crate::blocks::ChatBlock;
 use crate::chat::{ChatMessage, ProjectChatState};
 use crate::events::{
     HubEvent, HubEventType, MachineGuardData, MachineSleptData, PromptChangedData,
-    RequestEventData, ThreadEventData, TrainEventData, WorkstreamEventData,
+    RecoveryPausedData, RequestEventData, ThreadEventData, ThreadOrphanedData, TrainEventData,
+    WorkstreamEventData,
 };
 use crate::ledger::{Decision, HumanRequest, Lead, Workstream};
 use crate::mcp::McpToolName;
 use crate::model::{Machine, ProjectOutcome, ProjectSummary, ThreadSummary};
 use crate::projects::{CloneProgressData, ProjectAddFailedData, ProjectAddedData};
-use crate::status::{
-    ChangeStateData, CiMainData, PlanChangedData, PlanVerifiedData, SourceFreshData,
-    SourceStaleData,
-};
+use crate::status::{ChangeStateData, CiMainData, SourceFreshData, SourceStaleData};
 use crate::steer::SteerEventData;
 use crate::tasks::{AgentsCapData, FetchFailedData, TaskEventData};
 use crate::tasks::{SlotState, Task};
@@ -82,6 +80,8 @@ fn hub_event_data_document_for(side: Side) -> Value {
         data!(UsageEventData: ThreadUsageLimited, UsageBreaker, UsageResumed);
         data!(MachineSleptData: MachineSlept);
         data!(MachineGuardData: MachineGuard);
+        data!(RecoveryPausedData: MachineRecoveryPaused);
+        data!(ThreadOrphanedData: ThreadOrphaned);
         data!(ProjectAddedData: ProjectAdded);
         data!(CloneProgressData: ProjectCloneProgress);
         data!(ProjectAddFailedData: ProjectAddFailed);
@@ -96,8 +96,6 @@ fn hub_event_data_document_for(side: Side) -> Value {
         data!(CiMainData: CiMain);
         data!(SourceStaleData: SourceStale);
         data!(SourceFreshData: SourceFresh);
-        data!(PlanChangedData: PlanChanged);
-        data!(PlanVerifiedData: PlanVerified);
         data!(PromptChangedData: PromptChanged);
         data!(crate::chat::ChatMessageEventData: ChatMessage);
         data!(crate::chat::ProjectChatState: ChatWaiting);

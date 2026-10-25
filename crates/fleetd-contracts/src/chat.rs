@@ -239,6 +239,8 @@ pub struct ChatMessage {
     /// A final lead message of more than one bubble, or with a block: its bubbles in order. Absent: `text` is one
     /// bubble (and while a message streams).
     pub parts: Option<List<ChatPart, 1, CHAT_PARTS_MAX>>,
+    /// A system line "Remembered: …": what the lead's `remember` wrote, which `memory_undo` takes back.
+    pub remembered: Option<crate::memory::RememberedItem>,
 }
 
 /// One chat's state, for the sidebar and the status row.

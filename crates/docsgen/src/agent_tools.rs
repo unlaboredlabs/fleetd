@@ -9,14 +9,15 @@ use std::path::Path;
 
 use fleetd::cli::agent_mcp::{self, Role, SERVER_NAME, Tool};
 use fleetd::hub::orders::phase;
-use fleetd::hub::slots::DEFAULT_CAP;
+use fleetd::hub::slots::sizing::HARD_TOP;
 use fleetd::hub::tasks::policy::{
     self, CallerAgent, MAX_DEPTH, MAX_OPEN_TASKS, SPAWN_OPS, WORKER_OPS,
 };
 use fleetd::node::runner::claude::{
-    AUTO_MEMORY_OFF_ENV, AUTO_MEMORY_OFF_WHY, DEFAULT_ENV_WHY, DISALLOWED_WHY, HELPER_MODEL_ENV,
-    HELPER_MODEL_WHY, NESTING_VARS_WHY, PROMPT_CACHE_TTL_VARS, PROMPT_CACHE_TTL_WHY,
-    SESSION_ENV_WHY, SUBAGENTS_OFF_ENV_WHY, SUBAGENTS_ON_ENV_WHY,
+    AGENT_DISALLOWED_WHY, AUTO_MEMORY_OFF_ENV, AUTO_MEMORY_OFF_WHY, DEFAULT_ENV_WHY,
+    DISALLOWED_WHY, HELPER_MODEL_ENV, HELPER_MODEL_WHY, LEAD_DISALLOWED_WHY, NESTING_VARS_WHY,
+    PROMPT_CACHE_TTL_VARS, PROMPT_CACHE_TTL_WHY, SESSION_ENV_WHY, SUBAGENTS_OFF_ENV_WHY,
+    SUBAGENTS_ON_ENV_WHY, WORKER_ENV, WORKER_ENV_WHY,
 };
 use fleetd::node::runner::{conformance, version::TESTED};
 use fleetd_contracts::lead_calls::GatedRunCall;
@@ -284,16 +285,22 @@ fn limits(lead: &[&Tool], task: &[&Tool]) -> Result<String, String> {
         "| Depth | {MAX_DEPTH}. A lead is depth 0 and its tasks depth {MAX_DEPTH}; nothing goes deeper. |\n"
     ));
     md.push_str(&format!(
-        "| Open tasks per lead | {MAX_OPEN_TASKS} (queued, running or idle). |\n"
+        "| Open tasks per lead | {MAX_OPEN_TASKS}, or twice the project's max agents when that is more (queued, running \
+         or idle). |\n"
     ));
     md.push_str(
         "| Agents running at once, per project | The project's max agents, which a person sets (`cap_set`, the \
-         chat's Max agents); unset, the fleet cap. A spawn over it queues and starts by itself; a review goes \
+         chat's Max agents); unset, its machine's cap. A spawn over it queues and starts by itself; a review goes \
          ahead of queued writers. The lead is not an agent and doesn't count. |\n",
     );
     md.push_str(&format!(
-        "| Agents running at once, fleet-wide | The fleet cap, {DEFAULT_CAP} by default. |\n"
+        "| Agents running at once, per machine | What the machine fits: one per CPU less one in eight, and 2 GB of \
+         memory each after a quarter (4 to 16 GB) is left for the system, at most {HARD_TOP}. New agents also wait \
+         for 5 GB of disk each above the free-space floor. |\n"
     ));
+    md.push_str(
+        "| Agents running at once, fleet-wide | The machines' caps added up, unless a person set a fleet cap. |\n",
+    );
     md.push_str(&format!(
         "| Calls a task's agent may make | {}. Every other call is refused. |\n",
         code_list(worker_calls.iter().copied())
@@ -629,15 +636,13 @@ fn example(role: Role, tool: &str) -> Option<Value> {
             "reason": "Ship the upload rate limit to production.",
             "workstreamId": "W3",
         }),
-        (Role::Lead, "plan") => json!({
-            "workstreamId": "W3",
-            "items": [
-                { "id": "P4", "title": "Rate-limit uploads", "size": "m" },
-                { "title": "Docs for the limit", "size": "s", "after": ["P4"], "milestone": "Public beta" },
-            ],
-            "why": "The limiter needs a shared store.",
-        }),
         (Role::Lead, "decisions_search") => json!({ "query": "pagination" }),
+        (Role::Lead, "remember") => json!({
+            "scope": "project",
+            "text": "No npm here: use pnpm.",
+            "replaces": "Use npm",
+        }),
+        (Role::Lead, "memory_read") => json!({ "topic": "deploys" }),
         (Role::Lead, "change_enqueue") => json!({
             "prUrl": "https://github.com/acme/shop/pull/42",
             "workstreamId": "W3",
@@ -747,7 +752,7 @@ fn builtins(root: &Path) -> Result<String, String> {
         .filter(|t| !blocked.contains(&t.as_str()) && !conformance::agent_like(t))
         .collect();
     let mut md = format!(
-        "## Claude Code tools\n\nThe same for every session. Listed for Claude Code \
+        "## Claude Code tools\n\nListed for Claude Code \
          {TESTED}, the version fleetd is tested with.\n\n**Allowed:** {}.\n\nA project's policy file can deny more \
          with `tools.deny`.\n\n**Blocked**, in `--disallowedTools` and in the \
          `permissions.deny` of fleetd's settings, so your own settings can't turn them back on:\n\n| Tool | Why \
@@ -763,8 +768,22 @@ fn builtins(root: &Path) -> Result<String, String> {
     }
     md.push_str(
         "\nfleetd also blocks any tool like these that a newer Claude Code adds: a session whose tool list still offers \
-         one is stopped, and every later session on that machine blocks it.\n\n",
+         one is stopped, and every later session on that machine blocks it.\n\n**Blocked for fleetd's agents**, in \
+         `--disallowedTools`; threads you start keep them:\n\n| Tool | Sessions | Why |\n|---|---|---|\n",
     );
+    for (list, who) in [
+        (AGENT_DISALLOWED_WHY, "Leads and task agents"),
+        (LEAD_DISALLOWED_WHY, "Leads"),
+    ] {
+        for (tools, why) in grouped(list.iter().map(|(t, why)| (format!("`{t}`"), *why))) {
+            md.push_str(&format!(
+                "| {} | {who} | {} |\n",
+                tools.join(", "),
+                cell(why)
+            ));
+        }
+    }
+    md.push('\n');
     Ok(md)
 }
 
@@ -772,6 +791,7 @@ fn switches() -> Result<String, String> {
     let all = "Every claude fleetd starts";
     let cache: Vec<(String, String)> = PROMPT_CACHE_TTL_VARS
         .iter()
+        .chain(WORKER_ENV.iter().map(|(k, _)| k))
         .map(|v| ((*v).to_owned(), String::new()))
         .collect();
     let overlay: Value = serde_json::from_str(&fleetd::node::sessions::settings_overlay(&cache))
@@ -849,6 +869,13 @@ fn switches() -> Result<String, String> {
             who,
         );
     }
+    for ((name, value), why) in WORKER_ENV_WHY {
+        rows(
+            vec![(format!("`{name}`"), why)],
+            &format!("`{value}` unless your environment or `claude.env` sets it"),
+            "Task agents",
+        );
+    }
     rows(named(NESTING_VARS_WHY), "removed", "Sessions");
     md.push('\n');
     Ok(md)
@@ -903,6 +930,9 @@ mod tests {
             .unwrap();
         for (tool, _) in DISALLOWED_WHY {
             assert!(!allowed.contains(&format!("`{tool}`")), "{tool}");
+        }
+        for (tool, _) in AGENT_DISALLOWED_WHY.iter().chain(LEAD_DISALLOWED_WHY) {
+            assert!(blocked.contains(&format!("`{tool}`")), "{tool}");
         }
         assert!(allowed.contains("`Bash`") && allowed.contains("`Edit`"));
     }

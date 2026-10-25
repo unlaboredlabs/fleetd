@@ -153,8 +153,21 @@ every 15 seconds, with its heartbeat.
 The project's status says why, for example "Paused new agents: 14 GB free on builder-1" or "Paused new agents: 5-hour
 limit 91% on builder-1 as of Tue 13:42 UTC, resets Tue 14:00 UTC (pauses at 90%, lifts below 85%)", and `fleetd doctor`
 shows each machine's free space. A writer's worktree, build output included, goes once its PR merges, unless it holds
-uncommitted or unpushed work. When `sccache` is on the node's `PATH`, sessions compile through it, so a dependency
-builds once per machine rather than once per worktree.
+uncommitted or unpushed work. A reader's or reviewer's goes when its task ends. When `sccache` is on the node's `PATH`,
+sessions compile through it, so a dependency builds once per machine rather than once per worktree.
+
+## A fair share for each agent {#fair-share}
+
+Agents on one machine share its CPUs, memory and disk. Each session gets:
+
+| What | How |
+|---|---|
+| Build jobs | Each agent's share of the CPUs: the CPUs divided by the agents the machine fits, at least 2. fleetd sets `CARGO_BUILD_JOBS`, `MAKEFLAGS=-j<n>`, `CMAKE_BUILD_PARALLEL_LEVEL` and `GOFLAGS=-p=<n>`, except any you set in `claude.env`, and a task's brief says what `<n>` is. |
+| Scratch space | `TMPDIR`, `TMP` and `TEMP` point at `~/.fleetd/node/tmp/<16 hex characters, one per session>`, on disk. Never `/tmp`, which is often held in memory. It goes with the writer's worktree; for a session without one, when the session is stopped or the node restarts. |
+| Its own memory scope (Linux) | When the node can reach your systemd user manager, each session runs in its own transient scope (`systemctl --user list-units 'run-*.scope'`, described as "fleetd agent …"). If memory runs out, the kernel's kill lands in one agent: the build it killed fails, and the agent sees the error and goes on. The scopes and the node's unit have `OOMPolicy=continue`, so an out-of-memory kill never fails an agent's scope or the node, and stopping the node stops its agents' scopes after its own shutdown. If a scope can't be started, the session starts without one, and the node checks again 10 minutes later. Without a user manager (macOS, containers), sessions run as before. |
+
+A node unit written before this has no `OOMPolicy=continue`; run `fleetd machine add` again on that machine to rewrite
+it.
 
 ## Check health {#health}
 

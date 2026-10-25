@@ -106,6 +106,31 @@ describe("data layer", () => {
     expect(fake.resyncs).toHaveBeenCalledTimes(1);
     stop();
   });
+
+  it("reads the work elsewhere once for a run of task and change events, two seconds after the first", async () => {
+    vi.useFakeTimers();
+    const fake = fakeHub();
+    const layer = createDataLayer(fake.hub);
+    layer.start();
+    fake.send(live());
+    fake.send(snapshot(1));
+    const input = { projectRef: { machineId: "devbox", projectId: "storefront" }, paths: false };
+    const stop = new QueryObserver(layer.queryClient, layer.toolQuery("work_list", input)).subscribe(() => undefined);
+    await vi.advanceTimersByTimeAsync(0);
+    fake.answers[0]?.({ scope: { repoKey: "github.com/acme/storefront", base: "main" }, items: [], recentLandings: [] });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.calls).toEqual(["work_list"]);
+
+    for (let n = 2; n < 12; n++) {
+      fake.send(event(n, n % 2 === 0 ? "task.started" : "change.state", { workstreamId: "W1" }));
+      await vi.advanceTimersByTimeAsync(150);
+    }
+    expect(fake.calls.filter((t) => t === "work_list")).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(600);
+    expect(fake.calls.filter((t) => t === "work_list")).toHaveLength(2);
+    expect(fake.inputs.at(-1)).toEqual(input);
+    stop();
+  });
 });
 
 describe("read numbers", () => {

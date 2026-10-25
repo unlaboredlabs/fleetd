@@ -43,9 +43,18 @@ async fn catch_up(tasks: &Arc<super::Tasks>) {
     tasks.catch_up().await;
 }
 
-/// Answers every call the hub sends the node (a file read finds nothing; anything else is done) and hands each one
+/// Answers every call the hub sends the node (a file read finds nothing, the default branch is main; anything else is done) and hands each one
 /// to the test.
-fn serve(hub: &Arc<Hub>, mut node: Node) -> mpsc::UnboundedReceiver<SessionCall> {
+fn serve(hub: &Arc<Hub>, node: Node) -> mpsc::UnboundedReceiver<SessionCall> {
+    serve_with(hub, node, Some("main"))
+}
+
+/// As [`serve`], with `branch` as the project's default branch: `None` for a repo with no commit yet.
+fn serve_with(
+    hub: &Arc<Hub>,
+    mut node: Node,
+    branch: Option<&'static str>,
+) -> mpsc::UnboundedReceiver<SessionCall> {
     let (tx, calls) = mpsc::unbounded_channel();
     let hub = hub.clone();
     tokio::spawn(async move {
@@ -55,6 +64,9 @@ fn serve(hub: &Arc<Hub>, mut node: Node) -> mpsc::UnboundedReceiver<SessionCall>
             };
             let result = match f.call {
                 SessionCall::ReadFile { .. } => json!({ "ok": { "kind": "file" } }),
+                SessionCall::DefaultBranch { .. } => {
+                    json!({ "ok": { "kind": "default_branch", "branch": branch } })
+                }
                 _ => json!({ "ok": { "kind": "done" } }),
             };
             let reply = json!({ "t": "session_reply", "id": f.id, "result": result });
@@ -209,4 +221,91 @@ async fn a_merged_writer_has_the_node_remove_its_worktree() {
             break;
         }
     }
+}
+
+/// Tries every queued task, as a freed slot does.
+async fn start_queued(tasks: &Arc<super::Tasks>) {
+    let _guard = tasks.lock.lock().await;
+    tasks.retry_queue().await;
+}
+
+/// The next launch the hub sends the node.
+async fn next_launch(
+    calls: &mut mpsc::UnboundedReceiver<SessionCall>,
+) -> fleetd_contracts::sessions::SessionLaunch {
+    loop {
+        if let SessionCall::Launch(launch) = calls.recv().await.unwrap() {
+            return launch;
+        }
+    }
+}
+
+/// A node from before detached worktrees can't decode one and would drop its link, so its readers and reviewers start
+/// as before, in the project root, with a brief that says so. A node that lists the capability gets the worktree.
+#[tokio::test]
+async fn a_node_too_old_for_detached_worktrees_gets_the_old_launch() {
+    use fleetd_contracts::node_link::CAP_DETACHED;
+    use fleetd_contracts::prim::NonEmpty;
+    use fleetd_contracts::sessions::SessionWorkspace;
+    let (hub, _home) = hub();
+    let mut calls = serve(&hub, Node::link(&hub).await);
+    let pr = "https://github.com/o/r/pull/7";
+    insert(
+        &hub,
+        json!({ "taskId": "T1", "title": "old node", "state": "queued", "kind": "review", "pr": pr }),
+    );
+    start_queued(&hub.tasks).await;
+    let old = next_launch(&mut calls).await;
+    assert_eq!(old.workspace, SessionWorkspace::Root);
+    assert!(
+        old.prompt
+            .contains("the project's own checkout, which is the human's"),
+        "{}",
+        old.prompt.as_str()
+    );
+    assert!(!old.prompt.contains("worktree of your own"));
+
+    hub.link.set_capabilities(&lab_a(), &[CAP_DETACHED]);
+    insert(
+        &hub,
+        json!({ "taskId": "T2", "title": "new node", "state": "queued", "kind": "review", "pr": pr }),
+    );
+    start_queued(&hub.tasks).await;
+    let new = next_launch(&mut calls).await;
+    assert_eq!(
+        new.workspace,
+        SessionWorkspace::Detached {
+            base_ref: NonEmpty::unchecked("main"),
+            pr: Some(NonEmpty::unchecked(pr)),
+        }
+    );
+    assert!(
+        new.prompt
+            .contains("a detached git worktree of your own, at the PR's head")
+    );
+}
+
+/// In a repo with no commit yet the node names no default branch, so a reader starts in the project root, as before,
+/// with the brief that says it is the human's checkout, rather than failing.
+#[tokio::test]
+async fn a_reader_of_a_repo_with_no_commit_yet_starts_in_the_project_root() {
+    use fleetd_contracts::node_link::CAP_DETACHED;
+    use fleetd_contracts::sessions::SessionWorkspace;
+    let (hub, _home) = hub();
+    let mut calls = serve_with(&hub, Node::link(&hub).await, None);
+    hub.link.set_capabilities(&lab_a(), &[CAP_DETACHED]);
+    insert(
+        &hub,
+        json!({ "taskId": "T1", "title": "new repo", "state": "queued" }),
+    );
+    start_queued(&hub.tasks).await;
+    let launch = next_launch(&mut calls).await;
+    assert_eq!(launch.workspace, SessionWorkspace::Root);
+    assert!(
+        launch
+            .prompt
+            .contains("the project's own checkout, which is the human's"),
+        "{}",
+        launch.prompt.as_str()
+    );
 }

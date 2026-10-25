@@ -178,7 +178,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "status_get",
-        "Without projectRef: one row per project you can read, by title (rows): a state word (working, waiting_on_you, blocked with a one-line reason, idle), the two-tone progress (verified and in flight, no ETA), agents running now and the last merge, marked stale when its machine, GitHub or its merge train went quiet. With projectRef: that project's row and the series behind its bar, oldest first: each point's verified and in-flight figure, why it fell (a scope change, a failed review or CI, work that stopped, a reopened item) and when it held on paused work. Never an ETA.",
+        "Without projectRef: one row per project you can read, by title (rows): a state word (working, waiting_on_you, blocked with a one-line reason, idle), its work in groups (waiting_on_you, in_review, working, landing, idle, done: counts, and the newest items of each with their agent, PR and why), agents running now and the last merge, marked stale when its machine, GitHub or its merge train went quiet. With projectRef: that project's row. Never a percentage or an ETA.",
     ),
     (
         "time_insights",
@@ -230,7 +230,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "work_list",
-        "What is in flight on a repo's base branch (repo, any host, or projectRef): fleetd's agents, PRs on the merge train, and claims by people's sessions (expired ones last), with their files and keys. Read-only.",
+        "What is in flight on a repo's base branch (repo, any host, or projectRef): fleetd's agents, PRs on the merge train, and claims by people's sessions (expired ones last), with their files and keys; and recentLandings, what reached the base outside the merge train (a PR merged by hand, a direct push) in the last 24 h. Read-only.",
     ),
     (
         "work_done",

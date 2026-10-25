@@ -1,17 +1,10 @@
-//! Status over a real in-memory hub: plan calls and their markers, the done rule from train merges, and the project
-//! rows and series the tools serve.
+//! Status over a real in-memory hub: the project rows the tools serve, their groups, and that they follow events.
 use std::sync::Arc;
 use std::time::Duration;
 
 use fleetd_contracts::auth::KeyKind;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
-use fleetd_contracts::ledger::WorkstreamId;
-use fleetd_contracts::mcp::ErrorCode;
-use fleetd_contracts::plan::{PlanChange, PlanChangeKind, PlanItemId, PlanItemSpec, PlanItemState};
-use fleetd_contracts::status::{
-    DropReason, ProgressDrop, ProgressPoint, ProjectRowState, ProjectStatusRow,
-};
-use fleetd_contracts::train::GitHubPrUrl;
+use fleetd_contracts::status::{ProjectRowState, ProjectStatusRow, StatusGroup};
 use rusqlite::params;
 use serde_json::json;
 
@@ -85,366 +78,196 @@ fn person() -> Caller {
     .unwrap()
 }
 
-/// The project's row and series as status_get serves them, `secs` later.
-fn row_after(hub: &Hub, clock: &ManualClock, secs: u64) -> (ProjectStatusRow, Vec<ProgressPoint>) {
-    clock.advance(Duration::from_secs(secs));
-    hub.status
-        .project(hub, &person(), &project())
-        .unwrap()
-        .expect("the project's row")
+fn row(hub: &Hub) -> ProjectStatusRow {
+    hub.status.project_rows(hub, &person()).unwrap().remove(0)
 }
 
-/// The project's bar `secs` later: (pct, the last point's drop).
-fn bar_after(hub: &Hub, clock: &ManualClock, secs: u64) -> (i64, Option<ProgressDrop>) {
-    let (row, series) = row_after(hub, clock, secs);
-    (
-        row.progress.expect("something to count").pct.get(),
-        series.last().unwrap().drop.clone(),
-    )
+/// Something that changes a row, as the hub announces it.
+fn announce(hub: &Hub, r#type: fleetd_contracts::events::HubEventType) {
+    hub.events
+        .append(crate::hub::store::NewEvent {
+            at: fleetd_contracts::ids::Timestamp(AT.into()),
+            r#type,
+            machine_id: Some(MachineId::unchecked("devbox")),
+            project_id: Some(ProjectId::unchecked("storefront")),
+            thread_id: None,
+            summary: "changed".into(),
+            data: None,
+            attention: None,
+        })
+        .unwrap();
 }
 
-/// W1's `plan` call: `items` is the whole list, in order.
-fn plan(
-    hub: &Hub,
-    items: serde_json::Value,
-    why: Option<&str>,
-) -> Result<Vec<PlanChange>, crate::hub::plan::PlanError> {
-    let items: Vec<PlanItemSpec> = serde_json::from_value(items).unwrap();
-    hub.plans.set(
-        &project(),
-        "lead:devbox/storefront",
-        &WorkstreamId::unchecked("W1"),
-        &items,
-        why,
-    )
+fn writer(hub: &Hub, task: &str, state: &str) {
+    let at = iso_ms_of(T0 as i64);
+    let ended = matches!(state, "done" | "failed" | "cancelled").then(|| at.clone());
+    let row = json!({
+        "taskId": task, "projectRef": { "machineId": "devbox", "projectId": "storefront" }, "workstreamId": "W1",
+        "title": format!("work of {task}"), "kind": "write", "prompt": "Build it.",
+        "model": "claude-opus-5-5", "effort": "high", "state": state, "attempt": 1,
+        "createdAt": at, "startedAt": at, "endedAt": ended,
+    });
+    hub.db
+        .with(|c| {
+            c.execute(
+                "INSERT INTO tasks (n, machine_id, project_id, workstream_id, state, data)
+                 VALUES (?, 'devbox', 'storefront', 'W1', ?, ?)",
+                params![task[1..].parse::<i64>().unwrap(), state, row.to_string()],
+            )?;
+            Ok(())
+        })
+        .unwrap();
 }
 
-fn link_pr(hub: &Hub, item: &str, pr: i64) {
-    hub.plans
-        .link_pr(
+fn pr(hub: &Hub, n: i64, task: Option<&str>, state: &str) {
+    let change = json!({
+        "changeId": format!("X{n}"), "projectRef": { "machineId": "devbox", "projectId": "storefront" },
+        "repo": "acme/storefront", "prNumber": 200 + n,
+        "prUrl": format!("https://github.com/acme/storefront/pull/{}", 200 + n), "branch": format!("fleetd/pr-{n}"),
+        "taskId": task, "workstreamId": "W1", "headSha": "b".repeat(40), "state": state, "reviews": [],
+        "createdAt": iso_ms_of(T0 as i64), "updatedAt": iso_ms_of(T0 as i64),
+    });
+    hub.db
+        .with(|c| {
+            c.execute(
+                "INSERT INTO changes (n, repo, pr_number, state, machine_id, project_id, train_order, data)
+                 VALUES (?1, 'acme/storefront', ?2, ?3, 'devbox', 'storefront', ?1, ?4)",
+                params![n, 200 + n, state, change.to_string()],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+}
+
+/// One item per piece of work, each in the group its observed state puts it in: a writer is grouped with its PR, a
+/// PR no agent wrote stands alone, and the lead's question waits on you.
+#[tokio::test]
+async fn each_piece_of_work_is_in_one_group_from_what_the_hub_saw() {
+    use fleetd_contracts::chat::ChatAuthor;
+
+    use crate::hub::chat::NewMessage;
+
+    let clock = ManualClock::at(T0);
+    let (hub, _home) = hub(clock.clone());
+    writer(&hub, "T1", "running");
+    writer(&hub, "T2", "done");
+    pr(&hub, 1, Some("T2"), "reviewing");
+    writer(&hub, "T3", "done");
+    pr(&hub, 2, None, "ci");
+    pr(&hub, 3, None, "merged");
+    pr(&hub, 4, None, "abandoned");
+    hub.chat
+        .add(
             &project(),
-            &PlanItemId::unchecked(item),
-            &WorkstreamId::unchecked("W1"),
-            &GitHubPrUrl::unchecked(format!("https://github.com/acme/storefront/pull/{pr}")),
+            NewMessage {
+                author: Some(ChatAuthor::Lead),
+                text: "1. Ship the cart page behind a flag? I'd say yes.".into(),
+                ..Default::default()
+            },
         )
         .unwrap();
-}
-
-fn merged_change(hub: &Hub, pr: i64) {
-    let sha = "b".repeat(40);
-    let change = json!({
-        "changeId": "X1", "projectRef": { "machineId": "devbox", "projectId": "storefront" }, "repo": "acme/storefront",
-        "prNumber": pr, "prUrl": format!("https://github.com/acme/storefront/pull/{pr}"), "branch": "fleetd/T1-x",
-        "workstreamId": "W1", "headSha": sha, "state": "merged", "reviews": [],
-        "createdAt": AT, "updatedAt": AT,
-    });
-    hub.db
-        .with(|c| {
-            c.execute(
-                "INSERT INTO changes (repo, pr_number, state, machine_id, project_id, train_order, data)
-                 VALUES ('acme/storefront', ?, 'merged', 'devbox', 'storefront', 0, ?)",
-                params![pr, change.to_string()],
-            )?;
-            Ok(())
-        })
-        .unwrap();
-}
-
-#[tokio::test]
-async fn a_plan_call_that_moves_a_filled_milestone_writes_a_marker() {
-    let clock = ManualClock::at(T0);
-    let (hub, _home) = hub(clock.clone());
-    let cart = json!({ "id": "P1", "title": "cart page", "size": "l", "milestone": "Checkout" });
-    let first = plan(
-        &hub,
-        json!([
-            { "title": "cart page", "size": "l", "milestone": "Checkout" },
-            { "title": "payment page", "milestone": "Checkout" },
-        ]),
-        None,
-    )
-    .unwrap();
-    assert!(first.is_empty(), "filling a milestone is no scope change");
-    let added = plan(
-        &hub,
-        json!([cart, { "id": "P2", "title": "payment page", "milestone": "Checkout" },
-            { "title": "receipts", "milestone": "Checkout" }]),
-        Some("receipts were missed"),
-    )
-    .unwrap();
-    assert_eq!(added[0].kind, PlanChangeKind::Scope);
-    assert_eq!(added[0].note.as_str(), "+1 item: receipts were missed");
+    let row = row(&hub);
+    let items: Vec<(StatusGroup, &str)> = row
+        .items
+        .iter()
+        .map(|i| (i.group, i.title.as_str()))
+        .collect();
     assert_eq!(
-        (added[0].delta_items.get(), added[0].delta_size.get()),
-        (1, 3)
+        items,
+        [
+            (StatusGroup::WaitingOnYou, "The lead's question in chat"),
+            (StatusGroup::InReview, "work of T2"),
+            (StatusGroup::Working, "work of T1"),
+            (StatusGroup::Landing, "fleetd/pr-2"),
+            (StatusGroup::Idle, "work of T3"),
+            (StatusGroup::Idle, "fleetd/pr-4"),
+            (StatusGroup::Done, "fleetd/pr-3"),
+        ]
     );
-    let dropped = plan(
-        &hub,
-        json!([cart, { "id": "P3", "title": "receipts", "milestone": "Checkout" }]),
-        Some("folded into P1"),
-    )
-    .unwrap();
-    assert_eq!(dropped[0].note.as_str(), "−1 item: folded into P1");
-    let view = hub.plans.view(&project(), None).unwrap();
-    assert_eq!(view.items[1].state, PlanItemState::Dropped);
+    let c = &row.counts;
     assert_eq!(
-        (view.progress.done.get(), view.progress.total.get()),
-        (0, 2)
+        [
+            c.waiting_on_you,
+            c.in_review,
+            c.working,
+            c.landing,
+            c.idle,
+            c.done
+        ]
+        .map(|n| n.get()),
+        [1, 1, 1, 1, 2, 1]
     );
-    assert_eq!(view.markers.len(), 2);
-    let refused = plan(&hub, json!([cart, cart]), None).unwrap_err();
-    assert_eq!(refused.0.code, ErrorCode::Invalid, "an item listed twice");
-}
-
-#[tokio::test]
-async fn an_item_is_done_only_from_a_train_merge_and_the_row_shows_it() {
-    let clock = ManualClock::at(T0);
-    let (hub, _home) = hub(clock.clone());
-    let r = project();
-    plan(
-        &hub,
-        json!([{ "title": "cart page" }, { "title": "unlinked polish", "weight": "polish" }]),
-        None,
-    )
-    .unwrap();
-    link_pr(&hub, "P1", 212);
-    assert!(!hub.plans.verify("W1"), "no merge yet");
-    merged_change(&hub, 212);
-    assert!(hub.plans.verify("W1"));
-    let view = hub.plans.view(&r, None).unwrap();
-    let p1 = &view.items[0];
-    assert_eq!(p1.state, PlanItemState::Done);
-    assert_eq!(
-        p1.evidence.as_ref().unwrap().as_str(),
-        "#212 merged by the train"
-    );
-    assert_eq!(
-        view.progress.pct.get(),
-        100,
-        "polish never holds the number back"
-    );
-
-    let (row, _) = row_after(&hub, &clock, 1);
-    let bar = row.progress.unwrap();
-    assert_eq!(
-        (bar.pct.get(), bar.verified_pct.get()),
-        (100, 100),
-        "the row's bar counts it verified"
-    );
-
-    hub.plans
-        .close_order("W1", fleetd_contracts::ledger::WorkstreamState::Done);
-    let view = hub.plans.view(&r, None).unwrap();
-    assert_eq!(
-        view.items[1].state,
-        PlanItemState::Dropped,
-        "unlinked items close with the order"
-    );
-    assert_eq!(
-        view.items[0].state,
-        PlanItemState::Done,
-        "a verified item stays done"
-    );
-}
-
-/// A plan re-check per event is index lookups and stays within milliseconds, and a read of the rows within 200 ms
-/// (timed in release builds), however much history the project has.
-#[tokio::test]
-async fn recompute_stays_bounded_with_two_thousand_items_and_changes() {
-    let clock = ManualClock::at(T0);
-    let (hub, _home) = hub(clock.clone());
-    let r = project();
-    hub.db
-        .with(|c| {
-            crate::hub::plan::store::milestone_insert(
-                c,
-                &crate::hub::plan::store::pkey(&r),
-                "Big",
-                None,
-                0,
-            )?;
-            Ok(())
-        })
-        .unwrap();
-    hub.db
-        .with(|c| {
-            let tx = c.unchecked_transaction()?;
-            let sha = "b".repeat(40);
-            for n in 1..=2000i64 {
-                let change = json!({
-                    "changeId": format!("X{n}"), "projectRef": { "machineId": "devbox", "projectId": "storefront" },
-                    "repo": "acme/storefront", "prNumber": n, "prUrl": format!("https://github.com/acme/storefront/pull/{n}"),
-                    "branch": "b", "taskId": format!("T{n}"), "workstreamId": "W1",
-                    "headSha": sha, "state": "merged", "reviews": [], "createdAt": AT, "updatedAt": AT,
-                });
-                tx.execute(
-                    "INSERT INTO changes (repo, pr_number, state, machine_id, project_id, train_order, data)
-                     VALUES ('acme/storefront', ?, 'merged', 'devbox', 'storefront', 0, ?)",
-                    params![n, change.to_string()],
-                )?;
-                let state = if n <= 1980 { "done" } else { "open" };
-                let data = json!({ "title": format!("item {n}"), "links": { "tasks": [format!("T{n}")], "prs": [], "checks": [] }, "after": [] });
-                tx.execute(
-                    "INSERT INTO plan_items (project_ref, milestone, workstream_id, state, weight, size, position, done_ms, data)
-                     VALUES ('devbox/storefront', 1, 'W1', ?, 'must', 3, ?, ?, ?)",
-                    params![state, n, (state == "done").then_some(T0 as i64), data.to_string()],
-                )?;
-            }
-            tx.commit()?;
-            Ok(())
-        })
-        .unwrap();
-    let plan: String = hub
-        .db
-        .with(|c| {
-            Ok(c.query_row(
-                "EXPLAIN QUERY PLAN SELECT data FROM changes
-                 WHERE (CASE WHEN json_valid(data) THEN json_extract(data, '$.taskId') END) = 'T1'",
-                [],
-                |r| r.get(3),
-            )?)
-        })
-        .unwrap();
-    assert!(
-        plan.contains("changes_by_task"),
-        "linked Changes are an index lookup: {plan}"
-    );
-    // Wall time is asserted only in release builds; debug builds on shared CI runners vary too much. The index
-    // assertion above is the work bound that holds everywhere.
-    hub.plans.verify("W1");
-    let started = std::time::Instant::now();
-    hub.plans.verify("W1");
-    let again = started.elapsed();
-    let started = std::time::Instant::now();
-    let (row, _) = row_after(&hub, &clock, 1);
-    let read = started.elapsed();
-    if !cfg!(debug_assertions) {
-        assert!(again.as_millis() <= 2, "re-check took {again:?}");
-        assert!(read.as_millis() <= 200, "reading the rows took {read:?}");
-    }
-    assert_eq!(
-        row.progress, None,
-        "every item merged, so the milestone finished and left the figure"
-    );
-}
-
-fn set_change(hub: &Hub, state: &str, from: Option<&str>) {
-    let now = crate::hub::store::now_ms(hub.clock.as_ref());
-    let at = crate::hub::store::iso_ms(now);
-    let change = json!({
-        "changeId": "X1", "projectRef": { "machineId": "devbox", "projectId": "storefront" }, "repo": "acme/storefront",
-        "prNumber": 212, "prUrl": "https://github.com/acme/storefront/pull/212", "branch": "fleetd/T1-x",
-        "workstreamId": "W1", "headSha": "b".repeat(40), "state": state,
-        "reviews": [], "createdAt": iso_ms_of(T0 as i64), "updatedAt": at,
-    });
-    hub.db
-        .with(|c| {
-            c.execute("DELETE FROM changes", [])?;
-            c.execute(
-                "INSERT INTO changes (repo, pr_number, state, machine_id, project_id, train_order, data)
-                 VALUES ('acme/storefront', 212, ?, 'devbox', 'storefront', 0, ?)",
-                params![state, change.to_string()],
-            )?;
-            Ok(())
-        })
-        .unwrap();
-    if let Some(from) = from {
-        hub.events
-            .append(crate::hub::store::NewEvent {
-                at: fleetd_contracts::ids::Timestamp(at),
-                r#type: fleetd_contracts::events::HubEventType::ChangeState,
-                machine_id: Some(MachineId::unchecked("devbox")),
-                project_id: Some(ProjectId::unchecked("storefront")),
-                thread_id: None,
-                summary: format!("X1 {from} → {state}"),
-                data: Some(json!({
-                    "changeId": "X1", "workstreamId": "W1", "repo": "acme/storefront", "prNumber": 212,
-                    "from": from, "to": state,
-                })),
-                attention: None,
-            })
-            .unwrap();
-    }
-}
-
-fn iso_ms_of(ms: i64) -> String {
-    crate::hub::store::iso_ms(ms)
-}
-
-#[tokio::test]
-async fn the_bar_rises_with_observed_stages_and_falls_only_with_an_explained_marker() {
-    let clock = ManualClock::at(T0);
-    let (hub, _home) = hub(clock.clone());
-    plan(&hub, json!([{ "title": "cart page" }]), None).unwrap();
-    link_pr(&hub, "P1", 212);
-    assert_eq!(
-        bar_after(&hub, &clock, 1),
-        (0, None),
-        "planned, nothing observed"
-    );
-    set_change(&hub, "reviewing", None);
-    assert_eq!(bar_after(&hub, &clock, 1).0, 50, "a PR opened");
-    set_change(&hub, "ready", Some("reviewing"));
-    let (row, _) = row_after(&hub, &clock, 1);
-    let bar = row.progress.unwrap();
+    let t2 = &row.items[1];
     assert_eq!(
         (
-            bar.pct.get(),
-            bar.verified_pct.get(),
-            bar.in_flight_pct.get()
+            t2.task_id.as_ref().map(|t| t.as_str()),
+            t2.pr.as_ref().map(|p| p.number.get())
         ),
-        (70, 0, 70),
-        "review passed, all of it in flight"
+        (Some("T2"), Some(201)),
+        "the writer opens its agent, and carries its PR"
     );
-
-    set_change(&hub, "ci_failed", Some("ci"));
-    let (pct, drop) = bar_after(&hub, &clock, 1);
-    assert_eq!(pct, 50, "CI failed: back to PR open");
-    let drop = drop.expect("the drop is explained");
     assert_eq!(
-        (drop.reason, drop.from_pct.get(), drop.text.as_str()),
-        (DropReason::CiFailed, 70, "CI failed on #212")
+        row.items[5].why.as_ref().map(|w| w.as_str()),
+        Some("abandoned")
     );
 
-    set_change(&hub, "ready", None);
-    bar_after(&hub, &clock, 1);
-    hub.db
-        .with(|c| {
-            c.execute("DELETE FROM changes", [])?;
-            Ok(())
-        })
-        .unwrap();
-    let (row, series) = row_after(&hub, &clock, 1);
-    assert_eq!(row.progress.unwrap().pct.get(), 70, "no cause: it holds");
-    assert!(
-        series
-            .windows(2)
-            .all(|w| w[1].pct >= w[0].pct || w[1].drop.is_some()),
-        "never a silent drop: {series:?}"
+    // A week on, nothing idle or done is news; what is still in flight stays.
+    clock.advance(Duration::from_millis(super::groups::WINDOW_MS as u64 + 1));
+    announce(&hub, fleetd_contracts::events::HubEventType::TaskStarted);
+    let later = super::rows::read(
+        &hub,
+        &hub.status.fresh,
+        crate::hub::store::now_ms(hub.clock.as_ref()),
+    )
+    .unwrap()
+    .remove(0);
+    let groups: Vec<StatusGroup> = later.items.iter().map(|i| i.group).collect();
+    assert_eq!(
+        groups,
+        [
+            StatusGroup::WaitingOnYou,
+            StatusGroup::InReview,
+            StatusGroup::Working,
+            StatusGroup::Landing
+        ]
     );
 }
 
-/// What Status serves names no time to come: no ETA, no usual or remaining duration, no "slower than usual".
+/// The rows are read again after an event and only then: nothing in a row moves with the clock alone.
 #[tokio::test]
-async fn nothing_status_serves_is_a_time_estimate() {
+async fn the_rows_are_read_again_after_an_event_and_only_then() {
     let clock = ManualClock::at(T0);
-    let (hub, _home) = one_item(&clock);
-    set_writer(&hub, "T1", "running");
-    set_change(&hub, "ready", Some("reviewing"));
+    let (hub, _home) = hub(clock.clone());
+    assert_eq!(row(&hub).counts.working.get(), 0);
+    writer(&hub, "T1", "running");
+    clock.advance(Duration::from_secs(3600));
+    assert_eq!(
+        row(&hub).counts.working.get(),
+        0,
+        "no event yet: the same read"
+    );
+    announce(&hub, fleetd_contracts::events::HubEventType::TaskStarted);
+    assert_eq!(
+        row(&hub).counts.working.get(),
+        1,
+        "the event's read sees it"
+    );
+}
+
+#[tokio::test]
+async fn nothing_status_serves_is_a_score_or_a_time_estimate() {
+    let clock = ManualClock::at(T0);
+    let (hub, _home) = hub(clock.clone());
+    writer(&hub, "T1", "running");
+    pr(&hub, 1, None, "ci");
     let rows = hub.status.project_rows(&hub, &person()).unwrap();
-    let (row, series) = row_after(&hub, &clock, 30 * 60);
-    let text = serde_json::to_string(&(rows, row, series))
-        .unwrap()
-        .to_lowercase();
+    let text = serde_json::to_string(&rows).unwrap().to_lowercase();
     for word in [
+        "pct\"",
+        "progress",
         "eta",
         "estimate",
-        "p50",
-        "p90",
-        "usual",
         "remaining",
-        "left",
-        "slower",
         "duration",
         "minutes",
     ] {
@@ -452,36 +275,6 @@ async fn nothing_status_serves_is_a_time_estimate() {
     }
 }
 
-#[tokio::test]
-async fn a_finished_milestone_lowers_the_bar_only_with_a_marker() {
-    let clock = ManualClock::at(T0);
-    let (hub, _home) = hub(clock.clone());
-    plan(
-        &hub,
-        json!([
-            { "title": "cart page", "milestone": "Checkout" },
-            { "title": "search box", "milestone": "Search" },
-        ]),
-        None,
-    )
-    .unwrap();
-    link_pr(&hub, "P1", 212);
-    bar_after(&hub, &clock, 1);
-    set_change(&hub, "merged", None);
-    assert_eq!(bar_after(&hub, &clock, 1).0, 45, "a merged m of two");
-    assert!(
-        hub.plans.verify("W1"),
-        "M1 finishes and leaves the project's figure"
-    );
-    let (pct, drop) = bar_after(&hub, &clock, 1);
-    assert_eq!(pct, 0, "only the search box is left");
-    let drop = drop.expect("the drop is explained");
-    assert_eq!(drop.reason, DropReason::ScopeChange);
-    assert!(drop.text.as_str().contains("M1"), "{}", drop.text.as_str());
-}
-
-/// The rows are read again after any event, so a row is never older than the last thing that happened; and a row
-/// whose machine, GitHub or merge train went quiet says so, with why and since when.
 #[tokio::test]
 async fn a_row_follows_events_and_says_when_a_source_went_quiet() {
     let clock = ManualClock::at(T0);
@@ -532,6 +325,8 @@ async fn a_row_follows_events_and_says_when_a_source_went_quiet() {
         T0 as i64,
     );
     clock.advance(Duration::from_secs(1));
+    // Each change reaches the rows as an event: the follower's flips, the machine's going offline.
+    announce(&hub, fleetd_contracts::events::HubEventType::SourceStale);
     let quiet = row(&hub).stale.expect("GitHub went quiet");
     assert_eq!(quiet.reason.as_str(), "not checked since the hub started");
     hub.status.fresh.touch(
@@ -539,6 +334,7 @@ async fn a_row_follows_events_and_says_when_a_source_went_quiet() {
         crate::hub::store::now_ms(hub.clock.as_ref()),
     );
     clock.advance(Duration::from_secs(1));
+    announce(&hub, fleetd_contracts::events::HubEventType::SourceFresh);
     assert_eq!(row(&hub).stale, None, "live again once it answers");
 
     // Its machine stops sending heartbeats: blocked, and stale since the last one.
@@ -550,6 +346,7 @@ async fn a_row_follows_events_and_says_when_a_source_went_quiet() {
         .machine_upsert(&serde_json::from_value(machine).unwrap(), None)
         .unwrap();
     clock.advance(Duration::from_secs(1));
+    announce(&hub, fleetd_contracts::events::HubEventType::MachineOffline);
     let offline = row(&hub);
     assert_eq!(offline.state, ProjectRowState::Blocked);
     let mark = offline.stale.expect("its machine went quiet");
@@ -566,10 +363,13 @@ async fn a_row_follows_events_and_says_when_a_source_went_quiet() {
 #[tokio::test]
 async fn status_get_answers_only_for_a_project_there_is() {
     let clock = ManualClock::at(T0);
-    let (hub, _home) = one_item(&clock);
-    let (row, series) = row_after(&hub, &clock, 1);
+    let (hub, _home) = hub(clock);
+    let row = hub
+        .status
+        .project(&hub, &person(), &project())
+        .unwrap()
+        .expect("its row");
     assert_eq!(row.title.as_str(), "storefront");
-    assert_eq!(series.len(), 1, "the first point");
     let missing = ProjectRef {
         machine_id: MachineId::unchecked("devbox"),
         project_id: ProjectId::unchecked("nope"),
@@ -582,401 +382,26 @@ async fn status_get_answers_only_for_a_project_there_is() {
     );
 }
 
-/// Puts `task`, a writer linked to the item, in `state`, and appends its `task.*` event as the hub does.
-fn set_writer(hub: &Hub, task: &str, state: &str) {
-    let now = crate::hub::store::now_ms(hub.clock.as_ref());
-    let at = iso_ms_of(now);
-    let row = json!({
-        "taskId": task, "projectRef": { "machineId": "devbox", "projectId": "storefront" }, "workstreamId": "W1",
-        "title": "cart page", "kind": "write", "prompt": "Build the cart page.",
-        "model": "claude-opus-5-5", "effort": "high", "itemId": "P1", "state": state, "attempt": 1,
-        "createdAt": iso_ms_of(T0 as i64), "startedAt": iso_ms_of(T0 as i64),
+fn merged_change(hub: &Hub, pr: i64) {
+    let sha = "b".repeat(40);
+    let change = json!({
+        "changeId": "X1", "projectRef": { "machineId": "devbox", "projectId": "storefront" }, "repo": "acme/storefront",
+        "prNumber": pr, "prUrl": format!("https://github.com/acme/storefront/pull/{pr}"), "branch": "fleetd/T1-x",
+        "workstreamId": "W1", "headSha": sha, "state": "merged", "reviews": [],
+        "createdAt": AT, "updatedAt": AT,
     });
     hub.db
         .with(|c| {
             c.execute(
-                "DELETE FROM tasks WHERE json_extract(data, '$.taskId') = ?",
-                [task],
-            )?;
-            c.execute(
-                "INSERT INTO tasks (machine_id, project_id, workstream_id, state, data)
-                 VALUES ('devbox', 'storefront', 'W1', ?, ?)",
-                params![state, row.to_string()],
-            )?;
-            c.execute(
-                "UPDATE plan_items SET started_ms = ?, data = json_set(data, '$.links.tasks',
-                   (SELECT json_group_array(json_extract(data, '$.taskId')) FROM tasks))",
-                [T0 as i64],
-            )?;
-            Ok(())
-        })
-        .unwrap();
-    let r#type = match state {
-        "running" => fleetd_contracts::events::HubEventType::TaskStarted,
-        "failed" => fleetd_contracts::events::HubEventType::TaskFailed,
-        "done" => fleetd_contracts::events::HubEventType::TaskCompleted,
-        _ => return,
-    };
-    hub.events
-        .append(crate::hub::store::NewEvent {
-            at: fleetd_contracts::ids::Timestamp(at),
-            r#type,
-            machine_id: Some(MachineId::unchecked("devbox")),
-            project_id: Some(ProjectId::unchecked("storefront")),
-            thread_id: None,
-            summary: format!("{task} {state}: cart page"),
-            data: Some(json!({ "taskId": task, "workstreamId": "W1" })),
-            attention: None,
-        })
-        .unwrap();
-}
-
-/// The order's one m item, "cart page".
-fn one_item(clock: &Arc<ManualClock>) -> (Arc<Hub>, tempfile::TempDir) {
-    one_item_on(HubDb::open_memory().unwrap(), clock)
-}
-
-fn one_item_on(db: Arc<HubDb>, clock: &Arc<ManualClock>) -> (Arc<Hub>, tempfile::TempDir) {
-    let (hub, home) = hub_on(db, clock.clone());
-    plan(&hub, json!([{ "title": "cart page" }]), None).unwrap();
-    (hub, home)
-}
-
-/// The bug #261 fixed: an item whose writer had ended still earned in-stage credit for every minute since it started,
-/// so the bar sat near the cap with nothing being built. In-stage credit is for work in flight only.
-#[tokio::test]
-async fn an_item_with_nothing_in_flight_holds_its_stage_credit() {
-    let clock = ManualClock::at(T0);
-    let (hub, _home) = one_item(&clock);
-    // Its writer finished without a PR (a research item, say): nothing else will happen until the lead acts.
-    set_writer(&hub, "T1", "done");
-    assert_eq!(
-        bar_after(&hub, &clock, 2 * 3600).0,
-        0,
-        "two hours on: no time in the stage counts (45 before the fix)"
-    );
-}
-
-#[tokio::test]
-async fn in_stage_credit_moves_while_its_writer_runs_and_is_taken_back_with_a_marker_when_it_stops()
-{
-    let clock = ManualClock::at(T0);
-    let (hub, _home) = one_item(&clock);
-    set_writer(&hub, "T1", "running");
-    let (running, _) = bar_after(&hub, &clock, 3 * 60);
-    let (later, _) = bar_after(&hub, &clock, 30 * 60);
-    assert_eq!(
-        (running, later),
-        (15, 45),
-        "in flight: three minutes of a ten-minute step, then the 0.9 cap"
-    );
-    set_writer(&hub, "T1", "failed");
-    let (stopped, drop) = bar_after(&hub, &clock, 1);
-    assert_eq!(stopped, 0, "the in-stage credit is taken back");
-    let drop = drop.expect("never a silent drop");
-    assert_eq!(
-        (drop.reason, drop.from_pct.get(), drop.text.as_str()),
-        (
-            DropReason::WorkStopped,
-            later,
-            "work stopped: an agent failed"
-        )
-    );
-    assert_eq!(
-        bar_after(&hub, &clock, 3 * 3600).0,
-        stopped,
-        "and it doesn't creep back"
-    );
-}
-
-/// Work resumed after a gap earns in-stage credit from its own start: the hours nobody worked never count.
-#[tokio::test]
-async fn a_new_writer_after_a_gap_earns_from_its_own_start_not_from_the_stage_start() {
-    let clock = ManualClock::at(T0);
-    let (hub, _home) = one_item(&clock);
-    set_writer(&hub, "T1", "running");
-    let (ran, _) = bar_after(&hub, &clock, 30 * 60);
-    set_writer(&hub, "T1", "failed");
-    assert_eq!(bar_after(&hub, &clock, 1).0, 0);
-    clock.advance(Duration::from_secs(3 * 3600));
-    // The lead starts a new writer for the same item three hours later.
-    set_writer(&hub, "T2", "running");
-    assert_eq!(
-        bar_after(&hub, &clock, 1).0,
-        0,
-        "three idle hours earn nothing at its start ({ran} counted from the stage's start)"
-    );
-    let (three_min, _) = bar_after(&hub, &clock, 3 * 60);
-    assert!(
-        0 < three_min && three_min < ran,
-        "it moves with the new writer's own minutes: 0 < {three_min} < {ran}"
-    );
-    assert_eq!(bar_after(&hub, &clock, 30 * 60).0, ran);
-}
-
-/// A PR the train holds on an error, or one in review with no reviewer running, is not work in flight: its unit
-/// keeps the stage's credit and earns nothing more while it sits.
-#[tokio::test]
-async fn a_pr_the_train_holds_earns_no_in_stage_credit() {
-    let clock = ManualClock::at(T0);
-    let (hub, _home) = one_item(&clock);
-    let held = |error: Option<&str>| {
-        let change = json!({
-            "changeId": "X1", "projectRef": { "machineId": "devbox", "projectId": "storefront" },
-            "repo": "acme/storefront", "prNumber": 212, "prUrl": "https://github.com/acme/storefront/pull/212",
-            "branch": "fleetd/T1-x", "taskId": "T9", "workstreamId": "W1", "headSha": "b".repeat(40),
-            "state": "ready", "reviews": [], "lastError": error,
-            "createdAt": iso_ms_of(T0 as i64),
-            "updatedAt": iso_ms_of(crate::hub::store::now_ms(hub.clock.as_ref())),
-        });
-        hub.db
-            .with(|c| {
-                c.execute("DELETE FROM changes", [])?;
-                c.execute(
-                    "INSERT INTO changes (repo, pr_number, state, machine_id, project_id, train_order, data)
-                     VALUES ('acme/storefront', 212, 'ready', 'devbox', 'storefront', 0, ?)",
-                    [change.to_string()],
-                )?;
-                c.execute(
-                    "UPDATE plan_items SET data = json_set(data, '$.links.tasks', json('[\"T9\"]'))",
-                    [],
-                )?;
-                Ok(())
-            })
-            .unwrap();
-    };
-    held(Some("git: the node refused the checkout"));
-    assert_eq!(bar_after(&hub, &clock, 1).0, 70);
-    assert_eq!(
-        bar_after(&hub, &clock, 3600).0,
-        70,
-        "held an hour: review passed, nothing more"
-    );
-    held(None);
-    bar_after(&hub, &clock, 0);
-    assert!(
-        bar_after(&hub, &clock, 60).0 > 70,
-        "moving on the train again, it earns in-stage credit"
-    );
-}
-
-/// The stuck figure an update leaves behind: a point stored under the old credits. The drop rule holds a stored
-/// figure until an observed event explains a fall, so the update restarts each series.
-#[tokio::test]
-async fn the_update_drops_the_old_status_tables_and_restarts_every_series() {
-    let clock = ManualClock::at(T0);
-    let home = tempfile::tempdir().unwrap();
-    let db = HubDb::open(home.path()).unwrap();
-    let (hub, _home) = one_item_on(db.clone(), &clock);
-    set_writer(&hub, "T1", "done");
-    // The old model stored 45 an hour later.
-    db.with(|c| {
-        c.execute(
-            "INSERT INTO status_series (scope, at_ms, pct, verified) VALUES ('devbox/storefront', ?, 45, 0)",
-            [T0 as i64 + 3_600_000],
-        )?;
-        Ok(())
-    })
-    .unwrap();
-    assert_eq!(
-        bar_after(&hub, &clock, 2 * 3600).0,
-        45,
-        "held: nothing since that point explains a fall"
-    );
-    // Found by content, not as the last migration, so a later migration doesn't break this test.
-    let update = crate::hub::store::MIGRATIONS
-        .iter()
-        .find(|m| m.contains("DROP TABLE progress_calibration"))
-        .expect("the status rows update");
-    let tables = |c: &rusqlite::Connection| -> rusqlite::Result<Vec<String>> {
-        c.prepare(
-            "SELECT name FROM sqlite_master WHERE type = 'table'
-               AND name IN ('status_seen', 'status_planning', 'progress_calibration', 'status_series') ORDER BY name",
-        )?
-        .query_map([], |r| r.get(0))?
-        .collect()
-    };
-    // The update ran when the hub opened the database; run it again on a copy of the tables it drops.
-    db.with(|c| {
-        c.execute_batch(
-            "CREATE TABLE status_seen (x); CREATE TABLE status_planning (x); CREATE TABLE progress_calibration (x);",
-        )?;
-        c.execute_batch(update)?;
-        Ok(())
-    })
-    .unwrap();
-    assert_eq!(
-        db.with(|c| Ok(tables(c)?)).unwrap(),
-        vec!["status_series"],
-        "only the series stays"
-    );
-    assert_eq!(bar_after(&hub, &clock, 1).0, 0);
-}
-
-/// Appends a `thread.*` event for `thread` on the test machine, as the node link does.
-fn thread_event(hub: &Hub, kind: fleetd_contracts::events::HubEventType, thread: &str) {
-    let at = iso_ms_of(crate::hub::store::now_ms(hub.clock.as_ref()));
-    hub.events
-        .append(crate::hub::store::NewEvent {
-            at: fleetd_contracts::ids::Timestamp(at),
-            r#type: kind,
-            machine_id: Some(MachineId::unchecked("devbox")),
-            project_id: Some(ProjectId::unchecked("storefront")),
-            thread_id: Some(fleetd_contracts::ids::ThreadId::unchecked(thread)),
-            summary: format!("\"{thread}\" on devbox moved"),
-            data: Some(json!({ "status": "running" })),
-            attention: None,
-        })
-        .unwrap();
-}
-
-/// Sets `task`'s record as the task area does after its thread's event: `parked` on a usage limit, or running again.
-fn set_record(hub: &Hub, task: &str, state: &str, parked: Option<serde_json::Value>) {
-    hub.db
-        .with(|c| {
-            c.execute(
-                "UPDATE tasks SET state = ?2, thread_id = 'th-1',
-                   data = json_set(data, '$.state', ?2, '$.parked', json(?3))
-                 WHERE json_extract(data, '$.taskId') = ?1",
-                params![task, state, parked.map(|p| p.to_string())],
+                "INSERT INTO changes (repo, pr_number, state, machine_id, project_id, train_order, data)
+                 VALUES ('acme/storefront', ?, 'merged', 'devbox', 'storefront', 0, ?)",
+                params![pr, change.to_string()],
             )?;
             Ok(())
         })
         .unwrap();
 }
 
-/// The project's last point `secs` later.
-fn point_after(hub: &Hub, clock: &ManualClock, secs: u64) -> ProgressPoint {
-    row_after(hub, clock, secs).1.last().unwrap().clone()
-}
-
-/// A writer running since now, with nothing else happening: what the same minutes of work earn.
-fn twin() -> (Arc<ManualClock>, Arc<Hub>, tempfile::TempDir) {
-    let clock = ManualClock::at(T0);
-    let (hub, home) = one_item(&clock);
-    set_writer(&hub, "T1", "running");
-    set_record(&hub, "T1", "running", None);
-    (clock, hub, home)
-}
-
-/// The gap #261 left (#302): a task parked on a usage limit (or waiting for an answer) still earned in-stage credit up
-/// to the cap while nobody worked. Parked, it holds what it earned with a marker; resumed, it goes on from there, so
-/// its figure is always what the minutes it worked earn.
-#[tokio::test]
-async fn a_task_parked_on_a_usage_limit_holds_its_figure_and_goes_on_from_it() {
-    use fleetd_contracts::events::HubEventType;
-    let (clock, hub, _home) = twin();
-    let (tclock, twin, _thome) = twin();
-    let (start, _) = bar_after(&hub, &clock, 0);
-    let (ran, _) = bar_after(&hub, &clock, 3 * 60);
-    assert_eq!((start, ran), (0, 15), "it rises while it runs");
-
-    thread_event(&hub, HubEventType::ThreadUsageLimited, "th-1");
-    // Before the task area parks the record: the event alone pauses it.
-    let at_park = point_after(&hub, &clock, 1);
-    assert_eq!(
-        (
-            at_park.pct.get(),
-            at_park.drop.is_none(),
-            at_park.paused.as_ref().map(|p| p.as_str())
-        ),
-        (ran, true, Some("paused: an agent hit a usage limit")),
-        "it holds what it earned, with a marker and no drop"
-    );
-    let parked = json!({ "class": "usage_limit", "since": iso_ms_of(crate::hub::store::now_ms(hub.clock.as_ref())) });
-    set_record(&hub, "T1", "idle", Some(parked));
-    for _ in 0..4 {
-        assert_eq!(
-            point_after(&hub, &clock, 30 * 60),
-            at_park,
-            "flat while parked: the paused point stays the last"
-        );
-    }
-
-    // The usage layer's "continue" at the reset: the thread runs again, and the record follows it.
-    thread_event(&hub, HubEventType::ThreadStarted, "th-1");
-    let resumed = point_after(&hub, &clock, 0);
-    assert_eq!(
-        (resumed.pct.get(), resumed.drop, resumed.paused),
-        (ran, None, None),
-        "no jump: the two parked hours count for nothing, and the marker goes"
-    );
-    set_record(&hub, "T1", "running", None);
-    let (four_min, _) = bar_after(&hub, &clock, 60);
-    assert_eq!(
-        (four_min, bar_after(&twin, &tclock, 4 * 60).0),
-        (20, 20),
-        "it goes on from {ran}: three minutes before and one after earn what four unbroken minutes do"
-    );
-}
-
-/// A wait for an answer holds it the same way, and the lead's answer (which continues the task) goes on from there.
-#[tokio::test]
-async fn a_task_waiting_for_an_answer_holds_until_the_answer_continues_it() {
-    use fleetd_contracts::events::HubEventType;
-    let (clock, hub, _home) = twin();
-    let (tclock, twin, _thome) = twin();
-    let (ran, _) = bar_after(&hub, &clock, 3 * 60);
-    thread_event(&hub, HubEventType::ThreadWaiting, "th-1");
-    set_record(&hub, "T1", "idle", None);
-    let held = point_after(&hub, &clock, 2 * 3600);
-    assert_eq!(
-        (
-            held.pct.get(),
-            held.drop,
-            held.paused.map(|p| p.to_string())
-        ),
-        (
-            ran,
-            None,
-            Some("paused: an agent is waiting for an answer".to_owned())
-        )
-    );
-    // `message_agent` continues it: task.started.
-    set_writer(&hub, "T1", "running");
-    set_record(&hub, "T1", "running", None);
-    assert_eq!(bar_after(&hub, &clock, 0), (ran, None));
-    assert_eq!(
-        bar_after(&hub, &clock, 3 * 60).0,
-        bar_after(&twin, &tclock, 6 * 60).0
-    );
-}
-
-/// The control: the same timeline with the limit hitting another thread (the lead's), a reminder of an open prompt,
-/// and its own thread starting a new turn. None of them pauses it, so it keeps rising with no marker.
-#[tokio::test]
-async fn another_threads_limit_or_a_new_turn_never_pauses_a_running_task() {
-    use fleetd_contracts::events::HubEventType;
-    let (clock, hub, _home) = twin();
-    let (tclock, twin, _thome) = twin();
-    bar_after(&hub, &clock, 60);
-    thread_event(&hub, HubEventType::ThreadUsageLimited, "lead-th");
-    hub.events
-        .append(crate::hub::store::NewEvent {
-            at: fleetd_contracts::ids::Timestamp(iso_ms_of(crate::hub::store::now_ms(
-                hub.clock.as_ref(),
-            ))),
-            r#type: HubEventType::ThreadWaiting,
-            machine_id: Some(MachineId::unchecked("devbox")),
-            project_id: Some(ProjectId::unchecked("storefront")),
-            thread_id: Some(fleetd_contracts::ids::ThreadId::unchecked("th-1")),
-            summary: "still waiting".into(),
-            data: Some(json!({ "status": "waiting", "reminder": true })),
-            attention: None,
-        })
-        .unwrap();
-    thread_event(&hub, HubEventType::ThreadStarted, "th-1");
-    let p = point_after(&hub, &clock, 2 * 60);
-    assert_eq!(
-        (p.pct.get(), p.drop, p.paused),
-        (bar_after(&twin, &tclock, 3 * 60).0, None, None),
-        "the same three minutes as with no thread event at all"
-    );
-    let later = point_after(&hub, &clock, 2 * 3600);
-    assert!(
-        later.pct > p.pct && later.paused.is_none(),
-        "the two hours count as work: {} > {}",
-        later.pct.get(),
-        p.pct.get()
-    );
+fn iso_ms_of(ms: i64) -> String {
+    crate::hub::store::iso_ms(ms)
 }

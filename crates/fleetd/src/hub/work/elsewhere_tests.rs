@@ -1,28 +1,21 @@
-//! What a lead reads of the work that isn't its own, over a real in-memory hub: the digest's Elsewhere section, and
-//! `plan covered` marking an item done by a landing, with the commit and its route as evidence (D32). Landings come
-//! from a fake source, as the landing scanner will give them.
+//! What a lead reads of the work that isn't its own, over a real in-memory hub: the digest's Elsewhere section.
+//! Landings come from a fake source, as the landing scanner will give them.
 use std::sync::Arc;
 
-use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
-use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
-use fleetd_contracts::mcp::{ErrorCode, McpToolError};
-use fleetd_contracts::plan::{PlanItemState, PlanResult};
 use fleetd_contracts::prim::{Line, List};
 use fleetd_contracts::tasks::Task;
 use fleetd_contracts::verification::CommitSha;
 use fleetd_contracts::work::{
     ClaimOwner, ClaimOwnerKind, LandingRoute, RepoKey, WorkKey, WorkPath, WorkScope,
 };
-use serde_json::{Value, json};
+use serde_json::json;
 
 use super::elsewhere::{Landed, Landings};
 use super::{NewClaim, store};
 use crate::hub::api::{Hub, HubConfig, Listen};
-use crate::hub::link::LeadCaller;
-use crate::hub::link::lead_calls::CallerAgent;
 use crate::hub::store::test_clock::ManualClock;
-use crate::hub::store::{HubDb, StoreError, WaitInput, now_ms};
+use crate::hub::store::{HubDb, StoreError, now_ms};
 use crate::hub::tasks::records::TaskRecords;
 
 const AT: &str = "2026-10-25T10:00:00.000Z";
@@ -74,16 +67,6 @@ impl Landings for Fake {
             .map(|(_, l)| l.clone())
             .take(limit)
             .collect())
-    }
-
-    fn find(&self, scope: &WorkScope, sha: &str) -> Result<Option<Landed>, StoreError> {
-        let found: Vec<&Landed> = self
-            .0
-            .iter()
-            .filter(|(s, l)| s == scope && l.sha.as_str().starts_with(sha))
-            .map(|(_, l)| l)
-            .collect();
-        Ok((found.len() == 1).then(|| found[0].clone()))
     }
 }
 
@@ -194,7 +177,11 @@ async fn the_digest_shows_work_elsewhere_on_its_repo_and_base_and_none_of_its_ow
         "a project whose repo and base aren't known has no section"
     );
     hub.work.bind_project(&app, &shop()).unwrap();
-    assert_eq!(elsewhere(&hub, &app).await.as_deref(), Some("none"));
+    assert_eq!(
+        elsewhere(&hub, &app).await,
+        None,
+        "nor one with nothing elsewhere"
+    );
 
     hub.work.bind_project(&api, &shop()).unwrap();
     let other_base = WorkScope {
@@ -234,10 +221,7 @@ async fn the_digest_shows_work_elsewhere_on_its_repo_and_base_and_none_of_its_ow
             label: Some(Line::unchecked("laptop")),
         },
         "dark mode toggle in settings",
-        vec![
-            WorkKey::Issue(Line::unchecked("SHOP-12")),
-            WorkKey::Item(fleetd_contracts::plan::PlanItemId::unchecked("P9")),
-        ],
+        vec![WorkKey::Issue(Line::unchecked("SHOP-12"))],
     );
     landings(&hub, &clock);
 
@@ -247,7 +231,7 @@ async fn the_digest_shows_work_elsewhere_on_its_repo_and_base_and_none_of_its_ow
         lines,
         [
             &format!(
-                "- {human} claimed by a person (laptop): dark mode toggle in settings · on SHOP-12, P9"
+                "- {human} claimed by a person (laptop): dark mode toggle in settings · on SHOP-12"
             ),
             &format!(
                 "- {} writer of devbox/api, running: rate limits on the search API",
@@ -323,256 +307,5 @@ async fn a_long_elsewhere_keeps_the_digest_short_and_cuts_landings_before_a_pers
         digest.chars().count() <= crate::hub::leads::digest::DIGEST_MAX_CHARS,
         "{}",
         digest.len()
-    );
-}
-
-/// The project "app" with order W1 and its plan: P1 "dark mode toggle", P2 "search box".
-async fn planned(hub: &Hub) -> ProjectRef {
-    let app = project("app");
-    hub.db
-        .with(|c| {
-            let w = json!({
-                "workstreamId": "W1", "projectRef": app, "title": "Storefront",
-                "source": { "text": "Storefront", "channel": "app", "by": "human", "at": AT },
-                "state": "open", "createdAt": AT, "updatedAt": AT,
-            });
-            c.execute(
-                "INSERT INTO workstreams (machine_id, project_id, state, data) VALUES ('devbox', 'app', 'open', ?)",
-                [w.to_string()],
-            )?;
-            Ok(())
-        })
-        .unwrap();
-    plan(
-        hub,
-        json!({ "workstreamId": "W1", "items": [{ "title": "dark mode toggle" }, { "title": "search box" }] }),
-    )
-    .await
-    .unwrap();
-    app
-}
-
-async fn plan(hub: &Hub, call: Value) -> Result<PlanResult, McpToolError> {
-    let mut call = call;
-    call["op"] = "plan".into();
-    let call: LeadCall = serde_json::from_value(call).unwrap();
-    let caller = LeadCaller {
-        project_ref: project("app"),
-        by: "lead:devbox/app".into(),
-        agent: CallerAgent::Lead,
-    };
-    match hub
-        .lead_calls
-        .handler("plan")
-        .unwrap()
-        .handle(caller, call)
-        .await?
-    {
-        LeadCallResult::Plan(result) => Ok(result),
-        other => panic!("{other:?}"),
-    }
-}
-
-fn states(result: &PlanResult) -> Vec<PlanItemState> {
-    result.plan.items.iter().map(|i| i.state).collect()
-}
-
-#[tokio::test]
-async fn plan_covered_marks_an_item_done_by_a_landing_with_the_commit_and_its_route() {
-    let (hub, clock, _home) = hub();
-    let app = planned(&hub).await;
-    hub.work.bind_project(&app, &shop()).unwrap();
-    landings(&hub, &clock);
-
-    let one = plan(
-        &hub,
-        json!({ "covered": [{ "item": "P1", "landing": "abc1234" }] }),
-    )
-    .await
-    .unwrap();
-    assert_eq!(states(&one), [PlanItemState::Done, PlanItemState::Open]);
-    assert_eq!(
-        one.plan.progress.pct.get(),
-        50,
-        "a covered item counts toward the order's progress"
-    );
-    let done = plan(
-        &hub,
-        json!({ "covered": [{ "item": "P2", "landing": MERGED }] }),
-    )
-    .await
-    .unwrap();
-    assert_eq!(states(&done), [PlanItemState::Done, PlanItemState::Done]);
-    assert_eq!(
-        done.plan.milestones[0].milestone.state,
-        fleetd_contracts::plan::MilestoneState::Done
-    );
-    let (p1, p2) = (&done.plan.items[0], &done.plan.items[1]);
-    assert_eq!(
-        p1.evidence.as_ref().unwrap().as_str(),
-        "abc1234 pushed straight to main, outside fleetd: feat: dark mode toggle"
-    );
-    let covered = p1.covered_by.as_ref().unwrap();
-    assert_eq!(
-        (covered.sha.as_str(), covered.route),
-        (PUSHED, LandingRoute::DirectPush),
-        "the full sha and the route are kept, for metrics"
-    );
-    assert_eq!(
-        p2.evidence.as_ref().unwrap().as_str(),
-        "fed9876 PR #57 merged outside fleetd: Search box on the catalog"
-    );
-    assert_eq!(
-        p2.covered_by.as_ref().unwrap().route,
-        LandingRoute::PrOutside
-    );
-    assert!(done.text.contains("P1 [must m] done"), "{}", done.text);
-
-    let page = futures_util::FutureExt::now_or_never(hub.events.wait(WaitInput {
-        cursor: Some(0),
-        types: Some(vec![HubEventType::PlanVerified]),
-        machine_id: None,
-        timeout_sec: 0,
-    }))
-    .unwrap()
-    .unwrap();
-    let verified: Vec<&str> = page.events.iter().map(|e| e.summary.as_str()).collect();
-    assert_eq!(
-        verified,
-        [
-            "P1 dark mode toggle verified: abc1234 pushed straight to main, outside fleetd: feat: dark mode toggle",
-            "P2 search box verified: fed9876 PR #57 merged outside fleetd: Search box on the catalog",
-        ]
-    );
-
-    let again = plan(
-        &hub,
-        json!({ "covered": [{ "item": "P1", "landing": MERGED }] }),
-    )
-    .await
-    .unwrap_err();
-    assert_eq!(again.code, ErrorCode::Invalid);
-    assert_eq!(again.message.as_str(), "P1 is already done.");
-}
-
-#[tokio::test]
-async fn plan_covered_refuses_a_commit_it_has_not_seen_land_and_writes_nothing() {
-    let (hub, clock, _home) = hub();
-    let app = planned(&hub).await;
-    let unbound = plan(
-        &hub,
-        json!({ "covered": [{ "item": "P1", "landing": "abc1234" }] }),
-    )
-    .await
-    .unwrap_err();
-    assert_eq!(unbound.code, ErrorCode::Invalid, "{unbound:?}");
-
-    hub.work.bind_project(&app, &shop()).unwrap();
-    let no_scanner = plan(
-        &hub,
-        json!({ "covered": [{ "item": "P1", "landing": "abc1234" }] }),
-    )
-    .await
-    .unwrap_err();
-    assert_eq!(
-        no_scanner.code,
-        ErrorCode::NotFound,
-        "no landings are known before the scanner is set"
-    );
-
-    landings(&hub, &clock);
-    let never = plan(
-        &hub,
-        json!({ "covered": [{ "item": "P1", "landing": "0000000" }] }),
-    )
-    .await
-    .unwrap_err();
-    assert_eq!(never.code, ErrorCode::NotFound);
-    assert_eq!(
-        never.message.as_str(),
-        "0000000 is not one commit fleetd saw land on main of gitlab.example.com/acme/shop."
-    );
-
-    let refused = plan(
-        &hub,
-        json!({
-            "workstreamId": "W1", "items": [{ "id": "P2", "title": "search box, renamed" }],
-            "covered": [{ "item": "P2", "landing": "abc1234" }, { "item": "P2", "landing": MERGED }],
-        }),
-    )
-    .await
-    .unwrap_err();
-    assert_eq!(refused.message.as_str(), "P2 is listed twice in covered.");
-    let view = plan(&hub, json!({})).await.unwrap();
-    assert_eq!(
-        view.plan.items[1].title.as_str(),
-        "search box",
-        "a refused covered writes none of the call"
-    );
-    assert_eq!(view.plan.items[1].state, PlanItemState::Open);
-}
-
-#[tokio::test]
-async fn plan_items_and_covered_go_together_or_not_at_all() {
-    let (hub, clock, _home) = hub();
-    let app = planned(&hub).await;
-    hub.work.bind_project(&app, &shop()).unwrap();
-    landings(&hub, &clock);
-
-    let both = plan(
-        &hub,
-        json!({
-            "workstreamId": "W1", "items": [{ "id": "P2", "title": "search box" }, { "title": "checkout" }],
-            "covered": [{ "item": "P1", "landing": "abc1234" }],
-        }),
-    )
-    .await
-    .unwrap();
-    assert_eq!(
-        states(&both),
-        [
-            PlanItemState::Done,
-            PlanItemState::Open,
-            PlanItemState::Open
-        ],
-        "the covered item left out of the items is done, not dropped"
-    );
-    assert!(both.plan.items[0].covered_by.is_some());
-
-    let refused = plan(
-        &hub,
-        json!({
-            "workstreamId": "W1", "items": [{ "id": "P2", "title": "search box, renamed" }],
-            "covered": [{ "item": "P1", "landing": MERGED }],
-        }),
-    )
-    .await
-    .unwrap_err();
-    assert_eq!(refused.message.as_str(), "P1 is already done.");
-    let view = plan(&hub, json!({})).await.unwrap();
-    assert_eq!(
-        (view.plan.items[1].title.as_str(), view.plan.items[2].state),
-        ("search box", PlanItemState::Open),
-        "a cover refused inside the write leaves the call's items unwritten"
-    );
-
-    let refused = plan(
-        &hub,
-        json!({
-            "workstreamId": "W1", "items": [{ "id": "P2", "title": "search box" }, { "id": "P2", "title": "again" }],
-            "covered": [{ "item": "P2", "landing": MERGED }],
-        }),
-    )
-    .await
-    .unwrap_err();
-    assert_eq!(refused.message.as_str(), "P2 is listed twice.");
-    let view = plan(&hub, json!({})).await.unwrap();
-    assert_eq!(
-        (
-            view.plan.items[1].state,
-            view.plan.items[1].covered_by.as_ref()
-        ),
-        (PlanItemState::Open, None),
-        "items refused after the cover leave it unwritten too"
     );
 }

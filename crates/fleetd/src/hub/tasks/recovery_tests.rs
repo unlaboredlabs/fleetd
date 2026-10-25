@@ -20,9 +20,9 @@ use crate::hub::leads::records::NewWorkstream;
 use crate::hub::store::NewEvent;
 use crate::hub::store::test_clock::ManualClock;
 
-type Calls = mpsc::UnboundedReceiver<SessionCall>;
+pub(super) type Calls = mpsc::UnboundedReceiver<SessionCall>;
 
-fn project() -> ProjectRef {
+pub(super) fn project() -> ProjectRef {
     ProjectRef {
         machine_id: MachineId::unchecked("lab-a"),
         project_id: ProjectId::unchecked("p1"),
@@ -30,7 +30,7 @@ fn project() -> ProjectRef {
 }
 
 /// T1, a reader in the open workstream W1, running on thread t1's run r1, with the node linked.
-async fn running_t1() -> (Arc<Hub>, Arc<ManualClock>, Calls, tempfile::TempDir) {
+pub(super) async fn running_t1() -> (Arc<Hub>, Arc<ManualClock>, Calls, tempfile::TempDir) {
     let clock = ManualClock::at(1_792_000_000_000);
     let (hub, home) = hub_on(clock.clone());
     hub.leads
@@ -51,12 +51,25 @@ async fn running_t1() -> (Arc<Hub>, Arc<ManualClock>, Calls, tempfile::TempDir) 
 }
 
 /// The node's update of session t1: run `run` in `status`, with `end` (a run's `end`, `failure`) on it.
-fn session(hub: &Hub, seq: u64, run: &str, status: &str, end: Value) {
+pub(super) fn session(hub: &Hub, seq: u64, run: &str, status: &str, end: Value) {
     session_with(hub, seq, run, status, end, json!({}));
 }
 
 /// The same, with `extra` on the session (its `recreatedFrom`).
 fn session_with(hub: &Hub, seq: u64, run: &str, status: &str, end: Value, extra: Value) {
+    session_of(hub, "t1", seq, run, status, end, extra);
+}
+
+/// The same for session `id`.
+pub(super) fn session_of(
+    hub: &Hub,
+    id: &str,
+    seq: u64,
+    run: &str,
+    status: &str,
+    end: Value,
+    extra: Value,
+) {
     let active = matches!(status, "queued" | "starting" | "running" | "waiting");
     let session_status = match status {
         "completed" => "idle",
@@ -68,7 +81,7 @@ fn session_with(hub: &Hub, seq: u64, run: &str, status: &str, end: Value, extra:
         .as_object_mut()
         .unwrap()
         .extend(end.as_object().cloned().unwrap_or_default());
-    let mut event = json!({ "type": "session_updated", "sessionId": "t1", "projectId": "p1", "title": "t1",
+    let mut event = json!({ "type": "session_updated", "sessionId": id, "projectId": "p1", "title": id,
         "status": session_status, "model": "claude-haiku-5-5", "effort": "low", "runtimeMode": "approval-required",
         "latestRun": latest, "createdAt": AT, "updatedAt": AT });
     if active {
@@ -89,7 +102,7 @@ fn session_with(hub: &Hub, seq: u64, run: &str, status: &str, end: Value, extra:
 }
 
 /// The node goes away for `away`, then links again; `report` is what it says first on its return.
-async fn away_and_back(
+pub(super) async fn away_and_back(
     hub: &Arc<Hub>,
     clock: &ManualClock,
     away: Duration,
@@ -145,7 +158,7 @@ async fn ended(hub: &Hub) {
 }
 
 /// No send reaches the node within a moment.
-async fn nothing_sent(calls: &mut Calls) {
+pub(super) async fn nothing_sent(calls: &mut Calls) {
     tokio::time::sleep(Duration::from_millis(50)).await;
     while let Ok(call) = calls.try_recv() {
         assert!(!matches!(call, SessionCall::Send { .. }), "sent {call:?}");
@@ -153,7 +166,7 @@ async fn nothing_sent(calls: &mut Calls) {
 }
 
 /// The task's queued reason, while it waits to resume.
-fn reason(hub: &Hub) -> String {
+pub(super) fn reason(hub: &Hub) -> String {
     let t = task(hub);
     assert_eq!(t.state, TaskState::Queued, "{t:?}");
     t.queued_reason.unwrap().as_str().to_owned()
@@ -186,7 +199,11 @@ async fn resumes_about_30_s_later(
         text.starts_with(&format!("fleetd: your run was cut off ({cause}).")),
         "{text}"
     );
-    assert!(text.ends_with("(Automatic recovery 1 of 3.)"), "{text}");
+    // A node going away uses none of the budget.
+    assert!(
+        text.ends_with("(Automatic recovery: 0 of 3 recoveries used.)"),
+        "{text}"
+    );
     let resumed = task(hub);
     assert_eq!(
         (resumed.state, resumed.attempt.get()),
@@ -196,7 +213,7 @@ async fn resumes_about_30_s_later(
     let line = resumed_line(hub, &run, 9, json!({})).await;
     assert!(
         line.starts_with(&format!(
-            "- T1 resumed automatically (attempt 2, recovery 1 of 3): slice 1\n  > its run was cut off ({cause}) \
+            "- T1 resumed automatically (attempt 2, 0 of 3 recoveries used): slice 1\n  > its run was cut off ({cause}) \
              during: "
         )) && line.ends_with(". It goes on in its own worktree; nothing for you to do."),
         "{line}"
@@ -223,7 +240,7 @@ async fn resumed_line(hub: &Hub, run: &str, seq: u64, extra: Value) -> String {
 }
 
 /// The resumed run starts and completes: the task is done, and the lead hears of it once, as for any task.
-async fn completes(hub: &Hub, run: &str, seq: u64) {
+pub(super) async fn completes(hub: &Hub, run: &str, seq: u64) {
     session(hub, seq, run, "running", json!({}));
     session(
         hub,
@@ -254,7 +271,7 @@ async fn t18_and_t19_resume_about_30_s_after_their_node_is_back() {
         resumes_about_30_s_later(&hub, &clock, &mut calls, "the node on lab-a went away").await;
     assert!(
         hub.tasks.digest_lines(&project(), None, 10)[0].ends_with(
-            "; resumed automatically after the node on lab-a went away, recovery 1 of 3"
+            "; resumed automatically after the node on lab-a went away, 0 of 3 recoveries used"
         ),
         "{:?}",
         hub.tasks.digest_lines(&project(), None, 10)
@@ -267,7 +284,7 @@ async fn t18_and_t19_resume_about_30_s_after_their_node_is_back() {
     assert_eq!(
         lines[1..],
         [
-            "T1 resumed automatically (attempt 2, recovery 1 of 3): slice 1",
+            "T1 resumed automatically (attempt 2, 0 of 3 recoveries used): slice 1",
             "T1 completed: slice 1"
         ]
     );
@@ -325,13 +342,13 @@ async fn an_oom_killed_node_restarted_by_systemd_resumes_its_tasks() {
     completes(&hub, &run, 10).await;
 }
 
-/// The node keeps going away: resumed three times, and the fourth death fails the task, which wakes the lead with
-/// why. No fourth resume goes out.
+/// The node goes away five times under the task (stops, upgrades, crashes): each time it resumes once the node is back,
+/// none of it uses the task's budget, and the lead is never woken.
 #[tokio::test]
-async fn a_task_that_keeps_dying_is_escalated_at_the_limit() {
+async fn a_task_resumes_through_any_number_of_node_restarts() {
     let (hub, clock, mut calls, _home) = running_t1().await;
     let (mut run, mut seq) = ("r1".to_owned(), 3);
-    for recovery in 1..=4 {
+    for restart in 1..=5 {
         session(
             &hub,
             seq,
@@ -341,11 +358,8 @@ async fn a_task_that_keeps_dying_is_escalated_at_the_limit() {
         );
         logged(&hub, "thread.interrupted", &run).await;
         catch_up(&hub.tasks).await;
-        if recovery == 4 {
-            break;
-        }
         assert!(
-            reason(&hub).ends_with(&format!("(recovery {recovery} of 3)")),
+            reason(&hub).ends_with("(0 of 3 recoveries used)"),
             "{}",
             reason(&hub)
         );
@@ -353,6 +367,43 @@ async fn a_task_that_keeps_dying_is_escalated_at_the_limit() {
         let (next, _) = sent(&mut calls).await;
         session(&hub, seq + 1, &next, "running", json!({}));
         logged(&hub, "thread.started", &next).await;
+        let recovery = task(&hub).recovery.unwrap();
+        assert_eq!(
+            (recovery.count.get(), recovery.node_lost.get()),
+            (0, restart)
+        );
+        (run, seq) = (next, seq + 2);
+    }
+    assert!(!hub.leads.wakes.pending(&project()));
+    completes(&hub, &run, seq).await;
+}
+
+/// claude crashes three times, each time a different way after doing some work: three recoveries, all of the budget.
+/// The next crash fails the task, which wakes the lead with why; nothing more is sent.
+#[tokio::test]
+async fn a_task_whose_claude_keeps_crashing_is_escalated_once_its_recoveries_are_used() {
+    let (hub, clock, mut calls, _home) = running_t1().await;
+    let (mut run, mut seq) = ("r1".to_owned(), 3);
+    for (crash, signal) in [9, 15, 6, 11].into_iter().enumerate() {
+        let killed = json!({ "end": "exited", "failure": { "class": "process_exited",
+            "message": format!("claude was killed by signal {signal}") } });
+        session(&hub, seq, &run, "failed", killed);
+        logged(&hub, "thread.failed", &run).await;
+        catch_up(&hub.tasks).await;
+        if crash == 3 {
+            break;
+        }
+        assert!(
+            reason(&hub).ends_with(&format!("({} of 3 recoveries used)", crash + 1)),
+            "{}",
+            reason(&hub)
+        );
+        clock.advance(Duration::from_secs(67));
+        let (next, _) = sent(&mut calls).await;
+        session(&hub, seq + 1, &next, "running", json!({}));
+        logged(&hub, "thread.started", &next).await;
+        // It works a while before the next crash, so each one counts once.
+        clock.advance(Duration::from_secs(600));
         (run, seq) = (next, seq + 2);
     }
     let failed = task(&hub);
@@ -360,9 +411,9 @@ async fn a_task_that_keeps_dying_is_escalated_at_the_limit() {
     let tail = failed.result.unwrap().tail;
     assert!(
         tail.as_str().ends_with(
-            "Not resumed automatically: it died again (the node on lab-a restarted mid-run (a crash, a kill or a \
-             power loss)) after 3 automatic recoveries of at most 3. Decide: continue it with instructions \
-             (message_agent), split the work, or cancel it."
+            "Not resumed automatically: it died again (claude was killed by signal 11) after 3 automatic \
+             recoveries of at most 3. Decide: continue it with instructions (message_agent), split the work, or \
+             cancel it."
         ),
         "{}",
         tail.as_str()

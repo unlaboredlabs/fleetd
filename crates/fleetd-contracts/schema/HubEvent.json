@@ -91,6 +91,16 @@
           "type": "string"
         },
         {
+          "const": "machine.recovery_paused",
+          "description": "Agents on the machine kept dying (claude exited, or stalled), so fleetd stopped resuming them there, or\nresumes them again; `data` is `RecoveryPausedData`, and the summary says why.",
+          "type": "string"
+        },
+        {
+          "const": "thread.orphaned",
+          "description": "The machine's node runs a session no task or lead of this hub owns; `data` is `ThreadOrphanedData`.",
+          "type": "string"
+        },
+        {
           "const": "project.removed",
           "description": "The node no longer has the project: the hub dropped it from its cache, and its open workstreams stop. `data.title`.",
           "type": "string"
@@ -267,12 +277,12 @@
         },
         {
           "const": "plan.changed",
-          "description": "A plan's scope changed and a marker was written; `data` is the `PlanChange` (`status::PlanChangedData`).",
+          "description": "No longer sent (plans were removed); kept so an older log still reads.",
           "type": "string"
         },
         {
           "const": "plan.verified",
-          "description": "The hub verified a plan item done; `data.itemId`, `data.milestoneId`, `data.workstreamId`, `data.evidence`.",
+          "description": "No longer sent (plans were removed); kept so an older log still reads.",
           "type": "string"
         },
         {
@@ -328,6 +338,11 @@
         {
           "const": "work.landed",
           "description": "A commit reached a watched base, by the train, a PR merged outside it or a direct push; `data` is\n`work::WorkLandedData`.",
+          "type": "string"
+        },
+        {
+          "const": "memory.changed",
+          "description": "A memory file changed (a lead's `remember`, an Undo, an edit in the app): `data.scope`, `data.projectRef`\n(project scope), `data.topic`, `data.by`. The text is not in the event; memory_get reads it.",
           "type": "string"
         }
       ],

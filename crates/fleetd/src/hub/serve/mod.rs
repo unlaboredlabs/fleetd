@@ -238,6 +238,7 @@ pub fn build_on_with(
     clock: Arc<dyn Clock>,
     hosts: crate::hub::metrics::source::HostSources,
 ) -> anyhow::Result<Arc<Hub>> {
+    db.set_memory_dir(config.home.join("memory"));
     let store = Arc::new(HubStore::new(db.clone()));
     let events = Arc::new(EventLog::new(db.clone(), clock.clone())?);
     crate::hub::prompts::start(
@@ -253,6 +254,7 @@ pub fn build_on_with(
         crate::hub::executor::Executors::new(store.clone(), events.clone(), clock.clone());
     let node_commands = Arc::new(crate::hub::link::NodeCommands::default());
     let lead_calls = Arc::new(crate::hub::link::LeadCalls::default());
+    let slots = crate::hub::slots::Slots::new(db.clone(), clock.clone(), &store, &events)?;
     let link = crate::hub::link::NodeLinkServer::new(crate::hub::link::server::LinkDeps {
         hub_id: crate::hub::link::server::hub_id(),
         store: store.clone(),
@@ -263,6 +265,7 @@ pub fn build_on_with(
         lead_calls: lead_calls.clone(),
         clock: clock.clone(),
         time: time.clone(),
+        slots: slots.clone(),
     });
     executors.set_time(time.clone());
     let watchdog = crate::hub::watchdog::Watchdog::new(
@@ -305,7 +308,6 @@ pub fn build_on_with(
     let hub_task_ports =
         crate::hub::tasks::wire::HubTaskPorts::new(executors.clone(), node_commands.clone());
     let task_ports: Arc<dyn crate::hub::tasks::ports::TaskPorts> = hub_task_ports.clone();
-    let slots = crate::hub::slots::Slots::new(db.clone(), &store, &events)?;
     let source = crate::hub::policy::NodePolicySource {
         executors: executors.clone(),
     };
@@ -342,7 +344,6 @@ pub fn build_on_with(
     {
         tracing::warn!(error = %e, "projects: interrupted clones not closed");
     }
-    let plans = crate::hub::plan::Plans::new(db.clone(), events.clone(), clock.clone());
     let chat = crate::hub::chat::Chat::new(db.clone(), events.clone(), clock.clone());
     let prs =
         crate::hub::prs::Prs::new(Arc::new(crate::hub::train::github::SystemGh), clock.clone());
@@ -383,7 +384,6 @@ pub fn build_on_with(
         leads,
         time,
         status: crate::hub::status::Status::new(fresh),
-        plans,
         chat,
         prs,
         work,
@@ -396,7 +396,7 @@ pub fn build_on_with(
     crate::hub::tasks::wire::wire(&hub, &hub_task_ports);
     wire::wire(&hub);
     crate::hub::approvals::tools::register_lead_calls(&hub);
-    crate::hub::plan::calls::register_lead_calls(&hub);
+    crate::hub::memory::calls::register_lead_calls(&hub);
     crate::hub::steer::wire(&hub);
     crate::hub::chat::tools::extend_status(&hub);
     crate::hub::work::register_sweep(&hub);

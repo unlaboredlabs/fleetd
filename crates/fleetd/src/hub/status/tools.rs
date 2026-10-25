@@ -1,4 +1,4 @@
-//! status_get: the projects' rows, or one project's row and series.
+//! status_get: the projects' rows, or one project's row.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
@@ -30,13 +30,12 @@ async fn status_get(
         return Ok(StatusGetOutput {
             rows: Some(List::unchecked(rows)),
             row: None,
-            series: None,
-            next: Some("status_get with a row's projectRef for the series behind its bar".into()),
+            next: None,
             truncated,
         });
     };
     require(&caller, Role::Read, Some(&r.machine_id))?;
-    let Some((row, series)) = hub.status.project(&hub, &caller, r).map_err(unread)? else {
+    let Some(row) = hub.status.project(&hub, &caller, r).map_err(unread)? else {
         return Err(ToolError::new(
             ErrorCode::NotFound,
             format!("There is no project {}/{}.", r.machine_id, r.project_id),
@@ -46,7 +45,6 @@ async fn status_get(
     Ok(StatusGetOutput {
         rows: None,
         row: Some(row),
-        series: Some(List::unchecked(series)),
         next: None,
         truncated: None,
     })

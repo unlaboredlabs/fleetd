@@ -21,8 +21,6 @@ pub const DIGEST_DECISIONS: usize = 10;
 pub struct WorkstreamFacts {
     /// The human's latest direct steers to its tasks and whether each was acknowledged.
     pub steers: Option<String>,
-    /// "plan: 5/8 items, 62%" when the order has plan items.
-    pub plan: Option<String>,
 }
 
 pub struct DigestInput<'a> {
@@ -129,12 +127,8 @@ fn workstream_lines(w: &Workstream, facts: Option<&WorkstreamFacts>) -> String {
         .and_then(|f| f.steers.as_ref())
         .map(|s| format!("\n  steers: {s}"))
         .unwrap_or_default();
-    let plan = facts
-        .and_then(|f| f.plan.as_ref())
-        .map(|p| format!("\n  {p}"))
-        .unwrap_or_default();
     format!(
-        "{head}\n  done when: {}{plan}{steers}",
+        "{head}\n  done when: {}{steers}",
         done_when_text(&brief.done_when, 120)
     )
 }
@@ -260,7 +254,7 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
         input.project_ref.project_id,
         input.at
     );
-    if let Some(agents) = input.agents {
+    if let Some(agents) = &input.agents {
         head.push_str(&format!("\n{agents}"));
     }
 
@@ -332,8 +326,15 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
     }
     shown.extend([REQUESTS, DECISIONS, DO_NOT_RE_ASK]);
 
+    // An empty section says nothing a wake needs, except that there is no work.
     let render = |sections: &[Section]| {
-        let parts: Vec<String> = shown.iter().map(|&i| sections[i].render()).collect();
+        let parts: Vec<String> = shown
+            .iter()
+            .filter(|&&i| {
+                i == WORKSTREAMS || !sections[i].items.is_empty() || sections[i].omitted > 0
+            })
+            .map(|&i| sections[i].render())
+            .collect();
         format!("{head}\n\n{}", parts.join("\n\n"))
     };
     // Lowest value first: the key list, then decisions, work elsewhere, requests, agents, the train, and the work last.
@@ -401,6 +402,39 @@ mod tests {
             text.contains("more: check with `decisions_search`)"),
             "{text}"
         );
+    }
+
+    #[test]
+    fn leaves_out_empty_sections_but_says_there_is_no_work() {
+        let project_ref: ProjectRef =
+            serde_json::from_value(serde_json::json!({ "machineId": "lab-a", "projectId": "p1" }))
+                .unwrap();
+        let text = render_lead_digest(&DigestInput {
+            project_ref: &project_ref,
+            title: "app",
+            at: "2026-10-19T10:00:00.000Z",
+            workstreams: &[],
+            open_requests: &[],
+            decisions: &[],
+            agents: None,
+            tasks: Some(Vec::new()),
+            train: Some(vec!["- #4 merged".into()]),
+            elsewhere: Some(Vec::new()),
+            facts: &HashMap::new(),
+        });
+        assert!(
+            text.contains("## Work\nnone") && text.contains("## Merge train\n- #4 merged"),
+            "{text}"
+        );
+        for gone in [
+            "## Agents",
+            "## Elsewhere",
+            "## Waiting",
+            "## Decisions",
+            "## Decided",
+        ] {
+            assert!(!text.contains(gone), "{gone}: {text}");
+        }
     }
 
     #[test]

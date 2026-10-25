@@ -16,7 +16,7 @@
 // qa-results/index.html.
 
 import { type ElectronApplication, expect, type Locator, type Page } from "@playwright/test";
-import { AGENT_ROUTE } from "../fixtures/agents/route.ts";
+import { AGENT_ROUTE, ELSEWHERE_IDLE_ROUTE } from "../fixtures/agents/route.ts";
 import { STEER_WORDS } from "../fixtures/agents/steers.ts";
 import { CHAT_SENDS } from "../fixtures/composer/sends.ts";
 import { OFFLINE_SENDS } from "../fixtures/offline/sends.ts";
@@ -87,8 +87,6 @@ export const fixtures = [
   "status-rows",
   "status-stale",
   "status-skeleton",
-  // The bar's hover on a figure that holds while its work is paused (fixtures/status).
-  "status-paused",
   // E3b's shared stress fixture; the time inspector fills it with a ~15k-span order (fixtures/time).
   "time-heavy",
   // The Factory (fixtures/factory): a repo whose reads fail beside one on a plain git host, and a range with no merges.
@@ -107,6 +105,12 @@ export const fixtures = [
   "transcript-new",
   // UX-1 [23]: a long lead reply streaming in, in small deltas (fixtures/stream).
   "stream-long",
+  // The chat as a messaging app (fixtures/bubbles): split bubbles with a reply, charts and a table, a PR card with its
+  // diff, and the lead asking.
+  "bubbles-casual",
+  "bubbles-charts",
+  "bubbles-pr",
+  "bubbles-ask",
   // F5 (A5): a chat with every state of the two inline items (fixtures/inline), with every answer failing, and with
   // two approvals the hub reopens after Approve.
   "inline-items",
@@ -125,6 +129,8 @@ export const fixtures = [
   "agents-work",
   // ...with its steers that ended otherwise: never replied to, withdrawn, failed (fixtures/agents).
   "agents-steers",
+  // ...and the work elsewhere on storefront's repo, seen from storefront and from checkout (fixtures/agents).
+  "agents-elsewhere",
   // UX [7]: no hub, and the last launch's disk cache on screen with a message queued; back online with that chat not
   // read again yet, and with that read failed (fixtures/offline).
   "offline-held",
@@ -585,7 +591,40 @@ export const screens: readonly Screen[] = [
       await page.getByRole("button", { name: "3 new" }).waitFor({ timeout: 10_000 });
     },
   },
-  // UX-1 [23]: a long reply streams in with the chat open, block by block; checked after its last delta.
+  // The chat as bubbles: a casual exchange the hub split into bubbles with your reply to one, charts and a table, a
+  // PR card with its diff, and an ask waiting on you.
+  { id: "chat", route: CHAT, fixtures: ["bubbles-casual", "bubbles-charts", "bubbles-pr", "bubbles-ask"], variant: "bubbles" },
+  // A tapback put on one of the lead's bubbles, from the button its hover shows.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["bubbles-casual"],
+    variant: "tapback",
+    open: async (page) => {
+      const bubble = page.locator('[data-bubble="text"]').filter({ hasText: "Nightly was green" }).locator("..");
+      await bubble.hover();
+      await bubble.getByRole("button", { name: "Tapback" }).click();
+      await page.getByRole("button", { name: "Love" }).click();
+      await page.getByRole("img", { name: "You reacted: Love" }).waitFor({ timeout: 5_000 });
+      await page.mouse.move(0, 0);
+    },
+  },
+  // Replying to a bubble: its quote over the box, with what you write under it.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["bubbles-casual"],
+    variant: "reply",
+    open: async (page) => {
+      const bubble = page.locator('[data-bubble="text"]').filter({ hasText: "Both PRs are green" }).locator("..");
+      await bubble.hover();
+      await bubble.getByRole("button", { name: "Reply" }).click();
+      await page.getByRole("textbox", { name: "Message the lead" }).fill("merge the dates one first");
+      await page.mouse.move(0, 0);
+    },
+  },
+  // UX-1 [23]: a long reply streams in with the chat open, the typing bubble standing in for it; checked after its last
+  // delta.
   { id: "chat", route: CHAT, fixtures: ["stream-long"], variant: "stream", replay: true },
   // UX-1 [10]: just set up, no chat has a message yet: the empty chat shows the checklist on its last step.
   { id: "chat", route: CHAT, fixtures: ["onboarding-first-chat"], variant: "first-chat" },
@@ -1031,6 +1070,43 @@ export const screens: readonly Screen[] = [
     variant: "offline",
     open: (page) => expect(page.getByText("Agents show once you’re connected.")).toBeVisible(),
   },
+  // ...and under them Elsewhere, the work on storefront's repo that isn't its agents': a person's claim (who holds it,
+  // when it expires), checkout's agent and PR, an agent key's claim, an open PR outside fleetd, a direct push and a PR
+  // merged by hand, and an expired claim last.
+  {
+    id: "agents",
+    route: `${CHAT}/agents`,
+    fixtures: ["agents-elsewhere"],
+    variant: "elsewhere",
+    open: async (page) => {
+      await expect(page.getByText("Elsewhere on main")).toBeVisible();
+      await expect(page.getByText(/^held by you \(laptop\) · expires in \d+ h$/u)).toBeVisible();
+      await expect(page.getByText(/^pushed straight to main by ada@example\.com · \d+ min ago · covers P7$/u)).toBeVisible();
+    },
+  },
+  // ...checkout's, with no agents of its own: a note, then the same work seen from checkout (storefront's agent).
+  {
+    id: "agents",
+    route: ELSEWHERE_IDLE_ROUTE,
+    fixtures: ["agents-elsewhere"],
+    variant: "elsewhere-idle",
+    open: async (page) => {
+      await expect(page.getByText("No agents are working here.")).toBeVisible();
+      await expect(page.getByText("storefront’s agent · running")).toBeVisible();
+    },
+  },
+  // ...and with All projects, Elsewhere gives way to every project's agents.
+  {
+    id: "agents",
+    route: `${CHAT}/agents`,
+    fixtures: ["agents-elsewhere"],
+    variant: "elsewhere-all",
+    open: async (page) => {
+      await expect(page.getByText("Elsewhere on main")).toBeVisible();
+      await page.getByRole("button", { name: "All projects" }).click();
+      await expect(page.getByText("Elsewhere on main")).toBeHidden();
+    },
+  },
   // ...and with All projects, every project's agents under its name, checkout's first as one waits on you.
   {
     id: "agents",
@@ -1195,6 +1271,9 @@ export const screens: readonly Screen[] = [
     variant: "search-none",
     open: (page) => page.getByRole("searchbox", { name: "Search settings" }).fill("zebra"),
   },
+  // Memory: user.md with what the lead remembered, then one project's MEMORY.md and a topic.
+  { id: "settings.memory", route: "#/settings/memory", fixtures: ["typical", "empty", "hub-unreachable"] },
+  { id: "settings.memory", route: "#/settings/memory?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22", fixtures: ["typical", "long-text"], variant: "project" },
   // Prompts before one is picked.
   { id: "settings.prompts", route: "#/settings/prompts", fixtures: ["settings-prompts"], variant: "none" },
   { id: "settings.general", route: "#/settings/general", fixtures: ["typical", "empty", "hub-unreachable"] },
@@ -1235,24 +1314,12 @@ export const screens: readonly Screen[] = [
   },
   { id: "settings.prompts.update", route: "#/settings/prompts?prompt=lead.start&view=update", fixtures: ["settings-prompts"] },
   { id: "settings.instructions", route: "#/settings/instructions?for=devbox/storefront", fixtures: ["settings-prompts", "typical", "empty"] },
-  // F6: Status, one row per project: every state word, long titles, no projects, quiet sources, the skeleton before
-  // the first answer, and the link down.
+  // F6: Status, one row per project: every state word, its work in groups, long titles, no projects, quiet sources,
+  // the skeleton before the first answer, and the link down.
   {
     id: "status.fleet",
     route: "#/status",
     fixtures: ["typical", "status-rows", "long-text", "empty", "many-agents", "hub-unreachable", "status-stale", "status-skeleton"],
-  },
-  // A held figure: the bar's hover marks it, with why, above the drop that came before it. Nothing moves.
-  {
-    id: "status.fleet",
-    route: "#/status",
-    fixtures: ["status-paused"],
-    variant: "paused",
-    open: async (page) => {
-      await page.getByRole("img", { name: /^78% done/u }).hover();
-      await page.getByText("Held at 78% (paused: an agent hit a usage limit)").waitFor();
-      await page.getByText("↓ 61% → 55%: CI failed on #212").waitFor();
-    },
   },
   // The Factory (D33, fixtures/factory): the four tiles, the three charts, the projects table and the merge list over
   // 30 days; long titles; eight projects with one repo on two machines; no projects; no hub; failing reads; nothing

@@ -231,7 +231,7 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
           <Text size="xs" tone="quiet" tabular>
             1
           </Text>
-          <Text size="xs" tone="quiet" tabular>{`${a.cap}, the fleet's limit`}</Text>
+          <Text size="xs" tone="quiet" tabular>{`${a.cap}, the most it can run`}</Text>
         </div>
       ) : null}
       <ResultLine

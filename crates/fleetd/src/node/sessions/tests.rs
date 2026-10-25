@@ -275,9 +275,14 @@ async fn a_launch_runs_its_turn_streams_it_and_later_sends_continue_the_session(
         serde_json::json!(["agent-mcp", "--role", "worker"])
     );
     assert_eq!(mcp["mcpServers"]["fleetd"]["env"]["FLEETD_THREAD_ID"], "s1");
-    for tool in ALWAYS_DISALLOWED {
-        assert!(spec.disallowed_tools.iter().any(|t| t == tool));
+    for tool in ALWAYS_DISALLOWED
+        .iter()
+        .chain(crate::node::runner::claude::AGENT_DISALLOWED)
+    {
+        assert!(spec.disallowed_tools.iter().any(|t| t == tool), "{tool}");
     }
+    // A task's agent edits files; only a lead is kept from it.
+    assert!(!spec.disallowed_tools.iter().any(|t| t == "Edit"));
     // claude.env is read, but fleetd's own values come last and win.
     let last = |key: &str| {
         spec.env
@@ -321,6 +326,9 @@ async fn a_launch_runs_its_turn_streams_it_and_later_sends_continue_the_session(
         assert_eq!(last(key), Some("5m"), "{key}");
         assert_eq!(overlay["env"][key], "5m", "{key}");
     }
+    // No one command outlives that cache.
+    assert_eq!(last("BASH_MAX_TIMEOUT_MS"), Some("280000"));
+    assert_eq!(overlay["env"]["BASH_MAX_TIMEOUT_MS"], "280000");
 
     // A retried launch returns the same session without a second process.
     let again = hub
@@ -351,7 +359,7 @@ async fn a_launch_runs_its_turn_streams_it_and_later_sends_continue_the_session(
     let roles: Vec<_> = snapshot
         .messages
         .iter()
-        .map(|m| (m.role, m.text.as_str()))
+        .map(|m| (m.role, brief(&m.text)))
         .collect();
     assert_eq!(
         roles,
@@ -1022,6 +1030,7 @@ async fn writer_commits(worktree_config: bool) {
     let workspace = SessionWorkspace::Worktree {
         base_ref: NonEmpty::unchecked("main"),
         branch: NonEmpty::unchecked("fleetd/T7-docs"),
+        from_session: None,
     };
     hub.ok(launch("s1", RuntimeMode::FullAccess, workspace))
         .await;
@@ -1086,6 +1095,13 @@ async fn writer_commits(worktree_config: bool) {
 
 #[tokio::test]
 async fn a_removed_worktree_comes_back_at_the_same_path_when_the_session_resumes() {
+    let var = |spec: &crate::node::runner::SessionSpec, key: &str| {
+        spec.env
+            .iter()
+            .rev()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.clone())
+    };
     let dir = tempfile::tempdir().unwrap();
     let root = repo(dir.path());
     let mut hub = hub(
@@ -1098,6 +1114,7 @@ async fn a_removed_worktree_comes_back_at_the_same_path_when_the_session_resumes
     let workspace = SessionWorkspace::Worktree {
         base_ref: NonEmpty::unchecked("main"),
         branch: NonEmpty::unchecked("fleetd/s1"),
+        from_session: None,
     };
     hub.ok(launch("s1", RuntimeMode::FullAccess, workspace))
         .await;
@@ -1117,6 +1134,20 @@ async fn a_removed_worktree_comes_back_at_the_same_path_when_the_session_resumes
         Some("WebFetch")
     );
     assert!(spec.disallowed_tools.iter().any(|t| t == "Task"));
+    // Its own scratch dir under the node home, and its share of the CPUs, which its brief names.
+    let scratch = super::share::scratch_dir(&dir.path().join("node"), "s1");
+    assert!(scratch.is_dir());
+    for key in ["TMPDIR", "TMP", "TEMP"] {
+        assert_eq!(var(&spec, key).as_deref(), scratch.to_str());
+    }
+    let jobs = var(&spec, "CARGO_BUILD_JOBS").unwrap();
+    assert_eq!(var(&spec, "MAKEFLAGS"), Some(format!("-j{jobs}")));
+    assert_eq!(var(&spec, "GOFLAGS"), Some(format!("-p={jobs}")));
+    let first = &sends(&hub.runner)[0].1;
+    assert!(
+        first.contains(&format!("- Builds get {jobs} parallel jobs per agent")),
+        "{first}"
+    );
 
     std::fs::write(path.join("work.txt"), "w\n").unwrap();
     git(&path, &["add", "."]);
@@ -1141,6 +1172,7 @@ async fn a_removed_worktree_comes_back_at_the_same_path_when_the_session_resumes
     })
     .await;
     assert!(!path.exists());
+    assert!(!scratch.exists());
     let stopped = hub.summary(|s| s.worktree_path.is_none()).await;
     // Unmerged work keeps its branch.
     assert_eq!(stopped.branch.as_deref(), Some("fleetd/s1"));
@@ -1152,6 +1184,7 @@ async fn a_removed_worktree_comes_back_at_the_same_path_when_the_session_resumes
     let spec = &hub.runner.spawned()[1];
     assert!(spec.resume);
     assert_eq!(spec.cwd, path);
+    assert!(scratch.is_dir());
 }
 
 #[tokio::test]
@@ -1181,6 +1214,7 @@ async fn a_writer_starts_from_a_fresh_fetch_of_origin_not_the_stale_local_main()
     let workspace = SessionWorkspace::Worktree {
         base_ref: NonEmpty::unchecked("main"),
         branch: NonEmpty::unchecked("fleetd/s1"),
+        from_session: None,
     };
     let launched = hub
         .ok(launch("s1", RuntimeMode::FullAccess, workspace))
@@ -1272,6 +1306,7 @@ async fn a_slow_fetch_never_holds_up_a_launch_in_another_project() {
         SessionWorkspace::Worktree {
             base_ref: NonEmpty::unchecked("main"),
             branch: NonEmpty::unchecked("fleetd/s1"),
+            from_session: None,
         },
     );
     let SessionCall::Launch(mut reader) =
@@ -1292,6 +1327,407 @@ async fn a_slow_fetch_never_holds_up_a_launch_in_another_project() {
     );
 }
 
+/// Every file of the human's checkout outside `.git`, and what git keeps that is theirs: HEAD, the index, FETCH_HEAD
+/// and their branches.
+fn checkout_state(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+    fn walk(root: &Path, dir: &Path, out: &mut Vec<(PathBuf, Vec<u8>)>) {
+        let mut entries: Vec<_> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        entries.sort();
+        for path in entries {
+            if path == root.join(".git") {
+                continue;
+            }
+            if path.is_dir() {
+                walk(root, &path, out);
+            } else {
+                let rel = path.strip_prefix(root).unwrap().to_path_buf();
+                out.push((rel, std::fs::read(&path).unwrap()));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(root, root, &mut out);
+    for file in ["HEAD", "index", "FETCH_HEAD"] {
+        let at = Path::new(".git").join(file);
+        out.push((at.clone(), std::fs::read(root.join(at)).unwrap()));
+    }
+    let heads = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["for-each-ref", "refs/heads"])
+        .output()
+        .unwrap();
+    out.push(("refs/heads".into(), heads.stdout));
+    out
+}
+
+fn rev(dir: &Path, rev: &str) -> String {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["rev-parse", rev])
+        .output()
+        .unwrap();
+    String::from_utf8(out.stdout).unwrap().trim().to_owned()
+}
+
+/// Names `remote` of `checkout` as `url` on a host, which git reaches at the local repo `at` through
+/// `url.<at>.insteadOf`, as a real remote would be named.
+fn hosted(checkout: &Path, remote: &str, url: &str, at: &Path) {
+    let has = std::process::Command::new("git")
+        .arg("-C")
+        .arg(checkout)
+        .args(["remote", "get-url", remote])
+        .output()
+        .unwrap()
+        .status
+        .success();
+    let verb = if has { "set-url" } else { "add" };
+    git(checkout, &["remote", verb, remote, url]);
+    let key = format!("url.{}.insteadOf", at.to_string_lossy());
+    git(checkout, &["config", "--add", &key, url]);
+}
+
+#[tokio::test]
+async fn readers_and_reviewers_each_get_a_worktree_of_their_own_and_the_humans_checkout_is_untouched()
+ {
+    let dir = tempfile::tempdir().unwrap();
+    let seed = repo(dir.path());
+    let origin = dir.path().join("origin.git");
+    let checkout = dir.path().join("checkout");
+    let (o, c) = (origin.to_string_lossy(), checkout.to_string_lossy());
+    git(
+        dir.path(),
+        &["clone", "-q", "--bare", &seed.to_string_lossy(), &o],
+    );
+    git(dir.path(), &["clone", "-q", &o, &c]);
+    hosted(&checkout, "origin", "https://github.com/o/r.git", &origin);
+    hosted(
+        &checkout,
+        "mirror",
+        "git@gitlab.example.com:o/r.git",
+        &origin,
+    );
+    // Upstream moves on after the human's last pull, and two PRs are open: one on a host with GitHub's PR refs, one
+    // with GitLab's.
+    std::fs::write(seed.join("upstream.txt"), "u\n").unwrap();
+    git(&seed, &["add", "."]);
+    git(&seed, &["commit", "-q", "-m", "upstream"]);
+    git(&seed, &["push", "-q", &o, "main"]);
+    let mut heads = Vec::new();
+    for (file, pr_ref) in [
+        ("pr7.txt", "refs/pull/7/head"),
+        ("mr8.txt", "refs/merge-requests/8/head"),
+    ] {
+        git(&seed, &["checkout", "-q", "-B", file, "main"]);
+        std::fs::write(seed.join(file), "pr\n").unwrap();
+        git(&seed, &["add", "."]);
+        git(&seed, &["commit", "-q", "-m", file]);
+        git(&seed, &["push", "-q", &o, &format!("HEAD:{pr_ref}")]);
+        heads.push(rev(&seed, "HEAD"));
+    }
+    let fresh = rev(&origin, "main");
+    // The human: their own last fetch, a feature branch, an edit and a new file in progress.
+    git(&checkout, &["fetch", "-q", "origin"]);
+    git(&checkout, &["checkout", "-q", "-b", "feature"]);
+    std::fs::write(checkout.join("a.txt"), "edited\n").unwrap();
+    std::fs::write(checkout.join("wip.txt"), "wip\n").unwrap();
+    let before = checkout_state(&checkout);
+
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.project(&checkout).await;
+    let tasks = [
+        ("s1", None, fresh.as_str()),
+        (
+            "s2",
+            Some("https://github.com/o/r/pull/7"),
+            heads[0].as_str(),
+        ),
+        (
+            "s3",
+            Some("https://gitlab.example.com/o/r/-/merge_requests/8/diffs"),
+            heads[1].as_str(),
+        ),
+    ];
+    for (n, (id, pr, at)) in tasks.iter().enumerate() {
+        let workspace = SessionWorkspace::Detached {
+            base_ref: NonEmpty::unchecked("main"),
+            pr: pr.map(NonEmpty::unchecked),
+        };
+        hub.ok(launch(id, RuntimeMode::FullAccess, workspace)).await;
+        let done = hub
+            .summary(|s| {
+                s.session_id.as_str() == *id && s.active_run_id.is_none() && s.latest_run.is_some()
+            })
+            .await;
+        let path = dir.path().join("node/worktrees/p1").join(id);
+        assert_eq!(done.worktree_path.as_deref(), path.to_str(), "{id}");
+        assert_eq!(done.branch, None, "{id}");
+        assert_eq!(hub.runner.spawned()[n].cwd, path, "{id}");
+        // Detached, at the fresh base or the PR's head.
+        assert_eq!(rev(&path, "HEAD"), *at, "{id}");
+        assert!(
+            !std::process::Command::new("git")
+                .arg("-C")
+                .arg(&path)
+                .args(["symbolic-ref", "-q", "HEAD"])
+                .status()
+                .unwrap()
+                .success(),
+            "{id}"
+        );
+        assert!(path.join("upstream.txt").exists(), "{id}");
+        assert!(!path.join("wip.txt").exists(), "{id}");
+        // It may build and run tests there.
+        std::fs::create_dir_all(path.join("target")).unwrap();
+        std::fs::write(path.join("target/out"), "built\n").unwrap();
+    }
+    assert_eq!(checkout_state(&checkout), before);
+
+    // The task ended: its worktree goes, build output with it.
+    for (id, ..) in &tasks {
+        hub.ok(SessionCall::Stop {
+            session_id: ThreadId::unchecked(*id),
+            remove_worktree: true,
+        })
+        .await;
+        assert!(!dir.path().join("node/worktrees/p1").join(id).exists());
+    }
+    let listed = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&checkout)
+        .args(["worktree", "list", "--porcelain"])
+        .output()
+        .unwrap();
+    let listed = String::from_utf8(listed.stdout).unwrap();
+    assert_eq!(listed.matches("worktree ").count(), 1, "{listed}");
+    assert_eq!(checkout_state(&checkout), before);
+
+    // A message after its end brings it back at the same commit, so the session resumes in it.
+    hub.ok(send("s2", "r2")).await;
+    hub.settled("r2").await;
+    let path = dir.path().join("node/worktrees/p1/s2");
+    assert_eq!(rev(&path, "HEAD"), heads[0]);
+    let spec = hub.runner.spawned().last().unwrap().clone();
+    assert!(spec.resume);
+    assert_eq!(spec.cwd, path);
+}
+
+#[tokio::test]
+async fn a_review_whose_host_publishes_no_pr_refs_reads_the_fresh_base() {
+    let dir = tempfile::tempdir().unwrap();
+    let seed = repo(dir.path());
+    let origin = dir.path().join("origin.git");
+    let checkout = dir.path().join("checkout");
+    let (o, c) = (origin.to_string_lossy(), checkout.to_string_lossy());
+    git(
+        dir.path(),
+        &["clone", "-q", "--bare", &seed.to_string_lossy(), &o],
+    );
+    git(dir.path(), &["clone", "-q", &o, &c]);
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.project(&checkout).await;
+    let workspace = SessionWorkspace::Detached {
+        base_ref: NonEmpty::unchecked("main"),
+        pr: Some(NonEmpty::unchecked(
+            "https://bitbucket.org/o/r/pull-requests/3",
+        )),
+    };
+    hub.ok(launch("s1", RuntimeMode::FullAccess, workspace))
+        .await;
+    hub.settled("r1").await;
+    let path = dir.path().join("node/worktrees/p1/s1");
+    assert_eq!(rev(&path, "HEAD"), rev(&origin, "main"));
+}
+
+/// A bare repo `name` cloned from `seed`, with a commit `file` pushed to `pr_ref`; returns it and that commit.
+fn bare_with_pr(
+    dir: &Path,
+    seed: &Path,
+    name: &str,
+    file: &str,
+    pr_ref: &str,
+) -> (PathBuf, String) {
+    let bare = dir.join(name);
+    let b = bare.to_string_lossy().into_owned();
+    git(dir, &["clone", "-q", "--bare", &seed.to_string_lossy(), &b]);
+    git(seed, &["checkout", "-q", "-B", file, "main"]);
+    std::fs::write(seed.join(file), "pr\n").unwrap();
+    git(seed, &["add", "."]);
+    git(seed, &["commit", "-q", "-m", file]);
+    git(seed, &["push", "-q", &b, &format!("HEAD:{pr_ref}")]);
+    let head = rev(seed, "HEAD");
+    git(seed, &["checkout", "-q", "main"]);
+    (bare, head)
+}
+
+/// In a fork, origin is the human's fork and the PR is upstream's: its head comes from upstream, never from a PR of the
+/// same number on the fork. A PR of a repo no remote is reads the fresh base, for the brief to have it fetch the head.
+#[tokio::test]
+async fn a_review_in_a_fork_reads_the_head_from_the_remote_the_pr_belongs_to() {
+    let dir = tempfile::tempdir().unwrap();
+    let seed = repo(dir.path());
+    let (fork, decoy) = bare_with_pr(
+        dir.path(),
+        &seed,
+        "fork.git",
+        "decoy.txt",
+        "refs/pull/7/head",
+    );
+    let (upstream, head) = bare_with_pr(
+        dir.path(),
+        &seed,
+        "upstream.git",
+        "pr.txt",
+        "refs/pull/7/head",
+    );
+    let checkout = dir.path().join("checkout");
+    git(
+        dir.path(),
+        &[
+            "clone",
+            "-q",
+            &fork.to_string_lossy(),
+            &checkout.to_string_lossy(),
+        ],
+    );
+    hosted(&checkout, "origin", "https://github.com/me/r.git", &fork);
+    hosted(&checkout, "upstream", "https://github.com/o/r", &upstream);
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.project(&checkout).await;
+    for (id, pr, at) in [
+        ("s1", "https://github.com/O/R/pull/7", head.as_str()),
+        (
+            "s2",
+            "https://github.com/someone/else/pull/7",
+            &rev(&fork, "main"),
+        ),
+    ] {
+        let workspace = SessionWorkspace::Detached {
+            base_ref: NonEmpty::unchecked("main"),
+            pr: Some(NonEmpty::unchecked(pr)),
+        };
+        hub.ok(launch(id, RuntimeMode::FullAccess, workspace)).await;
+        hub.summary(|s| s.session_id.as_str() == id && s.latest_run.is_some())
+            .await;
+        let path = dir.path().join("node/worktrees/p1").join(id);
+        assert_eq!(rev(&path, "HEAD"), at, "{id}");
+        assert_ne!(rev(&path, "HEAD"), decoy, "{id}");
+    }
+}
+
+/// A new repo has no commit to start a worktree from, so the node names no default branch: the hub then runs its
+/// readers in the project root, as before, rather than failing their start.
+#[tokio::test]
+async fn a_repo_with_no_commit_yet_has_no_default_branch() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("new");
+    std::fs::create_dir_all(&root).unwrap();
+    git(&root, &["init", "-q", "-b", "main"]);
+    let hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.project(&root).await;
+    let ask = || SessionCall::DefaultBranch {
+        project_id: ProjectId::unchecked("p1"),
+    };
+    assert!(matches!(
+        hub.ok(ask()).await,
+        SessionOutput::DefaultBranch { branch: None }
+    ));
+    std::fs::write(root.join("a.txt"), "a\n").unwrap();
+    git(&root, &["add", "."]);
+    git(&root, &["commit", "-q", "-m", "first"]);
+    assert!(matches!(
+        hub.ok(ask()).await,
+        SessionOutput::DefaultBranch { branch: Some(b) } if b == "main"
+    ));
+}
+
+/// A message to a reader right as its task ends, before or while the hub removes its worktree: either the message
+/// lands first and the worktree stays, or it waits for the removal and the worktree comes back. Its run completes,
+/// and the session never runs in a directory that is gone.
+#[tokio::test]
+async fn a_message_as_a_readers_task_ends_never_resumes_in_a_worktree_being_removed() {
+    for message_first in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let root = repo(dir.path());
+        let mut hub = hub(
+            dir.path(),
+            NodeStore::open_memory(10_000).unwrap(),
+            FakeRunner::fixture("init-partial-two-turns"),
+        )
+        .await;
+        hub.project(&root).await;
+        let workspace = SessionWorkspace::Detached {
+            base_ref: NonEmpty::unchecked("main"),
+            pr: None,
+        };
+        hub.ok(launch("s1", RuntimeMode::FullAccess, workspace))
+            .await;
+        hub.settled("r1").await;
+        let path = dir.path().join("node/worktrees/p1/s1");
+        // Build output, so the removal takes a while.
+        for n in 0..2000 {
+            let at = path.join(format!("target/{}", n % 20));
+            std::fs::create_dir_all(&at).unwrap();
+            std::fs::write(at.join(n.to_string()), "o").unwrap();
+        }
+        let remove = SessionCall::Stop {
+            session_id: ThreadId::unchecked("s1"),
+            remove_worktree: true,
+        };
+        if message_first {
+            let (sent, _) = tokio::join!(hub.call(send("s1", "r2")), async {
+                tokio::task::yield_now().await;
+                hub.call(remove).await
+            });
+            assert!(matches!(sent, SessionResult::Ok(_)), "{sent:?}");
+        } else {
+            let (_, sent) = tokio::join!(hub.call(remove), async {
+                tokio::task::yield_now().await;
+                hub.call(send("s1", "r2")).await
+            });
+            assert!(matches!(sent, SessionResult::Ok(_)), "{sent:?}");
+        }
+        let done = hub.settled("r2").await;
+        assert_eq!(
+            done.latest_run.as_ref().map(|r| r.status),
+            Some(RunStatus::Completed),
+            "message first: {message_first}"
+        );
+        let live = hub.service.st().live.contains_key("s1");
+        assert!(
+            path.is_dir() || !live,
+            "message first: {message_first}: a live session in a removed worktree"
+        );
+        for spec in hub.runner.spawned() {
+            assert_eq!(spec.cwd, path);
+        }
+    }
+}
+
 #[tokio::test]
 async fn a_lost_worktree_and_branch_come_back_from_the_pushed_branch_and_the_agent_is_told() {
     let dir = tempfile::tempdir().unwrap();
@@ -1306,6 +1742,7 @@ async fn a_lost_worktree_and_branch_come_back_from_the_pushed_branch_and_the_age
     let workspace = SessionWorkspace::Worktree {
         base_ref: NonEmpty::unchecked("main"),
         branch: NonEmpty::unchecked("fleetd/s1"),
+        from_session: None,
     };
     hub.ok(launch("s1", RuntimeMode::FullAccess, workspace))
         .await;
@@ -1346,6 +1783,93 @@ async fn a_lost_worktree_and_branch_come_back_from_the_pushed_branch_and_the_age
     assert_eq!(recorded.text, message);
 }
 
+/// A task restarted fresh: its new session takes over the earlier one's worktree as it was left, uncommitted work
+/// included, and starts a conversation of its own there.
+#[tokio::test]
+async fn a_session_taking_over_a_branch_works_in_the_earlier_sessions_worktree() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, root) = cloned(dir.path(), "repo", "origin");
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.project(&root).await;
+    let workspace = |from: Option<&str>| SessionWorkspace::Worktree {
+        base_ref: NonEmpty::unchecked("main"),
+        branch: NonEmpty::unchecked("fleetd/s1"),
+        from_session: from.map(ThreadId::unchecked),
+    };
+    hub.ok(launch("s1", RuntimeMode::FullAccess, workspace(None)))
+        .await;
+    hub.settled("r1").await;
+    let path: PathBuf = dir.path().join("node/worktrees/p1/s1");
+    std::fs::write(path.join("draft.txt"), "not committed\n").unwrap();
+
+    let SessionCall::Launch(mut fresh) =
+        launch("s2", RuntimeMode::FullAccess, workspace(Some("s1")))
+    else {
+        unreachable!()
+    };
+    fresh.run_id = NonEmpty::unchecked("q1");
+    hub.ok(SessionCall::Launch(fresh)).await;
+    let started = hub.settled("q1").await;
+    assert_eq!(started.worktree_path.as_deref(), path.to_str());
+    assert_eq!(started.branch.as_deref(), Some("fleetd/s1"));
+    assert_eq!(started.recreated_from, None);
+    assert!(path.join("draft.txt").exists());
+    assert!(!dir.path().join("node/worktrees/p1/s2").exists());
+    let spec = &hub.runner.spawned()[1];
+    assert_eq!((spec.cwd.as_path(), spec.resume), (path.as_path(), false));
+}
+
+/// A task's session restarted after its process went must resume its conversation for anything but its first message:
+/// without it, a recovery note alone would reach an agent that knows nothing of its task, so claude's start is refused
+/// when the conversation is gone (the hub then restarts the task with its brief). The first message again may start
+/// over.
+#[tokio::test]
+async fn a_task_session_must_resume_for_anything_but_its_first_message() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.project(dir.path()).await;
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    hub.settled("r1").await;
+    let stop = || SessionCall::Stop {
+        session_id: ThreadId::unchecked("s1"),
+        remove_worktree: false,
+    };
+    hub.ok(stop()).await;
+    hub.ok(send("s1", "r2")).await;
+    hub.settled("r2").await;
+    hub.ok(stop()).await;
+    hub.ok(SessionCall::Send {
+        session_id: ThreadId::unchecked("s1"),
+        run_id: NonEmpty::unchecked("r3"),
+        text: NonEmpty::unchecked("Reply with the word OK and nothing else."),
+        mode: SendMode::Plain,
+        steer: None,
+    })
+    .await;
+    let spawned: Vec<(bool, bool)> = hub
+        .runner
+        .spawned()
+        .iter()
+        .map(|s| (s.resume, s.must_resume))
+        .collect();
+    assert_eq!(spawned, [(false, false), (true, true), (true, false)]);
+}
+
 #[tokio::test]
 async fn a_slow_fetch_for_a_lost_worktree_never_holds_up_another_sessions_start() {
     let dir = tempfile::tempdir().unwrap();
@@ -1368,6 +1892,7 @@ async fn a_slow_fetch_for_a_lost_worktree_never_holds_up_another_sessions_start(
     let workspace = SessionWorkspace::Worktree {
         base_ref: NonEmpty::unchecked("main"),
         branch: NonEmpty::unchecked("fleetd/s1"),
+        from_session: None,
     };
     hub.ok(launch("s1", RuntimeMode::FullAccess, workspace))
         .await;
@@ -1443,8 +1968,8 @@ async fn a_first_start_that_claude_already_knows_resumes_instead() {
     let prompt = "Reply with the word OK and nothing else.";
     let sends = sends(&hub.runner);
     assert_eq!(sends.len(), 2);
-    assert_eq!(sends[0], ("r1".into(), prompt.into()));
-    assert_eq!(sends[1].1, prompt);
+    assert_eq!((sends[0].0.as_str(), brief(&sends[0].1)), ("r1", prompt));
+    assert_eq!(brief(&sends[1].1), prompt);
     assert_eq!(hub.service.store().runs("s1").unwrap().len(), 1);
 }
 
@@ -1479,8 +2004,14 @@ async fn a_retry_of_a_message_claude_never_took_in_sends_the_message_again() {
     let sends = sends(&hub.runner);
     assert_eq!(sends.len(), 2);
     assert_ne!(sends[1].0, "r1");
-    assert_eq!(sends[1].1, prompt);
+    assert_eq!(brief(&sends[1].1), prompt);
     assert_eq!(hub.service.store().runs("s1").unwrap().len(), 1);
+}
+
+/// A worker's first message without the node's note on its share of the machine.
+fn brief(text: &str) -> &str {
+    text.split_once("\n\n## This machine\n")
+        .map_or(text, |(brief, _)| brief)
 }
 
 fn sends(runner: &FakeRunner) -> Vec<(String, String)> {

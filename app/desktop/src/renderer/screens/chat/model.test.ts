@@ -174,6 +174,37 @@ describe("the chat's rows", () => {
     ]);
   });
 
+  it("draw a run as one stack, ending where the author changes, and put the time over a long pause", () => {
+    const r = rows([
+      item("a", "lead", at(19, 9)),
+      item("b", "lead", at(19, 9, 1)),
+      item("c", "human", at(19, 9, 2)),
+      item("d", "human", at(19, 11, 30)),
+      item("e", "lead", at(19, 11, 31)),
+    ]);
+    expect(r.map((x) => (x.kind === "message" ? `${x.item.id}:${x.run ? "run" : "-"}:${x.end ? "end" : "-"}` : x.kind === "time" ? `time:${x.label}` : x.kind))).toEqual([
+      "top",
+      "day",
+      "a:run:-",
+      "b:-:end",
+      "c:run:end",
+      "time:11:30",
+      "d:run:end",
+      "e:run:end",
+    ]);
+  });
+
+  it("link your reply to the bubble it quotes, and an ask to the button you pressed", () => {
+    const ask = item("a", "lead", at(19, 9, 1), {
+      text: "```fleetd-block\n{}\n```",
+      message: { parts: [{ start: 0, end: 22, block: { v: 1, kind: "ask", question: "Merge?" } }] } as unknown as ChatItem["message"],
+    });
+    const r = rows([item("q", "lead", at(19, 9)), ask, item("b", "human", at(19, 9, 2), { text: "> text q\n\nyes" }), item("c", "human", at(19, 9, 3), { text: "Approve" })]);
+    const msg = (id: string) => r.find((x) => x.kind === "message" && x.item.id === id);
+    expect(msg("b")).toMatchObject({ reply: { quote: "text q", body: "yes", target: "q" } });
+    expect(msg("a")).toMatchObject({ answered: { "0": "Approve" } });
+  });
+
   it("word days plainly", () => {
     expect(dayLabel(at(19, 1), NOW, "UTC")).toBe("Today");
     expect(dayLabel(at(18, 1), NOW, "UTC")).toBe("Yesterday");

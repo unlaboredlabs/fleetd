@@ -34,7 +34,14 @@ const closeDoc = (doc: Doc): Doc => {
     if (Array.isArray(v)) return v.map((x) => close(x, true));
     if (!isObject(v)) return v;
     const out: JsonObject = {};
+    // A union beside properties of its own (a tagged enum flattened under a version, as ChatBlock's `v`): the union's
+    // branches can't see those properties, so the object is closed here and its branches stay open.
+    const outer = isObject(v["properties"]);
     for (const [k, x] of Object.entries(v)) {
+      if (outer && (k === "oneOf" || k === "anyOf") && Array.isArray(x)) {
+        out[k] = x.map((b) => close(b, false));
+        continue;
+      }
       out[k] = k === "properties" && isObject(x) ? Object.fromEntries(Object.entries(x).map(([n, sub]) => [n, close(sub, true)])) : k === "$defs" && isObject(x) ? Object.fromEntries(Object.entries(x).map(([n, d]) => [n, close(d, !extended.has(n))])) : close(x, true);
     }
     if (here && isObject(v["properties"]) && v["additionalProperties"] === undefined && v["unevaluatedProperties"] === undefined) out["unevaluatedProperties"] = false;

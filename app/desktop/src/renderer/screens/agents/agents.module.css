@@ -159,3 +159,21 @@
 .failed {
   color: var(--danger);
 }
+
+/* Elsewhere: work on the repo that isn't this project's, laid out as an agent's row but not a link. */
+.none {
+  padding: var(--space-2) var(--space-2) 0;
+}
+.other:hover {
+  background: none;
+}
+.tag {
+  flex: none;
+  display: flex;
+  width: 88px;
+  min-width: 0;
+}
+/* An expired claim, last: its title as quiet as the line under it. */
+.dim .task > * {
+  color: var(--quiet);
+}

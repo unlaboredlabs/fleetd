@@ -279,7 +279,7 @@ pub const ENTRIES: &[Entry] = &[
         Task,
         "Reader brief",
         "every read task attempt",
-        "taskId!=T<n>; kind=read; workstreamId=W<n>; project=the project's title; title=the task's title; task!=the lead's task text; workstream=the order's goal and done-when, or nothing",
+        "taskId!=T<n>; kind=read; workstreamId=W<n>; project=the project's title; title=the task's title; task!=the lead's task text; workstream=the order's goal and done-when, or nothing; baseBranch=the default branch; workspace!=where it works: its own worktree, or the project's checkout on an older node",
         &[READ_ONLY]
     ),
     entry!(
@@ -289,7 +289,7 @@ pub const ENTRIES: &[Entry] = &[
         Task,
         "Review task brief",
         "every attempt of a review task the lead spawns (the train's reviews use Reviewer)",
-        "taskId!=T<n>; kind=review; workstreamId=W<n>; project=the project's title; title=the task's title; task!=the lead's task text; workstream=the order's goal and done-when, or nothing",
+        "taskId!=T<n>; kind=review; workstreamId=W<n>; project=the project's title; title=the task's title; task!=the lead's task text; workstream=the order's goal and done-when, or nothing; baseBranch=the default branch; workspace!=where it works: its own worktree, or the project's checkout on an older node",
         &[READ_ONLY, VERDICT]
     ),
     entry!(
@@ -363,7 +363,17 @@ pub const ENTRIES: &[Entry] = &[
         Task,
         "Resume after a run died",
         "to an agent whose run was cut off (its node stopped, claude was killed, a stall), when fleetd resumes it",
-        "cause!=why the run ended, in plain words; doing!=the last thing it did; count!=this recovery's number; max!=the most fleetd makes",
+        "cause!=why the run ended, in plain words; doing!=the last thing it did; used!=the recoveries used of the most fleetd makes",
+        &[]
+    ),
+    entry!(
+        "task.handoff",
+        Start,
+        Tasks,
+        Task,
+        "Handoff to a fresh thread",
+        "after the task's brief, when fleetd restarts an agent in a new thread (its context filled up again, or its thread could not resume)",
+        "why!=why it restarted; workspace!=where the work is; tail!=the earlier agent's last words; commits!=the branch's commits, or none; uncommitted!=uncommitted paths, or none; pr!=its open PR, or none",
         &[]
     ),
     entry!(

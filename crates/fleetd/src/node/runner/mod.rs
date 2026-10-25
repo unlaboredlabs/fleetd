@@ -14,6 +14,7 @@ pub mod claude_setup;
 pub mod conformance;
 pub mod failure;
 pub mod process;
+pub mod scope;
 pub mod version;
 
 use std::future::Future;
@@ -37,6 +38,10 @@ pub struct SessionSpec {
     pub session_id: String,
     /// False on the first start, true whenever the session has run before (node restart, idle reap, retry).
     pub resume: bool,
+    /// A task's session that has started, with anything but its first message to go: starting it without its
+    /// conversation would leave the agent with no idea of its task, so the start is refused instead and the hub
+    /// restarts the task fresh.
+    pub must_resume: bool,
     /// The project root or the session's worktree. A resume must use the same cwd: claude files sessions by cwd.
     pub cwd: PathBuf,
     /// `--add-dir`, e.g. the project root for a worktree session.

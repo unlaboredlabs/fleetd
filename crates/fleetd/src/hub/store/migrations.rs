@@ -718,4 +718,34 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     PRIMARY KEY (repo_key, base)
   );
   "#,
+    // The threads a task ran in before a fresh restart (`previousThreads`), so their late events still find the task
+    // on an index.
+    r#"
+  CREATE TABLE task_threads (
+    machine_id TEXT NOT NULL, thread_id TEXT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (machine_id, thread_id)
+  );
+  CREATE INDEX task_threads_by_thread ON task_threads (thread_id);
+  "#,
+    // D67: a finished task whose PR lookup has not settled, so a hub restart runs it again.
+    r#"
+  ALTER TABLE tasks ADD COLUMN pr_lookup INTEGER NOT NULL DEFAULT 0;
+  CREATE INDEX tasks_pr_lookup ON tasks (n) WHERE pr_lookup = 1;
+  "#,
+    // Each machine's cap: what it fits as last measured (kept while it is offline) and a person's setting, if any.
+    r#"
+  CREATE TABLE slot_machine_caps (
+    machine_id TEXT PRIMARY KEY, name TEXT NOT NULL, auto INTEGER NOT NULL, why TEXT NOT NULL, max_agents INTEGER
+  );
+  "#,
+    // Status shows work in groups, not a figure: plans and the bar's series go, and a claim keeps its other keys.
+    r#"
+  DROP TABLE plan_items;
+  DROP TABLE plan_changes;
+  DROP TABLE plan_milestones;
+  DROP TABLE status_series;
+  UPDATE work_claims SET data = json_set(data, '$.keys', (SELECT json_group_array(json(k.value))
+      FROM json_each(work_claims.data, '$.keys') AS k WHERE json_type(k.value, '$.item') IS NULL))
+    WHERE json_valid(data)
+      AND EXISTS (SELECT 1 FROM json_each(work_claims.data, '$.keys') AS k WHERE json_type(k.value, '$.item') IS NOT NULL);
+  "#,
 ];

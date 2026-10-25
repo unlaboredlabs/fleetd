@@ -444,6 +444,85 @@ async fn work_list_only_reads_and_takes_the_base_of_a_project_on_the_repo() {
     assert!(main["items"].as_array().unwrap().is_empty(), "another base");
 }
 
+/// The scanner's landings: whatever the scope asks for, cut to `limit`, as its store answers.
+struct Landed(Vec<crate::hub::work::elsewhere::Landed>);
+
+impl crate::hub::work::elsewhere::Landings for Landed {
+    fn outside(
+        &self,
+        _scope: &WorkScope,
+        since_ms: i64,
+        limit: usize,
+    ) -> Result<Vec<crate::hub::work::elsewhere::Landed>, crate::hub::store::StoreError> {
+        Ok(self
+            .0
+            .iter()
+            .filter(|l| l.at_ms >= since_ms)
+            .take(limit)
+            .cloned()
+            .collect())
+    }
+}
+
+#[tokio::test]
+async fn work_list_shows_what_landed_outside_the_train_in_the_last_day() {
+    use fleetd_contracts::verification::CommitSha;
+    use fleetd_contracts::work::LandingRoute;
+
+    let (hub, _clock, _home) = hub();
+    let laptop = key(&hub, "laptop", KeyKind::Agent);
+    let list = call(&hub, &laptop, "work_list", json!({ "repo": REMOTE }))
+        .await
+        .unwrap();
+    assert_eq!(
+        list["recentLandings"],
+        json!([]),
+        "none until the scanner is set"
+    );
+
+    let now = 1_792_922_400_000;
+    hub.work.set_landings(Arc::new(Landed(vec![
+        crate::hub::work::elsewhere::Landed {
+            sha: CommitSha::unchecked("a".repeat(40)),
+            at_ms: now - 60_000,
+            route: LandingRoute::DirectPush,
+            pr: None,
+            subject: "feat: dark mode toggle".into(),
+            author_email: Some("ada@example.com".into()),
+            covers: vec!["P5".into()],
+        },
+        crate::hub::work::elsewhere::Landed {
+            sha: CommitSha::unchecked("b".repeat(40)),
+            at_ms: now - 25 * 3_600_000,
+            route: LandingRoute::PrOutside,
+            pr: Some("#57".into()),
+            subject: "fix: older than a day".into(),
+            author_email: None,
+            covers: Vec::new(),
+        },
+    ])));
+    let list = call(
+        &hub,
+        &laptop,
+        "work_list",
+        json!({ "repo": REMOTE, "paths": false }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        list["recentLandings"],
+        json!([{
+            "sha": "a".repeat(40),
+            "at": "2026-10-25T09:59:00.000Z",
+            "route": "direct_push",
+            "subject": "feat: dark mode toggle",
+            "authorEmail": "ada@example.com",
+            "covers": ["P5"],
+        }]),
+        "the last 24 h only, with the commit's time"
+    );
+}
+
 #[tokio::test]
 async fn a_call_names_a_repo_or_a_known_project() {
     let (hub, _clock, _home) = hub();

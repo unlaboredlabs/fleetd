@@ -10,6 +10,7 @@ use fleetd_contracts::ledger::{Brief, Workstream, WorkstreamId};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::prim::NonEmpty;
+use fleetd_contracts::projects::github_repo;
 use fleetd_contracts::sessions::{SessionWorkspace, WorktreeBase};
 use fleetd_contracts::tasks::TaskId;
 use fleetd_contracts::usage::UsageParked;
@@ -17,7 +18,7 @@ use fleetd_contracts::work::{WorkMatch, WorkScope};
 
 use super::hooks::UsageGate;
 use super::ports::{
-    BoxFut, CmdOutput, LaunchRequest, PortError, TaskPorts, ThreadChanges, WakeKind,
+    BoxFut, BranchPrError, CmdOutput, LaunchRequest, PortError, TaskPorts, ThreadChanges, WakeKind,
 };
 use super::{TaskCaller, Tasks};
 use crate::hub::api::Hub;
@@ -93,12 +94,23 @@ impl TaskPorts for HubTaskPorts {
             };
             let workspace = match request.worktree {
                 None => None,
-                Some(w) => Some(SessionWorkspace::Worktree {
-                    base_ref: NonEmpty::new(w.base_ref)
-                        .map_err(|_| PortError::Failed("a worktree needs a base ref".into()))?,
-                    branch: NonEmpty::new(w.branch)
-                        .map_err(|_| PortError::Failed("a worktree needs a branch".into()))?,
-                }),
+                Some(w) => {
+                    let base_ref = NonEmpty::new(w.base_ref)
+                        .map_err(|_| PortError::Failed("a worktree needs a base ref".into()))?;
+                    Some(match w.branch {
+                        Some(branch) => SessionWorkspace::Worktree {
+                            base_ref,
+                            branch: NonEmpty::new(branch).map_err(|_| {
+                                PortError::Failed("a worktree needs a branch".into())
+                            })?,
+                            from_session: w.from,
+                        },
+                        None => SessionWorkspace::Detached {
+                            base_ref,
+                            pr: w.pr.and_then(|pr| NonEmpty::new(pr).ok()),
+                        },
+                    })
+                }
             };
             let options = LaunchOptions {
                 workspace,
@@ -167,6 +179,13 @@ impl TaskPorts for HubTaskPorts {
         self.hub()?.link.paused(machine_id)
     }
 
+    fn detached_worktrees(&self, machine_id: &MachineId) -> bool {
+        self.hub().is_some_and(|hub| {
+            hub.link
+                .node_can(machine_id, fleetd_contracts::node_link::CAP_DETACHED)
+        })
+    }
+
     fn action_texts<'a>(
         &'a self,
         thread: &'a ThreadRef,
@@ -190,7 +209,7 @@ impl TaskPorts for HubTaskPorts {
         &'a self,
         machine_id: &'a MachineId,
         cwd: &'a str,
-    ) -> BoxFut<'a, Result<String, PortError>> {
+    ) -> BoxFut<'a, Result<Option<String>, PortError>> {
         Box::pin(async move {
             self.executors
                 .default_branch(machine_id, cwd)
@@ -261,8 +280,53 @@ impl TaskPorts for HubTaskPorts {
         })
     }
 
+    fn pr_found(&self, task_id: &TaskId) {
+        let Some(hub) = self.hub() else { return };
+        let task_id = task_id.clone();
+        tokio::spawn(async move { hub.train.on_task_pr(task_id.as_str()).await });
+    }
+
     fn pending_question<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Option<String>> {
         Box::pin(async move { self.executors.pending_question(thread).await.ok().flatten() })
+    }
+
+    fn branch_pr<'a>(
+        &'a self,
+        remote: &'a str,
+        branch: &'a str,
+    ) -> BoxFut<'a, Result<Option<String>, BranchPrError>> {
+        use crate::hub::train::github::{GhErrorKind, Pull};
+        Box::pin(async move {
+            let repo = github_repo(remote).ok_or(BranchPrError::NoReader)?;
+            let hub = self
+                .hub()
+                .ok_or_else(|| BranchPrError::Unread("the hub is starting".into()))?;
+            let owner = repo.as_str().split('/').next().unwrap_or_default();
+            let path = format!(
+                "repos/{}/pulls?head={owner}:{branch}&state=all&per_page=10",
+                repo.as_str()
+            );
+            let answer = hub.train.github().get(&path).await.map_err(|e| {
+                tracing::warn!(remote, branch, error = %e.message, "tasks: branch PR not read");
+                match e.kind {
+                    GhErrorKind::Auth => BranchPrError::Refused("gh not logged in".into()),
+                    GhErrorKind::Missing => BranchPrError::Refused("gh not installed".into()),
+                    GhErrorKind::Failed => BranchPrError::Unread(e.message),
+                }
+            })?;
+            let value = answer.map_err(|(status, message)| {
+                tracing::warn!(remote, branch, status, %message, "tasks: branch PR not read");
+                super::pr::host_error(status, &message)
+            })?;
+            let pulls: Vec<Pull> = serde_json::from_value(value).map_err(|_| {
+                BranchPrError::Unread(format!("gh api {path} returned an unexpected shape"))
+            })?;
+            let pull = pulls
+                .iter()
+                .find(|p| p.state == "open")
+                .or_else(|| pulls.iter().find(|p| p.merged || p.merged_at.is_some()));
+            Ok(pull.map(|p| format!("https://github.com/{}/pull/{}", repo.as_str(), p.number)))
+        })
     }
 
     fn run_command<'a>(
@@ -311,6 +375,8 @@ impl TaskPorts for HubTaskPorts {
             WakeKind::TaskWaiting => LineKind::TaskWaiting,
             WakeKind::CapRaised => LineKind::CapRaised,
             WakeKind::Recovery => LineKind::Recovery,
+            WakeKind::RecoveryPaused => LineKind::RecoveryPaused,
+            WakeKind::Quiet => LineKind::Quiet,
         };
         hub.leads
             .wakes
@@ -318,7 +384,7 @@ impl TaskPorts for HubTaskPorts {
     }
 
     fn done_when_text(&self, brief: &Brief) -> String {
-        crate::hub::leads::digest::done_when_text(&brief.done_when, 200)
+        crate::hub::leads::digest::done_when_text(&brief.done_when, 2000)
     }
 }
 
@@ -484,6 +550,20 @@ pub fn wire(hub: &Arc<Hub>, ports: &HubTaskPorts) {
         run: Arc::new(move || {
             let result = tasks.unreachable().map_err(|e| e.to_string());
             Box::pin(async move { result })
+        }),
+    });
+    // Orphaned tasks, sessions nobody owns, and breakers whose quiet spell is over.
+    let tasks = Arc::downgrade(&hub.tasks);
+    hub.sweep.register(crate::hub::sweep::SweepCheck {
+        name: "tasks".into(),
+        run: Arc::new(move || {
+            let tasks = tasks.upgrade();
+            Box::pin(async move {
+                match tasks {
+                    Some(tasks) => tasks.sweep().await,
+                    None => Ok(()),
+                }
+            })
         }),
     });
 }

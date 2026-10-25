@@ -17,7 +17,7 @@ use crate::ledger::{
     WorkstreamId, WorkstreamState,
 };
 use crate::mcp::McpToolError;
-use crate::plan::{PlanCall, PlanItemId, PlanResult};
+use crate::memory::{MemoryReadCall, MemoryReadResult, RememberCall, RememberResult};
 use crate::prim::{Line, List, NonEmpty, Text};
 use crate::secrets::SecretSink;
 use crate::steer::SteerId;
@@ -151,8 +151,6 @@ pub struct TaskSpawnCall {
     pub profile: Option<TaskProfile>,
     pub pr: Option<PrUrl>,
     pub qa: Option<bool>,
-    /// `--item P<n>`: the plan item this task works on; refused when it belongs to another order.
-    pub item: Option<PlanItemId>,
     /// The files a writer will change, repo-relative (`app/theme.ts`, `app/settings/**`): matched against the work
     /// in flight.
     pub paths: Option<List<WorkPath, 1, SPAWN_PATHS_MAX>>,
@@ -224,8 +222,6 @@ pub struct ChangeEnqueueCall {
     pub task_id: Option<TaskId>,
     pub pr_url: GitHubPrUrl,
     pub workstream_id: Option<WorkstreamId>,
-    /// `--item P<n>`: stores the PR as a link of that plan item (for a PR no task of the item wrote).
-    pub item: Option<PlanItemId>,
 }
 
 /// A worker's question for its lead (the `ask_lead` MCP tool). The lead is woken with it and answers with
@@ -253,8 +249,9 @@ pub enum LeadCall {
     ReviewVerdict(ReviewVerdict),
     ChangeEnqueue(ChangeEnqueueCall),
     GatedRun(GatedRunCall),
-    Plan(PlanCall),
     AskLead(AskLeadCall),
+    Remember(RememberCall),
+    MemoryRead(MemoryReadCall),
 }
 
 #[skip_serializing_none]
@@ -359,8 +356,9 @@ pub enum LeadCallResult {
     ReviewVerdict(ReviewVerdictResult),
     ChangeEnqueue(ChangeResult),
     GatedRun(RequestResult),
-    Plan(PlanResult),
     AskLead(AskLeadResult),
+    Remember(RememberResult),
+    MemoryRead(MemoryReadResult),
 }
 
 /// CLI -> node on the local socket, and node -> hub on the link.

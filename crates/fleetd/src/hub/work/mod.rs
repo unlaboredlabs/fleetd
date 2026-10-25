@@ -151,15 +151,18 @@ impl Work {
         let _ = self.landings.set(landings);
     }
 
-    /// The scope's one landing whose sha starts with `sha`.
-    pub fn landing(
+    /// The scope's landings outside the train from the last `LANDINGS_SHOWN_MS`, newest first, at most `limit`; none
+    /// until the landing scanner is set.
+    pub fn outside_landings(
         &self,
         scope: &WorkScope,
-        sha: &str,
-    ) -> Result<Option<elsewhere::Landed>, StoreError> {
+        limit: usize,
+    ) -> Result<Vec<elsewhere::Landed>, StoreError> {
         match self.landings.get() {
-            Some(landings) => landings.find(scope, sha),
-            None => Ok(None),
+            Some(landings) => {
+                landings.outside(scope, self.now() - elsewhere::LANDINGS_SHOWN_MS, limit)
+            }
+            None => Ok(Vec::new()),
         }
     }
 
@@ -169,15 +172,8 @@ impl Work {
         let Some(scope) = self.scope_of(project)? else {
             return Ok(None);
         };
-        let landings = match self.landings.get() {
-            Some(landings) => landings.outside(
-                &scope,
-                self.now() - elsewhere::LANDINGS_SHOWN_MS,
-                elsewhere::LANDINGS_SHOWN,
-            )?,
-            None => Vec::new(),
-        };
-        let in_flight = view::items(&self.sources(&scope)?);
+        let landings = self.outside_landings(&scope, elsewhere::LANDINGS_SHOWN)?;
+        let in_flight = self.in_flight_stored(&scope)?;
         Ok(Some(elsewhere::lines(
             project, &scope, &in_flight, &landings,
         )))
@@ -620,6 +616,11 @@ impl Work {
             intent,
             scope,
         ))
+    }
+
+    /// `in_flight` from the hub alone: no node is asked what its writers changed, so a writer carries no paths.
+    pub fn in_flight_stored(&self, scope: &WorkScope) -> Result<Vec<WorkItem>, StoreError> {
+        Ok(view::items(&self.sources(scope)?))
     }
 
     fn sources(&self, scope: &WorkScope) -> Result<view::Sources, StoreError> {

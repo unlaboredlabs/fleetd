@@ -29,10 +29,9 @@ pub fn matcher_scope(scope: &WorkScope) -> Scope {
 }
 
 /// A declared key as the matcher keys it: issues and PRs by the ref they are written as (`#12`, `ABC-123`, or
-/// `owner/repo#12` in another repo), items and branches as they are.
+/// `owner/repo#12` in another repo), branches as they are.
 pub fn matcher_keys(key: &WorkKey, scope: &Scope) -> Vec<matcher::WorkKey> {
     match key {
-        WorkKey::Item(item) => vec![matcher::WorkKey::Item(item.as_str().to_owned())],
         WorkKey::Branch(branch) => vec![matcher::WorkKey::Branch(branch.as_str().to_owned())],
         WorkKey::Issue(text) => {
             let keys = matcher::keys_in(text.as_str(), scope);
@@ -74,7 +73,7 @@ fn candidate(item: &WorkItem, scope: &Scope) -> Candidate {
     Candidate {
         id: item.id.as_str().to_owned(),
         work,
-        weak_only: expired || item.kind == WorkItemKind::Planned,
+        weak_only: expired,
     }
 }
 

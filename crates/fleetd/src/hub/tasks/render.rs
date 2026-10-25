@@ -108,18 +108,18 @@ pub fn tail_of(text: &str, max: usize) -> String {
 }
 
 static PR_URL: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"https?://[^\s"'<>()]+?/(?:pull|pulls|merge_requests)/[0-9]+"#).unwrap()
+    Regex::new(
+        r#"https?://[^\s"'<>()]+?/(?:pull|pulls|pull-requests|pullrequest|merge_requests)/[0-9]+"#,
+    )
+    .unwrap()
 });
 
-/// The last pull or merge request URL in `texts`, read in order.
-pub fn find_pr_url<'a>(texts: impl IntoIterator<Item = &'a str>) -> Option<String> {
-    let mut found = None;
-    for text in texts {
-        for m in PR_URL.find_iter(text) {
-            found = Some(m.as_str().to_owned());
-        }
-    }
-    found
+/// Every pull or merge request URL in `texts`, read in order.
+pub fn pr_urls<'a>(texts: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+    texts
+        .into_iter()
+        .flat_map(|text| PR_URL.find_iter(text).map(|m| m.as_str().to_owned()))
+        .collect()
 }
 
 pub struct PromptInput<'a> {
@@ -127,13 +127,15 @@ pub struct PromptInput<'a> {
     pub project_title: &'a str,
     /// Absent while the workstream is a draft.
     pub brief: Option<&'a Brief>,
-    /// The brief's done-when lines as text (leads' `done_when_text` with max 200).
+    /// The brief's done-when lines as text, whole (leads' `done_when_text` with the lines' own max).
     pub done_when: Option<String>,
-    /// Write tasks: their branch and the branch it starts from.
+    /// Write tasks: their branch. Every task's worktree starts from the remote's copy of `base_branch`.
     pub branch: Option<&'a str>,
     pub base_branch: Option<&'a str>,
     /// Write tasks: the work in flight elsewhere they may overlap (`duplicates::for_writer`).
     pub elsewhere: &'a [String],
+    /// Write tasks: `user.md` and the project's `MEMORY.md` (`Memory::injected`), or empty.
+    pub memory: &'a str,
 }
 
 fn kind_str(kind: TaskKind) -> &'static str {
@@ -152,6 +154,28 @@ fn state_str(state: TaskState) -> &'static str {
         TaskState::Done => "done",
         TaskState::Failed => "failed",
         TaskState::Cancelled => "cancelled",
+    }
+}
+
+/// Where a read or review task works, for its brief's `{{workspace}}`: a worktree of its own when it has a base, else
+/// (a node older than detached worktrees, or a directory with no branch) the project's checkout, left as it is.
+fn workspace_line(kind: TaskKind, base_branch: Option<&str>) -> String {
+    let own = "You may build and run tests there; fleetd removes it when the task ends. Never work in the project's \
+               own checkout, which is the human's.";
+    match (kind, base_branch) {
+        (TaskKind::Review, Some(base)) => format!(
+            "Your current directory is a detached git worktree of your own, at the PR's head when fleetd could fetch \
+             it from the remote the PR belongs to, else at origin/{base}. Check with `git log -1` against the PR's \
+             head commit; if it isn't that, fetch the PR's head yourself and check it out in this worktree. \
+             origin/{base} is fresh, to diff against. {own}"
+        ),
+        (_, Some(base)) => format!(
+            "Your current directory is a detached git worktree of your own, at origin/{base} as fetched at your \
+             start. {own}"
+        ),
+        (_, None) => "Your current directory is the project's own checkout, which is the human's: read it as it \
+                      is, and never check out, build or write anything there."
+            .to_owned(),
     }
 }
 
@@ -200,14 +224,19 @@ pub fn render_task_prompt(set: &PromptSet, input: &PromptInput<'_>) -> String {
             "baseBranch",
             &input.base_branch.unwrap_or("<default branch>"),
         ),
+        ("workspace", &workspace_line(task.kind, input.base_branch)),
     ];
     let id = match task.kind {
         TaskKind::Write => "task.brief.write",
         TaskKind::Read => "task.brief.read",
         TaskKind::Review => "task.brief.review",
     };
-    let text = set.render(id, vars);
-    set.with_instructions(text)
+    let text = set.with_instructions(set.render(id, vars));
+    if input.memory.is_empty() {
+        text
+    } else {
+        format!("{text}\n\n{}", input.memory)
+    }
 }
 
 /// The lead's event line for a finished task: its whole result tail, inline. `escalated`: its run died and fleetd
@@ -287,8 +316,7 @@ pub fn task_recovered_lines(
         title: task.title.as_str(),
         place: &branch_place(task),
         attempt: task.attempt.get(),
-        recovery: recovery.count.get(),
-        max: recovery.max.get(),
+        used: &super::recovery::used(recovery),
         cause: recovery.last_cause_text.as_str(),
         doing,
         worktree: &worktree_words(task, rebuilt),
@@ -316,6 +344,20 @@ pub fn task_unreachable_lines(task: &Task, minutes: i64) -> String {
         place: &branch_place(task),
         machine: task.project_ref.machine_id.as_str(),
         minutes,
+    }
+    .render()
+}
+
+/// The lead's quiet line for a finished writer whose PR lookup the host refused.
+pub fn task_pr_skipped_lines(task_id: &str, why: &str) -> String {
+    Event::AgentPrSkipped { task: task_id, why }.render()
+}
+
+/// The lead's quiet line for a finished task's PR, found after its result line went out.
+pub fn task_pr_lines(task_id: &str, pr_url: &str) -> String {
+    Event::AgentPr {
+        task: task_id,
+        pr_url,
     }
     .render()
 }
@@ -360,11 +402,14 @@ pub fn task_digest_lines(
             .as_ref()
             .filter(|r| r.resumed_at.is_some())
             .map_or_else(String::new, |r| {
+                let how = match r.mode {
+                    fleetd_contracts::tasks::RecoveryMode::Fresh => "restarted fresh",
+                    _ => "resumed automatically",
+                };
                 format!(
-                    "; resumed automatically after {}, recovery {} of {}",
+                    "; {how} after {}, {}",
                     r.last_cause_text.as_str(),
-                    r.count.get(),
-                    r.max.get()
+                    super::recovery::used(r)
                 )
             });
         // Its machine is away: it resumes when that is back, so the lead needn't continue it either.
@@ -397,17 +442,28 @@ pub fn task_digest_lines(
             TaskState::Done | TaskState::Failed | TaskState::Cancelled
         ) && since.is_none_or(|s| t.ended_at.as_ref().map_or("", |e| e.as_str()) > s)
     }) {
-        let first = t.result.as_ref().map_or_else(String::new, |r| {
-            let tail = r.tail.as_str();
-            one_line(tail.strip_prefix('…').unwrap_or(tail), 160)
-        });
+        // A wake's event lines carry the result of a task that ended since the last one; only a lead's first message
+        // has no such line.
+        let first = t
+            .result
+            .as_ref()
+            .filter(|_| since.is_none())
+            .map_or_else(String::new, |r| {
+                let tail = r.tail.as_str();
+                one_line(tail.strip_prefix('…').unwrap_or(tail), 160)
+            });
         let arrow = if first.is_empty() {
             String::new()
         } else {
             format!(" → {first}")
         };
+        let pr = t
+            .result
+            .as_ref()
+            .and_then(|r| r.pr_url.as_ref())
+            .map_or_else(String::new, |p| format!(" [{}]", p.as_str()));
         out.push(format!(
-            "- {} {} since your last wake: {}{arrow}",
+            "- {} {} since your last wake: {}{pr}{arrow}",
             t.task_id,
             state_str(t.state),
             title(t)
@@ -434,6 +490,21 @@ mod tests {
              it died the same way twice."
         );
         assert!(task_result_lines("T23", "B", &result, false).starts_with("- T23 failed: B"));
+    }
+
+    #[test]
+    fn an_ended_tasks_result_shows_in_a_first_message_but_not_beside_its_wake_line() {
+        let task: Task = serde_json::from_value(serde_json::json!({
+            "taskId": "T4", "projectRef": { "machineId": "lab-a", "projectId": "p1" }, "workstreamId": "W1",
+            "title": "B", "kind": "write", "prompt": "do it", "state": "done", "attempt": 1,
+            "createdAt": "2026-10-25T09:00:00.000Z", "endedAt": "2026-10-25T10:00:00.000Z",
+            "result": { "status": "done", "tail": "Fixed it.", "at": "2026-10-25T10:00:00.000Z" },
+        }))
+        .unwrap();
+        let lines = |since| task_digest_lines(std::slice::from_ref(&task), since, "", &|_| None);
+        assert!(lines(None)[0].ends_with("→ Fixed it."), "{:?}", lines(None));
+        let wake = lines(Some("2026-10-25T09:30:00.000Z"));
+        assert!(wake[0].ends_with(": B"), "{wake:?}");
     }
 
     #[test]

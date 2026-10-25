@@ -10,7 +10,6 @@ use std::collections::HashSet;
 
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::mcp::ErrorCode;
-use fleetd_contracts::plan::PlanItemId;
 use fleetd_contracts::tasks::{PrUrl, TaskId};
 use fleetd_contracts::work::{
     ClaimOwnerKind, MatchStrength, WorkItem, WorkItemKind, WorkKey, WorkMatch, WorkScope,
@@ -31,22 +30,20 @@ pub const UNBOUND: &str = "no repo bound; duplicate check skipped";
 /// The spawn's note while its project's repo and base are still being read, in the background.
 pub const BINDING: &str = "no repo bound yet; duplicate check skipped";
 
-/// New work as the matcher reads it: held by its project, with its item and PR declared.
+/// New work as the matcher reads it: held by its project, with its PR declared.
 pub fn intent(
     project: &ProjectRef,
     scope: &WorkScope,
     title: &str,
     prompt: &str,
-    item: Option<&PlanItemId>,
     pr: Option<&PrUrl>,
     paths: impl IntoIterator<Item = String>,
 ) -> matcher::Work {
     let scope = matcher_scope(scope);
     let mut work = matcher::Work::read(Some(project_owner(project)), title, prompt, &scope);
-    let declared = item
-        .map(|i| WorkKey::Item(i.clone()))
+    let declared = pr
+        .map(|pr| WorkKey::Pr(pr.clone()))
         .into_iter()
-        .chain(pr.map(|pr| WorkKey::Pr(pr.clone())))
         .flat_map(|k| matcher_keys(&k, &scope));
     for key in declared {
         match work.keys.iter_mut().find(|k| k.key == key) {
@@ -65,7 +62,6 @@ pub fn spawn_intent(input: &SpawnInput, project: &ProjectRef, scope: &WorkScope)
         scope,
         input.title.as_str(),
         input.prompt.as_str(),
-        input.item.as_ref(),
         input.pr.as_ref(),
         input.paths.iter().flatten().map(|p| p.as_str().to_owned()),
     )

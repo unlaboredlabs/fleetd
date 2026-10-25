@@ -66,8 +66,8 @@ The lead is also told to:
   agent ahead of them. A part's docs and tests go to that part's writer, not to a writer of their own. Parts that edit the same file go to one writer. Writers run up to the
   [Max agents](/docs/projects#max-agents) cap; a spawn past it queues and starts by itself.
 - Read the digest's Elsewhere section before spawning: claims, other projects' agents on the same repo, and commits
-  that landed outside fleetd. Work that already landed has its plan items marked `covered` by that commit instead of
-  being built again, and work a person has claimed is theirs: the lead asks you in chat before touching it.
+  that landed outside fleetd. Work that already landed isn't built again, and work a person has claimed is theirs: the
+  lead asks you in chat before touching it.
 - Never relax a review, CI, approval or check to go faster. Idle is fine.
 
 Most of this is also enforced by the hub, which refuses a call that breaks it and says why. See [Safety rules](#safety).
@@ -75,7 +75,8 @@ Most of this is also enforced by the hub, which refuses a call that breaks it an
 ### Claude's auto memory is off {#auto-memory}
 
 Claude Code can keep its own notes per folder ("auto memory"). fleetd turns that off in every `claude` it starts, so
-what an agent knows comes from its brief, the decisions and your instructions, all of which you can read here.
+what an agent knows comes from its brief, the decisions, your instructions and fleetd's own [memory](#memory), all of
+which you can read here.
 
 ### Claude's own subagents are off {#no-subagents}
 
@@ -167,6 +168,23 @@ under "Custom instructions from the human". They are not added to wakes.
 They are sized for about 500 characters; past that, `edit` warns. After your editor closes, `edit` prints any
 warnings and asks `Save? [Y/n]` on the terminal. In a script, `</dev/null` takes the default, Yes.
 
+## Memory {#memory}
+
+Leads remember how you work and what each project decided, so you don't say "concise" or "no npm" twice. When you
+correct the lead or state a rule, it calls `remember` in that turn, and the chat shows "Remembered: …" with Undo.
+
+- **You** (`user.md`): how you work everywhere. Every project's lead and writers get it.
+- **Each project** (`MEMORY.md`, plus topic files for detail): only that project's sessions get it. Another project
+  never sees it.
+
+A lead gets `user.md` and its project's `MEMORY.md` at the start of each session, after your instructions; writers
+get them in their brief. A lead opens a topic file when it needs one. Something remembered mid-session reaches the
+next session.
+
+Read, edit or delete any of it in Settings → Memory. The files are plain markdown in the hub's home (`memory/`), in no
+repo. Each file has a cap (4,000 characters for `user.md` and `MEMORY.md`, 8,000 per topic, 32,000 per project): a
+write past one is refused, and the lead merges entries instead. Memory never holds a secret.
+
 ## When fleetd changes a default you edited {#updates}
 
 Your version stays in use.
@@ -218,7 +236,7 @@ wake.
 
 ```
 # project lab (devbox/lab), 2026-10-19T14:02:11.000Z
-agents: 3 running of 6, 1 queued
+agents: 3 running of 6 (auto: memory 18 GB), 1 queued
 
 ## Work
 - W2 running: flaky login test
@@ -241,7 +259,7 @@ agent whose run died (its node stopped, claude was killed, a stall) and that fle
 has been offline for 30 minutes:
 
 ```
-- T23 resumed automatically (attempt 2, recovery 1 of 3): progress bar [fleetd/T23-progress-bar]
+- T23 resumed automatically (attempt 2, 0 of 3 recoveries used): progress bar [fleetd/T23-progress-bar]
   > its run was cut off (the node on devbox stopped) during: Ran cargo test --workspace. It goes on in its own worktree; nothing for you to do.
 - T24 waits for devbox, offline for 30 min: docs [fleetd/T24-docs]; it resumes on its own when devbox is back
   > Its worktree and session are on devbox, so it stays there. To have it done elsewhere, cancel it and start a new task.
@@ -252,6 +270,19 @@ When the node had to rebuild a resumed agent's worktree, the line says what from
 
 One that fleetd did not resume wakes the lead: `- T23 failed and was not resumed: …`, with why (it died the same way
 twice, it ran out of automatic recoveries, or resuming can't fix the cause) and the lead's choices.
+
+### This machine {#this-machine}
+
+The node that starts a task adds a short section to the end of its brief, after your instructions:
+
+```
+## This machine
+- Builds get 2 parallel jobs per agent, your share of this machine's CPUs: CARGO_BUILD_JOBS, MAKEFLAGS, CMAKE_BUILD_PARALLEL_LEVEL, GOFLAGS are set to it. Keep any other build or test runner to 2 jobs too.
+- Scratch files go in $TMPDIR, a directory of your own on disk; never in /tmp, which may be held in memory.
+```
+
+The jobs line names only the variables fleetd set: one you set in `claude.env` stands, and drops out of the line. See
+[A fair share for each agent](/docs/machines#fair-share).
 
 ### Tool texts {#tool-texts}
 
@@ -283,6 +314,7 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 | `task.brief.write` | every write task attempt | never merges; the train does (prompt only) |
 | `task.brief.read` | every read task attempt | changes no files (prompt only) |
 | `task.brief.review` | every attempt of a review task the lead spawns (the train's reviews use Reviewer) | changes no files (prompt only); ends with one review verdict (the \`report\` tool) |
+| `task.handoff` | after the task's brief, when fleetd restarts an agent in a new thread (its context filled up again, or its thread could not resume) |  |
 
 ### Reviews and checks
 

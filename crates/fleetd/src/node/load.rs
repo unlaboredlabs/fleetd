@@ -142,11 +142,22 @@ fn memory() -> Option<Memory> {
     if cfg!(target_os = "linux") {
         parse_meminfo(&std::fs::read_to_string("/proc/meminfo").ok()?)
     } else {
-        // Fixed while the machine is up, so asked once.
-        static TOTAL: OnceLock<Option<u64>> = OnceLock::new();
-        let total =
-            (*TOTAL.get_or_init(|| output("sysctl", &["-n", "hw.memsize"])?.trim().parse().ok()))?;
-        parse_vm_stat(&output("vm_stat", &[])?, total)
+        parse_vm_stat(&output("vm_stat", &[])?, macos_total()?)
+    }
+}
+
+/// `sysctl -n hw.memsize`: fixed while the machine is up, so asked once.
+fn macos_total() -> Option<u64> {
+    static TOTAL: OnceLock<Option<u64>> = OnceLock::new();
+    *TOTAL.get_or_init(|| output("sysctl", &["-n", "hw.memsize"])?.trim().parse().ok())
+}
+
+/// Physical memory in bytes.
+fn mem_total() -> Option<u64> {
+    if cfg!(target_os = "linux") {
+        memory().map(|m| m.total)
+    } else {
+        macos_total()
     }
 }
 
@@ -155,6 +166,34 @@ pub fn per_agent_bytes(gb: Option<u64>, default_gb: u64) -> u64 {
     gb.filter(|&gb| gb > 0)
         .unwrap_or(default_gb)
         .saturating_mul(1_000_000_000)
+}
+
+/// The agents this machine fits by its own measure, as the hub sizes its cap (5-throughput §1): one per CPU less a
+/// reserve of one in eight, and the memory left after a quarter of it (4 to 16 GB) at `mem_per_agent` bytes each, at
+/// most 64. An unknown total counts as 4 on memory, as the hub counts it.
+pub fn agents_fit(cpus: u64, mem_total: Option<u64>, mem_per_agent: u64) -> u64 {
+    const GIB: u64 = 1 << 30;
+    let cpu_term = cpus.saturating_sub(cpus.div_ceil(8)).max(1);
+    let mem_term = mem_total.map_or(4, |total| {
+        // As sold: a 32 GB machine whose kernel reports 31.3 counts as 32.
+        let total = total.div_ceil(GIB) as f64;
+        let reserve = (total / 4.0).clamp(4.0, 16.0);
+        (((total - reserve).max(0.0) / (mem_per_agent.max(1) as f64 / 1e9)).floor() as u64).max(1)
+    });
+    cpu_term.min(mem_term).min(64)
+}
+
+/// Parallel build jobs for each agent: its share of the CPUs when the machine runs all the agents it fits, at least 2.
+pub fn build_jobs(cpus: u64, agents: u64) -> u64 {
+    (cpus / agents.max(1)).max(2)
+}
+
+/// [`build_jobs`] for this machine now, with node.json's `memPerAgentGb`. Blocking on macOS (`sysctl` once).
+pub fn build_jobs_here(home: &Path) -> u64 {
+    let cpus = std::thread::available_parallelism().map_or(1, |n| n.get() as u64);
+    let config = super::config::read_config(home).ok().flatten();
+    let per_agent = per_agent_bytes(config.and_then(|c| c.mem_per_agent_gb), MEM_PER_AGENT_GB);
+    build_jobs(cpus, agents_fit(cpus, mem_total(), per_agent))
 }
 
 fn count(n: u64) -> Option<Count> {
@@ -213,6 +252,8 @@ pub fn read(limits: Vec<LoginLimit>, home: &Path) -> Option<NodeLoad> {
         )),
         limits: List::unchecked(limits.into_iter().take(4).collect()),
         disk: disk(home, setting(|c| c.min_free_gb)),
+        // The session service's, added by the heartbeat.
+        project_memory: None,
     })
 }
 
@@ -301,6 +342,41 @@ Pages occupied by compressor:            273395.
         assert_eq!(per_agent_bytes(None, DISK_PER_AGENT_GB), 5_000_000_000);
         assert_eq!(per_agent_bytes(Some(3), MEM_PER_AGENT_GB), 3_000_000_000);
         assert_eq!(per_agent_bytes(Some(0), DISK_PER_AGENT_GB), 5_000_000_000);
+    }
+
+    /// The design's example machines, and the one of 08:39: 20 agents at once on 32 cores and 59 GB.
+    #[test]
+    fn each_agent_builds_with_its_share_of_the_cpus_and_never_fewer_than_2_jobs() {
+        const GB: u64 = 1 << 30;
+        let jobs = |cpus, gb: Option<u64>| {
+            build_jobs(cpus, agents_fit(cpus, gb.map(|g| g * GB), 2_000_000_000))
+        };
+        // 32 threads, 59 GB: (59 − 14.75) / 2 = 22 agents under 28 CPUs; 32 / 22 rounds down to 1, so 2.
+        assert_eq!(agents_fit(32, Some(59 * GB), 2_000_000_000), 22);
+        assert_eq!(jobs(32, Some(59)), 2);
+        // MacBook Air, 8 CPUs, 8 GB: 2 agents, 4 jobs each.
+        assert_eq!(agents_fit(8, Some(8 * GB), 2_000_000_000), 2);
+        assert_eq!(jobs(8, Some(8)), 4);
+        // Workstation, 32 threads, 128 GB: 28 on CPU.
+        assert_eq!(agents_fit(32, Some(128 * GB), 2_000_000_000), 28);
+        // 128 threads, 512 GB: the top of 64, 2 jobs each.
+        assert_eq!(agents_fit(128, Some(512 * GB), 2_000_000_000), 64);
+        assert_eq!(jobs(128, Some(512)), 2);
+        // 64 threads on a 16 GB box: 6 agents, 10 jobs each.
+        assert_eq!(jobs(64, Some(16)), 10);
+        // Small VM, 2 vCPUs, 4 GB: 1 agent, still 2 jobs.
+        assert_eq!(jobs(2, Some(4)), 2);
+        // Memory unknown counts 4 agents.
+        assert_eq!(jobs(16, None), 4);
+        // 4 GB per agent halves the agents and doubles the jobs.
+        assert_eq!(
+            build_jobs(16, agents_fit(16, Some(32 * GB), 4_000_000_000)),
+            2
+        );
+        assert_eq!(
+            build_jobs(16, agents_fit(16, Some(16 * GB), 4_000_000_000)),
+            5
+        );
     }
 
     #[test]

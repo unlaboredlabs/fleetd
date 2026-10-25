@@ -144,8 +144,6 @@ pub struct Steer {
     pub acked_at: Option<Timestamp>,
     /// Acknowledged: the agent's reply, first 200 characters.
     pub ack_excerpt: Option<Text<0, 200>>,
-    /// A plan change the steer made, e.g. "−1 item".
-    pub plan_change: Option<Text<0, 200>>,
     /// Plain words on the stage: "waiting for lab-b (until 14:30)", "held: usage resets 14:00", the failure, or
     /// "sent (node older than 0.9)" when the node cannot report receipts.
     pub detail: Option<Text<0, 400>>,

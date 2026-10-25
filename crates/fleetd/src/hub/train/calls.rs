@@ -32,26 +32,9 @@ pub fn register_lead_calls(hub: &Arc<Hub>) {
                     next: Some(next),
                 };
                 match call {
-                    LeadCall::ChangeEnqueue(input) => {
-                        let item = input.item.clone();
-                        if let Some(item) = &item {
-                            hub.plans.check_item(r, item).map_err(|e| e.0)?;
-                        }
-                        let enqueued = change_enqueue(&hub.train, r, input).await;
-                        enqueued.map(|(change, mut next)| {
-                            if let Some(item) = &item
-                                && let Err(e) = hub.plans.link_pr(
-                                    r,
-                                    item,
-                                    &change.workstream_id,
-                                    &change.pr_url,
-                                )
-                            {
-                                next = format!("{next} Not linked to {item}: {}", e.0.message);
-                            }
-                            LeadCallResult::ChangeEnqueue(result((change, next)))
-                        })
-                    }
+                    LeadCall::ChangeEnqueue(input) => change_enqueue(&hub.train, r, input)
+                        .await
+                        .map(|done| LeadCallResult::ChangeEnqueue(result(done))),
                     other => Err(TrainError {
                         code: "invalid",
                         message: format!(
@@ -109,7 +92,6 @@ pub async fn slice_ready(
         task_id: Some(task_id.clone()),
         pr_url,
         workstream_id: None,
-        item: None,
     };
     train.enqueue(project_ref, input).await
 }
@@ -118,6 +100,10 @@ pub async fn slice_ready(
 pub fn change_next(change: &Change) -> String {
     match change.state {
         ChangeState::Merged => "nothing; it is merged.".into(),
+        ChangeState::CiFailed if super::service::timed_out(change) => format!(
+            "nothing: its CI timed out, and {}.",
+            super::service::CI_WATCHED
+        ),
         ChangeState::NeedsRebase | ChangeState::CiFailed => format!(
             "nothing unless its author is gone: the train told {} what to fix, and it retries the new head by itself.",
             change.task_id.as_ref().map_or("you", |t| t.as_str())

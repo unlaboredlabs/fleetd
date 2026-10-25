@@ -19,20 +19,23 @@ pub enum Ended {
     Cancelled,
 }
 
-/// The project's agents against its cap, the second line of every state block.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The project's agents against its cap, the second line of every state block: "agents: 4 running of 6 (auto:
+/// memory 18 GB), 2 queued".
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentsLine {
     pub running: i64,
     pub cap: i64,
     pub queued: i64,
+    /// Where the cap comes from: "auto: memory 18 GB", "max agents set", "machine cap set".
+    pub source: String,
 }
 
 impl Display for AgentsLine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "agents: {} running of {}, {} queued",
-            self.running, self.cap, self.queued
+            "agents: {} running of {} ({}), {} queued",
+            self.running, self.cap, self.source, self.queued
         )
     }
 }
@@ -62,8 +65,8 @@ pub enum Event<'a> {
         title: &'a str,
         place: &'a str,
         attempt: i64,
-        recovery: i64,
-        max: i64,
+        /// "1 of 3 recoveries used": a node going away uses none.
+        used: &'a str,
         cause: &'a str,
         doing: &'a str,
         worktree: &'a str,
@@ -88,6 +91,10 @@ pub enum Event<'a> {
         title: &'a str,
         question: &'a str,
     },
+    /// A finished writer's PR, found after its result line went out (D67: looked up once the task ends).
+    AgentPr { task: &'a str, pr_url: &'a str },
+    /// A finished writer's PR lookup ended without one: the host refused it (D130).
+    AgentPrSkipped { task: &'a str, why: &'a str },
     /// A person steered a task directly, past the lead.
     AgentSteered {
         task: &'a str,
@@ -212,14 +219,13 @@ impl Event<'_> {
                 title,
                 place,
                 attempt,
-                recovery,
-                max,
+                used,
                 cause,
                 doing,
                 worktree,
             } => (
                 format!(
-                    "- {task} resumed automatically (attempt {attempt}, recovery {recovery} of {max}): {}{place}",
+                    "- {task} resumed automatically (attempt {attempt}, {used}): {}{place}",
                     one_line(title, 80)
                 ),
                 vec![format!(
@@ -262,6 +268,11 @@ impl Event<'_> {
             } => (
                 format!("- {task} waiting for an answer: {}", one_line(title, 80)),
                 body(question),
+            ),
+            Event::AgentPr { task, pr_url } => (format!("- {task}'s PR: {pr_url}"), vec![]),
+            Event::AgentPrSkipped { task, why } => (
+                format!("- {task}: PR lookup skipped: {}", one_line(why, 200)),
+                vec![],
             ),
             Event::AgentSteered {
                 task,
@@ -402,15 +413,14 @@ mod tests {
                 title: "B: progress bar takes in-flight credit back",
                 place: " [fleetd/T23-b-progress-bar]",
                 attempt: 2,
-                recovery: 1,
-                max: 3,
+                used: "1 of 3 recoveries used",
                 cause: "the node on devbox stopped",
                 doing: "Ran cargo test --workspace",
                 worktree: "It goes on in its own worktree; nothing for you to do.",
             }),
-            "- T23 resumed automatically (attempt 2, recovery 1 of 3): B: progress bar takes in-flight credit back \
-             [fleetd/T23-b-progress-bar]\n  > its run was cut off (the node on devbox stopped) during: Ran cargo test \
-             --workspace. It goes on in its own worktree; nothing for you to do."
+            "- T23 resumed automatically (attempt 2, 1 of 3 recoveries used): B: progress bar takes in-flight credit \
+             back [fleetd/T23-b-progress-bar]\n  > its run was cut off (the node on devbox stopped) during: Ran cargo \
+             test --workspace. It goes on in its own worktree; nothing for you to do."
         );
         assert_eq!(
             r(Event::AgentUnreachable {

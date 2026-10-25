@@ -30,8 +30,6 @@ pub const WEAK_SHARED: usize = 2;
 /// An id that names one piece of work.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum WorkKey {
-    /// A plan item: `P5`.
-    Item(String),
     /// An issue, PR or merge request: `#12` or `!12` in the scope's repo, `ABC-123` in a tracker, or
     /// `owner/repo#12` in another repo.
     Ref(String),
@@ -41,7 +39,6 @@ pub enum WorkKey {
 impl std::fmt::Display for WorkKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            WorkKey::Item(id) => write!(f, "item {id}"),
             WorkKey::Ref(r) => f.write_str(r),
             WorkKey::Branch(b) => write!(f, "branch {b}"),
         }
@@ -120,10 +117,10 @@ impl Work {
 
 #[derive(Debug, Clone)]
 pub struct Candidate {
-    /// `T12`, `C7`, `X4`, `owner/repo#57`, `P5`: what the caller shows and what `notDuplicateOf` names.
+    /// `T12`, `C7`, `X4`, `owner/repo#57`: what the caller shows and what `notDuplicateOf` names.
     pub id: String,
     pub work: Work,
-    /// Planned items and expired claims: listed at most, whatever they match.
+    /// Expired claims: listed at most, whatever they match.
     pub weak_only: bool,
 }
 
@@ -371,8 +368,7 @@ const NOT_TICKETS: &[&str] = &[
     "MD", "MP", "PEP", "RFC", "RSA", "SHA", "SSL", "TLS", "UCS", "UTF", "WCAG",
 ];
 
-/// The issue, PR and tracker keys written in `text`. Plan item ids aren't read from text ("P1" is as often a
-/// priority); callers declare them.
+/// The issue, PR and tracker keys written in `text`. "P1" is not one: it is as often a priority.
 pub fn keys_in(text: &str, scope: &Scope) -> Vec<WorkKey> {
     let mut keys = Vec::new();
     for url in URL.find_iter(text) {

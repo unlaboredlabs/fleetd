@@ -8,6 +8,7 @@ use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadId, ThreadRe
 use fleetd_contracts::ledger::{Brief, Workstream, WorkstreamId};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::sessions::WorktreeBase;
+use fleetd_contracts::tasks::TaskId;
 use fleetd_contracts::work::{WorkMatch, WorkScope};
 
 use crate::hub::store::StoreError;
@@ -49,14 +50,19 @@ pub struct LaunchRequest {
     pub profile: TaskProfile,
     pub title: String,
     pub client_request_id: String,
-    /// Write tasks: `{ type: "worktree", baseRef, branch }`.
+    /// Write tasks: `{ type: "worktree", baseRef, branch }`; read and review tasks: `{ type: "detached", baseRef, pr }`.
     pub worktree: Option<Worktree>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Worktree {
     pub base_ref: String,
-    pub branch: String,
+    /// None: a detached worktree, for a read or review task.
+    pub branch: Option<String>,
+    /// A review's PR, whose head its detached worktree is at.
+    pub pr: Option<String>,
+    /// The task's earlier thread, whose worktree a fresh restart takes over.
+    pub from: Option<ThreadId>,
 }
 
 /// What a finished task thread changed.
@@ -70,6 +76,18 @@ pub struct ThreadChanges {
 
 /// A rebuild of a thread's worktree: its source, and when the node did it.
 pub type Rebuilt = (fleetd_contracts::sessions::WorktreeSource, Option<String>);
+
+/// Why the host gave no answer for a branch's PR.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BranchPrError {
+    /// It couldn't be reached now (network, timeout, a 5xx, a rate limit): ask again later.
+    Unread(String),
+    /// It refused, and asking again won't change that (gh not logged in or missing, a 404): the lookup ends, and the
+    /// lead is told why.
+    Refused(String),
+    /// fleetd has no reader for the host.
+    NoReader,
+}
 
 /// A node command's result (`cmd_result`).
 #[derive(Clone, Debug)]
@@ -86,6 +104,10 @@ pub enum WakeKind {
     CapRaised,
     /// A dead task resumed, or one waits for its offline machine: in the lead's next wake, never one alone.
     Recovery,
+    /// Agents on a machine kept dying, so their resumes there wait (`tasks::breaker`): once per lead.
+    RecoveryPaused,
+    /// Wakes nobody: goes with the lead's next wake.
+    Quiet,
 }
 
 pub trait TaskPorts: Send + Sync {
@@ -133,20 +155,31 @@ pub trait TaskPorts: Send + Sync {
     fn remove_worktree<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Result<(), PortError>>;
     /// NodeLinkServer.paused: why the disk and load guard holds new agents on the machine.
     fn paused(&self, machine_id: &MachineId) -> Option<String>;
+    /// NodeLinkServer.node_can(CAP_DETACHED): the machine's node runs read and review tasks in worktrees of their own.
+    fn detached_worktrees(&self, machine_id: &MachineId) -> bool;
     /// Executors.actions(ref, limit): each action's summary and output tail, newest first; empty when unreadable.
     fn action_texts<'a>(
         &'a self,
         thread: &'a ThreadRef,
         limit: usize,
     ) -> BoxFut<'a, Vec<(String, Option<String>)>>;
-    /// ThreadWorkspace.defaultBranch.
+    /// ThreadWorkspace.defaultBranch; `None` when `cwd` has no branch with a commit (not a checkout, or a new repo).
     fn default_branch<'a>(
         &'a self,
         machine_id: &'a MachineId,
         cwd: &'a str,
-    ) -> BoxFut<'a, Result<String, PortError>>;
+    ) -> BoxFut<'a, Result<Option<String>, PortError>>;
     /// ThreadWorkspace.changes; `None` when the node could not say.
     fn changes<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Option<ThreadChanges>>;
+    /// The open, else merged, PR whose head is `branch` in the repo at `remote` (the project's `origin`, shortened:
+    /// "github.com/acme/shop"), read through the train's GitHub reader. `Ok(None)` when the branch has none.
+    fn branch_pr<'a>(
+        &'a self,
+        remote: &'a str,
+        branch: &'a str,
+    ) -> BoxFut<'a, Result<Option<String>, BranchPrError>>;
+    /// Train.on_task_pr: a finished task's PR was set after its `task.completed`; the train queues it as the task's.
+    fn pr_found(&self, task_id: &TaskId);
     /// ThreadWorkspace.pendingQuestion; `None` when there is none or the node could not say.
     fn pending_question<'a>(&'a self, thread: &'a ThreadRef) -> BoxFut<'a, Option<String>>;
     /// NodeCommands.run (cmd_check); `None` when the node could not run it.

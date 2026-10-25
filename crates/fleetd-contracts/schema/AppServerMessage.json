@@ -509,6 +509,16 @@
           "type": "string"
         },
         {
+          "const": "machine.recovery_paused",
+          "description": "Agents on the machine kept dying (claude exited, or stalled), so fleetd stopped resuming them there, or\nresumes them again; `data` is `RecoveryPausedData`, and the summary says why.",
+          "type": "string"
+        },
+        {
+          "const": "thread.orphaned",
+          "description": "The machine's node runs a session no task or lead of this hub owns; `data` is `ThreadOrphanedData`.",
+          "type": "string"
+        },
+        {
           "const": "project.removed",
           "description": "The node no longer has the project: the hub dropped it from its cache, and its open workstreams stop. `data.title`.",
           "type": "string"
@@ -685,12 +695,12 @@
         },
         {
           "const": "plan.changed",
-          "description": "A plan's scope changed and a marker was written; `data` is the `PlanChange` (`status::PlanChangedData`).",
+          "description": "No longer sent (plans were removed); kept so an older log still reads.",
           "type": "string"
         },
         {
           "const": "plan.verified",
-          "description": "The hub verified a plan item done; `data.itemId`, `data.milestoneId`, `data.workstreamId`, `data.evidence`.",
+          "description": "No longer sent (plans were removed); kept so an older log still reads.",
           "type": "string"
         },
         {
@@ -746,6 +756,11 @@
         {
           "const": "work.landed",
           "description": "A commit reached a watched base, by the train, a PR merged outside it or a direct push; `data` is\n`work::WorkLandedData`.",
+          "type": "string"
+        },
+        {
+          "const": "memory.changed",
+          "description": "A memory file changed (a lead's `remember`, an Undo, an edit in the app): `data.scope`, `data.projectRef`\n(project scope), `data.topic`, `data.by`. The text is not in the event; memory_get reads it.",
           "type": "string"
         }
       ],
@@ -1095,6 +1110,14 @@
           "minimum": 0,
           "type": "integer"
         },
+        "projectMemory": {
+          "description": "What each project's agents have taken in memory here, for projects with a session measured. Absent from older\nnodes.",
+          "items": {
+            "$ref": "#/$defs/ProjectMemory"
+          },
+          "maxItems": 256,
+          "type": "array"
+        },
         "swapUsedPct": {
           "description": "Swap in use, percent. Linux only; absent without swap and from older nodes.",
           "maximum": 100,
@@ -1166,6 +1189,32 @@
     },
     "ProjectId": {
       "type": "string"
+    },
+    "ProjectMemory": {
+      "description": "One project's agents' memory on a machine: each session's peak resident memory, its whole process tree counted,\nover the project's latest sessions there.",
+      "properties": {
+        "p90Bytes": {
+          "description": "The 90th percentile of their peaks.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "samples": {
+          "description": "Sessions measured: the latest 20 at most.",
+          "maximum": 20,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "projectId",
+        "samples",
+        "p90Bytes"
+      ],
+      "type": "object"
     },
     "ProjectRef": {
       "properties": {
@@ -1251,10 +1300,24 @@
     "SlotState": {
       "properties": {
         "cap": {
-          "description": "The fleet cap: agents running at once across every project.",
+          "description": "Agents running at once across every project: `fleetCap` when set, else the sum of the machines' caps.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
+        },
+        "fleetCap": {
+          "description": "The fleet cap a person (or an older hub) saved; absent: none beyond the machines' own caps.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "perMachine": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SlotStatePerMachine"
+          },
+          "maxItems": 50,
+          "type": "array"
         },
         "perProject": {
           "items": {
@@ -1282,10 +1345,56 @@
       ],
       "type": "object"
     },
+    "SlotStatePerMachine": {
+      "description": "One machine's share of the board: what it fits, and what runs there.",
+      "properties": {
+        "auto": {
+          "description": "What the machine fits: one agent per CPU less a reserve, and 2 GB of memory each after the OS's share, at\nmost 64.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "cap": {
+          "description": "The most agents that run on it at once: a person's setting for the machine, else `auto`.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "diskRoom": {
+          "description": "New agents its free disk has room for now, above the guard's floor; absent while the node reports no disk.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "running": {
+          "description": "Agents running there now.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "why": {
+          "description": "The term that sets `auto`, e.g. \"memory 18 GB\" or \"14 of 16 CPUs\".",
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "machineId",
+        "cap",
+        "auto",
+        "why",
+        "running"
+      ],
+      "type": "object"
+    },
     "SlotStatePerProject": {
       "properties": {
         "maxAgents": {
-          "description": "The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead is not\none. The fleet `cap` until set.",
+          "description": "The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead is not\none. Its machine's `cap` until set.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"

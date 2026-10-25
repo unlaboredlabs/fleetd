@@ -3,66 +3,24 @@
 // (the follow rule is T3 Code's: apps/web MessagesTimeline.logic.ts). Scrolling to the top loads older pages; the
 // list keeps its place while they arrive above. Scrolled up, a button counts what arrived below and goes back to it.
 import type { Virtualizer } from "@tanstack/react-virtual";
-import { Paperclip } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import type { AttachmentRef } from "../../../shared/contracts";
-import { Button, cx, Text, Truncate, VirtualList } from "../../ui";
-import { useData, useToolQuery } from "../../src/data/react";
+import { Button, cx, Text, VirtualList } from "../../ui";
+import { useData } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
 import { leadActivity, leadTurnSince, leadTurnUntil, turnLine } from "./activity";
-import { fmtBytes } from "./attachments";
 import type { ChatItem } from "../../src/data/chat";
 
 import { shortClock } from "./format";
-import { authorLabel, latestLabel, newestKey, type Row, type TopState } from "./model";
-import { MessageReceipt } from "./Composer";
+import { latestLabel, newestKey, type Row, type TopState } from "./model";
+import { MessageView } from "./Bubble";
+import { RememberedUndo } from "./Remembered";
 import { LiveStrip, useNow, useOnScreen } from "../live";
 import { Boundary } from "../../src/Boundary";
 import type { ChatItem as InlineItem } from "../../../shared/contracts";
 import { InlineChatItem } from "../inline";
 import type { ProjectRef } from "./slots";
-import { InlineText, Message } from "./text";
+import { InlineText } from "./text";
 import s from "./view.module.css";
-
-/**
- * An attachment as a chip. The chat contract carries only its id (no name, type or size yet), so it reads
- * "Attachment n" with the id behind copy, never as text.
- */
-function FileChip({ file }: { file: AttachmentRef }) {
-  return (
-    <span className={s.attachment}>
-      <Paperclip className={s.attachmentIcon} aria-hidden />
-      {/* A file name is a machine token (pasted-1.txt, receipt-dates.png): the code voice, cut to fit. */}
-      <span className={s.attachmentName} data-text="code">
-        <Truncate size="sm" mono>
-          {file.name}
-        </Truncate>
-      </span>
-      <Text size="xs" tone="quiet" tabular>
-        {fmtBytes(file.bytes)}
-      </Text>
-    </span>
-  );
-}
-
-// An image shows itself, fetched once its row is on screen (the list only mounts visible rows). Until then, and
-// if it can't be read, it is a file like any other.
-function ImageAttachment({ project, file }: { project: ProjectRef; file: AttachmentRef }) {
-  const got = useToolQuery("attachment_get", { projectRef: project, attachmentId: file.attachmentId });
-  if (got.data === undefined) return <FileChip file={file} />;
-  return (
-    <img
-      className={s.attachmentImage}
-      src={`data:${got.data.mime};base64,${got.data.dataB64}`}
-      alt={file.name}
-      title={file.name}
-    />
-  );
-}
-
-function Attachment({ project, file }: { project: ProjectRef; file: AttachmentRef }) {
-  return file.mime.startsWith("image/") ? <ImageAttachment project={project} file={file} /> : <FileChip file={file} />;
-}
 
 function Top({ state, onLoadOlder }: { state: TopState; onLoadOlder: () => void }) {
   // Reaching the top of what is loaded asks for the page before it.
@@ -192,6 +150,7 @@ const RowView = memo(function RowView(props: {
       return (
         <div className={cx(s.quietRow, s.event)} data-entry="event">
           <InlineText size="xs" tone="quiet" text={r.item.text} project={project} />
+          {r.item.message ? <RememberedUndo project={project} message={r.item.message} /> : null}
           <span className={s.eventTime}>{shortClock(r.item.at)}</span>
         </div>
       );
@@ -211,44 +170,16 @@ const RowView = memo(function RowView(props: {
           </Boundary>
         </div>
       );
-    case "message": {
-      const i = r.item;
+    case "time":
       return (
-        <div
-          className={cx(s.message, r.run && s.messageHead, (r.history || i.author === "agent") && s.quietMessage, i.author === "human" && s.mine)}
-          data-entry="message"
-          data-author={i.author}
-          title={i.author === "human" ? shortClock(i.at) : undefined}
-        >
-          {r.head ? (
-            <div className={s.head}>
-              <Text size="xs" strong>
-                {authorLabel(i)}
-              </Text>
-              <Text size="xs" tone="quiet" tabular>
-                {shortClock(i.at)}
-              </Text>
-            </div>
-          ) : null}
-          {i.text.trim() !== "" ? <Message text={i.text} project={project} /> : null}
-          {i.attachments.length > 0 ? (
-            <div className={s.attachments}>
-              {i.attachments.map((a) => (
-                <Attachment key={a.attachmentId} project={project} file={a} />
-              ))}
-            </div>
-          ) : null}
-          {i.state === "streaming" ? (
-            <Text size="xs" tone="quiet">
-              Still writing…
-            </Text>
-          ) : null}
-          {i.author === "human" ? (
-            <MessageReceipt project={project} item={i} latest={props.mineLatest} />
-          ) : null}
+        <div className={s.clock} role="separator">
+          <Text size="xs" tone="quiet" tabular>
+            {r.label}
+          </Text>
         </div>
       );
-    }
+    case "message":
+      return <MessageView row={r} mineLatest={props.mineLatest} />;
   }
 });
 

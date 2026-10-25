@@ -627,6 +627,8 @@ export type ChatMessage = {
    */
   parts?: ChatPart[];
   projectRef: ProjectRef;
+  /** A system line "Remembered: …": what the lead's `remember` wrote, which `memory_undo` takes back. */
+  remembered?: RememberedItem;
   seq: number;
   state: ChatMessageState;
   /** Markdown. Empty while a streamed message has no text yet, and for an inline `item`. */
@@ -1075,10 +1077,6 @@ export type DoctorScope = "hub" | "machine";
 /** `unknown`: the hub could not look (machine offline, nothing to read). */
 export type DoctorStatus = "ok" | "warn" | "fail" | "unknown";
 
-export type KnownDropReason = "scope_change" | "review_failed" | "ci_failed" | "reopened" | "work_stopped";
-/** KnownDropReason, or a value from a newer hub. */
-export type DropReason = KnownDropReason | (string & {});
-
 /** The `--effort` claude runs at. Only [`TaskProfile`] picks one; nothing takes an effort as input. */
 export type Effort = "low" | "medium" | "high" | "max";
 
@@ -1279,6 +1277,8 @@ export type KnownHubEventType =
   | "steer.withdrawn"
   | "machine.slept"
   | "machine.guard"
+  | "machine.recovery_paused"
+  | "thread.orphaned"
   | "project.removed"
   | "project.added"
   | "project.clone_progress"
@@ -1326,7 +1326,8 @@ export type KnownHubEventType =
   | "repo.advanced"
   | "work.claimed"
   | "work.ended"
-  | "work.landed";
+  | "work.landed"
+  | "memory.changed";
 /** KnownHubEventType, or a value from a newer hub. */
 export type HubEventType = KnownHubEventType | (string & {});
 
@@ -1648,18 +1649,77 @@ export type MachineSleptData = {
 
 export type MachineStatus = "online" | "offline" | "degraded";
 
-/** A change to a figure's denominator, shown next to it. */
-export type Marker = {
+/** How sure the matcher is that new work repeats a piece in flight. */
+export type MatchStrength = "weak" | "strong" | "exact";
+
+export type MemoryFile = {
+  cap: number;
+  chars: number;
+  /** Newest first. */
+  notes: MemoryNote[];
+  scope: MemoryScope;
+  text: string;
+  /** A project's topic file; absent for `user.md` and `MEMORY.md`. */
+  topic?: MemoryTopic;
+  updatedAt?: Timestamp;
+};
+
+export type MemoryGetInput = {
+  /** Also that project's MEMORY.md and topic files; absent: user.md only. */
+  projectRef?: ProjectRef;
+};
+
+export type MemoryGetOutput = {
+  /** With projectRef: MEMORY.md first, then the topic files by name. */
+  files?: MemoryFile[];
+  next?: string;
+  projectCap?: number;
+  /** With projectRef: the project's files together, and their cap. */
+  projectChars?: number;
+  truncated?: boolean;
+  user: MemoryFile;
+};
+
+/** An entry `remember` wrote that is still in its file: when, and the chat line that said so. */
+export type MemoryNote = {
   at: Timestamp;
-  deltaItems: number;
-  pctAfter?: number;
-  pctBefore?: number;
-  /** "+3 items: time inspector added". */
+  messageId: ChatMessageId;
+  projectRef: ProjectRef;
   text: string;
 };
 
-/** How sure the matcher is that new work repeats a piece in flight. */
-export type MatchStrength = "weak" | "strong" | "exact";
+export type MemoryScope = "user" | "project";
+
+export type MemorySetInput = {
+  /** Required with scope project. */
+  projectRef?: ProjectRef;
+  scope: MemoryScope;
+  /** The whole file. Empty deletes it (a topic's index line too). */
+  text: string;
+  /** Project scope: a topic file; absent, MEMORY.md. */
+  topic?: MemoryTopic;
+};
+
+export type MemorySetOutput = {
+  file: MemoryFile;
+  next?: string;
+  truncated?: boolean;
+};
+
+/** Lowercase slug, [a-z0-9][a-z0-9-]{0,47}, other than memory */
+export type MemoryTopic = string;
+
+export type MemoryUndoInput = {
+  /** The chat line that said "Remembered: …". */
+  messageId: ChatMessageId;
+  projectRef: ProjectRef;
+};
+
+export type MemoryUndoOutput = {
+  next?: string;
+  ok: true;
+  truncated?: boolean;
+};
 
 /** How a landed change reached the default branch. The fixed order, bottom up on every chart, is the order here. */
 export type KnownMergeRoute = "train" | "fleetd_by_hand" | "outside" | "direct";
@@ -1813,24 +1873,6 @@ export type MetricsTiles = {
   throughFleetd: ThroughFleetdTile;
 };
 
-export type MilestoneId = string;
-
-export type MilestoneState = "open" | "done";
-
-/** A milestone with its derived figure. */
-export type MilestoneView = {
-  createdAt: Timestamp;
-  doneAt?: Timestamp;
-  /** The first item's time. */
-  firstItemAt?: Timestamp;
-  milestoneId: MilestoneId;
-  position: number;
-  progress: Progress;
-  projectRef: ProjectRef;
-  state: MilestoneState;
-  title: string;
-};
-
 /** Space on the volume holding a node's worktrees and build cache. */
 export type NodeDisk = {
   /** Free for the node's user. */
@@ -1872,6 +1914,11 @@ export type NodeLoad = {
   memTotalBytes?: number;
   /** Memory in use (total minus available), percent. */
   memUsedPct?: number;
+  /**
+   * What each project's agents have taken in memory here, for projects with a session measured. Absent from older
+   * nodes.
+   */
+  projectMemory?: ProjectMemory[];
   /** Swap in use, percent. Linux only; absent without swap and from older nodes. */
   swapUsedPct?: number;
 };
@@ -2015,111 +2062,6 @@ export type Placeholder = {
   description: string;
   name: string;
   required: boolean;
-};
-
-/** One marker: a recorded change to a figure's denominator, never a silent jump. */
-export type PlanChange = {
-  at: Timestamp;
-  /** `lead:<projectRef>`, a key id, or `hub`. */
-  by: string;
-  deltaItems: number;
-  /** In points. */
-  deltaSize: number;
-  kind: PlanChangeKind;
-  milestoneId: MilestoneId;
-  /** "+3 items: time inspector added". */
-  note: string;
-  pctAfter?: number;
-  pctBefore?: number;
-  workstreamId?: WorkstreamId;
-};
-
-export type PlanChangeKind = "scope" | "reopened" | "closed" | "milestone_done" | "milestone_reopened";
-
-/** `plan.changed`: a marker was written. */
-export type PlanChangedData = {
-  at: Timestamp;
-  /** `lead:<projectRef>`, a key id, or `hub`. */
-  by: string;
-  deltaItems: number;
-  /** In points. */
-  deltaSize: number;
-  kind: PlanChangeKind;
-  milestoneId: MilestoneId;
-  /** "+3 items: time inspector added". */
-  note: string;
-  pctAfter?: number;
-  pctBefore?: number;
-  workstreamId?: WorkstreamId;
-};
-
-/** The commit that did an item's work without its own agent, and how it reached the base. */
-export type PlanCoveredBy = {
-  route: LandingRoute;
-  sha: CommitSha;
-};
-
-export type PlanGetInput = {
-  projectRef?: ProjectRef;
-  workstreamId?: WorkstreamId;
-};
-
-/** A plan as `plan show` and `plan_get` return it: derived state, figures and markers. */
-export type PlanGetOutput = {
-  items: PlanItem[];
-  /** Newest first. */
-  markers: PlanChange[];
-  milestones: MilestoneView[];
-  next?: string;
-  progress: Progress;
-  projectRef: ProjectRef;
-  truncated?: boolean;
-  /** Set when the view is one order's items. */
-  workstreamId?: WorkstreamId;
-};
-
-export type PlanItem = {
-  /** Items that must be done before this one starts: serial gates. */
-  after?: PlanItemId[];
-  /** Set when a lead marked it `covered` by a landing. */
-  coveredBy?: PlanCoveredBy;
-  doneAt?: Timestamp;
-  /** Why it was dropped. */
-  dropReason?: string;
-  /** What verified it, e.g. "#212 merged by the train". */
-  evidence?: string;
-  itemId: PlanItemId;
-  links?: PlanLinks;
-  milestoneId: MilestoneId;
-  position: number;
-  projectRef: ProjectRef;
-  size: Size;
-  /** The first linked `task.started`. */
-  startedAt?: Timestamp;
-  state: PlanItemState;
-  title: string;
-  weight: Weight;
-  workstreamId?: WorkstreamId;
-};
-
-export type PlanItemId = string;
-
-export type PlanItemState = "open" | "dropped" | "done";
-
-/** What ties work to an item. An item with no links never counts done. */
-export type PlanLinks = {
-  /** PRs listed on the item (`--pr`, or `change enqueue --item`). */
-  prs?: GitHubPrUrl[];
-  /** Tasks spawned with `--item`; their Changes count through `Change.task_id`. */
-  tasks?: TaskId[];
-};
-
-/** `plan.verified`: the hub marked an item done. */
-export type PlanVerifiedData = {
-  evidence: string;
-  itemId: PlanItemId;
-  milestoneId: MilestoneId;
-  workstreamId?: WorkstreamId;
 };
 
 /** Who wrote the PR: fleetd's agent when one did, and the GitHub account it was opened from. */
@@ -2365,57 +2307,6 @@ export type ProfileTotal = {
   profile: TaskProfile;
 };
 
-/** A figure. `pct` counts verified must items by size only; polish shows beside it. */
-export type Progress = {
-  asOf: Timestamp;
-  /** Must items done and in the figure. */
-  done: number;
-  /** The latest scope change, e.g. "↓ from 80% · +3 items: time inspector added". */
-  marker?: Marker;
-  /** floor(100 · must points done / must points open or done); the polish figure when there are no must items. */
-  pct: number;
-  /** Polish items done and in the figure ("polish 2/5"). */
-  polishDone: number;
-  polishPct?: number;
-  polishTotal: number;
-  total: number;
-};
-
-/** Why the figure fell. */
-export type ProgressDrop = {
-  fromPct: number;
-  reason: DropReason;
-  /** "CI failed on #212", "+2 items: time inspector added". */
-  text: string;
-};
-
-/**
- * A project's two-tone bar: solid is what fleetd verified, lighter is credit for work in flight. Every stage it
- * credits is one fleetd observed (an event, a PR or a CI state), never an agent's word, and nothing in it is a time.
- */
-export type ProgressEstimate = {
-  /** The lighter part: credit for open units' reached stages, plus in-stage credit for the time work on them ran. */
-  inFlightPct: number;
-  /** verified + in flight, floored; 100 only when everything is verified. */
-  pct: number;
-  /** The solid part: points verified over points counted. */
-  verifiedPct: number;
-};
-
-/** One point of a project's series: its bar over time, oldest first. */
-export type ProgressPoint = {
-  at: Timestamp;
-  /** Set when the figure fell at this point; it never falls without one. */
-  drop?: ProgressDrop;
-  /**
-   * Set while the figure holds because the work in flight paused, waiting for an answer or for a usage limit to
-   * reset ("paused: an agent hit a usage limit"). A marker, not a drop: what was earned stays.
-   */
-  paused?: string;
-  pct: number;
-  verifiedPct: number;
-};
-
 /** `HubEvent.data` on `project.add_failed`: a clone that was accepted, then failed. */
 export type ProjectAddFailedData = {
   addId: string;
@@ -2562,6 +2453,18 @@ export type ProjectInspect = {
   repo?: GitHubRepo;
 };
 
+/**
+ * One project's agents' memory on a machine: each session's peak resident memory, its whole process tree counted,
+ * over the project's latest sessions there.
+ */
+export type ProjectMemory = {
+  /** The 90th percentile of their peaks. */
+  p90Bytes: number;
+  projectId: ProjectId;
+  /** Sessions measured: the latest 20 at most. */
+  samples: number;
+};
+
 /** The one-call project outcome, returned as-is by project_get. */
 export type ProjectOutcome = {
   asOf: Timestamp;
@@ -2639,21 +2542,22 @@ export type ProjectSetOutput = {
   truncated?: boolean;
 };
 
-/** One project on the Status screen: a state word, the two-tone bar, agents running and the last merge. */
+/** One project on the Status screen: a state word, its work in groups, agents running and the last merge. */
 export type ProjectStatusRow = {
   /** Its task agents holding a slot now (the lead's own turn is not one). */
   agentsRunning: number;
   asOf: Timestamp;
   /** Blocked only: why, in one line, for the expanded row. */
   blockedReason?: string;
+  counts: StatusCounts;
+  /** Group by group in `StatusGroup` order, newest first in each, at most `STATUS_ITEMS_PER_GROUP` per group. */
+  items: StatusItem[];
   lastMerged?: LastMerged;
   /**
    * Landed changes on its repos over the last 7 calendar days in the hub's zone, today included, by every route
    * (metrics_get's count). Absent when the metrics know none of its repos, so nothing is read as zero.
    */
   merged7d?: number;
-  /** The project's bar, under the drop rule of its series (status_get). Absent when it has nothing to count. */
-  progress?: ProgressEstimate;
   projectRef: ProjectRef;
   /** Set when a source the row reads (its machine, its repos on GitHub, their merge train) went quiet. */
   stale?: StaleMark;
@@ -2824,6 +2728,43 @@ export type PromptWarningCode = "placeholder_missing" | "placeholder_unknown" | 
 export type QuietWindow = {
   from: Timestamp;
   to: Timestamp;
+};
+
+/** A commit that reached the base outside the train, as `work_list` shows it: what the hub's `Landings` reads back. */
+export type RecentLanding = {
+  /** The commit's committer time. */
+  at: Timestamp;
+  authorEmail?: string;
+  /** The work it matched exactly: "P5", "T12", "C7". */
+  covers: string[];
+  /** The PR it merged as, when its message or the host names one: "#57", or its URL. */
+  pr?: string;
+  route: LandingRoute;
+  sha: CommitSha;
+  subject: string;
+};
+
+/** How a recovering task goes on. */
+export type RecoveryMode = "resume" | "compact" | "fresh";
+
+/** `machine.recovery_paused`. */
+export type RecoveryPausedData = {
+  /** true: dead agents there wait instead of resuming; false: they resume again. */
+  paused: boolean;
+  /** The agents whose deaths opened it, oldest first. */
+  taskIds?: TaskId[];
+  /** When it closes if nothing else dies there; an agent there completing closes it sooner. */
+  until?: Timestamp;
+};
+
+/** What a `remember` call wrote, as a line in the project's chat. Undone with `memory_undo`. */
+export type RememberedItem = {
+  /** The whole entry it replaced, which Undo puts back. */
+  replaced?: string;
+  scope: MemoryScope;
+  text: string;
+  topic?: MemoryTopic;
+  undone?: boolean;
 };
 
 export type RemoteRepo = string;
@@ -3091,8 +3032,6 @@ export type SessionPromptRef = {
   scope: PromptScope;
 };
 
-export type Size = "s" | "m" | "l";
-
 /** Merges that are not landed changes, by why. */
 export type SkipCount = {
   n: number;
@@ -3111,17 +3050,38 @@ export type SleptSpan = {
 };
 
 export type SlotState = {
-  /** The fleet cap: agents running at once across every project. */
+  /** Agents running at once across every project: `fleetCap` when set, else the sum of the machines' caps. */
   cap: number;
+  /** The fleet cap a person (or an older hub) saved; absent: none beyond the machines' own caps. */
+  fleetCap?: number;
+  perMachine?: SlotStatePerMachine[];
   perProject: SlotStatePerProject[];
   queued: number;
   used: number;
 };
 
+/** One machine's share of the board: what it fits, and what runs there. */
+export type SlotStatePerMachine = {
+  /**
+   * What the machine fits: one agent per CPU less a reserve, and 2 GB of memory each after the OS's share, at
+   * most 64.
+   */
+  auto: number;
+  /** The most agents that run on it at once: a person's setting for the machine, else `auto`. */
+  cap: number;
+  /** New agents its free disk has room for now, above the guard's floor; absent while the node reports no disk. */
+  diskRoom?: number;
+  machineId: MachineId;
+  /** Agents running there now. */
+  running: number;
+  /** The term that sets `auto`, e.g. "memory 18 GB" or "14 of 16 CPUs". */
+  why: string;
+};
+
 export type SlotStatePerProject = {
   /**
    * The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead is not
-   * one. The fleet `cap` until set.
+   * one. Its machine's `cap` until set.
    */
   maxAgents: number;
   projectRef: ProjectRef;
@@ -3305,6 +3265,16 @@ export type StalePrompt = {
   yours: PromptVersion;
 };
 
+/** A project's items per group. Complete: the rows' `items` may stop at a cap; these never do. */
+export type StatusCounts = {
+  done: number;
+  idle: number;
+  inReview: number;
+  landing: number;
+  waitingOnYou: number;
+  working: number;
+};
+
 export type StatusGetInput = {
   projectRef?: ProjectRef;
 };
@@ -3315,12 +3285,36 @@ export type StatusGetOutput = {
   row?: ProjectStatusRow;
   /** Without projectRef: by title. */
   rows?: ProjectStatusRow[];
-  /**
-   * With projectRef: the bar over time, oldest first: why it fell (`drop`) and when it held on paused work
-   * (`paused`).
-   */
-  series?: ProgressPoint[];
   truncated?: boolean;
+};
+
+/**
+ * Which group a piece of work is in. Each follows from state the hub observed (a task's run, its thread, its PR on
+ * the train, an open request), never from an agent's word.
+ */
+export type KnownStatusGroup = "waiting_on_you" | "in_review" | "working" | "landing" | "idle" | "done";
+/** KnownStatusGroup, or a value from a newer hub. */
+export type StatusGroup = KnownStatusGroup | (string & {});
+
+/** One piece of a project's work: an agent and its PR, a PR no listed agent wrote, or something waiting on you. */
+export type StatusItem = {
+  /** When it last moved: its PR's or its agent's latest change, a request's creation. */
+  at: Timestamp;
+  group: StatusGroup;
+  /** Its PR, when it has one: the app opens it in the project's panel when there is no agent. */
+  pr?: StatusPr;
+  /** The agent that does it: the app opens it in the project's panel. */
+  taskId?: TaskId;
+  title: string;
+  /** What the group alone doesn't say: "CI failed", "usage limit: resumes 14:05", a request's text. */
+  why?: string;
+};
+
+/** An item's PR. */
+export type StatusPr = {
+  number: number;
+  repo: GitHubRepo;
+  url: string;
 };
 
 /** One steer and its receipt. */
@@ -3338,8 +3332,6 @@ export type Steer = {
   how?: DeliveredHow;
   id: SteerId;
   mode: SteerMode;
-  /** A plan change the steer made, e.g. "−1 item". */
-  planChange?: string;
   queuedAt: Timestamp;
   /** The node run id it was sent as; also the user message id in the thread. */
   runId: string;
@@ -3409,8 +3401,6 @@ export type SteerSendOutput = {
   id: SteerId;
   mode: SteerMode;
   next?: string;
-  /** A plan change the steer made, e.g. "−1 item". */
-  planChange?: string;
   queuedAt: Timestamp;
   /** The node run id it was sent as; also the user message id in the thread. */
   runId: string;
@@ -3456,8 +3446,6 @@ export type SteerWithdrawOutput = {
   id: SteerId;
   mode: SteerMode;
   next?: string;
-  /** A plan change the steer made, e.g. "−1 item". */
-  planChange?: string;
   queuedAt: Timestamp;
   /** The node run id it was sent as; also the user message id in the thread. */
   runId: string;
@@ -3514,8 +3502,6 @@ export type Task = {
   branch?: string;
   createdAt: Timestamp;
   endedAt?: Timestamp;
-  /** The plan item it was spawned for (`--item`). */
-  itemId?: PlanItemId;
   kind: TaskKind;
   /** M4: its thread hit a usage limit; the task is idle until fleetd sends "continue" at `resumeAt`. */
   parked?: UsageParked;
@@ -3523,6 +3509,11 @@ export type Task = {
   paths?: string[];
   /** The PR a review task reviews. Required at spawn for review; absent on older rows (hub-spawned judges). */
   pr?: string;
+  /**
+   * The threads it ran in before `threadRef`, oldest first: fleetd restarted it fresh (its context filled up, or its
+   * thread could not resume), on the same branch and worktree.
+   */
+  previousThreads?: ThreadRef[];
   /** Resolved at spawn. Rows stored with a model and effort read as `high` (the hub migrates its own). */
   profile?: TaskProfile;
   projectRef: ProjectRef;
@@ -3577,7 +3568,7 @@ export type TaskGetOutput = {
 
 export type TaskId = string;
 
-/** Only write tasks get a worktree. */
+/** Every task gets its own worktree: a writer on its own branch, a reader or reviewer detached. */
 export type TaskKind = "write" | "read" | "review";
 
 /**
@@ -3588,15 +3579,25 @@ export type TaskProfile = "high" | "medium";
 
 /** A task fleetd resumes on its own after its run died: in the same thread and worktree, with a note to continue. */
 export type TaskRecovery = {
-  /** Automatic recoveries used of `max`; a resumed run that died again before doing anything counts twice. */
+  /**
+   * Automatic recoveries used of `max`; a resumed run that died again before doing anything counts twice. A node
+   * going away never counts here.
+   */
   count: number;
   /** How its last run ended. */
   lastCause: RunEnd;
   /** The same, in plain words: "the node on devbox stopped", "claude was killed by signal 9". */
   lastCauseText: string;
   max: number;
+  /** How it goes on. */
+  mode?: RecoveryMode;
   /** When the resume goes out; absent once it has. */
   nextAt?: Timestamp;
+  /**
+   * Resumes after its node went away (stopped, upgraded, crashed, powered off): not the task's doing, so outside
+   * `count`, with a high ceiling of its own only so a node that keeps dying can't loop it forever.
+   */
+  nodeLost?: number;
   /** When the last resume went out. */
   resumedAt?: Timestamp;
   /**
@@ -3667,6 +3668,14 @@ export type ThreadEventData = {
 export type ThreadEventReason = "stalled" | "usage_limit" | "interrupted";
 
 export type ThreadId = string;
+
+/** `thread.orphaned`. */
+export type ThreadOrphanedData = {
+  /** When the hub first saw it without an owner. */
+  since: Timestamp;
+  /** The session's title on its node. */
+  title: string;
+};
 
 export type ThreadRef = {
   machineId: MachineId;
@@ -4081,8 +4090,6 @@ export type WakeTarget = {
   threadId: ThreadId;
 };
 
-export type Weight = "must" | "polish";
-
 /** A command, file edit or tool call. Secrets in its summary and output are replaced by `[secret]`. */
 export type WorkAction = {
   action: ActionItem;
@@ -4168,7 +4175,9 @@ export type WorkEventData = {
 export type WorkItem = {
   changeId?: ChangeId;
   claimId?: ClaimId;
-  /** "T12", "X4", "C7", "acme/shop#57", "P5". */
+  /** A claim's: when it expires, or expired. */
+  expiresAt?: Timestamp;
+  /** "T12", "X4", "C7", "acme/shop#57". */
   id: string;
   keys: WorkKey[];
   kind: WorkItemKind;
@@ -4186,13 +4195,11 @@ export type WorkItem = {
   title: string;
 };
 
-export type WorkItemKind = "claim" | "task" | "change" | "pr" | "planned";
+export type WorkItemKind = "claim" | "task" | "change" | "pr";
 
 /** An id someone chose on purpose; the same key on two pieces of work means the same work. */
 export type WorkKey = {
   issue: string;
-} | {
-  item: PlanItemId;
 } | {
   pr: string;
 } | {
@@ -4211,8 +4218,6 @@ export type WorkLandedData = {
   claimIds: ClaimId[];
   /** The branch it came from, when the merge message or the host names one. */
   headBranch?: string;
-  /** The plan item of its task. */
-  itemIds: PlanItemId[];
   /** The PR or merge request it came from, when the merge message or the host names one. */
   prNumber?: number;
   repoKey: RepoKey;
@@ -4225,6 +4230,11 @@ export type WorkLandedData = {
 
 export type WorkListInput = {
   base?: string;
+  /**
+   * false: leave out what each writer has changed so far, which asks its machine; a claim keeps its paths.
+   * Default true.
+   */
+  paths?: boolean;
   projectRef?: ProjectRef;
   /** The repo's origin remote, in any form. Give it or projectRef. */
   repo?: string;
@@ -4233,6 +4243,11 @@ export type WorkListInput = {
 export type WorkListOutput = {
   items: WorkItem[];
   next?: string;
+  /**
+   * Commits that reached the base outside the train (a PR merged by hand, a direct push) in the last 24 h, newest
+   * first.
+   */
+  recentLandings: RecentLanding[];
   scope: WorkScope;
   truncated?: boolean;
   /** No project is bound to the repo yet, so fleetd's agents' work on it may be missing from the items. */
@@ -4360,11 +4375,13 @@ export interface ToolMap {
   fleetd_status: { input: FleetdStatusInput; output: FleetdStatusOutput };
   hub_info: { input: HubInfoInput; output: HubInfoOutput };
   lead_start: { input: LeadStartInput; output: LeadStartOutput };
+  memory_get: { input: MemoryGetInput; output: MemoryGetOutput };
+  memory_set: { input: MemorySetInput; output: MemorySetOutput };
+  memory_undo: { input: MemoryUndoInput; output: MemoryUndoOutput };
   metrics_get: { input: MetricsGetInput; output: MetricsGetOutput };
   metrics_retention_set: { input: MetricsRetentionSetInput; output: MetricsRetentionSetOutput };
   order_get: { input: OrderGetInput; output: OrderGetOutput };
   orders_board: { input: OrdersBoardInput; output: OrdersBoardOutput };
-  plan_get: { input: PlanGetInput; output: PlanGetOutput };
   pr_diff: { input: PrDiffInput; output: PrDiffOutput };
   pr_files: { input: PrFilesInput; output: PrFilesOutput };
   pr_get: { input: PrGetInput; output: PrGetOutput };
@@ -4417,9 +4434,8 @@ export interface HubEventDataMap {
   "chat.waiting": ProjectChatState;
   "ci.main": CiMainData;
   "machine.guard": MachineGuardData;
+  "machine.recovery_paused": RecoveryPausedData;
   "machine.slept": MachineSleptData;
-  "plan.changed": PlanChangedData;
-  "plan.verified": PlanVerifiedData;
   "pr.merged": TrainEventData;
   "pr.merged_outside": TrainEventData;
   "project.add_failed": ProjectAddFailedData;
@@ -4446,6 +4462,7 @@ export interface HubEventDataMap {
   "thread.completed": ThreadEventData;
   "thread.failed": ThreadEventData;
   "thread.interrupted": ThreadEventData;
+  "thread.orphaned": ThreadOrphanedData;
   "thread.started": ThreadEventData;
   "thread.usage_limited": UsageEventData;
   "thread.waiting": ThreadEventData;

@@ -11,6 +11,7 @@ Environment=PATH=/usr/bin:/a&b
 EnvironmentFile=-"/home/a b/.fleetd/hub.env"
 ExecStart="/home/a b/.fleetd/bin/fleetd" node run --home "/home/a b/.fleetd/node" 100%% $$HOME
 KillMode=mixed
+OOMPolicy=continue
 Restart=always
 RestartSec=5
 StandardOutput=append:/home/a b/.fleetd/logs/node.log

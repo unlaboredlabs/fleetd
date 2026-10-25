@@ -200,6 +200,7 @@
   ],
   "slots": {
     "cap": 40,
+    "fleetCap": 40,
     "used": 8,
     "queued": 1,
     "perProject": [
@@ -211,6 +212,16 @@
         "maxAgents": 20,
         "running": 3,
         "queued": 1
+      }
+    ],
+    "perMachine": [
+      {
+        "machineId": "devbox",
+        "cap": 28,
+        "auto": 28,
+        "why": "28 of 32 CPUs",
+        "running": 6,
+        "diskRoom": 80
       }
     ]
   }
