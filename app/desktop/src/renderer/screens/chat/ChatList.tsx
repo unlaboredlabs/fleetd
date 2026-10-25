@@ -81,9 +81,10 @@ function Inline({ item, enter }: { item: ChatItem; enter: Arrival | undefined })
 /** An approval or a secret, ringed while it is what Show went to; its card takes the focus. */
 function Waited({ id, children }: { id: string; children: ReactNode }) {
   const mark = markOf(useBubbleActions()?.shown, id);
-  const ref = useShown<HTMLDivElement>(mark, true);
+  const box = useRef<HTMLDivElement>(null);
+  const shown = useShown(box, mark, true);
   return (
-    <div ref={ref} className={cx(s.waitedBox, mark !== undefined && s.waited)} tabIndex={mark === undefined ? undefined : -1}>
+    <div ref={box} className={cx(s.waitedBox, shown && s.waited)} tabIndex={shown ? -1 : undefined}>
       {children}
     </div>
   );
@@ -210,12 +211,14 @@ export function ChatList(props: {
   openAt?: number | undefined;
   /** Bumped to scroll to `openAt` again (Show, pressed twice). */
   openSeq?: number | undefined;
+  /** The bubble in it to bring into view (Show's mark), by its key: a message can be taller than the view. */
+  openPart?: string | undefined;
   /** Bumped when the reader sends: back to the end. */
   sent?: number;
   /** What came in while the chat was open, by row key (arrivalsOf). */
   entering?: ReadonlyMap<string, Arrival> | undefined;
 }) {
-  const { rows, openAt, openSeq, sent, entering } = props;
+  const { rows, openAt, openSeq, openPart, sent, entering } = props;
   const virtualizer = useRef<Virtualizer<HTMLDivElement, Element> | null>(null);
   const mineLatest = useMemo(() => rows.findLast((r) => r.kind === "message" && r.item.author === "human")?.key, [rows]);
 
@@ -242,12 +245,26 @@ export function ChatList(props: {
       pinned = false;
     };
     unpin.current = release;
+    let tries = 0;
     const pin = () => {
       if (!pinned) return;
       const at = openIndex.current;
       if (openKey === undefined || at === undefined) el.scrollTop = el.scrollHeight;
       // Where you stopped reading goes at the top, with what's new under it.
-      else v.scrollToIndex(at, { align: openKey === "new" ? "start" : "center" });
+      else if (openKey === "new") v.scrollToIndex(at, { align: "start" });
+      else {
+        // A bubble in it goes in the middle itself (the top, if it is taller than the view): a message's middle can
+        // be a screen away from it. Until its row has mounted, the row goes there, and then the bubble, a frame on.
+        const bubble = openPart === undefined ? null : el.querySelector(`[data-index="${String(at)}"] [data-part="${openPart}"]`);
+        if (bubble === null) {
+          v.scrollToIndex(at, { align: "center" });
+          if (openPart !== undefined && tries++ < 10) requestAnimationFrame(pin);
+          return;
+        }
+        const b = bubble.getBoundingClientRect();
+        const top = el.scrollTop + b.top - el.getBoundingClientRect().top;
+        v.scrollToOffset(b.height > el.clientHeight ? top : top + b.height / 2 - el.clientHeight / 2);
+      }
     };
     if (openKey !== undefined) pin();
     el.addEventListener("wheel", release, { passive: true });
@@ -257,12 +274,13 @@ export function ChatList(props: {
     ro.observe(inner);
     ro.observe(el);
     return () => {
+      release();
       ro.disconnect();
       el.removeEventListener("wheel", release);
       el.removeEventListener("pointerdown", release);
       el.removeEventListener("keydown", release);
     };
-  }, [openKey, openSeq]);
+  }, [openKey, openSeq, openPart]);
 
   // Scrolled up past the follow threshold (followOptions'), the newest message's key then; undefined at the end.
   const [awayFrom, setAwayFrom] = useState<string>();

@@ -15,8 +15,23 @@ import { ChatScreen } from "./ChatScreen";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => vi.stubGlobal("fleetd", { platform: "darwin", fixture: null }));
 
-// happy-dom has no layout: the list is 2000 px tall, so every row renders; a row is 40 px.
-const heightOf = (el: Element) => (el.getAttribute("role") === "list" ? 2000 : el instanceof HTMLElement && el.dataset["index"] !== undefined ? 40 : 0);
+// happy-dom has no layout, so this lays it out: the list `view` px tall, each row `row` px at its place in the list
+// (as scrolled), and a message's bubbles `step` px apart in it, 20 px each. By default every row renders, 40 px.
+const LAYOUT = { view: 2000, row: (_: HTMLElement) => 40, step: 0 };
+let layout = LAYOUT;
+const isList = (el: Element): boolean => el.getAttribute("role") === "list";
+const isRow = (el: HTMLElement): boolean => el.dataset["index"] !== undefined;
+const list = () => host.querySelector<HTMLElement>("[role=list]");
+const heightOf = (el: HTMLElement) => (isList(el) ? layout.view : isRow(el) ? layout.row(el) : 0);
+const rectOf = (el: HTMLElement): DOMRect | undefined => {
+  if (isList(el)) return new DOMRect(0, 0, 600, layout.view);
+  if (isRow(el)) return new DOMRect(0, Number(/translateY\(([-\d.]+)px\)/.exec(el.style.transform)?.[1] ?? 0) - (list()?.scrollTop ?? 0), 600, layout.row(el));
+  const row = el.closest<HTMLElement>("[data-index]");
+  const part = el.dataset["part"];
+  if (row === null || part === undefined) return undefined;
+  const top = rectOf(row)?.top ?? 0;
+  return new DOMRect(0, top + Number(part) * layout.step, 300, 20);
+};
 const proto = HTMLElement.prototype;
 const realRect = proto.getBoundingClientRect.bind(proto);
 
@@ -28,11 +43,17 @@ beforeAll(async () => {
 });
 beforeEach(() => {
   window.localStorage.clear();
+  layout = LAYOUT;
   vi.spyOn(proto, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
-    const h = heightOf(this);
-    return h ? new DOMRect(0, 0, 600, h) : realRect.call(this);
+    return rectOf(this) ?? realRect.call(this);
   });
   Object.defineProperty(proto, "clientHeight", { configurable: true, get: function (this: HTMLElement) { return heightOf(this); } });
+  Object.defineProperty(proto, "scrollHeight", {
+    configurable: true,
+    get: function (this: HTMLElement) {
+      return isList(this) ? Number.parseFloat((this.firstElementChild as HTMLElement | null)?.style.height ?? "0") : 0;
+    },
+  });
   Object.defineProperty(proto, "clientWidth", { configurable: true, get: () => 600 });
   host = document.createElement("div");
   document.body.appendChild(host);
@@ -125,7 +146,11 @@ it("marks the bubble that asks, not the message around it, and moves focus to it
 
 it("steps through each thing it waits on, press by press, and says which", async () => {
   await mount([split(1, ["Two things before I ship.", "Merge #12 now?", "And tag v2.4 after?"])]);
+  // The count's live region is there, empty, before the first press, so a screen reader announces "1 of 2".
+  const status = host.querySelector("[data-attention] [role=status]");
+  expect(status?.textContent).toBe("");
   await show();
+  expect(host.querySelector("[data-attention] [role=status]")).toBe(status);
   expect(marked()).toEqual(["Merge #12 now?"]);
   expect(line()).toContain("1 of 2");
   // The palette and the live strip reach the same Show.
@@ -138,4 +163,24 @@ it("steps through each thing it waits on, press by press, and says which", async
   expect(marked()).toEqual(["Merge #12 now?"]);
   expect(focused()).toBe("Merge #12 now?");
   expect(line()).toContain("1 of 2");
+});
+
+/** Whether the bubble with these words is all inside the list's view. */
+const inView = (words: string) => {
+  const bubble = [...host.querySelectorAll<HTMLElement>("[data-part]")].find((el) => el.textContent === words);
+  const r = bubble?.getBoundingClientRect();
+  return r !== undefined && r.top >= 0 && r.bottom <= layout.view;
+};
+
+it("brings the bubble itself into view in a message taller than the view, and the next one in it on the next press", async () => {
+  // The lead's message is 1600 px in a 300 px view, its bubbles 500 px apart: centring the message shows neither.
+  layout = { view: 300, row: (el) => (el.textContent.includes("Merge") ? 1600 : 40), step: 500 };
+  await mount([msg(1, { author: "human", text: "go ahead" }), split(2, ["Here is the table of results.", "Ship it?", "Merge #12 now?"])]);
+  await show();
+  expect(marked()).toEqual(["Ship it?"]);
+  expect(inView("Ship it?")).toBe(true);
+  await show();
+  expect(marked()).toEqual(["Merge #12 now?"]);
+  expect(inView("Merge #12 now?")).toBe(true);
+  expect(inView("Ship it?")).toBe(false);
 });

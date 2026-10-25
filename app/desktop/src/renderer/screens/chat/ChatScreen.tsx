@@ -184,7 +184,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
         </EmptyChat>
       ) : (
         <BubbleActionsContext.Provider value={actions}>
-          <ChatList rows={rows} project={project} onLoadOlder={data.loadOlder} openAt={openAt} openSeq={shown?.n} sent={sent} entering={arrived?.entering} />
+          <ChatList rows={rows} project={project} onLoadOlder={data.loadOlder} openAt={openAt} openSeq={shown?.n} openPart={shown?.part} sent={sent} entering={arrived?.entering} />
         </BubbleActionsContext.Provider>
       )}
       {data.missing ? null : (

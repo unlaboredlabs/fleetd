@@ -150,7 +150,8 @@ function BubbleLine(props: {
   const wide = isWide(bubble);
   const jumbo = !block && EMOJI_ONLY.test(bubble.text.trim());
   const mark = markOf(actions?.shown, item.id, bubble.key);
-  const shown = useShown<HTMLDivElement>(mark);
+  const box = useRef<HTMLDivElement>(null);
+  const shown = useShown(box, mark);
   const pick = (t: Tapback) => {
     if (actions === undefined) return;
     const was = props.tapback;
@@ -163,9 +164,9 @@ function BubbleLine(props: {
   return (
     <div className={cx(s.line, wide && s.wide, props.tapback !== undefined && s.reacted, enter.className)} style={enter.style}>
       <div
-        ref={shown}
+        ref={box}
         // Focusable from script while it is what Show went to; not a tab stop of its own.
-        tabIndex={mark === undefined ? undefined : -1}
+        tabIndex={shown ? -1 : undefined}
         className={cx(
           !block && !jumbo && s.bubble,
           !block && !jumbo && (mine ? s.mineBubble : s.theirs),
@@ -174,9 +175,10 @@ function BubbleLine(props: {
           wide && s.wide,
           block && s.blockBubble,
           jumbo && s.jumbo,
-          mark !== undefined && s.waited,
+          shown && s.waited,
         )}
         data-bubble={block ? bubble.block.kind : "text"}
+        data-part={bubble.key}
       >
         {block ? <Block block={bubble.block} answer={props.answer} /> : jumbo ? bubble.text.trim() : <Message text={bubble.text} project={actions?.project} />}
         {props.tapback !== undefined ? (

@@ -45,14 +45,17 @@ export function AttentionLine({
           The lead is waiting on you:
         </Text>{" "}
         {waiting.what}
-        {which !== undefined ? (
-          <span role="status">
-            {" · "}
-            <Text size="xs" tone="quiet" tabular>
-              {which}
-            </Text>
-          </span>
-        ) : null}
+        {/* Always there, so the first "1 of 2" is announced. */}
+        <span role="status">
+          {which !== undefined ? (
+            <>
+              {" · "}
+              <Text size="xs" tone="quiet" tabular>
+                {which}
+              </Text>
+            </>
+          ) : null}
+        </span>
         {canShow ? (
           <>
             {" "}
