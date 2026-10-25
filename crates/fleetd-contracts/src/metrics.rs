@@ -59,7 +59,7 @@ pub enum MergeRoute {
     /// A merged PR with no Change and no fleetd branch: "Merged outside fleetd".
     Outside,
     /// A first-parent commit on the default branch with no PR: "Pushed straight to the default branch". On a repo
-    /// with no forge, direct pushes and outside merges can't be told apart and both read as `outside`.
+    /// with no git host fleetd can read, direct pushes and outside merges can't be told apart and both read as `outside`.
     Direct,
     /// A route this build doesn't know (a newer hub). Never sent.
     #[serde(other)]
@@ -114,7 +114,7 @@ pub enum SkipWhy {
     Unknown,
 }
 
-/// Who a PR's author or merger was, by the forge's account type: git authorship can't tell, because agents commit
+/// Who a PR's author or merger was, by the git host's account type: git authorship can't tell, because agents commit
 /// under the person's own identity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -123,7 +123,7 @@ pub enum ActorKind {
     Bot,
     /// The merge train (merger only).
     Train,
-    /// No forge, or the forge didn't say.
+    /// No git host to ask, or it didn't say.
     Unknown,
 }
 
@@ -177,11 +177,11 @@ touch_kinds! {
     ItemAnswered = "item.answered", Chat;
     /// An order the person submitted directly.
     OrderSubmitted = "order.submitted", Chat;
-    /// A review submitted on the forge. Its credit is estimated: forges keep when a review was sent, not how long it
+    /// A review submitted on the git host. Its credit is estimated: hosts keep when a review was sent, not how long it
     /// took.
-    Review = "forge.review", Reviews;
-    /// A review comment or PR comment on the forge.
-    Comment = "forge.comment", Reviews;
+    Review = "host.review", Reviews;
+    /// A review comment or PR comment on the git host.
+    Comment = "host.comment", Reviews;
     /// The app was focused on a project's screen with input in the last minute (`app.presence`).
     AppUse = "app.use", App;
     /// A fleetd call from the person's own Claude Code session.
@@ -204,7 +204,7 @@ touch_kinds! {
 pub enum HumanSource {
     /// Chat messages, inline approvals and secrets, and orders.
     Chat,
-    /// Reviews and comments on the forge: estimated.
+    /// Reviews and comments on the git host: estimated.
     Reviews,
     App,
     /// The person's own Claude Code sessions registered with fleetd.
@@ -232,7 +232,7 @@ impl HumanSource {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[schemars(extend("x-open" = true))]
-pub enum Forge {
+pub enum GitHost {
     #[serde(rename = "github")]
     GitHub,
     #[serde(rename = "gitlab")]
@@ -241,10 +241,10 @@ pub enum Forge {
     Bitbucket,
     #[serde(rename = "azure_devops")]
     AzureDevOps,
-    /// No forge fleetd can read: landed changes come from the default branch's first-parent log, and reviews,
+    /// No host API fleetd can read: landed changes come from the default branch's first-parent log, and reviews,
     /// bots and PR open times are absent.
     Git,
-    /// A forge this build doesn't know (a newer hub). Never sent.
+    /// A host this build doesn't know (a newer hub). Never sent.
     #[serde(other)]
     #[schemars(skip)]
     Unknown,
@@ -450,9 +450,9 @@ pub struct MetricsRepoRow {
 #[serde(rename_all = "camelCase")]
 pub struct RepoCoverage {
     pub repo: RemoteRepo,
-    pub forge: Forge,
+    pub host: GitHost,
     pub default_branch: Option<Line<1, 255>>,
-    /// The last good read of its forge or its git log.
+    /// The last good read of its host's API or its git log.
     pub last_read: Option<Timestamp>,
     /// Merges are known from here on (the first read backfills 90 days).
     pub known_since: Option<Timestamp>,
@@ -562,7 +562,7 @@ mod tests {
     }
 
     #[test]
-    fn every_source_has_a_touch_and_only_forge_touches_are_estimated() {
+    fn every_source_has_a_touch_and_only_host_touches_are_estimated() {
         for source in HumanSource::ALL {
             assert!(
                 TouchKind::ALL.iter().any(|k| k.source() == source),
@@ -607,7 +607,7 @@ mod tests {
             assert_eq!(serde_json::to_value(t).unwrap(), t.as_str());
         }
         // Open enums: the app's TypeScript admits a newer hub's values.
-        for name in ["MergeRoute", "SkipWhy", "Forge"] {
+        for name in ["MergeRoute", "SkipWhy", "GitHost"] {
             let def = &docs["McpTools"]["$defs"]
                 .get(name)
                 .or(docs["HubEventData"]["$defs"].get(name));
@@ -683,7 +683,7 @@ mod tests {
         );
         let why: SkipWhy = serde_json::from_value(serde_json::json!("revert")).unwrap();
         assert_eq!(why, SkipWhy::Unknown);
-        let forge: Forge = serde_json::from_value(serde_json::json!("sourcehut")).unwrap();
-        assert_eq!(forge, Forge::Unknown);
+        let host: GitHost = serde_json::from_value(serde_json::json!("sourcehut")).unwrap();
+        assert_eq!(host, GitHost::Unknown);
     }
 }

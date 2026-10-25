@@ -1,7 +1,7 @@
 {
   "$defs": {
     "ActorKind": {
-      "description": "Who a PR's author or merger was, by the forge's account type: git authorship can't tell, because agents commit\nunder the person's own identity.",
+      "description": "Who a PR's author or merger was, by the git host's account type: git authorship can't tell, because agents commit\nunder the person's own identity.",
       "oneOf": [
         {
           "enum": [
@@ -17,7 +17,7 @@
         },
         {
           "const": "unknown",
-          "description": "No forge, or the forge didn't say.",
+          "description": "No git host to ask, or it didn't say.",
           "type": "string"
         }
       ]
@@ -1947,7 +1947,7 @@
       "properties": {
         "authorKind": {
           "$ref": "#/$defs/ActorKind",
-          "description": "pr.merged_outside: who opened and who merged it, by the forge's account type."
+          "description": "pr.merged_outside: who opened and who merged it, by the git host's account type."
         },
         "batchPr": {
           "description": "pr.merged: the train's batch PR it landed in.",
@@ -1981,7 +1981,7 @@
         },
         "mergedAt": {
           "$ref": "#/$defs/Timestamp",
-          "description": "pr.merged, pr.merged_outside: when it landed on the forge."
+          "description": "pr.merged, pr.merged_outside: when it landed on the git host."
         },
         "mergedByKind": {
           "$ref": "#/$defs/ActorKind"

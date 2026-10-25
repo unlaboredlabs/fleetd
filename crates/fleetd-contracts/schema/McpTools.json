@@ -269,7 +269,7 @@
       "type": "object"
     },
     "ActorKind": {
-      "description": "Who a PR's author or merger was, by the forge's account type: git authorship can't tell, because agents commit\nunder the person's own identity.",
+      "description": "Who a PR's author or merger was, by the git host's account type: git authorship can't tell, because agents commit\nunder the person's own identity.",
       "oneOf": [
         {
           "enum": [
@@ -285,7 +285,7 @@
         },
         {
           "const": "unknown",
-          "description": "No forge, or the forge didn't say.",
+          "description": "No git host to ask, or it didn't say.",
           "type": "string"
         }
       ]
@@ -2566,27 +2566,6 @@
       ],
       "type": "object"
     },
-    "Forge": {
-      "description": "Where a repo's merges are read from.",
-      "oneOf": [
-        {
-          "enum": [
-            "github",
-            "gitlab",
-            "gitea",
-            "bitbucket",
-            "azure_devops"
-          ],
-          "type": "string"
-        },
-        {
-          "const": "git",
-          "description": "No forge fleetd can read: landed changes come from the default branch's first-parent log, and reviews,\nbots and PR open times are absent.",
-          "type": "string"
-        }
-      ],
-      "x-open": true
-    },
     "FoundRepo": {
       "description": "A git checkout found on a machine (under ~/src, ~/code, ~/projects, ~/dev and similar, at most two levels down).",
       "properties": {
@@ -2733,6 +2712,27 @@
         "timeoutSec"
       ],
       "type": "object"
+    },
+    "GitHost": {
+      "description": "Where a repo's merges are read from.",
+      "oneOf": [
+        {
+          "enum": [
+            "github",
+            "gitlab",
+            "gitea",
+            "bitbucket",
+            "azure_devops"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "git",
+          "description": "No host API fleetd can read: landed changes come from the default branch's first-parent log, and reviews,\nbots and PR open times are absent.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
     },
     "GitHubCandidate": {
       "description": "A repository `gh repo list` returned, for the user or one of their orgs.",
@@ -3322,7 +3322,7 @@
         },
         {
           "const": "reviews",
-          "description": "Reviews and comments on the forge: estimated.",
+          "description": "Reviews and comments on the git host: estimated.",
           "type": "string"
         },
         {
@@ -4438,7 +4438,7 @@
         },
         {
           "const": "direct",
-          "description": "A first-parent commit on the default branch with no PR: \"Pushed straight to the default branch\". On a repo\nwith no forge, direct pushes and outside merges can't be told apart and both read as `outside`.",
+          "description": "A first-parent commit on the default branch with no PR: \"Pushed straight to the default branch\". On a repo\nwith no git host fleetd can read, direct pushes and outside merges can't be told apart and both read as `outside`.",
           "type": "string"
         }
       ],
@@ -7692,8 +7692,8 @@
           "pattern": "^[^\\r\\n]*$",
           "type": "string"
         },
-        "forge": {
-          "$ref": "#/$defs/Forge"
+        "host": {
+          "$ref": "#/$defs/GitHost"
         },
         "knownSince": {
           "$ref": "#/$defs/Timestamp",
@@ -7701,7 +7701,7 @@
         },
         "lastRead": {
           "$ref": "#/$defs/Timestamp",
-          "description": "The last good read of its forge or its git log."
+          "description": "The last good read of its host's API or its git log."
         },
         "repo": {
           "$ref": "#/$defs/RemoteRepo"
@@ -7709,7 +7709,7 @@
       },
       "required": [
         "repo",
-        "forge"
+        "host"
       ],
       "type": "object"
     },

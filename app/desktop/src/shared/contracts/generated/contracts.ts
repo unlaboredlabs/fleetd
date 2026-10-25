@@ -92,7 +92,7 @@ export type ActivityNow = {
 };
 
 /**
- * Who a PR's author or merger was, by the forge's account type: git authorship can't tell, because agents commit
+ * Who a PR's author or merger was, by the git host's account type: git authorship can't tell, because agents commit
  * under the person's own identity.
  */
 export type ActorKind = "human" | "bot" | "train" | "unknown";
@@ -959,11 +959,6 @@ export type FleetdStatusOutput = {
   truncated?: boolean;
 };
 
-/** Where a repo's merges are read from. */
-export type KnownForge = "github" | "gitlab" | "gitea" | "bitbucket" | "azure_devops" | "git";
-/** KnownForge, or a value from a newer hub. */
-export type Forge = KnownForge | (string & {});
-
 /** A git checkout found on a machine (under ~/src, ~/code, ~/projects, ~/dev and similar, at most two levels down). */
 export type FoundRepo = {
   /** The directory's name. */
@@ -1000,6 +995,11 @@ export type GatedRunSpec = {
   secretEnv?: SecretEnvEntry[];
   timeoutSec: number;
 };
+
+/** Where a repo's merges are read from. */
+export type KnownGitHost = "github" | "gitlab" | "gitea" | "bitbucket" | "azure_devops" | "git";
+/** KnownGitHost, or a value from a newer hub. */
+export type GitHost = KnownGitHost | (string & {});
 
 /** A repository `gh repo list` returned, for the user or one of their orgs. */
 export type GitHubCandidate = {
@@ -2616,10 +2616,10 @@ export type RepoAdvancedData = {
 /** What a repo's figures were read from. */
 export type RepoCoverage = {
   defaultBranch?: string;
-  forge: Forge;
+  host: GitHost;
   /** Merges are known from here on (the first read backfills 90 days). */
   knownSince?: Timestamp;
-  /** The last good read of its forge or its git log. */
+  /** The last good read of its host's API or its git log. */
   lastRead?: Timestamp;
   repo: RemoteRepo;
 };
@@ -3586,7 +3586,7 @@ export type ToolPermission = {
  * `HubEventType`'s docs.
  */
 export type TrainEventData = {
-  /** pr.merged_outside: who opened and who merged it, by the forge's account type. */
+  /** pr.merged_outside: who opened and who merged it, by the git host's account type. */
   authorKind?: ActorKind;
   /** pr.merged: the train's batch PR it landed in. */
   batchPr?: number;
@@ -3599,7 +3599,7 @@ export type TrainEventData = {
   /** pr.merged_outside: the PR's head branch and when it was opened. */
   head?: string;
   logUrl?: string;
-  /** pr.merged, pr.merged_outside: when it landed on the forge. */
+  /** pr.merged, pr.merged_outside: when it landed on the git host. */
   mergedAt?: Timestamp;
   mergedByKind?: ActorKind;
   mergedSha?: string;

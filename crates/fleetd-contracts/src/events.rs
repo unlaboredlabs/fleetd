@@ -378,14 +378,14 @@ pub struct TrainEventData {
     pub pr_number: Option<Count>,
     pub pr_url: Option<String>,
     pub merged_sha: Option<String>,
-    /// pr.merged, pr.merged_outside: when it landed on the forge.
+    /// pr.merged, pr.merged_outside: when it landed on the git host.
     pub merged_at: Option<Timestamp>,
     /// pr.merged: the train's batch PR it landed in.
     pub batch_pr: Option<Count>,
     /// pr.merged_outside: the PR's head branch and when it was opened.
     pub head: Option<String>,
     pub pr_created_at: Option<Timestamp>,
-    /// pr.merged_outside: who opened and who merged it, by the forge's account type.
+    /// pr.merged_outside: who opened and who merged it, by the git host's account type.
     pub author_kind: Option<crate::metrics::ActorKind>,
     pub merged_by_kind: Option<crate::metrics::ActorKind>,
     /// pr.merged on a repo with no CI: what fleetd checked instead.

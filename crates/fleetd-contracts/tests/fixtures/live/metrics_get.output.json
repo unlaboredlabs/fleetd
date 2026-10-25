@@ -25,14 +25,14 @@
     "repos": [
       {
         "defaultBranch": "main",
-        "forge": "github",
+        "host": "github",
         "knownSince": "2026-07-21T00:00:00.000Z",
         "lastRead": "2026-10-20T23:59:00.000Z",
         "repo": "github.com/acme/web"
       },
       {
         "defaultBranch": "trunk",
-        "forge": "git",
+        "host": "git",
         "lastRead": "2026-10-20T14:02:00.000Z",
         "repo": "git.internal/srv/tools"
       }
