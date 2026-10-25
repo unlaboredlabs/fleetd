@@ -31,6 +31,12 @@ pub struct NodeConfig {
     /// volume or 20 GB, whichever is larger. 0 turns the disk pause off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_free_gb: Option<u64>,
+    /// GB of memory to allow per agent when the hub sizes this machine's cap. Absent or 0: 2 GB.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mem_per_agent_gb: Option<u64>,
+    /// GB of disk to allow per new agent's worktree when the hub decides how many more fit. Absent or 0: 5 GB.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disk_per_agent_gb: Option<u64>,
     /// The prompt cache TTL per session role (`lead`, `worker`, `plain`), over the role's default
     /// ([`PROMPT_CACHE_TTL`](crate::node::runner::claude::PROMPT_CACHE_TTL)). Read at each session start.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]

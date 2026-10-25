@@ -1012,6 +1012,12 @@
           "$ref": "#/$defs/NodeDisk",
           "description": "The volume holding the node's worktrees and build cache; absent from older nodes and when it can't be read."
         },
+        "diskPerAgentBytes": {
+          "description": "Disk to allow per new agent's worktree: node.json's `diskPerAgentGb`, else 5 GB. Absent from older nodes.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
         "limits": {
           "default": [],
           "description": "The latest claude.ai subscription limit of each type claude reported. Empty behind API keys and gateways,\nwhich send none.",
@@ -1025,6 +1031,18 @@
           "description": "The 1-minute load average.",
           "minimum": 0,
           "type": "number"
+        },
+        "memPerAgentBytes": {
+          "description": "Memory to allow per agent when sizing the machine's cap: node.json's `memPerAgentGb`, else 2 GB. Absent from\nolder nodes.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "memTotalBytes": {
+          "description": "Physical memory; absent from older nodes and when it can't be read.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
         },
         "memUsedPct": {
           "description": "Memory in use (total minus available), percent.",

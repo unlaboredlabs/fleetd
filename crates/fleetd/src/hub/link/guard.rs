@@ -39,6 +39,9 @@ pub(crate) mod tests {
             cpus: Int::unchecked(32),
             load1: NonNegative::new(load1).unwrap(),
             mem_used_pct: None,
+            mem_total_bytes: None,
+            mem_per_agent_bytes: None,
+            disk_per_agent_bytes: None,
             limits: List::unchecked(Vec::new()),
             disk: Some(NodeDisk {
                 free_bytes: Count::unchecked(free_gb * 1_000_000_000),
