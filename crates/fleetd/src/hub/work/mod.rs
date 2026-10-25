@@ -151,18 +151,6 @@ impl Work {
         let _ = self.landings.set(landings);
     }
 
-    /// The scope's one landing whose sha starts with `sha`.
-    pub fn landing(
-        &self,
-        scope: &WorkScope,
-        sha: &str,
-    ) -> Result<Option<elsewhere::Landed>, StoreError> {
-        match self.landings.get() {
-            Some(landings) => landings.find(scope, sha),
-            None => Ok(None),
-        }
-    }
-
     /// The scope's landings outside the train from the last `LANDINGS_SHOWN_MS`, newest first, at most `limit`; none
     /// until the landing scanner is set.
     pub fn outside_landings(

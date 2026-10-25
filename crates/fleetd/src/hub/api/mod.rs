@@ -137,7 +137,6 @@ pub struct Hub {
     pub leads: Arc<crate::hub::leads::Area>,
     pub time: Arc<crate::hub::time::Time>,
     pub status: Arc<crate::hub::status::Status>,
-    pub plans: Arc<crate::hub::plan::Plans>,
     pub chat: Arc<crate::hub::chat::Chat>,
     pub prs: Arc<crate::hub::prs::Prs>,
     pub work: Arc<crate::hub::work::Work>,
@@ -165,7 +164,6 @@ pub fn registry() -> Registry {
     crate::hub::memory::tools::register(&mut tools);
     crate::hub::time::tools::register(&mut tools);
     crate::hub::metrics::tools::register(&mut tools);
-    crate::hub::plan::tools::register(&mut tools);
     crate::hub::status::tools::register(&mut tools);
     crate::hub::chat::tools::register(&mut tools);
     crate::hub::agents::tools::register(&mut tools);

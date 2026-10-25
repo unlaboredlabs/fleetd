@@ -68,9 +68,6 @@ fn claim_state_str(state: ClaimState) -> &'static str {
 
 fn task_keys(task: &Task) -> Vec<WorkKey> {
     let mut keys = Vec::new();
-    if let Some(item) = &task.item_id {
-        push_key(&mut keys, WorkKey::Item(item.clone()));
-    }
     if let Some(key) = task.branch.as_deref().and_then(branch_key) {
         push_key(&mut keys, key);
     }
@@ -112,9 +109,6 @@ fn change_item(
     let mut keys = vec![WorkKey::Pr(PrUrl::unchecked(change.pr_url.as_str()))];
     if let Some(key) = branch_key(&change.branch) {
         push_key(&mut keys, key);
-    }
-    if let Some(item) = task.and_then(|t| t.item_id.clone()) {
-        push_key(&mut keys, WorkKey::Item(item));
     }
     let title = match task {
         Some(task) => task.title.as_str().to_owned(),

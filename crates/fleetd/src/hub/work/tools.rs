@@ -200,7 +200,6 @@ pub fn describe(item: &WorkItem) -> String {
         }
         (WorkItemKind::Claim, None) => "a claim".into(),
         (WorkItemKind::Pr, _) => "an open PR".into(),
-        (WorkItemKind::Planned, _) => format!("planned in {}", project.unwrap_or_default()),
     };
     let state = if item.state.as_str() == "expired" {
         ", expired"

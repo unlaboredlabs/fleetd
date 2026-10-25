@@ -21,8 +21,6 @@ pub const DIGEST_DECISIONS: usize = 10;
 pub struct WorkstreamFacts {
     /// The human's latest direct steers to its tasks and whether each was acknowledged.
     pub steers: Option<String>,
-    /// "plan: 5/8 items, 62%" when the order has plan items.
-    pub plan: Option<String>,
 }
 
 pub struct DigestInput<'a> {
@@ -129,12 +127,8 @@ fn workstream_lines(w: &Workstream, facts: Option<&WorkstreamFacts>) -> String {
         .and_then(|f| f.steers.as_ref())
         .map(|s| format!("\n  steers: {s}"))
         .unwrap_or_default();
-    let plan = facts
-        .and_then(|f| f.plan.as_ref())
-        .map(|p| format!("\n  {p}"))
-        .unwrap_or_default();
     format!(
-        "{head}\n  done when: {}{plan}{steers}",
+        "{head}\n  done when: {}{steers}",
         done_when_text(&brief.done_when, 120)
     )
 }

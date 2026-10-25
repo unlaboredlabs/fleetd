@@ -105,9 +105,6 @@ pub struct Task {
     pub qa: Option<bool>,
     /// The PR a review task reviews. Required at spawn for review; absent on older rows (hub-spawned judges).
     pub pr: Option<PrUrl>,
-    /// The plan item it was spawned for (`--item`).
-    #[serde(default)]
-    pub item_id: Option<crate::plan::PlanItemId>,
     /// The files the lead said a writer will change (`spawn_agent` `paths`), matched against later work.
     pub paths: Option<List<crate::work::WorkPath, 1, SPAWN_PATHS_MAX>>,
     pub state: TaskState,

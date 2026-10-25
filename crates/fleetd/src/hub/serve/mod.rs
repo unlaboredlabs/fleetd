@@ -344,7 +344,6 @@ pub fn build_on_with(
     {
         tracing::warn!(error = %e, "projects: interrupted clones not closed");
     }
-    let plans = crate::hub::plan::Plans::new(db.clone(), events.clone(), clock.clone());
     let chat = crate::hub::chat::Chat::new(db.clone(), events.clone(), clock.clone());
     let prs =
         crate::hub::prs::Prs::new(Arc::new(crate::hub::train::github::SystemGh), clock.clone());
@@ -385,7 +384,6 @@ pub fn build_on_with(
         leads,
         time,
         status: crate::hub::status::Status::new(fresh),
-        plans,
         chat,
         prs,
         work,
@@ -398,7 +396,6 @@ pub fn build_on_with(
     crate::hub::tasks::wire::wire(&hub, &hub_task_ports);
     wire::wire(&hub);
     crate::hub::approvals::tools::register_lead_calls(&hub);
-    crate::hub::plan::calls::register_lead_calls(&hub);
     crate::hub::memory::calls::register_lead_calls(&hub);
     crate::hub::steer::wire(&hub);
     crate::hub::chat::tools::extend_status(&hub);

@@ -15,7 +15,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use fleetd_contracts::ids::{MachineId, ProjectRef, Timestamp};
-use fleetd_contracts::plan::PlanItemId;
 use fleetd_contracts::prim::{Line, List, Positive};
 use fleetd_contracts::projects::short_remote;
 use fleetd_contracts::tasks::PrUrl;
@@ -71,8 +70,6 @@ pub struct Landing {
     pub task_id: Option<TaskId>,
     /// The claims it ended.
     pub claim_ids: Vec<ClaimId>,
-    /// The plan item of its task.
-    pub item_ids: Vec<PlanItemId>,
 }
 
 impl Landing {
@@ -89,7 +86,6 @@ impl Landing {
             claim_ids: self.claim_ids.clone(),
             change_id: self.change_id.clone(),
             task_id: self.task_id.clone(),
-            item_ids: self.item_ids.clone(),
         }
     }
 }
@@ -162,7 +158,7 @@ impl LandingPorts for HubLandingPorts {
     }
 }
 
-/// The landings table, as the digest and `plan covered` read it.
+/// The landings table, as the digest reads it.
 pub struct LandingStore(pub Arc<HubDb>);
 
 fn landed(landing: Landing) -> Landed {
@@ -171,8 +167,7 @@ fn landed(landing: Landing) -> Landed {
         .as_ref()
         .map(|u| u.to_string())
         .or_else(|| landing.pr_number.map(|n| format!("#{}", n.get())));
-    let mut covers: Vec<String> = landing.item_ids.iter().map(|i| i.to_string()).collect();
-    covers.extend(landing.task_id.iter().map(|t| t.to_string()));
+    let mut covers: Vec<String> = landing.task_id.iter().map(|t| t.to_string()).collect();
     covers.extend(landing.claim_ids.iter().map(|c| c.to_string()));
     Landed {
         at_ms: crate::hub::store::parse_ms(landing.at.as_str()).unwrap_or(0),
@@ -196,13 +191,6 @@ impl Landings for LandingStore {
             .0
             .with(|c| Ok(store::landings_since(c, scope, since_ms, limit, true)?))?;
         Ok(rows.into_iter().map(landed).collect())
-    }
-
-    fn find(&self, scope: &WorkScope, sha: &str) -> Result<Option<Landed>, StoreError> {
-        let found = self
-            .0
-            .with(|c| Ok(store::landing_by_prefix(c, scope, sha)?))?;
-        Ok(found.map(landed))
     }
 }
 
@@ -603,7 +591,6 @@ impl Scanner<'_> {
             change_id: change.as_ref().map(|c| c.change_id.clone()),
             task_id: task.as_ref().map(|t| t.task_id.clone()),
             claim_ids: Vec::new(),
-            item_ids: task.and_then(|t| t.item_id).into_iter().collect(),
         };
         Some(Read {
             landing,
@@ -685,12 +672,7 @@ pub fn wake_line(landing: &Landing) -> String {
         line.push_str(&format!("; it ended claim {}", ids.join(", ")));
     }
     if let Some(task) = &landing.task_id {
-        let item = landing
-            .item_ids
-            .first()
-            .map(|i| format!(", item {i}"))
-            .unwrap_or_default();
-        line.push_str(&format!("; it is {task}'s work{item}"));
+        line.push_str(&format!("; it is {task}'s work"));
     }
     line.push('.');
     line

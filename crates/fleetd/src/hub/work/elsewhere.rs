@@ -1,6 +1,6 @@
 //! What a lead reads of the work that isn't its own: the digest's "Elsewhere" lines (claims, other projects' writers
-//! and Changes on the same repo and base, and recent landings outside the train), and the landing `plan covered`
-//! names. Landings come through [`Landings`], which the landing scanner fills in; until it is set there are none.
+//! and Changes on the same repo and base, and recent landings outside the train). Landings come through
+//! [`Landings`], which the landing scanner fills in; until it is set there are none.
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::verification::CommitSha;
 use fleetd_contracts::work::{
@@ -26,7 +26,7 @@ pub struct Landed {
     pub pr: Option<String>,
     pub subject: String,
     pub author_email: Option<String>,
-    /// The work it matched exactly: "P5", "T12", "C7".
+    /// The work it matched exactly: "T12", "C7".
     pub covers: Vec<String>,
 }
 
@@ -39,8 +39,6 @@ pub trait Landings: Send + Sync {
         since_ms: i64,
         limit: usize,
     ) -> Result<Vec<Landed>, StoreError>;
-    /// The scope's one landing whose sha starts with `sha`; `None` when there is none, or more than one.
-    fn find(&self, scope: &WorkScope, sha: &str) -> Result<Option<Landed>, StoreError>;
 }
 
 /// How it reached the base, for a person: "pushed straight to main, outside fleetd".
@@ -57,19 +55,6 @@ pub fn how(landed: &Landed, base: &str) -> String {
 
 pub fn short_sha(sha: &CommitSha) -> &str {
     &sha.as_str()[..7]
-}
-
-/// The evidence on an item it covers: "abc1234 pushed straight to main, outside fleetd: feat: dark mode".
-pub fn evidence(landed: &Landed, base: &str) -> String {
-    one_line(
-        &format!(
-            "{} {}: {}",
-            short_sha(&landed.sha),
-            how(landed, base),
-            landed.subject
-        ),
-        LINE_MAX,
-    )
 }
 
 fn landing_line(landed: &Landed, base: &str) -> String {
@@ -110,7 +95,6 @@ fn owner_text(owner: &ClaimOwner) -> String {
 fn key_text(key: &WorkKey) -> String {
     match key {
         WorkKey::Issue(issue) => issue.to_string(),
-        WorkKey::Item(item) => item.to_string(),
         WorkKey::Pr(url) => url.to_string(),
         WorkKey::Branch(branch) => format!("branch {branch}"),
     }
@@ -145,7 +129,6 @@ fn item_line(item: &WorkItem) -> String {
             item.state
         ),
         WorkItemKind::Pr => format!("open PR, {}", item.state),
-        WorkItemKind::Planned => format!("planned in {}", project_text(item.project_ref.as_ref())),
     };
     let keys: Vec<String> = item.keys.iter().map(key_text).collect();
     let on = if item.kind == WorkItemKind::Claim && !keys.is_empty() {

@@ -100,13 +100,12 @@ describe("work elsewhere on the repo", () => {
     expect(rows(out).map((r) => r.dim)).toEqual([false, false, false, false, false, false, true]);
   });
 
-  it("leaves out the project's own agents and PRs, the claims its lead holds, and plan items", () => {
+  it("leaves out the project's own agents and PRs, and the claims its lead holds", () => {
     const out = list([
       item("T1", "task", { projectRef: api }),
       item("X1", "change", { projectRef: api }),
       claim("C1", { kind: "lead", keyId: "devbox/api" }),
       claim("C2", { kind: "lead", keyId: "devbox/web" }),
-      item("P5", "planned", { projectRef: web }),
     ]);
     expect(rows(out).map((r) => r.id)).toEqual(["C2"]);
     expect(rows(out)[0]?.meta).toBe("held by web’s lead · expires in 9 h");

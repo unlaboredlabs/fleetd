@@ -183,10 +183,10 @@ pub enum HubEventType {
     /// `data.reason`.
     #[serde(rename = "steer.failed")]
     SteerFailed,
-    /// A plan's scope changed and a marker was written; `data` is the `PlanChange` (`status::PlanChangedData`).
+    /// No longer sent (plans were removed); kept so an older log still reads.
     #[serde(rename = "plan.changed")]
     PlanChanged,
-    /// The hub verified a plan item done; `data.itemId`, `data.milestoneId`, `data.workstreamId`, `data.evidence`.
+    /// No longer sent (plans were removed); kept so an older log still reads.
     #[serde(rename = "plan.verified")]
     PlanVerified,
     /// A merge-train Change moved between states; `data.changeId`, `data.workstreamId`, `data.repo`, `data.prNumber`,

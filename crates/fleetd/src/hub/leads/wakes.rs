@@ -435,22 +435,7 @@ impl LeadWakes {
         let mut facts = HashMap::new();
         for w in workstreams.iter().filter(|w| w.brief.is_some()) {
             let steers = crate::hub::steer::digest_line(&self.ctx.db, &w.workstream_id);
-            let plan = self
-                .ctx
-                .db
-                .with(|c| {
-                    Ok(crate::hub::plan::store::items_of_workstream(
-                        c,
-                        w.workstream_id.as_str(),
-                    )?)
-                })
-                .ok()
-                .filter(|items| !items.is_empty())
-                .map(|items| {
-                    let f = crate::hub::plan::figure_of(&items);
-                    format!("plan: {}/{} items, {}%", f.must_done, f.must_total, f.pct())
-                });
-            facts.insert(w.workstream_id.clone(), WorkstreamFacts { plan, steers });
+            facts.insert(w.workstream_id.clone(), WorkstreamFacts { steers });
         }
         facts
     }

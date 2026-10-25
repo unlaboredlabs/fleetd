@@ -1,9 +1,9 @@
-// Status is one row per project, from the hub's `status_get` (H6): a state word, the two-tone progress bar,
-// agents running, last merged. The state word is the one the sidebar dot and the chat header show
+// Status is one row per project, from the hub's `status_get` (H6): a state word, its work in groups (waiting on you,
+// in review, working, landing, idle, done), agents running, last merged. The state word is the one the sidebar dot and the chat header show
 // (projectStateWord over the data layer's project row): "waiting on you" comes only from the hub's chat state, and
 // this row adds only "blocked" and a working its agents can't show. An unknown state reads as idle.
 
-import type { ProjectStatusRow } from "../../../shared/contracts";
+import type { ProjectStatusRow, StatusGroup, StatusItem } from "../../../shared/contracts";
 import { projectStateWord, type ProjectRow } from "../../src/data/selectors";
 
 export type StateWord = "waiting_on_you" | "blocked" | "working" | "idle";
@@ -23,22 +23,62 @@ const key = (row: ProjectStatusRow): string => `${row.projectRef.machineId}/${ro
 export const stateWord = (row: ProjectStatusRow, project: Pick<ProjectRow, "needsYou" | "working"> | undefined): StateWord =>
   projectStateWord(project?.needsYou ?? false, project?.working ?? false, row.state);
 
-/** The bar: solid = verified, lighter = credit for work in flight. Null when nothing can be counted (never 0%). */
-export interface Bar {
-  readonly pct: number;
-  readonly verifiedPct: number;
-  readonly inFlightPct: number;
+/** The groups in the hub's order; a group a newer hub sends reads as idle. */
+export const GROUPS = ["waiting_on_you", "in_review", "working", "landing", "idle", "done"] as const;
+export type Group = (typeof GROUPS)[number];
+
+export const GROUP_WORDS: Readonly<Record<Group, string>> = {
+  waiting_on_you: "waiting on you",
+  in_review: "in review",
+  working: "working",
+  landing: "landing",
+  idle: "idle",
+  done: "done",
+};
+
+const COUNT_KEY = {
+  waiting_on_you: "waitingOnYou",
+  in_review: "inReview",
+  working: "working",
+  landing: "landing",
+  idle: "idle",
+  done: "done",
+} as const satisfies Record<Group, keyof ProjectStatusRow["counts"]>;
+
+const groupOf = (g: StatusGroup): Group => GROUPS.find((x) => x === g) ?? "idle";
+
+export interface GroupView {
+  readonly group: Group;
+  readonly count: number;
+  /** The newest of the group, as many as the hub listed. */
+  readonly items: readonly StatusItem[];
 }
 
-const clamp = (n: number): number => Math.min(100, Math.max(0, Math.round(n)));
+/** The row's groups that have work, in order, with their counts and listed items. */
+export const groupsOf = (row: ProjectStatusRow): GroupView[] =>
+  GROUPS.map((group) => ({
+    group,
+    count: row.counts[COUNT_KEY[group]],
+    items: row.items.filter((i) => groupOf(i.group) === group),
+  })).filter((g) => g.count > 0);
 
-export const barOf = (row: ProjectStatusRow): Bar | null => {
-  const p = row.progress;
-  if (p === undefined) return null;
-  const verifiedPct = clamp(p.verifiedPct);
-  // The lighter part never claims past 100, whatever rounding did.
-  return { pct: clamp(p.pct), verifiedPct, inFlightPct: Math.min(clamp(p.inFlightPct), 100 - verifiedPct) };
+/** "1 waiting on you · 2 working · 3 done"; empty when nothing is in any group. */
+export const countsLine = (row: ProjectStatusRow): string =>
+  groupsOf(row)
+    .map((g) => `${String(g.count)} ${GROUP_WORDS[g.group]}`)
+    .join(" · ");
+
+/** Where an item opens: its agent in the project's panel, else its PR there, else the project's chat. */
+export const itemHref = (ref: ProjectStatusRow["projectRef"], item: StatusItem): string => {
+  const chat = `#/project/${encodeURIComponent(ref.machineId)}/${encodeURIComponent(ref.projectId)}`;
+  if (item.taskId !== undefined) return `${chat}/agents/${encodeURIComponent(item.taskId)}`;
+  if (item.pr !== undefined) return `${chat}/prs/${item.pr.repo.split("/", 2).map(encodeURIComponent).join("/")}/${String(item.pr.number)}`;
+  return chat;
 };
+
+/** "T4 · #212 · CI failed": what names the item beside its title. */
+export const itemRefs = (item: StatusItem): string =>
+  [item.taskId, item.pr === undefined ? undefined : `#${String(item.pr.number)}`, item.why].filter((p) => p !== undefined).join(" · ");
 
 export interface WordedRow {
   readonly row: ProjectStatusRow;

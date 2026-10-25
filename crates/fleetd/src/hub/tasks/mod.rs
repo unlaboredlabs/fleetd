@@ -1587,7 +1587,7 @@ impl Tasks {
     }
 
     /// Whether the task's work is over, so a dead run of it isn't resumed: it was cancelled, its workstream is closed,
-    /// its PR merged, or its plan item done or dropped.
+    /// or its PR merged.
     fn stopped(&self, task: &Task) -> Result<bool, StoreError> {
         if task.state == TaskState::Cancelled
             || self
@@ -1602,15 +1602,7 @@ impl Tasks {
             )?
             .query_row([task.task_id.as_str()], |r| r.get::<_, bool>(0))
         })?;
-        let item_over = match &task.item_id {
-            Some(item) => self
-                .db(|c| {
-                    crate::hub::plan::store::item_get(c, crate::hub::plan::number(item.as_str()))
-                })?
-                .is_some_and(|i| i.state != fleetd_contracts::plan::PlanItemState::Open),
-            None => false,
-        };
-        Ok(merged || item_over)
+        Ok(merged)
     }
 
     /// Runs again the pending PR lookups (of the machine's tasks, or all): at start, for those a hub restart cut
@@ -2121,21 +2113,6 @@ impl Tasks {
             (counts.queued.get() + counts.running.get() + counts.idle.get()) as usize,
             self.d.slots.agents(r).max_agents,
         )?;
-        if let Some(item) = &input.item {
-            let mut refused = None;
-            self.d
-                .db
-                .with(|c| {
-                    refused =
-                        crate::hub::plan::Plans::check_spawn_item(c, r, item, &input.workstream_id)
-                            .err();
-                    Ok(())
-                })
-                .map_err(store_error)?;
-            if let Some(e) = refused {
-                return Err(lead_error(e.0.code, e.0.message, e.0.fix.as_deref()));
-            }
-        }
         let (note, overridden) = match &checked {
             Some((scope, observed)) => self.check_duplicates(r, scope, observed, &input)?,
             None => (None, Vec::new()),
@@ -2157,7 +2134,6 @@ impl Tasks {
             profile,
             qa: input.qa,
             pr: input.pr.clone(),
-            item_id: input.item.clone(),
             paths: input.paths.clone(),
             state: TaskState::Queued,
             queued_reason: None,
@@ -2175,18 +2151,7 @@ impl Tasks {
             ended_at: None,
         };
         let task = self
-            .db(|c| {
-                let task = TaskRecords::create(c, task)?;
-                if let Some(item) = &task.item_id {
-                    crate::hub::plan::Plans::link_task(
-                        c,
-                        item,
-                        &task.workstream_id,
-                        &task.task_id,
-                    )?;
-                }
-                Ok(task)
-            })
+            .db(|c| TaskRecords::create(c, task))
             .map_err(store_error)?;
         if !overridden.is_empty() {
             tracing::info!(
@@ -2257,7 +2222,6 @@ impl Tasks {
             &scope,
             task.title.as_str(),
             task.prompt.as_str(),
-            task.item_id.as_ref(),
             task.pr.as_ref(),
             task.paths.iter().flatten().map(|p| p.as_str().to_owned()),
         );

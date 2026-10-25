@@ -23,7 +23,6 @@ pub mod metrics;
 pub mod model;
 pub mod node_link;
 pub mod pair;
-pub mod plan;
 pub mod projects;
 pub mod prompts;
 pub mod prs;

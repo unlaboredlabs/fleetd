@@ -66,8 +66,8 @@ The lead is also told to:
   agent ahead of them. A part's docs and tests go to that part's writer, not to a writer of their own. Parts that edit the same file go to one writer. Writers run up to the
   [Max agents](/docs/projects#max-agents) cap; a spawn past it queues and starts by itself.
 - Read the digest's Elsewhere section before spawning: claims, other projects' agents on the same repo, and commits
-  that landed outside fleetd. Work that already landed has its plan items marked `covered` by that commit instead of
-  being built again, and work a person has claimed is theirs: the lead asks you in chat before touching it.
+  that landed outside fleetd. Work that already landed isn't built again, and work a person has claimed is theirs: the
+  lead asks you in chat before touching it.
 - Never relax a review, CI, approval or check to go faster. Idle is fine.
 
 Most of this is also enforced by the hub, which refuses a call that breaks it and says why. See [Safety rules](#safety).

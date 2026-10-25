@@ -76,7 +76,7 @@ FLEETD_HUB=http://hub.your-tailnet.ts.net:4790 FLEETD_KEY_FILE=~/.fleetd/agent.k
 On a new hub with no projects yet, the output starts like this:
 
 ```text
-{"id":1,"jsonrpc":"2.0","result":{"content":[{"text":"{\"next\":\"status_get with a row's projectRef for the series behind its bar\",\"rows\":[]}", …
+{"id":1,"jsonrpc":"2.0","result":{"content":[{"text":"{\"rows\":[]}", …
 ```
 
 ## Use a key from the CLI {#key-file}
@@ -168,7 +168,7 @@ as stopping a project, answering an approval or entering a secret, need one.
 | `attachment_put {name, mime, dataB64}` | Upload a file (image, text or PDF, at most 5 MiB) for a message. | operate |
 | `attachment_get {projectRef, attachmentId}` | Read a file attached to a project's chat. | read |
 | `project_files {machineId, projectId, query}` | A project's files, for `@`-mentions. | read |
-| `status_get` | One row per project: its state word, verified and in-flight progress, agents running and the last merge. | read |
+| `status_get` | One row per project: its state word, its work in groups, agents running and the last merge. | read |
 | `agents_list {projectRef?, endedSince?}` | Every agent of your projects: its role, task, what it's doing now, when it started and its PR. | read |
 | `agent_work {machineId, threadId, before?, limit?}` | A page of one agent's recent messages, commands and edits, oldest first. Secrets show as `[secret]`. | read |
 | `pr_list {projectRef, closedSince?}`, `pr_get {repo, number}` | A project's PRs, and one in detail: description, checks, reviews with their findings, its place in the merge queue and the agent that wrote it. | read |

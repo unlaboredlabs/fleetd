@@ -87,11 +87,6 @@ The fleetd process on a worker. It connects out to the hub and starts the Claude
 
 A one-time code, such as `K4QW-7RNP`, that connects the desktop app or a new worker to the hub. It lasts 15 minutes.
 
-## Plan item {#plan-item}
-
-One piece of a project's plan, such as `P12`, sized `s`, `m` or `l`. [Status](/docs/status) counts progress in plan
-items.
-
 ## Policy file {#policy-file}
 
 An optional `.fleetd/policy.yaml` in a project's checkout. It sets tool rules and the branch prefix. See

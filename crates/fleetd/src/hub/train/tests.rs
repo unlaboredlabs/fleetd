@@ -1404,7 +1404,6 @@ fn enqueue_call(pr_url: String) -> ChangeEnqueueCall {
         task_id: None,
         pr_url: GitHubPrUrl::unchecked(pr_url),
         workstream_id: Some(ws()),
-        item: None,
     }
 }
 

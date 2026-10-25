@@ -175,7 +175,7 @@ export type WorkListAnswer = Omit<WorkListOutput, "recentLandings"> & { readonly
 /**
  * The Elsewhere group under a project's agents, from work_list on its repo and base: a person's active claims first,
  * then other claims and other projects' agents and PRs (the hub's order, newest first), then what landed outside the
- * train (newest first), and expired claims last. Not the project's own work, and not plan items nobody has started.
+ * train (newest first), and expired claims last. Not the project's own work.
  */
 export const elsewhere = (
   out: WorkListAnswer,
@@ -183,7 +183,7 @@ export const elsewhere = (
   nowMs: number,
   titleOf: (key: ProjectKey) => string | undefined = () => undefined,
 ): readonly ElsewhereRow[] => {
-  const items = out.items.filter((i) => i.kind !== "planned" && !isOwn(i, project));
+  const items = out.items.filter((i) => !isOwn(i, project));
   const person = items.filter((i) => i.kind === "claim" && !isExpired(i) && i.owner?.kind === "human_session");
   const others = items.filter((i) => !isExpired(i) && !person.includes(i));
   return [

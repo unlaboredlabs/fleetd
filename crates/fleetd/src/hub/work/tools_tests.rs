@@ -462,14 +462,6 @@ impl crate::hub::work::elsewhere::Landings for Landed {
             .cloned()
             .collect())
     }
-
-    fn find(
-        &self,
-        _scope: &WorkScope,
-        _sha: &str,
-    ) -> Result<Option<crate::hub::work::elsewhere::Landed>, crate::hub::store::StoreError> {
-        Ok(None)
-    }
 }
 
 #[tokio::test]

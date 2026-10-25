@@ -332,7 +332,7 @@ keep 30-400 days of landed changes (admin key on every machine)
 fleetd status [<project>] [--watch] [--json] [--hub <url> --key-file <path> | --home <dir>]
 ```
 
-one row per project, as the app's Status screen shows it: what it is doing (working, waiting on you, blocked and why, idle), its bar (verified plus work in flight), agents running, the last merge and why the bar last fell; one project by id or title (\<machine\>/\<project\> when two machines have one). `--watch` prints the rows again after each change; a stale row says so. On the hub machine it needs no `--hub` or `--key-file`
+one row per project, as the app's Status screen shows it: what it is doing (working, waiting on you, blocked and why, idle), its work in groups (waiting on you, in review, working, landing, idle, done), agents running and the last merge; one project by id or title (\<machine\>/\<project\> when two machines have one). `--watch` prints the rows again after each change; a stale row says so. On the hub machine it needs no `--hub` or `--key-file`
 
 ### fleetd steer {#steer}
 

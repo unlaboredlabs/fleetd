@@ -317,10 +317,10 @@ fn landings(hub: &Hub, scope: &WorkScope) -> Vec<super::landings::Landing> {
     all
 }
 
-fn task(hub: &Hub, project: &ProjectRef, branch: &str, item: &str) -> Task {
+fn task(hub: &Hub, project: &ProjectRef, branch: &str) -> Task {
     let task: Task = serde_json::from_value(json!({
         "taskId": "T1", "projectRef": project, "workstreamId": "W1", "title": "checkout totals", "kind": "write",
-        "prompt": "do it", "state": "running", "attempt": 1, "createdAt": AT, "branch": branch, "itemId": item,
+        "prompt": "do it", "state": "running", "attempt": 1, "createdAt": AT, "branch": branch,
     }))
     .unwrap();
     hub.db.with(|c| Ok(TaskRecords::create(c, task)?)).unwrap()
@@ -419,7 +419,7 @@ async fn a_direct_push_on_a_gitlab_repo_is_recorded_and_ends_its_authors_claim()
         events[0],
         json!({
             "repoKey": "gitlab.example.com/acme/shop", "base": "main", "sha": sha, "route": "direct_push",
-            "subject": "feat(app): dark mode toggle for settings", "claimIds": [mine.as_str()], "itemIds": [],
+            "subject": "feat(app): dark mode toggle for settings", "claimIds": [mine.as_str()],
         }),
         "work.landed leaves out what it doesn't know"
     );
@@ -435,20 +435,11 @@ async fn a_direct_push_on_a_gitlab_repo_is_recorded_and_ends_its_authors_claim()
         )
     );
 
-    // The digest and `plan covered` read it through `Landings`.
+    // The digest reads it through `Landings`.
     let store = LandingStore(hub.db.clone());
     let outside = store.outside(&shop_scope, 0, 5).unwrap();
     assert_eq!(outside.len(), 1);
     assert_eq!(outside[0].covers, [mine.to_string()]);
-    assert_eq!(
-        store
-            .find(&shop_scope, &sha[..7])
-            .unwrap()
-            .unwrap()
-            .sha
-            .as_str(),
-        sha
-    );
 
     // Scanning again with nothing new records nothing.
     scan(&hub, &git).await;
@@ -583,7 +574,7 @@ async fn a_github_squash_merge_takes_its_branch_from_github_and_links_the_task()
     let git = LocalGit::default();
     let scope = scope(GITHUB);
     scan(&hub, &git).await;
-    let task = task(&hub, &shop, "fleetd/T1-checkout-totals", "P5");
+    let task = task(&hub, &shop, "fleetd/T1-checkout-totals");
     let held = claim(
         &hub,
         &scope,
@@ -625,17 +616,9 @@ async fn a_github_squash_merge_takes_its_branch_from_github_and_links_the_task()
         Some("fleetd/T1-checkout-totals")
     );
     assert_eq!(landing.task_id.as_ref(), Some(&task.task_id));
-    assert_eq!(
-        landing
-            .item_ids
-            .iter()
-            .map(|i| i.as_str())
-            .collect::<Vec<_>>(),
-        ["P5"]
-    );
     assert_eq!(state(&hub, &held), ClaimState::Landed);
     assert!(wake_line(landing).ends_with(&format!(
-        "; it ended claim {held}; it is {}'s work, item P5.",
+        "; it ended claim {held}; it is {}'s work.",
         task.task_id
     )));
 

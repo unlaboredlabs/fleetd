@@ -131,7 +131,7 @@ Everything shows up in the chat, quietly:
 | Cards in the lead's messages | Charts, tables, a diff, a pull request or an agent with its live state, a checklist, an image. Click Open on a pull request or an agent to see it in the panel. |
 | Three dots | The lead is writing; its message shows when it's done. |
 
-For a project's progress at a glance, see [Status](/docs/status). For where the time went, see
+For a project's work at a glance, see [Status](/docs/status). For where the time went, see
 [Where time went](/docs/time-inspector).
 
 ## Read a pull request {#prs}

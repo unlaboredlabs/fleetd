@@ -33,18 +33,18 @@ const withProjectRows = (f: Fixture, first: { needsYou?: boolean; leadWorking?: 
     const title = asText(p["title"]);
     if (i === 0) {
       const state = first.needsYou === true ? "waiting_on_you" : first.leadWorking === true ? "working" : "idle";
-      return statusRow(f, ref, title, state, state === "working" ? { agents: 3, pct: [40, 25], merged: "Receipt dates use Intl" } : {});
+      return statusRow(f, ref, title, state, state === "working" ? { agents: 3, merged: "Receipt dates use Intl" } : {});
     }
     switch (i % 4) {
       case 0:
         writeChat(f, ref, [{ author: "human", text: "keep going on the export" }, { author: "lead", text: "On it. Two agents working." }], { leadWorking: true });
-        return statusRow(f, ref, title, "working", { agents: 2, pct: [30, 20] });
+        return statusRow(f, ref, title, "working", { agents: 2 });
       case 1:
         writeChat(f, ref, fromLines(QUESTION).slice(0, 1), { needsYou: true });
-        return statusRow(f, ref, title, "waiting_on_you", { pct: [50, 0], merged: "Nightly export resumes after a crash" });
+        return statusRow(f, ref, title, "waiting_on_you", { merged: "Nightly export resumes after a crash" });
       case 2:
         writeChat(f, ref, [{ author: "lead", text: "Stuck: main CI is red, so nothing can merge. Fixing CI first." }]);
-        return statusRow(f, ref, title, "blocked", { blocked: "main CI is red", pct: [20, 0] });
+        return statusRow(f, ref, title, "blocked", { blocked: "main CI is red" });
       default:
         writeChat(f, ref, []);
         return statusRow(f, ref, title, "idle");
@@ -64,13 +64,13 @@ const longDrafts = (): Array<Draft> => [...migrated(), ...fromLines(longChat(LON
 
 /** The sidebar and Status mix: projects needing you, running, both and neither, each row state, long names. */
 const PROJECTS: ReadonlyArray<{ title: string; machine: string; needsYou: boolean; working: boolean; row: Parameters<typeof statusRow>[3]; extra: Parameters<typeof statusRow>[4] }> = [
-  { title: "storefront", machine: "devbox", needsYou: false, working: true, row: "working", extra: { agents: 4, pct: [45, 30], merged: "Receipt dates use Intl" } },
-  { title: "billing", machine: "buildbox", needsYou: true, working: false, row: "waiting_on_you", extra: { agents: 0, pct: [60, 0], merged: "Nightly export resumes after a crash", mergedAgoMs: 26 * 3_600_000 } },
-  { title: "checkout", machine: "devbox", needsYou: false, working: false, row: "blocked", extra: { blocked: "main CI is red on acme/checkout", pct: [20, 10] } },
+  { title: "storefront", machine: "devbox", needsYou: false, working: true, row: "working", extra: { agents: 4, merged: "Receipt dates use Intl" } },
+  { title: "billing", machine: "buildbox", needsYou: true, working: false, row: "waiting_on_you", extra: { agents: 0, merged: "Nightly export resumes after a crash", mergedAgoMs: 26 * 3_600_000 } },
+  { title: "checkout", machine: "devbox", needsYou: false, working: false, row: "blocked", extra: { blocked: "main CI is red on acme/checkout" } },
   { title: "docs", machine: "devbox", needsYou: false, working: false, row: "idle", extra: { merged: "Quick start opens a project's chat", mergedAgoMs: 12 * 86_400_000 } },
-  { title: "inventory", machine: "buildbox", needsYou: true, working: true, row: "waiting_on_you", extra: { agents: 2, pct: [10, 15] } },
+  { title: "inventory", machine: "buildbox", needsYou: true, working: true, row: "waiting_on_you", extra: { agents: 2 } },
   { title: "search", machine: "buildbox", needsYou: false, working: false, row: "blocked", extra: { blocked: "buildbox is offline", stale: "buildbox stopped answering" } },
-  { title: ofLength(LONG_TITLES[1], 118), machine: "devbox", needsYou: false, working: true, row: "working", extra: { agents: 12, pct: [5, 70] } },
+  { title: ofLength(LONG_TITLES[1], 118), machine: "devbox", needsYou: false, working: true, row: "working", extra: { agents: 12 } },
   { title: "mobile", machine: "devbox", needsYou: false, working: false, row: "idle", extra: {} },
 ];
 
