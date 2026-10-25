@@ -1,0 +1,74 @@
+{
+ "data": {
+  "repository": {
+   "pullRequests": {
+    "pageInfo": {
+     "hasNextPage": false,
+     "endCursor": "Y3Vyc29yOnYyOpK5MjAyNi0wNy0wMVQxMDowMDowMFrOAAAAFA=="
+    },
+    "nodes": [
+     {
+      "number": 30,
+      "title": "Search results",
+      "url": "https://github.com/acme/web/pull/30",
+      "body": "",
+      "createdAt": "2026-08-30T10:00:00Z",
+      "updatedAt": "2026-09-01T10:00:00Z",
+      "mergedAt": "2026-09-01T10:00:00Z",
+      "baseRefName": "main",
+      "headRefName": "search",
+      "additions": 10,
+      "deletions": 2,
+      "headRepository": {
+       "nameWithOwner": "acme/web",
+       "defaultBranchRef": {
+        "name": "main"
+       }
+      },
+      "author": {
+       "__typename": "User",
+       "login": "ada-lovelace"
+      },
+      "mergedBy": {
+       "__typename": "User",
+       "login": "ada-lovelace"
+      },
+      "mergeCommit": {
+       "oid": "3030303030303030303030303030303030303030"
+      }
+     },
+     {
+      "number": 20,
+      "title": "Older than the backfill",
+      "url": "https://github.com/acme/web/pull/20",
+      "body": "",
+      "createdAt": "2026-10-20T08:00:00Z",
+      "updatedAt": "2026-07-01T10:00:00Z",
+      "mergedAt": "2026-07-01T10:00:00Z",
+      "baseRefName": "main",
+      "headRefName": "old",
+      "additions": 10,
+      "deletions": 2,
+      "headRepository": {
+       "nameWithOwner": "acme/web",
+       "defaultBranchRef": {
+        "name": "main"
+       }
+      },
+      "author": {
+       "__typename": "User",
+       "login": "ada-lovelace"
+      },
+      "mergedBy": {
+       "__typename": "User",
+       "login": "ada-lovelace"
+      },
+      "mergeCommit": {
+       "oid": "2020202020202020202020202020202020202020"
+      }
+     }
+    ]
+   }
+  }
+ }
+}

@@ -2726,6 +2726,11 @@ export type RepoCoverage = {
   knownSince?: Timestamp;
   /** The last good read of its host's API or its git log. */
   lastRead?: Timestamp;
+  /**
+   * The host's merged PRs are still being read back to the backfill's start: a busy repo's first read is bounded,
+   * and the next reads go on from where it stopped. `known_since` is as far as they have reached.
+   */
+  partlyRead?: boolean;
   repo: RemoteRepo;
 };
 
@@ -3728,6 +3733,8 @@ export type ToolPermission = {
 export type TrainEventData = {
   /** pr.merged_outside: who opened and who merged it, by the git host's account type. */
   authorKind?: ActorKind;
+  /** pr.merged, pr.merged_outside: the branch it merged into. */
+  base?: string;
   /** pr.merged: the train's batch PR it landed in. */
   batchPr?: number;
   changeId?: ChangeId;
@@ -3741,6 +3748,8 @@ export type TrainEventData = {
   logUrl?: string;
   /** pr.merged, pr.merged_outside: when it landed on the git host. */
   mergedAt?: Timestamp;
+  /** pr.merged_outside: the merger's login on the git host, so a merge by the person's own account is their touch. */
+  mergedBy?: string;
   mergedByKind?: ActorKind;
   mergedSha?: string;
   prCreatedAt?: Timestamp;

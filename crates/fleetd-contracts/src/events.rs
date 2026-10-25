@@ -131,7 +131,7 @@ pub enum HubEventType {
     PrMerged,
     /// A PR was merged into a base the train guards without the train; `data.repo`, `data.prNumber`,
     /// `data.mergedSha`, and `data.changeId` when it had been enqueued. Newer hubs add `data.mergedAt`, `data.head`,
-    /// `data.prCreatedAt`, `data.authorKind` and `data.mergedByKind`.
+    /// `data.base`, `data.prCreatedAt`, `data.authorKind`, `data.mergedByKind` and `data.mergedBy` (the merger's login).
     #[serde(rename = "pr.merged_outside")]
     PrMergedOutside,
     /// Refused at enqueue; `data.prUrl`, `data.fix`.
@@ -380,7 +380,7 @@ pub struct RequestEventData {
 /// `change.refused`, `pr.merged`, `pr.merged_outside`. Which fields each carries is in
 /// `HubEventType`'s docs.
 #[skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TrainEventData {
     pub change_id: Option<ChangeId>,
@@ -397,10 +397,14 @@ pub struct TrainEventData {
     pub batch_pr: Option<Count>,
     /// pr.merged_outside: the PR's head branch and when it was opened.
     pub head: Option<String>,
+    /// pr.merged, pr.merged_outside: the branch it merged into.
+    pub base: Option<String>,
     pub pr_created_at: Option<Timestamp>,
     /// pr.merged_outside: who opened and who merged it, by the git host's account type.
     pub author_kind: Option<crate::metrics::ActorKind>,
     pub merged_by_kind: Option<crate::metrics::ActorKind>,
+    /// pr.merged_outside: the merger's login on the git host, so a merge by the person's own account is their touch.
+    pub merged_by: Option<String>,
     /// pr.merged on a repo with no CI: what fleetd checked instead.
     pub ci: Option<String>,
     /// change.ci_failed: the failing check names.

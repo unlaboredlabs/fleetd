@@ -652,6 +652,10 @@ impl Train {
         if let Some(task_id) = &merged.task_id {
             data["taskId"] = json!(task_id);
         }
+        data["mergedAt"] = json!(iso_ms(self.now_ms()));
+        if let Some(b) = batch {
+            data["batchPr"] = json!(b.pr_number);
+        }
         let note = batch
             .map(|b| format!(" in batch #{}", b.pr_number))
             .unwrap_or_default();
@@ -1283,7 +1287,7 @@ impl Train {
         }
         let failed =
             |e: GhError| tracing::warn!(repo, error = %e.message, "train: merged PRs not read");
-        let merged = match self.github.merged_pulls(repo).await {
+        let merged = match self.github.merged_pulls(repo, watch_since_ms).await {
             Ok(merged) => merged,
             Err(e) => return failed(e),
         };
@@ -1304,12 +1308,14 @@ impl Train {
         let guarded = lock(&self.bases).get(repo).cloned().unwrap_or_default();
         let mut newest = watch_since_ms;
         for pr in merged {
-            if pr.base != default && !guarded.contains(&pr.base) || pr.head.starts_with(&scratch) {
-                continue;
-            }
             let Some(at) = parse_ms(&pr.merged_at).filter(|at| *at > watch_since_ms) else {
                 continue;
             };
+            // The watch moves past every merge read, the train's own too, so the next read stops at its first page.
+            newest = newest.max(at);
+            if pr.base != default && !guarded.contains(&pr.base) || pr.head.starts_with(&scratch) {
+                continue;
+            }
             let change = self.records.latest_for(repo, pr.number);
             if change
                 .as_ref()
@@ -1317,11 +1323,23 @@ impl Train {
             {
                 continue;
             }
-            newest = newest.max(at);
             let project_ref = change.as_ref().map_or(project_ref, |c| &c.project_ref);
-            let mut data = json!({ "repo": repo, "prNumber": pr.number });
+            let mut data = json!({
+                "repo": repo, "prNumber": pr.number, "mergedAt": iso_ms(at), "head": pr.head, "base": pr.base,
+            });
             if let Some(sha) = &pr.merge_sha {
                 data["mergedSha"] = json!(sha.to_lowercase());
+            }
+            if let Some(created) = pr.created_at.as_deref().and_then(parse_ms) {
+                data["prCreatedAt"] = json!(iso_ms(created));
+            }
+            if let Some(bot) = pr.author_bot {
+                data["authorKind"] = json!(if bot { "bot" } else { "human" });
+            }
+            // Only the PR's detail names who merged it; a merge made by the person is one of their touches.
+            if let Ok(Some(by)) = self.github.pull(repo, pr.number).await.map(|p| p.merged_by) {
+                data["mergedByKind"] = json!(if by.kind == "Bot" { "bot" } else { "human" });
+                data["mergedBy"] = json!(by.login);
             }
             if let Some(c) = &change {
                 data["changeId"] = json!(c.change_id);

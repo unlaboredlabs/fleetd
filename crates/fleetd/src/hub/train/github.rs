@@ -117,6 +117,17 @@ pub struct Pull {
     pub base: PullBase,
     #[serde(default)]
     pub labels: Vec<Label>,
+    /// Who merged it: only a PR's detail says.
+    #[serde(default)]
+    pub merged_by: Option<PullMerger>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct PullMerger {
+    pub login: String,
+    /// GitHub's account type: "User", "Bot".
+    #[serde(rename = "type", default)]
+    pub kind: String,
 }
 
 /// The label that keeps a PR off the train until someone takes it off.
@@ -133,6 +144,10 @@ impl Pull {
 /// The machine-readable line in a batch PR's body naming each member and the head it was built from
 /// (`fleetd-batch: #7@<sha> #8@<sha>`), which recovery and the `pr_merged` check read.
 pub const BATCH_MARKER: &str = "fleetd-batch:";
+
+/// A hidden line on every comment the train posts: it posts under the person's own login, so the metrics' host sweep
+/// tells the train's comments from the person's by it.
+pub const TRAIN_MARK: &str = "<!-- fleetd:train -->";
 
 /// Each member a batch PR's body names on its `fleetd-batch:` line, with the head sha it was built from (None when
 /// the line names none).
@@ -204,12 +219,21 @@ pub struct OpenPull {
 }
 
 #[derive(Deserialize)]
+struct PullUser {
+    #[serde(rename = "type", default)]
+    kind: String,
+}
+
+#[derive(Deserialize)]
 struct ClosedPull {
     number: i64,
     merged_at: Option<String>,
     merge_commit_sha: Option<String>,
     base: PullBase,
     head: PullHead,
+    user: Option<PullUser>,
+    created_at: Option<String>,
+    updated_at: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -220,7 +244,15 @@ pub struct MergedPull {
     pub base: String,
     /// Its branch.
     pub head: String,
+    /// Opened by a bot account (GitHub's `user.type`), when GitHub said.
+    pub author_bot: Option<bool>,
+    pub created_at: Option<String>,
 }
+
+/// Pages of closed PRs `merged_pulls` reads at most per check before it stops short of its cursor: the check runs
+/// every minute, so a busy repo stays within GitHub's rate limit; the metrics' host sweep backfills past it.
+pub const MERGED_PAGES: usize = 2;
+const MERGED_PAGE: usize = 100;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MergeOutcome {
@@ -693,12 +725,13 @@ impl TrainGitHub {
         }))
     }
 
-    /// Comments on the PR with why, then closes it.
+    /// Comments on the PR with why (marked as the train's), then closes it.
     pub async fn close(&self, repo: &str, n: i64, comment: &str) -> Result<(), GhError> {
+        let body = format!("{comment}\n\n{TRAIN_MARK}");
         self.json::<Value>(
             "POST",
             &format!("repos/{repo}/issues/{n}/comments"),
-            &[("body", comment)],
+            &[("body", &body)],
         )
         .await?;
         self.json::<Value>(
@@ -841,27 +874,47 @@ impl TrainGitHub {
         .await
     }
 
-    /// Recently updated closed PRs that were merged.
-    pub async fn merged_pulls(&self, repo: &str) -> Result<Vec<MergedPull>, GhError> {
-        let pulls: Vec<ClosedPull> = self
-            .json(
-                "GET",
-                &format!("repos/{repo}/pulls?state=closed&sort=updated&direction=desc&per_page=50"),
-                &[],
-            )
-            .await?;
-        Ok(pulls
-            .into_iter()
-            .filter_map(|p| {
+    /// Closed PRs that were merged, most recently updated first, paged until one was last updated before
+    /// `since_ms` (at most [`MERGED_PAGES`] pages).
+    pub async fn merged_pulls(
+        &self,
+        repo: &str,
+        since_ms: i64,
+    ) -> Result<Vec<MergedPull>, GhError> {
+        let mut out = Vec::new();
+        for page in 1..=MERGED_PAGES {
+            let pulls: Vec<ClosedPull> = self
+                .json(
+                    "GET",
+                    &format!(
+                        "repos/{repo}/pulls?state=closed&sort=updated&direction=desc&per_page={MERGED_PAGE}&page={page}"
+                    ),
+                    &[],
+                )
+                .await?;
+            let full = pulls.len() == MERGED_PAGE;
+            let passed = pulls.last().is_none_or(|p| {
+                p.updated_at
+                    .as_deref()
+                    .and_then(crate::hub::store::parse_ms)
+                    .is_none_or(|at| at < since_ms)
+            });
+            out.extend(pulls.into_iter().filter_map(|p| {
                 p.merged_at.map(|merged_at| MergedPull {
                     number: p.number,
                     merged_at,
                     merge_sha: p.merge_commit_sha,
                     base: p.base.ref_,
                     head: p.head.ref_,
+                    author_bot: p.user.map(|u| u.kind == "Bot"),
+                    created_at: p.created_at,
                 })
-            })
-            .collect())
+            }));
+            if !full || passed {
+                break;
+            }
+        }
+        Ok(out)
     }
 
     /// The repo's workflows and the checks `branch` requires, read as adding a project reads them; any read failing

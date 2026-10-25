@@ -2101,6 +2101,10 @@
           "$ref": "#/$defs/ActorKind",
           "description": "pr.merged_outside: who opened and who merged it, by the git host's account type."
         },
+        "base": {
+          "description": "pr.merged, pr.merged_outside: the branch it merged into.",
+          "type": "string"
+        },
         "batchPr": {
           "description": "pr.merged: the train's batch PR it landed in.",
           "maximum": 9007199254740991,
@@ -2134,6 +2138,10 @@
         "mergedAt": {
           "$ref": "#/$defs/Timestamp",
           "description": "pr.merged, pr.merged_outside: when it landed on the git host."
+        },
+        "mergedBy": {
+          "description": "pr.merged_outside: the merger's login on the git host, so a merge by the person's own account is their touch.",
+          "type": "string"
         },
         "mergedByKind": {
           "$ref": "#/$defs/ActorKind"

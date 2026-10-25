@@ -202,7 +202,7 @@
         },
         {
           "const": "pr.merged_outside",
-          "description": "A PR was merged into a base the train guards without the train; `data.repo`, `data.prNumber`,\n`data.mergedSha`, and `data.changeId` when it had been enqueued. Newer hubs add `data.mergedAt`, `data.head`,\n`data.prCreatedAt`, `data.authorKind` and `data.mergedByKind`.",
+          "description": "A PR was merged into a base the train guards without the train; `data.repo`, `data.prNumber`,\n`data.mergedSha`, and `data.changeId` when it had been enqueued. Newer hubs add `data.mergedAt`, `data.head`,\n`data.base`, `data.prCreatedAt`, `data.authorKind`, `data.mergedByKind` and `data.mergedBy` (the merger's login).",
           "type": "string"
         },
         {
