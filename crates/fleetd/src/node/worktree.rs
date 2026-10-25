@@ -429,8 +429,9 @@ impl FetchError {
 /// When each branch was last fetched, and how it went.
 type Fetched = HashMap<String, (Instant, Result<(), FetchError>)>;
 
-/// Each root's last fetches; the lock lets one fetch run at a time per project root.
-static FETCHES: LazyLock<Mutex<HashMap<PathBuf, Arc<Mutex<Fetched>>>>> =
+/// Each project and remote's last fetches. Its lock lets one fetch run at a time per project and remote, and a start
+/// that waited on it takes that fetch's result; other projects never wait.
+static FETCHES: LazyLock<Mutex<HashMap<RemoteKey, Arc<Mutex<Fetched>>>>> =
     LazyLock::new(Default::default);
 
 /// Brings `refs/remotes/<remote>/<branch>` up to date and nothing else: never the human's branches or working tree.
@@ -439,7 +440,7 @@ fn fetch(root: &Path, remote: &str, branch: &str) -> Result<(), FetchError> {
     let per_root = FETCHES
         .lock()
         .unwrap()
-        .entry(root.to_path_buf())
+        .entry((root.to_path_buf(), remote.to_owned()))
         .or_default()
         .clone();
     let mut last = per_root.lock().unwrap();
@@ -477,22 +478,47 @@ pub struct Base {
     pub note: Option<String>,
 }
 
-/// When `name` (a remote-tracking ref) last moved, as "10-24 18:02", from its reflog.
-fn as_of(root: &Path, name: &str) -> Option<String> {
-    let out = git(
+/// When `name` (a remote-tracking ref) last moved, as "10-24 18:02 UTC": from its reflog, else when git last wrote
+/// the ref (a clone packs it and writes no reflog).
+fn as_of(root: &Path, name: &str) -> String {
+    const FORMAT: &str = "%m-%d %H:%M UTC";
+    let logged = command(
         root,
         &[
             "log",
             "-g",
             "-1",
             "--format=%gd",
-            "--date=format:%m-%d %H:%M",
+            &format!("--date=format-local:{FORMAT}"),
             name,
         ],
     )
-    .ok()?;
-    let out = out.trim();
-    Some(out[out.find("@{")? + 2..out.rfind('}')?].to_owned())
+    .env("TZ", "UTC")
+    .output()
+    .ok()
+    .filter(|o| o.status.success())
+    .and_then(|o| {
+        let out = String::from_utf8_lossy(&o.stdout);
+        let out = out.trim();
+        Some(out[out.find("@{")? + 2..out.rfind('}')?].to_owned())
+    });
+    logged
+        .or_else(|| {
+            [name, "packed-refs"].into_iter().find_map(|file| {
+                let path = git(
+                    root,
+                    &["rev-parse", "--path-format=absolute", "--git-path", file],
+                )
+                .ok()?;
+                let written = std::fs::metadata(path.trim()).ok()?.modified().ok()?;
+                Some(
+                    chrono::DateTime::<chrono::Utc>::from(written)
+                        .format(FORMAT)
+                        .to_string(),
+                )
+            })
+        })
+        .unwrap_or_else(|| "an unknown time".to_owned())
 }
 
 /// The start point for a new branch whose PRs target `name`, the default branch the hub asked for: the remote's
@@ -544,12 +570,10 @@ pub fn fresh_base(root: &Path, name: &str) -> Result<Base, GitError> {
         Err(e) => e,
     };
     if let Some(sha) = tracking_sha {
-        let when = as_of(root, &format!("refs/remotes/{tracking}"))
-            .map(|w| format!(" as of {w}"))
-            .unwrap_or_default();
+        let when = as_of(root, &format!("refs/remotes/{tracking}"));
         return Ok(Base {
             note: Some(format!(
-                "based on {tracking}{when} (fetch failed: {failed})"
+                "based on {tracking} as of {when} (fetch failed: {failed})"
             )),
             base_ref: tracking,
             sha,
@@ -918,6 +942,46 @@ pub(crate) mod tests {
             e.0,
             "can't reach origin and have no copy of origin/main (fetch failed: offline)"
         );
+    }
+
+    #[test]
+    fn starts_that_arrive_together_share_one_fetch_and_other_projects_never_wait() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_, slow) = origin_and_checkout(&dir.path().join("a"));
+        let count = dir.path().join("fetches");
+        // A remote that takes 2 s to fail, counting each time it is asked.
+        let ssh = format!("echo x >> '{}'; sleep 2; exit 1 #", count.display());
+        run(&slow, &["config", "core.sshCommand", &ssh]);
+        // Else git first runs it with -G to learn which ssh it is.
+        run(&slow, &["config", "ssh.variant", "simple"]);
+        run(
+            &slow,
+            &["remote", "set-url", "origin", "ssh://example.invalid/a.git"],
+        );
+        let (origin, fast) = origin_and_checkout(&dir.path().join("b"));
+        let fresh = land(&origin, "main", "b.txt");
+
+        let starts: Vec<_> = (0..3)
+            .map(|_| {
+                let slow = slow.clone();
+                std::thread::spawn(move || fresh_base(&slow, "main").unwrap())
+            })
+            .collect();
+        std::thread::sleep(Duration::from_millis(300));
+        let started = Instant::now();
+        assert_eq!(fresh_base(&fast, "main").unwrap().sha, fresh);
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "waited on another project's fetch"
+        );
+        for start in starts {
+            let note = start.join().unwrap().note.unwrap();
+            // A fresh clone has no reflog for the ref; when it was written still dates it.
+            assert!(note.starts_with("based on origin/main as of "), "{note}");
+            assert!(!note.contains("unknown"), "{note}");
+            assert!(note.ends_with("(fetch failed: offline)"), "{note}");
+        }
+        assert_eq!(std::fs::read_to_string(&count).unwrap().lines().count(), 1);
     }
 
     #[test]
