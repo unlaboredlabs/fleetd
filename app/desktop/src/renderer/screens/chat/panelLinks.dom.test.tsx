@@ -39,6 +39,8 @@ const answer = (tool: string, input: Record<string, unknown>): unknown => {
       return { at: AT, trains: [], orders: [card("W1", { lanes: [writer], prs: [writer.pr] })] };
     case "agents_list":
       return { at: AT, agents: [] };
+    case "work_list":
+      return { scope: { repoKey: "github.com/acme/storefront", base: "main" }, items: [], recentLandings: [] };
     case "pr_list":
       return { at: AT, prs: PRS };
     case "pr_get": {

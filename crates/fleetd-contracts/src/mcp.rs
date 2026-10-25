@@ -1166,7 +1166,8 @@ output!(WorkClaimOutput {
 });
 
 // work_list: the work in flight on a repo's base branch, across every project on the repo and people's own sessions:
-// tasks, Changes on the merge train and claims (expired ones last, for a day). It only reads.
+// tasks, Changes on the merge train and claims (expired ones last, for a day), and what landed there outside the train
+// in the last 24 h. It only reads.
 input!(
     #[serde(remote = "Self")]
     WorkListInput {
@@ -1174,6 +1175,9 @@ input!(
         repo: Option<Line<1, 500>>,
         project_ref: Option<ProjectRef>,
         base: Option<crate::work::BranchName>,
+        /// false: leave out what each writer has changed so far, which asks its machine; a claim keeps its paths.
+        /// Default true.
+        paths: Option<bool>,
     }
 );
 checked!(WorkListInput, |input| {
@@ -1187,6 +1191,9 @@ output!(WorkListOutput {
     items: List<crate::work::WorkItem, 0, 100>,
     /// No project is bound to the repo yet, so fleetd's agents' work on it may be missing from the items.
     warning: Option<String>,
+    /// Commits that reached the base outside the train (a PR merged by hand, a direct push) in the last 24 h, newest
+    /// first.
+    recent_landings: List<crate::work::RecentLanding, 0, 10>,
 });
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
