@@ -6,6 +6,7 @@ import type { PrListOutput, PrRow, ProjectRef } from "../../../shared/contracts"
 import { useData, useToolQuery } from "../../src/data/react";
 import { Button, Dot, EmptyState, Text } from "../../ui";
 import type { PrKey } from "../shell/routes";
+import { PaneEmpty } from "./Bits";
 import { PrDetail, WithCode, type PrTab } from "./PrDetail";
 import { PrList } from "./PrList";
 import { githubLine } from "./words";
@@ -75,9 +76,10 @@ export function PrsPane({ project, pr, tab, onTab }: { project: ProjectRef; pr: 
       ) : rows !== undefined ? (
         <PrList rows={rows} cut={list.data?.truncated === true} project={project} nowMs={hubNow ?? 0} />
       ) : list.isError ? (
-        <div className={s.paneNote} role="alert">
-          <Text tone="quiet">Couldn’t read the pull requests.</Text>
-          <Button onClick={() => void list.refetch()}>Retry</Button>
+        <div className={s.listEmpty} role="alert">
+          <PaneEmpty title="Couldn’t read the pull requests" action={<Button size="sm" onClick={() => void list.refetch()}>Retry</Button>}>
+            The hub didn’t answer this time.
+          </PaneEmpty>
         </div>
       ) : (
         <Skeleton />
@@ -105,13 +107,16 @@ function GitHubBanner({ list, onRetry }: { list: PrListOutput; onRetry: () => vo
   );
 }
 
-/** Row outlines, no shimmer, as the list loads. */
+/** Row outlines, a title and its quiet line each, as the list loads; nothing shimmers. */
 function Skeleton() {
   return (
     <div className={s.skeleton} aria-busy="true" aria-label="Loading the pull requests">
-      <span />
-      <span />
-      <span />
+      {[0, 1, 2, 3].map((i) => (
+        <span key={i} className={s.skeletonRow}>
+          <span />
+          <span />
+        </span>
+      ))}
     </div>
   );
 }

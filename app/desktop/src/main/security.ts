@@ -29,7 +29,7 @@ const isDevSocket = (url: string): boolean => {
 
 /**
  * Defence in depth around the CSP: the renderer gets no network (hub traffic goes through main), no permissions, no
- * new windows and no navigation away from the app. GitHub and fleetd.sh links open in the user's browser. Run before
+ * new windows and no navigation away from the app. http and https links open in the user's browser. Run before
  * app ready.
  */
 export const harden = (): void => {

@@ -45,13 +45,20 @@ const QUEUE: Readonly<Partial<Record<string, QueueWords>>> = {
   abandoned: { word: "dropped", moved: "Dropped", tone: "idle" },
 } satisfies Record<ChangeState, QueueWords>;
 
+// The states a PR waits in line in: the list row and the PR's sentence both give its place only in these.
+const IN_LINE: ReadonlySet<string> = new Set<ChangeState>(["queued", "reviewing", "ready"]);
+
+/** Its 0-based place in line, when it is waiting in one. */
+const lineAt = (q: PrRow["queue"]): number | undefined => (q?.position === undefined || !IN_LINE.has(q.state) ? undefined : q.position);
+
 const queueSentence = (q: NonNullable<PrRow["queue"]>): string => {
-  const place = q.position === undefined ? "" : q.length > 1 ? `, ${ordinal(q.position + 1)} of ${q.length} in line` : "";
+  const at = lineAt(q);
+  const place = at === undefined ? "" : q.length > 1 ? `, ${ordinal(at + 1)} of ${q.length} in line` : ", next in line";
   switch (q.state) {
     case "queued":
       return `Waiting to merge${place}.`;
     case "reviewing":
-      return "In review. It merges once its reviews and checks pass.";
+      return `In review${place}. It merges once its reviews and checks pass.`;
     case "ready":
       return `Ready to merge${place}.`;
     case "rebasing":
@@ -106,6 +113,21 @@ export const checksWord = (c: ChecksSummary): { readonly text: string; readonly 
   if (c.pending > 0) return { text: `${c.pending} ${c.pending === 1 ? "check" : "checks"} running`, tone: "working" };
   if (c.passed > 0) return { text: c.passed === 1 ? "1 check passed" : `All ${c.passed} checks passed`, tone: "done" };
   return undefined;
+};
+
+/** A list row's checks, short beside their icon: "2 failed", "1 running", "6 passed"; undefined when none ran. */
+export const checksShort = (c: ChecksSummary): { readonly text: string; readonly tone: Tone } | undefined => {
+  if (c.failed > 0) return { text: `${c.failed} failed`, tone: "failed" };
+  if (c.pending > 0) return { text: `${c.pending} running`, tone: "working" };
+  if (c.passed > 0) return { text: `${c.passed} passed`, tone: "done" };
+  return undefined;
+};
+
+/** An open PR's place in line to merge: "next in line", "3rd in line"; undefined when it isn't waiting in it. */
+export const placeWord = (q: PrRow["queue"]): string | undefined => {
+  const at = lineAt(q);
+  if (at === undefined) return undefined;
+  return at === 0 ? "next in line" : `${ordinal(at + 1)} in line`;
 };
 
 /** "7 passed · 2 failed · 1 running". */
@@ -187,7 +209,6 @@ export const findingsWord = (r: PrReviewEntry): string => {
   const other = r.nonBlocking ?? 0;
   return [blocking > 0 ? `${blocking} blocking` : "", other > 0 ? `${other} ${other === 1 ? "suggestion" : "suggestions"}` : ""].filter(Boolean).join(", ");
 };
-
 
 /** "1h 05m", "14m", "40s". */
 export const duration = (ms: number): string => {

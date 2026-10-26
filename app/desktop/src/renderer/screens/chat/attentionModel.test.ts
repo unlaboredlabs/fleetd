@@ -25,19 +25,33 @@ const QUESTIONS = "Two calls before I ship it:\n\n1. **Copy link**: public or im
 
 describe("what the lead waits on", () => {
   it("counts the lead's numbered questions, and says when it asked", () => {
-    expect(waitingOn([item("a", "human", "ship it"), item("b", "lead", QUESTIONS)], NOW, "UTC")).toEqual({ what: "2 questions, asked at 09:02", target: "b" });
-    expect(waitingOn([item("b", "lead", "Looks good on your end?", at(18, 16, 40))], NOW, "UTC")).toEqual({ what: "1 question, asked yesterday at 16:40", target: "b" });
+    expect(waitingOn([item("a", "human", "ship it"), item("b", "lead", QUESTIONS)], NOW, "UTC")).toEqual({ what: "2 questions, asked at 09:02", targets: [{ id: "b", part: "0" }] });
+    expect(waitingOn([item("b", "lead", "Looks good on your end?", at(18, 16, 40))], NOW, "UTC")).toEqual({ what: "1 question, asked yesterday at 16:40", targets: [{ id: "b", part: "0" }] });
     expect(waitingOn([item("b", "lead", "Done. Over to you.", at(12, 8))], NOW, "UTC").what).toBe("a reply to its message Mon 12 Oct at 08:00");
   });
 
-  it("puts an open approval or secret first, and goes to the oldest", () => {
+  it("goes to each bubble that asks, an ask block among them, else to the message's last", () => {
+    const split = (text: string, parts: ChatMessage["parts"]) => item("b", "lead", text, at(19, 9, 2), { message: { parts } as ChatMessage });
+    const text = "Built it.Merge #12 now?Tag v2.4?";
+    const ask = { v: 1, kind: "ask", question: "Tag v2.4" } as const;
+    expect(waitingOn([split(text, [{ start: 0, end: 9 }, { start: 9, end: 23 }, { start: 23, end: 32, block: ask }])], NOW, "UTC")).toEqual({
+      what: "2 questions, asked at 09:02",
+      targets: [
+        { id: "b", part: "1" },
+        { id: "b", part: "2" },
+      ],
+    });
+    expect(waitingOn([split("Built it.Shipped.", [{ start: 0, end: 9 }, { start: 9, end: 17 }])], NOW, "UTC").targets).toEqual([{ id: "b", part: "1" }]);
+  });
+
+  it("puts an open approval or secret first, and goes to each in turn from the oldest", () => {
     const items = [item("b", "lead", QUESTIONS), inline("g1", "gated", "open"), inline("s1", "secret", "open"), inline("g2", "gated", "open"), inline("g0", "gated", "ran")];
-    expect(waitingOn(items, NOW, "UTC")).toEqual({ what: "2 commands to approve, 1 secret to enter", target: "g1" });
-    expect(waitingOn([inline("s1", "secret", "stored"), inline("g1", "gated", "open")], NOW, "UTC")).toEqual({ what: "1 command to approve", target: "g1" });
+    expect(waitingOn(items, NOW, "UTC")).toEqual({ what: "2 commands to approve, 1 secret to enter", targets: [{ id: "g1" }, { id: "s1" }, { id: "g2" }] });
+    expect(waitingOn([inline("s1", "secret", "stored"), inline("g1", "gated", "open")], NOW, "UTC")).toEqual({ what: "1 command to approve", targets: [{ id: "g1" }] });
   });
 
   it("still says it waits when the ask isn't loaded, with nowhere to show", () => {
-    expect(waitingOn([item("a", "human", "hi")], NOW, "UTC")).toEqual({ what: "a reply" });
+    expect(waitingOn([item("a", "human", "hi")], NOW, "UTC")).toEqual({ what: "a reply", targets: [] });
   });
 
   it("reads numbered lines as questions, not numbers inside a sentence", () => {

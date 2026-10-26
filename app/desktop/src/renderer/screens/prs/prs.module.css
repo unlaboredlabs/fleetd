@@ -34,72 +34,175 @@
   flex-direction: column;
   gap: 2px;
 }
-/* Row outlines while the list loads; nothing shimmers. */
+/* Row outlines while the list loads, each a title and its quiet line; nothing shimmers. */
 .skeleton {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-4);
   padding: var(--space-4) var(--pad);
 }
-.skeleton > span {
-  height: var(--space-3);
+.skeletonRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+}
+.skeletonRow > span {
+  height: 10px;
   border-radius: var(--radius-sm);
+  background: var(--hover);
+}
+.skeletonRow > span:first-child {
+  width: 72%;
   background: var(--selected);
 }
-.skeleton > span:nth-child(2) {
-  width: 70%;
+.skeletonRow > span:last-child {
+  width: 44%;
 }
-.skeleton > span:nth-child(3) {
-  width: 55%;
+.skeletonRow:nth-child(2) > span:first-child {
+  width: 58%;
+}
+.skeletonRow:nth-child(3) > span:first-child {
+  width: 80%;
+}
+
+/* The list: its filter on top, the rows under it. */
+.list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.filters {
+  flex: none;
+  display: flex;
+  padding: var(--space-3) var(--pad) var(--space-1);
+}
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-md);
+  background: var(--hover);
+}
+.segment {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1-5);
+  padding: 2px var(--space-3);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--quiet);
+  cursor: pointer;
+}
+.segment:hover {
+  color: var(--text);
+}
+.segment[aria-pressed="true"] {
+  background: var(--raised);
+  color: var(--text);
+  box-shadow: 0 0 0 1px var(--hairline);
 }
 .listScroll {
   flex: 1;
   min-height: 0;
-  padding: var(--space-2) 0;
+  padding: var(--space-1) 0 var(--space-2);
+}
+.listEmpty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-6) var(--pad);
+}
+.listEmpty .cutNote {
+  padding: var(--space-4) 0 0;
+}
+.paneEmpty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-width: 360px;
+}
+.paneEmpty p {
+  margin: 0;
+}
+.paneEmptyAction {
+  display: flex;
+  margin-top: var(--space-2);
 }
 .group {
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
-  padding: var(--space-3) var(--pad) var(--space-1);
+  padding: var(--space-4) var(--pad) var(--space-1);
 }
+.cutNote {
+  padding: var(--space-3) var(--pad);
+}
+/* A row: the title, the one line that reads at a glance; under it its state and figures, quiet. */
 .row {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-1);
   margin: 0 var(--space-2);
   padding: var(--space-2) var(--space-2);
   border-radius: var(--radius-sm);
-  color: inherit;
+  color: var(--text);
   text-decoration: none;
 }
 .row:hover {
   background: var(--hover);
 }
-.rowTop {
+/* Merged and closed rows step back a shade, so the open ones lead. */
+.rowDone {
+  color: var(--quiet);
+}
+.rowTop,
+.rowMeta {
   display: flex;
   align-items: baseline;
-  gap: var(--space-2);
+  gap: var(--space-3);
   min-width: 0;
 }
 .rowTitle {
   flex: 1;
   min-width: 0;
 }
-.rowMeta {
+.rowWhen,
+.rowRef {
+  flex: none;
+}
+.metaParts {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  column-gap: var(--space-2);
+  column-gap: var(--space-3);
   row-gap: 2px;
+}
+
+/* A checks word behind its icon, and a check's icon alone. */
+.checksMark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   min-width: 0;
 }
-.rowWhen {
+.checkIcon {
   flex: none;
+  display: inline-flex;
+  color: var(--quiet);
 }
-.rowBy {
-  display: flex;
-  min-width: 0;
+.checkIcon > svg {
+  width: 13px;
+  height: 13px;
+}
+.checksDone {
+  color: var(--success);
+}
+.checksFailed {
+  color: var(--danger);
 }
 
 /* The PR. */
@@ -181,12 +284,42 @@
   gap: 2px;
 }
 
+/* The summary: where it is and what it waits on, then its facts; its edge takes the state's colour only for a
+   failure, a wait on you, or a merge. */
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--hairline);
+  border-left: 3px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--raised);
+}
+.summaryFailed {
+  border-left-color: var(--danger);
+}
+.summaryNeedsYou {
+  border-left-color: var(--warning);
+}
+.summaryDone {
+  border-left-color: var(--success);
+}
+.summaryState {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
 .facts {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
+  align-items: baseline;
   column-gap: var(--space-6);
-  row-gap: var(--space-2);
+  row-gap: var(--space-1-5);
   margin: 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--hairline);
 }
 .fact {
   display: contents;
@@ -216,31 +349,35 @@
 .sectionHead {
   display: flex;
   align-items: baseline;
-  gap: var(--space-3);
-  padding-bottom: var(--space-1);
-  border-bottom: 1px solid var(--hairline);
+  gap: var(--space-2);
 }
 
 .checks {
   list-style: none;
   margin: 0;
   padding: 0;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
 }
 .check {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   min-height: var(--row);
   min-width: 0;
+  padding: 0 var(--space-1) 0 var(--space-3);
 }
-.checkWord {
-  flex: none;
-  width: 13ch;
-  min-width: 0;
+.check + .check {
+  border-top: 1px solid var(--hairline);
 }
 .checkName {
   flex: 1;
   min-width: 0;
+}
+.checkTook {
+  flex: none;
+  min-width: 5ch;
+  text-align: right;
 }
 
 .reviews {
@@ -270,23 +407,62 @@
 .reviewWhen {
   margin-left: auto;
 }
+/* A review's findings, set off under its reviewer. */
+.reviewBody {
+  min-width: 0;
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--hairline);
+}
 
+/* Its way to main: newest first, a dot per move on one thin line. */
 .history {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
 }
-.history li {
+.step {
+  position: relative;
   display: flex;
   align-items: baseline;
   gap: var(--space-3);
+  padding: 0 0 var(--space-2) var(--space-4);
+}
+.step::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--hairline);
+}
+.step:first-child::before {
+  top: 9px;
+}
+.step:last-child::before {
+  bottom: auto;
+  height: 9px;
+}
+.step:only-child::before {
+  display: none;
+}
+.stepDot {
+  position: absolute;
+  left: 0;
+  top: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--border);
+}
+.stepNow .stepDot {
+  background: var(--text);
 }
 .historyWhen {
   flex: none;
-  width: 10ch;
+  margin-left: auto;
 }
 
 /* Changes. */
