@@ -1,7 +1,7 @@
-// The Agents and Pull requests tabs as the tab list (tabs.ts) loads them: AgentsPane and PrsPane with the state they
-// share with their counts. The agents' scope (this project or all) is the panel's, so the tab's count follows the
-// list; the PR tab you read (Overview or Changes) is kept while the app runs, so reading diffs one PR after another
-// stays on Changes, and Changes asks the frame for its wide width.
+// The Agents, Browser sessions and Pull requests tabs as the tab list (tabs.ts) loads them: AgentsPane, SessionsPane
+// and PrsPane with the state they share with their counts. The agents' scope (this project or all) is the panel's, so
+// the tab's count follows the list; the PR tab you read (Overview or Changes) is kept while the app runs, so reading
+// diffs one PR after another stays on Changes, and Changes asks the frame for its wide width.
 import { createContext, useContext, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
 import { useData, useToolQuery } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
@@ -9,6 +9,9 @@ import { selectLiveAgents } from "../../src/data/selectors";
 import { AgentsPane, isLine, scopedAgents, useAgentScope, type AgentScope } from "../agents/AgentsPane";
 import type { PrTab } from "../prs/PrDetail";
 import { PrsPane, usePrList } from "../prs/PrsPane";
+import { SessionsPane } from "../sessions/SessionsPane";
+import { isLive } from "../sessions/model";
+import { useBrowserSessions } from "../sessions/preview";
 import { openCount } from "../prs/words";
 import type { CountProps, PaneProps } from "./tabs";
 
@@ -36,6 +39,22 @@ export function AgentCount({ project }: CountProps) {
   const all = useData(selectLiveAgents);
   const key = projectKey(project);
   const n = useMemo(() => (all === undefined ? 0 : scopedAgents(all, key, scope).filter((a) => !isLine(a)).length), [all, key, scope]);
+  return n > 0 ? String(n) : null;
+}
+
+/** One session opened (live or its replay) asks for the frame's wide width, so its page shows at a readable size. */
+export function SessionsTab({ project, view, onWide }: PaneProps) {
+  const session = view.tab === "sessions" ? view.session : null;
+  useLayoutEffect(() => {
+    onWide(session !== null);
+  }, [session, onWide]);
+  useLayoutEffect(() => () => onWide(false), [onWide]);
+  return <SessionsPane project={project} session={session} />;
+}
+
+/** The sessions open now, the ones asking for you among them. */
+export function SessionCount({ project }: CountProps) {
+  const n = useBrowserSessions(project).filter(isLive).length;
   return n > 0 ? String(n) : null;
 }
 

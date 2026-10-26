@@ -23,7 +23,11 @@ export const snapshot = (cursor: number): HubFrame => {
   return { t: "snapshot", snapshot: snap };
 };
 
-export const live = (): HubFrame => ({ t: "state", state: { phase: "live", hub: "devbox:4710", protocol: 1 } });
+/** The hub's live state; `features`, what newer it says it serves. */
+export const live = (features?: readonly string[]): HubFrame => ({
+  t: "state",
+  state: { phase: "live", hub: "devbox:4710", protocol: 1, ...(features === undefined ? {} : { features }) },
+});
 
 export const event = (seq: number, type: string, data?: Record<string, unknown>): HubFrame => {
   const e: HubEvent = { seq, at: AT, type, summary: type, ...project, ...(data === undefined ? {} : { data }) };

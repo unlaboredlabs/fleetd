@@ -66,6 +66,11 @@ export interface LiveState {
 
 export interface DataState {
   readonly hub: HubState;
+  /**
+   * What newer the paired hub serves, as its last live state said: kept while the link retries, so a view it serves
+   * doesn't vanish mid-reconnect, and dropped with the pairing.
+   */
+  readonly features: readonly string[];
   /** A snapshot arrived since the link last went down: what the store holds is current. */
   readonly fresh: boolean;
   /** Bumped by every snapshot; call results from an older generation are dropped. */
@@ -121,6 +126,7 @@ const emptyLive: LiveState = { lanes: {}, ended: {}, text: {}, machines: {}, sta
 
 export const initialState = (): DataState => ({
   hub: { phase: "connecting", hub: "", attempt: 0 },
+  features: [],
   fresh: false,
   generation: 0,
   machines: {},
@@ -168,7 +174,14 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
       const live = frame.state.phase === "live";
       const fresh = live && s.fresh;
       return [
-        { ...s, hub: frame.state, fresh, asOf: s.fresh && !fresh ? nowMs : s.asOf, live: live ? s.live : { ...s.live, stale: true } },
+        {
+          ...s,
+          hub: frame.state,
+          features: frame.state.phase === "live" ? (frame.state.features ?? []) : s.features,
+          fresh,
+          asOf: s.fresh && !fresh ? nowMs : s.asOf,
+          live: live ? s.live : { ...s.live, stale: true },
+        },
         {},
       ];
     }
