@@ -179,19 +179,56 @@ export const commandApproval = (state: "open" | "ran" | "denied", f: Fixture, pe
  */
 export const liveStrip = (f: Fixture, ref: Ref, n: number): Fixture => agentsAt(f, [{ ref, n }]);
 
+// Left out of a scene agent's branch name, as a writer names its branch for what it changes.
+const FILLER = new Set(["a", "an", "the", "at", "to", "from", "how", "use", "of", "in", "on"]);
+
+/** One agent of a scene: its role, its task and what it's doing now. */
+export interface SceneAgent {
+  readonly role: "implementer" | "reviewer" | "qa" | "reader";
+  readonly title: string;
+  readonly activity: JsonObject;
+}
+
+/**
+ * The agents at work on what a chat asked for: one order named `title` with these agents, all working, so the panel
+ * beside the chat and the strip under it show that work and no other.
+ */
+export const sceneStrip = (f: Fixture, ref: Ref, title: string, agents: ReadonlyArray<SceneAgent>): Fixture =>
+  agentsAt(f, [{ ref, n: agents.length, scene: { title, agents } }], true);
+
 /**
  * Agents at work in several projects at once: each project's `n` lanes on its own orders (a hub order holds at
  * most 12), on the board and in order_get, and one full live frame with every lane. With `allWorking` every lane is
  * "working", so a project's running count is exactly `n` (as a status row's agentsRunning says).
  */
-export const agentsAt = (f: Fixture, projects: ReadonlyArray<{ ref: Ref; n: number }>, allWorking = false): Fixture => {
+export const agentsAt = (
+  f: Fixture,
+  projects: ReadonlyArray<{ ref: Ref; n: number; scene?: { title: string; agents: ReadonlyArray<SceneAgent> } }>,
+  allWorking = false,
+): Fixture => {
   const start = at(f.now, -30 * 60_000);
   const orders: Array<JsonObject> = [];
   const live: Array<JsonObject> = [];
   let next = 0;
-  for (const { ref, n } of projects) {
-    const lanes = Array.from({ length: n }, () => {
-      const lane = agentLane(f, next++, false, ref.machineId, start);
+  for (const { ref, n, scene } of projects) {
+    const lanes = Array.from({ length: n }, (_, i) => {
+      const generic = agentLane(f, next++, false, ref.machineId, start);
+      const own = scene?.agents[i];
+      const lane =
+        own === undefined
+          ? generic
+          : {
+              ...generic,
+              role: own.role,
+              title: own.title,
+              branch: `fleetd/${asText(generic["taskId"], "T1")}-${own.title
+                .toLowerCase()
+                .split(/[^a-z0-9]+/u)
+                .filter((w) => w !== "" && !FILLER.has(w))
+                .slice(0, 3)
+                .join("-")}`,
+              live: { ...obj(generic["live"]), activity: { activity: own.activity, since: at(f.now, -(i + 1) * 4000) } },
+            };
       return allWorking ? { ...lane, status: "working", live: { ...obj(lane["live"]), status: "working" } } : lane;
     });
     live.push(...lanes.map((l) => obj(l["live"])));
@@ -202,7 +239,7 @@ export const agentsAt = (f: Fixture, projects: ReadonlyArray<{ ref: Ref; n: numb
       });
       orders.push({
         workstreamId: `W${String(orders.length + 1)}`,
-        title: LONG_TITLES[orders.length % LONG_TITLES.length] ?? "",
+        title: scene?.title ?? LONG_TITLES[orders.length % LONG_TITLES.length] ?? "",
         projectRef: { ...ref },
         createdAt: at(f.now, -40 * 60_000),
         updatedAt: at(f.now, -5_000),
