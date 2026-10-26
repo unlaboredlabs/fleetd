@@ -667,3 +667,59 @@ async fn a_fresh_partial_upload_counts_toward_its_projects_size() {
         "the upload in progress stays"
     );
 }
+
+#[tokio::test]
+async fn a_takeover_holds_only_once_the_node_says_it_acted() {
+    let (hub, _clock, _home) = hub();
+    let r = project("storefront");
+    node_call(&hub, &r, report(S1, "live", json!([])), "browser_session")
+        .await
+        .unwrap();
+    let devbox = MachineId::unchecked("devbox");
+    let mut to_node = hub
+        .link
+        .test_link(&devbox, &[fleetd_contracts::node_link::CAP_BROWSER]);
+    let operator = person(json!([{ "role": "operate", "machines": "*" }]));
+    let input = json!({ "sessionId": S1, "control": "human" });
+
+    // A node that no longer holds the session says nothing: refused, and nobody is shown in control.
+    let silent = tool(&hub, &operator, "browser_control", input.clone())
+        .await
+        .unwrap_err();
+    assert!(
+        format!("{silent:?}").contains("didn't confirm"),
+        "{silent:?}"
+    );
+    assert!(matches!(
+        to_node.try_recv(),
+        Ok(fleetd_contracts::node_link::HubToNode::BrowserControl(_))
+    ));
+    let s = super::get(
+        &hub.db,
+        &fleetd_contracts::browser::BrowserSessionId::unchecked(S1),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(s.control, fleetd_contracts::browser::BrowserControl::Agent);
+
+    // A node that acts reports it, and the call answers with the session as the node has it.
+    let node = {
+        let hub = hub.clone();
+        let r = r.clone();
+        tokio::spawn(async move {
+            let Some(fleetd_contracts::node_link::HubToNode::BrowserControl(_)) =
+                to_node.recv().await
+            else {
+                panic!("a control frame");
+            };
+            let mut human = report(S1, "live", json!([]));
+            human["control"] = "human".into();
+            node_call(&hub, &r, human, "browser_session").await.unwrap();
+        })
+    };
+    let took = tool(&hub, &operator, "browser_control", input)
+        .await
+        .unwrap();
+    assert_eq!(took["session"]["control"], "human");
+    node.await.unwrap();
+}

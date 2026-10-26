@@ -399,8 +399,16 @@ async fn an_agent_starts_a_session_uses_a_site_and_ends_it_and_its_recording_is_
         url,
         "the URL its env names"
     );
-    let live = sessions(&rig.hub).await;
-    assert_eq!(live["sessions"][0]["state"], "live");
+    // The node reports the session to the hub in the background, in order.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let live = loop {
+        let listed = sessions(&rig.hub).await;
+        if listed["sessions"][0]["state"] == "live" {
+            break listed;
+        }
+        assert!(Instant::now() < deadline, "never live: {listed}");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
     assert_eq!(live["sessions"][0]["taskId"], "T1");
     assert_eq!(live["sessions"][0]["purpose"], "Sign in to the test shop");
 
@@ -826,6 +834,11 @@ async fn a_person_watches_takes_over_and_types_and_the_agent_sees_it_after_the_h
     let frame = next_frame(&frames).await;
     assert_eq!(frame["sessionId"], id.as_str());
     assert_eq!(frame["control"], "agent");
+    assert!(
+        frame["url"].as_str().is_some_and(|u| u.starts_with(&site)),
+        "the page the frame shows: {}",
+        frame["url"]
+    );
     let (width, height) = (
         frame["width"].as_f64().unwrap(),
         frame["height"].as_f64().unwrap(),
@@ -1410,4 +1423,74 @@ async fn each_step_records_the_element_it_acted_on_with_its_box_in_frame_pixels(
         .find(|d| d["seq"] == actions[1]["seq"])
         .expect("the page after the fill");
     assert_eq!(after_fill["target"], *fill);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn reading_a_steps_element_never_holds_up_the_agents_input() {
+    let Some(rig) = rig().await else { return };
+    let (site, _site) = site().await;
+    let started = call(
+        &rig.broker,
+        json!({ "op": "session_start", "purpose": "Dialog" }),
+    )
+    .await;
+    let mut driver = Driver::connect(started["result"]["cdp"].as_str().unwrap())
+        .await
+        .unwrap();
+    let page = driver.page().await;
+    driver.ok(Some(&page), "Page.enable", json!({})).await;
+    driver
+        .ok(Some(&page), "Page.navigate", json!({ "url": site }))
+        .await;
+    driver
+        .wait_for(
+            &page,
+            "document.readyState === 'complete' && !!document.querySelector('#user')",
+        )
+        .await;
+    // A dialog holds the page's main thread: nothing evaluates until someone answers it.
+    driver
+        .ok(
+            Some(&page),
+            "Runtime.evaluate",
+            json!({ "expression": "setTimeout(() => alert('hold'), 0); 1" }),
+        )
+        .await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let session = rig.broker.live(THREAD).unwrap();
+    let click = json!({ "method": "Input.dispatchMouseEvent", "params": { "type": "mousePressed", "x": 20, "y": 20 } });
+    let started = Instant::now();
+    session.note_target(&click).await;
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "{:?}",
+        started.elapsed()
+    );
+    driver
+        .ok(
+            Some(&page),
+            "Page.handleJavaScriptDialog",
+            json!({ "accept": true }),
+        )
+        .await;
+    call(&rig.broker, json!({ "op": "session_end" })).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_takeover_asked_for_at_once_reaches_the_hub_after_its_session() {
+    let Some(rig) = rig().await else { return };
+    call(
+        &rig.broker,
+        json!({ "op": "session_start", "purpose": "Captcha" }),
+    )
+    .await;
+    let asked = call(
+        &rig.broker,
+        json!({ "op": "request_takeover", "reason": "Solve the captcha" }),
+    )
+    .await;
+    assert!(asked["result"]["message"].is_string(), "{asked}");
+    let waiting = crate::hub::browser::waiting(&rig.hub.hub.db, &rig.hub.project).unwrap();
+    assert_eq!(waiting.len(), 1);
+    call(&rig.broker, json!({ "op": "session_end" })).await;
 }

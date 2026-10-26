@@ -18,11 +18,14 @@ use fleetd_contracts::mcp::{
 use fleetd_contracts::node_link::{CAP_BROWSER, HubToNode};
 use fleetd_contracts::prim::{List, Text};
 
-use super::{count, file_path, get, list, retention_on, save, set_retention};
+use super::{count, file_path, get, list, retention_on, set_retention};
 use crate::hub::api::{
     Caller, Hub, Registry, ToolError, admin_everywhere_fix, allows_everywhere, is_human, require,
     unknown_project,
 };
+
+/// How long browser_control waits for the node to say it acted.
+const CONTROL_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 
 pub fn register(tools: &mut Registry) {
     tools.add("browser_sessions", browser_sessions);
@@ -86,18 +89,39 @@ async fn browser_control(
             control: input.control,
             by: Text::unchecked(person(&caller)),
         });
+        // The node says who drives once it acted; the session changes only then.
+        let mut reports = hub.link.browser_live.await_control(id);
         if !hub.link.send_to(&machine, frame) {
             return Err(ToolError::new(
                 ErrorCode::MachineOffline,
                 format!("{machine}'s node isn't connected."),
             ));
         }
-        session.control = next;
-        if next == BrowserControl::Human {
-            // The agent asked for a person, and one came: no longer waiting on you.
-            session.takeover_reason = None;
+        let confirmed = tokio::time::timeout(CONTROL_WAIT, async {
+            while let Some(control) = reports.recv().await {
+                let done = match next {
+                    BrowserControl::Human => control == BrowserControl::Human,
+                    // The agent may have taken it back already.
+                    _ => control != BrowserControl::Human,
+                };
+                if done {
+                    return true;
+                }
+            }
+            false
+        })
+        .await;
+        if confirmed != Ok(true) {
+            return Err(ToolError::new(
+                ErrorCode::Failed,
+                format!(
+                    "{machine}'s node didn't confirm the change: browser session {id} may have just ended there. \
+                     Nothing changed."
+                ),
+            )
+            .with_fix("Read the session again with browser_sessions, and try again if it is still live."));
         }
-        save(&hub, &session)?;
+        session = get(&hub.db, id)?.ok_or_else(not_found)?;
     }
     Ok(BrowserControlOutput {
         session,

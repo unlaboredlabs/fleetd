@@ -15,7 +15,7 @@ use fleetd_contracts::browser::{
 };
 use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::node_link::NodeToHub;
-use fleetd_contracts::prim::{Int, NonEmpty};
+use fleetd_contracts::prim::{Int, NonEmpty, Text};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
@@ -30,6 +30,8 @@ use crate::node::wire::to_json;
 const RESULT_CHARS: usize = 500;
 /// A page's HTML past this is cut in the DOM trace.
 const DOM_MAX_BYTES: usize = 2 << 20;
+/// The longest the proxy holds the driver's click or keystroke to read the element it acts on.
+const TARGET_WAIT: Duration = Duration::from_millis(250);
 /// What the agent's driver hears while a person has control.
 pub const PAUSED: &str = "A person has control of the browser now. Wait for them to hand it back (carry on with other \
                           work meanwhile); your next command after that sees the page as they left it.";
@@ -96,6 +98,8 @@ struct Live {
     last: Option<BrowserFrame>,
     /// The page's size in CSS pixels, as the last frame's metadata gave it: a person's input is scaled to it.
     page: (f64, f64),
+    /// Each page's address, by target, as the browser last said: the followed one's goes on its frames.
+    urls: std::collections::HashMap<String, String>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -256,7 +260,10 @@ impl Session {
             jpeg_b64: NonEmpty::unchecked(data),
             width: Int::unchecked(i64::from(width)),
             height: Int::unchecked(i64::from(height)),
-            url: None,
+            url: self
+                .page()
+                .and_then(|(target, _)| live.urls.get(&target).cloned())
+                .map(|url| Text::unchecked(url.chars().take(2000).collect::<String>())),
             control: self.control(),
         };
         // Only this session still holds the slot: its link went, and the hub watches again on the next one.
@@ -449,6 +456,17 @@ impl Session {
     /// Notes the element one of the driver's commands is about to act on, before it goes: the one under a click,
     /// or the one focused when the first key of a step is typed. The latest click of a step wins.
     pub async fn note_target(&self, command: &Value) {
+        // A note for the log never costs the agent real time: a page whose main thread is busy, or held by a
+        // dialog, gets its step logged without the element.
+        if tokio::time::timeout(TARGET_WAIT, self.find_target(command))
+            .await
+            .is_err()
+        {
+            tracing::debug!(session = %self.id, "step's element not read in time");
+        }
+    }
+
+    async fn find_target(&self, command: &Value) {
         let params = &command["params"];
         let found = match command["method"].as_str().unwrap_or_default() {
             "Input.dispatchMouseEvent" if params["type"] == "mousePressed" => {
@@ -728,12 +746,26 @@ async fn screencast(
                     video.frame(jpeg, session.start.elapsed());
                 }
             }
+            "Target.targetInfoChanged" => {
+                let info = &event.params["targetInfo"];
+                if let (Some(target), Some(url)) = (info["targetId"].as_str(), info["url"].as_str())
+                {
+                    lock(&session.live)
+                        .urls
+                        .insert(target.to_owned(), url.to_owned());
+                }
+            }
             "Target.targetCreated" => {
                 let info = &event.params["targetInfo"];
                 if info["type"] != "page" {
                     continue;
                 }
                 let target = info["targetId"].as_str().unwrap_or_default().to_owned();
+                if let Some(url) = info["url"].as_str() {
+                    lock(&session.live)
+                        .urls
+                        .insert(target.clone(), url.to_owned());
+                }
                 // Pages the driver attaches to show here too: follow each once, by the broker's own session.
                 if lock(&session.pages).stack.iter().any(|(t, _)| *t == target) {
                     continue;
@@ -751,6 +783,7 @@ async fn screencast(
                     }
                     _ => ("", event.params["sessionId"].as_str().unwrap_or_default()),
                 };
+                lock(&session.live).urls.remove(target);
                 let was_current = {
                     let mut pages = lock(&session.pages);
                     let current = pages.current().cloned();

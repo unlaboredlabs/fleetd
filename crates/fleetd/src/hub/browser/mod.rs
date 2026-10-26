@@ -206,8 +206,9 @@ fn on_disk(hub: &Hub, id: &BrowserSessionId) -> i64 {
 }
 
 /// The recordings past the retention, oldest first: those older than its days, then each project's oldest while its
-/// recordings together are over its size. A partial upload counts toward the size by what it holds on disk, and goes
-/// once it is stale ([`STALE_MS`]). Returns how many it expired.
+/// recordings together are over its size. A partial upload counts toward the size by what it holds on disk. Once it
+/// is stale ([`STALE_MS`]) it goes as a recording does, past the retention's days or while its project is over the
+/// size; before that, never. Returns how many it expired.
 pub fn prune(hub: &Hub) -> Result<usize, StoreError> {
     let now = now_ms(hub.clock.as_ref());
     let (retention, rows) = hub.db.with(|c| {

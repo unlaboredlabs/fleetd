@@ -338,7 +338,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "browser_control",
-        "Take a live browser session over from its agent (control human): its agent's commands then answer that a person has control, and your mouse and keys go to the page through the app's browser_input. control agent hands it back; the session is handing_back until the agent's next command, which sees the page as you left it. A person's device with operate on the machine only.",
+        "Take a live browser session over from its agent (control human): its agent's commands then answer that a person has control, and your mouse and keys go to the page through the app's browser_input. control agent hands it back; the session is handing_back until the agent's next command, which sees the page as you left it. Answers once the session's machine confirms (up to 5 s); a session that has just ended there is refused, and nothing changes. A person's device with operate on the machine only.",
     ),
     (
         "browser_retention_set",
