@@ -111,6 +111,9 @@ async fn browser_control(
             false
         })
         .await;
+        // This call waits no more: a session that ended leaves no wait behind for its id.
+        drop(reports);
+        hub.link.browser_live.drop_closed(id);
         if confirmed != Ok(true) {
             return Err(ToolError::new(
                 ErrorCode::Failed,

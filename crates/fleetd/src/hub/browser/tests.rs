@@ -690,6 +690,12 @@ async fn a_takeover_holds_only_once_the_node_says_it_acted() {
         format!("{silent:?}").contains("didn't confirm"),
         "{silent:?}"
     );
+    let id = fleetd_contracts::browser::BrowserSessionId::unchecked(S1);
+    assert_eq!(
+        hub.link.browser_live.awaiting(&id),
+        0,
+        "a call that gave up leaves no wait behind"
+    );
     assert!(matches!(
         to_node.try_recv(),
         Ok(fleetd_contracts::node_link::HubToNode::BrowserControl(_))

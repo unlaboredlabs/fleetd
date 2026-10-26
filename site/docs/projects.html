@@ -214,7 +214,7 @@ shown.</p>
 <p>If an agent prints a secret (<code dir="auto">printenv</code>, a stack trace, a config dump), the node replaces it with <code dir="auto">***NAME***</code> before
 the output leaves the machine, in command output, the agent’s replies and live text alike. Exactly these are masked:</p>
 <ul>
-<li>the whole value, and its base64 and URL encodings;</li>
+<li>the whole value, and its base64 and URL encodings, and its encoding as a web form submits it (<code dir="auto">+</code> for a space);</li>
 <li>for a secret of several lines, each whole line of 8 characters or more, wherever it appears. PEM armor lines such as
 <code dir="auto">-----BEGIN CERTIFICATE-----</code> are the same in every file and stay readable.</li>
 </ul>

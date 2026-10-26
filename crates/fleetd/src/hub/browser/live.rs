@@ -126,6 +126,30 @@ impl Live {
         rx
     }
 
+    /// Drops the waits on `session` whose call has stopped waiting (it gave up, or was answered), and the session's
+    /// entry with the last of them.
+    pub fn drop_closed(&self, session: &BrowserSessionId) {
+        let mut controls = self
+            .controls
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(waiting) = controls.get_mut(session) {
+            waiting.retain(|tx| !tx.is_closed());
+            if waiting.is_empty() {
+                controls.remove(session);
+            }
+        }
+    }
+
+    /// The calls waiting on `session`'s control now.
+    pub fn awaiting(&self, session: &BrowserSessionId) -> usize {
+        self.controls
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(session)
+            .map_or(0, Vec::len)
+    }
+
     /// The node reported who drives `session`: for the calls waiting on it.
     pub fn control_reported(&self, session: &BrowserSessionId, control: BrowserControl) {
         let mut controls = self
