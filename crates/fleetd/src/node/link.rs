@@ -9,6 +9,7 @@ use futures_util::{SinkExt, StreamExt};
 use rand::Rng;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 
 use super::actions::run_node_action;
 use super::cmd::run_cmd_check;
@@ -24,10 +25,15 @@ use super::wire::{
 };
 use fleetd_contracts::model::SleptSpan;
 use fleetd_contracts::node_link::{HEARTBEAT_INTERVAL_SECS, HEARTBEAT_TIMEOUT_SECS};
+use fleetd_contracts::sessions::SessionCall;
 
 const HEARTBEAT_EVERY: Duration = Duration::from_secs(HEARTBEAT_INTERVAL_SECS);
 const SILENCE_TIMEOUT: Duration = Duration::from_secs(HEARTBEAT_TIMEOUT_SECS);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+/// The largest frame the node takes from its hub: an attachment's put_file with room to spare.
+pub const LINK_MAX_FRAME_BYTES: usize = 64 << 20;
+/// The largest frame of any other kind: tungstenite's own default.
+pub const LINK_MAX_OTHER_FRAME_BYTES: usize = 16 << 20;
 
 /// The hub refused this node in a way retrying cannot fix (bad key or token, protocol mismatch).
 #[derive(Debug)]
@@ -221,9 +227,36 @@ async fn next_frame(
             // Pings are answered by tungstenite; neither counts as a frame.
             Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => continue,
         };
-        return decode_hub_frame(&raw)
-            .ok_or_else(|| LinkEnd::Lost("hub sent a frame that does not decode".into()));
+        let frame = decode_hub_frame(&raw)
+            .ok_or_else(|| LinkEnd::Lost("hub sent a frame that does not decode".into()))?;
+        if !size_allowed(&frame, raw.len()) {
+            // Never acted on: its sender's wait runs out, and the link stays up for the rest.
+            tracing::warn!(
+                kind = tag(&frame),
+                bytes = raw.len(),
+                "hub frame over the cap for anything but a file transfer; ignored"
+            );
+            continue;
+        }
+        return Ok(frame);
     }
+}
+
+/// An attachment (at most 25 MiB, base64 in one put_file frame) is over tungstenite's 16 MiB frame default, so the
+/// socket takes LINK_MAX_FRAME_BYTES; `next_frame` holds every other frame to LINK_MAX_OTHER_FRAME_BYTES.
+fn link_config() -> WebSocketConfig {
+    WebSocketConfig::default()
+        .max_frame_size(Some(LINK_MAX_FRAME_BYTES))
+        .max_message_size(Some(LINK_MAX_FRAME_BYTES))
+}
+
+/// Whether a frame of `len` bytes may be this large: only a file transfer goes past LINK_MAX_OTHER_FRAME_BYTES.
+fn size_allowed(frame: &HubToNode, len: usize) -> bool {
+    len <= LINK_MAX_OTHER_FRAME_BYTES
+        || matches!(
+            frame,
+            HubToNode::SessionCall(c) if matches!(c.call, SessionCall::PutFile { .. })
+        )
 }
 
 /// One link: succeeds (`Lost`) when it ends after or before a welcome, `Fatal` on a refusal.
@@ -236,7 +269,13 @@ async fn run_link_once(
         Ok(url) => url,
         Err(why) => return LinkEnd::Lost(why),
     };
-    let ws = match tokio_tungstenite::connect_async(url.as_str()).await {
+    let ws = match tokio_tungstenite::connect_async_with_config(
+        url.as_str(),
+        Some(link_config()),
+        false,
+    )
+    .await
+    {
         Ok((ws, _)) => ws,
         Err(error) => return LinkEnd::Lost(format!("cannot reach the hub: {error}")),
     };
@@ -395,5 +434,53 @@ async fn run_link_once(
                 .spans_acked(ack.upto, ack.rewind == Some(true)),
             HubToNode::Challenge(_) | HubToNode::Welcome(_) | HubToNode::Heartbeat(_) => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fleetd_contracts::mcp::ATTACHMENT_MAX_BYTES;
+
+    /// The largest attachment reaches the node in the one frame the hub sends it in.
+    #[tokio::test]
+    async fn the_link_takes_a_put_file_of_the_largest_attachment() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}/link", listener.local_addr().unwrap());
+        // Base64 of 25 MiB, with room for the frame around it.
+        let frame = "A".repeat(ATTACHMENT_MAX_BYTES.div_ceil(3) * 4 + 4096);
+        let sent = frame.len();
+        tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(tcp).await.unwrap();
+            ws.send(Message::Text(frame.into())).await.unwrap();
+            let _ = ws.next().await;
+        });
+        let (mut ws, _) =
+            tokio_tungstenite::connect_async_with_config(url.as_str(), Some(link_config()), false)
+                .await
+                .unwrap();
+        let Some(Ok(Message::Text(got))) = ws.next().await else {
+            panic!("the frame did not arrive whole")
+        };
+        assert_eq!(got.len(), sent);
+    }
+
+    /// Only a file transfer may use the room the socket has for one: any other frame over 16 MiB is ignored.
+    #[test]
+    fn only_a_put_file_frame_goes_past_16_mib() {
+        let frame = |call: serde_json::Value| {
+            decode_hub_frame(
+                &serde_json::json!({ "t": "session_call", "id": "1", "call": call }).to_string(),
+            )
+            .unwrap()
+        };
+        let put = frame(serde_json::json!({ "op": "put_file", "projectId": "app",
+            "relPath": ".fleetd/attachments/W1/a.txt", "dataB64": "aGk=" }));
+        let read = frame(serde_json::json!({ "op": "default_branch", "projectId": "app" }));
+        let big = LINK_MAX_OTHER_FRAME_BYTES + 1;
+        assert!(size_allowed(&put, big));
+        assert!(size_allowed(&read, LINK_MAX_OTHER_FRAME_BYTES));
+        assert!(!size_allowed(&read, big));
     }
 }

@@ -395,15 +395,50 @@ pub fn rows(
             out.extend(row(&change.repo, None, Some(change), ctx));
         }
     }
-    out.sort_by(|a, b| {
-        is_open(b.state)
-            .cmp(&is_open(a.state))
-            .then_with(|| b.updated_at.cmp(&a.updated_at))
-            .then_with(|| b.number.get().cmp(&a.number.get()))
-    });
+    out.sort_by_key(|r| std::cmp::Reverse(row_key(r)));
     let truncated = out.len() > max;
     out.truncate(max);
     (out, truncated)
+}
+
+/// Where a row sorts in the list, the greater first: open, then most recently updated, then by number and repo.
+pub type RowKey = (bool, String, i64, String);
+
+pub fn row_key(r: &PrRow) -> RowKey {
+    (
+        is_open(r.state),
+        r.updated_at.0.clone(),
+        r.number.get(),
+        r.repo.as_str().to_lowercase(),
+    )
+}
+
+/// The key GitHub's PR would sort at, as far as its list says.
+pub fn pull_key(repo: &GitHubRepo, pull: &GhPull) -> RowKey {
+    (
+        is_open(gh_state(pull)),
+        normalize_iso(&pull.updated_at),
+        pull.number,
+        repo.as_str().to_lowercase(),
+    )
+}
+
+/// A `pr_list` cursor: the key of the last row of its page.
+pub fn cursor_of(key: &RowKey) -> String {
+    let open = if key.0 { "o" } else { "c" };
+    format!("{open}|{}|{}|{}", key.1, key.2, key.3)
+}
+
+pub fn key_of_cursor(cursor: &str) -> Option<RowKey> {
+    let mut parts = cursor.splitn(4, '|');
+    let open = match parts.next()? {
+        "o" => true,
+        "c" => false,
+        _ => return None,
+    };
+    let at = parts.next()?.to_owned();
+    let number = parts.next()?.parse().ok()?;
+    Some((open, at, number, parts.next()?.to_owned()))
 }
 
 pub fn file_status(status: &str) -> PrFileStatus {

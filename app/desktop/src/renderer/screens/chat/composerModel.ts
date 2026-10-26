@@ -2,7 +2,7 @@
 // reaches it mid-turn as a steer (chat_send, or with ⌘Enter `now`, which stops its step), so the composer only says
 // which to expect.
 
-import type { ChatDelivery } from "../../../shared/contracts";
+import { CHAT_TEXT_MAX, type ChatDelivery } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
 
 export interface KeyLike {
@@ -24,7 +24,7 @@ export const recallsOn = (e: KeyLike & { readonly metaKey: boolean; readonly ctr
   e.key === "ArrowUp" && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey && !e.isComposing && box.text === "" && box.attached.length === 0;
 
 /** chat_send's limit on a message's text (ChatSendInput.text, JSON string length); more goes in as a file. */
-export const MAX_CHARS = 20_000;
+export const MAX_CHARS = CHAT_TEXT_MAX;
 
 /** The trimmed text, or why it can't be sent. "1 go" and "nvm" are messages like any other; files need a word. */
 export function checkMessage(text: string, attachments: number): { ok: true; text: string } | { ok: false; reason: string } {

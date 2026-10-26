@@ -179,7 +179,7 @@ pub struct CmdCheck {
     /// Absolute; the project workspace unless the check says otherwise.
     pub cwd: AbsolutePath,
     pub argv: List<String, 1, 64>,
-    pub timeout_sec: Int<1, 3600>,
+    pub timeout_sec: GatedTimeoutSec,
 }
 
 /// Node -> hub, one per `cmd_check`.

@@ -1,8 +1,8 @@
 // What a message can carry (the hub's attachment_put limits) and how a file becomes one. From the board composer.
 
-import type { AttachmentMime } from "../../../shared/contracts";
+import { ATTACHMENTS_MAX, type AttachmentMime } from "../../../shared/contracts";
 
-export const MAX_ATTACHMENTS = 8;
+export const MAX_ATTACHMENTS = ATTACHMENTS_MAX;
 /** A paste longer than this becomes a `pasted-N.txt` attachment (T3 Code's large-paste rule, under the limit). */
 export const PASTE_AS_FILE = 3500;
 

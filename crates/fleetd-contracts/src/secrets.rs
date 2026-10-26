@@ -57,7 +57,7 @@ brand!(
 );
 
 /// Plaintext limit for one secret.
-pub const SECRET_MAX_BYTES: usize = 8192;
+pub const SECRET_MAX_BYTES: usize = 64 * 1024;
 /// `crypto_box_seal` adds an ephemeral public key (32) and a MAC (16).
 pub const SEAL_OVERHEAD: usize = 48;
 
@@ -66,7 +66,7 @@ brand!(
     SealedSecret,
     name = "SealedSecret",
     check = |s| standard_base64_of(s, SEAL_OVERHEAD + 1, SEAL_OVERHEAD + SECRET_MAX_BYTES),
-    expected = "standard base64 of a sealed box holding 1 to 8192 bytes"
+    expected = "standard base64 of a sealed box holding 1 to 65536 bytes"
 );
 
 brand!(

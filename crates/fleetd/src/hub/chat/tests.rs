@@ -895,6 +895,121 @@ async fn a_messages_attachments_are_the_projects() {
     assert_eq!(got["bytes"], 3);
 }
 
+/// A message of 100,000 characters is taken whole; one more is refused before anything is stored.
+#[tokio::test]
+async fn a_message_is_at_most_100000_characters() {
+    let (hub, _home) = hub();
+    let tools = crate::hub::api::registry();
+    let message = |text: String, crid: &str| json!({ "projectRef": { "machineId": "devbox", "projectId": "app" }, "text": text, "clientRequestId": crid });
+    let long = "é".repeat(fleetd_contracts::chat::CHAT_TEXT_MAX);
+    let sent = tools
+        .call(&hub, &person(), "chat_send", message(long.clone(), "c1"))
+        .await
+        .unwrap();
+    assert_eq!(sent["message"]["text"], long);
+    let Err(crate::hub::api::CallError::Invalid(why)) = tools
+        .call(
+            &hub,
+            &person(),
+            "chat_send",
+            message(format!("{long}x"), "c2"),
+        )
+        .await
+    else {
+        panic!("a message past the limit was taken")
+    };
+    assert!(why.contains("100000"), "{why}");
+}
+
+/// A message carries 20 files, one of them 25 MiB sent in pieces as the app sends it; a 21st file, a byte past
+/// 25 MiB, or a piece out of order is refused and says why.
+#[tokio::test]
+async fn a_message_carries_twenty_files_of_up_to_25_mib() {
+    use base64::Engine;
+    use fleetd_contracts::mcp::{ATTACHMENT_MAX_BYTES, ATTACHMENT_PART_BYTES};
+    let b64 = |b: &[u8]| base64::engine::general_purpose::STANDARD.encode(b);
+    let (hub, _home) = hub();
+    let tools = crate::hub::api::registry();
+    let call = |tool: &'static str, input: Value| {
+        let (hub, tools) = (hub.clone(), &tools);
+        async move { tools.call(&hub, &person(), tool, input).await }
+    };
+    let refusal = |e: crate::hub::api::CallError| match e {
+        crate::hub::api::CallError::Tool(e) => e.message,
+        crate::hub::api::CallError::Invalid(m) => m,
+        crate::hub::api::CallError::UnknownTool => "unknown tool".into(),
+    };
+    // Sends `len` bytes the way the app does: pieces, then the last with attachment_put.
+    let send = |len: usize| async move {
+        let piece = vec![b'x'; ATTACHMENT_PART_BYTES];
+        let mut upload: Option<String> = None;
+        let mut at = 0;
+        while at + ATTACHMENT_PART_BYTES < len {
+            let mut input = json!({ "dataB64": b64(&piece) });
+            if let Some(id) = &upload {
+                input["uploadId"] = json!(id);
+                input["offset"] = json!(at);
+            }
+            let part = call("attachment_part", input).await.map_err(refusal)?;
+            upload = Some(part["uploadId"].as_str().unwrap().to_owned());
+            at += ATTACHMENT_PART_BYTES;
+        }
+        let mut input =
+            json!({ "name": "big.txt", "mime": "text/plain", "dataB64": b64(&piece[..len - at]) });
+        if let Some(id) = &upload {
+            input["uploadId"] = json!(id);
+        }
+        call("attachment_put", input).await.map_err(refusal)
+    };
+    let big = send(ATTACHMENT_MAX_BYTES).await.unwrap();
+    assert_eq!(big["bytes"], ATTACHMENT_MAX_BYTES);
+    let over = send(ATTACHMENT_MAX_BYTES + 1).await.unwrap_err();
+    assert_eq!(
+        over,
+        format!(
+            "The file is {} bytes; attachments are at most 25 MiB.",
+            ATTACHMENT_MAX_BYTES + 1
+        )
+    );
+
+    let first = call("attachment_part", json!({ "dataB64": b64(b"one") }))
+        .await
+        .unwrap();
+    let skipped = call(
+        "attachment_part",
+        json!({ "uploadId": first["uploadId"], "offset": 9, "dataB64": b64(b"two") }),
+    )
+    .await
+    .unwrap_err();
+    assert!(refusal(skipped).ends_with("holds 3 bytes, not 9."));
+
+    let mut files = vec![big["attachmentId"].clone()];
+    for n in 1..=20 {
+        let small = call(
+            "attachment_put",
+            json!({ "name": format!("note-{n}.txt"), "mime": "text/plain", "dataB64": b64(b"hi") }),
+        )
+        .await
+        .unwrap();
+        files.push(small["attachmentId"].clone());
+    }
+    let message = |files: &[Value], crid: &str| {
+        json!({ "projectRef": { "machineId": "devbox", "projectId": "app" }, "text": "see these",
+                "attachments": files, "clientRequestId": crid })
+    };
+    let sent = call("chat_send", message(&files[..20], "c1"))
+        .await
+        .unwrap();
+    assert_eq!(sent["message"]["attachments"].as_array().unwrap().len(), 20);
+    assert_eq!(
+        sent["message"]["attachments"][0]["bytes"],
+        ATTACHMENT_MAX_BYTES
+    );
+    let too_many = call("chat_send", message(&files, "c2")).await.unwrap_err();
+    let why = refusal(too_many);
+    assert!(why.contains("at most 20 items"), "{why}");
+}
+
 /// A stop reaches the lead as a line that says the order is over: no more work on it.
 #[tokio::test(flavor = "current_thread")]
 async fn a_stopped_order_tells_its_lead_to_do_no_more_work_on_it() {

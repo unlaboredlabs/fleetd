@@ -157,8 +157,12 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "Withdraw a steer that is still queued. Refused once it was delivered: the next steer says what changed. The sender's key only.",
     ),
     (
+        "attachment_part",
+        "One piece of a file too large for one call, in order: the first (no uploadId) starts an upload, each next passes the uploadId it returned and offset (the bytes sent so far). Finish with attachment_put, the last piece and the uploadId. An upload untouched for an hour is deleted.",
+    ),
+    (
         "attachment_put",
-        "Upload one file (png, jpeg, webp, gif, text or PDF; at most 5 MiB, base64) for a later chat_send. Unused uploads are deleted after 24 h.",
+        "Upload one file (png, jpeg, webp, gif, text or PDF; at most 25 MiB, base64) for a later chat_send: the whole file, or with uploadId the last piece after attachment_part. Unused uploads are deleted after 24 h.",
     ),
     (
         "project_files",
@@ -197,6 +201,10 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "How many days the hub keeps time spans (1 to 365, default 30). Pruned hourly; daily roll-ups and critical paths stay 400 days. Admin.",
     ),
     (
+        "memory_caps_set",
+        "The caps every memory write is held to, in characters: user (user.md), index (each MEMORY.md), topic (each topic file), 1,000 to 100,000 each, and project (a project's files together), 1,000 to 400,000. Defaults 16,000, 16,000, 32,000 and 128,000. A write past a cap is refused; a file already over a lowered one stays as it is. memory_get returns them as caps. Admin on every machine.",
+    ),
+    (
         "metrics_get",
         "Factory metrics for one project's repos, or the fleet's with each repo counted once: pull requests merged per day, time from order to merged (median, p90), the person's minutes per merged PR, and the share of merged work through fleetd, by calendar day in tz. A landed change is a PR merged into the default branch (a train batch's members one each) or a direct push; each has a route: train, fleetd_by_hand, outside or direct. coverage says which repos were read, when, and what fleetd can't see.",
     ),
@@ -218,7 +226,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "pr_list",
-        "A project's PRs: open ones on its repos and those closed or merged since closedSince (default 7 days), with title, state, checks, review state, merge-queue state and the agent that wrote it. GitHub data is cached for a minute; githubError says when only fleetd's records could be read. Read-only.",
+        "A page of a project's PRs (at most 60 rows; the first reads one GitHub page per list), open first, then most recently updated: all of them, or with closedSince the open ones and those closed or merged since; nextCursor, passed as cursor, reads the next page. Each with title, state, checks, review state, merge-queue state and the agent that wrote it. GitHub data is cached for a minute; githubError says when only fleetd's records could be read. Read-only.",
     ),
     (
         "pr_get",

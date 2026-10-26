@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { LinkHandlerClaim, NotifyRequest } from "./app";
 import { HUB_CACHE_MAX_BYTES } from "./cache";
+import { SECRET_MAX_BYTES } from "./contracts";
 import { MENU_COMMANDS } from "./menu";
 import { IPC, type InvokeChannel } from "./channels";
 
@@ -98,8 +99,9 @@ export const SecretRequest = z.strictObject({
   /** The secret request item's requestId (ChatRequestId), "Q<n>". */
   requestId: z.string().regex(/^Q[1-9][0-9]*$/u),
   boxPubKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/u),
-  // 8192 UTF-8 bytes at most; main checks the byte length, this only bounds the string.
-  value: z.string().min(1).max(8192),
+  // SECRET_MAX_BYTES UTF-8 bytes at most; main checks the byte length, this only bounds the string (a UTF-16 unit is
+  // at least one byte, so no value that fits is cut here).
+  value: z.string().min(1).max(SECRET_MAX_BYTES),
 });
 export type SecretRequest = z.infer<typeof SecretRequest>;
 /** An error the page caught, for the app log: what failed, the error's own text and the route. Main scrubs it. */

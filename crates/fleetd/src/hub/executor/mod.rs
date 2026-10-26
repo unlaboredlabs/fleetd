@@ -1976,9 +1976,9 @@ impl Executors {
             rel_path: non_empty(&r.machine_id, op, "path", rel_path)?,
             data_b64: non_empty(&r.machine_id, op, "file", &data_b64)?,
         };
-        self.call(&r.machine_id, op, call, Duration::from_secs(60))
-            .await
-            .map(|_| ())
+        // A minute, and a second more per half MiB: a 25 MiB file has two minutes on a slow link.
+        let wait = Duration::from_secs(60 + data_b64.len() as u64 / (512 * 1024));
+        self.call(&r.machine_id, op, call, wait).await.map(|_| ())
     }
 
     /// The repo's default branch at `cwd`, else its current branch; `None` when it has neither (not a checkout) or no

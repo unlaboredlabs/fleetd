@@ -13,10 +13,10 @@ use crate::hello::ProtocolVersion;
 use crate::ids::{EventSeq, MachineId, ProjectId, ProjectRef, ThreadId, Timestamp};
 use crate::ledger::{
     Decision, DecisionId, DecisionKey, DecisionScope, DecisionValue, DecisionWhy, HumanRequest,
-    IntakeText, Lead, RequestState, Workstream, WorkstreamId, WorkstreamState,
+    Lead, RequestState, Workstream, WorkstreamId, WorkstreamState,
 };
 use crate::live::{AgentLane, OrderCard, TrainLive};
-use crate::memory::{MemoryFile, MemoryScope, MemoryTopic, TOPIC_CAP};
+use crate::memory::{MemoryCaps, MemoryFile, MemoryScope, MemoryText, MemoryTopic};
 use crate::model::{ActionItem, Machine, ProjectOutcome, ProjectSummary, ThreadSummary};
 use crate::prim::{
     Count, Int, IntOr, Line, List, MAX_SAFE_INT, NonEmpty, Positive, Text, True, UniqueList,
@@ -28,7 +28,7 @@ use crate::prompts::{
 };
 use crate::secrets::{SealedSecret, SecretFingerprint};
 use crate::status::ProjectStatusRow;
-use crate::steer::{Steer, SteerId, SteerMode, SteerTarget};
+use crate::steer::{Steer, SteerId, SteerMode, SteerTarget, SteerText};
 use crate::tasks::{SlotState, Task, TaskId, TaskState};
 use crate::time::{
     CategoryTotal, CiCheckStat, CommandStat, Coverage, CriticalPath, HumanWait, Insight,
@@ -256,11 +256,20 @@ brand!(
     AttachmentId, name = "AttachmentId", pattern = r"^F[1-9][0-9]*$"
 );
 
+brand!(
+    /// "U" plus 32 hex digits: a file still being uploaded with attachment_part.
+    UploadId, name = "UploadId", pattern = r"^U[0-9a-f]{32}$"
+);
+
+/// Most attachments an order or a note may carry.
+pub const ATTACHMENTS_MAX: usize = 20;
 /// Attachments an order or a note may carry.
-pub type Attachments = UniqueList<AttachmentId, 0, 8>;
+pub type Attachments = UniqueList<AttachmentId, 0, ATTACHMENTS_MAX>;
 
 /// Largest attachment, decoded.
-pub const ATTACHMENT_MAX_BYTES: usize = 5 * 1024 * 1024;
+pub const ATTACHMENT_MAX_BYTES: usize = 25 * 1024 * 1024;
+/// The piece of a file the app sends per attachment_part call, decoded: its base64 fits one app call.
+pub const ATTACHMENT_PART_BYTES: usize = 512 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 pub enum AttachmentMime {
@@ -301,12 +310,30 @@ pub enum IntakeRef {
 
 pub type IntakeRefs = List<IntakeRef, 0, 20>;
 
+// attachment_part: one piece of a file too large for one call, in order. The first piece (no uploadId) starts an
+// upload; each next one passes the uploadId it returned and offset, the bytes sent so far. attachment_put with the
+// uploadId and the last piece stores the file. An upload untouched for an hour is deleted.
+input!(AttachmentPartInput {
+    upload_id: Option<UploadId>,
+    /// With uploadId: the bytes sent so far, which must match the hub's count.
+    offset: Option<Count>,
+    /// Standard base64.
+    data_b64: NonEmpty,
+});
+output!(AttachmentPartOutput {
+    upload_id: UploadId,
+    /// Received so far.
+    bytes: Count,
+});
+
 // attachment_put: upload one file for a later chat_send or steer_send. Unreferenced uploads are deleted after 24 h.
 input!(AttachmentPutInput {
     name: Line<1, 120>,
     mime: AttachmentMime,
-    /// Standard base64; at most 5 MiB decoded.
+    /// Standard base64: the whole file, or with uploadId its last piece. At most 25 MiB decoded, all pieces together.
     data_b64: NonEmpty,
+    /// The pieces sent with attachment_part, which come before dataB64.
+    upload_id: Option<UploadId>,
 });
 output!(AttachmentPutOutput {
     attachment_id: AttachmentId,
@@ -314,8 +341,9 @@ output!(AttachmentPutOutput {
     sha256: Text<64, 64>,
 });
 
-// attachment_get: one file of a project's chat or orders, to show it (an image in a chat message): at most 5 MiB, the
-// attachment_put cap. Read on the project's machine; the file must belong to that project, or the caller uploaded it.
+// attachment_get: one file of a project's chat or orders, to show it (an image in a chat message): at most 25 MiB,
+// the attachment_put cap. Read on the project's machine; the file must belong to that project, or the caller uploaded
+// it.
 input!(AttachmentGetInput {
     project_ref: ProjectRef,
     attachment_id: AttachmentId,
@@ -377,7 +405,7 @@ output!(OrderGetOutput {
 // `now` (⌘Enter) stops its current step. No wake debounce, no digest.
 input!(SteerSendInput {
     target: SteerTarget,
-    text: IntakeText,
+    text: SteerText,
     #[serde(default)]
     mode: SteerMode,
     refs: Option<IntakeRefs>,
@@ -892,6 +920,8 @@ output!(MemoryGetOutput {
     /// With projectRef: the project's files together, and their cap.
     project_chars: Option<Count>,
     project_cap: Option<Count>,
+    /// The hub's caps. Absent from older hubs.
+    caps: Option<MemoryCaps>,
 });
 input!(
     #[serde(remote = "Self")]
@@ -902,7 +932,7 @@ input!(
         /// Project scope: a topic file; absent, MEMORY.md.
         topic: Option<MemoryTopic>,
         /// The whole file. Empty deletes it (a topic's index line too).
-        text: Text<0, TOPIC_CAP>,
+        text: MemoryText,
     }
 );
 checked!(MemorySetInput, |input| {
@@ -919,6 +949,16 @@ input!(MemoryUndoInput {
     message_id: ChatMessageId,
 });
 output!(MemoryUndoOutput { ok: True });
+
+// memory_caps_set: the caps every memory write is held to, hub-wide. Admin on every machine.
+input!(MemoryCapsSetInput {
+    #[serde(flatten)]
+    caps: MemoryCaps,
+});
+output!(MemoryCapsSetOutput {
+    #[serde(flatten)]
+    caps: MemoryCaps,
+});
 
 // status_get: without projectRef, one row per project the key reads, for the Status screen; with it, that project's
 // row.
@@ -937,7 +977,7 @@ output!(StatusGetOutput {
 // human; any other key as an agent, by its name: input for the lead, never the human's answer.
 input!(ChatSendInput {
     project_ref: ProjectRef,
-    text: Text<1, 20000>,
+    text: Text<1, { crate::chat::CHAT_TEXT_MAX }>,
     /// A human key only: while the lead works, stop its running step and deliver at once (steer_send's `now`). An
     /// idle lead takes it as any message.
     now: Option<bool>,
@@ -1073,14 +1113,17 @@ output!(AgentWorkOutput {
     running: bool,
 });
 
-// pr_list: a project's PRs: open ones, and those closed or merged since `closedSince` (default: the last 7 days).
-// Open first, then most recently updated.
+// pr_list: a page of a project's PRs, open first, then most recently updated: every PR, or with `closedSince` the open
+// ones and those closed or merged since. `cursor` (a page's `nextCursor`) reads the page after it.
 input!(PrListInput {
     project_ref: ProjectRef,
     closed_since: Option<Timestamp>,
+    cursor: Option<crate::prs::PrListCursor>,
 });
 output!(PrListOutput {
     prs: List<crate::prs::PrRow, 0, { crate::prs::PR_LIST_MAX }>,
+    /// There are more rows: pass it as cursor for the next page.
+    next_cursor: Option<crate::prs::PrListCursor>,
     /// GitHub couldn't be reached: the list holds only the PRs fleetd records, without checks. Why, and what to do.
     github_error: Option<Text<0, 300>>,
     at: Timestamp,
@@ -1366,6 +1409,7 @@ tools! {
     doctor_list => DoctorList, Read, DoctorListInput, DoctorListOutput;
     // Admin keys, or a person's paired device (a human key) with operate on the machine; the handler checks which.
     doctor_fix => DoctorFix, Operate, DoctorFixInput, DoctorFixOutput;
+    attachment_part => AttachmentPart, Operate, AttachmentPartInput, AttachmentPartOutput;
     attachment_put => AttachmentPut, Operate, AttachmentPutInput, AttachmentPutOutput;
     attachment_get => AttachmentGet, Read, AttachmentGetInput, AttachmentGetOutput;
     project_files => ProjectFiles, Read, ProjectFilesInput, ProjectFilesOutput;
@@ -1380,6 +1424,7 @@ tools! {
     // Human keys only (the handlers check): agents write memory through the lead's remember.
     memory_set => MemorySet, Operate, MemorySetInput, MemorySetOutput;
     memory_undo => MemoryUndo, Operate, MemoryUndoInput, MemoryUndoOutput;
+    memory_caps_set => MemoryCapsSet, Admin, MemoryCapsSetInput, MemoryCapsSetOutput;
     time_spans => TimeSpans, Read, TimeSpansInput, TimeSpansOutput;
     time_breakdown => TimeBreakdown, Read, TimeBreakdownInput, TimeBreakdownOutput;
     time_insights => TimeInsights, Read, TimeInsightsInput, TimeInsightsOutput;

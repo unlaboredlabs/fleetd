@@ -47,12 +47,12 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const mount = async (rows: readonly PrRow[], { project = PROJECT, cut = false } = {}) => {
+const mount = async (rows: readonly PrRow[], { project = PROJECT, more = undefined as (() => void) | undefined } = {}) => {
   root = createRoot(host);
   act(() => {
     root?.render(
       <TooltipProvider>
-        <PrList rows={rows} cut={cut} project={project} nowMs={NOW} />
+        <PrList rows={rows} more={more === undefined ? undefined : { load: more, loading: false }} project={project} nowMs={NOW} />
       </TooltipProvider>,
     );
   });
@@ -103,10 +103,12 @@ it("says a filter with nothing in it is empty, and offers one that has rows", as
   expect(shown()).toEqual([8]);
 });
 
-it("still says the hub sent only the most recent when a filter is empty, since the rest may hold its PRs", async () => {
-  await mount([row(8, "merged")], { cut: true });
+it("still offers older PRs when a filter is empty, since they may hold its PRs", async () => {
+  const load = vi.fn();
+  await mount([row(8, "merged")], { more: load });
   expect(host.textContent).toContain("Nothing open");
-  expect(host.textContent).toContain("Only the 1 most recent are here");
+  await click([...host.querySelectorAll("button")].find((b) => b.textContent === "Load more"));
+  expect(load).toHaveBeenCalledOnce();
 });
 
 it("has no filter while there are no PRs at all", async () => {

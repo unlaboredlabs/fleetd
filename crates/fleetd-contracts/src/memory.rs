@@ -13,12 +13,48 @@ use serde_with::skip_serializing_none;
 use crate::chat::ChatMessageId;
 use crate::checked;
 use crate::ids::{ProjectRef, Timestamp};
-use crate::prim::{Count, Line, List, Text};
+use crate::prim::{Count, Int, Line, List, Text};
 
-pub const USER_CAP: usize = 4_000;
-pub const INDEX_CAP: usize = 4_000;
-pub const TOPIC_CAP: usize = 8_000;
-pub const PROJECT_CAP: usize = 32_000;
+/// The caps' defaults, in characters; a hub admin changes them with memory_caps_set.
+pub const USER_CAP: usize = 16_000;
+pub const INDEX_CAP: usize = 16_000;
+pub const TOPIC_CAP: usize = 32_000;
+pub const PROJECT_CAP: usize = 128_000;
+/// The range a cap may be set in: one file, and a project's files together.
+pub const CAP_MIN: usize = 1_000;
+pub const FILE_CAP_MAX: usize = 100_000;
+pub const PROJECT_CAP_MAX: usize = 400_000;
+
+pub type FileCap = Int<{ CAP_MIN as i64 }, { FILE_CAP_MAX as i64 }>;
+pub type ProjectCap = Int<{ CAP_MIN as i64 }, { PROJECT_CAP_MAX as i64 }>;
+/// A memory file's text: at most the highest cap, whatever the hub's is now.
+pub type MemoryText = Text<0, FILE_CAP_MAX>;
+
+/// What memory writes are held to, in characters. A write past a cap is refused; a file already past a lowered cap
+/// stays as it is until it is next written.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryCaps {
+    /// `user.md`.
+    pub user: FileCap,
+    /// Each project's `MEMORY.md`.
+    pub index: FileCap,
+    /// Each topic file.
+    pub topic: FileCap,
+    /// A project's files together, `MEMORY.md` included.
+    pub project: ProjectCap,
+}
+
+impl Default for MemoryCaps {
+    fn default() -> Self {
+        Self {
+            user: FileCap::unchecked(USER_CAP as i64),
+            index: FileCap::unchecked(INDEX_CAP as i64),
+            topic: FileCap::unchecked(TOPIC_CAP as i64),
+            project: ProjectCap::unchecked(PROJECT_CAP as i64),
+        }
+    }
+}
 
 static TOPIC: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[a-z0-9][a-z0-9-]{0,47}$").unwrap());
 
@@ -84,7 +120,7 @@ pub struct MemoryReadCall {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct MemoryReadResult {
     pub topic: MemoryTopic,
-    pub text: Text<0, TOPIC_CAP>,
+    pub text: MemoryText,
     pub next: Option<String>,
 }
 
@@ -118,7 +154,7 @@ pub struct MemoryFile {
     pub scope: MemoryScope,
     /// A project's topic file; absent for `user.md` and `MEMORY.md`.
     pub topic: Option<MemoryTopic>,
-    pub text: Text<0, TOPIC_CAP>,
+    pub text: MemoryText,
     pub chars: Count,
     pub cap: Count,
     pub updated_at: Option<Timestamp>,

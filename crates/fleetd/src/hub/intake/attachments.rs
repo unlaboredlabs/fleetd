@@ -1,6 +1,7 @@
 //! Files a person attaches to an order or a note. `attachment_put` stores the bytes under `<home>/attachments/<sha256>`
 //! with a row; placing the order (or sending the note) writes them into the project's `.fleetd/attachments/<W>/` on
-//! its machine and lists them in the lead's wake. Rows never used are deleted after 24 h.
+//! its machine and lists them in the lead's wake. Rows never used are deleted after 24 h. A file too large for one
+//! call comes in pieces first (`attachment_part`), appended under `<home>/attachments/uploads/<id>`.
 use std::path::PathBuf;
 
 use base64::Engine;
@@ -10,7 +11,8 @@ use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::mcp::{
     ATTACHMENT_MAX_BYTES, AttachmentGetInput, AttachmentGetOutput, AttachmentId, AttachmentMime,
-    AttachmentPutInput, AttachmentPutOutput, ErrorCode,
+    AttachmentPartInput, AttachmentPartOutput, AttachmentPutInput, AttachmentPutOutput, ErrorCode,
+    UploadId,
 };
 use fleetd_contracts::prim::{Count, Text};
 use rusqlite::{OptionalExtension, params};
@@ -21,6 +23,8 @@ use crate::hub::store::now_ms;
 
 /// Unreferenced uploads older than this are deleted.
 const UNUSED_TTL_MS: i64 = 24 * 3600 * 1000;
+/// An upload in pieces untouched this long is deleted.
+const PIECES_TTL_MS: i64 = 3600 * 1000;
 
 struct Row {
     sha256: String,
@@ -77,11 +81,7 @@ pub fn safe_name(name: &str) -> String {
     }
 }
 
-pub async fn put(
-    hub: &Hub,
-    caller: &Caller,
-    input: AttachmentPutInput,
-) -> Result<AttachmentPutOutput, ToolError> {
+fn may_attach(caller: &Caller) -> Result<(), ToolError> {
     if !is_human(caller) && !allows_everywhere(caller, Role::Operate) {
         return Err(ToolError::new(
             ErrorCode::Forbidden,
@@ -89,19 +89,215 @@ pub async fn put(
         )
         .with_fix("Use the desktop app, or a key with operate on every machine."));
     }
-    let bytes = B64
-        .decode(input.data_b64.as_bytes())
-        .map_err(|e| ToolError::new(ErrorCode::Invalid, format!("dataB64 is not base64: {e}.")))?;
-    if bytes.len() > ATTACHMENT_MAX_BYTES {
+    Ok(())
+}
+
+fn decode(data_b64: &str) -> Result<Vec<u8>, ToolError> {
+    B64.decode(data_b64.as_bytes())
+        .map_err(|e| ToolError::new(ErrorCode::Invalid, format!("dataB64 is not base64: {e}.")))
+}
+
+fn too_big(len: usize) -> Result<(), ToolError> {
+    if len > ATTACHMENT_MAX_BYTES {
         return Err(ToolError::new(
             ErrorCode::Invalid,
             format!(
-                "The file is {} bytes; attachments are at most 5 MiB.",
-                bytes.len()
+                "The file is {len} bytes; attachments are at most {} MiB.",
+                ATTACHMENT_MAX_BYTES / (1024 * 1024)
             ),
         )
         .with_fix("Attach a smaller file, or a link to it in the text."));
     }
+    Ok(())
+}
+
+fn uploads_dir(hub: &Hub) -> PathBuf {
+    dir(hub).join("uploads")
+}
+
+fn no_upload(id: &UploadId) -> ToolError {
+    ToolError::new(ErrorCode::NotFound, format!("No upload {id}.")).with_fix(
+        "Uploads untouched for an hour are deleted; send the file again from its first piece.",
+    )
+}
+
+/// Deletes every upload untouched for PIECES_TTL_MS, and any pieces file without its row (a hub stopped mid-write)
+/// once it too is that old, so a piece being written now is never taken. Returns how many uploads went.
+pub fn sweep_uploads(hub: &Hub) -> Result<usize, ToolError> {
+    let now = now_ms(hub.clock.as_ref());
+    let stale: Vec<String> = hub.db.with(|c| {
+        let mut stmt =
+            c.prepare("DELETE FROM attachment_uploads WHERE touched_ms < ?1 RETURNING id")?;
+        Ok(stmt
+            .query_map([now - PIECES_TTL_MS], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?)
+    })?;
+    let root = uploads_dir(hub);
+    for id in &stale {
+        let _ = std::fs::remove_file(root.join(id));
+    }
+    let ttl = std::time::Duration::from_millis(PIECES_TTL_MS as u64);
+    for entry in std::fs::read_dir(&root).into_iter().flatten().flatten() {
+        let old = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .is_ok_and(|at| at.elapsed().is_ok_and(|age| age > ttl));
+        if !old {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let known: bool = hub.db.with(|c| {
+            Ok(c.query_row(
+                "SELECT 1 FROM attachment_uploads WHERE id = ?1",
+                [&name],
+                |_| Ok(true),
+            )
+            .optional()?
+            .unwrap_or(false))
+        })?;
+        if !known {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+    Ok(stale.len())
+}
+
+/// Sweeps unfinished uploads every ten minutes, so one nobody finishes goes within the hour and ten minutes.
+pub async fn run_sweep(hub: std::sync::Arc<Hub>) {
+    loop {
+        hub.clock.sleep(std::time::Duration::from_secs(600)).await;
+        match sweep_uploads(&hub) {
+            Ok(0) => {}
+            Ok(n) => tracing::info!(n, "unfinished uploads deleted"),
+            Err(e) => tracing::warn!(error = %e.message, "unfinished uploads not swept"),
+        }
+    }
+}
+
+/// The bytes upload `id` of `caller` holds so far.
+fn upload_bytes(hub: &Hub, caller: &Caller, id: &UploadId) -> Result<usize, ToolError> {
+    let row: Option<(String, i64)> = hub.db.with(|c| {
+        Ok(c.query_row(
+            "SELECT by, bytes FROM attachment_uploads WHERE id = ?1",
+            [id.as_str()],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?)
+    })?;
+    match row {
+        Some((by, bytes)) if by == caller.key_id.as_str() => Ok(bytes as usize),
+        _ => Err(no_upload(id)),
+    }
+}
+
+/// `attachment_part`: one piece of a file, appended to its upload (a new one without an id).
+pub async fn part(
+    hub: &Hub,
+    caller: &Caller,
+    input: AttachmentPartInput,
+) -> Result<AttachmentPartOutput, ToolError> {
+    may_attach(caller)?;
+    let piece = decode(&input.data_b64)?;
+    if input.upload_id.is_none() {
+        sweep_uploads(hub)?;
+    }
+    let offset = input.offset.map_or(0, |o| o.get() as usize);
+    let (id, had) = match &input.upload_id {
+        Some(id) => (id.clone(), upload_bytes(hub, caller, id)?),
+        None => {
+            let n: [u8; 16] = rand::random();
+            (UploadId::unchecked(format!("U{}", hex(&n))), 0)
+        }
+    };
+    if offset != had {
+        return Err(ToolError::new(
+            ErrorCode::Invalid,
+            format!("Upload {id} holds {had} bytes, not {offset}."),
+        )
+        .with_fix("Send the piece that starts at the bytes the upload holds, or the file again."));
+    }
+    let len = had + piece.len();
+    too_big(len)?;
+    let upsert = |bytes: usize| {
+        let now = now_ms(hub.clock.as_ref());
+        hub.db.with(|c| {
+            c.execute(
+                "INSERT INTO attachment_uploads (id, by, bytes, touched_ms) VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT (id) DO UPDATE SET bytes = excluded.bytes, touched_ms = excluded.touched_ms",
+                params![id.as_str(), caller.key_id.as_str(), bytes as i64, now],
+            )?;
+            Ok(())
+        })
+    };
+    // The row comes first, so no sweep takes a new upload's file for an orphan while its first piece is written.
+    if input.upload_id.is_none() {
+        upsert(0)?;
+    }
+    let root = uploads_dir(hub);
+    let path = root.join(id.as_str());
+    tokio::task::spawn_blocking(move || -> std::io::Result<()> {
+        std::fs::create_dir_all(&root)?;
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)?;
+        std::io::Write::write_all(&mut file, &piece)
+    })
+    .await
+    .map_err(|_| crate::hub::api::internal_error())?
+    .map_err(|e| {
+        tracing::error!(error = %e, "attachment piece not stored");
+        crate::hub::api::internal_error()
+    })?;
+    upsert(len)?;
+    Ok(AttachmentPartOutput {
+        upload_id: id,
+        bytes: Count::unchecked(len as i64),
+        next: Some(
+            "Send the next piece, or the last one with attachment_put and this uploadId.".into(),
+        ),
+        truncated: None,
+    })
+}
+
+pub async fn put(
+    hub: &Hub,
+    caller: &Caller,
+    input: AttachmentPutInput,
+) -> Result<AttachmentPutOutput, ToolError> {
+    may_attach(caller)?;
+    let last = decode(&input.data_b64)?;
+    let bytes = match &input.upload_id {
+        None => last,
+        Some(id) => {
+            let had = upload_bytes(hub, caller, id)?;
+            too_big(had + last.len())?;
+            let path = uploads_dir(hub).join(id.as_str());
+            let mut bytes = tokio::fs::read(&path).await.map_err(|_| no_upload(id))?;
+            // The pieces on disk must be the ones counted: a file short of them would be stored corrupt.
+            if bytes.len() != had {
+                return Err(ToolError::new(
+                    ErrorCode::Failed,
+                    format!(
+                        "Upload {id} lost pieces: {} of its {had} bytes are here.",
+                        bytes.len()
+                    ),
+                )
+                .with_fix("Send the file again from its first piece."));
+            }
+            bytes.extend_from_slice(&last);
+            hub.db.with(|c| {
+                c.execute(
+                    "DELETE FROM attachment_uploads WHERE id = ?1",
+                    [id.as_str()],
+                )?;
+                Ok(())
+            })?;
+            let _ = tokio::fs::remove_file(&path).await;
+            bytes
+        }
+    };
+    too_big(bytes.len())?;
     let sha = hex(&Sha256::digest(&bytes));
     let root = dir(hub);
     let path = root.join(&sha);
@@ -395,6 +591,75 @@ mod tests {
 
     fn project(p: &str) -> ProjectRef {
         serde_json::from_value(json!({ "machineId": "devbox", "projectId": p })).unwrap()
+    }
+
+    /// An upload in pieces nobody finishes is deleted by the hub's own sweep an hour after its last piece, pieces
+    /// file and all, and a pieces file left without its row goes too.
+    #[tokio::test]
+    async fn an_unfinished_upload_expires_on_the_hub() {
+        let home = tempfile::tempdir().unwrap();
+        let config = HubConfig {
+            home: home.path().to_path_buf(),
+            listen: Listen::default(),
+            url: None,
+            queue_ttl_sec: None,
+        };
+        let clock = ManualClock::at(1_792_000_000_000);
+        let hub = crate::hub::serve::build_on(HubDb::open_memory().unwrap(), config, clock.clone())
+            .unwrap();
+        let me = caller("k1", true, "operate");
+        let piece = |upload: Option<&UploadId>, offset: i64| -> AttachmentPartInput {
+            serde_json::from_value(
+                json!({ "uploadId": upload, "offset": offset, "dataB64": B64.encode(b"part") }),
+            )
+            .unwrap()
+        };
+        let started = part(&hub, &me, piece(None, 0)).await.unwrap();
+        let id = started.upload_id;
+        let pieces = uploads_dir(&hub).join(id.as_str());
+        let orphan = uploads_dir(&hub).join(format!("U{}", "0".repeat(32)));
+        std::fs::write(&orphan, b"left by a stopped hub").unwrap();
+        let fresh_orphan = uploads_dir(&hub).join(format!("U{}", "1".repeat(32)));
+        std::fs::write(&fresh_orphan, b"a first piece being written").unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&orphan)
+            .unwrap()
+            .set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 3600))
+            .unwrap();
+
+        clock.advance(std::time::Duration::from_secs(59 * 60));
+        assert_eq!(sweep_uploads(&hub).unwrap(), 0);
+        assert!(pieces.exists(), "still within its hour");
+        assert!(
+            !orphan.exists(),
+            "no row for an hour: nothing can finish it"
+        );
+        assert!(
+            fresh_orphan.exists(),
+            "a file written just now may be a first piece before its row"
+        );
+        part(&hub, &me, piece(Some(&id), 4)).await.unwrap();
+
+        clock.advance(std::time::Duration::from_secs(61 * 60));
+        assert_eq!(sweep_uploads(&hub).unwrap(), 1);
+        assert!(!pieces.exists());
+        let gone = part(&hub, &me, piece(Some(&id), 8)).await.unwrap_err();
+        assert_eq!(gone.message, format!("No upload {id}."));
+
+        // A new upload has its row before its first piece is on disk; a pieces file short of its count is refused.
+        let next = part(&hub, &me, piece(None, 0)).await.unwrap().upload_id;
+        part(&hub, &me, piece(Some(&next), 4)).await.unwrap();
+        std::fs::write(uploads_dir(&hub).join(next.as_str()), b"part").unwrap();
+        let put_input: AttachmentPutInput = serde_json::from_value(json!({
+            "name": "a.txt", "mime": "text/plain", "dataB64": B64.encode(b"end"), "uploadId": next,
+        }))
+        .unwrap();
+        let short = put(&hub, &me, put_input).await.unwrap_err();
+        assert_eq!(
+            short.message,
+            format!("Upload {next} lost pieces: 4 of its 8 bytes are here.")
+        );
     }
 
     /// A chat shows an image its sender attached: the uploader reads it back, a reader of another project's file

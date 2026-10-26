@@ -15,8 +15,8 @@ use std::sync::Mutex;
 use fleetd_contracts::ids::{ProjectRef, Timestamp};
 use fleetd_contracts::mcp::ErrorCode;
 use fleetd_contracts::memory::{
-    INDEX_CAP, MemoryEntry, MemoryFile, MemoryNote, MemoryScope, MemoryTopic, PROJECT_CAP,
-    RememberCall, RememberedItem, TOPIC_CAP, USER_CAP,
+    FileCap, MemoryCaps, MemoryEntry, MemoryFile, MemoryNote, MemoryScope, MemoryTopic, ProjectCap,
+    RememberCall, RememberedItem,
 };
 use fleetd_contracts::prim::{Count, List, Text};
 use sha2::{Digest, Sha256};
@@ -85,26 +85,59 @@ impl Target<'_> {
             (Some(_), Some(t)) => format!("{t}.md"),
         }
     }
-
-    pub fn cap(&self) -> usize {
-        match (self.project, self.topic) {
-            (None, _) => USER_CAP,
-            (Some(_), None) => INDEX_CAP,
-            (Some(_), Some(_)) => TOPIC_CAP,
-        }
-    }
 }
 
 /// The memory of one hub, over `<home>/memory`; a hub without a home keeps none.
 pub struct Memory<'a> {
     dir: Option<&'a Path>,
+    caps: MemoryCaps,
 }
 
 impl HubDb {
     pub fn memory(&self) -> Memory<'_> {
         Memory {
             dir: self.memory_dir(),
+            caps: self.memory_caps().unwrap_or_default(),
         }
+    }
+
+    /// The caps a hub admin set; each one not set has its default.
+    pub fn memory_caps(&self) -> Result<MemoryCaps, StoreError> {
+        let set: Vec<(String, i64)> = self.with(|c| {
+            let mut stmt = c.prepare_cached("SELECT key, value FROM memory_settings")?;
+            Ok(stmt
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .collect::<rusqlite::Result<_>>()?)
+        })?;
+        let mut caps = MemoryCaps::default();
+        for (key, value) in set {
+            match key.as_str() {
+                "user" => caps.user = FileCap::new(value).unwrap_or(caps.user),
+                "index" => caps.index = FileCap::new(value).unwrap_or(caps.index),
+                "topic" => caps.topic = FileCap::new(value).unwrap_or(caps.topic),
+                "project" => caps.project = ProjectCap::new(value).unwrap_or(caps.project),
+                _ => {}
+            }
+        }
+        Ok(caps)
+    }
+
+    pub fn set_memory_caps(&self, caps: &MemoryCaps) -> Result<(), StoreError> {
+        self.transaction(|c| {
+            for (key, value) in [
+                ("user", caps.user.get()),
+                ("index", caps.index.get()),
+                ("topic", caps.topic.get()),
+                ("project", caps.project.get()),
+            ] {
+                c.execute(
+                    "INSERT INTO memory_settings (key, value) VALUES (?1, ?2)
+                     ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+                    rusqlite::params![key, value],
+                )?;
+            }
+            Ok(())
+        })
     }
 }
 
@@ -185,6 +218,24 @@ fn secret_refusal(text: &str) -> Result<(), MemoryError> {
 }
 
 impl Memory<'_> {
+    pub fn caps(&self) -> &MemoryCaps {
+        &self.caps
+    }
+
+    /// The cap of file `t`.
+    pub fn cap(&self, t: &Target<'_>) -> usize {
+        let cap = match (t.project, t.topic) {
+            (None, _) => self.caps.user,
+            (Some(_), None) => self.caps.index,
+            (Some(_), Some(_)) => self.caps.topic,
+        };
+        cap.get() as usize
+    }
+
+    fn project_cap(&self) -> usize {
+        self.caps.project.get() as usize
+    }
+
     fn root(&self) -> Result<&Path, MemoryError> {
         self.dir.ok_or_else(|| {
             MemoryError::new(
@@ -263,7 +314,7 @@ impl Memory<'_> {
     fn put(&self, t: &Target<'_>, text: &str) -> Result<(), MemoryError> {
         self.root()?;
         secret_refusal(text)?;
-        let (len, cap) = (chars(text), t.cap());
+        let (len, cap) = (chars(text), self.cap(t));
         if len > cap {
             return Err(MemoryError::new(
                 ErrorCode::Invalid,
@@ -278,11 +329,12 @@ impl Memory<'_> {
         }
         if let Some(r) = t.project {
             let total = self.project_chars(r) - chars(&self.read(t)) + len;
-            if total > PROJECT_CAP {
+            let cap = self.project_cap();
+            if total > cap {
                 return Err(MemoryError::new(
                     ErrorCode::Invalid,
                     format!(
-                        "This project's memory would be {total} characters, past its cap of {PROJECT_CAP}. Nothing was written."
+                        "This project's memory would be {total} characters, past its cap of {cap}. Nothing was written."
                     ),
                     Some(
                         "Merge or replace: fold topics together, or drop entries that no longer hold.",
@@ -384,10 +436,10 @@ impl Memory<'_> {
                 project: Some(r),
                 topic: None,
             };
-            let room = PROJECT_CAP.saturating_sub(
+            let room = self.project_cap().saturating_sub(
                 self.project_chars(r) - chars(&self.read(&t)) - chars(&self.read(&it)),
             );
-            if chars(index) > INDEX_CAP || chars(index) + chars(&text) > room {
+            if chars(index) > self.cap(&it) || chars(index) + chars(&text) > room {
                 return Err(MemoryError::new(
                     ErrorCode::Invalid,
                     "This project's memory is at its cap. Nothing was written.",
@@ -492,7 +544,7 @@ impl Memory<'_> {
             scope: t.scope(),
             topic: t.topic.cloned(),
             chars: Count::unchecked(chars(&text) as i64),
-            cap: Count::unchecked(t.cap() as i64),
+            cap: Count::unchecked(self.cap(t) as i64),
             text: Text::unchecked(text),
             updated_at: self.updated_at(t),
             notes: List::unchecked(notes),

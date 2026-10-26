@@ -1,25 +1,29 @@
-//! memory_get, memory_set and memory_undo: Settings > Memory and the chat's Undo. Writes are a person's (human keys):
-//! an agent changes memory only through its lead's `remember`.
+//! memory_get, memory_set, memory_undo and memory_caps_set: Settings > Memory and the chat's Undo. Writes are a
+//! person's (human keys): an agent changes memory only through its lead's `remember`. The caps are an admin's.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::mcp::{
-    ErrorCode, MemoryGetInput, MemoryGetOutput, MemorySetInput, MemorySetOutput, MemoryUndoInput,
-    MemoryUndoOutput,
+    ErrorCode, MemoryCapsSetInput, MemoryCapsSetOutput, MemoryGetInput, MemoryGetOutput,
+    MemorySetInput, MemorySetOutput, MemoryUndoInput, MemoryUndoOutput,
 };
-use fleetd_contracts::memory::{MemoryScope, PROJECT_CAP, RememberedItem};
+use fleetd_contracts::memory::{MemoryScope, RememberedItem};
 use fleetd_contracts::prim::{Count, True};
 
 use super::Target;
 use super::calls::changed;
-use crate::hub::api::{Caller, Hub, Registry, ToolError, require, unknown_project};
+use crate::hub::api::{
+    Caller, Hub, Registry, ToolError, admin_everywhere_fix, allows_everywhere, require,
+    unknown_project,
+};
 use crate::hub::orders::notes::require_human;
 
 pub fn register(tools: &mut Registry) {
     tools.add("memory_get", memory_get);
     tools.add("memory_set", memory_set);
     tools.add("memory_undo", memory_undo);
+    tools.add("memory_caps_set", memory_caps_set);
 }
 
 fn known_project(hub: &Hub, caller: &Caller, r: &ProjectRef, role: Role) -> Result<(), ToolError> {
@@ -49,6 +53,7 @@ async fn memory_get(
             files: None,
             project_chars: None,
             project_cap: None,
+            caps: Some(memory.caps().clone()),
             next: Some(
                 "memory_get with projectRef adds that project's MEMORY.md and topic files.".into(),
             ),
@@ -77,7 +82,8 @@ async fn memory_get(
         user,
         files: Some(files),
         project_chars: Some(Count::unchecked(memory.project_chars(r) as i64)),
-        project_cap: Some(Count::unchecked(PROJECT_CAP as i64)),
+        project_cap: Some(Count::unchecked(memory.caps().project.get())),
+        caps: Some(memory.caps().clone()),
         next: None,
         truncated: None,
     })
@@ -151,6 +157,29 @@ async fn memory_undo(
     Ok(MemoryUndoOutput {
         ok: True,
         next: None,
+        truncated: None,
+    })
+}
+
+async fn memory_caps_set(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: MemoryCapsSetInput,
+) -> Result<MemoryCapsSetOutput, ToolError> {
+    // user.md is every project's, so Admin on one machine is not enough.
+    if !allows_everywhere(&caller, Role::Admin) {
+        return Err(ToolError::new(
+            ErrorCode::Forbidden,
+            "Memory caps are hub-wide: they need Admin on every machine.",
+        )
+        .with_fix(admin_everywhere_fix(&caller)));
+    }
+    hub.db.set_memory_caps(&input.caps)?;
+    Ok(MemoryCapsSetOutput {
+        caps: input.caps,
+        next: Some(
+            "Writes past a cap are refused from now; a file already over a lowered cap stays as it is.".into(),
+        ),
         truncated: None,
     })
 }

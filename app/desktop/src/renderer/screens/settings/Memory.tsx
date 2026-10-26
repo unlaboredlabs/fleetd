@@ -6,6 +6,7 @@ import type { MemoryFile, MemorySetInput, ProjectRef } from "../../../shared/con
 import { Button, Field, Separator, Text, Textarea } from "../../ui";
 import { useToolQuery } from "../../src/data/react";
 import { parseScope, projectRefOf, scopeKey, type Draft, type Scope } from "./editor";
+import { MemoryCaps } from "./MemoryCaps";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { capState, fileName, noteHref, projectCapState } from "./memoryModel";
 import { PageHead, ScopeSelect, scopeName, useProjects } from "./parts";
@@ -86,6 +87,8 @@ export function Memory({ route }: { route: SettingsRoute }) {
               ))
             : null}
         </div>
+        <Separator />
+        <MemoryCaps caps={d?.caps} />
       </div>
     </div>
   );

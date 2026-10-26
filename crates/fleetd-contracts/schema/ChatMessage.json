@@ -449,7 +449,7 @@
           "items": {
             "$ref": "#/$defs/AttachmentRef"
           },
-          "maxItems": 8,
+          "maxItems": 20,
           "type": "array"
         },
         "author": {
@@ -821,7 +821,7 @@
           "type": "array"
         },
         "timeoutSec": {
-          "maximum": 1800,
+          "maximum": 14400,
           "minimum": 1,
           "type": "integer"
         }

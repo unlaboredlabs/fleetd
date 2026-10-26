@@ -33,7 +33,7 @@ The hub checks these on every fleetd call a session makes, through its MCP tools
 | Agents running at once, per machine | What the machine fits: one per CPU less one in eight, and 2 GB of memory each after a quarter (4 to 16 GB) is left for the system, at most 64. New agents also wait for 5 GB of disk each above the free-space floor. |
 | Agents running at once, fleet-wide | The machines' caps added up, unless a person set a fleet cap. |
 | Calls a task's agent may make | `report`, `ask_lead`. Every other call is refused. |
-| Gated commands (`gated_run`) | Classes `irreversible`, `money`, `credential`. Run only after a human approves; at most 1800 s. |
+| Gated commands (`gated_run`) | Classes `irreversible`, `money`, `credential`. Run only after a human approves; at most 14400 s. |
 
 These limits cover calls to fleetd, not what the agent's own shell can do. A task runs with full Bash, so `gated_run` is not the only way it could run a command. A process that leaves its session's process tree (for example with `setsid`) and scrubs its environment counts as you, with no limits: see "Known limit" on the Security page. Run agents you don't trust as a different OS user.
 
@@ -296,7 +296,7 @@ A prod write, spend, delete or credential use: the chat shows the human exactly 
 | `secretEnv` | object[] | no | At most 20 items. |
 | `secretEnv[].name` | string | yes | Matches `^[A-Za-z_][A-Za-z0-9_]{0,127}$`. |
 | `secretEnv[].secretKey` | string | yes | Lowercase dotted slug, [a-z0-9]+(.[a-z0-9_-]+)\*, at most 80. |
-| `timeoutSec` | integer | no | 1 to 1800. Default `1800`. |
+| `timeoutSec` | integer | no | 1 to 14400. Default `1800`. |
 | `workstreamId` | string | no | `W<n>`, e.g. `W1`. |
 
 **Who may call:** a lead, checked by the hub. **Needs a human:** A human approves the exact command in chat before the node runs it.

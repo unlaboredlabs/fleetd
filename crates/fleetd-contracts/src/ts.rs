@@ -94,6 +94,41 @@ fn constants() -> Vec<(&'static str, &'static str, Value)> {
             crate::mcp::ATTACHMENT_MAX_BYTES.into(),
         ),
         (
+            "ATTACHMENT_PART_BYTES",
+            "Largest piece of a file attachment_part and attachment_put take in one call.",
+            crate::mcp::ATTACHMENT_PART_BYTES.into(),
+        ),
+        (
+            "ATTACHMENTS_MAX",
+            "Most attachments one message or steer carries.",
+            crate::mcp::ATTACHMENTS_MAX.into(),
+        ),
+        (
+            "CHAT_TEXT_MAX",
+            "Longest chat message, in UTF-16 units.",
+            crate::chat::CHAT_TEXT_MAX.into(),
+        ),
+        (
+            "STEER_TEXT_MAX",
+            "Longest steer, in UTF-16 units.",
+            crate::steer::STEER_TEXT_MAX.into(),
+        ),
+        (
+            "MEMORY_FILE_CAP_MAX",
+            "Highest cap memory_caps_set gives one memory file.",
+            crate::memory::FILE_CAP_MAX.into(),
+        ),
+        (
+            "MEMORY_PROJECT_CAP_MAX",
+            "Highest cap memory_caps_set gives one project's memory together.",
+            crate::memory::PROJECT_CAP_MAX.into(),
+        ),
+        (
+            "MEMORY_CAP_MIN",
+            "Lowest cap memory_caps_set gives a memory file or a project.",
+            crate::memory::CAP_MIN.into(),
+        ),
+        (
             "SLEPT_SHOWN_MS",
             "How long a machine's sleep stays shown.",
             crate::model::SLEPT_SHOWN_MS.into(),
