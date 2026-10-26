@@ -1,7 +1,8 @@
 //! A project's own settings (Settings › Projects in the app): `project_settings_get`, `project_settings_set` and
 //! `project_env_set`, and what the hub keeps of them: `project_settings.keep_worktrees`, `project_settings.setup` (the
 //! commands each new worktree runs before its agent starts, sent with each task's launch), `project_settings.train`
-//! (the checks the merge train waits for, and those it leaves for after the merge) and the `project_env` rows.
+//! (the checks the merge train waits for, and those it leaves for after the merge), `project_settings.preview` (how a
+//! preview someone asks for runs, W58) and the `project_env` rows.
 //!
 //! A variable is set on the project's node first, which keeps the value and adds it to every claude it starts for
 //! the project; only then does the hub record it. The hub's row holds a plain variable's value and a secret's
@@ -16,6 +17,7 @@ use fleetd_contracts::mcp::{
     ProjectSettingsGetOutput, ProjectSettingsSetInput, ProjectSettingsSetOutput,
 };
 use fleetd_contracts::node_link::CAP_PROJECT_SETTINGS;
+use fleetd_contracts::preview::PreviewConfig;
 use fleetd_contracts::prim::Count;
 use fleetd_contracts::project_settings::{
     ENV_TOTAL_MAX_BYTES, ENV_VALUE_MAX_BYTES, env_total_over,
@@ -139,6 +141,36 @@ impl ProjectSettingsStore<'_> {
             .flatten()
             .and_then(|json| serde_json::from_str(&json).ok())
             .unwrap_or_default())
+    }
+
+    /// How a preview of the project runs (Try it); none until a person sets one or approves an agent's proposal.
+    pub fn preview(&self, r: &ProjectRef) -> Result<Option<PreviewConfig>, StoreError> {
+        let saved: Option<Option<String>> = self.db.with(|c| {
+            Ok(c.query_row(
+                "SELECT preview FROM project_settings WHERE machine_id = ? AND project_id = ?",
+                params![r.machine_id.as_str(), r.project_id.as_str()],
+                |row| row.get(0),
+            )
+            .optional()?)
+        })?;
+        Ok(saved
+            .flatten()
+            .and_then(|json| serde_json::from_str(&json).ok()))
+    }
+
+    /// Replaces how a preview runs; one with no target turns Try it off for the project.
+    pub fn set_preview(&self, r: &ProjectRef, preview: &PreviewConfig) -> Result<(), StoreError> {
+        let json = (!preview.targets().is_empty())
+            .then(|| serde_json::to_string(preview))
+            .transpose()?;
+        self.db.with(|c| {
+            c.execute(
+                "INSERT INTO project_settings (machine_id, project_id, medium_allowed, preview) VALUES (?, ?, 1, ?)
+                 ON CONFLICT (machine_id, project_id) DO UPDATE SET preview = excluded.preview",
+                params![r.machine_id.as_str(), r.project_id.as_str(), json],
+            )?;
+            Ok(())
+        })
     }
 
     /// Replaces the train settings; the defaults clear them.
@@ -296,8 +328,7 @@ async fn settings_of(hub: &Hub, r: &ProjectRef) -> Result<ProjectSettings, ToolE
         env: store.env(r)?,
         setup: store.setup(r)?.unwrap_or_default(),
         train: store.train(r)?,
-        // Kept by the hub's preview tools (W58), which come next; none until then.
-        preview: None,
+        preview: store.preview(r)?,
         worktrees,
         worktrees_unknown,
     })
@@ -328,12 +359,6 @@ async fn set(
     let Some(project) = hub.store.project_get(&r)? else {
         return Err(unknown_project(&r));
     };
-    if input.preview.is_some() {
-        return Err(ToolError::new(
-            ErrorCode::Invalid,
-            "this hub doesn't run previews yet, so it keeps no preview setting",
-        ));
-    }
     // The name lives on the node, which renames it in place: the machine stream then brings it back to every cache.
     if let Some(title) = &input.title
         && title.as_str() != project.title
@@ -355,12 +380,22 @@ async fn set(
     if let Some(train) = &input.train {
         hub.db.project_settings().set_train(&r, train)?;
     }
+    if let Some(preview) = &input.preview {
+        hub.db.project_settings().set_preview(&r, preview)?;
+    }
     let mut settings = settings_of(&hub, &r).await?;
     if let Some(title) = input.title {
         // Until the node's project event lands in the cache.
         settings.title = title.to_string();
     }
-    let next = if input.train.is_some() && input.setup.is_none() && input.keep_worktrees.is_none() {
+    let next = if input.preview.is_some()
+        && input.train.is_none()
+        && input.setup.is_none()
+        && input.keep_worktrees.is_none()
+    {
+        "Try it runs previews this way from the next one someone asks for; nothing starts now."
+            .to_owned()
+    } else if input.train.is_some() && input.setup.is_none() && input.keep_worktrees.is_none() {
         "The merge train uses these settings from its next pass.".to_owned()
     } else if input.setup.as_ref().is_some_and(|s| !s.is_empty())
         && !hub
