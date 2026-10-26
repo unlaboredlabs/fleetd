@@ -31,7 +31,7 @@ const row = (laneId: string, status: AgentRow["status"], workstreamId: string, m
 const PR = { changeId: "X12", repo: "acme/storefront", number: 12, url: "https://github.com/acme/storefront/pull/12", state: "ci" as const, reviewsDone: 0, reviewsNeeded: 1 };
 const AGENTS = [
   row("lead:devbox/storefront", "working", "W1", { role: "lead", title: "Lead" }),
-  row("T1", "working", "W1", { branch: "fleetd/T1-dark-mode" }),
+  row("T1", "working", "W1", { branch: "fleetd/T1-dark-mode", threadRef: { machineId: "devbox", threadId: "s-T1" } }),
   row("T2", "working", "W2", { pr: PR, role: "reviewer" }),
   row("T3", "waiting", "W2", { role: "reader" }),
 ];
@@ -60,6 +60,7 @@ const realRect = proto.getBoundingClientRect.bind(proto);
 
 let host: HTMLDivElement;
 let root: Root | undefined;
+const copy = vi.fn((_text: string) => Promise.resolve());
 
 beforeEach(() => {
   vi.spyOn(proto, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
@@ -68,7 +69,7 @@ beforeEach(() => {
   });
   Object.defineProperty(proto, "clientHeight", { configurable: true, get: function (this: HTMLElement) { return heightOf(this); } });
   Object.defineProperty(proto, "clientWidth", { configurable: true, get: () => 400 });
-  vi.stubGlobal("fleetd", { platform: "darwin", fixture: null, openExternal: vi.fn() });
+  vi.stubGlobal("fleetd", { platform: "darwin", fixture: null, openExternal: vi.fn(), copy });
   window.localStorage.clear();
   window.location.hash = `${CHAT}/agents`;
   host = document.createElement("div");
@@ -165,4 +166,26 @@ it("links each row to the agent's panel route, which opens its live view with it
   const prButton = [...(work?.querySelectorAll("button") ?? [])].find((b) => b.textContent === "PR #12 · in CI");
   act(() => prButton?.click());
   expect(window.location.hash).toBe(toHash(panelRoute(project, { tab: "prs", pr: { repo: "acme/storefront", number: 12 } })));
+});
+
+it("a row's right-click menu opens the agent, copies its branch, and Steer opens it with the cursor in its box", async () => {
+  const go = await mount();
+  const link = [...host.querySelectorAll<HTMLAnchorElement>("[data-screen='agents'] a")].find((a) => a.textContent.includes("Lane T1"));
+  if (link === undefined) throw new Error("no row");
+  const choose = async (label: string) => {
+    act(() => {
+      link.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
+    });
+    expect([...document.querySelectorAll("[role='menuitem']")].map((i) => i.textContent)).toEqual(["Open", "Steer", "Copy branch"]);
+    const item = [...document.querySelectorAll<HTMLElement>("[role='menuitem']")].find((i) => i.textContent === label);
+    act(() => item?.click());
+    await act(() => Promise.resolve());
+  };
+  await choose("Copy branch");
+  expect(copy).toHaveBeenCalledWith("fleetd/T1-dark-mode");
+  await choose("Steer");
+  const href = toHash(panelRoute(project, { tab: "agents", agent: "T1" }));
+  expect(window.location.hash).toBe(href);
+  await go(href);
+  expect(document.activeElement?.getAttribute("aria-label")).toBe("Steer this agent");
 });

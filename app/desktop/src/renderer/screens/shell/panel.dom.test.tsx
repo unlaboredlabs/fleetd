@@ -507,6 +507,25 @@ it("shows the lead's checklist with its progress, doing and to do open and done 
   expect(panel()?.querySelector("[role='tab'][data-tab='checklist']")?.textContent).toBe("Checklist1");
 });
 
+it("a checklist item's right-click menu opens its link; an item without one has no menu", async () => {
+  await mount();
+  await go(`${CHAT}/checklist`);
+  const rightClick = (id: number) => {
+    const item = panel()?.querySelector(`[data-item='${String(id)}']`);
+    act(() => {
+      item?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
+    });
+  };
+  const items = () => [...document.querySelectorAll<HTMLElement>("[role='menuitem']")];
+  rightClick(3);
+  expect(items()).toEqual([]);
+  rightClick(2);
+  expect(items().map((i) => i.textContent)).toEqual(["Open agent"]);
+  act(() => items()[0]?.click());
+  await settle();
+  expect(window.location.hash).toBe(`${CHAT}/agents/T1`);
+});
+
 it("says the lead keeps a checklist while there is none, and that it shows once you're connected", async () => {
   checklist = listOf([]);
   await mount();

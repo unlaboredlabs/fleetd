@@ -156,6 +156,28 @@ it("deletes an entry without a confirm, and Undo in the toast puts it back where
   expect(document.body.textContent).toContain("Put back in user.md");
 });
 
+it("an entry's right-click menu edits or deletes it", async () => {
+  const hub = await mount(FILE);
+  const menu = async (entry: string, label: string) => {
+    const card = Array.from(document.querySelectorAll('ul[aria-label="Entries of user.md"] > li > div')).find((d) => d.textContent.startsWith(entry));
+    act(() => {
+      card?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
+    });
+    const items = Array.from(document.querySelectorAll<HTMLElement>("[role='menuitem']"));
+    expect(items.map((i) => i.textContent)).toEqual(["Edit", "Delete"]);
+    act(() => items.find((i) => i.textContent === label)?.click());
+    await settle();
+  };
+  await menu("No npm.", "Edit");
+  expect(textarea("Edit the entry in user.md").value).toBe("No npm.");
+  await click("Cancel");
+  await menu("Never estimate time.", "Delete");
+  expect(hub.text).toBe("# Style\n- Concise. State first.\n- No npm.\n");
+  // Its toast's Undo, as the button's delete has.
+  await click("Undo");
+  expect(hub.text).toBe(FILE);
+});
+
 it("edits the whole file as text, and a cap refusal shows as before", async () => {
   const hub = await mount(FILE, { code: "invalid", message: "user.md would be 4001 characters, past its cap of 4000. Nothing was written." });
   await click("Edit as text");

@@ -8,9 +8,10 @@ import { memo, useEffect, useMemo, useState } from "react";
 import { useData, useToolQuery } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
 import { selectLiveAgents, selectProjects, type LiveAgent } from "../../src/data/selectors";
-import { Button, Dot, EmptyState, IdChip, PROFILE_WORD, Text, Truncate, VirtualList, cx } from "../../ui";
+import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, Dot, EmptyState, IdChip, PROFILE_WORD, Text, Truncate, VirtualList, cx } from "../../ui";
 import { ActivityLine } from "../live/parts";
-import { describe } from "../live/words";
+import { steerNext } from "../live/Steer";
+import { describe, isFinal } from "../live/words";
 import { useNow } from "../live/clock";
 import { useRoute } from "../shell/navigation";
 import { panelRoute, toHash, type ProjectKey } from "../shell/routes";
@@ -268,33 +269,53 @@ function ElsewhereRowView({ row }: { row: ElsewhereRow }) {
 /**
  * Its state as a dot, its title and role; under them what it is doing now and where its work is (its PR, or its
  * branch), left out on that PR's own page. Waiting on you, it stands out gently; a lead keeps its own tint. A link,
- * so it opens with the keyboard and keeps history.
+ * so it opens with the keyboard and keeps history. Its right-click menu opens it, opens it to steer while it runs, or
+ * copies its branch.
  */
 export const AgentRowLink = memo(function AgentRowLink({ agent }: { agent: LiveAgent }) {
   const { row } = agent;
   const onPr = onItsPr(useRoute(), row);
   const href = toHash(panelRoute(row.projectRef, { tab: "agents", agent: row.laneId }));
+  const { taskId, branch } = row;
+  const menu = () => (
+    <>
+      <ContextMenuItem onSelect={() => (window.location.hash = href)}>Open</ContextMenuItem>
+      {taskId !== undefined && row.workstreamId !== undefined && !isFinal(row.status) ? (
+        <ContextMenuItem
+          onSelect={() => {
+            steerNext(taskId);
+            window.location.hash = href;
+          }}
+        >
+          Steer
+        </ContextMenuItem>
+      ) : null}
+      {branch !== undefined ? <ContextMenuCopy text={branch}>Copy branch</ContextMenuCopy> : null}
+    </>
+  );
   return (
-    <a className={cx(s.row, row.status === "waiting" && s.waiting, row.role === "lead" && s.lead)} href={href} data-state={row.status}>
-      <StateDot status={row.status} />
-      <span className={s.line}>
-        <span className={s.task}>
-          <Truncate size="sm" expand="none">
-            {row.title}
-          </Truncate>
+    <ContextMenu menu={menu}>
+      <a className={cx(s.row, row.status === "waiting" && s.waiting, row.role === "lead" && s.lead)} href={href} data-state={row.status}>
+        <StateDot status={row.status} />
+        <span className={s.line}>
+          <span className={s.task}>
+            <Truncate size="sm" expand="none">
+              {row.title}
+            </Truncate>
+          </span>
+          {row.profile === "medium" ? (
+            <Text size="xs" tone="faint">
+              {PROFILE_WORD[row.profile]}
+            </Text>
+          ) : null}
+          <RolePill role={row.role} />
         </span>
-        {row.profile === "medium" ? (
-          <Text size="xs" tone="faint">
-            {PROFILE_WORD[row.profile]}
-          </Text>
-        ) : null}
-        <RolePill role={row.role} />
-      </span>
-      <span className={s.doing}>
-        <ActivityLine line={describe(row)} />
-        {onPr ? null : <WorkPlaceTag row={row} />}
-      </span>
-    </a>
+        <span className={s.doing}>
+          <ActivityLine line={describe(row)} />
+          {onPr ? null : <WorkPlaceTag row={row} />}
+        </span>
+      </a>
+    </ContextMenu>
   );
 });
 

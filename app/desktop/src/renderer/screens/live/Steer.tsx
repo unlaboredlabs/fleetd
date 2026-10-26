@@ -2,7 +2,7 @@
 // key, as chat is: the hub takes it as the person's (steer_send refuses an agent key). Receipts are the order's steers
 // in order_get, the read the live strip shares, which every steer.* event naming the order reads again (effects.ts).
 import { ArrowUp } from "lucide-react";
-import { useCallback, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { AttachmentId, Steer, SteerMode, SteerTarget } from "../../../shared/contracts";
 import { useDataLayer, useToolQuery } from "../../src/data/react";
 import { Button, cx, IdChip, Text, Tooltip, Truncate } from "../../ui";
@@ -95,6 +95,14 @@ function SteerReceipts({ workstreamId, taskId, steers }: { workstreamId: string;
   );
 }
 
+// The task whose box takes focus as it next mounts: an agent row's Steer, which opens the agent's work first.
+let focusNext: string | undefined;
+
+/** Opens with the cursor in task `taskId`'s box, the next time its box shows. */
+export const steerNext = (taskId: string): void => {
+  focusNext = taskId;
+};
+
 /** The box under one agent's live work: Enter at its next step, ⌘Enter stops its step. Its lead is told. */
 export function SteerBox({ workstreamId, taskId }: { workstreamId: string; taskId: string }) {
   const target = { taskId };
@@ -102,6 +110,12 @@ export function SteerBox({ workstreamId, taskId }: { workstreamId: string; taskI
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const input = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (focusNext !== taskId) return;
+    focusNext = undefined;
+    input.current?.focus();
+  }, [taskId]);
 
   const send = (mode: SteerMode) => {
     const words = text.trim();
@@ -130,6 +144,7 @@ export function SteerBox({ workstreamId, taskId }: { workstreamId: string; taskI
       <SteerReceipts workstreamId={workstreamId} taskId={taskId} steers={steers} />
       <div className={s.box}>
         <textarea
+          ref={input}
           className={s.input}
           aria-label="Steer this agent"
           placeholder="Steer this agent"
