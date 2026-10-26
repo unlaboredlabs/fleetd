@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use super::contract::{Change, ChangeState, ProjectRef, TrainState, state_str};
 use super::next::WAITING_FOR_RUNNERS;
-use super::records::{ChangeRecords, ListFilter};
+use super::records::{ChangeRecords, DRAFT, ListFilter, is_draft};
 use crate::hub::store::parse_ms;
 
 pub struct TrainFacts {
@@ -49,6 +49,7 @@ fn state_of(changes: &[Change], train: &TrainState) -> String {
         .queue
         .iter()
         .map(|id| match by_id.get(id.as_str()) {
+            Some(c) if is_draft(c) => format!("{id} {DRAFT}"),
             Some(c) => format!("{id} {}", state_str(c.state)),
             None => id.to_string(),
         })

@@ -23,7 +23,7 @@ for (const shot of siteShots.filter((s) => only === undefined || only.includes(s
     if (!entry) throw new Error(`${shot.screen}${shot.variant === undefined ? "" : `~${shot.variant}`} × ${shot.fixture} isn't registered in qa/registry.ts`);
     const { app, page, settled, close } = await launch(shot.fixture as FixtureName);
     try {
-      await setView(app, page, "medium", "light");
+      await setView(app, page, "medium", shot.theme ?? "light");
       const { open } = entry;
       await show(page, entry.id, entry.route, open && ((p) => open(p, app)));
       await settled();

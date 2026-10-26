@@ -33,6 +33,15 @@ pub const QUEUED_STATES: &[ChangeState] = &[
 /// States of the Change the train is working on.
 pub const HEAD_STATES: &[ChangeState] =
     &[ChangeState::Rebasing, ChangeState::Ci, ChangeState::Merging];
+/// The `lastError` of a draft PR's Change: recorded, but not sent to review, rebased, tested or merged, and at the back
+/// of the line until its PR is marked ready.
+pub const DRAFT: &str = "draft, waiting to be marked ready";
+
+/// Whether the Change waits on its PR being marked ready.
+pub fn is_draft(change: &Change) -> bool {
+    change.last_error.as_deref() == Some(DRAFT)
+}
+
 /// No way back from these; a new enqueue of the PR makes a new Change.
 pub const TERMINAL_STATES: &[ChangeState] = &[
     ChangeState::Merged,
@@ -328,6 +337,16 @@ impl ChangeRecords {
         });
     }
 
+    /// The Changes waiting in a repo's queue, in train order, drafts at the back.
+    pub fn line(&self, repo: &str) -> Vec<Change> {
+        let (mut line, drafts): (Vec<Change>, Vec<Change>) = self
+            .in_train(repo, QUEUED_STATES)
+            .into_iter()
+            .partition(|c| !is_draft(c));
+        line.extend(drafts);
+        line
+    }
+
     /// A repo's train as the API shows it: the Change at its head, and the queue in train order.
     pub fn train_state(&self, repo: &str) -> TrainState {
         let repo = repo.to_lowercase();
@@ -338,10 +357,7 @@ impl ChangeRecords {
                 .next()
                 .map(|c| c.change_id),
             queue: UniqueList::unchecked(
-                self.in_train(&repo, QUEUED_STATES)
-                    .into_iter()
-                    .map(|c| c.change_id)
-                    .collect(),
+                self.line(&repo).into_iter().map(|c| c.change_id).collect(),
             ),
             repo: GitHubRepo::unchecked(repo),
         }

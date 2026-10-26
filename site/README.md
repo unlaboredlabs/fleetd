@@ -1,8 +1,9 @@
 # fleetd.sh
 
 The static site behind `curl -fsSL https://fleetd.sh | sh`. `vercel.json` serves `install.sh` at `/` to curl, Wget and
-fetch user agents and `home.html` to everyone else. `install.sh` is also at `/install.sh` for reading first. `home.html` is the landing page; its app screenshots
-(`chat-*.png`) and transcripts are real fleetd output, `fleetd.txt` is its plain-text twin (not `index.txt`: Vercel would serve that at `/` and break the curl rewrite) for agents, and `fonts/`
+fetch user agents and `home.html` to everyone else. `install.sh` is also at `/install.sh` for reading first. `home.html` is the landing page, in light and dark after the
+reader's system; its showcase recording (`showcase-*.webm`), app screenshots (`chat-*.png`) and transcripts are real
+fleetd output, `fleetd.txt` is its plain-text twin (not `index.txt`: Vercel would serve that at `/` and break the curl rewrite) for agents, and `fonts/`
 holds the self-hosted IBM Plex Sans and Lilex (both SIL OFL, licences alongside).
 
 There is deliberately no `index.html` at the root: Vercel serves files before applying rewrites, so an `index.html`
@@ -11,12 +12,28 @@ would win over the user-agent rewrite at `/`. `docs/index.html` is `/docs` and f
 
 ## Refreshing the captures
 
-The app screenshots (`chat-hero.png` at the top of the page, `chat-approve.png` and `chat-secret.png` under "What waits for you")
-and the app shots in the docs (`docs/site/public/img/`) are the app's screens on E3b's fixtures, which are sanitized
-lab hub traffic (`app/desktop/fixtures`), at 1400x900@2x in the light theme, without the sample-data banner.
-`app/desktop/qa/site.ts` lists them; `pnpm fixtures && pnpm qa:build && pnpm site:shots` in `app/desktop` writes them in
-place. Re-shoot them when what those screens show changes, and keep the captions and alt texts (on the page, in
+The app screenshots (`chat-approve.png` and `chat-secret.png` under "What keeps it trustworthy", each with a `-dark`
+twin the page shows in dark mode) and the app shots in the docs (`docs/site/public/img/`) are the app's screens on
+E3b's fixtures, which are sanitized lab hub traffic (`app/desktop/fixtures`), at 1400x900@2x, without the sample-data
+banner. `app/desktop/qa/site.ts` lists them; `pnpm fixtures && pnpm qa:build && pnpm site:shots` in `app/desktop` writes
+them in place. Re-shoot them when what those screens show changes, and keep the captions and alt texts (on the page, in
 `fleetd.txt` and in the docs) true to the picture.
+
+The showcase under the hero is the app recorded while it plays one request from the message to the merge, on the
+`showcase-order` fixture (`app/desktop/fixtures/showcase`): `showcase-light.webm` and `showcase-dark.webm` (VP9,
+2240x1440, 25 fps) with H.264 `.mp4` twins for browsers without VP9 (1792x1152 at level 4.0, the most a 14:9 frame
+gets under level 4.2, which older iPhones and iPads decode; encoded frame by frame by the app's WebCodecs, so nothing
+is dropped), their posters `showcase-light.jpg` and `showcase-dark.jpg` (the end, the merge landed), a half-size
+`-small` twin of each for small screens, and `showcase.json`, when each of the page's five steps starts in the video.
+`pnpm fixtures && pnpm qa:build && pnpm site:showcase` in `app/desktop` records them in place
+(`app/desktop/qa/showcase.spec.ts`; it needs Playwright's ffmpeg, `pnpm exec playwright install ffmpeg` in
+`app/desktop`). The page shows the poster first. On a wide screen it plays the recording once the page has loaded and
+the frame is on screen; on a small screen or with reduced motion it waits for Play. Record it again when those screens
+change, and keep the alt text, the steps and the caption true to it.
+
+`train-week.txt` backs the number under "fleetd is built with fleetd": every pull request `fleetd metrics --days 7
+--json` lists with route "train" for fleetd's own repository in that week, one line each with its GitHub link. It is a
+dated snapshot; change the number, the week and this file together.
 
 The `<!-- capture:NAME -->` blocks in `home.html` and the same blocks in `fleetd.txt` (found there by the shape of
 fleetd's output, so the twin carries no markers) come from one command, run from the repo root:
@@ -27,9 +44,7 @@ node tests/lab/site-capture.ts
 ```
 
 It runs the `fleetd init --yes --no-service` wizard and `fleetd machine add builder-1 --dry-run` in a throwaway HOME
-with your claude and gh logins copied in, and reads the merge train from the newest lab m7 run, if there is one: the
-whole path of its first two merged changes and the first of each refusal, freeze, red CI and conflict, at most 16
-lines. This machine's tailnet name and addresses become `hub.your-tailnet.ts.net` and `<tailnet-ip>`, the gh login
+with your claude and gh logins copied in. This machine's tailnet name and addresses become `hub.your-tailnet.ts.net` and `<tailnet-ip>`, the gh login
 `demo`, and it refuses to write text that still names this machine, its home or lab paths, a non-loopback address or
 a key. Review the result with `git diff site/`.
 
