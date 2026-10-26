@@ -714,10 +714,6 @@ pub fn transition_event(t: &Transition, thread: &TrackedThread, machine_id: &str
     };
     let mut data = Map::new();
     data.insert("status".into(), json!(s.status));
-    // The usage layer lifts a limit on a completed turn on the limit's model.
-    if let Some(model) = s.model.as_deref().filter(|m| !m.is_empty()) {
-        data.insert("model".into(), json!(model));
-    }
     if let Some(run) = thread.known_run().filter(|r| !r.is_empty()) {
         data.insert("runId".into(), json!(run));
     }

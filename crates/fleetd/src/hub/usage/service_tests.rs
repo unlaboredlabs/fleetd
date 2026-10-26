@@ -211,7 +211,8 @@ async fn forges_proxy_cooldown_pauses_with_no_made_up_reset() {
 }
 
 /// The case behind this: during forge's pause the lead kept taking turns on the same login while every task stayed
-/// parked. A turn that started after the pause and completed on its model proves the login, so it lifts the pause.
+/// parked. A turn that started after the pause and completed proves the login, on whatever model id it names (an
+/// alias, a dated id, a proxy's own name), so it lifts the pause.
 #[tokio::test]
 async fn the_leads_successful_turn_on_the_paused_login_resumes_every_parked_agent() {
     let (fake, _clock, usage) = usage();
@@ -224,20 +225,28 @@ async fn the_leads_successful_turn_on_the_paused_login_resumes_every_parked_agen
         usage.gate("forge").is_some(),
         "a turn from before the pause"
     );
-    // A turn on another model proves nothing about this one's cooldown.
+    // A turn that starts after the pause but fails proves nothing, and leaves no start behind for a later
+    // completion that had none of its own.
     fake.turn(T0 + 10_000, "thread.started", "lead");
     fake.push(
         T0 + 20_000,
-        "thread.completed",
+        "thread.failed",
         "lead",
-        json!({ "status": "completed", "model": "claude-sonnet-5-5" }),
+        json!({ "status": "failed" }),
     );
+    fake.turn(T0 + 25_000, "thread.completed", "lead");
     usage.drain().await;
-    assert!(usage.gate("forge").is_some(), "another model");
+    assert!(usage.gate("forge").is_some(), "a failed turn");
     assert!(fake.sent().is_empty());
 
+    // The lead's next turn names a dated model id the limit didn't: it completed, so the login answers.
     fake.turn(T0 + 30_000, "thread.started", "lead");
-    fake.turn(T0 + 45_000, "thread.completed", "lead");
+    fake.push(
+        T0 + 45_000,
+        "thread.completed",
+        "lead",
+        json!({ "status": "completed", "model": "claude-opus-5-5-20261020" }),
+    );
     usage.drain().await;
     assert_eq!(usage.gate("forge"), None);
     assert_eq!(fake.sent(), ["r1", "w1", "w2"], "reviews before writers");

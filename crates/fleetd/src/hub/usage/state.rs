@@ -60,8 +60,6 @@ pub struct ParkedThread {
     pub kind: ParkedKind,
     pub task_id: Option<String>,
     pub parked: UsageParked,
-    /// The model the limit was on, which a turn must share to prove the login has capacity again.
-    pub model: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -391,7 +389,6 @@ impl UsageState {
                         kind: owner.kind,
                         task_id: owner.task_id,
                         parked: UsageParked { check_at, ..parked },
-                        model: limit.model,
                     };
                     match self.parked.iter_mut().find(|(k, _)| *k == key) {
                         Some(slot) => slot.1 = p,
@@ -404,6 +401,12 @@ impl UsageState {
                     let t = t.to_string();
                     self.unpark(&format!("{machine_id}/{t}"));
                     self.machine(&machine_id).started.insert(t, at_ms);
+                }
+            }
+            // A turn that failed or was stopped proves nothing; it only leaves `started`.
+            HubEventType::ThreadFailed | HubEventType::ThreadInterrupted => {
+                if let (Some(m), Some(t)) = (self.machines.get_mut(&machine_id), &event.thread_id) {
+                    m.started.remove(t.as_str());
                 }
             }
             HubEventType::ThreadCompleted => {
@@ -478,8 +481,8 @@ impl UsageState {
     }
 
     /// What a thread.completed lifts, read before the event is applied: a turn that started on the login after a
-    /// limit (on the limit's model, when both are known) proves the login has capacity again, so it closes the
-    /// machine's breaker and resumes everything parked there, or, with no breaker, the parks it proves over.
+    /// limit, on any model, proves the login has capacity again, so it closes the machine's breaker and resumes
+    /// everything parked there, or, with no breaker, the parks it proves over.
     pub fn lifted_by(&self, event: &HubEvent) -> Option<Lifted> {
         if event.r#type != HubEventType::ThreadCompleted {
             return None;
@@ -487,29 +490,17 @@ impl UsageState {
         let machine_id = event.machine_id.as_ref()?.to_string();
         let m = self.machines.get(&machine_id)?;
         let started = *m.started.get(event.thread_id.as_ref()?.as_str())?;
-        let model = event
-            .data
-            .as_ref()
-            .and_then(|d| d.get("model"))
-            .and_then(Value::as_str);
-        let proves = |since: &str, limited: Option<&str>| {
-            parse_ms(since).is_some_and(|s| started >= s)
-                && match (model, limited) {
-                    (Some(a), Some(b)) => a == b,
-                    _ => true,
-                }
-        };
-        let breaker_cleared = m
-            .breaker
-            .as_ref()
-            .is_some_and(|b| proves(&b.since, b.model.as_deref()));
+        // Any model: ids differ by alias, date suffix or a proxy's renaming, and a login that answers one turn is
+        // worth trying again. One still limited parks again on its next turn.
+        let proves = |since: &str| parse_ms(since).is_some_and(|s| started >= s);
+        let breaker_cleared = m.breaker.as_ref().is_some_and(|b| proves(&b.since));
         let threads: Vec<ParkedThread> = match &m.breaker {
             Some(_) if !breaker_cleared => Vec::new(),
             Some(_) => self.parked_on(&machine_id),
             None => self
                 .parked_on(&machine_id)
                 .into_iter()
-                .filter(|p| proves(&p.parked.since, p.model.as_deref()))
+                .filter(|p| proves(&p.parked.since))
                 .collect(),
         };
         (breaker_cleared || !threads.is_empty()).then_some(Lifted {

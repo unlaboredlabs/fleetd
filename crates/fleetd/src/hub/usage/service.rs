@@ -3,8 +3,8 @@
 //! 10 minutes (or its proxy has no account at all), a breaker pauses new turns there with one plain usage.breaker
 //! event, until the reset or usage_resume. A limit whose message names no reset is never given a made-up one: fleetd
 //! tries one parked thread after 1, 2, 5, 10 and then every 15 minutes, and lifts the pause once that thread's turn
-//! completes (a start proves nothing: claude may still be retrying the 429 inside it). Any turn that completes on the login after the limit (on its model) lifts it at once, the lead's own
-//! included. The state is rebuilt from the event log at start, so a hub restart keeps it.
+//! completes (a start proves nothing: claude may still be retrying the 429 inside it). Any turn that completes on the
+//! login after the limit, on whatever model, lifts it at once, the lead's own included. The state is rebuilt from the event log at start, so a hub restart keeps it.
 use super::classify::{UsageClass, UsageParked, limit_of_event};
 use super::ports::{BoxFut, EventLog, NewEvent, ThreadRef, WaitInput};
 use super::source::{LoginKind, UsageReading};
@@ -20,10 +20,18 @@ const REPLAYED: &[&str] = &[
     "thread.usage_limited",
     "thread.started",
     "thread.completed",
+    "thread.failed",
+    "thread.interrupted",
     "usage.breaker",
     "usage.resumed",
 ];
-const FOLLOWED: &[&str] = &["thread.usage_limited", "thread.started", "thread.completed"];
+const FOLLOWED: &[&str] = &[
+    "thread.usage_limited",
+    "thread.started",
+    "thread.completed",
+    "thread.failed",
+    "thread.interrupted",
+];
 
 /// Who owns a thread, and whether a park still stands.
 pub trait UsageOwners: Send + Sync {
@@ -223,20 +231,9 @@ impl Usage {
             } else {
                 "reset"
             };
-            let parked: Vec<_> = d.threads.iter().map(|p| p.thread.clone()).collect();
+            // A thread still limited parks again on its next turn, and on_live schedules its next check then.
             self.resume_threads(&d.machine_id, d.threads, d.breaker_cleared, by)
                 .await;
-            // A thread that is still limited parks again, one step further on its backoff.
-            let next: Vec<String> = {
-                let s = self.inner.state.lock().unwrap();
-                parked
-                    .iter()
-                    .filter_map(|t| s.parked(t)?.check_at.clone())
-                    .collect()
-            };
-            for at in next {
-                self.schedule(&at);
-            }
         }
     }
 
