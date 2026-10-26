@@ -157,7 +157,7 @@
   cursor: pointer;
 }
 
-/* Direction A's receipt mark, beside your bubble's foot: faint, an open ring while it waits for the lead, a check once taken. */
+/* A quiet receipt's mark, beside your bubble's foot: faint, an open ring while it waits for the lead, a check once taken. */
 .receiptMark {
   flex: none;
   align-self: flex-end;
@@ -181,8 +181,4 @@
   from {
     opacity: 0;
   }
-}
-/* Direction B: one faint word, no sentence. */
-.receiptWord {
-  justify-content: flex-end;
 }

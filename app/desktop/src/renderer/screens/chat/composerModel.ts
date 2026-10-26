@@ -104,13 +104,13 @@ function receiptOf(m: Sendable, latest: boolean): Receipt | undefined {
 }
 
 /**
- * A quiet receipt as a mark beside the bubble instead of a line under it (W42): an open ring while it waits for the
+ * A quiet receipt as a mark beside the bubble instead of a line under it: an open ring while it waits for the
  * lead (sending, or queued for when it's free), a check once the lead has it. The words go to its tooltip. Trouble,
  * and anything you can act on, keeps its line: undefined then.
  */
 export interface ReceiptMark {
   readonly mark: "waiting" | "delivered";
-  /** Direction B's one word under the bubble. */
+  /** The receipt in one word ("Queued", "Delivered"). */
   readonly word: string;
   /** The receipt's words in full, for the tooltip. */
   readonly words: string;

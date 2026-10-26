@@ -1,4 +1,4 @@
-// The sidebar's last line: a small chip naming the hub ("devbox") with a soft dot, quiet while all is well and saying
+// The sidebar's last line: a row naming the hub ("devbox") beside a plain dot, quiet while all is well and saying
 // so when it isn't ("Reconnecting…", "Offline", "Key refused"). Hovering shows the hub's address; clicking (or Enter)
 // opens the details: the address in full, the machines online, protocol and version, and what can be done from here
 // (Retry now, Hub settings, Disconnect), each only when it applies. A paired app switches hub from Settings' Hub
@@ -30,11 +30,7 @@ const SoftDot = ({ tone }: { tone: ConnTone }) => (
   </span>
 );
 
-/**
- * `variant` (W42 design preview): "row" (A) is one sidebar-height row, the hub's name beside its dot; "card" (B)
- * adds the hub's state and its machines under the name, on a quiet card.
- */
-export function HubStatus({ hub, variant = "row" }: { hub: HubState; variant?: "row" | "card" }) {
+export function HubStatus({ hub }: { hub: HubState }) {
   const asOf = useOfflineAsOf();
   const conn = connLine(hub, window.fleetd.fixture !== null, asOf);
   const layer = useDataLayer();
@@ -49,24 +45,13 @@ export function HubStatus({ hub, variant = "row" }: { hub: HubState; variant?: "
   const name = conn.label === conn.status ? conn.label : `${conn.label}, ${conn.status.toLowerCase()}`;
 
   return (
-    <div className={h.row} data-variant={variant}>
+    <div className={h.row}>
       <Popover open={open} onOpenChange={setOpen}>
         <Tooltip content={conn.hub ?? conn.detail ?? conn.status} side="right" open={tip && !open} onOpenChange={setTip}>
           <PopoverTrigger asChild>
-            <button type="button" className={h.chip} data-variant={variant} data-hub-status={hub.phase} data-tone={conn.tone} aria-label={`Hub: ${name}`}>
+            <button type="button" className={h.chip} data-hub-status={hub.phase} data-tone={conn.tone} aria-label={`Hub: ${name}`}>
               <SoftDot tone={conn.tone} />
-              {variant === "card" ? (
-                <span className={h.lines}>
-                  <span className={h.label}>{conn.label}</span>
-                  <span className={h.sub}>
-                    {machines === undefined
-                      ? conn.status
-                      : `${String(machines.filter((m) => m.machine.status === "online").length)} of ${String(machines.length)} machines online`}
-                  </span>
-                </span>
-              ) : (
-                <span className={h.label}>{conn.label}</span>
-              )}
+              <span className={h.label}>{conn.label}</span>
             </button>
           </PopoverTrigger>
         </Tooltip>

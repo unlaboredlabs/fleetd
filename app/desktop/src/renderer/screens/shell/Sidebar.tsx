@@ -14,7 +14,6 @@ import {
   ContextMenuCopy,
   ContextMenuItem,
   ContextMenuSeparator,
-  designPick,
   Dot,
   Kbd,
   Sidebar as Frame,
@@ -131,18 +130,11 @@ export function Sidebar({ projects, machinesDown, screen, hub, jumpHints, factor
     <Frame
       aria-label="Sidebar"
       footer={
-        // W42 design preview: A, the hub and any update on one row; B, a small card with the update above the hub.
-        designPick("footer") === "b" ? (
-          <div className={s.footerCard}>
-            <UpdatesLine variant="banner" />
-            <HubStatus hub={hub} variant="card" />
-          </div>
-        ) : (
-          <div className={s.footerRow}>
-            <HubStatus hub={hub} variant="row" />
-            <UpdatesLine variant="pill" />
-          </div>
-        )
+        // The hub and any update on one row.
+        <div className={s.footer}>
+          <HubStatus hub={hub} />
+          <UpdatesLine />
+        </div>
       }
     >
       <SidebarSection

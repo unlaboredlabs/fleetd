@@ -1,11 +1,11 @@
-// W42 design preview, the panel's structure. Six tabs became four sections in everyday words, each with an icon, its
-// label, a one-line say-what-it-is on hover and under the bar, and where it holds two views a switch between them:
-// Agents; Shipping (pull requests, and the merge line they land in); Plan (the checklist); History (what happened,
-// and what was decided). Direction A is a bar of the four; B opens on an overview of them and drills in. The routes
-// and panes are the same; only the way to them changes. Prototype only, behind localStorage fleetd.design panel=a|b.
-import { Bot, ChevronLeft, ChevronRight, History, ListChecks, Ship, type LucideIcon } from "lucide-react";
-import { type ReactNode } from "react";
-import { Button, Tooltip, cx } from "../../ui";
+// The panel's sections, in everyday words: Agents; Shipping (its pull requests, and the merge line they land in);
+// Plan (the lead's checklist); History (what happened, and what was decided). One compact row of four tabs, each its
+// icon beside its word and its count on the word's baseline, a tooltip saying what it is; under the row that same
+// line, and in a section of two views a second, smaller row of tabs between them (ui/DESIGN.md). The views are
+// tabs.ts's, each with its route; a section remembers the view you last had in it while the app runs.
+import { Bot, History, ListChecks, Ship, type LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
+import { Tab, TabList, Tooltip } from "../../ui";
 import type { ProjectKey } from "../shell/routes";
 import type { PanelTab } from "./tabs";
 import s from "./sections.module.css";
@@ -16,7 +16,7 @@ export interface Section {
   readonly icon: LucideIcon;
   /** What it is, in one line, for someone new. */
   readonly line: string;
-  /** Its views, in the switch's order, with the switch's words. */
+  /** Its views, in the inner row's order, with the inner row's words. */
   readonly views: readonly (readonly [PanelTab, string])[];
 }
 
@@ -45,99 +45,69 @@ export const SECTIONS: readonly Section[] = [
   },
 ];
 
-export const sectionOf = (tab: PanelTab): Section => SECTIONS.find((g) => g.views.some(([t]) => t === tab)) ?? (SECTIONS[0] as Section);
+const AGENTS = SECTIONS[0] as Section;
 
-type BadgeOf = (tab: PanelTab) => ReactNode;
+export const sectionOf = (tab: PanelTab): Section => SECTIONS.find((g) => g.views.some(([t]) => t === tab)) ?? AGENTS;
 
-/** A: the four sections as one compact row, icon and word side by side, the open one filled; its line and switch under it. */
-export function SectionBar({ active, onPick, badge }: { project: ProjectKey; active: PanelTab; onPick: (tab: PanelTab) => void; badge: BadgeOf }) {
-  const open = sectionOf(active);
+export const isSection = (id: string): boolean => SECTIONS.some((g) => g.id === id);
+
+// The view each section showed last, per project, while the app runs: back in Shipping, the merge line is still there.
+const lastView = new Map<string, PanelTab>();
+
+/** Notes `tab` as its section's view for `project`. */
+export const noteView = (project: ProjectKey, tab: PanelTab): void => {
+  lastView.set(`${project.machineId}/${project.projectId}/${sectionOf(tab).id}`, tab);
+};
+
+/** The view a section opens on for `project`: the one you last had in it, else its first. */
+export const viewOf = (project: ProjectKey, id: string): PanelTab => {
+  const section = SECTIONS.find((g) => g.id === id) ?? AGENTS;
+  return lastView.get(`${project.machineId}/${project.projectId}/${id}`) ?? section.views[0]?.[0] ?? "agents";
+};
+
+/** Forgets every section's view (tests start from the first). */
+export const forgetViews = (): void => lastView.clear();
+
+/** The four sections, as the panel's tabs (inside its Tabs, whose value is a section's id). */
+export function SectionTabs({ count }: { count: (tab: PanelTab) => ReactNode }) {
   return (
-    <div className={s.head}>
-      <div className={s.bar} role="group" aria-label="Panel">
-        {SECTIONS.map((g) => {
-          const Icon = g.icon;
-          const on = g.id === open.id;
-          const first = g.views[0]?.[0] ?? "agents";
-          return (
-            <Tooltip key={g.id} content={g.line} side="bottom">
-              <button type="button" aria-pressed={on} className={cx(s.section, on && s.on)} data-section={g.id} onClick={() => onPick(on ? active : first)}>
-                <Icon aria-hidden className={s.icon} />
-                <span className={s.words}>
-                  <span className={s.label}>{g.label}</span>
-                  <span className={s.count}>{badge(first)}</span>
-                </span>
-              </button>
-            </Tooltip>
-          );
-        })}
-      </div>
-      <SectionHead section={open} active={active} onPick={onPick} />
-    </div>
-  );
-}
-
-/** The open section's line, and its switch when it holds two views. */
-function SectionHead({ section, active, onPick }: { section: Section; active: PanelTab; onPick: (tab: PanelTab) => void }) {
-  return (
-    <div className={s.under}>
-      <p className={s.line}>{section.line}</p>
-      {section.views.length > 1 ? (
-        <div className={s.switch} role="radiogroup" aria-label={section.label}>
-          {section.views.map(([tab, words]) => (
-            <button key={tab} type="button" role="radio" aria-checked={tab === active} className={cx(s.option, tab === active && s.optionOn)} onClick={() => onPick(tab)}>
-              {words}
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-/** B: the overview the panel opens on: a card per section with its line and count; a card opens it. */
-export function Overview({ onPick, badge }: { onPick: (tab: PanelTab) => void; badge: BadgeOf }) {
-  return (
-    <div className={s.overview} data-screen="panel.overview">
+    <TabList aria-label="Panel" className={s.bar}>
       {SECTIONS.map((g) => {
         const Icon = g.icon;
         const first = g.views[0]?.[0] ?? "agents";
         return (
-          <button key={g.id} type="button" className={s.card} data-section={g.id} onClick={() => onPick(first)}>
-            <span className={s.cardIcon}>
-              <Icon aria-hidden />
-            </span>
-            <span className={s.cardText}>
-              <span className={s.cardTitle}>
-                {g.label}
-                <span className={s.badge}>{badge(first)}</span>
+          <Tooltip key={g.id} content={g.line} side="bottom">
+            <Tab value={g.id} className={s.section} data-section={g.id}>
+              <Icon aria-hidden className={s.icon} />
+              <span className={s.words}>
+                <span className={s.label}>{g.label}</span>
+                <span className={s.count}>{count(first)}</span>
               </span>
-              <span className={s.cardLine}>{g.line}</span>
-            </span>
-            <ChevronRight aria-hidden className={s.chevron} />
-          </button>
+            </Tab>
+          </Tooltip>
         );
       })}
-    </div>
+    </TabList>
   );
 }
 
-/** B, inside a section: the way back to the overview, its name, then its line and switch. */
-export function SectionTop({ active, onPick, onHome }: { active: PanelTab; onPick: (tab: PanelTab) => void; onHome: () => void }) {
-  const open = sectionOf(active);
-  const Icon = open.icon;
+/** A section's line; for one of two views, the inner row of tabs between them (inside a Tabs whose value is a view). */
+export function SectionHead({ section, count }: { section: Section; count: (tab: PanelTab) => ReactNode }) {
   return (
-    <div className={s.head}>
-      <div className={s.crumb}>
-        <Button variant="quiet" size="sm" icon={<ChevronLeft aria-hidden />} onClick={onHome}>
-          Overview
-        </Button>
-        <span className={s.crumbTitle}>
-          <Icon aria-hidden className={s.icon} />
-          {open.label}
-        </span>
-      </div>
-      <SectionHead section={open} active={active} onPick={onPick} />
+    <div className={s.under}>
+      <p className={s.line}>{section.line}</p>
+      {section.views.length > 1 ? (
+        <TabList aria-label={section.label} className={s.switch}>
+          {section.views.map(([tab, words]) => (
+            <Tab key={tab} value={tab} className={s.option} data-tab={tab}>
+              <span className={s.words}>
+                {words}
+                <span className={s.count}>{count(tab)}</span>
+              </span>
+            </Tab>
+          ))}
+        </TabList>
+      ) : null}
     </div>
   );
 }

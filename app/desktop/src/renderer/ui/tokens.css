@@ -188,12 +188,7 @@
   --enter-stagger: 50ms;
   --dur-row-in: 160ms;
   --row-rise: 3px;
-  /* Loops, on steps(): grain (working), walk (thinking, one lit cell round the ring), scan (words being made, a dither
-     band crossing them), dots (the lead writing). */
-  --dur-grain: 720ms;
-  --dur-walk: 960ms;
-  --dur-scan: 1400ms;
-  --dur-dots: 900ms;
+  /* Loops are not CSS animations: they step on the app's one beat, 120 ms (ui/lib/beat). */
 }
 
 :root[data-platform="darwin"] {

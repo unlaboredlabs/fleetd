@@ -232,7 +232,8 @@
   line-height: var(--leading-xs);
   font-weight: 500;
 }
-/* While CI runs on what merges now: a short band of 2 px dither steps along the card's top edge, then rests. */
+/* While CI runs on what merges now: a short band of 2 px dither steps along the card's top edge on the app's beat
+   (ui/lib/beat), then rests. Without a beat (the window hidden, reduced motion) the edge is a still, faint dither. */
 .progress {
   position: absolute;
   inset: 0 0 auto 0;
@@ -243,28 +244,69 @@
 .progress::after {
   content: "";
   position: absolute;
-  inset: 0 auto 0 0;
-  width: 24%;
+  inset: 0;
   background: repeating-conic-gradient(var(--accent) 0 25%, transparent 0 50%) 0 0 / 2px 2px;
+  opacity: 0.35;
+}
+:root[data-beat] .progress::after {
+  right: auto;
+  width: 24%;
+  opacity: 1;
+  transform: translateX(420%);
+}
+:root[data-beat="0"] .progress::after {
   transform: translateX(-100%);
-  animation: travel var(--dur-scan) steps(18, end) infinite;
 }
-@keyframes travel {
-  70%,
-  100% {
-    transform: translateX(420%);
-  }
+:root[data-beat="1"] .progress::after {
+  transform: translateX(-69%);
 }
-:root[data-still] .progress::after {
-  animation-play-state: paused;
+:root[data-beat="2"] .progress::after {
+  transform: translateX(-39%);
 }
-@media (prefers-reduced-motion: reduce) {
-  .progress::after {
-    animation: none;
-    width: 100%;
-    opacity: 0.5;
-    transform: none;
-  }
+:root[data-beat="3"] .progress::after {
+  transform: translateX(-8%);
+}
+:root[data-beat="4"] .progress::after {
+  transform: translateX(22%);
+}
+:root[data-beat="5"] .progress::after {
+  transform: translateX(53%);
+}
+:root[data-beat="6"] .progress::after {
+  transform: translateX(84%);
+}
+:root[data-beat="7"] .progress::after {
+  transform: translateX(114%);
+}
+:root[data-beat="8"] .progress::after {
+  transform: translateX(145%);
+}
+:root[data-beat="9"] .progress::after {
+  transform: translateX(175%);
+}
+:root[data-beat="10"] .progress::after {
+  transform: translateX(206%);
+}
+:root[data-beat="11"] .progress::after {
+  transform: translateX(236%);
+}
+:root[data-beat="12"] .progress::after {
+  transform: translateX(267%);
+}
+:root[data-beat="13"] .progress::after {
+  transform: translateX(298%);
+}
+:root[data-beat="14"] .progress::after {
+  transform: translateX(328%);
+}
+:root[data-beat="15"] .progress::after {
+  transform: translateX(359%);
+}
+:root[data-beat="16"] .progress::after {
+  transform: translateX(389%);
+}
+:root[data-beat="17"] .progress::after {
+  transform: translateX(420%);
 }
 /* What landed lately: plain rows between hairlines. */
 .recent > li {

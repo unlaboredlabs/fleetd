@@ -5,7 +5,7 @@
 import { useMemo, type ReactNode } from "react";
 import type { ChangesListInput, ProjectRef } from "../../../shared/contracts";
 import { useData, useToolQueries, useToolQuery } from "../../src/data/react";
-import { Button, cx, Dot, EmptyState, StateGlyph, Text, Truncate, useArrivals, useArrived, type GlyphState } from "../../ui";
+import { Button, cx, Dot, EmptyState, StateGlyph, Text, Truncate, useArrivals, useArrived, useBeat, useLeavers, type GlyphState } from "../../ui";
 import { when } from "../prs/words";
 import { panelRoute, toHash, type ProjectKey } from "../shell/routes";
 import { changesOf, checkLines, lineReads, onTrain, trainReads, STAGE_WORD, stageLine, trainViews, WAITING_WORD, type Moving, type QueueRow, type Recent, type TrainPr, type TrainView } from "./model";
@@ -120,9 +120,13 @@ export function TrainPane({ project }: { project: ProjectKey }) {
   );
 }
 
+const queueKey = (q: QueueRow): string => q.pr.changeId;
+
 function Train({ view, project, nowMs, named }: { view: TrainView; project: ProjectRef; nowMs: number | undefined; named: boolean }) {
   // A merge that lands while this train is open wipes its check in; those it opened with are still.
-  useArrivals(`train:${project.machineId}/${project.projectId}`, view.recent.map((r) => (r.kind === "merged" ? r.prs.map((p) => p.changeId).join() : r.pr.changeId)));
+  const merges = `train:${project.machineId}/${project.projectId}:${view.repo}`;
+  const queue = useLeavers(view.queue, queueKey, merges);
+  useArrivals(merges, view.recent.map((r) => (r.kind === "merged" ? r.prs.map((p) => p.changeId).join() : r.pr.changeId)));
   return (
     <div className={s.train}>
       {named ? (
@@ -146,8 +150,9 @@ function Train({ view, project, nowMs, named }: { view: TrainView; project: Proj
           </Text>
         ) : (
           <ol className={s.list}>
-            {view.queue.map((q) => (
-              <li key={q.pr.changeId}>
+            {queue?.map(({ item: q, leaving }) => (
+              // A PR that left the line (on to merging, or out) fades where it stood (ui/lib/leaving), then goes.
+              <li key={q.pr.changeId} {...(leaving ? { "data-leaving": "", inert: true, "aria-hidden": true } : {})}>
                 <QueueItem row={q} project={project} />
               </li>
             ))}
@@ -159,7 +164,7 @@ function Train({ view, project, nowMs, named }: { view: TrainView; project: Proj
           <ul className={cx(s.list, s.recent)}>
             {view.recent.map((r) => (
               <li key={r.kind === "merged" ? r.prs.map((p) => p.changeId).join() : r.pr.changeId}>
-                <RecentItem item={r} project={project} nowMs={nowMs} />
+                <RecentItem item={r} project={project} nowMs={nowMs} list={merges} />
               </li>
             ))}
           </ul>
@@ -211,6 +216,8 @@ function Head({ moving, project, nowMs }: { moving: Moving; project: ProjectRef;
   // Only a lone PR's own checks are the train's: a batch runs one CI of its own.
   const detail = useToolQuery("pr_get", { repo: one?.repo ?? "", number: one?.number ?? 0 }, { enabled: one !== undefined });
   const checks = one === undefined || detail.data === undefined ? undefined : checkLines(detail.data.checks);
+  // The CI band steps on the app's beat.
+  useBeat(moving.stage === "ci");
   return (
     <div className={s.head} data-stage={moving.stage}>
       {moving.stage === "ci" ? <span className={s.progress} aria-hidden /> : null}
@@ -302,8 +309,8 @@ function QueueItem({ row, project }: { row: QueueRow; project: ProjectRef }) {
 }
 
 /** "merged" behind a check that wipes in when the merge happens while you look at this project's train; else still. */
-function Merged({ id, project, words = "merged" }: { id: string; project: ProjectRef; words?: string }) {
-  const fresh = useArrived(`train:${project.machineId}/${project.projectId}`, id);
+function Merged({ id, list, words = "merged" }: { id: string; list: string; words?: string }) {
+  const fresh = useArrived(list, id);
   return (
     <span className={s.merged}>
       <StateGlyph state="done" size="sm" settled={!fresh} />
@@ -314,7 +321,8 @@ function Merged({ id, project, words = "merged" }: { id: string; project: Projec
   );
 }
 
-function RecentItem({ item, project, nowMs }: { item: Recent; project: ProjectRef; nowMs: number | undefined }) {
+/** `list`: the merges' arrival list (ui/lib/arrival), so one that lands while you look wipes its mark in. */
+function RecentItem({ item, project, nowMs, list }: { item: Recent; project: ProjectRef; nowMs: number | undefined; list: string }) {
   const at = (
     <Text size="xs" tone="faint" tabular>
       {whenAt(item.at, nowMs)}
@@ -344,7 +352,7 @@ function RecentItem({ item, project, nowMs }: { item: Recent; project: ProjectRe
     return (
       <PrLink pr={only} project={project}>
         <span className={s.rowMeta}>
-          <Merged id={only.changeId} project={project} />
+          <Merged id={only.changeId} list={list} />
           {at}
         </span>
       </PrLink>
@@ -353,7 +361,7 @@ function RecentItem({ item, project, nowMs }: { item: Recent; project: ProjectRe
   return (
     <div className={s.landedBatch} role="group" aria-label={`Batch of ${item.prs.length}, merged together`}>
       <span className={s.batchMeta}>
-        <Merged id={item.prs.map((p) => p.changeId).join()} project={project} words={`merged as a batch of ${item.prs.length}`} />
+        <Merged id={item.prs.map((p) => p.changeId).join()} list={list} words={`merged as a batch of ${item.prs.length}`} />
         {at}
       </span>
       <div className={s.batch}>

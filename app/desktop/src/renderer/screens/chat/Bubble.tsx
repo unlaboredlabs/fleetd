@@ -23,6 +23,7 @@ import {
   Text,
   Tooltip,
   Truncate,
+  useBeat,
 } from "../../ui";
 import { useBubbleActions } from "./actions";
 import { fmtBytes } from "./attachments";
@@ -88,8 +89,9 @@ export function useEnter(arrival: Arrival | undefined, step = 0): { className?: 
 /** One to three emoji and nothing else: shown large, without a bubble, as a messaging app does. */
 const EMOJI_ONLY = /^(?:\p{Extended_Pictographic}(?:️|‍\p{Extended_Pictographic})*\s*){1,3}$/u;
 
-/** The lead writing: three dots that gather one after another (view.module.css), all in CSS. */
+/** The lead writing: three square cells, one lit at a time, on the app's beat (view.module.css). */
 function TypingBubble() {
+  useBeat(true);
   return (
     <div className={cx(s.bubble, s.theirs, s.first, s.last)} role="status" aria-label="The lead is writing" data-typing>
       <span className={s.typing} aria-hidden>

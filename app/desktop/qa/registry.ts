@@ -368,8 +368,26 @@ export const screens: readonly Screen[] = [
       await box.press("ControlOrMeta+Enter");
       await expect(box).toHaveValue("");
       const mine = page.locator('[data-entry="message"]').filter({ hasText: CHAT_SENDS.now });
-      // A quiet receipt is a mark beside the bubble, its words its label (W42).
+      // A quiet receipt is a mark beside the bubble, its words its label.
       await expect(mine.getByLabel("Delivered; the lead stopped its step to read this")).toBeVisible();
+    },
+  },
+  // A message the hub took while the lead works waits for it to be free: no sentence under it, an open ring beside it,
+  // its words the ring's label.
+  {
+    id: "chat.composer",
+    route: CHAT,
+    fixtures: ["composer-sends"],
+    variant: "queued-mark",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      const box = page.getByRole("textbox", { name: "Message the lead" });
+      await box.fill(CHAT_SENDS.queued);
+      await box.press("Enter");
+      await expect(box).toHaveValue("");
+      const mine = page.locator('[data-entry="message"]').filter({ hasText: CHAT_SENDS.queued });
+      await expect(mine.getByLabel("Sent; the lead takes it when it’s free")).toBeVisible();
+      await expect(mine.getByText("the lead takes it when it’s free")).toHaveCount(0);
     },
   },
   // ↑ in the empty box brings back your last message.
@@ -806,6 +824,9 @@ export const screens: readonly Screen[] = [
   // UX-1 [23]: a long reply streams in with the chat open, the typing bubble standing in for it; checked after its last
   // delta.
   { id: "chat", route: CHAT, fixtures: ["stream-long"], variant: "stream", replay: true },
+  // The lead writes a moment, then its reply arrives whole: the typing cells give way to the reply's bubble. Replayed
+  // with the chat open, so the reply reaches it.
+  { id: "chat", route: CHAT, fixtures: ["stream-reply"], variant: "reply-arrives", replay: true },
   // UX-1 [10]: just set up, no chat has a message yet: the empty chat shows the checklist on its last step.
   { id: "chat", route: CHAT, fixtures: ["onboarding-first-chat"], variant: "first-chat" },
   // Sequences that once blanked the window, replayed to the end: the chat must still be up, with no error card.
@@ -1030,7 +1051,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["prs-loading"],
     variant: "loading",
     open: whileLoading(
-      (page) => page.getByRole("tab", { name: /^Pull requests/u }).click({ timeout: 10_000 }),
+      (page) => page.getByRole("tab", { name: /^Shipping/u }).click({ timeout: 10_000 }),
       (page) => page.getByLabel("Loading the pull requests"),
     ),
   },
@@ -1292,6 +1313,19 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.getByRole("button", { name: "All projects" }).click();
       await expect(page.getByRole("button", { name: "All projects" })).toHaveAttribute("aria-pressed", "true");
+    },
+  },
+  // Every live state's glyph at once (ui/DESIGN.md): working, thinking, waiting on you, queued and paused; a queued
+  // agent starts thinking a moment in. Each glyph is labelled with its state for a screen reader.
+  {
+    id: "agents",
+    route: `${CHAT}/agents`,
+    fixtures: ["agents-states"],
+    variant: "states",
+    replay: true,
+    open: async (page) => {
+      const list = page.getByRole("list", { name: "Agents" });
+      for (const state of ["needs you", "paused", "thinking", "working"]) await expect(list.getByRole("img", { name: state }).first()).toBeVisible();
     },
   },
   // Under its work, your steers to it with their receipts, in every stage, and the box that steers it directly.

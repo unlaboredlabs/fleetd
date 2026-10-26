@@ -1,6 +1,5 @@
 // The agents' small parts, shared by the list and one agent's head: the state dot, the role pill and where the work
 // is. Kept here until another screen wants them.
-import type { CSSProperties } from "react";
 import type { AgentRole, AgentRow } from "../../../shared/contracts";
 import { cx, ROLE_WORD, roleTint, StateGlyph, Truncate, type GlyphState } from "../../ui";
 import { MiddleCut } from "../live/parts";
@@ -19,13 +18,12 @@ export const glyphOf = (status: AgentRow["status"], thinking = false): GlyphStat
  * shape of their own, and it morphs as the state changes; `still` for a count, where only the shape speaks.
  */
 export function StateDot({ status, thinking = false, still = false, seed }: { status: AgentRow["status"]; thinking?: boolean; still?: boolean; seed?: string }) {
-  // Seeded by the agent, each glyph keeps its own place in the rhythm: a list of them never beats as one.
+  // Seeded by the agent, each glyph keeps its own place in the loop: a list of them never steps as one.
   let hash = 7;
   for (let i = 0; i < (seed?.length ?? 0); i++) hash = (hash * 31 + (seed?.charCodeAt(i) ?? 0)) % 997;
-  const phase = hash / 997;
   return (
-    <span className={cx(s.state, still && s.stillGlyph)} data-state={agentState(status)} style={{ "--glyph-phase": phase } as CSSProperties}>
-      <StateGlyph state={glyphOf(status, thinking)} label={thinking && agentState(status) === "working" ? "thinking" : STATE_WORD[status]} />
+    <span className={s.state} data-state={agentState(status)}>
+      <StateGlyph state={glyphOf(status, thinking)} still={still} phase={hash % 4} label={thinking && agentState(status) === "working" ? "thinking" : STATE_WORD[status]} />
     </span>
   );
 }

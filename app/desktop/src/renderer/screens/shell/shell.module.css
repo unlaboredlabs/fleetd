@@ -38,25 +38,14 @@
 }
 
 /* The sidebar's footer, below the rows that scroll, with no background of its own so the translucent sidebar shows
-   through. A (W42): one row like the rows above it, no rule over it; the hub, and any update as a pill at its end. */
-.footerRow {
+   through: one row like the rows above it, no rule over it; the hub, and any update as a pill at its end. */
+.footer {
   flex: none;
   display: flex;
   align-items: center;
   gap: var(--space-1);
   margin: 0 var(--space-2) var(--space-2);
   padding-right: var(--space-1);
-}
-/* B: a small quiet card, the update (if any) as its first row. */
-.footerCard {
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  margin: 0 var(--space-2) var(--space-2);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--raised) 60%, transparent);
-  overflow: hidden;
 }
 
 .conn {

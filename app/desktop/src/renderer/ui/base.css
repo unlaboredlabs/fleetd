@@ -150,9 +150,9 @@ ol {
 
 /*
  * Words being made (the lead thinking, an agent's line): a narrow band of 2 px dither, in the colour of the surface
- * they sit on (`--sweep-bg`), steps across them and rests, so a few letters at a time read as half-rendered. No
- * gradient and no glide: the band moves in whole steps. Only a transform moves; none with reduced motion, and none
- * while the window is hidden. DESIGN.md.
+ * they sit on (`--sweep-bg`), steps across them on the app's beat (ui/lib/beat) and rests, so a few letters at a time
+ * read as half-rendered. No gradient and no glide. Without a beat (the window hidden, reduced motion) it isn't there.
+ * The element carrying [data-sweep] keeps the beat going while it shows (useBeat). ui/DESIGN.md.
  */
 [data-sweep] {
   position: relative;
@@ -166,19 +166,58 @@ ol {
   pointer-events: none;
   background: repeating-conic-gradient(var(--sweep-bg, var(--bg)) 0 25%, transparent 0 50%) 0 0 / 2px 2px;
   transform: translateX(-110%);
-  animation: scan var(--dur-scan) steps(14, end) infinite;
 }
-@keyframes scan {
-  70%,
-  100% {
-    transform: translateX(480%);
-  }
+:root[data-beat="0"] [data-sweep]::after {
+  transform: translateX(-110%);
 }
-:root[data-still] [data-sweep]::after {
-  animation-play-state: paused;
+:root[data-beat="1"] [data-sweep]::after {
+  transform: translateX(-65%);
 }
-@media (prefers-reduced-motion: reduce) {
-  [data-sweep]::after {
-    display: none;
+:root[data-beat="2"] [data-sweep]::after {
+  transform: translateX(-19%);
+}
+:root[data-beat="3"] [data-sweep]::after {
+  transform: translateX(26%);
+}
+:root[data-beat="4"] [data-sweep]::after {
+  transform: translateX(72%);
+}
+:root[data-beat="5"] [data-sweep]::after {
+  transform: translateX(117%);
+}
+:root[data-beat="6"] [data-sweep]::after {
+  transform: translateX(162%);
+}
+:root[data-beat="7"] [data-sweep]::after {
+  transform: translateX(208%);
+}
+:root[data-beat="8"] [data-sweep]::after {
+  transform: translateX(253%);
+}
+:root[data-beat="9"] [data-sweep]::after {
+  transform: translateX(298%);
+}
+:root[data-beat="10"] [data-sweep]::after {
+  transform: translateX(344%);
+}
+:root[data-beat="11"] [data-sweep]::after {
+  transform: translateX(389%);
+}
+:root[data-beat="12"] [data-sweep]::after {
+  transform: translateX(435%);
+}
+:root[data-beat="13"] [data-sweep]::after {
+  transform: translateX(480%);
+}
+
+/* A row leaving a list (ui/lib/leaving): one quick fade where it stood, then it goes and the gap closes. Inert while
+   it fades. A plain fade with reduced motion too. */
+[data-leaving] {
+  pointer-events: none;
+  animation: leave var(--dur-quick) var(--ease-snap) forwards;
+}
+@keyframes leave {
+  to {
+    opacity: 0;
   }
 }

@@ -19,7 +19,7 @@ import type { ChatItem } from "../../src/data/chat";
 import { useData, useDataLayer } from "../../src/data/react";
 import { projectKey as keyOf } from "../../src/data/store";
 import { selectCanStop, selectHeldLeadWorking, selectLeadWorking } from "../../src/data/selectors";
-import { Button, cx, designPick, IdChip, StateGlyph, Text, Tooltip, Truncate } from "../../ui";
+import { Button, cx, IdChip, StateGlyph, Text, Tooltip, Truncate } from "../../ui";
 import { useCommands } from "../palette";
 import { nowKeys } from "../live/Steer";
 import { composerSendOn } from "../live/steerModel";
@@ -326,11 +326,11 @@ const sendableOf = (item: ChatItem) => ({
 });
 
 /**
- * Direction A (W42): a quiet receipt as a small mark beside your bubble's foot, its words on hover: an open ring of
+ * A quiet receipt as a small mark beside your bubble's foot, its words on hover: an open ring of
  * cells while the lead hasn't taken it, a plain check once it has. Nothing under the bubble.
  */
 export function ReceiptMarkView({ item, latest }: { item: ChatItem; latest: boolean }) {
-  const m = designPick("sent") === "a" ? receiptMark(sendableOf(item), latest) : undefined;
+  const m = receiptMark(sendableOf(item), latest);
   if (m === undefined) return null;
   return (
     <Tooltip content={m.words}>
@@ -345,18 +345,8 @@ export function MessageReceipt({ project, item, latest = false }: { project: Pro
   const projectKey = keyOf(project);
   const { chat } = useDataLayer();
   const drafts = useDrafts();
-  const mark = receiptMark(sendableOf(item), latest);
-  // A quiet receipt is a mark on the bubble (A) or one word under it (B), never a sentence.
-  if (mark !== undefined && designPick("sent") === "a") return null;
-  if (mark !== undefined) {
-    return (
-      <div className={cx(c.receipt, c.receiptWord)} data-receipt={item.state} title={mark.words}>
-        <Text size="xs" tone="faint">
-          {mark.word}
-        </Text>
-      </div>
-    );
-  }
+  // A quiet receipt is a mark beside the bubble (ReceiptMarkView), never a sentence under it.
+  if (receiptMark(sendableOf(item), latest) !== undefined) return null;
   const r = receiptFor(
     {
       state: item.state,

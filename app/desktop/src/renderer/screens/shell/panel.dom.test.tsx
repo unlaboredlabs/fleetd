@@ -7,6 +7,7 @@ import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { AT, event, live, snapshot } from "../../src/data/fixtures.test-util";
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
+import { forgetViews, SECTIONS, sectionOf } from "../panel/Sections";
 import { PANEL_TABS } from "../panel/tabs";
 import { useRoute } from "./navigation";
 import { PanelSlot, PanelToggle, useProjectPanel } from "./panel";
@@ -123,6 +124,7 @@ beforeEach(() => {
   Object.defineProperty(proto, "clientHeight", { configurable: true, get: function (this: HTMLElement) { return heightOf(this); } });
   vi.stubGlobal("fleetd", { platform: "darwin", fixture: null });
   window.localStorage.clear();
+  forgetViews();
   checklist = listOf([
     todo(1, "done", "Receipts in the shop's time zone", { pr: "https://github.com/acme/storefront/pull/11" }),
     todo(2, "doing", "Dark mode", { taskId: "T1" }),
@@ -374,24 +376,57 @@ const pointer = (el: Element | null, type: string, clientX: number) =>
     el?.dispatchEvent(new PointerEvent(type, { clientX, button: 0, pointerId: 1, bubbles: true, cancelable: true }));
   });
 
-it("lists its tabs from the one tab list, in its order, each a route of its own", async () => {
+it("shows four sections as tabs, each view a route of its own under its section, two-view sections with tabs inside", async () => {
   await mount();
-  const tabs = [...(panel()?.querySelectorAll<HTMLElement>("[role='tab']") ?? [])];
-  expect(tabs.map((tab) => tab.dataset["tab"])).toEqual(PANEL_TABS.map((tab) => tab.id));
-  expect(tabs.map((tab) => tab.textContent.replace(/[0-9]+$/u, ""))).toEqual(PANEL_TABS.map((tab) => tab.label));
+  const outer = () => [...(panel()?.querySelectorAll<HTMLElement>("[role='tab'][data-section]") ?? [])];
+  expect(outer().map((tab) => tab.dataset["section"])).toEqual(SECTIONS.map((g) => g.id));
+  expect(outer().map((tab) => tab.textContent.replace(/[0-9]+$/u, ""))).toEqual(["Agents", "Shipping", "Plan", "History"]);
   for (const tab of PANEL_TABS) {
     await go(`${CHAT}/${tab.id}`);
-    expect(panel()?.querySelector(`[role='tab'][data-tab='${tab.id}']`)?.getAttribute("aria-selected")).toBe("true");
+    const section = sectionOf(tab.id);
+    const selected = panel()?.querySelector<HTMLElement>(`[role='tab'][data-section='${section.id}']`);
+    expect(selected?.getAttribute("aria-selected")).toBe("true");
+    // Each tab names its panel, and the panel is labelled by it.
+    const pane = document.getElementById(selected?.getAttribute("aria-controls") ?? "");
+    expect(pane?.getAttribute("role")).toBe("tabpanel");
+    expect(pane?.getAttribute("aria-labelledby")).toBe(selected?.id);
+    const inner = panel()?.querySelector<HTMLElement>(`[role='tab'][data-tab='${tab.id}']`);
+    if (section.views.length > 1) {
+      expect(inner?.getAttribute("aria-selected")).toBe("true");
+      expect(document.getElementById(inner?.getAttribute("aria-controls") ?? "")?.getAttribute("role")).toBe("tabpanel");
+    } else {
+      expect(inner).toBeNull();
+    }
   }
+});
+
+it("opens a section on the view you last had in it", async () => {
+  await mount();
+  const press = (el: Element | null | undefined) =>
+    act(() => {
+      el?.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true, cancelable: true }));
+    });
+  await go(`${CHAT}/train`);
+  press(panel()?.querySelector("[role='tab'][data-section='agents']"));
+  await settle();
+  expect(window.location.hash).toBe(`${CHAT}/agents`);
+  press(panel()?.querySelector("[role='tab'][data-section='shipping']"));
+  await settle();
+  expect(window.location.hash).toBe(`${CHAT}/train`);
+  press(panel()?.querySelector("[role='tab'][data-tab='prs']"));
+  await settle();
+  expect(window.location.hash).toBe(`${CHAT}/prs`);
 });
 
 it("opens the merge train, the activity and the decisions from their tabs, each with its count, and a train row opens its PR", async () => {
   await mount();
   const tab = (id: string) => panel()?.querySelector(`[role='tab'][data-tab='${id}']`);
   // On the train: #11 merging and #12 in line. In force: one decision. Activity counts only after a first look.
-  expect(tab("train")?.textContent).toBe("Train2");
+  await go(`${CHAT}/prs`);
+  expect(tab("train")?.textContent).toBe("Merge line2");
+  await go(`${CHAT}/activity`);
   expect(tab("decisions")?.textContent).toBe("Decisions1");
-  expect(tab("activity")?.textContent).toBe("Activity");
+  expect(tab("activity")?.textContent).toBe("What happened");
 
   await go(`${CHAT}/train`);
   const train = panel()?.querySelector("[data-screen='train']");
@@ -489,7 +524,7 @@ it("shows the lead's checklist with its progress, doing and to do open and done 
   // Doing first, then to do; the agent on an item by its title while it works.
   expect(rows()).toEqual(["doing Dark modeReceipts show the shop's local time", "todo Release notes"]);
   expect(pane()?.querySelector<HTMLAnchorElement>("[data-item='2'] a")?.getAttribute("href")).toBe(`${CHAT}/agents/T1`);
-  expect(panel()?.querySelector("[role='tab'][data-tab='checklist']")?.textContent).toBe("Checklist2");
+  expect(panel()?.querySelector("[role='tab'][data-section='plan']")?.textContent).toBe("Plan2");
 
   const fold = [...(pane()?.querySelectorAll("button") ?? [])].find((b) => b.textContent.startsWith("Done"));
   expect(fold?.getAttribute("aria-expanded")).toBe("false");
@@ -511,7 +546,7 @@ it("shows the lead's checklist with its progress, doing and to do open and done 
   await settle();
   expect(pane()?.textContent).toContain("2 of 3 done");
   expect(rows()).toEqual(["doing Release notes", "done Receipts in the shop's time zonePR #11", "done Dark mode"]);
-  expect(panel()?.querySelector("[role='tab'][data-tab='checklist']")?.textContent).toBe("Checklist1");
+  expect(panel()?.querySelector("[role='tab'][data-section='plan']")?.textContent).toBe("Plan1");
 });
 
 it("a checklist item's right-click menu opens its link; an item without one has no menu", async () => {
@@ -543,49 +578,6 @@ it("says the lead keeps a checklist while there is none, and that it shows once 
   await go(`${CHAT}/checklist`);
   expect(panel()?.textContent).toContain("The checklist shows once you’re connected.");
   expect(panel()?.querySelector("[aria-busy='true']")).toBeNull();
-});
-
-it("fits its tabs to its width: icons with their labels as names, then the rest under More, the open tab kept", async () => {
-  // The measuring copy: 160 px a tab with its label, 40 as an icon, 28 for More; the bar has `room` px.
-  // Six tabs: 960 px with their labels, 240 as icons.
-  let room = 300;
-  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (this: HTMLElement) {
-    if (this.dataset["more"] !== undefined) return 28;
-    const row = this.parentElement?.dataset["row"];
-    return row === "full" ? 160 : row === "icon" ? 40 : 0;
-  });
-  Object.defineProperty(HTMLElement.prototype, "clientWidth", {
-    configurable: true,
-    get: function (this: HTMLElement) {
-      return this.querySelector(":scope > [role='tablist']") !== null ? room : 0;
-    },
-  });
-  await mount();
-  const tabs = () => [...(panel()?.querySelectorAll<HTMLElement>("[role='tab']") ?? [])];
-  expect(tabs().map((tab) => tab.getAttribute("aria-label"))).toEqual(PANEL_TABS.map((tab) => tab.label));
-  expect(tabs()[0]?.textContent).toBe("1");
-  expect(button("More tabs")).toBeUndefined();
-
-  room = 110;
-  unmount();
-  await go(`${CHAT}/checklist`);
-  await mount();
-  expect(tabs().map((tab) => tab.dataset["tab"])).toEqual(["agents", "checklist"]);
-  const more = button("More tabs");
-  expect(more).toBeDefined();
-  act(() => {
-    more?.dispatchEvent(new PointerEvent("pointerdown", { button: 0, bubbles: true, cancelable: true }));
-  });
-  await settle();
-  const items = [...document.querySelectorAll<HTMLElement>("[role='menuitem']")];
-  expect(items.map((el) => el.textContent.replace(/[0-9]+$/u, ""))).toEqual(["Pull requests", "Train", "Activity", "Decisions"]);
-  const item = items.find((el) => el.textContent.startsWith("Pull requests"));
-  expect(item).toBeDefined();
-  act(() => item?.click());
-  await settle();
-  expect(window.location.hash).toBe(`${CHAT}/prs`);
-  expect(tabs().map((tab) => tab.dataset["tab"])).toEqual(["agents", "prs"]);
-  delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
 });
 
 it("widens for a PR's changes with a width of its own, and narrows again to yours from its Overview", async () => {

@@ -75,11 +75,16 @@ export default defineGroup({
     // W42's motion: the lead writing a moment, then its reply final, its bubbles rising in one after another.
     const r = Fixture.from(base("chat-streaming"), "stream-reply", "The lead writes for a moment, then its reply arrives whole: the typing bubble gives way to its bubbles.");
     r.timeline = r.timeline.filter((t) => t.kind !== "chat_delta");
-    r.settleMs = undefined;
     const rref = firstProject(r);
     writeChat(r, rref, [...fromLines(QUESTION), { author: "human", text: "sounds good, go ahead and tell me the plan" }, { author: "lead", text: "", state: "streaming" }], { leadWorking: true });
     const last = arr(obj(r.output("chat_history", { projectRef: { ...rref } }))["messages"]).filter(isObject).at(-1) ?? {};
-    const seq = Math.max(Number(r.snapshot?.["cursor"] ?? 0), ...r.events.map((e) => Number(e["seq"] ?? 0))) + 1;
+    // Past every event the fixture has, timed ones included, or the app takes it for one it has seen.
+    const seq =
+      Math.max(
+        Number(r.snapshot?.["cursor"] ?? 0),
+        ...r.events.map((e) => Number(e["seq"] ?? 0)),
+        ...r.timeline.filter((x) => x.kind === "event").map((x) => Number(x.payload["seq"] ?? 0)),
+      ) + 1;
     const text = "Here's the plan.\n\nTwo writers start now: one on the receipt dates, one on the totals.\n\nQA checks both on a phone-sized window once the PRs are up. Nothing needs you yet.";
     r.later(1400, "event", {
       seq,
@@ -90,6 +95,7 @@ export default defineGroup({
       projectId: rref.projectId,
       data: { projectRef: { ...rref }, messageId: last["messageId"] ?? "m1", seq: last["seq"] ?? 1, author: "lead", state: "final", message: { ...last, text, state: "final", updatedAt: at(r.now, 1400) } },
     });
+    r.settleAt(2000);
     return [streamReply(f, ref, deltas(REPLY.slice(SO_FAR), 24), 25), r];
   },
 });

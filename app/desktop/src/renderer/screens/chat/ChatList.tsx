@@ -4,7 +4,7 @@
 // list keeps its place while they arrive above. Scrolled up, a button counts what arrived below and goes back to it.
 import type { Virtualizer } from "@tanstack/react-virtual";
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Button, cx, StateGlyph, Text, VirtualList } from "../../ui";
+import { Button, cx, StateGlyph, Text, useBeat, VirtualList } from "../../ui";
 import { useData } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
 import { leadDid, leadDoing, leadTurnSince, leadTurnUntil, sentenceCase, turnLine, workedFor } from "./activity";
@@ -93,10 +93,10 @@ function Waited({ id, children }: { id: string; children: ReactNode }) {
 const ACTIVITY_EVERY_MS = 1000;
 
 /**
- * The turn line after the lead's reply (W42 design preview). While its turn runs: a live glyph (thinking walks its
- * ring, anything else is grain), what it does now in plain words at full strength, with the dither scan (base.css), and how long
- * the turn has run, faint, counting; under it, quietly, what the turn did so far. Once over: a check and how long it
- * worked. The words change at most once a second; the count is apart from them, so a screen reader isn't told each tick.
+ * The turn line after the lead's reply. While its turn runs: a live glyph (thinking walks its ring, anything else is
+ * grain), what it does now in plain words at full strength under the dither scan (base.css), and how long the turn has
+ * run, faint, counting; under it, quietly, what the turn did so far. Once over: the done glyph and how long it worked.
+ * The words change at most once a second; the count is apart from them, so a screen reader isn't told each tick.
  */
 function LeadActivity({ project }: { project: ProjectRef }) {
   const key = projectKey(project);
@@ -125,6 +125,8 @@ function LeadActivity({ project }: { project: ProjectRef }) {
   const onScreen = useOnScreen(box);
   const running = shown !== undefined && since !== undefined && until === undefined;
   const clock = useNow(running && onScreen) + skew;
+  // The scan over what it does now steps on the app's beat.
+  useBeat(shown !== undefined);
   if (shown === undefined) {
     const line = turnLine({ since, until }, undefined, clock);
     if (line?.words === undefined) return null;

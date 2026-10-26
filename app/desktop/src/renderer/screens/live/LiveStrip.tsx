@@ -6,7 +6,7 @@
 // the now-line) opens in the panel's agents, where its live work and steer box are. Nothing is drawn when no agent is
 // shown.
 import { ChevronUp } from "lucide-react";
-import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useData } from "../../src/data/react";
 import { RoleTag, StateGlyph, Text, Truncate, cx, roleTint, type GlyphState } from "../../ui";
 import { panelRoute, toHash } from "../shell/routes";
@@ -80,8 +80,8 @@ function Dots({ lanes }: { lanes: readonly StripAgent[] }) {
   return (
     <span className={s.dots} aria-hidden>
       {lanes.slice(0, MAX_DOTS).map((a, i) => (
-        <span key={a.laneId} className={s.glyph} style={{ "--glyph-phase": (i * 0.37) % 1 } as CSSProperties}>
-          <StateGlyph state={a.state === "working" && a.line.thinking ? "thinking" : GLYPH[a.state]} size="sm" />
+        <span key={a.laneId} className={s.glyph}>
+          <StateGlyph state={a.state === "working" && a.line.thinking ? "thinking" : GLYPH[a.state]} size="sm" phase={i} />
         </span>
       ))}
       {more > 0 ? <span className={s.more}>+{more}</span> : null}

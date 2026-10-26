@@ -153,18 +153,13 @@
   line-height: var(--leading-xs);
 }
 
-/* The state glyph's cell (StateGlyph, ui/primitives): in the row's gutter. A count's glyphs keep their shape, still. */
+/* The state glyph's cell (StateGlyph, ui/primitives): in the row's gutter. */
 .state {
   grid-column: 1;
   grid-row: 1;
   justify-self: center;
   display: inline-grid;
   place-items: center;
-}
-.stillGlyph *,
-.stillGlyph *::before,
-.stillGlyph *::after {
-  animation: none !important;
 }
 
 /* The role's word on a faint wash of its tint. */

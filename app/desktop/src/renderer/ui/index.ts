@@ -3,8 +3,9 @@ export { UiProvider } from "./UiProvider";
 export { applyTheme, resolveTheme, isThemeMode, storedMode, useTheme, THEME_MODES, type ThemeMode, type ResolvedTheme } from "./theme";
 export { cx } from "./lib/cx";
 export { copyText } from "./lib/clipboard";
-export { arrived, noteKeys, useArrivals, useArrived } from "./lib/arrival";
-export { designPick } from "./lib/design";
+export { arrived, forgetList, noteKeys, useArrivals, useArrived } from "./lib/arrival";
+export { LEAVE_MS, useLeavers, type Shown } from "./lib/leaving";
+export { BEAT_MS, BEATS, useBeat } from "./lib/beat";
 
 export { Text, textClass, type TextProps, type TextSize, type TextTone, type TextStyleProps } from "./text/Text";
 export { Truncate, type TruncateProps } from "./text/Truncate";

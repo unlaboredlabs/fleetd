@@ -10,7 +10,7 @@ import { memo, useEffect, useMemo, useState } from "react";
 import { useData, useToolQuery } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
 import { selectLiveAgents, selectProjects, type LiveAgent } from "../../src/data/selectors";
-import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, Dot, EmptyState, IdChip, PROFILE_WORD, Text, Truncate, VirtualList, cx, useArrivals, useArrived } from "../../ui";
+import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, Dot, EmptyState, IdChip, PROFILE_WORD, Text, Truncate, VirtualList, cx, useArrivals, useArrived, useLeavers } from "../../ui";
 import { ActivityLine } from "../live/parts";
 import { steerNext } from "../live/Steer";
 import { describe, isFinal } from "../live/words";
@@ -118,6 +118,7 @@ function AgentList({ project: ref, scope, onScope }: { project: ProjectKey; scop
     const line = { elsewhere: "Also on this repo", count: other.rows.length };
     return [...agents, line, ...(unfolded ? other.rows.map((row) => ({ row, other: true as const })) : [])];
   }, [agents, other, unfolded]);
+  const shown = useLeavers(items, keyOf, `${project}:${scope}`);
   const counts = agents === undefined ? undefined : tally(agents.filter((a): a is LiveAgent => !isLine(a)));
   // Rows that join the list later enter once; those it opened with, or scrolled to, don't.
   useArrivals(`agents:${project}`, all?.filter((a) => a.project === project).map((a) => a.id));
@@ -171,27 +172,36 @@ function AgentList({ project: ref, scope, onScope }: { project: ProjectKey; scop
             </div>
           ) : null}
           <VirtualList
-            items={items}
-            getKey={keyOf}
-            renderItem={(a) =>
-              "elsewhere" in a ? (
-                <button type="button" className={s.fold} aria-expanded={unfolded} onClick={() => setUnfolded((u) => !u)}>
-                  <ChevronRight aria-hidden className={s.foldIcon} />
-                  <Text size="xs" tone="quiet" strong>
-                    {a.elsewhere}
-                  </Text>
-                  <Text size="xs" tone="faint" tabular>
-                    {String(a.count)}
-                  </Text>
-                </button>
-              ) : "other" in a ? (
-                <ElsewhereRowView row={a.row} />
-              ) : isLine(a) ? (
-                <GroupLineRow line={a} />
+            items={shown ?? []}
+            getKey={(x) => keyOf(x.item)}
+            renderItem={({ item: a, leaving }) => {
+              const row =
+                "elsewhere" in a ? (
+                  <button type="button" className={s.fold} aria-expanded={unfolded} onClick={() => setUnfolded((u) => !u)}>
+                    <ChevronRight aria-hidden className={s.foldIcon} />
+                    <Text size="xs" tone="quiet" strong>
+                      {a.elsewhere}
+                    </Text>
+                    <Text size="xs" tone="faint" tabular>
+                      {String(a.count)}
+                    </Text>
+                  </button>
+                ) : "other" in a ? (
+                  <ElsewhereRowView row={a.row} />
+                ) : isLine(a) ? (
+                  <GroupLineRow line={a} />
+                ) : (
+                  <AgentRowLink agent={a} />
+                );
+              // A row that left fades where it stood (ui/lib/leaving), then goes.
+              return leaving ? (
+                <div data-leaving="" inert aria-hidden>
+                  {row}
+                </div>
               ) : (
-                <AgentRowLink agent={a} />
-              )
-            }
+                row
+              );
+            }}
             estimateSize={52}
             aria-label="Agents"
           />

@@ -352,7 +352,7 @@ export const isLiveWork = (item: WorkItem): boolean => {
 };
 
 /**
- * "Also on this repo" (W42 design preview): only the live work on the project's repo that isn't its own, a person's
+ * "Also on this repo": only the live work on the project's repo that isn't its own, a person's
  * claims first, then the rest in the hub's order. What landed, expired claims and refused PRs are gone: they were
  * most of the old Elsewhere, and none of it is anything to steer around.
  */

@@ -48,21 +48,28 @@ breaks a rule changes this page in the same PR and says why.
     - a chat bubble: `--dur-enter` 200 ms, rising 6 px, a reply's bubbles 50 ms apart
     - your own send: 140 ms
   - Never scale text.
-- **Loops step, they don't glide.** Every loop runs on `steps()`, in the language of dithers and terminal renders:
-  - grain (working), `--dur-grain` 720 ms: each cell of the glyph flicks on its own clock
-  - walk (thinking), `--dur-walk` 960 ms: one cell round the ring
-  - scan (words being made, `[data-sweep]` in `base.css`), `--dur-scan` 1.4 s: a narrow band of 2 px dither steps
-    across the words, then rests; the train's CI band is the same
-  - dots (the lead writing), `--dur-dots` 900 ms: three square cells lit in turn
+- **Loops step on one beat, never on CSS animations.** While something live is on screen, `ui/lib/beat` advances
+  `data-beat` on `:root` every 120 ms (24 beats). The loops' CSS reads the beat, so every loop steps together and the
+  page draws only on a beat. A running CSS animation would draw a frame every vsync, which keeps a key press waiting
+  for the next one.
+  - Grain (working): each cell of the glyph flicks on a beat or two at a time, in one of four phases.
+  - Walk (thinking): one cell steps round the ring, a beat a step (960 ms round).
+  - Scan (words being made, `[data-sweep]` in `base.css`): a narrow band of 2 px dither steps across the words, then
+    rests. The train's CI band is the same.
+  - Dots (the lead writing): three square cells lit in turn, two beats each.
+  - The beat **yields to input**: while you type, click or scroll, and for 600 ms after, it holds still, so what you do
+    is all that draws.
+  - A new loop is CSS keyed on `data-beat` plus `useBeat(live)` in its component; never `animation: … infinite`.
 - **Only what is live moves, and only while it is live:** an agent at work, the lead thinking, a PR in CI, the lead
   writing.
   - Waiting, queued, paused, done and failed are still.
   - An ending wipes its shape in once, cell by cell, and only when it happens while you look (`lib/arrival`): not on
     first showing, and not when a virtual list mounts a row on scroll.
   - A glyph morphs, cell by cell, when its state changes.
-- **Only `transform` and `opacity` animate**, so nothing reflows. Closing a menu, popover or dialog is instant.
-- **Reduced motion:** no loops, and entrances are a plain fade. Each state keeps a still shape of its own (working is
-  a diamond on a dim field, thinking the ring's top row).
-- **Cost:** loops pause while the window is hidden (`:root[data-still]`), and loops in a list are out of step
-  (`--glyph-phase`). Check a change that adds a loop with `pnpm perf`.
+- **Only `transform` and `opacity` change**, so nothing reflows. Closing a menu, popover or dialog is instant. A row
+  leaving a list fades in place for 140 ms (`lib/leaving`), then the gap closes.
+- **Reduced motion:** no beat, so no loops, and entrances are a plain fade. Each state keeps a still shape of its own
+  (working is a diamond on a dim field, thinking the ring's top row).
+- **Cost:** no beat while the window is hidden or with reduced motion. Check a change that adds a loop with `pnpm perf`
+  and `pnpm perf:busy` (20 agents at work), against main.
 - **Never:** gradient blobs, rainbow or soft shimmer, confetti, sparkles, bouncing or overshooting easings.
