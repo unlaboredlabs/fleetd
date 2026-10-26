@@ -30,6 +30,8 @@ use fleetd_contracts::sessions::SessionCall;
 const HEARTBEAT_EVERY: Duration = Duration::from_secs(HEARTBEAT_INTERVAL_SECS);
 const SILENCE_TIMEOUT: Duration = Duration::from_secs(HEARTBEAT_TIMEOUT_SECS);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+/// How long a node that answered an update reads its watcher's verdict: a refused restart is decided within seconds.
+const RESTART_WATCH: Duration = Duration::from_secs(crate::update::finish::HEALTH_WAIT_SECS);
 /// The largest frame the node takes from its hub: an attachment's put_file with room to spare.
 pub const LINK_MAX_FRAME_BYTES: usize = 64 << 20;
 /// The largest frame of any other kind: tungstenite's own default.
@@ -415,8 +417,16 @@ async fn run_link_once(
                 let tx = tx.clone();
                 let home = shared.node_sessions.home();
                 tasks.spawn(async move {
-                    let result = run_node_action(action, &home).await;
+                    let (result, verdict) = run_node_action(action, &home).await;
+                    let id = result.id.clone();
                     let _ = tx.send(to_json(&NodeToHub::NodeActionResult(result)));
+                    // Still running once the watcher decided: the restart was refused, and the hub hears so now.
+                    if let Some(verdict) = verdict
+                        && let Some(f) = super::update::not_restarted(&verdict, RESTART_WATCH).await
+                    {
+                        let refused = super::actions::failed(id, &f);
+                        let _ = tx.send(to_json(&NodeToHub::NodeActionResult(refused)));
+                    }
                 });
             }
             // Not on the link's task set: a call that started (a launch half way through a spawn) finishes even if

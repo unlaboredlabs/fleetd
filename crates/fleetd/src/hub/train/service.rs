@@ -140,6 +140,11 @@ const GREEN: [&str; 3] = ["success", "neutral", "skipped"];
 
 /// The first waits between check-run reads of a head in CI: a short CI starts its checks within seconds.
 const CI_FIRST_WAIT: Duration = Duration::from_secs(2);
+/// The wait before the train tries again a merge GitHub refused for checks it still expects, doubled on each such
+/// refusal up to `MERGE_RETRY_MAX`: while the train reads the head green and GitHub doesn't, it would otherwise ask
+/// for the merge every `poll_interval` until the CI timeout.
+const MERGE_RETRY_FIRST: Duration = Duration::from_secs(15);
+const MERGE_RETRY_MAX: Duration = Duration::from_secs(5 * 60);
 /// The first waits between reads of a PR GitHub just rebased: its new head shows within a second or two.
 const REBASE_FIRST_WAIT: Duration = Duration::from_secs(1);
 
@@ -179,14 +184,28 @@ pub(super) fn checks(runs: &[CheckRun]) -> Checks {
 
 /// Whether GitHub refused a merge for required checks that haven't reported on the head yet, or still run, rather than
 /// for red ones or anything else: "3 of 3 required status checks are expected.", "Required status check \"build\" is
-/// in progress.".
+/// in progress.". Read from GitHub's own words, the quoted check names left out: a check named `error-prone` is still
+/// only expected. Every sentence about status checks must say so, and one must.
 pub(super) fn awaits_checks(message: &str) -> bool {
-    let m = message.to_lowercase();
-    m.contains("status check")
-        && ["expected", "in progress", "pending", "queued"]
-            .iter()
-            .any(|w| m.contains(w))
-        && !["fail", "error"].iter().any(|w| m.contains(w))
+    let words: String = message
+        .split('"')
+        .step_by(2)
+        .collect::<Vec<_>>()
+        .join("\"\"")
+        .to_lowercase();
+    let about_checks: Vec<&str> = words
+        .split(['.', '\n'])
+        .map(str::trim)
+        .filter(|s| s.contains("status check"))
+        .collect();
+    !about_checks.is_empty()
+        && about_checks.iter().all(|s| {
+            ["is ", "are "].iter().any(|verb| {
+                ["expected", "in progress", "pending", "queued"]
+                    .iter()
+                    .any(|state| s.ends_with(&format!("{verb}{state}")))
+            })
+        })
 }
 
 /// The checks `required` names that `runs` and `statuses` don't show green on a head, but the train's own status,
@@ -272,7 +291,7 @@ pub(super) enum CiOutcome {
 }
 
 /// How CI on a head ran out of time.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum Stall {
     /// No check reported within `ci_timeout`.
     NoChecks,
@@ -280,6 +299,9 @@ pub(super) enum Stall {
     Queued(usize),
     /// It ran for `ci_timeout` from its first check's start without finishing.
     Running,
+    /// Its checks finished green, but these checks the base requires never reported, within `ci_timeout` of its first
+    /// check's start.
+    Unreported(Vec<String>),
 }
 
 /// Whether a check run has a runner: a check still waiting for one doesn't count toward CI's running time.
@@ -857,7 +879,7 @@ impl Train {
             .collect();
         let log_url = failing.iter().find_map(|r| r.html_url.clone());
         let min = |d: Duration| (d.as_millis() as f64 / 60_000.0).round();
-        let why = if let Some(stall) = stall {
+        let why = if let Some(stall) = &stall {
             let what = match stall {
                 Stall::NoChecks => format!(
                     "no check reported within {} min",
@@ -865,11 +887,17 @@ impl Train {
                 ),
                 Stall::Queued(n) => format!(
                     "{n} check{} waited {} min for a runner and none started",
-                    if n == 1 { "" } else { "s" },
+                    if *n == 1 { "" } else { "s" },
                     min(self.options.ci_queue_ceiling)
                 ),
                 Stall::Running => format!(
                     "it did not finish within {} min of its first check starting",
+                    min(self.options.ci_timeout)
+                ),
+                Stall::Unreported(names) => format!(
+                    "the required check{} {} never reported within {} min; every other check passed",
+                    if names.len() == 1 { "" } else { "s" },
+                    names.join(", "),
                     min(self.options.ci_timeout)
                 ),
             };
@@ -965,6 +993,8 @@ impl Train {
         let (mut tried_label, mut told) = (start, false);
         loop {
             let mut all = Vec::new();
+            // The required checks that have neither a run nor a status on `sha` while every other check is green.
+            let mut unreported = Vec::new();
             let runs = match self.github.all_check_runs(repo, sha).await {
                 Ok(runs) => {
                     all = runs.clone();
@@ -1037,10 +1067,11 @@ impl Train {
                         .await
                         .ok()
                         .map(|c| c.required_checks);
-                    match self
+                    let (reported, missing) = self
                         .required_reported(repo, sha, &runs, required.as_deref())
-                        .await
-                    {
+                        .await;
+                    unreported = missing;
+                    match reported {
                         Checks::Red(red) => {
                             self.check_spans(change, sha, &runs);
                             return CiOutcome::Red(red);
@@ -1071,6 +1102,11 @@ impl Train {
             }
             if let Some(stall) = self.stalled(&last, start) {
                 self.check_spans(change, sha, &last);
+                // Every run finished: it is the required checks that never came, not CI that ran long.
+                let stall = match stall {
+                    Stall::Running if !unreported.is_empty() => Stall::Unreported(unreported),
+                    stall => stall,
+                };
                 return CiOutcome::Timeout(stall);
             }
             // A pass waiting on CI is the train running: keep its source live and main CI read.
@@ -1083,27 +1119,37 @@ impl Train {
     }
 
     /// Whether the checks `required` names have all reported green on `sha`, whose check runs `runs` read green
-    /// (`required_checks`). Its commit statuses are read only for a required check with no run. `required` None when
-    /// the base's rules can't be read: then the runs alone count.
+    /// (`required_checks`), with those that have neither a run nor a status there. Its commit statuses are read only
+    /// for a required check with no run. `required` None when the base's rules can't be read: then the runs alone
+    /// count.
     async fn required_reported(
         &self,
         repo: &str,
         sha: &str,
         runs: &[CheckRun],
         required: Option<&[String]>,
-    ) -> Checks {
+    ) -> (Checks, Vec<String>) {
         let required = required.unwrap_or_default();
         if required
             .iter()
             .all(|n| n == TRAIN_CONTEXT || runs.iter().any(|r| &r.name == n))
         {
-            return Checks::Green;
+            return (Checks::Green, Vec::new());
         }
         match self.github.statuses(repo, sha).await {
-            Ok(statuses) => required_checks(runs, &statuses, required),
+            Ok(statuses) => {
+                let missing = required
+                    .iter()
+                    .filter(|n| *n != TRAIN_CONTEXT)
+                    .filter(|n| !runs.iter().any(|r| &r.name == *n))
+                    .filter(|n| !statuses.iter().any(|s| &s.context == *n))
+                    .cloned()
+                    .collect();
+                (required_checks(runs, &statuses, required), missing)
+            }
             Err(e) => {
                 tracing::warn!(repo, sha, error = %e.message, "train: commit statuses not read");
-                Checks::Pending
+                (Checks::Pending, Vec::new())
             }
         }
     }
@@ -1478,6 +1524,7 @@ impl Train {
         let (title, body) = self.github.squash_message(repo, &rebased).await?;
         let body = super::batch::with_trailers(&body, [&merging]);
         let merging_since = self.now_ms();
+        let mut retry_wait = MERGE_RETRY_FIRST;
         let (status, message) = loop {
             let (status, message) = match self
                 .github
@@ -1514,9 +1561,11 @@ impl Train {
             else {
                 return Ok(());
             };
-            self.clock
-                .sleep(self.busy_wait(merging_since, CI_FIRST_WAIT))
-                .await;
+            self.clock.sleep(retry_wait).await;
+            retry_wait = (retry_wait * 2).min(MERGE_RETRY_MAX);
+            // GitHub may require a check the cached config doesn't name yet: read the base's rules again, and the
+            // head's checks with them.
+            lock(&self.ci_configs).remove(&(repo.to_string(), base.to_string()));
             match self
                 .wait_ci(&in_ci, repo, &head_sha, base, None, noted)
                 .await

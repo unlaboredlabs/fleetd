@@ -77,6 +77,8 @@ struct Pending {
     /// The reply frame's tag this request expects.
     reply: &'static str,
     done: oneshot::Sender<NodeToHub>,
+    /// Waits for a second reply to the same id once the first came.
+    then: Option<oneshot::Sender<NodeToHub>>,
 }
 
 #[derive(Default)]
@@ -162,6 +164,8 @@ impl NodeCommands {
         let Some((tag, id)) = reply_of(&frame) else {
             return;
         };
+        // Owned: the frame moves to the waiter, and a second reply's waiter may take its place under the same id.
+        let id = &id.to_owned();
         let mut state = self.state.lock().unwrap();
         let matches = state
             .pending
@@ -169,6 +173,16 @@ impl NodeCommands {
             .is_some_and(|p| &p.machine_id == machine_id && p.reply == tag);
         if matches && let Some(p) = state.pending.remove(id) {
             let _ = p.done.send(frame);
+            if let Some(then) = p.then {
+                state.pending.insert(
+                    id.clone(),
+                    Pending {
+                        done: then,
+                        then: None,
+                        ..p
+                    },
+                );
+            }
         }
     }
 
@@ -180,6 +194,20 @@ impl NodeCommands {
         reply: &'static str,
         wait: Duration,
     ) -> Result<NodeToHub, NodeCommandError> {
+        self.request_then(machine_id, request, reply, wait, None)
+            .await
+            .map(|(frame, _)| frame)
+    }
+
+    /// `request`, and with `then`, a second reply to the same id goes there.
+    async fn request_then(
+        &self,
+        machine_id: &MachineId,
+        request: Value,
+        reply: &'static str,
+        wait: Duration,
+        then: Option<oneshot::Sender<NodeToHub>>,
+    ) -> Result<(NodeToHub, String), NodeCommandError> {
         let id = new_id();
         let mut request = request;
         request["id"] = json!(id);
@@ -200,6 +228,7 @@ impl NodeCommands {
                     link_id,
                     reply,
                     done: tx,
+                    then,
                 },
             );
             if send.send(frame).is_err() {
@@ -209,18 +238,21 @@ impl NodeCommands {
             rx
         };
         let outcome = tokio::time::timeout(wait, rx).await;
-        self.state.lock().unwrap().pending.remove(&id);
+        // A reply or a lost link already took it out; a waiter for a second reply may stand in its place.
         match outcome {
-            Ok(Ok(frame)) => Ok(frame),
+            Ok(Ok(frame)) => Ok((frame, id)),
             Ok(Err(_)) => Err(lost(machine_id)),
-            Err(_) => Err(NodeCommandError::new(
-                machine_id,
-                NodeCommandErrorReason::NoReply,
-                format!(
-                    "{machine_id}'s node did not answer within {} s",
-                    wait.as_secs()
-                ),
-            )),
+            Err(_) => Err({
+                self.state.lock().unwrap().pending.remove(&id);
+                NodeCommandError::new(
+                    machine_id,
+                    NodeCommandErrorReason::NoReply,
+                    format!(
+                        "{machine_id}'s node did not answer within {} s",
+                        wait.as_secs()
+                    ),
+                )
+            }),
         }
     }
 
@@ -309,15 +341,34 @@ impl NodeCommands {
         self.node_action(machine_id, request, wait).await
     }
 
-    /// A node's update to `update`: it answers once the new build is in place, before its restart.
+    /// A node's update to `update`: it answers once the new build is in place, before its restart, and again only
+    /// if the service manager refused that restart ([`Refusal`]).
     pub async fn update_node(
         &self,
         machine_id: &MachineId,
         update: &fleetd_contracts::node_link::NodeUpdate,
-    ) -> Result<NodeActionResult, NodeCommandError> {
+    ) -> Result<(NodeActionResult, Refusal), NodeCommandError> {
         let request =
             json!({ "t": "node_action", "action": NodeActionKind::Update, "update": update });
-        self.node_action(machine_id, request, UPDATE_WAIT_SEC).await
+        let (tx, rx) = oneshot::channel();
+        let (frame, id) = self
+            .request_then(
+                machine_id,
+                request,
+                "node_action_result",
+                Duration::from_secs(UPDATE_WAIT_SEC),
+                Some(tx),
+            )
+            .await?;
+        let refusal = Refusal {
+            state: self.state.clone(),
+            id,
+            rx,
+        };
+        match frame {
+            NodeToHub::NodeActionResult(r) => Ok((r, refusal)),
+            _ => unreachable!("resolve matches the reply tag"),
+        }
     }
 
     async fn node_action(
@@ -341,10 +392,88 @@ impl NodeCommands {
     }
 }
 
+/// A node's second answer to its update, sent only when its restart was refused. Dropping it stops the wait.
+pub struct Refusal {
+    state: Arc<Mutex<State>>,
+    id: String,
+    rx: oneshot::Receiver<NodeToHub>,
+}
+
+impl Refusal {
+    /// The refusal, once the node sent it.
+    pub fn try_take(&mut self) -> Option<NodeActionResult> {
+        match self.rx.try_recv() {
+            Ok(NodeToHub::NodeActionResult(r)) => Some(r),
+            _ => None,
+        }
+    }
+}
+
+impl Drop for Refusal {
+    fn drop(&mut self) {
+        self.state.lock().unwrap().pending.remove(&self.id);
+    }
+}
+
 fn lost(machine_id: &MachineId) -> NodeCommandError {
     NodeCommandError::new(
         machine_id,
         NodeCommandErrorReason::Lost,
         format!("the link to {machine_id}'s node dropped while the command ran"),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use fleetd_contracts::node_link::NodeUpdate;
+    use fleetd_contracts::prim::Text;
+
+    use super::*;
+
+    fn answer(id: &str, ok: bool, message: &str) -> NodeToHub {
+        NodeToHub::NodeActionResult(NodeActionResult {
+            id: Text::unchecked(id.to_owned()),
+            ok,
+            message: Text::unchecked(message.to_owned()),
+            probe: None,
+            stage: None,
+        })
+    }
+
+    /// A node whose restart was refused answers its update twice; the second answer reaches the update's wait.
+    #[tokio::test]
+    async fn an_update_hears_a_second_answer_when_the_restart_was_refused() {
+        let commands = Arc::new(NodeCommands::default());
+        let builder = MachineId::unchecked("builder");
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let _link = commands.attach(&builder, tx);
+        let update = NodeUpdate {
+            version: Text::unchecked("0.0.0-nightly.202610261056+1b563d7".to_owned()),
+            channel: fleetd_contracts::mcp::HubChannel::Nightly,
+        };
+        let asking = {
+            let commands = commands.clone();
+            let builder = builder.clone();
+            tokio::spawn(async move { commands.update_node(&builder, &update).await })
+        };
+        let Some(HubToNode::NodeAction(action)) = rx.recv().await else {
+            panic!("no node action");
+        };
+        let id = action.id.as_str();
+        commands.resolve(&builder, answer(id, true, "restarting"));
+        let (first, mut refusal) = asking.await.unwrap().unwrap();
+        assert!(first.ok);
+        assert_eq!(refusal.try_take(), None);
+        // Only the machine asked may answer.
+        commands.resolve(&MachineId::unchecked("laptop"), answer(id, false, "no"));
+        assert_eq!(refusal.try_take(), None);
+        commands.resolve(&builder, answer(id, false, "restart refused"));
+        let second = refusal.try_take().unwrap();
+        assert_eq!(
+            (second.ok, second.message.as_str()),
+            (false, "restart refused")
+        );
+        drop(refusal);
+        assert!(commands.state.lock().unwrap().pending.is_empty());
+    }
 }

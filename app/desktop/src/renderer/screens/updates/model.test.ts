@@ -188,6 +188,22 @@ describe("an update of everything", () => {
     expect(v.progress?.text).toBe("Update failed: mac. The rest updated; this app updates with its own button.");
   });
 
+  it("says plainly that a machine's restart was refused, not that it didn't come back", () => {
+    const refused =
+      "restarting fleetd-node.service exited with exit status: 1, so it never restarted onto the new build and still runs the old one; its previous binary was put back";
+    const run = runOf(
+      [
+        p({ part: "hub", name: "the hub", state: "done" }),
+        p({ machineId: "builder", name: "builder", state: "done" }),
+        p({ machineId: "mac", name: "mac", state: "failed", stage: "restart", message: refused }),
+      ],
+      true,
+    );
+    const v = during(run, { phase: "finished" });
+    expect(v.nodes[1]).toMatchObject({ status: `Didn't restart: ${refused}`, tone: "danger" });
+    expect(v.progress?.text).toBe("Update failed: mac. The rest updated; this app updates with its own button.");
+  });
+
   it("says everything is updated only when nothing was skipped, and names what was", () => {
     const all = runOf(
       [p({ part: "hub", name: "the hub", state: "done" }), p({ machineId: "builder", name: "builder", state: "done" }), p({ machineId: "mac", name: "mac", state: "current" })],

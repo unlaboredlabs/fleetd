@@ -183,6 +183,8 @@ const runRow = (p: UpdatePart, to: string, reconnecting: boolean): Omit<PartRow,
     case "current":
       return { status: "Up to date", tone: "quiet" };
     case "failed":
+      // Its service never restarted (the service manager refused): it still runs what it ran, and says why.
+      if (p.stage === "restart") return { status: `Didn't restart: ${said}`, tone: "danger" };
       return { status: `Failed while ${STAGE[p.stage ?? ""] ?? "updating"}: ${said}`, tone: "danger" };
     case "rolled_back":
       return { status: `Put back: ${said}`, tone: "danger" };
