@@ -282,7 +282,7 @@ missing or logged out runs no sessions until it is fixed. fleetd turns claude’
 <tr>
 <td>“New turns on laptop are paused by the usage breaker”, “The usage limit was reached on laptop’s login; resets …” <code dir="auto">[usage_breaker]</code></td>
 <td>Its Claude login hit a plan or rate limit, and claude’s message said when it resets.</td>
-<td>Nothing: agents go on at that reset, or as soon as any turn on that login completes (the lead’s included). To go on sooner, call <code dir="auto">usage_resume</code> from an <a href="/docs/mcp-clients">MCP client</a> once it has capacity.</td>
+<td>Nothing: agents go on at that reset. To go on sooner, call <code dir="auto">usage_resume</code> from an <a href="/docs/mcp-clients">MCP client</a> once it has capacity.</td>
 </tr>
 <tr>
 <td>“Rate-limited by your proxy on laptop; checking again shortly” <code dir="auto">[usage_breaker]</code></td>

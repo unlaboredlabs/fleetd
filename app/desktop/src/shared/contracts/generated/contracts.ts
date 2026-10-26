@@ -4736,8 +4736,8 @@ export type TrainState = {
 export type UploadId = string;
 
 /**
- * Open: no new turns start on the machine's login until `until`, a check or another turn on the login succeeds,
- * or usage_resume.
+ * Open: no new turns start on the machine's login until `until`, or (no reset named) a check or another turn on the
+ * login succeeds, or usage_resume.
  */
 export type UsageBreaker = {
   /** No reset named: when fleetd next sends one parked thread "continue" to see whether the login has capacity. */
@@ -4795,7 +4795,7 @@ export type UsageEventThread = {
 
 /**
  * A task or lead whose thread hit a limit; fleetd sends it one "continue" at `resume_at`, or at `check_at` to see
- * whether the login has capacity again, or as soon as another turn on the login succeeds.
+ * whether the login has capacity again, or (no reset named) as soon as another turn on the login succeeds.
  */
 export type UsageParked = {
   /** A limit that named no reset: when fleetd next tries the thread, 1, 2, 5, 10 and then every 15 minutes. */

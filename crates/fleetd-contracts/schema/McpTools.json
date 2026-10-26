@@ -14069,7 +14069,7 @@
       "type": "string"
     },
     "UsageBreaker": {
-      "description": "Open: no new turns start on the machine's login until `until`, a check or another turn on the login succeeds,\nor usage_resume.",
+      "description": "Open: no new turns start on the machine's login until `until`, or (no reset named) a check or another turn on the\nlogin succeeds, or usage_resume.",
       "properties": {
         "checkAt": {
           "$ref": "#/$defs/Timestamp",
@@ -14112,7 +14112,7 @@
       "type": "string"
     },
     "UsageParked": {
-      "description": "A task or lead whose thread hit a limit; fleetd sends it one \"continue\" at `resume_at`, or at `check_at` to see\nwhether the login has capacity again, or as soon as another turn on the login succeeds.",
+      "description": "A task or lead whose thread hit a limit; fleetd sends it one \"continue\" at `resume_at`, or at `check_at` to see\nwhether the login has capacity again, or (no reset named) as soon as another turn on the login succeeds.",
       "properties": {
         "checkAt": {
           "$ref": "#/$defs/Timestamp",

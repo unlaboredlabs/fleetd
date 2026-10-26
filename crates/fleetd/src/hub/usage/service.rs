@@ -4,7 +4,9 @@
 //! event, until the reset or usage_resume. A limit whose message names no reset is never given a made-up one: fleetd
 //! tries one parked thread after 1, 2, 5, 10 and then every 15 minutes, and lifts the pause once that thread's turn
 //! completes (a start proves nothing: claude may still be retrying the 429 inside it). Any turn that completes on the
-//! login after the limit, on whatever model, lifts it at once, the lead's own included. The state is rebuilt from the event log at start, so a hub restart keeps it.
+//! login after such a limit, on whatever model, lifts it at once, the lead's own included; a known reset waits for
+//! itself, and a proxy with no account for usage_resume. The state is rebuilt from the event log at start, so a hub
+//! restart keeps it.
 use super::classify::{UsageClass, UsageParked, limit_of_event};
 use super::ports::{BoxFut, EventLog, NewEvent, ThreadRef, WaitInput};
 use super::source::{LoginKind, UsageReading};

@@ -88,7 +88,7 @@
       "type": "string"
     },
     "UsageParked": {
-      "description": "A task or lead whose thread hit a limit; fleetd sends it one \"continue\" at `resume_at`, or at `check_at` to see\nwhether the login has capacity again, or as soon as another turn on the login succeeds.",
+      "description": "A task or lead whose thread hit a limit; fleetd sends it one \"continue\" at `resume_at`, or at `check_at` to see\nwhether the login has capacity again, or (no reset named) as soon as another turn on the login succeeds.",
       "properties": {
         "checkAt": {
           "$ref": "#/$defs/Timestamp",

@@ -42,16 +42,30 @@ impl Fake {
 
     /// thread.usage_limited as the executor writes it for devbox's text.
     fn cooldown(&self, at_ms: i64, thread: &str) {
+        self.limited(at_ms, thread, "rate_limit", None, Some("claude-opus-5-5"));
+    }
+
+    /// thread.usage_limited for a failure the node classed `class`, with the reset it read (epoch ms) and the model
+    /// a gateway named.
+    fn limited(
+        &self,
+        at_ms: i64,
+        thread: &str,
+        class: &str,
+        reset_ms: Option<i64>,
+        failure_model: Option<&str>,
+    ) {
+        let reset = reset_ms.map(iso_ms);
         let limit = super::classify::classify_limit(&super::classify::LimitInput {
-            error_class: Some("rate_limit"),
+            error_class: Some(class),
+            reset_at: reset.as_deref(),
             at: &iso_ms(at_ms),
             model: Some("claude-opus-5-5"),
-            failure_model: Some("claude-opus-5-5"),
-            ..Default::default()
+            failure_model,
         })
         .unwrap();
         let mut data =
-            json!({ "status": "failed", "error": { "class": "rate_limit", "message": COOLDOWN } });
+            json!({ "status": "failed", "error": { "class": class, "message": COOLDOWN } });
         for (k, v) in super::classify::limit_data(&limit) {
             data[k] = v;
         }
@@ -373,4 +387,84 @@ async fn a_park_alone_with_no_reset_is_tried_again_after_a_minute_then_two() {
     assert_eq!(fake.sent(), ["w1"]);
     advance(&clock, 1).await;
     assert_eq!(fake.sent(), ["w1", "w1"]);
+}
+
+/// The lead completes a turn on another model while the pause holds; started after it, so it would lift an
+/// unknown-reset pause.
+fn leads_turn_on_sonnet(fake: &Fake) {
+    fake.turn(T0 + 30_000, "thread.started", "lead");
+    fake.push(
+        T0 + 45_000,
+        "thread.completed",
+        "lead",
+        json!({ "status": "completed", "model": "claude-sonnet-5-5" }),
+    );
+}
+
+/// A pause with the reset claude named waits for it: the lead's turn on another model proves nothing about a
+/// model's plan limit, and lifting it each lead turn would send every agent back into it. A park alone with a known
+/// reset waits the same.
+#[tokio::test]
+async fn a_known_reset_waits_for_itself_whatever_turns_complete_meanwhile() {
+    let (fake, _clock, usage) = usage();
+    let reset = T0 + 3 * 3_600_000;
+    fake.limited(T0, "w1", "usage_limit", Some(reset), None);
+    fake.limited(T0 + 500, "r1", "usage_limit", Some(reset), None);
+    usage.drain().await;
+    let breaker = fake.last("usage.breaker").expect("trips");
+    assert_eq!(breaker.data.unwrap()["until"], iso_ms(reset));
+    leads_turn_on_sonnet(&fake);
+    usage.drain().await;
+    assert!(usage.gate("devbox").is_some(), "waits for its reset");
+    assert!(fake.sent().is_empty());
+    assert!(fake.last("usage.resumed").is_none());
+
+    let (alone, _clock, parks) = self::usage();
+    alone.limited(T0, "w1", "usage_limit", Some(reset), None);
+    parks.drain().await;
+    leads_turn_on_sonnet(&alone);
+    parks.drain().await;
+    assert!(
+        alone.sent().is_empty(),
+        "a park alone waits for its reset too"
+    );
+}
+
+/// A proxy with no account for the model waits for a person (usage_resume), whatever else completes.
+#[tokio::test]
+async fn a_drained_proxy_pool_waits_for_usage_resume_whatever_turns_complete() {
+    let (fake, _clock, usage) = usage();
+    fake.limited(T0, "w1", "pool_exhausted", None, Some("claude-opus-5-5"));
+    usage.drain().await;
+    assert!(fake.last("usage.breaker").is_some(), "one is enough");
+    leads_turn_on_sonnet(&fake);
+    usage.drain().await;
+    assert!(usage.gate("devbox").is_some());
+    assert!(fake.sent().is_empty());
+    assert!(fake.last("usage.resumed").is_none());
+}
+
+/// A completed turn lifts a pause with no reset, and resumes only what is parked with no reset: an agent parked on a
+/// reset claude named there keeps waiting for it.
+#[tokio::test]
+async fn a_completed_turn_lifts_only_what_named_no_reset() {
+    let (fake, _clock, usage) = usage();
+    proxy_pause(&fake, &usage).await;
+    fake.limited(
+        T0 + 2_000,
+        "lead",
+        "usage_limit",
+        Some(T0 + 3 * 3_600_000),
+        None,
+    );
+    usage.drain().await;
+    fake.turn(T0 + 30_000, "thread.started", "x9");
+    fake.turn(T0 + 45_000, "thread.completed", "x9");
+    usage.drain().await;
+    assert_eq!(usage.gate("devbox"), None);
+    assert_eq!(
+        fake.sent(),
+        ["r1", "w1", "w2"],
+        "not the lead, parked until its reset"
+    );
 }

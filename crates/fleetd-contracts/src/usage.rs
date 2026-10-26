@@ -31,7 +31,7 @@ pub enum LoginKind {
 }
 
 /// A task or lead whose thread hit a limit; fleetd sends it one "continue" at `resume_at`, or at `check_at` to see
-/// whether the login has capacity again, or as soon as another turn on the login succeeds.
+/// whether the login has capacity again, or (no reset named) as soon as another turn on the login succeeds.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -54,8 +54,8 @@ pub enum BreakerState {
     Open,
 }
 
-/// Open: no new turns start on the machine's login until `until`, a check or another turn on the login succeeds,
-/// or usage_resume.
+/// Open: no new turns start on the machine's login until `until`, or (no reset named) a check or another turn on the
+/// login succeeds, or usage_resume.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]

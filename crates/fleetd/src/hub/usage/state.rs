@@ -482,8 +482,10 @@ impl UsageState {
     }
 
     /// What a thread.completed lifts, read before the event is applied: a turn that started on the login after a
-    /// limit, on any model, proves the login has capacity again, so it closes the machine's breaker and resumes
-    /// everything parked there, or, with no breaker, the parks it proves over.
+    /// limit that named no reset, on any model, proves the login has capacity again, so it closes such a breaker and
+    /// resumes what is parked with no reset there, or, with no breaker, those parks it proves over. A known reset
+    /// (claude named it) waits for itself, and pool_exhausted for usage_resume: a turn on another model proves nothing
+    /// about either, and a lead taking turns would otherwise lift them over and over.
     pub fn lifted_by(&self, event: &HubEvent) -> Option<Lifted> {
         if event.r#type != HubEventType::ThreadCompleted {
             return None;
@@ -494,15 +496,21 @@ impl UsageState {
         // Any model: ids differ by alias, date suffix or a proxy's renaming, and a login that answers one turn is
         // worth trying again. One still limited parks again on its next turn.
         let proves = |since: &str| parse_ms(since).is_some_and(|s| started >= s);
-        let breaker_cleared = m.breaker.as_ref().is_some_and(|b| proves(&b.since));
+        let unknown = |class: UsageClass, reset: Option<&String>| {
+            class != UsageClass::PoolExhausted && reset.is_none()
+        };
+        let breaker_cleared = m
+            .breaker
+            .as_ref()
+            .is_some_and(|b| unknown(b.class, b.until.as_ref()) && proves(&b.since));
+        let unknown_parks = self
+            .parked_on(&machine_id)
+            .into_iter()
+            .filter(|p| unknown(p.parked.class, p.parked.resume_at.as_ref()));
         let threads: Vec<ParkedThread> = match &m.breaker {
             Some(_) if !breaker_cleared => Vec::new(),
-            Some(_) => self.parked_on(&machine_id),
-            None => self
-                .parked_on(&machine_id)
-                .into_iter()
-                .filter(|p| proves(&p.parked.since))
-                .collect(),
+            Some(_) => unknown_parks.collect(),
+            None => unknown_parks.filter(|p| proves(&p.parked.since)).collect(),
         };
         (breaker_cleared || !threads.is_empty()).then_some(Lifted {
             machine_id,
