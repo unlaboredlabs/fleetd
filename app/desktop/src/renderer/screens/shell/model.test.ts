@@ -90,10 +90,10 @@ describe("sidebar projects", () => {
 
 describe("hubName", () => {
   it("is the first label of the host, without scheme, port or path", () => {
-    expect(hubName("https://forge.example.ts.net:4790/")).toBe("forge");
-    expect(hubName("http://devbox:4790")).toBe("devbox");
+    expect(hubName("https://devbox.example.ts.net:4790/")).toBe("devbox");
+    expect(hubName("http://hub:4790")).toBe("hub");
     expect(hubName("ws://Hub.Local/api")).toBe("Hub");
-    expect(hubName("forge.example.ts.net")).toBe("forge");
+    expect(hubName("devbox.example.ts.net")).toBe("devbox");
   });
 
   it("keeps an address whole, without its port", () => {
@@ -104,13 +104,13 @@ describe("hubName", () => {
 
 describe("connLine", () => {
   it("names a live hub by its short name, and keeps the full address and status for the popover", () => {
-    expect(connLine({ phase: "live", hub: "https://forge.example.ts.net:4790", protocol: 1 })).toEqual({
-      label: "forge",
+    expect(connLine({ phase: "live", hub: "https://devbox.example.ts.net:4790", protocol: 1 })).toEqual({
+      label: "devbox",
       tone: "success",
       status: "Connected",
       detail: null,
       fix: null,
-      hub: "https://forge.example.ts.net:4790",
+      hub: "https://devbox.example.ts.net:4790",
       retry: false,
     });
   });

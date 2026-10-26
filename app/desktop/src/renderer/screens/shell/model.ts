@@ -112,7 +112,7 @@ export type ConnTone = "success" | "warning" | "danger" | "quiet";
 const host = (hub: string): string => hub.replace(/^[a-z]+:\/\//iu, "").replace(/\/.*$/u, "");
 
 /**
- * What the sidebar calls a hub: the first label of its host (`https://forge.example.ts.net:4790` → `forge`). An
+ * What the sidebar calls a hub: the first label of its host (`https://devbox.example.ts.net:4790` → `devbox`). An
  * address has no such label, so it stays whole, without its port (`100.64.0.1`, `[fd7a::1]`).
  */
 export const hubName = (hub: string): string => {

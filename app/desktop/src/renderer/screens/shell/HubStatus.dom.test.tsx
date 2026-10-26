@@ -17,7 +17,7 @@ const fleetd = vi.hoisted(() => {
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const HUB = "http://forge.example.ts.net:4790";
+const HUB = "http://devbox.example.ts.net:4790";
 
 let host: HTMLDivElement;
 let root: Root;
@@ -66,7 +66,7 @@ const popover = () => document.querySelector("[aria-label='Hub'][role='dialog']"
 it("shows only the actions that apply to each state", () => {
   expect(open({ phase: "live", hub: HUB, protocol: 1, version: "0.9.2" })).toEqual(["Hub settings", "Disconnect…"]);
   expect(open({ phase: "connecting", hub: HUB, attempt: 1 })).toEqual(["Hub settings", "Disconnect…"]);
-  expect(open({ phase: "retrying", hub: HUB, reason: "Nothing is listening at forge:4790", retryAt: 0 })).toEqual([
+  expect(open({ phase: "retrying", hub: HUB, reason: "Nothing is listening at devbox:4790", retryAt: 0 })).toEqual([
     "Retry now",
     "Hub settings",
     "Disconnect…",
@@ -82,15 +82,15 @@ it("offers nothing to do on sample data", () => {
 
 it("names a live hub by its short name, with the address, protocol and version in the popover", () => {
   open({ phase: "live", hub: HUB, protocol: 1, version: "0.9.2" });
-  expect(host.querySelector("[data-hub-status]")?.textContent).toBe("forge");
+  expect(host.querySelector("[data-hub-status]")?.textContent).toBe("devbox");
   expect(popover()).toContain(HUB);
   expect(popover()).toContain("v1 · fleetd 0.9.2");
 });
 
 it("says why it is offline and what to do about it", () => {
-  open({ phase: "retrying", hub: HUB, reason: "Nothing is listening at forge:4790", fix: "Run `fleetd doctor` on forge", retryAt: 0 });
-  expect(popover()).toContain("Nothing is listening at forge:4790");
-  expect(popover()).toContain("Run fleetd doctor on forge");
+  open({ phase: "retrying", hub: HUB, reason: "Nothing is listening at devbox:4790", fix: "Run `fleetd doctor` on devbox", retryAt: 0 });
+  expect(popover()).toContain("Nothing is listening at devbox:4790");
+  expect(popover()).toContain("Run fleetd doctor on devbox");
   expect(document.querySelector("[aria-label='Hub'][role='dialog'] code")?.textContent).toBe("fleetd doctor");
 });
 
