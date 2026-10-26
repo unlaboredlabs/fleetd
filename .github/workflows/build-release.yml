@@ -107,6 +107,9 @@ jobs:
       - uses: mlugg/setup-zig@v2
         with:
           version: 0.17.0
+          # Its cache is saved under a new key on every run (about 230 MB each): 35 of them filled the repo's 10 GB
+          # cache quota, which CI's Rust caches share.
+          use-cache: false
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-zigbuild@0.23.4

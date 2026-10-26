@@ -4,13 +4,23 @@ name: Desktop QA
 # light and dark, with the DOM checks failing the job on any finding (overflow without wrap/ellipsis, overlapping
 # text or rows, content within 8 px of the window edge, raw ids/hashes/keys/markdown outside code). Linux runs it at
 # scale 1; macOS runs it at scale 2 with the platform bits (traffic lights, menu, fonts, a shot of the real window).
-# The contact sheet (index.html), the PNGs with their annotated overlays and findings.json are the run's artifact.
+# The contact sheet (index.html), the PNGs with their annotated overlays and findings.json are the run's artifacts.
+#
+# The screens are sharded across jobs (Playwright's --shard; every test is its own unit), 4 on Linux and 3 on macOS:
+# one job ran them in 8 (Linux) and 19 (macOS) minutes. Each shard has its own contact sheet, artifact
+# desktop-qa-<os>-<shard>. macOS stops at 3: an account runs 5 macOS jobs at once, and ci.yml has two more.
+#
+# The macOS leg doesn't decide merges (D158): it runs after them, on every push to main and nightly, and on demand (a
+# manual run, or a PR labelled `macos`), never on the merge train's runs. A failure on main or nightly opens an issue
+# labelled `macos-qa-failed` with the run's link (macos-report below); the next green macOS run on main closes it.
 
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
+  schedule:
+    - cron: "17 4 * * *"
   workflow_dispatch:
     inputs:
       pr:
@@ -36,16 +46,19 @@ jobs:
   qa:
     strategy:
       fail-fast: false
-      # The macOS leg runs where ci.yml's macOS jobs do: main, workflow_dispatch, the train's batch PR and a PR
-      # labelled `fleetd:next` or `macos`. It isn't a required check, so elsewhere it is left out of the matrix.
+      # The macOS leg runs on main (push and schedule), on workflow_dispatch and on a PR labelled `macos`, never on the
+      # train's batch PR or for `fleetd:next` (macos-label.yml dispatches this workflow only for `macos`). Elsewhere it
+      # is left out of the matrix.
       matrix:
         include: >-
-          ${{ fromJSON((github.event_name != 'pull_request' || endsWith(github.head_ref, 'train/batch')
-          || contains(github.event.pull_request.labels.*.name, 'fleetd:next')
-          || contains(github.event.pull_request.labels.*.name, 'macos'))
-          && '[{"os":"ubuntu-latest","scale":1},{"os":"macos-latest","scale":2}]'
-          || '[{"os":"ubuntu-latest","scale":1}]') }}
-    name: qa (${{ matrix.os }})
+          ${{ fromJSON(format('[{0}{1}]',
+          '{"os":"ubuntu-latest","scale":1,"shard":1,"of":4},{"os":"ubuntu-latest","scale":1,"shard":2,"of":4},
+          {"os":"ubuntu-latest","scale":1,"shard":3,"of":4},{"os":"ubuntu-latest","scale":1,"shard":4,"of":4}',
+          (github.event_name != 'pull_request' || !endsWith(github.head_ref, 'train/batch')
+          && contains(github.event.pull_request.labels.*.name, 'macos'))
+          && ',{"os":"macos-latest","scale":2,"shard":1,"of":3},{"os":"macos-latest","scale":2,"shard":2,"of":3},
+          {"os":"macos-latest","scale":2,"shard":3,"of":3}' || '')) }}
+    name: qa (${{ matrix.os }}, ${{ matrix.shard }}/${{ matrix.of }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     defaults:
@@ -58,12 +71,14 @@ jobs:
         with:
           fetch-depth: 2
       - name: Scope
-        # Runs when app/desktop or this workflow changed; otherwise reports success at once, so it can be required.
+        # Runs when app/desktop or this workflow changed, and always on a manual or nightly run; otherwise reports
+        # success at once, so it can be required.
         id: scope
         working-directory: .
         run: |
           run=true
-          if [ "${{ github.event_name }}" != workflow_dispatch ] && git rev-parse -q --verify HEAD^1 >/dev/null \
+          if [ "${{ github.event_name }}" != workflow_dispatch ] && [ "${{ github.event_name }}" != schedule ] \
+            && git rev-parse -q --verify HEAD^1 >/dev/null \
             && git diff --quiet HEAD^1 HEAD -- app/desktop .github/workflows/desktop-qa.yml; then
             run=false
             echo "app/desktop didn't change."
@@ -97,18 +112,58 @@ jobs:
       - if: steps.scope.outputs.run == 'true'
         # The app with the QA error probe bundled, which release builds leave out.
         run: pnpm qa:build
-      - if: steps.scope.outputs.run == 'true'
+      - if: steps.scope.outputs.run == 'true' && matrix.shard == 1
         name: Self-test of the DOM checks
         run: pnpm qa:selftest
       - if: steps.scope.outputs.run == 'true'
         name: Screens
-        run: pnpm qa
+        run: pnpm qa --shard=${{ matrix.shard }}/${{ matrix.of }}
       - if: always() && steps.scope.outputs.run == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: desktop-qa-${{ runner.os }}
+          name: desktop-qa-${{ runner.os }}-${{ matrix.shard }}
           path: |
             app/desktop/qa-results/
             app/desktop/test-results/
           if-no-files-found: ignore
           retention-days: 14
+
+  macos-report:
+    # main's and nightly's macOS QA, made findable: a failed (or timed out) shard opens an issue labelled
+    # `macos-qa-failed` with the run's link, or comments on the one already open; a run whose shards all ran their
+    # screens and passed closes it. A run that changed nothing in app/desktop ran no screens and leaves it be.
+    needs: qa
+    if: always() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      issues: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN: ${{ github.run_id }}
+          EVENT: ${{ github.event_name }}
+          URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          jobs=$(gh api "repos/$GH_REPO/actions/runs/$RUN/jobs?per_page=100" \
+            -q '[.jobs[] | select(.name | startswith("qa (macos-latest"))]')
+          failed=$(jq -r '[.[] | select(.conclusion != "success" and .conclusion != "skipped") | "- \(.name): \(.conclusion)"] | join("\n")' <<<"$jobs")
+          ran=$(jq '[.[] | select(any(.steps[]; .name == "Screens" and .conclusion == "success"))] | length' <<<"$jobs")
+          shards=$(jq length <<<"$jobs")
+          open=$(gh issue list --label macos-qa-failed --state open --json number -q '.[].number')
+          if [ -n "$failed" ]; then
+            body=$(printf 'macOS desktop QA failed on main (%s, %s).\n\n%s\n\nRun: %s\n\nThe next green macOS run on main closes this issue.' \
+              "$EVENT" "${GITHUB_SHA:0:9}" "$failed" "$URL")
+            if [ -n "$open" ]; then
+              for n in $open; do gh issue comment "$n" --body "$body"; done
+            else
+              gh label create macos-qa-failed --color d73a4a --description "Desktop QA on macOS failed on main or nightly" 2>/dev/null || true
+              gh issue create --title "macOS desktop QA failed on main" --label macos-qa-failed --body "$body"
+            fi
+          elif [ "$shards" -gt 0 ] && [ "$ran" -eq "$shards" ]; then
+            for n in $open; do gh issue close "$n" --comment "Green again on main ($EVENT, ${GITHUB_SHA:0:9}): $URL"; done
+          else
+            echo "No macOS screens ran in this run; any open macos-qa-failed issue stays open."
+          fi

@@ -545,10 +545,12 @@ async fn a_node_restart_mid_setup_runs_it_again_at_the_next_start() {
     let db = dir.path().join("sessions.sqlite");
     let hold = dir.path().join("hold");
     std::fs::write(&hold, "").unwrap();
+    let held = dir.path().join("held");
     let runs = dir.path().join("setup-runs.txt");
     let command = format!(
-        "if [ -f {} ]; then sleep 300; fi; echo ran >> {}",
+        "if [ -f {} ]; then touch {}; sleep 300; fi; echo ran >> {}",
         hold.display(),
+        held.display(),
         runs.display()
     );
     let before = hub(
@@ -566,6 +568,14 @@ async fn a_node_restart_mid_setup_runs_it_again_at_the_next_start() {
         ))
         .await;
     until_item(&before, "s1", "setup-s1-r1-0").await;
+    // The item is up before the shell reads `hold`: removing it any sooner lets this run finish and mark setup done.
+    tokio::time::timeout(Duration::from_secs(60), async {
+        while !held.exists() {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the setup command never held");
     assert!(
         before
             .service

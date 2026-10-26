@@ -29,6 +29,11 @@ concurrency:
 permissions:
   contents: read
 
+# Line tables only, not full debug info: backtraces keep their file and line, and the build, its link and the cache
+# each job restores are smaller.
+env:
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+
 # Everything runs on GitHub-hosted runners, which are free for public repos. Rust caches are saved from main only:
 # the repo's 10 GB cache quota holds one copy per job, and pull requests restore main's.
 #
@@ -40,9 +45,23 @@ permissions:
 
 jobs:
   rust-crates:
-    # The root Cargo workspace.
+    # The root Cargo workspace's tests. Lint (fmt, clippy) and the docs and lab checks on the built binary are jobs of
+    # their own, beside this one: one job ran all four one after the other.
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # Also checks that the generated contracts (schema/*.json and the app's TypeScript) are current
+      # (schema::generated_contracts_are_current) and replays the recorded claude fixtures (node::runner).
+      - run: cargo test --locked --workspace
+
+  rust-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -53,16 +72,25 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo fmt --all --check
       - run: cargo clippy --locked --workspace --all-targets -- -D warnings
-      # Also checks that the generated contracts (schema/*.json and the app's TypeScript) are current
-      # (schema::generated_contracts_are_current) and replays the recorded claude fixtures (node::runner).
-      - run: cargo test --locked --workspace
+
+  rust-docs:
+    # The docs' generated pages, `fleetd help` for the site job, and the lab scenarios, all on one debug build.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo build --locked -p fleetd -p docsgen
       - name: The docs' generated pages are up to date
         # The CLI reference, the Agent tools page and the prompt table in docs/site/src/content/docs come from the
         # code. This fails while they differ from a fresh render. Fix: cargo run -q -p docsgen, then rebuild and commit
         # (site/README.md).
         run: cargo run --locked -q -p docsgen -- --check
-      # For the site job. The dependencies are already built by the tests, so this compiles only the binary.
-      - run: cargo run --locked -q -p fleetd -- help > "$RUNNER_TEMP/fleetd-help.txt"
+      # For the site job.
+      - run: target/debug/fleetd help > "$RUNNER_TEMP/fleetd-help.txt"
       - uses: actions/upload-artifact@v7
         with:
           name: fleetd-help
@@ -96,7 +124,7 @@ jobs:
     # landing page for a browser and install.sh for curl; site/docs is the docs' current build; every link on the site
     # resolves; no tracked file names a maintainer's own machine, login or home directory; and the landing page fits
     # every width.
-    needs: rust-crates
+    needs: rust-docs
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -243,6 +271,7 @@ jobs:
   desktop:
     # app/desktop, the Electron app (its own pnpm workspace): typecheck, lint, unit tests and a build. Runs when
     # app/desktop or this workflow changed; otherwise it reports success at once, so it can be a required check.
+    # desktop-packaged runs the packed app and its budgets beside it.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -300,16 +329,59 @@ jobs:
         # run against the real package in build-release.yml.
         if: steps.scope.outputs.run == 'true'
         run: pnpm debug-guard-check
+
+  desktop-packaged:
+    # The test build of app/desktop, packed and run: the nightly's smoke, the recordings and the Linux budgets. Same
+    # scope as desktop.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: app/desktop
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # A manual run from a branch compares with its merge base on main, so it needs the history.
+          fetch-depth: ${{ github.event_name == 'workflow_dispatch' && '0' || '2' }}
+      - name: Scope
+        id: scope
+        working-directory: .
+        run: |
+          run=true
+          base=$(git rev-parse -q --verify HEAD^1 || true)
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$GITHUB_REF" != refs/heads/main ]; then
+            base=$(git merge-base origin/main HEAD || true)
+          fi
+          if [ -n "$base" ] && git diff --quiet "$base" HEAD -- app/desktop .github/workflows/ci.yml; then
+            run=false
+            echo "app/desktop didn't change."
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+      - if: steps.scope.outputs.run == 'true'
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: app/desktop/package.json
+      - if: steps.scope.outputs.run == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: app/desktop/pnpm-lock.yaml
+      - if: steps.scope.outputs.run == 'true'
+        run: pnpm install --frozen-lockfile
       - name: Test build (DevTools-driven perf and recording)
         # The release build refuses --remote-debugging-port, which the perf and recording runs drive the app with.
         if: steps.scope.outputs.run == 'true'
         run: pnpm build:test
+      - name: Fixtures
+        # Built once for the steps below: `pnpm perf` and `pnpm perf:record` would each build them again (a minute).
+        if: steps.scope.outputs.run == 'true'
+        run: pnpm fixtures
       - name: Packaged smoke (Linux)
         # The nightly's smoke (build-release.yml) on that test build, packed as the nightly packs it: otherwise a PR
         # that renames or removes a screen breaks only the nightly. Headless, so no virtual display.
         if: steps.scope.outputs.run == 'true'
         run: |
-          pnpm fixtures
           pnpm exec electron-builder --linux --dir --publish never -c.directories.output=dist-test
           node scripts/packaged-smoke.ts dist-test/linux-unpacked/fleetd-desktop --no-sandbox --ozone-platform=headless
       - name: Packaged recording (Linux)
@@ -327,12 +399,12 @@ jobs:
         # Measured on this runner, not the budget machine (an M-series Mac: scripts/perf-mac.sh), so this fails on a
         # regression from perf/baseline-linux.json and only reports the budgets. The numbers go to the job summary.
         if: steps.scope.outputs.run == 'true'
-        run: xvfb-run -a -s "-screen 0 1920x1200x24" pnpm perf --baseline perf/baseline-linux.json --json "$RUNNER_TEMP/perf.json"
+        run: xvfb-run -a -s "-screen 0 1920x1200x24" node perf/run.ts --baseline perf/baseline-linux.json --json "$RUNNER_TEMP/perf.json"
       - name: Demo recording (Linux)
         # FLEETD_RECORD + FLEETD_DEMO_TYPE end to end: the app records itself typing an order, the clip ends on
         # SIGUSR1, and both MP4s must be H.264 with frames.
         if: steps.scope.outputs.run == 'true'
-        run: xvfb-run -a -s "-screen 0 1920x1200x24" pnpm perf:record
+        run: xvfb-run -a -s "-screen 0 1920x1200x24" node perf/record-smoke.ts
 
   desktop-macos:
     # The nightly's macOS packaged smoke (build-release.yml, desktop-macos) on an ad-hoc signed arm64 test build, so a
