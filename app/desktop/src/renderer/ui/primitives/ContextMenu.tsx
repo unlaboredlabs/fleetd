@@ -9,21 +9,38 @@ import s from "./Overlay.module.css";
 /*
  * A right-click menu on one element, drawn as the dropdown menus are. It opens from the keyboard too: Shift+F10 or
  * the Menu key on the element or anything focused inside it. With text selected inside it, Copy selection comes
- * first. A text field inside it keeps the native edit menu (main's editMenu.ts), and an inner element's own menu (a
- * link in a message) wins over its container's.
+ * first, copying only what is selected inside it. A text field inside it keeps the native edit menu (main's
+ * editMenu.ts), and an inner element's own menu (a link in a message) opens instead of its container's, never with it.
  */
 
 const FIELD = "input, textarea, select, [contenteditable]:not([contenteditable='false'])";
+const TRIGGER = "[data-context-menu]:not([data-disabled])";
 
 /** The event came from a text field inside the trigger, not the trigger itself. */
 const fromField = (e: SyntheticEvent): boolean => e.target !== e.currentTarget && e.target instanceof Element && e.target.closest(FIELD) !== null;
 
-/** The text selected within `el`, or "" when none of it is. */
+/** The event began inside an inner element's own menu, which opens instead. */
+const forInner = (e: SyntheticEvent): boolean => e.target instanceof Element && e.target.closest(TRIGGER) !== e.currentTarget;
+
+/** The text selected within `el`, or "" when none of it is: a selection reaching past `el` is cut at its edges. */
 const selectionIn = (el: Element | null): string => {
   const sel = window.getSelection();
   if (el === null || sel === null || sel.isCollapsed) return "";
-  for (let i = 0; i < sel.rangeCount; i++) if (sel.getRangeAt(i).intersectsNode(el)) return sel.toString();
-  return "";
+  const parts: string[] = [];
+  let cut = false;
+  for (let i = 0; i < sel.rangeCount; i++) {
+    const range = sel.getRangeAt(i);
+    if (!range.intersectsNode(el)) continue;
+    const inside = document.createRange();
+    inside.selectNodeContents(el);
+    if (range.compareBoundaryPoints(Range.START_TO_START, inside) > 0) inside.setStart(range.startContainer, range.startOffset);
+    else cut ||= range.compareBoundaryPoints(Range.START_TO_START, inside) < 0;
+    if (range.compareBoundaryPoints(Range.END_TO_END, inside) < 0) inside.setEnd(range.endContainer, range.endOffset);
+    else cut ||= range.compareBoundaryPoints(Range.END_TO_END, inside) > 0;
+    parts.push(inside.toString());
+  }
+  // All of it inside: the selection's own text, which keeps the line breaks between blocks that a range's drops.
+  return cut ? parts.join("\n").trim() : parts.length > 0 ? sel.toString() : "";
 };
 
 const opensMenu = (e: KeyboardEvent): boolean => e.key === "ContextMenu" || (e.shiftKey && e.key === "F10");
@@ -61,14 +78,31 @@ export function ContextMenu({ children, menu, disabled }: ContextMenuProps) {
   const trigger = useRef<HTMLElement>(null);
   const [selected, setSelected] = useState("");
   const [open, setOpen] = useState(false);
+  // The last press or right-click began inside an inner element's menu. A right-click there never reaches this one,
+  // but a touch's long press opens every menu it is inside, so this one stays shut.
+  const inner = useRef(false);
+  const began = (e: SyntheticEvent) => {
+    inner.current = forInner(e);
+  };
   return (
     <C.Root
+      open={open}
       onOpenChange={(next) => {
+        if (next && inner.current) return;
         if (next) setSelected(selectionIn(trigger.current));
         setOpen(next);
       }}
     >
-      <C.Trigger ref={trigger} asChild disabled={disabled ?? false} onKeyDown={onKeyDown} onContextMenuCapture={onContextMenuCapture}>
+      <C.Trigger
+        ref={trigger}
+        asChild
+        disabled={disabled ?? false}
+        data-context-menu=""
+        onPointerDown={began}
+        onContextMenu={began}
+        onKeyDown={onKeyDown}
+        onContextMenuCapture={onContextMenuCapture}
+      >
         {children}
       </C.Trigger>
       {/* Gone the moment it closes, as a tooltip is: left to Radix, a closed menu stays until its entrance reports an
@@ -124,8 +158,9 @@ export function ContextMenuCopy({ text, ...rest }: Omit<ComponentProps<typeof Co
 
 /** An item that opens more items beside it (React's tapbacks). */
 export function ContextMenuSub({ label, icon, children }: { label: ReactNode; icon?: ReactNode; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
   return (
-    <C.Sub>
+    <C.Sub open={open} onOpenChange={setOpen}>
       <C.SubTrigger className={s.item}>
         {icon}
         <span className={s.itemLabel} data-text="wrap">
@@ -133,11 +168,14 @@ export function ContextMenuSub({ label, icon, children }: { label: ReactNode; ic
         </span>
         <ChevronRight aria-hidden />
       </C.SubTrigger>
-      <C.Portal>
-        <C.SubContent className={s.surface} sideOffset={4} collisionPadding={8}>
-          {children}
-        </C.SubContent>
-      </C.Portal>
+      {/* Gone the moment it closes, as the menu is. */}
+      {open ? (
+        <C.Portal>
+          <C.SubContent className={s.surface} sideOffset={4} collisionPadding={8}>
+            {children}
+          </C.SubContent>
+        </C.Portal>
+      ) : null}
     </C.Sub>
   );
 }

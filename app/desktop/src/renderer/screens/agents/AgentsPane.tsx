@@ -269,8 +269,8 @@ function ElsewhereRowView({ row }: { row: ElsewhereRow }) {
 /**
  * Its state as a dot, its title and role; under them what it is doing now and where its work is (its PR, or its
  * branch), left out on that PR's own page. Waiting on you, it stands out gently; a lead keeps its own tint. A link,
- * so it opens with the keyboard and keeps history. Its right-click menu opens it, opens it to steer while it runs, or
- * copies its branch.
+ * so it opens with the keyboard and keeps history. Its right-click menu opens it, opens it to steer while it runs (once
+ * it has started), or copies its branch.
  */
 export const AgentRowLink = memo(function AgentRowLink({ agent }: { agent: LiveAgent }) {
   const { row } = agent;
@@ -280,7 +280,9 @@ export const AgentRowLink = memo(function AgentRowLink({ agent }: { agent: LiveA
   const menu = () => (
     <>
       <ContextMenuItem onSelect={() => (window.location.hash = href)}>Open</ContextMenuItem>
-      {taskId !== undefined && row.workstreamId !== undefined && !isFinal(row.status) ? (
+      {/* Only when its view shows a steer box (AgentWork's, once it has a thread): with none, the box's focus would
+          wait for one and take the cursor whenever it showed. */}
+      {taskId !== undefined && row.workstreamId !== undefined && row.threadRef !== undefined && !isFinal(row.status) ? (
         <ContextMenuItem
           onSelect={() => {
             steerNext(taskId);
