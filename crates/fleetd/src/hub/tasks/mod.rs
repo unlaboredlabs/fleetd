@@ -553,6 +553,7 @@ impl Tasks {
                 pr: task.pr.as_deref().map(str::to_owned),
                 from,
             }),
+            order_id: Some(task.workstream_id.clone()),
         };
         let (thread_id, base) = self.d.ports.launch(&r.machine_id, request).await?;
         // Every later message to this thread renders from the texts it starts with. The thread runs either way.

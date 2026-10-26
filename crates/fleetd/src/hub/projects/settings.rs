@@ -1,5 +1,6 @@
 //! A project's own settings (Settings › Projects in the app): `project_settings_get`, `project_settings_set` and
-//! `project_env_set`, and what the hub keeps of them: `project_settings.keep_worktrees` and the `project_env` rows.
+//! `project_env_set`, and what the hub keeps of them: `project_settings.keep_worktrees`, `project_settings.setup` (the
+//! commands each new worktree runs before its agent starts, sent with each task's launch) and the `project_env` rows.
 //!
 //! A variable is set on the project's node first, which keeps the value and adds it to every claude it starts for
 //! the project; only then does the hub record it. The hub's row holds a plain variable's value and a secret's
@@ -19,7 +20,7 @@ use fleetd_contracts::project_settings::{
     ENV_TOTAL_MAX_BYTES, ENV_VALUE_MAX_BYTES, env_total_over,
 };
 use fleetd_contracts::project_settings::{
-    EnvValue, EnvVarKind, EnvVarName, EnvVarSet, PROJECT_ENV_MAX, ProjectEnvVar,
+    EnvValue, EnvVarKind, EnvVarName, EnvVarSet, PROJECT_ENV_MAX, ProjectEnvVar, WorktreeSetup,
 };
 use fleetd_contracts::secrets::{Base64Alphabet, SEAL_OVERHEAD, SecretFingerprint, base64_bytes};
 use rusqlite::{OptionalExtension, params};
@@ -86,6 +87,37 @@ impl ProjectSettingsStore<'_> {
                 "INSERT INTO project_settings (machine_id, project_id, medium_allowed, keep_worktrees) VALUES (?, ?, 1, ?)
                  ON CONFLICT (machine_id, project_id) DO UPDATE SET keep_worktrees = excluded.keep_worktrees",
                 params![r.machine_id.as_str(), r.project_id.as_str(), keep],
+            )?;
+            Ok(())
+        })
+    }
+
+    /// The project's setup commands; `None` when it has none.
+    pub fn setup(&self, r: &ProjectRef) -> Result<Option<WorktreeSetup>, StoreError> {
+        let saved: Option<Option<String>> = self.db.with(|c| {
+            Ok(c.query_row(
+                "SELECT setup FROM project_settings WHERE machine_id = ? AND project_id = ?",
+                params![r.machine_id.as_str(), r.project_id.as_str()],
+                |row| row.get(0),
+            )
+            .optional()?)
+        })?;
+        Ok(saved
+            .flatten()
+            .and_then(|json| serde_json::from_str::<WorktreeSetup>(&json).ok())
+            .filter(|s| !s.is_empty()))
+    }
+
+    /// Replaces the project's setup commands; none turns setup off.
+    pub fn set_setup(&self, r: &ProjectRef, setup: &WorktreeSetup) -> Result<(), StoreError> {
+        let json = (!setup.is_empty())
+            .then(|| serde_json::to_string(setup))
+            .transpose()?;
+        self.db.with(|c| {
+            c.execute(
+                "INSERT INTO project_settings (machine_id, project_id, medium_allowed, setup) VALUES (?, ?, 1, ?)
+                 ON CONFLICT (machine_id, project_id) DO UPDATE SET setup = excluded.setup",
+                params![r.machine_id.as_str(), r.project_id.as_str(), json],
             )?;
             Ok(())
         })
@@ -229,6 +261,7 @@ async fn settings_of(hub: &Hub, r: &ProjectRef) -> Result<ProjectSettings, ToolE
         workspace_root: project.workspace_root,
         keep_worktrees: store.keep_worktrees(r)?,
         env: store.env(r)?,
+        setup: store.setup(r)?.unwrap_or_default(),
         worktrees,
         worktrees_unknown,
     })
@@ -274,14 +307,28 @@ async fn set(
     if let Some(keep) = input.keep_worktrees {
         hub.db.project_settings().set_keep_worktrees(&r, keep)?;
     }
+    if let Some(setup) = &input.setup {
+        hub.db.project_settings().set_setup(&r, setup)?;
+    }
     let mut settings = settings_of(&hub, &r).await?;
     if let Some(title) = input.title {
         // Until the node's project event lands in the cache.
         settings.title = title.to_string();
     }
+    let next = if input.setup.as_ref().is_some_and(|s| !s.is_empty())
+        && !hub
+            .link
+            .node_can(m, fleetd_contracts::node_link::CAP_WORKTREE_SETUP)
+    {
+        format!(
+            "New tasks of the project use these settings. {m}'s node is too old to run setup commands: update fleetd there."
+        )
+    } else {
+        "New tasks of the project use these settings.".to_owned()
+    };
     Ok(ProjectSettingsSetOutput {
         settings,
-        next: Some("New tasks of the project use these settings.".into()),
+        next: Some(next),
         truncated: None,
     })
 }

@@ -386,7 +386,7 @@ pub struct SecretRequest {
     /// The secret's name, a dotted slug such as "stripe.test_key".
     pub key: DecisionKey,
     pub sink: SecretSink,
-    /// An env: sink's variable, when not the one the key names (`secret_env_name`).
+    /// An env: or order: sink's variable, when not the one the key names (`secret_env_name`).
     pub env_name: Option<EnvName>,
     /// Set once the node has written the sink; the value itself never reaches the hub in plain text.
     pub fingerprint: Option<SecretFingerprint>,
@@ -436,8 +436,9 @@ pub fn request_kind_rule(r: &HumanRequest) -> Result<(), String> {
             if let Some(secret) = &r.secret
                 && secret.env_name.is_some()
                 && !secret.sink.starts_with("env:")
+                && !secret.sink.starts_with("order:")
             {
-                return Err("only an env: sink has an env name".into());
+                return Err("only an env: or order: sink has an env name".into());
             }
         }
         RequestKind::Approval => {

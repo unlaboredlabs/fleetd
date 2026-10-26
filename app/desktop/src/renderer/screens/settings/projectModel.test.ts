@@ -105,6 +105,7 @@ describe("Settings → Projects", () => {
       workspaceRoot: "/w",
       keepWorktrees: false,
       env: [],
+      setup: {},
       worktrees: {
         dir: "/h/worktrees/p1",
         worktrees: [

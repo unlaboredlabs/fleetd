@@ -190,6 +190,9 @@ pub fn deliver_secret(frame: &SecretDeliver, ctx: &SecretsContext) -> SecretResu
             sink.machine_id, ctx.machine_id
         ));
     }
+    if sink.kind == SecretSinkKind::Order {
+        return deliver_order(frame, &sink.path, box_key, ctx);
+    }
     let target = match confine_sink(&sink.path, ctx.roots) {
         Ok(target) => target,
         Err(why) => return fail(why),
@@ -209,7 +212,7 @@ pub fn deliver_secret(frame: &SecretDeliver, ctx: &SecretsContext) -> SecretResu
                 ));
             }
         },
-        SecretSinkKind::File => None,
+        SecretSinkKind::File | SecretSinkKind::Order => None,
     };
 
     let sealed = Zeroizing::new(B64.decode(frame.sealed.as_str()).unwrap_or_default());
@@ -269,6 +272,50 @@ pub fn deliver_secret(frame: &SecretDeliver, ctx: &SecretsContext) -> SecretResu
             sink.path,
             io_code(&error)
         )),
+    }
+}
+
+/// An `order:` sink: the value becomes one variable of the order's agents on this machine (order_env.rs). No sink
+/// index entry: an approved command reads no order variable.
+fn deliver_order(
+    frame: &SecretDeliver,
+    order_id: &str,
+    box_key: &NodeBoxKey,
+    ctx: &SecretsContext,
+) -> SecretResult {
+    let fail = |error: String| SecretResult {
+        id: frame.id.clone(),
+        fingerprint: None,
+        error: Some(head_text(&error)),
+    };
+    let Some(project_id) = &frame.project_id else {
+        return fail(format!("the hub named no project for order {order_id}"));
+    };
+    let Some(name) = frame
+        .env_name
+        .as_ref()
+        .map(|n| n.to_string())
+        .or_else(|| secret_env_name(&frame.secret_key))
+    else {
+        return fail(format!(
+            "{} names no valid variable: ask again with --env-name",
+            frame.secret_key.as_str()
+        ));
+    };
+    let sealed = Zeroizing::new(B64.decode(frame.sealed.as_str()).unwrap_or_default());
+    let Some(plain) = box_key.open(&sealed) else {
+        return fail(format!(
+            "the value was not sealed to {}'s current box key: seal it to the machine's boxPubKey again",
+            ctx.machine_id
+        ));
+    };
+    match super::order_env::deliver(ctx.home, project_id.as_str(), order_id, &name, &plain) {
+        Ok(()) => SecretResult {
+            id: frame.id.clone(),
+            fingerprint: Some(SecretFingerprint::unchecked(fingerprint_of(&plain))),
+            error: None,
+        },
+        Err(why) => fail(why),
     }
 }
 

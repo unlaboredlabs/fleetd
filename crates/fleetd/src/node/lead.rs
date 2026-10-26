@@ -1,6 +1,8 @@
 //! Lead-side CLI calls: the `fleetd` CLI writes one `lead_call` line to `<node home>/node.sock` and reads one
 //! `lead_result` line back. The node forwards each call over whichever link is up under a node-chosen id, so two
-//! CLIs picking the same id cannot cross answers, and relays the hub's answer under the CLI's id.
+//! CLIs picking the same id cannot cross answers, and relays the hub's answer under the CLI's id. A call from a
+//! session (its `report`, `ask_lead`, any agent tool) leaves the machine with its project's and order's secrets
+//! masked, as what the session reports does (mask.rs).
 use std::collections::HashMap;
 use std::os::unix::fs::{FileTypeExt, PermissionsExt};
 use std::path::{Path, PathBuf};
@@ -12,6 +14,7 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{mpsc, oneshot, watch};
 
 use super::config::mkdir_private;
+use super::mask::Masker;
 use super::runner::process::PeerSession;
 use super::util::AbortOnDrop;
 use super::wire::{
@@ -189,6 +192,31 @@ fn decode_call(line: &str) -> Result<LeadCallFrame, String> {
 /// Which session a calling process runs in, from its pid (blocking).
 pub type Identify = Arc<dyn Fn(i32) -> PeerSession + Send + Sync>;
 
+/// The masker for a session's calls, by its id (blocking: it reads the secrets); `Err` is why there is none.
+pub type MaskFor = Arc<dyn Fn(&str) -> Result<Masker, String> + Send + Sync>;
+
+/// The call with every secret of its session masked; refused when masking broke its shape (a length limit), so the
+/// value never goes out.
+pub fn mask_call(
+    mut frame: LeadCallFrame,
+    masker: &Masker,
+) -> Result<LeadCallFrame, Box<LeadResultFrame>> {
+    match masker.serde(frame.call) {
+        Some(call) => {
+            frame.call = call;
+            Ok(frame)
+        }
+        None => Err(Box::new(error_frame(
+            frame.id.as_str(),
+            McpToolError::new(
+                ErrorCode::Invalid,
+                "this call holds a secret value, and masking it left the call too long to send",
+            )
+            .with_fix("send it again without the value: name the variable instead"),
+        ))),
+    }
+}
+
 /// Names the session a call comes from by where its process runs, never by what the frame claims: the hub tells a
 /// lead from a task by it. A frame naming another session than its process runs in, or naming one from outside every
 /// session, is refused; so is a call whose process can't be told.
@@ -239,7 +267,12 @@ pub fn attribute(
 
 /// Reads one line, answers it with one line, and closes. Half-open: a CLI that ends its side after writing still
 /// gets the answer.
-async fn serve_connection(mut conn: UnixStream, relay: LeadRelay, identify: Identify) {
+async fn serve_connection(
+    mut conn: UnixStream,
+    relay: LeadRelay,
+    identify: Identify,
+    mask_for: MaskFor,
+) {
     let pid = conn.peer_cred().ok().and_then(|c| c.pid());
     let mut buffer: Vec<u8> = Vec::new();
     let mut chunk = [0u8; 8192];
@@ -277,7 +310,31 @@ async fn serve_connection(mut conn: UnixStream, relay: LeadRelay, identify: Iden
                 None => None,
             };
             match attribute(frame, peer) {
-                Ok(frame) => relay.call(frame).await,
+                Ok(frame) => match frame.thread_id.as_ref().map(|t| t.to_string()) {
+                    Some(session) => {
+                        // No masker, no call: a session's call goes out masked or not at all.
+                        let masker = tokio::task::spawn_blocking(move || mask_for(&session))
+                            .await
+                            .unwrap_or_else(|_| Err("reading them failed".to_owned()));
+                        match masker {
+                            Ok(masker) => match mask_call(frame, &masker) {
+                                Ok(frame) => relay.call(frame).await,
+                                Err(refused) => *refused,
+                            },
+                            Err(why) => error_frame(
+                                frame.id.as_str(),
+                                McpToolError::new(
+                                    ErrorCode::Failed,
+                                    format!(
+                                        "the node could not read the session's secrets to mask this call ({why}), so it was not sent"
+                                    ),
+                                )
+                                .with_fix("try again; if it keeps failing, check the node's log and restart it"),
+                            ),
+                        }
+                    }
+                    None => relay.call(frame).await,
+                },
                 Err(refused) => *refused,
             }
         }
@@ -333,6 +390,7 @@ pub async fn serve_lead_socket(
     path: PathBuf,
     relay: LeadRelay,
     identify: Identify,
+    mask_for: MaskFor,
 ) -> Result<LeadSocket, String> {
     let parent = path.parent().unwrap_or(Path::new("/"));
     mkdir_private(parent).map_err(|_| format!("cannot create {}", parent.display()))?;
@@ -346,7 +404,12 @@ pub async fn serve_lead_socket(
             let mut connections = tokio::task::JoinSet::new();
             while let Ok((conn, _)) = listener.accept().await {
                 while connections.try_join_next().is_some() {}
-                connections.spawn(serve_connection(conn, relay.clone(), identify.clone()));
+                connections.spawn(serve_connection(
+                    conn,
+                    relay.clone(),
+                    identify.clone(),
+                    mask_for.clone(),
+                ));
             }
         })),
     };

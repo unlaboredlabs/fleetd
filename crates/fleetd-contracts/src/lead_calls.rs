@@ -68,17 +68,19 @@ checked!(BriefCreateCall, |call| {
 pub struct RequestSecretCall {
     /// The secret's name, a dotted slug such as "stripe.test_key".
     pub key: DecisionKey,
-    /// Where the value is written: env:<machine>:<file> (one NAME=value line) or file:<machine>:<path>.
+    /// Where the value is written: env:<machine>:<file> (one NAME=value line), file:<machine>:<path>, or
+    /// order:<machine>:<order id> (one variable of that order's agents on the project's machine, until it closes).
     pub sink: SecretSink,
     /// One line on why it is needed.
     pub text: Text<1, 500>,
-    /// An env: sink's variable, when not the one the key names.
+    /// An env: or order: sink's variable, when not the one the key names.
     pub env_name: Option<EnvName>,
     pub workstream_id: Option<WorkstreamId>,
 }
 checked!(RequestSecretCall, |call| {
-    if call.env_name.is_some() && !call.sink.starts_with("env:") {
-        return Err("only an env: sink has an env name".into());
+    if call.env_name.is_some() && !call.sink.starts_with("env:") && !call.sink.starts_with("order:")
+    {
+        return Err("only an env: or order: sink has an env name".into());
     }
     Ok(())
 });

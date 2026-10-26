@@ -209,7 +209,7 @@
       "properties": {
         "envName": {
           "$ref": "#/$defs/EnvName",
-          "description": "An env: sink's variable, when not the one the key names (`secret_env_name`)."
+          "description": "An env: or order: sink's variable, when not the one the key names (`secret_env_name`)."
         },
         "fingerprint": {
           "$ref": "#/$defs/SecretFingerprint",

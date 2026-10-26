@@ -30,6 +30,17 @@ describe("a secret request", () => {
     expect(secretTarget(devbox({ boxPubKey: key }), secret("Q2"))).toMatchObject({ where: "to /srv/storefront/.cdn-token on devbox" });
   });
 
+  it("names the order whose agents an order: sink's variable reaches", () => {
+    const order = { ...secret("Q1"), sink: "order:devbox:W27", envName: "DATABASE_URL" };
+    expect(secretTarget(devbox({ boxPubKey: key }), order)).toEqual({
+      ok: true,
+      machine: "devbox",
+      boxPubKey: key,
+      where: "as DATABASE_URL for W27's agents on devbox, until the order closes",
+    });
+    expect(secretTarget(devbox({ boxPubKey: key }), { ...order, sink: "order:devbox:27" }).ok).toBe(false);
+  });
+
   it("says why it can't be saved now, with what to do", () => {
     const cases: Array<[Record<string, Machine>, SecretRequestItem, string]> = [
       [devbox({}), secret("Q1"), "Update fleetd on devbox"],

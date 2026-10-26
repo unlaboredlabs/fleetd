@@ -54,6 +54,8 @@ pub struct LaunchRequest {
     pub kind: fleetd_contracts::tasks::TaskKind,
     /// Write tasks: `{ type: "worktree", baseRef, branch }`; read and review tasks: `{ type: "detached", baseRef, pr }`.
     pub worktree: Option<Worktree>,
+    /// The task's order: its session gets the variables delivered for it.
+    pub order_id: Option<fleetd_contracts::ledger::WorkstreamId>,
 }
 
 #[derive(Clone, Debug)]

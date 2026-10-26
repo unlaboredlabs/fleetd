@@ -203,13 +203,13 @@ Open and start work. Without workstreamId it opens a new order from text (the hu
 
 ### request_secret
 
-Ask the human for a secret (a key, a token, a password). The app shows a masked field in the chat; the value is sealed to the sink's machine and written there, and never enters a transcript. Only its fingerprint arrives, in a later wake.
+Ask the human for a secret (a key, a token, a password). The app shows a masked field in the chat; the value is sealed to the sink's machine and written there, and never enters a transcript. Only its fingerprint arrives, in a later wake. For a variable an agent asked for, use sink order:&lt;machine>:&lt;its order>: only that order's agents get it, at their next turn, until the order closes.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `envName` | string | no | An env: sink's variable, when not the one the key names. |
+| `envName` | string | no | An env: or order: sink's variable, when not the one the key names. |
 | `key` | string | yes | The secret's name, a dotted slug such as "stripe.test_key". |
-| `sink` | string | yes | Where the value is written: env:&lt;machine>:&lt;file> (one NAME=value line) or file:&lt;machine>:&lt;path>. |
+| `sink` | string | yes | Where the value is written: env:&lt;machine>:&lt;file> (one NAME=value line), file:&lt;machine>:&lt;path>, or order:&lt;machine>:&lt;order id> (one variable of that order's agents on the project's machine, until it closes). |
 | `text` | string | yes | One line on why it is needed. At most 500 characters. |
 | `workstreamId` | string | no | `W<n>`, e.g. `W1`. |
 
@@ -662,7 +662,7 @@ Record your review verdict once, before your final message: the number of blocki
 
 ### ask_lead
 
-Ask your lead a question. Carry on with what you can; the answer arrives as a message. If you can't go on without it, end your turn: the answer continues this thread.
+Ask your lead a question. Carry on with what you can; the answer arrives as a message. If you can't go on without it, end your turn: the answer continues this thread. For a variable that is not set, name it and say why; never put a secret's value in the question.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|

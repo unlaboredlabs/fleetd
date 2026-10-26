@@ -3,7 +3,8 @@
 use super::ports::{self, BoxFut};
 use super::wire::{OpsPorts, convert};
 use crate::hub::approvals::{
-    ApprovalHub, ApprovalNodes, GatedOutcome, NodeCommandError, SecretOutcome, shown_argv,
+    ApprovalHub, ApprovalNodes, GatedOutcome, NodeCommandError, OrderEnvSaved, SecretOutcome,
+    parse_secret_sink, shown_argv,
 };
 use crate::hub::link::commands::NodeCommandErrorReason;
 use crate::hub::usage::time::clip;
@@ -133,6 +134,31 @@ impl ApprovalHub for OpsPorts {
             );
         })
     }
+
+    fn order_refusal(
+        &self,
+        project: &ports::ProjectRef,
+        order_id: &str,
+    ) -> BoxFut<'_, Option<String>> {
+        let r: Option<fleetd_contracts::ids::ProjectRef> = convert(project);
+        let order = order_id.to_owned();
+        Box::pin(async move {
+            let Some(r) = r else {
+                return Some("The hub has no record of the project.".to_owned());
+            };
+            crate::hub::projects::order_env::refusal(&self.hub(), &r, &order)
+        })
+    }
+
+    fn order_env_saved(&self, saved: OrderEnvSaved) -> BoxFut<'_, Result<(), String>> {
+        Box::pin(async move {
+            let hub = self.hub();
+            let at = fleetd_contracts::ids::Timestamp(crate::hub::store::iso_ms(
+                crate::hub::store::now_ms(hub.clock.as_ref()),
+            ));
+            crate::hub::projects::order_env::saved(&hub, &saved, &at).await
+        })
+    }
 }
 
 /// What a request was and what became of it, in the lead's words for its wake.
@@ -153,7 +179,17 @@ pub fn request_outcome(r: &HumanRequest) -> (String, String) {
         _ => "request".into(),
     };
     let evidence = r.evidence.as_ref().map_or("", |e| e.as_str());
+    let order = r
+        .secret
+        .as_ref()
+        .and_then(|s| parse_secret_sink(s.sink.as_str()))
+        .and_then(|s| s.order);
     let outcome = match r.state {
+        RequestState::Stored if order.is_some() => format!(
+            "set for {}'s agents on {machine} ({evidence}): each gets it at its next turn, until the order closes; \
+             you never see the value",
+            order.unwrap_or_default()
+        ),
         RequestState::Stored => format!(
             "stored on {machine} ({evidence}); use it from its sink, you never see the value"
         ),

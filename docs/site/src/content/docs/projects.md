@@ -70,6 +70,7 @@ Open a project's settings in the desktop app: Settings → Projects, then pick t
 | Keep finished worktrees | Off (the default): a reader's worktree goes when its task finishes, and a writer's once its pull request merges. On: they stay on the machine. |
 | Environment variables | Variables every new agent of the project gets. See [Environment variables](#env). |
 | MCP servers | The project's own MCP servers for its agents, and the global ones it gets. See [MCP servers](/docs/mcp-servers). |
+| Setup commands | What runs in each new worktree before its agent starts. See [Setup commands](#setup). |
 | Delete project | See [Delete a project](#delete). |
 
 The page also shows where the project's worktrees live on its machine (`~/.fleetd/node/worktrees/<project>/`, one per
@@ -123,9 +124,33 @@ refused. A variable the node already gives every session, from its own environme
 Setting a variable needs the project's machine online. Nothing is queued.
 :::
 
+An agent that needs a variable no one set asks its lead for it by name; the value you enter then reaches only that
+order's agents, until the order closes: see [A variable an agent asks for](/docs/approvals-and-secrets#order-variables).
+Each agent's brief lists the variables it gets by name.
+
 From an MCP client: `project_settings_get` reads a project's settings, `project_settings_set` renames it or sets
-`keepWorktrees`, and `project_env_set` sets and removes variables, a secret sealed to the machine's `boxPubKey`.
-`project_env_set` takes only a human key.
+`keepWorktrees` and `setup`, and `project_env_set` sets and removes variables, a secret sealed to the machine's
+`boxPubKey`. `project_env_set` takes only a human key.
+
+### Setup commands {#setup}
+
+Commands that run in each new worktree before its agent starts: install dependencies, generate code. One a line, in
+order; each runs with `sh -c` in the worktree, with the project's variables (and the order's), the machine's build
+jobs and the agent's own `$TMPDIR`. The first that fails, or runs past the time limit (10 minutes unless you set
+another, up to an hour), stops the rest.
+
+- Each command shows on the agent's thread in the app as it runs, with its exit code and the end of its output, and
+  the agent's brief says what ran.
+- A failure fails the agent's start: its task fails with the command and the end of its output, and its lead hears it.
+  With **Start the agent anyway when setup fails** on, the agent starts and hears what failed instead.
+- **Skip when unchanged**: name the files whose contents decide what setup makes, such as `pnpm-lock.yaml`. A worktree
+  set up before (a task restarted on its own worktree) is not set up again while the commands and those files are
+  unchanged. With none named, setup runs every time.
+- A worktree that is gone when its agent goes on (removed, or deleted) comes back and is set up again first. Setup
+  counts as done only once it has run to its end: if the machine's fleetd stops in the middle, it runs again at the
+  agent's next start. Stopping or interrupting the agent during setup ends it there, and the agent doesn't start.
+- Setup runs only in agents' worktrees, never in the project's checkout, and only on machines whose fleetd is new
+  enough; the page says when it isn't.
 
 ### Delete a project {#delete}
 

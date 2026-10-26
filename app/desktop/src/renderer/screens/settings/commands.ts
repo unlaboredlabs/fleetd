@@ -40,9 +40,9 @@ const pages: Command[] = [
   {
     id: "go:settings.projects",
     title: "Project settings",
-    detail: "A project's name, worktrees and environment variables, or delete it",
+    detail: "A project's name, worktrees, environment variables and setup commands, or delete it",
     group: "settings",
-    keywords: ["env", "secrets", "worktrees", "delete project", "rename"],
+    keywords: ["env", "secrets", "worktrees", "setup", "delete project", "rename"],
     run: () => go(tabHref("projects")),
   },
   {

@@ -46,11 +46,11 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "project_settings_get",
-        "One project's settings: its title and checkout, keepWorktrees, its environment variables (a plain one's value, a secret's fingerprint only), and from its node, while online, where its worktrees live, the branch new ones start from and the worktrees there now, each marked when it has uncommitted changes.",
+        "One project's settings: its title and checkout, keepWorktrees, its environment variables (a plain one's value, a secret's fingerprint only), its setup commands, and from its node, while online, where its worktrees live, the branch new ones start from and the worktrees there now, each marked when it has uncommitted changes.",
     ),
     (
         "project_settings_set",
-        "Rename a project (title; its folder keeps its name) or turn keepWorktrees on or off. Off (the default): a reader's worktree goes when its task finishes and a writer's once its PR merges. On: finished tasks' worktrees stay on the machine.",
+        "Rename a project (title; its folder keeps its name), turn keepWorktrees on or off, or replace its setup commands. keepWorktrees off (the default): a reader's worktree goes when its task finishes and a writer's once its PR merges; on: finished tasks' worktrees stay on the machine. setup: commands run in order with sh -c in each new worktree, with the project's variables, before its agent starts (install dependencies, generate code), each within timeoutSec; a failure fails the start unless runAnyway; a worktree set up before is not set up again while the commands and the inputs files are unchanged. No commands turns setup off.",
     ),
     (
         "project_env_set",

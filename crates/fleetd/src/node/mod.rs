@@ -13,6 +13,7 @@ pub mod load;
 pub mod mask;
 pub mod mcp_probe;
 pub mod mcp_servers;
+pub mod order_env;
 pub mod power;
 pub mod project_env;
 pub mod repos;
@@ -25,6 +26,7 @@ pub mod store;
 pub mod util;
 pub mod wire;
 pub mod worktree;
+pub mod worktree_setup;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -206,9 +208,18 @@ async fn run_node(
         let sessions = node_sessions.clone();
         Arc::new(move |pid| sessions.peer_session(pid))
     };
-    let _socket = lead::serve_lead_socket(lead::lead_socket_path(home), relay.clone(), identify)
-        .await
-        .map_err(NodeError::LeadSocket)?;
+    let mask_for: lead::MaskFor = {
+        let sessions = node_sessions.clone();
+        Arc::new(move |session| sessions.call_masker(session))
+    };
+    let _socket = lead::serve_lead_socket(
+        lead::lead_socket_path(home),
+        relay.clone(),
+        identify,
+        mask_for,
+    )
+    .await
+    .map_err(NodeError::LeadSocket)?;
 
     let (enrolled_tx, enrolled_rx) = oneshot::channel::<()>();
     let on_enrolled: Option<Box<dyn FnOnce() + Send>> = enroll_token.as_ref().map(|_| {

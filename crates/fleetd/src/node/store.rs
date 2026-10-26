@@ -84,6 +84,16 @@ pub struct SessionLocal {
     /// Decides the fleetd MCP tools the session gets; sessions stored before roles existed get none.
     #[serde(default)]
     pub role: fleetd_contracts::sessions::SessionRole,
+    /// A task's order, whose variables (order_env.rs) the session gets on top of its project's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub order_id: Option<String>,
+    /// The project's setup commands as the session was launched with them: run again whenever its worktree is rebuilt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub setup: Option<fleetd_contracts::project_settings::WorktreeSetup>,
+    /// Setup is due before claude next starts: set when the worktree is made or rebuilt, cleared only once setup has
+    /// run to its end, so a node that stops mid-setup runs it again at the session's next start.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub setup_pending: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]

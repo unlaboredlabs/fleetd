@@ -82,18 +82,32 @@ brand!(
 pub enum SecretSinkKind {
     Env,
     File,
+    /// One variable for one order's agents (`order:<machine>:<order id>`): the node adds it to the environment of
+    /// that order's sessions on the machine, masks it in what they report, and drops it when the order closes.
+    Order,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ParsedSecretSink {
     pub kind: SecretSinkKind,
     pub machine_id: MachineId,
+    /// The file, or an `order:` sink's order id.
     pub path: String,
 }
 
 /// Splits a valid sink; `None` for anything else. The path must be absolute with no empty, "." or ".." segment and
 /// no control characters, so the node can check it against its command roots by prefix.
 pub fn parse_secret_sink(sink: &str) -> Option<ParsedSecretSink> {
+    static ORDER: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"^order:([a-z0-9-]{1,32}):(W[1-9][0-9]{0,9})$").unwrap()
+    });
+    if let Some(captures) = ORDER.captures(sink) {
+        return Some(ParsedSecretSink {
+            kind: SecretSinkKind::Order,
+            machine_id: MachineId::unchecked(&captures[1]),
+            path: captures[2].to_owned(),
+        });
+    }
     static SINK: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
         regex::Regex::new(r"^(env|file):([a-z0-9-]{1,32}):(/.*)$").unwrap()
     });
@@ -128,11 +142,12 @@ pub fn parse_secret_sink(sink: &str) -> Option<ParsedSecretSink> {
 
 brand!(
     /// Where the node writes a secret, mode 0600, under its command roots. `env:<machine>:<path>` adds or replaces
-    /// one KEY=VALUE line in an env file; `file:<machine>:<path>` writes the raw value.
+    /// one KEY=VALUE line in an env file; `file:<machine>:<path>` writes the raw value; `order:<machine>:<order id>`
+    /// makes it one variable of that order's agents on the machine, until the order closes.
     SecretSink,
     name = "SecretSink",
     check = |s| parse_secret_sink(s).is_some(),
-    expected = "env:<machine>:<absolute path> or file:<machine>:<absolute path>, with no empty, . or .. path segment"
+    expected = "env:<machine>:<absolute path>, file:<machine>:<absolute path> (with no empty, . or .. path segment) or order:<machine>:<order id>"
 );
 
 /// The variable an `env:` sink writes for a secret ask without `--env-name`: its key uppercased, with `.` and `-` as
@@ -188,6 +203,18 @@ mod tests {
             assert!(parse_secret_sink(bad).is_none(), "{bad}");
         }
         assert!(parse_secret_sink(&format!("file:devbox:/{}", "a".repeat(1000))).is_none());
+        let order = parse_secret_sink("order:devbox:W27").unwrap();
+        assert_eq!(order.kind, SecretSinkKind::Order);
+        assert_eq!(order.machine_id.as_str(), "devbox");
+        assert_eq!(order.path, "W27");
+        for bad in [
+            "order:devbox:27",
+            "order:devbox:W0",
+            "order:devbox:/W27",
+            "order:devbox:W27/x",
+        ] {
+            assert!(parse_secret_sink(bad).is_none(), "{bad}");
+        }
     }
 
     #[test]

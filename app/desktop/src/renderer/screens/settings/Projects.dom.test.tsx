@@ -28,6 +28,7 @@ const settings: Settings = {
   title: "storefront",
   workspaceRoot: "/home/w/src/storefront",
   keepWorktrees: false,
+  setup: { commands: [], timeoutSec: 600, runAnyway: false, inputs: [] },
   env: [
     { name: "API_URL", kind: "plain", value: "https://staging.example", bytes: 23, updatedAt: AT },
     { name: "STRIPE_KEY", kind: "secret", fingerprint: "5ec2e7a1", bytes: 20, updatedAt: AT },
@@ -195,6 +196,33 @@ describe("Settings → Projects", () => {
     await click(toggle);
     await settle();
     expect(calls.find((c) => c.tool === "project_settings_set")?.input).toEqual({ machineId: "devbox", projectId: "p1", keepWorktrees: true });
+  });
+
+  it("saves setup commands in order, with their limit, inputs and run anyway", async () => {
+    await render();
+    const section = document.querySelector<HTMLElement>('section[aria-label="Setup commands"]');
+    if (section === null) throw new Error("no setup section");
+    const [commands, inputs] = [...section.querySelectorAll("textarea")];
+    const limit = section.querySelector("input");
+    if (commands === undefined || inputs === undefined || limit === null) throw new Error("no setup fields");
+    expect(button("Save setup").disabled).toBe(true);
+    await type(commands, "pnpm install --frozen-lockfile\n\npnpm codegen\n");
+    await type(limit, "0");
+    expect(section.textContent).toContain("1 to 3600");
+    expect(button("Save setup").disabled).toBe(true);
+    await type(limit, "900");
+    await type(inputs, "pnpm-lock.yaml");
+    const anyway = section.querySelector<HTMLElement>('[role="switch"]');
+    if (anyway === null) throw new Error("no run anyway switch");
+    await click(anyway);
+    await click(button("Save setup"));
+    await settle();
+    expect(calls.find((c) => c.tool === "project_settings_set")?.input).toEqual({
+      machineId: "devbox",
+      projectId: "p1",
+      setup: { commands: ["pnpm install --frozen-lockfile", "pnpm codegen"], timeoutSec: 900, runAnyway: true, inputs: ["pnpm-lock.yaml"] },
+    });
+    expect(section.textContent).toContain("Saved.");
   });
 
   it("deletes only once the name is typed, names the worktree with uncommitted changes, and removes the worktrees", async () => {

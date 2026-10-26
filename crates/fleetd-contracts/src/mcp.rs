@@ -907,6 +907,8 @@ pub struct ProjectSettings {
     pub keep_worktrees: bool,
     /// Its agents' variables, by name. A secret's value is never here.
     pub env: Vec<crate::project_settings::ProjectEnvVar>,
+    /// What runs in each new worktree before its agent starts; no commands when none are set.
+    pub setup: crate::project_settings::WorktreeSetup,
     /// From the node, now: absent while it is offline or too old to say.
     pub worktrees: Option<crate::project_settings::ProjectWorktrees>,
     /// Why `worktrees` is absent.
@@ -923,11 +925,13 @@ input!(
         /// The project's name in fleetd; its folder keeps its own.
         title: Option<Line<1, 200>>,
         keep_worktrees: Option<bool>,
+        /// Replaces the project's setup commands and their settings; no commands turns setup off.
+        setup: Option<crate::project_settings::WorktreeSetup>,
     }
 );
 checked!(ProjectSettingsSetInput, |input| {
-    if input.title.is_none() && input.keep_worktrees.is_none() {
-        return Err("expected title, keepWorktrees or both".into());
+    if input.title.is_none() && input.keep_worktrees.is_none() && input.setup.is_none() {
+        return Err("expected title, keepWorktrees, setup or more".into());
     }
     Ok(())
 });

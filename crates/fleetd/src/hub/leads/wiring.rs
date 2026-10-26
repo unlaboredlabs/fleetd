@@ -77,6 +77,7 @@ impl LeadPorts for HubPorts {
                         workspace: None,
                         role: fleetd_contracts::sessions::SessionRole::Lead,
                         mcp_role: Some(fleetd_contracts::mcp_servers::McpAgentRole::Lead),
+                        ..Default::default()
                     },
                 )
                 .await

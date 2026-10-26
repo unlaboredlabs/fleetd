@@ -167,6 +167,10 @@ pub struct LaunchOptions {
     pub role: fleetd_contracts::sessions::SessionRole,
     /// The role whose configured MCP servers it gets; none for a plain thread.
     pub mcp_role: Option<fleetd_contracts::mcp_servers::McpAgentRole>,
+    /// A task's order, whose variables its session gets.
+    pub order_id: Option<fleetd_contracts::ledger::WorkstreamId>,
+    /// The project's setup commands, for a new worktree on a node that runs them.
+    pub setup: Option<fleetd_contracts::project_settings::WorktreeSetup>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1499,6 +1503,8 @@ impl Executors {
                 .mcp_role
                 .and_then(|_| self.mcp_config(machine_id, &input.project_id)),
             skills,
+            order_id: options.order_id,
+            setup: options.setup.map(Box::new),
         };
         let mcp_launched = launch
             .mcp
@@ -2112,6 +2118,30 @@ impl Executors {
                 "the node sent no answer to project_env",
             )),
         }
+    }
+
+    /// Has the node forget the variables delivered for a closed order, or only `name` while it still holds the value
+    /// `fingerprint` names. Only to a node listing `CAP_ORDER_ENV`.
+    pub async fn order_env_drop(
+        &self,
+        machine_id: &MachineId,
+        project_id: &ProjectId,
+        order_id: &fleetd_contracts::ledger::WorkstreamId,
+        name: Option<(
+            fleetd_contracts::project_settings::EnvVarName,
+            fleetd_contracts::secrets::SecretFingerprint,
+        )>,
+    ) -> Result<(), ExecutorError> {
+        let (name, fingerprint) = name.unzip();
+        let call = SessionCall::OrderEnvDrop {
+            project_id: project_id.clone(),
+            order_id: order_id.clone(),
+            name,
+            fingerprint,
+        };
+        self.call(machine_id, NodeOperation::Project, call, READ_TIMEOUT)
+            .await?;
+        Ok(())
     }
 
     /// Where the project's worktrees live on its node and which are there. Only to a node listing

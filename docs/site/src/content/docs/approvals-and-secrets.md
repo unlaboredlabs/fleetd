@@ -38,7 +38,7 @@ back. If an answer doesn't go through, the item says why in one line; click Retr
 ## Enter a secret {#secrets}
 
 When a lead needs an API key or a password, it asks with `request_secret`, and the item names the machine and where
-the value goes: a line in an env file, or a file.
+the value goes: a line in an env file, a file, or a variable for one order's agents (see below).
 
 ![A secret item in storefront's chat: the lead needs the Stripe test key, which goes to devbox only. The card names where it is saved, with a masked field and Save secret. Above it, a secret already saved, folded to one line; below it, one line for the agents at work.](/docs/img/chat-secret.png)
 
@@ -60,6 +60,33 @@ A gated command can use a stored secret as an environment variable. The node rea
 
 For a secret every agent of a project should have, such as a test API key, set it in the project's settings instead:
 see [Environment variables](/docs/projects#env).
+
+### A variable an agent asks for {#order-variables}
+
+An agent that finds a variable it needs isn't set asks its lead with `ask_lead`, naming the variable and why, never its
+value. The lead relays it to you as a secret request whose item says **for W27's agents** (the order's id): its sink is
+`order:<machine>:<order>`, on the project's machine.
+
+- The value reaches only that order's agents on that machine: each one already running gets it at its next turn (its
+  claude starts again with it and resumes its conversation), and each new one from the start. No other order's agents
+  and no other project's see it.
+- It is masked like a project's secret, as `***NAME***`, in everything those agents report.
+- A value entered after the order closed is refused.
+- It goes when the order closes, done or stopped: the node forgets it, and the hub drops its record (name,
+  fingerprint and size). A machine offline then forgets it once it is back.
+- Its limits are a project variable's: up to 64 KiB, any number of lines, no NUL character, and the order's values
+  together with the project's stay under 512 KiB.
+
+Each agent's brief lists the names of the project's and its order's variables (a short plain value too), never a
+secret's value.
+
+### What agents send is masked too {#masking}
+
+Before anything an agent reports leaves its machine, the node replaces each of its project's and order's secrets with
+`***NAME***` (see [what is masked](/docs/projects#env)). That covers the agent's own fleetd calls as well: a secret
+pasted into `ask_lead`, a `report` or any other fleetd tool reaches the hub, its records and the app masked. A call
+that masking would make too long for its field, or one the machine can't read the secrets to mask, is refused there, so
+it is never sent.
 
 From an MCP client, a secret is entered with `secret_submit` and an item is answered with `approval_answer`. Both
 take only a human key. `requests_list` lists every secret and approval request with its state.

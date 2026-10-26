@@ -9600,6 +9600,10 @@
         "projectId": {
           "$ref": "#/$defs/ProjectId"
         },
+        "setup": {
+          "$ref": "#/$defs/WorktreeSetup",
+          "description": "What runs in each new worktree before its agent starts; no commands when none are set."
+        },
         "title": {
           "type": "string"
         },
@@ -9621,7 +9625,8 @@
         "title",
         "workspaceRoot",
         "keepWorktrees",
-        "env"
+        "env",
+        "setup"
       ],
       "type": "object"
     },
@@ -9667,6 +9672,10 @@
         },
         "projectId": {
           "$ref": "#/$defs/ProjectId"
+        },
+        "setup": {
+          "$ref": "#/$defs/WorktreeSetup",
+          "description": "Replaces the project's setup commands and their settings; no commands turns setup off."
         },
         "title": {
           "description": "The project's name in fleetd; its folder keeps its own.",
@@ -10816,7 +10825,7 @@
       "properties": {
         "envName": {
           "$ref": "#/$defs/EnvName",
-          "description": "An env: sink's variable, when not the one the key names (`secret_env_name`)."
+          "description": "An env: or order: sink's variable, when not the one the key names (`secret_env_name`)."
         },
         "fingerprint": {
           "$ref": "#/$defs/SecretFingerprint",
@@ -11045,6 +11054,9 @@
         "scope"
       ],
       "type": "object"
+    },
+    "SetupInput": {
+      "type": "string"
     },
     "SkillDeleteInput": {
       "properties": {
@@ -15249,6 +15261,46 @@
         "ref",
         "sha"
       ],
+      "type": "object"
+    },
+    "WorktreeSetup": {
+      "description": "What runs in each new worktree of a project before its agent starts: install dependencies, generate code.",
+      "properties": {
+        "commands": {
+          "default": [],
+          "description": "In order, each with `sh -c` in the worktree and the project's variables (the order's too); the first that\nfails or passes its time limit stops the rest.",
+          "items": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "pattern": "^[^\\r\\n]*$",
+            "type": "string"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "inputs": {
+          "default": [],
+          "description": "Files whose contents decide what setup makes, such as lockfiles. A worktree an earlier agent set up with the\nsame commands, while these held the same contents, is not set up again. None listed: setup always runs.",
+          "items": {
+            "$ref": "#/$defs/SetupInput"
+          },
+          "maxItems": 20,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "runAnyway": {
+          "default": false,
+          "description": "True: a failed setup still starts the agent, which is told what failed. False (the default): the start fails,\nnaming the command and the end of its output.",
+          "type": "boolean"
+        },
+        "timeoutSec": {
+          "default": 600,
+          "description": "Each command's time limit, in seconds.",
+          "maximum": 3600,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
       "type": "object"
     }
   },

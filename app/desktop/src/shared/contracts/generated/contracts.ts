@@ -3140,6 +3140,8 @@ export type ProjectSettings = {
   keepWorktrees: boolean;
   machineId: MachineId;
   projectId: ProjectId;
+  /** What runs in each new worktree before its agent starts; no commands when none are set. */
+  setup: WorktreeSetup;
   title: string;
   workspaceRoot: string;
   /** From the node, now: absent while it is offline or too old to say. */
@@ -3163,6 +3165,8 @@ export type ProjectSettingsSetInput = {
   keepWorktrees?: boolean;
   machineId: MachineId;
   projectId: ProjectId;
+  /** Replaces the project's setup commands and their settings; no commands turns setup off. */
+  setup?: WorktreeSetup;
   /** The project's name in fleetd; its folder keeps its own. */
   title?: string;
 };
@@ -3602,7 +3606,7 @@ export type SecretFingerprint = string;
 
 /** A secret request: the secret's name and where the node writes it. */
 export type SecretRequest = {
-  /** An env: sink's variable, when not the one the key names (`secret_env_name`). */
+  /** An env: or order: sink's variable, when not the one the key names (`secret_env_name`). */
   envName?: EnvName;
   /** Set once the node has written the sink; the value itself never reaches the hub in plain text. */
   fingerprint?: SecretFingerprint;
@@ -3685,6 +3689,8 @@ export type SessionPromptRef = {
   ref: PromptRef;
   scope: PromptScope;
 };
+
+export type SetupInput = string;
 
 export type SkillDeleteInput = {
   name: SkillName;
@@ -5190,6 +5196,27 @@ export type WorktreeBase = {
   /** "origin/main"; a local branch when there is no remote, or no copy of the remote's. */
   ref: string;
   sha: string;
+};
+
+/** What runs in each new worktree of a project before its agent starts: install dependencies, generate code. */
+export type WorktreeSetup = {
+  /**
+   * In order, each with `sh -c` in the worktree and the project's variables (the order's too); the first that
+   * fails or passes its time limit stops the rest.
+   */
+  commands?: string[];
+  /**
+   * Files whose contents decide what setup makes, such as lockfiles. A worktree an earlier agent set up with the
+   * same commands, while these held the same contents, is not set up again. None listed: setup always runs.
+   */
+  inputs?: SetupInput[];
+  /**
+   * True: a failed setup still starts the agent, which is told what failed. False (the default): the start fails,
+   * naming the command and the end of its output.
+   */
+  runAnyway?: boolean;
+  /** Each command's time limit, in seconds. */
+  timeoutSec?: number;
 };
 
 /** Every tool the app can `call`: its input and its output. */
