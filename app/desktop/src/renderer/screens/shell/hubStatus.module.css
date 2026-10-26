@@ -42,15 +42,13 @@
   text-overflow: ellipsis;
 }
 
-/* A 6 px dot in a 12 px ring of its own color, faint: soft, not a warning light. */
+/* The hub's one dot, plain: no ring and no halo (ui/DESIGN.md), in a 12 px cell so it lines up with the rows' icons. */
 .dot {
   flex: none;
   display: inline-grid;
   place-items: center;
   width: 12px;
   height: 12px;
-  border-radius: 999px;
-  background: color-mix(in srgb, currentColor 22%, transparent);
 }
 
 .card {

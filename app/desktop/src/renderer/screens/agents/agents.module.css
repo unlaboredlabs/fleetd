@@ -1,6 +1,6 @@
 /* The panel's agents: the project's agents under their orders, or one's work in their place. Calm and dense like the
-   sidebar: hierarchy from weight, grey and space; colour only for state and role; only a working dot moves, briefly,
-   and not when motion is reduced. */
+   sidebar: hierarchy from weight, grey and space; colour only for state and role; each agent's state a glyph, and
+   only the live ones move (ui/DESIGN.md). */
 
 .pane {
   flex: 1;
@@ -26,10 +26,31 @@
   flex: none;
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 1px;
   padding: 2px;
   border-radius: var(--radius-md);
   background: var(--hover);
+}
+/* Compact, as every segmented control in the panel (DESIGN.md). */
+.scopeOption {
+  height: 22px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  line-height: 22px;
+  transition: color var(--dur-quick) var(--ease-snap);
+}
+.scopeOption:hover {
+  color: var(--text);
+}
+.scopeOption[aria-pressed="true"] {
+  background: var(--raised);
+  color: var(--text);
+  font-weight: 500;
+  box-shadow: 0 0 0 1px var(--hairline);
 }
 
 .liveness {
@@ -106,17 +127,10 @@
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
-/* Waiting on you: a faint amber wash and edge, enough to find it, not an alarm. */
-.waiting {
-  background: color-mix(in srgb, var(--warning) 7%, transparent);
-  box-shadow: inset 2px 0 0 var(--warning);
-}
-.waiting:hover {
-  background: color-mix(in srgb, var(--warning) 12%, transparent);
-}
-/* A lead (in a chat card or a PR's agents): its own tint along its edge. */
-.lead {
-  box-shadow: inset 2px 0 0 var(--role-lead);
+/* Waiting on you: no wash and no edge (DESIGN.md); the glyph's solid block and the words "needs you" in the warning
+   colour and weight say it. A lead reads by its role. */
+.waiting .task {
+  font-weight: 600;
 }
 .line {
   grid-column: 2;
@@ -358,7 +372,7 @@
 }
 /* Just arrived in the list (ui/lib/arrival): rises a little and fades in, once. Leaving is a plain fade. */
 .arrive {
-  animation: rowIn var(--dur-row-in) var(--ease-out) backwards;
+  animation: rowIn var(--dur-row-in) var(--ease-snap) backwards;
 }
 @keyframes rowIn {
   from {
@@ -389,7 +403,7 @@
   width: 14px;
   height: 14px;
   color: var(--faint);
-  transition: transform var(--dur-base) var(--ease-out);
+  transition: transform var(--dur-quick) var(--ease-snap);
 }
 .fold[aria-expanded="true"] .foldIcon {
   transform: rotate(90deg);

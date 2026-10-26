@@ -93,8 +93,8 @@ function Waited({ id, children }: { id: string; children: ReactNode }) {
 const ACTIVITY_EVERY_MS = 1000;
 
 /**
- * The turn line after the lead's reply (W42 design preview). While its turn runs: a live glyph (thinking glows,
- * anything else breathes), what it does now in plain words at full strength, with the sweep (base.css), and how long
+ * The turn line after the lead's reply (W42 design preview). While its turn runs: a live glyph (thinking walks its
+ * ring, anything else is grain), what it does now in plain words at full strength, with the dither scan (base.css), and how long
  * the turn has run, faint, counting; under it, quietly, what the turn did so far. Once over: a check and how long it
  * worked. The words change at most once a second; the count is apart from them, so a screen reader isn't told each tick.
  */

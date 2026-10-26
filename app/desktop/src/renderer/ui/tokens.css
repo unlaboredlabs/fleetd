@@ -174,35 +174,26 @@
   --dur-fast: 120ms;
   --dur-base: 180ms;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-  /* A chat bubble coming in: it rises a little into place as it fades in, never scaled (scaled words wobble); a
-     reply's bubbles a calm step apart. Your own send is quicker: you made it happen. */
-  --dur-enter: 360ms;
-  --dur-enter-mine: 220ms;
-  --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
-  --enter-rise: 10px;
+  /* The motion language: ui/DESIGN.md. Short and crisp: things arrive fast and stop dead, loops step rather than
+     glide, and only what is live moves. */
+  --ease-snap: cubic-bezier(0.2, 0, 0, 1);
+  --dur-quick: 140ms;
+  /* Arriving: a chat bubble rises a few pixels into place as it fades in, never scaled; a reply's bubbles a beat
+     apart. Your own send is quicker still: you made it happen. A list row rises less. */
+  --dur-enter: 200ms;
+  --dur-enter-mine: 140ms;
+  --ease-enter: var(--ease-snap);
+  --enter-rise: 6px;
   --enter-scale: 1;
-  --enter-stagger: 90ms;
-
-  /*
-   * The motion language (W42 design preview). Only what is live moves, and only while it is: an agent at work, the
-   * lead thinking, text arriving, a PR in CI. Each loop has one idea and its own rhythm; a state that has ended (done,
-   * failed, paused) settles once and is then still. Only transform and opacity, so nothing reflows. Closing is instant.
-   *   breath  2.4 s, sine in-out: work going on (a halo eases out of the dot and fades)
-   *   glow    1.6 s, sine in-out: thinking (the dot dims and gathers, no halo)
-   *   knock   2.4 s, two quick beats then rest: waiting on you
-   *   orbit   3.2 s, linear: queued (a mote circles the ring, waiting its turn)
-   *   sweep   2.2 s, sine in-out, a third of it at rest: words being made (thinking, streaming)
-   *   settle  480 ms, ease-out: an ending (done lands, failed nudges once), then still
-   */
-  --ease-sine: cubic-bezier(0.37, 0, 0.63, 1);
-  --dur-breath: 2400ms;
-  --dur-glow: 1600ms;
-  --dur-knock: 2400ms;
-  --dur-orbit: 3200ms;
-  --dur-sweep: 2200ms;
-  --dur-settle: 480ms;
-  --dur-row-in: 220ms;
-  --row-rise: 4px;
+  --enter-stagger: 50ms;
+  --dur-row-in: 160ms;
+  --row-rise: 3px;
+  /* Loops, on steps(): grain (working), walk (thinking, one lit cell round the ring), scan (words being made, a dither
+     band crossing them), dots (the lead writing). */
+  --dur-grain: 720ms;
+  --dur-walk: 960ms;
+  --dur-scan: 1400ms;
+  --dur-dots: 900ms;
 }
 
 :root[data-platform="darwin"] {

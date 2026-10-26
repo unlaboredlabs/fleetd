@@ -3,30 +3,34 @@
   flex: none;
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3) var(--space-2);
+  gap: var(--space-1-5);
+  padding: var(--space-1-5) var(--space-2) var(--space-2);
   border-bottom: 1px solid var(--hairline);
 }
-/* A: four equal sections, icon over label, so the words always show however narrow the panel. */
+/* A: one compact row of four (DESIGN.md): 26 px controls, icon and word side by side and centred, the count on the
+   word's baseline in faint figures, no pill. */
 .bar {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--space-1);
+  display: flex;
+  gap: 2px;
 }
 .section {
-  display: flex;
-  flex-direction: column;
+  flex: 1 1 0;
+  display: inline-flex;
   align-items: center;
-  gap: 2px;
+  justify-content: center;
+  gap: 6px;
   min-width: 0;
-  padding: var(--space-1-5) var(--space-1) var(--space-1);
+  height: 26px;
+  padding: 0 var(--space-1-5);
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--quiet);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
   transition:
-    background-color var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out);
+    background-color var(--dur-quick) var(--ease-snap),
+    color var(--dur-quick) var(--ease-snap);
 }
 .section:hover {
   background: var(--hover);
@@ -35,47 +39,51 @@
 .on {
   background: var(--selected);
   color: var(--text);
-}
-.labelRow {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  max-width: 100%;
-  min-width: 0;
+  font-weight: 500;
 }
 .icon {
   flex: none;
-  width: 16px;
-  height: 16px;
+  width: 13px;
+  height: 13px;
+}
+/* The word and its count, on one baseline. */
+.words {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
 }
 .label {
-  max-width: 100%;
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+/* The count rides the word's baseline: same size, its own figures, faint. */
+.count {
+  flex: none;
+  color: var(--faint);
   font-size: var(--text-xs);
-  line-height: var(--leading-xs);
-  font-weight: 500;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.count:empty {
+  display: none;
 }
 .badge:empty {
   display: none;
 }
 .badge {
-  min-width: 15px;
-  padding: 0 4px;
-  border-radius: 999px;
-  background: var(--hover);
-  color: var(--quiet);
-  font-size: 10px;
-  line-height: 15px;
+  color: var(--faint);
+  font-size: var(--text-xs);
   font-weight: 400;
   font-variant-numeric: tabular-nums;
-  text-align: center;
 }
 .under {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-1-5);
+  padding: 0 var(--space-1);
 }
 .line {
   margin: 0;
@@ -86,13 +94,13 @@
 .switch {
   display: inline-flex;
   align-self: flex-start;
-  gap: 2px;
+  gap: 1px;
   padding: 2px;
   border-radius: var(--radius-md);
   background: var(--hover);
 }
 .option {
-  height: 24px;
+  height: 22px;
   padding: 0 10px;
   border: none;
   border-radius: var(--radius-sm);

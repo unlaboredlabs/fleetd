@@ -58,15 +58,13 @@ const mark = (p: SidebarProject): { readonly node: ReactNode; readonly tip: stri
     if (want.word === "blocked") {
       return { node: <Text size="xs" tone="danger">blocked</Text>, tip: want.label };
     }
+    // The word in the warning colour and weight carries it: no dot (DESIGN.md).
     return {
       node: (
         <>
-          <Dot color="var(--warning)" />
-          {want.word === undefined ? null : (
-            <Text size="xs" tone="warning">
-              {want.word}
-            </Text>
-          )}
+          <Text size="xs" tone="warning" strong>
+            {want.word ?? "needs you"}
+          </Text>
           {want.count > 1 ? <span>{`· ${String(want.count)}`}</span> : null}
         </>
       ),

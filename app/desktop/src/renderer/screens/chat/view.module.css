@@ -381,33 +381,28 @@
   gap: 4px;
   height: var(--leading-md);
 }
-/* The lead writing: three dots gather and dim one after another, the thinking glyph's glow (tokens.css) in a row.
-   Still with reduced motion, and while the window is in the background. */
+/* The lead writing: three square cells, one lit at a time, stepping left to right like a cursor (DESIGN.md). Still
+   with reduced motion, and while the window is hidden. */
 .dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
   background: var(--quiet);
-  opacity: 0.35;
-  transform: scale(0.8);
-  animation: gather calc(var(--dur-glow) * 0.9) var(--ease-sine) infinite;
+  opacity: 0.3;
+  animation: step var(--dur-dots) steps(1, end) infinite;
 }
 .dot:nth-child(2) {
-  animation-delay: 180ms;
+  animation-delay: calc(var(--dur-dots) / 3);
 }
 .dot:nth-child(3) {
-  animation-delay: 360ms;
+  animation-delay: calc(var(--dur-dots) * 2 / 3);
 }
-@keyframes gather {
-  0%,
-  60%,
-  100% {
-    opacity: 0.35;
-    transform: scale(0.8);
-  }
-  30% {
+@keyframes step {
+  0% {
     opacity: 1;
-    transform: scale(1);
+  }
+  33.4% {
+    opacity: 0.3;
   }
 }
 :root[data-still] .dot {
@@ -417,7 +412,6 @@
   .dot {
     animation: none;
     opacity: 0.6;
-    transform: none;
   }
 }
 

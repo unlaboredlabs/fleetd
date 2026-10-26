@@ -12,7 +12,7 @@ interface ProjectRef {
   readonly projectId: string;
 }
 
-import { ArrowUp, Paperclip, Reply, Square, X } from "lucide-react";
+import { ArrowUp, Check, Paperclip, Reply, Square, X } from "lucide-react";
 import { useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
 import type { AttachmentRef } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
@@ -326,8 +326,8 @@ const sendableOf = (item: ChatItem) => ({
 });
 
 /**
- * Direction A (W42): a quiet receipt as a small mark beside your bubble's foot, its words on hover. A ring circles
- * while the lead hasn't taken it; a check lands once it has. Nothing under the bubble.
+ * Direction A (W42): a quiet receipt as a small mark beside your bubble's foot, its words on hover: an open ring of
+ * cells while the lead hasn't taken it, a plain check once it has. Nothing under the bubble.
  */
 export function ReceiptMarkView({ item, latest }: { item: ChatItem; latest: boolean }) {
   const m = designPick("sent") === "a" ? receiptMark(sendableOf(item), latest) : undefined;
@@ -335,7 +335,7 @@ export function ReceiptMarkView({ item, latest }: { item: ChatItem; latest: bool
   return (
     <Tooltip content={m.words}>
       <span className={c.receiptMark} data-mark={m.mark} tabIndex={0} aria-label={m.words}>
-        <StateGlyph state={m.mark === "waiting" ? "queued" : "done"} size="sm" />
+        {m.mark === "waiting" ? <StateGlyph state="queued" size="sm" /> : <Check aria-hidden className={c.receiptCheck} strokeWidth={2.5} />}
       </span>
     </Tooltip>
   );

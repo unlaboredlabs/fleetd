@@ -15,8 +15,8 @@ export const glyphOf = (status: AgentRow["status"], thinking = false): GlyphStat
 };
 
 /**
- * The agent's state as a glyph that moves the way the state feels (StateGlyph): working breathes, thinking glows,
- * waiting knocks, queued circles, paused is still; `still` for a count, where only the shape speaks.
+ * The agent's state as a 3×3 dither glyph (StateGlyph): working is grain, thinking walks its ring, the rest hold a
+ * shape of their own, and it morphs as the state changes; `still` for a count, where only the shape speaks.
  */
 export function StateDot({ status, thinking = false, still = false, seed }: { status: AgentRow["status"]; thinking?: boolean; still?: boolean; seed?: string }) {
   // Seeded by the agent, each glyph keeps its own place in the rhythm: a list of them never beats as one.

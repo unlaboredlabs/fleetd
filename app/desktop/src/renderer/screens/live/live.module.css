@@ -124,7 +124,7 @@
   flex: none;
   display: inline-grid;
   place-items: center;
-  animation: glyphIn var(--dur-row-in) var(--ease-out) backwards;
+  animation: glyphIn var(--dur-row-in) var(--ease-snap) backwards;
 }
 @keyframes glyphIn {
   from {

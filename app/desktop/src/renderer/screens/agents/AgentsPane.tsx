@@ -10,7 +10,7 @@ import { memo, useEffect, useMemo, useState } from "react";
 import { useData, useToolQuery } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
 import { selectLiveAgents, selectProjects, type LiveAgent } from "../../src/data/selectors";
-import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, Dot, EmptyState, IdChip, PROFILE_WORD, Text, Truncate, VirtualList, cx, useArrived } from "../../ui";
+import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, Dot, EmptyState, IdChip, PROFILE_WORD, Text, Truncate, VirtualList, cx, useArrivals, useArrived } from "../../ui";
 import { ActivityLine } from "../live/parts";
 import { steerNext } from "../live/Steer";
 import { describe, isFinal } from "../live/words";
@@ -119,18 +119,20 @@ function AgentList({ project: ref, scope, onScope }: { project: ProjectKey; scop
     return [...agents, line, ...(unfolded ? other.rows.map((row) => ({ row, other: true as const })) : [])];
   }, [agents, other, unfolded]);
   const counts = agents === undefined ? undefined : tally(agents.filter((a): a is LiveAgent => !isLine(a)));
+  // Rows that join the list later enter once; those it opened with, or scrolled to, don't.
+  useArrivals(`agents:${project}`, all?.filter((a) => a.project === project).map((a) => a.id));
   const none = agents?.every(isLine) === true;
 
   return (
     <div className={s.pane} data-screen="agents">
       <div className={s.top}>
         <div className={s.scope} role="group" aria-label="Whose agents">
-          <Button variant={scope === "project" ? "secondary" : "quiet"} size="sm" aria-pressed={scope === "project"} onClick={() => onScope("project")}>
+          <button type="button" className={s.scopeOption} aria-pressed={scope === "project"} onClick={() => onScope("project")}>
             This project
-          </Button>
-          <Button variant={scope === "all" ? "secondary" : "quiet"} size="sm" aria-pressed={scope === "all"} onClick={() => onScope("all")}>
+          </button>
+          <button type="button" className={s.scopeOption} aria-pressed={scope === "all"} onClick={() => onScope("all")}>
             All projects
-          </Button>
+          </button>
         </div>
         {!fresh ? (
           <span className={s.liveness} role="status">
@@ -292,7 +294,7 @@ export const AgentRowLink = memo(function AgentRowLink({ agent }: { agent: LiveA
   const href = toHash(panelRoute(row.projectRef, { tab: "agents", agent: row.laneId }));
   const { taskId, branch } = row;
   const line = describe(row);
-  const fresh = useArrived("agents", agent.id);
+  const fresh = useArrived(`agents:${agent.project}`, agent.id);
   const menu = () => (
     <>
       <ContextMenuItem onSelect={() => (window.location.hash = href)}>Open</ContextMenuItem>
@@ -313,7 +315,7 @@ export const AgentRowLink = memo(function AgentRowLink({ agent }: { agent: LiveA
   );
   return (
     <ContextMenu menu={menu}>
-      <a className={cx(s.row, fresh && s.arrive, row.status === "waiting" && s.waiting, row.role === "lead" && s.lead)} href={href} data-state={row.status}>
+      <a className={cx(s.row, fresh && s.arrive, row.status === "waiting" && s.waiting)} href={href} data-state={row.status}>
         <StateDot status={row.status} thinking={line.thinking} seed={agent.id} />
         <span className={s.line}>
           <span className={s.task}>

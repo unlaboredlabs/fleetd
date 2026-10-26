@@ -52,14 +52,8 @@ export function Segmented<T extends string>({ label, options, value, onChange }:
     <div className={s.segmented} role="group" aria-label={label}>
       {options.map((o) => (
         <button key={o.value} type="button" className={s.segment} aria-pressed={o.value === value} onClick={() => onChange(o.value)}>
-          <Text size="sm" tone="inherit">
-            {o.label}
-          </Text>
-          {o.count !== undefined ? (
-            <Text size="xs" tone="inherit" tabular>
-              {o.count}
-            </Text>
-          ) : null}
+          {o.label}
+          {o.count !== undefined ? <span className={s.segmentCount}>{o.count}</span> : null}
         </button>
       ))}
     </div>

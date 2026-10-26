@@ -34,7 +34,7 @@ export function ProjectPanel({ project, view, onWide }: { project: ProjectKey; v
   // W42 design preview: the panel as four sections (Sections.tsx), A a bar of them, B an overview first.
   const design = designPick("panel", "off");
   const [home, setHome] = useState(true);
-  const badge = (tab: PanelTab) => <Badge id={tab} project={project} active={tab === view.tab} />;
+  const badge = (tab: PanelTab) => <PlainCount id={tab} project={project} active={tab === view.tab} />;
   if (design === "b" && home) {
     return (
       <PanesProvider>
@@ -192,5 +192,16 @@ function Badge({ id, project, active }: { id: PanelTab; project: ProjectKey; act
         <Count project={project} active={active} />
       </Suspense>
     </span>
+  );
+}
+
+/** A tab's count as bare figures, for the sections' row, where it sits on the word's baseline. */
+function PlainCount({ id, project, active }: { id: PanelTab; project: ProjectKey; active: boolean }) {
+  const Count = COUNTS[id];
+  if (Count === undefined) return null;
+  return (
+    <Suspense fallback={null}>
+      <Count project={project} active={active} />
+    </Suspense>
   );
 }

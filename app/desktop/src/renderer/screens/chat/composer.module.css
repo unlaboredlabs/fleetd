@@ -55,7 +55,7 @@
   min-width: 0;
   margin: var(--space-2) var(--space-3) 0;
   padding: 2px var(--space-1) 2px var(--space-2);
-  border-left: 2px solid var(--accent);
+  border-left: 2px solid var(--hairline);
 }
 .replyIcon {
   flex: none;
@@ -157,7 +157,7 @@
   cursor: pointer;
 }
 
-/* Direction A's receipt mark, beside your bubble's foot: faint, a ring while it waits for the lead, a check once taken. */
+/* Direction A's receipt mark, beside your bubble's foot: faint, an open ring while it waits for the lead, a check once taken. */
 .receiptMark {
   flex: none;
   align-self: flex-end;
@@ -171,8 +171,16 @@
 .receiptMark > span[data-state] {
   color: var(--faint);
 }
-.receiptMark[data-mark="delivered"] > span[data-state] {
+.receiptCheck {
+  width: 12px;
+  height: 12px;
   color: var(--quiet);
+  animation: checkIn var(--dur-quick) var(--ease-snap) backwards;
+}
+@keyframes checkIn {
+  from {
+    opacity: 0;
+  }
 }
 /* Direction B: one faint word, no sentence. */
 .receiptWord {

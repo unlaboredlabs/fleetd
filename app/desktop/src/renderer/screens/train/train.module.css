@@ -1,8 +1,8 @@
 /*
- * The panel's Train: what merges now on a quiet raised card, then the line and what landed lately as plain rows.
- * Titles carry the weight; numbers, times and reasons stay small and quiet. The line's PRs are cards a step apart,
- * each with its place as a numbered badge; what landed lately is plain rows between hairlines. Only what merges now
- * moves: a slow sweep along its card's top edge while CI runs (the motion language, tokens.css).
+ * The panel's Train: what merges now on a quiet raised card (the one card here), then the line and what landed
+ * lately as rows between hairlines. Titles carry the weight; numbers, times and reasons stay small and quiet; states
+ * are words. Only what merges now moves: a short band of dither steps along its card's top edge while CI runs
+ * (ui/DESIGN.md).
  */
 .screen {
   --pad: var(--space-4);
@@ -191,39 +191,48 @@
   padding: 0 var(--space-2);
 }
 
-/* The line: each PR a card, its place a numbered badge at its left. */
+/* The line: rows between hairlines, each led by its place in tabular figures (DESIGN.md: cards only where they earn
+   it; here only what merges now). */
 .queued {
   display: flex;
   align-items: flex-start;
-  gap: var(--space-1);
-  margin: 0 var(--space-3) var(--space-1-5);
-  padding: 2px var(--space-1);
+  margin: 0 var(--space-3);
   min-width: 0;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-lg);
-  background: var(--raised);
-  transition: border-color var(--dur-fast) var(--ease-out);
-}
-.queued:hover {
-  border-color: color-mix(in srgb, var(--text) 18%, transparent);
-}
-.queued .row:hover {
-  background: none;
+  border-bottom: 1px solid var(--hairline);
 }
 .queued .rowTitle {
   font-weight: 500;
 }
 .place {
   flex: none;
-  display: inline-grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  margin: var(--space-2) 0 0 var(--space-1);
-  border-radius: 999px;
-  background: var(--hover);
+  width: var(--space-6);
+  padding: 9px 0 0 var(--space-1);
+  font-variant-numeric: tabular-nums;
 }
-/* While CI runs on what merges now: a band of the stage's colour travels the card's top edge, then rests. */
+/* A state in words: quiet, failure in the danger colour, waiting on you in the warning one. No dot. */
+.word {
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  white-space: nowrap;
+}
+.word[data-tone="failed"] {
+  color: var(--danger);
+  font-weight: 500;
+}
+.word[data-tone="needs-you"] {
+  color: var(--warning);
+  font-weight: 500;
+}
+.stage {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  font-weight: 500;
+}
+/* While CI runs on what merges now: a short band of 2 px dither steps along the card's top edge, then rests. */
 .progress {
   position: absolute;
   inset: 0 0 auto 0;
@@ -235,15 +244,15 @@
   content: "";
   position: absolute;
   inset: 0 auto 0 0;
-  width: 35%;
-  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  width: 24%;
+  background: repeating-conic-gradient(var(--accent) 0 25%, transparent 0 50%) 0 0 / 2px 2px;
   transform: translateX(-100%);
-  animation: travel var(--dur-sweep) var(--ease-sine) infinite;
+  animation: travel var(--dur-scan) steps(18, end) infinite;
 }
 @keyframes travel {
   70%,
   100% {
-    transform: translateX(290%);
+    transform: translateX(420%);
   }
 }
 :root[data-still] .progress::after {
@@ -253,7 +262,7 @@
   .progress::after {
     animation: none;
     width: 100%;
-    opacity: 0.35;
+    opacity: 0.5;
     transform: none;
   }
 }

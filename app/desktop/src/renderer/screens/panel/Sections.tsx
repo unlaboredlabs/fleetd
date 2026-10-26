@@ -49,23 +49,23 @@ export const sectionOf = (tab: PanelTab): Section => SECTIONS.find((g) => g.view
 
 type BadgeOf = (tab: PanelTab) => ReactNode;
 
-/** A: the four sections as a bar, icon over label, the open one filled; its line and switch under it. */
+/** A: the four sections as one compact row, icon and word side by side, the open one filled; its line and switch under it. */
 export function SectionBar({ active, onPick, badge }: { project: ProjectKey; active: PanelTab; onPick: (tab: PanelTab) => void; badge: BadgeOf }) {
   const open = sectionOf(active);
   return (
     <div className={s.head}>
-      <div className={s.bar} role="tablist" aria-label="Panel">
+      <div className={s.bar} role="group" aria-label="Panel">
         {SECTIONS.map((g) => {
           const Icon = g.icon;
           const on = g.id === open.id;
           const first = g.views[0]?.[0] ?? "agents";
           return (
             <Tooltip key={g.id} content={g.line} side="bottom">
-              <button type="button" role="tab" aria-selected={on} className={cx(s.section, on && s.on)} data-section={g.id} onClick={() => onPick(on ? active : first)}>
+              <button type="button" aria-pressed={on} className={cx(s.section, on && s.on)} data-section={g.id} onClick={() => onPick(on ? active : first)}>
                 <Icon aria-hidden className={s.icon} />
-                <span className={s.labelRow}>
+                <span className={s.words}>
                   <span className={s.label}>{g.label}</span>
-                  <span className={s.badge}>{badge(first)}</span>
+                  <span className={s.count}>{badge(first)}</span>
                 </span>
               </button>
             </Tooltip>

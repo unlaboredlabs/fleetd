@@ -5,11 +5,11 @@
 import { useMemo, useState, type KeyboardEvent } from "react";
 import type { ProjectRef } from "../../../shared/contracts";
 import type { PrRow } from "../../../shared/contracts";
-import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSeparator, StatusChip, Text, Truncate, VirtualList, cx, useArrived } from "../../ui";
+import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSeparator, Text, Truncate, VirtualList, cx, useArrivals, useArrived } from "../../ui";
 import { panelRoute, toHash } from "../shell/routes";
 import { ChecksMark, HintText, PaneEmpty, Segmented } from "./Bits";
 import { openExternal } from "./PrDetail";
-import { PR_FILTERS, emptyWords, filterCounts, listItems, openGroup, rowMeta, type PrFilter } from "./listModel";
+import { PR_FILTERS, emptyWords, filterCounts, listItems, rowMeta, type PrFilter } from "./listModel";
 import { checksWord, isOpen, when } from "./words";
 import s from "./prs.module.css";
 
@@ -47,6 +47,7 @@ export function PrList({ rows, more, project, nowMs }: PrListProps) {
     setFilterState(next);
   };
   const counts = useMemo(() => filterCounts(rows), [rows]);
+  useArrivals(`prs:${key}`, rows.map((r) => `${r.repo}#${r.number}`));
   const items = useMemo(() => listItems(rows, filter, cut), [rows, filter, cut]);
   // ↑/↓ from a focused row moves to the row above or below; Enter opens it.
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -154,7 +155,7 @@ function Row({ row, project, nowMs }: { row: PrRow; project: ProjectRef; nowMs: 
   );
   return (
     <ContextMenu menu={menu}>
-      <a className={cx(s.row, !isOpen(row) && s.rowDone, fresh && s.arrive)} href={href} data-pr={row.number} data-look={isOpen(row) && openGroup(row) === "look" ? "" : undefined}>
+      <a className={cx(s.row, !isOpen(row) && s.rowDone, fresh && s.arrive)} href={href} data-pr={row.number}>
         <span className={s.rowTop}>
           <span className={s.rowTitle}>
             <Truncate lines={2} expand="none" tone="inherit">
@@ -169,9 +170,9 @@ function Row({ row, project, nowMs }: { row: PrRow; project: ProjectRef; nowMs: 
         </span>
         <span className={s.rowMeta}>
           <span className={s.metaParts}>
-            <StatusChip tone={meta.state.tone} inRow>
+            <span className={s.stateWord} data-tone={meta.state.tone}>
               {meta.state.word}
-            </StatusChip>
+            </span>
             {meta.place !== undefined ? <HintText hint={{ text: meta.place, tone: "quiet" }} /> : null}
             {meta.checks !== undefined ? <ChecksMark hint={meta.checks} label={full} /> : null}
             {meta.review !== undefined ? <HintText hint={meta.review} /> : null}

@@ -75,11 +75,13 @@
 .filters {
   flex: none;
   display: flex;
-  padding: var(--space-3) var(--pad) var(--space-1);
+  padding: var(--space-2) var(--space-3) 0;
 }
+/* A compact segmented control (DESIGN.md): 22 px, the words and the count both xs so they share a baseline; the count
+   faint, no pill. */
 .segmented {
   display: inline-flex;
-  gap: 2px;
+  gap: 1px;
   padding: 2px;
   border-radius: var(--radius-md);
   background: var(--hover);
@@ -87,21 +89,34 @@
 .segment {
   display: inline-flex;
   align-items: baseline;
-  gap: var(--space-1-5);
-  padding: 2px var(--space-3);
+  gap: 5px;
+  height: 22px;
+  padding: 3px 10px 0;
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--quiet);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
   cursor: pointer;
+  transition: color var(--dur-quick) var(--ease-snap);
 }
 .segment:hover {
   color: var(--text);
 }
+.segmentCount {
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
 .segment[aria-pressed="true"] {
   background: var(--raised);
   color: var(--text);
+  font-weight: 500;
   box-shadow: 0 0 0 1px var(--hairline);
+}
+.segment[aria-pressed="true"] .segmentCount {
+  color: var(--quiet);
+  font-weight: 400;
 }
 .listScroll {
   flex: 1;
@@ -135,49 +150,49 @@
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
-  padding: var(--space-4) var(--pad) var(--space-2);
+  padding: 20px var(--space-2) var(--space-1);
+  margin: 0 var(--space-2);
 }
 .cutNote {
   padding: var(--space-3) var(--pad);
 }
-/* An open PR is a card of its own, a step apart from the next: the title the one line in full voice (a touch heavier),
-   under it its state and figures, quiet. A PR that needs a look has a danger edge. Merged and closed ones are plain
-   rows between hairlines, a shade quieter, so the open ones lead. */
+/* A PR: rows, not cards (DESIGN.md). The title is the one line in full voice, a touch heavier; under it its state
+   in words (coloured only for failure) and its figures, quiet. A hairline between rows, room above each group.
+   Merged and closed rows step back a shade, so the open ones lead. */
 .row {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin: 0 var(--space-3) var(--space-1-5);
-  padding: 10px var(--space-3);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-lg);
-  background: var(--raised);
+  gap: 3px;
+  margin: 0 var(--space-2);
+  padding: 10px var(--space-2);
+  border-bottom: 1px solid var(--hairline);
   color: var(--text);
   text-decoration: none;
-  transition:
-    border-color var(--dur-fast) var(--ease-out),
-    background var(--dur-fast) var(--ease-out);
+  transition: background var(--dur-quick) var(--ease-snap);
 }
 .row:hover {
-  border-color: color-mix(in srgb, var(--text) 18%, transparent);
-}
-.row[data-look] {
-  box-shadow: inset 2px 0 0 var(--danger);
+  background: var(--hover);
 }
 .rowDone {
-  margin-bottom: 0;
-  padding: var(--space-2) var(--space-2);
-  border: none;
-  border-bottom: 1px solid var(--hairline);
-  border-radius: 0;
-  background: none;
   color: var(--quiet);
 }
 .rowDone .rowTitle {
   font-weight: 400;
 }
-.rowDone:hover {
-  background: var(--hover);
+/* A row's state word: plain, quiet; failure in the danger colour. No dot. */
+.stateWord {
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  white-space: nowrap;
+}
+.stateWord[data-tone="failed"] {
+  color: var(--danger);
+  font-weight: 500;
+}
+.stateWord[data-tone="needs-you"] {
+  color: var(--warning);
+  font-weight: 500;
 }
 .rowTop,
 .rowMeta {
@@ -676,7 +691,7 @@
 
 /* A PR just come in (ui/lib/arrival): it rises into place once. */
 .arrive {
-  animation: rowIn var(--dur-row-in) var(--ease-out) backwards;
+  animation: rowIn var(--dur-row-in) var(--ease-snap) backwards;
 }
 @keyframes rowIn {
   from {

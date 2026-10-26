@@ -1,229 +1,222 @@
-/* StateGlyph.tsx: one 12 px box per glyph; ::before is its core, ::after what moves around it. Only transform and
-   opacity animate; a loop rests a part of each cycle so a list of them reads calm, not busy. */
+/* StateGlyph.tsx: a 3×3 grid of square cells (DESIGN.md). A cell's opacity is its only moving part: shapes change by
+   a short stepped wipe from the top-left, and the two live states loop on steps(), never on a smooth curve. */
 .glyph {
-  --g: 12px;
-  --core: 7px;
-  position: relative;
+  --cell: 3px;
+  --gap: 1px;
   flex: none;
   display: inline-grid;
-  place-items: center;
-  width: var(--g);
-  height: var(--g);
+  grid-template-columns: repeat(3, var(--cell));
+  grid-auto-rows: var(--cell);
+  gap: var(--gap);
   color: var(--quiet);
 }
 .glyph[data-size="sm"] {
-  --g: 10px;
-  --core: 6px;
+  --cell: 2px;
 }
-.glyph::before,
-.glyph::after {
-  content: "";
-  grid-area: 1 / 1;
-  width: var(--core);
-  height: var(--core);
-  border-radius: 999px;
-}
-.glyph::before {
+.cell {
   background: currentColor;
-}
-.glyph::after {
   opacity: 0;
+  transition: opacity var(--dur-quick) var(--ease-snap);
 }
-
-/* Working: a halo eases out of the dot and fades; then a rest. */
+/* The wipe: each cell a beat after the one before it. */
+.cell:nth-child(1) {
+  --i: 0;
+  transition-delay: calc(var(--i) * 14ms);
+}
+.cell:nth-child(2) {
+  --i: 1;
+  transition-delay: calc(var(--i) * 14ms);
+}
+.cell:nth-child(3) {
+  --i: 2;
+  transition-delay: calc(var(--i) * 14ms);
+}
+.cell:nth-child(4) {
+  --i: 3;
+  transition-delay: calc(var(--i) * 14ms);
+}
+.cell:nth-child(5) {
+  --i: 4;
+  transition-delay: calc(var(--i) * 14ms);
+}
+.cell:nth-child(6) {
+  --i: 5;
+  transition-delay: calc(var(--i) * 14ms);
+}
+.cell:nth-child(7) {
+  --i: 6;
+  transition-delay: calc(var(--i) * 14ms);
+}
+.cell:nth-child(8) {
+  --i: 7;
+  transition-delay: calc(var(--i) * 14ms);
+}
+.cell:nth-child(9) {
+  --i: 8;
+  transition-delay: calc(var(--i) * 14ms);
+}
 .glyph[data-state="working"] {
   color: var(--success);
 }
-.glyph[data-state="working"]::after {
-  background: currentColor;
-  animation: breath var(--dur-breath) var(--ease-sine) infinite;
-  animation-delay: calc(var(--glyph-phase, 0) * -1 * var(--dur-breath));
-}
-@keyframes breath {
-  0% {
-    opacity: 0.5;
-    transform: scale(1);
-  }
-  65%,
-  100% {
-    opacity: 0;
-    transform: scale(2.4);
-  }
-}
-
-/* Thinking: no halo; the dot itself dims and gathers, inward, like a held breath. */
 .glyph[data-state="thinking"] {
   color: var(--success);
 }
-.glyph[data-state="thinking"]::before {
-  animation: glow var(--dur-glow) var(--ease-sine) infinite alternate;
-  animation-delay: calc(var(--glyph-phase, 0) * -2 * var(--dur-glow));
-}
-@keyframes glow {
-  from {
-    opacity: 1;
-    transform: scale(1);
-  }
-  to {
-    opacity: 0.35;
-    transform: scale(0.72);
-  }
-}
-
-/* Waiting on you: a ring knocks twice, quick, then waits. */
 .glyph[data-state="waiting"] {
   color: var(--warning);
 }
-.glyph[data-state="waiting"]::after {
-  box-shadow: inset 0 0 0 1.5px currentColor;
-  animation: knock var(--dur-knock) var(--ease-out) infinite;
-  animation-delay: calc(var(--glyph-phase, 0) * -1 * var(--dur-knock));
-}
-@keyframes knock {
-  0%,
-  25% {
-    opacity: 0.9;
-    transform: scale(1.15);
-  }
-  12%,
-  37% {
-    opacity: 0.55;
-    transform: scale(1.9);
-  }
-  20%,
-  45%,
-  100% {
-    opacity: 0;
-    transform: scale(2.3);
-  }
-}
-
-/* Queued: an open ring with one mote circling it, slowly: in line, not stuck. */
 .glyph[data-state="queued"] {
   color: var(--faint);
-  animation: orbit var(--dur-orbit) linear infinite;
-  animation-delay: calc(var(--glyph-phase, 0) * -1 * var(--dur-orbit));
 }
-.glyph[data-state="queued"]::before {
-  background: none;
-  box-shadow: inset 0 0 0 1.5px currentColor;
-}
-.glyph[data-state="queued"]::after {
-  width: 3px;
-  height: 3px;
-  opacity: 1;
-  background: var(--quiet);
-  transform: translateY(calc(var(--core) / -2 + 0.75px));
-}
-@keyframes orbit {
-  to {
-    transform: rotate(1turn);
-  }
-}
-
-/* Paused: two bars, still. Paused things never move. */
-.glyph[data-state="paused"]::before,
-.glyph[data-state="paused"]::after {
-  width: 2px;
-  height: var(--core);
-  border-radius: 1px;
-  opacity: 1;
-  background: currentColor;
-}
-.glyph[data-state="paused"]::before {
-  transform: translateX(-2px);
-}
-.glyph[data-state="paused"]::after {
-  transform: translateX(2px);
-}
-
-/* Done and failed: an icon, no dot. Done lands once; failed nudges once; then both are still. */
-.glyph[data-state="done"]::before,
-.glyph[data-state="failed"]::before,
-.glyph[data-state="failed"]::after {
-  display: none;
-}
-.icon {
-  grid-area: 1 / 1;
-  width: calc(var(--g) - 1px);
-  height: calc(var(--g) - 1px);
+.glyph[data-state="paused"] {
+  color: var(--quiet);
 }
 .glyph[data-state="done"] {
   color: var(--success);
 }
-.glyph[data-state="done"] .icon {
-  animation: land var(--dur-settle) var(--ease-out) backwards;
-}
-/* ...and as it lands, one ring leaves it, once: the whole of the celebration. */
-.glyph[data-state="done"]::after {
-  box-shadow: inset 0 0 0 1.5px currentColor;
-  animation: ripple calc(var(--dur-settle) * 1.5) var(--ease-out) 120ms backwards;
-}
-@keyframes ripple {
-  from {
-    opacity: 0.6;
-    transform: scale(1);
-  }
-  to {
-    opacity: 0;
-    transform: scale(2.6);
-  }
-}
-@keyframes land {
-  from {
-    opacity: 0;
-    transform: scale(0.4);
-  }
-}
 .glyph[data-state="failed"] {
   color: var(--danger);
 }
-.glyph[data-state="failed"] .icon {
-  animation: nudge var(--dur-settle) var(--ease-out);
+.glyph[data-state="waiting"] .cell:nth-child(1),
+.glyph[data-state="waiting"] .cell:nth-child(2),
+.glyph[data-state="waiting"] .cell:nth-child(3),
+.glyph[data-state="waiting"] .cell:nth-child(4),
+.glyph[data-state="waiting"] .cell:nth-child(5),
+.glyph[data-state="waiting"] .cell:nth-child(6),
+.glyph[data-state="waiting"] .cell:nth-child(7),
+.glyph[data-state="waiting"] .cell:nth-child(8),
+.glyph[data-state="waiting"] .cell:nth-child(9) {
+  opacity: 1;
 }
-@keyframes nudge {
-  20% {
-    transform: translateX(-2px);
-  }
-  50% {
-    transform: translateX(1.5px);
-  }
-  75% {
-    transform: translateX(-0.5px);
+.glyph[data-state="queued"] .cell:nth-child(1),
+.glyph[data-state="queued"] .cell:nth-child(2),
+.glyph[data-state="queued"] .cell:nth-child(3),
+.glyph[data-state="queued"] .cell:nth-child(4),
+.glyph[data-state="queued"] .cell:nth-child(6),
+.glyph[data-state="queued"] .cell:nth-child(7),
+.glyph[data-state="queued"] .cell:nth-child(8),
+.glyph[data-state="queued"] .cell:nth-child(9) {
+  opacity: 1;
+}
+.glyph[data-state="paused"] .cell:nth-child(1),
+.glyph[data-state="paused"] .cell:nth-child(4),
+.glyph[data-state="paused"] .cell:nth-child(7),
+.glyph[data-state="paused"] .cell:nth-child(3),
+.glyph[data-state="paused"] .cell:nth-child(6),
+.glyph[data-state="paused"] .cell:nth-child(9) {
+  opacity: 1;
+}
+.glyph[data-state="done"] .cell:nth-child(7),
+.glyph[data-state="done"] .cell:nth-child(8),
+.glyph[data-state="done"] .cell:nth-child(9) {
+  opacity: 1;
+}
+.glyph[data-state="failed"] .cell:nth-child(1),
+.glyph[data-state="failed"] .cell:nth-child(3),
+.glyph[data-state="failed"] .cell:nth-child(5),
+.glyph[data-state="failed"] .cell:nth-child(7),
+.glyph[data-state="failed"] .cell:nth-child(9) {
+  opacity: 1;
+}
+/* Done and failed, as they arrive: the shape wipes in once. */
+.glyph[data-state="done"] .cell,
+.glyph[data-state="failed"] .cell {
+  animation: cellIn var(--dur-quick) var(--ease-snap) backwards;
+  animation-delay: calc(var(--i) * 22ms);
+}
+@keyframes cellIn {
+  from {
+    opacity: 0;
   }
 }
-
-/* Shown as it already was (a merge from before you looked): no landing. */
-.settled .icon,
-.settled::after {
+.settled .cell {
   animation: none !important;
 }
 
-/* Nothing loops where no one looks. */
-:root[data-still] .glyph,
-:root[data-still] .glyph::before,
-:root[data-still] .glyph::after {
+/* Working: grain. Every cell sits dim and flicks full on its own stepped clock, out of step with the rest, the way a
+   dither crawls. No easing: a cell is on or off. */
+.glyph[data-state="working"] .cell {
+  opacity: 0.3;
+  animation: grain var(--dur-grain) steps(1, end) infinite;
+  animation-delay: calc(var(--i) * -173ms - var(--glyph-phase, 0) * var(--dur-grain));
+}
+.glyph[data-state="working"] .cell:nth-child(3n) {
+  animation-duration: calc(var(--dur-grain) * 1.3);
+}
+.glyph[data-state="working"] .cell:nth-child(2n) {
+  animation-duration: calc(var(--dur-grain) * 0.8);
+}
+@keyframes grain {
+  0% {
+    opacity: 1;
+  }
+  35% {
+    opacity: 0.3;
+  }
+  60% {
+    opacity: 0.65;
+  }
+}
+
+/* Thinking: one lit cell walks the ring, a step at a time, like a terminal spinner; the centre stays dark. */
+.glyph[data-state="thinking"] .cell {
+  opacity: 0.18;
+  animation: walk var(--dur-walk) steps(1, end) infinite;
+}
+.glyph[data-state="thinking"] .cell:nth-child(5) {
+  opacity: 0;
+  animation: none;
+}
+.glyph[data-state="thinking"] .cell:nth-child(1) {
+  animation-delay: calc(0 * var(--dur-walk) / 8 - var(--glyph-phase, 0) * var(--dur-walk));
+}
+.glyph[data-state="thinking"] .cell:nth-child(2) {
+  animation-delay: calc(1 * var(--dur-walk) / 8 - var(--glyph-phase, 0) * var(--dur-walk));
+}
+.glyph[data-state="thinking"] .cell:nth-child(3) {
+  animation-delay: calc(2 * var(--dur-walk) / 8 - var(--glyph-phase, 0) * var(--dur-walk));
+}
+.glyph[data-state="thinking"] .cell:nth-child(6) {
+  animation-delay: calc(3 * var(--dur-walk) / 8 - var(--glyph-phase, 0) * var(--dur-walk));
+}
+.glyph[data-state="thinking"] .cell:nth-child(9) {
+  animation-delay: calc(4 * var(--dur-walk) / 8 - var(--glyph-phase, 0) * var(--dur-walk));
+}
+.glyph[data-state="thinking"] .cell:nth-child(8) {
+  animation-delay: calc(5 * var(--dur-walk) / 8 - var(--glyph-phase, 0) * var(--dur-walk));
+}
+.glyph[data-state="thinking"] .cell:nth-child(7) {
+  animation-delay: calc(6 * var(--dur-walk) / 8 - var(--glyph-phase, 0) * var(--dur-walk));
+}
+.glyph[data-state="thinking"] .cell:nth-child(4) {
+  animation-delay: calc(7 * var(--dur-walk) / 8 - var(--glyph-phase, 0) * var(--dur-walk));
+}
+@keyframes walk {
+  0% {
+    opacity: 1;
+  }
+  12.5% {
+    opacity: 0.45;
+  }
+  25% {
+    opacity: 0.18;
+  }
+}
+
+/* Nothing loops where no one can see it. */
+:root[data-still] .glyph .cell {
   animation-play-state: paused;
 }
 
-/* Reduced motion: each state keeps a still form that is its own shape. */
+/* Reduced motion: still shapes of their own. Working is a diamond on a dim field, thinking the ring's top row lit. */
 @media (prefers-reduced-motion: reduce) {
-  .glyph,
-  .glyph::before,
-  .glyph::after,
-  .glyph .icon {
+  .glyph .cell {
     animation: none !important;
+    transition: none;
   }
-  .glyph[data-state="working"]::after {
-    opacity: 0.22;
-    transform: scale(1.8);
+  .glyph[data-state="working"] .cell:nth-child(2n) {
+    opacity: 1;
   }
-  .glyph[data-state="thinking"]::before {
-    opacity: 0.55;
-    transform: scale(0.8);
-  }
-  .glyph[data-state="waiting"]::after {
-    opacity: 0.6;
-    transform: scale(1.7);
+  .glyph[data-state="thinking"] .cell:nth-child(-n + 3) {
+    opacity: 1;
   }
 }
