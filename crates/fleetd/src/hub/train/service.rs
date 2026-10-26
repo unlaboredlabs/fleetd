@@ -16,7 +16,8 @@ use super::contract::{
     parse_pr_url, state_str,
 };
 use super::github::{
-    BranchUpdate, CheckRun, GhError, GhRunner, MergeOutcome, Pull, TRAIN_CONTEXT, TrainGitHub,
+    BranchUpdate, CheckRun, CommitStatus, GhError, GhRunner, MergeOutcome, Pull, TRAIN_CONTEXT,
+    TrainGitHub,
 };
 use super::host::{BoxFut, TrainHost};
 use super::main_ci::{GithubSync, MainCi, ci_state};
@@ -170,6 +171,57 @@ pub(super) fn checks(runs: &[CheckRun]) -> Checks {
     if !red.is_empty() {
         Checks::Red(red)
     } else if running {
+        Checks::Pending
+    } else {
+        Checks::Green
+    }
+}
+
+/// Whether GitHub refused a merge for required checks that haven't reported on the head yet, or still run, rather than
+/// for red ones or anything else: "3 of 3 required status checks are expected.", "Required status check \"build\" is
+/// in progress.".
+pub(super) fn awaits_checks(message: &str) -> bool {
+    let m = message.to_lowercase();
+    m.contains("status check")
+        && ["expected", "in progress", "pending", "queued"]
+            .iter()
+            .any(|w| m.contains(w))
+        && !["fail", "error"].iter().any(|w| m.contains(w))
+}
+
+/// The checks `required` names that `runs` and `statuses` don't show green on a head, but the train's own status,
+/// posted only once CI is green: Pending while one has no run or status yet, or its status is pending; Red with each
+/// failed status. GitHub refuses a merge while a required check is expected, however green the other checks are: on
+/// #522 the train merged 40 s after its rebase, before the new head's CI had started its required checks.
+pub(super) fn required_checks(
+    runs: &[CheckRun],
+    statuses: &[CommitStatus],
+    required: &[String],
+) -> Checks {
+    let mut red = Vec::new();
+    let mut waiting = false;
+    for name in required.iter().filter(|n| *n != TRAIN_CONTEXT) {
+        if runs.iter().any(|r| &r.name == name) {
+            continue;
+        }
+        match statuses.iter().find(|s| &s.context == name) {
+            Some(s) if s.state == "success" => {}
+            Some(s) if s.state == "failure" || s.state == "error" => red.push(CheckRun {
+                id: 0.0,
+                name: name.clone(),
+                status: "completed".into(),
+                conclusion: Some(s.state.clone()),
+                html_url: s.target_url.clone(),
+                started_at: None,
+                completed_at: None,
+                head_sha: None,
+            }),
+            _ => waiting = true,
+        }
+    }
+    if !red.is_empty() {
+        Checks::Red(red)
+    } else if waiting {
         Checks::Pending
     } else {
         Checks::Green
@@ -985,22 +1037,34 @@ impl Train {
                         .await
                         .ok()
                         .map(|c| c.required_checks);
-                    let cancelled = cancelled_required(&all, required.as_deref());
-                    if cancelled.is_empty() {
-                        self.check_spans(change, sha, &runs);
-                        return CiOutcome::Green;
-                    }
                     match self
-                        .rerun_cancelled(change, repo, &cancelled, &mut reruns)
+                        .required_reported(repo, sha, &runs, required.as_deref())
                         .await
                     {
-                        None => {
+                        Checks::Red(red) => {
                             self.check_spans(change, sha, &runs);
-                            return CiOutcome::Red(cancelled);
+                            return CiOutcome::Red(red);
                         }
-                        // The re-run's time is its own.
-                        Some(true) => start = self.now_ms(),
-                        Some(false) => {}
+                        Checks::Green => {
+                            let cancelled = cancelled_required(&all, required.as_deref());
+                            if cancelled.is_empty() {
+                                self.check_spans(change, sha, &runs);
+                                return CiOutcome::Green;
+                            }
+                            match self
+                                .rerun_cancelled(change, repo, &cancelled, &mut reruns)
+                                .await
+                            {
+                                None => {
+                                    self.check_spans(change, sha, &runs);
+                                    return CiOutcome::Red(cancelled);
+                                }
+                                // The re-run's time is its own.
+                                Some(true) => start = self.now_ms(),
+                                Some(false) => {}
+                            }
+                        }
+                        Checks::None | Checks::Pending => {}
                     }
                 }
                 Checks::None | Checks::Pending => {}
@@ -1015,6 +1079,32 @@ impl Train {
                 self.main_ci_pass(repo, &train.project_ref).await;
             }
             self.clock.sleep(self.busy_wait(start, CI_FIRST_WAIT)).await;
+        }
+    }
+
+    /// Whether the checks `required` names have all reported green on `sha`, whose check runs `runs` read green
+    /// (`required_checks`). Its commit statuses are read only for a required check with no run. `required` None when
+    /// the base's rules can't be read: then the runs alone count.
+    async fn required_reported(
+        &self,
+        repo: &str,
+        sha: &str,
+        runs: &[CheckRun],
+        required: Option<&[String]>,
+    ) -> Checks {
+        let required = required.unwrap_or_default();
+        if required
+            .iter()
+            .all(|n| n == TRAIN_CONTEXT || runs.iter().any(|r| &r.name == n))
+        {
+            return Checks::Green;
+        }
+        match self.github.statuses(repo, sha).await {
+            Ok(statuses) => required_checks(runs, &statuses, required),
+            Err(e) => {
+                tracing::warn!(repo, sha, error = %e.message, "train: commit statuses not read");
+                Checks::Pending
+            }
         }
     }
 
@@ -1387,21 +1477,69 @@ impl Train {
         // The squash message GitHub would write by the repo's settings, with the Change's trailer added.
         let (title, body) = self.github.squash_message(repo, &rebased).await?;
         let body = super::batch::with_trailers(&body, [&merging]);
-        let (status, message) = match self
-            .github
-            .merge(
-                repo,
-                change.pr_number.get(),
-                &head_sha,
-                Some((&title, &body)),
-            )
-            .await?
-        {
-            MergeOutcome::Merged { sha } => {
-                self.finish_merged(&merging, Some(&sha), None).await;
+        let merging_since = self.now_ms();
+        let (status, message) = loop {
+            let (status, message) = match self
+                .github
+                .merge(
+                    repo,
+                    change.pr_number.get(),
+                    &head_sha,
+                    Some((&title, &body)),
+                )
+                .await?
+            {
+                MergeOutcome::Merged { sha } => {
+                    self.finish_merged(&merging, Some(&sha), None).await;
+                    return Ok(());
+                }
+                MergeOutcome::Refused { status, message } => (status, message),
+            };
+            let waited = self.now_ms() - merging_since;
+            if !awaits_checks(&message) || waited >= self.options.ci_timeout.as_millis() as i64 {
+                break (status, message);
+            }
+            // GitHub still waits on a required check for this head: wait for it too and merge again, with no try
+            // spent and no push asked of the author.
+            tracing::info!(change_id = %change.change_id, message, "train: merge refused until checks report");
+            let why = format!(
+                "GitHub refused the merge (HTTP {status}): {message}; the train waits for those checks"
+            );
+            let back = |mut c: Change| {
+                c.state = ChangeState::Ci;
+                c.last_error = Some(error_text(&why));
+                c
+            };
+            let Some(in_ci) = self.update(&change.change_id, Some(&[ChangeState::Merging]), back)
+            else {
+                return Ok(());
+            };
+            self.clock
+                .sleep(self.busy_wait(merging_since, CI_FIRST_WAIT))
+                .await;
+            match self
+                .wait_ci(&in_ci, repo, &head_sha, base, None, noted)
+                .await
+            {
+                CiOutcome::Green => {}
+                CiOutcome::Red(failing) => {
+                    self.ci_failed(&in_ci, &failing, None).await;
+                    return Ok(());
+                }
+                CiOutcome::Timeout(stall) => {
+                    self.ci_failed(&in_ci, &[], Some(stall)).await;
+                    return Ok(());
+                }
+            }
+            if self
+                .update(&change.change_id, Some(&[ChangeState::Ci]), |mut c| {
+                    c.state = ChangeState::Merging;
+                    c
+                })
+                .is_none()
+            {
                 return Ok(());
             }
-            MergeOutcome::Refused { status, message } => (status, message),
         };
 
         let refusals = {
