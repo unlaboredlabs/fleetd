@@ -135,6 +135,13 @@ pub fn apply(
     if total > ENV_TOTAL_MAX_BYTES {
         return Err(env_total_over(total));
     }
+    // An order's agents get its variables on top of these.
+    let after: Vars = env
+        .vars
+        .iter()
+        .map(|(name, entry)| (name.clone(), entry.value.clone()))
+        .collect();
+    super::order_env::largest_with(home, project_id, &after)?;
     let dir = home.join(DIR);
     super::config::mkdir_private(&dir).map_err(|e| format!("cannot make {DIR}: {}", io_why(&e)))?;
     let path = file(home, project_id);
@@ -194,8 +201,9 @@ pub fn secrets(home: &Path, project_id: &str) -> Vec<(String, String)> {
         .unwrap_or_default()
 }
 
-/// Deletes the project's file, when its project goes.
+/// Deletes the project's file and its orders' variables, when its project goes.
 pub fn forget(home: &Path, project_id: &str) {
+    super::order_env::forget_project(home, project_id);
     if let Err(e) = std::fs::remove_file(file(home, project_id))
         && e.kind() != std::io::ErrorKind::NotFound
     {

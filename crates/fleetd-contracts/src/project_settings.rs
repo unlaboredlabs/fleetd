@@ -1,5 +1,6 @@
 //! A project's own settings, as Settings › Projects in the desktop app shows them: its name, whether finished
-//! worktrees are kept, its agents' environment variables, and the worktrees its node holds.
+//! worktrees are kept, its agents' environment variables, the setup commands run in each new worktree, and the
+//! worktrees its node holds.
 //!
 //! A project's variables live on its machine's node, which adds them to every claude it starts for the project. The
 //! hub keeps each variable's name and kind, a plain variable's value, and a secret's fingerprint: a secret's value is
@@ -115,6 +116,74 @@ pub struct EnvSecretSaved {
     pub fingerprint: SecretFingerprint,
 }
 
+/// Setup commands one project may have.
+pub const SETUP_COMMANDS_MAX: usize = 20;
+/// Files one project's setup may name as its inputs.
+pub const SETUP_INPUTS_MAX: usize = 20;
+/// Each setup command's time limit when the project sets none: 10 minutes.
+pub const SETUP_TIMEOUT_DEFAULT_SEC: i64 = 600;
+/// The longest a project may give each setup command: an hour.
+pub const SETUP_TIMEOUT_MAX_SEC: i64 = 3600;
+
+/// One setup command: a shell line (`sh -c`), at most 2000 characters.
+pub type SetupCommand = crate::prim::Line<1, 2000>;
+
+brand!(
+    /// A file setup reads, relative to the worktree (`pnpm-lock.yaml`, `crates/Cargo.lock`): no leading `/`, no
+    /// empty, `.` or `..` segment, at most 500 characters.
+    SetupInput,
+    name = "SetupInput",
+    check = |s: &str| {
+        s.len() <= 500
+            && !s.starts_with('/')
+            && !s.contains(['\0', '\n', '\r'])
+            && s.split('/').all(|seg| !seg.is_empty() && seg != "." && seg != "..")
+    },
+    expected = "a path relative to the worktree, with no empty, . or .. segment"
+);
+
+/// What runs in each new worktree of a project before its agent starts: install dependencies, generate code.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeSetup {
+    /// In order, each with `sh -c` in the worktree and the project's variables (the order's too); the first that
+    /// fails or passes its time limit stops the rest.
+    #[serde(default)]
+    pub commands: crate::prim::List<SetupCommand, 0, SETUP_COMMANDS_MAX>,
+    /// Each command's time limit, in seconds.
+    #[serde(default = "setup_timeout_default")]
+    pub timeout_sec: crate::prim::Int<1, SETUP_TIMEOUT_MAX_SEC>,
+    /// True: a failed setup still starts the agent, which is told what failed. False (the default): the start fails,
+    /// naming the command and the end of its output.
+    #[serde(default)]
+    pub run_anyway: bool,
+    /// Files whose contents decide what setup makes, such as lockfiles. A worktree an earlier agent set up with the
+    /// same commands, while these held the same contents, is not set up again. None listed: setup always runs.
+    #[serde(default)]
+    pub inputs: crate::prim::UniqueList<SetupInput, 0, SETUP_INPUTS_MAX>,
+}
+
+fn setup_timeout_default() -> crate::prim::Int<1, SETUP_TIMEOUT_MAX_SEC> {
+    crate::prim::Int::unchecked(SETUP_TIMEOUT_DEFAULT_SEC)
+}
+
+impl Default for WorktreeSetup {
+    fn default() -> Self {
+        Self {
+            commands: Default::default(),
+            timeout_sec: setup_timeout_default(),
+            run_anyway: false,
+            inputs: Default::default(),
+        }
+    }
+}
+
+impl WorktreeSetup {
+    pub fn is_empty(&self) -> bool {
+        self.commands.is_empty()
+    }
+}
+
 /// One fleetd worktree of the project on its node, under `<node home>/worktrees/<project>/`.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -171,6 +240,24 @@ mod tests {
             "A project's variables take at most 512 KiB together; these would take 600 KiB."
         );
         assert!(EnvValue::new("").is_ok());
+    }
+
+    #[test]
+    fn setup_takes_relative_inputs_and_defaults_its_limit() {
+        let setup: WorktreeSetup =
+            serde_json::from_str(r#"{"commands":["pnpm install"]}"#).unwrap();
+        assert_eq!(setup.timeout_sec.get(), SETUP_TIMEOUT_DEFAULT_SEC);
+        assert!(!setup.run_anyway);
+        assert!(!setup.is_empty());
+        assert!(WorktreeSetup::default().is_empty());
+        for good in ["pnpm-lock.yaml", "app/desktop/pnpm-lock.yaml", ".nvmrc"] {
+            assert!(SetupInput::new(good).is_ok(), "{good}");
+        }
+        for bad in ["", "/etc/passwd", "../x", "a//b", "a/./b", "a/"] {
+            assert!(SetupInput::new(bad).is_err(), "{bad}");
+        }
+        assert!(serde_json::from_str::<WorktreeSetup>(r#"{"commands":["a\nb"]}"#).is_err());
+        assert!(serde_json::from_str::<WorktreeSetup>(r#"{"timeoutSec":0}"#).is_err());
     }
 
     #[test]

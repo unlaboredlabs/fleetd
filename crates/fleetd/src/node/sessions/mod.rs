@@ -6,6 +6,7 @@
 //! on start, runs that were active are closed as interrupted (its lead decides whether to continue one) and the next
 //! `send` resumes the claude session in the same cwd and config dir. Idle processes are reaped and respawned on
 //! demand. Permission prompts are answered from policy or held as a pending approval for the hub.
+mod env;
 pub mod files;
 mod health;
 mod proc;
@@ -461,6 +462,11 @@ struct Live {
     /// The run the node interrupted because claude said nothing after the machine woke: it ends as a network
     /// failure, so the node's retry resumes it.
     slept: Option<String>,
+    /// The digest of the order's variables the process was started with: when it changes, the next turn starts a
+    /// new process with them.
+    order_digest: Option<String>,
+    /// The secrets the process was started with, for masking what it reports and the fleetd calls it makes.
+    spawned: Arc<super::mask::Secrets>,
 }
 
 #[derive(Default)]
@@ -489,6 +495,9 @@ struct State {
     steers: HashMap<String, steers::SteerTrack>,
     send_now_waiters: HashMap<String, oneshot::Sender<SendNow>>,
     withdraw_waiters: HashMap<String, oneshot::Sender<bool>>,
+    /// Sessions whose worktree setup still runs: a send waits for it to end, `Some(true)` once the brief went to
+    /// claude, `Some(false)` when the start failed.
+    setting_up: HashMap<String, watch::Receiver<Option<bool>>>,
 }
 
 impl State {
@@ -804,6 +813,18 @@ impl SessionService {
                 .await
                 .map_err(invalid)?;
                 Ok(SessionOutput::ProjectEnv { secrets })
+            }
+            SessionCall::OrderEnvDrop {
+                project_id,
+                order_id,
+            } => {
+                let home = self.inner.config.home.clone();
+                blocking(move || {
+                    super::order_env::forget(&home, project_id.as_str(), order_id.as_str())
+                })
+                .await
+                .map_err(invalid)?;
+                Ok(SessionOutput::Done)
             }
             SessionCall::ProjectWorktrees { project_id } => {
                 let root = self.project_root(&project_id)?;
@@ -1494,6 +1515,7 @@ impl SessionService {
                 allowed_tools: launch.allowed_tools.clone(),
                 disallowed_tools: launch.disallowed_tools.clone(),
                 role: launch.role,
+                order_id: launch.order_id.as_ref().map(|o| o.to_string()),
             },
         };
         self.store().commit(&row, &[], false)?;
@@ -1517,8 +1539,21 @@ impl SessionService {
             }
             _ => prompt,
         };
-        self.begin_run(&id, &launch.run_id, &prompt, SendMode::Plain, None)
-            .await?;
+        let prompt = self.with_env_note(&row, prompt);
+        // A new worktree is set up first, while the run shows as starting; the brief goes to claude once it is done.
+        match launch
+            .setup
+            .filter(|s| !s.is_empty() && row.local.base_ref.is_some())
+        {
+            Some(setup) => {
+                self.begin_after_setup(&id, &launch.run_id, prompt, *setup)
+                    .await?
+            }
+            None => {
+                self.begin_run(&id, &launch.run_id, &prompt, SendMode::Plain, None)
+                    .await?;
+            }
+        }
         Ok(SessionOutput::Launched {
             summary: self.session(&id)?.summary,
             base: reported,
@@ -1537,6 +1572,41 @@ impl SessionService {
     ) -> Result<bool, SessionError> {
         let workspace = self.workspace_lock(id);
         let _workspace = workspace.lock().await;
+        // A new turn of a session whose order's variables changed starts a new claude, which has them.
+        self.renew_env(id).await;
+        let queued = match self.record_run(id, run_id, text, steer)? {
+            Ok(queued) => queued,
+            Err(was_queued) => return Ok(was_queued),
+        };
+        // The worktree is still being set up: the message goes once that has ended and the brief has gone.
+        let setting_up = self.st().setting_up.get(id).cloned();
+        if let Some(mut done) = setting_up {
+            let (service, id, run_id, text) =
+                (self.clone(), id.to_owned(), run_id.clone(), text.to_owned());
+            tokio::spawn(async move {
+                let started = done.wait_for(Option::is_some).await.ok().and_then(|d| *d);
+                if started == Some(true) {
+                    let _ = service.send_run(&id, &run_id, &text, mode).await;
+                } else {
+                    let why = "the session did not start: its worktree setup failed";
+                    service.fail_run(&id, &run_id, FailureClass::Other, why);
+                    service.steer_failed(&run_id, why);
+                }
+            });
+            return Ok(queued);
+        }
+        self.send_run(id, run_id, text, mode).await?;
+        Ok(queued)
+    }
+
+    /// Records a run and its user message; `Err(queued)` when the run was recorded before (a retry).
+    fn record_run(
+        &self,
+        id: &str,
+        run_id: &NonEmpty,
+        text: &str,
+        steer: Option<SteerTag>,
+    ) -> Result<Result<bool, bool>, SessionError> {
         let recorded = self.update(id, |c| {
             if let Some(run) = c.runs.iter().find(|r| r.id == *run_id) {
                 return Err(run.status == RunStatus::Queued);
@@ -1571,7 +1641,7 @@ impl SessionService {
         })?;
         let queued = match recorded {
             Ok(queued) => queued,
-            Err(was_queued) => return Ok(was_queued),
+            Err(was_queued) => return Ok(Err(was_queued)),
         };
         {
             let mut st = self.st();
@@ -1585,6 +1655,17 @@ impl SessionService {
             }
             self.track_steer(id, run_id, tag.id, queued);
         }
+        Ok(Ok(queued))
+    }
+
+    /// Hands a recorded run's message to the session's process, spawning or resuming it; a failure fails the run.
+    async fn send_run(
+        &self,
+        id: &str,
+        run_id: &NonEmpty,
+        text: &str,
+        mode: SendMode,
+    ) -> Result<(), SessionError> {
         let command = SessionCommand::Send {
             run_id: run_id.to_string(),
             text: text.to_owned(),
@@ -1595,7 +1676,7 @@ impl SessionService {
             self.steer_failed(run_id, e.message.as_str());
             return Err(e);
         }
-        Ok(queued)
+        Ok(())
     }
 
     fn fail_run(&self, id: &str, run_id: &str, class: FailureClass, message: &str) {
@@ -1753,12 +1834,13 @@ impl SessionService {
         // a later message alone (a recovery note) would leave it with no idea of its task. Refused, so the hub restarts
         // it with its brief and a handoff. Only its first message itself may start over.
         let must_resume = resume && !opening && row.local.role == SessionRole::Worker;
-        let (spec, secrets) = self.spec(&row, resume, must_resume).map_err(|e| {
+        let (spec, secrets, order_digest) = self.spec(&row, resume, must_resume).map_err(|e| {
             error(
                 SessionErrorCode::Internal,
                 format!("cannot prepare the session's files: {e}"),
             )
         })?;
+        let secrets = Arc::new(secrets);
         let handle = self.inner.runner.spawn(spec).map_err(runner_error)?;
         row.local.started = true;
         row.local.pid = Some(handle.pid);
@@ -1784,6 +1866,8 @@ impl SessionService {
                     aliases: HashMap::new(),
                     exited: exited_rx,
                     slept: None,
+                    order_digest,
+                    spawned: secrets.clone(),
                 },
             );
             generation
@@ -1873,7 +1957,7 @@ impl SessionService {
         row: &SessionRow,
         resume: bool,
         must_resume: bool,
-    ) -> std::io::Result<(SessionSpec, super::mask::Secrets)> {
+    ) -> std::io::Result<(SessionSpec, super::mask::Secrets, Option<String>)> {
         let config = &self.inner.config;
         let id = row.summary.session_id.as_str();
         let dir = config.home.join("sessions").join(id);
@@ -1897,10 +1981,14 @@ impl SessionService {
         let mut env = config.runner_env();
         // The project's own variables, re-read per spawn. What the node already gives claude (its login, gateway,
         // claude.env) keeps the node's value, and fleetd's values below still win.
-        let (mut project_env, secrets) =
+        let (mut project_env, mut secrets) =
             super::project_env::for_spawn(&config.home, row.summary.project_id.as_str());
-        let mut secrets = secrets;
         secrets.extend(session_mcp.secrets.iter().cloned());
+        // A task's order's own variables on top, each in place of the project's of the same name.
+        let (order_env, order_digest) = self.order_vars(row);
+        project_env.retain(|(p, _)| !order_env.iter().any(|(o, _)| o == p));
+        secrets.extend(order_env.iter().cloned());
+        project_env.extend(order_env);
         let secrets = super::mask::Secrets(secrets);
         project_env.retain(|(p, _)| !env.iter().any(|(k, _)| k == p));
         env.extend(project_env);
@@ -1976,7 +2064,7 @@ impl SessionService {
             env,
             transcript: Some(transcript),
         };
-        Ok((spec, secrets))
+        Ok((spec, secrets, order_digest))
     }
 
     /// Applies one process's events in order until it exits. Text deltas go only to followers, at most one frame
@@ -1987,7 +2075,7 @@ impl SessionService {
         generation: u64,
         mut events: mpsc::Receiver<RunnerEvent>,
         exited: watch::Sender<bool>,
-        spawned: super::mask::Secrets,
+        spawned: Arc<super::mask::Secrets>,
     ) {
         let mut delta: Option<(String, String)> = None;
         let mut flushed: Option<Instant> = None;
@@ -2240,18 +2328,11 @@ impl SessionService {
     }
 
     /// For masking what the session reports: the secrets its process was `spawned` with (a rotated or removed one is
-    /// still in its environment) and its project's secrets now.
+    /// still in its environment) and its project's and order's secrets now.
     fn masker(&self, id: &str, spawned: &super::mask::Secrets) -> super::mask::Masker {
         let home = &self.inner.config.home;
         let now = match self.store().session(id) {
-            Ok(Some(row)) => {
-                let mut now = super::project_env::secrets(home, row.summary.project_id.as_str());
-                now.extend(super::mcp_servers::secrets(
-                    home,
-                    &home.join("sessions").join(id),
-                ));
-                super::mask::Secrets(now)
-            }
+            Ok(Some(row)) => self.secrets_now(&row),
             _ => super::mask::Secrets::default(),
         };
         let all: Vec<(String, String)> = spawned.0.iter().chain(&now.0).cloned().collect();

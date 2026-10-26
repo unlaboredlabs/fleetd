@@ -120,7 +120,8 @@ static TOOLS: &[Tool] = &[
         "request_secret",
         "Ask the human for a secret (a key, a token, a password). The app shows a masked field in the chat; the value \
          is sealed to the sink's machine and written there, and never enters a transcript. Only its fingerprint \
-         arrives, in a later wake.",
+         arrives, in a later wake. For a variable an agent asked for, use sink order:<machine>:<its order>: only \
+         that order's agents get it, at their next turn, until the order closes.",
         inline_schema::<RequestSecretCall>,
     )
     .needs("The human enters the value in chat; you see only its fingerprint."),
@@ -261,7 +262,8 @@ static TOOLS: &[Tool] = &[
         worker: true,
         lead: false,
         description: "Ask your lead a question. Carry on with what you can; the answer arrives as a message. If you \
-                      can't go on without it, end your turn: the answer continues this thread.",
+                      can't go on without it, end your turn: the answer continues this thread. For a variable that \
+                      is not set, name it and say why; never put a secret's value in the question.",
         schema: inline_schema::<AskLeadCall>,
         human: None,
     },

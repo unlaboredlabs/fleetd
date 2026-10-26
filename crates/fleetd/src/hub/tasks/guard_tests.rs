@@ -353,3 +353,42 @@ async fn a_reader_of_a_repo_with_no_commit_yet_starts_in_the_project_root() {
         launch.prompt.as_str()
     );
 }
+
+/// A task's launch names its order, whose variables its session gets, and carries the project's setup commands to a
+/// node that runs them; a node too old for setup gets none.
+#[tokio::test]
+async fn a_launch_carries_its_order_and_the_projects_setup() {
+    use fleetd_contracts::node_link::CAP_WORKTREE_SETUP;
+    let (hub, _home) = hub();
+    let mut calls = serve(&hub, Node::link(&hub).await);
+    let project = fleetd_contracts::ids::ProjectRef {
+        machine_id: lab_a(),
+        project_id: fleetd_contracts::ids::ProjectId::unchecked("p1"),
+    };
+    let setup: fleetd_contracts::project_settings::WorktreeSetup = serde_json::from_value(
+        json!({ "commands": ["pnpm install --frozen-lockfile"], "inputs": ["pnpm-lock.yaml"] }),
+    )
+    .unwrap();
+    hub.db
+        .project_settings()
+        .set_setup(&project, &setup)
+        .unwrap();
+    insert(
+        &hub,
+        json!({ "taskId": "T1", "title": "old node", "state": "queued", "kind": "write" }),
+    );
+    start_queued(&hub.tasks).await;
+    let old = next_launch(&mut calls).await;
+    assert_eq!(old.order_id.as_ref().map(|o| o.as_str()), Some("W1"));
+    assert_eq!(old.setup, None);
+
+    hub.link.set_capabilities(&lab_a(), &[CAP_WORKTREE_SETUP]);
+    insert(
+        &hub,
+        json!({ "taskId": "T2", "title": "new node", "state": "queued", "kind": "write" }),
+    );
+    start_queued(&hub.tasks).await;
+    let new = next_launch(&mut calls).await;
+    assert_eq!(new.order_id.as_ref().map(|o| o.as_str()), Some("W1"));
+    assert_eq!(new.setup.as_deref(), Some(&setup));
+}

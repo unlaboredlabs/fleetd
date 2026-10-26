@@ -1,6 +1,7 @@
 //! Requests (`Q<n>`): what a lead needs a person for that a chat can't carry safely, shown inline in the project's chat.
 //! - secret (`request_secret`): the desktop app seals the value to the sink machine's box key; the hub relays the
-//!   ciphertext to that node without storing it and keeps only the fingerprint the node reports.
+//!   ciphertext to that node without storing it and keeps only the fingerprint the node reports. An `order:` sink
+//!   makes it one variable of an open order's agents on the project's machine, until the order closes.
 //! - approval of a command (`gated_run`): the exact command is stored; once a person approves it, the project's node
 //!   runs those bytes and the exit code and output tail go to the lead.
 //!
@@ -53,6 +54,8 @@ const EVIDENCE_MAX: usize = 2000;
 const RUNNING: &str = "running on";
 static SINK: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(env|file):([a-z0-9-]{1,32}):(/.*)$").unwrap());
+static ORDER_SINK: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^order:([a-z0-9-]{1,32}):(W[1-9][0-9]{0,9})$").unwrap());
 static PLAIN_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[\w./:=@%+-]+$").unwrap());
 pub const NOT_RUN_AFTER_RESTART: &str =
     "not run: the hub restarted before it ran; approve it again to run it";
@@ -67,12 +70,19 @@ pub struct Caller<'a> {
     pub allows_operate: &'a (dyn Fn(&str) -> bool + Sync),
 }
 
-/// The sink's machine.
+/// The sink's machine, and an `order:` sink's order.
 pub struct ParsedSink {
     pub machine_id: String,
+    pub order: Option<String>,
 }
 
 pub fn parse_secret_sink(sink: &str) -> Option<ParsedSink> {
+    if let Some(c) = ORDER_SINK.captures(sink) {
+        return Some(ParsedSink {
+            machine_id: c[1].to_string(),
+            order: Some(c[2].to_string()),
+        });
+    }
     let c = SINK.captures(sink)?;
     if sink.chars().count() > 1000 {
         return None;
@@ -89,6 +99,7 @@ pub fn parse_secret_sink(sink: &str) -> Option<ParsedSink> {
     }
     Some(ParsedSink {
         machine_id: c[2].to_string(),
+        order: None,
     })
 }
 
@@ -168,6 +179,22 @@ pub trait ApprovalHub: Send + Sync {
     fn workspace_root(&self, project: &ProjectRef) -> BoxFut<'_, Option<String>>;
     /// Wakes the project's lead with a request's outcome (an event line).
     fn wake_request(&self, request: &HumanRequest) -> BoxFut<'_, ()>;
+    /// Why the project's order can't take a variable now (no such order, another project's, closed, a node too old
+    /// for it); `None` when it can.
+    fn order_refusal(&self, project: &ProjectRef, order_id: &str) -> BoxFut<'_, Option<String>>;
+    /// Records a variable the node saved for an order: its name, fingerprint and size.
+    fn order_env_saved(&self, saved: OrderEnvSaved) -> BoxFut<'_, ()>;
+}
+
+/// A variable a node saved for one order's agents.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OrderEnvSaved {
+    pub project: ProjectRef,
+    pub order_id: String,
+    pub name: String,
+    pub fingerprint: String,
+    pub bytes: usize,
+    pub request_id: String,
 }
 
 pub struct ApprovalsDeps {
@@ -457,10 +484,16 @@ impl Approvals {
                 Some("Name a machine from fleetd_status in the sink."),
             ));
         }
+        let mut workstream_id = call.workstream_id.clone();
+        if let Some(order) = &sink.order {
+            self.order_sink(project, order, &sink.machine_id, &call)
+                .await?;
+            workstream_id = serde_json::from_value(json!(order)).ok();
+        }
         let now = system_ms(self.deps.clock.now());
         self.create(NewRequest {
             project_ref: contract_project(project),
-            workstream_id: call.workstream_id.clone(),
+            workstream_id,
             kind: RequestKind::Secret,
             text: call.text.to_string(),
             secret: Some(SecretRequest {
@@ -475,6 +508,65 @@ impl Approvals {
             at_ms: now,
         })
         .await
+    }
+
+    /// An `order:` sink's checks: the project's machine, an open order of the project, and a variable name that is
+    /// not fleetd's or claude's own.
+    async fn order_sink(
+        &self,
+        project: &ProjectRef,
+        order: &str,
+        machine_id: &str,
+        call: &RequestSecretCall,
+    ) -> Result<(), ApprovalRefused> {
+        if machine_id != project.machine_id {
+            return Err(refuse(
+                "invalid",
+                format!(
+                    "An order's variable goes to the machine its agents run on, {}, not {machine_id}.",
+                    project.machine_id
+                ),
+                Some(&format!("Use order:{}:{order}.", project.machine_id)),
+            ));
+        }
+        if call
+            .workstream_id
+            .as_ref()
+            .is_some_and(|w| w.as_str() != order)
+        {
+            return Err(refuse(
+                "invalid",
+                format!("The sink names {order} but workstreamId is another order."),
+                Some("Leave workstreamId out, or name the same order."),
+            ));
+        }
+        if let Some(why) = self.deps.hub.order_refusal(project, order).await {
+            return Err(refuse(
+                "invalid",
+                why,
+                Some("Name an open order of this project in the sink."),
+            ));
+        }
+        let name = call
+            .env_name
+            .as_ref()
+            .map(|n| n.to_string())
+            .or_else(|| fleetd_contracts::secrets::secret_env_name(call.key.as_str()));
+        match name {
+            None => Err(refuse(
+                "invalid",
+                format!("{} names no valid variable.", call.key.as_str()),
+                Some("Ask again with envName."),
+            )),
+            Some(name) if fleetd_contracts::project_settings::env_name_reserved(&name) => {
+                Err(refuse(
+                    "invalid",
+                    format!("{name} is fleetd's or claude's own: an order can't set it."),
+                    Some("Ask for it under another envName."),
+                ))
+            }
+            Some(_) => Ok(()),
+        }
     }
 
     /// `secret_submit`: relays the sealed value to the sink's node and stores the request with the node's fingerprint.
@@ -542,6 +634,9 @@ impl Approvals {
         if let Some(env) = &secret.env_name {
             input["envName"] = json!(env);
         }
+        if sink.order.is_some() {
+            input["projectId"] = json!(r.project_ref.project_id);
+        }
         // The ciphertext is never queued: the person enters it again once the node is back.
         let delivered = self
             .deps
@@ -568,6 +663,31 @@ impl Approvals {
                 ),
             ));
         };
+        if let Some(order_id) = &sink.order {
+            let name = secret
+                .env_name
+                .as_ref()
+                .map(|n| n.to_string())
+                .or_else(|| fleetd_contracts::secrets::secret_env_name(&key))
+                .unwrap_or_default();
+            let bytes = fleetd_contracts::secrets::base64_bytes(
+                sealed,
+                fleetd_contracts::secrets::Base64Alphabet::Base64,
+            )
+            .unwrap_or_default()
+            .saturating_sub(fleetd_contracts::secrets::SEAL_OVERHEAD);
+            self.deps
+                .hub
+                .order_env_saved(OrderEnvSaved {
+                    project: project_of(&r),
+                    order_id: order_id.clone(),
+                    name,
+                    fingerprint: fingerprint.clone(),
+                    bytes,
+                    request_id: id.to_string(),
+                })
+                .await;
+        }
         let by = format!("human:{}", caller.name);
         let at = self.now();
         let print = fingerprint.clone();

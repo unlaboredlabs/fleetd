@@ -17,6 +17,10 @@ struct Fake {
     gated_reply: Mutex<Result<GatedOutcome, NodeCommandError>>,
     /// Each sealed secret the node took: machine and input.
     secrets: Mutex<Vec<(String, Value)>>,
+    /// The project's open orders; every other order is refused.
+    open_orders: Vec<&'static str>,
+    /// Each variable recorded for an order.
+    order_saved: Mutex<Vec<OrderEnvSaved>>,
 }
 
 impl Default for Fake {
@@ -34,6 +38,8 @@ impl Default for Fake {
                 ..Default::default()
             })),
             secrets: Mutex::default(),
+            open_orders: vec!["W7"],
+            order_saved: Mutex::default(),
         }
     }
 }
@@ -115,6 +121,14 @@ impl ApprovalHub for Fake {
             .unwrap()
             .push(format!("{} {}", r.request_id, r.state.as_str()));
         self.woke.notify_one();
+        Box::pin(async {})
+    }
+    fn order_refusal(&self, _: &ProjectRef, order_id: &str) -> BoxFut<'_, Option<String>> {
+        let why = (!self.open_orders.contains(&order_id)).then(|| format!("{order_id} is closed."));
+        Box::pin(async move { why })
+    }
+    fn order_env_saved(&self, saved: OrderEnvSaved) -> BoxFut<'_, ()> {
+        self.order_saved.lock().unwrap().push(saved);
         Box::pin(async {})
     }
 }
@@ -389,6 +403,61 @@ async fn a_secret_is_entered_by_request_id_and_only_its_fingerprint_is_kept() {
             .unwrap_err()
             .code,
         "invalid"
+    );
+}
+
+/// An `order:` sink: only an open order of the project, on its machine, under a name an order may set; the node gets
+/// the project with the box, and the hub records the variable's name, fingerprint and size for the order.
+#[tokio::test]
+async fn an_order_sink_reaches_that_orders_node_and_is_recorded_for_it() {
+    let fake = Arc::new(Fake::default());
+    let a = approvals(&fake);
+    let ask = |sink: &str, env: Option<&str>| {
+        let mut call = json!({ "key": "db.url", "sink": sink, "text": "W7's writer needs the staging database" });
+        if let Some(env) = env {
+            call["envName"] = env.into();
+        }
+        serde_json::from_value::<fleetd_contracts::lead_calls::RequestSecretCall>(call).unwrap()
+    };
+    for (sink, env) in [
+        ("order:lab-b:W7", None),
+        ("order:lab-a:W8", None),
+        ("order:lab-a:W7", Some("CLAUDE_CODE_USE_BEDROCK")),
+    ] {
+        let refused = a.request_secret(&p1(), ask(sink, env)).await;
+        assert!(refused.is_err(), "{sink} {env:?}");
+    }
+    let open = a
+        .request_secret(&p1(), ask("order:lab-a:W7", None))
+        .await
+        .unwrap();
+    assert_eq!(open.workstream_id.as_ref().map(|w| w.as_str()), Some("W7"));
+    // 10 bytes sealed: 58 bytes of box.
+    let sealed = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, [7u8; 58]);
+    a.submit_secret(&person(), open.request_id.as_str(), &sealed)
+        .await
+        .unwrap();
+    assert_eq!(
+        fake.secrets.lock().unwrap().as_slice(),
+        [(
+            "lab-a".to_string(),
+            json!({ "sink": "order:lab-a:W7", "sealed": sealed, "secretKey": "db.url", "projectId": "p1" })
+        )]
+    );
+    assert_eq!(
+        fake.order_saved.lock().unwrap().as_slice(),
+        [OrderEnvSaved {
+            project: p1(),
+            order_id: "W7".into(),
+            name: "DB_URL".into(),
+            fingerprint: "ab12cd34".into(),
+            bytes: 10,
+            request_id: open.request_id.to_string(),
+        }]
+    );
+    assert_eq!(
+        fake.request(open.request_id.as_str()).state,
+        RequestState::Stored
     );
 }
 

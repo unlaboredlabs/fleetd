@@ -99,6 +99,11 @@ pub struct SessionLaunch {
     /// The node gives the session these and the checkout's own, the checkout's first on a name clash.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skills: Vec<crate::skills::SkillBundle>,
+    /// A task's order: the session also gets the variables delivered to it (`order:` secret sinks) until it closes.
+    pub order_id: Option<crate::ledger::WorkstreamId>,
+    /// The project's setup commands, run in the new worktree before the agent starts. Only nodes listing
+    /// [`crate::node_link::CAP_WORKTREE_SETUP`] get it.
+    pub setup: Option<Box<crate::project_settings::WorktreeSetup>>,
 }
 
 /// A session's place among fleetd's agents, which decides the MCP tools it gets. The hub enforces the same split on
@@ -193,6 +198,13 @@ pub enum SessionCall {
     McpTest {
         project_id: Option<ProjectId>,
         server: crate::mcp_servers::McpSessionServer,
+    },
+    /// The order closed: forget the variables delivered for it. Its sessions run on without them from their next
+    /// turn. Only nodes listing [`crate::node_link::CAP_ORDER_ENV`] get it.
+    #[serde(rename_all = "camelCase")]
+    OrderEnvDrop {
+        project_id: ProjectId,
+        order_id: crate::ledger::WorkstreamId,
     },
     /// Where the project's worktrees live, the branch new ones start from, and the worktrees there now. Only nodes
     /// listing [`crate::node_link::CAP_PROJECT_SETTINGS`] get it.

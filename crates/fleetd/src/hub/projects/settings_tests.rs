@@ -15,6 +15,9 @@ use crate::hub::api::{CallError, Caller, Hub, HubConfig, Listen, registry};
 use crate::hub::store::HubDb;
 use crate::hub::store::test_clock::ManualClock;
 
+#[path = "order_env_tests.rs"]
+mod order_env_tests;
+
 const AT: &str = "2026-10-19T10:00:00.000Z";
 const SECRET: &str = "sk_live_do_not_store";
 

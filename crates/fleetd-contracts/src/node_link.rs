@@ -11,7 +11,7 @@ use serde_with::skip_serializing_none;
 
 use crate::checked;
 use crate::hello::ProtocolVersion;
-use crate::ids::{MachineId, Timestamp};
+use crate::ids::{MachineId, ProjectId, Timestamp};
 use crate::lead_calls::{LeadCallFrame, LeadResultFrame};
 use crate::ledger::{DecisionKey, EnvName, GatedArgv, GatedCwd, GatedTimeoutSec, SecretEnv};
 use crate::model::SleptSpan;
@@ -87,6 +87,13 @@ pub const CAP_MCP_SERVERS: &str = "mcp_servers";
 /// `skills_list` (a project's repo skills, for Settings → Skills). Hub-kept skills ride on `launch`, which an older
 /// node ignores.
 pub const CAP_SKILLS: &str = "skills";
+
+/// `order:` secret sinks and `order_env_drop` (a variable for one order's agents), and the masking of a session's own
+/// fleetd tool calls.
+pub const CAP_ORDER_ENV: &str = "order_env";
+
+/// `SessionLaunch::setup`: a project's setup commands, run in each new worktree before its agent starts.
+pub const CAP_WORKTREE_SETUP: &str = "worktree_setup";
 
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -206,8 +213,10 @@ pub struct SecretDeliver {
     pub sealed: SealedSecret,
     /// The secret's name; `secret_env` entries name the secret by it.
     pub secret_key: DecisionKey,
-    /// An env: sink's variable; absent means `secret_env_name(secret_key)`.
+    /// An env: or order: sink's variable; absent means `secret_env_name(secret_key)`.
     pub env_name: Option<EnvName>,
+    /// An order: sink's project, whose agents the order's are. Only nodes listing [`CAP_ORDER_ENV`] get one.
+    pub project_id: Option<ProjectId>,
 }
 
 /// Node -> hub, one per `secret_deliver`: the sink was written (0600) and the buffer wiped, or why not.

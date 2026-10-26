@@ -27,6 +27,9 @@ use crate::node::store::NodeStore;
 use crate::node::wire::NodeToHub;
 use crate::node::worktree::tests::{cloned, repo, run as git};
 
+#[path = "env_tests.rs"]
+mod env_tests;
+
 struct Hub {
     service: SessionService,
     runner: Arc<FakeRunner>,
@@ -90,6 +93,8 @@ fn launch(id: &str, mode: RuntimeMode, workspace: SessionWorkspace) -> SessionCa
         mcp_role: None,
         mcp: None,
         skills: Vec::new(),
+        order_id: None,
+        setup: None,
     })
 }
 
@@ -2293,9 +2298,9 @@ async fn a_secret_rotated_mid_session_stays_masked_as_the_process_holds_it() {
     assert!(!frames.contains(old), "the rotated value left the node");
 }
 
-/// A command that prints a project's secret (`printenv`) gets it to neither the hub nor the app: the node masks the
-/// value, its base64 and its URL encoding in the tool's output, the live text and the reply before any frame leaves,
-/// and a real hub fed every frame the node sent keeps it in no row and returns it in no answer.
+/// A command that prints a project's secret (`printenv`), or its order's, gets it to neither the hub nor the app: the
+/// node masks the value, its base64 and its URL encoding in the tool's output, the live text and the reply before any
+/// frame leaves, and a real hub fed every frame the node sent keeps it in no row and returns it in no answer.
 #[tokio::test]
 async fn a_printed_secret_never_leaves_the_node() {
     use base64::Engine;
@@ -2307,14 +2312,15 @@ async fn a_printed_secret_never_leaves_the_node() {
         "sk_live_51%2FHx%2BQe9%3D".to_owned(),
     ];
     let chain = crate::node::project_env::tests::PEM;
+    let order_secret = "pw-order-only-6f1d";
     let printed = format!(
-        "HOME=/home/w\nSTRIPE_KEY={}\nSTRIPE_KEY_B64={}\nCALLBACK=https://pay.test/cb?key={}\nTLS_CHAIN={chain}\n",
+        "HOME=/home/w\nSTRIPE_KEY={}\nSTRIPE_KEY_B64={}\nCALLBACK=https://pay.test/cb?key={}\nTLS_CHAIN={chain}\nDB_PASSWORD={order_secret}\n",
         forms[0], forms[1], forms[2]
     );
     // Every line of the chain but its armor is secret, and so is the chain whole.
     let forms: Vec<String> = forms
         .into_iter()
-        .chain(std::iter::once(chain.to_owned()))
+        .chain([chain.to_owned(), order_secret.to_owned()])
         .chain(
             chain
                 .lines()
@@ -2347,6 +2353,7 @@ async fn a_printed_secret_never_leaves_the_node() {
         remove: vec![],
     })
     .await;
+    env_tests::deliver(&home, "W1", "DB_PASSWORD", order_secret);
 
     // A real hub on the other end of the link: its calls go to the node, and every frame the node sends goes to it.
     let hub_home = tempfile::tempdir().unwrap();
@@ -2413,12 +2420,11 @@ async fn a_printed_secret_never_leaves_the_node() {
         .await;
     central.executors.await_live(&lab).await;
 
-    node.ok(launch(
-        "s1",
-        RuntimeMode::FullAccess,
-        SessionWorkspace::Root,
-    ))
-    .await;
+    let mut started = launch("s1", RuntimeMode::FullAccess, SessionWorkspace::Root);
+    if let SessionCall::Launch(l) = &mut started {
+        l.order_id = Some(fleetd_contracts::ledger::WorkstreamId::unchecked("W1"));
+    }
+    node.ok(started).await;
     node.ok(SessionCall::Follow {
         session_id: ThreadId::unchecked("s1"),
     })
@@ -2494,6 +2500,7 @@ async fn a_printed_secret_never_leaves_the_node() {
     // The output got through, named.
     assert!(frames.contains("***STRIPE_KEY***"), "{frames}");
     assert!(frames.contains("***TLS_CHAIN***"), "{frames}");
+    assert!(frames.contains("***DB_PASSWORD***"), "{frames}");
     assert!(answers.contains("***STRIPE_KEY***"), "{answers}");
     for form in &forms {
         assert!(!frames.contains(form.as_str()), "a frame carried {form}");

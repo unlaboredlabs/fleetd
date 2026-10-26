@@ -1,0 +1,320 @@
+//! What a session is given beyond its brief: its order's variables on top of its project's, the names of both in its
+//! brief, a new claude at the next turn once its order's variables change, its worktree's setup commands before the
+//! brief goes, and the masker its own fleetd calls pass through.
+use fleetd_contracts::prim::NonEmpty;
+use fleetd_contracts::project_settings::WorktreeSetup;
+use fleetd_contracts::sessions::{
+    FailureClass, ItemKind, ItemStatus, SendMode, SessionError, SessionRole, ThreadItem,
+};
+
+use super::super::mask::{Masker, Secrets};
+use super::super::project_env::Vars;
+use super::super::worktree_setup::{self, Ran};
+use super::{
+    EXIT_WAIT, REAP_GRACE, SessionCommand, SessionRow, SessionService, blocking, now, share,
+};
+
+/// A plain value shown in a brief: one line of at most this many characters.
+const SHOWN_MAX: usize = 100;
+
+impl SessionService {
+    /// The session's order's variables, and their digest; none outside an order.
+    pub(super) fn order_vars(&self, row: &SessionRow) -> (Vars, Option<String>) {
+        match &row.local.order_id {
+            Some(order) => super::super::order_env::for_spawn(
+                &self.inner.config.home,
+                row.summary.project_id.as_str(),
+                order,
+            ),
+            None => (Vec::new(), None),
+        }
+    }
+
+    /// The project's, the order's and the session's MCP servers' secrets as they are now.
+    pub(super) fn secrets_now(&self, row: &SessionRow) -> Secrets {
+        let home = &self.inner.config.home;
+        let mut secrets =
+            super::super::project_env::secrets(home, row.summary.project_id.as_str());
+        secrets.extend(self.order_vars(row).0);
+        secrets.extend(super::super::mcp_servers::secrets(
+            home,
+            &home.join("sessions").join(row.summary.session_id.as_str()),
+        ));
+        Secrets(secrets)
+    }
+
+    /// For masking the fleetd calls a session makes (`report`, `ask_lead`, any agent tool) before they leave the
+    /// machine: the secrets its process holds and its project's and order's now.
+    pub fn call_masker(&self, id: &str) -> Masker {
+        let spawned = self.st().live.get(id).map(|l| l.spawned.clone());
+        let now = match self.store().session(id) {
+            Ok(Some(row)) => self.secrets_now(&row),
+            _ => Secrets::default(),
+        };
+        let all = Secrets(
+            spawned
+                .iter()
+                .flat_map(|s| s.0.iter())
+                .chain(&now.0)
+                .cloned()
+                .collect(),
+        );
+        Masker::new(&all.0)
+    }
+
+    /// The prompt with the names of the variables the session gets: a plain one's short value too, a secret's never.
+    pub(super) fn with_env_note(&self, row: &SessionRow, prompt: String) -> String {
+        if !matches!(row.local.role, SessionRole::Worker | SessionRole::Lead) {
+            return prompt;
+        }
+        let home = &self.inner.config.home;
+        let project = row.summary.project_id.as_str();
+        let (vars, _) = super::super::project_env::for_spawn(home, project);
+        let secret: Vec<String> = super::super::project_env::secrets(home, project)
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        let (order, _) = self.order_vars(row);
+        let shown = |(name, value): &(String, String)| {
+            if secret.contains(name)
+                || value.contains(['\n', '\r'])
+                || value.chars().count() > SHOWN_MAX
+            {
+                format!("`{name}`")
+            } else {
+                format!("`{name}={value}`")
+            }
+        };
+        let mut lines = Vec::new();
+        let project_vars: Vec<String> = vars
+            .iter()
+            .filter(|(n, _)| !order.iter().any(|(o, _)| o == n))
+            .map(|v| {
+                let named = shown(v);
+                if secret.contains(&v.0) {
+                    format!("{named} (secret)")
+                } else {
+                    named
+                }
+            })
+            .collect();
+        if !project_vars.is_empty() {
+            lines.push(format!(
+                "- Set for the project's agents: {}.",
+                project_vars.join(", ")
+            ));
+        }
+        if let Some(order_id) = &row.local.order_id
+            && !order.is_empty()
+        {
+            let names: Vec<String> = order
+                .iter()
+                .map(|(n, _)| format!("`{n}` (secret)"))
+                .collect();
+            lines.push(format!(
+                "- Set for order {order_id}'s agents: {}.",
+                names.join(", ")
+            ));
+        }
+        if lines.is_empty() {
+            return prompt;
+        }
+        format!(
+            "{}\n\n## Variables\n{}\n- A secret's value is masked as ***NAME*** in everything you report.\n",
+            prompt.trim_end(),
+            lines.join("\n")
+        )
+    }
+
+    /// A new turn of a session whose order's variables changed since its claude started: that claude is closed now,
+    /// while no run is active, so the send starts a new one with them. Its conversation resumes as it was.
+    pub(super) async fn renew_env(&self, id: &str) {
+        let Ok(row) = self.session(id) else { return };
+        let Some(order) = row.local.order_id.as_deref() else {
+            return;
+        };
+        if row.summary.active_run_id.is_some() {
+            return;
+        }
+        let home = self.inner.config.home.clone();
+        let (project, order) = (row.summary.project_id.to_string(), order.to_owned());
+        let digest =
+            blocking(move || super::super::order_env::digest_of(&home, &project, &order)).await;
+        let closing = {
+            let mut st = self.st();
+            let Some(live) = st.live.get_mut(id) else {
+                return;
+            };
+            if live.closing || live.order_digest == digest {
+                return;
+            }
+            live.closing = true;
+            (live.commands.clone(), live.exited.clone())
+        };
+        tracing::info!(
+            session_id = id,
+            "the order's variables changed: claude starts again with them"
+        );
+        let (commands, mut exited) = closing;
+        let _ = commands
+            .send(SessionCommand::Shutdown { grace: REAP_GRACE })
+            .await;
+        let _ = tokio::time::timeout(EXIT_WAIT, exited.wait_for(|e| *e)).await;
+    }
+
+    /// Records the session's first run, then runs the worktree's setup in the background and sends the brief once it
+    /// is done: with what setup did added, or not at all when it failed and the project does not start agents anyway.
+    pub(super) async fn begin_after_setup(
+        &self,
+        id: &str,
+        run_id: &NonEmpty,
+        prompt: String,
+        setup: WorktreeSetup,
+    ) -> Result<(), SessionError> {
+        let (done, waiting) = tokio::sync::watch::channel(None);
+        {
+            let workspace = self.workspace_lock(id);
+            let _workspace = workspace.lock().await;
+            if self.record_run(id, run_id, &prompt, None)?.is_err() {
+                return Ok(());
+            }
+            self.st().setting_up.insert(id.to_owned(), waiting);
+        }
+        let (service, id, run_id) = (self.clone(), id.to_owned(), run_id.clone());
+        tokio::spawn(async move {
+            let started = service.set_up(&id, &run_id, prompt, &setup).await;
+            service.st().setting_up.remove(&id);
+            done.send_replace(Some(started));
+        });
+        Ok(())
+    }
+
+    /// Runs the setup commands, each shown as an item of the first run; true once the brief went to claude.
+    async fn set_up(
+        &self,
+        id: &str,
+        run_id: &NonEmpty,
+        prompt: String,
+        setup: &WorktreeSetup,
+    ) -> bool {
+        let Ok(row) = self.session(id) else {
+            return false;
+        };
+        let env = self.setup_env(&row).await;
+        let secrets = self.secrets_now(&row);
+        let masker = Masker::new(&secrets.0);
+        let scrub: Vec<String> = secrets.0.iter().map(|(_, v)| v.clone()).collect();
+        let timeout_sec = setup.timeout_sec.get() as u64;
+        let started_at = std::sync::Mutex::new(Vec::new());
+        let item = |i: usize, command: &str, ran: Option<&Ran>| {
+            let at = now();
+            let started = started_at
+                .lock()
+                .ok()
+                .and_then(|s| s.get(i).cloned())
+                .unwrap_or_else(|| at.clone());
+            let (status, output, exit_code) = match ran {
+                None => (ItemStatus::Running, None, None),
+                Some(r) => (
+                    if r.ok() {
+                        ItemStatus::Completed
+                    } else {
+                        ItemStatus::Failed
+                    },
+                    Some(masker.text(&r.output_tail).into_owned()),
+                    r.exit_code.map(i64::from),
+                ),
+            };
+            let item = ThreadItem {
+                id: NonEmpty::unchecked(format!("setup-{run_id}-{i}")),
+                run_id: Some(run_id.clone()),
+                status,
+                title: super::super::util::head_utf16(
+                    &format!("Setup: {}", masker.text(command)),
+                    200,
+                )
+                .to_owned(),
+                started_at: started,
+                completed_at: ran.map(|_| at.clone()),
+                updated_at: at,
+                kind: ItemKind::Command {
+                    command: masker.text(command).into_owned(),
+                    timeout_ms: Some(timeout_sec * 1000),
+                    output,
+                    output_omitted: false,
+                    exit_code,
+                },
+            };
+            if let Err(e) = self.update(id, |c| c.put_item(item)) {
+                tracing::warn!(session_id = id, error = %e.message, "a setup item not recorded");
+            }
+        };
+        let commands: Vec<String> = setup.commands.iter().map(|c| c.to_string()).collect();
+        let outcome = worktree_setup::run(
+            setup,
+            &row.local.cwd,
+            &env,
+            &scrub,
+            |i| {
+                if let Ok(mut s) = started_at.lock() {
+                    s.push(now());
+                }
+                item(i, &commands[i], None);
+            },
+            |i, ran| item(i, &commands[i], Some(ran)),
+        )
+        .await;
+        if !setup.run_anyway
+            && let Some(why) = worktree_setup::failure(&outcome, timeout_sec)
+        {
+            tracing::info!(
+                session_id = id,
+                "worktree setup failed: the agent does not start"
+            );
+            self.fail_run(id, run_id, FailureClass::Other, &masker.text(&why));
+            return false;
+        }
+        let note = worktree_setup::note(&outcome, timeout_sec);
+        let text = match &note {
+            Some(note) => format!("{}\n\n## Setup\n{}\n", prompt.trim_end(), masker.text(note)),
+            None => prompt,
+        };
+        // The stored message is what claude is sent, so a resend of the brief sends the same.
+        if note.is_some() {
+            let stored = self.store().message(id, run_id.as_str()).ok().flatten();
+            if let Some(mut message) = stored {
+                message.text = text.clone();
+                if let Err(e) = self.update(id, |c| c.put_message(message)) {
+                    tracing::warn!(session_id = id, error = %e.message, "the brief's setup note not recorded");
+                }
+            }
+        }
+        self.send_run(id, run_id, &text, SendMode::Plain)
+            .await
+            .is_ok()
+    }
+
+    /// What setup commands run with: the node's plain environment and git's SSH agent, the project's and order's
+    /// variables, the build jobs and the session's scratch dir.
+    async fn setup_env(&self, row: &SessionRow) -> Vec<(String, String)> {
+        let home = self.inner.config.home.clone();
+        let mut env = super::super::util::git_command_env();
+        let (mut vars, _) =
+            super::super::project_env::for_spawn(&home, row.summary.project_id.as_str());
+        let (order, _) = self.order_vars(row);
+        vars.retain(|(p, _)| !order.iter().any(|(o, _)| o == p));
+        vars.extend(order);
+        vars.retain(|(k, _)| !env.iter().any(|(e, _)| e == k));
+        env.extend(vars);
+        let jobs_home = home.clone();
+        let n = blocking(move || super::super::load::build_jobs_here(&jobs_home)).await;
+        env.extend(share::jobs_env(&env, n));
+        let scratch = share::scratch_dir(&home, row.summary.session_id.as_str());
+        if super::super::config::mkdir_private(&scratch).is_ok() {
+            let scratch = share::scratch_env(&scratch);
+            env.retain(|(k, _)| !scratch.iter().any(|(s, _)| s == k));
+            env.extend(scratch);
+        }
+        env
+    }
+}

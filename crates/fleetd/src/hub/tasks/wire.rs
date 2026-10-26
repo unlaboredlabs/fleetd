@@ -84,6 +84,24 @@ impl TaskPorts for HubTaskPorts {
         request: LaunchRequest,
     ) -> BoxFut<'a, Result<(ThreadId, Option<WorktreeBase>), PortError>> {
         Box::pin(async move {
+            let project = ProjectRef {
+                machine_id: machine_id.clone(),
+                project_id: request.project_id.clone(),
+            };
+            // A new worktree is set up first, by a node that can.
+            let setup = match (&request.worktree, self.hub()) {
+                (Some(_), Some(hub))
+                    if hub
+                        .link
+                        .node_can(machine_id, fleetd_contracts::node_link::CAP_WORKTREE_SETUP) =>
+                {
+                    hub.db
+                        .project_settings()
+                        .setup(&project)
+                        .map_err(|e| PortError::Failed(e.to_string()))?
+                }
+                _ => None,
+            };
             let input = LaunchInput {
                 project_id: request.project_id,
                 prompt: request.prompt,
@@ -121,6 +139,8 @@ impl TaskPorts for HubTaskPorts {
                 workspace,
                 role: fleetd_contracts::sessions::SessionRole::Worker,
                 mcp_role: Some(mcp_role),
+                order_id: request.order_id,
+                setup,
             };
             self.executors
                 .launch(machine_id, &input, options)

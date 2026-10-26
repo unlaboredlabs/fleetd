@@ -84,6 +84,9 @@ pub struct SessionLocal {
     /// Decides the fleetd MCP tools the session gets; sessions stored before roles existed get none.
     #[serde(default)]
     pub role: fleetd_contracts::sessions::SessionRole,
+    /// A task's order, whose variables (order_env.rs) the session gets on top of its project's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub order_id: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
