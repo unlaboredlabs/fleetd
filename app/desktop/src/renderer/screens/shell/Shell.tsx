@@ -63,7 +63,16 @@ export function Shell() {
   // so Back doesn't return to the bare `#/`). It is shown from `home`, not from the replaced URL: a hash set back to
   // `#/` before React reads the replace leaves the hash snapshot unchanged, so nothing would render or redirect again.
   const home = route.id === "home" && projects !== undefined ? homeProject(projects, readLast()) : null;
-  const screen: Screen = useMemo(() => (home === null ? route : { id: "project", project: home, message: null }), [route, home]);
+  const screen: Screen = useMemo(
+    () =>
+      home !== null
+        ? { id: "project", project: home, message: null }
+        : // A session's own window's route, here: its project, with the session in the panel.
+          route.id === "session"
+          ? { id: "project", project: route.project, message: null, panel: { tab: "sessions", session: route.session } }
+          : route,
+    [route, home],
+  );
   useEffect(() => {
     if (home !== null) navigate({ id: "project", project: home, message: null }, { replace: true });
   }, [home]);

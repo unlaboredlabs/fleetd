@@ -1263,8 +1263,8 @@ export const screens: readonly Screen[] = [
     route: `${CHAT}/agents`,
     fixtures: ["typical", "many-agents", "long-text", "hub-unreachable", "live-20", "agents-work"],
   },
-  // W46 (design preview): the Agents section's Browser sessions, needs you, live and recent; one opened live, one
-  // asking you to take over, one taken over (the page yours), an ended one's replay and a step's page snapshot in it.
+  // W46 (design preview): the Agents section's Sessions, needs you, live and recent; one opened live, one asking you to
+  // take over, one taken over (the page yours), an ended one's replay and a step's page snapshot in it.
   { id: "sessions", route: `${CHAT}/sessions`, fixtures: ["sessions-preview"] },
   // ...and a hub that doesn't serve browser sessions (every other fixture's): the link opens Agents, with no Browser
   // sessions view beside it.
@@ -1275,7 +1275,7 @@ export const screens: readonly Screen[] = [
     variant: "no-sessions",
     open: async (page) => {
       await expect(page.locator('[data-screen="agents"]')).toBeVisible();
-      await expect(page.getByRole("tab", { name: /^Browser sessions/u })).toHaveCount(0);
+      await expect(page.getByRole("tab", { name: /^Sessions/u })).toHaveCount(0);
     },
   },
   { id: "sessions", route: `${CHAT}/sessions/bs-checkout`, fixtures: ["sessions-preview"], variant: "live" },
@@ -1286,11 +1286,36 @@ export const screens: readonly Screen[] = [
     fixtures: ["sessions-preview"],
     variant: "yours",
     open: async (page) => {
-      await page.getByRole("button", { name: "Take over" }).click();
+      await page.getByRole("button", { name: "Take over", exact: true }).click();
       await expect(page.getByRole("button", { name: "Hand back" })).toBeVisible();
     },
   },
   { id: "sessions", route: `${CHAT}/sessions/bs-share`, fixtures: ["sessions-preview"], variant: "replay" },
+  // ...taken over, ⌘⇧↩ hands it back, and the page never sees those keys (a key in the page would type the code).
+  {
+    id: "sessions",
+    route: `${CHAT}/sessions/bs-payouts`,
+    fixtures: ["sessions-preview"],
+    variant: "handed-back",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Take over", exact: true }).click();
+      await page.getByRole("application").focus();
+      await page.keyboard.press("ControlOrMeta+Shift+Enter");
+      await expect(page.getByText("You handed back")).toBeVisible();
+      await expect(page.getByText("You typed in the code field")).toHaveCount(0);
+    },
+  },
+  // ...and in a window of its own, the pop-out for taking over: the session alone, its page yours.
+  {
+    id: "session-window",
+    route: `#/session/devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22/bs-payouts`,
+    fixtures: ["sessions-preview"],
+    open: async (page) => {
+      await page.reload();
+      await page.getByRole("button", { name: "Take over", exact: true }).click();
+      await expect(page.getByRole("button", { name: /^Hand back/u })).toBeVisible();
+    },
+  },
   // ...with a step's page snapshot open: the structure as the step found it, what it clicked highlighted.
   {
     id: "sessions",

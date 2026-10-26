@@ -5,10 +5,12 @@
 // ended: its replay, the recording with its steps beside it, each step a jump to its moment and a way into the page's
 // snapshot at that step. A login filled from 1Password is a step in words; its value is never on the hub to show, nor
 // in a snapshot.
-import { ChevronLeft, CornerUpLeft, Hand, KeyRound, ListTree, Pause, Play } from "lucide-react";
+import { AppWindow, ChevronLeft, CornerUpLeft, Hand, KeyRound, ListTree, Pause, Play } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 import { Button, EmptyState, StateGlyph, Text, Tooltip, Truncate, cx, useBeatRef } from "../../ui";
+import { display } from "../../../shared/shortcuts";
 import { RolePill } from "../agents/parts";
+import { useCommands } from "../palette";
 import { useNow } from "../live/clock";
 import { MiddleCut } from "../live/parts";
 import { panelRoute, toHash, type ProjectKey } from "../shell/routes";
@@ -33,12 +35,19 @@ import {
   type SessionFrame,
 } from "./model";
 import { actInPage, handBack, takeOver, useBrowserSessions } from "./preview";
+import { showWindow, useInItsWindow } from "./windows";
 import s from "./sessions.module.css";
+
+const MODIFIERS: ReadonlySet<string> = new Set(["Shift", "Control", "Meta", "Alt"]);
 
 const clock = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit" });
 
-export function SessionView({ project, id }: { project: ProjectKey; id: string }) {
-  const session = useBrowserSessions(project).find((x) => x.id === id);
+/** One session; `windowed` in a window of its own (SessionWindow), which pops nothing out and links nowhere. */
+export function SessionView({ project, id, windowed = false }: { project: ProjectKey; id: string; windowed?: boolean }) {
+  const all = useBrowserSessions(project);
+  const session = all.find((x) => x.id === id);
+  // A session's window has its sessions from the main window a moment after it opens.
+  if (session === undefined && windowed && all.length === 0) return <div className={s.view} aria-busy="true" />;
   if (session === undefined) {
     return (
       <div className={s.view} data-screen="sessions.missing">
@@ -49,16 +58,24 @@ export function SessionView({ project, id }: { project: ProjectKey; id: string }
   const live = isLive(session);
   return (
     <section className={s.view} aria-label={session.purpose} data-screen={live ? "sessions.live" : "sessions.replay"}>
-      <Head session={session} />
-      {live ? <Live session={session} /> : <Replay key={session.id} session={session} />}
+      <Head session={session} windowed={windowed} />
+      {live ? <Live session={session} windowed={windowed} /> : <Replay key={session.id} session={session} />}
     </section>
   );
 }
 
 /** Its state in words beside its glyph, its agent (a link to its work); its purpose; the site, its start, how long. */
-function Head({ session: x }: { session: BrowserSession }) {
+function Head({ session: x, windowed }: { session: BrowserSession; windowed: boolean }) {
   const now = useNow(isLive(x));
   const agent = toHash(panelRoute(x.projectRef, { tab: "agents", agent: x.agent.laneId }));
+  const who = (
+    <>
+      <RolePill role={x.agent.role} />
+      <Truncate size="xs" tone="quiet" expand="none">
+        {x.agent.title}
+      </Truncate>
+    </>
+  );
   return (
     <div className={s.head}>
       <span className={s.headState}>
@@ -66,12 +83,13 @@ function Head({ session: x }: { session: BrowserSession }) {
         <Text size="xs" tone={STATE_TONE[x.state]} strong={x.state === "asking" || x.state === "yours"}>
           {STATE_WORD[x.state]}
         </Text>
-        <a className={s.agentLink} href={agent} title="Open its agent">
-          <RolePill role={x.agent.role} />
-          <Truncate size="xs" tone="quiet" expand="none">
-            {x.agent.title}
-          </Truncate>
-        </a>
+        {windowed ? (
+          <span className={s.agentLink}>{who}</span>
+        ) : (
+          <a className={s.agentLink} href={agent} title="Open its agent">
+            {who}
+          </a>
+        )}
       </span>
       <Text as="h2" size="md" strong>
         {x.purpose}
@@ -86,16 +104,44 @@ function Head({ session: x }: { session: BrowserSession }) {
   );
 }
 
-/** The page now, what the agent does, the one control (Take over or Hand back) and its steps as they come. */
-function Live({ session: x }: { session: BrowserSession }) {
+/**
+ * The page now, what the agent does, the one control (Take over or Hand back) and its steps as they come. Beside Take
+ * over, the pop-out takes the page over in a window of its own; while the session is in its window, this one mirrors it
+ * and offers to bring that window forward. Taken over, ⌘⇧↩ (Ctrl+Shift+Enter) hands back: the app's keymap catches it
+ * in the capture phase, so the page never sees those keys.
+ */
+function Live({ session: x, windowed }: { session: BrowserSession; windowed: boolean }) {
   const yours = x.state === "yours";
+  const away = useInItsWindow(x.id) && !windowed;
   // The scan over its line steps on the app's beat while the browser starts.
   const scan = useBeatRef<HTMLSpanElement>(x.state === "starting");
   const page = useRef<HTMLDivElement>(null);
-  // Taken over, the keys go to the page at once.
+  // Taken over, the keys go to the page at once (in the window that has it).
   useEffect(() => {
-    if (yours) page.current?.focus();
-  }, [yours]);
+    if (yours && !away) page.current?.focus();
+  }, [yours, away]);
+  useCommands(
+    [
+      {
+        id: "session.handBack",
+        title: "Hand back the page",
+        detail: "Give the page you took over back to its agent",
+        group: "actions",
+        enabled: () => yours && !away,
+        run: () => handBack(x.id),
+      },
+    ],
+    [x.id],
+  );
+  const popOut = () => {
+    if (x.state !== "yours") takeOver(x.id);
+    showWindow(x.projectRef, x.id);
+  };
+  const popOutButton = windowed ? null : (
+    <Tooltip content="Take over in its own window">
+      <Button variant="quiet" size="sm" iconOnly icon={<AppWindow aria-hidden />} aria-label="Take over in its own window" onClick={popOut} />
+    </Tooltip>
+  );
   return (
     <div className={s.body}>
       {x.state === "asking" && x.handoff !== undefined ? (
@@ -106,14 +152,17 @@ function Live({ session: x }: { session: BrowserSession }) {
             </Text>
             <Text size="sm">{x.handoff.reason}</Text>
           </span>
-          <Button variant="primary" size="sm" icon={<Hand aria-hidden />} onClick={() => takeOver(x.id)}>
-            Take over
-          </Button>
+          <span className={s.controls}>
+            {popOutButton}
+            <Button variant="primary" size="sm" icon={<Hand aria-hidden />} onClick={() => takeOver(x.id)}>
+              Take over
+            </Button>
+          </span>
         </div>
       ) : null}
       <div className={s.stage}>
         <div className={s.player}>
-          <Frame session={x} frame={x.frames.at(-1)} yours={yours} pageRef={page} />
+          <Frame session={x} frame={x.frames.at(-1)} yours={yours} away={away} pageRef={page} />
           <div className={s.control}>
             <span className={s.nowLine}>
               <Text size="xs" tone="faint">
@@ -125,14 +174,21 @@ function Live({ session: x }: { session: BrowserSession }) {
                 </Text>
               </span>
             </span>
-            {yours ? (
-              <Button variant="primary" size="sm" icon={<CornerUpLeft aria-hidden />} onClick={() => handBack(x.id)}>
+            {away ? (
+              <Button variant="secondary" size="sm" icon={<AppWindow aria-hidden />} onClick={() => showWindow(x.projectRef, x.id)}>
+                Show its window
+              </Button>
+            ) : yours ? (
+              <Button variant="primary" size="sm" icon={<CornerUpLeft aria-hidden />} shortcut={display("session.handBack", window.fleetd.platform)} onClick={() => handBack(x.id)}>
                 Hand back
               </Button>
             ) : x.state === "running" ? (
-              <Button variant="secondary" size="sm" icon={<Hand aria-hidden />} onClick={() => takeOver(x.id)}>
-                Take over
-              </Button>
+              <span className={s.controls}>
+                {popOutButton}
+                <Button variant="secondary" size="sm" icon={<Hand aria-hidden />} onClick={() => takeOver(x.id)}>
+                  Take over
+                </Button>
+              </span>
             ) : null}
           </div>
         </div>
@@ -151,6 +207,7 @@ function Frame({
   session: x,
   frame,
   yours = false,
+  away = false,
   right,
   marks,
   pageRef,
@@ -158,27 +215,38 @@ function Frame({
   session: BrowserSession;
   frame: SessionFrame | undefined;
   yours?: boolean;
+  /** Yours, but in the session's own window: this one only mirrors it. */
+  away?: boolean;
   right?: string;
   marks?: PageSnapshot | undefined;
   pageRef?: RefObject<HTMLDivElement | null>;
 }) {
-  const act = yours ? () => actInPage(x.id) : undefined;
+  const takes = yours && !away;
+  const act = takes ? () => actInPage(x.id) : undefined;
   return (
     <div className={cx(s.frame, yours && s.yours)} data-control={yours ? "you" : "agent"}>
       <div className={s.bar}>
         <span className={s.url}>{frame === undefined ? <span /> : <MiddleCut text={frame.url} />}</span>
         <Text size="xs" tone="inherit" strong={yours} tabular>
-          {right ?? (yours ? "You’re in control: mouse and keys go to the page" : x.state === "starting" ? "Starting" : "The agent is driving")}
+          {right ??
+            (away
+              ? "You’re in control, in its own window"
+              : yours
+                ? "You’re in control: mouse and keys go to the page"
+                : x.state === "starting"
+                  ? "Starting"
+                  : "The agent is driving")}
         </Text>
       </div>
       <div
         ref={pageRef}
         className={s.screen}
-        role={yours ? "application" : "img"}
-        aria-label={yours ? "The page: your clicks and keys go to it" : `The page${frame === undefined ? "" : `: ${frame.url}`}`}
-        tabIndex={yours ? 0 : undefined}
+        role={takes ? "application" : "img"}
+        aria-label={takes ? "The page: your clicks and keys go to it" : `The page${frame === undefined ? "" : `: ${frame.url}`}`}
+        tabIndex={takes ? 0 : undefined}
         onPointerDown={act}
-        onKeyDown={act}
+        // A modifier alone types nothing (it may be the start of ⌘⇧↩, which the keymap keeps from the page).
+        onKeyDown={act === undefined ? undefined : (e) => MODIFIERS.has(e.key) || act()}
       >
         {frame === undefined ? <span className={s.blank} /> : <img src={frame.image} alt="" draggable={false} />}
         {marks?.targets.map((i) => {

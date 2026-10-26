@@ -57,7 +57,7 @@ export function ProjectPanel({ project, view: asked, onWide }: { project: Projec
     <PanesProvider>
       <Tabs className={s.panel} value={section.id} onValueChange={(id) => pick(viewOf(project, id, features))}>
         <div className={s.head}>
-          <SectionTabs count={count} />
+          <SectionTabs count={count} features={features} />
         </div>
         <TabPanel value={section.id} className={s.section}>
           {section.views.length > 1 ? (

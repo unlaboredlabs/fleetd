@@ -30,7 +30,7 @@ function SessionList({ project }: { project: ProjectKey }) {
   return (
     <div className={s.pane} data-screen="sessions">
       {sessions.length === 0 ? (
-        <EmptyState title="No browser sessions yet">When an agent opens a browser, it shows here: live while it runs, then its recording.</EmptyState>
+        <EmptyState title="No sessions yet">When an agent opens a browser, it shows here: live while it runs, then its recording.</EmptyState>
       ) : (
         <>
           <div className={s.list}>

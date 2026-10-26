@@ -65,7 +65,9 @@ export type Screen =
   /** A tab; `prompt`, `for` ("<machine>/<project>") and `view` link one prompt, a project's texts or a prompt's update. */
   | { readonly id: "settings"; readonly tab: SettingsTab; readonly prompt?: string; readonly for?: string; readonly view?: SettingsView }
   /** A fleetd://pair link prefills the hub and code; the screen still asks before it pairs. */
-  | { readonly id: "onboarding"; readonly hub: string | null; readonly code: string | null };
+  | { readonly id: "onboarding"; readonly hub: string | null; readonly code: string | null }
+  /** One session in a window of its own (the pop-out, for taking over); the main window shows it in the panel. */
+  | { readonly id: "session"; readonly project: ProjectKey; readonly session: string };
 
 export const HOME: Screen = { id: "home" };
 
@@ -120,6 +122,10 @@ const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): Screen 
     }
     case "status":
       return { id: "status" };
+    case "session": {
+      const id = parts[3];
+      return a === undefined || b === undefined || id === undefined ? HOME : { id: "session", project: { machineId: a, projectId: b }, session: id };
+    }
     case "factory":
       return { id: "factory", project: projectParam(query.get("project")) };
     case "time":
@@ -182,6 +188,8 @@ const path = (screen: Screen): Array<string> => {
       return ["projects", "add"];
     case "settings":
       return ["settings", screen.tab];
+    case "session":
+      return ["session", screen.project.machineId, screen.project.projectId, screen.session];
     case "status":
     case "factory":
     case "machines":

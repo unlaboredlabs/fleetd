@@ -1,7 +1,7 @@
 import type { LinkHandlerClaim, LinkHandlerStatus, NotifyRequest, OpenTarget } from "../shared/app";
 import type { MenuCommand } from "../shared/menu";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
-import type { ChatScope, ErrorReport, McpServerRequest, OrderFocus, ProjectEnvRequest, SecretRequest } from "../shared/ipc";
+import type { ChatScope, ErrorReport, McpServerRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest } from "../shared/ipc";
 import type { KeyStore, PairOutcome, PairRequest, PairStart, Probe, SetupOutcome } from "../shared/pairing";
 import type { UpdatesState } from "../shared/updates";
 
@@ -109,6 +109,8 @@ export interface FleetdApi {
     notify(request: NotifyRequest): Promise<boolean>;
     /** The Dock (or launcher) badge count; 0 clears it. */
     setBadge(count: number): Promise<void>;
+    /** Opens one session in a window of its own (the pop-out, for taking over), or brings that window forward. */
+    sessionWindow(request: SessionWindowRequest): Promise<void>;
     /** Mirrors the app's light/dark choice to the window, so its translucent sidebar matches. */
     setTheme(mode: "system" | "light" | "dark"): Promise<void>;
     /**

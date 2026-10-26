@@ -71,6 +71,8 @@ export const IPC = {
   appMenuState: "app:menuState",
   /** invoke(ErrorReport) → void. An error the page caught (an error card, an uncaught error); main logs it, scrubbed. */
   appLog: "app:log",
+  /** invoke(SessionWindowRequest) → void. Opens one session in a window of its own, or brings that window forward. */
+  appSessionWindow: "app:sessionWindow",
   /** invoke() → UpdatesState. The app's own update (src/main/updater.ts). */
   updatesState: "updates:state",
   /** invoke() → void. A check someone asked for; its answer comes as `updatesChanged`. */

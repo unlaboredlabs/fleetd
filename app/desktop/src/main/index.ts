@@ -28,6 +28,7 @@ import { PresenceSetting, startPresence } from "./presence";
 import { FAILURES_IN_A_ROW, guardWindow } from "./recovery";
 import { harden, isOwnPage, lockSession, pageUrl } from "./security";
 import { updates } from "./updater";
+import { SessionWindows } from "./sessionWindow";
 import { restorePlacement, trackPlacement } from "./windowState";
 
 /** Height of the renderer's top bar; the macOS traffic lights are centred in it. */
@@ -130,6 +131,26 @@ const hubMode = (): { mode: HubMode; fixtureFile: string | null; keyStore: KeySt
   };
 };
 
+/** What every window of the app's page runs with: the preload, the sandbox and what the page reads at startup. */
+const pagePreferences = (mode: HubMode) => {
+  const mac = process.platform === "darwin";
+  return {
+    preload: join(import.meta.dirname, "../preload/index.cjs"),
+    contextIsolation: true,
+    sandbox: true,
+    nodeIntegration: false,
+    webSecurity: true,
+    spellcheck: false,
+    additionalArguments: [
+      // The version, for an error card's Copy details.
+      `--fleetd-version=${app.getVersion()}`,
+      // The page shows a "sample data" banner for as long as a fixture stands in for the hub.
+      ...(mode.kind === "fixture" ? [`--fleetd-fixture=${mode.fixture.name}`] : []),
+      ...(mac ? ["--fleetd-vibrancy"] : []),
+    ],
+  };
+};
+
 const createWindow = (mode: HubMode): BrowserWindow => {
   const mac = process.platform === "darwin";
   const placement = restorePlacement(LIMITS);
@@ -152,21 +173,7 @@ const createWindow = (mode: HubMode): BrowserWindow => {
           visualEffectState: "followWindow" as const,
         }
       : {}),
-    webPreferences: {
-      preload: join(import.meta.dirname, "../preload/index.cjs"),
-      contextIsolation: true,
-      sandbox: true,
-      nodeIntegration: false,
-      webSecurity: true,
-      spellcheck: false,
-      additionalArguments: [
-        // The version, for an error card's Copy details.
-        `--fleetd-version=${app.getVersion()}`,
-        // The page shows a "sample data" banner for as long as a fixture stands in for the hub.
-        ...(mode.kind === "fixture" ? [`--fleetd-fixture=${mode.fixture.name}`] : []),
-        ...(mac ? ["--fleetd-vibrancy"] : []),
-      ],
-    },
+    webPreferences: pagePreferences(mode),
   });
   win.once("ready-to-show", () => {
     if (placement.maximized) win.maximize();
@@ -237,7 +244,23 @@ void app.whenReady().then(() => {
   }
   const updater = updates(fixtureFile);
   const presence = new PresenceSetting(join(app.getPath("userData"), "presence.json"));
-  registerIpc(hub, { opener, notifier: new Notifier(opener), log: appLog, updates: updater, presence }, pairing);
+  const sessionWindows = new SessionWindows((hash) => {
+    const win = new BrowserWindow({
+      width: 1180,
+      height: 820,
+      minWidth: 720,
+      minHeight: 520,
+      show: false,
+      title: "Session · fleetd",
+      backgroundColor: nativeTheme.shouldUseDarkColors ? "#111214" : "#ffffff",
+      ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 16, y: (TOP_BAR - TRAFFIC_LIGHT) / 2 } } : {}),
+      webPreferences: pagePreferences(mode),
+    });
+    win.once("ready-to-show", () => win.show());
+    void win.loadURL(`${pageUrl()}${hash}`);
+    return win;
+  });
+  registerIpc(hub, { opener, notifier: new Notifier(opener), log: appLog, updates: updater, presence, sessionWindows }, pairing);
   installMenu(opener, help);
   claimOnFirstRun();
   app.on("browser-window-focus", () => {

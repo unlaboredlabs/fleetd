@@ -3,8 +3,8 @@
 // compact row of four tabs, each its icon beside its word and its count on the word's baseline, a tooltip saying what
 // it is; under the row that same line, and in a section of two views a second, smaller row of tabs between them
 // (ui/DESIGN.md). The views are tabs.ts's, each with its route; a section remembers the view you last had in it while
-// the app runs. A view the hub doesn't serve (tabs.ts `feature`) isn't there: Agents without Browser sessions is one
-// view, with its own line.
+// the app runs. A view the hub doesn't serve (tabs.ts `feature`) isn't there: Agents without Sessions is one view, with
+// its own line.
 import { Bot, History, ListChecks, Ship, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Tab, TabList, Tooltip } from "../../ui";
@@ -33,7 +33,7 @@ export const SECTIONS: readonly Section[] = [
     lineAlone: "The AI workers on this project, and what each is doing right now.",
     views: [
       ["agents", "Agents"],
-      ["sessions", "Browser sessions"],
+      ["sessions", "Sessions"],
     ],
   },
   {
@@ -89,11 +89,15 @@ export const viewOf = (project: ProjectKey, id: string, features: readonly strin
 /** Forgets every section's view (tests start from the first). */
 export const forgetViews = (): void => lastView.clear();
 
-/** The four sections, as the panel's tabs (inside its Tabs, whose value is a section's id). */
-export function SectionTabs({ count }: { count: (tab: PanelTab) => ReactNode }) {
+/**
+ * The four sections, as the panel's tabs (inside its Tabs, whose value is a section's id), each tooltip the line for
+ * the views the hub serves.
+ */
+export function SectionTabs({ count, features }: { count: (tab: PanelTab) => ReactNode; features: readonly string[] }) {
   return (
     <TabList aria-label="Panel" className={s.bar}>
-      {SECTIONS.map((g) => {
+      {SECTIONS.map((section) => {
+        const g = servedSection(section, features);
         const Icon = g.icon;
         const first = g.views[0]?.[0] ?? "agents";
         return (
