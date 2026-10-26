@@ -3166,6 +3166,100 @@ async fn a_merge_refused_for_expected_checks_waits_for_them_and_merges_without_a
     );
 }
 
+/// GitHub's words decide, not the names it quotes: a required check named `error-prone` that is only expected still
+/// waits, and one that failed doesn't.
+#[test]
+fn a_merge_refused_for_checks_still_to_report_waits_whatever_the_checks_are_named() {
+    use super::service::awaits_checks;
+    for waits in [
+        "Required status check \"error-prone\" is expected.",
+        "Required status check \"fail-fast\" is in progress.",
+        "Repository rule violations found\n\nRequired status check \"lint.errors\" is expected.",
+    ] {
+        assert!(awaits_checks(waits), "{waits}");
+    }
+    for gives_up in [
+        "Required status check \"is expected\" has failed.",
+        "Required status check \"build\" is expected. Required status check \"lint\" has failed.",
+    ] {
+        assert!(!awaits_checks(gives_up), "{gives_up}");
+    }
+}
+
+/// The head's checks all pass, but the `build` its base requires never reports. The train gives up on it within the
+/// CI timeout and says `build` never reported, not that CI ran long or waited for a runner.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_required_check_that_never_reports_times_out_within_the_ci_timeout_by_name() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Required, clock.clone());
+    answer_checks(&kit, || vec![job(1, 1, "lint", "success")]);
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+
+    kit.train.step(REPO).await;
+    let parked = kit.get(&change_id);
+    assert_eq!(parked.state, ChangeState::CiFailed);
+    let options = TrainOptions::default();
+    assert!(
+        slept(&clock) <= options.ci_timeout + options.poll_interval,
+        "held {:?}",
+        slept(&clock)
+    );
+    let why = parked.last_error.unwrap();
+    assert!(
+        why.ends_with(
+            "the required check build never reported within 45 min; every other check passed"
+        ),
+        "{why:?}"
+    );
+    assert!(kit.gh.merges.lock().unwrap().is_empty());
+}
+
+/// The train reads the head green, but GitHub keeps refusing the merge for checks it still expects. The train backs
+/// off between tries and reads the head's checks again before each, rather than calling merge every poll until the CI
+/// timeout.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_merge_refused_again_and_again_for_expected_checks_backs_off_between_tries() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Required, clock.clone());
+    let log = kit.gh.log.clone();
+    answer_checks(&kit, move || {
+        log.lock().unwrap().push("checks read".into());
+        vec![job(1, 1, "build", "success")]
+    });
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+    let expected = "3 of 3 required status checks are expected.";
+    kit.gh
+        .merge_replies
+        .lock()
+        .unwrap()
+        .extend((0..1000).map(|_| http_error(405, expected)));
+
+    kit.train.step(REPO).await;
+    let log = gh_log(&kit);
+    let tries: Vec<usize> = log
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| *l == "refused #7")
+        .map(|(i, _)| i)
+        .collect();
+    assert!(
+        (2..=20).contains(&tries.len()),
+        "{} merge tries in {:?}",
+        tries.len(),
+        slept(&clock)
+    );
+    assert!(
+        tries
+            .windows(2)
+            .all(|w| log[w[0]..w[1]].iter().any(|l| l == "checks read")),
+        "a try without the checks read again: {log:?}"
+    );
+    assert!(slept(&clock) >= TrainOptions::default().ci_timeout);
+    assert_eq!(kit.get(&change_id).state, ChangeState::Ready);
+}
+
 /// Three PRs, each adding its own file, reviewed and ready: 7 (a), 8 (b), 9 (c).
 async fn three_ready(kit: &Kit) -> [Change; 3] {
     let mut out = Vec::new();
