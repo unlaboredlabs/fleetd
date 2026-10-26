@@ -1,6 +1,7 @@
 //! A project's own settings (Settings › Projects in the app): `project_settings_get`, `project_settings_set` and
 //! `project_env_set`, and what the hub keeps of them: `project_settings.keep_worktrees`, `project_settings.setup` (the
-//! commands each new worktree runs before its agent starts, sent with each task's launch) and the `project_env` rows.
+//! commands each new worktree runs before its agent starts, sent with each task's launch), `project_settings.train`
+//! (the checks the merge train waits for, and those it leaves for after the merge) and the `project_env` rows.
 //!
 //! A variable is set on the project's node first, which keeps the value and adds it to every claude it starts for
 //! the project; only then does the hub record it. The hub's row holds a plain variable's value and a secret's
@@ -20,7 +21,8 @@ use fleetd_contracts::project_settings::{
     ENV_TOTAL_MAX_BYTES, ENV_VALUE_MAX_BYTES, env_total_over,
 };
 use fleetd_contracts::project_settings::{
-    EnvValue, EnvVarKind, EnvVarName, EnvVarSet, PROJECT_ENV_MAX, ProjectEnvVar, WorktreeSetup,
+    EnvValue, EnvVarKind, EnvVarName, EnvVarSet, PROJECT_ENV_MAX, ProjectEnvVar, TrainSettings,
+    WorktreeSetup,
 };
 use fleetd_contracts::secrets::{Base64Alphabet, SEAL_OVERHEAD, SecretFingerprint, base64_bytes};
 use rusqlite::{OptionalExtension, params};
@@ -117,6 +119,37 @@ impl ProjectSettingsStore<'_> {
             c.execute(
                 "INSERT INTO project_settings (machine_id, project_id, medium_allowed, setup) VALUES (?, ?, 1, ?)
                  ON CONFLICT (machine_id, project_id) DO UPDATE SET setup = excluded.setup",
+                params![r.machine_id.as_str(), r.project_id.as_str(), json],
+            )?;
+            Ok(())
+        })
+    }
+
+    /// How the merge train treats the project's repo's checks; the defaults when none are set.
+    pub fn train(&self, r: &ProjectRef) -> Result<TrainSettings, StoreError> {
+        let saved: Option<Option<String>> = self.db.with(|c| {
+            Ok(c.query_row(
+                "SELECT train FROM project_settings WHERE machine_id = ? AND project_id = ?",
+                params![r.machine_id.as_str(), r.project_id.as_str()],
+                |row| row.get(0),
+            )
+            .optional()?)
+        })?;
+        Ok(saved
+            .flatten()
+            .and_then(|json| serde_json::from_str(&json).ok())
+            .unwrap_or_default())
+    }
+
+    /// Replaces the train settings; the defaults clear them.
+    pub fn set_train(&self, r: &ProjectRef, train: &TrainSettings) -> Result<(), StoreError> {
+        let json = (*train != TrainSettings::default())
+            .then(|| serde_json::to_string(train))
+            .transpose()?;
+        self.db.with(|c| {
+            c.execute(
+                "INSERT INTO project_settings (machine_id, project_id, medium_allowed, train) VALUES (?, ?, 1, ?)
+                 ON CONFLICT (machine_id, project_id) DO UPDATE SET train = excluded.train",
                 params![r.machine_id.as_str(), r.project_id.as_str(), json],
             )?;
             Ok(())
@@ -262,6 +295,7 @@ async fn settings_of(hub: &Hub, r: &ProjectRef) -> Result<ProjectSettings, ToolE
         keep_worktrees: store.keep_worktrees(r)?,
         env: store.env(r)?,
         setup: store.setup(r)?.unwrap_or_default(),
+        train: store.train(r)?,
         worktrees,
         worktrees_unknown,
     })
@@ -310,12 +344,17 @@ async fn set(
     if let Some(setup) = &input.setup {
         hub.db.project_settings().set_setup(&r, setup)?;
     }
+    if let Some(train) = &input.train {
+        hub.db.project_settings().set_train(&r, train)?;
+    }
     let mut settings = settings_of(&hub, &r).await?;
     if let Some(title) = input.title {
         // Until the node's project event lands in the cache.
         settings.title = title.to_string();
     }
-    let next = if input.setup.as_ref().is_some_and(|s| !s.is_empty())
+    let next = if input.train.is_some() && input.setup.is_none() && input.keep_worktrees.is_none() {
+        "The merge train uses these settings from its next pass.".to_owned()
+    } else if input.setup.as_ref().is_some_and(|s| !s.is_empty())
         && !hub
             .link
             .node_can(m, fleetd_contracts::node_link::CAP_WORKTREE_SETUP)

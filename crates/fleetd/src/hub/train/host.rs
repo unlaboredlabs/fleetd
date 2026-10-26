@@ -103,6 +103,14 @@ pub trait TrainHost: Send + Sync + 'static {
     fn branch_prefix<'a>(&'a self, _project_ref: &'a ProjectRef) -> BoxFut<'a, Option<String>> {
         Box::pin(async { Some(fleetd_contracts::tasks::DEFAULT_BRANCH_PREFIX.to_string()) })
     }
+    /// How the project's train treats its repo's checks (Settings › Projects); None when they can't be read now, and
+    /// then the train waits for every check, as with no settings it can trust.
+    fn train_settings(
+        &self,
+        _project_ref: &ProjectRef,
+    ) -> Option<fleetd_contracts::project_settings::TrainSettings> {
+        Some(Default::default())
+    }
     /// Whether the work ledger's landing scanner watches `repo`'s `base`: it then tells the leads about each merge
     /// there that didn't go through the train, so the train doesn't.
     fn landings_watched(&self, _repo: &str, _base: &str) -> bool {

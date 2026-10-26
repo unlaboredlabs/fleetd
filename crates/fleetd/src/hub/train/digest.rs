@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use super::batch::LEFT_OUT;
 use super::contract::{Change, ChangeState, ProjectRef, TrainState, state_str};
 use super::next::WAITING_FOR_RUNNERS;
 use super::records::{ChangeRecords, DRAFT, ListFilter, is_draft};
@@ -50,6 +51,14 @@ fn state_of(changes: &[Change], train: &TrainState) -> String {
         .iter()
         .map(|id| match by_id.get(id.as_str()) {
             Some(c) if is_draft(c) => format!("{id} {DRAFT}"),
+            // A ready PR the batch left out says why: `X3 ready (not in this batch: its own head's `lint` failed)`.
+            Some(c)
+                if c.state == ChangeState::Ready
+                    && let Some(why) =
+                        c.last_error.as_deref().filter(|e| e.starts_with(LEFT_OUT)) =>
+            {
+                format!("{id} ready ({})", one_line(why, 100))
+            }
             Some(c) => format!("{id} {}", state_str(c.state)),
             None => id.to_string(),
         })

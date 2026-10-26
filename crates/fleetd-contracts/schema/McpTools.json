@@ -10036,6 +10036,14 @@
         "title": {
           "type": "string"
         },
+        "train": {
+          "$ref": "#/$defs/TrainSettings",
+          "default": {
+            "afterMerge": [],
+            "fastChecks": []
+          },
+          "description": "How the merge train treats the checks of the project's repo; none set by default."
+        },
         "workspaceRoot": {
           "type": "string"
         },
@@ -10112,6 +10120,10 @@
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
           "type": "string"
+        },
+        "train": {
+          "$ref": "#/$defs/TrainSettings",
+          "description": "Replaces how the merge train treats the repo's checks: the checks it also waits for, and those left for\nafter the merge."
         }
       },
       "required": [
@@ -14520,6 +14532,36 @@
         "chips",
         "mergedToday"
       ],
+      "type": "object"
+    },
+    "TrainSettings": {
+      "description": "How the merge train treats the checks of the project's repo. It waits only for its fast set: the checks the base\nbranch requires, read from its ruleset or branch protection, plus `fastChecks`. It never waits for any other\ncheck; one of those that has already failed when the fast set is green still stops the merge, unless it is in\n`afterMerge`. After a merge the train watches every check outside the fast set on the base branch, and a failure\nthere opens a fix order. A check the base requires is always in the fast set: GitHub won't merge without it.",
+      "properties": {
+        "afterMerge": {
+          "default": [],
+          "description": "Checks that never stop a merge, even once failed: they only run after it.",
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 50,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "fastChecks": {
+          "default": [],
+          "description": "Checks the train waits for besides the required ones.",
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 50,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
       "type": "object"
     },
     "TrainState": {

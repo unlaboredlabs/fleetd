@@ -37,6 +37,12 @@ pub const PROJECT_USAGE: &str =
   project set <machine>/<project> --medium on|off [--home <dir>] [--hub <url>]
              whether the lead may run mechanical tasks on the medium profile (on by
              default); off runs every task on high
+  project set <machine>/<project> [--fast-check <check>]... [--after-merge <check>]...
+         [--home <dir>] [--hub <url>]
+             how the merge train treats the repo's checks. It waits only for its fast
+             set: the checks the base branch requires, plus each --fast-check. Each
+             --after-merge never stops a merge, even once failed; it is watched on the
+             base after the merge. Each option replaces its list; none empties it
 ";
 
 const SPEC: Spec = Spec {
@@ -53,6 +59,8 @@ const SPEC: Spec = Spec {
         ("fleet-cap", Kind::Str),
         ("key-file", Kind::Str),
         ("medium", Kind::Str),
+        ("fast-check", Kind::Multi),
+        ("after-merge", Kind::Multi),
     ],
     positionals: true,
 };
@@ -446,6 +454,31 @@ async fn set(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(), 
         _ => count_of(v, "max-agents")?.map(Some),
     };
     let fleet_cap = count_of(v, "fleet-cap")?;
+    let train = v.has("fast-check") || v.has("after-merge");
+    if train {
+        let (machine, project) = find(client, v).await?;
+        let at = json!({ "machineId": machine, "projectId": s(&project, "/projectId") });
+        let current = call(client, "project_settings_get", at.clone()).await?;
+        let mut settings = current["settings"]["train"].clone();
+        // `none` alone empties the list.
+        for (option, key) in [("fast-check", "fastChecks"), ("after-merge", "afterMerge")] {
+            if v.has(option) {
+                let names = v.multi(option);
+                settings[key] = if names == ["none"] {
+                    json!([])
+                } else {
+                    json!(names)
+                };
+            }
+        }
+        let mut input = at;
+        input["train"] = settings;
+        let body = call(client, "project_settings_set", input).await?;
+        out.success(body.get("next").and_then(Value::as_str).unwrap_or("Set."));
+        if medium.is_none() && max_agents.is_none() && fleet_cap.is_none() {
+            return Ok(());
+        }
+    }
     if let Some(allowed) = medium {
         let (machine, project) = find(client, v).await?;
         let body = call(
@@ -475,10 +508,10 @@ async fn set(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(), 
                 None => input["project"]["followDefault"] = json!(true),
             }
         }
-        (Some(_), None) if medium.is_none() => {
+        (Some(_), None) if medium.is_none() && !train => {
             return Err(Stop(
                 2,
-                "give --max-agents <n> or --medium on|off for the project".into(),
+                "give --max-agents <n>, --medium on|off, --fast-check or --after-merge for the project".into(),
                 None,
             ));
         }

@@ -168,6 +168,10 @@ struct FakeGh {
     runs: Mutex<Option<Box<dyn Fn() -> Value + Send + Sync>>>,
     /// The workflow runs whose failed jobs were re-run, in order.
     reruns: Arc<Mutex<Vec<u64>>>,
+    /// The `check_runs` of one head, before `runs` and `ci`.
+    head_runs: Mutex<HashMap<String, Value>>,
+    /// The checks main requires through a ruleset, when set: in place of what `ci` requires.
+    required: Mutex<Option<Vec<String>>>,
 }
 
 fn ok(body: Value) -> GhOut {
@@ -621,6 +625,9 @@ impl FakeGh {
                     look();
                 }
                 self.moves_during_ci(sha);
+                if let Some(runs) = self.head_runs.lock().unwrap().get(*sha) {
+                    return ok(json!({ "check_runs": runs }));
+                }
                 if let Some(runs) = &*self.runs.lock().unwrap() {
                     return ok(json!({ "check_runs": runs() }));
                 }
@@ -670,6 +677,11 @@ impl FakeGh {
             (["branches", ..], "GET") => ok(
                 json!({ "name": "main", "protected": false, "protection": { "enabled": false, "required_status_checks": { "enforcement_level": "off", "contexts": [] } } }),
             ),
+            (["rules", "branches", ..], "GET") if self.required.lock().unwrap().is_some() => {
+                let names = self.required.lock().unwrap().clone().unwrap_or_default();
+                let checks: Vec<Value> = names.iter().map(|n| json!({ "context": n })).collect();
+                ok(json!([{ "type": "required_status_checks", "ruleset_id": 1, "parameters": { "required_status_checks": checks } }]))
+            }
             (["rules", "branches", ..], "GET") => ok(match self.ci {
                 FakeCi::Required => {
                     json!([{ "type": "required_status_checks", "ruleset_id": 1, "parameters": { "required_status_checks": [{ "context": "build" }] } }])
@@ -894,6 +906,8 @@ struct FakeHost {
     branches: Mutex<HashMap<String, String>>,
     /// Bases the landing scanner watches.
     watched: Mutex<HashSet<String>>,
+    /// The project's train settings; None reads as unreadable.
+    train: Mutex<Option<fleetd_contracts::project_settings::TrainSettings>>,
 }
 
 impl FakeHost {
@@ -957,6 +971,12 @@ impl FakeHost {
 }
 
 impl TrainHost for FakeHost {
+    fn train_settings(
+        &self,
+        _: &ProjectRef,
+    ) -> Option<fleetd_contracts::project_settings::TrainSettings> {
+        self.train.lock().unwrap().clone()
+    }
     fn landings_watched(&self, _repo: &str, base: &str) -> bool {
         self.watched.lock().unwrap().contains(base)
     }
@@ -1224,6 +1244,8 @@ impl Kit {
             on_checks: Mutex::default(),
             runs: Mutex::default(),
             reruns: Arc::default(),
+            head_runs: Mutex::default(),
+            required: Mutex::default(),
         });
         let host = Arc::new(FakeHost {
             tasks: Mutex::default(),
@@ -1237,6 +1259,7 @@ impl Kit {
             ws_closed: Mutex::default(),
             branches: Mutex::default(),
             watched: Mutex::default(),
+            train: Mutex::new(Some(Default::default())),
         });
         let gate = Arc::new(FakeGate::default());
         let mut options = TrainOptions {
@@ -4692,4 +4715,398 @@ async fn a_batch_whose_checks_wait_for_runners_says_so_after_five_minutes() {
         assert_eq!(merged.state, ChangeState::Merged);
         assert_eq!(merged.last_error, None);
     }
+}
+
+/// A check run that finished `conclusion`, or is still `in_progress` when None.
+fn run(id: u64, name: &str, conclusion: Option<&str>) -> Value {
+    let status = if conclusion.is_some() {
+        "completed"
+    } else {
+        "in_progress"
+    };
+    json!({ "id": id, "name": name, "status": status, "conclusion": conclusion, "started_at": BEFORE,
+        "html_url": format!("https://github.com/{REPO}/actions/runs/{id}/job/{id}") })
+}
+
+/// Two repos' CI, as different as repos are: what main requires, what the project adds to the fast set, and the runs
+/// every head shows. In each, every check of the fast set is green, and checks outside it still run or were cancelled.
+struct RepoCi {
+    required: &'static [&'static str],
+    fast: &'static [&'static str],
+    runs: fn() -> Vec<Value>,
+}
+
+const REPOS: [RepoCi; 2] = [
+    // A service: one required build; its slow end-to-end suite and a superseded lint run aren't in the fast set.
+    RepoCi {
+        required: &["build"],
+        fast: &[],
+        runs: || {
+            vec![
+                run(1, "build", Some("success")),
+                run(2, "e2e (macos-latest)", None),
+                run(3, "lint", Some("cancelled")),
+            ]
+        },
+    },
+    // A library: two required checks, and integration tests the project added; docs and a benchmark run after.
+    RepoCi {
+        required: &["fmt", "unit (linux)"],
+        fast: &["integration"],
+        runs: || {
+            vec![
+                run(1, "fmt", Some("success")),
+                run(2, "unit (linux)", Some("success")),
+                run(3, "integration", Some("success")),
+                run(4, "docs", Some("cancelled")),
+                run(5, "bench", None),
+            ]
+        },
+    },
+];
+
+fn train_settings(
+    fast: &[&str],
+    after: &[&str],
+) -> fleetd_contracts::project_settings::TrainSettings {
+    serde_json::from_value(json!({ "fastChecks": fast, "afterMerge": after })).unwrap()
+}
+
+/// A kit on `repo`'s CI, with no wait for CI that doesn't finish at once.
+fn kit_on(repo: &RepoCi) -> Kit {
+    let kit = Kit::with(FakeCi::Actions, one_poll);
+    *kit.gh.required.lock().unwrap() = Some(repo.required.iter().map(|s| s.to_string()).collect());
+    *kit.host.train.lock().unwrap() = Some(train_settings(repo.fast, &[]));
+    let runs = repo.runs;
+    answer_checks(&kit, runs);
+    kit
+}
+
+/// W54: several ready PRs whose required and fast checks are green go as one batch, in every repo, whatever its other
+/// checks are doing: still running, or cancelled. Before, a PR joined only once every check on its head had finished
+/// green, so the train took them one at a time.
+#[tokio::test(flavor = "multi_thread")]
+async fn ready_prs_green_on_their_fast_set_batch_in_any_repo() {
+    for repo in &REPOS {
+        let kit = kit_on(repo);
+        let a = kit
+            .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+            .await;
+        let b = kit
+            .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]))
+            .await;
+        let c = kit
+            .enqueue(kit.open_pr(9, "c", &[add("c1.txt", "c\n")]))
+            .await;
+
+        assert!(kit.train.step(REPO).await);
+        assert_eq!(
+            merged_prs(&kit).len(),
+            1,
+            "one squash for the three: {:?}",
+            repo.required
+        );
+        assert_eq!(members_of_batch(&kit), [7, 8, 9]);
+        for change in [&a, &b, &c] {
+            assert_eq!(state_of(&kit, change), ChangeState::Merged);
+        }
+    }
+}
+
+/// W54: the train waits only for its fast set. A lone PR whose required checks pass merges while its slow checks run;
+/// a check the project adds to the fast set is waited for; a check outside it that already failed stops the merge,
+/// unless the project left it for after the merge.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_train_never_waits_on_a_check_outside_the_fast_set() {
+    for repo in &REPOS {
+        let kit = kit_on(repo);
+        let a = kit
+            .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+            .await;
+        assert!(kit.train.step(REPO).await);
+        assert_eq!(
+            state_of(&kit, &a),
+            ChangeState::Merged,
+            "{:?}",
+            repo.required
+        );
+    }
+
+    // The slow check in the fast set: the train waits for it, here until its (zero) timeout.
+    let kit = kit_on(&REPOS[0]);
+    *kit.host.train.lock().unwrap() = Some(train_settings(&["e2e (macos-latest)"], &[]));
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    assert!(kit.train.step(REPO).await);
+    let waited = kit.get(&a.change_id);
+    assert_eq!(waited.state, ChangeState::CiFailed);
+    assert!(
+        waited
+            .last_error
+            .as_deref()
+            .unwrap()
+            .starts_with("CI timed out"),
+        "{:?}",
+        waited.last_error
+    );
+
+    // Marked after-merge only, it is never waited for again.
+    *kit.host.train.lock().unwrap() = Some(train_settings(
+        &["e2e (macos-latest)"],
+        &["e2e (macos-latest)"],
+    ));
+    let b = kit
+        .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]))
+        .await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &b), ChangeState::Merged);
+
+    // A check outside the fast set that already failed stops the merge; left for after the merge, it doesn't.
+    let red = || {
+        vec![
+            run(1, "build", Some("success")),
+            run(2, "docs", Some("failure")),
+        ]
+    };
+    let kit = kit_on(&REPOS[0]);
+    answer_checks(&kit, red);
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    assert!(kit.train.step(REPO).await);
+    let stopped = kit.get(&a.change_id);
+    assert_eq!(stopped.state, ChangeState::CiFailed);
+    assert!(
+        stopped
+            .last_error
+            .as_deref()
+            .unwrap()
+            .contains("docs (failure)"),
+        "{:?}",
+        stopped.last_error
+    );
+    *kit.host.train.lock().unwrap() = Some(train_settings(&[], &["docs"]));
+    let b = kit
+        .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]))
+        .await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &b), ChangeState::Merged);
+}
+
+/// Unreadable settings are no license to skip checks: the train waits for every check, as before.
+#[tokio::test(flavor = "multi_thread")]
+async fn unreadable_train_settings_wait_for_every_check() {
+    let kit = kit_on(&REPOS[0]);
+    *kit.host.train.lock().unwrap() = None;
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &a), ChangeState::CiFailed);
+    assert!(merged_prs(&kit).is_empty());
+}
+
+/// W54: each pass says why each ready PR was left out of the batch, on its Change and in the train's line, in plain
+/// words; once it can join, the reason goes.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pr_left_out_of_a_batch_says_why() {
+    let kit = kit_on(&REPOS[0]);
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    let red = kit
+        .enqueue(kit.open_pr(8, "r", &[add("r1.txt", "r\n")]))
+        .await;
+    let slow = kit
+        .enqueue(kit.open_pr(9, "s", &[add("s1.txt", "s\n")]))
+        .await;
+    let d = kit
+        .enqueue(kit.open_pr(10, "d", &[add("d1.txt", "d\n")]))
+        .await;
+    let heads = &kit.gh.head_runs;
+    heads
+        .lock()
+        .unwrap()
+        .insert(kit.head_of("r"), json!([run(1, "build", Some("failure"))]));
+    heads
+        .lock()
+        .unwrap()
+        .insert(kit.head_of("s"), json!([run(1, "build", None)]));
+    // Hold the batch in CI, to read the line while it waits.
+    let line = Arc::new(Mutex::new(Vec::new()));
+    let (seen, records) = (line.clone(), kit.train.records.clone());
+    *kit.gh.on_checks.lock().unwrap() = Some(Box::new(move || {
+        let facts = super::digest::train_facts(&records, |_| true);
+        seen.lock()
+            .unwrap()
+            .push(super::digest::lead_train_lines(&facts, None).join("\n"));
+    }));
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(members_of_batch(&kit), [7, 10]);
+    assert_eq!(state_of(&kit, &a), ChangeState::Merged);
+    assert_eq!(state_of(&kit, &d), ChangeState::Merged);
+    let why = |c: &Change| kit.get(&c.change_id).last_error;
+    assert_eq!(
+        why(&red).as_deref(),
+        Some("not in this batch: its own head's `build` failed")
+    );
+    assert_eq!(
+        why(&slow).as_deref(),
+        Some("not in this batch: its own head's `build` still running")
+    );
+    let shown = line.lock().unwrap().last().cloned().unwrap();
+    assert!(
+        shown.contains(&format!(
+            "{} ready (not in this batch: its own head's `build` failed)",
+            red.change_id
+        )),
+        "{shown}"
+    );
+
+    // Green on its own head now: it joins, and the reason goes.
+    heads.lock().unwrap().remove(&kit.head_of("s"));
+    let e = kit
+        .enqueue(kit.open_pr(11, "e", &[add("e1.txt", "e\n")]))
+        .await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &slow), ChangeState::Merged);
+    assert_eq!(state_of(&kit, &e), ChangeState::Merged);
+    assert_eq!(why(&slow), None);
+    // Alone in line, the red one is taken by itself (rebased, its new head is tested), and no reason is left on it.
+    assert!(kit.train.step(REPO).await);
+    assert!(!why(&red).is_some_and(|e| e.starts_with(super::batch::LEFT_OUT)));
+}
+
+impl Kit {
+    /// A new train on this kit's database, GitHub and hub, as after a hub restart; the old one stopped.
+    fn restarted(&self) -> Arc<Train> {
+        self.train.stop();
+        let gate = self.gate.clone();
+        let train = Train::new(
+            self.host.clone(),
+            Arc::new(SystemClock),
+            self.db.clone(),
+            self.gh.clone(),
+            TrainOptions {
+                auto_run: false,
+                bypass_every: Duration::ZERO,
+                ready_every: Duration::ZERO,
+                poll_interval: Duration::from_millis(50),
+                ..TrainOptions::default()
+            },
+            |_| gate,
+        );
+        train.start();
+        train
+    }
+
+    /// Steps the train until its CI is read with these Changes in `ci`, then stops it there, as a hub stopping
+    /// mid-CI does.
+    async fn stopped_in_ci(&self, changes: &[&Change]) {
+        let read = Arc::new(Notify::new());
+        let (seen, records) = (read.clone(), self.train.records.clone());
+        let ids: Vec<ChangeId> = changes.iter().map(|c| c.change_id.clone()).collect();
+        // Main's CI is read on every pass too: only a read with them all in CI counts.
+        *self.gh.on_checks.lock().unwrap() = Some(Box::new(move || {
+            if ids
+                .iter()
+                .all(|id| records.get(id).is_some_and(|c| c.state == ChangeState::Ci))
+            {
+                seen.notify_one();
+            }
+        }));
+        let train = self.train.clone();
+        let pass = tokio::spawn(async move { train.step(REPO).await });
+        tokio::time::timeout(Duration::from_secs(20), read.notified())
+            .await
+            .expect("CI read");
+        pass.abort();
+        let _ = pass.await;
+        *self.gh.on_checks.lock().unwrap() = None;
+        for c in changes {
+            assert_eq!(state_of(self, c), ChangeState::Ci);
+        }
+    }
+
+    /// Whether any of these Changes went from `ci` back to ready.
+    fn reset_from_ci(&self, changes: &[&Change]) -> bool {
+        self.host.events_of("change.state").iter().any(|e| {
+            e["from"] == json!("ci")
+                && e["to"] == json!("ready")
+                && changes.iter().any(|c| e["changeId"] == json!(c.change_id))
+        })
+    }
+}
+
+/// CI that goes green once `green` is set.
+fn ci_until(kit: &Kit) -> Arc<std::sync::atomic::AtomicBool> {
+    let green = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let now = green.clone();
+    answer_checks(kit, move || {
+        let done = now.load(std::sync::atomic::Ordering::SeqCst);
+        vec![run(1, "ci", done.then_some("success"))]
+    });
+    green
+}
+
+/// W54: a hub restart while a PR's CI runs doesn't reset it: the new hub watches the same run on the same head and
+/// merges once it is green, never rebasing or testing it again.
+#[tokio::test(flavor = "multi_thread")]
+async fn after_a_restart_ci_in_flight_is_still_watched_and_merges_when_green() {
+    let kit = Kit::new();
+    let green = ci_until(&kit);
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    kit.commit("main", &[add("other.txt", "other\n")], None);
+    kit.stopped_in_ci(&[&a]).await;
+    let tested = kit.get(&a.change_id).head_sha;
+
+    green.store(true, std::sync::atomic::Ordering::SeqCst);
+    let train = kit.restarted();
+    assert!(
+        train.step(REPO).await || train.get(&a.change_id).unwrap().state == ChangeState::Merged
+    );
+    let merged = train.get(&a.change_id).unwrap();
+    assert_eq!(merged.state, ChangeState::Merged);
+    assert_eq!(
+        *kit.gh.merges.lock().unwrap(),
+        [(7, tested.to_string())],
+        "merged on the head it tested"
+    );
+    assert!(!kit.reset_from_ci(&[&a]), "never put back in line");
+}
+
+/// The same for a batch: its open PR still names its members at their heads, so the new hub watches its CI and merges
+/// it.
+#[tokio::test(flavor = "multi_thread")]
+async fn after_a_restart_a_batch_in_ci_is_still_watched_and_merges_when_green() {
+    let kit = Kit::new();
+    let green = ci_until(&kit);
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    let b = kit
+        .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]))
+        .await;
+    // Green on their own heads, so they batch; the batch's own run is what the restart interrupts.
+    for branch in ["a", "b"] {
+        kit.gh
+            .head_runs
+            .lock()
+            .unwrap()
+            .insert(kit.head_of(branch), json!([run(1, "ci", Some("success"))]));
+    }
+    kit.stopped_in_ci(&[&a, &b]).await;
+
+    green.store(true, std::sync::atomic::Ordering::SeqCst);
+    let train = kit.restarted();
+    train.step(REPO).await;
+    assert_eq!(members_of_batch(&kit), [7, 8]);
+    for c in [&a, &b] {
+        assert_eq!(train.get(&c.change_id).unwrap().state, ChangeState::Merged);
+    }
+    assert!(!kit.reset_from_ci(&[&a, &b]));
 }

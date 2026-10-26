@@ -10,7 +10,7 @@ How fleetd merges pull requests. Only fleetd merges: each writer's PR goes on it
 
 1. Takes the next ready PR. A PR is ready once its review passes (see [Review](#review)).
 2. Has GitHub rebase it onto its base branch, as **Update branch** with rebase does.
-3. Waits for CI on that exact commit (see [How long CI may take](#ci-time)).
+3. Waits for its [fast set](#fast-set) of checks on that exact commit (see [How long CI may take](#ci-time)).
 4. Posts the `fleetd/train` status and squash-merges it, pinned to that commit.
 
 A conflict or red CI goes back to the agent that wrote the PR; for red CI, with the failing checks.
@@ -20,6 +20,28 @@ fleetd merges only on green CI. A ready PR on a repo with no CI (no GitHub Actio
 exists.
 
 To keep a PR off the train, [hold it](#hold).
+
+## Which checks it waits for {#fast-set}
+
+The train waits only for the repo's fast set, the same way in every repo:
+
+- the checks the base branch requires, read from its ruleset or branch protection;
+- the checks you add in the project's settings.
+
+It never waits for any other check. A check outside the fast set that has already failed when the fast set is green
+still stops the merge, unless you mark it **after merge only**. A required check is always in the fast set, since
+GitHub won't merge without it. A cancelled run of a check that isn't required doesn't count. A base that requires
+nothing, on a repo whose checks include none you added, waits for every check, so such a repo still merges only on
+green CI. When the train can't read the base's rules or the project's settings, it also waits for every check.
+
+Set the checks in the desktop app under **Settings › Projects › Merge train**, with the `project_settings_set` tool
+(`train`), or from a terminal:
+
+```sh
+fleetd project set lab-a/storefront --fast-check "test (ubuntu-latest)" --after-merge "e2e (macos-latest)"
+```
+
+Each option may repeat, and replaces its list; `none` empties it. The train uses new settings from its next pass.
 
 ## How long CI may take {#ci-time}
 
@@ -32,6 +54,9 @@ PR shows `ci_failed` with "CI timed out", the lead is told, and the agent that w
 keeps reading that commit's checks. If they finish green, the PR goes back in the queue ("CI finished after the
 timeout; back in the queue") and merges on that run, after the usual rebase if its base moved. If one goes red, the
 PR goes back to its agent as for any red CI. A new push starts over as usual.
+
+When the hub restarts while a PR's CI runs, alone or in a batch, the new hub keeps watching the same run on the same
+commit, and merges once it is green. It doesn't rebase the PR or run its CI again.
 
 The train takes a PR whose base is a branch it merges into, such as `main`. A PR based on another open PR's branch is
 refused when it is queued: once that PR merges, point it at the same base (`gh pr edit <n> --base main`) and queue it
@@ -67,7 +92,8 @@ changed. Blocking findings go to the agent that wrote the PR, and the PR waits f
 ## Batches {#batches}
 
 When several PRs are ready at once, the train merges them together in one CI run. It takes up to 8 ready PRs in
-line that go into the same base branch and are green on their own commit. Then:
+line that go into the same base branch and whose fast set passed on their own commit. A cancelled or superseded run,
+and any check outside the fast set, doesn't keep a PR out: the batch's own CI decides. Then:
 
 1. It makes its own branch from the base on GitHub, `train/batch` under the project's branch prefix
    (`fleetd/train/batch` by default), and merges each PR into it in order.
@@ -82,6 +108,9 @@ A member counts as merged only while its head is still the one the batch was bui
 | A PR conflicts with the base or the PRs ahead of it | Leaves it out and sends it back to the agent that wrote it. |
 | The batch is red, or GitHub refuses to merge its PR | Takes each member alone, so each CI result blames only that PR. |
 | A member gets a new push, the `hold` label, or is closed during CI | Drops the batch before the merge, so untested code never lands, and builds a new one without it. |
+
+On every pass, a ready PR the batch left out says why, in its queue entry and in the train's line in the lead's digest:
+for example "not in this batch: its own head's `lint` failed", "… still running", or "the batch is full (8 PRs)".
 
 ## CI runners are scarce {#scarce-runners}
 
@@ -146,6 +175,6 @@ its turn. To hold every PR of a repo, label each one.
 Batches only save waiting.
 
 - Every PR in a batch is reviewed at its current patch.
-- The batch's CI must be green and include the checks the base requires.
+- The batch's fast set must pass, and it always includes the checks the base requires.
 - `fleetd/train` is posted only on a commit whose CI passed.
 - GitHub's rules on the base decide every merge.
