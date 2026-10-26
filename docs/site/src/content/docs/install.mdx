@@ -62,6 +62,7 @@ Pass options after `sh -s --`:
 | `--app` | Install the desktop app on Linux even without a display. |
 | `--no-app` | Install the CLI only. |
 | `--no-init` | Install, but don't start the setup wizard. |
+| `--join <url> --code <code>` | Install, then join that hub as a worker instead of starting the wizard. Takes `--machine-id`, `--git-identity` and `--rejoin` too. `fleetd pair --worker` prints this command; see [Add a machine the hub can't reach](/docs/machines#join). |
 | `--uninstall` | Remove the CLI and the app. See [Updating & uninstall](/docs/updating-and-uninstall). |
 
 For example, to install without the wizard:

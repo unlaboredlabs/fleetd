@@ -2,6 +2,7 @@
 # fleetd installer: curl -fsSL https://fleetd.sh | sh
 #
 #   sh -s -- [--no-app] [--app] [--no-init] [--uninstall]
+#   sh -s -- --join <hub url> --code <code> [--machine-id <id>] [--git-identity "Name <email>"] [--rejoin]
 #
 # Installs the fleetd CLI to ~/.fleetd/bin/fleetd (symlinked from ~/.local/bin/fleetd) and the desktop app to
 # ~/Applications/fleetd.app on macOS, or an AppImage in ~/.local/share/fleetd/app on Linux (only with a display, or
@@ -10,6 +11,8 @@
 # hub key when it first opens. Every download is checked against the release's SHA256SUMS. Safe to run again; it
 # replaces what it installed.
 # With a terminal it then runs `fleetd init` (the setup wizard) on it; --no-init, or no terminal, only installs.
+# With --join and --code (the command `fleetd pair --worker` prints) it runs `fleetd init --join` instead, which
+# makes this machine a worker of that hub without asking for its address or code, with or without a terminal.
 #
 # FLEETD_CHANNEL=nightly|stable picks the release (default nightly). FLEETD_BASE_URL points at another directory
 # of release assets.
@@ -33,6 +36,9 @@ Usage: curl -fsSL https://fleetd.sh | sh -s -- [options]
   --no-app      install only the CLI
   --app         install the desktop app on Linux even without a display
   --no-init     don't start the setup wizard (fleetd init) after installing
+  --join <url> --code <code> [--machine-id <id>] [--git-identity "Name <email>"] [--rejoin]
+                join that hub as a worker (fleetd init --join) after installing: the
+                command fleetd pair --worker prints on the hub
   --uninstall   remove the CLI and the app (fleetd's data in ~/.fleetd stays)
 
 Environment: FLEETD_CHANNEL=nightly|stable (default nightly), FLEETD_BASE_URL=<asset directory>
@@ -177,26 +183,64 @@ uninstall() {
   say "removed the fleetd CLI and app. Your data in ~/.fleetd is still there; delete it yourself if you want it gone."
 }
 
+# join_hub: `fleetd init --join` with what `fleetd pair --worker` printed, so it doesn't ask for them. The terminal, when there
+# is one, is its stdin, as when the command is typed there.
+join_hub() {
+  set -- init --join "$join" --code "$code"
+  [ -z "$machine_id" ] || set -- "$@" --machine-id "$machine_id"
+  [ -z "$git_identity" ] || set -- "$@" --git-identity "$git_identity"
+  [ "$rejoin" = 0 ] || set -- "$@" --rejoin
+  if (: </dev/tty) 2>/dev/null; then
+    "$bin_dir/fleetd" "$@" </dev/tty
+  else
+    "$bin_dir/fleetd" "$@" </dev/null
+  fi
+}
+
 main() {
   want_app=auto
   do_uninstall=0
   run_init=1
-  for arg in "$@"; do
-    case "$arg" in
+  join=""
+  code=""
+  machine_id=""
+  git_identity=""
+  rejoin=0
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
       --no-app) want_app=no ;;
       --app) want_app=yes ;;
       --uninstall) do_uninstall=1 ;;
       --no-init) run_init=0 ;;
+      --rejoin) rejoin=1 ;;
+      --join | --code | --machine-id | --git-identity)
+        [ "$#" -ge 2 ] || die "$1 needs a value"
+        case "$1" in
+          --join) join="$2" ;;
+          --code) code="$2" ;;
+          --machine-id) machine_id="$2" ;;
+          --git-identity) git_identity="$2" ;;
+        esac
+        shift
+        ;;
       -h | --help)
         usage
         return 0
         ;;
       *)
         usage >&2
-        die "unknown option: $arg"
+        die "unknown option: $1"
         ;;
     esac
+    shift
   done
+  if [ -n "$join" ] || [ -n "$code" ]; then
+    [ -n "$join" ] && [ -n "$code" ] ||
+      die "--join and --code go together: both are in what fleetd pair --worker prints"
+    [ "$run_init" = 1 ] || die "--no-init and --join contradict each other: --join runs fleetd init --join"
+  elif [ -n "$machine_id$git_identity" ] || [ "$rejoin" = 1 ]; then
+    die "--machine-id, --git-identity and --rejoin only go with --join and --code"
+  fi
 
   [ -n "${HOME:-}" ] || die "HOME is not set"
   bin_dir="$HOME/.fleetd/bin"
@@ -266,7 +310,14 @@ An earlier fleetd app you have keeps working. To install or update only the CLI:
   fi
   [ "$installed" = 1 ] || die "nothing to install from $base"
 
-  [ -x "$bin_dir/fleetd" ] || return 0
+  if [ ! -x "$bin_dir/fleetd" ]; then
+    [ -z "$join" ] || die "no fleetd CLI here to join $join with"
+    return 0
+  fi
+  if [ -n "$join" ]; then
+    join_hub
+    return
+  fi
   # `curl | sh` has the script on stdin, so the wizard reads the terminal itself. Without one (CI, a pipe), or with
   # --no-init, only the next command is printed. The binary is in place either way; Ctrl-C in the wizard leaves it.
   if [ "$run_init" = 1 ] && [ -t 2 ] && (: </dev/tty) 2>/dev/null; then

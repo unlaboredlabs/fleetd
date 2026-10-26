@@ -302,8 +302,8 @@ pub fn pair_command(argv: &[String]) -> CliResult {
     }
 }
 
-/// The command a new worker runs to join: the installer, then `fleetd init --join` with a one-time enrollment code
-/// for `machine` (the node join path's own token, so nothing new crosses the wire).
+/// The command a new worker runs to join: the installer, which then runs `fleetd init --join` with a one-time
+/// enrollment code for `machine` (the node join path's own token, so nothing new crosses the wire).
 pub fn worker_command(home: Option<&str>, machine: &str) -> Result<String, String> {
     let machine_id = fleetd_contracts::ids::MachineId::new(machine)
         .map_err(|_| format!("'{machine}' is not a machine id ([a-z0-9-]{{1,32}})"))?;
@@ -317,17 +317,28 @@ pub fn worker_command(home: Option<&str>, machine: &str) -> Result<String, Strin
         .map_err(|error| error.to_string())?;
     let identity = setup
         .and_then(|s| s.git_identity)
-        .map(|id| {
-            format!(
-                " --git-identity {}",
-                super::setup::units::q(&format!("{} <{}>", id.name, id.email))
-            )
-        })
-        .unwrap_or_default();
+        .map(|id| format!("{} <{}>", id.name, id.email));
     Ok(format!(
-        "On {machine}, run:\n\n  curl -fsSL https://fleetd.sh | sh && ~/.local/bin/fleetd init --join {} --code {} --machine-id {machine}{identity}\n\nThe code works once, until {}. {machine} needs claude installed and must reach the hub at that address.\n",
-        urls[0], token.token, token.expires_at
+        "On {machine}, run:\n\n  {}\n\nThe code works once, until {}. {machine} needs claude installed and must reach the hub at that address.\n",
+        join_line(&urls[0], &token.token, machine, identity.as_deref()),
+        token.expires_at
     ))
+}
+
+/// One line that installs fleetd and joins the hub, asking nothing: install.sh takes the join options and runs
+/// `fleetd init --join` with them instead of the setup wizard. Every value is quoted for the shell.
+pub fn join_line(hub: &str, code: &str, machine: &str, identity: Option<&str>) -> String {
+    use super::setup::units::q;
+    let mut line = format!(
+        "curl -fsSL https://fleetd.sh | sh -s -- --join {} --code {} --machine-id {}",
+        q(hub),
+        q(code),
+        q(machine)
+    );
+    if let Some(identity) = identity {
+        line += &format!(" --git-identity {}", q(identity));
+    }
+    line
 }
 
 fn describe(minted: &Minted) -> String {
@@ -350,6 +361,27 @@ fn describe(minted: &Minted) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn the_worker_command_installs_and_joins_in_one_step() {
+        assert_eq!(
+            super::join_line(
+                "http://devbox.example.ts.net:4790",
+                "abc123",
+                "laptop",
+                Some("O'Neil Ada <1+ada@users.noreply.github.com>")
+            ),
+            "curl -fsSL https://fleetd.sh | sh -s -- --join http://devbox.example.ts.net:4790 --code abc123 \
+             --machine-id laptop --git-identity 'O'\\''Neil Ada <1+ada@users.noreply.github.com>'"
+        );
+        // No `&& fleetd init` after the pipe: the installer's own wizard would ask for the hub and code first.
+        let line = super::join_line("http://hub:4790", "c", "mac", None);
+        assert_eq!(
+            line,
+            "curl -fsSL https://fleetd.sh | sh -s -- --join http://hub:4790 --code c --machine-id mac"
+        );
+        assert!(!line.contains("&&"));
+    }
 
     #[test]
     fn reads_the_listen_address_of_a_running_hub() {
