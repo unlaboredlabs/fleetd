@@ -100,7 +100,7 @@ pub fn register(tools: &mut Registry) {
                     cap: input.cap.map(|c| c.get()),
                     project: input.project.map(|p| ProjectCap {
                         project_ref: p.project_ref,
-                        max_agents: p.max_agents.get(),
+                        max_agents: p.max_agents.map(|n| n.get()),
                         pause_extras: p.pause_extras.unwrap_or(false),
                     }),
                 })

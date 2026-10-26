@@ -290,7 +290,7 @@ fn limits(lead: &[&Tool], task: &[&Tool]) -> Result<String, String> {
     ));
     md.push_str(
         "| Agents running at once, per project | The project's max agents, which a person sets (`cap_set`, the \
-         chat's Max agents); unset, its machine's cap. A spawn over it queues and starts by itself; a review goes \
+         chat's Max agents); unset, its machine's cap within the fleet cap. A spawn over it queues and starts by itself; a review goes \
          ahead of queued writers. The lead is not an agent and doesn't count. |\n",
     );
     md.push_str(&format!(

@@ -48,8 +48,8 @@ pub type ReleaseListener = Arc<dyn Fn() + Send + Sync>;
 pub struct CapInput {
     /// 1..1000.
     pub cap: Option<i64>,
-    /// A project's max agents, 1 up to the cap.
-    pub max_agents: Option<(ProjectRef, i64)>,
+    /// A project's own max agents, 1 up to the cap; None: back to the default.
+    pub max_agents: Option<(ProjectRef, Option<i64>)>,
 }
 
 /// A project's agents as its lead is told them: "agents: 7 running of 12 (auto: memory 32 GB), 2 queued".
@@ -115,12 +115,16 @@ fn persist(db: &HubDb, ops: Vec<Op>) -> Result<(), StoreError> {
                         .execute([cap])?;
                 }
                 // The table keeps its name from when this was a project's share, so an older hub's database opens.
-                Op::MaxAgents(r, share) => {
+                Op::MaxAgents(r, Some(share)) => {
                     db.prepare_cached(
                         "INSERT INTO slot_shares (machine_id, project_id, share) VALUES (?, ?, ?)
                          ON CONFLICT (machine_id, project_id) DO UPDATE SET share = excluded.share",
                     )?
                     .execute(params![r.machine_id.as_str(), r.project_id.as_str(), share])?;
+                }
+                Op::MaxAgents(r, None) => {
+                    db.prepare_cached("DELETE FROM slot_shares WHERE machine_id = ? AND project_id = ?")?
+                        .execute(params![r.machine_id.as_str(), r.project_id.as_str()])?;
                 }
                 Op::Machine(m, name, auto) => {
                     db.prepare_cached(
@@ -190,6 +194,7 @@ fn slot_state(s: BoardState) -> SlotState {
                 .map(|row| SlotStatePerProject {
                     project_ref: row.project_ref,
                     max_agents: count(row.max_agents),
+                    own: row.own,
                     running: count(row.running),
                     queued: count(row.queued),
                 })
@@ -487,7 +492,7 @@ mod tests {
         slots
             .set_cap(CapInput {
                 cap: None,
-                max_agents: Some((r.clone(), 2)),
+                max_agents: Some((r.clone(), Some(2))),
             })
             .unwrap();
         let n = 24;
@@ -522,6 +527,34 @@ mod tests {
         );
     }
 
+    /// A project's own max, and going back to the default, both outlive a restart.
+    #[test]
+    fn going_back_to_the_default_outlives_a_restart() {
+        let db = HubDb::open_memory().unwrap();
+        let store = HubStore::new(db.clone());
+        let clock = ManualClock::at(1_792_000_000_000);
+        let events = EventLog::new(db.clone(), clock.clone()).unwrap();
+        let open = || Slots::new(db.clone(), clock.clone(), &store, &events).unwrap();
+        let r = ProjectRef {
+            machine_id: MachineId::unchecked("lab-a"),
+            project_id: ProjectId::unchecked("p1"),
+        };
+        let set = |slots: &Slots, n: Option<i64>| {
+            slots
+                .set_cap(CapInput {
+                    cap: Some(6),
+                    max_agents: Some((r.clone(), n)),
+                })
+                .unwrap()
+        };
+        set(&open(), Some(2));
+        assert_eq!(open().agents(&r).source, MaxSource::Project);
+        set(&open(), None);
+        let slots = open();
+        assert_ne!(slots.agents(&r).source, MaxSource::Project);
+        assert!(slots.state().per_project.is_empty());
+    }
+
     /// Max agents of 20 starts 20 on a machine whose free memory fits 10 of the project's agents at what an older node
     /// says they took: the caps alone hold agents back, never an estimate of their memory.
     #[test]
@@ -550,7 +583,7 @@ mod tests {
         slots
             .set_cap(CapInput {
                 cap: None,
-                max_agents: Some((r.clone(), 20)),
+                max_agents: Some((r.clone(), Some(20))),
             })
             .unwrap();
         let acquire = |holder: &str| {

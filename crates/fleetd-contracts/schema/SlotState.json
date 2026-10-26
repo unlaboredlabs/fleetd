@@ -120,10 +120,15 @@
     "SlotStatePerProject": {
       "properties": {
         "maxAgents": {
-          "description": "The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead is not\none. Its machine's `cap` until set.",
+          "description": "The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead is not\none. Until set, the default: its machine's `cap`, within the fleet cap.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
+        },
+        "own": {
+          "default": false,
+          "description": "A person set the project's own max; false: it follows the default. Absent from a hub before this, which\nlisted a project only once set or busy.",
+          "type": "boolean"
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"

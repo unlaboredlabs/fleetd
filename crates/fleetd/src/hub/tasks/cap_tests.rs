@@ -78,7 +78,7 @@ fn set(max_agents: i64, pause_extras: bool) -> CapChange {
         cap: None,
         project: Some(ProjectCap {
             project_ref: project(),
-            max_agents,
+            max_agents: Some(max_agents),
             pause_extras,
         }),
     }
@@ -637,4 +637,101 @@ async fn a_task_result_says_why_its_run_ended() {
         assert_eq!(ended.state, state, "{kind} {n}");
         assert_eq!(ended.result.unwrap().end_cause, end, "{kind} {n}");
     }
+}
+
+fn fleet(cap: i64) -> CapChange {
+    CapChange {
+        cap: Some(cap),
+        project: None,
+    }
+}
+
+/// The app's flow, as a person reported it: the project's slider moved off the top and Undone, then the whole fleet
+/// raised and lowered. A project with no max of its own follows the fleet cap at once, in what it shows and runs.
+#[tokio::test]
+async fn a_project_without_its_own_max_follows_the_fleet_cap() {
+    let (hub, _home) = hub();
+    let r = project();
+    hub.tasks.set_caps(fleet(10)).await.unwrap();
+    assert_eq!(hub.slots.agents(&r).max_agents, 10, "within the fleet cap");
+    assert_eq!(
+        hub.tasks.agents(&r).to_string(),
+        "agents: 0 running of 10 (fleet cap set), 0 queued"
+    );
+    hub.tasks.set_caps(fleet(20)).await.unwrap();
+    assert_eq!(hub.slots.agents(&r).max_agents, 20, "raised");
+    hub.tasks.set_caps(fleet(2)).await.unwrap();
+    assert_eq!(hub.slots.agents(&r).max_agents, 2, "lowered");
+    for n in 1..=3 {
+        running(&hub, n);
+    }
+    assert_eq!(
+        (hub.slots.agents(&r).running, hub.slots.agents(&r).queued),
+        (2, 1)
+    );
+    hub.tasks.set_caps(fleet(3)).await.unwrap();
+    assert_eq!(
+        (hub.slots.agents(&r).running, hub.slots.agents(&r).queued),
+        (3, 0),
+        "raising starts the queued one at once"
+    );
+}
+
+/// A max a person set is the project's own: no fleet cap change moves it, the slot state says so, and going back to
+/// the default follows the fleet cap again.
+#[tokio::test]
+async fn a_projects_own_max_holds_until_it_goes_back_to_the_default() {
+    let (hub, _home) = hub();
+    let r = project();
+    hub.tasks.set_caps(fleet(10)).await.unwrap();
+    // The app's Undo of 10 → 6 from the default used to write 10 back as the project's own.
+    let own = hub.tasks.set_caps(set(6, false)).await.unwrap();
+    let row = |s: &fleetd_contracts::tasks::SlotState| {
+        let row = s.per_project.iter().find(|p| p.project_ref == r).unwrap();
+        (row.max_agents.get(), row.own)
+    };
+    assert_eq!(row(&own.slots), (6, true));
+    let raised = hub.tasks.set_caps(fleet(20)).await.unwrap();
+    assert_eq!(row(&raised.slots), (6, true), "its own max stays");
+    assert_eq!(
+        hub.tasks.agents(&r).to_string(),
+        "agents: 0 running of 6 (max agents set), 0 queued"
+    );
+
+    let back = hub
+        .tasks
+        .set_caps(CapChange {
+            cap: None,
+            project: Some(ProjectCap {
+                project_ref: r.clone(),
+                max_agents: None,
+                pause_extras: false,
+            }),
+        })
+        .await
+        .unwrap();
+    assert_eq!(back.next, "Max agents 6 → 20. It follows the default now.");
+    assert!(back.slots.per_project.iter().all(|p| p.project_ref != r));
+    assert_eq!(hub.slots.agents(&r).source, MaxSource::Fleet);
+    hub.tasks.set_caps(fleet(12)).await.unwrap();
+    assert_eq!(hub.slots.agents(&r).max_agents, 12, "it follows again");
+    running(&hub, 1);
+    assert_eq!(row(&hub.slots.state()), (12, false));
+
+    // At its default already, going back to it says so once, then nothing changes.
+    hub.tasks.set_caps(set(12, false)).await.unwrap();
+    let same = hub
+        .tasks
+        .set_caps(CapChange {
+            cap: None,
+            project: Some(ProjectCap {
+                project_ref: r.clone(),
+                max_agents: None,
+                pause_extras: false,
+            }),
+        })
+        .await
+        .unwrap();
+    assert_eq!(same.next, "Max agents 12, the default now.");
+    assert_eq!(row(&same.slots), (12, false));
 }

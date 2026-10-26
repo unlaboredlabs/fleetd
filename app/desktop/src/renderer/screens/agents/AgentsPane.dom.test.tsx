@@ -189,3 +189,13 @@ it("a row's right-click menu opens the agent, copies its branch, and Steer opens
   await go(href);
   expect(document.activeElement?.getAttribute("aria-label")).toBe("Steer this agent");
 });
+
+it("a row with no steer box yet has no Steer, so no box takes the cursor later", async () => {
+  await mount();
+  const link = [...host.querySelectorAll<HTMLAnchorElement>("[data-screen='agents'] a")].find((a) => a.textContent.includes("Lane T2"));
+  if (link === undefined) throw new Error("no row");
+  act(() => {
+    link.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
+  });
+  expect([...document.querySelectorAll("[role='menuitem']")].map((i) => i.textContent)).toEqual(["Open"]);
+});

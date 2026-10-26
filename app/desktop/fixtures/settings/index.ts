@@ -159,8 +159,8 @@ function basics(f: Fixture) {
 const shared = (f: Fixture) => basics(f);
 
 /**
- * Max agents: a fleet cap of 16 with each project at a different point. The first runs 6 under a max of 12, the
- * second sits at its max of 3, and the third has no limit of its own. The slot state is set in the snapshot and in
+ * Max agents: a fleet cap of 16 with each project at a different point. The first runs 6 under its own max of 12, the
+ * second sits at its own max of 3, and the third follows the default. The slot state is set in the snapshot and in
  * every live frame that carries one, since the live state wins.
  */
 function agents(from: Fixture): Fixture {
@@ -170,20 +170,26 @@ function agents(from: Fixture): Fixture {
   const ref = (p: JsonObject): JsonObject => ({ machineId: asText(p["machineId"]), projectId: asText(p["projectId"]) });
   const rows: JsonObject[] = [];
   const [first, second] = projects;
-  if (first) rows.push({ projectRef: ref(first), maxAgents: 12, running: 6, queued: 0 });
-  if (second) rows.push({ projectRef: ref(second), maxAgents: 3, running: 3, queued: 2 });
-  const slots: JsonObject = { cap: 16, used: 9, queued: 2, perProject: rows };
+  if (first) rows.push({ projectRef: ref(first), maxAgents: 12, own: true, running: 6, queued: 0 });
+  if (second) rows.push({ projectRef: ref(second), maxAgents: 3, own: true, running: 3, queued: 2 });
+  const slots: JsonObject = { cap: 16, fleetCap: 16, used: 9, queued: 2, perProject: rows };
   if (f.snapshot) f.snapshot["slots"] = clone(slots);
   for (const frame of f.live) if (frame["slots"] !== undefined) frame["slots"] = clone(slots);
   // A change answers with the slot state it asked for, as the hub does: every max each project can take (and the
-  // pause of the agents over it, which Undo's neighbour offers), and every fleet cap the slider reaches.
+  // pause of the agents over it, which Undo's neighbour offers), back to the default, and every fleet cap the slider
+  // reaches.
   for (const p of projects) {
     const projectRef = ref(p);
     const row = rows.find((r) => r["projectRef"] && asText((r["projectRef"] as JsonObject)["projectId"]) === projectRef["projectId"]);
     const running = typeof row?.["running"] === "number" ? row["running"] : 0;
+    const queued = row?.["queued"] ?? 0;
+    const others = rows.filter((r) => r !== row).map(clone);
+    // Back to the default, 16: a busy project still has a row, now not its own.
+    const back = running > 0 || queued !== 0 ? [{ projectRef: clone(projectRef), maxAgents: 16, own: false, running, queued }] : [];
+    f.answer("cap_set", { project: { projectRef: clone(projectRef), followDefault: true } }, { slots: { ...clone(slots), perProject: [...others, ...back] } });
     for (let n = 1; n <= 16; n++) {
-      const own = { projectRef: clone(projectRef), maxAgents: n, running, queued: row?.["queued"] ?? 0 };
-      const perProject = [...rows.filter((r) => r !== row).map(clone), own];
+      const own = { projectRef: clone(projectRef), maxAgents: n, own: true, running, queued };
+      const perProject = [...others, own];
       const out = { slots: { ...clone(slots), perProject } };
       f.answer("cap_set", { project: { projectRef: clone(projectRef), maxAgents: n } }, out);
       const over = Math.max(0, running - n);
@@ -191,7 +197,7 @@ function agents(from: Fixture): Fixture {
       f.answer("cap_set", { project: { projectRef: clone(projectRef), maxAgents: n, pauseExtras: true } }, { ...out, paused });
     }
   }
-  for (let n = 1; n <= 64; n++) f.answer("cap_set", { cap: n }, { slots: { ...clone(slots), cap: n } });
+  for (let n = 1; n <= 64; n++) f.answer("cap_set", { cap: n }, { slots: { ...clone(slots), cap: n, fleetCap: n } });
   return f;
 }
 

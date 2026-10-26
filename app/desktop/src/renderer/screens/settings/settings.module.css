@@ -282,6 +282,13 @@
 }
 
 /* ---- Max agents ---- */
+/*
+ * The header's "agents 6 / 12": a block on its own 16 px line, as the state word beside it is, so the button's larger
+ * line doesn't set its baseline a pixel lower.
+ */
+.agentsLabel {
+  display: block;
+}
 .agentsPopover {
   width: 320px;
   max-width: calc(100vw - 32px);
@@ -309,6 +316,14 @@
 .agentsScale {
   display: flex;
   align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
+}
+/* Where a project's max comes from, and the way back to the default when it is its own. */
+.agentsSource {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
   min-width: 0;
