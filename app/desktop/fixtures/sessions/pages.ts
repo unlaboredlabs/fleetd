@@ -1,24 +1,25 @@
 // The Sessions fixture's web pages: a made-up shop and a made-up payments dashboard, drawn as 1280×800 SVG so a
 // session's frames and video look like a real page's without a real site in them (media.ts renders them to the JPEG
-// frames and the WebM the fixture serves), and the same pages as the HTML a step's DOM snapshot holds (html.ts).
+// frames and the WebM the fixture serves), and the same pages as the HTML a step's DOM snapshot holds (html.ts). Its
+// drawing parts draw the Try it fixture's checkout too (fixtures/tryit/pages.ts).
 
-const W = 1280;
-const H = 800;
+export const W = 1280;
+export const H = 800;
 
 type Point = { readonly x: number; readonly y: number };
 
 const esc = (s: string) => s.replace(/&/gu, "&amp;").replace(/</gu, "&lt;").replace(/>/gu, "&gt;");
 
-const text = (x: number, y: number, s: string, size = 16, fill = "#1a1a1a", weight = 400, anchor = "start") =>
+export const text = (x: number, y: number, s: string, size = 16, fill = "#1a1a1a", weight = 400, anchor = "start") =>
   `<text x="${String(x)}" y="${String(y)}" font-size="${String(size)}" font-weight="${String(weight)}" fill="${fill}" text-anchor="${anchor}">${esc(s)}</text>`;
 
-const rect = (x: number, y: number, w: number, h: number, fill: string, r = 0, stroke?: string) =>
+export const rect = (x: number, y: number, w: number, h: number, fill: string, r = 0, stroke?: string) =>
   `<rect x="${String(x)}" y="${String(y)}" width="${String(w)}" height="${String(h)}" rx="${String(r)}" fill="${fill}"${stroke === undefined ? "" : ` stroke="${stroke}"`}/>`;
 
-const field = (x: number, y: number, w: number, label: string, value: string) =>
+export const field = (x: number, y: number, w: number, label: string, value: string) =>
   text(x, y, label, 14, "#555", 500) + rect(x, y + 10, w, 44, "#fff", 6, "#c9c9c4") + (value === "" ? "" : text(x + 14, y + 39, value, 16, "#1a1a1a"));
 
-const button = (x: number, y: number, w: number, label: string, fill: string) => rect(x, y, w, 46, fill, 6) + text(x + w / 2, y + 29, label, 16, "#fff", 600, "middle");
+export const button = (x: number, y: number, w: number, label: string, fill: string) => rect(x, y, w, 46, fill, 6) + text(x + w / 2, y + 29, label, 16, "#fff", 600, "middle");
 
 /** The agent's pointer where it acts, with a ring where it clicked. */
 const pointer = (at: Point | undefined) =>
@@ -27,13 +28,13 @@ const pointer = (at: Point | undefined) =>
     : `<circle cx="${String(at.x)}" cy="${String(at.y)}" r="16" fill="none" stroke="#1a1a1a" stroke-opacity="0.35" stroke-width="2"/>` +
       `<path transform="translate(${String(at.x)} ${String(at.y)})" d="M0 0 L0 22 L6 17 L10 26 L14 24 L10 15 L18 15 Z" fill="#1a1a1a" stroke="#fff" stroke-width="1.5"/>`;
 
-const svg = (body: string, at?: Point) =>
+export const svg = (body: string, at?: Point) =>
   `data:image/svg+xml;utf8,${encodeURIComponent(
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${String(W)} ${String(H)}" font-family="Helvetica, Arial, sans-serif">${rect(0, 0, W, H, "#fff")}${body}${pointer(at)}</svg>`,
   )}`;
 
 // The shop: Linen & Co.
-const SHOP = "#24433b";
+export const SHOP = "#24433b";
 const shopHead = (cart: number) =>
   rect(0, 0, W, 72, "#f6f4ef") +
   text(48, 45, "Linen & Co.", 24, SHOP, 700) +

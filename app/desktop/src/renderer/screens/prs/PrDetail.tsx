@@ -1,6 +1,6 @@
 // One PR: its title and where it stands, then Overview (a summary of where it is and what it waits on, the
-// description, checks, reviews and their findings, its way to main so far) or Changes (the files and their diff).
-// Open on GitHub stays one click away.
+// description, checks, reviews and their findings, its way to main so far), Changes (the files and their diff) or,
+// once the person asked to try it, Try it (screens/tryit). Try it and Open on GitHub stay one click away.
 import { ExternalLink } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { useData, useToolQuery } from "../../src/data/react";
@@ -10,6 +10,11 @@ import { codeRuns, machineCode } from "../chat/format";
 import { Button, InlineCode, Markdown, StatusChip, Tab, TabList, TabPanel, Tabs, Text, Truncate, cx, toast, type TextTone } from "../../ui";
 import { AgentRowLink } from "../agents/AgentsPane";
 import { CheckIcon, ChecksMark } from "./Bits";
+import type { ProjectKey } from "../shell/routes";
+import { usePreviews } from "../tryit/hub";
+import { ofPr, previewFor } from "../tryit/model";
+import { SuggestionLine, TryItButton } from "../tryit/Suggestion";
+import { TryItView } from "../tryit/TryIt";
 import { DiffPane } from "./DiffPane";
 import {
   authorWords,
@@ -32,7 +37,8 @@ import {
 } from "./words";
 import s from "./prs.module.css";
 
-export type PrTab = "overview" | "changes";
+/** "try": its Try it, shown once a preview of it exists or Try it was pressed. */
+export type PrTab = "overview" | "changes" | "try";
 
 export const openExternal = (url: string): void => {
   void window.fleetd.openExternal(url).then((o) => {
@@ -45,6 +51,7 @@ const PASSED_SHOWN = 5;
 const HISTORY_SHOWN = 4;
 
 interface PrDetailProps {
+  readonly project: ProjectKey;
   readonly repo: string;
   readonly number: number;
   readonly row: PrRow | undefined;
@@ -55,11 +62,13 @@ interface PrDetailProps {
   readonly githubSaid: boolean;
 }
 
-export function PrDetail({ repo, number, row, nowMs, tab, onTab, githubSaid }: PrDetailProps) {
+export function PrDetail({ project, repo, number, row, nowMs, tab, onTab, githubSaid }: PrDetailProps) {
   const query = useToolQuery("pr_get", { repo, number });
   const fresh = useData((st) => st.fresh);
   const data = query.data;
   const pr = data?.pr ?? row;
+  const previews = usePreviews(project);
+  const tried = previews.on && previewFor(previews.previews, ofPr(repo, number)) !== undefined;
 
   if (pr === undefined) {
     // Nothing held and no hub to ask: "Loading" would never finish.
@@ -89,7 +98,7 @@ export function PrDetail({ repo, number, row, nowMs, tab, onTab, githubSaid }: P
     <Tabs
       className={s.pr}
       value={tab}
-      onValueChange={(v) => onTab(v === "changes" ? "changes" : "overview")}
+      onValueChange={(v) => onTab(v === "changes" || v === "try" ? v : "overview")}
       data-screen={data !== undefined ? "prs.detail" : query.isError ? "prs.detail.error" : "prs.detail.loading"}
     >
       <div className={s.prHead}>
@@ -99,6 +108,7 @@ export function PrDetail({ repo, number, row, nowMs, tab, onTab, githubSaid }: P
               {pr.title === "" ? `#${pr.number}` : pr.title}
             </Truncate>
           </span>
+          {isOpen(pr) ? <TryItButton project={project} repo={repo} number={number} /> : null}
           <Button variant="secondary" size="sm" icon={<ExternalLink aria-hidden />} onClick={() => openExternal(pr.url)}>
             Open on GitHub
           </Button>
@@ -126,6 +136,7 @@ export function PrDetail({ repo, number, row, nowMs, tab, onTab, githubSaid }: P
           <Tab value="changes" count={files === undefined ? undefined : stat(files)}>
             Changes
           </Tab>
+          {tried || tab === "try" ? <Tab value="try">Try it</Tab> : null}
         </TabList>
       </div>
       <TabPanel value="overview" className={s.overview}>
@@ -145,17 +156,20 @@ export function PrDetail({ repo, number, row, nowMs, tab, onTab, githubSaid }: P
             </div>
           )
         ) : (
-          <Overview data={data} now={now} githubSaid={githubSaid} />
+          <Overview data={data} now={now} githubSaid={githubSaid} project={project} />
         )}
       </TabPanel>
       <TabPanel value="changes" className={s.changesPanel}>
         {tab === "changes" ? <DiffPane repo={repo} number={number} additions={additions} deletions={deletions} githubDown={data?.githubError !== undefined} /> : null}
       </TabPanel>
+      <TabPanel value="try" className={s.changesPanel}>
+        {tab === "try" ? <TryItView project={project} repo={repo} number={number} /> : null}
+      </TabPanel>
     </Tabs>
   );
 }
 
-function Overview({ data, now, githubSaid }: { data: PrGetOutput; now: number; githubSaid: boolean }) {
+function Overview({ data, now, githubSaid, project }: { data: PrGetOutput; now: number; githubSaid: boolean; project: ProjectKey }) {
   const pr = data.pr;
   const state = stateLine(pr);
   const checks = pr.checks === undefined ? undefined : checksWord(pr.checks);
@@ -173,6 +187,7 @@ function Overview({ data, now, githubSaid }: { data: PrGetOutput; now: number; g
           </Text>
         </div>
       ) : null}
+      {isOpen(pr) ? <SuggestionLine project={project} repo={pr.repo} number={pr.number} /> : null}
       <div className={s.summary} aria-label="Summary" role="group">
         <div className={s.summaryState}>
           <Text size="md" tone={SUMMARY_TONE[state.tone]} strong={state.tone === "failed" || state.tone === "needs-you"}>

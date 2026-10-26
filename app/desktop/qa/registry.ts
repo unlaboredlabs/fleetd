@@ -154,6 +154,14 @@ export const fixtures = [
   // W46's design preview: storefront's browser sessions, one agent driving and one asking you to take over
   // (fixtures/sessions).
   "sessions-preview",
+  // W58's Try it: storefront's #14 suggested, started, ready, starting, failed, ended, and from a read key
+  // (fixtures/tryit).
+  "tryit-fresh",
+  "tryit-ready",
+  "tryit-starting",
+  "tryit-failed",
+  "tryit-ended",
+  "tryit-read",
   "stream-reply",
   // UX [7]: no hub, and the last launch's disk cache on screen with a message queued; back online with that chat not
   // read again yet, and with that read failed (fixtures/offline).
@@ -254,6 +262,18 @@ const openUpdates = async (page: Page) => {
   await page.keyboard.press("ControlOrMeta+K");
   await page.getByRole("combobox", { name: "Search" }).fill("Check for updates");
   await page.keyboard.press("Enter");
+};
+
+/** #14's Try it, ready: Mark up, a pin on the Dutch pay button, and what's wrong there in words. */
+const markUp = async (page: Page) => {
+  await page.getByRole("tab", { name: "Try it" }).click();
+  await page.getByRole("button", { name: "Mark up" }).click();
+  const layer = page.locator("[data-pin-layer]");
+  const box = await layer.boundingBox();
+  if (box === null) throw new Error("no page to mark up");
+  // The pay button, as the Dutch checkout draws it (fixtures/tryit/pages.ts): 42% across, 64% down.
+  await layer.click({ position: { x: box.width * 0.42, y: box.height * 0.64 } });
+  await page.getByRole("textbox", { name: "What’s wrong at pin 1" }).fill("In Dutch the button wraps onto two lines. Keep it on one, as in German.");
 };
 
 // storefront's PRs in the panel beside its chat (fixtures/prs): the list, and #11 (in review, its reviewers at work),
@@ -1090,6 +1110,58 @@ export const screens: readonly Screen[] = [
   },
   { id: "prs.detail", route: `${PRS}/11`, fixtures: ["typical"], variant: "by-number", sizes: ["small"] },
   { id: "prs.detail", route: PR(11), fixtures: ["prs-error"], expect: "error" },
+  // W58's Try it on #14: its writer's suggestion in the overview with Try it beside it, and the lead's proposed Try it
+  // setting in the chat; a start played through to the page; the preview starting, ready, marked up and its feedback
+  // sent; failed and ended; the merge line's Try it; and a read key, which gets no Try it to press (D162).
+  { id: "prs.detail", route: PR(14), fixtures: ["tryit-fresh"], variant: "try-suggested" },
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["tryit-fresh"],
+    variant: "try-suggested",
+    open: async (page) => {
+      await expect(page.getByRole("note").filter({ hasText: "suggests trying it" })).toBeVisible();
+      await expect(page.getByText("Try it setting", { exact: true })).toBeVisible();
+    },
+  },
+  {
+    id: "tryit",
+    route: PR(14),
+    fixtures: ["tryit-fresh"],
+    variant: "started",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Try #14" }).first().click();
+      await expect(page.locator('[data-screen="tryit.ready"]')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByRole("application", { name: "The preview: your clicks and keys go to it" }).locator("img")).toBeVisible();
+    },
+  },
+  ...(["tryit-starting", "tryit-ready", "tryit-failed", "tryit-ended"] as const).map(
+    (fixture): Screen => ({ id: "tryit", route: PR(14), fixtures: [fixture], open: (page) => page.getByRole("tab", { name: "Try it" }).click() }),
+  ),
+  { id: "tryit", route: PR(14), fixtures: ["tryit-ready"], variant: "marked", open: markUp },
+  {
+    id: "tryit",
+    route: PR(14),
+    fixtures: ["tryit-ready"],
+    variant: "sent",
+    open: async (page) => {
+      await markUp(page);
+      await page.getByRole("button", { name: "Send to #14’s agents" }).click();
+      await expect(page.getByText("Sent to #14’s writer, at its next step.", { exact: true })).toBeVisible();
+    },
+  },
+  { id: "train", route: `${CHAT}/train`, fixtures: ["tryit-ready"], variant: "try" },
+  {
+    id: "prs.detail",
+    route: PR(14),
+    fixtures: ["tryit-read"],
+    variant: "read",
+    open: async (page) => {
+      await expect(page.getByRole("note").filter({ hasText: "suggests trying it" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Try #14" })).toHaveCount(0);
+    },
+  },
+
   // Its changes: the files beside a diff drawn a screen at a time, one column or side by side, and a PR too big to
   // load at once.
   { id: "prs.detail", route: PR(11), fixtures: ["typical", "long-text", "prs-no-github"], variant: "changes", open: openChanges },
