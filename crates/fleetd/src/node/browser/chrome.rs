@@ -292,7 +292,8 @@ impl Pool {
 
     /// Whether the pool's browsers run without Chrome's sandbox: configured so, or this host refused it.
     pub fn unsandboxed(&self) -> bool {
-        self.launch.sandbox == Some(false) || self.no_sandbox.load(std::sync::atomic::Ordering::Relaxed)
+        self.launch.sandbox == Some(false)
+            || self.no_sandbox.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// One browser: sandboxed unless configured otherwise. A host that refuses the sandbox (no user namespaces, as
@@ -306,7 +307,8 @@ impl Pool {
             Err(why) if self.launch.sandbox.is_none() => {
                 let browser = launch(&self.launch, false).await?;
                 tracing::warn!(error = %why, "Chrome's sandbox refused on this host: browsers run with --no-sandbox");
-                self.no_sandbox.store(true, std::sync::atomic::Ordering::Relaxed);
+                self.no_sandbox
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
                 Ok(browser)
             }
             Err(why) => Err(why),
@@ -396,7 +398,10 @@ mod tests {
         );
         assert!(args.contains(&"--no-sandbox".to_owned()));
         let sandboxed = super::args(&launch, Path::new("/p/profile-1"), true);
-        assert!(!sandboxed.contains(&"--no-sandbox".to_owned()), "sandboxed unless the host refuses it");
+        assert!(
+            !sandboxed.contains(&"--no-sandbox".to_owned()),
+            "sandboxed unless the host refuses it"
+        );
     }
 
     #[test]

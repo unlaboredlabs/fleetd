@@ -8,6 +8,7 @@
 pub mod agent_browser;
 pub mod cdp;
 pub mod chrome;
+pub mod credentials;
 pub mod proxy;
 pub mod record;
 pub mod session;
@@ -25,8 +26,8 @@ use std::time::{Duration, Instant};
 
 use fleetd_contracts::browser::{
     BrowserCall, BrowserCallFrame, BrowserCallResult, BrowserControl, BrowserControlTo,
-    BrowserInput, BrowserRecordingEntry, BrowserResultFrame, BrowserSessionId,
-    BrowserSessionState, BrowserTakeoverCall, SessionEnded, SessionStarted, TakeoverRequested,
+    BrowserInput, BrowserRecordingEntry, BrowserResultFrame, BrowserSessionId, BrowserSessionState,
+    BrowserTakeoverCall, SessionEnded, SessionStarted, TakeoverRequested,
 };
 use fleetd_contracts::lead_calls::LeadCall;
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
@@ -40,8 +41,8 @@ use self::chrome::{Launch, Pool};
 use self::proxy::Proxy;
 use self::session::{Opened, Session};
 use self::upload::HubCalls;
-use crate::node::mask::Secrets;
 use super::util::AbortOnDrop;
+use crate::node::mask::Secrets;
 
 /// node.json's `browser`: how this machine runs browser sessions. Every field is optional.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -222,7 +223,8 @@ impl Broker {
             secrets_for,
             uploading: Mutex::default(),
             reports: {
-                let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<(String, String, LeadCall)>();
+                let (tx, mut rx) =
+                    tokio::sync::mpsc::unbounded_channel::<(String, String, LeadCall)>();
                 let hub = hub.clone();
                 tokio::spawn(async move {
                     while let Some((thread, cwd, call)) = rx.recv().await {
@@ -363,11 +365,9 @@ impl Broker {
             }
             BrowserCall::SessionEnd(_) => self.session_end(&thread).await,
             BrowserCall::RequestTakeover(call) => self.request_takeover(&thread, call.reason).await,
-            BrowserCall::FillCredential(_) => Err(refuse(
-                ErrorCode::Invalid,
-                format!("{} is not available on this machine yet.", frame.call.op()),
-                "do without it and say so in your result",
-            )),
+            BrowserCall::FillCredential(call) => {
+                credentials::fill_credential(self, &thread, call).await
+            }
         }
     }
 
@@ -549,7 +549,11 @@ impl Broker {
     }
 
     /// The hub watches a session (its link, to send frames on) or no more.
-    pub fn watch(&self, id: &BrowserSessionId, link: Option<tokio::sync::mpsc::UnboundedSender<String>>) {
+    pub fn watch(
+        &self,
+        id: &BrowserSessionId,
+        link: Option<tokio::sync::mpsc::UnboundedSender<String>>,
+    ) {
         if let Some(session) = self.by_id(id) {
             session.set_watcher(link);
         }
@@ -557,7 +561,9 @@ impl Broker {
 
     /// A person's input from the app, for a session they took over.
     pub async fn input(&self, id: &BrowserSessionId, input: BrowserInput) {
-        let Some(session) = self.by_id(id) else { return };
+        let Some(session) = self.by_id(id) else {
+            return;
+        };
         if let Err(why) = session.input(input).await {
             tracing::debug!(session = %id, error = %why, "browser input not delivered");
         }
@@ -566,11 +572,15 @@ impl Broker {
     /// A person takes a session over, or hands it back: the agent's commands wait meanwhile (the proxy answers them
     /// that a person has control), and its next command after a handback takes control again.
     pub fn control(&self, id: &BrowserSessionId, to: BrowserControlTo, by: &str) {
-        let Some(session) = self.by_id(id) else { return };
+        let Some(session) = self.by_id(id) else {
+            return;
+        };
         let (next, step) = match (to, session.control()) {
             (BrowserControlTo::Human, BrowserControl::Human) => return,
             (BrowserControlTo::Human, _) => (BrowserControl::Human, "takeover"),
-            (BrowserControlTo::Agent, BrowserControl::Human) => (BrowserControl::HandingBack, "handback"),
+            (BrowserControlTo::Agent, BrowserControl::Human) => {
+                (BrowserControl::HandingBack, "handback")
+            }
             (BrowserControlTo::Agent, _) => return,
         };
         session.set_control(next);
@@ -585,14 +595,24 @@ impl Broker {
         reason: fleetd_contracts::prim::Line<1, 500>,
     ) -> Result<BrowserCallResult, McpToolError> {
         let session = self.live(thread).ok_or_else(|| {
-            refuse(ErrorCode::NotFound, "No browser session is open.", "start one with session_start")
+            refuse(
+                ErrorCode::NotFound,
+                "No browser session is open.",
+                "start one with session_start",
+            )
         })?;
         let call = LeadCall::BrowserTakeover(BrowserTakeoverCall {
             session_id: session.id.clone(),
             reason: reason.clone(),
         });
         self.hub.call(thread, &session.cwd, call).await?;
-        session.step("request_takeover", json!({ "reason": reason.as_str() }), true, None, 0);
+        session.step(
+            "request_takeover",
+            json!({ "reason": reason.as_str() }),
+            true,
+            None,
+            0,
+        );
         Ok(BrowserCallResult::RequestTakeover(TakeoverRequested {
             message: "Asked: it shows under waiting on you. Carry on with what you can; while a person has control \
                       your browser commands answer so, and after they hand it back your next one sees the page as \

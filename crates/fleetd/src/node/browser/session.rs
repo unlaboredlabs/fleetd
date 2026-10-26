@@ -13,9 +13,9 @@ use fleetd_contracts::browser::{
     BrowserAction, BrowserControl, BrowserFrame, BrowserInput, BrowserSessionId, DomSnapshot,
     KeyAction, MouseAction, MouseButton, RecordingFile,
 };
+use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::node_link::NodeToHub;
 use fleetd_contracts::prim::{Int, NonEmpty};
-use fleetd_contracts::ids::Timestamp;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
@@ -221,7 +221,12 @@ impl Session {
         };
         let mut live = lock(&self.live);
         live.seq += 1;
-        let css = |key: &str, or: u32| metadata[key].as_f64().filter(|v| *v > 0.0).unwrap_or(f64::from(or));
+        let css = |key: &str, or: u32| {
+            metadata[key]
+                .as_f64()
+                .filter(|v| *v > 0.0)
+                .unwrap_or(f64::from(or))
+        };
         live.page = (css("deviceWidth", width), css("deviceHeight", height));
         let frame = BrowserFrame {
             session_id: self.id.clone(),
@@ -233,7 +238,9 @@ impl Session {
             control: self.control(),
         };
         if let Some(watcher) = &live.watcher
-            && watcher.send(to_json(&NodeToHub::BrowserFrame(frame.clone()))).is_err()
+            && watcher
+                .send(to_json(&NodeToHub::BrowserFrame(frame.clone())))
+                .is_err()
         {
             live.watcher = None;
         }
@@ -313,9 +320,12 @@ impl Session {
         }
     }
 
-    /// What the proxy answers the driver's command with instead of sending it on, if anything: while a person
-    /// has control, every command.
-    pub fn refusal(&self, _method: &str, _params: &Value) -> Option<String> {
+    /// What the proxy answers the driver's command with instead of sending it on, if anything: what a session that
+    /// filled a credential refuses (credentials.rs), and while a person has control, every command.
+    pub fn refusal(&self, method: &str, params: &Value) -> Option<String> {
+        if let Some(why) = super::credentials::refusal(self, method, params) {
+            return Some(why);
+        }
         match self.control() {
             BrowserControl::Agent => None,
             // Handed back: the agent's first command takes control again and sees the page as the person left it.
@@ -331,9 +341,9 @@ impl Session {
         }
     }
 
-    /// A message from the browser on its way to the driver.
+    /// A message from the browser on its way to the driver (credentials.rs).
     pub fn outgoing(&self, message: Value) -> Value {
-        message
+        super::credentials::outgoing(self, message)
     }
 
     /// Logs one step of the session's: a tool call of the agent's, or fleetd's own (a session tool, a fill), and
@@ -631,7 +641,11 @@ fn key_code(key: &str) -> Option<u32> {
         "Delete" => 46,
         k if k.chars().count() == 1 => {
             let c = k.chars().next()?.to_ascii_uppercase();
-            if c.is_ascii_alphanumeric() { c as u32 } else { return None }
+            if c.is_ascii_alphanumeric() {
+                c as u32
+            } else {
+                return None;
+            }
         }
         _ => return None,
     })
@@ -640,7 +654,16 @@ fn key_code(key: &str) -> Option<u32> {
 /// The CDP command for a person's input, its coordinates scaled from frame to page pixels.
 pub fn cdp_input(input: &BrowserInput, scale_x: f64, scale_y: f64) -> (&'static str, Value) {
     match input {
-        BrowserInput::Mouse { action, x, y, button, click_count, delta_x, delta_y, modifiers } => {
+        BrowserInput::Mouse {
+            action,
+            x,
+            y,
+            button,
+            click_count,
+            delta_x,
+            delta_y,
+            modifiers,
+        } => {
             let kind = match action {
                 MouseAction::Pressed => "mousePressed",
                 MouseAction::Released => "mouseReleased",
@@ -662,7 +685,13 @@ pub fn cdp_input(input: &BrowserInput, scale_x: f64, scale_y: f64) -> (&'static 
                 }),
             )
         }
-        BrowserInput::Key { action, key, code, text, modifiers } => {
+        BrowserInput::Key {
+            action,
+            key,
+            code,
+            text,
+            modifiers,
+        } => {
             let text = text
                 .as_ref()
                 .map(|t| t.to_string())
@@ -672,7 +701,8 @@ pub fn cdp_input(input: &BrowserInput, scale_x: f64, scale_y: f64) -> (&'static 
                 (KeyAction::Down, None) => "rawKeyDown",
                 (KeyAction::Up, _) => "keyUp",
             };
-            let mut params = json!({ "type": kind, "key": key.as_str(), "modifiers": modifiers.get() });
+            let mut params =
+                json!({ "type": kind, "key": key.as_str(), "modifiers": modifiers.get() });
             if let Some(code) = code {
                 params["code"] = code.as_str().into();
             }

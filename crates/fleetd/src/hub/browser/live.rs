@@ -153,7 +153,10 @@ pub fn start_watch(hub: &Hub, caller: &Caller, id: &BrowserSessionId) -> Result<
     if session.state != BrowserSessionState::Live {
         return Err(ToolError::new(
             ErrorCode::Invalid,
-            format!("Browser session {id} is {}: replay its recording instead.", session.state.as_str()),
+            format!(
+                "Browser session {id} is {}: replay its recording instead.",
+                session.state.as_str()
+            ),
         )
         .with_fix("Read its files with browser_recording_get."));
     }
@@ -167,15 +170,23 @@ pub fn start_watch(hub: &Hub, caller: &Caller, id: &BrowserSessionId) -> Result<
 }
 
 /// The app's `browser_input`: a person's device with operate on the machine, on a session they took over.
-pub fn input(hub: &Hub, caller: &Caller, id: &BrowserSessionId, input: BrowserInput) -> Result<(), ToolError> {
+pub fn input(
+    hub: &Hub,
+    caller: &Caller,
+    id: &BrowserSessionId,
+    input: BrowserInput,
+) -> Result<(), ToolError> {
     let session = super::get(&hub.db, id)?.ok_or_else(|| no_session(id))?;
     let machine = &session.project_ref.machine_id;
     if require(caller, Role::Read, Some(machine)).is_err() {
         return Err(no_session(id));
     }
     if !is_human(caller) {
-        return Err(ToolError::new(ErrorCode::Forbidden, "Only a person's device drives a browser session.")
-            .with_fix("Use the desktop app."));
+        return Err(ToolError::new(
+            ErrorCode::Forbidden,
+            "Only a person's device drives a browser session.",
+        )
+        .with_fix("Use the desktop app."));
     }
     require(caller, Role::Operate, Some(machine))?;
     if session.state != BrowserSessionState::Live || session.control != BrowserControl::Human {
@@ -185,9 +196,15 @@ pub fn input(hub: &Hub, caller: &Caller, id: &BrowserSessionId, input: BrowserIn
         )
         .with_fix("Take it over first with browser_control control human."));
     }
-    let frame = HubToNode::BrowserInput(BrowserInputFrame { session_id: id.clone(), input });
+    let frame = HubToNode::BrowserInput(BrowserInputFrame {
+        session_id: id.clone(),
+        input,
+    });
     if !hub.link.send_to(machine, frame) {
-        return Err(ToolError::new(ErrorCode::MachineOffline, format!("{machine}'s node isn't connected.")));
+        return Err(ToolError::new(
+            ErrorCode::MachineOffline,
+            format!("{machine}'s node isn't connected."),
+        ));
     }
     Ok(())
 }

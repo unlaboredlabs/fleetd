@@ -236,8 +236,14 @@ pub fn prune(hub: &Hub) -> Result<usize, StoreError> {
     for (machine, project, started_ms, bytes, data) in rows {
         let session: BrowserSession = serde_json::from_str(&data)?;
         let partial = session.state != BrowserSessionState::Recorded;
-        let bytes = if partial { on_disk(hub, &session.session_id) } else { bytes };
-        *totals.entry((machine.clone(), project.clone())).or_default() += bytes;
+        let bytes = if partial {
+            on_disk(hub, &session.session_id)
+        } else {
+            bytes
+        };
+        *totals
+            .entry((machine.clone(), project.clone()))
+            .or_default() += bytes;
         sessions.push((machine, project, started_ms, bytes, partial, session));
     }
     let mut expired = 0;

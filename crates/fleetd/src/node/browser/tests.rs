@@ -146,7 +146,9 @@ async fn site() -> (String, AbortOnDrop) {
                         // A project secret as a page shows it: HTML-escaped, and inside longer base64.
                         let html = PROJECT_SECRET.replace('&', "&amp;").replace('<', "&lt;");
                         let b64 = B64.encode(format!("key={PROJECT_SECRET};"));
-                        format!("<html><body><p title=\"{html}\">{html}</p><p>{b64}</p></body></html>")
+                        format!(
+                            "<html><body><p title=\"{html}\">{html}</p><p>{b64}</p></body></html>"
+                        )
                     } else if text.starts_with("POST /login") {
                         let user = body
                             .split('&')
@@ -763,19 +765,43 @@ async fn a_person_watches_takes_over_and_types_and_the_agent_sees_it_after_the_h
     use fleetd_contracts::browser::{BrowserControlTo, BrowserInput, BrowserSessionId};
     let Some(rig) = rig().await else { return };
     let (site, _site) = site().await;
-    let started = call(&rig.broker, json!({ "op": "session_start", "purpose": "Sign up" })).await;
+    let started = call(
+        &rig.broker,
+        json!({ "op": "session_start", "purpose": "Sign up" }),
+    )
+    .await;
     let id = BrowserSessionId::unchecked(started["result"]["sessionId"].as_str().unwrap());
     let url = started["result"]["cdp"].as_str().unwrap().to_owned();
     let mut driver = Driver::connect(&url).await.unwrap();
     let page = driver.page().await;
-    driver.ok(Some(&page), "Page.navigate", json!({ "url": site })).await;
-    driver.wait_for(&page, "document.readyState === 'complete' && !!document.querySelector('#user')").await;
+    driver
+        .ok(Some(&page), "Page.navigate", json!({ "url": site }))
+        .await;
+    driver
+        .wait_for(
+            &page,
+            "document.readyState === 'complete' && !!document.querySelector('#user')",
+        )
+        .await;
 
     // The agent asks for a person; the hub lists it until one comes.
-    let asked = call(&rig.broker, json!({ "op": "request_takeover", "reason": "Type the user name" })).await;
-    assert!(asked["result"]["message"].as_str().unwrap().contains("waiting on you"), "{asked}");
+    let asked = call(
+        &rig.broker,
+        json!({ "op": "request_takeover", "reason": "Type the user name" }),
+    )
+    .await;
+    assert!(
+        asked["result"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("waiting on you"),
+        "{asked}"
+    );
     let waiting = crate::hub::browser::waiting(&rig.hub.hub.db, &rig.hub.project).unwrap();
-    assert_eq!(waiting[0].takeover_reason.as_ref().unwrap().as_str(), "Type the user name");
+    assert_eq!(
+        waiting[0].takeover_reason.as_ref().unwrap().as_str(),
+        "Type the user name"
+    );
 
     // Watching: the newest frame at once, then each new one.
     let (link, mut frames) = tokio::sync::mpsc::unbounded_channel();
@@ -783,15 +809,33 @@ async fn a_person_watches_takes_over_and_types_and_the_agent_sees_it_after_the_h
     let frame = next_frame(&mut frames).await;
     assert_eq!(frame["sessionId"], id.as_str());
     assert_eq!(frame["control"], "agent");
-    let (width, height) = (frame["width"].as_f64().unwrap(), frame["height"].as_f64().unwrap());
+    let (width, height) = (
+        frame["width"].as_f64().unwrap(),
+        frame["height"].as_f64().unwrap(),
+    );
     assert!(width > 100.0 && height > 100.0, "{width}x{height}");
     let jpeg = B64.decode(frame["jpegB64"].as_str().unwrap()).unwrap();
-    assert_eq!(super::session::jpeg_size(&jpeg), Some((width as u32, height as u32)));
+    assert_eq!(
+        super::session::jpeg_size(&jpeg),
+        Some((width as u32, height as u32))
+    );
 
     // A person takes over: the agent's commands wait, and the person's input reaches the page.
-    rig.broker.control(&id, BrowserControlTo::Human, "human:desk");
-    let paused = driver.send(Some(&page), "Runtime.evaluate", json!({ "expression": "1" })).await;
-    assert!(paused["error"]["message"].as_str().unwrap().contains("A person has control"));
+    rig.broker
+        .control(&id, BrowserControlTo::Human, "human:desk");
+    let paused = driver
+        .send(
+            Some(&page),
+            "Runtime.evaluate",
+            json!({ "expression": "1" }),
+        )
+        .await;
+    assert!(
+        paused["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("A person has control")
+    );
     let rect = rig.broker.live(THREAD).unwrap();
     let (_, own) = rect.page().unwrap();
     let box_ = rect
@@ -805,7 +849,10 @@ async fn a_person_watches_takes_over_and_types_and_the_agent_sees_it_after_the_h
         .unwrap();
     let at = box_["result"]["value"].as_array().unwrap().clone();
     let scale = width / at[2].as_f64().unwrap();
-    let (x, y) = (at[0].as_f64().unwrap() * scale, at[1].as_f64().unwrap() * scale);
+    let (x, y) = (
+        at[0].as_f64().unwrap() * scale,
+        at[1].as_f64().unwrap() * scale,
+    );
     for action in ["pressed", "released"] {
         let click: BrowserInput = serde_json::from_value(json!({
             "kind": "mouse", "action": action, "x": x, "y": y, "button": "left", "clickCount": 1,
@@ -813,7 +860,8 @@ async fn a_person_watches_takes_over_and_types_and_the_agent_sees_it_after_the_h
         .unwrap();
         rig.broker.input(&id, click).await;
     }
-    let typed: BrowserInput = serde_json::from_value(json!({ "kind": "text", "text": "typed-by-human" })).unwrap();
+    let typed: BrowserInput =
+        serde_json::from_value(json!({ "kind": "text", "text": "typed-by-human" })).unwrap();
     rig.broker.input(&id, typed).await;
     // The frames say who drives now.
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -822,11 +870,20 @@ async fn a_person_watches_takes_over_and_types_and_the_agent_sees_it_after_the_h
     }
 
     // Handed back: the agent's next command takes control again and sees what the person typed.
-    rig.broker.control(&id, BrowserControlTo::Agent, "human:desk");
-    assert_eq!(rect.control(), fleetd_contracts::browser::BrowserControl::HandingBack);
-    let value = driver.eval(&page, "document.querySelector('#user').value").await;
+    rig.broker
+        .control(&id, BrowserControlTo::Agent, "human:desk");
+    assert_eq!(
+        rect.control(),
+        fleetd_contracts::browser::BrowserControl::HandingBack
+    );
+    let value = driver
+        .eval(&page, "document.querySelector('#user').value")
+        .await;
     assert_eq!(value, "typed-by-human");
-    assert_eq!(rect.control(), fleetd_contracts::browser::BrowserControl::Agent);
+    assert_eq!(
+        rect.control(),
+        fleetd_contracts::browser::BrowserControl::Agent
+    );
 
     // The hub followed: no longer waiting on anyone, and the agent drives.
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -839,7 +896,11 @@ async fn a_person_watches_takes_over_and_types_and_the_agent_sees_it_after_the_h
         assert!(Instant::now() < deadline, "{s}");
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    assert!(crate::hub::browser::waiting(&rig.hub.hub.db, &rig.hub.project).unwrap().is_empty());
+    assert!(
+        crate::hub::browser::waiting(&rig.hub.hub.db, &rig.hub.project)
+            .unwrap()
+            .is_empty()
+    );
     rig.broker.watch(&id, None);
     call(&rig.broker, json!({ "op": "session_end" })).await;
     let deadline = Instant::now() + Duration::from_secs(30);
@@ -850,14 +911,29 @@ async fn a_person_watches_takes_over_and_types_and_the_agent_sees_it_after_the_h
     let actions = String::from_utf8(read_file(&rig.hub, id.as_str(), "actions").await).unwrap();
     let steps: Vec<String> = actions
         .lines()
-        .map(|l| serde_json::from_str::<Value>(l).unwrap()["tool"].as_str().unwrap().to_owned())
+        .map(|l| {
+            serde_json::from_str::<Value>(l).unwrap()["tool"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
         .collect();
     assert_eq!(
         steps,
-        ["session_start", "request_takeover", "takeover", "handback", "agent_resumed", "session_end"]
+        [
+            "session_start",
+            "request_takeover",
+            "takeover",
+            "handback",
+            "agent_resumed",
+            "session_end"
+        ]
     );
     assert!(actions.contains("human:desk"), "who took over");
-    assert!(!actions.contains("typed-by-human"), "a person's keys aren't logged one by one");
+    assert!(
+        !actions.contains("typed-by-human"),
+        "a person's keys aren't logged one by one"
+    );
 }
 
 async fn recorded(hub: &TestHub) -> String {
@@ -865,7 +941,10 @@ async fn recorded(hub: &TestHub) -> String {
     loop {
         let listed = sessions(hub).await;
         if listed["sessions"][0]["state"] == "recorded" {
-            return listed["sessions"][0]["sessionId"].as_str().unwrap().to_owned();
+            return listed["sessions"][0]["sessionId"]
+                .as_str()
+                .unwrap()
+                .to_owned();
         }
         assert!(Instant::now() < deadline, "not recorded: {listed}");
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -874,14 +953,36 @@ async fn recorded(hub: &TestHub) -> String {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_project_secret_is_scrubbed_from_the_dom_trace_in_every_form_the_page_shows_it() {
-    let Some(rig) = rig_with(vec![("SHOP_KEY".into(), PROJECT_SECRET.into())]).await else { return };
+    let Some(rig) = rig_with(vec![("SHOP_KEY".into(), PROJECT_SECRET.into())]).await else {
+        return;
+    };
     let (site, _site) = site().await;
-    let started = call(&rig.broker, json!({ "op": "session_start", "purpose": "Read" })).await;
-    let mut driver = Driver::connect(started["result"]["cdp"].as_str().unwrap()).await.unwrap();
+    let started = call(
+        &rig.broker,
+        json!({ "op": "session_start", "purpose": "Read" }),
+    )
+    .await;
+    let mut driver = Driver::connect(started["result"]["cdp"].as_str().unwrap())
+        .await
+        .unwrap();
     let page = driver.page().await;
-    driver.ok(Some(&page), "Page.navigate", json!({ "url": format!("{site}/secret") })).await;
-    driver.wait_for(&page, "document.readyState === 'complete' && !!document.querySelector('p')").await;
-    rig.broker.item(THREAD, &command_item(&format!("agent-browser open {site}/secret"), "✓"));
+    driver
+        .ok(
+            Some(&page),
+            "Page.navigate",
+            json!({ "url": format!("{site}/secret") }),
+        )
+        .await;
+    driver
+        .wait_for(
+            &page,
+            "document.readyState === 'complete' && !!document.querySelector('p')",
+        )
+        .await;
+    rig.broker.item(
+        THREAD,
+        &command_item(&format!("agent-browser open {site}/secret"), "✓"),
+    );
     tokio::time::sleep(Duration::from_millis(300)).await;
     call(&rig.broker, json!({ "op": "session_end" })).await;
     let id = recorded(&rig.hub).await;
@@ -897,15 +998,26 @@ async fn a_project_secret_is_scrubbed_from_the_dom_trace_in_every_form_the_page_
 async fn two_starts_at_once_open_one_session_and_leave_one_recording() {
     let Some(rig) = rig().await else { return };
     let (a, b) = tokio::join!(
-        call(&rig.broker, json!({ "op": "session_start", "purpose": "One" })),
-        call(&rig.broker, json!({ "op": "session_start", "purpose": "Two" })),
+        call(
+            &rig.broker,
+            json!({ "op": "session_start", "purpose": "One" })
+        ),
+        call(
+            &rig.broker,
+            json!({ "op": "session_start", "purpose": "Two" })
+        ),
     );
-    let opened = [&a, &b].iter().filter(|r| r["result"]["sessionId"].is_string()).count();
+    let opened = [&a, &b]
+        .iter()
+        .filter(|r| r["result"]["sessionId"].is_string())
+        .count();
     assert_eq!(opened, 1, "{a} {b}");
     let refused = if a.get("error").is_some() { &a } else { &b };
     let why = refused["error"]["message"].as_str().unwrap();
     assert!(why.contains("starting") || why.contains("is open"), "{why}");
-    let folders = std::fs::read_dir(rig.node_home.path().join("browser/recordings")).unwrap().count();
+    let folders = std::fs::read_dir(rig.node_home.path().join("browser/recordings"))
+        .unwrap()
+        .count();
     assert_eq!(folders, 1, "the refused start made no recording");
     call(&rig.broker, json!({ "op": "session_end" })).await;
 }
@@ -913,9 +1025,16 @@ async fn two_starts_at_once_open_one_session_and_leave_one_recording() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_browser_session_ends_with_its_agents_session() {
     let Some(rig) = rig().await else { return };
-    call(&rig.broker, json!({ "op": "session_start", "purpose": "Look" })).await;
+    call(
+        &rig.broker,
+        json!({ "op": "session_start", "purpose": "Look" }),
+    )
+    .await;
     SessionHooks::ended(rig.broker.as_ref(), "th-someone-else");
-    assert!(rig.broker.live(THREAD).is_some(), "another agent's exit changes nothing");
+    assert!(
+        rig.broker.live(THREAD).is_some(),
+        "another agent's exit changes nothing"
+    );
     SessionHooks::ended(rig.broker.as_ref(), THREAD);
     assert!(rig.broker.live(THREAD).is_none());
     let id = recorded(&rig.hub).await;

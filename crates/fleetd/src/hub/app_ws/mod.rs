@@ -209,7 +209,8 @@ impl Session {
                             loop {
                                 match watch.frames.recv().await {
                                     Ok(frame) if frame.session_id == session => {
-                                        let mut value = serde_json::to_value(&frame).unwrap_or_default();
+                                        let mut value =
+                                            serde_json::to_value(&frame).unwrap_or_default();
                                         value["t"] = json!("browser_frame");
                                         slot.replace(value.to_string());
                                     }

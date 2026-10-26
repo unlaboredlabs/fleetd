@@ -365,11 +365,18 @@ mod tests {
         routes.proxy = Some(tx);
         routes.attaching.insert("T1".into(), Vec::new());
         routes.event(attached("T1", "driver-1"));
-        assert!(proxy.try_recv().is_err(), "held while the broker's attach is pending");
+        assert!(
+            proxy.try_recv().is_err(),
+            "held while the broker's attach is pending"
+        );
         routes.release("T1");
         assert_eq!(proxy.try_recv().unwrap()["params"]["sessionId"], "driver-1");
         routes.event(attached("T1", "driver-2"));
-        assert_eq!(proxy.try_recv().unwrap()["params"]["sessionId"], "driver-2", "not held any more");
+        assert_eq!(
+            proxy.try_recv().unwrap()["params"]["sessionId"],
+            "driver-2",
+            "not held any more"
+        );
     }
 
     #[test]
@@ -378,7 +385,9 @@ mod tests {
         let (tx, mut proxy) = mpsc::unbounded_channel();
         routes.proxy = Some(tx);
         let (answer, _wait) = oneshot::channel();
-        routes.waiting.insert(7, Waiter::Attach("T1".into(), answer));
+        routes
+            .waiting
+            .insert(7, Waiter::Attach("T1".into(), answer));
         routes.attaching.insert("T1".into(), Vec::new());
         routes.event(attached("T1", "driver-1"));
         routes.event(attached("T1", "broker-1"));
@@ -390,6 +399,9 @@ mod tests {
             params: json!({}),
             session_id: Some("broker-1".into()),
         });
-        assert!(proxy.try_recv().is_err(), "the broker's session's events stay the broker's");
+        assert!(
+            proxy.try_recv().is_err(),
+            "the broker's session's events stay the broker's"
+        );
     }
 }

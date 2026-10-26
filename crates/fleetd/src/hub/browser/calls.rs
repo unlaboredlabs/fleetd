@@ -149,7 +149,9 @@ fn session(
         takeover_reason: stored
             .as_ref()
             .and_then(|s| s.takeover_reason.clone())
-            .filter(|_| call.state == BrowserSessionState::Live && call.control == BrowserControl::Agent),
+            .filter(|_| {
+                call.state == BrowserSessionState::Live && call.control == BrowserControl::Agent
+            }),
         credentials_filled: call.credentials_filled,
         note: call.note,
     };

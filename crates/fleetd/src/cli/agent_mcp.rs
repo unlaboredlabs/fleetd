@@ -396,7 +396,9 @@ pub fn browser_result(answer: &Value) -> Value {
             }
             text
         }
-        Some(_) if result["message"].is_string() => result["message"].as_str().unwrap_or_default().to_owned(),
+        Some(_) if result["message"].is_string() => {
+            result["message"].as_str().unwrap_or_default().to_owned()
+        }
         _ => return tool_result(answer),
     };
     json!({ "content": [{ "type": "text", "text": text }], "isError": false })
