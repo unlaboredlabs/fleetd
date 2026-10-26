@@ -169,7 +169,7 @@ Settings go under `browser` in [node.json](/docs/config-and-files#node-json):
 
 ## Android sessions {#android}
 
-An agent that needs a phone app (to check an Android build, or a site on a phone) opens an Android session:
+An agent that needs Android (to check an Android build, or how a site looks on Android) opens an Android session:
 **`session_start`** with `kind` `android`. It gets a fresh Android 15 emulator on its machine, drives it with
 Callstack's [agent-device](https://github.com/callstack/agent-device) CLI (`agent-device open settings`, `snapshot -i`,
 `press @e3 --settle`), and ends it with **`session_end`**. agent-device is on its `PATH` with its skill, already
