@@ -2,14 +2,12 @@
 // `node tests/lab/site-capture.ts --docs` only recaptures the docs' ```console capture=NAME blocks.
 // The setup CLI in a throwaway HOME (`fleetd init` and `fleetd machine add --dry-run`, with your claude and gh logins
 // copied in, sanitized) fills the `<!-- capture:NAME -->` blocks in site/home.html and the same blocks in
-// site/fleetd.txt; the merge train's lines come from the newest lab m7 run, when there is one. No hub, node or claude
-// turn. The page's app screenshots come from app/desktop's fixtures instead (app/desktop/qa/site.ts).
+// site/fleetd.txt. No hub, node or claude turn. The page's app screenshots come from app/desktop's fixtures instead (app/desktop/qa/site.ts).
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
-import { type Body, claudeLoginEnv, check, fleetdCommand, LAB, log, REPO, SLOT, scrubbedEnv } from "./harness.ts";
+import { type Body, claudeLoginEnv, check, fleetdCommand, LAB, log, REPO, scrubbedEnv } from "./harness.ts";
 
 const DOCS_ONLY = process.argv.includes("--docs");
 const SITE = path.join(REPO, "site");
@@ -17,7 +15,7 @@ const SITE = path.join(REPO, "site");
 /** Undone last to first in `finally`. */
 const cleanups: Array<() => Promise<void> | void> = [];
 
-// ---- Setup transcripts and train lines ----
+// ---- Setup transcripts ----
 
 const INIT = 'fleetd init --listen 127.0.0.1:4778 --git-identity "Demo <demo@users.noreply.github.com>" --no-service';
 
@@ -171,78 +169,6 @@ function fillDocs(blocks: ReturnType<typeof docsBlocks>) {
   log(`docs: recaptured ${blocks.size} block(s) in ${files.size} file(s) and rebuilt site/docs`);
 }
 
-interface TrainLine {
-  readonly ms: number;
-  readonly type: string;
-  readonly summary: string;
-  /** The Change (X<n>) the line is about, when it is about one. */
-  readonly change?: string;
-  readonly statusOn?: string;
-}
-
-/** The merge train from the newest lab m7 run on this box (any slot), with the `fleetd/train` commit status the
- * train posted on GitHub before each merge. Undefined when no run has merged anything. */
-export function trainLines(): { lines: Array<TrainLine>; from: string } | undefined {
-  const root = SLOT === 0 ? LAB : path.dirname(LAB);
-  const runs = [root, ...fs.readdirSync(root).filter((d) => /^slot-\d$/u.test(d)).map((d) => path.join(root, d))].flatMap((dir) =>
-    fs.readdirSync(dir).filter((d) => d.startsWith("e2e-")).map((d) => path.join(dir, d, "hub", "hub.sqlite")),
-  );
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "fleetd-site-train-"));
-  cleanups.push(() => fs.rmSync(tmp, { recursive: true, force: true }));
-  let best: { db: DatabaseSync; at: number; from: string } | undefined;
-  for (const [i, file] of runs.filter((f) => fs.existsSync(f)).entries()) {
-    // A copy, so a reader never takes a lock in or checkpoints a lab run's own files.
-    const copy = path.join(tmp, `${i}.sqlite`);
-    for (const ext of ["", "-wal"]) if (fs.existsSync(file + ext)) fs.copyFileSync(file + ext, copy + ext);
-    const db = new DatabaseSync(copy);
-    const at = Number((db.prepare("SELECT max(created_ms) AS at FROM events WHERE type = 'pr.merged'").get() as { at: number | null }).at ?? 0);
-    if (at > (best?.at ?? 0)) best = { db, at, from: file };
-  }
-  if (best === undefined) return undefined;
-  const rows = best.db
-    .prepare("SELECT created_ms, type, data FROM events WHERE type LIKE 'change.%' OR type LIKE 'train.%' OR type IN ('review.verdict', 'pr.merged') ORDER BY seq")
-    .all() as Array<{ created_ms: number; type: string; data: string }>;
-  const lines: Array<TrainLine> = [];
-  const changeOfPr = new Map<number, string>();
-  for (const row of rows) {
-    const event = JSON.parse(row.data) as Body;
-    if (row.type === "change.queued") changeOfPr.set(Number(event.data.prNumber), String(event.data.changeId));
-    // A verdict names the PR, not the Change.
-    const reviewed = row.type === "review.verdict" ? changeOfPr.get(Number(/\/pull\/(\d+)$/u.exec(String(event.data?.pr))?.[1])) : undefined;
-    const change = typeof event.data?.changeId === "string" ? (event.data.changeId as string) : reviewed;
-    const summary = String(event.summary).replace(/\(log: https?:\/\/[^)]+\)/u, "(log: …)");
-    lines.push({ ms: row.created_ms, type: row.type, summary, ...(change === undefined ? {} : { change }) });
-    if (row.type !== "pr.merged") continue;
-    const { repo, prNumber } = event.data as { repo: string; prNumber: number };
-    const gh = (route: string): unknown => JSON.parse(execFileSync("gh", ["api", route], { env: scrubbedEnv(), encoding: "utf8" }));
-    const head = String((gh(`repos/${repo}/pulls/${prNumber}`) as Body).head.sha);
-    // Newest first: the last status the train set before merging.
-    const status = (gh(`repos/${repo}/commits/${head}/statuses`) as Array<Body>).find((s) => s.context === "fleetd/train");
-    if (status !== undefined) {
-      lines.push({ ms: Date.parse(status.created_at), type: "fleetd/train", summary: String(status.description), change: String(event.data.changeId), statusOn: head.slice(0, 7) });
-    }
-  }
-  return { lines: pickTrain(lines.toSorted((a, b) => a.ms - b.ms)), from: best.from };
-}
-
-const LIFECYCLE = ["change.queued", "review.verdict", "change.ready", "fleetd/train", "pr.merged"];
-const SETBACKS = ["change.refused", "change.ci_failed", "change.needs_rebase"];
-
-/** What the page shows of a run, in time order: the whole path of the first two Changes that merged, and the first
- * of each way the train turns a change away. At most 16 lines. */
-export function pickTrain(lines: ReadonlyArray<TrainLine>) {
-  const merged = new Set(lines.filter((l) => l.type === "pr.merged").map((l) => l.change));
-  const followed = lines.filter((l) => l.type === "change.queued" && merged.has(l.change)).map((l) => l.change).slice(0, 2);
-  const picked = new Set(lines.filter((l) => followed.includes(l.change) && LIFECYCLE.includes(l.type)));
-  for (const type of SETBACKS) {
-    const first = lines.find((l) => l.type === type);
-    if (first !== undefined) picked.add(first);
-  }
-  const shown = lines.filter((l) => picked.has(l));
-  check(shown.length <= 16, `the train rule picked ${shown.length} lines, more than the page's 16`);
-  return shown;
-}
-
 // ---- The page's capture blocks ----
 
 const esc = (s: string) => s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
@@ -253,22 +179,6 @@ const transcriptBlocks = ({ cmd, out }: { cmd: string; out: string }) => ({
   html: (indent: string) => `${indent}<pre class="lines"><span class="c">${esc(`$ ${cmd}`)}</span>\n<span class="o">${esc(out)}</span></pre>`,
   txt: () => `$ ${cmd}\n${out}`,
 });
-
-const trainBlocks = (lines: ReadonlyArray<TrainLine>) => {
-  const time = (ms: number) => new Date(ms).toISOString().slice(11, 19);
-  const tone = (type: string) => (["change.refused", "change.ci_failed", "change.needs_rebase"].includes(type) ? ' class="bad"' : type === "pr.merged" ? ' class="ok"' : "");
-  const width = Math.max(...lines.map((l) => l.type.length)) + 2;
-  return {
-    html: (indent: string) =>
-      lines
-        .map((l) => {
-          const status = l.statusOn === undefined ? "" : ` <span class="x">· commit status on ${l.statusOn}</span>`;
-          return `${indent}<li${tone(l.type)}><span class="t">${time(l.ms)}</span><span class="e">${esc(l.type)}</span><span class="s">${esc(l.summary)}${status}</span></li>`;
-        })
-        .join("\n"),
-    txt: () => lines.map((l) => `${time(l.ms)}  ${l.type.padEnd(width)}${l.summary}${l.statusOn === undefined ? "" : `   [commit status on ${l.statusOn}]`}`).join("\n"),
-  };
-};
 
 /** In home.html: replaces what is between `<!-- capture:NAME -->` and `<!-- /capture:NAME -->`; each block gets the
  * opening marker's indentation. */
@@ -286,7 +196,6 @@ function fill(file: string, blocks: Blocks) {
 const TWIN: Record<string, RegExp> = {
   init: /^\$ fleetd init .*\n(?:.*\n)*?\[exit \d+\]$/gmu,
   "machine-add": /^\$ fleetd machine add .*\n(?:.*\n)*?\[exit \d+\]$/gmu,
-  train: /^\d\d:\d\d:\d\d {2}.*(?:\n\d\d:\d\d:\d\d {2}.*)*/gmu,
 };
 
 /** Replaces each block in the plain-text twin; each must be found exactly once, before and after. */
@@ -329,14 +238,8 @@ function assertPublishable(name: string, text: string) {
 async function main() {
   check(fs.existsSync(fleetdCommand([])[0]), `${fleetdCommand([])[0]} is built (cargo build --release --locked -p fleetd)`);
   const { init, add } = setupTranscripts();
-  const train = trainLines();
-  log(train === undefined ? "train: no lab run has merged a PR; the train blocks stay as they are" : `train: ${train.lines.length} lines from ${train.from}`);
   const htmlBlocks: Blocks = { init: transcriptBlocks(init).html, "machine-add": transcriptBlocks(add).html };
   const txtBlocks: Blocks = { init: transcriptBlocks(init).txt, "machine-add": transcriptBlocks(add).txt };
-  if (train !== undefined) {
-    htmlBlocks.train = trainBlocks(train.lines).html;
-    txtBlocks.train = trainBlocks(train.lines).txt;
-  }
   for (const [name, make] of [...Object.entries(htmlBlocks), ...Object.entries(txtBlocks)]) assertPublishable(`capture:${name}`, make(""));
 
   // Everything checked: now the site changes.

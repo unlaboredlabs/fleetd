@@ -14,7 +14,7 @@ const WIDTHS = [320, 390, 768, 1001, 1180, 1280, 1366, 1440, 1600, 1920];
 const HEIGHT = 900;
 const SITE = path.resolve("site");
 const PAGE = `file://${SITE}/home.html`;
-const TYPES = { ".woff2": "font/woff2", ".png": "image/png", ".svg": "image/svg+xml" };
+const TYPES = { ".woff2": "font/woff2", ".png": "image/png", ".jpg": "image/jpeg", ".svg": "image/svg+xml", ".webm": "video/webm", ".json": "application/json" };
 
 function chromePath() {
   if (process.env.CHROME) return process.env.CHROME;
