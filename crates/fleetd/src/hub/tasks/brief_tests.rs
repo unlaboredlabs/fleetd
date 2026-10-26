@@ -1,6 +1,7 @@
 //! A task's agent reads its workstream's brief and its project's decisions itself, over a real hub with a fake node:
 //! `brief_read` and `decisions_search` answer in full, another project's decisions are refused, and the first prompt
-//! carries the whole brief and the decisions it names by id or key.
+//! carries the whole brief and the decisions it names by id or key. `review_read` gives an author, and its lead, every
+//! finding of its PRs' latest reviews in full, and refuses another project's.
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
 use fleetd_contracts::ledger::{Brief, DecisionKey, DecisionScope, DecisionSource, IntakeChannel};
@@ -81,13 +82,18 @@ fn decide(hub: &Hub, project: &ProjectRef, key: &str, value: &str) -> String {
 
 /// `call` made by T1's agent, a task of p1.
 fn as_task(hub: &Hub, call: Value) -> Result<LeadCallResult, McpToolError> {
+    as_agent(hub, CallerAgent::Task(TaskId::unchecked("T1")), call)
+}
+
+/// `call` made by `agent` in p1.
+fn as_agent(hub: &Hub, agent: CallerAgent, call: Value) -> Result<LeadCallResult, McpToolError> {
     let call: LeadCall = serde_json::from_value(call).unwrap();
     let op = crate::hub::link::lead_calls::op_of(&call);
-    crate::hub::tasks::policy::check(&CallerAgent::Task(TaskId::unchecked("T1")), &op)?;
+    crate::hub::tasks::policy::check(&agent, &op)?;
     let caller = LeadCaller {
         project_ref: project("p1"),
         by: "lead:lab-a/p1".into(),
-        agent: CallerAgent::Task(TaskId::unchecked("T1")),
+        agent,
     };
     let handler = hub.lead_calls.handler(&op).unwrap();
     futures_util::FutureExt::now_or_never(handler.handle(caller, call)).unwrap()
@@ -202,4 +208,115 @@ async fn a_tasks_first_prompt_carries_the_whole_brief_and_the_decisions_it_names
         !prompt.contains("never cited") && !prompt.contains("/p2-health"),
         "{prompt}"
     );
+}
+
+/// Records `task`'s verdict on `pr` at `sha`, as `report` does.
+fn verdict(hub: &Hub, task: &str, pr: &str, sha: char, blocking: i64, summary: &str) {
+    let sha = sha.to_string().repeat(40);
+    let data = json!({ "taskId": task, "prHeadSha": sha, "blocking": blocking, "nonBlocking": 1, "summary": summary });
+    hub.db
+        .with(|conn| {
+            conn.execute(
+                "INSERT INTO review_verdicts (task_id, pr_key, sha, blocking, at_ms, data) VALUES (?1, ?2, ?3, ?4, 0, ?5)",
+                rusqlite::params![task, crate::hub::reviews::verdicts::pr_key(pr), sha, blocking, data.to_string()],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[tokio::test]
+async fn an_author_reads_every_finding_of_its_prs_latest_reviews_but_no_other_projects() {
+    let (hub, _home) = hub();
+    let (mine, theirs) = (
+        "https://github.com/acme/app/pull/7",
+        "https://github.com/acme/other/pull/8",
+    );
+    insert(
+        &hub,
+        json!({ "taskId": "T1", "title": "write it", "kind": "write", "state": "running", "startedAt": AT, "pr": mine }),
+    );
+    let full = format!(
+        "blocking: src/a.rs:3 leaks the handle. non-blocking: src/b.rs:9 {}the last nit.",
+        "names a helper twice. ".repeat(150)
+    );
+    verdict(&hub, "T9", mine, 'a', 2, "src/old.rs:1 was fixed since");
+    verdict(&hub, "T9", mine, 'b', 1, &full);
+    verdict(
+        &hub,
+        "T10",
+        mine,
+        'b',
+        0,
+        "non-blocking: src/c.rs:12 a clearer name",
+    );
+    verdict(&hub, "T20", theirs, 'c', 1, "p2's own: secret/plan.rs:1");
+
+    let Ok(LeadCallResult::ReviewRead(read)) = as_task(&hub, json!({ "op": "review_read" })) else {
+        panic!("review_read was not answered")
+    };
+    assert_eq!(read.prs.len(), 1);
+    assert_eq!(read.prs[0].pr.as_str(), mine);
+    let reviews: Vec<_> = read.prs[0]
+        .reviews
+        .iter()
+        .map(|r| (r.task_id.as_str(), r.blocking.get(), r.findings.as_str()))
+        .collect();
+    assert_eq!(
+        reviews,
+        [
+            ("T10", 0, "non-blocking: src/c.rs:12 a clearer name"),
+            ("T9", 1, full.as_str()),
+        ],
+        "the latest head's reviews, whole; the older head's are gone"
+    );
+    let Ok(LeadCallResult::ReviewRead(by_number)) =
+        as_task(&hub, json!({ "op": "review_read", "pr": "#7" }))
+    else {
+        panic!("review_read by number was not answered")
+    };
+    assert_eq!(by_number.prs, read.prs);
+
+    // The lead reads its project's PRs too, and neither reads another project's.
+    let Ok(LeadCallResult::ReviewRead(lead)) = as_agent(
+        &hub,
+        CallerAgent::Lead,
+        json!({ "op": "review_read", "pr": mine }),
+    ) else {
+        panic!("review_read was not answered for the lead")
+    };
+    assert_eq!(lead.prs, read.prs);
+    for agent in [
+        CallerAgent::Task(TaskId::unchecked("T1")),
+        CallerAgent::Lead,
+    ] {
+        let refused =
+            as_agent(&hub, agent, json!({ "op": "review_read", "pr": theirs })).unwrap_err();
+        assert_eq!(refused.code, ErrorCode::Forbidden);
+        assert!(
+            refused.message.contains("another project's reviews"),
+            "{}",
+            refused.message
+        );
+        assert!(!format!("{refused:?}").contains("p2's own"));
+    }
+
+    // A reviewer of the PR never reads the earlier reviews of it: it judges the PR alone.
+    insert(
+        &hub,
+        json!({ "taskId": "T2", "title": "review it", "kind": "review", "state": "running", "startedAt": AT, "pr": mine }),
+    );
+    let reviewer = as_agent(
+        &hub,
+        CallerAgent::Task(TaskId::unchecked("T2")),
+        json!({ "op": "review_read", "pr": mine }),
+    )
+    .unwrap_err();
+    assert_eq!(reviewer.code, ErrorCode::Forbidden);
+    assert!(
+        reviewer.message.contains("is a review task"),
+        "{}",
+        reviewer.message
+    );
+    assert!(!format!("{reviewer:?}").contains("src/a.rs:3"));
 }

@@ -32,7 +32,7 @@ The hub checks these on every fleetd call a session makes, through its MCP tools
 | Agents running at once, per project | The project's max agents, which a person sets (`cap_set`, the chat's Max agents); unset, its machine's cap within the fleet cap. A spawn over it queues and starts by itself; a review goes ahead of queued writers. The lead is not an agent and doesn't count. |
 | Agents running at once, per machine | The machine's max agents, which a person may set up to the fleet cap (`cap_set`, `fleetd machine set`, Settings > Agents). Unset: what the machine fits, one per CPU less one in eight, and 2 GB of memory each after a quarter (4 to 16 GB) is left for the system, at most 64. Either way new agents pause while memory in use runs short, and wait for 5 GB of disk each above the free-space floor. |
 | Agents running at once, fleet-wide | The machines' caps added up, unless a person set a fleet cap. |
-| Calls a task's agent may make | `report`, `ask_lead`, `brief_read`, `decisions_search`. Every other call is refused. |
+| Calls a task's agent may make | `report`, `ask_lead`, `brief_read`, `decisions_search`, `review_read`. Every other call is refused. |
 | Gated commands (`gated_run`) | Classes `irreversible`, `money`, `credential`. Run only after a human approves; at most 14400 s. |
 
 These limits cover calls to fleetd, not what the agent's own shell can do. A task runs with full Bash, so `gated_run` is not the only way it could run a command. A process that leaves its session's process tree (for example with `setsid`) and scrubs its environment counts as you, with no limits: see "Known limit" on the Security page. Run agents you don't trust as a different OS user.
@@ -67,6 +67,7 @@ Every lead gets these.
 | [`skill_install`](#skill_install) | Install skills (SKILL.md workflows) from a skills.sh source (owner/repo, owner/repo@skill, a GitHub URL) for this project (scope project; global skills take an admin, so the human installs those); pinned to the commit fetched, and the human updates it from Settings > Skills. | No |
 | [`usage_resume`](#usage_resume) | Lift the usage pause on your project's machine now and send every agent parked there "continue": only once you know its login has capacity again (the human says so, or a turn of yours just went through). | No |
 | [`change_enqueue`](#change_enqueue) | Put a PR no task's result put there on its repo's merge train; only the train merges. | No |
+| [`review_read`](#review_read) | Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. | No |
 | [`session_start`](#session_start) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. | No |
 | [`session_end`](#session_end) | Close your browser session: the browser and its profile are thrown away, and its recording goes to the hub. | No |
 | [`request_takeover`](#request_takeover) | Ask a person to take your browser over, for what only they can do: a captcha, a login confirmation only they can give, a judgement call. | No |
@@ -651,6 +652,25 @@ Put a PR no task's result put there on its repo's merge train; only the train me
 }
 ```
 
+### review_read
+
+Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. pr (its URL or number) picks one; without it, a task reads all its own PRs and a lead its project's PRs in the merge queue. Another project's reviews are refused.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `pr` | string | no | The PR: its URL or its number. Absent: a task's every PR, a lead's PRs in the merge queue. At most 500 characters. |
+
+**Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "review_read",
+  "arguments": {
+    "pr": "https://github.com/acme/storefront/pull/7"
+  }
+}
+```
+
 ### session_start
 
 Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. It is recorded (video, the page after each step, a line per agent-browser command) for the person to replay. Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no browser of your own. purpose: one line on what for.
@@ -714,6 +734,7 @@ Every task's agent gets these: implementers, readers, reviewers and QA.
 | [`report`](#report) | Record your review verdict once, before your final message: the number of blocking and non-blocking findings and a summary of each. | No |
 | [`ask_lead`](#ask_lead) | Ask your lead a question. | No |
 | [`brief_read`](#brief_read) | Read your workstream's brief, whole: its goal, why, pointers, constraints and done-when. | No |
+| [`review_read`](#review_read-task) | Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. | No |
 | [`session_start`](#session_start-task) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. | No |
 | [`session_end`](#session_end-task) | Close your browser session: the browser and its profile are thrown away, and its recording goes to the hub. | No |
 | [`request_takeover`](#request_takeover-task) | Ask a person to take your browser over, for what only they can do: a captcha, a login confirmation only they can give, a judgement call. | No |
@@ -791,6 +812,25 @@ No parameters.
 {
   "name": "brief_read",
   "arguments": {}
+}
+```
+
+### review_read (task)
+
+Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with path:line. pr (its URL or number) picks one; without it, a task reads all its own PRs and a lead its project's PRs in the merge queue. Another project's reviews are refused.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `pr` | string | no | The PR: its URL or its number. Absent: a task's every PR, a lead's PRs in the merge queue. At most 500 characters. |
+
+**Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "review_read",
+  "arguments": {
+    "pr": "https://github.com/acme/storefront/pull/7"
+  }
 }
 ```
 

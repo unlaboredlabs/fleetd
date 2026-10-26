@@ -16,13 +16,14 @@ pub fn max_open_tasks(max_agents: i64) -> usize {
     MAX_OPEN_TASKS.max(2 * max_agents.max(0) as usize)
 }
 
-/// The calls a task's agent makes: its review verdict (`report`), a question for its lead, and reading its brief and
-/// its project's decisions. Only a lead closes work.
+/// The calls a task's agent makes: its review verdict (`report`), a question for its lead, and reading its brief, its
+/// project's decisions and its PRs' reviews. Only a lead closes work.
 pub const WORKER_OPS: &[&str] = &[
     "review_verdict",
     "ask_lead",
     "brief_read",
     "decisions_search",
+    "review_read",
 ];
 /// The calls a task's node makes for it: its browser sessions (node/browser).
 pub const NODE_OPS: &[&str] = &[
@@ -79,8 +80,8 @@ pub fn check(agent: &CallerAgent, op: &str) -> Result<(), McpToolError> {
                 )
                 .with_fix(
                     "A task reports its review verdict (report), asks its lead (ask_lead), and reads its brief \
-                     (brief_read) and decisions (decisions_search). Put anything else in your result or ask your \
-                     lead.",
+                     (brief_read), decisions (decisions_search) and its PRs' reviews (review_read). Put anything \
+                     else in your result or ask your lead.",
                 ));
             }
             Ok(())

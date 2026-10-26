@@ -11,6 +11,7 @@ const FLEETD_WORDS: readonly (readonly [string, string])[] = [
   ["brief", "briefing an agent"],
   ["decisions_record", "noting a decision"],
   ["decisions_search", "looking up decisions"],
+  ["review_read", "reading review findings"],
   ["task_message", "messaging an agent"],
   ["steer_send", "messaging an agent"],
   ["change_", "moving a PR along"],
