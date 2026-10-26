@@ -60,16 +60,29 @@ describe("Settings → Projects", () => {
   it("reads a quoted value over several lines: a certificate chain, a service account's JSON", () => {
     const chain = "-----BEGIN CERTIFICATE-----\nMIIBszCCAVmgAwIBAgIU\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nMIIBrDCCAVKgAwIBAgIU\n-----END CERTIFICATE-----";
     const json = '{\n  "type": "service_account",\n  "private_key": "-----BEGIN PRIVATE KEY-----\\nMIIE\\n-----END PRIVATE KEY-----\\n"\n}';
-    const vars = parseDotEnv([`TLS_CHAIN="${chain}" # the staging chain`, "AFTER=1", `SA_JSON='${json}'`, "LAST=2", 'OPEN="never closed', "tail"].join("\n"));
+    const vars = parseDotEnv([`TLS_CHAIN="${chain}" # the staging chain`, "AFTER=1", `SA_JSON='${json}'`, "LAST=2"].join("\n"));
     const byName = Object.fromEntries(vars.map((v) => [v.name, v]));
-    expect(vars.map((v) => v.name)).toEqual(["TLS_CHAIN", "AFTER", "SA_JSON", "LAST", "OPEN"]);
+    expect(vars.map((v) => v.name)).toEqual(["TLS_CHAIN", "AFTER", "SA_JSON", "LAST"]);
     expect(byName["TLS_CHAIN"]?.value).toBe(chain);
     expect(byName["AFTER"]?.value).toBe("1");
     // '…' keeps a JSON's own \n escapes as they are.
     expect(byName["SA_JSON"]?.value).toBe(json);
     expect(byName["LAST"]?.value).toBe("2");
-    expect(byName["OPEN"]?.value).toBe("never closed\ntail");
     expect(vars.every((v) => v.problem === null)).toBe(true);
+  });
+
+  it("names the line of a quote never closed, and reads on after it", () => {
+    const vars = parseDotEnv(["A=1", 'TLS_CHAIN="-----BEGIN CERTIFICATE-----', "MIIBszCCAVmgAwIBAgIU", "B=2"].join("\n"));
+    const byName = Object.fromEntries(vars.map((v) => [v.name, v]));
+    expect(byName["TLS_CHAIN"]?.problem).toBe("Line 2: the double quote that opens TLS_CHAIN's value is never closed.");
+    // The lines after it are not swallowed into its value.
+    expect(byName["TLS_CHAIN"]?.value).toBe("-----BEGIN CERTIFICATE-----");
+    expect(byName["B"]).toMatchObject({ value: "2", problem: null });
+    expect(byName["A"]?.problem).toBeNull();
+    // Switching it to a secret keeps the problem.
+    const chain = byName["TLS_CHAIN"];
+    if (chain === undefined) throw new Error("not parsed");
+    expect(withKind(chain, "secret").problem).toContain("never closed");
   });
 
   it("holds a project's values to 512 KiB together, naming the total", () => {

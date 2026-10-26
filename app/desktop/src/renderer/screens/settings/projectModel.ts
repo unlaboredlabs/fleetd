@@ -50,6 +50,8 @@ export interface PastedVar {
   readonly name: string;
   readonly value: string;
   readonly kind: EnvKind;
+  /** What is wrong with how it was written (a quote never closed), whatever its kind; or null. */
+  readonly syntax: string | null;
   /** Why it can't be added as it is, or null. */
   readonly problem: string | null;
 }
@@ -60,7 +62,8 @@ const unescape = (v: string) => v.replace(/\\([nrt"\\])/gu, (_, c: string) => ({
 /**
  * A pasted .env: `NAME=value` lines, `export ` allowed, blank lines and `#` comments skipped. A value may be quoted,
  * over as many lines as it needs (a certificate, a key, JSON): '…' as is, "…" with \n-style escapes. An unquoted one
- * ends at the line's end or at ` #`. A quote never closed takes the rest. A later line for the same name wins.
+ * ends at the line's end or at ` #`. A quote never closed is that variable's problem, naming its line, and reading
+ * goes on with the next line. A later line for the same name wins.
  */
 export function parseDotEnv(text: string): PastedVar[] {
   const out = new Map<string, PastedVar>();
@@ -94,6 +97,7 @@ export function parseDotEnv(text: string): PastedVar[] {
     while (v < end && blank(src[v])) v++;
     const quote = src[v];
     let value: string;
+    let syntax: string | null = null;
     if (quote === '"' || quote === "'") {
       // To the closing quote, on this line or a later one; inside "…" a backslash escapes the next character.
       let k = v + 1;
@@ -101,10 +105,18 @@ export function parseDotEnv(text: string): PastedVar[] {
         if (quote === '"' && src[k] === "\\") k++;
         k++;
       }
-      const raw = src.slice(v + 1, Math.min(k, src.length));
-      value = quote === '"' ? unescape(raw) : raw;
-      // Whatever follows the closing quote on its line (a comment) is skipped.
-      at = lineEnd(Math.min(k, src.length)) + 1;
+      if (k >= src.length) {
+        // Never closed: the rest of the paste is not its value. Its own line is, as typed, and the next line reads on.
+        const line = src.slice(0, at).split("\n").length;
+        syntax = `Line ${line}: the ${quote === '"' ? "double" : "single"} quote that opens ${name}'s value is never closed.`;
+        value = src.slice(v + 1, end);
+        at = end + 1;
+      } else {
+        const raw = src.slice(v + 1, k);
+        value = quote === '"' ? unescape(raw) : raw;
+        // Whatever follows the closing quote on its line (a comment) is skipped.
+        at = lineEnd(k) + 1;
+      }
     } else {
       value = src.slice(v, end).trimEnd();
       const comment = value.search(/\s#/u);
@@ -113,13 +125,17 @@ export function parseDotEnv(text: string): PastedVar[] {
     }
     const kind = guessKind(name);
     out.delete(name);
-    out.set(name, { name, value, kind, problem: nameProblem(name) ?? valueProblem(value, kind) });
+    out.set(name, { name, value, kind, syntax, problem: syntax ?? nameProblem(name) ?? valueProblem(value, kind) });
   }
   return [...out.values()];
 }
 
 /** The same variable with another kind, its problem checked again. */
-export const withKind = (v: PastedVar, kind: EnvKind): PastedVar => ({ ...v, kind, problem: nameProblem(v.name) ?? valueProblem(v.value, kind) });
+export const withKind = (v: PastedVar, kind: EnvKind): PastedVar => ({
+  ...v,
+  kind,
+  problem: v.syntax ?? nameProblem(v.name) ?? valueProblem(v.value, kind),
+});
 
 /** What a variable shows in the list: a plain one's value, a secret's fingerprint, never a secret's value. */
 export const shownValue = (v: ProjectEnvVar): string => (v.kind === "secret" ? `secret · ${v.fingerprint ?? "saved"}` : v.value ?? "");

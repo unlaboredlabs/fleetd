@@ -2,10 +2,11 @@
 //! a stack trace, a config dump) would otherwise carry it into the node's store and on to the hub and the app. Every
 //! exact occurrence of a secret's value, its standard and URL-safe base64, and its percent-encoding becomes
 //! `***NAME***` in tool output and input, assistant text, live text and failure messages before the node keeps or
-//! sends any of it. A value of several lines (a certificate chain, a key, a service account's JSON) is masked whole
-//! and line by line, each line of [`MIN_LINE`] characters or more on its own, so a command that prints only part of it
-//! still leaks none of it; PEM armor lines (`-----BEGIN CERTIFICATE-----`) are public and stay. Values under
-//! [`MIN_LEN`] bytes are left alone: masking them would garble ordinary output.
+//! sends any of it. A value of several lines (a certificate chain, a key, a service account's JSON) is also masked
+//! line by line, each whole line of [`MIN_LINE`] characters or more on its own, so printing some of its lines leaks
+//! none of them; PEM armor lines (`-----BEGIN CERTIFICATE-----`) are public and stay. Only exact matches are caught:
+//! part of a line, or another encoding, goes out as printed. Values under [`MIN_LEN`] bytes are left alone: masking
+//! them would garble ordinary output.
 use std::borrow::Cow;
 
 use base64::Engine;

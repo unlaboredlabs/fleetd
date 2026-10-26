@@ -190,7 +190,7 @@ one can be switched.</p>
 <tr>
 <td>Secret</td>
 <td>Only the project’s machine.</td>
-<td>Never again: only its fingerprint, the first 8 hex characters of its SHA-256.</td>
+<td>Never again: only its fingerprint (the first 8 hex characters of its SHA-256) and its size.</td>
 </tr>
 </tbody>
 </table>
@@ -200,11 +200,17 @@ own in <code dir="auto">~/.fleetd/node/project-env/</code>, mode <code dir="auto
 An agent already running gets a change at its next start. To change a secret, type a new value: the old one is never
 shown.</p>
 <p>If an agent prints a secret (<code dir="auto">printenv</code>, a stack trace, a config dump), the node replaces it with <code dir="auto">***NAME***</code> before
-the output leaves the machine: the value itself, its base64 and its URL encoding, in command output, the agent’s
-replies and live text alike. A secret of several lines is also masked line by line, each line of 8 characters or more,
-so printing part of a key leaks none of it; PEM armor lines such as <code dir="auto">-----BEGIN CERTIFICATE-----</code> are the same in every
-file and stay readable. The hub and the app see only the name. A value under 4 characters isn’t masked, so keep secrets
-longer than that.</p>
+the output leaves the machine, in command output, the agent’s replies and live text alike. Exactly these are masked:</p>
+<ul>
+<li>the whole value, and its base64 and URL encodings;</li>
+<li>for a secret of several lines, each whole line of 8 characters or more, wherever it appears. PEM armor lines such as
+<code dir="auto">-----BEGIN CERTIFICATE-----</code> are the same in every file and stay readable.</li>
+</ul>
+<p>Only exact matches are caught. Part of a line (<code dir="auto">head -c 20</code> of a key, one field cut from a line), the value in another
+encoding, or a value under 4 characters goes out as printed, so keep secrets out of output where you can. A line of a
+secret is masked even where the same text comes from somewhere else, such as a generic line of a JSON file.</p>
+<p>The hub and the app never get a secret’s value: they see its name, its fingerprint and its size in bytes (the size
+counts toward the project’s total).</p>
 <p>Names are letters, digits and <code dir="auto">_</code>. fleetd sets <code dir="auto">HOME</code>, <code dir="auto">PATH</code>, <code dir="auto">USER</code>, <code dir="auto">TMPDIR</code> (and <code dir="auto">TMP</code>, <code dir="auto">TEMP</code>) and every
 <code dir="auto">FLEETD_</code> variable itself, and a project can’t change how claude itself runs: <code dir="auto">ANTHROPIC_*</code> and <code dir="auto">CLAUDE*</code> names are
 refused. A variable the node already gives every session, from its own environment or

@@ -85,7 +85,7 @@ one can be switched.
 | Kind | Where its value lives | Shown |
 |---|---|---|
 | Plain | The hub and the project's machine. | In the list. |
-| Secret | Only the project's machine. | Never again: only its fingerprint, the first 8 hex characters of its SHA-256. |
+| Secret | Only the project's machine. | Never again: only its fingerprint (the first 8 hex characters of its SHA-256) and its size. |
 
 A secret is sealed in the app to its machine's key, as a [secret request](/docs/approvals-and-secrets#secrets) is. The
 hub passes the sealed value on without storing or logging it. The node keeps the project's variables in a file of its
@@ -94,11 +94,18 @@ An agent already running gets a change at its next start. To change a secret, ty
 shown.
 
 If an agent prints a secret (`printenv`, a stack trace, a config dump), the node replaces it with `***NAME***` before
-the output leaves the machine: the value itself, its base64 and its URL encoding, in command output, the agent's
-replies and live text alike. A secret of several lines is also masked line by line, each line of 8 characters or more,
-so printing part of a key leaks none of it; PEM armor lines such as `-----BEGIN CERTIFICATE-----` are the same in every
-file and stay readable. The hub and the app see only the name. A value under 4 characters isn't masked, so keep secrets
-longer than that.
+the output leaves the machine, in command output, the agent's replies and live text alike. Exactly these are masked:
+
+- the whole value, and its base64 and URL encodings;
+- for a secret of several lines, each whole line of 8 characters or more, wherever it appears. PEM armor lines such as
+  `-----BEGIN CERTIFICATE-----` are the same in every file and stay readable.
+
+Only exact matches are caught. Part of a line (`head -c 20` of a key, one field cut from a line), the value in another
+encoding, or a value under 4 characters goes out as printed, so keep secrets out of output where you can. A line of a
+secret is masked even where the same text comes from somewhere else, such as a generic line of a JSON file.
+
+The hub and the app never get a secret's value: they see its name, its fingerprint and its size in bytes (the size
+counts toward the project's total).
 
 Names are letters, digits and `_`. fleetd sets `HOME`, `PATH`, `USER`, `TMPDIR` (and `TMP`, `TEMP`) and every
 `FLEETD_` variable itself, and a project can't change how claude itself runs: `ANTHROPIC_*` and `CLAUDE*` names are
