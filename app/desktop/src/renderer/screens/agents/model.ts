@@ -342,10 +342,11 @@ export const elsewhere = (
 /** A change still in flight: not refused, merged or closed. */
 const LIVE_CHANGE = new Set(["queued", "reviewing", "ready", "rebasing", "ci", "merging", "needs_rebase", "ci_failed"]);
 
-/** Live work: a claim still held, an agent running, a PR still open or on its way. Not what landed, expired or was refused. */
+/** Live work: a claim still held, an agent queued, running or idle, a PR still open or on its way. Not what landed, expired or was refused. */
 export const isLiveWork = (item: WorkItem): boolean => {
   if (item.kind === "claim") return item.state === "active";
-  if (item.kind === "task") return item.state === "running" || item.state === "starting" || item.state === "working";
+  // work_list sends only tasks in flight (queued, running, idle): another project's agent in line is a collision too.
+  if (item.kind === "task") return item.state === "queued" || item.state === "running" || item.state === "idle";
   if (item.kind === "change") return LIVE_CHANGE.has(item.state);
   return true;
 };

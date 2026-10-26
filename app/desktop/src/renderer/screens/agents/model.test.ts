@@ -205,11 +205,13 @@ describe("work elsewhere on the repo", () => {
     expect(rows(out).map((r) => r.dim)).toEqual([false, false, false, false, false, false, true]);
   });
 
-  it("keeps only live work for Also on this repo: held claims, running agents, PRs still on their way", () => {
+  it("keeps only live work for Also on this repo: held claims, queued, running and idle agents, PRs still on their way", () => {
     const out = list(
       [
         item("T7", "task", { projectRef: web, taskId: "T7" }),
         item("T8", "task", { projectRef: web, taskId: "T8", state: "done" }),
+        item("T9", "task", { projectRef: web, taskId: "T9", state: "queued" }),
+        item("T10", "task", { projectRef: web, taskId: "T10", state: "idle" }),
         claim("C1", person, "expired", -3 * H),
         claim("C2", person),
         item("X4", "change", { projectRef: web, state: "ci" }),
@@ -218,7 +220,7 @@ describe("work elsewhere on the repo", () => {
       ],
       [landing("a", "direct_push", { authorEmail: "ada@example.com" })],
     );
-    expect(alsoOnRepo(out, "devbox/api", NOW, (k) => titles[k]).map((r) => r.id)).toEqual(["C2", "T7", "X4", "acme/shop#57"]);
+    expect(alsoOnRepo(out, "devbox/api", NOW, (k) => titles[k]).map((r) => r.id)).toEqual(["C2", "T7", "T9", "T10", "X4", "acme/shop#57"]);
     expect(alsoOnRepo(list([claim("C1", person, "expired", -H), item("X5", "change", { projectRef: web, state: "refused" })]), "devbox/api", NOW)).toEqual([]);
   });
 
