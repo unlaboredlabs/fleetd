@@ -420,6 +420,10 @@ pub enum HubToNode {
     /// Only to nodes that list [`CAP_PREVIEWS`].
     PreviewRun(crate::preview::PreviewRunFrame),
     PreviewStop(crate::preview::PreviewStopFrame),
+    /// Only to nodes that list [`CAP_SESSION_HOST`].
+    RelayDial(crate::machine_roles::RelayDialFrame),
+    /// Only to nodes that list [`CAP_SESSION_HOST`].
+    SessionStep(crate::machine_roles::SessionStepFrame),
 }
 
 #[cfg(test)]

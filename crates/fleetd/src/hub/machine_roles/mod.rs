@@ -5,14 +5,14 @@
 //! on the agent's own machine when it hosts sessions, can run this kind and has a free session slot, else a plain
 //! refusal that says why. A session placed on its agent's machine runs there as before.
 //!
-//! Placing on another machine is off until the hub relays what a session streams, so the agent can drive it there
-//! ([`remote_on`]). With it on, a session the agent's machine can't take goes to the online machine that can with
-//! the most free slots. That machine's node hosts it under a key the hub mints, the agent's later session calls go to
+//! With [`remote_on`], a session the agent's machine can't take goes to the online machine that can with the most free
+//! slots, and the agent drives it through the hub's relay (relay.rs). It is off by default for now: see there. That machine's node hosts it under a key the hub mints, the agent's later session calls go to
 //! it through the hub, and the runner reports the session in the agent's name ([`HostedCallers`]).
 //!
 //! Session slots are separate from agent slots: a machine's live sessions are its own agents' (`browser_sessions`)
 //! and those it hosts for others, and each machine's cap is a person's setting or what it fits ([`auto_sessions`]).
 pub mod calls;
+pub mod relay;
 pub mod tools;
 
 #[cfg(test)]
@@ -108,8 +108,10 @@ pub fn set_roles(c: &Connection, m: &MachineId, roles: &Roles) -> Result<(), Sto
     Ok(())
 }
 
-/// Whether the hub places sessions on other machines than their agents'. Off until the relay carries what a
-/// session streams; tests of the hosting path turn it on.
+/// Whether the hub places sessions on other machines than their agents' (relay.rs carries what they stream). Off
+/// unless set on: the runner records a hosted session without the agent's secrets to scrub it with, so what the
+/// agent types or shows through the browser would reach its recording unmasked until the agent's node can hand them
+/// over sealed to the runner.
 pub fn remote_on(c: &Connection) -> Result<bool, StoreError> {
     let v: Option<i64> = c
         .query_row(
@@ -497,12 +499,32 @@ pub fn hosted(c: &Connection, key: &str) -> Result<Option<Place>, StoreError> {
     .optional()?)
 }
 
-pub fn set_session(c: &Connection, key: &HostKey, session_id: &str) -> Result<(), StoreError> {
+/// A hosted start that answered: its session, and the SHA-256 of its relay token.
+pub fn set_session(
+    c: &Connection,
+    key: &HostKey,
+    session_id: &str,
+    relay_hash: &str,
+) -> Result<(), StoreError> {
     c.execute(
-        "UPDATE session_places SET session_id = ?2 WHERE place_id = ?1",
-        params![key.as_str(), session_id],
+        "UPDATE session_places SET session_id = ?2, relay_hash = ?3 WHERE place_id = ?1",
+        params![key.as_str(), session_id, relay_hash],
     )?;
     Ok(())
+}
+
+/// The open hosted session whose relay token hashes to `relay_hash`.
+pub fn place_by_relay(c: &Connection, relay_hash: &str) -> Result<Option<Place>, StoreError> {
+    Ok(c.query_row(
+        &format!(
+            "SELECT {PLACE_COLUMNS} FROM session_places p WHERE relay_hash = ?1 AND hosted = 1 AND ended_ms IS NULL
+               AND session_id IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM browser_sessions b WHERE b.session_id = p.session_id AND b.state != 'live')"
+        ),
+        [relay_hash],
+        place_of,
+    )
+    .optional()?)
 }
 
 pub fn end_place(c: &Connection, key: &HostKey, now: i64) -> Result<(), StoreError> {

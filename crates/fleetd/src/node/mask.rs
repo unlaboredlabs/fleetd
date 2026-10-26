@@ -1,6 +1,7 @@
 //! Masking a project's secret variables in what its agents' sessions report: a command that prints one (`printenv`,
 //! a stack trace, a config dump) would otherwise carry it into the node's store and on to the hub and the app. Every
-//! exact occurrence of a secret's value, its standard and URL-safe base64, and its percent-encoding becomes
+//! exact occurrence of a secret's value, its standard and URL-safe base64, its percent-encoding and its form encoding
+//! (as a browser submits it) becomes
 //! `***NAME***` in tool output and input, assistant text, live text and failure messages before the node keeps or
 //! sends any of it. A value of several lines (a certificate chain, a key, a service account's JSON) is also masked
 //! line by line, each whole line of [`MIN_LINE`] characters or more on its own, so printing some of its lines leaks
@@ -55,6 +56,21 @@ impl Drop for Masker {
     }
 }
 
+/// `value` as a browser submits it in a form (`application/x-www-form-urlencoded`, a GET form's query or a POST
+/// body): a space is `+`, and every byte outside `A-Za-z0-9*-._` is percent-encoded, `!~'()` too, unlike
+/// [`percent`].
+fn form_encoded(value: &str) -> String {
+    let mut out = String::with_capacity(value.len() * 3);
+    for b in value.bytes() {
+        match b {
+            b' ' => out.push('+'),
+            b if b.is_ascii_alphanumeric() || b"*-._".contains(&b) => out.push(b as char),
+            b => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
 /// `value` percent-encoded as `encodeURIComponent` does: every byte outside `A-Za-z0-9-_.!~*'()`.
 fn percent(value: &str) -> String {
     let mut out = String::with_capacity(value.len() * 3);
@@ -96,6 +112,7 @@ impl Masker {
                 URL_SAFE.encode(value),
                 URL_SAFE_NO_PAD.encode(value),
                 percent(value),
+                form_encoded(value),
             ]
             .into_iter()
             .chain(
@@ -116,8 +133,8 @@ impl Masker {
         Self { patterns }
     }
 
-    /// [`Masker::new`] plus the forms a web page or a browser trace shows a value in: JSON- and HTML-escaped, `+` for
-    /// a space as a form body sends it, and its base64 inside a longer encoded string at any of the three byte
+    /// [`Masker::new`] plus the forms a web page or a browser trace shows a value in: JSON- and HTML-escaped, and its
+    /// base64 inside a longer encoded string at any of the three byte
     /// alignments (the characters that depend only on the value). For browser sessions (node/browser), where a page
     /// may echo or encode what was typed into it.
     pub fn thorough(secrets: &[(String, String)]) -> Self {
@@ -128,6 +145,8 @@ impl Masker {
             let mut forms = vec![
                 json.trim_matches('"').to_owned(),
                 html_escaped(value),
+                // As a page's script posts it: encodeURIComponent with `+` for a space (a form encodes it as
+                // form_encoded does, which Masker::new matches).
                 percent(value).replace("%20", "+"),
             ];
             for prefix in 0..3 {
@@ -295,6 +314,35 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_thorough_masker_also_catches_what_a_script_posts_with_plus_for_space() {
+        let value = "it's a top secret!";
+        let m = Masker::thorough(&[("CODE".into(), value.into())]);
+        let posted = format!("code={}", percent(value).replace("%20", "+"));
+        assert_eq!(posted, "code=it's+a+top+secret!");
+        assert_eq!(m.text(&posted), "code=***CODE***");
+        // And as a form encodes it.
+        let submitted = format!("code={}", form_encoded(value));
+        assert_eq!(m.text(&submitted), "code=***CODE***");
+    }
+
+    #[test]
+    fn a_secret_is_masked_as_a_form_sends_it() {
+        let value = "it's (a) top~secret!";
+        assert_eq!(form_encoded(value), "it%27s+%28a%29+top%7Esecret%21");
+        assert_ne!(
+            form_encoded(value),
+            percent(value),
+            "a form escapes what encodeURIComponent keeps"
+        );
+        let m = Masker::new(&[("CODE".into(), value.into())]);
+        let query = format!("https://shop.test/found?code={}&x=1", form_encoded(value));
+        assert_eq!(
+            m.text(&query),
+            "https://shop.test/found?code=***CODE***&x=1"
+        );
+    }
+
+    #[test]
     fn a_thorough_masker_also_catches_escaped_and_embedded_encodings() {
         let value = "hunter2<&>\"pass word";
         let m = Masker::thorough(&[("LOGIN".into(), value.into())]);
@@ -302,7 +350,7 @@ mod tests {
         assert!(!m.text(&json).contains("hunter2"), "{}", m.text(&json));
         let html = format!("<input value=\"{}\">", html_escaped(value));
         assert!(!m.text(&html).contains("hunter2"));
-        let form = format!("user=a&pw={}", percent(value).replace("%20", "+"));
+        let form = format!("user=a&pw={}", form_encoded(value));
         assert!(!m.text(&form).contains("hunter2"));
         // btoa of a longer string the value sits in, at each alignment.
         for prefix in ["", "a", "ab", "abc"] {

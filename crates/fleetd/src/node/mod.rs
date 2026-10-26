@@ -19,6 +19,9 @@ pub mod order_env;
 pub mod power;
 pub mod preview;
 pub mod project_env;
+pub mod relay;
+#[cfg(test)]
+mod relay_tests;
 pub mod repos;
 pub mod runner;
 pub mod secrets;
@@ -229,20 +232,34 @@ async fn run_node(
                 home,
                 browser_config,
                 Arc::new(browser::upload::RelayHub(relay.clone())),
-                Arc::new(move |session| sessions.call_secrets(session)),
+                Arc::new(move |session| {
+                    if session_route::hosted(session) {
+                        // Hosted for an agent on another machine: none of its secrets are here.
+                        return Ok(mask::Secrets(Vec::new()));
+                    }
+                    sessions.call_secrets(session)
+                }),
             )
             .await;
-            node_sessions.set_browser(broker.clone());
             Some(broker)
         }
         false => None,
     };
+    let router = Arc::new(session_route::Router {
+        broker: broker.clone(),
+        relay: relay.clone(),
+        hub: config.hub.clone(),
+        mask_for: mask_for.clone(),
+    });
+    if broker.is_some() {
+        node_sessions.set_browser(router.clone());
+    }
     let _socket = lead::serve_lead_socket(
         lead::lead_socket_path(home),
         relay.clone(),
         identify,
         mask_for,
-        Some(session_route::routed(broker.clone(), relay.clone())),
+        Some(session_route::routed(router)),
     )
     .await
     .map_err(NodeError::LeadSocket)?;

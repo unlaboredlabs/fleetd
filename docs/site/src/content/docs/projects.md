@@ -99,7 +99,7 @@ shown.
 If an agent prints a secret (`printenv`, a stack trace, a config dump), the node replaces it with `***NAME***` before
 the output leaves the machine, in command output, the agent's replies and live text alike. Exactly these are masked:
 
-- the whole value, and its base64 and URL encodings;
+- the whole value, and its base64 and URL encodings, and its encoding as a web form submits it (`+` for a space);
 - for a secret of several lines, each whole line of 8 characters or more, wherever it appears. PEM armor lines such as
   `-----BEGIN CERTIFICATE-----` are the same in every file and stay readable.
 

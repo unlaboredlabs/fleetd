@@ -10,8 +10,11 @@ use fleetd_contracts::browser::{
 };
 use fleetd_contracts::ids::MachineId;
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
-use fleetd_contracts::machine_roles::{SessionRouteCall, SessionRouteResult};
+use fleetd_contracts::machine_roles::{
+    SessionRouteCall, SessionRouteResult, SessionStepCall, SessionStepFrame, SessionStepResult,
+};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
+use fleetd_contracts::node_link::HubToNode;
 
 use super::{
     Place, drop_place, end_place, insert_place, new_key, open_hosted, place, remote_on, runners,
@@ -21,7 +24,7 @@ use crate::hub::link::lead_calls::{CallerAgent, LeadCallFuture, op_of};
 use crate::hub::link::{LeadCaller, LeadCalls};
 use crate::hub::store::{StoreError, now_ms};
 
-pub const OPS: [&str; 1] = ["session_route"];
+pub const OPS: [&str; 2] = ["session_route", "session_step"];
 
 /// How long a start on another machine may take: its pool may have to launch a browser or boot a device. With its
 /// cancel, well inside the agent's node's wait for `session_route` (node/session_route.rs `ROUTE_WAIT`), so the hub
@@ -43,6 +46,7 @@ pub fn register_lead_calls(hub: &Arc<Hub>) {
                 })?;
                 match call {
                     LeadCall::SessionRoute(call) => route(hub, &caller, call).await,
+                    LeadCall::SessionStep(call) => step(&hub, &caller, call),
                     other => Err(McpToolError::new(
                         ErrorCode::Invalid,
                         format!("{} is not a session route.", op_of(&other)),
@@ -67,6 +71,7 @@ fn here(machine: &MachineId) -> LeadCallResult {
         runner: machine.clone(),
         here: true,
         answer: None,
+        relay: None,
     })
 }
 
@@ -75,6 +80,7 @@ fn relayed(runner: &MachineId, answer: BrowserResultFrame) -> LeadCallResult {
         runner: runner.clone(),
         here: false,
         answer: Some(answer),
+        relay: None,
     })
 }
 
@@ -182,8 +188,11 @@ pub async fn route(
         cancel(&hub, &placed).await;
         return answer.map(|frame| relayed(&placed.runner, frame));
     };
+    // The agent's node's side of the session's relay: the hub keeps only its hash.
+    let token = super::relay::new_token();
+    let hashed = super::relay::hash(token.as_str());
     hub.db
-        .transaction(|c| super::set_session(c, &placed.key, &id))
+        .transaction(|c| super::set_session(c, &placed.key, &id, &hashed))
         .map_err(failed)?;
     starting.place = None;
     if !hub.node_commands.linked(&origin) {
@@ -198,7 +207,41 @@ pub async fn route(
         ));
     }
     tracing::info!(runner = %placed.runner, origin = %origin, "session placed on another machine");
-    answer.map(|frame| relayed(&placed.runner, frame))
+    answer.map(|frame| match relayed(&placed.runner, frame) {
+        LeadCallResult::SessionRoute(mut routed) => {
+            routed.relay = Some(token);
+            LeadCallResult::SessionRoute(routed)
+        }
+        other => other,
+    })
+}
+
+/// `session_step`: a command of the agent's that drove its session hosted elsewhere, for the runner's recording.
+fn step(
+    hub: &Hub,
+    caller: &LeadCaller,
+    call: SessionStepCall,
+) -> Result<LeadCallResult, McpToolError> {
+    if caller.agent == CallerAgent::Person {
+        return Err(McpToolError::new(
+            ErrorCode::Forbidden,
+            "A session belongs to an agent's session, and this call comes from none.",
+        ));
+    }
+    let origin = &caller.project_ref.machine_id;
+    let now = now_ms(hub.clock.as_ref());
+    let open = hub
+        .db
+        .with(|c| open_hosted(c, origin, &call.thread_id, now))
+        .map_err(failed)?;
+    let forwarded = open.is_some_and(|open| {
+        let frame = HubToNode::SessionStep(SessionStepFrame {
+            host_key: open.key,
+            item: *call.item,
+        });
+        hub.node_commands.send(&open.runner, frame).is_ok()
+    });
+    Ok(LeadCallResult::SessionStep(SessionStepResult { forwarded }))
 }
 
 /// A start on another machine still waiting for its answer; dropped unanswered, it is cancelled.

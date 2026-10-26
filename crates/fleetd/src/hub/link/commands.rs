@@ -159,6 +159,16 @@ impl NodeCommands {
         }
     }
 
+    /// Sends one frame that wants no reply over the machine's live link.
+    pub fn send(&self, machine_id: &MachineId, frame: HubToNode) -> Result<(), NodeCommandError> {
+        let state = self.state.lock().unwrap();
+        let link = state
+            .links
+            .get(machine_id)
+            .ok_or_else(|| NodeCommandError::offline(machine_id))?;
+        link.send.send(frame).map_err(|_| lost(machine_id))
+    }
+
     /// Whether the machine's node is linked now.
     pub fn linked(&self, machine_id: &MachineId) -> bool {
         self.state.lock().unwrap().links.contains_key(machine_id)

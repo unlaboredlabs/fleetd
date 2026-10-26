@@ -39,7 +39,7 @@ fn playwright_cache() -> PathBuf {
     crate::node::util::home_dir().join(".cache/ms-playwright")
 }
 
-fn chrome() -> Option<PathBuf> {
+pub(crate) fn chrome() -> Option<PathBuf> {
     std::env::var_os("FLEETD_TEST_CHROME")
         .map(PathBuf::from)
         .or_else(|| super::chrome::find_chrome(&playwright_cache()))
@@ -47,7 +47,7 @@ fn chrome() -> Option<PathBuf> {
         .or_else(|| on_path("chromium"))
 }
 
-fn ffmpeg() -> Option<PathBuf> {
+pub(crate) fn ffmpeg() -> Option<PathBuf> {
     std::env::var_os("FLEETD_TEST_FFMPEG")
         .map(PathBuf::from)
         .or_else(|| super::chrome::find_ffmpeg(&playwright_cache()))
@@ -108,7 +108,7 @@ fn hub(home: &Path) -> Arc<TestHub> {
 }
 
 /// A local site: a login form at /, and /login, which greets whoever signed in.
-async fn site() -> (String, AbortOnDrop) {
+pub(crate) async fn site() -> (String, AbortOnDrop) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
     let serving = tokio::spawn(async move {
@@ -241,7 +241,7 @@ async fn call(broker: &Arc<Broker>, call: Value) -> Value {
 }
 
 /// A raw CDP client, as agent-browser is one, on the session's proxy URL.
-struct Driver {
+pub(crate) struct Driver {
     ws: tokio_tungstenite::WebSocketStream<
         tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
     >,
@@ -251,7 +251,7 @@ struct Driver {
 }
 
 impl Driver {
-    async fn connect(url: &str) -> Result<Self, String> {
+    pub(crate) async fn connect(url: &str) -> Result<Self, String> {
         let (ws, _) = tokio_tungstenite::connect_async(url)
             .await
             .map_err(|e| e.to_string())?;
@@ -263,7 +263,12 @@ impl Driver {
     }
 
     /// The whole answer: `result` or `error`.
-    async fn send(&mut self, session: Option<&str>, method: &str, params: Value) -> Value {
+    pub(crate) async fn send(
+        &mut self,
+        session: Option<&str>,
+        method: &str,
+        params: Value,
+    ) -> Value {
         self.next += 1;
         let mut message = json!({ "id": self.next, "method": method, "params": params });
         if let Some(session) = session {
@@ -288,13 +293,13 @@ impl Driver {
         }
     }
 
-    async fn ok(&mut self, session: Option<&str>, method: &str, params: Value) -> Value {
+    pub(crate) async fn ok(&mut self, session: Option<&str>, method: &str, params: Value) -> Value {
         let answer = self.send(session, method, params).await;
         assert!(answer.get("error").is_none(), "{method}: {answer}");
         answer["result"].clone()
     }
 
-    async fn eval(&mut self, page: &str, expression: &str) -> Value {
+    pub(crate) async fn eval(&mut self, page: &str, expression: &str) -> Value {
         let result = self
             .ok(
                 Some(page),
@@ -306,7 +311,7 @@ impl Driver {
     }
 
     /// Attaches to the page as a driver does, and returns its session.
-    async fn page(&mut self) -> String {
+    pub(crate) async fn page(&mut self) -> String {
         let targets = self.ok(None, "Target.getTargets", json!({})).await;
         let page = targets["targetInfos"]
             .as_array()
@@ -327,7 +332,7 @@ impl Driver {
 
     /// Waits until `expression` is true on the page. A page between documents (a submit navigating) answers with an
     /// error meanwhile, which only means not yet.
-    async fn wait_for(&mut self, page: &str, expression: &str) {
+    pub(crate) async fn wait_for(&mut self, page: &str, expression: &str) {
         let deadline = Instant::now() + Duration::from_secs(15);
         loop {
             let answer = self
@@ -349,7 +354,7 @@ impl Driver {
     }
 }
 
-fn command_item(command: &str, output: &str) -> ThreadItem {
+pub(crate) fn command_item(command: &str, output: &str) -> ThreadItem {
     serde_json::from_value(json!({
         "id": "toolu_1", "status": "completed", "title": command,
         "startedAt": "2026-10-26T10:00:00.000Z", "completedAt": "2026-10-26T10:00:00.120Z",
@@ -1634,4 +1639,98 @@ async fn a_frames_address_never_carries_a_value_a_get_form_submitted() {
         "no query once a credential was filled"
     );
     call(&rig.broker, json!({ "op": "session_end" })).await;
+}
+
+/// A secret with the characters a form escapes and encodeURIComponent doesn't (`!~'()`), and spaces, submitted by a
+/// GET form: masked in the action log, the DOM trace and the frames' address, as the browser encoded it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_secret_a_get_form_encoded_is_masked_everywhere_it_goes() {
+    const CODE: &str = "it's (a) top~secret!";
+    let Some(rig) = rig_with(vec![("SHOP_CODE".into(), CODE.into())]).await else {
+        return;
+    };
+    let (site, _site) = site().await;
+    let started = call(
+        &rig.broker,
+        json!({ "op": "session_start", "purpose": "Search" }),
+    )
+    .await;
+    let id = fleetd_contracts::browser::BrowserSessionId::unchecked(
+        started["result"]["sessionId"].as_str().unwrap(),
+    );
+    let mut driver = Driver::connect(started["result"]["cdp"].as_str().unwrap())
+        .await
+        .unwrap();
+    let page = driver.page().await;
+    driver
+        .ok(
+            Some(&page),
+            "Page.navigate",
+            json!({ "url": format!("{site}/search-form") }),
+        )
+        .await;
+    driver
+        .wait_for(
+            &page,
+            "document.readyState === 'complete' && !!document.querySelector('#code')",
+        )
+        .await;
+    driver
+        .eval(&page, "document.querySelector('#code').focus()")
+        .await;
+    driver
+        .ok(Some(&page), "Input.insertText", json!({ "text": CODE }))
+        .await;
+    driver
+        .eval(&page, "document.querySelector('#find').click()")
+        .await;
+    driver
+        .wait_for(
+            &page,
+            "location.pathname === '/found' && document.readyState === 'complete'",
+        )
+        .await;
+    // The browser encoded it as a form does.
+    let encoded = "it%27s+%28a%29+top%7Esecret%21";
+    let href = driver
+        .eval(&page, "location.href")
+        .await
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(href.contains(&format!("code={encoded}")), "{href}");
+
+    // The agent reads the address back: its step's line in the log, and the page after it in the trace.
+    rig.broker
+        .item(THREAD, &command_item("agent-browser get url", &href));
+    let frames = Arc::new(super::FrameSlot::default());
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let shown = loop {
+        rig.broker.watch(&id, Some(frames.clone()));
+        let url = next_frame(&frames).await["url"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned();
+        if url.contains("/found") {
+            break url;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the frame never showed the page: {url}"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+    assert!(
+        shown.ends_with("code=***SHOP_CODE***"),
+        "the frame's address: {shown}"
+    );
+    call(&rig.broker, json!({ "op": "session_end" })).await;
+    let recorded = recorded(&rig.hub).await;
+    for file in ["actions", "dom"] {
+        let text = String::from_utf8(read_file(&rig.hub, &recorded, file).await).unwrap();
+        assert!(text.contains("code=***SHOP_CODE***"), "{file}: {text}");
+        for leak in [encoded, "top%7Esecret", "top~secret"] {
+            assert!(!text.contains(leak), "{file} has {leak}: {text}");
+        }
+    }
 }
