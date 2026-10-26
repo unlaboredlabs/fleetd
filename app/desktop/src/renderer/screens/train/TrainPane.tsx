@@ -5,7 +5,7 @@
 import { useMemo, type ReactNode } from "react";
 import type { ChangesListInput, ProjectRef } from "../../../shared/contracts";
 import { useData, useToolQueries, useToolQuery } from "../../src/data/react";
-import { Button, Dot, EmptyState, StatusChip, Text, Truncate } from "../../ui";
+import { Button, cx, Dot, EmptyState, StateGlyph, StatusChip, Text, Truncate, useArrived } from "../../ui";
 import { when } from "../prs/words";
 import { panelRoute, toHash, type ProjectKey } from "../shell/routes";
 import { changesOf, checkLines, lineReads, onTrain, trainReads, STAGE_WORD, stageLine, trainViews, WAITING_WORD, type Moving, type QueueRow, type Recent, type TrainPr, type TrainView } from "./model";
@@ -154,7 +154,7 @@ function Train({ view, project, nowMs, named }: { view: TrainView; project: Proj
       </Section>
       {view.recent.length > 0 ? (
         <Section label="Recent">
-          <ul className={s.list}>
+          <ul className={cx(s.list, s.recent)}>
             {view.recent.map((r) => (
               <li key={r.kind === "merged" ? r.prs.map((p) => p.changeId).join() : r.pr.changeId}>
                 <RecentItem item={r} project={project} nowMs={nowMs} />
@@ -211,6 +211,7 @@ function Head({ moving, project, nowMs }: { moving: Moving; project: ProjectRef;
   const checks = one === undefined || detail.data === undefined ? undefined : checkLines(detail.data.checks);
   return (
     <div className={s.head} data-stage={moving.stage}>
+      <span className={s.progress} aria-hidden />
       <div className={s.headTop}>
         <StatusChip tone="working">{STAGE_WORD[moving.stage]}</StatusChip>
         {moving.prs.length > 1 ? (
@@ -294,6 +295,19 @@ function QueueItem({ row, project }: { row: QueueRow; project: ProjectRef }) {
   );
 }
 
+/** "merged" behind a check that lands, with its one ring, when the merge happens while you look; else still. */
+function Merged({ id }: { id: string }) {
+  const fresh = useArrived("train:merged", id);
+  return (
+    <span className={s.merged}>
+      <StateGlyph state="done" size="sm" settled={!fresh} />
+      <Text size="xs" tone="quiet">
+        merged
+      </Text>
+    </span>
+  );
+}
+
 function RecentItem({ item, project, nowMs }: { item: Recent; project: ProjectRef; nowMs: number | undefined }) {
   const at = (
     <Text size="xs" tone="faint" tabular>
@@ -324,9 +338,7 @@ function RecentItem({ item, project, nowMs }: { item: Recent; project: ProjectRe
     return (
       <PrLink pr={only} project={project}>
         <span className={s.rowMeta}>
-          <StatusChip tone="done" inRow>
-            merged
-          </StatusChip>
+          <Merged id={only.changeId} />
           {at}
         </span>
       </PrLink>

@@ -113,3 +113,45 @@
   gap: var(--space-1);
   min-width: 0;
 }
+
+/* W42 design preview. A: a small pill at the end of the hub's row, in the update's tone on a faint wash of it. */
+.pill {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 60%;
+  min-width: 0;
+  height: 22px;
+  padding: 0 var(--space-2) 0 var(--space-1-5);
+  border: none;
+  border-radius: 999px;
+  color: var(--accent);
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  font-weight: 500;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.pill:hover {
+  background: color-mix(in srgb, currentColor 20%, transparent);
+}
+.pill[data-updates-line="warning"] {
+  color: var(--warning);
+}
+.pill[data-updates-line="danger"] {
+  color: var(--danger);
+}
+.pill[data-updates-line="quiet"] {
+  color: var(--quiet);
+}
+.pillIcon {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+/* B: the card's first row, the hub under it past a hairline. */
+.line[data-variant="banner"] {
+  border-top: none;
+  border-bottom: 1px solid var(--hairline);
+  padding: var(--space-1-5) 10px;
+  color: var(--text);
+}

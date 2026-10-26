@@ -147,3 +147,38 @@ ol {
 ::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/*
+ * Words being made (the lead thinking, an agent's line, text still streaming): one soft band of the surface's own
+ * colour passes over them, then rests, so they read as alive without changing a letter. `--sweep-bg` is the surface
+ * they sit on. Only a transform moves; still with reduced motion, and while the window is in the background.
+ */
+[data-sweep] {
+  position: relative;
+  overflow: hidden;
+}
+[data-sweep]::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 45%;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--sweep-bg, var(--bg)) 50%, transparent);
+  opacity: 0.7;
+  transform: translateX(-110%);
+  animation: sweep var(--dur-sweep) var(--ease-sine) infinite;
+}
+@keyframes sweep {
+  66%,
+  100% {
+    transform: translateX(240%);
+  }
+}
+:root[data-still] [data-sweep]::after {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-sweep]::after {
+    display: none;
+  }
+}

@@ -45,6 +45,26 @@
   display: flex;
   flex-direction: column;
 }
+/* W42 design preview. A: one row like the rows above it, no rule over it; the update a pill at its end. */
+.footerRow {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0 var(--space-2) var(--space-2);
+  padding-right: var(--space-1);
+}
+/* B: a small quiet card, the update (if any) as its first row. */
+.footerCard {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  margin: 0 var(--space-2) var(--space-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--raised) 60%, transparent);
+  overflow: hidden;
+}
 
 .conn {
   display: flex;

@@ -30,7 +30,11 @@ const SoftDot = ({ tone }: { tone: ConnTone }) => (
   </span>
 );
 
-export function HubStatus({ hub }: { hub: HubState }) {
+/**
+ * `variant` (W42 design preview): "row" (A) is one sidebar-height row, the hub's name beside its dot; "card" (B)
+ * adds the hub's state and its machines under the name, on a quiet card.
+ */
+export function HubStatus({ hub, variant = "row" }: { hub: HubState; variant?: "row" | "card" }) {
   const asOf = useOfflineAsOf();
   const conn = connLine(hub, window.fleetd.fixture !== null, asOf);
   const layer = useDataLayer();
@@ -45,13 +49,24 @@ export function HubStatus({ hub }: { hub: HubState }) {
   const name = conn.label === conn.status ? conn.label : `${conn.label}, ${conn.status.toLowerCase()}`;
 
   return (
-    <div className={h.row}>
+    <div className={h.row} data-variant={variant}>
       <Popover open={open} onOpenChange={setOpen}>
         <Tooltip content={conn.hub ?? conn.detail ?? conn.status} side="right" open={tip && !open} onOpenChange={setTip}>
           <PopoverTrigger asChild>
-            <button type="button" className={h.chip} data-hub-status={hub.phase} data-tone={conn.tone} aria-label={`Hub: ${name}`}>
+            <button type="button" className={h.chip} data-variant={variant} data-hub-status={hub.phase} data-tone={conn.tone} aria-label={`Hub: ${name}`}>
               <SoftDot tone={conn.tone} />
-              <span className={h.label}>{conn.label}</span>
+              {variant === "card" ? (
+                <span className={h.lines}>
+                  <span className={h.label}>{conn.label}</span>
+                  <span className={h.sub}>
+                    {machines === undefined
+                      ? conn.status
+                      : `${String(machines.filter((m) => m.machine.status === "online").length)} of ${String(machines.length)} machines online`}
+                  </span>
+                </span>
+              ) : (
+                <span className={h.label}>{conn.label}</span>
+              )}
             </button>
           </PopoverTrigger>
         </Tooltip>

@@ -8,7 +8,7 @@ import type { DataState, ProjectKey } from "../../src/data/store";
 /** The lead's fleetd calls, by name or prefix, in plain words. */
 const FLEETD_WORDS: readonly (readonly [string, string])[] = [
   ["plan", "planning"],
-  ["brief", "writing the brief"],
+  ["brief", "briefing an agent"],
   ["decisions_record", "noting a decision"],
   ["decisions_search", "looking up decisions"],
   ["task_message", "messaging an agent"],
@@ -33,7 +33,7 @@ export const doingWords = (a: Activity): string => {
     case "thinking":
       return "thinking";
     case "compacting":
-      return "compacting its context";
+      return "tidying its notes";
     case "retrying":
       return `retrying (${String(a.attempt)} of ${String(a.of)})`;
     case "web":
@@ -42,7 +42,7 @@ export const doingWords = (a: Activity): string => {
       return "planning";
     case "tool": {
       if (a.server === "fleetd") {
-        return FLEETD_WORDS.find(([name]) => (name.endsWith("_") ? a.name.startsWith(name) : a.name === name))?.[1] ?? "asking fleetd";
+        return FLEETD_WORDS.find(([name]) => (name.endsWith("_") ? a.name.startsWith(name) : a.name === name))?.[1] ?? "checking with fleetd";
       }
       return "working";
     }
@@ -95,7 +95,7 @@ export const turnTally = (events: readonly HubEvent[], ref: ProjectRef): string[
     }
   }
   return [
-    ...(orders > 0 ? [orders === 1 ? "opened an order" : `opened ${String(orders)} orders`] : []),
+    ...(orders > 0 ? [orders === 1 ? "planned a piece of work" : `planned ${String(orders)} pieces of work`] : []),
     ...(agents.size > 0 ? [`started ${count(agents.size, "agent", "agents")}`] : []),
   ];
 };
@@ -144,6 +144,19 @@ export const turnLine = (
   // "working" is all the hub said: the count says it already.
   return doing === "working" ? { count } : { count, words: doing };
 };
+
+/** What the lead does this moment ("thinking", "editing `a.ts`"), "working" when nothing more is known; undefined idle. */
+export const leadDoing = (s: DataState, key: ProjectKey): string | undefined => {
+  if (selectLeadWorking(key)(s) !== true) return undefined;
+  const now = s.live.lanes[leadLaneId(refOf(key))]?.activity?.activity;
+  return now === undefined ? "working" : doingWords(now);
+};
+
+/** What the running turn did so far, joined ("planned a piece of work · started 2 agents"); "" for nothing yet. */
+export const leadDid = (s: DataState, key: ProjectKey): string => (selectLeadWorking(key)(s) === true ? turnTally(s.events, refOf(key)).join(" · ") : "");
+
+/** "thinking" as a line's first word: "Thinking". */
+export const sentenceCase = (words: string): string => words.charAt(0).toUpperCase() + words.slice(1);
 
 /** The line while the project's lead works ("planning · started 3 agents"), else undefined. */
 export const leadActivity = (s: DataState, key: ProjectKey): string | undefined => {

@@ -1,6 +1,8 @@
 /*
  * The panel's Train: what merges now on a quiet raised card, then the line and what landed lately as plain rows.
- * Titles carry the weight; numbers, times and reasons stay small and quiet. Nothing animates.
+ * Titles carry the weight; numbers, times and reasons stay small and quiet. The line's PRs are cards a step apart,
+ * each with its place as a numbered badge; what landed lately is plain rows between hairlines. Only what merges now
+ * moves: a slow sweep along its card's top edge while CI runs (the motion language, tokens.css).
  */
 .screen {
   --pad: var(--space-4);
@@ -71,7 +73,7 @@
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
-  padding: var(--space-3) var(--pad) var(--space-1);
+  padding: var(--space-4) var(--pad) var(--space-2);
 }
 .quietLine {
   padding: var(--space-1) var(--pad);
@@ -121,10 +123,12 @@
 
 /* What merges now. */
 .head {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  margin: 0 var(--space-2);
+  margin: 0 var(--space-3);
   padding: var(--space-3) var(--space-2) var(--space-2);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-md);
@@ -187,18 +191,85 @@
   padding: 0 var(--space-2);
 }
 
-/* The line: its place, then the PR. */
+/* The line: each PR a card, its place a numbered badge at its left. */
 .queued {
   display: flex;
   align-items: flex-start;
-  margin: 0 var(--space-2);
+  gap: var(--space-1);
+  margin: 0 var(--space-3) var(--space-1-5);
+  padding: 2px var(--space-1);
   min-width: 0;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: var(--raised);
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+.queued:hover {
+  border-color: color-mix(in srgb, var(--text) 18%, transparent);
+}
+.queued .row:hover {
+  background: none;
+}
+.queued .rowTitle {
+  font-weight: 500;
 }
 .place {
   flex: none;
-  width: var(--space-6);
-  padding: var(--space-2) 0 0 var(--space-2);
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin: var(--space-2) 0 0 var(--space-1);
+  border-radius: 999px;
+  background: var(--hover);
+}
+/* While CI runs on what merges now: a band of the stage's colour travels the card's top edge, then rests. */
+.progress {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+}
+.progress::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 35%;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  transform: translateX(-100%);
+  animation: travel var(--dur-sweep) var(--ease-sine) infinite;
+}
+@keyframes travel {
+  70%,
+  100% {
+    transform: translateX(290%);
+  }
+}
+:root[data-still] .progress::after {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .progress::after {
+    animation: none;
+    width: 100%;
+    opacity: 0.35;
+    transform: none;
+  }
+}
+/* What landed lately: plain rows between hairlines. */
+.recent > li {
+  margin: 0 var(--space-3);
+  border-bottom: 1px solid var(--hairline);
+}
+.list.recent > li > .row {
+  margin: 0;
 }
 .list > li > .row {
   margin: 0 var(--space-2);
+}
+.merged {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
 }

@@ -341,20 +341,24 @@ it("lists every project's agents with All projects, remembers it across a remoun
   expect(rows()).toEqual(["#/project/devbox/checkout/agents/T41", "#/project/devbox/checkout/agents/T40"]);
 });
 
-it("shows the work elsewhere on the project's repo under its agents, with This project only", async () => {
+it("folds the live work on the project's repo under its agents, with This project only", async () => {
   await mount();
   const lines = () => panel()?.querySelector("[role='list']")?.textContent ?? "";
   const other = () => [...(panel()?.querySelectorAll<HTMLElement>("[data-elsewhere]") ?? [])].map((el) => el.dataset["elsewhere"]);
-  expect(other()).toEqual(["C3", `landing:${"a".repeat(40)}`]);
-  expect(lines().indexOf("Receipts show the shop's local time")).toBeLessThan(lines().indexOf("Elsewhere on main"));
+  // Folded: its line and count, no rows.
+  expect(other()).toEqual([]);
+  expect(lines().indexOf("Receipts show the shop's local time")).toBeLessThan(lines().indexOf("Also on this repo"));
+  await click("Also on this repo1");
+  // Live work only: the held claim, not what landed.
+  expect(other()).toEqual(["C3"]);
   expect(lines()).toContain("held by you (laptop)");
-  expect(lines()).toContain("pushed straight to main by ada@example.com");
+  expect(lines()).not.toContain("pushed straight to main");
   expect(panel()?.querySelectorAll("[data-screen='agents'] a")).toHaveLength(1);
   expect(panel()?.querySelector("[role='tab']")?.textContent).toBe("Agents1");
 
   await click("All projects");
   expect(other()).toEqual([]);
-  expect(lines()).not.toContain("Elsewhere");
+  expect(lines()).not.toContain("Also on this repo");
 });
 
 const handle = () => panel()?.querySelector<HTMLElement>("[role='separator']") ?? null;

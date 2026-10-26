@@ -156,3 +156,25 @@
   text-underline-offset: 2px;
   cursor: pointer;
 }
+
+/* Direction A's receipt mark, beside your bubble's foot: faint, a ring while it waits for the lead, a check once taken. */
+.receiptMark {
+  flex: none;
+  align-self: flex-end;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-bottom: 3px;
+  border-radius: 999px;
+}
+.receiptMark > span[data-state] {
+  color: var(--faint);
+}
+.receiptMark[data-mark="delivered"] > span[data-state] {
+  color: var(--quiet);
+}
+/* Direction B: one faint word, no sentence. */
+.receiptWord {
+  justify-content: flex-end;
+}

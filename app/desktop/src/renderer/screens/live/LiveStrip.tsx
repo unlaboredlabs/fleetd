@@ -6,9 +6,9 @@
 // the now-line) opens in the panel's agents, where its live work and steer box are. Nothing is drawn when no agent is
 // shown.
 import { ChevronUp } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { useData } from "../../src/data/react";
-import { RoleTag, Text, Truncate, cx, roleTint } from "../../ui";
+import { RoleTag, StateGlyph, Text, Truncate, cx, roleTint, type GlyphState } from "../../ui";
 import { panelRoute, toHash } from "../shell/routes";
 import { useNow } from "./clock";
 import { ActivityLine } from "./parts";
@@ -72,18 +72,17 @@ function Dock({ project, strip }: { project: ProjectRef; strip: Strip }) {
   );
 }
 
+const GLYPH: Readonly<Record<StripAgent["state"], GlyphState>> = { working: "working", needsYou: "waiting", onHold: "paused", queued: "queued" };
+
+/** A glyph per agent (StateGlyph), each a little out of step with the next so a row of them never beats as one. */
 function Dots({ lanes }: { lanes: readonly StripAgent[] }) {
   const more = lanes.length - MAX_DOTS;
   return (
     <span className={s.dots} aria-hidden>
-      {lanes.slice(0, MAX_DOTS).map((a) => (
-        <span
-          // Keyed by state too, so a change of state draws the dot anew and it pulses once (live.module.css).
-          key={`${a.laneId}:${a.state}`}
-          className={cx(s.dot, s[a.state])}
-          // At work, a dot takes its role's tint.
-          style={a.state === "working" ? { color: roleTint(a.role) } : undefined}
-        />
+      {lanes.slice(0, MAX_DOTS).map((a, i) => (
+        <span key={a.laneId} className={s.glyph} style={{ "--glyph-phase": (i * 0.37) % 1 } as CSSProperties}>
+          <StateGlyph state={a.state === "working" && a.line.thinking ? "thinking" : GLYPH[a.state]} size="sm" />
+        </span>
       ))}
       {more > 0 ? <span className={s.more}>+{more}</span> : null}
     </span>

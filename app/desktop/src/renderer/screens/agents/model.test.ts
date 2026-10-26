@@ -5,6 +5,7 @@ import {
   actionLine,
   agentState,
   allAgents,
+  alsoOnRepo,
   elsewhere,
   headline,
   landedHow,
@@ -202,6 +203,23 @@ describe("work elsewhere on the repo", () => {
     );
     expect(rows(out).map((r) => r.id)).toEqual(["C2", "T7", "C3", "X4", "acme/shop#57", `landing:${"a".repeat(40)}`, "C1"]);
     expect(rows(out).map((r) => r.dim)).toEqual([false, false, false, false, false, false, true]);
+  });
+
+  it("keeps only live work for Also on this repo: held claims, running agents, PRs still on their way", () => {
+    const out = list(
+      [
+        item("T7", "task", { projectRef: web, taskId: "T7" }),
+        item("T8", "task", { projectRef: web, taskId: "T8", state: "done" }),
+        claim("C1", person, "expired", -3 * H),
+        claim("C2", person),
+        item("X4", "change", { projectRef: web, state: "ci" }),
+        item("X5", "change", { projectRef: web, state: "refused" }),
+        item("acme/shop#57", "pr", { state: "open" }),
+      ],
+      [landing("a", "direct_push", { authorEmail: "ada@example.com" })],
+    );
+    expect(alsoOnRepo(out, "devbox/api", NOW, (k) => titles[k]).map((r) => r.id)).toEqual(["C2", "T7", "X4", "acme/shop#57"]);
+    expect(alsoOnRepo(list([claim("C1", person, "expired", -H), item("X5", "change", { projectRef: web, state: "refused" })]), "devbox/api", NOW)).toEqual([]);
   });
 
   it("leaves out the project's own agents and PRs, and the claims its lead holds", () => {

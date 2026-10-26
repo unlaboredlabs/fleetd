@@ -14,11 +14,13 @@ import {
   ContextMenuCopy,
   ContextMenuItem,
   ContextMenuSeparator,
+  designPick,
   Dot,
   Kbd,
   Sidebar as Frame,
   SidebarItem,
   SidebarSection,
+  StateGlyph,
   Text,
   Tooltip,
 } from "../../ui";
@@ -72,8 +74,18 @@ const mark = (p: SidebarProject): { readonly node: ReactNode; readonly tip: stri
     };
   }
   if (p.unread) return { node: <Dot color="var(--accent)" label={UNREAD} />, tip: UNREAD };
-  if (p.running > 0) return { node: `${String(p.running)} working`, tip: `${String(p.running)} ${p.running === 1 ? "agent" : "agents"} working` };
-  if (p.working) return { node: "working", tip: "The lead is working" };
+  if (p.running > 0) {
+    return {
+      node: (
+        <>
+          <StateGlyph state="working" size="sm" />
+          {String(p.running)}
+        </>
+      ),
+      tip: `${String(p.running)} ${p.running === 1 ? "agent" : "agents"} working`,
+    };
+  }
+  if (p.working) return { node: <StateGlyph state="thinking" size="sm" />, tip: "The lead is working" };
   return null;
 };
 
@@ -121,10 +133,18 @@ export function Sidebar({ projects, machinesDown, screen, hub, jumpHints, factor
     <Frame
       aria-label="Sidebar"
       footer={
-        <div className={s.footer}>
-          <UpdatesLine />
-          <HubStatus hub={hub} />
-        </div>
+        // W42 design preview: A, the hub and any update on one row; B, a small card with the update above the hub.
+        designPick("footer") === "b" ? (
+          <div className={s.footerCard}>
+            <UpdatesLine variant="banner" />
+            <HubStatus hub={hub} variant="card" />
+          </div>
+        ) : (
+          <div className={s.footerRow}>
+            <HubStatus hub={hub} variant="row" />
+            <UpdatesLine variant="pill" />
+          </div>
+        )
       }
     >
       <SidebarSection

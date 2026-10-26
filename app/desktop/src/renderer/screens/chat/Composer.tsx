@@ -19,12 +19,12 @@ import type { ChatItem } from "../../src/data/chat";
 import { useData, useDataLayer } from "../../src/data/react";
 import { projectKey as keyOf } from "../../src/data/store";
 import { selectCanStop, selectHeldLeadWorking, selectLeadWorking } from "../../src/data/selectors";
-import { Button, cx, IdChip, Text, Tooltip, Truncate } from "../../ui";
+import { Button, cx, designPick, IdChip, StateGlyph, Text, Tooltip, Truncate } from "../../ui";
 import { useCommands } from "../palette";
 import { nowKeys } from "../live/Steer";
 import { composerSendOn } from "../live/steerModel";
 import { fmtBytes, PASTE_AS_FILE, pastedName } from "./attachments";
-import { ACT_LABEL, checkMessage, placeholder, receiptFor, recallsOn, stopFailed, type Act } from "./composerModel";
+import { ACT_LABEL, checkMessage, placeholder, receiptFor, receiptMark, recallsOn, stopFailed, type Act } from "./composerModel";
 import { useDraft, useDrafts } from "./drafts";
 import { useSkillPicker } from "./SkillPicker";
 import type { ReplyTarget } from "./actions";
@@ -317,10 +317,46 @@ export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCa
 }
 
 /** The quiet line under one of your messages, with Resend / Edit / Dismiss when it didn't go. */
+const sendableOf = (item: ChatItem) => ({
+  state: item.state,
+  error: item.error,
+  delivery: item.delivery,
+  leadWaiting: item.leadWaiting,
+  client: item.message?.client,
+});
+
+/**
+ * Direction A (W42): a quiet receipt as a small mark beside your bubble's foot, its words on hover. A ring circles
+ * while the lead hasn't taken it; a check lands once it has. Nothing under the bubble.
+ */
+export function ReceiptMarkView({ item, latest }: { item: ChatItem; latest: boolean }) {
+  const m = designPick("sent") === "a" ? receiptMark(sendableOf(item), latest) : undefined;
+  if (m === undefined) return null;
+  return (
+    <Tooltip content={m.words}>
+      <span className={c.receiptMark} data-mark={m.mark} tabIndex={0} aria-label={m.words}>
+        <StateGlyph state={m.mark === "waiting" ? "queued" : "done"} size="sm" />
+      </span>
+    </Tooltip>
+  );
+}
+
 export function MessageReceipt({ project, item, latest = false }: { project: ProjectRef; item: ChatItem; latest?: boolean }) {
   const projectKey = keyOf(project);
   const { chat } = useDataLayer();
   const drafts = useDrafts();
+  const mark = receiptMark(sendableOf(item), latest);
+  // A quiet receipt is a mark on the bubble (A) or one word under it (B), never a sentence.
+  if (mark !== undefined && designPick("sent") === "a") return null;
+  if (mark !== undefined) {
+    return (
+      <div className={cx(c.receipt, c.receiptWord)} data-receipt={item.state} title={mark.words}>
+        <Text size="xs" tone="faint">
+          {mark.word}
+        </Text>
+      </div>
+    );
+  }
   const r = receiptFor(
     {
       state: item.state,

@@ -6,10 +6,11 @@
 import { ChevronLeft, MoreHorizontal } from "lucide-react";
 import { lazy, Suspense, useLayoutEffect, useRef, useState, type ComponentType, type LazyExoticComponent } from "react";
 import { Boundary } from "../../src/Boundary";
-import { Button, Menu, MenuContent, MenuItem, MenuTrigger, Tab, TabList, TabPanel, Tabs } from "../../ui";
+import { Button, designPick, Menu, MenuContent, MenuItem, MenuTrigger, Tab, TabList, TabPanel, Tabs } from "../../ui";
 import { navigate } from "../shell/navigation";
 import { hasItem, listView, panelRoute, type PanelView, type ProjectKey } from "../shell/routes";
 import { PanesProvider } from "./panes";
+import { Overview, SectionBar, SectionTop } from "./Sections";
 import { fitTabs, type TabFit } from "./tabFit";
 import { isPanelTab, PANEL_TABS, tabEntry, type CountProps, type PanelTab, type PanelTabEntry, type PaneProps } from "./tabs";
 import s from "./panel.module.css";
@@ -30,10 +31,35 @@ export function ProjectPanel({ project, view, onWide }: { project: ProjectKey; v
   const pick = (tab: string) => {
     if (isPanelTab(tab)) navigate(panelRoute(project, listView(tab)), { replace: true });
   };
+  // W42 design preview: the panel as four sections (Sections.tsx), A a bar of them, B an overview first.
+  const design = designPick("panel", "off");
+  const [home, setHome] = useState(true);
+  const badge = (tab: PanelTab) => <Badge id={tab} project={project} active={tab === view.tab} />;
+  if (design === "b" && home) {
+    return (
+      <PanesProvider>
+        <div className={s.panel}>
+          <Overview
+            badge={badge}
+            onPick={(tab) => {
+              setHome(false);
+              pick(tab);
+            }}
+          />
+        </div>
+      </PanesProvider>
+    );
+  }
   return (
     <PanesProvider>
       <Tabs className={s.panel} value={view.tab} onValueChange={pick}>
-        <TabBar project={project} active={view.tab} onPick={pick} />
+        {design === "a" ? (
+          <SectionBar project={project} active={view.tab} onPick={pick} badge={badge} />
+        ) : design === "b" ? (
+          <SectionTop active={view.tab} onPick={pick} onHome={() => setHome(true)} />
+        ) : (
+          <TabBar project={project} active={view.tab} onPick={pick} />
+        )}
         {hasItem(view) && entry.back !== undefined ? (
           <div className={s.back}>
             <Button variant="quiet" size="sm" icon={<ChevronLeft aria-hidden />} onClick={() => navigate(panelRoute(project, listView(view.tab)))}>

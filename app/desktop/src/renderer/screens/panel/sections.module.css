@@ -1,0 +1,186 @@
+/* W42 design preview: the panel's sections (Sections.tsx). */
+.head {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3) var(--space-2);
+  border-bottom: 1px solid var(--hairline);
+}
+/* A: four equal sections, icon over label, so the words always show however narrow the panel. */
+.bar {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-1);
+}
+.section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--space-1-5) var(--space-1) var(--space-1);
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--quiet);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+.section:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.on {
+  background: var(--selected);
+  color: var(--text);
+}
+.labelRow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  min-width: 0;
+}
+.icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+.label {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  font-weight: 500;
+}
+.badge:empty {
+  display: none;
+}
+.badge {
+  min-width: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--hover);
+  color: var(--quiet);
+  font-size: 10px;
+  line-height: 15px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.under {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.line {
+  margin: 0;
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+.switch {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-md);
+  background: var(--hover);
+}
+.option {
+  height: 24px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--quiet);
+  font-size: var(--text-xs);
+}
+.option:hover {
+  color: var(--text);
+}
+.optionOn {
+  background: var(--raised);
+  color: var(--text);
+  box-shadow: 0 0 0 1px var(--hairline);
+  font-weight: 500;
+}
+/* B: the overview, a card per section. */
+.overview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+.card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: var(--raised);
+  color: var(--text);
+  text-align: left;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+.card:hover {
+  border-color: color-mix(in srgb, var(--text) 18%, transparent);
+}
+.cardIcon {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  background: var(--hover);
+  color: var(--quiet);
+}
+.cardIcon > svg {
+  width: 16px;
+  height: 16px;
+}
+.cardText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cardTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  font-weight: 500;
+}
+.cardLine {
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+.chevron {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--faint);
+}
+.crumb {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.crumbTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}

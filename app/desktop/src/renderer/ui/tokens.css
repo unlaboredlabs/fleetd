@@ -174,12 +174,35 @@
   --dur-fast: 120ms;
   --dur-base: 180ms;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-  /* A chat bubble coming in: up a little from where it lands, grown a touch, faded in; a reply's bubbles a step apart. */
-  --dur-enter: 280ms;
-  --ease-enter: cubic-bezier(0.2, 0.9, 0.3, 1);
-  --enter-rise: 6px;
-  --enter-scale: 0.97;
-  --enter-stagger: 60ms;
+  /* A chat bubble coming in: it rises a little into place as it fades in, never scaled (scaled words wobble); a
+     reply's bubbles a calm step apart. Your own send is quicker: you made it happen. */
+  --dur-enter: 360ms;
+  --dur-enter-mine: 220ms;
+  --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --enter-rise: 10px;
+  --enter-scale: 1;
+  --enter-stagger: 90ms;
+
+  /*
+   * The motion language (W42 design preview). Only what is live moves, and only while it is: an agent at work, the
+   * lead thinking, text arriving, a PR in CI. Each loop has one idea and its own rhythm; a state that has ended (done,
+   * failed, paused) settles once and is then still. Only transform and opacity, so nothing reflows. Closing is instant.
+   *   breath  2.4 s, sine in-out: work going on (a halo eases out of the dot and fades)
+   *   glow    1.6 s, sine in-out: thinking (the dot dims and gathers, no halo)
+   *   knock   2.4 s, two quick beats then rest: waiting on you
+   *   orbit   3.2 s, linear: queued (a mote circles the ring, waiting its turn)
+   *   sweep   2.2 s, sine in-out, a third of it at rest: words being made (thinking, streaming)
+   *   settle  480 ms, ease-out: an ending (done lands, failed nudges once), then still
+   */
+  --ease-sine: cubic-bezier(0.37, 0, 0.63, 1);
+  --dur-breath: 2400ms;
+  --dur-glow: 1600ms;
+  --dur-knock: 2400ms;
+  --dur-orbit: 3200ms;
+  --dur-sweep: 2200ms;
+  --dur-settle: 480ms;
+  --dur-row-in: 220ms;
+  --row-rise: 4px;
 }
 
 :root[data-platform="darwin"] {
@@ -194,5 +217,6 @@
     --enter-rise: 0px;
     --enter-scale: 1;
     --enter-stagger: 0ms;
+    --row-rise: 0px;
   }
 }

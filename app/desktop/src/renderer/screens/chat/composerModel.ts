@@ -103,6 +103,28 @@ function receiptOf(m: Sendable, latest: boolean): Receipt | undefined {
   }
 }
 
+/**
+ * A quiet receipt as a mark on the bubble instead of a line under it (W42 design preview): a ring that circles while
+ * it waits for the lead (sending, or queued for when it's free), a check once the lead has it. The words go to its
+ * tooltip. Trouble, and anything you can act on, keeps its line: undefined then.
+ */
+export interface ReceiptMark {
+  readonly mark: "waiting" | "delivered";
+  /** Direction B's one word under the bubble. */
+  readonly word: string;
+  /** The receipt's words in full, for the tooltip. */
+  readonly words: string;
+}
+
+export function receiptMark(m: Sendable, latest: boolean): ReceiptMark | undefined {
+  const r = receiptFor(m, latest);
+  if (r === undefined || r.kind !== "quiet" || r.acts !== undefined) return undefined;
+  const words = r.line.charAt(0).toUpperCase() + r.line.slice(1);
+  if (m.state === "pending") return { mark: "waiting", word: "Sending", words };
+  const waiting = m.delivery === "queued" || m.delivery === "steer";
+  return waiting ? { mark: "waiting", word: m.delivery === "queued" ? "Queued" : "Delivered", words } : { mark: "delivered", word: "Delivered", words };
+}
+
 /** Why Stop didn't stop the lead and its agents, in one plain sentence; never the hub's own words. */
 export function stopFailed(code: string): string {
   switch (code) {

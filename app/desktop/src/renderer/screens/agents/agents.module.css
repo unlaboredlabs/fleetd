@@ -83,15 +83,17 @@
   min-width: 0;
 }
 
-/* One agent: its dot in a gutter, title and role; under them what it is doing now and where its work is. */
+/* One agent: its glyph in a gutter, title and role; under them what it is doing now and where its work is. Rows
+   stand a step apart; one that has ended (done, failed, paused) steps back a shade so the live ones lead. */
 .row {
   display: grid;
-  grid-template-columns: 14px minmax(0, 1fr);
-  column-gap: var(--space-2);
-  row-gap: 2px;
+  grid-template-columns: 16px minmax(0, 1fr);
+  column-gap: 10px;
+  row-gap: 3px;
   align-items: center;
   min-width: 0;
-  padding: var(--space-1-5) var(--space-2);
+  margin-bottom: 2px;
+  padding: var(--space-2) 10px;
   border-radius: var(--radius-md);
   color: inherit;
   text-decoration: none;
@@ -137,66 +139,18 @@
   line-height: var(--leading-xs);
 }
 
-/* The state dot: working is the success colour, waiting amber, failed danger, done quiet, queued an open ring. A
-   working dot breathes twice as it appears or starts working, then rests: never continuous, as a running animation
-   keeps every frame drawing and slows what a key press shows. */
+/* The state glyph's cell (StateGlyph, ui/primitives): in the row's gutter. A count's glyphs keep their shape, still. */
 .state {
-  position: relative;
   grid-column: 1;
   grid-row: 1;
   justify-self: center;
-  flex: none;
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  color: var(--quiet);
-  background: currentColor;
+  display: inline-grid;
+  place-items: center;
 }
-.state[data-state="working"] {
-  color: var(--success);
-}
-.state[data-state="waiting"] {
-  color: var(--warning);
-}
-.state[data-state="failed"] {
-  color: var(--danger);
-}
-.state[data-state="done"] {
-  color: var(--quiet);
-}
-.state[data-state="queued"] {
-  color: var(--faint);
-  background: none;
-  box-shadow: inset 0 0 0 1.5px currentColor;
-}
-.state[data-state="working"]::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: currentColor;
-  opacity: 0;
-  animation: breathe 2.4s var(--ease-out) 2;
-}
-/* The head's counts: a dot each, still. */
-.count .state::after {
-  animation: none;
-}
-@keyframes breathe {
-  from {
-    opacity: 0.45;
-    transform: scale(1);
-  }
-  to {
-    opacity: 0;
-    transform: scale(2.6);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .state[data-state="working"]::after {
-    animation: none;
-  }
+.stillGlyph *,
+.stillGlyph *::before,
+.stillGlyph *::after {
+  animation: none !important;
 }
 
 /* The role's word on a faint wash of its tint. */
@@ -390,4 +344,57 @@
 /* An expired claim, last: its title as quiet as the line under it. */
 .dim .task > * {
   color: var(--quiet);
+}
+
+.row .task {
+  font-weight: 500;
+}
+.row[data-state="done"] .task,
+.row[data-state="cancelled"] .task,
+.row[data-state="parked"] .task,
+.row[data-state="queued"] .task {
+  color: var(--quiet);
+  font-weight: 400;
+}
+/* Just arrived in the list (ui/lib/arrival): rises a little and fades in, once. Leaving is a plain fade. */
+.arrive {
+  animation: rowIn var(--dur-row-in) var(--ease-out) backwards;
+}
+@keyframes rowIn {
+  from {
+    opacity: 0;
+    transform: translateY(var(--row-rise));
+  }
+}
+
+/* Also on this repo: a fold, shut until asked; its chevron turns as it opens. */
+.fold {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  width: 100%;
+  margin-top: var(--space-3);
+  padding: var(--space-1-5) var(--space-2);
+  border: none;
+  border-top: 1px solid var(--hairline);
+  border-radius: 0;
+  background: none;
+  text-align: left;
+}
+.fold:hover {
+  background: var(--hover);
+}
+.foldIcon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--faint);
+  transition: transform var(--dur-base) var(--ease-out);
+}
+.fold[aria-expanded="true"] .foldIcon {
+  transform: rotate(90deg);
+}
+.otherMark {
+  width: 7px;
+  height: 7px;
 }

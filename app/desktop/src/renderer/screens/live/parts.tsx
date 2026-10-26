@@ -57,9 +57,10 @@ export function MiddleCut({ text }: { text: string }) {
 /**
  * What an agent is doing now: words in the UI voice, then machine text in mono cut in the middle to the room it has.
  */
-export function ActivityLine({ line }: { line: { readonly words: string; readonly machine?: string | undefined; readonly tone: Tone } }) {
+export function ActivityLine({ line }: { line: { readonly words: string; readonly machine?: string | undefined; readonly tone: Tone; readonly thinking?: boolean } }) {
   return (
-    <span className={cx(s.activity, TONE_CLASS[line.tone] ?? s.quietText)}>
+    // Thinking, its words carry the sweep (base.css): alive, without a letter changing.
+    <span className={cx(s.activity, TONE_CLASS[line.tone] ?? s.quietText)} data-sweep={line.thinking === true ? "" : undefined}>
       {line.machine !== undefined ? (
         <>
           <span className={s.words}>{line.words}</span>

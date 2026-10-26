@@ -4,10 +4,10 @@
 // list keeps its place while they arrive above. Scrolled up, a button counts what arrived below and goes back to it.
 import type { Virtualizer } from "@tanstack/react-virtual";
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Button, cx, Text, VirtualList } from "../../ui";
+import { Button, cx, StateGlyph, Text, VirtualList } from "../../ui";
 import { useData } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
-import { leadActivity, leadTurnSince, leadTurnUntil, turnLine } from "./activity";
+import { leadDid, leadDoing, leadTurnSince, leadTurnUntil, sentenceCase, turnLine, workedFor } from "./activity";
 import type { ChatItem } from "../../src/data/chat";
 
 import { shortClock } from "./format";
@@ -92,10 +92,18 @@ function Waited({ id, children }: { id: string; children: ReactNode }) {
 /** The lead's activity changes with its frames; the line takes a new value at most once a second. */
 const ACTIVITY_EVERY_MS = 1000;
 
-/** The quiet line after the lead's reply: how long its turn has run (counting up, once a second) and what it does. */
+/**
+ * The turn line after the lead's reply (W42 design preview). While its turn runs: a live glyph (thinking glows,
+ * anything else breathes), what it does now in plain words at full strength, with the sweep (base.css), and how long
+ * the turn has run, faint, counting; under it, quietly, what the turn did so far. Once over: a check and how long it
+ * worked. The words change at most once a second; the count is apart from them, so a screen reader isn't told each tick.
+ */
 function LeadActivity({ project }: { project: ProjectRef }) {
   const key = projectKey(project);
-  const now = useData((st) => leadActivity(st, key));
+  const now = useData((st) => {
+    const doing = leadDoing(st, key);
+    return doing === undefined ? undefined : `${doing}\n${leadDid(st, key)}`;
+  });
   const since = useData((st) => leadTurnSince(st, key));
   const until = useData((st) => leadTurnUntil(st, key));
   const skew = useData((st) => st.live.skewMs ?? 0);
@@ -115,19 +123,38 @@ function LeadActivity({ project }: { project: ProjectRef }) {
   const box = useRef<HTMLDivElement>(null);
   // The count stops while the line is out of view or the window hidden (useNow).
   const onScreen = useOnScreen(box);
-  const clock = useNow(shown !== undefined && since !== undefined && until === undefined && onScreen) + skew;
-  const line = turnLine({ since, until }, shown, clock);
-  if (line === undefined) return null;
+  const running = shown !== undefined && since !== undefined && until === undefined;
+  const clock = useNow(running && onScreen) + skew;
+  if (shown === undefined) {
+    const line = turnLine({ since, until }, undefined, clock);
+    if (line?.words === undefined) return null;
+    return (
+      <div ref={box} className={cx(s.quietRow, s.turn)} data-entry="activity" data-turn="done" role="status">
+        <StateGlyph state="done" size="sm" />
+        <Text size="xs" tone="quiet">
+          {line.words}
+        </Text>
+      </div>
+    );
+  }
+  const [doing = "working", did = ""] = shown.split("\n");
+  const thinking = doing === "thinking" || doing === "planning";
   return (
-    <div ref={box} className={s.quietRow} data-entry="activity" role="status">
-      {line.count !== undefined ? (
-        <span aria-hidden>
-          <Text size="xs" tone="quiet" tabular>
-            {line.words === undefined ? line.count : `${line.count} · `}
-          </Text>
+    <div ref={box} className={cx(s.quietRow, s.turn)} data-entry="activity" data-turn="running" role="status">
+      <StateGlyph state={thinking ? "thinking" : "working"} size="sm" />
+      <span className={s.turnNow} data-sweep="">
+        <InlineText size="xs" text={sentenceCase(doing)} />
+      </span>
+      {running ? (
+        <span className={s.turnTime} aria-hidden>
+          {workedFor(clock - since)}
         </span>
       ) : null}
-      {line.words !== undefined ? <InlineText size="xs" tone="quiet" text={line.words} /> : null}
+      {did === "" ? null : (
+        <span className={s.turnDid}>
+          <InlineText size="xs" tone="quiet" text={sentenceCase(did)} />
+        </span>
+      )}
     </div>
   );
 }

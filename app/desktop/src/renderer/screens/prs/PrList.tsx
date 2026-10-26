@@ -5,11 +5,11 @@
 import { useMemo, useState, type KeyboardEvent } from "react";
 import type { ProjectRef } from "../../../shared/contracts";
 import type { PrRow } from "../../../shared/contracts";
-import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSeparator, StatusChip, Text, Truncate, VirtualList, cx } from "../../ui";
+import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSeparator, StatusChip, Text, Truncate, VirtualList, cx, useArrived } from "../../ui";
 import { panelRoute, toHash } from "../shell/routes";
 import { ChecksMark, HintText, PaneEmpty, Segmented } from "./Bits";
 import { openExternal } from "./PrDetail";
-import { PR_FILTERS, emptyWords, filterCounts, listItems, rowMeta, type PrFilter } from "./listModel";
+import { PR_FILTERS, emptyWords, filterCounts, listItems, openGroup, rowMeta, type PrFilter } from "./listModel";
 import { checksWord, isOpen, when } from "./words";
 import s from "./prs.module.css";
 
@@ -93,7 +93,7 @@ export function PrList({ rows, more, project, nowMs }: PrListProps) {
           <VirtualList
             items={items}
             getKey={(it) => (it.kind === "group" ? `group:${it.label}` : it.kind === "cut" ? "cut" : `${it.row.repo}#${it.row.number}`)}
-            estimateSize={56}
+            estimateSize={78}
             aria-label="Pull requests"
             renderItem={(it) =>
               it.kind === "group" ? (
@@ -142,6 +142,7 @@ function Row({ row, project, nowMs }: { row: PrRow; project: ProjectRef; nowMs: 
   const full = row.checks === undefined ? undefined : checksWord(row.checks)?.text;
   const href = prHref(project, row);
   const branch = row.branch;
+  const fresh = useArrived(`prs:${project.machineId}/${project.projectId}`, `${row.repo}#${row.number}`);
   const menu = () => (
     <>
       <ContextMenuItem onSelect={() => (window.location.hash = href)}>Open</ContextMenuItem>
@@ -153,7 +154,7 @@ function Row({ row, project, nowMs }: { row: PrRow; project: ProjectRef; nowMs: 
   );
   return (
     <ContextMenu menu={menu}>
-      <a className={cx(s.row, !isOpen(row) && s.rowDone)} href={href} data-pr={row.number}>
+      <a className={cx(s.row, !isOpen(row) && s.rowDone, fresh && s.arrive)} href={href} data-pr={row.number} data-look={isOpen(row) && openGroup(row) === "look" ? "" : undefined}>
         <span className={s.rowTop}>
           <span className={s.rowTitle}>
             <Truncate lines={2} expand="none" tone="inherit">
