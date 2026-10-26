@@ -464,7 +464,10 @@ mod tests {
         files.sort();
         let mut gated = label_gated(&files);
         gated.sort();
-        assert_eq!(gated, ["desktop-macos", "dispatch", "rust (macos)"]);
+        assert_eq!(
+            gated,
+            ["desktop-macos", "dispatch", "ios sessions", "rust (macos)"]
+        );
     }
 
     #[test]

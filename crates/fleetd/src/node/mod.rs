@@ -134,6 +134,7 @@ pub async fn join(args: JoinArgs) -> Result<(), NodeError> {
         browser: None,
         preview: None,
         device: None,
+        ios: None,
     };
     write_config(&home, &config).map_err(|_| {
         NodeError::Setup(format!(
@@ -262,16 +263,31 @@ async fn run_node(
         ),
         false => None,
     };
-    let sessions_router = (broker.is_some() || devices.is_some()).then(|| {
+    let ios_config = config.ios.clone().unwrap_or_default();
+    let ios = match ios_config.enabled() {
+        true => Some(
+            device::ios::Simulators::start(
+                home,
+                ios_config,
+                Arc::new(browser::upload::RelayHub(relay.clone())),
+                secrets_for.clone(),
+            )
+            .await,
+        ),
+        false => None,
+    };
+    let sessions_router = (broker.is_some() || devices.is_some() || ios.is_some()).then(|| {
         Arc::new(device::Router {
             browser: broker.clone(),
             devices: devices.clone(),
+            ios: ios.clone(),
             live: Default::default(),
         })
     });
     let router = Arc::new(session_route::Router {
         broker: broker.clone(),
         devices,
+        ios,
         relay: relay.clone(),
         hub: config.hub.clone(),
         secrets_for,

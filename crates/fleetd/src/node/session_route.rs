@@ -59,13 +59,14 @@ async fn local(router: &Router, thread: String, frame: BrowserCallFrame) -> Brow
     router.here().handle(thread, frame).await
 }
 
-/// What routing an agent's session tools needs: this node's broker (none where browser sessions are off) and its
-/// android sessions (none where they are off), its link to the hub, the hub's URL for relays, the sessions' secrets (to seal to the machine that hosts one elsewhere, and
+/// What routing an agent's session tools needs: this node's broker (none where browser sessions are off), its android
+/// and iOS sessions (none where they are off), its link to the hub, the hub's URL for relays, the sessions' secrets (to seal to the machine that hosts one elsewhere, and
 /// to mask its steps with), and the values this node read from 1Password for its agents' sessions hosted elsewhere.
 #[derive(Clone)]
 pub struct Router {
     pub broker: Option<Arc<Broker>>,
     pub devices: Option<Arc<Devices>>,
+    pub ios: Option<Arc<device::ios::Simulators>>,
     pub relay: LeadRelay,
     pub hub: String,
     pub secrets_for: SecretsFor,
@@ -74,22 +75,27 @@ pub struct Router {
 }
 
 impl Router {
-    /// The sessions on this machine, both kinds.
+    /// The sessions on this machine, every kind.
     fn here(&self) -> device::Router {
         device::Router {
             browser: self.broker.clone(),
             devices: self.devices.clone(),
+            ios: self.ios.clone(),
             // Session calls only; live view goes through the link's own router.
             live: Default::default(),
         }
     }
 }
 
-/// What a call's session runs on: an Android emulator for `session_start` with kind android, else a browser.
+/// What a call's session runs on: an Android emulator for `session_start` with kind android, an iOS simulator for
+/// kind ios, else a browser.
 fn host_of(frame: &BrowserCallFrame) -> SessionHost {
     match &frame.call {
         BrowserCall::SessionStart(start) if start.kind == Some(SessionKind::Android) => {
             SessionHost::Android
+        }
+        BrowserCall::SessionStart(start) if start.kind == Some(SessionKind::Ios) => {
+            SessionHost::Ios
         }
         _ => SessionHost::Browser,
     }
@@ -225,16 +231,16 @@ async fn route(router: Arc<Router>, thread: String, frame: BrowserCallFrame) -> 
     if router.here().live(&thread) || !router.relay.hub_can(HUB_CAP_SESSION_ROUTE) {
         return local(&router, thread, frame).await;
     }
-    let android = host_of(&frame) == SessionHost::Android;
-    // Browser sessions off here: no proxy to drive one through, wherever it would run. An Android start goes to the
-    // hub, which may place it here.
+    let device = matches!(host_of(&frame), SessionHost::Android | SessionHost::Ios);
+    // Browser sessions off here: no proxy to drive one through, wherever it would run. An Android or iOS start goes
+    // to the hub, which may place it here.
     let broker = match router.broker.as_ref() {
         Some(broker) => broker,
-        None if android => return android_start(&router, thread, frame).await,
+        None if device => return device_start(&router, thread, frame).await,
         None => return local(&router, thread, frame).await,
     };
-    if android {
-        return android_start(&router, thread, frame).await;
+    if device {
+        return device_start(&router, thread, frame).await;
     }
     let ending = matches!(frame.call, BrowserCall::SessionEnd(_));
     let starting = matches!(frame.call, BrowserCall::SessionStart(_));
@@ -378,23 +384,31 @@ async fn sealed_fill(
     })
 }
 
-/// An Android `session_start`: on this machine when the hub places it here. agent-device drives an emulator over adb,
-/// which doesn't cross the hub's relay yet, so one the hub would place elsewhere is refused before anything starts
-/// there (nothing is sealed for it).
-async fn android_start(
+/// An Android or iOS `session_start`: on this machine when the hub places it here. agent-device drives an emulator
+/// over adb and a simulator over simctl and its XCTest runner, neither of which crosses the hub's relay yet, so one the
+/// hub would place elsewhere is refused before anything starts there (nothing is sealed for it).
+async fn device_start(
     router: &Arc<Router>,
     thread: String,
     frame: BrowserCallFrame,
 ) -> BrowserResultFrame {
+    let (kind, device) = match host_of(&frame) {
+        SessionHost::Ios => ("iOS", "a simulator"),
+        _ => ("Android", "an emulator"),
+    };
     let elsewhere = |frame: &BrowserCallFrame| {
         error_frame(
             &frame.id,
             McpToolError::new(
                 ErrorCode::Failed,
-                "The hub placed this Android session on another machine, and agent-device can't drive an emulator \
-                 there from here yet.",
+                format!(
+                    "The hub placed this {kind} session on another machine, and agent-device can't drive {device} \
+                     there from here yet."
+                ),
             )
-            .with_fix("say so in your result: Android sessions run only on the agent's own machine for now"),
+            .with_fix(format!(
+                "say so in your result: {kind} sessions run only on the agent's own machine for now"
+            )),
         )
     };
     match ask(router, &thread, &frame, None).await {
@@ -402,7 +416,7 @@ async fn android_start(
         // Placed elsewhere and already started there (a hub that doesn't ask for a seal first): end it there.
         Ok(routed) if routed.answer.is_some() => {
             let end: BrowserCallFrame = serde_json::from_value(json!({
-                "id": "android-elsewhere", "cwd": frame.cwd, "call": { "op": "session_end" },
+                "id": "device-elsewhere", "cwd": frame.cwd, "call": { "op": "session_end" },
             }))
             .expect("a session_end frame");
             let _ = ask(router, &thread, &end, None).await;
@@ -456,6 +470,9 @@ impl SessionHooks for Router {
         if let Some(devices) = &self.devices {
             devices.ended(thread);
         }
+        if let Some(ios) = &self.ios {
+            ios.ended(thread);
+        }
         let Some(broker) = &self.broker else {
             return;
         };
@@ -479,6 +496,9 @@ impl SessionHooks for Router {
     fn item(&self, thread: &str, item: &ThreadItem) {
         if let Some(devices) = &self.devices {
             devices.item(thread, item);
+        }
+        if let Some(ios) = &self.ios {
+            ios.item(thread, item);
         }
         let Some(broker) = &self.broker else {
             return;
@@ -704,7 +724,8 @@ pub async fn host(
                         Err(error) => error_frame(&id, error),
                     }
                 }
-                // Either kind: the dispatch sends an android start to the emulators, the rest to the broker.
+                // Any kind: the dispatch sends an android start to the emulators, an ios one to the simulators, the
+                // rest to the broker.
                 _ => match (&sessions, &broker) {
                     (Some(sessions), _) => sessions.handle(key.clone(), host.frame).await,
                     (None, Some(broker)) => broker.handle(key.clone(), host.frame).await,
@@ -775,6 +796,7 @@ mod tests {
         Arc::new(Router {
             broker,
             devices: None,
+            ios: None,
             relay,
             hub: "http://devbox:4790".into(),
             secrets_for: Arc::new(|_| Ok(Secrets(Vec::new()))),
@@ -809,6 +831,12 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(host_of(&android), SessionHost::Android);
+        let ios: BrowserCallFrame = serde_json::from_value(json!({
+            "id": "1", "cwd": "/w", "threadId": "t1",
+            "call": { "op": "session_start", "purpose": "Settings", "kind": "ios" },
+        }))
+        .unwrap();
+        assert_eq!(host_of(&ios), SessionHost::Ios);
         assert_eq!(host_of(&start()), SessionHost::Browser);
     }
 

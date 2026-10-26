@@ -44,8 +44,8 @@ export const agentOf = (agents: readonly LiveAgent[] | undefined, row: Pick<HubS
   return { laneId: row.taskId, title: "Its agent" };
 };
 
-type RecordedFile = "actions" | "dom" | "video";
-const RECORDED: ReadonlySet<string> = new Set<RecordedFile>(["actions", "dom", "video"]);
+type RecordedFile = "actions" | "dom" | "video" | "video_mp4";
+const RECORDED: ReadonlySet<string> = new Set<RecordedFile>(["actions", "dom", "video", "video_mp4"]);
 const isRecorded = (file: string): file is RecordedFile => RECORDED.has(file);
 
 /** A hub session as the views show it: no frames or steps until its recording is read. */
@@ -345,7 +345,9 @@ export function useRecording(session: BrowserSession): { readonly data?: Recordi
       };
       const text = async (file: RecordedFile) => (files?.includes(file) === true ? new TextDecoder().decode(await read(file)) : "");
       const [actions, doms] = await Promise.all([text("actions"), text("dom")]);
-      const video = files?.includes("video") === true ? new Blob([await read("video")], { type: "video/webm" }) : undefined;
+      // A browser's or an Android emulator's video is WebM; an iOS simulator's is simctl's own MP4.
+      const [file, type] = files?.includes("video_mp4") === true ? (["video_mp4", "video/mp4"] as const) : (["video", "video/webm"] as const);
+      const video = files?.includes(file) === true ? new Blob([await read(file)], { type }) : undefined;
       return { actions: stepsOf(jsonLines<HubAction>(actions), jsonLines<HubDom>(doms)), ...(video === undefined ? {} : { video }) };
     },
   });

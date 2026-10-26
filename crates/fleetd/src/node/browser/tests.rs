@@ -1217,6 +1217,7 @@ fn bridge(rig: &Rig) {
     let router = Arc::new(crate::node::device::Router {
         browser: Some(rig.broker.clone()),
         devices: None,
+        ios: None,
         live: Default::default(),
     });
     let slot = frames.clone();

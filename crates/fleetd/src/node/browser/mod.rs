@@ -568,6 +568,7 @@ impl Broker {
             session_id: session.id.clone(),
             cdp: Some(Text::unchecked(cdp)),
             serial: None,
+            udid: None,
             start_ms: started.elapsed().as_millis() as u64,
         }))
     }

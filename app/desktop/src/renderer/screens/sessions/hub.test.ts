@@ -65,6 +65,8 @@ describe("a hub session as the views show it", () => {
     );
     expect(view).toMatchObject({ state: "ended", recording: { durationMs: 161_000, files: ["actions", "video"] }, credentialsFilled: 1, note: "no video" });
     expect(fromHub(row(), { laneId: "T3", title: "x" }).recording).toBeUndefined();
+    const ios = fromHub(row({ state: "recorded", endedAt: "2026-10-19T10:02:41.000Z", files: [{ file: "video_mp4", bytes: 2000 }] }), { laneId: "T3", title: "x" });
+    expect(ios.recording?.files).toEqual(["video_mp4"]);
     expect(fromHub(row({ takeoverReason: "a code" }), { laneId: "T3", title: "x" }).handoff?.reason).toBe("a code");
   });
 });

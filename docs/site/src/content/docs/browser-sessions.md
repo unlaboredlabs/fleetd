@@ -1,6 +1,6 @@
 ---
 title: Browser sessions
-description: Agents open a fresh Chrome or Android emulator of their own, drive it with agent-browser or agent-device, and leave a recording on the hub.
+description: Agents open a fresh Chrome, Android emulator or iOS simulator of their own, drive it with agent-browser or agent-device, and leave a recording on the hub.
 ---
 
 An agent that needs a web page (to check a signup form on staging, read a dashboard, reproduce a bug) opens a browser
@@ -221,3 +221,47 @@ Settings go under `device` in [node.json](/docs/config-and-files#node-json):
 | `enabled` | `true` opts this machine in: the first Android session installs the emulator. `false` turns Android sessions off. Absent: on only where they are installed already; nothing is installed. |
 | `pool` | Emulators kept booted for the next sessions. Absent: 1. Each takes about 2 GB of memory. |
 | `idleMinutes` | End a session after this many minutes without an `agent-device` command. Absent: 30. |
+
+## iOS sessions {#ios}
+
+On a Mac with Xcode, an agent opens an iOS session with **`session_start`** and `kind` `ios`. It gets a fresh iOS
+simulator and drives it with [agent-device](https://github.com/callstack/agent-device), as in an Android session
+(`agent-device open com.apple.Preferences`, `snapshot -i`, `press @e3 --settle`). agent-device is already pointed at
+the session's simulator by its udid. Only agent-device is told about the node's simulators: an agent's own `xcrun
+simctl` and Xcode stay as they were. The session tools, the one-session-at-a-time rule, the action log and the hub's
+storage work as for a browser session.
+
+- **A fresh simulator per session.** The node keeps its simulators in a device set of its own
+  (`~/.fleetd/node/device/ios/set`), apart from the ones in Xcode. It makes one golden simulator there: the newest iOS
+  runtime on a plain iPhone. It boots the golden once, waits for its first-boot work to settle, has agent-device build
+  its XCTest runner for it, and shuts it down. Each session gets a clone of the golden (`simctl clone`), which is
+  deleted at `session_end` along with everything done in it.
+- **Starts from a warm pool.** The node keeps one clone booted for the next session and clones and boots another
+  behind it, so `session_start` doesn't wait for a boot. An agent-device command takes longer the first time in a
+  session, while its runner starts on the clone.
+- **Recorded by the simulator.** The video is `simctl io recordVideo`'s H.264 MP4 (`video_mp4`), at the screen's full
+  size. The action log is the same as an Android session's, and there's no `dom` file.
+- **Live view and takeover.** `simctl` can't stream, so a person watching gets screenshots in a loop, which runs only
+  while someone watches. Their taps, drags, scrolls and typing go through agent-device, one command at a time.
+
+### On each Mac {#ios-setup}
+
+iOS sessions need macOS with Xcode, an iOS simulator runtime (Xcode > Settings > Components, or
+`xcodebuild -downloadPlatform iOS`), and Node.js 22.12 or later for agent-device. The doctor's `ios` check shows on
+every Mac with Xcode. It fails with the fix when something is missing (`sudo xcode-select --switch
+/Applications/Xcode.app` when only the command line tools are selected). A Mac lists `session_ios` to the hub only once
+its golden simulator is made.
+
+Nothing is made until a person opts a Mac in with `"ios": {"enabled": true}` in its node.json. The node then installs
+agent-device 0.21.31 (the same pin Android sessions use) and makes the golden. That takes minutes: the boot that
+settles, and an `xcodebuild` of agent-device's runner. Until it's done, `session_start` says the Mac is still making
+it. The node deletes clones that a stopped node left behind each time it starts.
+
+Settings go under `ios` in [node.json](/docs/config-and-files#node-json):
+
+| Key | Means |
+|---|---|
+| `enabled` | `true` opts this Mac in: the node makes its golden simulator and keeps clones booted. `false` turns iOS sessions off. Absent: on only where the golden is made already. |
+| `pool` | Clones kept booted for the next sessions. Absent: 1. Each takes 1–2 GB of memory. |
+| `idleMinutes` | End a session after this many minutes without an `agent-device` command. Absent: 30. |
+| `deviceType` | The simulator's device type by name, such as `iPhone 17 Pro`. Absent: the newest plain iPhone of the newest iOS runtime. A change takes effect when the golden is made again (delete `device/ios/golden.json`). |

@@ -37,6 +37,7 @@ Where fleetd keeps everything, and the settings you can change. The [hub](/docs/
     browser/             browser sessions: the pinned Chrome, ffmpeg and agent-browser, and recordings not yet on the hub
     previews/<project>/  up to 3 worktrees for previews of the project's PRs, each kept as the next preview's build cache
     device/              Android sessions: the pinned SDK, emulator, snapshot and agent-device, and recordings not yet on the hub
+      ios/               iOS sessions: the node's simulator set, its golden, agent-device's runner, and recordings not yet on the hub
   claude.env             optional extra environment for every claude fleetd starts
   logs/node.log          the node service's log
 ```
@@ -80,6 +81,7 @@ after you change it.
 | `browser` | How this machine runs [browser sessions](/docs/browser-sessions#setup): `enabled`, `chrome`, `ffmpeg`, `pool`, `sandbox`, `idleMinutes`. |
 | `preview` | Previews of PRs someone asked to try: `enabled` (`false`: this machine runs none) and `slots`, the previews of one project at once, each in a worktree of its own (default 3). |
 | `device` | How this machine runs [Android sessions](/docs/browser-sessions#android-setup): `enabled`, `pool`, `idleMinutes`. |
+| `ios` | How this Mac runs [iOS sessions](/docs/browser-sessions#ios-setup): `enabled`, `pool`, `idleMinutes`, `deviceType`. |
 
 ## The Claude login {#claude}
 
@@ -104,6 +106,7 @@ fleetd adds its own settings on top of yours, per session:
 | A `--settings` overlay | Pins claude's version, turns claude's auto memory and its own subagents off ([why](/docs/what-agents-are-told#no-subagents)), and denies tools agents never get: plan mode, worktrees, cron. |
 | agent-browser on `PATH`, its `AGENT_BROWSER_*` variables and its skill | A lead's and a task's [browser session](/docs/browser-sessions#use). |
 | agent-device on `PATH` (it alone: the node's SDK and adb stay inside it), its `AGENT_DEVICE_*` variables and its skill, on a machine with Android sessions | A lead's and a task's [Android session](/docs/browser-sessions#android). |
+| agent-device on `PATH` (it alone: the node's simulator set and runner stay inside it), its `AGENT_DEVICE_*` variables and its skill, on a Mac with iOS sessions | A lead's and a task's [iOS session](/docs/browser-sessions#ios). |
 
 ### A dedicated claude profile {#claude-profile}
 

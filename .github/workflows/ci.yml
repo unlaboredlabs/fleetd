@@ -274,6 +274,57 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         run: cargo test --locked -p fleetd --lib node::power
 
+  ios-sessions:
+    # node/device/ios on a real iOS simulator: the probes its design rests on (simctl clone needs its source shut down,
+    # boot times, the live view's screenshot loop, recordVideo's MP4; idb's stream where idb is installed, which the
+    # runner's Homebrew refuses: facebook/fb is an untrusted tap), then a session end to end
+    # with the hub in process. Only where rust-macos runs, and only when node/device or this workflow changed: making
+    # the golden simulator (a settling boot and an xcodebuild of agent-device's runner) takes minutes.
+    name: ios sessions
+    if: >-
+      github.event_name != 'pull_request' || endsWith(github.head_ref, 'train/batch')
+      || contains(github.event.pull_request.labels.*.name, 'fleetd:next')
+      || contains(github.event.pull_request.labels.*.name, 'macos')
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: ${{ github.event_name == 'workflow_dispatch' && '0' || '2' }}
+      - name: Scope
+        id: scope
+        run: |
+          run=true
+          base=$(git rev-parse -q --verify HEAD^1 || true)
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$GITHUB_REF" != refs/heads/main ]; then
+            base=$(git merge-base origin/main HEAD || true)
+          fi
+          if [ -n "$base" ] &&
+            git diff --quiet "$base" HEAD -- crates/fleetd/src/node/device .github/workflows/ci.yml; then
+            run=false
+            echo "node/device didn't change."
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+      - if: steps.scope.outputs.run == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - if: steps.scope.outputs.run == 'true'
+        uses: dtolnay/rust-toolchain@stable
+      - if: steps.scope.outputs.run == 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # The probe first, on a quiet machine; then the rest, the session end to end among them.
+      - name: What iOS sessions rest on, measured
+        if: steps.scope.outputs.run == 'true'
+        run: cargo test --locked -p fleetd --lib node::device::ios::tests::probes -- --nocapture
+      - name: iOS sessions on a simulator
+        if: steps.scope.outputs.run == 'true'
+        run: cargo test --locked -p fleetd --lib node::device::ios -- --nocapture --test-threads=1 --skip probes
+        env:
+          FLEETD_TEST_IOS_HOME: ${{ runner.temp }}/fleetd-test-ios
+
   darwin-deps:
     # The release cross-builds the darwin fleetd binaries on Linux, which breaks on any crate that links a macOS
     # framework. Catch one here, before it lands on main.

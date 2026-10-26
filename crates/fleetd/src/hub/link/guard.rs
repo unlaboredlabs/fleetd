@@ -87,6 +87,7 @@ pub(crate) mod tests {
                 min_free_bytes: Count::unchecked(100_000_000_000),
             }),
             android: None,
+            ios: None,
         }
     }
 

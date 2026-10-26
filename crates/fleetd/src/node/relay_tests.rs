@@ -319,6 +319,7 @@ async fn an_agent_on_one_node_drives_a_browser_on_another_through_the_hub() {
     let router = Arc::new(Router {
         broker: Some(devbox.clone()),
         devices: None,
+        ios: None,
         relay,
         hub: url.clone(),
         secrets_for: Arc::new(|_| Ok(Secrets(secrets()))),

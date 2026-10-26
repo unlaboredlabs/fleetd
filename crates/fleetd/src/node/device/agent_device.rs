@@ -38,7 +38,8 @@ pub fn bin_dir(home: &Path) -> PathBuf {
     install_dir(home).join("bin")
 }
 
-fn entry(home: &Path) -> PathBuf {
+/// The pinned package's CLI, which the wrappers run.
+pub fn entry(home: &Path) -> PathBuf {
     install_dir(home).join("node_modules/agent-device/bin/agent-device.mjs")
 }
 

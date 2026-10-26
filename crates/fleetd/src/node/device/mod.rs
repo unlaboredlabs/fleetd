@@ -9,6 +9,7 @@
 //! messages to call.
 pub mod agent_device;
 pub mod emulator;
+pub mod ios;
 pub mod live;
 pub mod scrcpy;
 pub mod sdk;
@@ -470,6 +471,7 @@ impl Devices {
             session_id: session.id.clone(),
             cdp: None,
             serial: Some(Text::unchecked(serial)),
+            udid: None,
             start_ms: started.elapsed().as_millis() as u64,
         }))
     }
@@ -719,12 +721,13 @@ async fn housekeeping(devices: std::sync::Weak<Devices>) {
     }
 }
 
-/// The node's session tools, for both kinds: each call goes to the browser broker or to the android sessions, and an
-/// agent session holds one session of either kind at a time.
+/// The node's session tools, for every kind: each call goes to the browser broker, the android sessions or the iOS
+/// sessions, and an agent session holds one session of any kind at a time.
 pub struct Router {
     pub browser: Option<Arc<Broker>>,
     pub devices: Option<Arc<Devices>>,
-    /// Android sessions' live view (live.rs).
+    pub ios: Option<Arc<ios::Simulators>>,
+    /// Android and iOS sessions' live view (live.rs).
     pub live: live::DeviceLive,
 }
 
@@ -738,36 +741,55 @@ impl Router {
         })
     }
 
-    /// Whether the agent session has a session of either kind live here.
+    /// Whether the agent session has a session of any kind live here.
     pub fn live(&self, thread: &str) -> bool {
-        self.device_live(thread).is_some()
-            || self
-                .browser
-                .as_ref()
-                .is_some_and(|b| b.live(thread).is_some())
+        self.open(thread).is_some()
     }
 
     fn device_live(&self, thread: &str) -> Option<Arc<Session>> {
         self.devices.as_ref().and_then(|d| d.live(thread))
     }
 
+    /// The kind and id of the agent session's open session, if it has one.
+    fn open(&self, thread: &str) -> Option<(SessionKind, String)> {
+        let browser = self.browser.as_ref().and_then(|b| b.live(thread));
+        let ios = self.ios.as_ref().and_then(|i| i.live(thread));
+        browser
+            .map(|s| (SessionKind::Browser, s.id.to_string()))
+            .or_else(|| {
+                self.device_live(thread)
+                    .map(|s| (SessionKind::Android, s.id.to_string()))
+            })
+            .or_else(|| ios.map(|s| (SessionKind::Ios, s.id.to_string())))
+    }
+
     pub async fn handle(&self, thread: String, frame: BrowserCallFrame) -> BrowserResultFrame {
-        let android = match &frame.call {
-            BrowserCall::SessionStart(call) => call.kind == Some(SessionKind::Android),
-            _ => self.device_live(&thread).is_some(),
+        let open = self.open(&thread);
+        let kind = match &frame.call {
+            BrowserCall::SessionStart(call) => call.kind.unwrap_or_default(),
+            _ => open
+                .as_ref()
+                .map_or(SessionKind::Browser, |(kind, _)| *kind),
         };
-        if !android {
-            if let BrowserCall::SessionStart(_) = &frame.call
-                && let Some(open) = self.device_live(&thread)
-            {
-                let error = refuse(
-                    ErrorCode::Invalid,
-                    format!("Android session {} is open.", open.id),
-                    "end it with session_end before starting a browser session",
-                );
-                return result_frame(&frame, Err(error));
-            }
-            return match &self.browser {
+        if let BrowserCall::SessionStart(_) = &frame.call
+            && let Some((other, id)) = open.filter(|(other, _)| *other != kind)
+        {
+            let error = refuse(
+                ErrorCode::Invalid,
+                format!("{} session {id} is open.", noun(other)),
+                &format!(
+                    "end it with session_end before starting {} session",
+                    match kind {
+                        SessionKind::Browser => "a browser",
+                        SessionKind::Android => "an Android",
+                        SessionKind::Ios => "an iOS",
+                    }
+                ),
+            );
+            return result_frame(&frame, Err(error));
+        }
+        match kind {
+            SessionKind::Browser => match &self.browser {
                 Some(broker) => broker.handle(thread, frame).await,
                 None => result_frame(
                     &frame,
@@ -777,8 +799,13 @@ impl Router {
                         "do without a browser and say so in your result",
                     )),
                 ),
-            };
+            },
+            SessionKind::Android => self.android(thread, frame).await,
+            SessionKind::Ios => self.ios(thread, frame).await,
         }
+    }
+
+    async fn android(&self, thread: String, frame: BrowserCallFrame) -> BrowserResultFrame {
         let Some(devices) = &self.devices else {
             return result_frame(
                 &frame,
@@ -791,17 +818,9 @@ impl Router {
         };
         let outcome = match &frame.call {
             BrowserCall::SessionStart(call) => {
-                if let Some(open) = self.browser.as_ref().and_then(|b| b.live(&thread)) {
-                    Err(refuse(
-                        ErrorCode::Invalid,
-                        format!("Browser session {} is open.", open.id),
-                        "end it with session_end before starting an Android session",
-                    ))
-                } else {
-                    devices
-                        .session_start(thread, frame.cwd.to_string(), call.purpose.to_string())
-                        .await
-                }
+                devices
+                    .session_start(thread, frame.cwd.to_string(), call.purpose.to_string())
+                    .await
             }
             BrowserCall::SessionEnd(_) => devices.session_end(&thread).await,
             BrowserCall::FillCredential(_) | BrowserCall::RequestTakeover(_) => Err(refuse(
@@ -816,6 +835,33 @@ impl Router {
         result_frame(&frame, outcome)
     }
 
+    async fn ios(&self, thread: String, frame: BrowserCallFrame) -> BrowserResultFrame {
+        let Some(simulators) = &self.ios else {
+            return result_frame(
+                &frame,
+                Err(refuse(
+                    ErrorCode::Failed,
+                    "This machine hosts no iOS sessions: they need a Mac with Xcode.",
+                    "say so in your result",
+                )),
+            );
+        };
+        let outcome = match &frame.call {
+            BrowserCall::SessionStart(call) => {
+                simulators
+                    .session_start(thread, frame.cwd.to_string(), call.purpose.to_string())
+                    .await
+            }
+            BrowserCall::SessionEnd(_) => simulators.session_end(&thread).await,
+            BrowserCall::FillCredential(_) | BrowserCall::RequestTakeover(_) => Err(refuse(
+                ErrorCode::Invalid,
+                format!("{} is not available in iOS sessions yet.", frame.call.op()),
+                "do without it and say so in your result",
+            )),
+        };
+        result_frame(&frame, outcome)
+    }
+
     pub async fn shutdown(&self) {
         if let Some(broker) = &self.browser {
             broker.shutdown().await;
@@ -823,6 +869,18 @@ impl Router {
         if let Some(devices) = &self.devices {
             devices.shutdown().await;
         }
+        if let Some(ios) = &self.ios {
+            ios.shutdown().await;
+        }
+    }
+}
+
+/// A session kind as a sentence starts it: "Browser session B... is open."
+fn noun(kind: SessionKind) -> &'static str {
+    match kind {
+        SessionKind::Browser => "Browser",
+        SessionKind::Android => "Android",
+        SessionKind::Ios => "iOS",
     }
 }
 
@@ -839,7 +897,8 @@ fn result_frame(
 }
 
 impl SessionHooks for Router {
-    /// agent-browser's environment, then agent-device's, each first on the PATH it was given.
+    /// agent-browser's environment, then agent-device's (android's or iOS's wrapper), each first on the PATH it was
+    /// given.
     fn env(&self, thread: &str, path: Option<&str>) -> Vec<(String, String)> {
         let mut env = self
             .browser
@@ -856,6 +915,16 @@ impl SessionHooks for Router {
             env.retain(|(k, _)| !device.iter().any(|(d, _)| d == k));
             env.extend(device);
         }
+        if let Some(ios) = self.ios.as_ref().filter(|i| i.offered()) {
+            let path = env
+                .iter()
+                .find(|(k, _)| k == "PATH")
+                .map(|(_, v)| v.clone())
+                .or_else(|| path.map(str::to_owned));
+            let device = ios.env(thread, path.as_deref());
+            env.retain(|(k, _)| !device.iter().any(|(d, _)| d == k));
+            env.extend(device);
+        }
         env
     }
 
@@ -868,6 +937,10 @@ impl SessionHooks for Router {
         if let Some(devices) = self.devices.as_ref().filter(|d| d.offered()) {
             dirs.extend(devices.plugin_dirs());
         }
+        if let Some(ios) = self.ios.as_ref().filter(|i| i.offered()) {
+            dirs.extend(ios.plugin_dirs());
+        }
+        dirs.dedup();
         dirs
     }
 
@@ -878,9 +951,12 @@ impl SessionHooks for Router {
         if let Some(devices) = &self.devices {
             devices.item(thread, item);
         }
+        if let Some(ios) = &self.ios {
+            ios.item(thread, item);
+        }
     }
 
-    /// Only browsers fill logins from 1Password; an Android session fills none.
+    /// Only browsers fill logins from 1Password; an Android or iOS session fills none.
     fn filled_since(&self, thread: &str, known: usize) -> Option<crate::node::mask::Secrets> {
         self.browser
             .as_ref()
@@ -893,6 +969,9 @@ impl SessionHooks for Router {
         }
         if let Some(devices) = &self.devices {
             devices.ended(thread);
+        }
+        if let Some(ios) = &self.ios {
+            ios.ended(thread);
         }
     }
 }

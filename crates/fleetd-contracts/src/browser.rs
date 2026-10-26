@@ -29,8 +29,10 @@ brand!(
 
 /// What a session drives: a fresh Chrome with an empty profile (`browser`, driven with agent-browser), or a fresh
 /// `-read-only` copy of an Android emulator booted from its Quick Boot snapshot (`android`, driven with agent-device at
-/// the copy's serial). Both kinds share the session tools, the action log, the video and the hub's storage; an android
-/// recording has no `dom` file. A node hosts android sessions when it lists the `session_android` capability.
+/// the copy's serial), or a fresh clone of an iOS simulator from the node's settled golden device (`ios`, driven with
+/// agent-device at the clone's udid). Every kind shares the session tools, the action log, the video and the hub's
+/// storage; a device recording has no `dom` file, and an iOS one's video is `video_mp4`. A node hosts android sessions
+/// when it lists the `session_android` capability, and iOS ones when it lists `session_ios`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[schemars(extend("x-open" = true))]
@@ -38,6 +40,7 @@ pub enum SessionKind {
     #[default]
     Browser,
     Android,
+    Ios,
 }
 
 impl SessionKind {
@@ -45,6 +48,7 @@ impl SessionKind {
         match self {
             Self::Browser => "browser",
             Self::Android => "android",
+            Self::Ios => "ios",
         }
     }
 }
@@ -114,16 +118,19 @@ pub enum RecordingFile {
     Dom,
     /// `video.webm`: VP9 from the node's own screencast of the page, 1280×800. Absent when the node has no ffmpeg.
     Video,
+    /// `video.mp4`: H.264 from the iOS simulator's own recording (`simctl io recordVideo`), in its screen's pixels.
+    VideoMp4,
 }
 
 impl RecordingFile {
-    pub const ALL: [RecordingFile; 3] = [Self::Actions, Self::Dom, Self::Video];
+    pub const ALL: [RecordingFile; 4] = [Self::Actions, Self::Dom, Self::Video, Self::VideoMp4];
 
     pub fn file_name(self) -> &'static str {
         match self {
             Self::Actions => "actions.jsonl",
             Self::Dom => "dom.jsonl",
             Self::Video => "video.webm",
+            Self::VideoMp4 => "video.mp4",
         }
     }
 
@@ -132,6 +139,7 @@ impl RecordingFile {
             Self::Actions => "actions",
             Self::Dom => "dom",
             Self::Video => "video",
+            Self::VideoMp4 => "video_mp4",
         }
     }
 
@@ -139,6 +147,7 @@ impl RecordingFile {
         match self {
             Self::Actions | Self::Dom => "application/x-ndjson",
             Self::Video => "video/webm",
+            Self::VideoMp4 => "video/mp4",
         }
     }
 }
@@ -370,14 +379,15 @@ impl BrowserCall {
     }
 }
 
-/// `session_start`: a fresh Chrome with an empty profile (or with `kind` android, a fresh Android emulator), for this
-/// agent only, recorded until `session_end`.
+/// `session_start`: a fresh Chrome with an empty profile (or with `kind` android, a fresh Android emulator; `ios`, a
+/// fresh iOS simulator), for this agent only, recorded until `session_end`.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SessionStartCall {
     /// What you need the browser for, in one line; the person replaying it sees it.
     pub purpose: BrowserPurpose,
-    /// `android` for an Android emulator, driven with agent-device; absent for a browser.
+    /// `android` for an Android emulator, `ios` for an iOS simulator, each driven with agent-device; absent for a
+    /// browser.
     pub kind: Option<SessionKind>,
 }
 
@@ -451,6 +461,8 @@ pub struct SessionStarted {
     pub cdp: Option<Text<1, 200>>,
     /// An emulator's adb serial (`emulator-5554`), which the session's agent-device config already names.
     pub serial: Option<Text<1, 100>>,
+    /// A simulator's udid, which the session's agent-device config already names.
+    pub udid: Option<Text<1, 100>>,
     pub start_ms: u64,
 }
 

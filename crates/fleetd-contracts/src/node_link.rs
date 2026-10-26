@@ -104,6 +104,11 @@ pub const CAP_BROWSER: &str = "browser";
 /// installing lists it from its next link; [`NodeLoad::android`] says why a node doesn't.
 pub const CAP_SESSION_ANDROID: &str = "session_android";
 
+/// The node hosts iOS sessions now (`session_start` with kind ios): Xcode's simctl works, an iOS runtime is installed,
+/// and the node's golden simulator, with agent-device's runner built for it, is made. Listed at each link's hello;
+/// [`NodeLoad::ios`] says why a node doesn't.
+pub const CAP_SESSION_IOS: &str = "session_ios";
+
 /// `node_action` `update`: the node updates itself to a build its hub names. A node without it drops the link on
 /// the frame, so the hub asks only nodes that list it.
 pub const CAP_SELF_UPDATE: &str = "self_update";
@@ -177,6 +182,35 @@ pub struct NodeLoad {
     pub hosts: Option<crate::machine_roles::HostChecks>,
     /// Whether the machine can host android sessions; absent where node.json turns them off and from older nodes.
     pub android: Option<AndroidHealth>,
+    /// Whether the machine can host iOS sessions; absent off macOS, where node.json turns them off, on a Mac without
+    /// Xcode that didn't opt in, and from older nodes.
+    pub ios: Option<IosHealth>,
+}
+
+/// Where a node's iOS sessions stand, for the doctor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
+pub enum IosState {
+    /// The golden simulator is made: sessions start.
+    Ready,
+    /// Xcode and an iOS runtime work, but the machine isn't opted in: node.json's `ios.enabled` makes the golden.
+    Wanted,
+    /// Making the golden simulator: one boot left to settle, and agent-device's runner built for it.
+    Preparing,
+    /// Can't run here until a person fixes something (no Xcode, no iOS runtime, no Node.js, or the golden failed).
+    Unavailable,
+}
+
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct IosHealth {
+    pub state: IosState,
+    /// Plain words: the runtime and device sessions use, or what is wrong.
+    pub message: Text<0, 500>,
+    /// The command a person runs to fix it, when there is one.
+    pub fix: Option<Text<0, 500>>,
 }
 
 /// Where a node's android sessions stand, for the doctor.

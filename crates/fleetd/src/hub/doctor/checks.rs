@@ -9,7 +9,7 @@ use std::sync::LazyLock;
 
 use crate::hub::tasks::base;
 use crate::node::runner::{RunnerGuide, guide};
-use fleetd_contracts::node_link::{AndroidHealth, AndroidState, NodeDisk};
+use fleetd_contracts::node_link::{AndroidHealth, AndroidState, IosHealth, IosState, NodeDisk};
 use fleetd_contracts::sessions::{BaseErrorKind, LoginStatus, RunnerInfo, WorktreeBase};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -823,6 +823,29 @@ pub fn android_sessions(
     ))
 }
 
+/// Whether the Mac can host iOS sessions (Xcode, an iOS runtime, simctl, the golden simulator), from its heartbeat;
+/// None where they are off (or the machine is offline, or its node is older).
+pub fn ios_sessions(machine_id: &str, offline: bool, health: Option<&IosHealth>) -> Option<Entry> {
+    let health = health.filter(|_| !offline)?;
+    let status = match health.state {
+        IosState::Ready | IosState::Wanted | IosState::Preparing => Pass,
+        IosState::Unavailable => Fail,
+    };
+    let fix = health.fix.as_ref().map(|command| {
+        manual(
+            &format!("On {machine_id}, then restart its node"),
+            Some(command.to_string()),
+        )
+    });
+    Some(machine_entry(
+        machine_id,
+        "ios",
+        status,
+        health.message.as_str(),
+        fix,
+    ))
+}
+
 /// Whether git could fetch each project's remote at the last worktree started there. None until one has started.
 pub fn git_fetch(machine_id: &str, bases: &[(String, WorktreeBase)], now: &str) -> Option<Entry> {
     if bases.is_empty() {
@@ -1046,6 +1069,30 @@ mod tests {
             android_sessions("devbox", false, None).is_none(),
             "off there"
         );
+    }
+
+    #[test]
+    fn ios_sessions_fail_with_the_fix_a_person_runs() {
+        let health = |state, fix: Option<&str>| IosHealth {
+            state,
+            message: fleetd_contracts::prim::Text::unchecked("Xcode has no iOS simulator runtime."),
+            fix: fix.map(fleetd_contracts::prim::Text::unchecked),
+        };
+        let broken = health(
+            IosState::Unavailable,
+            Some("xcodebuild -downloadPlatform iOS"),
+        );
+        let entry = ios_sessions("mac", false, Some(&broken)).unwrap();
+        assert_eq!(entry.check.id, "mac/ios");
+        assert_eq!(entry.check.status, Fail);
+        assert_eq!(
+            entry.check.fix.unwrap().command.as_deref(),
+            Some("xcodebuild -downloadPlatform iOS")
+        );
+        let ready = ios_sessions("mac", false, Some(&health(IosState::Ready, None))).unwrap();
+        assert_eq!((ready.check.status, ready.check.fix), (Pass, None));
+        assert!(ios_sessions("mac", true, Some(&health(IosState::Ready, None))).is_none());
+        assert!(ios_sessions("mac", false, None).is_none());
     }
 
     #[test]

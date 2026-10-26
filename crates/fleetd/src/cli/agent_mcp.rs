@@ -365,7 +365,7 @@ static TOOLS: &[Tool] = &[
          Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no \
          browser of your own. purpose: one line on what for. kind android instead opens a fresh Android emulator \
          (Android 15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or \
-         --platform.",
+         --platform. kind ios opens a fresh iOS simulator on a Mac the same way: pass no --udid or --platform.",
         inline_schema::<SessionStartCall>,
     ),
     browser(
@@ -442,6 +442,14 @@ pub fn call_of(role: Role, name: &str, arguments: Value) -> Result<Value, String
 pub fn browser_result(answer: &Value) -> Value {
     let result = &answer["result"];
     let text = match result["op"].as_str() {
+        Some("session_start") if result["udid"].is_string() => format!(
+            "iOS session {} is open ({} ms): a fresh iOS simulator, thrown away at session_end, recorded. Drive it \
+             with agent-device in Bash; it is already pointed at this simulator, so pass no --udid or --platform. \
+             Start with `agent-device open <app>` (`agent-device open com.apple.Preferences` for Settings); its \
+             first command takes longer while its test runner starts. End it with session_end when done.",
+            result["sessionId"].as_str().unwrap_or_default(),
+            result["startMs"]
+        ),
         Some("session_start") if result["serial"].is_string() => format!(
             "Android session {} is open ({} ms): a fresh Android emulator, thrown away at session_end, recorded. \
              Drive it with agent-device in Bash; it is already pointed at this emulator, so pass no --serial or \
@@ -450,10 +458,19 @@ pub fn browser_result(answer: &Value) -> Value {
             result["sessionId"].as_str().unwrap_or_default(),
             result["startMs"]
         ),
-        Some("session_end") if result["kind"] == "android" => format!(
-            "Android session {} ended; the emulator and everything done in it are gone. Its recording ({}) goes to \
-             the hub.{}",
+        Some("session_end") if result["kind"] == "android" || result["kind"] == "ios" => format!(
+            "{} session {} ended; the {} and everything done in it are gone. Its recording ({}) goes to the hub.{}",
+            if result["kind"] == "ios" {
+                "iOS"
+            } else {
+                "Android"
+            },
             result["sessionId"].as_str().unwrap_or_default(),
+            if result["kind"] == "ios" {
+                "simulator"
+            } else {
+                "emulator"
+            },
             result["files"]
                 .as_array()
                 .into_iter()
@@ -785,6 +802,33 @@ mod tests {
             checklist.contains("text is a short plain outcome")
                 && checklist.contains("never a status, id or PR number"),
             "{checklist}"
+        );
+    }
+
+    #[test]
+    fn an_ios_session_tells_the_agent_to_drive_it_with_agent_device() {
+        let said = |result: Value| {
+            browser_result(&json!({ "id": "1", "result": result }))["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        };
+        let started = said(json!({
+            "op": "session_start", "sessionId": "B1", "udid": "8A1B2C3D-0000-4000-8000-000000000002", "startMs": 40,
+        }));
+        assert!(
+            started.starts_with("iOS session B1 is open (40 ms)")
+                && started.contains("pass no --udid"),
+            "{started}"
+        );
+        let ended = said(json!({
+            "op": "session_end", "sessionId": "B1", "kind": "ios",
+            "files": [{ "file": "actions", "bytes": 10 }, { "file": "video_mp4", "bytes": 900 }],
+        }));
+        assert_eq!(
+            ended,
+            "iOS session B1 ended; the simulator and everything done in it are gone. Its recording (actions, \
+             video_mp4) goes to the hub."
         );
     }
 
