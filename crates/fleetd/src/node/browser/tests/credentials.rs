@@ -857,7 +857,8 @@ async fn a_filled_field_cant_be_tested_against_guesses_with_validation_and_inval
 }
 
 /// A filled field stays in its own form: it can't be tied to another form by its `form` attribute, nor moved into
-/// one, by agent-browser's own script shape, by script or by DOM command; that form would send it to its own address.
+/// one, nor can its form be made to send another way (`method`, `target`, `enctype`), by agent-browser's own script
+/// shape, by script or by DOM command; another form would send it to its own address.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_filled_field_cant_be_moved_to_a_form_that_sends_elsewhere() {
     let Some(rig) = rig_with(vec![(TOKEN_ENV.into(), TOKEN.into())]).await else {
@@ -908,6 +909,12 @@ async fn a_filled_field_cant_be_moved_to_a_form_that_sends_elsewhere() {
          if (el) { el.setAttribute('form', 'away'); return false; } return false; })()",
         "(() => { const el = document.querySelector('#go'); \
          if (el) { el.setAttribute('formaction', 'http://127.0.0.1:9/steal'); return false; } return false; })()",
+        "(() => { const el = document.querySelector('form'); \
+         if (el) { el.setAttribute('method', 'get'); return false; } return false; })()",
+        "(() => { const el = document.querySelector('form'); \
+         if (el) { el.setAttribute('target', 'away'); return false; } return false; })()",
+        "(() => { const el = document.querySelector('form'); \
+         if (el) { el.setAttribute('enctype', 'text/plain'); return false; } return false; })()",
         "document.querySelector('#away').appendChild(document.querySelector('#pw'))",
         "document.querySelector('#away').append(document.querySelector('form'))",
     ] {
@@ -931,6 +938,18 @@ async fn a_filled_field_cant_be_moved_to_a_form_that_sends_elsewhere() {
             "DOM.setAttributesAsText",
             json!({ "nodeId": user, "text": "form=away" }),
         ),
+        (
+            "DOM.setAttributeValue",
+            json!({ "nodeId": login, "name": "method", "value": "get" }),
+        ),
+        (
+            "DOM.setAttributeValue",
+            json!({ "nodeId": login, "name": "target", "value": "away" }),
+        ),
+        (
+            "DOM.setAttributeValue",
+            json!({ "nodeId": login, "name": "enctype", "value": "text/plain" }),
+        ),
         ("DOM.moveTo", json!({ "nodeId": pw, "targetNodeId": away })),
         (
             "DOM.moveTo",
@@ -942,6 +961,15 @@ async fn a_filled_field_cant_be_moved_to_a_form_that_sends_elsewhere() {
         assert!(refused(&answer), "{method}: {answer}");
         heard.push_str(&answer.to_string());
     }
+    // The login form still sends as it did.
+    let form = driver
+        .ok(Some(&page), "DOM.getAttributes", json!({ "nodeId": login }))
+        .await;
+    assert_eq!(
+        form["attributes"],
+        json!(["method", "post", "action", "/login"]),
+        "{form}"
+    );
     // The field is still in its own form, and the other form takes nothing of it.
     let attributes = driver
         .ok(Some(&page), "DOM.getAttributes", json!({ "nodeId": pw }))

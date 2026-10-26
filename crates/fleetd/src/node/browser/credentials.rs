@@ -691,6 +691,29 @@ mod tests {
                 json!({ "name": "formaction", "value": "https://evil.test/" }),
                 "DOM.setAttributeValue formaction is off",
             ),
+            (
+                "DOM.setAttributeValue",
+                json!({ "name": "method", "value": "get" }),
+                "DOM.setAttributeValue method is off",
+            ),
+            (
+                "DOM.setAttributeValue",
+                json!({ "name": "target", "value": "_blank" }),
+                "DOM.setAttributeValue target is off",
+            ),
+            (
+                "DOM.removeAttribute",
+                json!({ "name": "enctype" }),
+                "DOM.removeAttribute enctype is off",
+            ),
+            (
+                "Runtime.evaluate",
+                script(
+                    "(() => { const el = document.querySelector('form'); \
+                     if (el) { el.setAttribute('method', 'get'); return false; } return false; })()",
+                ),
+                "it changes the method attribute",
+            ),
             ("DOM.performSearch", json!({}), "DOM.performSearch is off"),
             ("CSS.addRule", json!({}), "CSS.addRule is off"),
             (
