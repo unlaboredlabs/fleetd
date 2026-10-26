@@ -147,7 +147,7 @@ async fn live_on_devbox(hub: &Hub, thread: &str, id: &str) {
     handler.handle(task_caller(), call).await.unwrap();
 }
 
-/// Placing sessions on other machines turned on, as the relay will, and devbox's node linked to hear of them.
+/// Placing sessions on other machines turned on, and devbox's node linked to hear of them.
 fn remote(hub: &Arc<Hub>) -> crate::hub::link::commands::AttachedLink {
     hub.db.transaction(|c| super::set_remote(c, true)).unwrap();
     let (tx, rx) = mpsc::unbounded_channel::<HubToNode>();
@@ -229,6 +229,20 @@ async fn a_session_its_machine_cannot_host_goes_to_one_that_can_and_its_calls_fo
     assert_eq!(routed.runner, mid("mac1"));
     let answer = routed.answer.unwrap();
     assert!(answer.error.is_none(), "{answer:?}");
+    // The agent's node gets the session's relay token; the hub keeps only its hash.
+    let token = routed.relay.expect("a relay token").to_string();
+    let stored: Option<String> = hub
+        .db
+        .with(|c| {
+            Ok(c.query_row(
+                "SELECT relay_hash FROM session_places WHERE hosted = 1",
+                [],
+                |r| r.get(0),
+            )?)
+        })
+        .unwrap();
+    assert_eq!(stored, Some(super::relay::hash(&token)));
+    assert_ne!(stored.as_deref(), Some(token.as_str()));
     let (key, op) = seen.recv().await.unwrap();
     assert_eq!(op, "session_start");
     assert!(key.starts_with('H'), "{key}");
@@ -644,8 +658,10 @@ async fn the_runner_reports_a_hosted_session_in_the_agents_name_and_no_one_else_
 }
 
 #[tokio::test]
-async fn until_the_relay_a_session_runs_only_on_its_agents_machine() {
+async fn by_default_a_session_runs_only_on_its_agents_machine() {
     let (hub, _home) = hub();
+    // Off until the runner can scrub a hosted session with its agent's secrets.
+    assert!(!hub.db.with(super::remote_on).unwrap());
     let (_link, _seen) = mac1_node(&hub);
     // mac1 could host an iOS simulator, but sessions stay on their agent's machine: a plain refusal instead.
     let ios = route(&hub, "th-1", SessionHost::Ios, start())
@@ -783,7 +799,7 @@ async fn a_hosted_session_that_reports_before_its_start_returns_counts_once() {
     };
     assert_eq!((count("devbox"), count("mac1")), (0, 1));
     hub.db
-        .transaction(|c| super::set_session(c, &place.key, SESSION))
+        .transaction(|c| super::set_session(c, &place.key, SESSION, &super::relay::hash("t")))
         .unwrap();
     assert_eq!((count("devbox"), count("mac1")), (0, 1));
 }

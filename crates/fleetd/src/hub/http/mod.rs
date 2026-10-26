@@ -1,4 +1,4 @@
-//! The hub's HTTP server: /healthz, /mcp, /app, /pair, /node/link and automations' /hooks on one port, loopback by
+//! The hub's HTTP server: /healthz, /mcp, /app, /pair, /node/link, session relays and automations' /hooks on one port, loopback by
 //! default.
 use crate::hub::api::{Hub, Registry};
 use crate::hub::{app_ws, mcp, pair};
@@ -37,6 +37,7 @@ pub fn router(hub: Arc<Hub>, tools: Arc<Registry>) -> Router {
         .route("/app", get(app_route))
         .route("/pair", post(pair_route))
         .route("/node/link", get(node_link_route))
+        .route("/relay/{token}", get(relay_route))
         .route("/hooks/{automation_id}/{secret}", post(hook_route))
         .with_state(Server {
             hub,
@@ -111,6 +112,17 @@ async fn app_route(
         return expect_upgrade();
     };
     upgrade.on_upgrade(move |socket| app_ws::handle(server.hub, server.tools, socket))
+}
+
+async fn relay_route(
+    State(server): State<Server>,
+    Path(token): Path<String>,
+    upgrade: Result<WebSocketUpgrade, WebSocketUpgradeRejection>,
+) -> Response {
+    let Ok(upgrade) = upgrade else {
+        return expect_upgrade();
+    };
+    crate::hub::machine_roles::relay::route(server.hub, token, upgrade).await
 }
 
 async fn node_link_route(

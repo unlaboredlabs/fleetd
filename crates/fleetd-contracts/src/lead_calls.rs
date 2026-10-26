@@ -312,6 +312,7 @@ pub enum LeadCall {
     PreviewSuggest(crate::preview::PreviewSuggestCall),
     PreviewConfigPropose(crate::preview::PreviewConfigProposeCall),
     PreviewStart(crate::preview::PreviewStartCall),
+    SessionStep(crate::machine_roles::SessionStepCall),
 }
 
 /// The call's `op` tag, as on the wire.
@@ -498,6 +499,7 @@ pub enum LeadCallResult {
     PreviewSuggest(crate::preview::PreviewSuggestResult),
     PreviewConfigPropose(RequestResult),
     PreviewStart(crate::preview::PreviewStartResult),
+    SessionStep(crate::machine_roles::SessionStepResult),
 }
 
 /// CLI -> node on the local socket, and node -> hub on the link.

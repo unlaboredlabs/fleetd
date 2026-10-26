@@ -93,6 +93,7 @@ fn reject(status: u16, text: &str) -> ErrorResponse {
 #[allow(clippy::result_large_err)]
 async fn serve(tcp: tokio::net::TcpStream, proxy: Weak<Proxy>, broker: Weak<Broker>) {
     let mut found: Option<Arc<Session>> = None;
+    let mut remote: Option<String> = None;
     let config = WebSocketConfig::default()
         .max_frame_size(Some(MAX_MESSAGE))
         .max_message_size(Some(MAX_MESSAGE));
@@ -102,17 +103,26 @@ async fn serve(tcp: tokio::net::TcpStream, proxy: Weak<Proxy>, broker: Weak<Brok
             .upgrade()
             .and_then(|p| p.thread_of(token))
             .ok_or_else(|| reject(403, "not a fleetd browser session"))?;
-        let session = broker
-            .upgrade()
-            .and_then(|b| b.live(&thread))
-            .ok_or_else(|| reject(409, "No browser session is open: call session_start first."))?;
-        found = Some(session);
+        let broker = broker.upgrade();
+        match broker.as_ref().and_then(|b| b.live(&thread)) {
+            Some(session) => found = Some(session),
+            // On another machine: the hub's relay carries the driver there, frame for frame.
+            None => {
+                remote = Some(broker.and_then(|b| b.remote(&thread)).ok_or_else(|| {
+                    reject(409, "No browser session is open: call session_start first.")
+                })?);
+            }
+        }
         Ok(response)
     };
     let Ok(ws) = tokio_tungstenite::accept_hdr_async_with_config(tcp, pick, Some(config)).await
     else {
         return;
     };
+    if let Some(relay) = remote {
+        crate::node::relay::to_hub(ws, &relay).await;
+        return;
+    }
     let Some(session) = found else {
         return;
     };

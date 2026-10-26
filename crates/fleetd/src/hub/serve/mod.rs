@@ -414,6 +414,7 @@ pub fn build_on_with(
         work,
         metrics: crate::hub::metrics::Metrics::new(hosts),
         updates,
+        relays: Arc::default(),
     });
     hub.updates
         .set_ports(Arc::new(crate::hub::update::ports::HubPorts(

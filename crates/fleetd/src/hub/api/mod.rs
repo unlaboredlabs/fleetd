@@ -143,6 +143,8 @@ pub struct Hub {
     pub work: Arc<crate::hub::work::Work>,
     pub metrics: Arc<crate::hub::metrics::Metrics>,
     pub updates: Arc<crate::hub::update::Updates>,
+    /// Session relays waiting for their runner's side (machine_roles/relay.rs).
+    pub relays: Arc<crate::hub::machine_roles::relay::Relays>,
 }
 
 /// Every MCP tool the hub serves, from every area that registers. The one place that lists them.

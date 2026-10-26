@@ -860,4 +860,9 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     PRIMARY KEY (repo, check_name, sha)
   );
   "#,
+    // A hosted session's relay: the SHA-256 of the token its agent's node connects with (`/relay/<token>`).
+    r#"
+  ALTER TABLE session_places ADD COLUMN relay_hash TEXT;
+  CREATE INDEX session_places_by_relay ON session_places (relay_hash);
+  "#,
 ];
