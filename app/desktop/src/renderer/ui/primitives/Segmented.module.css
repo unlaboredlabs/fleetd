@@ -1,0 +1,45 @@
+/* A compact segmented control (DESIGN.md): 22 px, the words and the count both xs so they share a baseline; the count
+   faint, no pill. */
+.segmented {
+  display: inline-flex;
+  gap: 1px;
+  padding: 2px;
+  border-radius: var(--radius-md);
+  background: var(--hover);
+}
+.segment {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  height: 22px;
+  padding: 3px 10px 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  cursor: pointer;
+  transition: color var(--dur-quick) var(--ease-snap);
+}
+.segment:hover {
+  color: var(--text);
+}
+.segmentCount {
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.segment[aria-pressed="true"] {
+  background: var(--raised);
+  color: var(--text);
+  font-weight: 500;
+  box-shadow: 0 0 0 1px var(--hairline);
+}
+.segment[aria-pressed="true"] .segmentCount {
+  color: var(--quiet);
+  font-weight: 400;
+}
+.segment:disabled {
+  color: var(--faint);
+  cursor: default;
+}

@@ -1,5 +1,5 @@
-// Small pieces the PR list and the PR share: a checks mark (an icon with a short word), a quiet hint, and a
-// segmented filter. Kept here until another screen needs them.
+// Small pieces the PR list and the PR share: a checks mark (an icon with a short word) and a quiet hint. Kept here until
+// another screen needs them. (The segmented filter moved to ui/primitives/Segmented once Settings → Machines needed it.)
 import { CircleCheck, CircleDashed, CircleX } from "lucide-react";
 import type { ReactNode } from "react";
 import { Text, cx } from "../../ui";
@@ -37,26 +37,6 @@ export function HintText({ hint }: { hint: Hint }) {
     <Text size="xs" tone={hint.tone === "failed" ? "danger" : "quiet"}>
       {hint.text}
     </Text>
-  );
-}
-
-export interface SegmentOption<T extends string> {
-  readonly value: T;
-  readonly label: string;
-  readonly count?: ReactNode;
-}
-
-/** One of a few views of a list, as pressed buttons: each a tab stop, the pressed one plain to see. */
-export function Segmented<T extends string>({ label, options, value, onChange }: { label: string; options: readonly SegmentOption<T>[]; value: T; onChange: (value: T) => void }) {
-  return (
-    <div className={s.segmented} role="group" aria-label={label}>
-      {options.map((o) => (
-        <button key={o.value} type="button" className={s.segment} aria-pressed={o.value === value} onClick={() => onChange(o.value)}>
-          {o.label}
-          {o.count !== undefined ? <span className={s.segmentCount}>{o.count}</span> : null}
-        </button>
-      ))}
-    </div>
   );
 }
 

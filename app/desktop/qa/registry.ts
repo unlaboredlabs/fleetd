@@ -1519,6 +1519,8 @@ export const screens: readonly Screen[] = [
   // keys and titles; settings-prompts is the real registry with edits. Compare and Update are deep links.
   // Max agents: the fleet cap and each project's slider.
   { id: "settings.agents", route: "#/settings/agents", fixtures: ["settings-agents", "long-text", "empty", "hub-unreachable"] },
+  // Machines: one machine for agents and sessions, one for sessions only (macOS, iOS simulators), and what each can host.
+  { id: "settings.machines", route: "#/settings/machines", fixtures: ["settings-agents", "empty", "hub-unreachable"] },
   // Machines: devbox's auto 22 and where it comes from, a machine set to 40 with the way back to auto; storefront set to
   // 30 on devbox, which holds it at 22 and offers to raise it.
   {

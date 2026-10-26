@@ -26,6 +26,7 @@ export {
   type CheckboxProps,
 } from "./primitives/Field";
 export { Select, type SelectProps, type SelectOption } from "./primitives/Select";
+export { Segmented, type SegmentOption } from "./primitives/Segmented";
 export { Menu, MenuTrigger, MenuContent, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator } from "./primitives/Menu";
 export { ContextMenu, ContextMenuItem, ContextMenuCopy, ContextMenuSub, ContextMenuSeparator, type ContextMenuProps } from "./primitives/ContextMenu";
 export { Dialog, Sheet, type DialogProps } from "./primitives/Dialog";

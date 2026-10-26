@@ -543,11 +543,19 @@ pub const MACHINE_SET_USAGE: &str =
              the most agents the machine runs at once (admin key), up to the fleet cap,
              in place of what it is measured to fit; auto: what it fits again. Raising
              starts queued agents at once; lowering stops nothing
+  machine set <id> --roles agents,sessions [--max-sessions <n>|auto] [--home <dir>] [--hub <url>]
+             what the machine is for (admin key): agents, sessions (browsers and devices) or
+             both, and the most sessions it hosts at once (1 to 64; auto: what it fits).
+             A session an agent starts runs on its own machine, refused when that has no
+             sessions role or no free slot. Without agents, running agents finish and new
+             ones wait
 ";
 
 const MACHINE_SET_SPEC: Spec = Spec {
     options: &[
         ("max-agents", Kind::Str),
+        ("roles", Kind::Str),
+        ("max-sessions", Kind::Str),
         ("home", Kind::Str),
         ("hub", Kind::Str),
     ],
@@ -559,7 +567,66 @@ fn machine_usage(message: &str) -> u8 {
     2
 }
 
-/// `fleetd machine set <id> --max-agents <n>|auto`: cap_set with the machine.
+/// `machine_roles_set`'s input from `--roles` and `--max-sessions`; None when neither is given.
+pub fn roles_input(
+    machine: &str,
+    roles: Option<&str>,
+    max_sessions: Option<&str>,
+) -> Result<Option<Value>, String> {
+    if roles.is_none() && max_sessions.is_none() {
+        return Ok(None);
+    }
+    let mut input = json!({ "machineId": machine });
+    if let Some(roles) = roles {
+        let mut list: Vec<&str> = Vec::new();
+        for role in roles.split(',').map(str::trim).filter(|r| !r.is_empty()) {
+            if !matches!(role, "agents" | "sessions") {
+                return Err(format!(
+                    "--roles takes agents, sessions or both (agents,sessions), not {role}"
+                ));
+            }
+            if !list.contains(&role) {
+                list.push(role);
+            }
+        }
+        if list.is_empty() {
+            return Err("--roles takes agents, sessions or both (agents,sessions)".into());
+        }
+        input["roles"] = json!(list);
+    }
+    match max_sessions {
+        None => {}
+        Some("auto") => input["autoSessions"] = json!(true),
+        Some(n) => match n.parse::<i64>() {
+            Ok(n) if (1..=64).contains(&n) => input["maxSessions"] = json!(n),
+            _ => return Err("--max-sessions takes a number from 1 to 64 or auto".into()),
+        },
+    }
+    Ok(Some(input))
+}
+
+/// "devbox: agents and sessions, 2 of 4 sessions (auto: 8 CPUs, 16 GB)."
+fn roles_line(machine: &Value) -> String {
+    let roles: Vec<&str> = machine
+        .get("roles")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    let n = |k: &str| machine.get(k).and_then(Value::as_i64).unwrap_or(0);
+    format!(
+        "{}: {}, {} of {} sessions ({}).",
+        s(machine, "/machineId"),
+        roles.join(" and "),
+        n("sessionsLive"),
+        n("maxSessions"),
+        s(machine, "/maxSessionsWhy")
+    )
+}
+
+/// `fleetd machine set <id> --max-agents <n>|auto` (cap_set with the machine) and `--roles`, `--max-sessions`
+/// (machine_roles_set).
 pub async fn machine_set_command(argv: &[String]) -> u8 {
     let v = match args::parse(argv, &MACHINE_SET_SPEC) {
         Ok(v) => v,
@@ -567,12 +634,17 @@ pub async fn machine_set_command(argv: &[String]) -> u8 {
     };
     let [machine] = v.positionals.as_slice() else {
         return machine_usage(
-            "give the machine's id: fleetd machine set <id> --max-agents <n>|auto",
+            "give the machine's id: fleetd machine set <id> --max-agents <n>|auto or --roles agents,sessions",
         );
+    };
+    let roles = match roles_input(machine, v.str("roles"), v.str("max-sessions")) {
+        Ok(roles) => roles,
+        Err(message) => return machine_usage(&message),
     };
     let mut input = json!({ "machine": { "machineId": machine } });
     match v.str("max-agents") {
-        None => return machine_usage("give --max-agents <n> or --max-agents auto"),
+        None if roles.is_some() => input = Value::Null,
+        None => return machine_usage("give --max-agents <n>|auto, --roles or --max-sessions"),
         Some("auto") => input["machine"]["auto"] = json!(true),
         Some(_) => match count_of(&v, "max-agents") {
             Ok(n) => input["machine"]["maxAgents"] = json!(n),
@@ -590,13 +662,25 @@ pub async fn machine_set_command(argv: &[String]) -> u8 {
         Ok(c) => c,
         Err(f) => return out.fail(&Stop(4, f.message, Some(f.fix))),
     };
-    match call(&mut client, "cap_set", input).await {
-        Ok(body) => {
-            out.success(body.get("next").and_then(Value::as_str).unwrap_or("Set."));
-            0
+    if !input.is_null() {
+        match call(&mut client, "cap_set", input).await {
+            Ok(body) => out.success(body.get("next").and_then(Value::as_str).unwrap_or("Set.")),
+            Err(stop) => return out.fail(&stop),
         }
-        Err(stop) => out.fail(&stop),
     }
+    if let Some(roles) = roles {
+        match call(&mut client, "machine_roles_set", roles).await {
+            Ok(body) => {
+                let line = body.get("machine").map(roles_line).unwrap_or_default();
+                match body.get("next").and_then(Value::as_str) {
+                    Some(next) => out.success(&format!("{line} {next}")),
+                    None => out.success(&line),
+                }
+            }
+            Err(stop) => return out.fail(&stop),
+        }
+    }
+    0
 }
 
 /// What to add, after the argument or the pick.
@@ -919,6 +1003,31 @@ fn finish(out: &Out) -> Result<(), Stop> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn machine_roles_read_from_the_command_line() {
+        assert_eq!(roles_input("devbox", None, None), Ok(None));
+        assert_eq!(
+            roles_input("devbox", Some("agents, sessions,agents"), Some("4")),
+            Ok(Some(
+                json!({ "machineId": "devbox", "roles": ["agents", "sessions"], "maxSessions": 4 })
+            ))
+        );
+        assert_eq!(
+            roles_input("mac1", Some("sessions"), Some("auto")),
+            Ok(Some(
+                json!({ "machineId": "mac1", "roles": ["sessions"], "autoSessions": true })
+            ))
+        );
+        assert!(
+            roles_input("devbox", Some("browsers"), None)
+                .unwrap_err()
+                .contains("not browsers")
+        );
+        assert!(roles_input("devbox", Some(","), None).is_err());
+        assert!(roles_input("devbox", None, Some("65")).is_err());
+        assert!(roles_input("devbox", None, Some("0")).is_err());
+    }
 
     #[test]
     fn paths_resolve_like_a_shell() {

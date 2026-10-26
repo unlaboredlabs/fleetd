@@ -12,7 +12,7 @@ use base64::engine::general_purpose::STANDARD as B64;
 use fleetd_contracts::events::Attention;
 use fleetd_contracts::hello::{PROTOCOL_VERSION, ProtocolVersion};
 use fleetd_contracts::ids::{MachineId, Timestamp};
-use fleetd_contracts::lead_calls::{LeadCallFrame, LeadResultFrame};
+use fleetd_contracts::lead_calls::{LeadCall, LeadCallFrame, LeadResultFrame};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::model::{Machine, MachineStatus, SleptSpan, duration_text};
 use fleetd_contracts::node_link::{
@@ -534,13 +534,16 @@ impl NodeLinkServer {
     }
 
     /// Attributes a forwarded call to the project its cwd is in, on the machine whose node sent it, and answers it.
-    async fn answer_lead_call(
+    pub(crate) async fn answer_lead_call(
         &self,
         machine_id: &MachineId,
         frame: LeadCallFrame,
     ) -> LeadResultFrame {
         let id = frame.id.clone();
         let outcome = async {
+            if let Some(answer) = self.answer_hosted(machine_id, &frame) {
+                return answer.await;
+            }
             let projects = self
                 .deps
                 .store
@@ -586,6 +589,34 @@ impl NodeLinkServer {
         };
         serde_json::from_value(frame)
             .expect("a lead result frame with exactly one of result and error")
+    }
+
+    /// A runner's report of a session it hosts for an agent on another machine: answered in that agent's name, as
+    /// if its own node had sent it. Only the node's own browser calls; None for every other call.
+    fn answer_hosted(
+        &self,
+        machine_id: &MachineId,
+        frame: &LeadCallFrame,
+    ) -> Option<crate::hub::link::lead_calls::LeadCallFuture> {
+        let op = op_of(&frame.call);
+        if !crate::hub::browser::calls::OPS.contains(&op.as_str()) {
+            return None;
+        }
+        let hosted = self
+            .deps
+            .lead_calls
+            .hosted(machine_id, frame.thread_id.as_ref()?)?;
+        let mut call = frame.call.clone();
+        if let LeadCall::BrowserSession(session) = &mut call {
+            session.thread_id = hosted.thread_id.clone();
+        }
+        let handler = self.deps.lead_calls.handler(&op)?;
+        let caller = LeadCaller {
+            by: lead_by(&hosted.project_ref),
+            project_ref: hosted.project_ref,
+            agent: hosted.agent,
+        };
+        Some(handler.handle(caller, call))
     }
 
     async fn handshake(&self, ws: &mut Rx, tx: &LinkTx) -> Result<NodeHello, Refused> {
@@ -777,9 +808,10 @@ impl NodeLinkServer {
         send(
             tx,
             HubToNode::Welcome(
-                serde_json::from_value(
-                    json!({ "hubId": self.deps.hub_id, "protocol": ProtocolVersion::CURRENT }),
-                )
+                serde_json::from_value(json!({
+                    "hubId": self.deps.hub_id, "protocol": ProtocolVersion::CURRENT,
+                    "capabilities": [fleetd_contracts::node_link::HUB_CAP_SESSION_ROUTE],
+                }))
                 .expect("welcome"),
             ),
         );
@@ -891,7 +923,10 @@ impl NodeLinkServer {
                 reply @ (NodeToHub::CmdResult(_)
                 | NodeToHub::SecretResult(_)
                 | NodeToHub::GatedResult(_)
-                | NodeToHub::NodeActionResult(_)) => self.deps.commands.resolve(&machine_id, reply),
+                | NodeToHub::NodeActionResult(_)
+                | NodeToHub::SessionHostResult(_)) => {
+                    self.deps.commands.resolve(&machine_id, reply)
+                }
                 frame @ (NodeToHub::SessionReply(_)
                 | NodeToHub::MachineEvent(_)
                 | NodeToHub::ThreadEvent(_)

@@ -186,6 +186,7 @@ fn tag(frame: &HubToNode) -> &'static str {
         HubToNode::BrowserWatch(_) => "browser_watch",
         HubToNode::BrowserInput(_) => "browser_input",
         HubToNode::BrowserControl(_) => "browser_control",
+        HubToNode::SessionHost(_) => "session_host",
     }
 }
 
@@ -359,6 +360,12 @@ async fn run_link_once(
                 .as_ref()
                 .map(|_| fleetd_contracts::node_link::CAP_BROWSER.to_owned()),
         )
+        .chain(
+            shared
+                .browser
+                .as_ref()
+                .map(|_| fleetd_contracts::node_link::CAP_SESSION_HOST.to_owned()),
+        )
         .collect(),
     }));
     let hub_id = match next_frame(&mut stream, HANDSHAKE_TIMEOUT, "welcome").await {
@@ -370,7 +377,10 @@ async fn run_link_once(
                 ),
             });
         }
-        Ok(HubToNode::Welcome(welcome)) => welcome.hub_id,
+        Ok(HubToNode::Welcome(welcome)) => {
+            shared.lead_calls.set_hub_caps(welcome.capabilities);
+            welcome.hub_id
+        }
         Ok(other) => return LinkEnd::Lost(format!("expected a welcome, got {}", tag(&other))),
         Err(end) => return end,
     };
@@ -476,6 +486,27 @@ async fn run_link_once(
                 tokio::spawn(async move {
                     let reply = service.handle(call).await;
                     let _ = tx.send(to_json(&NodeToHub::SessionReply(reply)));
+                });
+            }
+            // Off the link's task set too: a browser that started is the broker's, and ends with its session.
+            HubToNode::SessionHost(host) => {
+                let broker = shared.browser.clone();
+                let tx = tx.clone();
+                tokio::spawn(async move {
+                    let frame = match broker {
+                        Some(broker) => broker.handle(host.host_key.to_string(), host.frame).await,
+                        None => serde_json::from_value(serde_json::json!({
+                            "id": host.frame.id,
+                            "error": fleetd_contracts::mcp::McpToolError::new(
+                                fleetd_contracts::mcp::ErrorCode::Invalid,
+                                "this machine hosts no sessions",
+                            ),
+                        }))
+                        .expect("an error frame"),
+                    };
+                    let result =
+                        fleetd_contracts::machine_roles::SessionHostResult { id: host.id, frame };
+                    let _ = tx.send(to_json(&NodeToHub::SessionHostResult(result)));
                 });
             }
             HubToNode::SpansAck(ack) => shared

@@ -7,8 +7,9 @@
 progressive web app
 web push
 mobile app
-\biOS\b
-\bandroid\b
+# iOS and Android themselves are back, as simulators and emulators agents use (machine roles); only the apps are gone.
+\b(iOS|android) app\b
+\bfor (iOS|android)\b
 app store
 google play
 home screen

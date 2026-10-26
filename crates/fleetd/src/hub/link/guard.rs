@@ -80,6 +80,7 @@ pub(crate) mod tests {
             mem_per_agent_bytes: None,
             disk_per_agent_bytes: None,
             limits: List::unchecked(Vec::new()),
+            hosts: None,
             disk: Some(NodeDisk {
                 free_bytes: Count::unchecked(free_gb * 1_000_000_000),
                 total_bytes: Count::unchecked(1_000_000_000_000),

@@ -344,4 +344,12 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "browser_retention_set",
         "How long the hub keeps browser recordings: retentionDays (1 to 365, default 30) and maxGbPerProject (default 20; a project's oldest go first past it). Pruned hourly; an expired session keeps its row. Admin on every machine.",
     ),
+    (
+        "machine_roles",
+        "Every machine's roles (agents, sessions or both), its session slots (live of max, and where the max comes from) and what it can host for browser and device sessions, each in plain words: Chrome, an Android emulator (SDK and KVM), an iOS simulator (Xcode on macOS), a desktop (docker or Xvfb). Read-only.",
+    ),
+    (
+        "machine_roles_set",
+        "Set what a machine is for: roles [agents, sessions] (one or both), and the most sessions it hosts at once (maxSessions 1 to 64, or autoSessions: true for what it fits). A session an agent starts runs on its own machine, and is refused when that has no sessions role, can't host the kind, or has no free slot. Turning agents off stops nothing: running agents finish, new ones wait. Admin on the machine.",
+    ),
 ];

@@ -1347,6 +1347,44 @@ output!(BrowserRetentionSetOutput {
     retention: crate::browser::BrowserRetention,
 });
 
+// machine_roles: every machine's roles (agents, sessions), its session slots and what it can host (Settings > Machines).
+input!(MachineRolesInput {});
+output!(MachineRolesOutput {
+    machines: List<crate::machine_roles::MachineRolesEntry, 0, 1000>,
+});
+
+// machine_roles_set: what a machine is for, and the most sessions it hosts at once. Turning agents off stops nothing:
+// its running agents finish, new ones wait.
+input!(
+    #[serde(remote = "Self")]
+    MachineRolesSetInput {
+        machine_id: MachineId,
+        roles: Option<List<crate::machine_roles::MachineRole, 1, 2>>,
+        /// The most sessions it hosts at once, in place of what it fits.
+        max_sessions: Option<crate::machine_roles::MaxSessions>,
+        /// Drop the session cap: it hosts what it fits again.
+        auto_sessions: Option<bool>,
+    }
+);
+checked!(MachineRolesSetInput, |input| {
+    if input.roles.is_none() && input.max_sessions.is_none() && input.auto_sessions != Some(true) {
+        return Err("expected roles, maxSessions or autoSessions: true".into());
+    }
+    if input.max_sessions.is_some() && input.auto_sessions == Some(true) {
+        return Err("expected maxSessions or autoSessions: true, not both".into());
+    }
+    if let Some(roles) = &input.roles
+        && roles.len() == 2
+        && roles[0] == roles[1]
+    {
+        return Err("roles: each at most once".into());
+    }
+    Ok(())
+});
+output!(MachineRolesSetOutput {
+    machine: crate::machine_roles::MachineRolesEntry,
+});
+
 // skills_list: Settings > Skills and the composer's `$`. The hub's global skills; with projectRef also the project's
 // and its repo's (.agents/skills, .claude/skills), each marked when a skill of the same name outranks it.
 input!(SkillsListInput {
@@ -2075,6 +2113,8 @@ tools! {
     // Human keys only (the handler checks).
     browser_control => BrowserControl, Operate, BrowserControlInput, BrowserControlOutput;
     browser_retention_set => BrowserRetentionSet, Admin, BrowserRetentionSetInput, BrowserRetentionSetOutput;
+    machine_roles => MachineRoles, Read, MachineRolesInput, MachineRolesOutput;
+    machine_roles_set => MachineRolesSet, Admin, MachineRolesSetInput, MachineRolesSetOutput;
     skills_list => SkillsList, Read, SkillsListInput, SkillsListOutput;
     skill_get => SkillGet, Read, SkillGetInput, SkillGetOutput;
     // Human keys only (the handlers check): a lead installs with its own skill_install.
