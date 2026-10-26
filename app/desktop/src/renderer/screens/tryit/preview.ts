@@ -145,6 +145,18 @@ export const start = (target: Target): void => {
   );
 };
 
+/** Try it from outside the view (the merge line): reopens a run that is starting or ready, the one on view first, and
+ * starts one only when none is. */
+export const openOrStart = (): void => {
+  const live = (t: Target) => {
+    const run = state.runs[t];
+    return run !== undefined && run.phase !== "ended";
+  };
+  const running = live(state.target) ? state.target : (["web", "android"] as const).find(live);
+  if (running === undefined) start(state.target);
+  else if (running !== state.target) pickTarget(running);
+};
+
 /** End: the node throws the run away (process, worktree's port, emulator snapshot). */
 export const end = (target: Target): void => {
   stop(target);

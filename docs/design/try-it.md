@@ -67,9 +67,10 @@ a preview worktree of its own, never an agent's. Then it runs the project's prev
   works as for any session (D156). The agent never holds this session, so ⌘⇧↩ has nothing to hand back to. The session
   is recorded like every other session, which is what the feedback's clip comes from.
 - **In their own browser, over the tailnet.** The node gives the preview its own port on its tailnet address (from
-  8400–8499) and proxies it to `127.0.0.1:$PORT`: `http://devbox:8414`. With `tailscale serve` allowed on the node, the
-  same port serves HTTPS with the machine's tailnet certificate, for apps that need secure cookies or a service worker.
-  Wildcard names (`pr-14.devbox.ts.net`) aren't possible: MagicDNS has none.
+  8400–8499) and proxies it to `127.0.0.1:$PORT`: `http://devbox:8414`. In v1 that is plain HTTP; the tailnet
+  already encrypts the traffic. HTTPS (for apps that need secure cookies or a service worker) comes later through
+  `tailscale serve`, with its own identity check (see Security). Wildcard names (`pr-14.devbox.ts.net`) aren't
+  possible: MagicDNS has none.
 
 ## 2. Mobile
 
@@ -185,7 +186,7 @@ rule above, it never rebuilds on its own.
   store, Gradle's cache, a build output cache where the tool has one. Plus the last 3 builds by commit, so Try it again
   on an unchanged head starts without building. Capped per project (default 10 GB, oldest first).
 - **Port routing on the tailnet**: a small proxy in the node, bound to the node's tailnet address only, one port per
-  preview from a range. Optional `tailscale serve` for HTTPS.
+  preview from a range. Plain HTTP in v1; HTTPS through `tailscale serve` later (see Security).
 - **Hub**: `preview_start`, `preview_end`, `preview_suggest`, `preview_config_propose`, `previews_list`, a
   `preview.state` event, the `signoff` hold and `signoff_give`. The app gets the Try it tab, the suggestion line, Mark
   up, and the merge line's Waiting on you.
@@ -196,6 +197,14 @@ rule above, it never rebuilds on its own.
   connection it asks the local tailscaled who the peer is (`tailscale whois`) and accepts only devices of the tailnet
   user who owns the hub. Anyone else on a shared tailnet gets nothing. The in-app session reaches the preview on
   127.0.0.1 and never leaves the machine.
+- **HTTPS through `tailscale serve` (later, not v1)** can't use that check: serve terminates TLS and forwards from
+  127.0.0.1, so `whois` would only ever see the machine itself. That path gets a listener of its own on loopback,
+  which only serve forwards to. On it, the proxy reads the `Tailscale-User-Login` header that serve sets on every
+  request from a tailnet device (serve overwrites any value the client sent) and accepts only the hub owner's login.
+  A request without the header (from a tagged device, or through Funnel) is refused, and Funnel is never turned on
+  for a preview. The header names the user, not the device, which is the same set of devices `whois` lets in. A
+  process on the machine could reach that listener and send the header, but it could already reach
+  `127.0.0.1:$PORT` directly, so nothing new is exposed.
 - **Install links** are per preview, signed, valid for 1 hour, and checked the same way.
 - **Secrets**: a preview gets the project's variables, like an agent. Whatever the app under test shows on its pages
   is in the recording (as for any session); the text it reports is masked.
@@ -216,9 +225,11 @@ forgotten one costs at most that.
 
 **Phases.**
 
-1. **Web**: preview config (with agents' proposals), the runner, the tailnet port, Try it in the app as a held browser
-   session and in the person's own browser, idle end, and feedback (pins, words, screenshot, clip) to the writer.
-2. **Sign-off**: the project setting, "I want to try this", the train's hold, Waiting on you, Works for me.
+1. **Web**: preview config (with agents' proposals), the runner, the tailnet port over plain HTTP, Try it in the app
+   as a held browser session and in the person's own browser, idle end, and feedback (pins, words, screenshot, clip)
+   to the writer.
+2. **Sign-off**: the project setting, "I want to try this", the train's hold, Waiting on you, Works for me. With it,
+   HTTPS through `tailscale serve` and its header check.
 3. **Android**: APK build, a T533 pool emulator driven from the app, the install link for the person's own phone.
 4. **Linux desktop**: an isolated display per session, streamed and driven like the others.
 5. **iOS**: a simulator on a Mac machine through T534's routing; TestFlight as a project's opt-in.

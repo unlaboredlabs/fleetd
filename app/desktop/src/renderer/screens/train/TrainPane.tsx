@@ -9,7 +9,7 @@ import { Button, cx, Dot, EmptyState, StateGlyph, Text, Truncate, useArrivals, u
 import { when } from "../prs/words";
 import { panelRoute, toHash, type ProjectKey } from "../shell/routes";
 import { SignOffRow, useSignOffWaiting } from "../tryit/SignOff";
-import { askTab, PREVIEW_PR, start } from "../tryit/preview";
+import { askTab, openOrStart, PREVIEW_PR } from "../tryit/preview";
 import { changesOf, checkLines, lineReads, onTrain, trainReads, STAGE_WORD, stageLine, trainViews, WAITING_WORD, type Moving, type QueueRow, type Recent, type TrainPr, type TrainView } from "./model";
 import s from "./train.module.css";
 
@@ -151,7 +151,7 @@ function Train({ view, project, nowMs, named }: { view: TrainView; project: Proj
         <Section label="Waiting on you" count={1}>
           <SignOffRow
             onTry={() => {
-              start("web");
+              openOrStart();
               askTab();
               window.location.hash = toHash(panelRoute(project, { tab: "prs", pr: { repo: PREVIEW_PR.repo, number: PREVIEW_PR.number } }));
             }}
