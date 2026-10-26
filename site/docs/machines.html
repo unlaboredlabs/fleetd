@@ -306,7 +306,7 @@ the number you set, 1 to 64.</p>
 </tr>
 <tr>
 <td>Android emulator</td>
-<td>The Android SDK (<code dir="auto">ANDROID_HOME</code>, <code dir="auto">ANDROID_SDK_ROOT</code>, or where Android Studio puts it) with its emulator, and on Linux a <code dir="auto">/dev/kvm</code> this user can use.</td>
+<td>fleetd’s own pinned emulator: Linux on x86_64, opted in with <code dir="auto">"device": {"enabled": true}</code> in node.json (the first session installs it) or installed already, and a <code dir="auto">/dev/kvm</code> this user can open read-write. See <a href="/docs/browser-sessions#android-setup">Android sessions</a>.</td>
 </tr>
 <tr>
 <td>iOS simulator</td>
