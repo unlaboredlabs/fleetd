@@ -1,7 +1,7 @@
 // One agent's live work, read-only: its state, role and order, where its work is (its PR, or its branch), what it is
-// doing now, and its newest steps (what it wrote, what it ran and edited), with the message it is writing streaming in
-// at the end. Under it, a box steers it directly. Its head opens what it was told at its start: its first message and
-// the prompts it pinned.
+// doing now and the browser it has open, and its newest steps (what it wrote, what it ran and edited), with the message
+// it is writing streaming in at the end. Under it, a box steers it directly. Its head opens what it was told at its
+// start: its first message and the prompts it pinned.
 import { useMemo, useState } from "react";
 import type { WorkStep } from "../../../shared/contracts";
 import { useAgentWork, useData } from "../../src/data/react";
@@ -11,6 +11,7 @@ import { roleWords } from "../chat/told";
 import { ToldPanel } from "../chat/ToldPanel";
 import { ActivityLine, MiddleCut } from "../live/parts";
 import { SteerBox } from "../live/Steer";
+import { AgentSession } from "../sessions/AgentSession";
 import { describe } from "../live/words";
 import { navigate } from "../shell/navigation";
 import { panelRoute } from "../shell/routes";
@@ -101,6 +102,7 @@ export function AgentWork({ id }: { id: string }) {
           </Text>
           <ActivityLine line={describe(row)} />
         </div>
+        <AgentSession project={row.projectRef} laneId={row.laneId} />
       </div>
       <div className={s.feed}>
         {!work.hasThread ? (

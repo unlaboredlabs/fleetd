@@ -150,6 +150,9 @@ export const fixtures = [
   // ...and the work elsewhere on storefront's repo, seen from storefront and from checkout (fixtures/agents).
   "agents-elsewhere",
   "agents-states",
+  // W46's design preview: storefront's browser sessions, one agent driving and one asking you to take over
+  // (fixtures/sessions).
+  "sessions-preview",
   "stream-reply",
   // UX [7]: no hub, and the last launch's disk cache on screen with a message queued; back online with that chat not
   // read again yet, and with that read failed (fixtures/offline).
@@ -1258,6 +1261,47 @@ export const screens: readonly Screen[] = [
     route: `${CHAT}/agents`,
     fixtures: ["typical", "many-agents", "long-text", "hub-unreachable", "live-20", "agents-work"],
   },
+  // W46 (design preview): the Agents section's Browser sessions, needs you, live and recent; one opened live, one
+  // asking you to take over, one taken over (the page yours), an ended one's replay and a step's page snapshot in it.
+  { id: "sessions", route: `${CHAT}/sessions`, fixtures: ["sessions-preview"] },
+  // ...and a hub that doesn't serve browser sessions (every other fixture's): the link opens Agents, with no Browser
+  // sessions view beside it.
+  {
+    id: "agents",
+    route: `${CHAT}/sessions`,
+    fixtures: ["typical"],
+    variant: "no-sessions",
+    open: async (page) => {
+      await expect(page.locator('[data-screen="agents"]')).toBeVisible();
+      await expect(page.getByRole("tab", { name: /^Browser sessions/u })).toHaveCount(0);
+    },
+  },
+  { id: "sessions", route: `${CHAT}/sessions/bs-checkout`, fixtures: ["sessions-preview"], variant: "live" },
+  { id: "sessions", route: `${CHAT}/sessions/bs-payouts`, fixtures: ["sessions-preview"], variant: "asking" },
+  {
+    id: "sessions",
+    route: `${CHAT}/sessions/bs-payouts`,
+    fixtures: ["sessions-preview"],
+    variant: "yours",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Take over" }).click();
+      await expect(page.getByRole("button", { name: "Hand back" })).toBeVisible();
+    },
+  },
+  { id: "sessions", route: `${CHAT}/sessions/bs-share`, fixtures: ["sessions-preview"], variant: "replay" },
+  // ...with a step's page snapshot open: the structure as the step found it, what it clicked highlighted.
+  {
+    id: "sessions",
+    route: `${CHAT}/sessions/bs-share`,
+    fixtures: ["sessions-preview"],
+    variant: "snapshot",
+    open: async (page) => {
+      await page.getByRole("button", { name: "The page at 0:12" }).click();
+      await expect(page.getByRole("list", { name: "The page’s structure" })).toBeVisible();
+    },
+  },
+  // ...and an agent asking you to take over its browser, in its own view.
+  { id: "agents", route: `${CHAT}/agents/T4`, fixtures: ["sessions-preview"], variant: "browser" },
   // ...and offline with nothing held: it says they show once you're connected, never loading bars.
   {
     id: "agents",
