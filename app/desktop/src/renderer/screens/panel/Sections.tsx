@@ -1,4 +1,4 @@
-// The panel's sections, in everyday words: Agents; Shipping (its pull requests, and the merge line they land in);
+// The panel's sections, in everyday words: Agents (the agents, and the browsers they use); Shipping (its pull requests, and the merge line they land in);
 // Plan (the lead's checklist); History (what happened, and what was decided). One compact row of four tabs, each its
 // icon beside its word and its count on the word's baseline, a tooltip saying what it is; under the row that same
 // line, and in a section of two views a second, smaller row of tabs between them (ui/DESIGN.md). The views are
@@ -21,7 +21,16 @@ export interface Section {
 }
 
 export const SECTIONS: readonly Section[] = [
-  { id: "agents", label: "Agents", icon: Bot, line: "The AI workers on this project, and what each is doing right now.", views: [["agents", "Agents"]] },
+  {
+    id: "agents",
+    label: "Agents",
+    icon: Bot,
+    line: "The AI workers on this project, what each is doing right now, and the browsers they use.",
+    views: [
+      ["agents", "Agents"],
+      ["sessions", "Browser sessions"],
+    ],
+  },
   {
     id: "shipping",
     label: "Shipping",
