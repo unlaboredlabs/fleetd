@@ -194,7 +194,7 @@ async fn rig() -> Option<Rig> {
         node_home.path(),
         config,
         hub.clone(),
-        Arc::new(|_| Ok(Masker::default())),
+        Arc::new(|_| Ok(crate::node::mask::Secrets::default())),
     )
     .await;
     broker.ready(chrome);

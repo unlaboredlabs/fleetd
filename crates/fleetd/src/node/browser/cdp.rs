@@ -103,6 +103,13 @@ impl Routes {
         }
     }
 
+    /// Stops holding attach events for `target`, and hands the held ones to the proxy.
+    fn release(&mut self, target: &str) {
+        for held in self.attaching.remove(target).unwrap_or_default() {
+            self.send_proxy(held.to_message());
+        }
+    }
+
     fn answer(&mut self, id: u64, mut message: Value) {
         let Some(waiter) = self.waiting.remove(&id) else {
             return;
@@ -303,7 +310,15 @@ impl Cdp {
             routes.attaching.remove(target);
             return Err("the browser closed".to_owned());
         }
-        let answer = self.wait(id, "Target.attachToTarget", rx).await?;
+        let answer = match self.wait(id, "Target.attachToTarget", rx).await {
+            Ok(answer) => answer,
+            Err(why) => {
+                // No answer named the broker's session: what was held is the driver's, and later attach events for
+                // the page go to it as usual.
+                lock(&self.routes).release(target);
+                return Err(why);
+            }
+        };
         answer["sessionId"]
             .as_str()
             .map(str::to_owned)
@@ -328,5 +343,53 @@ impl Cdp {
             return false;
         }
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn attached(target: &str, session: &str) -> Event {
+        Event {
+            method: "Target.attachedToTarget".into(),
+            params: json!({ "sessionId": session, "targetInfo": { "targetId": target, "type": "page" } }),
+            session_id: None,
+        }
+    }
+
+    #[test]
+    fn an_attach_that_got_no_answer_hands_what_it_held_to_the_driver_and_holds_nothing_after() {
+        let mut routes = Routes::default();
+        let (tx, mut proxy) = mpsc::unbounded_channel();
+        routes.proxy = Some(tx);
+        routes.attaching.insert("T1".into(), Vec::new());
+        routes.event(attached("T1", "driver-1"));
+        assert!(proxy.try_recv().is_err(), "held while the broker's attach is pending");
+        routes.release("T1");
+        assert_eq!(proxy.try_recv().unwrap()["params"]["sessionId"], "driver-1");
+        routes.event(attached("T1", "driver-2"));
+        assert_eq!(proxy.try_recv().unwrap()["params"]["sessionId"], "driver-2", "not held any more");
+    }
+
+    #[test]
+    fn the_brokers_own_attach_stays_hidden_and_the_drivers_goes_through() {
+        let mut routes = Routes::default();
+        let (tx, mut proxy) = mpsc::unbounded_channel();
+        routes.proxy = Some(tx);
+        let (answer, _wait) = oneshot::channel();
+        routes.waiting.insert(7, Waiter::Attach("T1".into(), answer));
+        routes.attaching.insert("T1".into(), Vec::new());
+        routes.event(attached("T1", "driver-1"));
+        routes.event(attached("T1", "broker-1"));
+        routes.answer(7, json!({ "id": 7, "result": { "sessionId": "broker-1" } }));
+        assert_eq!(proxy.try_recv().unwrap()["params"]["sessionId"], "driver-1");
+        assert!(proxy.try_recv().is_err());
+        routes.event(Event {
+            method: "Page.screencastFrame".into(),
+            params: json!({}),
+            session_id: Some("broker-1".into()),
+        });
+        assert!(proxy.try_recv().is_err(), "the broker's session's events stay the broker's");
     }
 }

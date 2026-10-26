@@ -106,8 +106,8 @@ pub struct Launch {
     pub chrome: PathBuf,
     /// Where each process's fresh profile goes, one directory per process.
     pub profiles: PathBuf,
-    /// Chrome's own sandbox. Off by default as Playwright has it: it needs user namespaces many Linux hosts refuse.
-    pub sandbox: bool,
+    /// Chrome's own sandbox: always, never, or (None) wherever this host allows it.
+    pub sandbox: Option<bool>,
 }
 
 /// One launched Chrome: its process group, its profile and the node's pipe connection to it. Killed and its profile
@@ -145,7 +145,7 @@ impl Drop for Browser {
 
 /// Chrome's flags: no debugging port, only its pipe; a fresh profile; nothing that phones home or waits on a keyring
 /// (without `--password-store=basic` the first load of a fresh profile waits 12-24 s on the desktop keyring).
-pub fn args(launch: &Launch, profile: &Path) -> Vec<String> {
+pub fn args(launch: &Launch, profile: &Path, sandboxed: bool) -> Vec<String> {
     let mut args: Vec<String> = [
         "--remote-debugging-pipe",
         "--no-first-run",
@@ -177,7 +177,7 @@ pub fn args(launch: &Launch, profile: &Path) -> Vec<String> {
     if !headless_shell {
         args.push("--headless=new".to_owned());
     }
-    if !launch.sandbox {
+    if !sandboxed {
         args.push("--no-sandbox".to_owned());
     }
     args.push("about:blank".to_owned());
@@ -186,7 +186,7 @@ pub fn args(launch: &Launch, profile: &Path) -> Vec<String> {
 
 /// Launches Chrome with its pipe on fds 3 (commands in) and 4 (answers out), which `sh` moves there from the
 /// stdin and stdout the node holds, and waits until it answers.
-pub async fn launch(launch: &Launch) -> Result<Browser, String> {
+pub async fn launch(launch: &Launch, sandboxed: bool) -> Result<Browser, String> {
     std::fs::create_dir_all(&launch.profiles)
         .map_err(|e| format!("cannot make {}: {e}", launch.profiles.display()))?;
     let profile = tempfile::Builder::new()
@@ -198,7 +198,7 @@ pub async fn launch(launch: &Launch) -> Result<Browser, String> {
     cmd.arg("-c")
         .arg(r#"exec "$0" "$@" 3<&0 4>&1 </dev/null >/dev/null"#)
         .arg(&launch.chrome)
-        .args(args(launch, &profile))
+        .args(args(launch, &profile, sandboxed))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -271,6 +271,8 @@ pub struct Pool {
     size: usize,
     warm: Mutex<VecDeque<Browser>>,
     filling: tokio::sync::Mutex<()>,
+    /// The host refused Chrome's sandbox once: launches go without it.
+    no_sandbox: std::sync::atomic::AtomicBool,
 }
 
 impl Pool {
@@ -280,11 +282,35 @@ impl Pool {
             size,
             warm: Mutex::default(),
             filling: tokio::sync::Mutex::new(()),
+            no_sandbox: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
     pub fn launch_settings(&self) -> &Launch {
         &self.launch
+    }
+
+    /// Whether the pool's browsers run without Chrome's sandbox: configured so, or this host refused it.
+    pub fn unsandboxed(&self) -> bool {
+        self.launch.sandbox == Some(false) || self.no_sandbox.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// One browser: sandboxed unless configured otherwise. A host that refuses the sandbox (no user namespaces, as
+    /// Ubuntu's AppArmor has it) gets `--no-sandbox` from then on, with a warning, unless the sandbox is required.
+    async fn launch_one(&self) -> Result<Browser, String> {
+        if self.unsandboxed() {
+            return launch(&self.launch, false).await;
+        }
+        match launch(&self.launch, true).await {
+            Ok(browser) => Ok(browser),
+            Err(why) if self.launch.sandbox.is_none() => {
+                let browser = launch(&self.launch, false).await?;
+                tracing::warn!(error = %why, "Chrome's sandbox refused on this host: browsers run with --no-sandbox");
+                self.no_sandbox.store(true, std::sync::atomic::Ordering::Relaxed);
+                Ok(browser)
+            }
+            Err(why) => Err(why),
+        }
     }
 
     /// A warm browser, or one launched now when none is; the pool refills behind it.
@@ -303,7 +329,7 @@ impl Pool {
         };
         let browser = match warm {
             Some(browser) => browser,
-            None => launch(&self.launch).await?,
+            None => self.launch_one().await?,
         };
         self.refill();
         Ok(browser)
@@ -317,7 +343,7 @@ impl Pool {
                 return;
             };
             while pool.lock().len() < pool.size {
-                match launch(&pool.launch).await {
+                match pool.launch_one().await {
                     Ok(browser) => pool.lock().push_back(browser),
                     Err(e) => {
                         tracing::warn!(error = %e, "browser pool not refilled");
@@ -353,9 +379,9 @@ mod tests {
         let launch = Launch {
             chrome: PathBuf::from("/x/chrome-headless-shell"),
             profiles: PathBuf::from("/p"),
-            sandbox: false,
+            sandbox: None,
         };
-        let args = args(&launch, Path::new("/p/profile-1"));
+        let args = args(&launch, Path::new("/p/profile-1"), false);
         assert!(args.contains(&"--remote-debugging-pipe".to_owned()));
         assert!(
             !args
@@ -368,6 +394,9 @@ mod tests {
             !args.contains(&"--headless=new".to_owned()),
             "the headless shell is headless already"
         );
+        assert!(args.contains(&"--no-sandbox".to_owned()));
+        let sandboxed = super::args(&launch, Path::new("/p/profile-1"), true);
+        assert!(!sandboxed.contains(&"--no-sandbox".to_owned()), "sandboxed unless the host refuses it");
     }
 
     #[test]

@@ -218,11 +218,12 @@ async fn run_node(
     let browser_config = config.browser.clone().unwrap_or_default();
     let broker = match browser_config.enabled() {
         true => {
+            let sessions = node_sessions.clone();
             let broker = browser::Broker::start(
                 home,
                 browser_config,
                 Arc::new(browser::upload::RelayHub(relay.clone())),
-                mask_for.clone(),
+                Arc::new(move |session| sessions.call_secrets(session)),
             )
             .await;
             node_sessions.set_browser(broker.clone());

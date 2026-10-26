@@ -22,7 +22,7 @@ use sha2::{Digest, Sha256};
 use super::cdp::{Cdp, Event};
 use super::chrome::{Browser, HEIGHT, WIDTH};
 use super::record::{self, Meta, Scrub, VideoSink};
-use crate::node::mask::{Masker, Secrets};
+use crate::node::mask::Secrets;
 use crate::node::util::AbortOnDrop;
 use crate::node::wire::to_json;
 
@@ -63,10 +63,8 @@ pub struct Session {
     note: Mutex<Option<String>>,
     seq: AtomicU64,
     control: Mutex<BrowserControl>,
-    /// The session's own secrets (its project's and order's), masked as its reports are.
-    base: Arc<Masker>,
-    /// Every value filled into its browser, wiped when the session goes.
-    filled: Mutex<Secrets>,
+    /// Its own secrets, then every value filled into its browser; wiped when the session goes.
+    secrets: Mutex<Secrets>,
     scrub: Mutex<Arc<Scrub>>,
     pub credentials_filled: AtomicU64,
     last_active: Mutex<Instant>,
@@ -106,7 +104,8 @@ pub struct Opened {
     pub purpose: String,
     pub dir: PathBuf,
     pub ffmpeg: Option<PathBuf>,
-    pub masker: Masker,
+    /// The agent session's secrets (its project's, its order's, its MCP servers').
+    pub secrets: Secrets,
 }
 
 impl Session {
@@ -123,7 +122,7 @@ impl Session {
             Err(why) => (None, Some(why)),
         };
         let started_at = Timestamp(crate::node::util::now_iso());
-        let base = Arc::new(opened.masker);
+        let scrub = Arc::new(Scrub::new(&opened.secrets.0));
         let session = Arc::new(Self {
             id: opened.id,
             thread: opened.thread,
@@ -139,9 +138,8 @@ impl Session {
             note: Mutex::new(note),
             seq: AtomicU64::new(0),
             control: Mutex::default(),
-            scrub: Mutex::new(Arc::new(Scrub::new(base.clone(), &[]))),
-            base,
-            filled: Mutex::default(),
+            scrub: Mutex::new(scrub),
+            secrets: Mutex::new(opened.secrets),
             credentials_filled: AtomicU64::new(0),
             last_active: Mutex::new(Instant::now()),
             last_dom: Mutex::default(),
@@ -271,12 +269,12 @@ impl Session {
 
     /// A value the session must never show: scrubbed from everything recorded or answered from now on.
     pub fn add_secret(&self, name: &str, value: &str) {
-        let mut filled = lock(&self.filled);
-        if filled.0.iter().any(|(_, v)| v == value) {
+        let mut secrets = lock(&self.secrets);
+        if secrets.0.iter().any(|(_, v)| v == value) {
             return;
         }
-        filled.0.push((name.to_owned(), value.to_owned()));
-        *lock(&self.scrub) = Arc::new(Scrub::new(self.base.clone(), &filled.0));
+        secrets.0.push((name.to_owned(), value.to_owned()));
+        *lock(&self.scrub) = Arc::new(Scrub::new(&secrets.0));
     }
 
     /// The page the session follows: (targetId, CDP sessionId).
@@ -446,7 +444,8 @@ impl Session {
     /// Stops recording and the browser: the video is finished, the text files scrubbed once more with every value the
     /// session knew, and the browser killed with its profile. Returns the files there are.
     pub async fn close(&self) -> Vec<(RecordingFile, u64)> {
-        let _ = self.dom_turn.lock().await;
+        // Held to the end: a DOM capture still running finishes before the files are scrubbed and closed.
+        let _turn = self.dom_turn.lock().await;
         lock(&self._ticker).take();
         if let Some((_, page)) = self.page() {
             let _ = self

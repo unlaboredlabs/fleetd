@@ -40,7 +40,7 @@ use self::chrome::{Launch, Pool};
 use self::proxy::Proxy;
 use self::session::{Opened, Session};
 use self::upload::HubCalls;
-use super::lead::MaskFor;
+use crate::node::mask::Secrets;
 use super::util::AbortOnDrop;
 
 /// node.json's `browser`: how this machine runs browser sessions. Every field is optional.
@@ -60,7 +60,8 @@ pub struct BrowserConfig {
     /// Browsers kept launched for the next sessions. Absent: 1.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pool: Option<usize>,
-    /// Chrome's own sandbox. Absent: off, as Playwright launches it.
+    /// Chrome's own sandbox: true requires it, false turns it off. Absent: on wherever this host allows it, else off
+    /// (a host without unprivileged user namespaces, such as Ubuntu 24.04 with its AppArmor default).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sandbox: Option<bool>,
     /// A session no tool call touched for this long is ended. Absent: 30.
@@ -83,6 +84,9 @@ enum Install {
     Missing(String),
 }
 
+/// The secrets of an agent session, by its id (blocking: it reads them); `Err` is why they can't be read.
+pub type SecretsFor = Arc<dyn Fn(&str) -> Result<Secrets, String> + Send + Sync>;
+
 pub type BrowserHandler = Arc<
     dyn Fn(String, BrowserCallFrame) -> Pin<Box<dyn Future<Output = BrowserResultFrame> + Send>>
         + Send
@@ -96,9 +100,13 @@ pub trait SessionHooks: Send + Sync + 'static {
     /// A plugin of skills for the session: agent-browser's.
     fn plugin_dir(&self) -> Option<PathBuf>;
     fn item(&self, thread: &str, item: &ThreadItem);
+    /// The session's claude exited (it finished, was stopped or idled out, or crashed).
+    fn ended(&self, thread: &str);
 }
 
 pub struct Broker {
+    /// Itself, for the hooks the node's sessions call through a plain reference.
+    me: std::sync::Weak<Broker>,
     home: PathBuf,
     config: BrowserConfig,
     install: Mutex<Install>,
@@ -106,8 +114,10 @@ pub struct Broker {
     proxy: Mutex<Option<Arc<Proxy>>>,
     /// Live sessions by the agent session they belong to: one each.
     sessions: Mutex<HashMap<String, Arc<Session>>>,
+    /// Agent sessions whose browser is starting: a second start meanwhile is refused before it launches anything.
+    starting: Mutex<HashSet<String>>,
     hub: Arc<dyn HubCalls>,
-    mask_for: MaskFor,
+    secrets_for: SecretsFor,
     /// Recordings being uploaded now: one upload each.
     uploading: Mutex<HashSet<PathBuf>>,
     /// Reports for the hub, sent in order by one task.
@@ -130,6 +140,15 @@ fn new_id() -> BrowserSessionId {
     BrowserSessionId::unchecked(format!("B{hex}"))
 }
 
+/// An agent session's start in progress, until it returns.
+struct Starting<'a>(&'a Broker, String);
+
+impl Drop for Starting<'_> {
+    fn drop(&mut self) {
+        lock(&self.0.starting).remove(&self.1);
+    }
+}
+
 /// Whether a command the agent ran drove its browser.
 pub fn drives_browser(command: &str) -> bool {
     command.contains("agent-browser")
@@ -142,7 +161,7 @@ impl Broker {
         home: &Path,
         config: BrowserConfig,
         hub: Arc<dyn HubCalls>,
-        mask_for: MaskFor,
+        secrets_for: SecretsFor,
     ) -> Arc<Self> {
         let root = chrome::install_dir(home);
         let chrome = config
@@ -150,7 +169,7 @@ impl Broker {
             .clone()
             .map(PathBuf::from)
             .or_else(|| chrome::find_chrome(&root));
-        let broker = Self::open(home, config, hub, mask_for).await;
+        let broker = Self::open(home, config, hub, secrets_for).await;
         match chrome {
             Some(chrome) if agent_browser::find(home).is_some() => broker.ready(chrome),
             _ => {
@@ -184,21 +203,23 @@ impl Broker {
         home: &Path,
         config: BrowserConfig,
         hub: Arc<dyn HubCalls>,
-        mask_for: MaskFor,
+        secrets_for: SecretsFor,
     ) -> Arc<Self> {
         let ffmpeg = config
             .ffmpeg
             .clone()
             .map(PathBuf::from)
             .or_else(|| chrome::find_ffmpeg(&chrome::install_dir(home)));
-        let broker = Arc::new(Self {
+        let broker = Arc::new_cyclic(|me| Self {
+            me: me.clone(),
             home: home.to_owned(),
             install: Mutex::new(Install::Installing),
             ffmpeg: Mutex::new(ffmpeg),
             proxy: Mutex::default(),
             sessions: Mutex::default(),
+            starting: Mutex::default(),
             hub: hub.clone(),
-            mask_for,
+            secrets_for,
             uploading: Mutex::default(),
             reports: {
                 let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<(String, String, LeadCall)>();
@@ -268,7 +289,7 @@ impl Broker {
             Launch {
                 chrome,
                 profiles: self.home.join("browser").join("profiles"),
-                sandbox: self.config.sandbox == Some(true),
+                sandbox: self.config.sandbox,
             },
             self.config.pool.unwrap_or(1),
         );
@@ -364,6 +385,14 @@ impl Broker {
                 "use it, or end it with session_end before starting another",
             ));
         }
+        if !lock(&self.starting).insert(thread.clone()) {
+            return Err(refuse(
+                ErrorCode::Invalid,
+                "Your browser session is starting.",
+                "wait for that session_start's answer",
+            ));
+        }
+        let _starting = Starting(self, thread.clone());
         let Some(cdp) = self.cdp_url(&thread) else {
             return Err(refuse(
                 ErrorCode::Failed,
@@ -372,9 +401,9 @@ impl Broker {
             ));
         };
         let pool = self.pool()?;
-        let mask_for = self.mask_for.clone();
-        let masker_thread = thread.clone();
-        let masker = tokio::task::spawn_blocking(move || mask_for(&masker_thread));
+        let secrets_for = self.secrets_for.clone();
+        let secrets_thread = thread.clone();
+        let secrets = tokio::task::spawn_blocking(move || secrets_for(&secrets_thread));
         let browser = pool.take().await.map_err(|why| {
             refuse(
                 ErrorCode::Failed,
@@ -382,7 +411,7 @@ impl Broker {
                 "try session_start again",
             )
         })?;
-        let masker = masker
+        let secrets = secrets
             .await
             .map_err(|e| e.to_string())
             .and_then(|m| m)
@@ -397,37 +426,30 @@ impl Broker {
             })?;
         let id = new_id();
         let ffmpeg = lock(&self.ffmpeg).clone();
+        let dir = upload::recordings_dir(&self.home).join(id.as_str());
         let session = Session::open(
             browser,
             Opened {
-                dir: upload::recordings_dir(&self.home).join(id.as_str()),
+                dir: dir.clone(),
                 id,
                 thread: thread.clone(),
                 cwd,
                 purpose: purpose.clone(),
                 ffmpeg,
-                masker,
+                secrets,
             },
         )
         .await
         .map_err(|why| {
+            // Nothing was recorded: no folder is left for the uploader to find.
+            let _ = std::fs::remove_dir_all(&dir);
             refuse(
                 ErrorCode::Failed,
                 format!("The browser did not start: {why}."),
                 "try session_start again",
             )
         })?;
-        {
-            let mut sessions = lock(&self.sessions);
-            if sessions.contains_key(&thread) {
-                return Err(refuse(
-                    ErrorCode::Invalid,
-                    "Another browser session of yours opened meanwhile.",
-                    "use it, or end it with session_end",
-                ));
-            }
-            sessions.insert(thread.clone(), session.clone());
-        }
+        lock(&self.sessions).insert(thread.clone(), session.clone());
         {
             let broker = Arc::downgrade(self);
             let thread = thread.clone();
@@ -606,6 +628,21 @@ impl SessionHooks for Broker {
             Some(cdp) => agent_browser::env(&self.home, thread, &cdp, path),
             None => Vec::new(),
         }
+    }
+
+    /// Ends the agent session's browser session, if it has one: its recording goes to the hub now, not after the
+    /// idle timeout.
+    fn ended(&self, thread: &str) {
+        let Some(session) = lock(&self.sessions).remove(thread) else {
+            return;
+        };
+        let Some(broker) = self.me.upgrade() else {
+            return;
+        };
+        tokio::spawn(async move {
+            session.step("agent_session_ended", json!({}), true, None, 0);
+            broker.close(session).await;
+        });
     }
 
     fn plugin_dir(&self) -> Option<PathBuf> {
