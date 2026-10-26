@@ -3241,15 +3241,23 @@ async fn a_ready_slice_gets_the_orders_reviewer_and_a_refused_spawn_never_lets_i
     let change = slice_ready(&kit.train, &project(), &writer, slice(&first))
         .await
         .unwrap();
-    let spawned: Vec<(String, &str)> = kit
+    let spawned: Vec<(String, &str, String)> = kit
         .host
         .review_spawns
         .lock()
         .unwrap()
         .iter()
-        .map(|s| (s.pr.clone(), s.by))
+        .map(|s| (s.pr.clone(), s.by, s.title.clone()))
         .collect();
-    assert_eq!(spawned, [(first.clone(), "hub:reviews")]);
+    // Titled by what it checks, the PR's own title: the change's id and the PR stay in its details.
+    assert_eq!(
+        spawned,
+        [(
+            first.clone(),
+            "hub:reviews",
+            "Checking: change slice-1".to_owned()
+        )]
+    );
     slice_ready(&kit.train, &project(), &writer, slice(&first))
         .await
         .unwrap();

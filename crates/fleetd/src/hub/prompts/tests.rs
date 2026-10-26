@@ -387,3 +387,78 @@ fn the_leads_examples_never_nag() {
         );
     }
 }
+
+/// The lead writes to the human only for results, problems and their decisions, one short message per real change,
+/// in plain words: the steps along the way stay in the panel's Activity, and fleetd's ids, tools and process words
+/// stay out of the chat unless the human asks. Its own examples say no more.
+#[test]
+fn the_lead_speaks_only_when_it_matters_in_plain_words() {
+    let lead = super::registry::entry("lead.start");
+    let rules = lead.safety_rules();
+    for id in [
+        "speak-when-it-matters",
+        "one-message-per-change",
+        "plain-words",
+    ] {
+        let rule = rules
+            .iter()
+            .find(|r| r.id == id)
+            .unwrap_or_else(|| panic!("lead.start has no {id} rule"));
+        assert!(
+            super::render::rule_present(&rule.needle, lead.default),
+            "lead.start doesn't say its {id} rule"
+        );
+    }
+    let section = |head: &str| {
+        let rest = lead.default.split(head).nth(1).unwrap_or_default();
+        rest.split("\n## ").next().unwrap_or_default().to_owned()
+    };
+    let when = section("## When to speak");
+    for silent in ["a review passing", "CI running", "a PR queued"] {
+        assert!(when.contains(silent), "silent on {silent}? {when}");
+    }
+    for news in [
+        "a result they can use",
+        "a problem",
+        "a decision only they can make",
+    ] {
+        assert!(when.contains(news), "speaks for {news}? {when}");
+    }
+    let plain = section("## Plain words");
+    for banned in [
+        "W, T, P, C, X, D, S, Q numbers",
+        "tool names",
+        "file paths",
+        "done-when",
+        "head",
+        "rebase",
+        "non-blocking findings",
+        "PR numbers are fine",
+    ] {
+        assert!(
+            plain.contains(banned),
+            "plain words cover {banned}? {plain}"
+        );
+    }
+    // Nothing else in it has the lead report in fleetd's terms.
+    assert!(
+        !lead
+            .default
+            .contains("List the reviews' non-blocking findings"),
+        "{}",
+        lead.default
+    );
+    let jargon = regex::Regex::new(
+        r"\b[WTPCXDSQ]\d+\b|(?i)done-when|non-blocking|\bhead\b|\brebase|workstream|review passed|queued",
+    )
+    .unwrap();
+    let examples = section("## Examples");
+    let said: Vec<&str> = examples.lines().filter(|l| l.starts_with("You:")).collect();
+    assert!(!said.is_empty(), "{examples}");
+    for line in said {
+        assert!(
+            !jargon.is_match(line),
+            "the lead's example talks shop: {line}"
+        );
+    }
+}

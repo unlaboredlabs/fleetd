@@ -180,11 +180,11 @@ function Row({ item, project }: { item: TodoItem; project: ProjectKey }) {
   );
 }
 
-/** The agent on an item, by its title while it is at work. */
+/** The agent on an item, by its title while it is at work; its id only in the tooltip. */
 function AgentLink({ project, laneId }: { project: ProjectKey; laneId: string }) {
   const agent = useData(selectLiveAgent(`${projectKey(project)}/${laneId}`));
   return (
-    <a className={s.link} href={toHash(panelRoute(project, { tab: "agents", agent: laneId }))}>
+    <a className={s.link} href={toHash(panelRoute(project, { tab: "agents", agent: laneId }))} title={laneId}>
       {agent === undefined ? "The agent" : <span className={s.agent}>{agent.row.title}</span>}
     </a>
   );

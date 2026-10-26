@@ -116,7 +116,9 @@ describe("an agent's state and where its work is", () => {
     expect(workPlace({ pr: { ...pr, state: "ci" }, branch: "fleetd/T1-dark-mode" })).toEqual({ kind: "pr", text: "#212", state: "in CI", tone: "quiet" });
     expect(workPlace({ pr: { ...pr, state: "ci_failed" } })).toMatchObject({ state: "CI failed", tone: "danger" });
     expect(workPlace({ pr: { ...pr, state: "merged" } })).toMatchObject({ tone: "success" });
-    expect(workPlace({ branch: "fleetd/T1-dark-mode" })).toEqual({ kind: "branch", text: "fleetd/T1-dark-mode", tone: "quiet" });
+    // A fleetd branch reads by its slug; its full name, task id and all, is the tooltip.
+    expect(workPlace({ branch: "fleetd/T1-dark-mode" })).toEqual({ kind: "branch", text: "dark-mode", full: "fleetd/T1-dark-mode", tone: "quiet" });
+    expect(workPlace({ branch: "ada/dark-mode" })).toEqual({ kind: "branch", text: "ada/dark-mode", tone: "quiet" });
     expect(workPlace({ branch: "" })).toBeUndefined();
     expect(workPlace({})).toBeUndefined();
   });

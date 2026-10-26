@@ -156,6 +156,8 @@ export const STATE_WORD: Readonly<Record<LaneStatus, string>> = {
 export interface WorkPlace {
   readonly kind: "pr" | "branch";
   readonly text: string;
+  /** A branch's full name, for its tooltip, when `text` leaves out its task id. */
+  readonly full?: string | undefined;
   readonly state?: string | undefined;
   readonly tone: "quiet" | "danger" | "success";
 }
@@ -180,7 +182,11 @@ export const workPlace = (row: Pick<AgentRow, "pr" | "branch">): WorkPlace | und
     const tone = pr.state === "ci_failed" || pr.state === "refused" ? "danger" : pr.state === "merged" ? "success" : "quiet";
     return { kind: "pr", text: `#${String(pr.number)}`, state: PR_WORD[pr.state], tone };
   }
-  if (branch !== undefined && branch !== "") return { kind: "branch", text: branch, tone: "quiet" };
+  if (branch !== undefined && branch !== "") {
+    // fleetd names a writer's branch <prefix>T12-<slug>: the row says the slug, the task id stays in the tooltip.
+    const slug = /^(?:.*\/)?T\d+-(.+)$/u.exec(branch)?.[1];
+    return slug === undefined ? { kind: "branch", text: branch, tone: "quiet" } : { kind: "branch", text: slug, full: branch, tone: "quiet" };
+  }
   return undefined;
 };
 

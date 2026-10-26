@@ -241,18 +241,19 @@ const LineRow = memo(function LineRow({ line, project, child }: { line: Line; pr
     </>
   );
   const className = cx(s.row, child && s.child);
+  // Its ids, if a person wants them, are in the tooltip: never in the row's words.
   return line.link === undefined ? (
-    <div className={className} data-event={line.seq}>
+    <div className={className} title={line.ids} data-event={line.seq}>
       {body}
     </div>
   ) : (
-    <a className={cx(className, s.link)} href={toHash(panelRoute(project, line.link))} data-event={line.seq}>
+    <a className={cx(className, s.link)} href={toHash(panelRoute(project, line.link))} title={line.ids} data-event={line.seq}>
       {body}
     </a>
   );
 });
 
-/** A run folded into one row: the newest line's icon, how many, and a chevron that opens it. */
+/** A run folded into one row: the newest line's icon, how many, the newest (an agent by its title), and a chevron that opens it. */
 function RunRow({ item, onToggle }: { item: Extract<Row, { t: "run" }>; onToggle: (key: string) => void }) {
   const top = item.lines[0];
   if (top === undefined) return null;
@@ -267,7 +268,7 @@ function RunRow({ item, onToggle }: { item: Extract<Row, { t: "run" }>; onToggle
       </span>
       <span className={s.detail}>
         <Truncate size="xs" tone="quiet" expand="none">
-          {`Latest: ${top.text}`}
+          {`Latest: ${top.kind === "agents" ? (top.detail ?? top.text) : top.text}`}
         </Truncate>
       </span>
       <Text size="xs" tone="faint" tabular>

@@ -493,6 +493,9 @@ it("shows the lead's checklist with its progress, doing and to do open and done 
   await settle();
   expect(fold?.getAttribute("aria-expanded")).toBe("true");
   expect(rows()).toHaveLength(3);
+  // Plain words only: the agent's id is in its link's tooltip, never in what the list says.
+  expect(pane()?.textContent).not.toMatch(/\b[WTXPCDSQ]\d+\b/u);
+  expect(pane()?.querySelector("[data-item='2'] a")?.getAttribute("title")).toBe("T1");
   // A done item's PR opens in the panel.
   expect(pane()?.querySelector<HTMLAnchorElement>("[data-item='1'] a")?.getAttribute("href")).toBe(`${CHAT}/prs/acme/storefront/11`);
 

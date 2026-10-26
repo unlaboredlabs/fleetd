@@ -82,10 +82,12 @@ export interface Line {
   readonly kind: ActivityKind;
   readonly icon: Icon;
   readonly tone: Tone;
-  /** What happened, short: "T12 finished", "Merged #31". */
+  /** What happened, short and in plain words: "Agent finished", "Merged #31". Never an internal id. */
   readonly text: string;
   /** Quieter, after it: the task's title, the reason, the command. */
   readonly detail?: string | undefined;
+  /** The internal ids it is about ("T12", "X4"), for the row's tooltip only. */
+  readonly ids?: string | undefined;
   /** Where the row opens in the panel, when the event names an agent or a PR. */
   readonly link?: PanelView | undefined;
   /** Lines next to each other with the same `run.key` fold into one row worded by `run.label(count)`. */
@@ -123,11 +125,11 @@ export function describe(e: HubEvent): Line | undefined {
   const kind = kindOf(e.type);
   if (kind === undefined) return undefined;
   const data = record(e.data);
-  const base = { seq: e.seq, at: e.at, kind };
   const taskId = str(data["taskId"]);
   const workstream = str(data["workstreamId"]);
   const agent: PanelView | undefined = taskId === undefined ? undefined : { tab: "agents", agent: taskId };
-  const who = taskId ?? "An agent";
+  const ids = [taskId, str(data["changeId"]), workstream].filter((id) => id !== undefined).join(" · ") || undefined;
+  const base = { seq: e.seq, at: e.at, kind, ids };
   const pr = prOf(data);
   const prWord = pr === undefined ? "a PR" : `#${pr.number}`;
   switch (e.type) {
@@ -136,17 +138,17 @@ export function describe(e: HubEvent): Line | undefined {
         ...base,
         icon: "started",
         tone: "quiet",
-        text: `${who} started`,
+        text: "Agent started",
         detail: tail(e.summary),
         link: agent,
         ...(workstream === undefined ? {} : { run: { key: `started:${workstream}`, label: (n: number) => `${plural(n, "agent")} started` } }),
       };
     case "task.completed":
-      return { ...base, icon: "finished", tone: "done", text: `${who} finished`, detail: tail(e.summary), link: agent };
+      return { ...base, icon: "finished", tone: "done", text: "Agent finished", detail: tail(e.summary), link: agent };
     case "task.failed":
-      return { ...base, icon: "failed", tone: "failed", text: `${who} failed`, detail: tail(e.summary), link: agent };
+      return { ...base, icon: "failed", tone: "failed", text: "Agent failed", detail: tail(e.summary), link: agent };
     case "task.cancelled":
-      return { ...base, icon: "cancelled", tone: "quiet", text: `${who} stopped`, detail: tail(e.summary), link: agent };
+      return { ...base, icon: "cancelled", tone: "quiet", text: "Agent stopped", detail: tail(e.summary), link: agent };
     case "review.verdict": {
       const blocking = typeof data["blocking"] === "number" ? data["blocking"] : 0;
       const of = pr === undefined ? "Review" : `Review of #${pr.number}`;
