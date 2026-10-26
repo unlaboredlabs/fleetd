@@ -18,6 +18,8 @@ export interface ProjectAgents {
   readonly top: number;
   /** What it runs at most now: its max, within its machine's cap and the fleet cap. */
   readonly limit: number;
+  /** Slots free now on its machine, within the fleet cap: every project's agents there count, not just its own. */
+  readonly free: number;
   /** Whether a person set the project's own max, which no fleet or machine change moves; false: it follows `cap`. */
   readonly own: boolean;
 }
@@ -33,7 +35,8 @@ export const sliderTop = (slots: SlotState): number => (slots.perMachine === und
 export function projectAgents(slots: SlotState, project: ProjectRef): ProjectAgents {
   const row = slots.perProject.find((p) => sameRef(p.projectRef, project));
   // `slots.cap` is every machine's cap added up, so a project is held to its own machine's.
-  const machineCap = slots.perMachine?.find((m) => m.machineId === project.machineId)?.cap ?? slots.cap;
+  const machine = slots.perMachine?.find((m) => m.machineId === project.machineId);
+  const machineCap = machine?.cap ?? slots.cap;
   const cap = Math.min(machineCap, slots.cap);
   const top = Math.max(1, sliderTop(slots));
   // A hub from before `own` lists only projects set or busy, and says nothing of which: a max at the top reads as the
@@ -41,7 +44,9 @@ export function projectAgents(slots: SlotState, project: ProjectRef): ProjectAge
   const own = row?.own ?? (row !== undefined && row.maxAgents < cap);
   // On the default (or no row: nothing running or waiting), it follows `cap` whatever the row says.
   const max = own && row !== undefined ? Math.min(row.maxAgents, top) : cap;
-  return { running: row?.running ?? 0, queued: row?.queued ?? 0, max, cap, machineCap, top, limit: Math.min(max, cap), own };
+  // A hub from before machine caps runs its projects as one machine: what is used is what runs there.
+  const free = Math.max(0, Math.min(machineCap - (machine?.running ?? slots.used), slots.cap - slots.used));
+  return { running: row?.running ?? 0, queued: row?.queued ?? 0, max, cap, machineCap, top, limit: Math.min(max, cap), free, own };
 }
 
 /** Where the max comes from, beside the slider: its own setting, or the default it follows and what sets it. */
@@ -104,11 +109,12 @@ export function changeLine(a: ProjectAgents, next: number): string {
     return `${a.running} running now, ${over} over the new max: they finish their current work, and new agents wait ${until}.`;
   }
   if (a.queued > 0 && next > a.max) {
-    // Its machine (or the fleet, when lower) still holds it at `cap`: only what fits under both starts.
-    const start = Math.min(a.queued, Math.max(0, Math.min(next, a.cap) - a.running));
+    // Its machine (or the fleet, when lower) still holds it: only what fits in the slots free there starts, and other
+    // projects' agents on the machine hold those too.
+    const start = Math.min(a.queued, Math.max(0, Math.min(next - a.running, a.free)));
     const holder = a.cap < a.machineCap ? "the whole fleet" : "its machine";
     if (start === 0) return `Up to ${next} at once, but ${holder} runs ${a.cap} at most: the ${a.queued} queued wait for it.`;
-    const rest = start < a.queued && next > a.cap ? `; the rest wait for ${holder}` : "";
+    const rest = start < a.queued && a.free < next - a.running ? `; the rest wait for ${holder}` : "";
     return `Up to ${next} at once. ${start} of the ${a.queued} queued can start now${rest}.`;
   }
   if (next > a.max) return `Up to ${next} at once. Queued agents start as soon as there is room.`;

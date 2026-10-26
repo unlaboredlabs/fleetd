@@ -59,7 +59,10 @@ describe("machines", () => {
     expect(machineHolds(a, 22, "devbox")).toBeNull();
     // Raising it while devbox runs its 22: the queued wait for the machine, not start.
     expect(changeLine(a, 40)).toBe("Up to 40 at once, but its machine runs 22 at most: the 8 queued wait for it.");
-    const room = projectAgents({ ...fleet, perProject: [{ projectRef: storefront, maxAgents: 20, own: true, running: 20, queued: 8 }] }, storefront);
+    const room = projectAgents(
+      { ...fleet, used: 20, perMachine: [{ ...devbox, running: 20 }], perProject: [{ projectRef: storefront, maxAgents: 20, own: true, running: 20, queued: 8 }] },
+      storefront,
+    );
     expect(changeLine(room, 40)).toBe("Up to 40 at once. 2 of the 8 queued can start now; the rest wait for its machine.");
     expect(changeLine(room, 21)).toBe("Up to 21 at once. 1 of the 8 queued can start now.");
     // Under a fleet cap below devbox's, the fleet holds them.
@@ -70,14 +73,35 @@ describe("machines", () => {
     const busy = { projectRef: billing, maxAgents: 50, own: false, running: 2, queued: 0 };
     expect(projectAgents({ ...fleet, perProject: [busy] }, billing)).toMatchObject({ max: 22, cap: 22, limit: 22, own: false });
   });
+
+  it("counts every project's agents on the machine when saying how many queued start", () => {
+    // storefront and billing share devbox's 22: 10 and 10 run, so 2 slots are free whatever storefront's max.
+    const shared: SlotState = {
+      ...fleet,
+      used: 20,
+      perMachine: [{ ...devbox, running: 20 }],
+      perProject: [
+        { projectRef: storefront, maxAgents: 10, own: true, running: 10, queued: 8 },
+        { projectRef: billing, maxAgents: 22, own: false, running: 10, queued: 0 },
+      ],
+    };
+    const a = projectAgents(shared, storefront);
+    expect(a).toMatchObject({ running: 10, free: 2 });
+    expect(changeLine(a, 30)).toBe("Up to 30 at once. 2 of the 8 queued can start now; the rest wait for its machine.");
+    expect(changeLine(a, 15)).toBe("Up to 15 at once. 2 of the 8 queued can start now; the rest wait for its machine.");
+    expect(changeLine(a, 11)).toBe("Up to 11 at once. 1 of the 8 queued can start now.");
+    // Full with billing's too: none start.
+    const full = projectAgents({ ...shared, used: 22, perMachine: [{ ...devbox, running: 22 }] }, storefront);
+    expect(changeLine(full, 30)).toBe("Up to 30 at once, but its machine runs 22 at most: the 8 queued wait for it.");
+  });
 });
 
 describe("max agents", () => {
   it("reads a project's max, and the fleet cap when it has none of its own", () => {
     const at12 = { cap: 12, machineCap: 12, top: 12 };
-    expect(projectAgents(slots, storefront)).toEqual({ running: 6, queued: 2, max: 6, limit: 6, ...at12, own: true });
-    expect(projectAgents(slots, billing)).toEqual({ running: 2, queued: 0, max: 12, limit: 12, ...at12, own: false });
-    expect(projectAgents(slots, { machineId: "devbox", projectId: "new" })).toEqual({ running: 0, queued: 0, max: 12, limit: 12, ...at12, own: false });
+    expect(projectAgents(slots, storefront)).toEqual({ running: 6, queued: 2, max: 6, limit: 6, free: 4, ...at12, own: true });
+    expect(projectAgents(slots, billing)).toEqual({ running: 2, queued: 0, max: 12, limit: 12, free: 4, ...at12, own: false });
+    expect(projectAgents(slots, { machineId: "devbox", projectId: "new" })).toEqual({ running: 0, queued: 0, max: 12, limit: 12, free: 4, ...at12, own: false });
     // A share above a cap lowered later is held to the cap.
     expect(projectAgents({ ...slots, cap: 4 }, storefront).max).toBe(4);
     expect(agentsLabel(projectAgents(slots, storefront))).toBe("agents 6 / 6 · 2 queued");
@@ -99,7 +123,7 @@ describe("max agents", () => {
       ],
     };
     // No fleet cap: the sliders go past what the machines fit, to 64.
-    const on6 = { cap: 6, machineCap: 6, top: 64 };
+    const on6 = { cap: 6, machineCap: 6, top: 64, free: 6 };
     expect(projectAgents(machines, storefront)).toEqual({ running: 0, queued: 0, max: 6, limit: 6, ...on6, own: false });
     expect(projectAgents(machines, billing)).toEqual({ running: 0, queued: 0, max: 3, limit: 3, ...on6, own: true });
     expect(projectAgents(machines, { machineId: "builder", projectId: "new" }).max).toBe(14);
