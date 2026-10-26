@@ -1744,4 +1744,18 @@ export const screens: readonly Screen[] = [
     fixtures: ["typical", "long-text", "empty"],
     open: (page) => page.getByRole("tab", { name: "Insights" }).click(),
   },
+  // A finding's spans, then one span's transcript with its item marked (the selected fill, no coloured edge).
+  {
+    id: "time",
+    route: "#/time/order/W8",
+    fixtures: ["typical"],
+    variant: "transcript",
+    open: async (page) => {
+      await page.getByRole("tab", { name: "Insights" }).click();
+      await page.getByRole("button", { name: /^Show \d+ spans?$/u }).first().click();
+      await page.getByRole("button", { name: "List them" }).click();
+      await page.getByRole("dialog").getByRole("button", { disabled: false }).filter({ hasText: /\d/u }).first().click();
+      await page.locator('li[aria-current="true"]').waitFor();
+    },
+  },
 ];
