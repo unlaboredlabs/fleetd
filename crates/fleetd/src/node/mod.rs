@@ -6,6 +6,7 @@ pub mod actions;
 pub mod browser;
 pub mod cmd;
 pub mod config;
+pub mod device;
 pub mod identity;
 pub mod landed;
 pub mod lead;
@@ -125,6 +126,7 @@ pub async fn join(args: JoinArgs) -> Result<(), NodeError> {
         disk_per_agent_gb: None,
         enrolled: false,
         browser: None,
+        device: None,
     };
     write_config(&home, &config).map_err(|_| {
         NodeError::Setup(format!(
@@ -225,17 +227,37 @@ async fn run_node(
                 mask_for.clone(),
             )
             .await;
-            node_sessions.set_browser(broker.clone());
             Some(broker)
         }
         false => None,
     };
+    let device_config = config.device.clone().unwrap_or_default();
+    let devices = match device_config.enabled() {
+        true => Some(
+            device::Devices::start(
+                home,
+                device_config,
+                Arc::new(browser::upload::RelayHub(relay.clone())),
+                mask_for.clone(),
+            )
+            .await,
+        ),
+        false => None,
+    };
+    let sessions_router = (broker.is_some() || devices.is_some()).then(|| {
+        let router = Arc::new(device::Router {
+            browser: broker,
+            devices,
+        });
+        node_sessions.set_browser(router.clone());
+        router
+    });
     let _socket = lead::serve_lead_socket(
         lead::lead_socket_path(home),
         relay.clone(),
         identify,
         mask_for,
-        broker.as_ref().map(browser::Broker::handler),
+        sessions_router.as_ref().map(device::Router::handler),
     )
     .await
     .map_err(NodeError::LeadSocket)?;
@@ -288,8 +310,8 @@ async fn run_node(
         () = enrolled => Ok(()),
         () = shutdown_signal() => {
             node_sessions.shutdown().await;
-            if let Some(broker) = &broker {
-                broker.shutdown().await;
+            if let Some(router) = &sessions_router {
+                router.shutdown().await;
             }
             Ok(())
         }

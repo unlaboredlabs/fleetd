@@ -91,8 +91,8 @@ pub type BrowserHandler = Arc<
 /// tool calls as it ends.
 pub trait SessionHooks: Send + Sync + 'static {
     fn env(&self, thread: &str, path: Option<&str>) -> Vec<(String, String)>;
-    /// A plugin of skills for the session: agent-browser's.
-    fn plugin_dir(&self) -> Option<PathBuf>;
+    /// Plugins of skills for the session: agent-browser's (and agent-device's, node/device).
+    fn plugin_dirs(&self) -> Vec<PathBuf>;
     fn item(&self, thread: &str, item: &ThreadItem);
 }
 
@@ -424,7 +424,8 @@ impl Broker {
         self.report(&session, BrowserSessionState::Live);
         Ok(BrowserCallResult::SessionStart(SessionStarted {
             session_id: session.id.clone(),
-            cdp: Text::unchecked(cdp),
+            cdp: Some(Text::unchecked(cdp)),
+            serial: None,
             start_ms: started.elapsed().as_millis() as u64,
         }))
     }
@@ -449,6 +450,7 @@ impl Broker {
         let files = session.close().await;
         let ended = SessionEnded {
             session_id: session.id.clone(),
+            kind: fleetd_contracts::browser::SessionKind::Browser,
             files: files
                 .iter()
                 .map(|(file, bytes)| BrowserRecordingEntry {
@@ -528,9 +530,13 @@ impl SessionHooks for Broker {
         }
     }
 
-    fn plugin_dir(&self) -> Option<PathBuf> {
+    fn plugin_dirs(&self) -> Vec<PathBuf> {
         let dir = agent_browser::plugin_dir(&self.home);
-        dir.join(".claude-plugin").is_dir().then_some(dir)
+        dir.join(".claude-plugin")
+            .is_dir()
+            .then_some(dir)
+            .into_iter()
+            .collect()
     }
 
     /// A finished `agent-browser` command of a session with a live browser: a line in its action log, and the page

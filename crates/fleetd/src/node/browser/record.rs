@@ -8,13 +8,12 @@ use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
 
-use fleetd_contracts::browser::{BrowserAction, DomSnapshot, RecordingFile};
+use fleetd_contracts::browser::{BrowserAction, DomSnapshot, RecordingFile, SessionKind};
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::mpsc;
 
-use super::chrome::{HEIGHT, WIDTH};
 use crate::node::mask::Masker;
 
 /// Frames a second in the video.
@@ -30,6 +29,9 @@ fn frames_at(at: Duration) -> u64 {
 #[serde(rename_all = "camelCase")]
 pub struct Meta {
     pub session_id: String,
+    /// What the session drove; absent from a recording made before android sessions: a browser.
+    #[serde(default)]
+    pub kind: SessionKind,
     pub thread_id: String,
     pub cwd: String,
     pub purpose: String,
@@ -62,8 +64,8 @@ struct Encoder {
 }
 
 impl Encoder {
-    fn start(ffmpeg: &Path, out: &Path) -> Result<Self, String> {
-        let size = format!("{WIDTH}:{HEIGHT}");
+    fn start(ffmpeg: &Path, out: &Path, (width, height): (u32, u32)) -> Result<Self, String> {
+        let size = format!("{width}:{height}");
         let log = out.with_extension("log");
         let stderr = std::fs::File::create(&log)
             .map_err(|e| format!("cannot write {}: {e}", log.display()))?;
@@ -196,12 +198,13 @@ pub struct VideoSink {
 }
 
 impl VideoSink {
-    /// Starts encoding to `out`; `Err` says why there will be no video.
-    pub fn start(ffmpeg: Option<&Path>, out: PathBuf) -> Result<Self, String> {
+    /// Starts encoding to `out`, `size` pixels (a frame of another size is padded or cut to it); `Err` says why there
+    /// will be no video.
+    pub fn start(ffmpeg: Option<&Path>, out: PathBuf, size: (u32, u32)) -> Result<Self, String> {
         let Some(ffmpeg) = ffmpeg else {
             return Err("no video: this machine has no ffmpeg for it".to_owned());
         };
-        let mut encoder = Encoder::start(ffmpeg, &out)?;
+        let mut encoder = Encoder::start(ffmpeg, &out, size)?;
         let (tx, mut rx) = mpsc::unbounded_channel::<Feed>();
         tokio::spawn(async move {
             let mut broken = None;

@@ -27,6 +27,28 @@ brand!(
     BrowserSessionId, name = "BrowserSessionId", pattern = r"^B[0-9a-f]{32}$"
 );
 
+/// What a session drives: a fresh Chrome with an empty profile (`browser`, driven with agent-browser), or a fresh
+/// `-read-only` copy of an Android emulator booted from its Quick Boot snapshot (`android`, driven with agent-device at
+/// the copy's serial). Both kinds share the session tools, the action log, the video and the hub's storage; an android
+/// recording has no `dom` file. A node hosts android sessions when it lists the `session_android` capability.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
+pub enum SessionKind {
+    #[default]
+    Browser,
+    Android,
+}
+
+impl SessionKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Browser => "browser",
+            Self::Android => "android",
+        }
+    }
+}
+
 /// What the agent opened the session for, in one line ("Check the signup form on staging").
 pub type BrowserPurpose = Line<1, 200>;
 
@@ -136,6 +158,8 @@ pub struct BrowserRecordingEntry {
 pub struct BrowserSession {
     pub session_id: BrowserSessionId,
     pub project_ref: ProjectRef,
+    #[serde(default)]
+    pub kind: SessionKind,
     /// The agent's session (its thread on the project's machine).
     pub thread_id: ThreadId,
     /// The task whose agent opened it; absent for the project's lead.
@@ -232,6 +256,8 @@ pub struct BrowserSessionEventData {
 #[serde(rename_all = "camelCase")]
 pub struct BrowserSessionCall {
     pub session_id: BrowserSessionId,
+    #[serde(default)]
+    pub kind: SessionKind,
     /// The agent's session the browser is for.
     pub thread_id: ThreadId,
     pub purpose: BrowserPurpose,
@@ -310,11 +336,15 @@ impl BrowserCall {
     }
 }
 
-/// `session_start`: a fresh Chrome with an empty profile, for this agent only, recorded until `session_end`.
+/// `session_start`: a fresh Chrome with an empty profile (or with `kind` android, a fresh Android emulator), for this
+/// agent only, recorded until `session_end`.
+#[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SessionStartCall {
     /// What you need the browser for, in one line; the person replaying it sees it.
     pub purpose: BrowserPurpose,
+    /// `android` for an Android emulator, driven with agent-device; absent for a browser.
+    pub kind: Option<SessionKind>,
 }
 
 /// `session_end`: closes the browser and throws its profile away; the recording goes to the hub.
@@ -372,13 +402,16 @@ pub enum BrowserCallResult {
     RequestTakeover(TakeoverRequested),
 }
 
-/// The session's browser, ready for the agent's `agent-browser`.
+/// The session's browser, ready for the agent's `agent-browser`; or its emulator, ready for `agent-device`.
+#[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionStarted {
     pub session_id: BrowserSessionId,
-    /// The node's CDP proxy for this agent's session, as its `AGENT_BROWSER_CDP` already names it.
-    pub cdp: Text<1, 200>,
+    /// A browser's: the node's CDP proxy for this agent's session, as its `AGENT_BROWSER_CDP` already names it.
+    pub cdp: Option<Text<1, 200>>,
+    /// An emulator's adb serial (`emulator-5554`), which the session's agent-device config already names.
+    pub serial: Option<Text<1, 100>>,
     pub start_ms: u64,
 }
 
@@ -387,6 +420,8 @@ pub struct SessionStarted {
 #[serde(rename_all = "camelCase")]
 pub struct SessionEnded {
     pub session_id: BrowserSessionId,
+    #[serde(default)]
+    pub kind: SessionKind,
     /// The recording's files as the node will upload them.
     pub files: Vec<BrowserRecordingEntry>,
     pub note: Option<String>,

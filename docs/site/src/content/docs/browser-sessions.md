@@ -1,6 +1,6 @@
 ---
 title: Browser sessions
-description: Agents open a fresh Chrome of their own, drive it with agent-browser, and leave a recording on the hub.
+description: Agents open a fresh Chrome or Android emulator of their own, drive it with agent-browser or agent-device, and leave a recording on the hub.
 ---
 
 An agent that needs a web page (to check a signup form on staging, read a dashboard, reproduce a bug) opens a browser
@@ -78,3 +78,44 @@ Settings go under `browser` in [node.json](/docs/config-and-files#node-json):
 | `pool` | Chromes kept launched for the next sessions. Absent: 1. Each waiting Chrome takes about 0.5 GB of memory. |
 | `sandbox` | `true` turns on Chrome's own sandbox. It's off by default, as Playwright has it, because it needs user namespaces that many Linux hosts refuse. |
 | `idleMinutes` | End a session after this many minutes without an `agent-browser` command. Absent: 30. |
+
+## Android sessions {#android}
+
+An agent that needs a phone app (to check an Android build, or a site on a phone) opens an Android session:
+**`session_start`** with `kind` `android`. It gets a fresh Android 15 emulator on its machine, drives it with
+Callstack's [agent-device](https://github.com/callstack/agent-device) CLI (`agent-device open settings`, `snapshot -i`,
+`press @e3 --settle`), and ends it with **`session_end`**. agent-device is on its `PATH` with its skill, already
+pointed at the session's emulator. The session tools, the one-session-at-a-time rule, the action log, the hub's
+storage and its limits are the same as a browser session's.
+
+- **A fresh emulator per session.** The node boots its virtual device once, cold, and saves its Quick Boot snapshot.
+  Each session gets its own copy, started from that snapshot with `-read-only`: nothing done in it is kept, and the
+  copy is killed at `session_end`.
+- **Starts from a warm pool.** A copy boots in about 8 seconds on a KVM machine. The node keeps one booted for the
+  next session and boots another behind it, so `session_start` takes well under a second.
+- **Recorded through scrcpy.** The node runs [scrcpy](https://github.com/Genymobile/scrcpy)'s server on the emulator
+  and decodes its screen stream itself. The recording is an `actions` file as a browser session's, and a `video` (a
+  WebM, VP9, 576×1280). There's no `dom` file.
+
+### On each machine {#android-setup}
+
+Android sessions need Linux on x86_64 with KVM: the user running the node must be able to open `/dev/kvm`. The doctor's
+`android` check says when it can't, and the fix (usually `sudo usermod -aG kvm $USER`, then a restart of the node).
+A node that can host them lists `session_android` to the hub.
+
+The node installs everything the first time an agent asks for an Android session (or as soon as it starts, with
+`"enabled": true`), about 2 GB under `~/.fleetd/node/device`, each download checked against its pinned digest:
+
+- Google's platform-tools 37.0.1 (adb), emulator 37.2.12 and the Android 15 (API 35) Google APIs x86_64 system image;
+- scrcpy's server 5.0.1, and an ffmpeg 6.0.1 static build that decodes its stream;
+- agent-device 0.21.31 from npm (it needs Node.js 22.12 or later), with its skill.
+
+It then boots the emulator once to save its snapshot. Until that's done, `session_start` says it is still installing.
+
+Settings go under `device` in [node.json](/docs/config-and-files#node-json):
+
+| Key | Means |
+|---|---|
+| `enabled` | `false` turns Android sessions off on this machine. `true` installs them when the node starts rather than at the first session. Absent: on where the machine has KVM, installed at the first session. |
+| `pool` | Emulators kept booted for the next sessions. Absent: 1. Each takes about 2 GB of memory. |
+| `idleMinutes` | End a session after this many minutes without an `agent-device` command. Absent: 30. |

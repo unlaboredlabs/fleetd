@@ -35,6 +35,7 @@ Where fleetd keeps everything, and the settings you can change. The [hub](/docs/
     project-env/<project>.json   a project's environment variables, secrets included (mode 0600; Settings → Projects)
     mcp-secrets/         the secrets of the MCP servers agents get, global and per project (mode 0600; Settings → MCP servers)
     browser/             browser sessions: the pinned Chrome, ffmpeg and agent-browser, and recordings not yet on the hub
+    device/              Android sessions: the pinned SDK, emulator, snapshot and agent-device, and recordings not yet on the hub
   claude.env             optional extra environment for every claude fleetd starts
   logs/node.log          the node service's log
 ```
@@ -76,6 +77,7 @@ after you change it.
 | `memPerAgentGb` | GB of memory to allow per agent when the hub works out how many agents this machine runs at once by default. It sizes the default only: no agent waits for the memory it might take. Absent or `0`: 2 GB. Read with every heartbeat. |
 | `diskPerAgentGb` | GB of disk to allow per new agent's worktree when the hub works out how many more fit above `minFreeGb`. Absent or `0`: 5 GB, about a Rust worktree with a build cache; a JS project needs 1 to 2. Read with every heartbeat. |
 | `browser` | How this machine runs [browser sessions](/docs/browser-sessions#setup): `enabled`, `chrome`, `ffmpeg`, `pool`, `sandbox`, `idleMinutes`. |
+| `device` | How this machine runs [Android sessions](/docs/browser-sessions#android-setup): `enabled`, `pool`, `idleMinutes`. |
 
 ## The Claude login {#claude}
 
@@ -99,6 +101,7 @@ fleetd adds its own settings on top of yours, per session:
 | `--mcp-config` | fleetd's agent tools. |
 | A `--settings` overlay | Pins claude's version, turns claude's auto memory and its own subagents off ([why](/docs/what-agents-are-told#no-subagents)), and denies tools agents never get: plan mode, worktrees, cron. |
 | agent-browser on `PATH`, its `AGENT_BROWSER_*` variables and its skill | A lead's and a task's [browser session](/docs/browser-sessions#use). |
+| agent-device and adb on `PATH`, its `AGENT_DEVICE_*` and `ANDROID_HOME` variables and its skill | A lead's and a task's [Android session](/docs/browser-sessions#android). |
 
 ### A dedicated claude profile {#claude-profile}
 

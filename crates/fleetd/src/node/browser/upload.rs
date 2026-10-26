@@ -72,6 +72,7 @@ pub fn report(
 ) -> LeadCall {
     LeadCall::BrowserSession(BrowserSessionCall {
         session_id: BrowserSessionId::unchecked(&meta.session_id),
+        kind: meta.kind,
         thread_id: ThreadId::unchecked(&meta.thread_id),
         purpose: Line::unchecked(meta.purpose.chars().take(200).collect::<String>()),
         state,
@@ -167,7 +168,12 @@ pub async fn give_up(hub: &dyn HubCalls, dir: &Path, why: &str) {
 
 /// The recordings waiting to go, but `live` ones. One a node stopped during is ended now, with a note.
 pub fn waiting(home: &Path, live: &[String]) -> Vec<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(recordings_dir(home)) else {
+    waiting_in(&recordings_dir(home), live)
+}
+
+/// [`waiting`], for the recordings in `root`.
+pub fn waiting_in(root: &Path, live: &[String]) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(root) else {
         return Vec::new();
     };
     let mut out = Vec::new();
