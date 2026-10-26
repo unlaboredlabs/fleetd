@@ -29,7 +29,7 @@ use fleetd_contracts::browser::{
     BrowserInput, BrowserRecordingEntry, BrowserResultFrame, BrowserSessionId, BrowserSessionState,
     BrowserTakeoverCall, SessionEnded, SessionStarted, TakeoverRequested,
 };
-use fleetd_contracts::lead_calls::LeadCall;
+use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::node_link::HubToNode;
 use fleetd_contracts::prim::{Count, Text};
@@ -123,7 +123,7 @@ pub struct Broker {
     /// Recordings being uploaded now: one upload each.
     uploading: Mutex<HashSet<PathBuf>>,
     /// Reports for the hub, sent in order by one task.
-    reports: tokio::sync::mpsc::UnboundedSender<(String, String, LeadCall)>,
+    reports: tokio::sync::mpsc::UnboundedSender<Report>,
     _loop: Mutex<Option<AbortOnDrop>>,
 }
 
@@ -164,6 +164,14 @@ impl FrameSlot {
             .into_values()
             .collect()
     }
+}
+
+/// A call for the hub about a session, sent after those before it; `answer` when the caller waits for it.
+struct Report {
+    thread: String,
+    cwd: String,
+    call: LeadCall,
+    answer: Option<tokio::sync::oneshot::Sender<Result<LeadCallResult, McpToolError>>>,
 }
 
 /// An agent session's start in progress, until it returns.
@@ -248,13 +256,20 @@ impl Broker {
             secrets_for,
             uploading: Mutex::default(),
             reports: {
-                let (tx, mut rx) =
-                    tokio::sync::mpsc::unbounded_channel::<(String, String, LeadCall)>();
+                let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Report>();
                 let hub = hub.clone();
                 tokio::spawn(async move {
-                    while let Some((thread, cwd, call)) = rx.recv().await {
-                        if let Err(e) = hub.call(&thread, &cwd, call).await {
-                            tracing::warn!(error = %e.message, "browser session not reported to the hub");
+                    while let Some(report) = rx.recv().await {
+                        let answer = hub.call(&report.thread, &report.cwd, report.call).await;
+                        match report.answer {
+                            Some(waiting) => {
+                                let _ = waiting.send(answer);
+                            }
+                            None => {
+                                if let Err(e) = answer {
+                                    tracing::warn!(error = %e.message, "browser session not reported to the hub");
+                                }
+                            }
                         }
                     }
                 });
@@ -563,9 +578,42 @@ impl Broker {
     /// Tells the hub where a session is now, in the background, after what was reported before.
     fn report(&self, session: &Session, state: BrowserSessionState) {
         let call = upload::report(&session.meta(None), state, session.control(), &[]);
-        let _ = self
-            .reports
-            .send((session.thread.clone(), session.cwd.clone(), call));
+        let _ = self.reports.send(Report {
+            thread: session.thread.clone(),
+            cwd: session.cwd.clone(),
+            call,
+            answer: None,
+        });
+    }
+
+    /// A call about a session, after every report before it (a takeover request never reaches the hub before the
+    /// session it is about), and its answer.
+    async fn in_turn(
+        &self,
+        session: &Session,
+        call: LeadCall,
+    ) -> Result<LeadCallResult, McpToolError> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let report = Report {
+            thread: session.thread.clone(),
+            cwd: session.cwd.clone(),
+            call,
+            answer: Some(tx),
+        };
+        if self.reports.send(report).is_err() {
+            return Err(refuse(
+                ErrorCode::Failed,
+                "The node is stopping.",
+                "try again shortly",
+            ));
+        }
+        rx.await.unwrap_or_else(|_| {
+            Err(refuse(
+                ErrorCode::Failed,
+                "The node is stopping.",
+                "try again shortly",
+            ))
+        })
     }
 
     /// A live session by its id.
@@ -608,16 +656,19 @@ impl Broker {
         let Some(session) = self.by_id(id) else {
             return;
         };
-        let (next, step) = match (to, session.control()) {
-            (BrowserControlTo::Human, BrowserControl::Human) => return,
-            (BrowserControlTo::Human, _) => (BrowserControl::Human, "takeover"),
+        let change = match (to, session.control()) {
+            (BrowserControlTo::Human, BrowserControl::Human) => None,
+            (BrowserControlTo::Human, _) => Some((BrowserControl::Human, "takeover")),
             (BrowserControlTo::Agent, BrowserControl::Human) => {
-                (BrowserControl::HandingBack, "handback")
+                Some((BrowserControl::HandingBack, "handback"))
             }
-            (BrowserControlTo::Agent, _) => return,
+            (BrowserControlTo::Agent, _) => None,
         };
-        session.set_control(next);
-        session.step(step, json!({ "by": by }), true, None, 0);
+        if let Some((next, step)) = change {
+            session.set_control(next);
+            session.step(step, json!({ "by": by }), true, None, 0);
+        }
+        // Even when nothing changed: the hub waits for the node to say who drives.
         self.report(&session, BrowserSessionState::Live);
     }
 
@@ -638,7 +689,7 @@ impl Broker {
             session_id: session.id.clone(),
             reason: reason.clone(),
         });
-        self.hub.call(thread, &session.cwd, call).await?;
+        self.in_turn(&session, call).await?;
         session.step(
             "request_takeover",
             json!({ "reason": reason.as_str() }),
@@ -734,7 +785,7 @@ impl SessionHooks for Broker {
             .unwrap_or_default();
         let ok = item.status == ItemStatus::Completed && exit_code.is_none_or(|c| c == 0);
         let (seq, target) = session.agent_step(command, ok, output.as_deref(), duration_ms);
-        tokio::spawn(async move { session.capture_dom(seq, target).await });
+        session.queue_capture(seq, target);
     }
 }
 

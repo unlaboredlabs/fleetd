@@ -167,6 +167,9 @@ fn session(
     hub.db
         .transaction(|c| put_on(c, &next, started_ms))
         .map_err(failed)?;
+    hub.link
+        .browser_live
+        .control_reported(&next.session_id, next.control);
     if changed {
         announce(hub, &next, now_ms(hub.clock.as_ref())).map_err(failed)?;
     }

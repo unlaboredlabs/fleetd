@@ -25,6 +25,9 @@ const FRAMES: usize = 8;
 
 pub struct Live {
     frames: broadcast::Sender<BrowserFrame>,
+    /// `browser_control` calls waiting for the node to report who drives a session now.
+    controls:
+        Mutex<HashMap<BrowserSessionId, Vec<tokio::sync::mpsc::UnboundedSender<BrowserControl>>>>,
     /// Watched sessions: their machine, and how many watch.
     watched: Mutex<HashMap<BrowserSessionId, (MachineId, usize)>>,
 }
@@ -33,6 +36,7 @@ impl Default for Live {
     fn default() -> Self {
         Self {
             frames: broadcast::channel(FRAMES).0,
+            controls: Mutex::default(),
             watched: Mutex::default(),
         }
     }
@@ -105,6 +109,35 @@ impl Live {
             .filter(|(_, (m, _))| m == machine)
             .map(|(session, _)| watch_frame(session, true))
             .collect()
+    }
+
+    /// The control the node reports for `session` from now on, report by report.
+    pub fn await_control(
+        &self,
+        session: &BrowserSessionId,
+    ) -> tokio::sync::mpsc::UnboundedReceiver<BrowserControl> {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        self.controls
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .entry(session.clone())
+            .or_default()
+            .push(tx);
+        rx
+    }
+
+    /// The node reported who drives `session`: for the calls waiting on it.
+    pub fn control_reported(&self, session: &BrowserSessionId, control: BrowserControl) {
+        let mut controls = self
+            .controls
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(waiting) = controls.get_mut(session) {
+            waiting.retain(|tx| tx.send(control).is_ok());
+            if waiting.is_empty() {
+                controls.remove(session);
+            }
+        }
     }
 
     pub fn watchers(&self, session: &BrowserSessionId) -> usize {

@@ -26,8 +26,9 @@ session slot.
 
 ## Watch and take over {#takeover}
 
-A live session streams its page to the app as you watch it: the node sends its frames only while someone watches.
-**Take over** gives you the mouse and keyboard on the page. While you have control, the agent's `agent-browser`
+A live session streams its page, with its address, to the app as you watch it: the node sends its frames only while
+someone watches, and a slow connection skips frames rather than falling behind.
+**Take over** gives you the mouse and keyboard on the page once the session's machine confirms it. While you have control, the agent's `agent-browser`
 commands answer that a person has control, and the agent carries on with other work. **Hand back** returns control: the
 agent's next command sees the page as you left it, what you typed included. The recording's action log says who took
 over and when, but not what you typed.
@@ -71,8 +72,9 @@ scrubbed: whatever showed on the page is in it.
 ## On the hub {#hub}
 
 The hub keeps each recording for **30 days**, and up to **20 GB** per project, deleting a project's oldest first. It
-checks every hour. An upload still in progress counts toward the size; one its machine never finished (a day after it
-started) is deleted like a recording. An expired session keeps its row, with no files. An admin key on every machine
+checks every hour. An upload still in progress counts toward the size, and is never cut short. One its machine never
+finished is treated as a recording from a day after it started: it goes past the 30 days, or when its project is over
+its size. An expired session keeps its row, with no files. An admin key on every machine
 changes both limits with `browser_retention_set`.
 
 The app and any [MCP client](/docs/mcp-clients) read sessions with `browser_sessions`: each one's agent and task,

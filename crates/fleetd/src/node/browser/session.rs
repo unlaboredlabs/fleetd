@@ -15,7 +15,7 @@ use fleetd_contracts::browser::{
 };
 use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::node_link::NodeToHub;
-use fleetd_contracts::prim::{Int, NonEmpty};
+use fleetd_contracts::prim::{Int, NonEmpty, Text};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
@@ -30,6 +30,8 @@ use crate::node::wire::to_json;
 const RESULT_CHARS: usize = 500;
 /// A page's HTML past this is cut in the DOM trace.
 const DOM_MAX_BYTES: usize = 2 << 20;
+/// The longest the proxy holds the driver's click or keystroke to read the element it acts on.
+const TARGET_WAIT: Duration = Duration::from_millis(250);
 /// What the agent's driver hears while a person has control.
 pub const PAUSED: &str = "A person has control of the browser now. Wait for them to hand it back (carry on with other \
                           work meanwhile); your next command after that sees the page as they left it.";
@@ -81,6 +83,9 @@ pub struct Session {
     /// A person's input, applied one at a time in the order it came: a click focuses before the typing after it.
     inputs: tokio::sync::mpsc::UnboundedSender<BrowserInput>,
     _inputs: Mutex<Option<AbortOnDrop>>,
+    /// The DOM captures after each step, taken one at a time in order; `close` waits for those queued.
+    captures: tokio::sync::mpsc::UnboundedSender<Capture>,
+    _captures: Mutex<Option<AbortOnDrop>>,
     _screencast: Mutex<Option<AbortOnDrop>>,
     _ticker: Mutex<Option<AbortOnDrop>>,
 }
@@ -96,6 +101,8 @@ struct Live {
     last: Option<BrowserFrame>,
     /// The page's size in CSS pixels, as the last frame's metadata gave it: a person's input is scaled to it.
     page: (f64, f64),
+    /// Each page's address, by target, as the browser last said: the followed one's goes on its frames.
+    urls: std::collections::HashMap<String, String>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -129,6 +136,7 @@ impl Session {
         let started_at = Timestamp(crate::node::util::now_iso());
         let scrub = Arc::new(Scrub::new(&opened.secrets.0));
         let (inputs, mut queued) = tokio::sync::mpsc::unbounded_channel::<BrowserInput>();
+        let (captures, mut steps) = tokio::sync::mpsc::unbounded_channel::<Capture>();
         let session = Arc::new(Self {
             id: opened.id,
             thread: opened.thread,
@@ -156,8 +164,28 @@ impl Session {
             on_control: Mutex::default(),
             inputs,
             _inputs: Mutex::default(),
+            captures,
+            _captures: Mutex::default(),
             target: Mutex::default(),
         });
+        {
+            let weak = Arc::downgrade(&session);
+            *lock(&session._captures) = Some(AbortOnDrop(tokio::spawn(async move {
+                while let Some(capture) = steps.recv().await {
+                    match capture {
+                        Capture::Step(seq, target) => {
+                            let Some(session) = weak.upgrade() else {
+                                return;
+                            };
+                            session.capture_dom(seq, target).await;
+                        }
+                        Capture::Flush(done) => {
+                            let _ = done.send(());
+                        }
+                    }
+                }
+            })));
+        }
         {
             let weak = Arc::downgrade(&session);
             *lock(&session._inputs) = Some(AbortOnDrop(tokio::spawn(async move {
@@ -225,13 +253,27 @@ impl Session {
         *lock(&self.on_control) = Some(hook);
     }
 
+    /// The followed page's address for its frames, scrubbed as everything else the session sends, so a value a
+    /// form submits by GET, or a redirect puts in a query string, never reaches the hub. Once the session filled a
+    /// credential, its query and fragment go too: a value may be there in a form the scrubber doesn't know.
+    fn frame_url(&self, live: &Live) -> Option<Text<0, 2000>> {
+        let (target, _) = self.page()?;
+        let mut url = self.scrub().text(live.urls.get(&target)?);
+        if self.credentials_filled.load(Ordering::Relaxed) > 0 {
+            url = without_query(&url).to_owned();
+        }
+        Some(Text::unchecked(url.chars().take(2000).collect::<String>()))
+    }
+
     /// Sends this session's frames to the hub from now on (`Some`), the newest at once, or no more.
     pub fn set_watcher(&self, watcher: Option<Arc<super::FrameSlot>>) {
         let mut live = lock(&self.live);
         live.watcher = watcher;
         if let (Some(watcher), Some(last)) = (&live.watcher, &live.last) {
             let mut last = last.clone();
+            // As things are now: a still page sends no new frame, so the newest says who drives and where it is.
             last.control = self.control();
+            last.url = self.frame_url(&live);
             watcher.replace(self.id.as_str(), to_json(&NodeToHub::BrowserFrame(last)));
         }
     }
@@ -256,7 +298,7 @@ impl Session {
             jpeg_b64: NonEmpty::unchecked(data),
             width: Int::unchecked(i64::from(width)),
             height: Int::unchecked(i64::from(height)),
-            url: None,
+            url: self.frame_url(&live),
             control: self.control(),
         };
         // Only this session still holds the slot: its link went, and the hub watches again on the next one.
@@ -449,6 +491,17 @@ impl Session {
     /// Notes the element one of the driver's commands is about to act on, before it goes: the one under a click,
     /// or the one focused when the first key of a step is typed. The latest click of a step wins.
     pub async fn note_target(&self, command: &Value) {
+        // A note for the log never costs the agent real time: a page whose main thread is busy, or held by a
+        // dialog, gets its step logged without the element.
+        if tokio::time::timeout(TARGET_WAIT, self.find_target(command))
+            .await
+            .is_err()
+        {
+            tracing::debug!(session = %self.id, "step's element not read in time");
+        }
+    }
+
+    async fn find_target(&self, command: &Value) {
         let params = &command["params"];
         let found = match command["method"].as_str().unwrap_or_default() {
             "Input.dispatchMouseEvent" if params["type"] == "mousePressed" => {
@@ -570,8 +623,13 @@ impl Session {
         }
     }
 
+    /// Queues the DOM capture after action `seq`, behind those before it.
+    pub fn queue_capture(&self, seq: u64, target: Option<StepTarget>) {
+        let _ = self.captures.send(Capture::Step(seq, target));
+    }
+
     /// Writes the page's HTML to the DOM trace after action `seq`, unless it is as the last one left it.
-    pub async fn capture_dom(&self, seq: u64, target: Option<StepTarget>) {
+    async fn capture_dom(&self, seq: u64, target: Option<StepTarget>) {
         let _turn = self.dom_turn.lock().await;
         let Some((target_id, page)) = self.page() else {
             return;
@@ -648,7 +706,16 @@ impl Session {
     /// Stops recording and the browser: the video is finished, the text files scrubbed once more with every value the
     /// session knew, and the browser killed with its profile. Returns the files there are.
     pub async fn close(&self) -> Vec<(RecordingFile, u64)> {
-        // Held to the end: a DOM capture still running finishes before the files are scrubbed and closed.
+        // Every step's DOM capture queued so far lands first, while the page is still there.
+        let (done, flushed) = tokio::sync::oneshot::channel();
+        if self.captures.send(Capture::Flush(done)).is_ok()
+            && tokio::time::timeout(Duration::from_secs(30), flushed)
+                .await
+                .is_err()
+        {
+            tracing::warn!(session = %self.id, "DOM captures not finished in 30 s");
+        }
+        // Held to the end: no capture runs while the files are scrubbed and closed.
         let _turn = self.dom_turn.lock().await;
         lock(&self._ticker).take();
         if let Some((_, page)) = self.page() {
@@ -728,12 +795,26 @@ async fn screencast(
                     video.frame(jpeg, session.start.elapsed());
                 }
             }
+            "Target.targetInfoChanged" => {
+                let info = &event.params["targetInfo"];
+                if let (Some(target), Some(url)) = (info["targetId"].as_str(), info["url"].as_str())
+                {
+                    lock(&session.live)
+                        .urls
+                        .insert(target.to_owned(), url.to_owned());
+                }
+            }
             "Target.targetCreated" => {
                 let info = &event.params["targetInfo"];
                 if info["type"] != "page" {
                     continue;
                 }
                 let target = info["targetId"].as_str().unwrap_or_default().to_owned();
+                if let Some(url) = info["url"].as_str() {
+                    lock(&session.live)
+                        .urls
+                        .insert(target.clone(), url.to_owned());
+                }
                 // Pages the driver attaches to show here too: follow each once, by the broker's own session.
                 if lock(&session.pages).stack.iter().any(|(t, _)| *t == target) {
                     continue;
@@ -751,6 +832,7 @@ async fn screencast(
                     }
                     _ => ("", event.params["sessionId"].as_str().unwrap_or_default()),
                 };
+                lock(&session.live).urls.remove(target);
                 let was_current = {
                     let mut pages = lock(&session.pages);
                     let current = pages.current().cloned();
@@ -940,4 +1022,17 @@ pub fn element_ref(command: &str) -> Option<String> {
                 .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
         })
         .map(str::to_owned)
+}
+
+/// A job for a session's DOM capture queue.
+enum Capture {
+    /// The page after step `seq`, with the element it acted on.
+    Step(u64, Option<StepTarget>),
+    /// Answers once every capture queued before it is written.
+    Flush(tokio::sync::oneshot::Sender<()>),
+}
+
+/// A URL without its query and fragment.
+pub fn without_query(url: &str) -> &str {
+    url.find(['?', '#']).map_or(url, |at| &url[..at])
 }
