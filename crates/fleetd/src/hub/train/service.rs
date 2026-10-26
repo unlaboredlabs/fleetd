@@ -17,7 +17,7 @@ use super::contract::{
 };
 use super::github::{
     BranchUpdate, CheckRun, CommitStatus, GhError, GhRunner, MergeOutcome, Pull, TRAIN_CONTEXT,
-    TrainGitHub,
+    TrainGitHub, batch_heads,
 };
 use super::host::{BoxFut, TrainHost};
 use super::main_ci::{GithubSync, MainCi, ci_state};
@@ -148,7 +148,7 @@ const MERGE_RETRY_MAX: Duration = Duration::from_secs(5 * 60);
 /// The first waits between reads of a PR GitHub just rebased: its new head shows within a second or two.
 const REBASE_FIRST_WAIT: Duration = Duration::from_secs(1);
 
-fn is_red(run: &CheckRun) -> bool {
+pub(super) fn is_red(run: &CheckRun) -> bool {
     run.status == "completed" && !GREEN.contains(&run.conclusion.as_deref().unwrap_or(""))
 }
 
@@ -180,6 +180,67 @@ pub(super) fn checks(runs: &[CheckRun]) -> Checks {
     } else {
         Checks::Green
     }
+}
+
+/// The checks the train judges a head by: its base's required checks and the repo's own additions (`TrainSettings`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(super) struct Fast {
+    /// The base's required checks, the train's own status left out.
+    pub required: Vec<String>,
+    /// The fast set: `required` and the repo's `fastChecks`.
+    pub set: Vec<String>,
+    pub settings: fleetd_contracts::project_settings::TrainSettings,
+}
+
+impl Fast {
+    pub fn new(
+        required: &[String],
+        settings: fleetd_contracts::project_settings::TrainSettings,
+    ) -> Self {
+        let required: Vec<String> = required
+            .iter()
+            .filter(|n| *n != TRAIN_CONTEXT)
+            .cloned()
+            .collect();
+        Self {
+            set: settings.fast_set(&required),
+            required,
+            settings,
+        }
+    }
+
+    pub(super) fn holds(&self, name: &str) -> bool {
+        self.set.iter().any(|n| n == name)
+    }
+}
+
+/// The runs of `runs` (the newest of each check) the train waits on: those in the fast set, a cancelled one that is not
+/// required left out, and any other that already failed, unless it is left for after the merge. A check of the fast set
+/// with no run yet is waited for by name (`must_report`). An empty fast set (a base that requires nothing, and nothing
+/// added) is judged by every check, so a repo with CI but no rules still merges on green CI only. `fast` None when the
+/// base's rules or the repo's settings can't be read: every check.
+pub(super) fn gated(runs: &[CheckRun], fast: Option<&Fast>) -> Vec<CheckRun> {
+    let Some(fast) = fast.filter(|f| !f.set.is_empty()) else {
+        return runs.to_vec();
+    };
+    let cancelled = |r: &CheckRun| r.conclusion.as_deref() == Some("cancelled");
+    runs.iter()
+        .filter(|r| {
+            if fast.holds(&r.name) {
+                !cancelled(r) || fast.required.contains(&r.name)
+            } else {
+                is_red(r) && !cancelled(r) && !fast.settings.after_merge_only(&r.name)
+            }
+        })
+        .cloned()
+        .collect()
+}
+
+/// The checks that must report on a head before it counts as green: its fast set, or the base's `required` checks
+/// alone while the repo's settings can't be read. None when neither can be read.
+pub(super) fn must_report(fast: Option<&Fast>, required: Option<&[String]>) -> Option<Vec<String>> {
+    fast.map(|f| f.set.clone())
+        .or_else(|| required.map(<[String]>::to_vec))
 }
 
 /// Whether GitHub refused a merge for required checks that haven't reported on the head yet, or still run, rather than
@@ -299,9 +360,16 @@ pub(super) enum Stall {
     Queued(usize),
     /// It ran for `ci_timeout` from its first check's start without finishing.
     Running,
-    /// Its checks finished green, but these checks the base requires never reported, within `ci_timeout` of its first
-    /// check's start.
-    Unreported(Vec<String>),
+    /// Its checks finished green, but these checks of its fast set never reported, within `ci_timeout` of its first
+    /// check's start; whether they are all ones the base requires.
+    Unreported(Vec<String>, Required),
+}
+
+/// Whether checks that never reported are all ones the base requires, or include ones the repo added to its fast set.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Required {
+    All,
+    NotAll,
 }
 
 /// Whether a check run has a runner: a check still waiting for one doesn't count toward CI's running time.
@@ -894,8 +962,13 @@ impl Train {
                     "it did not finish within {} min of its first check starting",
                     min(self.options.ci_timeout)
                 ),
-                Stall::Unreported(names) => format!(
-                    "the required check{} {} never reported within {} min; every other check passed",
+                Stall::Unreported(names, required) => format!(
+                    "the {}check{} {} never reported within {} min; every other check passed",
+                    if *required == Required::All {
+                        "required "
+                    } else {
+                        ""
+                    },
                     if names.len() == 1 { "" } else { "s" },
                     names.join(", "),
                     min(self.options.ci_timeout)
@@ -993,8 +1066,10 @@ impl Train {
         let (mut tried_label, mut told) = (start, false);
         loop {
             let mut all = Vec::new();
-            // The required checks that have neither a run nor a status on `sha` while every other check is green.
+            // The checks of the fast set that have neither a run nor a status on `sha` while every other is green, and
+            // what the base requires.
             let mut unreported = Vec::new();
+            let mut base_requires: Vec<String> = Vec::new();
             let runs = match self.github.all_check_runs(repo, sha).await {
                 Ok(runs) => {
                     all = runs.clone();
@@ -1005,8 +1080,10 @@ impl Train {
                     None
                 }
             };
+            let fast = self.fast(repo, base).await;
             if let Some(runs) = &runs {
-                let (now, queued) = (self.now_ms(), super::next::queued(runs));
+                let judged = gated(runs, fast.as_ref());
+                let (now, queued) = (self.now_ms(), super::next::queued(&judged));
                 queued_since = (queued > 0).then(|| queued_since.unwrap_or(now));
                 let note = queued_since
                     .filter(|since| now - since >= RUNNER_WAIT_MS)
@@ -1014,10 +1091,18 @@ impl Train {
                 self.runner_note(noted, note.as_deref(), earlier);
             }
             let runs = runs.unwrap_or_default();
-            if !runs.is_empty() {
+            // Only the fast set is waited for; a head whose runs are all outside it waits on its required checks below.
+            let judged = gated(&runs, fast.as_ref());
+            if !judged.is_empty() {
+                last = judged.clone();
+            } else if !runs.is_empty() {
                 last = runs.clone();
             }
-            match checks(&runs) {
+            let judged = match checks(&judged) {
+                Checks::None if !runs.is_empty() => Checks::Green,
+                judged => judged,
+            };
+            match judged {
                 Checks::Red(red) => {
                     self.check_spans(change, sha, &runs);
                     return CiOutcome::Red(red);
@@ -1067,8 +1152,11 @@ impl Train {
                         .await
                         .ok()
                         .map(|c| c.required_checks);
+                    // Every check of the fast set, an added one as a required one, reports before the merge.
+                    let waits = must_report(fast.as_ref(), required.as_deref());
+                    base_requires = required.clone().unwrap_or_default();
                     let (reported, missing) = self
-                        .required_reported(repo, sha, &runs, required.as_deref())
+                        .required_reported(repo, sha, &runs, waits.as_deref())
                         .await;
                     unreported = missing;
                     match reported {
@@ -1104,7 +1192,11 @@ impl Train {
                 self.check_spans(change, sha, &last);
                 // Every run finished: it is the required checks that never came, not CI that ran long.
                 let stall = match stall {
-                    Stall::Running if !unreported.is_empty() => Stall::Unreported(unreported),
+                    Stall::Running if !unreported.is_empty() => {
+                        let all = unreported.iter().all(|n| base_requires.contains(n));
+                        let required = if all { Required::All } else { Required::NotAll };
+                        Stall::Unreported(unreported, required)
+                    }
                     stall => stall,
                 };
                 return CiOutcome::Timeout(stall);
@@ -1235,6 +1327,15 @@ impl Train {
     pub(super) async fn has_ci(&self, repo: &str, base: &str) -> Result<bool, GhError> {
         let ci = self.ci_config(repo, base).await?;
         Ok(!ci.workflows.is_empty() || ci.required_checks.iter().any(|c| c != TRAIN_CONTEXT))
+    }
+
+    /// The fast set of a head into `base`: its required checks and the repo's own. None while the base's rules or the
+    /// settings of the project that owns the repo's train can't be read: then every check counts.
+    pub(super) async fn fast(&self, repo: &str, base: &str) -> Option<Fast> {
+        let required = self.ci_config(repo, base).await.ok()?.required_checks;
+        let train = self.records.train(repo)?;
+        let owner = self.train_project(repo, &train.project_ref);
+        Some(Fast::new(&required, self.host.train_settings(&owner)?))
     }
 
     /// `base`'s CI config, read at most every `CI_CONFIG_TTL_MS`.
@@ -1487,22 +1588,36 @@ impl Train {
         ) else {
             return Ok(());
         };
+        self.ci_and_merge(&in_ci, &rebased, base, label).await
+    }
+
+    /// From CI on the Change's head, in `ci`, to merged: waits for its fast set, posts `fleetd/train` and merges
+    /// pinned to that head. `rebased` is its PR at that head, `base` what it merges into, `label` how `fleetd:next`
+    /// went on. Taking a Change and finding one in CI after a restart both end here.
+    async fn ci_and_merge(
+        &self,
+        in_ci: &Change,
+        rebased: &Pull,
+        base: &str,
+        label: super::next::Labelled,
+    ) -> Result<(), GhError> {
+        let (change, repo, head_sha) = (in_ci, in_ci.repo.as_str(), in_ci.head_sha.clone());
         let lone = match self.label_gate(repo, base).await {
             super::next::Gate::Checks(names) if names.is_empty() => None,
             gate => Some(super::next::Lone { label, gate }),
         };
         let noted = std::slice::from_ref(&in_ci.change_id);
         match self
-            .wait_ci(&in_ci, repo, &head_sha, base, lone, noted)
+            .wait_ci(in_ci, repo, &head_sha, base, lone, noted)
             .await
         {
             CiOutcome::Green => {}
             CiOutcome::Red(failing) => {
-                self.ci_failed(&in_ci, &failing, None).await;
+                self.ci_failed(in_ci, &failing, None).await;
                 return Ok(());
             }
             CiOutcome::Timeout(stall) => {
-                self.ci_failed(&in_ci, &[], Some(stall)).await;
+                self.ci_failed(in_ci, &[], Some(stall)).await;
                 return Ok(());
             }
         };
@@ -1521,7 +1636,7 @@ impl Train {
             )
             .await?;
         // The squash message GitHub would write by the repo's settings, with the Change's trailer added.
-        let (title, body) = self.github.squash_message(repo, &rebased).await?;
+        let (title, body) = self.github.squash_message(repo, rebased).await?;
         let body = super::batch::with_trailers(&body, [&merging]);
         let merging_since = self.now_ms();
         let mut retry_wait = MERGE_RETRY_FIRST;
@@ -1693,7 +1808,32 @@ impl Train {
                 return tracing::warn!(change_id = %change.change_id, error = %e.message, "train: check runs not read");
             }
         };
-        match checks(&runs) {
+        let base = match self.github.pull(&change.repo, change.pr_number.get()).await {
+            Ok(pull) => pull.base.ref_,
+            Err(e) => {
+                return tracing::warn!(change_id = %change.change_id, error = %e.message, "train: PR not read");
+            }
+        };
+        let fast = self.fast(&change.repo, &base).await;
+        let judged = match checks(&gated(&runs, fast.as_ref())) {
+            Checks::None if !runs.is_empty() => Checks::Green,
+            judged => judged,
+        };
+        let judged = match judged {
+            Checks::Green => {
+                let required = self
+                    .ci_config(&change.repo, &base)
+                    .await
+                    .ok()
+                    .map(|c| c.required_checks);
+                let waits = must_report(fast.as_ref(), required.as_deref());
+                self.required_reported(&change.repo, &change.head_sha, &runs, waits.as_deref())
+                    .await
+                    .0
+            }
+            judged => judged,
+        };
+        match judged {
             Checks::Green => {
                 if self.set_ready(change, Vec::new()).is_some() {
                     let line = Event::PrNote {
@@ -1773,9 +1913,19 @@ impl Train {
     }
 
     /// After a restart: a Change the train was merging is finished if GitHub merged it, else put back in its place in
-    /// line.
+    /// line. CI in flight is not lost: a Change alone in `ci` whose PR is still at the head it took, or a batch whose
+    /// open PR still names its members at theirs, is watched where it is and merges once green.
     async fn recover(&self, repo: &str) {
+        let in_ci = self.records.in_train(repo, &[ChangeState::Ci]);
+        let resumed = match in_ci.as_slice() {
+            [] => false,
+            [one] => self.resume_ci(one).await || self.resume_batch(repo, &in_ci).await,
+            _ => self.resume_batch(repo, &in_ci).await,
+        };
         for change in self.records.in_train(repo, HEAD_STATES) {
+            if resumed && in_ci.iter().any(|c| c.change_id == change.change_id) {
+                continue;
+            }
             let pull = self.github.pull(repo, change.pr_number.get()).await;
             if let Ok(pull) = &pull {
                 self.guard_base(repo, &pull.base.ref_);
@@ -1797,6 +1947,47 @@ impl Train {
             }
         }
         lock(&self.recovered).insert(repo.to_string());
+    }
+
+    /// A Change alone in `ci` at a restart, its PR open at the head it took, no batch PR naming it: its CI is watched
+    /// again and it merges once green. False when it isn't such a Change.
+    async fn resume_ci(&self, change: &Change) -> bool {
+        let Ok(pull) = self.github.pull(&change.repo, change.pr_number.get()).await else {
+            return false;
+        };
+        if pull.merged
+            || pull.state != "open"
+            || pull.head.sha.to_lowercase() != change.head_sha.as_str()
+        {
+            return false;
+        }
+        // A batch member's head is in CI on the batch's PR, not its own.
+        if let Some(branch) = self.scratch_branch(change, "batch").await
+            && let Ok(open) = self.github.pulls_for(&change.repo, &branch, "open").await
+            && open.iter().any(|b| {
+                batch_heads(b.body.as_deref().unwrap_or_default())
+                    .iter()
+                    .any(|(n, _)| *n == change.pr_number.get())
+            })
+        {
+            return false;
+        }
+        tracing::info!(change_id = %change.change_id, "train: the hub restarted; watching its CI again");
+        self.guard_base(&change.repo, &pull.base.ref_);
+        let label = self
+            .label(
+                &change.repo,
+                change.pr_number.get(),
+                pull.labelled(super::github::NEXT_LABEL),
+            )
+            .await;
+        if let Err(e) = self
+            .ci_and_merge(change, &pull, &pull.base.ref_, label)
+            .await
+        {
+            self.put_back(change, &format!("GitHub: {}", e.message));
+        }
+        true
     }
 
     fn guard_base(&self, repo: &str, base: &str) {

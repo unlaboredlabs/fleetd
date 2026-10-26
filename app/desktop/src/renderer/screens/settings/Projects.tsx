@@ -1,5 +1,5 @@
 // Settings → Projects (#/settings/projects?for=<machine>/<project>): one project's name, its worktrees, its agents'
-// environment variables, its setup commands (SetupSetting.tsx), and deleting it. Reads project_settings_get; writes project_settings_set, project_env_set
+// environment variables, its setup commands (SetupSetting.tsx), the merge train's checks (TrainSetting.tsx), and deleting it. Reads project_settings_get; writes project_settings_set, project_env_set
 // (through main, which seals each secret to the project machine's key) and project_remove. A secret's value is
 // write-only: typed here once, sealed in main, and only its fingerprint ever comes back.
 import { useEffect, useState } from "react";
@@ -28,6 +28,7 @@ import {
 } from "./projectModel";
 import { replaceRoute, type SettingsRoute } from "./route";
 import { SetupSetting } from "./SetupSetting";
+import { TrainSetting } from "./TrainSetting";
 import s from "./settings.module.css";
 
 type Echo = { ok: boolean; text: string };
@@ -77,7 +78,7 @@ export function ProjectSettings({ route }: { route: SettingsRoute }) {
           title="Projects"
           aside={<ScopeSelect id="projects-scope" className={s.scopeSelect} value={scope} projects={projects} onChange={(next) => setPicked(next)} />}
         >
-          One project's name, worktrees, its agents' environment and setup.
+          One project's name, worktrees, its agents' environment and setup, and its merge train.
         </PageHead>
         {projects?.length === 0 ? <Text tone="quiet">No projects yet. Add one from Machines.</Text> : null}
         {read.isLoadingError ? (
@@ -133,6 +134,8 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
       <McpSection projectRef={ref} />
       <Separator />
       <SetupSetting settings={settings} />
+      <Separator />
+      <TrainSetting settings={settings} />
       <Separator />
       <Setting reveal="projects.delete" label="Delete project" help="Stops its agents and removes it from fleetd, with its fleetd worktrees.">
         <Text size="sm" tone="quiet">

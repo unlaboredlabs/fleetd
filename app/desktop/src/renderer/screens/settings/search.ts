@@ -54,6 +54,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "projects.env", label: "Environment variables", tab: "projects", keywords: ["env", ".env", "secrets", "api key", "token", "variables"] },
   { key: "projects.mcp", label: "Project MCP servers", tab: "projects", keywords: ["mcp", "tools", "servers", "connections"] },
   { key: "projects.setup", label: "Setup commands", tab: "projects", keywords: ["setup", "install", "dependencies", "codegen", "worktree", "lockfile", "pnpm"] },
+  { key: "projects.train", label: "Merge train", tab: "projects", keywords: ["merge", "train", "checks", "ci", "required", "fast", "after merge"] },
   { key: "projects.delete", label: "Delete project", tab: "projects", keywords: ["remove", "delete", "forget"] },
   page("mcp", ["mcp", "tools", "servers", "connections", "integrations"]),
   { key: "mcp.servers", label: "Global MCP servers", tab: "mcp", keywords: ["mcp", "stdio", "http", "sse", "headers", "token", "test connection"] },

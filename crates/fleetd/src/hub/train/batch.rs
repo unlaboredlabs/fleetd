@@ -1,14 +1,18 @@
-//! Batches: two or more ready Changes into one base, each reviewed for its current patch and green on its own head,
-//! up to `BATCH_MAX` of them in queue order, merged together after one CI run. The train builds the batch on GitHub: its
+//! Batches: two or more ready Changes into one base, each reviewed for its current patch and green on its own head by
+//! its fast set (the base's required checks and the repo's own; cancelled and superseded runs and every other check
+//! left to the batch's CI), up to `BATCH_MAX` of them in queue order, merged together after one CI run. Each pass
+//! records why each ready PR was left out, on the Change and in the log. The train builds the batch on GitHub: its
 //! scratch branch at the base, each member's head merged into it in order, and one PR for it. A member that conflicts
 //! is left out and goes back to its writer. Green, the train posts `fleetd/train` on that head and squash-merges the
 //! batch PR pinned to it; each member is then closed with a link. Red, timed out or refused, every member goes alone.
 //! No gate is skipped: every member is ready, the batch's CI must pass, and GitHub's rules on the base decide the merge
 //! as they would for one PR. The next pass's sweep deletes the scratch branch, which closes a batch PR left open.
 use super::contract::{Change, ChangeState};
-use super::github::{BATCH_MARKER, BranchMerge, MergeOutcome, NEXT_LABEL, Pull, batch_heads};
+use super::github::{
+    BATCH_MARKER, BranchMerge, CheckRun, CommitStatus, MergeOutcome, NEXT_LABEL, Pull, batch_heads,
+};
 use super::records::DRAFT;
-use super::service::{Checks, CiOutcome, Train, checks, error_text, lock, short};
+use super::service::{CiOutcome, Fast, Train, error_text, is_red, lock, short};
 
 const BATCH_MAX: usize = 8;
 
@@ -19,6 +23,75 @@ pub(super) const NO_CI: &str = "held: this repo has no CI, and fleetd merges onl
 const MEMBER_LEFT: &str = "a PR left the batch while it formed; the next pass forms it again";
 /// The last error of a merged member whose PR the train could not close; the next pass's reconcile closes it.
 const NOT_CLOSED: &str = "landed, but its PR is not closed yet";
+
+/// The start of a ready Change's `lastError` while the batch forming left it out, followed by why.
+pub(crate) const LEFT_OUT: &str = "not in this batch: ";
+
+/// The checks a list names, in backticks.
+fn named(runs: &[String]) -> String {
+    runs.iter()
+        .map(|n| format!("`{n}`"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Why a ready PR's own head keeps it out of a batch, by its fast set: a check there failed or still runs, or one of
+/// it, required or added, never reported (`statuses` are read for those), or the head has no checks at all. A cancelled
+/// or superseded run, and any check outside the fast set, doesn't count: the batch's own CI decides. None when it may
+/// join. `runs` are the newest of each check; `fast` None when the base's rules or the settings can't be read, and an
+/// empty fast set, judge by every check.
+pub(super) fn own_checks(
+    runs: &[CheckRun],
+    statuses: &[CommitStatus],
+    fast: Option<&Fast>,
+) -> Option<String> {
+    if runs.is_empty() && statuses.is_empty() {
+        return Some("its own head has no checks yet".into());
+    }
+    let cancelled = |r: &CheckRun| r.conclusion.as_deref() == Some("cancelled");
+    let judged: Vec<&CheckRun> = match fast.filter(|f| !f.set.is_empty()) {
+        Some(fast) => runs
+            .iter()
+            .filter(|r| fast.holds(&r.name) && !cancelled(r))
+            .collect(),
+        None if fast.is_some() => runs.iter().filter(|r| !cancelled(r)).collect(),
+        None => runs.iter().collect(),
+    };
+    let names = |f: &dyn Fn(&CheckRun) -> bool| -> Vec<String> {
+        judged
+            .iter()
+            .filter(|r| f(r))
+            .map(|r| r.name.clone())
+            .collect()
+    };
+    let mut red = names(&|r| is_red(r));
+    let set = fast.map(|f| f.set.as_slice()).unwrap_or_default();
+    let mut missing = Vec::new();
+    for name in set.iter().filter(|n| !runs.iter().any(|r| &r.name == *n)) {
+        match statuses
+            .iter()
+            .find(|s| &s.context == name)
+            .map(|s| s.state.as_str())
+        {
+            Some("success") => {}
+            Some("failure" | "error") => red.push(name.clone()),
+            _ => missing.push(name.clone()),
+        }
+    }
+    let running = names(&|r| r.status != "completed");
+    if !red.is_empty() {
+        Some(format!("its own head's {} failed", named(&red)))
+    } else if !running.is_empty() {
+        Some(format!("its own head's {} still running", named(&running)))
+    } else if !missing.is_empty() {
+        Some(format!(
+            "its own head hasn't reported {} yet",
+            named(&missing)
+        ))
+    } else {
+        None
+    }
+}
 
 /// A clean review is bound to the Change's current patch: nothing else lets the train take it.
 fn reviewed(change: &Change) -> bool {
@@ -160,15 +233,63 @@ impl Train {
         };
         let base = head.pull.base.ref_.clone();
         let mut members = Vec::new();
+        let mut left = Vec::new();
         if candidates.len() >= 2 {
             for c in &candidates {
-                if members.len() == BATCH_MAX {
-                    break;
-                }
-                if c.pull.base.ref_ == base && self.own_ci_green(repo, &c.change).await {
-                    members.push(c.clone());
+                let why = if members.len() == BATCH_MAX {
+                    Some(format!("the batch is full ({BATCH_MAX} PRs)"))
+                } else if c.pull.base.ref_ != base {
+                    Some(format!(
+                        "it merges into {}, and this batch into {base}",
+                        c.pull.base.ref_
+                    ))
+                } else {
+                    self.own_ci(repo, &c.change, &base).await
+                };
+                match why {
+                    None => members.push(c.clone()),
+                    Some(why) => left.push((c, why)),
                 }
             }
+        }
+        if members.len() < 2 {
+            // Alone: the head goes, and every other PR waits for it.
+            let alone = match left
+                .iter()
+                .find(|(c, _)| c.change.change_id == head.change.change_id)
+            {
+                Some((_, why)) => format!("{} goes alone first, as {why}", head.change.change_id),
+                None => format!(
+                    "{} goes alone first: no other ready PR could join it",
+                    head.change.change_id
+                ),
+            };
+            for m in &members {
+                left.push((
+                    candidates
+                        .iter()
+                        .find(|c| c.change.change_id == m.change.change_id)
+                        .unwrap_or(head),
+                    alone.clone(),
+                ));
+            }
+        }
+        let taken: Vec<&Candidate> = if members.len() >= 2 {
+            members.iter().collect()
+        } else {
+            vec![head]
+        };
+        for c in &candidates {
+            let why = left
+                .iter()
+                .find(|(l, _)| l.change.change_id == c.change.change_id)
+                .map(|(_, why)| why.as_str())
+                .filter(|_| {
+                    !taken
+                        .iter()
+                        .any(|t| t.change.change_id == c.change.change_id)
+                });
+            self.left_out(repo, &c.change, why);
         }
         // The batch PR gets its label once it is open (`take_batch`); its members keep one they have, as a red batch
         // sends each alone.
@@ -262,12 +383,55 @@ impl Train {
         });
     }
 
-    /// Green on its own head: every check done and none red.
-    async fn own_ci_green(&self, repo: &str, change: &Change) -> bool {
-        match self.github.check_runs(repo, change.head_sha.as_str()).await {
-            Ok(runs) => matches!(checks(&runs), Checks::Green),
-            Err(_) => false,
+    /// Why the Change's own head keeps it out of a batch into `base` (`own_checks`); None when it may join.
+    async fn own_ci(&self, repo: &str, change: &Change, base: &str) -> Option<String> {
+        let runs = match self.github.check_runs(repo, change.head_sha.as_str()).await {
+            Ok(runs) => runs,
+            Err(e) => {
+                return Some(format!(
+                    "its checks could not be read: GitHub: {}",
+                    e.message
+                ));
+            }
+        };
+        let fast = self.fast(repo, base).await;
+        let unrun = fast
+            .as_ref()
+            .is_some_and(|f| f.set.iter().any(|n| !runs.iter().any(|r| &r.name == n)));
+        // A head with no check runs may still carry statuses.
+        let statuses = if unrun || runs.is_empty() {
+            match self.github.statuses(repo, change.head_sha.as_str()).await {
+                Ok(statuses) => statuses,
+                Err(e) => {
+                    return Some(format!(
+                        "its statuses could not be read: GitHub: {}",
+                        e.message
+                    ));
+                }
+            }
+        } else {
+            Vec::new()
+        };
+        own_checks(&runs, &statuses, fast.as_ref())
+    }
+
+    /// Records why this pass left a ready Change out of the batch, on the Change (`LEFT_OUT`) and in the log; None
+    /// clears a reason an earlier pass recorded.
+    fn left_out(&self, repo: &str, change: &Change, why: Option<&str>) {
+        let shown = change.last_error.as_deref();
+        let ours = shown.is_some_and(|e| e.starts_with(LEFT_OUT));
+        let note = why.map(|why| format!("{LEFT_OUT}{why}"));
+        if let Some(why) = why {
+            tracing::info!(repo, change_id = %change.change_id, pr = change.pr_number.get(), why, "train: left out of the batch");
         }
+        // Another reason an earlier pass left (a red batch, a refusal) gives way to this pass's.
+        if note.as_deref() == shown || (note.is_none() && !ours) {
+            return;
+        }
+        self.update(&change.change_id, Some(&[ChangeState::Ready]), |mut c| {
+            c.last_error = note.as_deref().map(error_text);
+            c
+        });
     }
 
     /// Deletes the train's scratch branches: no batch is in flight between passes, so any left is a leftover (a
@@ -408,12 +572,29 @@ impl Train {
         if in_ci.len() != kept.len() {
             return self.release(&kept, MEMBER_LEFT);
         }
-        let numbers: Vec<i64> = in_ci.iter().map(|m| m.change.pr_number.get()).collect();
-        tracing::info!(repo, pr, sha, ?numbers, "train: batch in CI");
         lock(&self.pushed).insert(
             in_ci[0].change.change_id.clone(),
             (sha.clone(), self.now_ms()),
         );
+        self.batch_ci_and_merge(repo, base, pr, &sha, &title, in_ci)
+            .await
+    }
+
+    /// From the batch PR `pr` in CI at `sha`, its members `in_ci` in `ci`, to merged: waits for its fast set, checks
+    /// each member is still where the batch took it, posts `fleetd/train` and merges pinned to `sha`. Forming a batch
+    /// and finding one in CI after a restart both end here.
+    async fn batch_ci_and_merge(
+        &self,
+        repo: &str,
+        base: &str,
+        pr: i64,
+        sha: &str,
+        title: &str,
+        in_ci: Vec<Candidate>,
+    ) {
+        let sha = sha.to_string();
+        let numbers: Vec<i64> = in_ci.iter().map(|m| m.change.pr_number.get()).collect();
+        tracing::info!(repo, pr, sha, ?numbers, "train: batch in CI");
         let noted: Vec<_> = in_ci.iter().map(|m| m.change.change_id.clone()).collect();
         let red = match self
             .wait_ci(&in_ci[0].change, repo, &sha, base, None, &noted)
@@ -604,6 +785,61 @@ impl Train {
                 }
             }
         }
+    }
+
+    /// After a restart, the batch whose members are all in `ci`, each at the head the open batch PR names, goes on
+    /// being watched where it is: true when it was (merged, red or released). False when there is none.
+    pub(super) async fn resume_batch(&self, repo: &str, in_ci: &[Change]) -> bool {
+        let Some(first) = in_ci.first() else {
+            return false;
+        };
+        let Some(branch) = self.scratch_branch(first, "batch").await else {
+            return false;
+        };
+        let Ok(pulls) = self.github.pulls_for(repo, &branch, "open").await else {
+            return false;
+        };
+        let Some(batch) = pulls.into_iter().next() else {
+            return false;
+        };
+        let heads = batch_heads(batch.body.as_deref().unwrap_or_default());
+        let built_from = |c: &Change| {
+            heads.iter().any(|(n, sha)| {
+                *n == c.pr_number.get() && sha.as_deref() == Some(c.head_sha.as_str())
+            })
+        };
+        if heads.len() != in_ci.len() || !in_ci.iter().all(built_from) {
+            return false;
+        }
+        let mut members = Vec::new();
+        for n in heads.iter().map(|(n, _)| *n) {
+            let Some(change) = in_ci.iter().find(|c| c.pr_number.get() == n) else {
+                return false;
+            };
+            match self.github.pull(repo, n).await {
+                Ok(pull) => members.push(Candidate {
+                    change: change.clone(),
+                    pull,
+                }),
+                Err(_) => return false,
+            }
+        }
+        tracing::info!(
+            repo,
+            pr = batch.number,
+            "train: the hub restarted; watching the batch's CI again"
+        );
+        let sha = batch.head.sha.to_lowercase();
+        self.batch_ci_and_merge(
+            repo,
+            &batch.base.ref_,
+            batch.number,
+            &sha,
+            &batch.title,
+            members,
+        )
+        .await;
+        true
     }
 
     /// The merged batch PR that names this Change's PR, for a hub that restarted while merging it.

@@ -71,6 +71,7 @@ Open a project's settings in the desktop app: Settings → Projects, then pick t
 | Environment variables | Variables every new agent of the project gets. See [Environment variables](#env). |
 | MCP servers | The project's own MCP servers for its agents, and the global ones it gets. See [MCP servers](/docs/mcp-servers). |
 | Setup commands | What runs in each new worktree before its agent starts. See [Setup commands](#setup). |
+| Merge train | The checks the train also waits for before a merge, and those left for after it. See [Which checks it waits for](/docs/merge-train#fast-set). |
 | Delete project | See [Delete a project](#delete). |
 
 The page also shows where the project's worktrees live on its machine (`~/.fleetd/node/worktrees/<project>/`, one per
