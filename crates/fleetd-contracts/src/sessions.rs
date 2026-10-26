@@ -745,12 +745,15 @@ pub struct RunFailure {
     /// The runner's own text (its result or error), then the tail of its stderr. Never rewritten.
     pub message: Text<1, 4000>,
     pub api_status: Option<u16>,
-    /// UsageLimit and RateLimit: when to continue.
+    /// UsageLimit and RateLimit: when to continue, as the runner read it; absent when the runner's words name no
+    /// reset, and the hub checks the login on a backoff instead.
     pub reset_at: Option<Timestamp>,
     /// How many times the node retried the run before giving up (Overloaded, Network).
     #[serde(default)]
     pub retries: u32,
-    /// PoolExhausted: the model the gateway has no account for, as the runner read it off the error.
+    /// The model a gateway named, as the runner read it off the error: the one it has no account for
+    /// (PoolExhausted), or the one whose credentials are cooling down (UsageLimit, RateLimit). Set only from a
+    /// gateway's words, so on a limit it also says a proxy decided it.
     pub model: Option<String>,
 }
 

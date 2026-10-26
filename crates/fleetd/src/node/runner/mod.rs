@@ -33,11 +33,6 @@ use tokio::sync::mpsc;
 
 pub type BoxFut<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
-/// When a runner can't say when a plan limit resets.
-pub const FALLBACK_USAGE_LIMIT_MS: i64 = 60 * 60_000;
-/// When a runner can't say when a request-rate limit resets.
-pub const FALLBACK_RATE_LIMIT_MS: i64 = 5 * 60_000;
-
 /// The model and effort a runner runs one [`TaskProfile`] on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ProfileModel {

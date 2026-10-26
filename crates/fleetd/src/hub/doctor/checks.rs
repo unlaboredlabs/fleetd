@@ -528,10 +528,11 @@ pub fn usage_breaker(machine_id: &str, breaker: &UsageBreaker) -> Entry {
             None,
         );
     }
-    let until = breaker
-        .until
-        .as_ref()
-        .map_or(String::new(), |u| format!(" ({u})"));
+    let wait = match (&breaker.until, &breaker.check_at) {
+        (Some(u), _) => format!("Wait for the reset ({u})"),
+        (None, Some(c)) => format!("Nothing: fleetd tries the login again by itself (next at {c})"),
+        (None, None) => "Wait for the reset".to_string(),
+    };
     machine_entry(
         machine_id,
         "usage_breaker",
@@ -540,9 +541,7 @@ pub fn usage_breaker(machine_id: &str, breaker: &UsageBreaker) -> Entry {
             format!("New turns on {machine_id} are paused by the usage breaker.")
         }),
         Some(manual(
-            &format!(
-                "Wait for the reset{until}, or call usage_resume for {machine_id} once the login has capacity"
-            ),
+            &format!("{wait}, or call usage_resume for {machine_id} once the login has capacity"),
             None,
         )),
     )
