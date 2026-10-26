@@ -2863,9 +2863,12 @@ fn only_leads_and_workers_get_fleetds_agent_tools() {
 #[test]
 fn the_agent_server_starts_after_an_update_replaced_the_node_binary() {
     use std::io::Write;
-    let dir = tempfile::tempdir().unwrap();
+    // A hard link, not a copy: a copy's write fd leaks into whatever another test thread forks meanwhile, and exec
+    // of a file open for writing fails (`ETXTBSY`). The link lives beside this binary, on its filesystem.
+    let exe = std::env::current_exe().unwrap();
+    let dir = tempfile::tempdir_in(exe.parent().unwrap()).unwrap();
     let node = dir.path().join("fleetd");
-    std::fs::copy(std::env::current_exe().unwrap(), &node).unwrap();
+    std::fs::hard_link(&exe, &node).unwrap();
     let child = format!(
         "{}::agent_server_child",
         module_path!().split_once("::").unwrap().1
