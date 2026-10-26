@@ -7,7 +7,8 @@
 //! its own service. The watcher restarts the hub, waits for `/healthz` to answer on the new build, and puts the kept
 //! binary back if it doesn't. The run lives in `<hub home>/update/run.json`, so the hub that comes up, new or put
 //! back, takes it from there: it reads the watcher's verdict, then updates the nodes, each with `node_action`
-//! `update`, and learns how each came back from the version it reconnects with.
+//! `update`, and learns how each came back from the version it reconnects with, or that it never restarted from the
+//! second answer a node sends when its service manager refused the restart.
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -63,11 +64,20 @@ pub trait UpdatePorts: Send + Sync {
     fn health_url(&self) -> String;
     fn start_watcher(&self, plan: &Plan, plan_path: &Path) -> Result<(), String>;
     fn nodes(&self) -> Vec<NodeFacts>;
+    /// The node's answer, and the wait for its second, sent only when its restart was refused.
     fn update_node<'a>(
         &'a self,
         machine_id: &'a MachineId,
         update: &'a NodeUpdate,
-    ) -> BoxFuture<'a, Result<NodeActionResult, String>>;
+    ) -> BoxFuture<'a, Result<NodeAnswer, String>>;
+}
+
+/// A node's answer to its update, and the wait for its second.
+pub type NodeAnswer = (NodeActionResult, Box<dyn Refusal>);
+
+/// A node's second answer to its update: it still runs, as its service manager refused the restart.
+pub trait Refusal: Send {
+    fn try_take(&mut self) -> Option<NodeActionResult>;
 }
 
 /// How long the update waits on things, and how often it looks; tests shorten them.
@@ -637,7 +647,7 @@ impl Updates {
             format!("downloading {label}"),
         );
         let asked = now_ms(self.clock.as_ref());
-        match ports.update_node(machine_id, update).await {
+        let mut refusal = match ports.update_node(machine_id, update).await {
             Err(e) => {
                 return self.set_part(
                     Some(machine_id),
@@ -646,7 +656,7 @@ impl Updates {
                     e,
                 );
             }
-            Ok(r) if !r.ok => {
+            Ok((r, _)) if !r.ok => {
                 return self.set_part(
                     Some(machine_id),
                     UpdateState::Failed,
@@ -654,8 +664,8 @@ impl Updates {
                     r.message.as_str(),
                 );
             }
-            Ok(_) => {}
-        }
+            Ok((_, refusal)) => refusal,
+        };
         self.set_part(
             Some(machine_id),
             UpdateState::Restarting,
@@ -685,6 +695,14 @@ impl Updates {
                     );
                 }
                 _ => {}
+            }
+            if let Some(r) = refusal.try_take() {
+                return self.set_part(
+                    Some(machine_id),
+                    UpdateState::Failed,
+                    Some(r.stage.unwrap_or(UpdateStage::Restart)),
+                    r.message.as_str(),
+                );
             }
             if now_ms(self.clock.as_ref()) >= deadline {
                 return self.set_part(

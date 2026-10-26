@@ -5,7 +5,7 @@ use std::sync::{Arc, Weak};
 use fleetd_contracts::ids::MachineId;
 use fleetd_contracts::node_link::{CAP_SELF_UPDATE, NodeActionResult, NodeUpdate};
 
-use super::{NodeFacts, UpdatePorts};
+use super::{NodeAnswer, NodeFacts, Refusal, UpdatePorts};
 use crate::hub::api::Hub;
 use crate::update::finish::{self, Plan};
 use crate::update::service::{self, Service};
@@ -91,14 +91,22 @@ impl UpdatePorts for HubPorts {
         &'a self,
         machine_id: &'a MachineId,
         update: &'a NodeUpdate,
-    ) -> BoxFuture<'a, Result<NodeActionResult, String>> {
+    ) -> BoxFuture<'a, Result<NodeAnswer, String>> {
         Box::pin(async move {
             let hub = self.hub().ok_or("the hub is stopping")?;
-            hub.node_commands
+            let (result, refusal) = hub
+                .node_commands
                 .update_node(machine_id, update)
                 .await
-                .map_err(|e| e.message)
+                .map_err(|e| e.message)?;
+            Ok((result, Box::new(refusal) as Box<dyn Refusal>))
         })
+    }
+}
+
+impl Refusal for crate::hub::link::commands::Refusal {
+    fn try_take(&mut self) -> Option<NodeActionResult> {
+        Self::try_take(self)
     }
 }
 

@@ -1,11 +1,13 @@
 //! `node_action` `update`: the node updates itself to the build its hub names (hub/update), with the CLI's own pieces
 //! (`crate::update`): a download checked against the release's SHA256SUMS, the previous binary kept, and the watcher
 //! that restarts the node's service and puts the previous binary back if the new one doesn't come up. It answers before
-//! the restart; the hub sees the outcome in the version the node reconnects with.
+//! the restart; the hub sees the outcome in the version the node reconnects with, or, when the service manager refuses
+//! the restart, in a second answer the node still running sends ([`not_restarted`]).
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
-use fleetd_contracts::mcp::{HubChannel, UpdateStage};
+use fleetd_contracts::mcp::{HubChannel, UpdateStage, UpdateState};
 use fleetd_contracts::node_link::NodeUpdate;
 
 use crate::update::finish::{self, HEALTH_WAIT_SECS, Health, Plan};
@@ -137,8 +139,15 @@ pub async fn stage(
     })))
 }
 
-/// The node action: stage the update, then start the watcher that restarts this node. Ok's message for the hub.
-pub async fn run(update: &NodeUpdate, home: &Path) -> Result<String, Failure> {
+/// What the node answers the hub, and the watcher's verdict file when it started one.
+#[derive(Debug, PartialEq)]
+pub struct Answer {
+    pub message: String,
+    pub verdict: Option<PathBuf>,
+}
+
+/// The node action: stage the update, then start the watcher that restarts this node.
+pub async fn run(update: &NodeUpdate, home: &Path) -> Result<Answer, Failure> {
     let place = Place::here(home)?;
     let channel = match update.channel {
         HubChannel::Nightly => Channel::Nightly,
@@ -152,10 +161,10 @@ pub async fn run(update: &NodeUpdate, home: &Path) -> Result<String, Failure> {
     };
     let feed = crate::update::HttpFeed::new(channel.base_url());
     match stage(update, &place, &feed, crate::update::running_binary).await? {
-        Staged::Current => Ok(format!(
-            "already runs {}",
-            crate::version_label(&update.version)
-        )),
+        Staged::Current => Ok(Answer {
+            message: format!("already runs {}", crate::version_label(&update.version)),
+            verdict: None,
+        }),
         Staged::Restarting(plan) => {
             if let Err(e) = finish::start(&plan, &place.plan_path()) {
                 let _ = crate::update::restore(&plan.exe, &plan.prev);
@@ -166,10 +175,36 @@ pub async fn run(update: &NodeUpdate, home: &Path) -> Result<String, Failure> {
                     ),
                 ));
             }
-            Ok(format!("restarting on {}", crate::version_label(&plan.to)))
+            Ok(Answer {
+                message: format!("restarting on {}", crate::version_label(&plan.to)),
+                verdict: Some(plan.verdict),
+            })
         }
     }
 }
+
+/// After the node answered "restarting": the watcher's verdict, if this process lives to read it. A restart that
+/// happened ends this process first, so a verdict read here means the service manager refused the restart, and the
+/// hub hears why at once instead of waiting for a node that never comes back.
+pub async fn not_restarted(verdict: &Path, wait: Duration) -> Option<Failure> {
+    let deadline = tokio::time::Instant::now() + wait;
+    loop {
+        if let Some(v) = finish::read_verdict(verdict)
+            && v.state != UpdateState::Done
+        {
+            return Some(Failure::new(
+                v.stage.unwrap_or(UpdateStage::Restart),
+                v.message,
+            ));
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return None;
+        }
+        tokio::time::sleep(VERDICT_POLL).await;
+    }
+}
+
+const VERDICT_POLL: Duration = Duration::from_secs(1);
 
 #[cfg(test)]
 mod tests {
@@ -301,5 +336,25 @@ mod tests {
             .unwrap_err();
         assert_eq!(by_hand.stage, UpdateStage::Restart);
         assert_eq!(fs::read(&place.exe).unwrap(), b"old");
+    }
+
+    /// A verdict read by the node still running means the restart was refused: it becomes the node's second answer.
+    #[tokio::test]
+    async fn a_verdict_the_node_lives_to_read_is_a_refused_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("node-verdict.json");
+        let wait = Duration::from_millis(50);
+        assert_eq!(not_restarted(&path, wait).await, None);
+        let refused = finish::Verdict {
+            state: UpdateState::Failed,
+            stage: Some(UpdateStage::Restart),
+            message:
+                "restarting fleetd-node.service exited with exit status: 1, so it never restarted"
+                    .into(),
+        };
+        fs::write(&path, serde_json::to_vec(&refused).unwrap()).unwrap();
+        let failed = not_restarted(&path, wait).await.unwrap();
+        assert_eq!(failed.stage, UpdateStage::Restart);
+        assert_eq!(failed.message, refused.message);
     }
 }
