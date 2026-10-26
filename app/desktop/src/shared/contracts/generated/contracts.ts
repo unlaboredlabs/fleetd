@@ -237,6 +237,19 @@ export type AgentsListOutput = {
   truncated?: boolean;
 };
 
+export type AndroidHealth = {
+  /** The command a person runs to fix it, when there is one. */
+  fix?: string;
+  /** Plain words: what is installed, or what is wrong. */
+  message: string;
+  state: AndroidState;
+};
+
+/** Where a node's android sessions stand, for the doctor. */
+export type KnownAndroidState = "installing" | "ready" | "wanted" | "unavailable";
+/** KnownAndroidState, or a value from a newer hub. */
+export type AndroidState = KnownAndroidState | (string & {});
+
 export type AppClientMessage = {
   key: string;
   t: "auth";
@@ -731,6 +744,7 @@ export type BrowserSession = {
   endedAt?: Timestamp;
   /** The recording's files on the hub; empty until it is recorded, and again once it expired. */
   files?: BrowserRecordingEntry[];
+  kind?: SessionKind;
   /** Why a session is lost, or what its recording lacks ("no video: this machine has no ffmpeg"). */
   note?: string;
   projectRef: ProjectRef;
@@ -2696,6 +2710,8 @@ export type NodeDisk = {
 
 /** What a machine reports about itself with each heartbeat. */
 export type NodeLoad = {
+  /** Whether the machine can host android sessions; absent where node.json turns them off and from older nodes. */
+  android?: AndroidHealth;
   /** Logical CPUs. */
   cpus: number;
   /** The volume holding the node's worktrees and build cache; absent from older nodes and when it can't be read. */
@@ -3916,6 +3932,16 @@ export type SecretSubmitOutput = {
   requestId: ChatRequestId;
   truncated?: boolean;
 };
+
+/**
+ * What a session drives: a fresh Chrome with an empty profile (`browser`, driven with agent-browser), or a fresh
+ * `-read-only` copy of an Android emulator booted from its Quick Boot snapshot (`android`, driven with agent-device at
+ * the copy's serial). Both kinds share the session tools, the action log, the video and the hub's storage; an android
+ * recording has no `dom` file. A node hosts android sessions when it lists the `session_android` capability.
+ */
+export type KnownSessionKind = "browser" | "android";
+/** KnownSessionKind, or a value from a newer hub. */
+export type SessionKind = KnownSessionKind | (string & {});
 
 /** `session_prompt_get`: exactly what a session was told at its start. */
 export type SessionPrompt = {

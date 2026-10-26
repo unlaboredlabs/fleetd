@@ -11,7 +11,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use fleetd_contracts::browser::{
     BrowserAction, BrowserControl, BrowserFrame, BrowserInput, BrowserSessionId, DomSnapshot,
-    FrameBox, KeyAction, MouseAction, MouseButton, RecordingFile, StepTarget,
+    FrameBox, KeyAction, MouseAction, MouseButton, RecordingFile, SessionKind, StepTarget,
 };
 use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::node_link::NodeToHub;
@@ -122,6 +122,7 @@ impl Session {
         let (video, note) = match VideoSink::start(
             opened.ffmpeg.as_deref(),
             opened.dir.join(RecordingFile::Video.file_name()),
+            (WIDTH, HEIGHT),
         ) {
             Ok(video) => (Some(video), None),
             Err(why) => (None, Some(why)),
@@ -338,6 +339,7 @@ impl Session {
     pub fn meta(&self, ended_at: Option<String>) -> Meta {
         Meta {
             session_id: self.id.to_string(),
+            kind: SessionKind::Browser,
             thread_id: self.thread.clone(),
             cwd: self.cwd.clone(),
             purpose: self.purpose.clone(),

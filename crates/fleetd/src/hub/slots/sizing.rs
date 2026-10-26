@@ -117,6 +117,7 @@ mod tests {
             mem_pressure_pct: None,
             limits: List::unchecked(Vec::new()),
             disk: None,
+            android: None,
             mem_total_bytes: mem_gib.map(|g| Count::unchecked(g * GIB)),
             mem_per_agent_bytes: None,
             disk_per_agent_bytes: None,

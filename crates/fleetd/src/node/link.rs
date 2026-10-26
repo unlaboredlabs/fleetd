@@ -359,6 +359,7 @@ async fn run_link_once(
                 .as_ref()
                 .map(|_| fleetd_contracts::node_link::CAP_BROWSER.to_owned()),
         )
+        .chain(super::device::capabilities(&shared.node_sessions.home()))
         .collect(),
     }));
     let hub_id = match next_frame(&mut stream, HANDSHAKE_TIMEOUT, "welcome").await {

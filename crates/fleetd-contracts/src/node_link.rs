@@ -99,6 +99,11 @@ pub const CAP_WORKTREE_SETUP: &str = "worktree_setup";
 /// `browser_frame`s.
 pub const CAP_BROWSER: &str = "browser";
 
+/// The node hosts android sessions now (`session_start` with kind android): KVM is usable and its pinned Android SDK,
+/// emulator image, agent-device and scrcpy server are installed. Listed at each link's hello, so a node that finishes
+/// installing lists it from its next link; [`NodeLoad::android`] says why a node doesn't.
+pub const CAP_SESSION_ANDROID: &str = "session_android";
+
 /// `node_action` `update`: the node updates itself to a build its hub names. A node without it drops the link on
 /// the frame, so the hub asks only nodes that list it.
 pub const CAP_SELF_UPDATE: &str = "self_update";
@@ -150,6 +155,33 @@ pub struct NodeLoad {
     pub limits: List<LoginLimit, 0, 4>,
     /// The volume holding the node's worktrees and build cache; absent from older nodes and when it can't be read.
     pub disk: Option<NodeDisk>,
+    /// Whether the machine can host android sessions; absent where node.json turns them off and from older nodes.
+    pub android: Option<AndroidHealth>,
+}
+
+/// Where a node's android sessions stand, for the doctor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
+pub enum AndroidState {
+    /// Installed, with KVM usable: sessions start.
+    Ready,
+    /// Not installed yet; the first android `session_start` installs it.
+    Wanted,
+    Installing,
+    /// Can't run here until a person fixes something (no KVM, or the install failed).
+    Unavailable,
+}
+
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AndroidHealth {
+    pub state: AndroidState,
+    /// Plain words: what is installed, or what is wrong.
+    pub message: Text<0, 500>,
+    /// The command a person runs to fix it, when there is one.
+    pub fix: Option<Text<0, 500>>,
 }
 
 /// Space on the volume holding a node's worktrees and build cache.

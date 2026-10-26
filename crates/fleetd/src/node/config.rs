@@ -38,6 +38,9 @@ pub struct NodeConfig {
     /// Browser sessions for agents (node/browser): on unless `enabled` is false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub browser: Option<super::browser::BrowserConfig>,
+    /// Android sessions for agents (node/device): on where the machine has KVM unless `enabled` is false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device: Option<super::device::DeviceConfig>,
 }
 
 fn config_file(home: &Path) -> PathBuf {
