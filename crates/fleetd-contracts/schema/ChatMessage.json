@@ -497,6 +497,10 @@
           "minItems": 1,
           "type": "array"
         },
+        "previewSuggestion": {
+          "$ref": "#/$defs/PreviewSuggestion",
+          "description": "An agent's suggestion to try a PR (preview_suggest), posted once per PR with `text` in its words: the app\nshows it as one line with Try it. Nothing runs from it."
+        },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
         },
@@ -653,7 +657,7 @@
       "type": "object"
     },
     "CommandApprovalItem": {
-      "description": "A risky command (prod write, spend, delete, credential use) or a session's permission prompt waits for the\nhuman: the exact command, then Approve or Deny. Answered with `approval_answer`, naming `requestId`. Exactly one of\n`gated` and `permission`.",
+      "description": "A risky command (prod write, spend, delete, credential use), a session's permission prompt or an agent's proposed\npreview setting waits for the human: exactly what it would do, then Approve or Deny. Answered with\n`approval_answer`, naming `requestId`. Exactly one of `gated`, `permission` and `previewConfig`.",
       "properties": {
         "answeredAt": {
           "$ref": "#/$defs/Timestamp"
@@ -696,6 +700,10 @@
         "permission": {
           "$ref": "#/$defs/ToolPermission",
           "description": "A session's permission prompt: the tool and what it would do."
+        },
+        "previewConfig": {
+          "$ref": "#/$defs/PreviewConfigProposeCall",
+          "description": "An agent's proposed preview setting (preview_config_propose): approved, it becomes the project's `preview`.\nOlder apps show it as an approval with neither command nor permission.\nBoxed: the setting is large beside the item's other fields, and every chat item would carry its size."
         },
         "requestId": {
           "$ref": "#/$defs/ChatRequestId"
@@ -898,6 +906,120 @@
       ],
       "type": "object"
     },
+    "PreviewConfig": {
+      "description": "A project's preview setting (Settings › Projects › Try it, or `project_settings_set {preview}`). Nothing runs\nbecause of it: it says how to run a preview someone asks for.",
+      "properties": {
+        "idleMinutes": {
+          "default": 30,
+          "description": "A preview no one used for this many minutes ends.",
+          "maximum": 240,
+          "minimum": 5,
+          "type": "integer"
+        },
+        "web": {
+          "$ref": "#/$defs/WebPreview"
+        }
+      },
+      "type": "object"
+    },
+    "PreviewConfigProposeCall": {
+      "description": "`preview_config_propose`: how to run the project's preview, for the person to approve as a card in the chat.\nNothing is saved until they do. Answered with the request, as `gated_run` is.",
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/PreviewConfig"
+        },
+        "why": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "config",
+        "why"
+      ],
+      "type": "object"
+    },
+    "PreviewOf": {
+      "description": "What a preview is of: one PR, or an order's PRs merged together onto their base on a scratch branch (D162).",
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "const": "pr",
+              "type": "string"
+            },
+            "number": {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "repo": {
+              "$ref": "#/$defs/GitHubRepo"
+            }
+          },
+          "required": [
+            "kind",
+            "repo",
+            "number"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "order",
+              "type": "string"
+            },
+            "workstreamId": {
+              "$ref": "#/$defs/WorkstreamId"
+            }
+          },
+          "required": [
+            "kind",
+            "workstreamId"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "PreviewSuggestion": {
+      "description": "An agent's suggestion to try a PR: one line with a Try it button, once per PR. Nothing runs from it.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "by": {
+          "description": "Who suggests it: \"#14's writer\".",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "of": {
+          "$ref": "#/$defs/PreviewOf"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "why": {
+          "description": "Why a person should try it, in a line.",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectRef",
+        "of",
+        "by",
+        "why",
+        "at"
+      ],
+      "type": "object"
+    },
     "ProjectId": {
       "type": "string"
     },
@@ -915,6 +1037,9 @@
         "projectId"
       ],
       "type": "object"
+    },
+    "ReadyPath": {
+      "type": "string"
     },
     "RememberedItem": {
       "description": "What a `remember` call wrote, as a line in the project's chat. Undone with `memory_undo`.",
@@ -1041,6 +1166,9 @@
     "SecretSink": {
       "type": "string"
     },
+    "SetupInput": {
+      "type": "string"
+    },
     "SkillName": {
       "description": "Lowercase letters, digits and single hyphens, at most 64 characters",
       "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
@@ -1140,6 +1268,60 @@
         "summary"
       ],
       "type": "object"
+    },
+    "WebPreview": {
+      "description": "How a project's web app is built and run for a preview, each command with `sh -c` in the preview's worktree and\nthe project's variables, as setup commands run (#501).",
+      "properties": {
+        "build": {
+          "description": "Builds the app; none for an app the start command builds itself.",
+          "maxLength": 2000,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "inputs": {
+          "default": [],
+          "description": "Files whose contents decide what setup makes, such as lockfiles.",
+          "items": {
+            "$ref": "#/$defs/SetupInput"
+          },
+          "maxItems": 20,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "ready": {
+          "$ref": "#/$defs/ReadyPath",
+          "default": "/",
+          "description": "Asked until it answers, for at most 2 minutes after the start."
+        },
+        "setup": {
+          "default": [],
+          "description": "Run first, in order: install dependencies, generate code. Skipped when `inputs` haven't changed since a\npreview of this project last ran them on this machine.",
+          "items": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "pattern": "^[^\\r\\n]*$",
+            "type": "string"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "start": {
+          "description": "Serves the app on `127.0.0.1:$PORT`; it runs until the preview ends.",
+          "maxLength": 2000,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "start"
+      ],
+      "type": "object"
+    },
+    "WorkstreamId": {
+      "pattern": "^W[1-9][0-9]*$",
+      "type": "string"
     }
   },
   "$ref": "#/$defs/ChatMessage",

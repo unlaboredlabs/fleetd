@@ -302,6 +302,8 @@ impl Chat {
                 history: new.history,
                 remembered: new.remembered,
                 skills: (!new.skills.is_empty()).then(|| List::unchecked(new.skills)),
+                // Posted by the hub's preview_suggest (W58), which comes next.
+                preview_suggestion: None,
                 parts: (author == ChatAuthor::Lead && !new.streaming)
                     .then(|| parts::parts(&text))
                     .flatten(),

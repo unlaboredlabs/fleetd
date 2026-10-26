@@ -160,9 +160,9 @@ pub enum CommandApprovalState {
     Failed,
 }
 
-/// A risky command (prod write, spend, delete, credential use) or a session's permission prompt waits for the
-/// human: the exact command, then Approve or Deny. Answered with `approval_answer`, naming `requestId`. Exactly one of
-/// `gated` and `permission`.
+/// A risky command (prod write, spend, delete, credential use), a session's permission prompt or an agent's proposed
+/// preview setting waits for the human: exactly what it would do, then Approve or Deny. Answered with
+/// `approval_answer`, naming `requestId`. Exactly one of `gated`, `permission` and `previewConfig`.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -174,6 +174,10 @@ pub struct CommandApprovalItem {
     pub gated: Option<GatedRunSpec>,
     /// A session's permission prompt: the tool and what it would do.
     pub permission: Option<ToolPermission>,
+    /// An agent's proposed preview setting (preview_config_propose): approved, it becomes the project's `preview`.
+    /// Older apps show it as an approval with neither command nor permission.
+    /// Boxed: the setting is large beside the item's other fields, and every chat item would carry its size.
+    pub preview_config: Option<Box<crate::preview::PreviewConfigProposeCall>>,
     pub state: CommandApprovalState,
     pub exit_code: Option<i64>,
     /// The end of the output, once it ran.
@@ -254,6 +258,9 @@ pub struct ChatMessage {
     pub remembered: Option<crate::memory::RememberedItem>,
     /// A human message: the skills it named with `$name`, which the lead's copy lists.
     pub skills: Option<List<crate::skills::SkillName, 1, 8, true>>,
+    /// An agent's suggestion to try a PR (preview_suggest), posted once per PR with `text` in its words: the app
+    /// shows it as one line with Try it. Nothing runs from it.
+    pub preview_suggestion: Option<crate::preview::PreviewSuggestion>,
 }
 
 /// One chat's state, for the sidebar and the status row.

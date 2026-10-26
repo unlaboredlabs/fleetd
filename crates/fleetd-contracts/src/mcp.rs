@@ -1417,6 +1417,9 @@ output!(PreviewsListOutput {
     previews: List<crate::preview::Preview, 0, 200>,
     /// Agents' suggestions to try a PR, for those with no preview yet.
     suggestions: List<crate::preview::PreviewSuggestion, 0, 200>,
+    /// The caller's key may start previews on this project: a human key with admin or operate on its machine (D162).
+    /// False: it only opens running ones. Absent from older hubs: the app offers Try it and shows a refusal.
+    can_start: Option<bool>,
 });
 input!(PreviewFeedbackInput {
     preview_id: crate::preview::PreviewId,

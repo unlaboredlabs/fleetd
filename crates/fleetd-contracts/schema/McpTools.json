@@ -2655,6 +2655,10 @@
           "minItems": 1,
           "type": "array"
         },
+        "previewSuggestion": {
+          "$ref": "#/$defs/PreviewSuggestion",
+          "description": "An agent's suggestion to try a PR (preview_suggest), posted once per PR with `text` in its words: the app\nshows it as one line with Try it. Nothing runs from it."
+        },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
         },
@@ -3376,7 +3380,7 @@
       "type": "object"
     },
     "CommandApprovalItem": {
-      "description": "A risky command (prod write, spend, delete, credential use) or a session's permission prompt waits for the\nhuman: the exact command, then Approve or Deny. Answered with `approval_answer`, naming `requestId`. Exactly one of\n`gated` and `permission`.",
+      "description": "A risky command (prod write, spend, delete, credential use), a session's permission prompt or an agent's proposed\npreview setting waits for the human: exactly what it would do, then Approve or Deny. Answered with\n`approval_answer`, naming `requestId`. Exactly one of `gated`, `permission` and `previewConfig`.",
       "properties": {
         "answeredAt": {
           "$ref": "#/$defs/Timestamp"
@@ -3419,6 +3423,10 @@
         "permission": {
           "$ref": "#/$defs/ToolPermission",
           "description": "A session's permission prompt: the tool and what it would do."
+        },
+        "previewConfig": {
+          "$ref": "#/$defs/PreviewConfigProposeCall",
+          "description": "An agent's proposed preview setting (preview_config_propose): approved, it becomes the project's `preview`.\nOlder apps show it as an approval with neither command nor permission.\nBoxed: the setting is large beside the item's other fields, and every chat item would carry its size."
         },
         "requestId": {
           "$ref": "#/$defs/ChatRequestId"
@@ -9764,6 +9772,25 @@
       },
       "type": "object"
     },
+    "PreviewConfigProposeCall": {
+      "description": "`preview_config_propose`: how to run the project's preview, for the person to approve as a card in the chat.\nNothing is saved until they do. Answered with the request, as `gated_run` is.",
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/PreviewConfig"
+        },
+        "why": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "config",
+        "why"
+      ],
+      "type": "object"
+    },
     "PreviewEndInput": {
       "properties": {
         "previewId": {
@@ -10142,6 +10169,10 @@
     },
     "PreviewsListOutput": {
       "properties": {
+        "canStart": {
+          "description": "The caller's key may start previews on this project: a human key with admin or operate on its machine (D162).\nFalse: it only opens running ones. Absent from older hubs: the app offers Try it and shows a refusal.",
+          "type": "boolean"
+        },
         "next": {
           "type": "string"
         },
