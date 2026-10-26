@@ -427,13 +427,6 @@ impl Usage {
         self.inner.state.lock().unwrap().hold(thread, self.now_ms())
     }
 
-    /// When `by` last lifted something on the machine (epoch ms), from every usage.resumed since the hub started its
-    /// replay.
-    pub fn last_resumed_by(&self, machine_id: &str, by: &str) -> Option<i64> {
-        let s = self.inner.state.lock().unwrap();
-        s.machines.get(machine_id)?.resumed_by.get(by).copied()
-    }
-
     pub fn parked_of(&self, thread: &ThreadRef) -> Option<UsageParked> {
         self.inner.state.lock().unwrap().parked(thread).cloned()
     }
@@ -500,6 +493,40 @@ impl Usage {
     pub async fn resume(&self, machine_id: &str, by: &str) -> usize {
         let mut cursor = self.inner.op.lock().await;
         self.pump(&mut cursor).await;
+        self.resume_held(machine_id, by).await
+    }
+
+    /// A lead's usage_resume: `resume`, unless a lead of any project lifted something on the machine less than
+    /// `every_ms` ago; then `Err` with which lead and when (epoch ms). The check and the resume hold one op lock, and
+    /// the resume's usage.resumed is applied before it is released, so of two leads calling at once one is refused.
+    pub async fn resume_as_lead(
+        &self,
+        machine_id: &str,
+        by: &str,
+        every_ms: i64,
+    ) -> Result<usize, (String, i64)> {
+        let mut cursor = self.inner.op.lock().await;
+        self.pump(&mut cursor).await;
+        let now = self.now_ms();
+        let last = {
+            let s = self.inner.state.lock().unwrap();
+            s.machines.get(machine_id).and_then(|m| {
+                // A lead's `by` is `lead:<machine>/<project>` (`lead_by`).
+                m.resumed_by
+                    .iter()
+                    .filter(|(who, _)| who.starts_with("lead:"))
+                    .max_by_key(|(_, at)| **at)
+                    .map(|(who, at)| (who.clone(), *at))
+            })
+        };
+        if let Some(last) = last.filter(|(_, at)| now - at < every_ms) {
+            return Err(last);
+        }
+        Ok(self.resume_held(machine_id, by).await)
+    }
+
+    /// `resume`'s work; the caller holds the op lock and has pumped.
+    async fn resume_held(&self, machine_id: &str, by: &str) -> usize {
         let (cleared, parked) = {
             let s = self.inner.state.lock().unwrap();
             (
