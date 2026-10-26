@@ -1,5 +1,7 @@
 // What the lead is waiting on you for, in a few words, for the quiet line above the composer: an open approval or
-// secret first (the lead can't go on without it), else its newest message's questions. Pure.
+// secret first (the lead can't go on without it), loaded or not, else the questions of its newest message since you last wrote that
+// asks any; nothing when it asks nothing. Pure.
+import type { ChatOpenItem } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
 import { bubblesOf } from "./bubbles";
 import { plural, shortClock } from "./format";
@@ -19,6 +21,14 @@ export interface Waiting {
   readonly targets: readonly WaitTarget[];
 }
 
+/** What the chat knows beyond its loaded items. */
+export interface Unloaded {
+  /** Older pages aren't loaded. */
+  readonly older: boolean;
+  /** The hub's open items (ProjectChatState.openItems), on any page. */
+  readonly open?: readonly ChatOpenItem[] | undefined;
+}
+
 const openItem = (i: ChatItem): boolean => (i.kind === "secret" || i.kind === "gated") && i.message?.item?.state === "open";
 
 /** Numbered items at the start of a line ("1. …", "2) …"): the lead asks its questions as a numbered list. */
@@ -34,23 +44,30 @@ const when = (iso: string, nowMs: number, timeZone?: string): string => {
   return `${day === "Yesterday" ? "yesterday" : day} at ${clock}`;
 };
 
-export function waitingOn(items: readonly ChatItem[], nowMs: number, timeZone?: string): Waiting {
-  const open = items.filter(openItem);
+export function waitingOn(items: readonly ChatItem[], { older, open: away = [] }: Unloaded, nowMs: number, timeZone?: string): Waiting | undefined {
+  // A loaded item goes by its own state, which may be newer than the hub's list; the rest by the list, oldest first,
+  // which comes before what's loaded.
+  const loaded = new Set(items.map((i) => i.id));
+  const unloaded = away.filter((o) => !loaded.has(o.messageId) && (o.kind === "command_approval" || o.kind === "secret_request"));
+  const open = [...unloaded.map((o) => ({ id: o.messageId, gated: o.kind === "command_approval" })), ...items.filter(openItem).map((i) => ({ id: i.id, gated: i.kind === "gated" }))];
   if (open.length > 0) {
-    const approvals = open.filter((i) => i.kind === "gated").length;
+    const approvals = open.filter((i) => i.gated).length;
     const secrets = open.length - approvals;
     const parts = [approvals > 0 ? `${plural(approvals, "command")} to approve` : "", secrets > 0 ? `${plural(secrets, "secret")} to enter` : ""];
     return { what: parts.filter((p) => p !== "").join(", "), targets: open.map((i) => ({ id: i.id })) };
   }
-  const ask = items.findLast((i) => i.author === "lead" && i.kind === "message");
-  if (ask === undefined) return { what: "a reply", targets: [] };
-  // Each bubble that asks (an ask block, or words with a question in them), else the message's last.
-  const bubbles = bubblesOf(ask);
-  const asking = bubbles.map((b) => ({ key: b.key, n: b.kind === "block" ? (b.block.kind === "ask" ? 1 : 0) : countQuestions(b.text) })).filter((b) => b.n > 0);
-  const n = asking.length > 1 ? asking.reduce((sum, b) => sum + b.n, 0) : Math.max(countQuestions(ask.text), asking.length);
-  const parts = asking.length > 0 ? asking.map((b) => b.key) : [bubbles.at(-1)?.key];
-  return {
-    what: n > 0 ? `${plural(n, "question")}, asked ${when(ask.at, nowMs, timeZone)}` : `a reply to its message ${when(ask.at, nowMs, timeZone)}`,
-    targets: parts.map((part) => ({ id: ask.id, part })),
-  };
+  // The newest lead message since you last wrote that asks something: a later status line doesn't answer it.
+  const since = items.findLastIndex((i) => i.author === "human" && i.kind === "message") + 1;
+  for (const ask of items.slice(since).reverse()) {
+    if (ask.author !== "lead" || ask.kind !== "message") continue;
+    // Each bubble that asks: an ask block, or words with a question in them.
+    const asking = bubblesOf(ask)
+      .map((b) => ({ key: b.key, n: b.kind === "block" ? (b.block.kind === "ask" ? 1 : 0) : countQuestions(b.text) }))
+      .filter((b) => b.n > 0);
+    if (asking.length === 0) continue;
+    const n = asking.length > 1 ? asking.reduce((sum, b) => sum + b.n, 0) : Math.max(countQuestions(ask.text), 1);
+    return { what: `${plural(n, "question")}, asked ${when(ask.at, nowMs, timeZone)}`, targets: asking.map((b) => ({ id: ask.id, part: b.key })) };
+  }
+  // A plain status line asks nothing; only a page not loaded can hold the wait, and only if you haven't written since.
+  return older && since === 0 ? { what: "a reply", targets: [] } : undefined;
 }

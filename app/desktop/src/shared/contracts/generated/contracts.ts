@@ -872,6 +872,17 @@ export type KnownChatMessageState = "final" | "streaming";
 /** KnownChatMessageState, or a value from a newer hub. */
 export type ChatMessageState = KnownChatMessageState | (string & {});
 
+/** An inline item that waits on the human: which message, and what it asks for. */
+export type ChatOpenItem = {
+  kind: ChatOpenItemKind;
+  messageId: ChatMessageId;
+};
+
+/** `ChatItem`'s kind. */
+export type KnownChatOpenItemKind = "secret_request" | "command_approval";
+/** KnownChatOpenItemKind, or a value from a newer hub. */
+export type ChatOpenItemKind = KnownChatOpenItemKind | (string & {});
+
 /**
  * One bubble of a lead message: `text.slice(start, end)` (UTF-16 offsets, like `ChatDelta.offset`), shown as
  * markdown, or as `block` when it has one (the slice is then the block's fence, its readable fallback).
@@ -2939,6 +2950,11 @@ export type ProjectChatState = {
   leadWorking: boolean;
   /** The lead's last message waits for a human reply, or an inline item is open. */
   needsYou: boolean;
+  /**
+   * The inline items still open, oldest first, however far back: the chat may not have their page loaded. Absent
+   * when none is (and from older hubs).
+   */
+  openItems?: ChatOpenItem[];
   projectRef: ProjectRef;
 };
 

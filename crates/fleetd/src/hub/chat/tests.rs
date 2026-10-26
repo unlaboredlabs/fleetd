@@ -272,6 +272,29 @@ fn an_open_inline_item_waits_on_you_until_its_state_moves() {
         hub.chat.state(&r, true).unwrap().needs_you,
         "an item waits even while the lead works"
     );
+    // However much is said after it, the state names it, for a chat that hasn't loaded its page.
+    for text in ["one", "two"] {
+        hub.chat
+            .add(
+                &r,
+                NewMessage {
+                    author: Some(ChatAuthor::Human),
+                    text: text.into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    }
+    let open = hub.chat.state(&r, false).unwrap();
+    assert!(open.needs_you);
+    assert_eq!(
+        open.open_items.clone().map(List::into_inner),
+        Some(vec![ChatOpenItem {
+            message_id: shown.message_id.clone(),
+            kind: ChatOpenItemKind::CommandApproval,
+        }])
+    );
+    hub.chat.tell_state(&open).unwrap();
     let moved = hub
         .chat
         .update_item(&ChatRequestId::unchecked("Q1"), approval("approved"))
@@ -283,6 +306,13 @@ fn an_open_inline_item_waits_on_you_until_its_state_moves() {
     };
     assert_eq!(item.state, CommandApprovalState::Approved);
     assert!(!hub.chat.state(&r, true).unwrap().needs_you);
+    let answered = hub.chat.state(&r, false).unwrap();
+    assert_eq!(answered.open_items, None);
+    // chat.waiting says so when the open items change, not only needs-you.
+    let mut still = answered.clone();
+    still.needs_you = true;
+    hub.chat.tell_state(&still).unwrap();
+    assert_eq!(events_of(&hub, HubEventType::ChatWaiting).len(), 2);
 }
 
 #[tokio::test]
