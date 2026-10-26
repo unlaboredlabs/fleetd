@@ -460,6 +460,7 @@ mod tests {
             tasks: None,
             train: None,
             elsewhere: None,
+            checklist: None,
             facts: &HashMap::new(),
         });
         assert_eq!(
