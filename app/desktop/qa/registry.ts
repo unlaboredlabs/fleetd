@@ -132,6 +132,19 @@ export const fixtures = [
   // The panel's Checklist tab: a list the lead keeps, and none yet (fixtures/checklist).
   "checklist-listed",
   "checklist-empty",
+  // The panel's Train, Activity and Decisions tabs (fixtures/train, fixtures/activity, fixtures/decisions).
+  "train-full",
+  "train-batch",
+  "train-empty",
+  "train-loading",
+  "train-error",
+  "activity-none",
+  "activity-loading",
+  "activity-error",
+  "activity-old-hub",
+  "decisions-none",
+  "decisions-loading",
+  "decisions-error",
   // ...and the work elsewhere on storefront's repo, seen from storefront and from checkout (fixtures/agents).
   "agents-elsewhere",
   // UX [7]: no hub, and the last launch's disk cache on screen with a message queued; back online with that chat not
@@ -545,6 +558,48 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.getByRole("complementary", { name: "Project panel" }).getByText("No checklist yet").waitFor();
     },
+  },
+  // The panel's Train: a PR in CI with its checks, the line with its held and sent-back PRs, merges and a refusal; a
+  // batch of three in CI; the shared fixtures' train (fixtures/prs's PRs); nothing on it; on its way; and failing.
+  { id: "train", route: `${CHAT}/train`, fixtures: ["train-full", "train-batch", "train-empty", "typical", "long-text"] },
+  { id: "train", route: `${CHAT}/train`, fixtures: ["train-error"], expect: "error" },
+  {
+    id: "train",
+    route: CHAT,
+    fixtures: ["train-loading"],
+    variant: "loading",
+    open: whileLoading(async (page) => {
+      await page.evaluate((r) => {
+        window.location.hash = r;
+      }, `${CHAT}/train`);
+    }, (page) => page.getByLabel("Loading the merge train")),
+  },
+  // The panel's Activity: storefront's feed; nothing yet; failing; a hub without events_list; and on its way.
+  { id: "activity", route: `${CHAT}/activity`, fixtures: ["typical", "long-text", "activity-none", "activity-error", "activity-old-hub"] },
+  {
+    id: "activity",
+    route: CHAT,
+    fixtures: ["activity-loading"],
+    variant: "loading",
+    open: whileLoading(async (page) => {
+      await page.evaluate((r) => {
+        window.location.hash = r;
+      }, `${CHAT}/activity`);
+    }, (page) => page.getByLabel("Loading the activity")),
+  },
+  // The panel's Decisions: what the lead and you settled; none yet; failing; and on its way.
+  { id: "decisions", route: `${CHAT}/decisions`, fixtures: ["typical", "long-text", "decisions-none"] },
+  { id: "decisions", route: `${CHAT}/decisions`, fixtures: ["decisions-error"], expect: "error" },
+  {
+    id: "decisions",
+    route: CHAT,
+    fixtures: ["decisions-loading"],
+    variant: "loading",
+    open: whileLoading(async (page) => {
+      await page.evaluate((r) => {
+        window.location.hash = r;
+      }, `${CHAT}/decisions`);
+    }, (page) => page.getByLabel("Loading the decisions")),
   },
   // Resized from its edge with the keyboard: at its widest, and at its narrowest, where the tabs fold to icons.
   {

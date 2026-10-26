@@ -2,7 +2,7 @@
 // the palette's Go to commands and the remembered tab all read. A new tab is one entry here: its words, its icon, its
 // pane and, if it has one, its count, each loaded the first time the panel shows it. Agents and Pull requests also
 // name an item in their routes (one agent's work, one PR); every other tab's view is `{ tab }`.
-import { Bot, GitPullRequest, ListChecks, type LucideIcon } from "lucide-react";
+import { Activity, Bot, GitPullRequest, ListChecks, Scale, TrainFront, type LucideIcon } from "lucide-react";
 import type { ComponentType } from "react";
 import type { PanelView, ProjectKey } from "../shell/routes";
 
@@ -55,6 +55,15 @@ export const PANEL_TABS = [
     count: () => import("./panes").then((m) => m.PrCount),
   },
   {
+    id: "train",
+    label: "Train",
+    icon: TrainFront,
+    detail: "This project’s merge train: what merges now, what waits, what landed",
+    keywords: ["merge", "queue", "merging", "ci", "batch", "landed"],
+    pane: () => import("../train/TrainPane").then((m) => m.TrainPane),
+    count: () => import("../train/TrainPane").then((m) => m.TrainCount),
+  },
+  {
     id: "checklist",
     label: "Checklist",
     icon: ListChecks,
@@ -62,6 +71,24 @@ export const PANEL_TABS = [
     keywords: ["todo", "to-do", "tasks", "progress", "plan", "list"],
     pane: () => import("../checklist/ChecklistPane").then((m) => m.ChecklistPane),
     count: () => import("../checklist/ChecklistPane").then((m) => m.ChecklistCount),
+  },
+  {
+    id: "activity",
+    label: "Activity",
+    icon: Activity,
+    detail: "What happened in this project while you were away",
+    keywords: ["events", "feed", "history", "log", "recent", "away"],
+    pane: () => import("../activity").then((m) => m.ActivityPane),
+    count: () => import("./counts").then((m) => m.ActivityCount),
+  },
+  {
+    id: "decisions",
+    label: "Decisions",
+    icon: Scale,
+    detail: "What the lead and you decided in this project",
+    keywords: ["decided", "choices", "settled", "why", "revoke"],
+    pane: () => import("../decisions/DecisionsPane").then((m) => m.DecisionsPane),
+    count: () => import("./counts").then((m) => m.DecisionCount),
   },
 ] as const satisfies readonly PanelTabEntry[];
 

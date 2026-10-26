@@ -28,6 +28,8 @@ const TIME_TYPES = new Set(["lead.woken", "pr.merged"]);
 // state, a review, a merge, its writer's task. Only a new head changes its files and diff, and only the queue sees one.
 const PR_PREFIXES = ["change.", "pr.", "review.", "task."];
 const PR_DIFF_PREFIXES = ["change.", "pr."];
+// The panel's Train reads the project's changes: every move on the train is a change.* or pr.* event.
+const TRAIN_PREFIXES = ["change.", "pr."];
 
 /** The orders an event is about: `data.workstreamId`, plus `data.workstreamIds` (a lead woken for several). */
 export const ordersNamed = (event: HubEvent): readonly string[] => {
@@ -67,6 +69,7 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   // Only the PR screen on view has these reads mounted, so this refetches one list, one PR and its visible pages.
   if (startsWithAny(type, PR_PREFIXES)) out.push({ tool: "pr_list" }, { tool: "pr_get" });
   if (startsWithAny(type, PR_DIFF_PREFIXES)) out.push({ tool: "pr_files" }, { tool: "pr_diff" });
+  if (startsWithAny(type, TRAIN_PREFIXES)) out.push({ tool: "changes_list" });
   // Status's per-project rows read the same facts as the status doc.
   if (shapesOrders || STATUS_TYPES.has(type) || startsWithAny(type, STATUS_PREFIXES)) out.push({ tool: "status_get" });
   // Only the open order's time reads: they are scoped `{ kind: "order", workstreamId }`, matched inside `scope`.

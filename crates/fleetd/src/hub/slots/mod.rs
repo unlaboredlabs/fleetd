@@ -157,8 +157,6 @@ fn load(db: &HubDb) -> Result<Board, StoreError> {
                     max_agents: r.get(4)?,
                     // Until its next heartbeat.
                     disk_room: None,
-                    projects: Vec::new(),
-                    memory: None,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -334,9 +332,8 @@ impl Slots {
         self.locked(|b| ((), b.observe(machine_id.as_str(), thread_id, running)))
     }
 
-    /// A heartbeat's facts about the machine (`name` for the reasons people read): what it fits, its disk room, and
-    /// what each project measured there fits, and its memory budget. When it takes more than before, starts the queued agents that now fit
-    /// and runs the listeners.
+    /// A heartbeat's facts about the machine (`name` for the reasons people read): what it fits and its disk room.
+    /// When it takes more than before, starts the queued agents that now fit and runs the listeners.
     pub fn observe_machine(
         &self,
         machine_id: &MachineId,
@@ -344,12 +341,7 @@ impl Slots {
         load: &NodeLoad,
     ) -> Result<(), StoreError> {
         let (auto, disk_room) = (sizing::auto_cap(load), sizing::disk_room(load));
-        let (projects, memory) = (sizing::project_caps(load, &auto), sizing::memory(load));
-        self.locked(|b| {
-            let more = b.observe_machine(machine_id, name, auto, disk_room);
-            let more = b.observe_projects(machine_id, projects) || more;
-            ((), b.observe_memory(machine_id, memory) || more)
-        })
+        self.locked(|b| ((), b.observe_machine(machine_id, name, auto, disk_room)))
     }
 
     /// Takes a slot now, or queues the request (reviews first, then the oldest) and says why. Asking again for a holder that
@@ -527,6 +519,55 @@ mod tests {
                 queued: n as i64 - 2,
                 source: MaxSource::Project,
             }
+        );
+    }
+
+    /// Max agents of 20 starts 20 on a machine whose free memory fits 10 of the project's agents at what an older node
+    /// says they took: the caps alone hold agents back, never an estimate of their memory.
+    #[test]
+    fn max_agents_starts_every_agent_whatever_memory_each_is_estimated_to_take() {
+        let db = HubDb::open_memory().unwrap();
+        let store = HubStore::new(db.clone());
+        let clock = ManualClock::at(1_792_000_000_000);
+        let events = EventLog::new(db.clone(), clock.clone()).unwrap();
+        let slots = Slots::new(db, clock, &store, &events).unwrap();
+        let r = ProjectRef {
+            machine_id: MachineId::unchecked("lab-a"),
+            project_id: ProjectId::unchecked("p1"),
+        };
+        // 32 threads, 60 GB: 45 GB after the reserve, which 10 agents at 4.42 GB each fill.
+        let load: NodeLoad = serde_json::from_value(serde_json::json!({
+            "cpus": 32,
+            "load1": 0.5,
+            "memTotalBytes": 60_i64 << 30,
+            "memPerAgentBytes": 2_000_000_000_i64,
+            "projectMemory": [{ "projectId": "p1", "samples": 20, "p90Bytes": 4_420_000_000_i64 }],
+        }))
+        .unwrap();
+        slots
+            .observe_machine(&r.machine_id, "builder-1", &load)
+            .unwrap();
+        slots
+            .set_cap(CapInput {
+                cap: None,
+                max_agents: Some((r.clone(), 20)),
+            })
+            .unwrap();
+        let acquire = |holder: &str| {
+            slots
+                .acquire(SlotRequest {
+                    holder,
+                    project_ref: &r,
+                    priority: SlotPriority::Work,
+                })
+                .unwrap()
+        };
+        for i in 1..=20 {
+            assert_eq!(acquire(&format!("T{i}")), Grant::Granted, "T{i}");
+        }
+        assert_eq!(
+            acquire("T21"),
+            Grant::Queued("Max agents: 20 of 20 running".to_owned())
         );
     }
 }

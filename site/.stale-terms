@@ -51,3 +51,7 @@ recs fine
 train_freeze
 github-webhook
 fleetd/stack
+
+# The memory budget is gone: the caps alone hold agents back, never the memory an agent is estimated to take.
+memory budget
+seen on this project

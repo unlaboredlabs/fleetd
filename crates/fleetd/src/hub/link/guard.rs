@@ -79,7 +79,6 @@ pub(crate) mod tests {
             mem_pressure_pct: None,
             mem_per_agent_bytes: None,
             disk_per_agent_bytes: None,
-            project_memory: None,
             limits: List::unchecked(Vec::new()),
             disk: Some(NodeDisk {
                 free_bytes: Count::unchecked(free_gb * 1_000_000_000),
