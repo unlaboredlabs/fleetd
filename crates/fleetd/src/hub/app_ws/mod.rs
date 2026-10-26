@@ -190,6 +190,14 @@ impl Session {
         };
         match message {
             AppClientMessage::Auth { .. } => unreachable!("handled above"),
+            AppClientMessage::BrowserWatch { .. } | AppClientMessage::BrowserInput { .. } => {
+                let unread = ToolError::new(
+                    ErrorCode::Invalid,
+                    "This hub doesn't take browser_watch or browser_input yet.",
+                )
+                .with_fix("Send them only to a hub whose ready names browser_sessions.");
+                self.send(error_frame(&unread, None));
+            }
             AppClientMessage::Chat { project } => {
                 // A new `chat` request replaces the running one; none stops it.
                 if let Some(old) = self.chat.take() {

@@ -188,6 +188,21 @@ impl NodeLinkServer {
             .insert(machine_id.clone(), caps);
     }
 
+    /// Sends `frame` to the machine's live node; false when it has none.
+    pub fn send_to(&self, machine_id: &MachineId, frame: HubToNode) -> bool {
+        let tx = self
+            .state
+            .lock()
+            .unwrap()
+            .links
+            .get(machine_id)
+            .map(|(_, tx)| tx.clone());
+        match tx {
+            Some(tx) => tx.send(Out::Frame(Box::new(frame))).is_ok(),
+            None => false,
+        }
+    }
+
     /// Whether the machine's live node listed `capability` in its hello.
     pub fn node_can(&self, machine_id: &MachineId, capability: &str) -> bool {
         self.state
@@ -860,6 +875,7 @@ impl NodeLinkServer {
                         }),
                     });
                 }
+                NodeToHub::BrowserFrame(_) => {}
                 NodeToHub::Hello(_) => return refuse(close::BAD_FRAME, "hello after welcome"),
             }
         }

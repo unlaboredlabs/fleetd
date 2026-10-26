@@ -158,7 +158,7 @@ pub struct BrowserSession {
 }
 
 /// One line of `actions.jsonl`: a tool call of the agent's that drove the browser (an `agent-browser` command, a
-/// session tool), or a person's takeover step.
+/// session tool), or a person's step (`takeover`, `handback`; their input is not logged key by key).
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -403,6 +403,140 @@ pub struct Filled {
 #[serde(rename_all = "camelCase")]
 pub struct TakeoverRequested {
     pub message: String,
+}
+
+// ---- live view and takeover: the app <-> the hub (app.rs `browser_watch`, `browser_input`, `browser_frame`), the
+// hub <-> the node (node_link.rs), and `browser_control` ----
+
+/// One screencast frame of a live session, for the person watching. Ephemeral: the hub keeps only the newest per
+/// session, and a slow link skips frames rather than queueing them.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserFrame {
+    pub session_id: BrowserSessionId,
+    /// 1, 2, ... per watch; a frame older than one already shown is dropped.
+    pub seq: u64,
+    /// A JPEG, base64.
+    pub jpeg_b64: NonEmpty,
+    /// The image's size in pixels: `browser_input` coordinates are in it.
+    pub width: Int<1, 8192>,
+    pub height: Int<1, 8192>,
+    /// The page the frame shows, when the node knows it.
+    pub url: Option<Text<0, 2000>>,
+    pub control: BrowserControl,
+}
+
+/// A mouse button, as CDP names it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MouseButton {
+    #[default]
+    None,
+    Left,
+    Middle,
+    Right,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MouseAction {
+    Pressed,
+    Released,
+    Moved,
+    Wheel,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum KeyAction {
+    Down,
+    Up,
+}
+
+/// Alt 1, Ctrl 2, Meta 4, Shift 8, summed, as CDP's `modifiers`.
+pub type Modifiers = Int<0, 15>;
+
+/// A person's input to a session they have control of (`control` human). Coordinates are in the last frame's pixels;
+/// the node scales them to the page.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(
+    tag = "kind",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
+pub enum BrowserInput {
+    Mouse {
+        action: MouseAction,
+        x: f64,
+        y: f64,
+        #[serde(default)]
+        button: MouseButton,
+        /// 1 for a click, 2 for a double click.
+        #[serde(default)]
+        click_count: Int<0, 3>,
+        #[serde(default)]
+        delta_x: f64,
+        #[serde(default)]
+        delta_y: f64,
+        #[serde(default)]
+        modifiers: Modifiers,
+    },
+    /// A key as the browser's `KeyboardEvent` names it (`key` "Enter", `code` "Enter"); `text` for one that types.
+    Key {
+        action: KeyAction,
+        key: Text<1, 64>,
+        code: Option<Text<1, 64>>,
+        text: Option<Text<1, 16>>,
+        #[serde(default)]
+        modifiers: Modifiers,
+    },
+    /// Text typed or pasted at once.
+    Text { text: Text<1, 10_000> },
+}
+
+/// Who should drive a live session: `human` takes it over from the agent; `agent` hands it back, and the session is
+/// `handing_back` until the agent's next command, which sees the page as the person left it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BrowserControlTo {
+    Human,
+    Agent,
+}
+
+/// The node's lead call for an agent's `request_takeover`: the hub lists it under "waiting on you" until a person
+/// takes control or the session ends.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserTakeoverCall {
+    pub session_id: BrowserSessionId,
+    pub reason: Line<1, 500>,
+}
+
+/// Hub -> node: the frames of a session, from now on (`on`) or no more.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserWatchFrame {
+    pub session_id: BrowserSessionId,
+    pub on: bool,
+}
+
+/// Hub -> node: a person's input, or a change of control, for a session.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserInputFrame {
+    pub session_id: BrowserSessionId,
+    pub input: BrowserInput,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserControlFrame {
+    pub session_id: BrowserSessionId,
+    pub control: BrowserControlTo,
+    /// "human:<device>", for the action log.
+    pub by: Text<1, 200>,
 }
 
 #[cfg(test)]

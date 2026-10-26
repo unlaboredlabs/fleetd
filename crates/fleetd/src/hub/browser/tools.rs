@@ -1,28 +1,115 @@
-//! browser_sessions, browser_recording_get and browser_retention_set: the app's Sessions view and its replay. A
-//! recording is read in pieces, as attachments are.
+//! browser_sessions, browser_recording_get, browser_control and browser_retention_set: the app's Sessions view, its
+//! replay and its takeover. A recording is read in pieces, as attachments are.
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::Arc;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use fleetd_contracts::auth::Role;
-use fleetd_contracts::browser::RECORDING_PART_BYTES;
-use fleetd_contracts::mcp::{
-    BrowserRecordingGetInput, BrowserRecordingGetOutput, BrowserRetentionSetInput,
-    BrowserRetentionSetOutput, BrowserSessionsInput, BrowserSessionsOutput, ErrorCode,
+use fleetd_contracts::browser::{
+    BrowserControl, BrowserControlFrame, BrowserControlTo, BrowserSessionState,
+    RECORDING_PART_BYTES,
 };
+use fleetd_contracts::mcp::{
+    BrowserControlInput, BrowserControlOutput, BrowserRecordingGetInput, BrowserRecordingGetOutput,
+    BrowserRetentionSetInput, BrowserRetentionSetOutput, BrowserSessionsInput,
+    BrowserSessionsOutput, ErrorCode,
+};
+use fleetd_contracts::node_link::{CAP_BROWSER, HubToNode};
 use fleetd_contracts::prim::{List, Text};
 
-use super::{count, file_path, get, list, retention_on, set_retention};
+use super::{count, file_path, get, list, retention_on, save, set_retention};
 use crate::hub::api::{
-    Caller, Hub, Registry, ToolError, admin_everywhere_fix, allows_everywhere, require,
+    Caller, Hub, Registry, ToolError, admin_everywhere_fix, allows_everywhere, is_human, require,
     unknown_project,
 };
 
 pub fn register(tools: &mut Registry) {
     tools.add("browser_sessions", browser_sessions);
     tools.add("browser_recording_get", browser_recording_get);
+    tools.add("browser_control", browser_control);
     tools.add("browser_retention_set", browser_retention_set);
+}
+
+/// "human:<device>", as the action log names a person's step.
+pub fn person(caller: &Caller) -> String {
+    format!("human:{}", caller.name)
+}
+
+async fn browser_control(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: BrowserControlInput,
+) -> Result<BrowserControlOutput, ToolError> {
+    let id = &input.session_id;
+    let not_found = || {
+        ToolError::new(ErrorCode::NotFound, format!("No browser session {id}."))
+            .with_fix("Call browser_sessions for the project's sessions.")
+    };
+    let mut session = get(&hub.db, id)?.ok_or_else(not_found)?;
+    let machine = session.project_ref.machine_id.clone();
+    if require(&caller, Role::Read, Some(&machine)).is_err() {
+        return Err(not_found());
+    }
+    if !is_human(&caller) {
+        return Err(ToolError::new(
+            ErrorCode::Forbidden,
+            "Only a person's device takes a browser over or hands it back.",
+        )
+        .with_fix("Use the desktop app."));
+    }
+    require(&caller, Role::Operate, Some(&machine))?;
+    if session.state != BrowserSessionState::Live {
+        return Err(ToolError::new(
+            ErrorCode::Invalid,
+            format!(
+                "Browser session {id} is {}, not live.",
+                session.state.as_str()
+            ),
+        ));
+    }
+    let next = match (input.control, session.control) {
+        (BrowserControlTo::Human, _) => BrowserControl::Human,
+        (BrowserControlTo::Agent, BrowserControl::Human) => BrowserControl::HandingBack,
+        (BrowserControlTo::Agent, now) => now,
+    };
+    if next != session.control {
+        if !hub.link.node_can(&machine, CAP_BROWSER) {
+            return Err(ToolError::new(
+                ErrorCode::MachineOffline,
+                format!("{machine}'s node isn't connected, or is too old for takeover."),
+            )
+            .with_fix("Try again once the machine is online on the current fleetd."));
+        }
+        let frame = HubToNode::BrowserControl(BrowserControlFrame {
+            session_id: id.clone(),
+            control: input.control,
+            by: Text::unchecked(person(&caller)),
+        });
+        if !hub.link.send_to(&machine, frame) {
+            return Err(ToolError::new(
+                ErrorCode::MachineOffline,
+                format!("{machine}'s node isn't connected."),
+            ));
+        }
+        session.control = next;
+        if next == BrowserControl::Human {
+            // The agent asked for a person, and one came: no longer waiting on you.
+            session.takeover_reason = None;
+        }
+        save(&hub, &session)?;
+    }
+    Ok(BrowserControlOutput {
+        session,
+        next: Some(match next {
+            BrowserControl::Human => {
+                "You have control: send browser_input; hand it back with control agent.".into()
+            }
+            _ => "The agent drives again from its next command; it sees the page as you left it."
+                .into(),
+        }),
+        truncated: None,
+    })
 }
 
 async fn browser_sessions(

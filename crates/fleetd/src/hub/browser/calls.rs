@@ -7,8 +7,9 @@ use std::sync::{Arc, Weak};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use fleetd_contracts::browser::{
-    BrowserRecordingPartCall, BrowserRecordingPartResult, BrowserSession, BrowserSessionCall,
-    BrowserSessionResult, BrowserSessionState, RECORDING_PART_BYTES,
+    BrowserControl, BrowserRecordingPartCall, BrowserRecordingPartResult, BrowserSession,
+    BrowserSessionCall, BrowserSessionResult, BrowserSessionState, BrowserTakeoverCall,
+    RECORDING_PART_BYTES,
 };
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
@@ -19,7 +20,11 @@ use crate::hub::link::lead_calls::{CallerAgent, LeadCallFuture, op_of};
 use crate::hub::link::{LeadCaller, LeadCalls};
 use crate::hub::store::{StoreError, now_ms, parse_ms};
 
-pub const OPS: [&str; 2] = ["browser_session", "browser_recording_part"];
+pub const OPS: [&str; 3] = [
+    "browser_session",
+    "browser_recording_part",
+    "browser_takeover",
+];
 
 pub fn register_lead_calls(hub: &Arc<Hub>) {
     let weak: Weak<Hub> = Arc::downgrade(hub);
@@ -59,6 +64,7 @@ fn answer(hub: &Hub, caller: &LeadCaller, call: LeadCall) -> Result<LeadCallResu
     match call {
         LeadCall::BrowserSession(call) => session(hub, caller, call),
         LeadCall::BrowserRecordingPart(call) => part(hub, caller, call),
+        LeadCall::BrowserTakeover(call) => takeover(hub, caller, call),
         other => Err(invalid(format!("{} is not a browser call.", op_of(&other)))),
     }
 }
@@ -223,4 +229,34 @@ fn part(
             bytes: count(bytes),
         },
     ))
+}
+
+/// An agent's `request_takeover`: the session waits on a person (status lists it under "waiting on you") until one
+/// takes control or it ends.
+fn takeover(
+    hub: &Hub,
+    caller: &LeadCaller,
+    call: BrowserTakeoverCall,
+) -> Result<LeadCallResult, McpToolError> {
+    let id = call.session_id.as_str();
+    let Some(mut session) = own(hub, caller, id)? else {
+        return Err(McpToolError::new(
+            ErrorCode::NotFound,
+            format!("No browser session {id}."),
+        ));
+    };
+    if session.state != BrowserSessionState::Live {
+        return Err(invalid(format!(
+            "Browser session {id} is {}: nobody can take it over.",
+            session.state.as_str()
+        )));
+    }
+    if session.control == BrowserControl::Agent {
+        session.takeover_reason = Some(call.reason);
+        super::save(hub, &session).map_err(failed)?;
+    }
+    Ok(LeadCallResult::BrowserTakeover(BrowserSessionResult {
+        session_id: session.session_id,
+        state: session.state,
+    }))
 }

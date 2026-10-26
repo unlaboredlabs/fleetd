@@ -108,6 +108,13 @@ pub fn put_on(c: &Connection, s: &BrowserSession, started_ms: i64) -> Result<(),
     Ok(())
 }
 
+/// Writes a stored session back after a change, and tells the app.
+pub fn save(hub: &Hub, s: &BrowserSession) -> Result<(), StoreError> {
+    let started_ms = crate::hub::store::parse_ms(s.started_at.as_str()).unwrap_or_default();
+    hub.db.transaction(|c| put_on(c, s, started_ms))?;
+    announce(hub, s, now_ms(hub.clock.as_ref()))
+}
+
 /// A project's sessions, newest first.
 pub fn list(db: &HubDb, r: &ProjectRef, limit: usize) -> Result<Vec<BrowserSession>, StoreError> {
     db.with(|c| {

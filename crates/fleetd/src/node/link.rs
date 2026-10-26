@@ -179,6 +179,9 @@ fn tag(frame: &HubToNode) -> &'static str {
         HubToNode::NodeAction(_) => "node_action",
         HubToNode::SessionCall(_) => "session_call",
         HubToNode::SpansAck(_) => "spans_ack",
+        HubToNode::BrowserWatch(_) => "browser_watch",
+        HubToNode::BrowserInput(_) => "browser_input",
+        HubToNode::BrowserControl(_) => "browser_control",
     }
 }
 
@@ -391,6 +394,10 @@ async fn run_link_once(
             _ = woke.changed() => return LinkEnd::Woke,
         };
         match frame {
+            // The broker takes these from the next commit on; the hub sends them only to nodes listing CAP_BROWSER.
+            HubToNode::BrowserWatch(_)
+            | HubToNode::BrowserInput(_)
+            | HubToNode::BrowserControl(_) => {}
             HubToNode::LeadResult(result) => shared.lead_calls.resolve(result),
             HubToNode::CmdCheck(check) => {
                 let shared = shared.clone();

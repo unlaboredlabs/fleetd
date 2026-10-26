@@ -1518,6 +1518,46 @@
       "type": "string",
       "x-open": true
     },
+    "BrowserControlInput": {
+      "properties": {
+        "control": {
+          "$ref": "#/$defs/BrowserControlTo"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/BrowserSessionId"
+        }
+      },
+      "required": [
+        "sessionId",
+        "control"
+      ],
+      "type": "object"
+    },
+    "BrowserControlOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "session": {
+          "$ref": "#/$defs/BrowserSession"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "session"
+      ],
+      "type": "object"
+    },
+    "BrowserControlTo": {
+      "description": "Who should drive a live session: `human` takes it over from the agent; `agent` hands it back, and the session is\n`handing_back` until the agent's next command, which sees the page as the person left it.",
+      "enum": [
+        "human",
+        "agent"
+      ],
+      "type": "string"
+    },
     "BrowserRecordingEntry": {
       "description": "A stored file of a recording.",
       "properties": {
@@ -6472,6 +6512,12 @@
         "automation_update.output": {
           "$ref": "#/$defs/AutomationUpdateOutput"
         },
+        "browser_control.input": {
+          "$ref": "#/$defs/BrowserControlInput"
+        },
+        "browser_control.output": {
+          "$ref": "#/$defs/BrowserControlOutput"
+        },
         "browser_recording_get.input": {
           "$ref": "#/$defs/BrowserRecordingGetInput"
         },
@@ -6984,6 +7030,8 @@
         "automation_runs.output",
         "automation_update.input",
         "automation_update.output",
+        "browser_control.input",
+        "browser_control.output",
         "browser_recording_get.input",
         "browser_recording_get.output",
         "browser_retention_set.input",
