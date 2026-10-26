@@ -65,9 +65,10 @@ Memory
   https://fleetd.sh/docs/what-agents-are-told#memory
 
 Usage limits
-  An agent that hits a Claude usage limit pauses and carries on by itself at the
-  reset. A machine near the end of a usage window takes no new agents until it
-  has room. https://fleetd.sh/docs/machines#guard
+  An agent that hits a Claude usage or rate limit pauses, and carries on by
+  itself once it can: at the reset, or when a later check gets through. A
+  machine near the end of a usage window takes no new agents until it has room.
+  https://fleetd.sh/docs/machines#guard
 
 
 WHAT WAITS FOR YOU
