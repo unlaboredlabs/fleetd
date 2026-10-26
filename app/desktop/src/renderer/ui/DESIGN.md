@@ -49,17 +49,22 @@ breaks a rule changes this page in the same PR and says why.
     - your own send: 140 ms
   - Never scale text.
 - **Loops step on one beat, never on CSS animations.** While something live is on screen, `ui/lib/beat` advances
-  `data-beat` on `:root` every 120 ms (24 beats). The loops' CSS reads the beat, so every loop steps together and the
-  page draws only on a beat. A running CSS animation would draw a frame every vsync, which keeps a key press waiting
-  for the next one.
+  every 120 ms (24 beats) and hands each loop the beat to write onto its own elements, so every loop steps together
+  and the page draws only on a beat. A running CSS animation would draw a frame every vsync, which keeps a key press
+  waiting for the next one.
+  - A beat restyles only what changes: a glyph sets `data-lit` on the cells whose light changes, a scan or band takes
+    the beat as `data-step`. Nothing on `:root` changes per beat (it carries `data-beat` while the beat runs), so a
+    beat's frame with 20 agents at work is about 1 ms of main thread, not 5.
   - Grain (working): each cell of the glyph flicks on a beat or two at a time, in one of four phases.
   - Walk (thinking): one cell steps round the ring, a beat a step (960 ms round).
   - Scan (words being made, `[data-sweep]` in `base.css`): a narrow band of 2 px dither steps across the words, then
     rests. The train's CI band is the same.
   - Dots (the lead writing): three square cells lit in turn, two beats each.
-  - The beat **yields to input**: while you type, click or scroll, and for 600 ms after, it holds still, so what you do
-    is all that draws.
-  - A new loop is CSS keyed on `data-beat` plus `useBeat(live)` in its component; never `animation: … infinite`.
+  - The beat **keeps moving while you type, click or scroll, on your frames.** Within 600 ms of a key, click or wheel,
+    a beat that falls due waits for your next input and steps with it, so both draw on one frame and a key never
+    waits out a frame of the beat's own. If nothing comes within a beat, it steps by itself.
+  - A new loop is CSS keyed on `data-step` plus `useBeatRef(live)` on its element, or `useBeat(live, step)` writing
+    only what changes; never `animation: … infinite`.
 - **Only what is live moves, and only while it is live:** an agent at work, the lead thinking, a PR in CI, the lead
   writing.
   - Waiting, queued, paused, done and failed are still.

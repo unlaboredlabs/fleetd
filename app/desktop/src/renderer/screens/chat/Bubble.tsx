@@ -23,7 +23,7 @@ import {
   Text,
   Tooltip,
   Truncate,
-  useBeat,
+  useBeatRef,
 } from "../../ui";
 import { useBubbleActions } from "./actions";
 import { fmtBytes } from "./attachments";
@@ -91,10 +91,10 @@ const EMOJI_ONLY = /^(?:\p{Extended_Pictographic}(?:️|‍\p{Extended_Pictograp
 
 /** The lead writing: three square cells, one lit at a time, on the app's beat (view.module.css). */
 function TypingBubble() {
-  useBeat(true);
+  const dots = useBeatRef<HTMLSpanElement>(true);
   return (
     <div className={cx(s.bubble, s.theirs, s.first, s.last)} role="status" aria-label="The lead is writing" data-typing>
-      <span className={s.typing} aria-hidden>
+      <span ref={dots} className={s.typing} aria-hidden>
         {[0, 1, 2].map((d) => (
           <span key={d} className={s.dot} />
         ))}

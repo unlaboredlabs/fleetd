@@ -4,7 +4,7 @@
 // list keeps its place while they arrive above. Scrolled up, a button counts what arrived below and goes back to it.
 import type { Virtualizer } from "@tanstack/react-virtual";
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Button, cx, StateGlyph, Text, useBeat, VirtualList } from "../../ui";
+import { Button, cx, StateGlyph, Text, useBeatRef, VirtualList } from "../../ui";
 import { useData } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
 import { leadDid, leadDoing, leadTurnSince, leadTurnUntil, sentenceCase, turnLine, workedFor } from "./activity";
@@ -124,8 +124,8 @@ function LeadActivity({ project }: { project: ProjectRef }) {
   const [onScreen, box] = useOnScreen();
   const running = shown !== undefined && since !== undefined && until === undefined;
   const clock = useNow(running && onScreen) + skew;
-  // The scan over what it does now, and its glyph, step on the app's beat while on screen.
-  useBeat(shown !== undefined && onScreen);
+  // The scan over what it does now steps on the app's beat while on screen, as its glyph does.
+  const scan = useBeatRef<HTMLSpanElement>(shown !== undefined && onScreen);
   if (shown === undefined) {
     const line = turnLine({ since, until }, undefined, clock);
     if (line?.words === undefined) return null;
@@ -143,7 +143,7 @@ function LeadActivity({ project }: { project: ProjectRef }) {
   return (
     <div ref={box} className={cx(s.quietRow, s.turn)} data-entry="activity" data-turn="running" role="status">
       <StateGlyph state={thinking ? "thinking" : "working"} size="sm" still={!onScreen} />
-      <span className={s.turnNow} data-sweep="">
+      <span ref={scan} className={s.turnNow} data-sweep="">
         <InlineText size="xs" text={sentenceCase(doing)} />
       </span>
       {running ? (

@@ -5,7 +5,7 @@
 import { useMemo, type ReactNode } from "react";
 import type { ChangesListInput, ProjectRef } from "../../../shared/contracts";
 import { useData, useToolQueries, useToolQuery } from "../../src/data/react";
-import { Button, cx, Dot, EmptyState, StateGlyph, Text, Truncate, useArrivals, useArrived, useBeat, useLeavers, type GlyphState } from "../../ui";
+import { Button, cx, Dot, EmptyState, StateGlyph, Text, Truncate, useArrivals, useArrived, useBeatRef, useLeavers, type GlyphState } from "../../ui";
 import { when } from "../prs/words";
 import { panelRoute, toHash, type ProjectKey } from "../shell/routes";
 import { changesOf, checkLines, lineReads, onTrain, trainReads, STAGE_WORD, stageLine, trainViews, WAITING_WORD, type Moving, type QueueRow, type Recent, type TrainPr, type TrainView } from "./model";
@@ -217,10 +217,10 @@ function Head({ moving, project, nowMs }: { moving: Moving; project: ProjectRef;
   const detail = useToolQuery("pr_get", { repo: one?.repo ?? "", number: one?.number ?? 0 }, { enabled: one !== undefined });
   const checks = one === undefined || detail.data === undefined ? undefined : checkLines(detail.data.checks);
   // The CI band steps on the app's beat.
-  useBeat(moving.stage === "ci");
+  const band = useBeatRef<HTMLSpanElement>(moving.stage === "ci");
   return (
     <div className={s.head} data-stage={moving.stage}>
-      {moving.stage === "ci" ? <span className={s.progress} aria-hidden /> : null}
+      {moving.stage === "ci" ? <span ref={band} className={s.progress} aria-hidden /> : null}
       <div className={s.headTop}>
         <span className={s.stage}>
           <StateGlyph state="working" size="sm" />

@@ -132,134 +132,38 @@
   animation: none !important;
 }
 
-/* The two live states step on the app's beat (ui/lib/beat: data-beat on :root, 0 to 23, every 120 ms) rather than on
-   CSS animations, so the page draws only on a beat and a key press is never kept waiting for a frame. Without a beat
-   (the window hidden, reduced motion) each keeps a still shape of its own, below. A live cell changes at once, never
-   through the morph's transition. */
+/* The two live states step on the app's beat (ui/lib/beat, every 120 ms) rather than on CSS animations, so the page
+   draws only on a beat and a key press is never kept waiting for a frame. Each beat marks only the cells whose light
+   changes (data-lit, StateGlyph.tsx), so it restyles those few cells and nothing else. Without a beat (the window
+   hidden, reduced motion) each keeps a still shape of its own, below. A live cell changes at once, never through the
+   morph's transition. */
 .glyph[data-state="working"] .cell,
 .glyph[data-state="thinking"] .cell {
   transition: none;
+  isolation: isolate;
 }
 
 /* Working: grain. Cells sit dim and flick on a beat or two at a time, out of step with each other, the way a dither
-   crawls. A glyph's phase (0 to 3) starts it at another point of the same pattern, so a list of them never flickers as
-   one. Each rule is one cell of one phase, with the beats it is lit on. */
+   crawls (GRAIN in StateGlyph.tsx). */
 .glyph[data-state="working"] .cell {
   opacity: 0.3;
 }
-:root:is([data-beat="1"], [data-beat="2"], [data-beat="7"], [data-beat="8"], [data-beat="9"], [data-beat="10"], [data-beat="13"], [data-beat="14"], [data-beat="21"], [data-beat="22"]) .glyph[data-phase="0"][data-state="working"] .cell:nth-child(1),
-:root:is([data-beat="4"], [data-beat="5"], [data-beat="6"], [data-beat="7"], [data-beat="10"], [data-beat="11"], [data-beat="12"], [data-beat="13"], [data-beat="14"], [data-beat="15"], [data-beat="16"], [data-beat="17"], [data-beat="22"], [data-beat="23"]) .glyph[data-phase="0"][data-state="working"] .cell:nth-child(2),
-:root:is([data-beat="3"], [data-beat="4"]) .glyph[data-phase="0"][data-state="working"] .cell:nth-child(3),
-:root:is([data-beat="2"], [data-beat="3"], [data-beat="16"], [data-beat="17"]) .glyph[data-phase="0"][data-state="working"] .cell:nth-child(4),
-:root:is([data-beat="1"], [data-beat="2"], [data-beat="9"], [data-beat="10"], [data-beat="13"], [data-beat="14"], [data-beat="15"], [data-beat="16"], [data-beat="21"], [data-beat="22"]) .glyph[data-phase="0"][data-state="working"] .cell:nth-child(5),
-:root:is([data-beat="2"], [data-beat="3"], [data-beat="14"], [data-beat="15"], [data-beat="18"], [data-beat="19"]) .glyph[data-phase="0"][data-state="working"] .cell:nth-child(6),
-:root:is([data-beat="0"], [data-beat="11"], [data-beat="12"], [data-beat="13"], [data-beat="14"], [data-beat="15"], [data-beat="16"], [data-beat="23"]) .glyph[data-phase="0"][data-state="working"] .cell:nth-child(7),
-:root:is([data-beat="6"], [data-beat="7"], [data-beat="20"], [data-beat="21"]) .glyph[data-phase="0"][data-state="working"] .cell:nth-child(8),
-:root:is([data-beat="5"], [data-beat="6"], [data-beat="7"], [data-beat="8"], [data-beat="9"], [data-beat="10"], [data-beat="11"], [data-beat="12"], [data-beat="17"], [data-beat="18"], [data-beat="19"], [data-beat="20"]) .glyph[data-phase="0"][data-state="working"] .cell:nth-child(9),
-:root:is([data-beat="1"], [data-beat="2"], [data-beat="3"], [data-beat="4"], [data-beat="7"], [data-beat="8"], [data-beat="15"], [data-beat="16"], [data-beat="19"], [data-beat="20"]) .glyph[data-phase="1"][data-state="working"] .cell:nth-child(1),
-:root:is([data-beat="0"], [data-beat="1"], [data-beat="4"], [data-beat="5"], [data-beat="6"], [data-beat="7"], [data-beat="8"], [data-beat="9"], [data-beat="10"], [data-beat="11"], [data-beat="16"], [data-beat="17"], [data-beat="22"], [data-beat="23"]) .glyph[data-phase="1"][data-state="working"] .cell:nth-child(2),
-:root:is([data-beat="21"], [data-beat="22"]) .glyph[data-phase="1"][data-state="working"] .cell:nth-child(3),
-:root:is([data-beat="10"], [data-beat="11"], [data-beat="20"], [data-beat="21"]) .glyph[data-phase="1"][data-state="working"] .cell:nth-child(4),
-:root:is([data-beat="3"], [data-beat="4"], [data-beat="7"], [data-beat="8"], [data-beat="9"], [data-beat="10"], [data-beat="15"], [data-beat="16"], [data-beat="19"], [data-beat="20"]) .glyph[data-phase="1"][data-state="working"] .cell:nth-child(5),
-:root:is([data-beat="8"], [data-beat="9"], [data-beat="12"], [data-beat="13"], [data-beat="20"], [data-beat="21"]) .glyph[data-phase="1"][data-state="working"] .cell:nth-child(6),
-:root:is([data-beat="5"], [data-beat="6"], [data-beat="7"], [data-beat="8"], [data-beat="9"], [data-beat="10"], [data-beat="17"], [data-beat="18"]) .glyph[data-phase="1"][data-state="working"] .cell:nth-child(7),
-:root:is([data-beat="0"], [data-beat="1"], [data-beat="14"], [data-beat="15"]) .glyph[data-phase="1"][data-state="working"] .cell:nth-child(8),
-:root:is([data-beat="0"], [data-beat="1"], [data-beat="2"], [data-beat="3"], [data-beat="4"], [data-beat="5"], [data-beat="6"], [data-beat="11"], [data-beat="12"], [data-beat="13"], [data-beat="14"], [data-beat="23"]) .glyph[data-phase="1"][data-state="working"] .cell:nth-child(9),
-:root:is([data-beat="1"], [data-beat="2"], [data-beat="9"], [data-beat="10"], [data-beat="13"], [data-beat="14"], [data-beat="19"], [data-beat="20"], [data-beat="21"], [data-beat="22"]) .glyph[data-phase="2"][data-state="working"] .cell:nth-child(1),
-:root:is([data-beat="0"], [data-beat="1"], [data-beat="2"], [data-beat="3"], [data-beat="4"], [data-beat="5"], [data-beat="10"], [data-beat="11"], [data-beat="16"], [data-beat="17"], [data-beat="18"], [data-beat="19"], [data-beat="22"], [data-beat="23"]) .glyph[data-phase="2"][data-state="working"] .cell:nth-child(2),
-:root:is([data-beat="15"], [data-beat="16"]) .glyph[data-phase="2"][data-state="working"] .cell:nth-child(3),
-:root:is([data-beat="4"], [data-beat="5"], [data-beat="14"], [data-beat="15"]) .glyph[data-phase="2"][data-state="working"] .cell:nth-child(4),
-:root:is([data-beat="1"], [data-beat="2"], [data-beat="3"], [data-beat="4"], [data-beat="9"], [data-beat="10"], [data-beat="13"], [data-beat="14"], [data-beat="21"], [data-beat="22"]) .glyph[data-phase="2"][data-state="working"] .cell:nth-child(5),
-:root:is([data-beat="2"], [data-beat="3"], [data-beat="6"], [data-beat="7"], [data-beat="14"], [data-beat="15"]) .glyph[data-phase="2"][data-state="working"] .cell:nth-child(6),
-:root:is([data-beat="0"], [data-beat="1"], [data-beat="2"], [data-beat="3"], [data-beat="4"], [data-beat="11"], [data-beat="12"], [data-beat="23"]) .glyph[data-phase="2"][data-state="working"] .cell:nth-child(7),
-:root:is([data-beat="8"], [data-beat="9"], [data-beat="18"], [data-beat="19"]) .glyph[data-phase="2"][data-state="working"] .cell:nth-child(8),
-:root:is([data-beat="0"], [data-beat="5"], [data-beat="6"], [data-beat="7"], [data-beat="8"], [data-beat="17"], [data-beat="18"], [data-beat="19"], [data-beat="20"], [data-beat="21"], [data-beat="22"], [data-beat="23"]) .glyph[data-phase="2"][data-state="working"] .cell:nth-child(9),
-:root:is([data-beat="3"], [data-beat="4"], [data-beat="7"], [data-beat="8"], [data-beat="13"], [data-beat="14"], [data-beat="15"], [data-beat="16"], [data-beat="19"], [data-beat="20"]) .glyph[data-phase="3"][data-state="working"] .cell:nth-child(1),
-:root:is([data-beat="4"], [data-beat="5"], [data-beat="10"], [data-beat="11"], [data-beat="12"], [data-beat="13"], [data-beat="16"], [data-beat="17"], [data-beat="18"], [data-beat="19"], [data-beat="20"], [data-beat="21"], [data-beat="22"], [data-beat="23"]) .glyph[data-phase="3"][data-state="working"] .cell:nth-child(2),
-:root:is([data-beat="9"], [data-beat="10"]) .glyph[data-phase="3"][data-state="working"] .cell:nth-child(3),
-:root:is([data-beat="8"], [data-beat="9"], [data-beat="22"], [data-beat="23"]) .glyph[data-phase="3"][data-state="working"] .cell:nth-child(4),
-:root:is([data-beat="3"], [data-beat="4"], [data-beat="7"], [data-beat="8"], [data-beat="15"], [data-beat="16"], [data-beat="19"], [data-beat="20"], [data-beat="21"], [data-beat="22"]) .glyph[data-phase="3"][data-state="working"] .cell:nth-child(5),
-:root:is([data-beat="0"], [data-beat="1"], [data-beat="8"], [data-beat="9"], [data-beat="20"], [data-beat="21"]) .glyph[data-phase="3"][data-state="working"] .cell:nth-child(6),
-:root:is([data-beat="5"], [data-beat="6"], [data-beat="17"], [data-beat="18"], [data-beat="19"], [data-beat="20"], [data-beat="21"], [data-beat="22"]) .glyph[data-phase="3"][data-state="working"] .cell:nth-child(7),
-:root:is([data-beat="2"], [data-beat="3"], [data-beat="12"], [data-beat="13"]) .glyph[data-phase="3"][data-state="working"] .cell:nth-child(8),
-:root:is([data-beat="0"], [data-beat="1"], [data-beat="2"], [data-beat="11"], [data-beat="12"], [data-beat="13"], [data-beat="14"], [data-beat="15"], [data-beat="16"], [data-beat="17"], [data-beat="18"], [data-beat="23"]) .glyph[data-phase="3"][data-state="working"] .cell:nth-child(9) {
+:root[data-beat] .glyph[data-state="working"] .cell[data-lit] {
   opacity: 1;
 }
 
 /* Thinking: one lit cell walks the ring a beat at a time (960 ms round), its last step a shade behind it, like a
-   terminal spinner; the centre stays dark. The phase starts it two cells further on. */
+   terminal spinner; the centre stays dark. */
 .glyph[data-state="thinking"] .cell {
   opacity: 0.18;
 }
 .glyph[data-state="thinking"] .cell:nth-child(5) {
   opacity: 0;
 }
-:root:is([data-beat="1"], [data-beat="9"], [data-beat="17"]) .glyph[data-phase="0"][data-state="thinking"] .cell:nth-child(1),
-:root:is([data-beat="2"], [data-beat="10"], [data-beat="18"]) .glyph[data-phase="0"][data-state="thinking"] .cell:nth-child(2),
-:root:is([data-beat="3"], [data-beat="11"], [data-beat="19"]) .glyph[data-phase="0"][data-state="thinking"] .cell:nth-child(3),
-:root:is([data-beat="4"], [data-beat="12"], [data-beat="20"]) .glyph[data-phase="0"][data-state="thinking"] .cell:nth-child(6),
-:root:is([data-beat="5"], [data-beat="13"], [data-beat="21"]) .glyph[data-phase="0"][data-state="thinking"] .cell:nth-child(9),
-:root:is([data-beat="6"], [data-beat="14"], [data-beat="22"]) .glyph[data-phase="0"][data-state="thinking"] .cell:nth-child(8),
-:root:is([data-beat="7"], [data-beat="15"], [data-beat="23"]) .glyph[data-phase="0"][data-state="thinking"] .cell:nth-child(7),
-:root:is([data-beat="0"], [data-beat="8"], [data-beat="16"]) .glyph[data-phase="0"][data-state="thinking"] .cell:nth-child(4),
-:root:is([data-beat="7"], [data-beat="15"], [data-beat="23"]) .glyph[data-phase="1"][data-state="thinking"] .cell:nth-child(1),
-:root:is([data-beat="0"], [data-beat="8"], [data-beat="16"]) .glyph[data-phase="1"][data-state="thinking"] .cell:nth-child(2),
-:root:is([data-beat="1"], [data-beat="9"], [data-beat="17"]) .glyph[data-phase="1"][data-state="thinking"] .cell:nth-child(3),
-:root:is([data-beat="2"], [data-beat="10"], [data-beat="18"]) .glyph[data-phase="1"][data-state="thinking"] .cell:nth-child(6),
-:root:is([data-beat="3"], [data-beat="11"], [data-beat="19"]) .glyph[data-phase="1"][data-state="thinking"] .cell:nth-child(9),
-:root:is([data-beat="4"], [data-beat="12"], [data-beat="20"]) .glyph[data-phase="1"][data-state="thinking"] .cell:nth-child(8),
-:root:is([data-beat="5"], [data-beat="13"], [data-beat="21"]) .glyph[data-phase="1"][data-state="thinking"] .cell:nth-child(7),
-:root:is([data-beat="6"], [data-beat="14"], [data-beat="22"]) .glyph[data-phase="1"][data-state="thinking"] .cell:nth-child(4),
-:root:is([data-beat="5"], [data-beat="13"], [data-beat="21"]) .glyph[data-phase="2"][data-state="thinking"] .cell:nth-child(1),
-:root:is([data-beat="6"], [data-beat="14"], [data-beat="22"]) .glyph[data-phase="2"][data-state="thinking"] .cell:nth-child(2),
-:root:is([data-beat="7"], [data-beat="15"], [data-beat="23"]) .glyph[data-phase="2"][data-state="thinking"] .cell:nth-child(3),
-:root:is([data-beat="0"], [data-beat="8"], [data-beat="16"]) .glyph[data-phase="2"][data-state="thinking"] .cell:nth-child(6),
-:root:is([data-beat="1"], [data-beat="9"], [data-beat="17"]) .glyph[data-phase="2"][data-state="thinking"] .cell:nth-child(9),
-:root:is([data-beat="2"], [data-beat="10"], [data-beat="18"]) .glyph[data-phase="2"][data-state="thinking"] .cell:nth-child(8),
-:root:is([data-beat="3"], [data-beat="11"], [data-beat="19"]) .glyph[data-phase="2"][data-state="thinking"] .cell:nth-child(7),
-:root:is([data-beat="4"], [data-beat="12"], [data-beat="20"]) .glyph[data-phase="2"][data-state="thinking"] .cell:nth-child(4),
-:root:is([data-beat="3"], [data-beat="11"], [data-beat="19"]) .glyph[data-phase="3"][data-state="thinking"] .cell:nth-child(1),
-:root:is([data-beat="4"], [data-beat="12"], [data-beat="20"]) .glyph[data-phase="3"][data-state="thinking"] .cell:nth-child(2),
-:root:is([data-beat="5"], [data-beat="13"], [data-beat="21"]) .glyph[data-phase="3"][data-state="thinking"] .cell:nth-child(3),
-:root:is([data-beat="6"], [data-beat="14"], [data-beat="22"]) .glyph[data-phase="3"][data-state="thinking"] .cell:nth-child(6),
-:root:is([data-beat="7"], [data-beat="15"], [data-beat="23"]) .glyph[data-phase="3"][data-state="thinking"] .cell:nth-child(9),
-:root:is([data-beat="0"], [data-beat="8"], [data-beat="16"]) .glyph[data-phase="3"][data-state="thinking"] .cell:nth-child(8),
-:root:is([data-beat="1"], [data-beat="9"], [data-beat="17"]) .glyph[data-phase="3"][data-state="thinking"] .cell:nth-child(7),
-:root:is([data-beat="2"], [data-beat="10"], [data-beat="18"]) .glyph[data-phase="3"][data-state="thinking"] .cell:nth-child(4) {
+:root[data-beat] .glyph[data-state="thinking"] .cell[data-lit="trail"] {
   opacity: 0.45;
 }
-:root:is([data-beat="0"], [data-beat="8"], [data-beat="16"]) .glyph[data-phase="0"][data-state="thinking"] .cell:nth-child(1),
-:root:is([data-beat="1"], [data-beat="9"], [data-beat="17"]) .glyph[data-phase="0"][data-state="thinking"] .cell:nth-child(2),
-:root:is([data-beat="2"], [data-beat="10"], [data-beat="18"]) .glyph[data-phase="0"][data-state="thinking"] .cell:nth-child(3),
-:root:is([data-beat="3"], [data-beat="11"], [data-beat="19"]) .glyph[data-phase="0"][data-state="thinking"] .cell:nth-child(6),
-:root:is([data-beat="4"], [data-beat="12"], [data-beat="20"]) .glyph[data-phase="0"][data-state="thinking"] .cell:nth-child(9),
-:root:is([data-beat="5"], [data-beat="13"], [data-beat="21"]) .glyph[data-phase="0"][data-state="thinking"] .cell:nth-child(8),
-:root:is([data-beat="6"], [data-beat="14"], [data-beat="22"]) .glyph[data-phase="0"][data-state="thinking"] .cell:nth-child(7),
-:root:is([data-beat="7"], [data-beat="15"], [data-beat="23"]) .glyph[data-phase="0"][data-state="thinking"] .cell:nth-child(4),
-:root:is([data-beat="6"], [data-beat="14"], [data-beat="22"]) .glyph[data-phase="1"][data-state="thinking"] .cell:nth-child(1),
-:root:is([data-beat="7"], [data-beat="15"], [data-beat="23"]) .glyph[data-phase="1"][data-state="thinking"] .cell:nth-child(2),
-:root:is([data-beat="0"], [data-beat="8"], [data-beat="16"]) .glyph[data-phase="1"][data-state="thinking"] .cell:nth-child(3),
-:root:is([data-beat="1"], [data-beat="9"], [data-beat="17"]) .glyph[data-phase="1"][data-state="thinking"] .cell:nth-child(6),
-:root:is([data-beat="2"], [data-beat="10"], [data-beat="18"]) .glyph[data-phase="1"][data-state="thinking"] .cell:nth-child(9),
-:root:is([data-beat="3"], [data-beat="11"], [data-beat="19"]) .glyph[data-phase="1"][data-state="thinking"] .cell:nth-child(8),
-:root:is([data-beat="4"], [data-beat="12"], [data-beat="20"]) .glyph[data-phase="1"][data-state="thinking"] .cell:nth-child(7),
-:root:is([data-beat="5"], [data-beat="13"], [data-beat="21"]) .glyph[data-phase="1"][data-state="thinking"] .cell:nth-child(4),
-:root:is([data-beat="4"], [data-beat="12"], [data-beat="20"]) .glyph[data-phase="2"][data-state="thinking"] .cell:nth-child(1),
-:root:is([data-beat="5"], [data-beat="13"], [data-beat="21"]) .glyph[data-phase="2"][data-state="thinking"] .cell:nth-child(2),
-:root:is([data-beat="6"], [data-beat="14"], [data-beat="22"]) .glyph[data-phase="2"][data-state="thinking"] .cell:nth-child(3),
-:root:is([data-beat="7"], [data-beat="15"], [data-beat="23"]) .glyph[data-phase="2"][data-state="thinking"] .cell:nth-child(6),
-:root:is([data-beat="0"], [data-beat="8"], [data-beat="16"]) .glyph[data-phase="2"][data-state="thinking"] .cell:nth-child(9),
-:root:is([data-beat="1"], [data-beat="9"], [data-beat="17"]) .glyph[data-phase="2"][data-state="thinking"] .cell:nth-child(8),
-:root:is([data-beat="2"], [data-beat="10"], [data-beat="18"]) .glyph[data-phase="2"][data-state="thinking"] .cell:nth-child(7),
-:root:is([data-beat="3"], [data-beat="11"], [data-beat="19"]) .glyph[data-phase="2"][data-state="thinking"] .cell:nth-child(4),
-:root:is([data-beat="2"], [data-beat="10"], [data-beat="18"]) .glyph[data-phase="3"][data-state="thinking"] .cell:nth-child(1),
-:root:is([data-beat="3"], [data-beat="11"], [data-beat="19"]) .glyph[data-phase="3"][data-state="thinking"] .cell:nth-child(2),
-:root:is([data-beat="4"], [data-beat="12"], [data-beat="20"]) .glyph[data-phase="3"][data-state="thinking"] .cell:nth-child(3),
-:root:is([data-beat="5"], [data-beat="13"], [data-beat="21"]) .glyph[data-phase="3"][data-state="thinking"] .cell:nth-child(6),
-:root:is([data-beat="6"], [data-beat="14"], [data-beat="22"]) .glyph[data-phase="3"][data-state="thinking"] .cell:nth-child(9),
-:root:is([data-beat="7"], [data-beat="15"], [data-beat="23"]) .glyph[data-phase="3"][data-state="thinking"] .cell:nth-child(8),
-:root:is([data-beat="0"], [data-beat="8"], [data-beat="16"]) .glyph[data-phase="3"][data-state="thinking"] .cell:nth-child(7),
-:root:is([data-beat="1"], [data-beat="9"], [data-beat="17"]) .glyph[data-phase="3"][data-state="thinking"] .cell:nth-child(4) {
+:root[data-beat] .glyph[data-state="thinking"] .cell[data-lit="on"] {
   opacity: 1;
 }
 
