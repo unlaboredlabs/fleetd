@@ -115,11 +115,12 @@ pub struct UsageEventData {
     pub parked: Option<ParkedCounts>,
     /// usage.resumed: the breaker was open and is now closed.
     pub breaker_cleared: Option<bool>,
-    /// usage.resumed: "reset", "check" (fleetd tried one parked thread), "turn" (a turn on the login succeeded), or
-    /// who ran usage_resume.
+    /// usage.resumed: "reset", "check" (fleetd tried one parked thread, or the one it tried completed a turn),
+    /// "unchecked" (nothing was left parked to try, so the pause lifted for the next turn to try the login), "turn" (a
+    /// turn on the login succeeded), or who ran usage_resume.
     pub by: Option<String>,
     /// usage.resumed: a check of an open breaker; the one thread listed is the one tried, and the breaker stays open
-    /// until it gets through.
+    /// until its turn completes.
     pub check: Option<bool>,
     /// usage.resumed: the threads sent "continue", in the order they were sent.
     pub threads: Option<Vec<UsageEventThread>>,

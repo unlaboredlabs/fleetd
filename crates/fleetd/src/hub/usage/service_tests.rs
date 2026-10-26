@@ -249,43 +249,94 @@ async fn the_leads_successful_turn_on_the_paused_login_resumes_every_parked_agen
     assert_eq!(resumed.data.unwrap()["by"], "turn");
 }
 
-/// With no turn to prove it, fleetd tries one parked thread at 1, 2, 5, 10, then every 15 minutes, and lifts the
-/// pause once that thread's turn gets through.
+/// What the executor logs for one run of a fake claude behind forge's proxy: the run starts, claude retries the 429
+/// inside the turn for `retrying_ms`, then either gives up (thread.usage_limited) or gets a response and completes.
+fn fake_run(fake: &Fake, at_ms: i64, thread: &str, retrying_ms: i64, gets_through: bool) {
+    fake.turn(at_ms, "thread.started", thread);
+    if gets_through {
+        fake.turn(at_ms + retrying_ms, "thread.completed", thread);
+    } else {
+        fake.cooldown(at_ms + retrying_ms, thread);
+    }
+}
+
+/// With no turn to prove it, fleetd tries one parked thread at 1, 2, 5, 10, then every 15 minutes. A tried thread
+/// whose turn has only started proves nothing, since claude may still be retrying the 429 inside it; the pause lifts
+/// only once a tried turn completes.
 #[tokio::test]
-async fn with_no_reset_one_parked_thread_is_tried_on_a_backoff_until_it_gets_through() {
+async fn with_no_reset_one_parked_thread_is_tried_on_a_backoff_until_its_turn_completes() {
     let (fake, clock, usage) = usage();
     forge_pause(&fake, &usage).await;
-    let tripped = T0;
     advance(&clock, MIN - 1).await;
     assert!(fake.sent().is_empty());
     advance(&clock, 1).await;
     assert_eq!(fake.sent(), ["r1"], "one check, the review first");
     assert!(usage.gate("forge").is_some(), "the rest stay parked");
-    let check = fake.last("usage.resumed").unwrap();
-    assert_eq!(
-        check.summary.as_str(),
-        "Trying forge's login again; sent \"continue\" to 1 parked thread"
-    );
-    // Still limited: the next check is 2 minutes on, then 5.
-    let now = tripped + MIN as i64;
-    fake.turn(now + 1_000, "thread.started", "r1");
-    fake.cooldown(now + 7_000, "r1");
-    usage.drain().await;
-    advance(&clock, 2 * MIN).await;
-    assert_eq!(fake.sent(), ["r1", "r1"]);
-    assert!(usage.gate("forge").is_some());
-    advance(&clock, 5 * MIN - 1).await;
-    assert_eq!(fake.sent().len(), 2);
-    // This time r1's turn starts and is not limited again: the next check lifts the pause.
-    fake.turn(now + 2 * MIN as i64 + 1_000, "thread.started", "r1");
-    usage.drain().await;
-    advance(&clock, 1).await;
-    assert_eq!(usage.gate("forge"), None);
-    assert_eq!(fake.sent(), ["r1", "r1", "w1", "w2"]);
     assert_eq!(
         fake.last("usage.resumed").unwrap().summary.as_str(),
-        "Usage pause on forge lifted (a check got through); sent \"continue\" to 2 parked threads"
+        "Trying forge's login again; sent \"continue\" to 1 parked thread"
     );
+
+    // r1's run starts, and claude is still retrying the 429 at the next check, 2 minutes on: not through.
+    let first = T0 + MIN as i64;
+    fake.turn(first + 1_000, "thread.started", "r1");
+    usage.drain().await;
+    advance(&clock, 2 * MIN).await;
+    assert!(
+        usage.gate("forge").is_some(),
+        "a started turn proves nothing"
+    );
+    assert_eq!(
+        fake.sent(),
+        ["r1"],
+        "r1 isn't parked, so nothing else was tried"
+    );
+    // Then claude gives up, 30 s later: r1 parks again, and the next check is a step (2 minutes) on from then.
+    let failed = first + 2 * MIN as i64 + 30_000;
+    fake.cooldown(failed, "r1");
+    usage.drain().await;
+    advance(&clock, 30_000 + 2 * MIN - 1).await;
+    assert_eq!(fake.sent(), ["r1"]);
+    advance(&clock, 1).await;
+    assert_eq!(fake.sent(), ["r1", "r1"]);
+    assert!(usage.gate("forge").is_some());
+
+    // That run retries 40 s and fails again; the one after retries 40 s, then the proxy answers and the turn
+    // completes: the pause lifts at once.
+    let second = failed + 2 * MIN as i64;
+    fake_run(&fake, second + 1_000, "r1", 40_000, false);
+    usage.drain().await;
+    assert!(usage.gate("forge").is_some(), "retried, then failed again");
+    advance(&clock, 10 * MIN).await;
+    assert_eq!(fake.sent(), ["r1", "r1", "r1"]);
+    fake_run(&fake, second + 10 * MIN as i64 + 1_000, "r1", 40_000, true);
+    usage.drain().await;
+    assert_eq!(usage.gate("forge"), None);
+    assert_eq!(fake.sent(), ["r1", "r1", "r1", "w1", "w2"]);
+    assert_eq!(
+        fake.last("usage.resumed").unwrap().summary.as_str(),
+        "Usage pause on forge lifted (a turn on its login succeeded); sent \"continue\" to 2 parked threads"
+    );
+}
+
+/// A check with nothing parked left to try lifts the pause, and says just that, not that a check got through.
+#[tokio::test]
+async fn a_check_with_nothing_left_to_try_says_so() {
+    let (fake, clock, usage) = usage();
+    // Threads no task or lead owns count for the breaker but are not parked.
+    fake.cooldown(T0, "x1");
+    fake.cooldown(T0 + 500, "x2");
+    usage.drain().await;
+    assert!(usage.gate("forge").is_some());
+    advance(&clock, MIN).await;
+    assert_eq!(usage.gate("forge"), None);
+    assert!(fake.sent().is_empty());
+    let lifted = fake.last("usage.resumed").unwrap();
+    assert_eq!(
+        lifted.summary.as_str(),
+        "Usage pause on forge lifted (nothing was left parked to check it with; the next turn there tries the login)"
+    );
+    assert_eq!(lifted.data.unwrap()["by"], "unchecked");
 }
 
 /// A single park that named no reset is tried again itself on the same backoff, not after an hour.

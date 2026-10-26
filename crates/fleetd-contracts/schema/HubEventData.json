@@ -2730,11 +2730,11 @@
           "type": "boolean"
         },
         "by": {
-          "description": "usage.resumed: \"reset\", \"check\" (fleetd tried one parked thread), \"turn\" (a turn on the login succeeded), or\nwho ran usage_resume.",
+          "description": "usage.resumed: \"reset\", \"check\" (fleetd tried one parked thread, or the one it tried completed a turn),\n\"unchecked\" (nothing was left parked to try, so the pause lifted for the next turn to try the login), \"turn\" (a\nturn on the login succeeded), or who ran usage_resume.",
           "type": "string"
         },
         "check": {
-          "description": "usage.resumed: a check of an open breaker; the one thread listed is the one tried, and the breaker stays open\nuntil it gets through.",
+          "description": "usage.resumed: a check of an open breaker; the one thread listed is the one tried, and the breaker stays open\nuntil its turn completes.",
           "type": "boolean"
         },
         "checkAt": {

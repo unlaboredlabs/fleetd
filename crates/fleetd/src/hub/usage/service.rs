@@ -2,8 +2,8 @@
 //! reset, leads first, then reviews, then writers. When one machine's login fails the same way on two threads within
 //! 10 minutes (or its proxy has no account at all), a breaker pauses new turns there with one plain usage.breaker
 //! event, until the reset or usage_resume. A limit whose message names no reset is never given a made-up one: fleetd
-//! tries one parked thread after 1, 2, 5, 10 and then every 15 minutes, and lifts the pause once that thread gets
-//! through. Any turn that completes on the login after the limit (on its model) lifts it at once, the lead's own
+//! tries one parked thread after 1, 2, 5, 10 and then every 15 minutes, and lifts the pause once that thread's turn
+//! completes (a start proves nothing: claude may still be retrying the 429 inside it). Any turn that completes on the login after the limit (on its model) lifts it at once, the lead's own
 //! included. The state is rebuilt from the event log at start, so a hub restart keeps it.
 use super::classify::{UsageClass, UsageParked, limit_of_event};
 use super::ports::{BoxFut, EventLog, NewEvent, ThreadRef, WaitInput};
@@ -210,6 +210,10 @@ impl Usage {
     async fn tick(&self) {
         let due = self.inner.state.lock().unwrap().due(self.now_ms());
         for d in due {
+            if let Some(at) = &d.in_flight_until {
+                self.schedule(at);
+                continue;
+            }
             if d.check && !d.breaker_cleared {
                 self.check(&d.machine_id, d.threads).await;
                 continue;
@@ -238,7 +242,7 @@ impl Usage {
 
     /// A check of a breaker with no reset: sends the first thread still parked "continue" and names it in a
     /// usage.resumed `check` event, which keeps the breaker open and sets the next check. Nothing else moves until
-    /// that thread gets through. With nothing left to try, the breaker clears, and the queue's next turn tries the
+    /// that thread's turn completes. With nothing left to try, the breaker clears, and the queue's next turn tries the
     /// login itself.
     async fn check(&self, machine_id: &str, parked: Vec<ParkedThread>) {
         for p in UsageState::in_order(&parked) {
@@ -264,7 +268,9 @@ impl Usage {
             }
             return;
         }
-        if let Some(event) = resumed_event(machine_id, &iso_ms(self.now_ms()), &[], true, "check") {
+        if let Some(event) =
+            resumed_event(machine_id, &iso_ms(self.now_ms()), &[], true, "unchecked")
+        {
             self.emit(event).await;
         }
     }
@@ -363,6 +369,17 @@ impl Usage {
                 .clone()
         });
         if let Some(at) = check_at {
+            self.schedule(&at);
+        }
+        let breaker_check = self
+            .inner
+            .state
+            .lock()
+            .unwrap()
+            .machines
+            .get(machine_id)
+            .and_then(|m| m.breaker.as_ref()?.check_at.clone());
+        if let Some(at) = breaker_check {
             self.schedule(&at);
         }
     }

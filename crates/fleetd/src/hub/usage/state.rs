@@ -96,16 +96,21 @@ pub struct Breaker {
 pub struct Probe {
     pub thread_id: String,
     pub at_ms: i64,
-    /// Its turn started on the login.
-    pub started: bool,
+    /// Its turn completed: the login answered past claude's own retries.
+    pub completed: bool,
     /// It hit the limit again.
     pub limited: bool,
 }
 
+/// How long a check waits for the thread it tried to complete or fail before it tries another: claude's own 429
+/// retries end well within it.
+pub const PROBE_WAIT_MS: i64 = 15 * 60_000;
+
 impl Probe {
-    /// Started and not limited by the next check: the login served the turn's requests.
+    /// Its turn completed and was not limited. A start proves nothing: claude retries a 429 inside the turn for a
+    /// while before it gives up, so a turn still running may never get a response.
     fn got_through(&self) -> bool {
-        self.started && !self.limited
+        self.completed && !self.limited
     }
 }
 
@@ -136,9 +141,12 @@ pub struct Due {
     pub machine_id: String,
     pub threads: Vec<ParkedThread>,
     pub breaker_cleared: bool,
-    /// A check of an open breaker: send one of `threads` "continue" (or, when `breaker_cleared`, the previous check
-    /// got through and everything goes).
+    /// A check of an open breaker: send one of `threads` "continue" (or, when `breaker_cleared`, the thread the
+    /// previous check tried completed its turn, and everything goes).
     pub check: bool,
+    /// A check that found the thread it tried last still in its turn (claude may be retrying the 429 inside it):
+    /// nothing is tried, and the check comes back at this time unless that turn completes or fails first.
+    pub in_flight_until: Option<String>,
 }
 
 /// What a completed turn on a machine's login lifts: the breaker, and the parks it proves over.
@@ -338,13 +346,22 @@ impl UsageState {
                 let m = self.machine(&machine_id);
                 Self::remember(m, event);
                 m.started.remove(&thread_id);
-                if let Some(p) = m
-                    .breaker
-                    .as_mut()
-                    .and_then(|b| b.probe.as_mut())
-                    .filter(|p| p.thread_id == thread_id && at_ms >= p.at_ms)
+                if let Some(b) = m.breaker.as_mut()
+                    && let Some(p) = b
+                        .probe
+                        .as_mut()
+                        .filter(|p| p.thread_id == thread_id && at_ms >= p.at_ms && !p.limited)
                 {
+                    // The thread tried is still limited: the next check is a step on from now, never at once.
                     p.limited = true;
+                    let next = at_ms + check_after_ms(b.checks);
+                    if b.check_at
+                        .as_deref()
+                        .and_then(parse_ms)
+                        .is_some_and(|c| c < next)
+                    {
+                        b.check_at = Some(iso_ms(next));
+                    }
                 }
                 // A limit that named no reset is tried again on the backoff, one step further each time.
                 let check_at =
@@ -386,23 +403,23 @@ impl UsageState {
                 if let Some(t) = &event.thread_id {
                     let t = t.to_string();
                     self.unpark(&format!("{machine_id}/{t}"));
-                    let m = self.machine(&machine_id);
-                    if let Some(p) = m
-                        .breaker
-                        .as_mut()
-                        .and_then(|b| b.probe.as_mut())
-                        .filter(|p| p.thread_id == t && at_ms >= p.at_ms)
-                    {
-                        p.started = true;
-                    }
-                    m.started.insert(t, at_ms);
+                    self.machine(&machine_id).started.insert(t, at_ms);
                 }
             }
             HubEventType::ThreadCompleted => {
                 let m = self.machine(&machine_id);
-                if let Some(t) = &event.thread_id
-                    && m.started.remove(t.as_str()).is_some()
+                let Some(t) = &event.thread_id else {
+                    return;
+                };
+                if let Some(p) = m
+                    .breaker
+                    .as_mut()
+                    .and_then(|b| b.probe.as_mut())
+                    .filter(|p| p.thread_id == t.as_str() && at_ms >= p.at_ms)
                 {
+                    p.completed = true;
+                }
+                if m.started.remove(t.as_str()).is_some() {
                     // The login served a whole turn: limits with no reset start their backoff over.
                     m.streaks.clear();
                 }
@@ -446,7 +463,7 @@ impl UsageState {
                     b.probe = listed.first().map(|t| Probe {
                         thread_id: t.clone(),
                         at_ms,
-                        started: false,
+                        completed: false,
                         limited: false,
                     });
                     b.checks += 1;
@@ -571,6 +588,7 @@ impl UsageState {
                 threads,
                 breaker_cleared,
                 check,
+                in_flight_until: None,
             };
             match &m.breaker {
                 Some(b) if at(b.until.as_deref()) => {
@@ -578,7 +596,21 @@ impl UsageState {
                 }
                 Some(b) if at(b.check_at.as_deref()) => {
                     let through = b.probe.as_ref().is_some_and(Probe::got_through);
-                    out.push(due(self.parked_on(machine_id), through, true));
+                    let in_flight = b
+                        .probe
+                        .as_ref()
+                        .filter(|p| !p.completed && !p.limited && now_ms < p.at_ms + PROBE_WAIT_MS)
+                        .filter(|p| {
+                            !self
+                                .parked_on(machine_id)
+                                .iter()
+                                .any(|t| t.thread.thread_id == p.thread_id)
+                        })
+                        .map(|p| iso_ms(p.at_ms + PROBE_WAIT_MS));
+                    out.push(Due {
+                        in_flight_until: in_flight.filter(|_| !through),
+                        ..due(self.parked_on(machine_id), through, true)
+                    });
                 }
                 Some(_) => {}
                 None => {
@@ -664,11 +696,15 @@ pub struct Resumed {
     pub task_id: Option<String>,
 }
 
-/// Why a usage.resumed went out, as its `by` says: "reset", "check", "turn", or who ran usage_resume.
+/// Why a usage.resumed went out, as its `by` says: "reset", "check", "unchecked", "turn", or who ran usage_resume.
 fn resumed_why(by: &str) -> String {
     match by {
         "reset" => "the limit reset".to_string(),
-        "check" => "a check got through".to_string(),
+        "check" => "the turn a check tried completed".to_string(),
+        "unchecked" => {
+            "nothing was left parked to check it with; the next turn there tries the login"
+                .to_string()
+        }
         "turn" => "a turn on its login succeeded".to_string(),
         who => format!("usage_resume by {who}"),
     }
@@ -690,7 +726,9 @@ pub fn resumed_event(
         "sent \"continue\" to {}",
         plural(sent.len(), "parked thread")
     );
-    let summary = if breaker_cleared {
+    let summary = if breaker_cleared && sent.is_empty() {
+        format!("Usage pause on {machine_id} lifted ({})", resumed_why(by))
+    } else if breaker_cleared {
         format!(
             "Usage pause on {machine_id} lifted ({}); {what}",
             resumed_why(by)
