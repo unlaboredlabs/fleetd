@@ -62,6 +62,12 @@ describe("what the lead waits on", () => {
     const items = [item("b", "lead", QUESTIONS), inline("g1", "gated", "open"), inline("s1", "secret", "open"), inline("g2", "gated", "open"), inline("g0", "gated", "ran")];
     expect(waitingOn(items, LOADED, NOW, "UTC")).toEqual({ what: "2 commands to approve, 1 secret to enter", targets: [{ id: "g1" }, { id: "s1" }, { id: "g2" }] });
     expect(waitingOn([inline("s1", "secret", "stored"), inline("g1", "gated", "open")], LOADED, NOW, "UTC")).toEqual({ what: "1 command to approve", targets: [{ id: "g1" }] });
+    // An agent's proposed Try it setting says so.
+    const setting = item("p1", "lead", "", at(19, 9, 6), {
+      kind: "gated",
+      message: { item: { kind: "command_approval", state: "open", previewConfig: { config: {}, why: "how it runs" } } } as unknown as ChatMessage,
+    });
+    expect(waitingOn([inline("g1", "gated", "open"), setting], LOADED, NOW, "UTC")).toEqual({ what: "1 command to approve, 1 Try it setting to approve", targets: [{ id: "g1" }, { id: "p1" }] });
   });
 
   it("counts an open approval or secret on a page not loaded, from the hub's list, and goes there too", () => {

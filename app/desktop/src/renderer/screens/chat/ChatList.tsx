@@ -16,6 +16,7 @@ import { MessageView, useEnter } from "./Bubble";
 import { useBubbleActions } from "./actions";
 import { markOf, useShown } from "./shown";
 import { RememberedUndo } from "./Remembered";
+import { ChatSuggestion } from "../tryit/Suggestion";
 import { useNow, useOnScreen } from "../live";
 import type { ChatItem as InlineItem } from "../../../shared/contracts";
 import { InlineChatItem } from "../inline";
@@ -198,6 +199,14 @@ const RowView = memo(function RowView(props: {
         </div>
       );
     case "event":
+      // An agent's suggestion to try a PR: a line of its own, with Try it (screens/tryit).
+      if (r.item.message?.previewSuggestion !== undefined) {
+        return (
+          <div className={s.quietRow} data-entry="event">
+            <ChatSuggestion project={project} suggestion={r.item.message.previewSuggestion} at={shortClock(r.item.at)} />
+          </div>
+        );
+      }
       return (
         <div className={cx(s.quietRow, s.event)} data-entry="event">
           <InlineText size="xs" tone="quiet" text={r.item.text} project={project} />

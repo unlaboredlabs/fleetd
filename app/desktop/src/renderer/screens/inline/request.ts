@@ -100,6 +100,7 @@ const took = (item: CommandApprovalItem): string | undefined => {
 
 /** The one line an answered approval folds to, or undefined while it waits for Approve / Deny. */
 export const approvalOutcome = (item: CommandApprovalItem): Outcome | undefined => {
+  if (item.previewConfig !== undefined) return configOutcome(item);
   const time = took(item);
   switch (item.state) {
     case "open":
@@ -116,6 +117,23 @@ export const approvalOutcome = (item: CommandApprovalItem): Outcome | undefined 
       return { tone: "danger", text: "Approved, didn't run" };
     case "denied":
       return { tone: "quiet", text: "Denied, nothing ran" };
+    default:
+      return NEWER;
+  }
+};
+
+/** A proposed Try it setting runs nothing: approved, the hub saves it as the project's. */
+const configOutcome = (item: CommandApprovalItem): Outcome | undefined => {
+  switch (item.state) {
+    case "open":
+      return undefined;
+    case "approved":
+    case "ran":
+      return { tone: "success", text: "Approved, saved as the project’s Try it setting" };
+    case "failed":
+      return { tone: "danger", text: "Approved, not saved" };
+    case "denied":
+      return { tone: "quiet", text: "Denied, nothing saved" };
     default:
       return NEWER;
   }
@@ -138,7 +156,11 @@ const plain = (text: string): string => text.replace(/`/gu, "");
 
 /** What an answered approval was about, as one plain line for its folded row. */
 export const approvalTitle = (item: CommandApprovalItem): string =>
-  plain(item.gated?.reason ?? (item.permission === undefined ? "An agent's request" : `An agent wanted to use ${item.permission.toolName}`));
+  plain(
+    item.previewConfig !== undefined
+      ? `How to run Try it: ${item.previewConfig.why}`
+      : (item.gated?.reason ?? (item.permission === undefined ? "An agent's request" : `An agent wanted to use ${item.permission.toolName}`)),
+  );
 
 /** What an answered secret was for, in the lead's words: its key is a slug, never row text. */
 export const secretTitle = (item: SecretRequestItem): string => plain(item.text);

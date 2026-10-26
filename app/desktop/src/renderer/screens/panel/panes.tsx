@@ -1,8 +1,9 @@
 // The Agents, Sessions and Pull requests tabs as the tab list (tabs.ts) loads them: AgentsPane, SessionsPane and
 // PrsPane with the state they share with their counts. The agents' scope (this project or all) is the panel's, so the
 // tab's count follows the list; the PR tab you read (Overview or Changes) is kept while the app runs, so reading diffs
-// one PR after another stays on Changes, and Changes asks the frame for its wide width.
-import { createContext, useContext, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
+// one PR after another stays on Changes, and Changes asks the frame for its wide width. Try it (screens/tryit) takes
+// the wide width too, and opens only for the PR it was pressed for.
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
 import { useData, useToolQuery } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
 import { selectLiveAgents } from "../../src/data/selectors";
@@ -13,6 +14,7 @@ import { SessionsPane } from "../sessions/SessionsPane";
 import { isLive } from "../sessions/model";
 import { useSessions } from "../sessions/hub";
 import { openCount } from "../prs/words";
+import { isWanted, shownTry, useWantedTry } from "../tryit/open";
 import type { CountProps, PaneProps } from "./tabs";
 
 const ALL = {} as const;
@@ -61,9 +63,24 @@ export function SessionCount({ project }: CountProps) {
 let lastPrTab: PrTab = "overview";
 
 export function PrsTab({ project, view, onWide }: PaneProps) {
-  const [tab, setTab] = useState<PrTab>(lastPrTab);
   const pr = view.tab === "prs" ? view.pr : null;
-  const wide = pr !== null && tab === "changes";
+  // Try it pressed anywhere opens that PR's Try it (tryit/open.ts) once it is the one shown; another PR opens on its
+  // overview rather than on a Try it of its own.
+  const wanted = useWantedTry();
+  const asked = pr !== null && isWanted(wanted, pr.repo, pr.number);
+  const shown = pr === null ? null : `${pr.repo ?? ""}#${String(pr.number)}`;
+  const [tab, setTab] = useState<PrTab>(asked ? "try" : lastPrTab === "try" ? "overview" : lastPrTab);
+  const [seen, setSeen] = useState({ shown, wanted });
+  if (seen.shown !== shown || seen.wanted !== wanted) {
+    setSeen({ shown, wanted });
+    const next = asked ? "try" : tab === "try" && seen.shown !== shown ? "overview" : tab;
+    if (next !== tab) setTab(next);
+  }
+  useEffect(() => {
+    if (asked) shownTry();
+  }, [asked]);
+  // Changes and Try it take the wide panel: a diff, and a page the person uses.
+  const wide = pr !== null && (tab === "changes" || tab === "try");
   // Before paint, so the diff never shows at the narrow width first.
   useLayoutEffect(() => {
     onWide(wide);

@@ -73,6 +73,8 @@ describe("event effects", () => {
     // A lead's remember, an Undo or an edit elsewhere: Settings → Memory reads the files again.
     expect(tools(e("memory.changed"))).toEqual(["memory_get"]);
     expect(tools(e("checklist.changed"))).toEqual(["checklist_get"]);
+    // A preview moving: Try it reads the project's previews again, and nothing else.
+    expect(tools(e("preview.state", { previewId: `P${"a".repeat(32)}`, state: "ready" }))).toEqual(["previews_list"]);
     // Status's health strip: a machine going quiet or sleeping, a usage reading.
     expect(tools(e("machine.slept", undefined, { machineId: "devbox" }))).toContain("status_get");
     expect(tools(e("pr.merged", { workstreamId: "W1" }))).toContain("status_get");

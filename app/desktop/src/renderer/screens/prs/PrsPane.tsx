@@ -59,7 +59,7 @@ export function PrsPane({ project, pr, tab, onTab }: { project: ProjectRef; pr: 
       ) : null}
       {list.data?.githubError !== undefined ? <GitHubBanner list={list.data} onRetry={() => void list.refetch()} /> : null}
       {selected !== undefined ? (
-        <PrDetail key={`${selected.repo}#${selected.number}`} repo={selected.repo} number={selected.number} row={row} nowMs={hubNow} tab={tab} onTab={onTab} githubSaid={list.data?.githubError !== undefined} />
+        <PrDetail key={`${selected.repo}#${selected.number}`} project={project} repo={selected.repo} number={selected.number} row={row} nowMs={hubNow} tab={tab} onTab={onTab} githubSaid={list.data?.githubError !== undefined} />
       ) : picked === "unknown" ? (
         <div data-screen="prs.detail.missing" className={s.detailEmpty}>
           <EmptyState title={`#${pr?.number ?? ""} isn’t in this project`}>It may be in another project, or further down the list.</EmptyState>

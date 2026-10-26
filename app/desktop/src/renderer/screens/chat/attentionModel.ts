@@ -49,11 +49,17 @@ export function waitingOn(items: readonly ChatItem[], { older, open: away = [] }
   // which comes before what's loaded.
   const loaded = new Set(items.map((i) => i.id));
   const unloaded = away.filter((o) => !loaded.has(o.messageId) && (o.kind === "command_approval" || o.kind === "secret_request"));
-  const open = [...unloaded.map((o) => ({ id: o.messageId, gated: o.kind === "command_approval" })), ...items.filter(openItem).map((i) => ({ id: i.id, gated: i.kind === "gated" }))];
+  // A proposed Try it setting is an approval too, said as what it is once its page is loaded.
+  const kindOf = (i: ChatItem) => (i.kind !== "gated" ? "secret" : i.message?.item?.kind === "command_approval" && i.message.item.previewConfig !== undefined ? "setting" : "command");
+  const open = [...unloaded.map((o) => ({ id: o.messageId, kind: o.kind === "command_approval" ? "command" : "secret" })), ...items.filter(openItem).map((i) => ({ id: i.id, kind: kindOf(i) }))];
   if (open.length > 0) {
-    const approvals = open.filter((i) => i.gated).length;
-    const secrets = open.length - approvals;
-    const parts = [approvals > 0 ? `${plural(approvals, "command")} to approve` : "", secrets > 0 ? `${plural(secrets, "secret")} to enter` : ""];
+    const count = (kind: string) => open.filter((i) => i.kind === kind).length;
+    const [approvals, settings, secrets] = [count("command"), count("setting"), count("secret")];
+    const parts = [
+      approvals > 0 ? `${plural(approvals, "command")} to approve` : "",
+      settings > 0 ? `${plural(settings, "Try it setting")} to approve` : "",
+      secrets > 0 ? `${plural(secrets, "secret")} to enter` : "",
+    ];
     return { what: parts.filter((p) => p !== "").join(", "), targets: open.map((i) => ({ id: i.id })) };
   }
   // The newest lead message since you last wrote that asks something: a later status line doesn't answer it.

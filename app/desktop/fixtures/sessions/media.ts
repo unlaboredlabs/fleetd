@@ -48,39 +48,49 @@ export const pixelsOnly = (jpeg: Buffer): Buffer => {
   return Buffer.concat(keep);
 };
 
-const main = async () => {
-  mkdirSync(OUT, { recursive: true });
+/** Electron with a page of one canvas, for drawing frames on; close `app` when done. */
+export const launchCanvas = async (width = WIDTH, height = HEIGHT) => {
   const dir = mkdtempSync(path.join(tmpdir(), "fleetd-media-"));
   const entry = path.join(dir, "main.cjs");
   writeFileSync(
     entry,
     `const { app, BrowserWindow } = require("electron");
 app.whenReady().then(() => {
-  const w = new BrowserWindow({ width: ${String(WIDTH)}, height: ${String(HEIGHT)}, show: false });
-  w.loadURL("data:text/html,<canvas id=c width=${String(WIDTH)} height=${String(HEIGHT)}></canvas>");
+  const w = new BrowserWindow({ width: ${String(width)}, height: ${String(height)}, show: false });
+  w.loadURL("data:text/html,<canvas id=c width=${String(width)} height=${String(height)}></canvas>");
 });`,
   );
   const args = [entry, "--no-sandbox", ...(process.env["DISPLAY"] === undefined ? ["--ozone-platform=headless"] : [])];
   const app = await electron.launch({ args });
+  const win = await app.firstWindow();
+  await win.waitForSelector("#c");
+  return { app, win };
+};
+
+/** Each page (an image URL) drawn on the canvas as a JPEG, in base64, by name. */
+export const jpegsOf = (win: Awaited<ReturnType<typeof launchCanvas>>["win"], pages: Readonly<Record<string, string>>): Promise<Record<string, string>> =>
+  win.evaluate(
+    async ({ pages, quality }) => {
+      const canvas = document.querySelector("canvas") as HTMLCanvasElement;
+      const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+      const out: Record<string, string> = {};
+      for (const [name, src] of Object.entries(pages)) {
+        const img = new Image();
+        img.src = src;
+        await img.decode();
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        out[name] = canvas.toDataURL("image/jpeg", quality).split(",")[1] ?? "";
+      }
+      return out;
+    },
+    { pages, quality: 0.7 },
+  );
+
+const main = async () => {
+  mkdirSync(OUT, { recursive: true });
+  const { app, win } = await launchCanvas();
   try {
-    const win = await app.firstWindow();
-    await win.waitForSelector("#c");
-    const jpegs = await win.evaluate(
-      async ({ pages, quality }) => {
-        const canvas = document.querySelector("canvas") as HTMLCanvasElement;
-        const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
-        const out: Record<string, string> = {};
-        for (const [name, src] of Object.entries(pages)) {
-          const img = new Image();
-          img.src = src;
-          await img.decode();
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          out[name] = canvas.toDataURL("image/jpeg", quality).split(",")[1] ?? "";
-        }
-        return out;
-      },
-      { pages: PAGES, quality: 0.7 },
-    );
+    const jpegs = await jpegsOf(win, PAGES);
     for (const [name, b64] of Object.entries(jpegs)) writeFileSync(path.join(OUT, `${name}.jpg`), pixelsOnly(Buffer.from(b64, "base64")));
     const plan = SHARE.flatMap((s) => (s.frame === undefined ? [] : [{ at: s.at, src: PAGES[s.frame] ?? "" }]));
     const webm = await win.evaluate(
@@ -128,4 +138,5 @@ app.whenReady().then(() => {
   }
 };
 
-await main();
+// Run as a script, not when another fixture's media.ts imports its parts.
+if (path.resolve(process.argv[1] ?? "") === import.meta.filename) await main();

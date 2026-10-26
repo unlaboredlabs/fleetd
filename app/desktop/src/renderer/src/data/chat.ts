@@ -275,7 +275,8 @@ const authorOf = (a: ChatMessage["author"]): KnownChatAuthor =>
 const kindOf = (m: ChatMessage): ChatItemKind => {
   if (m.item?.kind === "secret_request") return "secret";
   if (m.item?.kind === "command_approval") return "gated";
-  return m.history !== undefined || authorOf(m.author) === "system" ? "event" : "message";
+  // An agent's suggestion to try a PR is a line in the chat, not a bubble: the hub posts it, not the agent.
+  return m.history !== undefined || m.previewSuggestion !== undefined || authorOf(m.author) === "system" ? "event" : "message";
 };
 
 const messageItem = (m: ChatMessage, chat: Chat): ChatItem => ({

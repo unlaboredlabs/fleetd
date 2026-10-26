@@ -9,6 +9,7 @@ import type { ChatItem, CommandApprovalItem, Machine, SecretRequestItem } from "
 import type { HubError } from "../../../shared/hub";
 import { Button, Code, cx, InlineCode, Input, Text, Truncate } from "../../ui";
 import { useData, useDataLayer, useReadOf, useToolQuery } from "../../src/data/react";
+import { configLines, configWords } from "../tryit/model";
 import { patchLocal, useLocal, type Failed } from "./local";
 import { prose } from "./prose";
 import {
@@ -318,7 +319,7 @@ function ApprovalItem({ item, read }: { item: CommandApprovalItem; read: number 
   const { local, shown, busy, failed, confirming, setConfirming, run, refocus, focused } = useSent(key, item, read, machine, section);
   const outcome = approvalOutcome(shown);
   const offline = approvalOffline(shown.state, live);
-  const { gated, permission } = item;
+  const { gated, permission, previewConfig } = item;
   const confirm = useRef<HTMLDivElement>(null);
   const approveButton = useRef<HTMLButtonElement>(null);
   const canAnswer = live && !busy && shown.state === "open";
@@ -373,10 +374,10 @@ function ApprovalItem({ item, read }: { item: CommandApprovalItem; read: number 
 
   const destructive = gated?.class === "irreversible";
   return (
-    <Shell ref={section} label="Command to approve" requestId={item.requestId} outcome={outcome} about={approvalTitle(item)} refocus={refocus} onFocused={focused} open={local.open} onToggle={() => patchLocal(key, { open: !local.open })} onKeyDown={onKeyDown}>
+    <Shell ref={section} label={previewConfig === undefined ? "Command to approve" : "Try it setting to approve"} requestId={item.requestId} outcome={outcome} about={approvalTitle(item)} refocus={refocus} onFocused={focused} open={local.open} onToggle={() => patchLocal(key, { open: !local.open })} onKeyDown={onKeyDown}>
       <div className={s.head}>
         <Text size="xs" tone="quiet" strong>
-          {gated === undefined ? "Permission" : "Command"}
+          {previewConfig !== undefined ? "Try it setting" : gated === undefined ? "Permission" : "Command"}
         </Text>
         {gated === undefined ? null : (
           <Text size="xs" tone={gated.class === "credential" ? "warning" : "danger"} strong>
@@ -385,25 +386,35 @@ function ApprovalItem({ item, read }: { item: CommandApprovalItem; read: number 
         )}
       </div>
       <Text as="p" strong className={cx(s.title)}>
-        {gated !== undefined
-          ? prose(gated.reason)
-          : permission !== undefined
-            ? `An agent wants to use ${permission.toolName}`
-            : "An agent needs your OK"}
+        {previewConfig !== undefined
+          ? prose(previewConfig.why)
+          : gated !== undefined
+            ? prose(gated.reason)
+            : permission !== undefined
+              ? `An agent wants to use ${permission.toolName}`
+              : "An agent needs your OK"}
       </Text>
       <div className={s.detail}>
+        {/* A proposed Try it setting: its commands as they would run, in order. */}
+        {previewConfig !== undefined ? <Code code={configLines(previewConfig.config).join("\n")} lang="sh" bare /> : null}
         {gated !== undefined ? <Code code={shellLine(gated.argv)} lang="sh" bare /> : null}
-        {gated === undefined && permission !== undefined ? <Code code={permission.summary} bare /> : null}
-        <Text size="xs" tone="quiet">
-          on {machine}
-          {gated?.cwd === undefined ? null : (
-            <>
-              {" "}
-              in <InlineCode>{gated.cwd}</InlineCode>
-            </>
-          )}
-          {gated === undefined ? null : ` · stops after ${String(Math.ceil(gated.timeoutSec / 60))} min`}
-        </Text>
+        {gated === undefined && previewConfig === undefined && permission !== undefined ? <Code code={permission.summary} bare /> : null}
+        {previewConfig !== undefined ? (
+          <Text size="xs" tone="quiet">
+            {`${configWords(previewConfig.config)} Approved, it is how this project runs Try it on ${machine}; nothing runs until someone asks.`}
+          </Text>
+        ) : (
+          <Text size="xs" tone="quiet">
+            on {machine}
+            {gated?.cwd === undefined ? null : (
+              <>
+                {" "}
+                in <InlineCode>{gated.cwd}</InlineCode>
+              </>
+            )}
+            {gated === undefined ? null : ` · stops after ${String(Math.ceil(gated.timeoutSec / 60))} min`}
+          </Text>
+        )}
         {gated === undefined
           ? null
           : secretEnvLines(gated).map((line) => (
