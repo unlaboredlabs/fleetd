@@ -63,8 +63,10 @@ describe("what the lead waits on", () => {
   });
 
   it("still says it waits when the ask isn't loaded, with nowhere to show", () => {
-    expect(waitingOn([item("a", "human", "hi")], true, NOW, "UTC")).toEqual({ what: "a reply", targets: [] });
     expect(waitingOn([item("a", "human", "hi")], false, NOW, "UTC")).toBeUndefined();
+    expect(waitingOn([item("b", "lead", "Done. Over to you.")], true, NOW, "UTC")).toEqual({ what: "a reply", targets: [] });
+    // Older pages come before your message, so you've answered them.
+    expect(waitingOn([item("a", "human", "ship it"), item("b", "lead", "Done. Over to you.")], true, NOW, "UTC")).toBeUndefined();
   });
 
   it("reads numbered lines as questions, not numbers inside a sentence", () => {

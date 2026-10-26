@@ -56,6 +56,6 @@ export function waitingOn(items: readonly ChatItem[], older: boolean, nowMs: num
     const n = asking.length > 1 ? asking.reduce((sum, b) => sum + b.n, 0) : Math.max(countQuestions(ask.text), 1);
     return { what: `${plural(n, "question")}, asked ${when(ask.at, nowMs, timeZone)}`, targets: asking.map((b) => ({ id: ask.id, part: b.key })) };
   }
-  // A plain status line asks nothing; only a page not loaded can hold the wait.
-  return older ? { what: "a reply", targets: [] } : undefined;
+  // A plain status line asks nothing; only a page not loaded can hold the wait, and only if you haven't written since.
+  return older && since === 0 ? { what: "a reply", targets: [] } : undefined;
 }
