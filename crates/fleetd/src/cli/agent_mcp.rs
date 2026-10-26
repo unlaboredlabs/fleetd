@@ -12,6 +12,7 @@ use fleetd_contracts::automations::{
     AutomationCreateCall, AutomationDeleteCall, AutomationListCall, AutomationPauseCall,
     AutomationRunCall, AutomationRunsCall, AutomationUpdateCall,
 };
+use fleetd_contracts::browser::{BrowserCall, SessionEndCall, SessionStartCall};
 use fleetd_contracts::checklist::ChecklistCall;
 use fleetd_contracts::lead_calls::{
     AskLeadCall, BriefCreateCall, ChangeEnqueueCall, CloseCall, DecideCall, DecisionsSearchCall,
@@ -37,10 +38,12 @@ pub const SERVER_NAME: &str = "fleetd";
 
 pub struct Tool {
     pub name: &'static str,
-    /// The lead call's `op`.
+    /// The lead call's `op`, or the browser call's.
     pub op: &'static str,
     pub worker: bool,
     pub lead: bool,
+    /// A browser call (`browser_call`), which the node answers itself: its broker runs the session's browser.
+    pub browser: bool,
     pub description: &'static str,
     pub schema: fn() -> Value,
     /// What a person must do before the call takes effect; `None` when nothing.
@@ -58,6 +61,21 @@ const fn lead(
         op,
         worker: false,
         lead: true,
+        browser: false,
+        description,
+        schema,
+        human: None,
+    }
+}
+
+/// A browser tool, for leads and tasks alike.
+const fn browser(name: &'static str, description: &'static str, schema: fn() -> Value) -> Tool {
+    Tool {
+        name,
+        op: name,
+        worker: true,
+        lead: true,
+        browser: true,
         description,
         schema,
         human: None,
@@ -261,6 +279,7 @@ static TOOLS: &[Tool] = &[
         op: "review_verdict",
         worker: true,
         lead: false,
+        browser: false,
         description: "Record your review verdict once, before your final message: the number of blocking and \
                       non-blocking findings and a summary of each. fleetd fills in your task and the head you \
                       reviewed.",
@@ -272,12 +291,26 @@ static TOOLS: &[Tool] = &[
         op: "ask_lead",
         worker: true,
         lead: false,
+        browser: false,
         description: "Ask your lead a question. Carry on with what you can; the answer arrives as a message. If you \
                       can't go on without it, end your turn: the answer continues this thread. For a variable that \
                       is not set, name it and say why; never put a secret's value in the question.",
         schema: inline_schema::<AskLeadCall>,
         human: None,
     },
+    browser(
+        "session_start",
+        "Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. It is \
+         recorded (video, the page after each step, a line per agent-browser command) for the person to replay. \
+         Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no \
+         browser of your own. purpose: one line on what for.",
+        inline_schema::<SessionStartCall>,
+    ),
+    browser(
+        "session_end",
+        "Close your browser session: the browser and its profile are thrown away, and its recording goes to the hub.",
+        inline_schema::<SessionEndCall>,
+    ),
 ];
 
 /// A verdict without what the hub fills in from the session: its task and the head it reviewed.
@@ -317,9 +350,45 @@ pub fn call_of(role: Role, name: &str, arguments: Value) -> Result<Value, String
     };
     call.insert("op".into(), tool.op.into());
     let call = Value::Object(call);
-    serde_json::from_value::<LeadCall>(call.clone())
-        .map_err(|e| format!("Invalid arguments for {name}: {e}."))?;
+    let checked = match tool.browser {
+        true => serde_json::from_value::<BrowserCall>(call.clone()).map(drop),
+        false => serde_json::from_value::<LeadCall>(call.clone()).map(drop),
+    };
+    checked.map_err(|e| format!("Invalid arguments for {name}: {e}."))?;
     Ok(call)
+}
+
+/// A browser call's answer, in words that tell the agent what to do next.
+pub fn browser_result(answer: &Value) -> Value {
+    let result = &answer["result"];
+    let text = match result["op"].as_str() {
+        Some("session_start") => format!(
+            "Browser session {} is open ({} ms): a fresh Chrome with an empty profile, recorded. Drive it with \
+             agent-browser in Bash; it is already pointed at this session. If you haven't yet, run `agent-browser \
+             skills get core` once for how. End it with session_end when done.",
+            result["sessionId"].as_str().unwrap_or_default(),
+            result["startMs"]
+        ),
+        Some("session_end") => {
+            let files: Vec<&str> = result["files"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|f| f["file"].as_str())
+                .collect();
+            let mut text = format!(
+                "Browser session {} ended; the browser and its profile are gone. Its recording ({}) goes to the hub.",
+                result["sessionId"].as_str().unwrap_or_default(),
+                files.join(", ")
+            );
+            if let Some(note) = result["note"].as_str() {
+                text.push_str(&format!(" Note: {note}."));
+            }
+            text
+        }
+        _ => return tool_result(answer),
+    };
+    json!({ "content": [{ "type": "text", "text": text }], "isError": false })
 }
 
 /// A node answer frame as an MCP tool result: compact JSON, since it stays in the caller's context for every later
@@ -444,11 +513,14 @@ pub fn send_to_node(socket: &Path, frame: &Value, timeout: Duration) -> Result<V
         .ok_or_else(|| "the fleetd node sent an answer this CLI cannot read; check that node and CLI versions match".to_owned())
 }
 
-/// The node's answer, checked against the contract (a `lead_result` with exactly one of result and error).
+/// The node's answer, checked against the contract (a `lead_result` or `browser_result` with exactly one of result
+/// and error).
 fn decode_result_frame(line: &str) -> Option<Value> {
     match serde_json::from_str::<LeadSocketFrame>(line).ok()? {
-        LeadSocketFrame::LeadResult(_) => serde_json::from_str(line).ok(),
-        LeadSocketFrame::LeadCall(_) => None,
+        LeadSocketFrame::LeadResult(_) | LeadSocketFrame::BrowserResult(_) => {
+            serde_json::from_str(line).ok()
+        }
+        LeadSocketFrame::LeadCall(_) | LeadSocketFrame::BrowserCall(_) => None,
     }
 }
 
@@ -464,8 +536,12 @@ pub struct LeadDeps<'a> {
 
 /// One lead call (`{"op": …, …}`) to the hub through the node; the answer frame, or why the node could not be asked.
 pub fn send_call(call: Value, deps: &LeadDeps) -> Result<Value, String> {
+    let t = match serde_json::from_value::<BrowserCall>(call.clone()) {
+        Ok(_) => "browser_call",
+        Err(_) => "lead_call",
+    };
     let mut frame = json!({
-        "t": "lead_call",
+        "t": t,
         "id": format!("cli-{}", std::process::id()),
         "cwd": caller_cwd(deps.pwd.as_deref(), &deps.cwd),
         "call": call,
@@ -506,6 +582,9 @@ pub fn handle(role: Role, message: &Value, deps: &LeadDeps) -> Option<Value> {
             match call_of(role, name, arguments) {
                 Err(why) => error_result(&why),
                 Ok(call) => match send_call(call, deps) {
+                    Ok(answer) if answer.get("result").is_some_and(|r| r.get("op").is_some()) => {
+                        browser_result(&answer)
+                    }
                     Ok(answer) => tool_result(&answer),
                     Err(unreachable) => error_result(&format!(
                         "{unreachable}. Carry on without this call and say so in your result."
@@ -603,8 +682,11 @@ mod tests {
     }
 
     #[test]
-    fn a_worker_sees_only_report_and_ask_lead() {
-        assert_eq!(names(Role::Worker), ["report", "ask_lead"]);
+    fn a_worker_sees_only_report_ask_lead_and_its_browser() {
+        assert_eq!(
+            names(Role::Worker),
+            ["report", "ask_lead", "session_start", "session_end"]
+        );
         let lead = names(Role::Lead);
         for tool in [
             "spawn_agent",

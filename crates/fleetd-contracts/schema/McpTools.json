@@ -1508,6 +1508,297 @@
       ],
       "type": "object"
     },
+    "BrowserControl": {
+      "description": "Who drives a live session's browser. A person takes it over (human) and hands it back (handing_back, until the\nagent's next tool call sees the page as the person left it, then agent). While it isn't the agent's, the agent's\nbrowser tools answer that a person has control.",
+      "enum": [
+        "agent",
+        "human",
+        "handing_back"
+      ],
+      "type": "string",
+      "x-open": true
+    },
+    "BrowserRecordingEntry": {
+      "description": "A stored file of a recording.",
+      "properties": {
+        "bytes": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "file": {
+          "$ref": "#/$defs/RecordingFile"
+        }
+      },
+      "required": [
+        "file",
+        "bytes"
+      ],
+      "type": "object"
+    },
+    "BrowserRecordingGetInput": {
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/RecordingFile"
+        },
+        "offset": {
+          "default": 0,
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/BrowserSessionId"
+        }
+      },
+      "required": [
+        "sessionId",
+        "file"
+      ],
+      "type": "object"
+    },
+    "BrowserRecordingGetOutput": {
+      "properties": {
+        "bytes": {
+          "description": "The whole file's size.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "dataB64": {
+          "description": "At most RECORDING_PART_BYTES decoded; empty at the end.",
+          "type": "string"
+        },
+        "done": {
+          "type": "boolean"
+        },
+        "file": {
+          "$ref": "#/$defs/RecordingFile"
+        },
+        "mime": {
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        },
+        "next": {
+          "type": "string"
+        },
+        "offset": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/BrowserSessionId"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sessionId",
+        "file",
+        "mime",
+        "offset",
+        "dataB64",
+        "bytes",
+        "done"
+      ],
+      "type": "object"
+    },
+    "BrowserRetention": {
+      "description": "How long the hub keeps recordings: each for `retentionDays`, and a project's together up to `maxGbPerProject`\n(its oldest go first).",
+      "properties": {
+        "maxGbPerProject": {
+          "maximum": 10000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "retentionDays": {
+          "maximum": 365,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "retentionDays",
+        "maxGbPerProject"
+      ],
+      "type": "object"
+    },
+    "BrowserRetentionSetInput": {
+      "description": "How long the hub keeps recordings: each for `retentionDays`, and a project's together up to `maxGbPerProject`\n(its oldest go first).",
+      "properties": {
+        "maxGbPerProject": {
+          "maximum": 10000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "retentionDays": {
+          "maximum": 365,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "retentionDays",
+        "maxGbPerProject"
+      ],
+      "type": "object"
+    },
+    "BrowserRetentionSetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "retention": {
+          "$ref": "#/$defs/BrowserRetention"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "retention"
+      ],
+      "type": "object"
+    },
+    "BrowserSession": {
+      "description": "One session as the hub keeps it.",
+      "properties": {
+        "control": {
+          "$ref": "#/$defs/BrowserControl"
+        },
+        "credentialsFilled": {
+          "default": 0,
+          "description": "How many logins the node filled from 1Password; never their values.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "endedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "files": {
+          "default": [],
+          "description": "The recording's files on the hub; empty until it is recorded, and again once it expired.",
+          "items": {
+            "$ref": "#/$defs/BrowserRecordingEntry"
+          },
+          "maxItems": 3,
+          "type": "array"
+        },
+        "note": {
+          "description": "Why a session is lost, or what its recording lacks (\"no video: this machine has no ffmpeg\").",
+          "maxLength": 500,
+          "type": "string"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "purpose": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/BrowserSessionId"
+        },
+        "startedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "state": {
+          "$ref": "#/$defs/BrowserSessionState"
+        },
+        "takeoverReason": {
+          "description": "What the agent said it needs a person for, while it waits for one (`request_takeover`).",
+          "maxLength": 500,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId",
+          "description": "The task whose agent opened it; absent for the project's lead."
+        },
+        "threadId": {
+          "$ref": "#/$defs/ThreadId",
+          "description": "The agent's session (its thread on the project's machine)."
+        }
+      },
+      "required": [
+        "sessionId",
+        "projectRef",
+        "threadId",
+        "purpose",
+        "state",
+        "control",
+        "startedAt"
+      ],
+      "type": "object"
+    },
+    "BrowserSessionId": {
+      "pattern": "^B[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "BrowserSessionState": {
+      "description": "Where a session is. live → uploading → recorded; lost when the node could not record or upload it; expired once\nretention deleted its recording (its row stays).",
+      "enum": [
+        "live",
+        "uploading",
+        "recorded",
+        "lost",
+        "expired"
+      ],
+      "type": "string",
+      "x-open": true
+    },
+    "BrowserSessionsInput": {
+      "properties": {
+        "limit": {
+          "default": 50,
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/BrowserSessionId"
+        }
+      },
+      "required": [
+        "projectRef"
+      ],
+      "type": "object"
+    },
+    "BrowserSessionsOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "retention": {
+          "$ref": "#/$defs/BrowserRetention"
+        },
+        "sessions": {
+          "items": {
+            "$ref": "#/$defs/BrowserSession"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sessions",
+        "retention"
+      ],
+      "type": "object"
+    },
     "CapSetInput": {
       "properties": {
         "cap": {
@@ -4861,6 +5152,11 @@
           "const": "skills.changed",
           "description": "A hub-kept skill was created, edited, installed, updated or deleted: `data.scope`, `data.projectRef` (project\nscope), `data.names`, `data.by`. skills_list reads them.",
           "type": "string"
+        },
+        {
+          "const": "browser.session",
+          "description": "A browser session started, changed hands, ended, or its recording landed or was lost; `data` is\n`browser::BrowserSessionEventData`. browser_sessions reads the rest.",
+          "type": "string"
         }
       ],
       "x-open": true
@@ -6176,6 +6472,24 @@
         "automation_update.output": {
           "$ref": "#/$defs/AutomationUpdateOutput"
         },
+        "browser_recording_get.input": {
+          "$ref": "#/$defs/BrowserRecordingGetInput"
+        },
+        "browser_recording_get.output": {
+          "$ref": "#/$defs/BrowserRecordingGetOutput"
+        },
+        "browser_retention_set.input": {
+          "$ref": "#/$defs/BrowserRetentionSetInput"
+        },
+        "browser_retention_set.output": {
+          "$ref": "#/$defs/BrowserRetentionSetOutput"
+        },
+        "browser_sessions.input": {
+          "$ref": "#/$defs/BrowserSessionsInput"
+        },
+        "browser_sessions.output": {
+          "$ref": "#/$defs/BrowserSessionsOutput"
+        },
         "cap_set.input": {
           "$ref": "#/$defs/CapSetInput"
         },
@@ -6670,6 +6984,12 @@
         "automation_runs.output",
         "automation_update.input",
         "automation_update.output",
+        "browser_recording_get.input",
+        "browser_recording_get.output",
+        "browser_retention_set.input",
+        "browser_retention_set.output",
+        "browser_sessions.input",
+        "browser_sessions.output",
         "cap_set.input",
         "cap_set.output",
         "changes_list.input",
@@ -10434,6 +10754,26 @@
         "covers"
       ],
       "type": "object"
+    },
+    "RecordingFile": {
+      "description": "The files of a recording, each scrubbed on the node before upload.",
+      "oneOf": [
+        {
+          "const": "actions",
+          "description": "`actions.jsonl`: one [`BrowserAction`] per line, in order.",
+          "type": "string"
+        },
+        {
+          "const": "dom",
+          "description": "`dom.jsonl`: one [`DomSnapshot`] per line, after each step that changed the page.",
+          "type": "string"
+        },
+        {
+          "const": "video",
+          "description": "`video.webm`: VP9 from the node's own screencast of the page, 1280×800. Absent when the node has no ffmpeg.",
+          "type": "string"
+        }
+      ]
     },
     "RecoveryMode": {
       "description": "How a recovering task goes on.",

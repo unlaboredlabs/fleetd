@@ -1286,6 +1286,47 @@ output!(ChecklistGetOutput {
     updated_at: Option<Timestamp>,
 });
 
+// browser_sessions: a project's browser sessions, newest first, or one by sessionId (the Sessions view).
+input!(BrowserSessionsInput {
+    project_ref: ProjectRef,
+    session_id: Option<crate::browser::BrowserSessionId>,
+    #[serde(default)]
+    limit: IntOr<1, 100, 50>,
+});
+output!(BrowserSessionsOutput {
+    sessions: List<crate::browser::BrowserSession, 0, 100>,
+    retention: crate::browser::BrowserRetention,
+});
+
+// browser_recording_get: one piece of a recorded session's file, from offset; read the next from offset + its bytes
+// until done.
+input!(BrowserRecordingGetInput {
+    session_id: crate::browser::BrowserSessionId,
+    file: crate::browser::RecordingFile,
+    #[serde(default)]
+    offset: Count,
+});
+output!(BrowserRecordingGetOutput {
+    session_id: crate::browser::BrowserSessionId,
+    file: crate::browser::RecordingFile,
+    mime: Text<1, 100>,
+    offset: Count,
+    /// At most RECORDING_PART_BYTES decoded; empty at the end.
+    data_b64: String,
+    /// The whole file's size.
+    bytes: Count,
+    done: bool,
+});
+
+// browser_retention_set: how long the hub keeps browser recordings, for every project.
+input!(BrowserRetentionSetInput {
+    #[serde(flatten)]
+    retention: crate::browser::BrowserRetention,
+});
+output!(BrowserRetentionSetOutput {
+    retention: crate::browser::BrowserRetention,
+});
+
 // skills_list: Settings > Skills and the composer's `$`. The hub's global skills; with projectRef also the project's
 // and its repo's (.agents/skills, .claude/skills), each marked when a skill of the same name outranks it.
 input!(SkillsListInput {
@@ -2009,6 +2050,9 @@ tools! {
     automation_run => AutomationRun, Operate, AutomationRunInput, AutomationRunOutput;
     automation_runs => AutomationRuns, Read, AutomationRunsInput, AutomationRunsOutput;
     checklist_get => ChecklistGet, Read, ChecklistGetInput, ChecklistGetOutput;
+    browser_sessions => BrowserSessions, Read, BrowserSessionsInput, BrowserSessionsOutput;
+    browser_recording_get => BrowserRecordingGet, Read, BrowserRecordingGetInput, BrowserRecordingGetOutput;
+    browser_retention_set => BrowserRetentionSet, Admin, BrowserRetentionSetInput, BrowserRetentionSetOutput;
     skills_list => SkillsList, Read, SkillsListInput, SkillsListOutput;
     skill_get => SkillGet, Read, SkillGetInput, SkillGetOutput;
     // Human keys only (the handlers check): a lead installs with its own skill_install.

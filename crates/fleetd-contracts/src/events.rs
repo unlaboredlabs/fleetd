@@ -249,6 +249,10 @@ pub enum HubEventType {
     /// scope), `data.names`, `data.by`. skills_list reads them.
     #[serde(rename = "skills.changed")]
     SkillsChanged,
+    /// A browser session started, changed hands, ended, or its recording landed or was lost; `data` is
+    /// `browser::BrowserSessionEventData`. browser_sessions reads the rest.
+    #[serde(rename = "browser.session")]
+    BrowserSession,
 }
 
 impl HubEventType {
@@ -332,6 +336,7 @@ impl HubEventType {
             Self::AutomationRun => "automation.run",
             Self::ChecklistChanged => "checklist.changed",
             Self::SkillsChanged => "skills.changed",
+            Self::BrowserSession => "browser.session",
         }
     }
 }

@@ -12,6 +12,10 @@ use crate::automations::{
     AutomationListResult, AutomationPauseCall, AutomationResult, AutomationRunCall,
     AutomationRunResult, AutomationRunsCall, AutomationRunsResult, AutomationUpdateCall,
 };
+use crate::browser::{
+    BrowserCallFrame, BrowserRecordingPartCall, BrowserRecordingPartResult, BrowserResultFrame,
+    BrowserSessionCall, BrowserSessionResult,
+};
 use crate::chat::ChatRequestId;
 use crate::checked;
 use crate::checklist::{ChecklistCall, ChecklistResult};
@@ -281,6 +285,17 @@ pub enum LeadCall {
     Checklist(ChecklistCall),
     SkillInstall(SkillInstallCall),
     UsageResume(UsageResumeCall),
+    /// Made by the node for a session's browser, never by the session itself (the node refuses that).
+    BrowserSession(BrowserSessionCall),
+    BrowserRecordingPart(BrowserRecordingPartCall),
+}
+
+/// The call's `op` tag, as on the wire.
+pub fn op_name(call: &LeadCall) -> String {
+    serde_json::to_value(call)
+        .ok()
+        .and_then(|v| v.get("op")?.as_str().map(str::to_owned))
+        .unwrap_or_default()
 }
 
 #[skip_serializing_none]
@@ -410,6 +425,8 @@ pub enum LeadCallResult {
     Checklist(ChecklistResult),
     SkillInstall(SkillInstallResult),
     UsageResume(UsageResumeResult),
+    BrowserSession(BrowserSessionResult),
+    BrowserRecordingPart(BrowserRecordingPartResult),
 }
 
 /// CLI -> node on the local socket, and node -> hub on the link.
@@ -449,6 +466,9 @@ checked!(LeadResultFrame, |frame| {
 pub enum LeadSocketFrame {
     LeadCall(LeadCallFrame),
     LeadResult(LeadResultFrame),
+    /// `fleetd browser-mcp` to its node, which answers it itself: the session's browser lives there.
+    BrowserCall(BrowserCallFrame),
+    BrowserResult(BrowserResultFrame),
 }
 
 #[cfg(test)]

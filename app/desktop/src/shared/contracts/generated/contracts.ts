@@ -593,6 +593,123 @@ export type Brief = {
   why: string;
 };
 
+/**
+ * Who drives a live session's browser. A person takes it over (human) and hands it back (handing_back, until the
+ * agent's next tool call sees the page as the person left it, then agent). While it isn't the agent's, the agent's
+ * browser tools answer that a person has control.
+ */
+export type KnownBrowserControl = "agent" | "human" | "handing_back";
+/** KnownBrowserControl, or a value from a newer hub. */
+export type BrowserControl = KnownBrowserControl | (string & {});
+
+/** A stored file of a recording. */
+export type BrowserRecordingEntry = {
+  bytes: number;
+  file: RecordingFile;
+};
+
+export type BrowserRecordingGetInput = {
+  file: RecordingFile;
+  offset?: number;
+  sessionId: BrowserSessionId;
+};
+
+export type BrowserRecordingGetOutput = {
+  /** The whole file's size. */
+  bytes: number;
+  /** At most RECORDING_PART_BYTES decoded; empty at the end. */
+  dataB64: string;
+  done: boolean;
+  file: RecordingFile;
+  mime: string;
+  next?: string;
+  offset: number;
+  sessionId: BrowserSessionId;
+  truncated?: boolean;
+};
+
+/**
+ * How long the hub keeps recordings: each for `retentionDays`, and a project's together up to `maxGbPerProject`
+ * (its oldest go first).
+ */
+export type BrowserRetention = {
+  maxGbPerProject: number;
+  retentionDays: number;
+};
+
+/**
+ * How long the hub keeps recordings: each for `retentionDays`, and a project's together up to `maxGbPerProject`
+ * (its oldest go first).
+ */
+export type BrowserRetentionSetInput = {
+  maxGbPerProject: number;
+  retentionDays: number;
+};
+
+export type BrowserRetentionSetOutput = {
+  next?: string;
+  retention: BrowserRetention;
+  truncated?: boolean;
+};
+
+/** One session as the hub keeps it. */
+export type BrowserSession = {
+  control: BrowserControl;
+  /** How many logins the node filled from 1Password; never their values. */
+  credentialsFilled?: number;
+  endedAt?: Timestamp;
+  /** The recording's files on the hub; empty until it is recorded, and again once it expired. */
+  files?: BrowserRecordingEntry[];
+  /** Why a session is lost, or what its recording lacks ("no video: this machine has no ffmpeg"). */
+  note?: string;
+  projectRef: ProjectRef;
+  purpose: string;
+  sessionId: BrowserSessionId;
+  startedAt: Timestamp;
+  state: BrowserSessionState;
+  /** What the agent said it needs a person for, while it waits for one (`request_takeover`). */
+  takeoverReason?: string;
+  /** The task whose agent opened it; absent for the project's lead. */
+  taskId?: TaskId;
+  /** The agent's session (its thread on the project's machine). */
+  threadId: ThreadId;
+};
+
+/**
+ * `browser.session`: a session started, changed hands, ended or its recording landed. The rest comes from
+ * `browser_sessions`.
+ */
+export type BrowserSessionEventData = {
+  control: BrowserControl;
+  projectRef: ProjectRef;
+  sessionId: BrowserSessionId;
+  state: BrowserSessionState;
+  taskId?: TaskId;
+};
+
+export type BrowserSessionId = string;
+
+/**
+ * Where a session is. live → uploading → recorded; lost when the node could not record or upload it; expired once
+ * retention deleted its recording (its row stays).
+ */
+export type KnownBrowserSessionState = "live" | "uploading" | "recorded" | "lost" | "expired";
+/** KnownBrowserSessionState, or a value from a newer hub. */
+export type BrowserSessionState = KnownBrowserSessionState | (string & {});
+
+export type BrowserSessionsInput = {
+  limit?: number;
+  projectRef: ProjectRef;
+  sessionId?: BrowserSessionId;
+};
+
+export type BrowserSessionsOutput = {
+  next?: string;
+  retention: BrowserRetention;
+  sessions: BrowserSession[];
+  truncated?: boolean;
+};
+
 export type CapSetInput = {
   /** The fleet cap: agents running at once across every project. Needs an admin key. */
   cap?: number;
@@ -1691,7 +1808,8 @@ export type KnownHubEventType =
   | "automation.changed"
   | "automation.run"
   | "checklist.changed"
-  | "skills.changed";
+  | "skills.changed"
+  | "browser.session";
 /** KnownHubEventType, or a value from a newer hub. */
 export type HubEventType = KnownHubEventType | (string & {});
 
@@ -3455,6 +3573,9 @@ export type RecentLanding = {
   sha: CommitSha;
   subject: string;
 };
+
+/** The files of a recording, each scrubbed on the node before upload. */
+export type RecordingFile = "actions" | "dom" | "video";
 
 /** How a recovering task goes on. */
 export type RecoveryMode = "resume" | "compact" | "fresh";
@@ -5338,6 +5459,9 @@ export interface ToolMap {
   automation_run: { input: AutomationRunInput; output: AutomationRunOutput };
   automation_runs: { input: AutomationRunsInput; output: AutomationRunsOutput };
   automation_update: { input: AutomationUpdateInput; output: AutomationUpdateOutput };
+  browser_recording_get: { input: BrowserRecordingGetInput; output: BrowserRecordingGetOutput };
+  browser_retention_set: { input: BrowserRetentionSetInput; output: BrowserRetentionSetOutput };
+  browser_sessions: { input: BrowserSessionsInput; output: BrowserSessionsOutput };
   cap_set: { input: CapSetInput; output: CapSetOutput };
   changes_list: { input: ChangesListInput; output: ChangesListOutput };
   chat_history: { input: ChatHistoryInput; output: ChatHistoryOutput };
@@ -5421,6 +5545,7 @@ export interface ToolMap {
 export interface HubEventDataMap {
   "agents.cap": AgentsCapData;
   "app.presence": AppPresenceData;
+  "browser.session": BrowserSessionEventData;
   "change.ci_failed": TrainEventData;
   "change.needs_rebase": TrainEventData;
   "change.queued": TrainEventData;

@@ -1,0 +1,494 @@
+//! One live browser session: its Chrome, the node's pipe connection to it, the page it follows (the newest page
+//! target; when that closes, the one before), the screencast that feeds the video, and the action log: a line per
+//! tool call of the agent's that drove the browser (its `agent-browser` commands, fleetd's session tools), each
+//! followed by the page's DOM.
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as B64;
+use fleetd_contracts::browser::{
+    BrowserAction, BrowserControl, BrowserSessionId, DomSnapshot, RecordingFile,
+};
+use fleetd_contracts::ids::Timestamp;
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+
+use super::cdp::{Cdp, Event};
+use super::chrome::{Browser, HEIGHT, WIDTH};
+use super::record::{self, Meta, Scrub, VideoSink};
+use crate::node::mask::{Masker, Secrets};
+use crate::node::util::AbortOnDrop;
+
+/// The start of a result's text the action log keeps.
+const RESULT_CHARS: usize = 500;
+/// A page's HTML past this is cut in the DOM trace.
+const DOM_MAX_BYTES: usize = 2 << 20;
+/// What the agent's driver hears while a person has control.
+pub const PAUSED: &str = "A person has control of the browser now. Wait for them to hand it back (carry on with other \
+                          work meanwhile); your next command after that sees the page as they left it.";
+
+/// The page the session follows, and the pages before it.
+#[derive(Default)]
+struct Pages {
+    /// (targetId, CDP sessionId), oldest first; the last is followed.
+    stack: Vec<(String, String)>,
+}
+
+impl Pages {
+    fn current(&self) -> Option<&(String, String)> {
+        self.stack.last()
+    }
+}
+
+pub struct Session {
+    pub id: BrowserSessionId,
+    pub thread: String,
+    pub cwd: String,
+    pub purpose: String,
+    pub started_at: Timestamp,
+    pub start: Instant,
+    pub dir: PathBuf,
+    pub cdp: Arc<Cdp>,
+    browser: Mutex<Option<Browser>>,
+    pages: Arc<Mutex<Pages>>,
+    video: Option<VideoSink>,
+    /// Why the recording lacks something, e.g. its video.
+    note: Mutex<Option<String>>,
+    seq: AtomicU64,
+    control: Mutex<BrowserControl>,
+    /// The session's own secrets (its project's and order's), masked as its reports are.
+    base: Arc<Masker>,
+    /// Every value filled into its browser, wiped when the session goes.
+    filled: Mutex<Secrets>,
+    scrub: Mutex<Arc<Scrub>>,
+    pub credentials_filled: AtomicU64,
+    last_active: Mutex<Instant>,
+    /// The hash of the last DOM snapshot written: an unchanged page isn't written again.
+    last_dom: Mutex<Option<[u8; 32]>>,
+    /// One DOM capture at a time, in order.
+    dom_turn: tokio::sync::Mutex<()>,
+    _screencast: Mutex<Option<AbortOnDrop>>,
+    _ticker: Mutex<Option<AbortOnDrop>>,
+}
+
+fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+pub struct Opened {
+    pub id: BrowserSessionId,
+    pub thread: String,
+    pub cwd: String,
+    pub purpose: String,
+    pub dir: PathBuf,
+    pub ffmpeg: Option<PathBuf>,
+    pub masker: Masker,
+}
+
+impl Session {
+    /// Connects to a launched browser, follows its page and starts recording.
+    pub async fn open(browser: Browser, opened: Opened) -> Result<Arc<Self>, String> {
+        let cdp = browser.cdp.clone();
+        std::fs::create_dir_all(&opened.dir)
+            .map_err(|e| format!("cannot make {}: {e}", opened.dir.display()))?;
+        let (video, note) = match VideoSink::start(
+            opened.ffmpeg.as_deref(),
+            opened.dir.join(RecordingFile::Video.file_name()),
+        ) {
+            Ok(video) => (Some(video), None),
+            Err(why) => (None, Some(why)),
+        };
+        let started_at = Timestamp(crate::node::util::now_iso());
+        let base = Arc::new(opened.masker);
+        let session = Arc::new(Self {
+            id: opened.id,
+            thread: opened.thread,
+            cwd: opened.cwd,
+            purpose: opened.purpose,
+            started_at,
+            start: Instant::now(),
+            dir: opened.dir,
+            cdp: cdp.clone(),
+            browser: Mutex::new(Some(browser)),
+            pages: Arc::default(),
+            video,
+            note: Mutex::new(note),
+            seq: AtomicU64::new(0),
+            control: Mutex::default(),
+            scrub: Mutex::new(Arc::new(Scrub::new(base.clone(), &[]))),
+            base,
+            filled: Mutex::default(),
+            credentials_filled: AtomicU64::new(0),
+            last_active: Mutex::new(Instant::now()),
+            last_dom: Mutex::default(),
+            dom_turn: tokio::sync::Mutex::new(()),
+            _screencast: Mutex::default(),
+            _ticker: Mutex::default(),
+        });
+        // Listen before discovering: the existing page arrives as a targetCreated event.
+        let events = cdp.events();
+        *lock(&session._screencast) = Some(AbortOnDrop(tokio::spawn(screencast(
+            Arc::downgrade(&session),
+            events,
+        ))));
+        cdp.call(
+            None,
+            "Target.setDiscoverTargets",
+            json!({ "discover": true }),
+        )
+        .await?;
+        // The page is followed once attached; wait for it so the agent's first call is recorded.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while lock(&session.pages).current().is_none() && Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        if let Some(video) = session.video.clone() {
+            let start = session.start;
+            *lock(&session._ticker) = Some(AbortOnDrop(tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    video.tick(start.elapsed());
+                }
+            })));
+        }
+        session.write_meta(None);
+        Ok(session)
+    }
+
+    pub fn offset_ms(&self) -> u64 {
+        self.start.elapsed().as_millis() as u64
+    }
+
+    pub fn touch(&self) {
+        *lock(&self.last_active) = Instant::now();
+    }
+
+    pub fn idle_for(&self) -> Duration {
+        lock(&self.last_active).elapsed()
+    }
+
+    pub fn control(&self) -> BrowserControl {
+        *lock(&self.control)
+    }
+
+    pub fn set_control(&self, control: BrowserControl) {
+        *lock(&self.control) = control;
+    }
+
+    pub fn scrub(&self) -> Arc<Scrub> {
+        lock(&self.scrub).clone()
+    }
+
+    /// A value the session must never show: scrubbed from everything recorded or answered from now on.
+    pub fn add_secret(&self, name: &str, value: &str) {
+        let mut filled = lock(&self.filled);
+        if filled.0.iter().any(|(_, v)| v == value) {
+            return;
+        }
+        filled.0.push((name.to_owned(), value.to_owned()));
+        *lock(&self.scrub) = Arc::new(Scrub::new(self.base.clone(), &filled.0));
+    }
+
+    /// The page the session follows: (targetId, CDP sessionId).
+    pub fn page(&self) -> Option<(String, String)> {
+        lock(&self.pages).current().cloned()
+    }
+
+    pub fn note(&self) -> Option<String> {
+        lock(&self.note).clone()
+    }
+
+    fn set_note(&self, note: String) {
+        let mut held = lock(&self.note);
+        *held = Some(match held.take() {
+            Some(before) => format!("{before}; {note}"),
+            None => note,
+        });
+    }
+
+    pub fn meta(&self, ended_at: Option<String>) -> Meta {
+        Meta {
+            session_id: self.id.to_string(),
+            thread_id: self.thread.clone(),
+            cwd: self.cwd.clone(),
+            purpose: self.purpose.clone(),
+            started_at: self.started_at.to_string(),
+            ended_at,
+            credentials_filled: self.credentials_filled.load(Ordering::Relaxed),
+            note: self.note(),
+        }
+    }
+
+    pub fn write_meta(&self, ended_at: Option<String>) {
+        if let Err(e) = record::write_meta(&self.dir, &self.meta(ended_at)) {
+            tracing::warn!(session = %self.id, error = %e, "browser session file not written");
+        }
+    }
+
+    /// What the proxy answers the driver's command with instead of sending it on, if anything: while a person
+    /// has control, every command.
+    pub fn refusal(&self, _method: &str, _params: &Value) -> Option<String> {
+        match self.control() {
+            BrowserControl::Agent => None,
+            _ => Some(PAUSED.to_owned()),
+        }
+    }
+
+    /// A message from the browser on its way to the driver.
+    pub fn outgoing(&self, message: Value) -> Value {
+        message
+    }
+
+    /// Logs one step of the session's: a tool call of the agent's, or fleetd's own (a session tool, a fill), and
+    /// returns its number.
+    pub fn step(
+        &self,
+        tool: &str,
+        mut args: Value,
+        ok: bool,
+        result: Option<&str>,
+        duration_ms: u64,
+    ) -> u64 {
+        self.touch();
+        let seq = self.seq.fetch_add(1, Ordering::Relaxed) + 1;
+        let scrub = self.scrub();
+        scrub.value(&mut args);
+        let offset_ms = self.offset_ms().saturating_sub(duration_ms);
+        self.log(BrowserAction {
+            seq,
+            at: Timestamp(crate::node::util::now_iso()),
+            offset_ms,
+            tool: tool.to_owned(),
+            args,
+            ok,
+            result: result.map(|r| scrub.text(&r.chars().take(RESULT_CHARS).collect::<String>())),
+            duration_ms,
+            url: None,
+        });
+        seq
+    }
+
+    fn log(&self, action: BrowserAction) {
+        if let Err(e) = record::append_action(&self.dir, &action, &self.scrub()) {
+            tracing::warn!(session = %self.id, error = %e, "browser action not logged");
+        }
+    }
+
+    /// Writes the page's HTML to the DOM trace after action `seq`, unless it is as the last one left it.
+    pub async fn capture_dom(&self, seq: u64) {
+        let _turn = self.dom_turn.lock().await;
+        let Some((target, page)) = self.page() else {
+            return;
+        };
+        let Ok(doc) = self
+            .cdp
+            .call(Some(&page), "DOM.getDocument", json!({ "depth": 0 }))
+            .await
+        else {
+            return;
+        };
+        let Some(root) = doc.pointer("/root/nodeId").and_then(Value::as_u64) else {
+            return;
+        };
+        let Ok(html) = self
+            .cdp
+            .call(Some(&page), "DOM.getOuterHTML", json!({ "nodeId": root }))
+            .await
+        else {
+            return;
+        };
+        let mut html = html
+            .get("outerHTML")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        let info = self
+            .cdp
+            .call(None, "Target.getTargetInfo", json!({ "targetId": target }))
+            .await
+            .unwrap_or_default();
+        let url = info
+            .pointer("/targetInfo/url")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        let title = info
+            .pointer("/targetInfo/title")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        let hash: [u8; 32] = Sha256::digest(format!("{url}\n{html}").as_bytes()).into();
+        {
+            let mut last = lock(&self.last_dom);
+            if *last == Some(hash) {
+                return;
+            }
+            *last = Some(hash);
+        }
+        if html.len() > DOM_MAX_BYTES {
+            let mut cut = DOM_MAX_BYTES;
+            while !html.is_char_boundary(cut) {
+                cut -= 1;
+            }
+            html.truncate(cut);
+        }
+        let snapshot = DomSnapshot {
+            seq,
+            offset_ms: self.offset_ms(),
+            url,
+            title,
+            html,
+        };
+        if let Err(e) = record::append_dom(&self.dir, &snapshot, &self.scrub()) {
+            tracing::warn!(session = %self.id, error = %e, "DOM snapshot not written");
+        }
+    }
+
+    /// Stops recording and the browser: the video is finished, the text files scrubbed once more with every value the
+    /// session knew, and the browser killed with its profile. Returns the files there are.
+    pub async fn close(&self) -> Vec<(RecordingFile, u64)> {
+        let _ = self.dom_turn.lock().await;
+        lock(&self._ticker).take();
+        if let Some((_, page)) = self.page() {
+            let _ = self
+                .cdp
+                .call(Some(&page), "Page.stopScreencast", json!({}))
+                .await;
+        }
+        lock(&self._screencast).take();
+        if let Some(video) = &self.video
+            && let Err(why) = video.finish(self.start.elapsed()).await
+        {
+            let _ = std::fs::remove_file(self.dir.join(RecordingFile::Video.file_name()));
+            self.set_note(format!("no video: {why}"));
+        }
+        lock(&self.browser).take();
+        let scrub = self.scrub();
+        for file in [RecordingFile::Actions, RecordingFile::Dom] {
+            if let Err(e) = record::scrub_file(&self.dir.join(file.file_name()), &scrub) {
+                tracing::warn!(session = %self.id, error = %e, "recording not scrubbed");
+                let _ = std::fs::remove_file(self.dir.join(file.file_name()));
+            }
+        }
+        self.write_meta(Some(crate::node::util::now_iso()));
+        files(&self.dir)
+    }
+}
+
+/// The recording files in `dir` and their sizes.
+pub fn files(dir: &std::path::Path) -> Vec<(RecordingFile, u64)> {
+    RecordingFile::ALL
+        .iter()
+        .filter_map(|f| {
+            let len = std::fs::metadata(dir.join(f.file_name())).ok()?.len();
+            (len > 0).then_some((*f, len))
+        })
+        .collect()
+}
+
+/// Follows the browser's pages and feeds their screencast to the video, until the session goes.
+async fn screencast(
+    session: std::sync::Weak<Session>,
+    mut events: tokio::sync::mpsc::UnboundedReceiver<Event>,
+) {
+    loop {
+        let Some(event) = events.recv().await else {
+            return;
+        };
+        let Some(session) = session.upgrade() else {
+            return;
+        };
+        match event.method.as_str() {
+            "Page.screencastFrame" => {
+                let Some(page) = event.session_id.as_deref() else {
+                    continue;
+                };
+                if let Some(ack) = event.params.get("sessionId") {
+                    session.cdp.post(
+                        Some(page),
+                        "Page.screencastFrameAck",
+                        json!({ "sessionId": ack }),
+                    );
+                }
+                if session.page().is_none_or(|(_, followed)| followed != page) {
+                    continue;
+                }
+                let data = event
+                    .params
+                    .get("data")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                if let (Some(video), Ok(jpeg)) = (&session.video, B64.decode(data)) {
+                    video.frame(jpeg, session.start.elapsed());
+                }
+            }
+            "Target.targetCreated" => {
+                let info = &event.params["targetInfo"];
+                if info["type"] != "page" {
+                    continue;
+                }
+                let target = info["targetId"].as_str().unwrap_or_default().to_owned();
+                // Pages the driver attaches to show here too: follow each once, by the broker's own session.
+                if lock(&session.pages).stack.iter().any(|(t, _)| *t == target) {
+                    continue;
+                }
+                let Ok(page) = session.cdp.attach(&target).await else {
+                    continue;
+                };
+                follow(&session, Some((target, page))).await;
+            }
+            "Target.targetDestroyed" | "Target.detachedFromTarget" => {
+                // A page closed, or the broker's own session to it ended; the driver detaching changes nothing.
+                let (target, gone_session) = match event.method.as_str() {
+                    "Target.targetDestroyed" => {
+                        (event.params["targetId"].as_str().unwrap_or_default(), "")
+                    }
+                    _ => ("", event.params["sessionId"].as_str().unwrap_or_default()),
+                };
+                let was_current = {
+                    let mut pages = lock(&session.pages);
+                    let current = pages.current().cloned();
+                    let gone = |(t, s): &(String, String)| t == target || s == gone_session;
+                    pages.stack.retain(|p| !gone(p));
+                    current.is_some_and(|p| gone(&p))
+                };
+                if was_current {
+                    follow(&session, None).await;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Follows `page` (a new one), or the newest left when none: its screencast feeds the video from now on.
+async fn follow(session: &Session, page: Option<(String, String)>) {
+    let before = session.page();
+    if let Some(page) = &page {
+        lock(&session.pages).stack.push(page.clone());
+    }
+    let Some((_, now)) = session.page() else {
+        return;
+    };
+    if let Some((_, old)) = before.filter(|(_, old)| *old != now) {
+        let _ = session
+            .cdp
+            .call(Some(&old), "Page.stopScreencast", json!({}))
+            .await;
+    }
+    let _ = session.cdp.call(Some(&now), "Page.enable", json!({})).await;
+    let started = session
+        .cdp
+        .call(
+            Some(&now),
+            "Page.startScreencast",
+            json!({ "format": "jpeg", "quality": 70, "maxWidth": WIDTH, "maxHeight": HEIGHT }),
+        )
+        .await;
+    if let Err(e) = started {
+        tracing::warn!(session = %session.id, error = %e, "screencast not started");
+    }
+}
