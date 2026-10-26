@@ -108,6 +108,14 @@ fleetd machine set <id> --max-agents <n>|auto [--home <dir>] [--hub <url>]
 
 the most agents the machine runs at once (admin key), up to the fleet cap, in place of what it is measured to fit; auto: what it fits again. Raising starts queued agents at once; lowering stops nothing
 
+### fleetd machine set {#machine-set-roles}
+
+```text
+fleetd machine set <id> --roles agents,sessions [--max-sessions <n>|auto] [--home <dir>] [--hub <url>]
+```
+
+what the machine is for (admin key): agents, sessions (browsers and devices) or both, and the most sessions it hosts at once (1 to 64; auto: what it fits). A session an agent starts runs on its own machine, refused when that has no sessions role or no free slot. Without agents, running agents finish and new ones wait
+
 ### fleetd pair {#pair}
 
 ```text

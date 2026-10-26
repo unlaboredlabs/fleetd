@@ -39,6 +39,8 @@ struct RelayState {
     send: Option<mpsc::UnboundedSender<String>>,
     pending: HashMap<String, oneshot::Sender<LeadResultFrame>>,
     next_id: u64,
+    /// What the hub's last welcome said it takes beyond the base set.
+    hub_caps: Vec<String>,
 }
 
 /// The node's half of lead-side calls: CLI frames in from the socket, out over whichever link is up.
@@ -119,6 +121,16 @@ impl LeadRelay {
         }
     }
 
+    /// The hub's welcome: the calls it takes beyond the base set, kept until the next welcome.
+    pub fn set_hub_caps(&self, caps: Vec<String>) {
+        self.lock().hub_caps = caps;
+    }
+
+    /// Whether the hub last linked takes `capability`.
+    pub fn hub_can(&self, capability: &str) -> bool {
+        self.lock().hub_caps.iter().any(|c| c == capability)
+    }
+
     /// A `lead_result` frame from the hub.
     pub fn resolve(&self, frame: LeadResultFrame) {
         if let Some(answer) = self.lock().pending.remove(frame.id.as_str()) {
@@ -127,7 +139,12 @@ impl LeadRelay {
     }
 
     /// Forwards one CLI frame and returns the hub's answer under the CLI's id. Never fails: trouble is an error frame.
-    pub async fn call(&self, mut frame: LeadCallFrame) -> LeadResultFrame {
+    pub async fn call(&self, frame: LeadCallFrame) -> LeadResultFrame {
+        self.call_within(frame, ANSWER_TIMEOUT).await
+    }
+
+    /// [`LeadRelay::call`], waiting up to `wait` for the answer: for calls the hub may take longer over.
+    pub async fn call_within(&self, mut frame: LeadCallFrame, wait: Duration) -> LeadResultFrame {
         let cli_id = frame.id.clone();
         let mut linked = self.linked.subscribe();
         let up = tokio::time::timeout(LINK_WAIT, linked.wait_for(|up| *up))
@@ -157,15 +174,12 @@ impl LeadRelay {
             }
             (id, rx)
         };
-        let mut result = match tokio::time::timeout(ANSWER_TIMEOUT, answer).await {
+        let mut result = match tokio::time::timeout(wait, answer).await {
             Ok(Ok(result)) => result,
             Ok(Err(_)) => unanswered(&id, "the link to the fleetd hub dropped before it answered"),
             Err(_) => unanswered(
                 &id,
-                &format!(
-                    "the fleetd hub did not answer within {} s",
-                    ANSWER_TIMEOUT.as_secs()
-                ),
+                &format!("the fleetd hub did not answer within {} s", wait.as_secs()),
             ),
         };
         self.lock().pending.remove(&id);

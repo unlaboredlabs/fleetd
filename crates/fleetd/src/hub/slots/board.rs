@@ -197,6 +197,9 @@ pub struct Board {
     now_ms: i64,
     next_order: i64,
     ops: Vec<Op>,
+    /// Machines whose role is sessions only (`machine_roles_set`): they run no agents. Kept by the machine roles
+    /// area, which sets it at load and on each change.
+    sessions_only: Vec<MachineId>,
 }
 
 impl Board {
@@ -218,7 +221,21 @@ impl Board {
             now_ms: 0,
             next_order,
             ops: Vec::new(),
+            sessions_only: Vec::new(),
         }
+    }
+
+    /// Whether the machine runs agents: false takes its cap to 0, so its projects' agents wait. Always counts as
+    /// freeing capacity, like [`Board::set_cap`].
+    pub fn set_runs_agents(&mut self, m: &MachineId, on: bool) {
+        self.sessions_only.retain(|x| x != m);
+        if !on {
+            self.sessions_only.push(m.clone());
+        }
+    }
+
+    fn runs_agents(&self, m: &MachineId) -> bool {
+        !self.sessions_only.contains(m)
     }
 
     /// The time, before each change; starts older than [`SETTLE_MS`] stop counting against disk room. True when
@@ -284,8 +301,12 @@ impl Board {
 
     /// The fleet cap when set, else what the machines fit together.
     pub fn total(&self) -> i64 {
-        self.cap
-            .unwrap_or_else(|| self.machines.iter().map(Machine::cap).sum())
+        self.cap.unwrap_or_else(|| {
+            self.machines
+                .iter()
+                .map(|m| self.machine_cap(&m.machine_id))
+                .sum()
+        })
     }
 
     fn machine(&self, m: &MachineId) -> Option<&Machine> {
@@ -294,6 +315,9 @@ impl Board {
 
     /// The machine's cap: a person's setting, else what it fits; [`sizing::UNMEASURED`] until its node reports.
     pub fn machine_cap(&self, m: &MachineId) -> i64 {
+        if !self.runs_agents(m) {
+            return 0;
+        }
         self.machine(m).map_or(sizing::UNMEASURED, Machine::cap)
     }
 
@@ -425,6 +449,10 @@ impl Board {
             && used >= cap
         {
             Some(format!("fleet cap: {used} of {cap} running"))
+        } else if !self.runs_agents(m) {
+            Some(format!(
+                "{name} runs no agents: its role is sessions only (Settings > Machines)"
+            ))
         } else if on_machine >= machine_cap {
             let why = self.machine(m).map_or(sizing::UNMEASURED_WHY, Machine::why);
             Some(format!(

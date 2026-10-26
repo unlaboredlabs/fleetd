@@ -567,6 +567,29 @@
       ],
       "type": "object"
     },
+    "HostCheck": {
+      "description": "Whether a machine can host one kind of session, and why, in plain words: \"Chrome 131 at /usr/bin/google-chrome\",\n\"Android SDK at ~/Android/Sdk, but no /dev/kvm\".",
+      "properties": {
+        "detail": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "host": {
+          "$ref": "#/$defs/SessionHost"
+        },
+        "ready": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "host",
+        "ready",
+        "detail"
+      ],
+      "type": "object"
+    },
     "HubEvent": {
       "properties": {
         "at": {
@@ -1239,6 +1262,14 @@
           "minimum": 0,
           "type": "integer"
         },
+        "hosts": {
+          "description": "What the machine can host for sessions (a browser, an Android emulator, an iOS simulator, a desktop); absent\nfrom older nodes.",
+          "items": {
+            "$ref": "#/$defs/HostCheck"
+          },
+          "maxItems": 4,
+          "type": "array"
+        },
         "limits": {
           "default": [],
           "description": "The latest claude.ai subscription limit of each type claude reported. Empty behind API keys and gateways,\nwhich send none.",
@@ -1417,6 +1448,32 @@
         "to"
       ],
       "type": "object"
+    },
+    "SessionHost": {
+      "description": "A kind of session a machine can host.",
+      "oneOf": [
+        {
+          "const": "browser",
+          "description": "A fresh Chrome per session.",
+          "type": "string"
+        },
+        {
+          "const": "android",
+          "description": "An Android emulator: the Android SDK, with KVM on Linux.",
+          "type": "string"
+        },
+        {
+          "const": "ios",
+          "description": "An iOS simulator: Xcode on macOS.",
+          "type": "string"
+        },
+        {
+          "const": "desktop",
+          "description": "A Linux desktop: docker or Xvfb.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
     },
     "SleptSpan": {
       "description": "A span a machine spent asleep, epoch milliseconds; `machine.slept` carries the same fields as its data.",

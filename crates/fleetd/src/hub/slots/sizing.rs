@@ -116,6 +116,7 @@ mod tests {
             swap_used_pct: None,
             mem_pressure_pct: None,
             limits: List::unchecked(Vec::new()),
+            hosts: None,
             disk: None,
             mem_total_bytes: mem_gib.map(|g| Count::unchecked(g * GIB)),
             mem_per_agent_bytes: None,

@@ -6,6 +6,7 @@ pub mod actions;
 pub mod browser;
 pub mod cmd;
 pub mod config;
+pub mod hosts;
 pub mod identity;
 pub mod landed;
 pub mod lead;
@@ -21,6 +22,7 @@ pub mod repos;
 pub mod runner;
 pub mod secrets;
 pub mod self_exe;
+pub mod session_route;
 pub mod sessions;
 pub mod skills;
 pub mod store;
@@ -213,7 +215,10 @@ async fn run_node(
     };
     let mask_for: lead::MaskFor = {
         let sessions = node_sessions.clone();
-        Arc::new(move |session| sessions.call_masker(session))
+        Arc::new(move |session| match session_route::host_masker(session) {
+            Some(masker) => Ok(masker),
+            None => sessions.call_masker(session),
+        })
     };
     let browser_config = config.browser.clone().unwrap_or_default();
     let broker = match browser_config.enabled() {
@@ -236,7 +241,7 @@ async fn run_node(
         relay.clone(),
         identify,
         mask_for,
-        broker.as_ref().map(browser::Broker::handler),
+        Some(session_route::routed(broker.clone(), relay.clone())),
     )
     .await
     .map_err(NodeError::LeadSocket)?;

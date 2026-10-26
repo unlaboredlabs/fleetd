@@ -38,10 +38,10 @@ const noInput = {};
  * Whether this key may change the fleet and machine caps (Admin on every machine), as hub_info says. True until it
  * answers, and with a hub from before it said: the hub refuses the change, and the line under the slider says why.
  */
-const useAdmin = (): boolean => useToolQuery("hub_info", noInput).data?.admin !== false;
+export const useAdmin = (): boolean => useToolQuery("hub_info", noInput).data?.admin !== false;
 
 /** Under a control a key without Admin can't use. */
-const NOT_ADMIN = "This key can't change it: that needs an admin key.";
+export const NOT_ADMIN = "This key can't change it: that needs an admin key.";
 
 /** The hub's slot state for this connection; undefined until it is fresh (never the last connection's numbers). */
 const useSlots = (): SlotState | undefined => useData((st) => (st.fresh ? (st.live.slots ?? st.slots) : undefined));

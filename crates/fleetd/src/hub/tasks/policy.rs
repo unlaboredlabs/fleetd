@@ -29,6 +29,7 @@ pub const NODE_OPS: &[&str] = &[
     "browser_session",
     "browser_recording_part",
     "browser_takeover",
+    "session_route",
 ];
 /// The calls that start an agent.
 pub const SPAWN_OPS: &[&str] = &["task_spawn"];

@@ -21,6 +21,8 @@ An agent has one session open at a time. Its session also ends when the agent's 
 stopped or it went idle), or after 30 minutes without an `agent-browser` command. When the agent needs a person (a
 captcha, a confirmation only you can give), it calls **`request_takeover`** with what you should do. The tools are on
 the [Agent tools](/docs/reference/agent-tools#session_start) page.
+A session runs on the agent's own machine, and needs it to have the sessions [role](/docs/machines#roles) and a free
+session slot.
 
 ## Watch and take over {#takeover}
 

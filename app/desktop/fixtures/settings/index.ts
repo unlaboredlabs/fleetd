@@ -144,9 +144,44 @@ function automations(f: Fixture) {
   f.answer("automation_pause", undefined, { automation: json(list[2]) });
 }
 
+/**
+ * Settings → Machines: the fleet's first machine runs agents and hosts sessions on Linux (Chrome and Xvfb; an Android
+ * SDK without KVM), the next only hosts sessions on macOS (iOS simulators), and any after them only run agents. A role
+ * change answers with the row it asked for.
+ */
+function machineRoles(f: Fixture) {
+  const machines = isObject(f.snapshot) && Array.isArray(f.snapshot["machines"]) ? f.snapshot["machines"].filter(isObject) : [];
+  const linux: JsonObject[] = [
+    { host: "browser", ready: true, detail: "Chrome at /home/dev/.fleetd/node/browser/ms-playwright/chromium_headless_shell-1194/chrome-linux/headless_shell" },
+    { host: "android", ready: false, detail: "Android SDK at /home/dev/Android/Sdk, but no /dev/kvm: the emulator needs KVM" },
+    { host: "ios", ready: false, detail: "iOS simulators need macOS" },
+    { host: "desktop", ready: true, detail: "Xvfb at /usr/bin/Xvfb, docker at /usr/bin/docker" },
+  ];
+  const mac: JsonObject[] = [
+    { host: "browser", ready: true, detail: "Chrome not installed yet: the node installs it with the first session" },
+    { host: "android", ready: true, detail: "Android SDK at /Users/dev/Library/Android/sdk" },
+    { host: "ios", ready: true, detail: "Xcode with 6 iOS simulators" },
+    { host: "desktop", ready: false, detail: "desktop sessions run on Linux (docker or Xvfb)" },
+  ];
+  const entries: JsonObject[] = machines.map((m, i) => {
+    const machineId = asText(m["machineId"]);
+    const base: JsonObject = { machineId, name: asText(m["name"]) || machineId, online: m["status"] !== "offline", hostsOthers: true };
+    if (i === 0) return { ...base, roles: ["agents", "sessions"], maxSessions: 8, maxSessionsWhy: "auto: 16 CPUs, 60 GB", sessionsLive: 2, hosts: linux };
+    if (i === 1) return { ...base, roles: ["sessions"], maxSessions: 2, maxSessionsSet: 2, maxSessionsWhy: "set", sessionsLive: 1, hosts: mac };
+    return { ...base, roles: ["agents"], maxSessions: 4, maxSessionsWhy: "auto: 8 CPUs, 32 GB", sessionsLive: 0, hosts: linux };
+  });
+  f.answer("machine_roles", undefined, { machines: entries });
+  for (const e of entries) {
+    for (const roles of [["agents"], ["sessions"], ["agents", "sessions"]]) {
+      f.answer("machine_roles_set", { machineId: asText(e["machineId"]), roles }, { machine: { ...clone(e), roles } });
+    }
+  }
+}
+
 /** What Settings calls besides the prompt reads. */
 function basics(f: Fixture) {
   projectSettings(f);
+  machineRoles(f);
   memory(f);
   automations(f);
   skills(f);
