@@ -3,7 +3,7 @@ import "./debug-guard";
 import { existsSync } from "node:fs";
 import { homedir, release } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
-import { app, BrowserWindow, clipboard, crashReporter, dialog, nativeTheme, powerMonitor, session, shell } from "electron";
+import { app, BrowserWindow, clipboard, crashReporter, dialog, Menu, nativeTheme, powerMonitor, session, shell } from "electron";
 import { asError } from "../shared/scrub";
 import { AppLog, diagnostics } from "./applog";
 import { RELEASE_BUILD } from "./build";
@@ -18,6 +18,7 @@ import { instrument } from "./instrument";
 import { registerIpc } from "./ipc";
 import { fixturePairingDeps } from "./pairing/fixture";
 import { PairingService, realPairingDeps } from "./pairing/service";
+import { editMenuTemplate } from "./editMenu";
 import { installMenu } from "./menu";
 import { Notifier } from "./notify";
 import { claimOnFirstRun } from "./linkHandlerMain";
@@ -194,6 +195,10 @@ const createWindow = (mode: HubMode): BrowserWindow => {
     quit: () => app.quit(),
     quitting: () => quitting,
     isOwnPage,
+  });
+  win.webContents.on("context-menu", (_event, params) => {
+    const template = editMenuTemplate(params);
+    if (template !== null) Menu.buildFromTemplate(template).popup({ window: win });
   });
   opener.attach(win);
   instrument(win);

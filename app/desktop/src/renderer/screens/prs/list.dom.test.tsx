@@ -116,3 +116,37 @@ it("has no filter while there are no PRs at all", async () => {
   expect(host.querySelector("[aria-label='Show']")).toBeNull();
   expect(host.textContent).toContain("No pull requests yet");
 });
+
+it("a row's right-click menu opens the PR here or on GitHub, and copies its URL and branch", async () => {
+  const copy = vi.fn((_text: string) => Promise.resolve());
+  const openExternal = vi.fn((_url: string) => Promise.resolve({ ok: true }));
+  vi.stubGlobal("fleetd", { platform: "linux", copy, openExternal });
+  await mount([{ ...row(11, "open"), branch: "fleetd/T11-fix" }]);
+  const link = host.querySelector<HTMLAnchorElement>("a[data-pr='11']");
+  if (link === null) throw new Error("no row");
+  const choose = async (label: string) => {
+    act(() => {
+      link.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
+    });
+    const item = [...document.querySelectorAll<HTMLElement>("[role='menuitem']")].find((i) => i.textContent === label);
+    if (item === undefined) throw new Error(`no ${label}`);
+    act(() => item.click());
+    await act(() => Promise.resolve());
+  };
+  act(() => {
+    link.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
+  });
+  expect([...document.querySelectorAll("[role='menuitem']")].map((i) => i.textContent)).toEqual(["Open", "Open on GitHub", "Copy URL", "Copy branch"]);
+  act(() => {
+    document.querySelector("[role='menu']")?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  });
+  window.location.hash = "";
+  await choose("Open");
+  expect(window.location.hash).toBe(link.getAttribute("href"));
+  await choose("Open on GitHub");
+  expect(openExternal).toHaveBeenCalledWith("https://github.com/acme/storefront/pull/11");
+  await choose("Copy URL");
+  await choose("Copy branch");
+  expect(copy.mock.calls).toEqual([["https://github.com/acme/storefront/pull/11"], ["fleetd/T11-fix"]]);
+  vi.unstubAllGlobals();
+});

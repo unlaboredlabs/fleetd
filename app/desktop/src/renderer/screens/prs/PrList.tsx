@@ -1,12 +1,14 @@
 // The project's PRs, open ones by default, merged ones or all a click away: each row its title, and under it, quietly,
 // where it stands, its place in line, its checks and reviews, and its repo and number, a page at a time (Load more). A
-// row opens the PR in the list's place; ↑ and ↓ move between rows.
+// row opens the PR in the list's place; ↑ and ↓ move between rows. A row's right-click menu opens it here or on GitHub,
+// or copies its URL or branch.
 import { useMemo, useState, type KeyboardEvent } from "react";
 import type { ProjectRef } from "../../../shared/contracts";
 import type { PrRow } from "../../../shared/contracts";
-import { Button, StatusChip, Text, Truncate, VirtualList, cx } from "../../ui";
+import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSeparator, StatusChip, Text, Truncate, VirtualList, cx } from "../../ui";
 import { panelRoute, toHash } from "../shell/routes";
 import { ChecksMark, HintText, PaneEmpty, Segmented } from "./Bits";
+import { openExternal } from "./PrDetail";
 import { PR_FILTERS, emptyWords, filterCounts, listItems, rowMeta, type PrFilter } from "./listModel";
 import { checksWord, isOpen, when } from "./words";
 import s from "./prs.module.css";
@@ -138,35 +140,48 @@ function Row({ row, project, nowMs }: { row: PrRow; project: ProjectRef; nowMs: 
   const meta = rowMeta(row);
   const at = row.mergedAt ?? row.updatedAt;
   const full = row.checks === undefined ? undefined : checksWord(row.checks)?.text;
+  const href = prHref(project, row);
+  const branch = row.branch;
+  const menu = () => (
+    <>
+      <ContextMenuItem onSelect={() => (window.location.hash = href)}>Open</ContextMenuItem>
+      <ContextMenuItem onSelect={() => openExternal(row.url)}>Open on GitHub</ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuCopy text={row.url}>Copy URL</ContextMenuCopy>
+      {branch !== undefined ? <ContextMenuCopy text={branch}>Copy branch</ContextMenuCopy> : null}
+    </>
+  );
   return (
-    <a className={cx(s.row, !isOpen(row) && s.rowDone)} href={prHref(project, row)} data-pr={row.number}>
-      <span className={s.rowTop}>
-        <span className={s.rowTitle}>
-          <Truncate lines={2} expand="none" tone="inherit">
-            {row.title === "" ? `#${row.number}` : row.title}
-          </Truncate>
+    <ContextMenu menu={menu}>
+      <a className={cx(s.row, !isOpen(row) && s.rowDone)} href={href} data-pr={row.number}>
+        <span className={s.rowTop}>
+          <span className={s.rowTitle}>
+            <Truncate lines={2} expand="none" tone="inherit">
+              {row.title === "" ? `#${row.number}` : row.title}
+            </Truncate>
+          </span>
+          <span className={s.rowWhen}>
+            <Text size="xs" tone="faint" tabular>
+              {when(at, nowMs || Date.parse(at))}
+            </Text>
+          </span>
         </span>
-        <span className={s.rowWhen}>
-          <Text size="xs" tone="faint" tabular>
-            {when(at, nowMs || Date.parse(at))}
-          </Text>
+        <span className={s.rowMeta}>
+          <span className={s.metaParts}>
+            <StatusChip tone={meta.state.tone} inRow>
+              {meta.state.word}
+            </StatusChip>
+            {meta.place !== undefined ? <HintText hint={{ text: meta.place, tone: "quiet" }} /> : null}
+            {meta.checks !== undefined ? <ChecksMark hint={meta.checks} label={full} /> : null}
+            {meta.review !== undefined ? <HintText hint={meta.review} /> : null}
+          </span>
+          <span className={s.rowRef}>
+            <Text size="xs" tone="faint" tabular>
+              {meta.ref}
+            </Text>
+          </span>
         </span>
-      </span>
-      <span className={s.rowMeta}>
-        <span className={s.metaParts}>
-          <StatusChip tone={meta.state.tone} inRow>
-            {meta.state.word}
-          </StatusChip>
-          {meta.place !== undefined ? <HintText hint={{ text: meta.place, tone: "quiet" }} /> : null}
-          {meta.checks !== undefined ? <ChecksMark hint={meta.checks} label={full} /> : null}
-          {meta.review !== undefined ? <HintText hint={meta.review} /> : null}
-        </span>
-        <span className={s.rowRef}>
-          <Text size="xs" tone="faint" tabular>
-            {meta.ref}
-          </Text>
-        </span>
-      </span>
-    </a>
+      </a>
+    </ContextMenu>
   );
 }

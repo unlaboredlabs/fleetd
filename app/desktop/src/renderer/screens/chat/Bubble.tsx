@@ -1,14 +1,29 @@
 // A message as bubbles: the lead's on the left, yours on the right in the accent, a run from one author drawn as one
 // stack with the tail on its last bubble. A lead message the hub split shows one bubble per part, its blocks as
 // cards. While the lead writes, a typing bubble stands in for the text. Hovering a bubble shows its time and, on the
-// lead's, a tapback and Reply. A reply of yours shows the bubble it answers above it.
-import { Paperclip, Reply, SmilePlus } from "lucide-react";
+// lead's, a tapback and Reply; right-clicking one copies it, and on the lead's replies or reacts too. A reply of yours
+// shows the bubble it answers above it.
+import { Check, Paperclip, Reply, SmilePlus } from "lucide-react";
 import { useMemo, useRef, useState, type CSSProperties } from "react";
 import type { AttachmentRef } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
 import { useToolQuery } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
-import { Button, cx, Popover, PopoverContent, PopoverTrigger, Text, Tooltip, Truncate } from "../../ui";
+import {
+  Button,
+  ContextMenu,
+  ContextMenuCopy,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  cx,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+  Text,
+  Tooltip,
+  Truncate,
+} from "../../ui";
 import { useNow, useOnScreen } from "../live";
 import { useBubbleActions } from "./actions";
 import { fmtBytes } from "./attachments";
@@ -17,6 +32,7 @@ import { bubblesOf, isWide, quoteOf, TAPBACK_WORD, TAPBACKS, tapbackSend, type B
 import { MessageReceipt } from "./Composer";
 import { shortClock } from "./format";
 import { authorLabel, ENTER_MS, type Arrival, type Row } from "./model";
+import { plainText } from "./plain";
 import { markOf, useShown } from "./shown";
 import type { ProjectRef } from "./slots";
 import { bubbleKey, toggleTapback, useTapbacks } from "./tapbacks";
@@ -106,27 +122,30 @@ function TapbackPicker({ current, onPick }: { current: Tapback | undefined; onPi
         </PopoverTrigger>
       </Tooltip>
       {/* Above the bubble, or below it when there's no room above. Once the bubble scrolls out of the chat the
-          picker hides with it rather than following it past the window's edge. */}
-      <PopoverContent side="top" hideWhenDetached aria-label="Tapbacks">
-        <div className={s.picker}>
-          {TAPBACKS.map((t) => (
-            <button
-              key={t}
-              type="button"
-              className={s.pick}
-              aria-label={TAPBACK_WORD[t]}
-              aria-pressed={current === t}
-              title={TAPBACK_WORD[t]}
-              onClick={() => {
-                setOpen(false);
-                onPick(t);
-              }}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-      </PopoverContent>
+          picker hides with it rather than following it past the window's edge. Gone the moment it closes, as a
+          tooltip is: left to Radix, a closed picker stays until its entrance reports an end that may never come. */}
+      {open ? (
+        <PopoverContent side="top" hideWhenDetached aria-label="Tapbacks">
+          <div className={s.picker}>
+            {TAPBACKS.map((t) => (
+              <button
+                key={t}
+                type="button"
+                className={s.pick}
+                aria-label={TAPBACK_WORD[t]}
+                aria-pressed={current === t}
+                title={TAPBACK_WORD[t]}
+                onClick={() => {
+                  setOpen(false);
+                  onPick(t);
+                }}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        </PopoverContent>
+      ) : null}
     </Popover>
   );
 }
@@ -163,38 +182,68 @@ function BubbleLine(props: {
     const send = tapbackSend(t, bubble, actions.waitedOn === item.id, props.answer === undefined);
     if (send !== undefined) actions.send(send.text);
   };
+  const reply = () => actions?.reply({ id: item.id, part: Number(bubble.key), quote: quoteOf(bubble.text) });
+  const words = bubble.text.trim() !== "";
+  const answers = lead && actions !== undefined;
+  const menu = () => (
+    <>
+      {words ? (
+        <>
+          <ContextMenuCopy text={plainText(bubble.text)}>Copy text</ContextMenuCopy>
+          <ContextMenuCopy text={bubble.text.trim()}>Copy as Markdown</ContextMenuCopy>
+        </>
+      ) : null}
+      {words && answers ? <ContextMenuSeparator /> : null}
+      {answers ? (
+        <>
+          <ContextMenuItem icon={<Reply />} onSelect={reply}>
+            Reply
+          </ContextMenuItem>
+          <ContextMenuSub label="React" icon={<SmilePlus />}>
+            {TAPBACKS.map((t) => (
+              <ContextMenuItem key={t} icon={<span aria-hidden>{t}</span>} hint={props.tapback === t ? <Check aria-label="On" /> : undefined} onSelect={() => pick(t)}>
+                {TAPBACK_WORD[t]}
+              </ContextMenuItem>
+            ))}
+          </ContextMenuSub>
+        </>
+      ) : null}
+    </>
+  );
   return (
     <div className={cx(s.line, wide && s.wide, props.tapback !== undefined && s.reacted, enter.className)} style={enter.style}>
-      <div
-        ref={box}
-        // Focusable from script while it is what Show went to; not a tab stop of its own.
-        tabIndex={shown ? -1 : undefined}
-        className={cx(
-          !block && !jumbo && s.bubble,
-          !block && !jumbo && (mine ? s.mineBubble : s.theirs),
-          first && s.first,
-          last && s.last,
-          wide && s.wide,
-          block && s.blockBubble,
-          jumbo && s.jumbo,
-          shown && s.waited,
-        )}
-        data-bubble={block ? bubble.block.kind : "text"}
-        data-part={bubble.key}
-      >
-        {block ? <Block block={bubble.block} answer={props.answer} /> : jumbo ? bubble.text.trim() : <Message text={bubble.text} project={actions?.project} />}
-        {props.tapback !== undefined ? (
-          <span className={s.tapbacks} role="img" aria-label={`You reacted: ${TAPBACK_WORD[props.tapback]}`}>
-            {props.tapback}
-          </span>
-        ) : null}
-      </div>
+      <ContextMenu menu={menu} disabled={!words && !answers}>
+        <div
+          ref={box}
+          // Focusable from script while it is what Show went to; not a tab stop of its own.
+          tabIndex={shown ? -1 : undefined}
+          className={cx(
+            !block && !jumbo && s.bubble,
+            !block && !jumbo && (mine ? s.mineBubble : s.theirs),
+            first && s.first,
+            last && s.last,
+            wide && s.wide,
+            block && s.blockBubble,
+            jumbo && s.jumbo,
+            shown && s.waited,
+          )}
+          data-bubble={block ? bubble.block.kind : "text"}
+          data-part={bubble.key}
+        >
+          {block ? <Block block={bubble.block} answer={props.answer} /> : jumbo ? bubble.text.trim() : <Message text={bubble.text} project={actions?.project} />}
+          {props.tapback !== undefined ? (
+            <span className={s.tapbacks} role="img" aria-label={`You reacted: ${TAPBACK_WORD[props.tapback]}`}>
+              {props.tapback}
+            </span>
+          ) : null}
+        </div>
+      </ContextMenu>
       <span className={s.aside}>
         {lead && actions !== undefined ? (
           <>
             <TapbackPicker current={props.tapback} onPick={pick} />
             <Tooltip content="Reply">
-              <Button variant="quiet" iconOnly aria-label="Reply" onClick={() => actions.reply({ id: item.id, part: Number(bubble.key), quote: quoteOf(bubble.text) })}>
+              <Button variant="quiet" iconOnly aria-label="Reply" onClick={reply}>
                 <Reply />
               </Button>
             </Tooltip>

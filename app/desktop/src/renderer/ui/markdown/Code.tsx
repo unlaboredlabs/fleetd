@@ -3,6 +3,7 @@ import { memo, useEffect, useState, type ReactNode } from "react";
 import { copyText } from "../lib/clipboard";
 import { cx } from "../lib/cx";
 import { Button } from "../primitives/Button";
+import { ContextMenu, ContextMenuCopy } from "../primitives/ContextMenu";
 import { Tooltip } from "../primitives/Tooltip";
 import { Truncate } from "../text/Truncate";
 import { cachedTokens, canHighlight, highlight, resolveLang, type CodeLang, type Tokens } from "./highlighter";
@@ -51,7 +52,7 @@ export interface CodeProps {
   className?: string | undefined;
 }
 
-/** A block of machine text with syntax colours, a copy button and a wrap toggle. */
+/** A block of machine text with syntax colours, a copy button and a wrap toggle; its right-click menu copies it too. */
 export const Code = memo(function Code({ code, lang, title, wrap: initialWrap = true, bare, className }: CodeProps) {
   const grammar = resolveLang(lang);
   // Fences end in a newline; highlighting it would add an empty last line.
@@ -62,46 +63,48 @@ export const Code = memo(function Code({ code, lang, title, wrap: initialWrap = 
   const lines = tokens ?? text.split("\n");
 
   return (
-    <div className={cx(s.block, bare && s.noHead, className)}>
-      {bare ? null : (
-        <div className={s.head}>
-          <span className={s.title}>
-            <Truncate size="xs" tone="quiet">
-              {title ?? lang ?? "text"}
-            </Truncate>
-          </span>
-          <Tooltip content={wrap ? "Don't wrap lines" : "Wrap lines"}>
-            <Button variant="quiet" iconOnly aria-label={wrap ? "Don't wrap lines" : "Wrap lines"} aria-pressed={wrap} onClick={() => setWrap((w) => !w)}>
-              <WrapText />
-            </Button>
-          </Tooltip>
-          <Tooltip content={copied ? "Copied" : "Copy"}>
-            <Button
-              variant="quiet"
-              iconOnly
-              aria-label="Copy code"
-              onClick={() => {
-                void copyText(text).then((ok) => {
-                  setCopied(ok);
-                  if (ok) window.setTimeout(() => setCopied(false), 1500);
-                });
-              }}
-            >
-              {copied ? <Check /> : <Copy />}
-            </Button>
-          </Tooltip>
-        </div>
-      )}
-      <pre className={cx(s.pre, wrap ? s.wrap : s.nowrap)} data-text="code" tabIndex={wrap ? undefined : 0}>
-        <code>
-          {lines.map((line, i) => (
-            <span key={i} className={s.line}>
-              {typeof line === "string" ? line : renderTokens(line)}
+    <ContextMenu menu={() => <ContextMenuCopy text={text}>Copy code</ContextMenuCopy>}>
+      <div className={cx(s.block, bare && s.noHead, className)}>
+        {bare ? null : (
+          <div className={s.head}>
+            <span className={s.title}>
+              <Truncate size="xs" tone="quiet">
+                {title ?? lang ?? "text"}
+              </Truncate>
             </span>
-          ))}
-        </code>
-      </pre>
-    </div>
+            <Tooltip content={wrap ? "Don't wrap lines" : "Wrap lines"}>
+              <Button variant="quiet" iconOnly aria-label={wrap ? "Don't wrap lines" : "Wrap lines"} aria-pressed={wrap} onClick={() => setWrap((w) => !w)}>
+                <WrapText />
+              </Button>
+            </Tooltip>
+            <Tooltip content={copied ? "Copied" : "Copy"}>
+              <Button
+                variant="quiet"
+                iconOnly
+                aria-label="Copy code"
+                onClick={() => {
+                  void copyText(text).then((ok) => {
+                    setCopied(ok);
+                    if (ok) window.setTimeout(() => setCopied(false), 1500);
+                  });
+                }}
+              >
+                {copied ? <Check /> : <Copy />}
+              </Button>
+            </Tooltip>
+          </div>
+        )}
+        <pre className={cx(s.pre, wrap ? s.wrap : s.nowrap)} data-text="code" tabIndex={wrap ? undefined : 0}>
+          <code>
+            {lines.map((line, i) => (
+              <span key={i} className={s.line}>
+                {typeof line === "string" ? line : renderTokens(line)}
+              </span>
+            ))}
+          </code>
+        </pre>
+      </div>
+    </ContextMenu>
   );
 });
 

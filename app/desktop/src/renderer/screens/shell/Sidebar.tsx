@@ -2,12 +2,27 @@
 // you ("reply", "approve", "secret", "blocked") or how many agents work; a chat with a message you haven't seen is
 // bold. Then Status, Factory, Time, Machines and Settings (a project's agents and PRs are in the panel beside its chat); then
 // any update to make, and the hub (HubStatus). Holding ⌘ (Ctrl) shows jump numbers
-// on the first nine projects, which ⌘1..9 open.
+// on the first nine projects, which ⌘1..9 open. A project's right-click menu opens it or its settings, copies its
+// path, or removes it (RemoveProjectDialog asks first).
 import { Activity, Clock, Factory, Plus, Server, Settings } from "lucide-react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { HubState } from "../../../shared/hub";
 import { display, type ShortcutId } from "../../../shared/shortcuts";
-import { Button, Dot, Kbd, Sidebar as Frame, SidebarItem, SidebarSection, Text, Tooltip } from "../../ui";
+import {
+  Button,
+  ContextMenu,
+  ContextMenuCopy,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  Dot,
+  Kbd,
+  Sidebar as Frame,
+  SidebarItem,
+  SidebarSection,
+  Text,
+  Tooltip,
+} from "../../ui";
+import { RemoveProjectDialog, type RemoveTarget } from "../projects/RemoveProjectDialog";
 import { UpdatesLine } from "../updates";
 import { HubStatus } from "./HubStatus";
 import { routeOf, type SidebarProject } from "./model";
@@ -86,6 +101,21 @@ export function Sidebar({ projects, machinesDown, screen, hub, jumpHints, factor
     <SidebarItem label={label} icon={icon} current={current} trailing={trailing} onClick={() => go(target)} />
   );
   const open = screen.id === "project" ? screen.project : null;
+  const [removing, setRemoving] = useState<RemoveTarget | null>(null);
+  const menu = (p: SidebarProject) => () => {
+    const { machineId, projectId, title, workspaceRoot } = p.project;
+    return (
+      <>
+        <ContextMenuItem onSelect={() => go({ id: "project", project: routeOf(p), message: null })}>Open</ContextMenuItem>
+        <ContextMenuItem onSelect={() => go({ id: "settings", tab: "projects", for: p.key })}>Open settings</ContextMenuItem>
+        <ContextMenuCopy text={workspaceRoot}>Copy path</ContextMenuCopy>
+        <ContextMenuSeparator />
+        <ContextMenuItem danger onSelect={() => setRemoving({ machineId, projectId, title, path: workspaceRoot })}>
+          Remove project…
+        </ContextMenuItem>
+      </>
+    );
+  };
 
   return (
     <Frame
@@ -119,14 +149,15 @@ export function Sidebar({ projects, machinesDown, screen, hub, jumpHints, factor
           </Text>
         ) : (
           projects.map((p, i) => (
-            <SidebarItem
-              key={p.key}
-              label={p.project.title}
-              current={sameProject(open, p.project)}
-              emphasis={p.unread}
-              trailing={trailing(p, jumpHints && i < 9 ? i + 1 : null, asOf)}
-              onClick={() => go({ id: "project", project: routeOf(p), message: null })}
-            />
+            <ContextMenu key={p.key} menu={menu(p)}>
+              <SidebarItem
+                label={p.project.title}
+                current={sameProject(open, p.project)}
+                emphasis={p.unread}
+                trailing={trailing(p, jumpHints && i < 9 ? i + 1 : null, asOf)}
+                onClick={() => go({ id: "project", project: routeOf(p), message: null })}
+              />
+            </ContextMenu>
           ))
         )}
       </SidebarSection>
@@ -152,6 +183,7 @@ export function Sidebar({ projects, machinesDown, screen, hub, jumpHints, factor
           onClick={() => go({ id: "settings", tab: "general" })}
         />
       </SidebarSection>
+      <RemoveProjectDialog project={removing} onClose={() => setRemoving(null)} />
     </Frame>
   );
 }

@@ -1,13 +1,14 @@
 // The panel's Checklist tab: the project's to-dos as its lead keeps them (the lead's `checklist` tool), with how far
 // along they are, grouped as doing, to do and done; done folds away. Read-only: the lead changes it, and each change
-// (checklist.changed) reads it again, so it is live. An item's PR or agent opens in the panel.
+// (checklist.changed) reads it again, so it is live. An item's PR or agent opens in the panel, from its link or its
+// right-click menu.
 import { ChevronRight, Circle, CircleCheck, CircleDot } from "lucide-react";
 import { useState } from "react";
 import type { TodoItem, TodoState } from "../../../shared/contracts";
 import { useData, useToolQuery } from "../../src/data/react";
 import { selectLiveAgent } from "../../src/data/selectors";
 import { projectKey } from "../../src/data/store";
-import { Button, Dot, EmptyState, Text, cx } from "../../ui";
+import { Button, ContextMenu, ContextMenuItem, Dot, EmptyState, Text, cx } from "../../ui";
 import { panelRoute, toHash, type ProjectKey } from "../shell/routes";
 import { groupItems, openItems, progressOf, prOf, type ChecklistGroup } from "./model";
 import s from "./checklist.module.css";
@@ -150,23 +151,32 @@ function Row({ item, project }: { item: TodoItem; project: ProjectKey }) {
   const { icon: Icon, word } = MARK[item.state];
   const pr = item.link?.pr === undefined ? null : prOf(item.link.pr);
   const taskId = item.link?.taskId;
+  // Its right-click menu opens what it links to.
+  const menu = () => (
+    <>
+      {taskId !== undefined ? <ContextMenuItem onSelect={() => (window.location.hash = toHash(panelRoute(project, { tab: "agents", agent: taskId })))}>Open agent</ContextMenuItem> : null}
+      {pr !== null ? <ContextMenuItem onSelect={() => (window.location.hash = toHash(panelRoute(project, { tab: "prs", pr })))}>{`Open PR #${String(pr.number)}`}</ContextMenuItem> : null}
+    </>
+  );
   return (
-    <li className={s.row} data-state={item.state} data-item={item.id}>
-      <Icon className={s.mark} role="img" aria-label={word} />
-      <div className={s.main}>
-        <span className={s.text}>{item.text}</span>
-        {pr !== null || taskId !== undefined ? (
-          <span className={s.links}>
-            {taskId !== undefined ? <AgentLink project={project} laneId={taskId} /> : null}
-            {pr !== null ? (
-              <a className={s.link} href={toHash(panelRoute(project, { tab: "prs", pr }))}>
-                PR #{pr.number}
-              </a>
-            ) : null}
-          </span>
-        ) : null}
-      </div>
-    </li>
+    <ContextMenu menu={menu} disabled={pr === null && taskId === undefined}>
+      <li className={s.row} data-state={item.state} data-item={item.id}>
+        <Icon className={s.mark} role="img" aria-label={word} />
+        <div className={s.main}>
+          <span className={s.text}>{item.text}</span>
+          {pr !== null || taskId !== undefined ? (
+            <span className={s.links}>
+              {taskId !== undefined ? <AgentLink project={project} laneId={taskId} /> : null}
+              {pr !== null ? (
+                <a className={s.link} href={toHash(panelRoute(project, { tab: "prs", pr }))}>
+                  PR #{pr.number}
+                </a>
+              ) : null}
+            </span>
+          ) : null}
+        </div>
+      </li>
+    </ContextMenu>
   );
 }
 

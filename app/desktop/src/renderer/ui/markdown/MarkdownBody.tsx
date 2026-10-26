@@ -3,6 +3,7 @@
 import { memo, useMemo, type ReactElement, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { ContextMenu, ContextMenuCopy, ContextMenuItem } from "../primitives/ContextMenu";
 import { toast } from "../primitives/Toast";
 import { markdownBlocks } from "./blocks";
 import { Code, InlineCode } from "./Code";
@@ -10,25 +11,48 @@ import s from "./Markdown.module.css";
 
 const REMARK = [remarkGfm];
 
+const openLink = (href: string): void => {
+  void window.fleetd.openExternal(href).then((outcome) => {
+    if (!outcome.ok) toast({ title: "Link not opened", description: outcome.message, tone: "warning", key: "link-refused" });
+  });
+};
+
 /**
  * A link that main opens in the browser (window.fleetd.openExternal decides which links; nothing navigates the app).
  * A refused link says why in a toast. A link without a web address (react-markdown blanks unsafe schemes) is text.
+ * Its right-click menu opens or copies it.
  */
 function ExternalLink({ href, children }: { href: string | undefined; children: ReactNode }) {
   if (!href || !/^https?:\/\//i.test(href)) return <span>{children}</span>;
   return (
-    <a
-      href={href}
-      title={href}
-      onClick={(e) => {
-        e.preventDefault();
-        void window.fleetd.openExternal(href).then((outcome) => {
-          if (!outcome.ok) toast({ title: "Link not opened", description: outcome.message, tone: "warning", key: "link-refused" });
-        });
-      }}
+    <ContextMenu
+      menu={() => (
+        <>
+          <ContextMenuItem onSelect={() => openLink(href)}>Open link</ContextMenuItem>
+          <ContextMenuCopy text={href}>Copy link</ContextMenuCopy>
+        </>
+      )}
     >
-      {children}
-    </a>
+      <a
+        href={href}
+        title={href}
+        onClick={(e) => {
+          e.preventDefault();
+          openLink(href);
+        }}
+      >
+        {children}
+      </a>
+    </ContextMenu>
+  );
+}
+
+/** An app route (a PR in the panel, chat/format prLinks): the hash router follows it, and its menu opens it. */
+function AppLink({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <ContextMenu menu={() => <ContextMenuItem onSelect={() => (window.location.hash = href)}>Open link</ContextMenuItem>}>
+      <a href={href}>{children}</a>
+    </ContextMenu>
   );
 }
 
@@ -49,8 +73,8 @@ const COMPONENTS: Components = {
     return fence ? <Code code={fence.code} lang={fence.lang} /> : <pre>{children}</pre>;
   },
   code: ({ children }) => <InlineCode>{children}</InlineCode>,
-  // An app route (a PR in the panel, chat/format prLinks) stays in the app: the hash router follows it.
-  a: ({ href, children }) => (href?.startsWith("#/") ? <a href={href}>{children}</a> : <ExternalLink href={href}>{children}</ExternalLink>),
+  // An app route stays in the app.
+  a: ({ href, children }) => (href?.startsWith("#/") ? <AppLink href={href}>{children}</AppLink> : <ExternalLink href={href}>{children}</ExternalLink>),
   // No remote content: an image becomes its alt text as a link.
   img: ({ src, alt }) => <ExternalLink href={typeof src === "string" ? src : undefined}>{alt || "image"}</ExternalLink>,
   table: ({ children }) => (

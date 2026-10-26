@@ -1,12 +1,13 @@
 // Settings → Memory: what the leads remember, as the plain text files the hub keeps. user.md goes to every project's
 // lead and writers; a project's MEMORY.md (and the topic files it lists) only to that project's. The lead writes with
 // `remember`; here a person reads each file as a list of entries (one card per line, with where and when the lead
-// remembered it when the hub knows), edits or deletes one, and undoes a delete from its toast. "Edit as text" is the
-// whole file in a textarea. Every change is the file's new text through memory_set, a human key's write.
+// remembered it when the hub knows), edits or deletes one (its buttons, or its right-click menu), and undoes a delete
+// from its toast. "Edit as text" is the whole file in a textarea. Every change is the file's new text through
+// memory_set, a human key's write.
 import { Pencil, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { MemoryFile, MemoryNote, MemorySetInput, ProjectRef } from "../../../shared/contracts";
-import { Button, Field, Input, Separator, Text, Textarea, toast, Tooltip } from "../../ui";
+import { Button, ContextMenu, ContextMenuItem, Field, Input, Separator, Text, Textarea, toast, Tooltip } from "../../ui";
 import { useToolQuery } from "../../src/data/react";
 import { parseScope, projectRefOf, scopeKey, type Draft, type Scope } from "./editor";
 import { MemoryCaps } from "./MemoryCaps";
@@ -343,21 +344,35 @@ function EntryCard(props: {
     <li className={m.card} data-editing={draft !== null || undefined}>
       {draft === null ? (
         <>
-          <div className={m.cardBody}>
-            <Text className={m.entryText}>{line.text}</Text>
-            <div className={m.cardActions}>
-              <Tooltip content="Edit">
-                <Button variant="quiet" size="sm" iconOnly aria-label={`Edit “${line.text}”`} disabled={busy !== null} onClick={() => setDraft(line.text)}>
-                  <Pencil aria-hidden />
-                </Button>
-              </Tooltip>
-              <Tooltip content="Delete">
-                <Button variant="quiet" size="sm" iconOnly aria-label={`Delete “${line.text}”`} disabled={busy !== null} onClick={() => run("deleting", props.onDelete)}>
-                  <Trash2 aria-hidden />
-                </Button>
-              </Tooltip>
+          <ContextMenu
+            disabled={busy !== null}
+            menu={() => (
+              <>
+                <ContextMenuItem icon={<Pencil />} onSelect={() => setDraft(line.text)}>
+                  Edit
+                </ContextMenuItem>
+                <ContextMenuItem icon={<Trash2 />} danger onSelect={() => run("deleting", props.onDelete)}>
+                  Delete
+                </ContextMenuItem>
+              </>
+            )}
+          >
+            <div className={m.cardBody}>
+              <Text className={m.entryText}>{line.text}</Text>
+              <div className={m.cardActions}>
+                <Tooltip content="Edit">
+                  <Button variant="quiet" size="sm" iconOnly aria-label={`Edit “${line.text}”`} disabled={busy !== null} onClick={() => setDraft(line.text)}>
+                    <Pencil aria-hidden />
+                  </Button>
+                </Tooltip>
+                <Tooltip content="Delete">
+                  <Button variant="quiet" size="sm" iconOnly aria-label={`Delete “${line.text}”`} disabled={busy !== null} onClick={() => run("deleting", props.onDelete)}>
+                    <Trash2 aria-hidden />
+                  </Button>
+                </Tooltip>
+              </div>
             </div>
-          </div>
+          </ContextMenu>
           {line.note ? <Source note={line.note} /> : null}
         </>
       ) : (
