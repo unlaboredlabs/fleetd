@@ -271,6 +271,7 @@ jobs:
   desktop:
     # app/desktop, the Electron app (its own pnpm workspace): typecheck, lint, unit tests and a build. Runs when
     # app/desktop or this workflow changed; otherwise it reports success at once, so it can be a required check.
+    # desktop-packaged runs the packed app and its budgets beside it.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -328,6 +329,45 @@ jobs:
         # run against the real package in build-release.yml.
         if: steps.scope.outputs.run == 'true'
         run: pnpm debug-guard-check
+  desktop-packaged:
+    # The test build of app/desktop, packed and run: the nightly's smoke, the recordings and the Linux budgets. Same
+    # scope as desktop.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: app/desktop
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # A manual run from a branch compares with its merge base on main, so it needs the history.
+          fetch-depth: ${{ github.event_name == 'workflow_dispatch' && '0' || '2' }}
+      - name: Scope
+        id: scope
+        working-directory: .
+        run: |
+          run=true
+          base=$(git rev-parse -q --verify HEAD^1 || true)
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$GITHUB_REF" != refs/heads/main ]; then
+            base=$(git merge-base origin/main HEAD || true)
+          fi
+          if [ -n "$base" ] && git diff --quiet "$base" HEAD -- app/desktop .github/workflows/ci.yml; then
+            run=false
+            echo "app/desktop didn't change."
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+      - if: steps.scope.outputs.run == 'true'
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: app/desktop/package.json
+      - if: steps.scope.outputs.run == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: app/desktop/pnpm-lock.yaml
+      - if: steps.scope.outputs.run == 'true'
+        run: pnpm install --frozen-lockfile
       - name: Test build (DevTools-driven perf and recording)
         # The release build refuses --remote-debugging-port, which the perf and recording runs drive the app with.
         if: steps.scope.outputs.run == 'true'
