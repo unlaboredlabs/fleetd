@@ -136,20 +136,59 @@ impl Drop for Server {
     }
 }
 
-/// Ends an app a node that stopped left running, from its pid file: only a group whose leader still runs in `cwd`
-/// (on Linux, where /proc says so), so a reused pid is never hit.
+/// Ends an app a node that stopped left running, from the process group its pid file names: every member of that
+/// group, whether or not its leader (the `sh` the start command ran in) is still there. Only a group one of whose
+/// members still runs in `cwd`, the slot, so a group number the system gave to something else since is never hit.
 pub fn reap(pid_file: &Path, cwd: &Path) {
-    let Some(pid) = std::fs::read_to_string(pid_file)
+    let group = std::fs::read_to_string(pid_file)
         .ok()
-        .and_then(|s| s.trim().parse::<i32>().ok())
-    else {
-        let _ = std::fs::remove_file(pid_file);
-        return;
-    };
-    let here = std::fs::read_link(format!("/proc/{pid}/cwd")).ok();
-    if here.is_some_and(|dir| dir.starts_with(cwd)) {
-        let _ = killpg(Pid::from_raw(pid), Signal::SIGKILL);
-        tracing::info!(pid, "ended a preview a stopped node left running");
+        .and_then(|s| s.trim().parse::<i32>().ok());
+    if let Some(group) = group.filter(|g| *g > 1) {
+        let slot = cwd.canonicalize().unwrap_or_else(|_| cwd.to_owned());
+        let ours = group_members(group)
+            .into_iter()
+            .any(|pid| cwd_of(pid).is_some_and(|dir| dir.starts_with(&slot)));
+        if ours {
+            let _ = killpg(Pid::from_raw(group), Signal::SIGKILL);
+            tracing::info!(group, "ended a preview a stopped node left running");
+        }
     }
     let _ = std::fs::remove_file(pid_file);
+}
+
+/// The processes in process group `group`, from `ps` (Linux and macOS alike).
+fn group_members(group: i32) -> Vec<i32> {
+    let Ok(out) = std::process::Command::new("ps")
+        .args(["-A", "-o", "pid=,pgid="])
+        .stdin(Stdio::null())
+        .output()
+    else {
+        return Vec::new();
+    };
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace().map(|f| f.parse::<i32>().ok());
+            match (fields.next().flatten(), fields.next().flatten()) {
+                (Some(pid), Some(pgid)) if pgid == group => Some(pid),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
+/// Where a process runs: /proc on Linux, lsof elsewhere (macOS has no /proc).
+fn cwd_of(pid: i32) -> Option<PathBuf> {
+    if cfg!(target_os = "linux") {
+        return std::fs::read_link(format!("/proc/{pid}/cwd")).ok();
+    }
+    let out = std::process::Command::new("lsof")
+        .args(["-a", "-p", &pid.to_string(), "-d", "cwd", "-Fn"])
+        .stdin(Stdio::null())
+        .output()
+        .ok()?;
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .find_map(|l| l.strip_prefix('n'))
+        .map(PathBuf::from)
 }

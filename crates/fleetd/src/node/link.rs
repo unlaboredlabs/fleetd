@@ -526,18 +526,23 @@ async fn run_link_once(
                 .node_sessions
                 .spans_acked(ack.upto, ack.rewind == Some(true)),
             // Only to nodes listing CAP_PREVIEWS: a run is taken at once and reports as it goes.
+            // Off the link's loop: taking a run checks the hub's names with git.
             HubToNode::PreviewRun(run) => {
-                let result = match &shared.previews {
-                    Some(previews) => previews.run(run),
-                    None => fleetd_contracts::preview::PreviewRunResult {
-                        id: run.id,
-                        error: Some(fleetd_contracts::mcp::McpToolError::new(
-                            fleetd_contracts::mcp::ErrorCode::Invalid,
-                            "this machine runs no previews",
-                        )),
-                    },
-                };
-                let _ = tx.send(to_json(&NodeToHub::PreviewRunResult(result)));
+                let previews = shared.previews.clone();
+                let tx = tx.clone();
+                tokio::spawn(async move {
+                    let result = match previews {
+                        Some(previews) => previews.run(run).await,
+                        None => fleetd_contracts::preview::PreviewRunResult {
+                            id: run.id,
+                            error: Some(fleetd_contracts::mcp::McpToolError::new(
+                                fleetd_contracts::mcp::ErrorCode::Invalid,
+                                "this machine runs no previews",
+                            )),
+                        },
+                    };
+                    let _ = tx.send(to_json(&NodeToHub::PreviewRunResult(result)));
+                });
             }
             HubToNode::PreviewStop(stop) => {
                 if let Some(previews) = &shared.previews {

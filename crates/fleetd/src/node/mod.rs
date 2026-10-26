@@ -264,6 +264,9 @@ async fn run_node(
             Arc::new(move |id| sessions.project_workspace(id)),
         )
     });
+    if let Some(previews) = &previews {
+        node_sessions.set_previews(previews.clone());
+    }
     let _socket = lead::serve_lead_socket(
         lead::lead_socket_path(home),
         relay.clone(),
@@ -325,7 +328,7 @@ async fn run_node(
         () = shutdown_signal() => {
             node_sessions.shutdown().await;
             if let Some(previews) = &previews {
-                previews.stop_all();
+                previews.stop_all().await;
             }
             if let Some(broker) = &broker {
                 broker.shutdown().await;

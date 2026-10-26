@@ -22,7 +22,7 @@ use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::node_link::NodeToHub;
 use fleetd_contracts::preview::{
     PreviewEndReason, PreviewReport, PreviewRunFrame, PreviewRunResult, PreviewState,
-    PreviewStopFrame,
+    PreviewStopFrame, WebPreview,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, watch};
@@ -74,15 +74,24 @@ impl Default for Timing {
     }
 }
 
-/// Finds this machine on its tailnet, for the proxy.
-pub type DetectTailnet =
-    Arc<dyn Fn() -> proxy::BoxFuture<'static, std::io::Result<proxy::Config>> + Send + Sync>;
+/// Finds this machine on its tailnet, for the proxy, with the login whose devices it lets in (the hub owner's, when
+/// the hub names one).
+pub type DetectTailnet = Arc<
+    dyn Fn(Option<String>) -> proxy::BoxFuture<'static, std::io::Result<proxy::Config>>
+        + Send
+        + Sync,
+>;
 /// A project's checkout on this machine, by project id.
 pub type ProjectRoot = Arc<dyn Fn(&str) -> Option<PathBuf> + Send + Sync>;
 
-/// One running preview: how to end it.
+/// How long a node shutting down, or a project being removed, waits for its previews' apps to end.
+pub const END_WAIT: Duration = Duration::from_secs(10);
+
+/// One running preview: how to end it, and its task, to wait for.
 struct Live {
+    project: String,
     stop: watch::Sender<Option<PreviewEndReason>>,
+    task: Option<tokio::task::JoinHandle<()>>,
 }
 
 /// The node's previews.
@@ -124,7 +133,9 @@ impl Previews {
 
     /// The real service: projects from the node's store, the tailnet from tailscaled.
     pub fn for_node(home: &Path, config: &PreviewNodeConfig, root_of: ProjectRoot) -> Arc<Self> {
-        let detect: DetectTailnet = Arc::new(|| Box::pin(proxy::Config::detect()));
+        let detect: DetectTailnet = Arc::new(|owner| {
+            Box::pin(async move { proxy::Config::detect(owner.as_deref()).await })
+        });
         Self::new(home, config, root_of, detect, Timing::default())
     }
 
@@ -152,57 +163,48 @@ impl Previews {
         }
     }
 
-    /// `preview_run`: takes the run and answers at once; the run reports as it goes. The same preview again is
-    /// taken again without a second run.
-    pub fn run(self: &Arc<Self>, frame: PreviewRunFrame) -> PreviewRunResult {
+    /// `preview_run`: takes the run, or refuses it, and the run reports as it goes. The same preview again is taken
+    /// without a second run. Every git call here (the names' checks, the slot's pick) runs off the async threads.
+    pub async fn run(self: &Arc<Self>, frame: PreviewRunFrame) -> PreviewRunResult {
         let id = frame.id.clone();
         let refuse = |why: String| PreviewRunResult {
             id: id.clone(),
             error: Some(McpToolError::new(ErrorCode::Invalid, why)),
         };
         let preview_id = frame.preview_id.as_str().to_owned();
-        if self.runs.lock().unwrap().contains_key(&preview_id) {
-            return PreviewRunResult { id, error: None };
-        }
-        let Some(root) = (self.root_of)(frame.project_id.as_str()) else {
-            return refuse(format!(
-                "no project {} on this machine",
-                frame.project_id.as_str()
-            ));
-        };
-        let Some(web) = frame.web.clone() else {
-            return refuse("this machine runs web previews only".to_owned());
-        };
-        // What the hub names goes to git only once it is a full SHA or a branch name, never an option.
-        let checked = frame.heads.iter().try_for_each(|h| {
-            slots::check_sha(h.sha.as_str())?;
-            slots::check_branch(&root, h.branch.as_str())
-        });
-        let checked = checked.and_then(|()| {
-            frame
-                .base
-                .as_ref()
-                .map_or(Ok(()), |b| slots::check_branch(&root, b.as_str()))
-        });
-        if let Err(why) = checked {
-            return refuse(why);
-        }
-        let shas: Vec<&str> = frame.heads.iter().map(|h| h.sha.as_str()).collect();
-        let key = slots::key_of(frame.base.as_ref().map(|b| b.as_str()), &shas);
-        let dir = slots::project_dir(&self.home, frame.project_id.as_str());
-        let Some(slot) = self.slots.take(&dir, self.slots_per_project, &key) else {
-            return refuse(format!(
-                "{} previews of this project already run on this machine; end one first",
-                self.slots_per_project
-            ));
-        };
+        let project = frame.project_id.as_str().to_owned();
         let (stop, stopped) = watch::channel(None);
-        self.runs
-            .lock()
-            .unwrap()
-            .insert(preview_id.clone(), Live { stop });
+        {
+            let mut runs = self.runs.lock().unwrap();
+            if runs.contains_key(&preview_id) {
+                return PreviewRunResult { id, error: None };
+            }
+            runs.insert(
+                preview_id.clone(),
+                Live {
+                    project: project.clone(),
+                    stop,
+                    task: None,
+                },
+            );
+        }
+        let taken = {
+            let me = self.clone();
+            let frame = frame.clone();
+            tokio::task::spawn_blocking(move || me.take(&frame))
+                .await
+                .unwrap_or_else(|e| Err(e.to_string()))
+        };
+        let (root, web, key, slot) = match taken {
+            Ok(taken) => taken,
+            Err(why) => {
+                self.runs.lock().unwrap().remove(&preview_id);
+                return refuse(why);
+            }
+        };
         let me = self.clone();
-        tokio::spawn(async move {
+        let done = preview_id.clone();
+        let task = tokio::spawn(async move {
             run::run(
                 &me,
                 run::Run {
@@ -216,9 +218,46 @@ impl Previews {
             )
             .await;
             drop(slot);
-            me.runs.lock().unwrap().remove(&preview_id);
+            me.runs.lock().unwrap().remove(&done);
         });
+        if let Some(live) = self.runs.lock().unwrap().get_mut(&preview_id) {
+            live.task = Some(task);
+        }
         PreviewRunResult { id, error: None }
+    }
+
+    /// What a run needs before it starts, checked: the project's checkout, its web setting, the names the hub gave
+    /// (a full SHA, a branch name, never an option, before they reach git) and a free slot. Blocking: it runs git.
+    fn take(
+        &self,
+        frame: &PreviewRunFrame,
+    ) -> Result<(PathBuf, WebPreview, String, slots::Held), String> {
+        let root = (self.root_of)(frame.project_id.as_str())
+            .ok_or_else(|| format!("no project {} on this machine", frame.project_id.as_str()))?;
+        let web = frame
+            .web
+            .clone()
+            .ok_or_else(|| "this machine runs web previews only".to_owned())?;
+        for h in frame.heads.iter() {
+            slots::check_sha(h.sha.as_str())?;
+            slots::check_branch(&root, h.branch.as_str())?;
+        }
+        if let Some(base) = &frame.base {
+            slots::check_branch(&root, base.as_str())?;
+        }
+        let shas: Vec<&str> = frame.heads.iter().map(|h| h.sha.as_str()).collect();
+        let key = slots::key_of(frame.base.as_ref().map(|b| b.as_str()), &shas);
+        let dir = slots::project_dir(&self.home, frame.project_id.as_str());
+        let slot = self
+            .slots
+            .take(&dir, self.slots_per_project, &key)
+            .ok_or_else(|| {
+                format!(
+                    "{} previews of this project already run on this machine; end one first",
+                    self.slots_per_project
+                )
+            })?;
+        Ok((root, web, key, slot))
     }
 
     /// `preview_stop`: ends the run. One the node doesn't know (it restarted, or it ended already) is reported ended,
@@ -248,10 +287,39 @@ impl Previews {
         }
     }
 
-    /// Ends every preview, for a node shutting down.
-    pub fn stop_all(&self) {
-        for live in self.runs.lock().unwrap().values() {
-            let _ = live.stop.send(Some(PreviewEndReason::Lost));
+    /// Ends the previews `which` picks with `reason`, and waits up to [`END_WAIT`] for their apps to end.
+    async fn end_where(&self, which: impl Fn(&Live) -> bool, reason: PreviewEndReason) {
+        let tasks: Vec<tokio::task::JoinHandle<()>> = {
+            let mut runs = self.runs.lock().unwrap();
+            runs.values_mut()
+                .filter(|l| which(l))
+                .filter_map(|l| {
+                    let _ = l.stop.send(Some(reason));
+                    l.task.take()
+                })
+                .collect()
+        };
+        let _ = tokio::time::timeout(END_WAIT, futures_util::future::join_all(tasks)).await;
+    }
+
+    /// Ends every preview, for a node shutting down, and waits a little for their apps to end.
+    pub async fn stop_all(&self) {
+        self.end_where(|_| true, PreviewEndReason::Lost).await;
+    }
+
+    /// A project removed from this machine: its previews end, and its preview worktrees go (they hold no work).
+    pub async fn forget_project(&self, project_id: &str, root: &Path) {
+        self.end_where(|l| l.project == project_id, PreviewEndReason::Done)
+            .await;
+        let dir = slots::project_dir(&self.home, project_id);
+        let root = root.to_owned();
+        let removed = tokio::task::spawn_blocking(move || {
+            reap_project(&dir);
+            super::worktree::remove_all(&root, &dir)
+        })
+        .await;
+        if let Ok(Err(e)) = removed {
+            tracing::warn!(project_id, error = %e.0, "preview worktrees not removed");
         }
     }
 
@@ -267,14 +335,19 @@ fn reap_all(home: &Path) {
         return;
     };
     for project in projects.flatten() {
-        let Ok(entries) = std::fs::read_dir(project.path()) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().is_some_and(|e| e == "pid") {
-                serve::reap(&path, &path.with_extension(""));
-            }
+        reap_project(&project.path());
+    }
+}
+
+/// Ends the apps left in one project's preview worktrees, by the process groups their pid files name.
+fn reap_project(dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().is_some_and(|e| e == "pid") {
+            serve::reap(&path, &path.with_extension(""));
         }
     }
 }

@@ -233,12 +233,18 @@ pub async fn run(
 
     // Check out.
     r.begin(plan.checkout);
-    let checkout = {
+    let mut checkout = {
         let (root, slot, frame) = (run.root.clone(), slot.to_owned(), run.frame.clone());
         tokio::task::spawn_blocking(move || check_out(&root, &slot, &frame))
     };
-    match or_stop(&mut stopped, checkout).await {
-        Err(reason) => return ended(reason),
+    match or_stop(&mut stopped, &mut checkout).await {
+        // git can't be stopped from here: it ends (a fetch within its limit) before the slot is free again, so the
+        // next preview never finds its lock or a merge half done. The slot no longer counts as holding these commits.
+        Err(reason) => {
+            let _ = checkout.await;
+            slots::set_key(slot, None);
+            return ended(reason);
+        }
         Ok(Ok(Ok(head))) => {
             slots::set_key(slot, Some(&run.key));
             r.p.lock().unwrap().head = Some(head.clone());
@@ -461,13 +467,13 @@ pub async fn run(
 
     // Open it to the person's devices.
     r.begin(plan.open);
-    let proxied = match (me.detect)().await {
-        Ok(mut config) => {
-            if let Some(owner) = &run.frame.owner_login {
-                config.owner = owner.as_str().to_owned();
-            }
-            proxy::Proxy::start(&config, server.port).await
-        }
+    let owner = run
+        .frame
+        .owner_login
+        .as_ref()
+        .map(|o| o.as_str().to_owned());
+    let proxied = match (me.detect)(owner).await {
+        Ok(config) => proxy::Proxy::start(&config, server.port).await,
         Err(e) => Err(e),
     };
     let (proxy, note) = match proxied {
@@ -564,10 +570,17 @@ fn slot_name(slot: &Path) -> String {
         .unwrap_or_default()
 }
 
-/// Puts the slot at what the frame asks for, and answers the commit it is at.
+/// Puts the slot at what the frame asks for, and answers the commit it is at. The refs its fetches made go after.
 fn check_out(root: &Path, slot: &Path, frame: &PreviewRunFrame) -> Result<String, String> {
-    for h in frame.heads.iter() {
-        slots::fetch(root, h.branch.as_str(), h.sha.as_str())?;
+    let out = check_out_with(root, slot, frame);
+    slots::drop_refs(root, frame.preview_id.as_str());
+    out
+}
+
+fn check_out_with(root: &Path, slot: &Path, frame: &PreviewRunFrame) -> Result<String, String> {
+    let id = frame.preview_id.as_str();
+    for (n, h) in frame.heads.iter().enumerate() {
+        slots::fetch(root, id, n, h.branch.as_str(), h.sha.as_str())?;
     }
     match &frame.base {
         None => {
@@ -579,7 +592,7 @@ fn check_out(root: &Path, slot: &Path, frame: &PreviewRunFrame) -> Result<String
             slots::checkout(root, slot, sha)?;
         }
         Some(base) => {
-            let base_sha = slots::fetch_base(root, base.as_str())?;
+            let base_sha = slots::fetch_base(root, id, base.as_str())?;
             slots::checkout(root, slot, &base_sha)?;
             for h in frame.heads.iter() {
                 slots::merge(slot, h.branch.as_str(), h.sha.as_str())?;

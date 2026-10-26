@@ -139,12 +139,28 @@ pub fn check_branch(root: &Path, branch: &str) -> Result<(), String> {
     }
 }
 
-/// Fetches `branch` from the checkout's origin, and checks `sha` is there after it.
-pub fn fetch(root: &Path, branch: &str, sha: &str) -> Result<(), String> {
+/// Where a preview's fetches land in the project's checkout: a ref of its own, so nothing else fetching there (an
+/// agent, another preview) can change what it reads, as `FETCH_HEAD` could.
+fn preview_ref(preview_id: &str, name: &str) -> String {
+    format!("refs/fleetd/preview/{preview_id}/{name}")
+}
+
+/// Fetches `branch` from the checkout's origin into the preview's own ref, and checks `sha` is there after it.
+pub fn fetch(
+    root: &Path,
+    preview_id: &str,
+    n: usize,
+    branch: &str,
+    sha: &str,
+) -> Result<(), String> {
     if !has_commit(root, sha) {
+        let spec = format!(
+            "+refs/heads/{branch}:{}",
+            preview_ref(preview_id, &format!("head-{n}"))
+        );
         worktree::git_remote(
             root,
-            &["fetch", "--no-tags", "origin", "--", branch],
+            &["fetch", "--no-tags", "origin", "--", &spec],
             FETCH_TIMEOUT,
         )
         .map_err(|GitError(e)| format!("couldn't fetch {branch}: {e}"))?;
@@ -159,17 +175,32 @@ pub fn fetch(root: &Path, branch: &str, sha: &str) -> Result<(), String> {
     }
 }
 
-/// The commit `origin/<base>` is at, fetched now.
-pub fn fetch_base(root: &Path, base: &str) -> Result<String, String> {
+/// The commit `base` is at on origin, fetched now into the preview's own ref.
+pub fn fetch_base(root: &Path, preview_id: &str, base: &str) -> Result<String, String> {
+    let to = preview_ref(preview_id, "base");
+    let spec = format!("+refs/heads/{base}:{to}");
     worktree::git_remote(
         root,
-        &["fetch", "--no-tags", "origin", "--", base],
+        &["fetch", "--no-tags", "origin", "--", &spec],
         FETCH_TIMEOUT,
     )
     .map_err(|GitError(e)| format!("couldn't fetch {base}: {e}"))?;
-    worktree::git(root, &["rev-parse", "FETCH_HEAD^{commit}"])
-        .map(|s| s.trim().to_owned())
-        .map_err(|GitError(e)| e)
+    worktree::git(
+        root,
+        &["rev-parse", "--verify", "-q", &format!("{to}^{{commit}}")],
+    )
+    .map(|s| s.trim().to_owned())
+    .map_err(|GitError(e)| e)
+}
+
+/// Drops the refs the preview's fetches made; its worktree's HEAD keeps what it checked out.
+pub fn drop_refs(root: &Path, preview_id: &str) {
+    let prefix = format!("refs/fleetd/preview/{preview_id}/");
+    let refs =
+        worktree::git(root, &["for-each-ref", "--format=%(refname)", &prefix]).unwrap_or_default();
+    for name in refs.lines().filter(|n| n.starts_with(&prefix)) {
+        let _ = worktree::git(root, &["update-ref", "-d", name]);
+    }
 }
 
 fn has_commit(root: &Path, sha: &str) -> bool {

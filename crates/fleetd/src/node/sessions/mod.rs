@@ -558,6 +558,8 @@ struct Inner {
     /// The node's browser broker, once it runs: a lead's and a task's claude get agent-browser pointed at their
     /// session, and their browser commands are logged.
     browser: std::sync::OnceLock<Arc<dyn crate::node::browser::SessionHooks>>,
+    /// The node's previews: a removed project's end, and its preview worktrees go.
+    previews: std::sync::OnceLock<Arc<crate::node::preview::Previews>>,
 }
 
 /// A project's file list and when it was read.
@@ -673,6 +675,10 @@ impl SessionService {
         let _ = self.inner.browser.set(hooks);
     }
 
+    pub fn set_previews(&self, previews: Arc<crate::node::preview::Previews>) {
+        let _ = self.inner.previews.set(previews);
+    }
+
     /// Opens the service over `store`, settling what a previous node process left: recorded claude processes are
     /// killed (only when pid and start time still match) and their active runs closed as interrupted.
     pub async fn start(
@@ -697,6 +703,7 @@ impl SessionService {
                 running: watch::Sender::new(0),
                 span_wake: Arc::new(tokio::sync::Notify::new()),
                 browser: std::sync::OnceLock::new(),
+                previews: std::sync::OnceLock::new(),
             }),
         };
         let rows = service.inner.store.sessions()?;
@@ -3132,6 +3139,12 @@ impl SessionService {
                 live.join(", "),
                 REMOVE_WAIT.as_secs()
             )));
+        }
+        // Its previews end and their worktrees go whatever `remove_worktrees` says: they hold no work.
+        if let (Some(previews), Ok(root)) =
+            (self.inner.previews.get(), self.project_root(project_id))
+        {
+            previews.forget_project(project_id.as_str(), &root).await;
         }
         // Only once every process of the project has exited: none still works in a worktree that goes.
         if remove_worktrees {
