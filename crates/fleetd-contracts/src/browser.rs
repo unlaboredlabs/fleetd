@@ -355,8 +355,10 @@ pub struct SessionStartCall {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SessionEndCall {}
 
-/// `fill_credential`: the node reads a 1Password reference and types its value into the page; the value never comes
-/// back.
+/// `fill_credential`: the node reads a 1Password reference and types its value into the page, only on the item's own
+/// website, then submits the field's form in the same step; the value never comes back. From the first fill on, the
+/// session refuses whatever would read a filled value back.
+#[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct FillCredentialCall {
     /// A 1Password secret reference: `op://<vault>/<item>/<field>`, `?attribute=otp` for a one-time code.
@@ -364,6 +366,9 @@ pub struct FillCredentialCall {
     pub reference: OpReference,
     /// The field to fill: a CSS selector (`input[name=password]`, `#otp`).
     pub target: Text<1, 500>,
+    /// False to fill without submitting, for a field before the last of its form (a username before its password).
+    /// Absent: true.
+    pub submit: Option<bool>,
 }
 
 brand!(

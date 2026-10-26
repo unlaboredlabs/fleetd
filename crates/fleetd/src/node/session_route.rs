@@ -160,6 +160,15 @@ impl SessionHooks for Router {
         self.broker.as_ref().and_then(|b| b.plugin_dir())
     }
 
+    /// What this node's broker filled into the agent's sessions here.
+    // TODO(T534, sealed secrets): a session hosted on another machine fills there, so its values aren't masked in
+    // this agent's reports yet. Remote placement is off by default (D163).
+    fn filled_since(&self, thread: &str, known: usize) -> Option<crate::node::mask::Secrets> {
+        self.broker
+            .as_ref()
+            .and_then(|b| SessionHooks::filled_since(b.as_ref(), thread, known))
+    }
+
     /// The agent's claude exited: its session ends, here or on the machine hosting it.
     fn ended(&self, thread: &str) {
         let Some(broker) = &self.broker else {

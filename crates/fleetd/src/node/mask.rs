@@ -175,6 +175,20 @@ impl Masker {
         masker
     }
 
+    /// This masker with `other`'s forms too.
+    pub fn and(mut self, mut other: Masker) -> Self {
+        for (mut pattern, shown) in std::mem::take(&mut other.patterns) {
+            if self.patterns.iter().any(|(p, _)| *p == pattern) {
+                pattern.zeroize();
+            } else {
+                self.patterns.push((pattern, shown));
+            }
+        }
+        self.patterns
+            .sort_by_key(|(p, _)| std::cmp::Reverse(p.len()));
+        self
+    }
+
     pub fn is_empty(&self) -> bool {
         self.patterns.is_empty()
     }
@@ -312,6 +326,18 @@ impl Masker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn two_maskers_together_mask_both_and_the_longer_form_first() {
+        let base = Masker::new(&[("KEY".into(), "abcd-1234".into())]);
+        let filled = Masker::thorough(&[("op://T/I/password".into(), "abcd-1234-xyz".into())]);
+        let both = base.and(filled);
+        assert_eq!(
+            both.text("a abcd-1234-xyz b abcd-1234"),
+            "a ***op://T/I/password*** b ***KEY***"
+        );
+        assert!(Masker::default().and(Masker::default()).is_empty());
+    }
 
     #[test]
     fn a_thorough_masker_also_catches_what_a_script_posts_with_plus_for_space() {

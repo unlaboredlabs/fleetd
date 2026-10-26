@@ -200,6 +200,22 @@ jobs:
         run: cargo test --locked -p fleetd --lib node::identity
         env:
           FLEETD_REQUIRE_NODE_SEAL: "1"
+      - name: agent-browser's own scripts run in a session that filled a login
+        # The pinned agent-browser (agent_browser.rs's VERSION), on the runner's Chrome: every script its commands
+        # send is one of the pinned shapes (agent_browser_shapes.json) and a sealed session runs it, and its commands
+        # work after a fill. FLEETD_REQUIRE_AGENT_BROWSER makes these tests fail, not skip, without it or a Chrome.
+        run: |
+          version="$(sed -n 's/^pub const VERSION: &str = "\(.*\)";$/\1/p' crates/fleetd/src/node/browser/agent_browser.rs)"
+          npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/agent-browser" "agent-browser@$version"
+          # The package carries each platform's binary itself; its install script only links one, so skipping it
+          # leaves them all in bin/. Fail here, plainly, if this one isn't there or doesn't run.
+          bin="$RUNNER_TEMP/agent-browser/node_modules/agent-browser/bin/agent-browser-linux-x64"
+          test -f "$bin" || { ls -l "$(dirname "$bin")"; echo "no $bin in agent-browser@$version" >&2; exit 1; }
+          chmod +x "$bin"
+          "$bin" --version | grep -F "$version"
+          FLEETD_TEST_AGENT_BROWSER="$bin" cargo test --locked -p fleetd --lib agent_browser
+        env:
+          FLEETD_REQUIRE_AGENT_BROWSER: "1"
 
   rust-macos:
     # rust (linux)'s sealed boxes on macOS, and the node's power code (IOKit).

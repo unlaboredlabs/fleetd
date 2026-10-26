@@ -705,6 +705,10 @@ fn example(role: Role, tool: &str) -> Option<Value> {
         (_, "request_takeover") => json!({
             "reason": "Solve the captcha on the signup page, then hand the browser back",
         }),
+        (_, "fill_credential") => json!({
+            "ref": "op://Staging/Shop admin/password",
+            "target": "input[name=password]",
+        }),
         _ => return None,
     })
 }

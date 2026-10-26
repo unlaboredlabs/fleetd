@@ -129,6 +129,53 @@ async fn an_order_variable_reaches_only_that_orders_agents_from_their_next_turn(
     assert_eq!(var(&last, "DB_URL"), None);
 }
 
+/// The 1Password service account token, entered as an order variable, is the node's: no agent's environment holds
+/// it, its brief names it only as the node's and points at fill_credential, and it is still masked.
+#[tokio::test]
+async fn the_1password_token_stays_with_the_node_and_out_of_every_agents_environment() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("node");
+    let mut node = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    node.project(dir.path()).await;
+    let token = "ops_eyJzaWduSW5BZGRyZXNzIjoibXkuMXBhc3N3b3JkLmNvbSJ9";
+    deliver(&home, "W1", "OP_SERVICE_ACCOUNT_TOKEN", token);
+    deliver(&home, "W1", "DB_URL", "postgres://w1:pw-81f2@db/x");
+    node.ok(in_order("a", "W1", SessionWorkspace::Root)).await;
+    node.settled("a-r1").await;
+    let spawned = node.runner.spawned();
+    assert_eq!(var(&spawned[0], "OP_SERVICE_ACCOUNT_TOKEN"), None);
+    assert!(spawned[0].env.iter().all(|(_, v)| !v.contains(token)));
+    assert_eq!(
+        var(&spawned[0], "DB_URL"),
+        Some("postgres://w1:pw-81f2@db/x"),
+        "the order's other variables do reach it"
+    );
+    let brief = node
+        .service
+        .store()
+        .message("a", "a-r1")
+        .unwrap()
+        .unwrap()
+        .text;
+    assert!(
+        brief.contains("`OP_SERVICE_ACCOUNT_TOKEN` is set, for this machine's node only")
+            && brief.contains("fill_credential")
+            && !brief.contains("`OP_SERVICE_ACCOUNT_TOKEN` (secret)")
+            && !brief.contains(token),
+        "{brief}"
+    );
+    let masker = node.service.call_masker("a").unwrap();
+    assert_eq!(
+        masker.text(&format!("token={token}")),
+        "token=***OP_SERVICE_ACCOUNT_TOKEN***"
+    );
+}
+
 /// A project secret pasted into an `ask_lead` (or any fleetd call of a session) goes out over the link masked: the
 /// hub gets, and so stores and shows, `***NAME***`. A call whose masked form no longer fits is refused, never sent.
 #[tokio::test]
