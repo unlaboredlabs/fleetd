@@ -2855,3 +2855,74 @@ fn only_leads_and_workers_get_fleetds_agent_tools() {
         assert_eq!(servers(role)["fleetd"]["alwaysLoad"], true);
     }
 }
+
+/// `fleetd update` replaces the binary while the node runs on (W23): every session spawned after that still gets a
+/// fleetd agent server claude can start, the node's own binary, not the one now at its path. This test binary plays
+/// the node: a copy of it runs [`agent_server_child`], and the copy is replaced on disk under it.
+#[cfg(target_os = "linux")]
+#[test]
+fn the_agent_server_starts_after_an_update_replaced_the_node_binary() {
+    use std::io::Write;
+    let dir = tempfile::tempdir().unwrap();
+    let node = dir.path().join("fleetd");
+    std::fs::copy(std::env::current_exe().unwrap(), &node).unwrap();
+    let child = format!(
+        "{}::agent_server_child",
+        module_path!().split_once("::").unwrap().1
+    );
+    let mut run = std::process::Command::new(&node)
+        .args([
+            &child,
+            "--exact",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env("FLEETD_TEST_AGENT_SERVER_CHILD", "1")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    // As `fleetd update` installs: a new file renamed over the running one. What runs at the path now fails.
+    let new = dir.path().join("fleetd.new");
+    std::fs::write(&new, "#!/bin/sh\nexit 3\n").unwrap();
+    std::fs::set_permissions(&new, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    std::fs::rename(&new, &node).unwrap();
+    run.stdin.take().unwrap().write_all(b"go\n").unwrap();
+    let out = run.wait_with_output().unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success() && text.contains("1 passed"),
+        "{text}{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// The node's side of the test above: once its binary is replaced, the command its sessions get starts, and it is
+/// this binary still (a test binary lists its tests).
+#[test]
+#[ignore = "run by the_agent_server_starts_after_an_update_replaced_the_node_binary"]
+fn agent_server_child() {
+    use fleetd_contracts::sessions::SessionRole;
+    if std::env::var_os("FLEETD_TEST_AGENT_SERVER_CHILD").is_none() {
+        return;
+    }
+    std::io::stdin().read_line(&mut String::new()).unwrap();
+    let config: serde_json::Value = serde_json::from_str(&mcp_config(
+        SessionRole::Worker,
+        Path::new("/n/node.sock"),
+        "s1",
+    ))
+    .unwrap();
+    let command = config["mcpServers"]["fleetd"]["command"].as_str().unwrap();
+    let listed = std::process::Command::new(command)
+        .args(["--list", "--ignored"])
+        .output()
+        .unwrap_or_else(|e| panic!("claude can't start {command:?}: {e}"));
+    assert!(
+        listed.status.success(),
+        "{command:?} is not this binary: {listed:?}"
+    );
+    assert!(String::from_utf8_lossy(&listed.stdout).contains("agent_server_child"));
+}

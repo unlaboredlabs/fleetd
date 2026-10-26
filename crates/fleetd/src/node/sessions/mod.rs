@@ -285,9 +285,7 @@ fn mcp_config(role: SessionRole, sock: &Path, session_id: &str) -> String {
     let servers = match role.cli_arg() {
         None => serde_json::json!({}),
         Some(role) => {
-            let exe = std::env::current_exe()
-                .map(|p| p.to_string_lossy().into_owned())
-                .unwrap_or_else(|_| "fleetd".into());
+            let exe = agent_exe(std::env::current_exe(), std::process::id());
             serde_json::json!({ crate::cli::agent_mcp::SERVER_NAME: {
                 "type": "stdio",
                 "command": exe,
@@ -301,6 +299,18 @@ fn mcp_config(role: SessionRole, sock: &Path, session_id: &str) -> String {
         }
     };
     format!("{}\n", serde_json::json!({ "mcpServers": servers }))
+}
+
+/// The command for `fleetd agent-mcp`: the node's own running binary, which speaks the node's socket. Once `fleetd
+/// update` replaces that binary on disk while the node keeps running, Linux names it `<path> (deleted)`, a file that
+/// doesn't exist: claude can't start the server (`ENOENT`) and every session from then on goes without fleetd's tools.
+/// `/proc/<pid>/exe` still opens the running binary for as long as the node lives, and its sessions don't outlive it.
+fn agent_exe(exe: std::io::Result<PathBuf>, pid: u32) -> String {
+    match exe {
+        Ok(path) if !path.exists() && cfg!(target_os = "linux") => format!("/proc/{pid}/exe"),
+        Ok(path) => path.to_string_lossy().into_owned(),
+        Err(_) => "fleetd".into(),
+    }
 }
 
 /// fleetd's settings overlay (`--settings`). claude ranks it above the user's own settings, so a user's `env` or

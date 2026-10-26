@@ -4,9 +4,11 @@
 //! verdicts bound to the Change's current patch id count. Blocking findings go back to the author task and the Change
 //! waits for a new head, which the train brings back here with its new patch id.
 //!
-//! A reviewer that ends without a verdict is replaced, `RETRIES` times per patch, then the lead is told. A reviewer
-//! still on an older patch when the Change moves on is stopped, and what it reports later is ignored. A new patch that
-//! only drops commits already on the base from an approved head keeps that approval (`carry`).
+//! A reviewer that ends without a recorded verdict never counts as approval, whatever its final text says: the train
+//! and the lead see "verdict not recorded" with that text, and a new reviewer starts, `RETRIES` times per patch, then
+//! no more until a new head. A reviewer still on an older patch when the Change moves on is stopped, and what it
+//! reports later is ignored. A new patch that only drops commits already on the base from an approved head keeps that
+//! approval (`carry`).
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex, Weak};
 
@@ -29,7 +31,8 @@ use crate::hub::train::service::{ReviewGate, Train, Verdict, lock, short};
 pub const REVIEWS_BY: &str = "hub:reviews";
 
 /// New reviewers started for one patch after one ended without a verdict, before the gate stops and tells the lead.
-const RETRIES: usize = 2;
+/// One: a reviewer that can't record (its fleetd tools server down) fails the same way again, and each costs a slot.
+const RETRIES: usize = 1;
 /// The most commits landed on the base since an approved head whose patches are read to find its dropped commits.
 const LANDED_MAX: usize = 100;
 
@@ -438,7 +441,7 @@ impl Reviews {
 
     /// Where the review of the Change's patch stands, starting what it lacks: a stale reviewer is stopped, a carried
     /// approval or a new reviewer is tried when none was started, and a reviewer that ended without a verdict is
-    /// replaced up to `RETRIES` times, then the lead is told. Under the gate's lock.
+    /// replaced up to `RETRIES` times, the lead told each time. Under the gate's lock.
     async fn round(&self, change: &Change, patch_id: &str) -> Verdict {
         self.supersede(change, patch_id).await;
         let (before, reviews) = self.gate_for(change, patch_id);
@@ -465,14 +468,33 @@ impl Reviews {
         if tries > RETRIES {
             self.stalled(change, patch_id, last, tries).await;
         } else if let Some(next) = self.spawn_reviewer(change, patch_id).await {
+            let tail = self.final_text(last);
             self.note(
                 &change.change_id,
                 &format!(
-                    "the reviewer {last} ended without a review verdict; {next} reviews it again (retry {tries} of {RETRIES})"
+                    "verdict not recorded: the reviewer {last} ended without one, saying \"{}\"; {next} reviews it again (retry {tries} of {RETRIES})",
+                    one_line(&tail, 200)
                 ),
             );
+            let line = Event::PrReviewNotRecorded {
+                change: change.change_id.as_str(),
+                pr_url: change.pr_url.as_str(),
+                task: last,
+                next: &next,
+                tail: &tail,
+            }
+            .render();
+            self.host.wake_lead(&change.project_ref, line).await;
         }
         Verdict::Pending
+    }
+
+    /// The reviewer's final text, which may well say it approved: only a recorded verdict counts.
+    fn final_text(&self, task: &str) -> String {
+        self.host
+            .task(&TaskId::unchecked(task))
+            .and_then(|t| t.result_tail)
+            .unwrap_or_default()
     }
 
     /// `carry`, read from GitHub once per patch unless the read failed.
@@ -509,15 +531,11 @@ impl Reviews {
         self.note(
             &change.change_id,
             &format!(
-                "the reviewer {last} ended without a review verdict; {tries} reviewers of patch {} did, so no more start until a new head; the lead was told",
+                "verdict not recorded: the reviewer {last} ended without one; {tries} reviewers of patch {} did, so no more start until a new head; the lead was told",
                 short(patch_id)
             ),
         );
-        let tail = self
-            .host
-            .task(&TaskId::unchecked(last))
-            .and_then(|t| t.result_tail)
-            .unwrap_or_default();
+        let tail = self.final_text(last);
         let line = Event::PrReviewStalled {
             change: change.change_id.as_str(),
             pr_url: change.pr_url.as_str(),
@@ -677,7 +695,7 @@ impl Reviews {
             .unwrap_or(&event.event_type);
         self.note(
             &change_id,
-            &format!("the reviewer {task_id} ended ({how}) without a review verdict"),
+            &format!("verdict not recorded: the reviewer {task_id} ended ({how}) without one"),
         );
         // The Change still waits on this patch's review: a new reviewer, or the lead told.
         let Some(change) = self
