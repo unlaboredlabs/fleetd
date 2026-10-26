@@ -4,7 +4,7 @@ import rust from "./secret.rust-seal.json";
 import { SECRET_MAX_BYTES } from "../shared/contracts";
 import { IPC } from "../shared/channels";
 import { parseRequest } from "../shared/ipc";
-import { seal, submitSecret } from "./secret";
+import { seal, submitProjectEnv, submitSecret } from "./secret";
 
 const bytes = (b64: string) => new Uint8Array(Buffer.from(b64, "base64"));
 
@@ -67,5 +67,45 @@ describe("sealing a secret ask's value", () => {
     expect(out).toEqual({ ok: true, fingerprint: "ab12cd34" });
     expect(sent[0]).toBe("secret_submit");
     expect(JSON.stringify(sent[1])).not.toContain("hunter2");
+  });
+
+  it("sends a project's plain values as typed and its secrets only sealed, and takes a secret of several lines but not a NUL", async () => {
+    await sodium.ready;
+    const [pk, sk] = [bytes(rust.publicKey), bytes(rust.secretKey)];
+    const sent: unknown[] = [];
+    const call = (tool: string, input: unknown) => {
+      sent.push(tool, input);
+      return Promise.resolve({ ok: true as const, output: { env: [] } });
+    };
+    const request = {
+      machineId: "devbox",
+      projectId: "p1",
+      boxPubKey: rust.publicKey,
+      set: [
+        { kind: "plain" as const, name: "API_URL", value: "https://staging.example" },
+        { kind: "secret" as const, name: "STRIPE_KEY", value: "sk_test_hunter2" },
+      ],
+      remove: ["OLD"],
+    };
+    expect((await submitProjectEnv(request, call)).ok).toBe(true);
+    expect(sent[0]).toBe("project_env_set");
+    const input = sent[1] as { set: Array<{ kind: string; value?: string; sealed?: string }>; remove: string[] };
+    expect(JSON.stringify(input)).not.toContain("sk_test_hunter2");
+    expect(input.set[0]).toEqual({ kind: "plain", name: "API_URL", value: "https://staging.example" });
+    expect(input.remove).toEqual(["OLD"]);
+    expect(sodium.to_string(sodium.crypto_box_seal_open(bytes(input.set[1]?.sealed ?? ""), pk, sk))).toBe("sk_test_hunter2");
+
+    sent.length = 0;
+    const nul = await submitProjectEnv({ ...request, set: [{ kind: "secret", name: "K", value: "a\0b" }] }, call);
+    expect(nul.ok).toBe(false);
+    const noKey = await submitProjectEnv({ ...request, boxPubKey: undefined, set: [{ kind: "secret", name: "K", value: "v" }] }, call);
+    expect(noKey.ok).toBe(false);
+    expect(sent).toEqual([]);
+
+    // A certificate chain: sealed with every newline in it.
+    const chain = "-----BEGIN CERTIFICATE-----\nMIIBszCCAVmgAwIBAgIU\n-----END CERTIFICATE-----\n";
+    expect((await submitProjectEnv({ ...request, set: [{ kind: "secret", name: "TLS_CHAIN", value: chain }] }, call)).ok).toBe(true);
+    const sealed = (sent[1] as { set: Array<{ sealed?: string }> }).set[0]?.sealed ?? "";
+    expect(sodium.to_string(sodium.crypto_box_seal_open(bytes(sealed), pk, sk))).toBe(chain);
   });
 });

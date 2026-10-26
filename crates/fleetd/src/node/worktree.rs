@@ -346,6 +346,45 @@ pub fn remove_detached(root: &Path, path: &Path) -> Result<(), GitError> {
     Ok(())
 }
 
+/// Whether the worktree at `path` has changes git hasn't committed; gitignored files don't count.
+pub fn uncommitted(path: &Path) -> Result<bool, GitError> {
+    Ok(!git(path, &["status", "--porcelain"])?.trim().is_empty())
+}
+
+/// Removes every worktree of a project that is going: each worktree of `root` that git records under `dir` (fleetd's
+/// own directory under the node home), uncommitted changes and build output included, and git's record of one whose
+/// directory is already gone; then `dir` itself. Nothing else git records is touched (no `git worktree prune`, which
+/// would also drop the records of the person's own worktrees that are missing for now). Branches stay, so every
+/// commit stays reachable, and nothing in the checkout's working tree changes. With the checkout itself gone, only
+/// `dir` goes. Returns how many worktrees it removed.
+pub fn remove_all(root: &Path, dir: &Path) -> Result<usize, GitError> {
+    let mut removed = 0;
+    if root.is_dir() {
+        let real = dir.canonicalize().ok();
+        let list = git(root, &["worktree", "list", "--porcelain"])?;
+        let ours: Vec<&str> = list
+            .lines()
+            .filter_map(|line| line.strip_prefix("worktree "))
+            .filter(|p| {
+                let p = Path::new(p);
+                p != dir
+                    && (p.starts_with(dir) || real.as_deref().is_some_and(|r| p.starts_with(r)))
+            })
+            .collect();
+        for path in ours {
+            git(root, &["worktree", "remove", "--force", path])?;
+            removed += 1;
+        }
+    }
+    match std::fs::remove_dir_all(dir) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            return Err(GitError(format!("cannot remove {}: {e}", dir.display())));
+        }
+        _ => {}
+    }
+    Ok(removed)
+}
+
 /// The PR keywords that end a repo's path in a PR URL.
 const PR_SEGMENTS: [&str; 4] = ["pull", "pulls", "merge_requests", "pull-requests"];
 

@@ -8,7 +8,7 @@ import type { HubService } from "./hub/service";
 import { claimLinkHandler, linkHandlerStatus } from "./linkHandlerMain";
 import type { PairingService } from "./pairing/service";
 import type { PresenceSetting } from "./presence";
-import { submitSecret } from "./secret";
+import { submitProjectEnv, submitSecret } from "./secret";
 import { applyMenuState } from "./menuState";
 import type { Notifier } from "./notify";
 import type { Opener } from "./opener";
@@ -53,6 +53,7 @@ export const registerIpc = (
   handle(IPC.hubConnect, (_event, request) => hub.connect(request));
   handle(IPC.hubForget, () => hub.forget());
   handle(IPC.secretSubmit, (_event, request) => submitSecret(request, (tool, input) => hub.call({ tool, input })));
+  handle(IPC.projectEnvSubmit, (_event, request) => submitProjectEnv(request, (tool, input) => hub.call({ tool, input })));
   handle(IPC.systemHostName, () => hostName());
   handle(IPC.projectsPickFolder, (event) => pickFolder(event.sender));
   handle(IPC.projectsReadDrop, (_event, path) => readDrop(path));

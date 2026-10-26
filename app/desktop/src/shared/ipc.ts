@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { LinkHandlerClaim, NotifyRequest } from "./app";
 import { HUB_CACHE_MAX_BYTES } from "./cache";
-import { SECRET_MAX_BYTES } from "./contracts";
+import { ENV_VALUE_MAX_BYTES, SECRET_MAX_BYTES } from "./contracts";
 import { MENU_COMMANDS } from "./menu";
 import { IPC, type InvokeChannel } from "./channels";
 
@@ -104,6 +104,31 @@ export const SecretRequest = z.strictObject({
   value: z.string().min(1).max(SECRET_MAX_BYTES),
 });
 export type SecretRequest = z.infer<typeof SecretRequest>;
+
+/** project_settings.rs EnvVarName. */
+const EnvName = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/u);
+/**
+ * A project's environment changes (Settings › Projects): plain values as typed, secret values for main to seal to
+ * `boxPubKey`, the project machine's key (main/secret.ts). The hub gets the boxes, never a secret's value.
+ */
+export const ProjectEnvRequest = z.strictObject({
+  machineId: z.string().min(1).max(64),
+  projectId: z.string().min(1).max(200),
+  /** Required when `set` holds a secret. */
+  boxPubKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/u).optional(),
+  set: z
+    .array(
+      z.discriminatedUnion("kind", [
+        // Any number of lines. ENV_VALUE_MAX_BYTES UTF-8 bytes at most: this only bounds the string; the hub and the
+        // node check the bytes, and the project's total.
+        z.strictObject({ kind: z.literal("plain"), name: EnvName, value: z.string().max(ENV_VALUE_MAX_BYTES) }),
+        z.strictObject({ kind: z.literal("secret"), name: EnvName, value: z.string().min(1).max(ENV_VALUE_MAX_BYTES) }),
+      ]),
+    )
+    .max(100),
+  remove: z.array(EnvName).max(100),
+});
+export type ProjectEnvRequest = z.infer<typeof ProjectEnvRequest>;
 /** An error the page caught, for the app log: what failed, the error's own text and the route. Main scrubs it. */
 export const ErrorReport = z.strictObject({
   /** The part whose card is up ("the conversation"), or "uncaught error" / "unhandled rejection". */
@@ -152,6 +177,7 @@ export const REQUESTS = {
   [IPC.pairStore]: none,
   [IPC.pairSetup]: none,
   [IPC.secretSubmit]: z.tuple([SecretRequest]),
+  [IPC.projectEnvSubmit]: z.tuple([ProjectEnvRequest]),
   [IPC.systemHostName]: none,
   [IPC.projectsPickFolder]: none,
   [IPC.projectsReadDrop]: z.tuple([DropPath]),

@@ -3322,6 +3322,73 @@
       "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$",
       "type": "string"
     },
+    "EnvValue": {
+      "type": "string"
+    },
+    "EnvVarKind": {
+      "oneOf": [
+        {
+          "const": "plain",
+          "description": "Shown in the app and kept by the hub.",
+          "type": "string"
+        },
+        {
+          "const": "secret",
+          "description": "Write-only: only the node holds the value; the hub and the app see its fingerprint.",
+          "type": "string"
+        }
+      ]
+    },
+    "EnvVarName": {
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$",
+      "type": "string"
+    },
+    "EnvVarSet": {
+      "description": "One variable to add or replace.",
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "const": "plain",
+              "type": "string"
+            },
+            "name": {
+              "$ref": "#/$defs/EnvVarName"
+            },
+            "value": {
+              "$ref": "#/$defs/EnvValue"
+            }
+          },
+          "required": [
+            "kind",
+            "name",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`sealed`: `crypto_box_seal` of the value to the project machine's `boxPubKey`: up to 64 KiB, any number of\nlines, no NUL.",
+          "properties": {
+            "kind": {
+              "const": "secret",
+              "type": "string"
+            },
+            "name": {
+              "$ref": "#/$defs/EnvVarName"
+            },
+            "sealed": {
+              "$ref": "#/$defs/SealedSecret"
+            }
+          },
+          "required": [
+            "kind",
+            "name",
+            "sealed"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "EventSeq": {
       "maximum": 9007199254740991,
       "minimum": 0,
@@ -5099,6 +5166,12 @@
         "project_discover.output": {
           "$ref": "#/$defs/ProjectDiscoverOutput"
         },
+        "project_env_set.input": {
+          "$ref": "#/$defs/ProjectEnvSetInput"
+        },
+        "project_env_set.output": {
+          "$ref": "#/$defs/ProjectEnvSetOutput"
+        },
         "project_files.input": {
           "$ref": "#/$defs/ProjectFilesInput"
         },
@@ -5122,6 +5195,18 @@
         },
         "project_set.output": {
           "$ref": "#/$defs/ProjectSetOutput"
+        },
+        "project_settings_get.input": {
+          "$ref": "#/$defs/ProjectSettingsGetInput"
+        },
+        "project_settings_get.output": {
+          "$ref": "#/$defs/ProjectSettingsGetOutput"
+        },
+        "project_settings_set.input": {
+          "$ref": "#/$defs/ProjectSettingsSetInput"
+        },
+        "project_settings_set.output": {
+          "$ref": "#/$defs/ProjectSettingsSetOutput"
         },
         "project_stop.input": {
           "$ref": "#/$defs/ProjectStopInput"
@@ -5353,6 +5438,8 @@
         "project_add.output",
         "project_discover.input",
         "project_discover.output",
+        "project_env_set.input",
+        "project_env_set.output",
         "project_files.input",
         "project_files.output",
         "project_get.input",
@@ -5361,6 +5448,10 @@
         "project_remove.output",
         "project_set.input",
         "project_set.output",
+        "project_settings_get.input",
+        "project_settings_get.output",
+        "project_settings_set.input",
+        "project_settings_set.output",
         "project_stop.input",
         "project_stop.output",
         "prompt_get.input",
@@ -7649,6 +7740,94 @@
       ],
       "type": "object"
     },
+    "ProjectEnvSetInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "remove": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/EnvVarName"
+          },
+          "maxItems": 100,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "set": {
+          "default": [],
+          "description": "Variables to add or replace; a secret replaces a plain one of the same name and the other way round.",
+          "items": {
+            "$ref": "#/$defs/EnvVarSet"
+          },
+          "maxItems": 100,
+          "type": "array"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "ProjectEnvSetOutput": {
+      "properties": {
+        "env": {
+          "items": {
+            "$ref": "#/$defs/ProjectEnvVar"
+          },
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "env"
+      ],
+      "type": "object"
+    },
+    "ProjectEnvVar": {
+      "description": "One of a project's variables as the hub keeps it. A secret has no value here, only its fingerprint.",
+      "properties": {
+        "bytes": {
+          "description": "The value's size in bytes, a secret's too, for the project's total ([`ENV_TOTAL_MAX_BYTES`]).",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "fingerprint": {
+          "$ref": "#/$defs/SecretFingerprint",
+          "description": "A secret's: the first 8 hex characters of sha256 over its value, as the node computed it."
+        },
+        "kind": {
+          "$ref": "#/$defs/EnvVarKind"
+        },
+        "name": {
+          "$ref": "#/$defs/EnvVarName"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "value": {
+          "$ref": "#/$defs/EnvValue",
+          "description": "A plain variable's value."
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "bytes",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
     "ProjectFilesInput": {
       "properties": {
         "limit": {
@@ -7925,6 +8104,10 @@
         },
         "projectId": {
           "$ref": "#/$defs/ProjectId"
+        },
+        "removeWorktrees": {
+          "description": "Also force-remove the fleetd worktrees its agents worked in, uncommitted changes and all, once its agents have\nstopped. Their branches and the checkout stay as they are.",
+          "type": "boolean"
         }
       },
       "required": [
@@ -8012,6 +8195,124 @@
       },
       "required": [
         "mediumAllowed"
+      ],
+      "type": "object"
+    },
+    "ProjectSettings": {
+      "properties": {
+        "env": {
+          "description": "Its agents' variables, by name. A secret's value is never here.",
+          "items": {
+            "$ref": "#/$defs/ProjectEnvVar"
+          },
+          "type": "array"
+        },
+        "keepWorktrees": {
+          "description": "True: a finished task's worktree stays on the machine. False (the default): a reader's goes when it finishes\nand a writer's once its PR merges.",
+          "type": "boolean"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workspaceRoot": {
+          "type": "string"
+        },
+        "worktrees": {
+          "$ref": "#/$defs/ProjectWorktrees",
+          "description": "From the node, now: absent while it is offline or too old to say."
+        },
+        "worktreesUnknown": {
+          "description": "Why `worktrees` is absent.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId",
+        "title",
+        "workspaceRoot",
+        "keepWorktrees",
+        "env"
+      ],
+      "type": "object"
+    },
+    "ProjectSettingsGetInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "ProjectSettingsGetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/ProjectSettings"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "settings"
+      ],
+      "type": "object"
+    },
+    "ProjectSettingsSetInput": {
+      "properties": {
+        "keepWorktrees": {
+          "type": "boolean"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "title": {
+          "description": "The project's name in fleetd; its folder keeps its own.",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "ProjectSettingsSetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/ProjectSettings"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "settings"
       ],
       "type": "object"
     },
@@ -8163,6 +8464,56 @@
         "workspaceRoot",
         "threads",
         "lastActivityAt"
+      ],
+      "type": "object"
+    },
+    "ProjectWorktree": {
+      "description": "One fleetd worktree of the project on its node, under `<node home>/worktrees/<project>/`.",
+      "properties": {
+        "branch": {
+          "description": "A writer's branch; absent for a read or review task's detached worktree.",
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/ThreadId",
+          "description": "The session that works in it."
+        },
+        "uncommitted": {
+          "description": "It has changes git hasn't committed (gitignored files don't count): deleting the project loses them.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sessionId",
+        "path",
+        "uncommitted"
+      ],
+      "type": "object"
+    },
+    "ProjectWorktrees": {
+      "description": "Where the project's worktrees live on its node and what is there now.",
+      "properties": {
+        "baseBranch": {
+          "description": "The branch new worktrees start from, freshly fetched from the remote: the repo's default branch. Absent for a\nrepo with no commit yet.",
+          "type": "string"
+        },
+        "dir": {
+          "description": "`<node home>/worktrees/<project>`: every new worktree of the project goes here, one per session.",
+          "type": "string"
+        },
+        "worktrees": {
+          "items": {
+            "$ref": "#/$defs/ProjectWorktree"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "dir",
+        "worktrees"
       ],
       "type": "object"
     },

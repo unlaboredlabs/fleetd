@@ -2,6 +2,9 @@
 //! a GitHub repository with progress events, and remove. The node does the filesystem and git work on its machine;
 //! gh runs on the hub machine, and `gh repo list` falls back to the target worker when the hub has no gh login.
 pub mod inspect;
+pub mod settings;
+#[cfg(test)]
+mod settings_tests;
 pub mod tools;
 
 use std::sync::Arc;

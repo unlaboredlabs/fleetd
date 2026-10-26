@@ -42,7 +42,19 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "project_remove",
-        "Stop the project's agent processes and forget it. Its files, branches and worktrees stay on the machine; project_add brings it back.",
+        "Stop the project's agent processes and forget it. Its files, branches and worktrees stay on the machine; project_add brings it back. removeWorktrees also force-removes the fleetd worktrees its agents worked in (uncommitted changes in them are lost), once its agents have stopped; its checkout and every branch stay as they are.",
+    ),
+    (
+        "project_settings_get",
+        "One project's settings: its title and checkout, keepWorktrees, its environment variables (a plain one's value, a secret's fingerprint only), and from its node, while online, where its worktrees live, the branch new ones start from and the worktrees there now, each marked when it has uncommitted changes.",
+    ),
+    (
+        "project_settings_set",
+        "Rename a project (title; its folder keeps its name) or turn keepWorktrees on or off. Off (the default): a reader's worktree goes when its task finishes and a writer's once its PR merges. On: finished tasks' worktrees stay on the machine.",
+    ),
+    (
+        "project_env_set",
+        "Human keys only. Add, replace (set) and remove environment variables of a project's agents. A plain variable carries its value; a secret carries sealed: its value sealed on the client (the desktop app) with libsodium's crypto_box_seal to the project machine's boxPubKey. The project's node keeps them and adds them to every claude it starts for the project from then on, and masks a secret printed by an agent as ***NAME*** before its output leaves the machine; the hub keeps a plain value and a secret's fingerprint, never a secret's value. ANTHROPIC_*, CLAUDE* and FLEETD_* names are refused. A value is up to 64 KiB, any number of lines, no NUL; a project's values together up to 512 KiB. All or nothing; refused with machine_offline when the node is down.",
     ),
     (
         "thread_tail",

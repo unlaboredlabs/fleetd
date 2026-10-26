@@ -2047,6 +2047,7 @@ async fn removing_a_project_stops_its_claude_processes_first() {
 
     let remove = || SessionCall::ProjectRemove {
         project_id: ProjectId::unchecked("p1"),
+        remove_worktrees: false,
     };
     assert_eq!(hub.ok(remove()).await, SessionOutput::Done);
     let ended = hub.settled("r1").await;
@@ -2063,6 +2064,448 @@ async fn removing_a_project_stops_its_claude_processes_first() {
         panic!("removed the same project twice")
     };
     assert_eq!(gone.code, SessionErrorCode::NotFound);
+}
+
+/// A project's plain and secret variables reach the claude of its next session, with only the secret's fingerprint
+/// in the answer; the worktree list names one with uncommitted changes; and deleting the project with its worktrees
+/// removes them and its variables, keeps its branch, and leaves the checkout exactly as it was.
+#[tokio::test]
+async fn project_env_reaches_a_new_session_and_deleting_the_project_leaves_the_checkout() {
+    use fleetd_contracts::project_settings::{EnvValue, EnvVarName, EnvVarSet};
+    let dir = tempfile::tempdir().unwrap();
+    let (_, root) = cloned(dir.path(), "repo", "origin");
+    // The human's own last fetch and work in progress in the checkout.
+    git(&root, &["fetch", "-q", "origin"]);
+    std::fs::write(root.join("a.txt"), "edited\n").unwrap();
+    std::fs::write(root.join("mine.txt"), "mine\n").unwrap();
+    let home = dir.path().join("node");
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.project(&root).await;
+    let name = |n: &str| EnvVarName::new(n).unwrap();
+    let saved = hub
+        .ok(SessionCall::ProjectEnv {
+            project_id: ProjectId::unchecked("p1"),
+            set: vec![
+                EnvVarSet::Plain {
+                    name: name("API_URL"),
+                    value: EnvValue::new("https://staging.example").unwrap(),
+                },
+                EnvVarSet::Secret {
+                    name: name("STRIPE_KEY"),
+                    sealed: crate::node::project_env::seal(&home, "sk_test_4242"),
+                },
+            ],
+            remove: vec![],
+        })
+        .await;
+    let SessionOutput::ProjectEnv { secrets } = &saved else {
+        panic!("{saved:?}")
+    };
+    assert_eq!(secrets.len(), 1);
+    assert_eq!(
+        secrets[0].fingerprint.as_str(),
+        crate::node::secrets::fingerprint_of(b"sk_test_4242")
+    );
+    assert!(
+        !serde_json::to_string(&saved)
+            .unwrap()
+            .contains("sk_test_4242")
+    );
+
+    let branch = "fleetd/T1-env";
+    hub.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Worktree {
+            base_ref: NonEmpty::unchecked("main"),
+            branch: NonEmpty::unchecked(branch),
+            from_session: None,
+        },
+    ))
+    .await;
+    hub.settled("r1").await;
+    let spec = hub.runner.spawned()[0].clone();
+    let var = |k: &str| {
+        spec.env
+            .iter()
+            .rev()
+            .find(|(key, _)| key == k)
+            .map(|(_, v)| v.as_str())
+    };
+    assert_eq!(var("API_URL"), Some("https://staging.example"));
+    assert_eq!(var("STRIPE_KEY"), Some("sk_test_4242"));
+    assert_eq!(var("FLEETD_THREAD_ID"), Some("s1"));
+
+    std::fs::write(spec.cwd.join("wip.txt"), "not committed\n").unwrap();
+    let listed = hub
+        .ok(SessionCall::ProjectWorktrees {
+            project_id: ProjectId::unchecked("p1"),
+        })
+        .await;
+    let SessionOutput::ProjectWorktrees(listed) = listed else {
+        panic!("{listed:?}")
+    };
+    assert_eq!(listed.dir, home.join("worktrees/p1").to_string_lossy());
+    assert_eq!(listed.base_branch.as_deref(), Some("main"));
+    assert_eq!(listed.worktrees.len(), 1);
+    assert_eq!(listed.worktrees[0].branch.as_deref(), Some(branch));
+    assert!(listed.worktrees[0].uncommitted);
+
+    // The person's own worktree, on a drive that isn't mounted now: git's record of it must stay.
+    let theirs = dir.path().join("usb/storefront-hotfix");
+    git(
+        &root,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "hotfix",
+            &theirs.to_string_lossy(),
+        ],
+    );
+    std::fs::remove_dir_all(dir.path().join("usb")).unwrap();
+    let before = checkout_state(&root);
+    assert_eq!(
+        hub.ok(SessionCall::ProjectRemove {
+            project_id: ProjectId::unchecked("p1"),
+            remove_worktrees: true,
+        })
+        .await,
+        SessionOutput::Done
+    );
+    assert!(!spec.cwd.exists());
+    assert!(!home.join("worktrees/p1").exists());
+    assert_eq!(checkout_state(&root), before);
+    // Its branch stays, so its commits do; git keeps no record of fleetd's worktree, and still has the person's.
+    git(
+        &root,
+        &["rev-parse", "--verify", &format!("refs/heads/{branch}")],
+    );
+    let worktrees =
+        crate::node::worktree::git(&root, &["worktree", "list", "--porcelain"]).unwrap();
+    assert_eq!(worktrees.matches("worktree ").count(), 2, "{worktrees}");
+    assert!(worktrees.contains("storefront-hotfix"), "{worktrees}");
+    assert!(!worktrees.contains("/worktrees/p1/"), "{worktrees}");
+    assert!(crate::node::project_env::vars(&home, "p1").is_empty());
+}
+
+/// The recorded `echo hi` turn, as a `printenv` that prints `printed` and a reply that repeats it.
+fn printenv_turn(printed: &str) -> String {
+    fn swap(v: &mut serde_json::Value, printed: &str) {
+        match v {
+            serde_json::Value::String(s) if s == "hi" => *s = printed.to_owned(),
+            serde_json::Value::String(s) if s == "echo hi" => *s = "printenv".to_owned(),
+            serde_json::Value::Array(a) => a.iter_mut().for_each(|v| swap(v, printed)),
+            serde_json::Value::Object(o) => o.values_mut().for_each(|v| swap(v, printed)),
+            _ => {}
+        }
+    }
+    let fixture = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src/node/runner/fixtures/claude-2.1.302-allowlisted-tool.jsonl"),
+    )
+    .unwrap();
+    fixture
+        .lines()
+        .map(|line| {
+            let mut v: serde_json::Value = serde_json::from_str(line).unwrap();
+            swap(&mut v, printed);
+            format!("{v}\n")
+        })
+        .collect()
+}
+
+/// A secret rotated (or removed) while its session's claude lives on is still in that process's environment: what it
+/// prints in a later run is masked as the value it was started with, not only as the file's value now.
+#[tokio::test]
+async fn a_secret_rotated_mid_session_stays_masked_as_the_process_holds_it() {
+    use fleetd_contracts::project_settings::{EnvVarName, EnvVarSet};
+    let (old, new) = ("sk_live_old_9f2c41", "sk_live_new_7d03aa");
+    let printed = format!("STRIPE_KEY={old}\n");
+    // Two runs in one process, each printing the value the process was started with.
+    let lines = format!("{}{}", printenv_turn(&printed), printenv_turn(&printed));
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("node");
+    let mut node = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::from_lines(&lines),
+    )
+    .await;
+    node.project(dir.path()).await;
+    let set = |value: &str| SessionCall::ProjectEnv {
+        project_id: ProjectId::unchecked("p1"),
+        set: vec![EnvVarSet::Secret {
+            name: EnvVarName::new("STRIPE_KEY").unwrap(),
+            sealed: crate::node::project_env::seal(&home, value),
+        }],
+        remove: vec![],
+    };
+    node.ok(set(old)).await;
+    node.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    node.ok(SessionCall::Follow {
+        session_id: ThreadId::unchecked("s1"),
+    })
+    .await;
+    node.settled("r1").await;
+    node.ok(set(new)).await;
+    node.ok(send("s1", "r2")).await;
+    let mut frames = Vec::new();
+    tokio::time::timeout(Duration::from_secs(600), async {
+        loop {
+            let raw = node.rx.recv().await.unwrap();
+            let done = matches!(serde_json::from_str(&raw).unwrap(), NodeToHub::MachineEvent(f)
+                if matches!(&f.event, MachineEvent::SessionUpdated(s)
+                    if s.active_run_id.is_none() && s.latest_run.as_ref().is_some_and(|r| r.id == "r2")));
+            frames.push(raw);
+            if done {
+                break;
+            }
+        }
+    })
+    .await
+    .expect("the second run never settled");
+    assert_eq!(
+        node.runner.spawned().len(),
+        1,
+        "the second run is the same process"
+    );
+    let frames = frames.join("\n");
+    assert!(frames.contains("***STRIPE_KEY***"), "{frames}");
+    assert!(!frames.contains(old), "the rotated value left the node");
+}
+
+/// A command that prints a project's secret (`printenv`) gets it to neither the hub nor the app: the node masks the
+/// value, its base64 and its URL encoding in the tool's output, the live text and the reply before any frame leaves,
+/// and a real hub fed every frame the node sent keeps it in no row and returns it in no answer.
+#[tokio::test]
+async fn a_printed_secret_never_leaves_the_node() {
+    use base64::Engine;
+    use fleetd_contracts::project_settings::{EnvVarName, EnvVarSet};
+    let secret = "sk_live_51/Hx+Qe9=";
+    let forms = [
+        secret.to_owned(),
+        base64::engine::general_purpose::STANDARD.encode(secret),
+        "sk_live_51%2FHx%2BQe9%3D".to_owned(),
+    ];
+    let chain = crate::node::project_env::tests::PEM;
+    let printed = format!(
+        "HOME=/home/w\nSTRIPE_KEY={}\nSTRIPE_KEY_B64={}\nCALLBACK=https://pay.test/cb?key={}\nTLS_CHAIN={chain}\n",
+        forms[0], forms[1], forms[2]
+    );
+    // Every line of the chain but its armor is secret, and so is the chain whole.
+    let forms: Vec<String> = forms
+        .into_iter()
+        .chain(std::iter::once(chain.to_owned()))
+        .chain(
+            chain
+                .lines()
+                .filter(|l| !l.starts_with("-----"))
+                .map(str::to_owned),
+        )
+        .collect();
+    let lines = printenv_turn(&printed);
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("node");
+    let mut node = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::from_lines(&lines),
+    )
+    .await;
+    node.project(dir.path()).await;
+    node.ok(SessionCall::ProjectEnv {
+        project_id: ProjectId::unchecked("p1"),
+        set: vec![
+            EnvVarSet::Secret {
+                name: EnvVarName::new("STRIPE_KEY").unwrap(),
+                sealed: crate::node::project_env::seal(&home, secret),
+            },
+            EnvVarSet::Secret {
+                name: EnvVarName::new("TLS_CHAIN").unwrap(),
+                sealed: crate::node::project_env::seal(&home, chain),
+            },
+        ],
+        remove: vec![],
+    })
+    .await;
+
+    // A real hub on the other end of the link: its calls go to the node, and every frame the node sends goes to it.
+    let hub_home = tempfile::tempdir().unwrap();
+    let central = crate::hub::serve::build_on(
+        crate::hub::store::HubDb::open_memory().unwrap(),
+        crate::hub::api::HubConfig {
+            home: hub_home.path().to_path_buf(),
+            listen: Default::default(),
+            url: None,
+            queue_ttl_sec: None,
+        },
+        crate::hub::store::test_clock::ManualClock::at(1_792_000_000_000),
+    )
+    .unwrap();
+    let lab = fleetd_contracts::ids::MachineId::unchecked("lab");
+    let at = "2026-10-19T10:00:00.000Z";
+    central
+        .store
+        .machine_upsert(
+            &serde_json::from_value(
+                serde_json::json!({ "machineId": "lab", "name": "lab", "tags": [],
+                "status": "online", "lastSeenAt": at, "nodeVersion": "0.1.0" }),
+            )
+            .unwrap(),
+            None,
+        )
+        .unwrap();
+    let (to_node, mut calls) = mpsc::unbounded_channel();
+    let (service, answer, m) = (node.service.clone(), central.clone(), lab.clone());
+    tokio::spawn(async move {
+        while let Some(frame) = calls.recv().await {
+            let fleetd_contracts::node_link::HubToNode::SessionCall(call) = frame else {
+                continue;
+            };
+            let (service, answer, m) = (service.clone(), answer.clone(), m.clone());
+            tokio::spawn(async move {
+                let reply = service.handle(call).await;
+                answer
+                    .executors
+                    .handle_frame(&m, NodeToHub::SessionReply(reply));
+            });
+        }
+    });
+    let (sent_tx, mut sent) = mpsc::unbounded_channel::<String>();
+    let mut outlet = std::mem::replace(&mut node.rx, mpsc::unbounded_channel().1);
+    let (forward, m) = (central.clone(), lab.clone());
+    tokio::spawn(async move {
+        while let Some(raw) = outlet.recv().await {
+            forward
+                .executors
+                .handle_frame(&m, serde_json::from_str(&raw).unwrap());
+            let _ = sent_tx.send(raw);
+        }
+    });
+    central
+        .executors
+        .attach(
+            &lab,
+            crate::hub::executor::NodeSessions {
+                link_id: 1,
+                send: to_node,
+            },
+        )
+        .await;
+    central.executors.await_live(&lab).await;
+
+    node.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    node.ok(SessionCall::Follow {
+        session_id: ThreadId::unchecked("s1"),
+    })
+    .await;
+    let mut frames = Vec::new();
+    tokio::time::timeout(Duration::from_secs(600), async {
+        loop {
+            let raw = sent.recv().await.unwrap();
+            let done = matches!(serde_json::from_str(&raw).unwrap(), NodeToHub::MachineEvent(f)
+                if matches!(&f.event, MachineEvent::SessionUpdated(s)
+                    if s.active_run_id.is_none() && s.latest_run.as_ref().is_some_and(|r| r.id == "r1")));
+            frames.push(raw);
+            if done {
+                break;
+            }
+        }
+    })
+    .await
+    .expect("the run never settled");
+
+    let person = {
+        let c = serde_json::from_value::<crate::hub::api::Caller>(serde_json::json!({
+            "keyId": "k1", "name": "desk", "prefix": "fld_abcdef", "createdAt": at,
+            "grants": [{ "role": "operate", "machines": "*" }],
+        }))
+        .unwrap();
+        crate::hub::api::Caller {
+            kind: Some(fleetd_contracts::auth::KeyKind::Human),
+            ..c
+        }
+    };
+    let mut answers = String::new();
+    for (tool, input) in [
+        (
+            "thread_tail",
+            serde_json::json!({ "machineId": "lab", "threadId": "s1", "n": 50 }),
+        ),
+        (
+            "actions_list",
+            serde_json::json!({ "machineId": "lab", "threadId": "s1" }),
+        ),
+    ] {
+        let out = crate::hub::api::registry()
+            .call(&central, &person, tool, input)
+            .await
+            .unwrap();
+        answers.push_str(&out.to_string());
+    }
+    let rows = central
+        .db
+        .with(|c| {
+            let tables: Vec<String> = c
+                .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")?
+                .query_map([], |r| r.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            let mut out = String::new();
+            for table in tables {
+                let mut stmt = c.prepare(&format!("SELECT * FROM \"{table}\""))?;
+                let n = stmt.column_count();
+                let mut rows = stmt.query([])?;
+                while let Some(row) = rows.next()? {
+                    for i in 0..n {
+                        if let rusqlite::types::ValueRef::Text(t) = row.get_ref(i)? {
+                            out.push_str(&String::from_utf8_lossy(t));
+                        }
+                    }
+                }
+            }
+            Ok(out)
+        })
+        .unwrap();
+    let frames = frames.join("\n");
+    // The output got through, named.
+    assert!(frames.contains("***STRIPE_KEY***"), "{frames}");
+    assert!(frames.contains("***TLS_CHAIN***"), "{frames}");
+    assert!(answers.contains("***STRIPE_KEY***"), "{answers}");
+    for form in &forms {
+        assert!(!frames.contains(form.as_str()), "a frame carried {form}");
+        assert!(!answers.contains(form.as_str()), "the hub answered {form}");
+        assert!(!rows.contains(form.as_str()), "a hub row holds {form}");
+    }
+    // The agent itself still got the real values, newlines and all.
+    assert!(
+        node.runner.spawned()[0]
+            .env
+            .iter()
+            .any(|(k, v)| k == "STRIPE_KEY" && v == secret)
+    );
+    assert!(
+        node.runner.spawned()[0]
+            .env
+            .iter()
+            .any(|(k, v)| k == "TLS_CHAIN" && v == chain)
+    );
 }
 
 #[test]

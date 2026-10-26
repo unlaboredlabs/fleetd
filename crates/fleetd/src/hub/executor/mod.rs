@@ -1896,17 +1896,62 @@ impl Executors {
         Ok(())
     }
 
+    /// `remove_worktrees` only to a node listing `CAP_PROJECT_SETTINGS`.
     pub async fn project_remove(
         &self,
         machine_id: &MachineId,
         project_id: &ProjectId,
+        remove_worktrees: bool,
     ) -> Result<(), ExecutorError> {
         let call = SessionCall::ProjectRemove {
             project_id: project_id.clone(),
+            remove_worktrees,
         };
         self.call(machine_id, NodeOperation::Project, call, REMOVE_TIMEOUT)
             .await?;
         Ok(())
+    }
+
+    /// Sets and removes the project's environment variables on its node; the fingerprint of each secret it saved.
+    /// Only to a node listing `CAP_PROJECT_SETTINGS`.
+    pub async fn project_env(
+        &self,
+        machine_id: &MachineId,
+        project_id: &ProjectId,
+        set: Vec<fleetd_contracts::project_settings::EnvVarSet>,
+        remove: Vec<fleetd_contracts::project_settings::EnvVarName>,
+    ) -> Result<Vec<fleetd_contracts::project_settings::EnvSecretSaved>, ExecutorError> {
+        let op = NodeOperation::Project;
+        let call = SessionCall::ProjectEnv {
+            project_id: project_id.clone(),
+            set,
+            remove,
+        };
+        match self.call(machine_id, op, call, READ_TIMEOUT).await? {
+            SessionOutput::ProjectEnv { secrets } => Ok(secrets),
+            _ => Err(failed(
+                machine_id,
+                op,
+                "the node sent no answer to project_env",
+            )),
+        }
+    }
+
+    /// Where the project's worktrees live on its node and which are there. Only to a node listing
+    /// `CAP_PROJECT_SETTINGS`.
+    pub async fn project_worktrees(
+        &self,
+        machine_id: &MachineId,
+        project_id: &ProjectId,
+    ) -> Result<fleetd_contracts::project_settings::ProjectWorktrees, ExecutorError> {
+        let op = NodeOperation::Read;
+        let call = SessionCall::ProjectWorktrees {
+            project_id: project_id.clone(),
+        };
+        match self.call(machine_id, op, call, READ_TIMEOUT).await? {
+            SessionOutput::ProjectWorktrees(w) => Ok(w),
+            _ => Err(failed(machine_id, op, "the node sent no worktrees")),
+        }
     }
 
     // WorkspaceFiles, ThreadWorkspace (leads, tasks)

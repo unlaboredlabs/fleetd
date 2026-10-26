@@ -28,6 +28,7 @@ use std::time::Duration;
 use fleetd_contracts::effort::Effort;
 use fleetd_contracts::ids::{ProjectId, ThreadId, Timestamp};
 use fleetd_contracts::prim::{NonEmpty, Text};
+use fleetd_contracts::project_settings::{ProjectWorktree, ProjectWorktrees};
 use fleetd_contracts::sessions::{
     CloneProgressFrame, FailureClass, ItemKind, ItemStatus, MachineEvent, MachineEventFrame,
     MessageRole, PendingPermission, PermissionDecision, ProjectInfo, RunEnd, RunFailure, RunInfo,
@@ -761,7 +762,59 @@ impl SessionService {
                 title,
                 workspace_root,
             } => self.project_upsert(project_id, title.to_string(), workspace_root.to_string()),
-            SessionCall::ProjectRemove { project_id } => self.project_remove(&project_id).await,
+            SessionCall::ProjectRemove {
+                project_id,
+                remove_worktrees,
+            } => self.project_remove(&project_id, remove_worktrees).await,
+            SessionCall::ProjectEnv {
+                project_id,
+                set,
+                remove,
+            } => {
+                self.project_root(&project_id)?;
+                let home = self.inner.config.home.clone();
+                let secrets = blocking(move || {
+                    let box_key = super::identity::load_or_create_box_key(&home).ok();
+                    super::project_env::apply(
+                        &home,
+                        project_id.as_str(),
+                        &set,
+                        &remove,
+                        box_key.as_ref(),
+                    )
+                })
+                .await
+                .map_err(invalid)?;
+                Ok(SessionOutput::ProjectEnv { secrets })
+            }
+            SessionCall::ProjectWorktrees { project_id } => {
+                let root = self.project_root(&project_id)?;
+                let dir = self.worktrees_dir(&project_id);
+                let held = self.worktrees_of(&project_id)?;
+                let worktrees = blocking(move || {
+                    let base_branch = worktree::has_commit(&root)
+                        .then(|| worktree::default_branch(&root))
+                        .flatten();
+                    let worktrees = held
+                        .into_iter()
+                        .filter(|(_, path, _)| path.is_dir())
+                        .map(|(session_id, path, branch)| ProjectWorktree {
+                            session_id,
+                            // A worktree git can't read is counted as holding work, so the confirm names it.
+                            uncommitted: worktree::uncommitted(&path).unwrap_or(true),
+                            path: path.to_string_lossy().into_owned(),
+                            branch,
+                        })
+                        .collect();
+                    ProjectWorktrees {
+                        dir: dir.to_string_lossy().into_owned(),
+                        base_branch,
+                        worktrees,
+                    }
+                })
+                .await;
+                Ok(SessionOutput::ProjectWorktrees(worktrees))
+            }
             SessionCall::Launch(launch) => self.launch(launch).await,
             SessionCall::Send {
                 session_id,
@@ -1612,7 +1665,7 @@ impl SessionService {
         // a later message alone (a recovery note) would leave it with no idea of its task. Refused, so the hub restarts
         // it with its brief and a handoff. Only its first message itself may start over.
         let must_resume = resume && !opening && row.local.role == SessionRole::Worker;
-        let spec = self.spec(&row, resume, must_resume).map_err(|e| {
+        let (spec, secrets) = self.spec(&row, resume, must_resume).map_err(|e| {
             error(
                 SessionErrorCode::Internal,
                 format!("cannot prepare the session's files: {e}"),
@@ -1647,10 +1700,13 @@ impl SessionService {
             );
             generation
         };
-        tokio::spawn(
-            self.clone()
-                .pump(id.to_owned(), generation, handle.events, exited_tx),
-        );
+        tokio::spawn(self.clone().pump(
+            id.to_owned(),
+            generation,
+            handle.events,
+            exited_tx,
+            secrets,
+        ));
         Ok((handle.commands, note))
     }
 
@@ -1682,7 +1738,7 @@ impl SessionService {
         row: &SessionRow,
         resume: bool,
         must_resume: bool,
-    ) -> std::io::Result<SessionSpec> {
+    ) -> std::io::Result<(SessionSpec, super::mask::Secrets)> {
         let config = &self.inner.config;
         let id = row.summary.session_id.as_str();
         let dir = config.home.join("sessions").join(id);
@@ -1695,6 +1751,13 @@ impl SessionService {
         let transcript = transcripts.join(format!("{id}.jsonl"));
 
         let mut env = config.runner_env();
+        // The project's own variables, re-read per spawn. What the node already gives claude (its login, gateway,
+        // claude.env) keeps the node's value, and fleetd's values below still win.
+        let (mut project_env, secrets) =
+            super::project_env::for_spawn(&config.home, row.summary.project_id.as_str());
+        let secrets = super::mask::Secrets(secrets);
+        project_env.retain(|(p, _)| !env.iter().any(|(k, _)| k == p));
+        env.extend(project_env);
         let mut role_env = config.prompt_cache_env(row.local.role, &env);
         role_env.extend(claude::role_env(row.local.role, &env));
         env.retain(|(k, _)| !role_env.iter().any(|(c, _)| c == k));
@@ -1736,7 +1799,7 @@ impl SessionService {
         let scratch = share::scratch_env(&scratch);
         env.retain(|(k, _)| !scratch.iter().any(|(s, _)| s == k));
         env.extend(scratch);
-        Ok(SessionSpec {
+        let spec = SessionSpec {
             session_id: id.to_owned(),
             resume,
             must_resume,
@@ -1757,7 +1820,8 @@ impl SessionService {
             settings: Some(settings),
             env,
             transcript: Some(transcript),
-        })
+        };
+        Ok((spec, secrets))
     }
 
     /// Applies one process's events in order until it exits. Text deltas go only to followers, at most one frame
@@ -1768,12 +1832,16 @@ impl SessionService {
         generation: u64,
         mut events: mpsc::Receiver<RunnerEvent>,
         exited: watch::Sender<bool>,
+        spawned: super::mask::Secrets,
     ) {
         let mut delta: Option<(String, String)> = None;
         let mut flushed: Option<Instant> = None;
         let mut usage: Option<(String, RunUsage)> = None;
         let mut usage_sent: Option<Instant> = None;
         let mut run_id: Option<String> = None;
+        // The secrets the process was started with, which it holds until it exits, and the project's as they are now,
+        // read again at each run's start.
+        let mut masker = self.masker(&id, &spawned);
         loop {
             let delta_due = delta
                 .as_ref()
@@ -1788,7 +1856,7 @@ impl SessionService {
                         () = tokio::time::sleep_until(due) => {
                             let now = Instant::now();
                             if delta_due.is_some_and(|d| d <= now) {
-                                self.flush_delta(&id, &mut delta, &run_id);
+                                self.flush_delta(&id, &mut delta, &run_id, &masker, true);
                                 flushed = Some(now);
                             }
                             if usage_due.is_some_and(|d| d <= now) {
@@ -1814,6 +1882,17 @@ impl SessionService {
             if let Some(live) = self.st().live.get_mut(&id) {
                 live.last_active = Instant::now();
             }
+            if matches!(event, RunnerEvent::RunStarted { .. }) {
+                masker = self.masker(&id, &spawned);
+            }
+            // Nothing the agent's session reports leaves this machine with a secret of its project in it.
+            let Some(event) = masker.event(event) else {
+                tracing::warn!(
+                    session_id = id.as_str(),
+                    "an event dropped: masking a secret broke its shape"
+                );
+                continue;
+            };
             match event {
                 RunnerEvent::Delta { message_id, append } => {
                     if !self.st().followed.contains(&id) {
@@ -1822,12 +1901,12 @@ impl SessionService {
                     match &mut delta {
                         Some((m, text)) if *m == message_id => text.push_str(&append),
                         _ => {
-                            self.flush_delta(&id, &mut delta, &run_id);
+                            self.flush_delta(&id, &mut delta, &run_id, &masker, false);
                             delta = Some((message_id, append));
                         }
                     }
                     if flushed.is_none_or(|at| at + DELTA_EVERY <= Instant::now()) {
-                        self.flush_delta(&id, &mut delta, &run_id);
+                        self.flush_delta(&id, &mut delta, &run_id, &masker, true);
                         flushed = Some(Instant::now());
                     }
                 }
@@ -2005,10 +2084,47 @@ impl SessionService {
         }
     }
 
-    fn flush_delta(&self, id: &str, delta: &mut Option<(String, String)>, run_id: &Option<String>) {
-        if let Some((message_id, append)) = delta.take()
-            && let Ok(message_id) = NonEmpty::new(message_id)
-        {
+    /// For masking what the session reports: the secrets its process was `spawned` with (a rotated or removed one is
+    /// still in its environment) and its project's secrets now.
+    fn masker(&self, id: &str, spawned: &super::mask::Secrets) -> super::mask::Masker {
+        let now = match self.store().session(id) {
+            Ok(Some(row)) => super::mask::Secrets(super::project_env::secrets(
+                &self.inner.config.home,
+                row.summary.project_id.as_str(),
+            )),
+            _ => super::mask::Secrets::default(),
+        };
+        let all: Vec<(String, String)> = spawned.0.iter().chain(&now.0).cloned().collect();
+        let all = super::mask::Secrets(all);
+        super::mask::Masker::new(&all.0)
+    }
+
+    /// Sends the live text so far, masked. `hold` keeps back an end that could be the start of a secret, until the
+    /// next piece (or the complete message) shows what it is.
+    fn flush_delta(
+        &self,
+        id: &str,
+        delta: &mut Option<(String, String)>,
+        run_id: &Option<String>,
+        masker: &super::mask::Masker,
+        hold: bool,
+    ) {
+        if let Some((message_id, mut append)) = delta.take() {
+            let held = if hold { masker.held(&append) } else { 0 };
+            if held > 0 {
+                let kept = append.split_off(append.len() - held);
+                *delta = Some((message_id.clone(), kept));
+                if append.is_empty() {
+                    return;
+                }
+            }
+            let append = masker.text(&append).into_owned();
+            self.send_delta(id, message_id, append, run_id);
+        }
+    }
+
+    fn send_delta(&self, id: &str, message_id: String, append: String, run_id: &Option<String>) {
+        if let Ok(message_id) = NonEmpty::new(message_id) {
             self.st().thread(
                 id,
                 ThreadEvent::Delta {
@@ -2629,7 +2745,35 @@ impl SessionService {
         ))
     }
 
-    async fn project_remove(&self, project_id: &ProjectId) -> Reply {
+    /// `<node home>/worktrees/<project>`, where every worktree of the project's sessions is made.
+    fn worktrees_dir(&self, project_id: &ProjectId) -> PathBuf {
+        self.inner
+            .config
+            .home
+            .join("worktrees")
+            .join(project_id.as_str())
+    }
+
+    /// Each session of the project that has a worktree of its own: its id, path and branch.
+    fn worktrees_of(
+        &self,
+        project_id: &ProjectId,
+    ) -> Result<Vec<(ThreadId, PathBuf, Option<String>)>, SessionError> {
+        let dir = self.worktrees_dir(project_id);
+        Ok(self
+            .store()
+            .sessions()?
+            .into_iter()
+            .filter(|r| {
+                &r.summary.project_id == project_id
+                    && r.local.base_ref.is_some()
+                    && r.local.cwd.starts_with(&dir)
+            })
+            .map(|r| (r.summary.session_id, r.local.cwd, r.local.branch))
+            .collect())
+    }
+
+    async fn project_remove(&self, project_id: &ProjectId, remove_worktrees: bool) -> Reply {
         let stopping: Vec<_> = {
             let mut st = self.st();
             let ids = self.live_in(&st, project_id);
@@ -2652,8 +2796,7 @@ impl SessionService {
             stopping
         };
         let _ = tokio::time::timeout(REMOVE_WAIT, futures_util::future::join_all(stopping)).await;
-        let st = self.st();
-        let live = self.live_in(&st, project_id);
+        let live = self.live_in(&self.st(), project_id);
         if !live.is_empty() {
             return Err(invalid(format!(
                 "project {project_id}: claude in session(s) {} was stopped but has not exited after {}s; run \
@@ -2662,11 +2805,33 @@ impl SessionService {
                 REMOVE_WAIT.as_secs()
             )));
         }
+        // Only once every process of the project has exited: none still works in a worktree that goes.
+        if remove_worktrees {
+            let root = self.project_root(project_id)?;
+            let dir = self.worktrees_dir(project_id);
+            let held = self.worktrees_of(project_id)?;
+            let home = self.inner.config.home.clone();
+            let removed = blocking(move || {
+                for (session_id, _, _) in &held {
+                    share::remove_scratch(&home, session_id.as_str());
+                }
+                worktree::remove_all(&root, &dir)
+            })
+            .await?;
+            tracing::info!(
+                project_id = project_id.as_str(),
+                removed,
+                "project worktrees removed"
+            );
+        }
         let frame = self
             .store()
             .remove_project(project_id)?
             .ok_or_else(|| not_found(format!("no project {project_id} on this machine")))?;
-        st.machine(frame);
+        let home = self.inner.config.home.clone();
+        let id = project_id.to_string();
+        blocking(move || super::project_env::forget(&home, &id)).await;
+        self.st().machine(frame);
         Ok(SessionOutput::Done)
     }
 

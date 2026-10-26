@@ -44,6 +44,8 @@ export const IPC = {
   copy: "app:copy",
   /** invoke(SecretRequest) → SecretOutcome. Main seals the value to the machine's key and submits it. */
   secretSubmit: "secret:submit",
+  /** invoke(ProjectEnvRequest) → CallOutcome. Main seals each secret to the project machine's key, then calls project_env_set. */
+  projectEnvSubmit: "project:env-submit",
   /** invoke(url) → OpenOutcome. Opens an http(s) link in the user's browser; refuses other schemes. */
   openExternal: "app:openExternal",
   /** main → renderer: HubFrame */
