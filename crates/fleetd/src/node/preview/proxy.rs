@@ -1,12 +1,14 @@
-//! A preview's port on the tailnet. A preview listens on `127.0.0.1:$PORT`; [`Proxy::start`] gives it a port of its
+//! A preview's port on the tailnet. A preview listens on `127.0.0.1:$PORT` (or `[::1]:$PORT`); [`Proxy::start`] gives it a port of its
 //! own from a range (8400–8499 by default), bound to the node's tailnet address only, never `0.0.0.0`, and returns
 //! where it is. For each connection the node asks the local tailscaled who the peer is (`tailscale whois`) and lets
-//! it through only when it is a device of the tailnet user who owns the hub; anyone else gets a plain 403 page. The
-//! check is per connection and the bytes are then copied as they are, so keep-alive and WebSocket upgrades pass
+//! it through only when it is a device of the tailnet user who owns the hub; anyone else gets a plain 403 page. Each
+//! address's answer is kept for a short while ([`Cached`]), so a page loading 50 assets asks once. The check is per
+//! connection and the bytes are then copied as they are, so keep-alive and WebSocket upgrades pass
 //! through untouched. [`Proxy::stop`] (or dropping it) closes the port and every connection through it.
+use std::collections::HashMap;
 use std::future::Future;
 use std::io;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::ops::RangeInclusive;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -22,6 +24,8 @@ use crate::node::util::exec;
 /// The preview ports, one per running preview.
 pub const PORTS: RangeInclusive<u16> = 8400..=8499;
 const TAILSCALE_TIMEOUT: Duration = Duration::from_secs(5);
+/// How long [`Config::detect`]'s whois keeps an address's answer.
+pub const WHOIS_TTL: Duration = Duration::from_secs(30);
 /// How much of a refused request is read before the answer, and for how long.
 const MAX_HEAD: usize = 16 << 10;
 const HEAD_TIMEOUT: Duration = Duration::from_secs(2);
@@ -46,6 +50,12 @@ pub trait Whois: Send + Sync {
     fn whois(&self, peer: SocketAddr) -> BoxFuture<'_, io::Result<Peer>>;
 }
 
+impl<W: Whois + ?Sized> Whois for Arc<W> {
+    fn whois(&self, peer: SocketAddr) -> BoxFuture<'_, io::Result<Peer>> {
+        (**self).whois(peer)
+    }
+}
+
 /// The local tailscaled, through `tailscale whois --json <ip:port>`.
 pub struct Tailscale;
 
@@ -59,6 +69,55 @@ impl Whois for Tailscale {
             }
             parse_whois(&out.stdout)
                 .ok_or_else(|| io::Error::other("tailscale whois: no user in its answer"))
+        })
+    }
+}
+
+/// Each address's answer kept for `ttl`. Connections from the same address wait for the one question in flight
+/// instead of asking again. Errors aren't kept: the next connection asks again.
+pub struct Cached<W> {
+    inner: W,
+    ttl: Duration,
+    answers: Mutex<HashMap<IpAddr, Slot>>,
+}
+
+/// An address's answer and when it came; locked while the question is in flight.
+type Slot = Arc<tokio::sync::Mutex<Option<(Instant, Peer)>>>;
+
+impl<W: Whois> Cached<W> {
+    pub fn new(inner: W, ttl: Duration) -> Self {
+        Self {
+            inner,
+            ttl,
+            answers: Mutex::default(),
+        }
+    }
+}
+
+impl<W: Whois> Whois for Cached<W> {
+    fn whois(&self, peer: SocketAddr) -> BoxFuture<'_, io::Result<Peer>> {
+        Box::pin(async move {
+            let slot = {
+                let mut answers = lock(&self.answers);
+                // Forget stale answers no one is asking about.
+                answers.retain(|_, slot| {
+                    slot.try_lock().map_or(true, |answer| {
+                        answer
+                            .as_ref()
+                            .is_some_and(|(at, _)| at.elapsed() < self.ttl)
+                    })
+                });
+                answers.entry(peer.ip()).or_default().clone()
+            };
+            let mut answer = slot.lock().await;
+            if let Some((at, who)) = answer.as_ref()
+                && at.elapsed() < self.ttl
+            {
+                return Ok(who.clone());
+            }
+            let who = self.inner.whois(peer).await?;
+            *answer = Some((Instant::now(), who.clone()));
+            Ok(who)
         })
     }
 }
@@ -100,36 +159,29 @@ pub struct Config {
 }
 
 impl Config {
-    /// This machine on its tailnet (`tailscale status --json`), with its user as the owner and the [`PORTS`] range.
-    /// A caller that knows the hub owner's login sets `owner` to it.
-    pub async fn detect() -> io::Result<Self> {
+    /// This machine on its tailnet (`tailscale status --json`) and the [`PORTS`] range, asking tailscaled through
+    /// [`Cached`]. The owner is `owner` when given (the hub owner's login), else this machine's user. A tagged machine
+    /// has no user, so it needs `owner`.
+    pub async fn detect(owner: Option<&str>) -> io::Result<Self> {
         let argv = ["tailscale", "status", "--json"].map(str::to_owned);
         let out = exec(&argv, TAILSCALE_TIMEOUT).await;
         if let Some(error) = out.error {
             return Err(io::Error::other(error));
         }
-        parse_status(&out.stdout).ok_or_else(|| {
-            io::Error::other(
-                "tailscale isn't running here, or this machine is a tagged device with no user",
-            )
-        })
+        parse_status(&out.stdout, owner).map_err(io::Error::other)
     }
 }
 
-/// `tailscale status --json`, when its backend runs and this machine belongs to a user (a tagged one has none).
-fn parse_status(json: &str) -> Option<Config> {
-    let status: Value = serde_json::from_str(json).ok()?;
+/// `tailscale status --json`, when its backend runs. The error says what's missing, in plain words.
+fn parse_status(json: &str, owner: Option<&str>) -> Result<Config, String> {
+    let status: Value =
+        serde_json::from_str(json).map_err(|_| "tailscale status: unreadable answer".to_owned())?;
     if status.get("BackendState").and_then(Value::as_str) != Some("Running") {
-        return None;
+        return Err("tailscale isn't running on this machine".to_owned());
     }
-    let me = status.get("Self")?;
-    if me
-        .get("Tags")
-        .and_then(Value::as_array)
-        .is_some_and(|tags| !tags.is_empty())
-    {
-        return None;
-    }
+    let me = status
+        .get("Self")
+        .ok_or("tailscale status doesn't describe this machine")?;
     let ips: Vec<IpAddr> = me
         .get("TailscaleIPs")
         .and_then(Value::as_array)
@@ -142,24 +194,45 @@ fn parse_status(json: &str) -> Option<Config> {
         .iter()
         .find(|ip| ip.is_ipv4())
         .or_else(|| ips.first())
-        .copied()?;
+        .copied()
+        .ok_or("this machine has no tailnet address")?;
     let host = me
         .get("DNSName")
         .and_then(Value::as_str)
         .map(|name| name.trim_end_matches('.').to_owned())
         .filter(|name| !name.is_empty());
-    let user = me.get("UserID")?.as_u64()?.to_string();
-    let owner = status
-        .pointer(&format!("/User/{user}/LoginName"))?
-        .as_str()?
-        .to_owned();
-    Some(Config {
+    let owner = match owner {
+        Some(owner) => owner.to_owned(),
+        None => own_user(&status, me)?,
+    };
+    Ok(Config {
         addr,
         host,
         ports: PORTS,
         owner,
-        whois: Arc::new(Tailscale),
+        whois: Arc::new(Cached::new(Tailscale, WHOIS_TTL)),
     })
+}
+
+/// The login of the user this machine belongs to.
+fn own_user(status: &Value, me: &Value) -> Result<String, String> {
+    if me
+        .get("Tags")
+        .and_then(Value::as_array)
+        .is_some_and(|tags| !tags.is_empty())
+    {
+        return Err(
+            "this machine is a tagged tailnet device, so it has no user to own its previews: \
+             give the hub owner's tailnet login instead"
+                .to_owned(),
+        );
+    }
+    let user = me.get("UserID").and_then(Value::as_u64).unwrap_or_default();
+    status
+        .pointer(&format!("/User/{user}/LoginName"))
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .ok_or_else(|| "tailscale status names no user for this machine".to_owned())
 }
 
 /// Tailscale's addresses: 100.64.0.0/10 and fd7a:115c:a1e0::/48.
@@ -334,11 +407,17 @@ async fn serve(
             return refuse(client, "403 Forbidden", FORBIDDEN).await;
         }
     }
-    let _open = Open::new(activity);
-    let mut client = client;
-    let Ok(mut upstream) = TcpStream::connect((Ipv4Addr::LOCALHOST, target)).await else {
+    // A server started on `localhost` may have bound only ::1.
+    let upstream = match TcpStream::connect((Ipv4Addr::LOCALHOST, target)).await {
+        Ok(upstream) => Ok(upstream),
+        Err(_) => TcpStream::connect((Ipv6Addr::LOCALHOST, target)).await,
+    };
+    // A preview that isn't answering doesn't keep itself alive: only a connection that reached it counts.
+    let Ok(mut upstream) = upstream else {
         return refuse(client, "502 Bad Gateway", NOT_RUNNING).await;
     };
+    let _open = Open::new(activity);
+    let mut client = client;
     let _ = tokio::io::copy_bidirectional(&mut client, &mut upstream).await;
 }
 
@@ -369,7 +448,6 @@ async fn refuse(mut client: TcpStream, status: &str, body: &str) {
 mod tests {
     use super::*;
     use futures_util::{SinkExt, StreamExt};
-    use std::net::Ipv6Addr;
     use tokio_tungstenite::tungstenite::Message;
 
     const OWNER: &str = "me@example.com";
@@ -393,7 +471,11 @@ mod tests {
         fn whois(&self, peer: SocketAddr) -> BoxFuture<'_, io::Result<Peer>> {
             lock(&self.asked).push(peer);
             let answer = self.answer.clone();
-            Box::pin(async move { answer.ok_or_else(|| io::Error::other("no such peer")) })
+            Box::pin(async move {
+                // Callers asking at once overlap here, as they would on a real tailscaled.
+                tokio::task::yield_now().await;
+                answer.ok_or_else(|| io::Error::other("no such peer"))
+            })
         }
     }
 
@@ -423,7 +505,10 @@ mod tests {
 
     /// A preview that answers every request with `hello`.
     async fn preview() -> u16 {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        preview_on(TcpListener::bind("127.0.0.1:0").await.unwrap())
+    }
+
+    fn preview_on(listener: TcpListener) -> u16 {
         let port = listener.local_addr().unwrap().port();
         tokio::spawn(async move {
             while let Ok((mut tcp, _)) = listener.accept().await {
@@ -575,7 +660,12 @@ mod tests {
         // A connection held open through the proxy.
         let mut client = TcpStream::connect(addr).await.unwrap();
         let (_held, _) = upstream.accept().await.unwrap();
-        assert_eq!(proxy.idle_since(), None);
+        // It counts once the proxy's own connect has returned, just after the accept.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while proxy.idle_since().is_some() {
+            assert!(Instant::now() < deadline, "the connection never counted");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
 
         proxy.stop().await;
         TcpListener::bind(addr).await.unwrap();
@@ -683,15 +773,94 @@ mod tests {
         let json = r#"{"BackendState":"Running",
             "Self":{"DNSName":"devbox.tail1.ts.net.","TailscaleIPs":["fd7a:115c:a1e0::5","100.101.102.103"],"UserID":7},
             "User":{"7":{"ID":7,"LoginName":"me@example.com"},"8":{"ID":8,"LoginName":"other@example.com"}}}"#;
-        let config = parse_status(json).unwrap();
+        let config = parse_status(json, None).unwrap();
         assert_eq!(config.addr, "100.101.102.103".parse::<IpAddr>().unwrap());
         assert_eq!(config.host.as_deref(), Some("devbox.tail1.ts.net"));
         assert_eq!(config.owner, OWNER);
         assert_eq!(config.ports, PORTS);
 
-        let tagged = json.replace(r#""UserID":7"#, r#""UserID":7,"Tags":["tag:server"]"#);
-        assert!(parse_status(&tagged).is_none());
+        let hub = parse_status(json, Some("hub@example.com")).unwrap();
+        assert_eq!(hub.owner, "hub@example.com");
         let stopped = json.replace("Running", "Stopped");
-        assert!(parse_status(&stopped).is_none());
+        let error = parse_status(&stopped, None).err().unwrap();
+        assert_eq!(error, "tailscale isn't running on this machine");
+    }
+
+    #[test]
+    fn a_tagged_machine_says_it_needs_the_owner_and_takes_one_given() {
+        let json = r#"{"BackendState":"Running",
+            "Self":{"TailscaleIPs":["100.101.102.103"],"UserID":9,"Tags":["tag:server"]},
+            "User":{"9":{"ID":9,"LoginName":"tagged-devices"}}}"#;
+        let error = parse_status(json, None).err().unwrap();
+        assert!(error.contains("tagged tailnet device"), "{error}");
+        assert!(error.contains("hub owner's tailnet login"), "{error}");
+        let config = parse_status(json, Some(OWNER)).unwrap();
+        assert_eq!(config.owner, OWNER);
+        assert_eq!(config.addr, "100.101.102.103".parse::<IpAddr>().unwrap());
+    }
+
+    #[tokio::test]
+    async fn a_page_of_many_requests_asks_tailscale_once() {
+        let fake = FakeWhois::new(device(OWNER, &[]));
+        let mut config = config(fake.clone()).await;
+        config.whois = Arc::new(Cached::new(fake.clone(), WHOIS_TTL));
+        let proxy = Proxy::start(&config, preview().await).await.unwrap();
+        let responses = futures_util::future::join_all((0..20).map(|_| get(proxy.addr))).await;
+        for (response, _) in responses {
+            assert!(response.ends_with("hello"), "{response}");
+        }
+        assert_eq!(lock(&fake.asked).len(), 1);
+    }
+
+    #[tokio::test]
+    async fn the_cache_is_per_address_lapses_and_keeps_no_errors() {
+        let at = |ip: &str, port| SocketAddr::new(ip.parse().unwrap(), port);
+        let fake = FakeWhois::new(device(OWNER, &[]));
+        let cached = Cached::new(fake.clone(), WHOIS_TTL);
+        cached.whois(at("100.64.0.2", 50000)).await.unwrap();
+        cached.whois(at("100.64.0.2", 50001)).await.unwrap();
+        cached.whois(at("100.64.0.3", 50000)).await.unwrap();
+        assert_eq!(lock(&fake.asked).len(), 2);
+
+        let lapsed = Cached::new(fake.clone(), Duration::ZERO);
+        lapsed.whois(at("100.64.0.2", 50000)).await.unwrap();
+        lapsed.whois(at("100.64.0.2", 50000)).await.unwrap();
+        assert_eq!(lock(&fake.asked).len(), 4);
+
+        let unknown = FakeWhois::new(None);
+        let cached = Cached::new(unknown.clone(), WHOIS_TTL);
+        for _ in 0..2 {
+            assert!(cached.whois(at("100.64.0.4", 50000)).await.is_err());
+        }
+        assert_eq!(lock(&unknown.asked).len(), 2);
+    }
+
+    #[tokio::test]
+    async fn a_preview_on_ipv6_loopback_is_reached() {
+        // No IPv6 loopback on this machine: nothing to try.
+        let Ok(listener) = TcpListener::bind((Ipv6Addr::LOCALHOST, 0)).await else {
+            return;
+        };
+        let target = preview_on(listener);
+        let proxy = Proxy::start(&config(FakeWhois::new(device(OWNER, &[]))).await, target)
+            .await
+            .unwrap();
+        let (response, _) = get(proxy.addr).await;
+        assert!(response.ends_with("hello"), "{response}");
+    }
+
+    #[tokio::test]
+    async fn a_preview_not_answering_still_goes_idle() {
+        let proxy = Proxy::start(
+            &config(FakeWhois::new(device(OWNER, &[]))).await,
+            free_port().await,
+        )
+        .await
+        .unwrap();
+        let started = proxy.idle_since().unwrap();
+        for _ in 0..3 {
+            assert!(get(proxy.addr).await.0.starts_with("HTTP/1.1 502"));
+        }
+        assert_eq!(proxy.idle_since(), Some(started));
     }
 }
