@@ -100,6 +100,14 @@ fleetd machine remove <id> [--purge] [--home <hub home>]
 
 stop and remove the node's service on the machine and revoke its key on the hub; `--purge` also deletes `~/.fleetd/node` and `~/.fleetd/claude.env` there, and what an older fleetd installed for T3 Code
 
+### fleetd machine set {#machine-set}
+
+```text
+fleetd machine set <id> --max-agents <n>|auto [--home <dir>] [--hub <url>]
+```
+
+the most agents the machine runs at once (admin key), up to the fleet cap, in place of what it is measured to fit; auto: what it fits again. Raising starts queued agents at once; lowering stops nothing
+
 ### fleetd pair {#pair}
 
 ```text

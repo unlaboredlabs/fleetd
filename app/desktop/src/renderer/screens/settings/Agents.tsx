@@ -1,5 +1,5 @@
 // Max agents in the app: the chat header's "agents 6 / 12" control (it opens the slider in place), the same slider
-// per project in Settings → Agents, and the fleet-wide cap above them. Reads the hub's slot state from the data
+// per project in Settings → Agents, each machine's, and the fleet-wide cap above them. Reads the hub's slot state from the data
 // layer's store; a slider applies when you let go (a cap_set call through the layer), with Undo, and the hub's next
 // slot state confirms it.
 import { Slider } from "radix-ui";
@@ -16,10 +16,14 @@ import {
   extrasOver,
   fleetTop,
   fleetWarning,
+  machineAgents,
+  machineHolds,
   pauseLine,
   projectAgents,
   serialNote,
+  sliderTop,
   sourceLine,
+  type MachineAgents,
 } from "./agentsModel";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { useFocusProjectSlider } from "./focusProject";
@@ -40,7 +44,7 @@ export function AgentsCapControl({ projectRef }: { projectRef: ProjectRef }) {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button size="sm" variant="ghost" aria-label={`Max agents: ${a.running} running of ${a.max}${a.queued > 0 ? `, ${a.queued} queued` : ""}`}>
+        <Button size="sm" variant="ghost" aria-label={`Max agents: ${a.running} running of ${a.limit}${a.queued > 0 ? `, ${a.queued} queued` : ""}`}>
           <span className={cx(textClass({ size: "xs", tabular: true }), s.agentsLabel)}>{agentsLabel(a)}</span>
         </Button>
       </PopoverTrigger>
@@ -226,7 +230,7 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
       project: { projectRef: props.projectRef, ...(follow ? { followDefault: true } : { maxAgents }), ...(pauseExtras ? { pauseExtras: true } : {}) },
     }).then((o) => o.paused?.length ?? 0),
   );
-  const value = clampMax(state.value, a.cap);
+  const value = clampMax(state.value, a.top);
   const id = `agents-${props.projectRef.machineId}-${props.projectRef.projectId}`;
   const serial = serialNote(value);
 
@@ -248,15 +252,18 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
           </Button>
         ) : null}
       </div>
-      <CapSlider id={id} max={Math.max(1, a.cap)} disabled={!live || a.cap <= 1} state={state} />
+      <CapSlider id={id} max={a.top} disabled={!live || a.top <= 1} state={state} />
       {props.scale ? (
         <div className={s.agentsScale}>
           <Text size="xs" tone="quiet" tabular>
             1
           </Text>
-          <Text size="xs" tone="quiet" tabular>{`${a.cap}, the most it can run`}</Text>
+          <Text size="xs" tone="quiet" tabular>
+            {props.slots.fleetCap === undefined ? `${a.top}` : `${a.top}, the whole fleet's cap`}
+          </Text>
         </div>
       ) : null}
+      <MachineHolds machineId={props.projectRef.machineId} note={machineHolds(a, value, props.projectRef.machineId)} to={value} busy={state.busy} />
       <ResultLine
         id={id}
         state={state}
@@ -282,7 +289,101 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
   );
 }
 
-/** Settings → Agents: the fleet-wide cap, then each project's max. */
+/** Under a project's slider past its machine's cap: the machine holds it there, and one click raises the machine. */
+function MachineHolds(props: { machineId: string; note: string | null; to: number; busy: boolean }) {
+  const live = useLive();
+  const call = useHubCall();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
+  if (props.note === null) return null;
+  const raise = () => {
+    setBusy(true);
+    setError(undefined);
+    call("cap_set", { machine: { machineId: props.machineId, maxAgents: props.to } })
+      .catch((e: unknown) => setError(errorText(e)))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <div className={s.result}>
+      <Text size="xs" tone="warning">
+        {props.note}
+      </Text>
+      <Button size="sm" disabled={!live || busy || props.busy} onClick={raise}>
+        {`Raise ${props.machineId} to ${props.to}`}
+      </Button>
+      {error === undefined ? null : (
+        <p role="alert" className={s.alertLine}>
+          <Text size="xs" tone="danger">{`Not changed: ${error}`}</Text>
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Each machine's max agents: what it runs at once, where that comes from, and the slider that changes it. */
+function MachineCaps({ slots }: { slots: SlotState }) {
+  const ref = useReveal<HTMLElement>("agents.machines");
+  const machines = machineAgents(slots);
+  return (
+    <section ref={ref} className={s.agentsList} aria-labelledby="agents-machines" tabIndex={-1}>
+      <div className={s.agentsPanel}>
+        <Text strong id="agents-machines">
+          Machines
+        </Text>
+        <Text size="xs" tone="quiet">
+          Every project's agents on a machine together, up to the whole fleet's cap. Changing one needs an admin key.
+        </Text>
+      </div>
+      {machines.length === 0 ? (
+        <Text tone="quiet">No machine has reported yet.</Text>
+      ) : (
+        machines.map((m) => (
+          <section key={m.machineId} className={s.agentsRow} aria-label={m.machineId}>
+            <MachinePanel machine={m} top={Math.max(1, sliderTop(slots), m.cap)} />
+          </section>
+        ))
+      )}
+    </section>
+  );
+}
+
+function MachinePanel({ machine: m, top }: { machine: MachineAgents; top: number }) {
+  const live = useLive();
+  const call = useHubCall();
+  const state = useApplySlider(m.cap, !m.set, (maxAgents, _pause, auto) =>
+    call("cap_set", { machine: { machineId: m.machineId, ...(auto ? { auto: true } : { maxAgents }) } }).then(() => 0),
+  );
+  const id = `agents-machine-${m.machineId}`;
+  return (
+    <div className={s.agentsPanel}>
+      <div className={s.agentsHead}>
+        <span id={`${id}-label`} className={textClass({ strong: true })}>
+          {m.machineId}
+        </span>
+        <Text tabular strong>{`${state.value}`}</Text>
+      </div>
+      <div className={s.agentsSource}>
+        <Text size="xs" tone="quiet">
+          {m.source}
+        </Text>
+        {m.set ? (
+          <Button size="sm" variant="quiet" disabled={!live || state.busy} onClick={() => state.toDefault(m.auto)}>
+            Use auto
+          </Button>
+        ) : null}
+      </div>
+      <CapSlider id={id} max={top} disabled={!live || top <= 1} state={state} />
+      <ResultLine
+        id={id}
+        state={state}
+        idle={`${m.running} ${m.running === 1 ? "agent" : "agents"} running now.`}
+        done={(d) => appliedLine(d.follow ? `${m.machineId}, auto` : m.machineId, d.from, d.to)}
+      />
+    </div>
+  );
+}
+
+/** Settings → Agents: the fleet-wide cap, each machine's, then each project's max. */
 export function AgentsSettings() {
   const slots = useSlots();
   const projects = useProjects();
@@ -300,6 +401,8 @@ export function AgentsSettings() {
         ) : (
           <>
             <FleetCap slots={slots} />
+            <Separator />
+            <MachineCaps slots={slots} />
             <Separator />
             <TaskProfiles />
             <Separator />

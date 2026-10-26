@@ -1,11 +1,12 @@
-//! A project's max agents and the fleet cap, as a person sets them (`cap_set`, `fleetd project set`). The slot board
+//! A project's max agents, a machine's and the fleet cap, as a person sets them (`cap_set`, `fleetd project set`,
+//! `fleetd machine set`). The slot board
 //! enforces both at every start; this is the change itself: lowering stops nothing (running agents finish their work,
 //! new ones wait) unless the extras are paused, raising starts queued agents at once and wakes the lead, and every
 //! change is one `agents.cap` event whose summary is the chat's quiet line.
 use std::sync::Arc;
 
 use fleetd_contracts::events::HubEventType;
-use fleetd_contracts::ids::{ProjectRef, Timestamp};
+use fleetd_contracts::ids::{MachineId, ProjectRef, Timestamp};
 use fleetd_contracts::mcp::ErrorCode;
 use fleetd_contracts::prim::{Count, Int, List};
 use fleetd_contracts::tasks::{AgentsCapData, SlotState, TaskId, TaskState};
@@ -17,7 +18,14 @@ use crate::hub::store::NewEvent;
 
 pub struct CapChange {
     pub cap: Option<i64>,
+    pub machine: Option<MachineCap>,
     pub project: Option<ProjectCap>,
+}
+
+pub struct MachineCap {
+    pub machine_id: MachineId,
+    /// The most agents that run on it at once, in place of what it fits; None: auto again.
+    pub max_agents: Option<i64>,
 }
 
 pub struct ProjectCap {
@@ -73,6 +81,22 @@ pub fn raised_line(from: i64, to: i64, started: i64, free: i64) -> String {
     )
 }
 
+/// The line for a machine's max agents set, changed, or back to auto (`set` before, `set_now` after).
+pub fn machine_line(machine: &str, from: i64, to: i64, set: bool, set_now: bool) -> String {
+    let change = match (set, set_now) {
+        (false, _) => format!("Max agents on {machine} set to {to} (auto was {from})"),
+        (true, true) => format!("Max agents on {machine} {from} → {to}"),
+        (true, false) => format!("Max agents on {machine} back to auto: {to}, was {from}"),
+    };
+    if to > from {
+        format!("{change}: queued agents start as slots allow.")
+    } else if to < from {
+        format!("{change}: running agents finish; new ones wait.")
+    } else {
+        format!("{change}.")
+    }
+}
+
 /// A paused agent's reason, as its task shows it while it waits.
 pub fn paused_reason(max_agents: i64) -> String {
     format!("paused: max agents lowered to {max_agents}; resumes when a slot frees")
@@ -94,6 +118,26 @@ impl Tasks {
                 Some(&format!("Pick 1 to {cap}, or raise the fleet cap first.")),
             ));
         }
+        if let Some(m) = &change.machine
+            && let Some(max) = m.max_agents
+            && let Some(cap) = change.cap.or(cap_before)
+            && max > cap
+        {
+            return Err(lead_error(
+                ErrorCode::Invalid,
+                format!(
+                    "Max agents {max} on {} is above the fleet's {cap} slots.",
+                    m.machine_id
+                ),
+                Some(&format!("Pick 1 to {cap}, or raise the fleet cap first.")),
+            ));
+        }
+        let machine_before = change.machine.as_ref().map(|m| {
+            (
+                slots.machine_cap(&m.machine_id),
+                slots.machine_setting(&m.machine_id),
+            )
+        });
         let before = change
             .project
             .as_ref()
@@ -102,6 +146,10 @@ impl Tasks {
         slots
             .set_cap(CapInput {
                 cap: change.cap,
+                machine: change
+                    .machine
+                    .as_ref()
+                    .map(|m| (m.machine_id.clone(), m.max_agents)),
                 max_agents: change
                     .project
                     .as_ref()
@@ -126,8 +174,35 @@ impl Tasks {
             };
             self.cap_event(
                 None,
+                None,
                 cap_before.unwrap_or(total_before),
                 cap,
+                after.used.get(),
+                after.queued.get(),
+                &[],
+                &line,
+            )
+            .map_err(store_error)?;
+            lines.push(line);
+        }
+        if let (Some(m), Some((from, setting))) = (&change.machine, machine_before)
+            && setting != m.max_agents
+        {
+            let id = &m.machine_id;
+            let to = slots.machine_cap(id);
+            let after = slots.state();
+            let line = machine_line(
+                id.as_str(),
+                from,
+                to,
+                setting.is_some(),
+                m.max_agents.is_some(),
+            );
+            self.cap_event(
+                None,
+                Some(id),
+                from,
+                to,
                 after.used.get(),
                 after.queued.get(),
                 &[],
@@ -179,6 +254,7 @@ impl Tasks {
             if to != from || back || !paused.is_empty() {
                 self.cap_event(
                     Some(r),
+                    None,
                     from,
                     to,
                     after.running,
@@ -214,6 +290,7 @@ impl Tasks {
     fn cap_event(
         &self,
         r: Option<&ProjectRef>,
+        machine: Option<&MachineId>,
         from: i64,
         to: i64,
         running: i64,
@@ -233,7 +310,7 @@ impl Tasks {
         self.d.events.append(NewEvent {
             at: Timestamp(self.now_iso()),
             r#type: HubEventType::AgentsCap,
-            machine_id: r.map(|r| r.machine_id.clone()),
+            machine_id: r.map(|r| &r.machine_id).or(machine).cloned(),
             project_id: r.map(|r| r.project_id.clone()),
             thread_id: None,
             summary: line.to_owned(),

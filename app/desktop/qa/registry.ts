@@ -48,6 +48,8 @@ export const fixtures = [
   "settings-agents",
   // ...with storefront's medium switch off (fixtures/settings).
   "settings-medium-off",
+  // A machine past its memory estimate, and a project set past its machine (fixtures/settings).
+  "settings-machines",
   // F2: the lead chat's live strip with 0, 3 and 20 agents at work (fixtures/live).
   "live-0",
   "live-3",
@@ -1380,6 +1382,42 @@ export const screens: readonly Screen[] = [
   // keys and titles; settings-prompts is the real registry with edits. Compare and Update are deep links.
   // Max agents: the fleet cap and each project's slider.
   { id: "settings.agents", route: "#/settings/agents", fixtures: ["settings-agents", "long-text", "empty", "hub-unreachable"] },
+  // Machines: devbox's auto 22 and where it comes from, a machine set to 40 with the way back to auto; storefront set to
+  // 30 on devbox, which holds it at 22 and offers to raise it.
+  {
+    id: "settings.agents",
+    route: "#/settings/agents",
+    fixtures: ["settings-machines"],
+    variant: "machines",
+    open: async (page) => {
+      const machines = page.getByRole("region", { name: "Machines" });
+      await machines.scrollIntoViewIfNeeded();
+      await machines.getByText("Auto: memory 60 GB, about 2 GB an agent.").waitFor();
+      await machines.getByRole("button", { name: "Use auto" }).waitFor();
+    },
+  },
+  {
+    id: "settings.agents",
+    route: "#/settings/agents",
+    fixtures: ["settings-machines"],
+    variant: "machine-holds",
+    open: async (page) => {
+      const storefront = page.getByRole("region", { name: "storefront" });
+      await storefront.scrollIntoViewIfNeeded();
+      await storefront.getByRole("button", { name: /^Raise devbox to 30$/u }).waitFor();
+    },
+  },
+  {
+    id: "settings.agents",
+    route: "#/settings/agents",
+    fixtures: ["settings-machines"],
+    variant: "machine-raised",
+    open: async (page) => {
+      const storefront = page.getByRole("region", { name: "storefront" });
+      await storefront.getByRole("button", { name: /^Raise devbox to 30$/u }).click();
+      await page.getByRole("region", { name: "devbox" }).getByText("Set by you. Auto would be 22: memory 60 GB, about 2 GB an agent.").waitFor();
+    },
+  },
   // The two task profiles, and each project's medium switch: storefront's off in settings-medium-off.
   {
     id: "settings.agents",

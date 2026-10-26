@@ -10,12 +10,12 @@ use fleetd_contracts::prim::List;
 use fleetd_contracts::tasks::{Task, TaskKind};
 use serde_json::{Value, json};
 
-use super::cap::{CapChange, ProjectCap};
+use super::cap::{CapChange, MachineCap, ProjectCap};
 use super::ports::TaskError;
 use super::{TaskCaller, TaskFilter, Tasks};
 use crate::hub::api::{
     Hub, Registry, ToolError, allows, allows_everywhere, cap, internal_error, refused, require,
-    unknown_project,
+    unknown_machine, unknown_project,
 };
 use crate::hub::store::StoreError;
 
@@ -85,8 +85,15 @@ pub fn register(tools: &mut Registry) {
     tools.add(
         "cap_set",
         |hub: Arc<Hub>, caller, input: CapSetInput| async move {
-            if input.cap.is_some() && !allows_everywhere(&caller, Role::Admin) {
+            if (input.cap.is_some() || input.machine.is_some())
+                && !allows_everywhere(&caller, Role::Admin)
+            {
                 return Err(refused(&caller, Role::Admin, None));
+            }
+            if let Some(m) = &input.machine
+                && hub.store.machine_get(&m.machine_id)?.is_none()
+            {
+                return Err(unknown_machine(&m.machine_id));
             }
             if let Some(p) = &input.project {
                 require(&caller, Role::Operate, Some(&p.project_ref.machine_id))?;
@@ -98,6 +105,10 @@ pub fn register(tools: &mut Registry) {
                 .tasks
                 .set_caps(CapChange {
                     cap: input.cap.map(|c| c.get()),
+                    machine: input.machine.map(|m| MachineCap {
+                        machine_id: m.machine_id,
+                        max_agents: m.max_agents.map(|n| n.get()),
+                    }),
                     project: input.project.map(|p| ProjectCap {
                         project_ref: p.project_ref,
                         max_agents: p.max_agents.map(|n| n.get()),

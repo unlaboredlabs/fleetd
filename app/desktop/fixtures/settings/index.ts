@@ -172,7 +172,10 @@ function agents(from: Fixture): Fixture {
   const [first, second] = projects;
   if (first) rows.push({ projectRef: ref(first), maxAgents: 12, own: true, running: 6, queued: 0 });
   if (second) rows.push({ projectRef: ref(second), maxAgents: 3, own: true, running: 3, queued: 2 });
-  const slots: JsonObject = { cap: 16, fleetCap: 16, used: 9, queued: 2, perProject: rows };
+  // Each machine fits 16 on its own measure, so the fleet cap is what binds.
+  const machineIds = [...new Set(projects.map((p) => asText(p["machineId"])))];
+  const perMachine = machineIds.map((machineId) => ({ machineId, cap: 16, auto: 16, running: 0, why: "memory 44 GB, about 2 GB an agent" }));
+  const slots: JsonObject = { cap: 16, fleetCap: 16, used: 9, queued: 2, perMachine, perProject: rows };
   if (f.snapshot) f.snapshot["slots"] = clone(slots);
   for (const frame of f.live) if (frame["slots"] !== undefined) frame["slots"] = clone(slots);
   // A change answers with the slot state it asked for, as the hub does: every max each project can take (and the
@@ -198,6 +201,37 @@ function agents(from: Fixture): Fixture {
     }
   }
   for (let n = 1; n <= 64; n++) f.answer("cap_set", { cap: n }, { slots: { ...clone(slots), cap: n, fleetCap: n } });
+  return f;
+}
+
+/**
+ * A machine past its memory estimate: devbox fits 22 on its 60 GB (45 after the reserve, at 2 GB an agent) under a fleet
+ * cap of 50, storefront is set to 30 there and runs 22 with 8 queued, and a second machine is set to 40. A machine
+ * change answers with the slot state it asked for, every number the slider reaches and back to auto.
+ */
+function machines(from: Fixture): Fixture {
+  const f = Fixture.from(from, "settings-machines", "devbox at its auto 22 under a fleet cap of 50, storefront set to 30 there; a second machine set to 40");
+  f.agentsFromSlots = true;
+  const projects = isObject(f.snapshot) && Array.isArray(f.snapshot["projects"]) ? f.snapshot["projects"].filter(isObject) : [];
+  const [first] = projects;
+  const home = first === undefined ? "devbox" : asText(first["machineId"]);
+  const other = projects.map((p) => asText(p["machineId"])).find((m) => m !== home);
+  const devbox: JsonObject = { machineId: home, cap: 22, auto: 22, running: 22, why: "memory 60 GB, about 2 GB an agent" };
+  const perMachine: JsonObject[] = [devbox];
+  if (other !== undefined) perMachine.push({ machineId: other, cap: 40, maxAgents: 40, auto: 28, running: 0, why: "28 of 32 CPUs" });
+  const rows: JsonObject[] = [];
+  if (first) rows.push({ projectRef: { machineId: home, projectId: asText(first["projectId"]) }, maxAgents: 30, own: true, running: 22, queued: 8 });
+  const slots: JsonObject = { cap: 50, fleetCap: 50, used: 22, queued: 8, perMachine, perProject: rows };
+  if (f.snapshot) f.snapshot["slots"] = clone(slots);
+  for (const frame of f.live) if (frame["slots"] !== undefined) frame["slots"] = clone(slots);
+  for (const m of perMachine) {
+    const machineId = asText(m["machineId"]);
+    const at = (row: JsonObject) => ({ slots: { ...clone(slots), perMachine: perMachine.map((x) => (x === m ? row : clone(x))) } });
+    const auto = typeof m["auto"] === "number" ? m["auto"] : 1;
+    const { maxAgents: _set, ...unset } = clone(m);
+    f.answer("cap_set", { machine: { machineId, auto: true } }, at({ ...unset, cap: auto }));
+    for (let n = 1; n <= 50; n++) f.answer("cap_set", { machine: { machineId, maxAgents: n } }, at({ ...clone(m), cap: n, maxAgents: n }));
+  }
   return f;
 }
 
@@ -239,6 +273,6 @@ export default defineGroup({
     const off = Fixture.from(withAgents, "settings-medium-off", "Max agents as in settings-agents, with storefront's medium switch off");
     const storefront = isObject(off.snapshot) && Array.isArray(off.snapshot["projects"]) ? off.snapshot["projects"].filter(isObject)[0] : undefined;
     projectSettings(off, new Set(storefront === undefined ? [] : [asText(storefront["projectId"])]));
-    return [f, withAgents, off];
+    return [f, withAgents, off, machines(base("typical"))];
   },
 });

@@ -596,7 +596,17 @@ export type Brief = {
 export type CapSetInput = {
   /** The fleet cap: agents running at once across every project. Needs an admin key. */
   cap?: number;
+  /** A machine's max agents. Needs an admin key. */
+  machine?: CapSetMachine;
   project?: CapSetProject;
+};
+
+export type CapSetMachine = {
+  /** Drop the setting: the machine runs what it is measured to fit again. */
+  auto?: boolean;
+  machineId: MachineId;
+  /** 1 up to the fleet cap: the most agents that run on the machine at once, in place of what it is measured to fit. */
+  maxAgents?: number;
 };
 
 export type CapSetOutput = {
@@ -3901,9 +3911,11 @@ export type SlotStatePerMachine = {
   /** New agents its free disk has room for now, above the guard's floor; absent while the node reports no disk. */
   diskRoom?: number;
   machineId: MachineId;
+  /** A person's setting for the machine (`cap_set`); absent: it runs `auto`. */
+  maxAgents?: number;
   /** Agents running there now. */
   running: number;
-  /** The term that sets `auto`, e.g. "memory 18 GB" or "14 of 16 CPUs". */
+  /** The term that sets `auto`, e.g. "memory 18 GB, about 2 GB an agent" or "14 of 16 CPUs". */
   why: string;
 };
 

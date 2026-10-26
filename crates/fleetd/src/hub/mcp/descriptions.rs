@@ -162,7 +162,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "cap_set",
-        "Set the fleet cap on running agents (1-1000, admin key) and/or one project's max agents (1 up to the fleet cap, or followDefault: its machine's cap within the fleet cap). Applies at once; queued agents start as soon as they fit. Returns the slot board.",
+        "Set the fleet cap on running agents (1-1000, admin key), one machine's max agents (1 up to the fleet cap in place of what it is measured to fit, or auto: true; admin key), and/or one project's max agents (1 up to the fleet cap, or followDefault: its machine's cap within the fleet cap). Applies at once; queued agents start as soon as they fit. Returns the slot board.",
     ),
     (
         "usage_status",

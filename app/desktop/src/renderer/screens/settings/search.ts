@@ -45,6 +45,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "notifications.test", label: "Test notification", tab: "notifications", keywords: ["notifications", "alerts", "try"] },
   page("agents", ["limit", "at once", "parallel"]),
   { key: "agents.project", label: "Max agents per project", tab: "agents", keywords: ["limit", "at once", "parallel", "concurrency"] },
+  { key: "agents.machines", label: "Machines", tab: "agents", keywords: ["max agents", "machine cap", "memory", "auto", "admin"] },
   { key: "agents.fleet", label: "Whole fleet", tab: "agents", keywords: ["max agents", "fleet limit", "fleet cap", "admin"] },
   { key: "agents.profiles", label: "Task profiles", tab: "agents", keywords: ["profile", "medium", "high", "effort", "model", "opus"] },
   page("projects", ["project settings", "repo", "repository"]),

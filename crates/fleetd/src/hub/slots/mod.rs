@@ -48,6 +48,8 @@ pub type ReleaseListener = Arc<dyn Fn() + Send + Sync>;
 pub struct CapInput {
     /// 1..1000.
     pub cap: Option<i64>,
+    /// A machine's max agents, 1 up to the cap; None: auto again.
+    pub machine: Option<(MachineId, Option<i64>)>,
     /// A project's own max agents, 1 up to the cap; None: back to the default.
     pub max_agents: Option<(ProjectRef, Option<i64>)>,
 }
@@ -133,6 +135,13 @@ fn persist(db: &HubDb, ops: Vec<Op>) -> Result<(), StoreError> {
                     )?
                     .execute(params![m.as_str(), name, auto.cap, auto.why])?;
                 }
+                Op::MachineMax(m) => {
+                    db.prepare_cached(
+                        "INSERT INTO slot_machine_caps (machine_id, name, auto, why, max_agents) VALUES (?, ?, ?, ?, ?)
+                         ON CONFLICT (machine_id) DO UPDATE SET max_agents = excluded.max_agents",
+                    )?
+                    .execute(params![m.machine_id.as_str(), m.name, m.auto.cap, m.auto.why, m.max_agents])?;
+                }
             }
         }
         Ok(())
@@ -206,6 +215,7 @@ fn slot_state(s: BoardState) -> SlotState {
                 .map(|row| SlotStatePerMachine {
                     machine_id: row.machine_id,
                     cap: count(row.cap),
+                    max_agents: row.max_agents.map(count),
                     auto: count(row.auto),
                     why: Text::new(row.why).unwrap_or_else(|_| Text::unchecked("auto".to_owned())),
                     running: count(row.running),
@@ -383,10 +393,13 @@ impl Slots {
         Ok(())
     }
 
-    /// `cap_set`: the fleet cap, a project's max agents, or both. Persisted; applies at once, starting queued
-    /// agents that now fit before it returns.
+    /// `cap_set`: the fleet cap, a machine's max agents, a project's max agents, or any of them. Persisted; applies
+    /// at once, starting queued agents that now fit before it returns.
     pub fn set_cap(&self, input: CapInput) -> Result<SlotState, StoreError> {
         self.locked(|b| {
+            if let Some((m, n)) = &input.machine {
+                b.set_machine(m, *n);
+            }
             b.set_cap(input.cap, input.max_agents);
             ((), true)
         })?;
@@ -427,6 +440,11 @@ impl Slots {
     /// The machine's cap: a person's setting, else what it fits.
     pub fn machine_cap(&self, m: &MachineId) -> i64 {
         self.board().machine_cap(m)
+    }
+
+    /// A person's setting for the machine; None: auto.
+    pub fn machine_setting(&self, m: &MachineId) -> Option<i64> {
+        self.board().machine_setting(m)
     }
 
     /// Slots the project's tasks could take now ([`Board::room`]).
@@ -492,6 +510,7 @@ mod tests {
         slots
             .set_cap(CapInput {
                 cap: None,
+                machine: None,
                 max_agents: Some((r.clone(), Some(2))),
             })
             .unwrap();
@@ -543,6 +562,7 @@ mod tests {
             slots
                 .set_cap(CapInput {
                     cap: Some(6),
+                    machine: None,
                     max_agents: Some((r.clone(), n)),
                 })
                 .unwrap()
@@ -583,6 +603,7 @@ mod tests {
         slots
             .set_cap(CapInput {
                 cap: None,
+                machine: None,
                 max_agents: Some((r.clone(), Some(20))),
             })
             .unwrap();

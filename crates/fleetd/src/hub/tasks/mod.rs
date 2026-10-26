@@ -16,6 +16,8 @@ mod fresh_tests;
 #[cfg(test)]
 mod guard_tests;
 pub mod hooks;
+#[cfg(test)]
+mod machine_cap_tests;
 pub mod policy;
 pub mod ports;
 pub mod pr;
