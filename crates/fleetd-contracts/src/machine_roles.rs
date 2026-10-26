@@ -125,6 +125,8 @@ pub struct MachineRolesEntry {
     pub hosts: HostChecks,
     /// Its node hosts sessions for agents on other machines (newer nodes).
     pub hosts_others: bool,
+    /// Why it doesn't, in plain words, while it hosts sessions and doesn't.
+    pub hosts_others_note: Option<Line<1, 200>>,
 }
 
 brand!(

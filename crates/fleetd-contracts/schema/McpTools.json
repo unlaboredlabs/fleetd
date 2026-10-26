@@ -6071,6 +6071,13 @@
           "description": "Its node hosts sessions for agents on other machines (newer nodes).",
           "type": "boolean"
         },
+        "hostsOthersNote": {
+          "description": "Why it doesn't, in plain words, while it hosts sessions and doesn't.",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
         "machineId": {
           "$ref": "#/$defs/MachineId"
         },

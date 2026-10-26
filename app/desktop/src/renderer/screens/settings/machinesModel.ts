@@ -52,6 +52,7 @@ export const capChoices = (m: MachineRolesEntry): Array<{ value: string; label: 
 export const hostsNote = (m: MachineRolesEntry): string | null => {
   if (!m.roles.includes("sessions")) return null;
   if ((m.hosts ?? []).length === 0) return m.online ? "Hasn't said what it can host yet." : "Offline: what it can host shows once it is back.";
-  if (!m.hostsOthers) return "Its fleetd is older: it hosts only its own agents' sessions until it is updated.";
+  // The hub says why in plain words: no key to seal to, an older fleetd, or offline.
+  if (!m.hostsOthers) return m.hostsOthersNote ?? "It hosts only its own agents' sessions.";
   return null;
 };
