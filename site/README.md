@@ -21,13 +21,14 @@ them in place. Re-shoot them when what those screens show changes, and keep the 
 
 The showcase under the hero is the app recorded while it plays one request from the message to the merge, on the
 `showcase-order` fixture (`app/desktop/fixtures/showcase`): `showcase-light.webm` and `showcase-dark.webm` (VP9,
-2240x1440, 25 fps), their posters `showcase-light.jpg` and `showcase-dark.jpg` (the end, the merge landed), a
-half-size `-small` twin of each for small screens, and `showcase.json`, when each of the page's five steps starts in
-the video. `pnpm fixtures && pnpm qa:build && pnpm site:showcase` in `app/desktop` records them in place
-(`app/desktop/qa/showcase.spec.ts`; it needs Playwright's ffmpeg, `pnpm exec playwright install ffmpeg` in
-`app/desktop`). The page shows the poster first. On a wide screen it plays the recording once the page has loaded and
-the frame is on screen; on a small screen or with reduced motion it waits for Play. Record it again when those screens
-change, and keep the alt text, the steps and the caption true to it.
+2240x1440, 25 fps) with H.264 `.mp4` twins for browsers without VP9 (encoded by the app's MediaRecorder), their
+posters `showcase-light.jpg` and `showcase-dark.jpg` (the end, the merge landed), a half-size `-small` twin of each
+for small screens, and `showcase.json`, when each of the page's five steps starts in the video. `pnpm fixtures && pnpm
+qa:build && pnpm site:showcase` in `app/desktop` records them in place (`app/desktop/qa/showcase.spec.ts`; it needs
+Playwright's ffmpeg, `pnpm exec playwright install ffmpeg` in `app/desktop`). The page shows the poster first. On a
+wide screen it plays the recording once the page has loaded and the frame is on screen; on a small screen or with
+reduced motion it waits for Play. Record it again when those screens change, and keep the alt text, the steps and the
+caption true to it.
 
 The `<!-- capture:NAME -->` blocks in `home.html` and the same blocks in `fleetd.txt` (found there by the shape of
 fleetd's output, so the twin carries no markers) come from one command, run from the repo root:

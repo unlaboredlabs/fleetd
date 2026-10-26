@@ -1,12 +1,12 @@
 // fleetd.sh's showcase: the app on fixtures/showcase, recorded while it plays one request from the message to the
 // merge, in the light and the dark theme. `pnpm fixtures && pnpm qa:build && pnpm site:showcase` writes
-// site/showcase-<theme>.webm and its poster, site/showcase-<theme>.jpg (the end: the merge landed), each with a
-// half-size -small twin for small screens, over the files in the repo, and each step's start in the video, in seconds, to
-// site/showcase.json: the page marks the step that is playing.
+// site/showcase-<theme>.webm, its H.264 twin site/showcase-<theme>.mp4 and its poster, site/showcase-<theme>.jpg (the
+// end: the merge landed), each with a half-size -small twin for small screens, over the files in the repo, and each
+// step's start in the video, in seconds, to site/showcase.json: the page marks the step that is playing.
 //
 // The frames are the window's own (CDP's screencast), with motion on: the app's beat, its entrances and the typing.
 // They are spaced out to a steady 25 fps, then encoded as VP9 by the ffmpeg Playwright installs for its own videos
-// (`pnpm exec playwright install ffmpeg`; FFMPEG=<path> to use another).
+// (`pnpm exec playwright install ffmpeg`; FFMPEG=<path> to use another), and as H.264 by the app's MediaRecorder.
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -37,6 +37,64 @@ const ffmpeg = (): string => {
   return bin;
 };
 
+/**
+ * The same ticks as H.264 MP4, for the browsers without VP9 WebM: the app window's own MediaRecorder encodes them, as
+ * the app's recorder does (src/main/instrument/record.ts), from a canvas fed one tick every 1/FPS s. It runs in real
+ * time, since MediaRecorder stamps each frame with the clock.
+ */
+async function mp4(page: Page, ticks: readonly Buffer[], size: { width: number; height: number }, bitrate: number, file: string) {
+  const unique = [...new Set(ticks)];
+  const index = ticks.map((t) => unique.indexOf(t));
+  await page.evaluate(() => ((window as unknown as { __frames: string[] }).__frames = []));
+  for (let i = 0; i < unique.length; i += 16) {
+    const batch = unique.slice(i, i + 16).map((b) => b.toString("base64"));
+    await page.evaluate((b) => (window as unknown as { __frames: string[] }).__frames.push(...b), batch);
+  }
+  const b64 = await page.evaluate(
+    async ({ index, size, bitrate, fps }) => {
+      const frames = (window as unknown as { __frames: string[] }).__frames;
+      const type = "video/mp4;codecs=avc1.640028";
+      if (!MediaRecorder.isTypeSupported(type)) throw new Error(`MediaRecorder can't record ${type}`);
+      const canvas = document.createElement("canvas");
+      canvas.width = size.width;
+      canvas.height = size.height;
+      const ctx = canvas.getContext("2d");
+      if (ctx === null) throw new Error("no 2d context");
+      const stream = canvas.captureStream(0);
+      const [track] = stream.getVideoTracks() as CanvasCaptureMediaStreamTrack[];
+      if (track === undefined) throw new Error("no canvas track");
+      const recorder = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: bitrate });
+      const chunks: Blob[] = [];
+      recorder.ondataavailable = (e) => chunks.push(e.data);
+      const stopped = new Promise((done) => (recorder.onstop = done));
+      const bytes = (i: number) => Uint8Array.from(atob(frames[i] ?? ""), (c) => c.charCodeAt(0));
+      recorder.start();
+      const start = performance.now();
+      let shown = -1;
+      for (const [k, i] of index.entries()) {
+        if (i !== shown) {
+          const bitmap = await createImageBitmap(new Blob([bytes(i)], { type: "image/jpeg" }), { resizeWidth: size.width, resizeHeight: size.height, resizeQuality: "high" });
+          ctx.drawImage(bitmap, 0, 0);
+          bitmap.close();
+          shown = i;
+        }
+        track.requestFrame();
+        const next = start + ((k + 1) * 1000) / fps;
+        await new Promise((tick) => setTimeout(tick, Math.max(0, next - performance.now())));
+      }
+      track.requestFrame();
+      recorder.stop();
+      await stopped;
+      const data = new Uint8Array(await new Blob(chunks).arrayBuffer());
+      let out = "";
+      for (let i = 0; i < data.length; i += 0x8000) out += String.fromCharCode(...data.subarray(i, i + 0x8000));
+      return btoa(out);
+    },
+    { index, size, bitrate, fps: FPS },
+  );
+  writeFileSync(file, Buffer.from(b64, "base64"));
+}
+
 const hideByClass = async (page: Page, selector: string, text: string, how: "display: none" | "visibility: hidden") => {
   const target = page.locator(selector, { hasText: text }).first();
   await target.waitFor({ state: "attached", timeout: 10_000 });
@@ -49,7 +107,7 @@ const sleepUntil = (at: number) => new Promise((done) => setTimeout(done, Math.m
 
 for (const theme of ["light", "dark"] as const) {
   test(`showcase ${theme}`, async () => {
-    test.setTimeout(90_000);
+    test.setTimeout(180_000);
     // A running clock from the fixture's "now": QA's fixed one never moves, and the merge line redraws only when a
     // read's answer is newer than the last (TrainPane's dataUpdatedAt stamp).
     const { app, page, settled, close } = await launch("showcase-order", appMain, { realClock: true });
@@ -126,6 +184,9 @@ for (const theme of ["light", "dark"] as const) {
         );
         if (run.status !== 0) throw new Error(`ffmpeg failed: ${String(run.stderr)}`);
       }
+      // And as H.264, for Safari on an older iPhone or Mac.
+      await mp4(page, ticks, { width: 2240, height: 1440 }, 1_400_000, `${out}.mp4`);
+      await mp4(page, ticks, { width: 1120, height: 720 }, 700_000, `${out}-small.mp4`);
     } finally {
       await close();
     }

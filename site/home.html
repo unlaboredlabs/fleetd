@@ -99,8 +99,8 @@ figcaption b{color:var(--ink);font-weight:500}
 .show{padding-bottom:var(--sec)}
 .show video{position:absolute;inset:0;opacity:0}
 .show .on video{opacity:1}
-.play{position:absolute;right:10px;bottom:10px;font:500 13px/1 var(--sans);color:var(--ink);background:var(--paper);border:1px solid var(--rule);border-radius:4px;padding:6px 9px;cursor:pointer;opacity:0}
-.show .on .play,.show .ready .play{opacity:1}
+.play{position:absolute;right:10px;bottom:10px;font:500 13px/1 var(--sans);color:var(--ink);background:var(--paper);border:1px solid var(--rule);border-radius:4px;padding:6px 9px;cursor:pointer;opacity:0;visibility:hidden}
+.show .on .play,.show .ready .play{opacity:1;visibility:visible}
 .play:hover{border-color:var(--ink)}
 .line{list-style:none;margin:20px 0 0;padding:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:0 clamp(14px,1.8vw,28px);counter-reset:s}
 .line li{border-top:1px solid var(--rule);padding:12px 0 0;counter-increment:s;color:var(--grey)}
@@ -183,7 +183,7 @@ summary:hover{color:var(--ink)}
 /* Snappy, as in the app (app/desktop/src/renderer/ui/DESIGN.md): state changes in 140 ms, only colour and opacity. */
 @media (prefers-reduced-motion:no-preference){
   .copy,.nav a,a,summary,.line li,.line b::before{transition:color .14s var(--snap),border-color .14s var(--snap),text-decoration-color .14s var(--snap)}
-  .show video,.play{transition:opacity .14s var(--snap)}
+  .show video,.play{transition:opacity .14s var(--snap),visibility .14s var(--snap)}
 }
 </style>
 </head>
@@ -218,7 +218,7 @@ summary:hover{color:var(--ink)}
       <source srcset="/showcase-dark-small.jpg 1400w, /showcase-dark.jpg 2800w" sizes="(min-width: 1240px) 1112px, calc(100vw - 2 * clamp(20px, 4.4vw, 64px))" media="(prefers-color-scheme: dark)">
       <img src="/showcase-light.jpg" srcset="/showcase-light-small.jpg 1400w, /showcase-light.jpg 2800w" sizes="(min-width: 1240px) 1112px, calc(100vw - 2 * clamp(20px, 4.4vw, 64px))" width="2800" height="1800" fetchpriority="high" alt="The fleetd app on the storefront project, after one request has run through. You asked: let shoppers save their cart and pick it up on any device. The lead answered that one writer saves the cart and one brings it back at sign-in, each PR with its own reviewer; then that #231 is up with a reviewer on it; then that #231 is merged and the second PR opens next. The panel’s merge line lists Saved carts are stored per shopper, #231, as merged, above two earlier merges. Under the chat, one writer is still at work.">
     </picture>
-    <video muted loop playsinline preload="none" disablepictureinpicture aria-hidden="true" tabindex="-1" data-light="/showcase-light.webm" data-dark="/showcase-dark.webm" data-light-small="/showcase-light-small.webm" data-dark-small="/showcase-dark-small.webm"></video>
+    <video muted loop playsinline preload="none" disablepictureinpicture aria-hidden="true" tabindex="-1" data-src="/showcase-"></video>
     <button class="play" type="button" aria-controls="show">Pause</button>
   </div>
   <ol class="line" id="line">
@@ -275,7 +275,7 @@ summary:hover{color:var(--ink)}
     </div>
     <div>
       <p>pull requests landed by fleetd’s merge train in fleetd’s own repository in one week, 20 to 26 October 2026. fleetd is built with fleetd: the lead plans, agents write and review, the train merges, and the people behind it answer the lead’s questions.</p>
-      <p>Counted by <code>fleetd metrics --days 7</code> on the hub that builds fleetd, from GitHub’s record of the merges. <a href="https://github.com/unlaboredlabs/fleetd/pulls?q=is%3Apr+is%3Amerged">See the merged pull requests</a>.</p>
+      <p>How it was counted: <code>fleetd metrics --days 7</code> on the hub that builds fleetd, from GitHub’s record of the merges. Each pull request the train put on main counts once, whether it merged alone or as one of a batch; a merge someone made by hand doesn’t count. GitHub’s own list shows each batch as one merged pull request that names its members, and the members as closed, so its count for the week differs. <a href="https://github.com/unlaboredlabs/fleetd/pulls?q=is%3Apr+is%3Amerged+merged%3A2026-10-20..2026-10-26">The pull requests merged that week</a>.</p>
     </div>
   </div>
 </section>
@@ -286,7 +286,7 @@ summary:hover{color:var(--ink)}
     <p>A hub keeps your projects, a node on each machine runs the agents, and the desktop app is where you talk to them and watch the work.</p>
   </div>
   <ul class="feats quiet">
-    <li><h3>Status and Factory</h3><p>One row per project: what it’s doing, what waits on you, what merged last. Factory charts what came out: pull requests merged per day, time from request to merge, and your minutes per merged PR.</p><a href="/docs/status">Status</a></li>
+    <li><h3>Status and Factory</h3><p>One row per project: what it’s doing, what waits on you, what merged last. Factory charts what came out: pull requests merged per day, time from request to merge, and your minutes per merged PR.</p><a href="/docs/status">Status</a> · <a href="/docs/reference/cli#metrics">Factory’s figures in the terminal</a></li>
     <li><h3>Steer mid-run</h3><p>Write to the lead or to one agent while it works. Your message lands at its next step, or at once if you say so.</p><a href="/docs/steering">Steering</a></li>
     <li><h3>Automations</h3><p>A stored prompt that runs on a schedule, from a webhook, or with Run now. Each run becomes work the lead starts on its own.</p><a href="/docs/automations">Automations</a></li>
     <li><h3>Skills and MCP servers</h3><p>SKILL.md workflows from the repo, the project or the whole hub, and more tools for agents over MCP, for every project or one.</p><a href="/docs/skills">Skills</a></li>
@@ -419,7 +419,9 @@ document.querySelectorAll("[data-copy]").forEach(function(b){
   var source=function(){
     // A frame under 1600 device pixels wide gets the half-size recording: as sharp there, at half the bytes.
     var small=box.clientWidth*(window.devicePixelRatio||1)<1600;
-    var want=video.dataset[(dark.matches?"dark":"light")+(small?"Small":"")];
+    // VP9 WebM where the browser is sure of it, else the H.264 MP4 (an older Safari).
+    var webm=video.canPlayType('video/webm; codecs="vp9"')==="probably";
+    var want=video.dataset.src+(dark.matches?"dark":"light")+(small?"-small":"")+(webm?".webm":".mp4");
     if(video.getAttribute("src")===want)return;
     var at=video.currentTime||0;
     video.src=want;
