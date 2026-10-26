@@ -351,12 +351,13 @@ impl Leads {
         let at = now_iso(&self.ctx);
         let set = self.ctx.db.prompts().current(Some(r));
         let medium = self.records.medium_allowed(r)?;
+        let (digest, idle) = self.wakes.digest_to_send(r).await?;
         let mut prompt = render_lead_start(
             &set,
             r,
             &project.title,
             medium,
-            &self.wakes.digest(r).await?,
+            &digest,
             &self.ctx.db.memory().injected(r, true),
         );
         if let Some(waiting) = self.waiting_orders(r)? {
@@ -385,6 +386,7 @@ impl Leads {
             ),
         };
         let thread_id = self.ctx.ports().launch(&r.machine_id, input).await?;
+        self.wakes.idle_sent(r, idle);
         let at: Timestamp = at.into();
         // Every later message to this thread renders from the texts it starts with.
         let text_sha = self
