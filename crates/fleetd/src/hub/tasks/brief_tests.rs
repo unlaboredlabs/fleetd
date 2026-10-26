@@ -300,4 +300,23 @@ async fn an_author_reads_every_finding_of_its_prs_latest_reviews_but_no_other_pr
         );
         assert!(!format!("{refused:?}").contains("p2's own"));
     }
+
+    // A reviewer of the PR never reads the earlier reviews of it: it judges the PR alone.
+    insert(
+        &hub,
+        json!({ "taskId": "T2", "title": "review it", "kind": "review", "state": "running", "startedAt": AT, "pr": mine }),
+    );
+    let reviewer = as_agent(
+        &hub,
+        CallerAgent::Task(TaskId::unchecked("T2")),
+        json!({ "op": "review_read", "pr": mine }),
+    )
+    .unwrap_err();
+    assert_eq!(reviewer.code, ErrorCode::Forbidden);
+    assert!(
+        reviewer.message.contains("is a review task"),
+        "{}",
+        reviewer.message
+    );
+    assert!(!format!("{reviewer:?}").contains("src/a.rs:3"));
 }

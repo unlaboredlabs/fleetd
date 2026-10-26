@@ -1,12 +1,12 @@
 //! `review_read`: an author reads every finding of its PRs' latest reviews, whole, and a lead its project's. Read-only;
-//! a PR that is not the caller's is refused, whoever's it is.
+//! a PR that is not the caller's is refused, whoever's it is, and so is a review task, which judges its PR alone.
 use std::collections::HashSet;
 
 use fleetd_contracts::ids::Timestamp;
 use fleetd_contracts::lead_calls::{PrReviews, ReviewFindings, ReviewReadCall, ReviewReadResult};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::prim::Text;
-use fleetd_contracts::tasks::{PrUrl, TaskId};
+use fleetd_contracts::tasks::{PrUrl, TaskId, TaskKind};
 use fleetd_contracts::train::ChangeState;
 use fleetd_contracts::verification::ReviewVerdict;
 
@@ -85,6 +85,16 @@ fn caller_prs(
                     format!("No task {task_id} in this project."),
                 ));
             };
+            // A reviewer judges its PR alone: the earlier reviews of it are not for it to read.
+            if own.kind == TaskKind::Review {
+                return Err(McpToolError::new(
+                    ErrorCode::Forbidden,
+                    format!(
+                        "{task_id} is a review task; review_read is for a PR's author and its lead."
+                    ),
+                )
+                .with_fix("Judge the diff yourself and record your verdict with report."));
+            }
             prs.extend(
                 changes
                     .iter()
