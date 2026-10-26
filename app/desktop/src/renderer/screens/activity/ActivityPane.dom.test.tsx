@@ -111,9 +111,12 @@ it("shows the project's events newest first, a run folded, each linking to its a
   await mount(() => page(FIRST));
   expect(reads[0]).toMatchObject({ projectRef: project, hubWide: true, limit: 50 });
   expect(reads[0]?.before).toBeUndefined();
-  expect(texts()).toEqual(["Today", "Merged #31 into main", "2 reviews of #31Latest: Review of #31 passed", "T12 finishedReceipt dates in the shop's zone"]);
+  expect(texts()).toEqual(["Today", "Merged #31 into main", "2 reviews of #31Latest: Review of #31 passed", "Agent finishedReceipt dates in the shop's zone"]);
   expect(host.querySelector("[data-event='9']")?.getAttribute("href")).toBe("#/project/devbox/storefront/prs/acme/storefront/31");
   expect(host.querySelector("[data-event='6']")?.getAttribute("href")).toBe("#/project/devbox/storefront/agents/T12");
+  // No internal id in what the rows say; the agent's id is in its row's tooltip.
+  expect(host.textContent).not.toMatch(/\b[WTXPCDSQ]\d+\b/u);
+  expect(host.querySelector("[data-event='6']")?.getAttribute("title")).toBe("T12");
 
   const run = host.querySelector<HTMLButtonElement>("[data-run]");
   expect(run?.getAttribute("aria-expanded")).toBe("false");
@@ -143,8 +146,8 @@ it("puts a streamed event on top without reading again, and counts it unread unt
     send({ t: "event", event: { ...ev(13, "task.started", { taskId: "T99" }), projectId: "elsewhere" } });
     await vi.advanceTimersByTimeAsync(200);
   });
-  expect(texts()[1]).toBe("T13 failedCart page");
-  expect(texts()).not.toContain("T99 started");
+  expect(texts()[1]).toBe("Agent failedCart page");
+  expect(texts()).not.toContain("Agent started");
   expect(reads.length).toBe(before);
   // The pane is open: what it shows is seen.
   expect(host.querySelector("[data-unread]")?.textContent).toBe("0");
@@ -162,7 +165,7 @@ it("loads older events as the end of the list comes into view, and then says whe
   await mount((input) => (input.before === undefined ? page(FIRST, true) : page(older)));
   await settle();
   expect(reads.map((r) => r.before)).toEqual([undefined, 6]);
-  expect(texts().slice(-2)).toEqual(["Yesterday", "T12 startedReceipt dates"]);
+  expect(texts().slice(-2)).toEqual(["Yesterday", "Agent startedReceipt dates"]);
   expect(host.textContent).toContain("That’s everything from the last 30 days.");
 });
 
@@ -185,7 +188,7 @@ it("stops asking for an older page that keeps failing, and offers Retry", async 
   down = false;
   act(() => retry?.click());
   await settle();
-  expect(texts().slice(-2)).toEqual(["Yesterday", "T12 startedReceipt dates"]);
+  expect(texts().slice(-2)).toEqual(["Yesterday", "Agent startedReceipt dates"]);
   expect(host.textContent).toContain("That’s everything from the last 30 days.");
 });
 

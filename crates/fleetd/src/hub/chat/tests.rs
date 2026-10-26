@@ -2370,3 +2370,34 @@ async fn a_reply_in_bubbles_lands_once_with_its_parts_and_its_ask_waits_on_you()
         .unwrap();
     assert!(!hub.chat.state(&r, false).unwrap().needs_you);
 }
+
+/// The lines fleetd itself writes in a chat read in plain words: an order's outcome by its title, a max-agents change,
+/// a review's task by its PR's title. No W, T, X or other internal id.
+#[test]
+fn fleetds_own_lines_name_no_internal_ids() {
+    use crate::hub::reviews::rules::review_title;
+    use crate::hub::tasks::cap::{paused_line, raised_line};
+
+    let id = regex::Regex::new(r"\b[WTXPCDSQ]\d+\b").unwrap();
+    let done: fleetd_contracts::ledger::Workstream = serde_json::from_value(json!({
+        "workstreamId": "W4", "projectRef": { "machineId": "devbox", "projectId": "app" }, "title": "Schedules",
+        "source": { "text": "add schedules", "channel": "app", "by": "human", "at": "2026-10-19T08:00:00.000Z" },
+        "state": "done", "createdAt": "2026-10-19T08:00:00.000Z", "updatedAt": "2026-10-19T09:00:00.000Z",
+    }))
+    .unwrap();
+    let mut lines: Vec<String> = history::order(&done)
+        .into_iter()
+        .filter(|m| m.author == Some(ChatAuthor::System))
+        .map(|m| m.text)
+        .collect();
+    assert_eq!(lines, ["Schedules is done."]);
+    lines.extend([
+        raised_line(3, 12, 3, 9),
+        paused_line(12, 3, 2, 3),
+        review_title(Some("Receipts use the shop's time zone"), 31),
+        review_title(None, 31),
+    ]);
+    for line in &lines {
+        assert!(!id.is_match(line), "an internal id in {line}");
+    }
+}

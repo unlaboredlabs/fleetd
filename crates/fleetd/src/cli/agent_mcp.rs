@@ -77,8 +77,9 @@ static TOOLS: &[Tool] = &[
     lead(
         "spawn_agent",
         "task_spawn",
-        "Start a fleetd agent (a task) with its own session, slot and lane. kind write|read|review; a writer \
-         gets its own worktree and branch; a review task needs pr. profile is high by default; medium is for mechanical \
+        "Start a fleetd agent (a task) with its own session, slot and lane. title is what the human sees: a short \
+         plain outcome (\"Saved carts survive a sign-out\"), never an id, status or PR number. kind \
+         write|read|review; a writer gets its own worktree and branch; a review task needs pr. profile is high by default; medium is for mechanical \
          work only, and reviews always run high. A full slot board queues it and it starts by itself. A writer is \
          checked against the work in flight on the repo: one that repeats it is refused (taken, or a possible \
          duplicate); if it is different work, call again with notDuplicateOf and notDuplicateWhy. A person's claim is \
@@ -225,8 +226,9 @@ static TOOLS: &[Tool] = &[
     lead(
         "checklist",
         "checklist",
-        "Keep the project's checklist: the to-dos the human sees beside the chat, each todo, doing or done, in plain \
-         words. Add items without an id, change one by its id (text, state, link to its PR, agent or workstream), or \
+        "Keep the project's checklist: the to-dos the human sees beside the chat, each todo, doing or done. An \
+         item's text is a short plain outcome (\"Gift cards apply before tax\"), never a status, id or PR number: \
+         its state and link carry those. Add items without an id, change one by its id (text, state, link to its PR, agent or workstream), or \
          remove it; replace sets the whole list. Returns the list.",
         inline_schema::<ChecklistCall>,
     ),
@@ -569,6 +571,35 @@ mod tests {
             .iter()
             .map(|t| t["name"].as_str().unwrap().to_owned())
             .collect()
+    }
+
+    /// What the lead names an agent and a checklist item is what the human reads beside the chat: both tools ask for
+    /// a short plain outcome, with no status, id or PR number in the text.
+    #[test]
+    fn the_lead_names_agents_and_to_dos_as_plain_outcomes() {
+        let tools = tool_list(Role::Lead);
+        let said = |name: &str| {
+            tools["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|t| t["name"] == name)
+                .and_then(|t| t["description"].as_str())
+                .unwrap()
+                .to_owned()
+        };
+        let spawn = said("spawn_agent");
+        assert!(
+            spawn.contains("title is what the human sees: a short plain outcome")
+                && spawn.contains("never an id, status or PR number"),
+            "{spawn}"
+        );
+        let checklist = said("checklist");
+        assert!(
+            checklist.contains("text is a short plain outcome")
+                && checklist.contains("never a status, id or PR number"),
+            "{checklist}"
+        );
     }
 
     #[test]

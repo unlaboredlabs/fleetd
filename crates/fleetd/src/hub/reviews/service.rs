@@ -17,6 +17,7 @@ use serde_json::Value;
 
 use super::rules::{
     BoundReview, FindingsVerdict, Gate, findings_message, gate, one_line, review_prompt,
+    review_title,
 };
 use crate::hub::leads::events::Event;
 use crate::hub::train::contract::{
@@ -247,17 +248,21 @@ impl Reviews {
             .optional()
             .expect("reviewed head")
         });
+        // The task reads as what it checks, by the PR's own title; the PR and its ids stay in the task's details.
+        let pr_title = match self.train() {
+            Some(train) => train
+                .github()
+                .pull(&change.repo, change.pr_number.get())
+                .await
+                .ok()
+                .map(|pull| pull.title),
+            None => None,
+        };
         let spawn = ReviewSpawn {
             project_ref: change.project_ref.clone(),
             by: REVIEWS_BY,
             workstream_id: change.workstream_id.clone(),
-            title: one_line(
-                &format!(
-                    "Review {}#{} for {}",
-                    change.repo, change.pr_number, change.change_id
-                ),
-                80,
-            ),
+            title: review_title(pr_title.as_deref(), change.pr_number.get()),
             prompt: review_prompt(
                 &self.db.prompts().current(Some(&change.project_ref)),
                 change,

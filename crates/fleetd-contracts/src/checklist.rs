@@ -16,7 +16,8 @@ use crate::train::GitHubPrUrl;
 /// Items on one project's list.
 pub const CHECKLIST_MAX: usize = 50;
 
-/// One item, in plain words for the human: at most 200 characters, no line breaks.
+/// One item, a short plain outcome for the human ("Gift cards apply before tax"), with no status, id or PR number:
+/// its state and link say those. At most 200 characters, no line breaks.
 pub type TodoText = Line<1, 200>;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]

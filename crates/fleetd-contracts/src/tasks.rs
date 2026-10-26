@@ -36,7 +36,8 @@ pub enum TaskState {
     Cancelled,
 }
 
-/// It also becomes the branch slug, so one line.
+/// What the human sees for the agent: a short plain outcome ("Saved carts survive a sign-out"), never an id, status
+/// or PR number. It also becomes the branch slug, so one line.
 pub type TaskTitle = Line<1, 80>;
 pub type TaskPrompt = Text<1, 8000>;
 

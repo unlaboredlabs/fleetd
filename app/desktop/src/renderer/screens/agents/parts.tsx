@@ -20,14 +20,14 @@ export function RolePill({ role }: { role: AgentRole }) {
   );
 }
 
-/** Its PR with the train's word for it, or its branch in mono; nothing when it has neither yet. */
+/** Its PR with the train's word for it, or its branch in mono (its task id in the tooltip); nothing when it has neither yet. */
 export function WorkPlaceTag({ row }: { row: Pick<AgentRow, "pr" | "branch"> }) {
   const place = workPlace(row);
   if (place === undefined) return null;
   if (place.kind === "branch") {
     return (
       // As wide as the branch in mono, up to its share of the line: a long one is cut in the middle.
-      <span className={s.branch} style={{ flexBasis: `${String(place.text.length + 1)}ch` }}>
+      <span className={s.branch} style={{ flexBasis: `${String(place.text.length + 1)}ch` }} title={place.full}>
         <MiddleCut text={place.text} />
       </span>
     );

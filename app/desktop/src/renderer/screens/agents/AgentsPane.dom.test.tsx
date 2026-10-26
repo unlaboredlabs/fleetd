@@ -16,11 +16,14 @@ import { AgentsPane } from "./AgentsPane";
 
 const CHAT = "#/project/devbox/storefront";
 
+/** The agents' titles as the lead and the hub write them: plain outcomes, a review by what it checks. */
+const TITLES: Readonly<Record<string, string>> = { T1: "Dark mode follows the system", T2: "Checking: Receipts in the store's zone", T3: "Find where receipts format dates" };
+
 const row = (laneId: string, status: AgentRow["status"], workstreamId: string, more: Partial<AgentRow> = {}): AgentRow => ({
   laneId,
   role: "implementer",
   status,
-  title: `Lane ${laneId}`,
+  title: TITLES[laneId] ?? "An agent",
   taskId: laneId,
   projectRef: project,
   projectTitle: "storefront",
@@ -143,6 +146,14 @@ it("lists the project's agents under their orders' titles, the order waiting on 
   expect(list?.querySelector("[role='img'][aria-label='needs you']")).not.toBeNull();
 });
 
+it("shows no internal ids in its rows: a writer's branch by its slug, the full branch in its tooltip", async () => {
+  await mount();
+  const list = host.querySelector("[data-screen='agents']");
+  expect(list?.textContent).not.toMatch(/\b[WTXPCDSQ]\d+\b/u);
+  const branch = list?.querySelector("[title='fleetd/T1-dark-mode']");
+  expect(branch?.textContent).toBe("dark-mode");
+});
+
 it("leaves the PR out of an agent's row on that PR's own page", async () => {
   const go = await mount();
   await go(`${CHAT}/prs/12`);
@@ -153,14 +164,14 @@ it("leaves the PR out of an agent's row on that PR's own page", async () => {
 
 it("links each row to the agent's panel route, which opens its live view with its order and its PR", async () => {
   const go = await mount();
-  const link = [...host.querySelectorAll<HTMLAnchorElement>("[data-screen='agents'] a")].find((a) => a.textContent.includes("Lane T2"));
+  const link = [...host.querySelectorAll<HTMLAnchorElement>("[data-screen='agents'] a")].find((a) => a.textContent.includes("Checking: Receipts"));
   const href = toHash(panelRoute(project, { tab: "agents", agent: "T2" }));
   expect(href).toBe(`${CHAT}/agents/T2`);
   expect(link?.getAttribute("href")).toBe(href);
 
   await go(href);
   const work = host.querySelector("[data-screen='agents.work']");
-  expect(work?.querySelector("h2")?.textContent).toBe("Lane T2");
+  expect(work?.querySelector("h2")?.textContent).toBe("Checking: Receipts in the store's zone");
   expect(work?.textContent).toContain("Receipts in the store's zone");
   expect(work?.textContent).toContain("working");
   const prButton = [...(work?.querySelectorAll("button") ?? [])].find((b) => b.textContent === "PR #12 · in CI");
@@ -170,7 +181,7 @@ it("links each row to the agent's panel route, which opens its live view with it
 
 it("a row's right-click menu opens the agent, copies its branch, and Steer opens it with the cursor in its box", async () => {
   const go = await mount();
-  const link = [...host.querySelectorAll<HTMLAnchorElement>("[data-screen='agents'] a")].find((a) => a.textContent.includes("Lane T1"));
+  const link = [...host.querySelectorAll<HTMLAnchorElement>("[data-screen='agents'] a")].find((a) => a.textContent.includes("Dark mode follows"));
   if (link === undefined) throw new Error("no row");
   const choose = async (label: string) => {
     act(() => {

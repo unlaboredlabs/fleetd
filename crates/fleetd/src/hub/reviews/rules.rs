@@ -99,6 +99,14 @@ pub fn findings_message(set: &PromptSet, change: &Change, v: &FindingsVerdict<'_
     crate::hub::train::service::fix_your_pr(set, change, &problem, v.summary)
 }
 
+/// A review task's title in plain words: what it checks, by the PR's title, or by its number when GitHub didn't say.
+pub fn review_title(pr_title: Option<&str>, pr_number: i64) -> String {
+    match pr_title.map(str::trim).filter(|t| !t.is_empty()) {
+        Some(title) => one_line(&format!("Checking: {title}"), 80),
+        None => format!("Checking PR #{pr_number}"),
+    }
+}
+
 /// One line, at most `max` characters.
 pub fn one_line(text: &str, max: usize) -> String {
     let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -147,6 +155,29 @@ mod tests {
         let new_head = [review("T2", P, 2)];
         assert!(!gate(Q, &new_head).ready && !gate(Q, &new_head).waiting_for_head);
         assert!(gate(Q, &[review("T2", P, 2), review("T5", Q, 0)]).ready);
+    }
+
+    /// A review task is titled by what it checks, never by the train's ids.
+    #[test]
+    fn a_review_is_titled_by_its_pr_in_plain_words() {
+        let id = regex::Regex::new(r"\b[WTX]\d+\b|acme/").unwrap();
+        for (title, want) in [
+            (
+                Some("Receipts use the shop's time zone"),
+                "Checking: Receipts use the shop's time zone",
+            ),
+            (Some("  "), "Checking PR #31"),
+            (None, "Checking PR #31"),
+        ] {
+            let got = review_title(title, 31);
+            assert_eq!(got, want);
+            assert!(!id.is_match(&got), "{got}");
+        }
+        let long = review_title(Some(&"word ".repeat(40)), 31);
+        assert!(
+            long.starts_with("Checking: word") && long.chars().count() == 80,
+            "{long}"
+        );
     }
 }
 

@@ -137,6 +137,24 @@ pub const ENTRIES: &[Entry] = &[
                 Prompt
             ),
             (
+                "speak-when-it-matters",
+                "writes only for results, problems and the human's decisions; silent on steps along the way",
+                r"Stay silent on steps along the way",
+                Prompt
+            ),
+            (
+                "one-message-per-change",
+                "one short message per real change, outcome first",
+                r"One short message per real change, outcome first",
+                Prompt
+            ),
+            (
+                "plain-words",
+                "no fleetd ids, tool names, paths or process words unless asked",
+                r"No tool names, file paths",
+                Prompt
+            ),
+            (
                 "no-time",
                 "never estimates time",
                 r"Never estimate time",

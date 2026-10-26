@@ -30,9 +30,10 @@ const shape = (rows: readonly Row[]): string[] =>
 group("describe", () => {
   it("words an agent's start and end, linking to the agent, with the title as the detail", () => {
     const started = describe(ev("task.started", today("10:00"), { taskId: "T12", workstreamId: "W3" }, "T12 started (high): Fix receipt dates"));
-    expect(started).toMatchObject({ text: "T12 started", detail: "Fix receipt dates", link: { tab: "agents", agent: "T12" }, icon: "started" });
+    // The agent's title says which; its ids are only the row's tooltip.
+    expect(started).toMatchObject({ text: "Agent started", detail: "Fix receipt dates", ids: "T12 · W3", link: { tab: "agents", agent: "T12" }, icon: "started" });
     const failed = describe(ev("task.failed", today("10:30"), { taskId: "T12" }, "T12 failed: Fix receipt dates"));
-    expect(failed).toMatchObject({ text: "T12 failed", tone: "failed", detail: "Fix receipt dates" });
+    expect(failed).toMatchObject({ text: "Agent failed", tone: "failed", detail: "Fix receipt dates", ids: "T12" });
   });
 
   it("links reviews and merges to their PR", () => {
@@ -122,9 +123,9 @@ group("grouping and collapsing", () => {
     expect(shape(layout(linesOf([a, b, c, b]), { nowMs: NOW, timeZone: TZ }))).toEqual([
       "day:Today",
       "line:Merged #4",
-      "line:T1 finished",
+      "line:Agent finished",
       "day:Yesterday",
-      "line:T1 started",
+      "line:Agent started",
     ]);
   });
 
@@ -161,7 +162,7 @@ group("grouping and collapsing", () => {
     expect(shape(layout(lines, { nowMs: NOW, timeZone: TZ }))).toEqual([
       "day:Today",
       "line:Review of #1 passed",
-      "line:T9 finished",
+      "line:Agent finished",
       "line:Review of #1 passed",
       "line:Review of #2 passed",
       "line:Review of #1 passed",
@@ -194,9 +195,9 @@ group("since you last looked", () => {
       "day:Today",
       "line:Merged #2",
       "since",
-      "line:T1 finished",
+      "line:Agent finished",
       "day:Yesterday",
-      "line:T1 started",
+      "line:Agent started",
     ]);
     expect(unreadCount(lines, seen.seq)).toBe(1);
   });
@@ -214,10 +215,10 @@ group("since you last looked", () => {
     const fresh = ev("task.completed", today("09:00"), { taskId: "T1" });
     expect(shape(layout(linesOf([seen, fresh]), { nowMs: NOW, timeZone: TZ, seenSeq: seen.seq }))).toEqual([
       "day:Today",
-      "line:T1 finished",
+      "line:Agent finished",
       "since",
       "day:Yesterday",
-      "line:T1 started",
+      "line:Agent started",
     ]);
   });
 

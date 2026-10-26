@@ -63,14 +63,14 @@ Every lead gets these.
 | [`automation_delete`](#automation_delete) | Delete an automation and its run history; orders its runs opened stay. | No |
 | [`automation_run`](#automation_run) | Run an automation now: it opens its order, which reaches you in a later wake. | No |
 | [`automation_runs`](#automation_runs) | An automation's runs, newest first, with the order each opened; with runId, that run and its whole webhook body. | No |
-| [`checklist`](#checklist) | Keep the project's checklist: the to-dos the human sees beside the chat, each todo, doing or done, in plain words. | No |
+| [`checklist`](#checklist) | Keep the project's checklist: the to-dos the human sees beside the chat, each todo, doing or done. | No |
 | [`skill_install`](#skill_install) | Install skills (SKILL.md workflows) from a skills.sh source (owner/repo, owner/repo@skill, a GitHub URL) for this project (scope project; global skills take an admin, so the human installs those); pinned to the commit fetched, and the human updates it from Settings > Skills. | No |
 | [`usage_resume`](#usage_resume) | Lift the usage pause on your project's machine now and send every agent parked there "continue": only once you know its login has capacity again (the human says so, or a turn of yours just went through). | No |
 | [`change_enqueue`](#change_enqueue) | Put a PR no task's result put there on its repo's merge train; only the train merges. | No |
 
 ### spawn_agent
 
-Start a fleetd agent (a task) with its own session, slot and lane. kind write|read|review; a writer gets its own worktree and branch; a review task needs pr. profile is high by default; medium is for mechanical work only, and reviews always run high. A full slot board queues it and it starts by itself. A writer is checked against the work in flight on the repo: one that repeats it is refused (taken, or a possible duplicate); if it is different work, call again with notDuplicateOf and notDuplicateWhy. A person's claim is theirs: ask in chat. The result names the other writers running in the project and the work elsewhere it may overlap. Its result arrives in a later wake: end your turn instead of waiting.
+Start a fleetd agent (a task) with its own session, slot and lane. title is what the human sees: a short plain outcome ("Saved carts survive a sign-out"), never an id, status or PR number. kind write|read|review; a writer gets its own worktree and branch; a review task needs pr. profile is high by default; medium is for mechanical work only, and reviews always run high. A full slot board queues it and it starts by itself. A writer is checked against the work in flight on the repo: one that repeats it is refused (taken, or a possible duplicate); if it is different work, call again with notDuplicateOf and notDuplicateWhy. A person's claim is theirs: ask in chat. The result names the other writers running in the project and the work elsewhere it may overlap. Its result arrives in a later wake: end your turn instead of waiting.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -544,7 +544,7 @@ An automation's runs, newest first, with the order each opened; with runId, that
 
 ### checklist
 
-Keep the project's checklist: the to-dos the human sees beside the chat, each todo, doing or done, in plain words. Add items without an id, change one by its id (text, state, link to its PR, agent or workstream), or remove it; replace sets the whole list. Returns the list.
+Keep the project's checklist: the to-dos the human sees beside the chat, each todo, doing or done. An item's text is a short plain outcome ("Gift cards apply before tax"), never a status, id or PR number: its state and link carry those. Add items without an id, change one by its id (text, state, link to its PR, agent or workstream), or remove it; replace sets the whole list. Returns the list.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
