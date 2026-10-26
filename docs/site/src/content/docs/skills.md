@@ -5,7 +5,8 @@ description: Reusable SKILL.md workflows every fleetd agent can use, from the re
 
 A skill is a workflow an agent follows when it fits: how to cut a release, review a PR, fill a PDF form. Every fleetd
 agent (the lead, writers, reviewers) gets the skills of its repo, of its project and of the whole hub. fleetd uses the
-skills.sh format, so skills installed with `npx skills add` work as they are, and so do Claude Code skills.
+skills.sh format, so skills installed with the skills.sh CLI (`skills add`) work as they are, and so do Claude Code
+skills.
 
 ## What a skill is {#format}
 
@@ -39,7 +40,7 @@ loads. Other frontmatter fields Claude Code knows (`allowed-tools`, `disable-mod
 
 An agent gets skills from four places. When two have a skill of the same name, the first one wins:
 
-1. **The repo's `.agents/skills/<name>/`**: where `npx skills add` puts a project's skills.
+1. **The repo's `.agents/skills/<name>/`**: where the skills.sh CLI puts a project's skills.
 2. **The repo's `.claude/skills/<name>/`**: Claude Code's project skills.
 3. **The project's skills**, kept by the hub.
 4. **Global skills**, kept by the hub for every project.
@@ -81,7 +82,7 @@ them takes admin on every machine.
   - `https://github.com/owner/repo/tree/<branch>/<folder>`: a branch or tag, and a folder in it.
   - Any other git URL.
 
-  The hub runs `git` to fetch the source. It finds skills as `npx skills add` does: a `SKILL.md` at the folder you
+  The hub runs `git` to fetch the source. It finds skills as the skills.sh CLI does: a `SKILL.md` at the folder you
   gave, else the folders in `skills/`, `.agents/skills/`, `.claude/skills/` and the top level. Nothing is read
   through a symlink: a linked folder is no skill, and a skill that holds a link is refused, since a link could point
   at any file on the hub.
