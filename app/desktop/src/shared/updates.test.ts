@@ -55,17 +55,23 @@ describe("versions", () => {
     expect(knownVersion(undefined)).toBe(false);
   });
 
-  it("drops the build hash and reads a nightly by its date", () => {
-    expect(versionLabel("0.6.0-nightly.202610221030+abc1234", "UTC")).toBe("0.6.0 nightly (Oct 22, 10:30)");
+  it("reads a nightly by when and from which commit it was built, and any other version as itself", () => {
+    expect(versionLabel("0.0.0-nightly.202610261056+1b563d7")).toBe("Nightly · Oct 26, 10:56 UTC · 1b563d7");
+    expect(versionLabel("0.6.0-nightly.202601020304+ABCDEF0123")).toBe("Nightly · Jan 2, 03:04 UTC · abcdef0");
+    expect(versionLabel("0.6.0-nightly.202610221030")).toBe("Nightly · Oct 22, 10:30 UTC");
     expect(versionLabel("v0.6.0")).toBe("0.6.0");
+    expect(versionLabel("0.6.0+abc1234")).toBe("0.6.0");
     expect(versionLabel("0.6.0-rc.1+abc1234")).toBe("0.6.0-rc.1");
+    // Not a real month: shown as it is, never as a made-up date.
+    expect(versionLabel("0.6.0-nightly.202613221030+abc1234")).toBe("0.6.0-nightly.202613221030");
   });
 
-  it("gives the About panel the whole build: the commit in macOS's parentheses, the full string on Linux", () => {
+  it("gives the About panel the label and the raw version to copy", () => {
     const nightly = "0.0.0-nightly.202610231259+bdd3566";
-    expect(aboutVersions(nightly, true)).toEqual({ applicationVersion: "0.0.0-nightly.202610231259", version: "bdd3566" });
-    expect(aboutVersions(nightly, false)).toEqual({ applicationVersion: nightly });
+    expect(aboutVersions(nightly, true)).toEqual({ applicationVersion: "Nightly · Oct 23, 12:59 UTC · bdd3566", version: nightly });
+    expect(aboutVersions(nightly, false)).toEqual({ applicationVersion: `Nightly · Oct 23, 12:59 UTC · bdd3566 (${nightly})` });
     expect(aboutVersions("0.6.0", true)).toEqual({ applicationVersion: "0.6.0", version: "0.6.0" });
+    expect(aboutVersions("0.6.0", false)).toEqual({ applicationVersion: "0.6.0" });
   });
 });
 

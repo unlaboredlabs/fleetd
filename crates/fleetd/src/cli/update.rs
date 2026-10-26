@@ -98,12 +98,23 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
         .filter(|v| cli_latest.is_none() && *v != current && *v != "0.0.0");
 
     match (cli_latest, release.cli_version.as_deref()) {
-        (Some(v), _) => println!("fleetd {current} -> {v} ({channel})"),
-        (None, Some(_)) => println!("fleetd {current} is up to date ({channel})"),
+        (Some(v), _) => println!(
+            "fleetd {} -> {} ({channel})",
+            crate::version_shown(current),
+            crate::version_shown(v)
+        ),
+        (None, Some(_)) => println!(
+            "fleetd {} is up to date ({channel})",
+            crate::version_shown(current)
+        ),
         (None, None) => println!("the {channel} channel has no fleetd CLI build yet"),
     }
     if let Some(v) = pending {
-        println!("the hub still runs {v}; a restart moves it to {current}");
+        println!(
+            "the hub still runs {}; a restart moves it to {}",
+            crate::version_shown(v),
+            crate::version_shown(current)
+        );
     }
     if gpui.is_some() {
         println!("this replaces the earlier fleetd app with the new one, which keeps its pairing");
@@ -450,7 +461,7 @@ fn hold_restart(
                 "Not restarting {what} now, since this runs on {}:\n{}\n{they} running {}; {later}",
                 if their == "their" { "them" } else { "it" },
                 lines.join("\n"),
-                info.version
+                crate::version_shown(&info.version)
             ))
         }
         Err(why) => Some(format!(

@@ -128,17 +128,26 @@ pub fn help_for(argv: &[String]) -> Option<String> {
     Some(format!("usage:\n{text}"))
 }
 
+/// `fleetd version`: the build's label, with the raw version beside it when they differ.
+fn version_line() -> String {
+    version_line_of(update::version())
+}
+
+fn version_line_of(version: &str) -> String {
+    let protocol = fleetd_contracts::hello::PROTOCOL_VERSION;
+    match crate::version_label(version) {
+        label if label == version => format!("fleetd {version} (protocol {protocol})\n"),
+        label => format!("fleetd {label} ({version}, protocol {protocol})\n"),
+    }
+}
+
 /// The short-lived commands: version, help and `hub key`.
 pub fn run(argv: &[String]) -> CliResult {
     let command = argv.first().map(String::as_str);
     match command {
         Some("version" | "--version" | "-v") => CliResult {
             code: 0,
-            stdout: format!(
-                "fleetd {} (protocol {})\n",
-                update::version(),
-                fleetd_contracts::hello::PROTOCOL_VERSION
-            ),
+            stdout: version_line(),
             stderr: String::new(),
         },
         None | Some("help" | "--help" | "-h") => CliResult {
@@ -325,9 +334,11 @@ mod tests {
 
     #[test]
     fn version_and_unknown_commands() {
+        assert_eq!(run(&argv(&["--version"])).stdout, version_line());
+        assert_eq!(version_line_of("0.4.0"), "fleetd 0.4.0 (protocol 1)\n");
         assert_eq!(
-            run(&argv(&["--version"])).stdout,
-            format!("fleetd {} (protocol 1)\n", update::version())
+            version_line_of("0.0.0-nightly.202610261056+1b563d7"),
+            "fleetd Nightly · Oct 26, 10:56 UTC · 1b563d7 (0.0.0-nightly.202610261056+1b563d7, protocol 1)\n"
         );
         let unknown = run(&argv(&["frobnicate"]));
         assert_eq!(unknown.code, 2);

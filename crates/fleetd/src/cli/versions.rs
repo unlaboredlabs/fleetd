@@ -46,7 +46,7 @@ pub async fn line(client: &mut McpClient) -> Option<String> {
     mismatch(crate::version(), hub.as_deref(), &nodes)
 }
 
-/// "Versions differ: A (this CLI, the hub) · B (node mac). …", or None when the known versions all match.
+/// "Versions differ: A on this CLI, the hub; B on node mac. …", each version by its label and raw version, or None when the known versions all match.
 pub fn mismatch(cli: &str, hub: Option<&str>, nodes: &[(String, String)]) -> Option<String> {
     let mut who: Vec<(&str, String)> = vec![(cli, "this CLI".to_owned())];
     who.extend(hub.map(|v| (v, "the hub".to_owned())));
@@ -70,11 +70,11 @@ pub fn mismatch(cli: &str, hub: Option<&str>, nodes: &[(String, String)]) -> Opt
     }
     let parts: Vec<String> = groups
         .iter()
-        .map(|(v, names)| format!("{v} ({})", names.join(", ")))
+        .map(|(v, names)| format!("{} on {}", crate::version_shown(v), names.join(", ")))
         .collect();
     Some(format!(
         "Versions differ: {}. Run `fleetd update` on each machine that's behind.",
-        parts.join(" · ")
+        parts.join("; ")
     ))
 }
 
@@ -111,8 +111,9 @@ mod tests {
         .unwrap();
         assert_eq!(
             line,
-            "Versions differ: 0.0.0-nightly.202610221107+333368c (this CLI, node mac) · \
-             0.0.0-nightly.202610211030+abc1234 (the hub, node builder). Run `fleetd update` on each machine that's behind."
+            "Versions differ: Nightly · Oct 22, 11:07 UTC · 333368c (0.0.0-nightly.202610221107+333368c) \
+             on this CLI, node mac; Nightly · Oct 21, 10:30 UTC · abc1234 (0.0.0-nightly.202610211030+abc1234) \
+             on the hub, node builder. Run `fleetd update` on each machine that's behind."
         );
         assert!(!line.contains('\n'));
     }

@@ -52,6 +52,22 @@ function Command({ command, note }: { command: string; note?: string | undefined
   );
 }
 
+/** A raw version, small and selectable, with Copy: what a bug report or `fleetd update --channel` wants. */
+function Raw({ version }: { version: string | undefined }) {
+  const [copied, setCopied] = useState(false);
+  if (version === undefined) return null;
+  return (
+    <div className={s.raw}>
+      <Text mono size="xs" tone="quiet">
+        {version}
+      </Text>
+      <Button variant="ghost" size="sm" onClick={() => void copyText(version).then(setCopied)} onBlur={() => setCopied(false)}>
+        {copied ? "Copied" : "Copy version"}
+      </Button>
+    </div>
+  );
+}
+
 function Notes({ notes }: { notes: NotesOf }) {
   if (notes.lines.length === 0) return null;
   return (
@@ -106,6 +122,7 @@ function AppSection({ part }: { part: AppPart }) {
           </Button>
         )}
       </Head>
+      <Raw version={part.raw} />
       {part.command === undefined ? null : <Command command={part.command} />}
       <Notes notes={part.notes} />
     </section>
@@ -197,6 +214,7 @@ function HubSection({ part }: { part: HubPart }) {
           )}
         </>
       )}
+      <Raw version={part.raw} />
       <Notes notes={part.notes} />
     </section>
   );

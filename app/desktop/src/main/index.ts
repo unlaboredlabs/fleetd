@@ -240,7 +240,10 @@ void app.whenReady().then(() => {
   registerIpc(hub, { opener, notifier: new Notifier(opener), log: appLog, updates: updater, presence }, pairing);
   installMenu(opener, help);
   claimOnFirstRun();
-  app.on("browser-window-focus", () => hub.windowFocused());
+  app.on("browser-window-focus", () => {
+    hub.windowFocused();
+    updater.focused();
+  });
   powerMonitor.on("resume", () => hub.systemResumed());
   const stopPresence = startPresence({
     on: () => presence.on,
