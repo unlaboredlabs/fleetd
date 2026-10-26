@@ -66,7 +66,8 @@ recorded. They can't stop an agent that sets out to get around them, for example
 
 Before anything leaves the machine, the node scrubs the text files. The project's
 [secret variables](/docs/projects#env) and the session's MCP secrets are masked as `***NAME***`, in every form a page
-shows them: as written, JSON- or HTML-escaped, URL-encoded, and in base64, inside a longer string too. A video can't be
+shows them: as written, JSON- or HTML-escaped, URL-encoded or encoded as a form submits it, and in base64, inside a
+longer string too. A video can't be
 scrubbed: whatever showed on the page is in it.
 
 ## On the hub {#hub}

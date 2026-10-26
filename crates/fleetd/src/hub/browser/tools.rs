@@ -91,6 +91,7 @@ async fn browser_control(
         });
         // The node says who drives once it acted; the session changes only then.
         let mut reports = hub.link.browser_live.await_control(id);
+        // Every exit from here drops `reports`, which leaves no wait behind (live.rs).
         if !hub.link.send_to(&machine, frame) {
             return Err(ToolError::new(
                 ErrorCode::MachineOffline,
@@ -111,6 +112,7 @@ async fn browser_control(
             false
         })
         .await;
+        drop(reports);
         if confirmed != Ok(true) {
             return Err(ToolError::new(
                 ErrorCode::Failed,
