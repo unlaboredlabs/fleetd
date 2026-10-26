@@ -454,7 +454,7 @@ async fn refuse(mut client: TcpStream, status: &str, body: &str) {
 mod tests {
     use super::*;
     use futures_util::{SinkExt, StreamExt};
-    use std::sync::atomic::{AtomicU16, Ordering};
+    use tokio::net::TcpSocket;
     use tokio_tungstenite::tungstenite::Message;
 
     const OWNER: &str = "me@example.com";
@@ -493,27 +493,36 @@ mod tests {
         })
     }
 
-    /// Ports of 18000–18399 handed out in turn (the preview runner's tests use 18400–18499).
-    static NEXT_PORT: AtomicU16 = AtomicU16::new(0);
-
-    /// A port nothing listens on right now. Below every OS's ephemeral range, so no other test's outgoing connection
-    /// (nor a listener on port 0) takes it between this check and the proxy's bind.
-    async fn free_port() -> u16 {
-        for _ in 0..400 {
-            let port = 18000 + NEXT_PORT.fetch_add(1, Ordering::Relaxed) % 400;
-            if TcpListener::bind((Ipv4Addr::LOCALHOST, port)).await.is_ok() {
-                return port;
+    /// A port that refuses connections on both loopbacks for as long as the sockets live: bound but never
+    /// listening, so no listener in another test or test process can take it.
+    fn refusing_port() -> (u16, Vec<TcpSocket>) {
+        for _ in 0..100 {
+            let v4 = TcpSocket::new_v4().unwrap();
+            v4.bind((Ipv4Addr::LOCALHOST, 0).into()).unwrap();
+            let port = v4.local_addr().unwrap().port();
+            let Ok(v6) = TcpSocket::new_v6() else {
+                return (port, vec![v4]);
+            };
+            match v6.bind((Ipv6Addr::LOCALHOST, port).into()) {
+                Ok(()) => return (port, vec![v4, v6]),
+                // No IPv6 loopback here: nothing listens there either.
+                Err(error) if error.kind() == io::ErrorKind::AddrNotAvailable => {
+                    return (port, vec![v4]);
+                }
+                // Taken on ::1: try another.
+                Err(_) => {}
             }
         }
-        panic!("no free test port in 18000–18399");
+        panic!("no port free on both loopbacks");
     }
 
+    /// Its port is the one the OS picks as the proxy binds (`0..=0`), so nothing else can take it between a check
+    /// and the bind, however many test processes run at once.
     async fn config(whois: Arc<dyn Whois>) -> Config {
-        let port = free_port().await;
         Config {
             addr: Ipv4Addr::LOCALHOST.into(),
             host: None,
-            ports: port..=port,
+            ports: 0..=0,
             owner: OWNER.to_owned(),
             whois,
         }
@@ -604,12 +613,10 @@ mod tests {
 
     #[tokio::test]
     async fn a_preview_not_listening_gets_a_502_page() {
-        let proxy = Proxy::start(
-            &config(FakeWhois::new(device(OWNER, &[]))).await,
-            free_port().await,
-        )
-        .await
-        .unwrap();
+        let (target, _held) = refusing_port();
+        let proxy = Proxy::start(&config(FakeWhois::new(device(OWNER, &[]))).await, target)
+            .await
+            .unwrap();
         let (response, _) = get(proxy.addr).await;
         assert!(
             response.starts_with("HTTP/1.1 502 Bad Gateway"),
@@ -636,7 +643,7 @@ mod tests {
         let config = config(FakeWhois::new(None)).await;
         let proxy = Proxy::start(&config, 3000).await.unwrap();
         assert_eq!(proxy.addr.ip(), config.addr);
-        assert_eq!(proxy.addr.port(), *config.ports.start());
+        assert_ne!(proxy.addr.port(), 0);
         assert_eq!(proxy.url(), format!("http://{}", proxy.addr));
     }
 
@@ -694,14 +701,23 @@ mod tests {
 
     #[tokio::test]
     async fn the_range_skips_busy_ports_and_says_when_none_is_free() {
-        let config = config(FakeWhois::new(None)).await;
-        let taken = TcpListener::bind(SocketAddr::new(config.addr, *config.ports.start()))
-            .await
-            .unwrap();
+        // A port held for the whole test, with room above it for the range.
+        let (_taken, busy) = loop {
+            let taken = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = taken.local_addr().unwrap().port();
+            if port <= 65000 {
+                break (taken, port);
+            }
+        };
+        let mut config = config(FakeWhois::new(None)).await;
+        config.ports = busy..=busy;
         let error = Proxy::start(&config, 3000).await.err().unwrap();
         assert_eq!(error.kind(), io::ErrorKind::AddrInUse);
-        drop(taken);
-        Proxy::start(&config, 3000).await.unwrap();
+        assert!(error.to_string().contains(&busy.to_string()), "{error}");
+        config.ports = busy..=busy + 50;
+        let proxy = Proxy::start(&config, 3000).await.unwrap();
+        assert_eq!(proxy.addr.ip(), config.addr);
+        assert!((busy + 1..=busy + 50).contains(&proxy.addr.port()));
     }
 
     #[tokio::test]
@@ -884,9 +900,17 @@ mod tests {
 
     #[tokio::test]
     async fn a_preview_on_ipv6_loopback_is_reached() {
-        // No IPv6 loopback on this machine: nothing to try.
-        let Ok(listener) = TcpListener::bind((Ipv6Addr::LOCALHOST, 0)).await else {
-            return;
+        // A preview on ::1 only, its port held on 127.0.0.1 so the proxy's first try is refused.
+        let (listener, _held) = loop {
+            // No IPv6 loopback on this machine: nothing to try.
+            let Ok(listener) = TcpListener::bind((Ipv6Addr::LOCALHOST, 0)).await else {
+                return;
+            };
+            let port = listener.local_addr().unwrap().port();
+            let v4 = TcpSocket::new_v4().unwrap();
+            if v4.bind((Ipv4Addr::LOCALHOST, port).into()).is_ok() {
+                break (listener, v4);
+            }
         };
         let target = preview_on(listener);
         let proxy = Proxy::start(&config(FakeWhois::new(device(OWNER, &[]))).await, target)
@@ -898,12 +922,10 @@ mod tests {
 
     #[tokio::test]
     async fn a_preview_not_answering_still_goes_idle() {
-        let proxy = Proxy::start(
-            &config(FakeWhois::new(device(OWNER, &[]))).await,
-            free_port().await,
-        )
-        .await
-        .unwrap();
+        let (target, _held) = refusing_port();
+        let proxy = Proxy::start(&config(FakeWhois::new(device(OWNER, &[]))).await, target)
+            .await
+            .unwrap();
         let started = proxy.idle_since().unwrap();
         for _ in 0..3 {
             assert!(get(proxy.addr).await.0.starts_with("HTTP/1.1 502"));
