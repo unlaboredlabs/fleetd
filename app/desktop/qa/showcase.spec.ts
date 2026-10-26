@@ -1,12 +1,12 @@
 // fleetd.sh's showcase: the app on fixtures/showcase, recorded while it plays one request from the message to the
 // merge, in the light and the dark theme. `pnpm fixtures && pnpm qa:build && pnpm site:showcase` writes
-// site/showcase-<theme>.webm and its poster, site/showcase-<theme>.jpg (the end: the merge landed), over the
-// files in the repo, and each step's start in the video, in seconds, to site/showcase.json: the page marks the step
-// that is playing.
+// site/showcase-<theme>.webm and its poster, site/showcase-<theme>.jpg (the end: the merge landed), each with a
+// half-size -small twin for small screens, over the files in the repo, and each step's start in the video, in seconds, to
+// site/showcase.json: the page marks the step that is playing.
 //
 // The frames are the window's own (CDP's screencast), with motion on: the app's beat, its entrances and the typing.
 // They are spaced out to a steady 25 fps, then encoded as VP9 by the ffmpeg Playwright installs for its own videos
-// (`npx playwright install ffmpeg`; FFMPEG=<path> to use another).
+// (`pnpm exec playwright install ffmpeg`; FFMPEG=<path> to use another).
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -33,7 +33,7 @@ const ffmpeg = (): string => {
     (process.platform === "darwin" ? path.join(homedir(), "Library/Caches/ms-playwright") : path.join(homedir(), ".cache/ms-playwright"));
   const dir = existsSync(cache) ? readdirSync(cache).find((d) => d.startsWith("ffmpeg-")) : undefined;
   const bin = dir === undefined ? undefined : path.join(cache, dir, process.platform === "darwin" ? "ffmpeg-mac" : "ffmpeg-linux");
-  if (bin === undefined || !existsSync(bin)) throw new Error("no ffmpeg: run `npx playwright install ffmpeg`, or set FFMPEG");
+  if (bin === undefined || !existsSync(bin)) throw new Error("no ffmpeg: run `pnpm exec playwright install ffmpeg` in app/desktop, or set FFMPEG");
   return bin;
 };
 
@@ -101,6 +101,7 @@ for (const theme of ["light", "dark"] as const) {
       // The poster, lighter than a screencast frame: the page shows it until the video plays, and instead of it with
       // reduced motion.
       await page.screenshot({ path: `${out}.jpg`, type: "jpeg", quality: 78, caret: "hide" });
+      await page.screenshot({ path: `${out}-small.jpg`, type: "jpeg", quality: 80, caret: "hide", scale: "css" });
       await cdp.send("Page.stopScreencast");
       const end = Date.now();
       if (frames.length < 10) throw new Error(`the screencast sent ${frames.length} frames`);
@@ -116,12 +117,15 @@ for (const theme of ["light", "dark"] as const) {
       const all = existsSync(chapters) ? (JSON.parse(readFileSync(chapters, "utf8")) as Record<string, unknown>) : {};
       all[theme] = { ask: at(typing), plan: at(sent), build: at(sent + STEPS.writers), review: at(sent + STEPS.opened), merge: at(sent + STEPS.ci), end: at(end) };
       writeFileSync(chapters, `${JSON.stringify(all, null, 2)}\n`);
-      const run = spawnSync(
-        ffmpeg(),
-        ["-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", String(FPS), "-c:v", "mjpeg", "-i", "pipe:0", "-vf", "scale=-2:1440:flags=lanczos", "-c:v", "libvpx-vp9", "-pix_fmt", "yuv420p", "-crf", "38", "-b:v", "0", "-row-mt", "1", "-deadline", "good", "-cpu-used", "2", "-an", `${out}.webm`],
-        { input: Buffer.concat(ticks), maxBuffer: 1 << 30 },
-      );
-      if (run.status !== 0) throw new Error(`ffmpeg failed: ${String(run.stderr)}`);
+      // Two sizes: 1440 px tall for a wide screen at 2x, 720 for a small screen's (the page picks by the frame's pixels).
+      for (const [height, file] of [[1440, `${out}.webm`], [720, `${out}-small.webm`]] as const) {
+        const run = spawnSync(
+          ffmpeg(),
+          ["-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", String(FPS), "-c:v", "mjpeg", "-i", "pipe:0", "-vf", `scale=-2:${String(height)}:flags=lanczos`, "-c:v", "libvpx-vp9", "-pix_fmt", "yuv420p", "-crf", height === 720 ? "34" : "38", "-b:v", "0", "-row-mt", "1", "-deadline", "good", "-cpu-used", "2", "-an", file],
+          { input: Buffer.concat(ticks), maxBuffer: 1 << 30 },
+        );
+        if (run.status !== 0) throw new Error(`ffmpeg failed: ${String(run.stderr)}`);
+      }
     } finally {
       await close();
     }

@@ -100,15 +100,15 @@ figcaption b{color:var(--ink);font-weight:500}
 .show video{position:absolute;inset:0;opacity:0}
 .show .on video{opacity:1}
 .play{position:absolute;right:10px;bottom:10px;font:500 13px/1 var(--sans);color:var(--ink);background:var(--paper);border:1px solid var(--rule);border-radius:4px;padding:6px 9px;cursor:pointer;opacity:0}
-.show .on .play{opacity:1}
+.show .on .play,.show .ready .play{opacity:1}
 .play:hover{border-color:var(--ink)}
 .line{list-style:none;margin:20px 0 0;padding:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:0 clamp(14px,1.8vw,28px);counter-reset:s}
 .line li{border-top:1px solid var(--rule);padding:12px 0 0;counter-increment:s;color:var(--grey)}
-.line h3{font-size:15px;line-height:1.35;color:var(--ink)}
-.line h3::before{content:counter(s);display:inline-block;width:1.4em;color:var(--faint);font-variant-numeric:tabular-nums}
+.line b{display:block;font-size:15px;line-height:1.35;font-weight:500;color:var(--ink)}
+.line b::before{content:counter(s);display:inline-block;width:1.4em;color:var(--faint);font-variant-numeric:tabular-nums}
 .line p{font-size:14px;margin-top:3px}
 .line .now{border-top-color:var(--ink)}
-.line .now h3::before{color:var(--ink)}
+.line .now b::before{color:var(--ink)}
 
 /* sections */
 .sec{padding-top:var(--sec);padding-bottom:var(--sec);background:linear-gradient(var(--rule),var(--rule)) no-repeat center top/calc(100% - 2*var(--pad)) 1px}
@@ -182,7 +182,7 @@ summary:hover{color:var(--ink)}
 }
 /* Snappy, as in the app (app/desktop/src/renderer/ui/DESIGN.md): state changes in 140 ms, only colour and opacity. */
 @media (prefers-reduced-motion:no-preference){
-  .copy,.nav a,a,summary,.line li,.line h3::before{transition:color .14s var(--snap),border-color .14s var(--snap),text-decoration-color .14s var(--snap)}
+  .copy,.nav a,a,summary,.line li,.line b::before{transition:color .14s var(--snap),border-color .14s var(--snap),text-decoration-color .14s var(--snap)}
   .show video,.play{transition:opacity .14s var(--snap)}
 }
 </style>
@@ -215,18 +215,18 @@ summary:hover{color:var(--ink)}
 <figure class="w show" aria-labelledby="show-cap">
   <div class="shot" id="show">
     <picture>
-      <source srcset="/showcase-dark.jpg" media="(prefers-color-scheme: dark)">
-      <img src="/showcase-light.jpg" width="2800" height="1800" fetchpriority="high" alt="The fleetd app on the storefront project, after one request has run through. You asked: let shoppers save their cart and pick it up on any device. The lead answered that one writer saves the cart and one brings it back at sign-in, each PR with its own reviewer; then that #231 is up with a reviewer on it; then that #231 is merged and the second PR opens next. The panel’s merge line lists Saved carts are stored per shopper, #231, as merged, above two earlier merges. Under the chat, one writer is still at work.">
+      <source srcset="/showcase-dark-small.jpg 1400w, /showcase-dark.jpg 2800w" sizes="(min-width: 1240px) 1112px, calc(100vw - 2 * clamp(20px, 4.4vw, 64px))" media="(prefers-color-scheme: dark)">
+      <img src="/showcase-light.jpg" srcset="/showcase-light-small.jpg 1400w, /showcase-light.jpg 2800w" sizes="(min-width: 1240px) 1112px, calc(100vw - 2 * clamp(20px, 4.4vw, 64px))" width="2800" height="1800" fetchpriority="high" alt="The fleetd app on the storefront project, after one request has run through. You asked: let shoppers save their cart and pick it up on any device. The lead answered that one writer saves the cart and one brings it back at sign-in, each PR with its own reviewer; then that #231 is up with a reviewer on it; then that #231 is merged and the second PR opens next. The panel’s merge line lists Saved carts are stored per shopper, #231, as merged, above two earlier merges. Under the chat, one writer is still at work.">
     </picture>
-    <video muted loop playsinline preload="none" disablepictureinpicture aria-hidden="true" tabindex="-1" data-light="/showcase-light.webm" data-dark="/showcase-dark.webm"></video>
+    <video muted loop playsinline preload="none" disablepictureinpicture aria-hidden="true" tabindex="-1" data-light="/showcase-light.webm" data-dark="/showcase-dark.webm" data-light-small="/showcase-light-small.webm" data-dark-small="/showcase-dark-small.webm"></video>
     <button class="play" type="button" aria-controls="show">Pause</button>
   </div>
   <ol class="line" id="line">
-    <li data-step="ask"><h3>You ask</h3><p>Say what you want in the project’s chat.</p></li>
-    <li data-step="plan"><h3>The lead plans</h3><p>It splits the work and starts agents.</p></li>
-    <li data-step="build"><h3>Agents build</h3><p>In parallel, each on its own branch.</p></li>
-    <li data-step="review"><h3>A reviewer checks</h3><p>Every pull request, before it merges.</p></li>
-    <li data-step="merge"><h3>The train merges</h3><p>Rebased onto main, merged on green CI.</p></li>
+    <li data-step="ask"><b>You ask</b><p>Say what you want in the project’s chat.</p></li>
+    <li data-step="plan"><b>The lead plans</b><p>It splits the work and starts agents.</p></li>
+    <li data-step="build"><b>Agents build</b><p>In parallel, each on its own branch.</p></li>
+    <li data-step="review"><b>A reviewer checks</b><p>Every pull request, before it merges.</p></li>
+    <li data-step="merge"><b>The train merges</b><p>Rebased onto main, merged on green CI.</p></li>
   </ol>
   <figcaption id="show-cap"><b>One request, from message to merged pull request.</b> Recorded from the fleetd app on sample data, with the waits cut short: a real change takes minutes to hours, and you can close the app meanwhile.</figcaption>
 </figure>
@@ -400,14 +400,15 @@ document.querySelectorAll("[data-copy]").forEach(function(b){
   });
 });
 
-// The showcase. The still is what everyone gets first, and all a reader with reduced motion gets. Otherwise the
-// recording loads once the page has and the frame is near the screen, plays only while it is on screen, follows the
-// system theme, and marks the step it is on.
+// The showcase. The still is what everyone gets first. On a wide screen without reduced motion, the recording loads
+// once the page has and the frame is near the screen, and plays while it is on screen. On a small screen, or with
+// reduced motion, it waits for Play: the reader's data and wish come first. It follows the system
+// theme and marks the step it is on.
 (function(){
   var box=document.getElementById("show"),video=box.querySelector("video"),button=box.querySelector(".play");
   var steps=[].slice.call(document.querySelectorAll("#line [data-step]"));
   var calm=matchMedia("(prefers-reduced-motion: reduce)"),dark=matchMedia("(prefers-color-scheme: dark)");
-  var chapters,seen=false,paused=false;
+  var chapters,paused=calm.matches||box.clientWidth<640;
   var mark=function(){
     if(!chapters)return;
     var t=video.currentTime,now;
@@ -416,34 +417,32 @@ document.querySelectorAll("[data-copy]").forEach(function(b){
   };
   var clear=function(){steps.forEach(function(li){li.classList.remove("now");li.removeAttribute("aria-current")})};
   var source=function(){
-    var want=dark.matches?video.dataset.dark:video.dataset.light;
+    // A frame under 1600 device pixels wide gets the half-size recording: as sharp there, at half the bytes.
+    var small=box.clientWidth*(window.devicePixelRatio||1)<1600;
+    var want=video.dataset[(dark.matches?"dark":"light")+(small?"Small":"")];
     if(video.getAttribute("src")===want)return;
     var at=video.currentTime||0;
     video.src=want;
     video.addEventListener("loadedmetadata",function(){video.currentTime=at},{once:true});
-    if(!paused&&seen)video.play().catch(function(){});
     fetch("/showcase.json").then(function(r){return r.json()}).then(function(j){chapters=j[dark.matches?"dark":"light"];mark()}).catch(function(){});
   };
   var start=function(){
-    if(calm.matches)return;
+    if(paused)return;
     source();
-    if(!paused)video.play().catch(function(){});
+    video.play().catch(function(){});
   };
+  var hold=function(){paused=true;video.pause();button.textContent="Play"};
+  if(paused){button.textContent="Play";box.classList.add("ready")}
   video.addEventListener("playing",function(){box.classList.add("on")});
   video.addEventListener("timeupdate",mark);
   button.addEventListener("click",function(){
-    paused=!paused;
-    if(paused){video.pause();button.textContent="Play"}else{video.play().catch(function(){});button.textContent="Pause"}
+    if(paused){paused=false;button.textContent="Pause";start()}else hold();
   });
-  calm.addEventListener("change",function(){
-    if(calm.matches){video.pause();box.classList.remove("on");clear()}else if(seen)start();
-  });
-  dark.addEventListener("change",function(){if(video.getAttribute("src"))source()});
+  calm.addEventListener("change",function(){if(calm.matches){hold();box.classList.remove("on");box.classList.add("ready");clear()}});
+  dark.addEventListener("change",function(){if(video.getAttribute("src")){source();if(!paused)video.play().catch(function(){})}});
   var watch=function(){
     new IntersectionObserver(function(es){
-      var e=es[es.length-1];
-      seen=e.isIntersecting;
-      if(seen)start();else video.pause();
+      if(es[es.length-1].isIntersecting)start();else video.pause();
     },{rootMargin:"200px 0px"}).observe(box);
   };
   if(document.readyState==="complete")watch();else addEventListener("load",watch);
