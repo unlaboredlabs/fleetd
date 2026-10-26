@@ -3,16 +3,14 @@
 //! make it (`tasks::policy`). The human resumes from the app's Resume or `fleetd usage resume <machine>`.
 use std::sync::{Arc, Weak};
 
-use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult, UsageResumeResult};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::prim::Count;
-use serde_json::Value;
 
 use crate::hub::api::Hub;
 use crate::hub::link::lead_calls::LeadCallFuture;
 use crate::hub::link::{LeadCaller, LeadCalls};
-use crate::hub::store::{iso_ms, now_ms, parse_ms};
+use crate::hub::store::{iso_ms, now_ms};
 
 pub const OPS: [&str; 1] = ["usage_resume"];
 /// How often a lead may lift one machine's pause: a login still limited parks again on the next turn, so a lead
@@ -46,22 +44,6 @@ pub fn register_lead_calls(hub: &Arc<Hub>) {
     }
 }
 
-/// When `by` last lifted something on the machine, from the usage layer's recent events for it.
-fn last_resume_by(events: &[fleetd_contracts::events::HubEvent], by: &str) -> Option<i64> {
-    events
-        .iter()
-        .rev()
-        .filter(|e| e.r#type == HubEventType::UsageResumed)
-        .find(|e| {
-            e.data
-                .as_ref()
-                .and_then(|d| d.get("by"))
-                .and_then(Value::as_str)
-                == Some(by)
-        })
-        .and_then(|e| parse_ms(e.at.as_str()))
-}
-
 async fn resume(
     hub: &Hub,
     caller: &LeadCaller,
@@ -80,8 +62,10 @@ async fn resume(
     }
     let before = hub.usage.status(machine, Err(String::new())).await;
     let now = now_ms(hub.clock.as_ref());
-    if let Some(at) =
-        last_resume_by(&before.last_events, &caller.by).filter(|at| now - at < LEAD_RESUME_EVERY_MS)
+    if let Some(at) = hub
+        .usage
+        .last_resumed_by(machine, &caller.by)
+        .filter(|at| now - at < LEAD_RESUME_EVERY_MS)
     {
         let again = iso_ms(at + LEAD_RESUME_EVERY_MS);
         return Err(McpToolError::new(
@@ -275,8 +259,9 @@ mod tests {
             [(true, "lead:forge/fleetd".to_owned())]
         );
 
-        // It trips again on two more limits; the lead may not lift it again within 10 minutes.
-        for thread in ["w1", "w2"] {
+        // Twelve agents hit it again, more than the usage layer's recent events per machine keep: the lead still may
+        // not lift it again within 10 minutes.
+        for thread in (1..=12).map(|n| format!("w{n}")) {
             let event: NewEvent = serde_json::from_value(json!({
                 "at": crate::hub::store::iso_ms(T0 as i64 + 60_000), "type": "thread.usage_limited",
                 "machineId": "forge", "threadId": thread, "summary": "hit the usage limit",
