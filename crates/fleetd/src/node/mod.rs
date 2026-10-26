@@ -17,6 +17,7 @@ pub mod mcp_probe;
 pub mod mcp_servers;
 pub mod order_env;
 pub mod power;
+pub mod preview;
 pub mod project_env;
 pub mod repos;
 pub mod runner;
