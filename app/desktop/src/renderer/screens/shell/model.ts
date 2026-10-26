@@ -109,24 +109,66 @@ export const homeProject = (projects: ReadonlyArray<SidebarProject>, last: strin
 export type ConnTone = "success" | "warning" | "danger" | "quiet";
 
 /** `http://100.64.0.1:4790/` → `100.64.0.1:4790`. */
-const host = (hub: string): string => hub.replace(/^[a-z]+:\/\//iu, "").replace(/\/+$/u, "");
+const host = (hub: string): string => hub.replace(/^[a-z]+:\/\//iu, "").replace(/\/.*$/u, "");
 
 /**
- * The sidebar's last line. A fixture never says it is connected. Offline it marks the projects above it with the
- * time they were last current (`asOf`, "as of 09:02"); the banner says why and counts down.
+ * What the sidebar calls a hub: the first label of its host (`https://devbox.example.ts.net:4790` → `devbox`). An
+ * address has no such label, so it stays whole, without its port (`100.64.0.1`, `[fd7a::1]`).
  */
-export const connLine = (state: HubState, fixture = false, asOf?: string): { readonly label: string; readonly tone: ConnTone } => {
-  if (fixture) return { label: "Sample data, no hub", tone: "quiet" };
+export const hubName = (hub: string): string => {
+  const h = host(hub);
+  if (h.startsWith("[")) return h.slice(0, h.indexOf("]") + 1);
+  const bare = h.replace(/:\d*$/u, "");
+  if (/^\d+(?:\.\d+){3}$/u.test(bare)) return bare;
+  return bare.split(".")[0] ?? bare;
+};
+
+export interface ConnLine {
+  /** The chip's words: the hub's short name while connected, else its state in a word or two. */
+  readonly label: string;
+  readonly tone: ConnTone;
+  /** The state in a word or two ("Connected", "Offline"), the popover's heading. */
+  readonly status: string;
+  /** What is going on, in a sentence without a final period; null when the status says it all. */
+  readonly detail: string | null;
+  /** What to do about it, from the hub's own error (may name a command in backticks); null when there's nothing to say. */
+  readonly fix: string | null;
+  /** The hub's address in full, when there is one. */
+  readonly hub: string | null;
+  /** Waiting out a retry: Retry dials now. */
+  readonly retry: boolean;
+}
+
+/**
+ * The sidebar's hub chip, and its popover. A fixture never says it is connected. Offline the projects above it are
+ * marked with the time they were last current (`asOf`, "as of 09:02"); the popover says it too, and the banner
+ * counts down.
+ */
+export const connLine = (state: HubState, fixture = false, asOf?: string): ConnLine => {
+  const none = { detail: null, fix: null, hub: null, retry: false };
+  if (fixture) return { ...none, label: "Sample data", tone: "quiet", status: "Sample data", detail: "Sample data, no hub" };
   switch (state.phase) {
-    case "connecting":
-      return { label: state.hub === "" ? "Connecting…" : `Connecting to ${host(state.hub)}…`, tone: "quiet" };
+    // The first attempt is the usual start: quiet. Amber once it is trying again.
+    case "connecting": {
+      const again = state.attempt > 1;
+      const status = again ? "Reconnecting…" : "Connecting…";
+      return { ...none, label: status, tone: again ? "warning" : "quiet", status, hub: state.hub === "" ? null : state.hub };
+    }
     case "unpaired":
-      return { label: "Not connected to a hub", tone: "quiet" };
+      return { ...none, label: "No hub", tone: "quiet", status: "Not connected", detail: state.note ?? "This app isn't paired with a hub" };
     case "live":
-      return { label: `Connected to ${host(state.hub)}`, tone: "success" };
+      return { ...none, label: hubName(state.hub), tone: "success", status: "Connected", hub: state.hub };
     case "retrying":
-      return { label: asOf === undefined ? "Offline" : `Offline, ${asOf}`, tone: "warning" };
+      return {
+        label: "Offline",
+        tone: "warning",
+        status: asOf === undefined ? "Offline" : `Offline, ${asOf}`,
+        detail: state.reason,
+        fix: state.fix ?? null,
+        hub: state.hub,
+        retry: true,
+      };
     case "refused":
-      return { label: "The hub refused this key", tone: "danger" };
+      return { label: "Key refused", tone: "danger", status: "Key refused", detail: `The hub refused this app's key: ${state.message}`, fix: null, hub: state.hub, retry: false };
   }
 };
