@@ -8,11 +8,13 @@ export interface ProjectAgents {
   readonly running: number;
   /** Agents waiting for a slot, paused ones included. */
   readonly queued: number;
-  /** The project's max; its machine's cap when the project has no limit of its own. */
+  /** The project's max: its own, or the default (`cap`) it follows. */
   readonly max: number;
-  /** The most it can run, the slider's top: its machine's cap, or the fleet cap when that is lower. */
+  /**
+   * The most it can run, the slider's top and the default: its machine's cap, or the fleet cap when that is lower.
+   */
   readonly cap: number;
-  /** Whether the project has a limit of its own below that. */
+  /** Whether a person set the project's own max, which no fleet or machine change moves; false: it follows `cap`. */
   readonly own: boolean;
 }
 
@@ -24,9 +26,18 @@ export function projectAgents(slots: SlotState, project: ProjectRef): ProjectAge
   // caps sends no `perMachine`, and its cap is the fleet's.
   const machine = slots.perMachine?.find((m) => m.machineId === project.machineId)?.cap ?? slots.cap;
   const cap = Math.min(machine, slots.cap);
-  // No row: the hub's default, the machine's cap, with nothing running or waiting.
+  // No row: the default, with nothing running or waiting.
   const max = Math.min(row?.maxAgents ?? cap, cap);
-  return { running: row?.running ?? 0, queued: row?.queued ?? 0, max, cap, own: max < cap };
+  // A hub from before `own` lists only projects set or busy, and says nothing of which: a max at the top reads as the
+  // default.
+  return { running: row?.running ?? 0, queued: row?.queued ?? 0, max, cap, own: row?.own ?? max < cap };
+}
+
+/** Where the max comes from, beside the slider: its own setting, or the default it follows and what sets it. */
+export function sourceLine(slots: SlotState, a: ProjectAgents): string {
+  if (a.own) return `Set for this project. The default is ${a.cap}.`;
+  const fleet = slots.fleetCap !== undefined && slots.fleetCap <= a.cap;
+  return fleet ? "Follows the default: the whole fleet's cap." : "Follows the default: its machine's cap, within the whole fleet's.";
 }
 
 /** The header control's words: "agents 6 / 12", and "· 2 queued" when some wait their turn. */
@@ -81,7 +92,9 @@ export const fleetTop = (cap: number): number => Math.max(64, cap);
  * `name` gives a project's title.
  */
 export function fleetWarning(slots: SlotState, cap: number, name: (r: ProjectRef) => string): string | null {
-  const over = slots.perProject.filter((p) => p.maxAgents > cap);
+  // A project on the default follows the fleet cap, so only an own max is held below. A hub from before `own` sends
+  // none, and its rows are maxes set, or busy projects at their machine's cap.
+  const over = slots.perProject.filter((p) => p.own !== false && p.maxAgents > cap);
   const [first] = over;
   if (first === undefined) return null;
   if (over.length === 1) return `Below ${name(first.projectRef)}'s max of ${first.maxAgents}: it runs at most ${cap} until you raise this.`;

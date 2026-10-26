@@ -924,6 +924,35 @@ export const screens: readonly Screen[] = [
     open: (page) => page.getByRole("button", { name: /^Max agents: \d+ running of \d+/u }).click(),
     variant: "max-agents",
   },
+  // The header's state word and its agents control on one line: the same height, and their text on one baseline.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["settings-agents"],
+    variant: "header-line",
+    open: async (page) => {
+      const control = page.getByRole("button", { name: /^Max agents: \d+ running of \d+/u });
+      await control.waitFor();
+      const line = await control.evaluate((button) => {
+        const state = button.previousElementSibling;
+        if (state === null) return null;
+        // An empty inline-block sits on the baseline of the text it is put in.
+        const baseline = (el: Element) => {
+          const text = [...el.querySelectorAll("*")].reverse().find((x) => [...x.childNodes].some((n) => n.nodeType === Node.TEXT_NODE)) ?? el;
+          const probe = document.createElement("span");
+          probe.style.cssText = "display:inline-block;width:0;height:0";
+          text.append(probe);
+          const y = probe.getBoundingClientRect().top;
+          probe.remove();
+          return y;
+        };
+        const box = (el: Element) => ({ top: el.getBoundingClientRect().top, height: el.getBoundingClientRect().height, baseline: baseline(el) });
+        return { state: box(state), control: box(button) };
+      });
+      expect(line).not.toBeNull();
+      expect(line?.state).toEqual(line?.control);
+    },
+  },
   // C1: updates. The sidebar's line above the connection for each state that has one, and the sheet the palette's
   // "Check for updates" opens, for every state of this app (not checked yet, checking, a build that doesn't update,
   // up to date, found, downloading to restart, ready, the deb's command, a failed check, a failed download) and of the
@@ -1415,6 +1444,20 @@ export const screens: readonly Screen[] = [
       await page.getByRole("slider", { name: "storefront" }).focus();
       for (let i = 0; i < 8; i++) await page.keyboard.press("ArrowLeft");
       await page.getByRole("button", { name: "Undo" }).waitFor();
+    },
+  },
+  // A project's own max goes back to the default: storefront's 12 to the fleet's 16, with Undo.
+  {
+    id: "settings.agents",
+    route: "#/settings/agents",
+    fixtures: ["settings-agents"],
+    variant: "to-default",
+    open: async (page) => {
+      const storefront = page.getByRole("region", { name: "storefront" });
+      await storefront.getByText("Set for this project. The default is 16.").waitFor();
+      await storefront.getByRole("button", { name: "Use the default" }).click();
+      await storefront.getByText("Max agents, the default: 16, was 12.").waitFor();
+      await storefront.getByText("Follows the default: the whole fleet's cap.").waitFor();
     },
   },
   {

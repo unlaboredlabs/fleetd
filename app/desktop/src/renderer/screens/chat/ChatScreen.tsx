@@ -150,9 +150,13 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
         {view?.held === true ? (
           // A held chat is as it was then, connected or not, until this connection's newest page lands; what the
           // lead is doing now isn't known from it.
-          <StatusChip tone="quiet">{heldLabel(view.offline, asOf)}</StatusChip>
+          <span className={s.state}>
+            <StatusChip tone="quiet">{heldLabel(view.offline, asOf)}</StatusChip>
+          </span>
         ) : state ? (
-          <StatusChip tone={TONE[state]}>{STATE_WORDS[state]}</StatusChip>
+          <span className={s.state}>
+            <StatusChip tone={TONE[state]}>{STATE_WORDS[state]}</StatusChip>
+          </span>
         ) : null}
         {data.missing ? null : <AgentsCapControl projectRef={project} />}
       </FrameTitle>

@@ -29,7 +29,7 @@ The hub checks these on every fleetd call a session makes, through its MCP tools
 | Who can start agents | A lead, with `spawn_agent`. A task's agent can't. |
 | Depth | 1. A lead is depth 0 and its tasks depth 1; nothing goes deeper. |
 | Open tasks per lead | 32, or twice the project's max agents when that is more (queued, running or idle). |
-| Agents running at once, per project | The project's max agents, which a person sets (`cap_set`, the chat's Max agents); unset, its machine's cap. A spawn over it queues and starts by itself; a review goes ahead of queued writers. The lead is not an agent and doesn't count. |
+| Agents running at once, per project | The project's max agents, which a person sets (`cap_set`, the chat's Max agents); unset, its machine's cap within the fleet cap. A spawn over it queues and starts by itself; a review goes ahead of queued writers. The lead is not an agent and doesn't count. |
 | Agents running at once, per machine | What the machine fits: one per CPU less one in eight, and 2 GB of memory each after a quarter (4 to 16 GB) is left for the system, at most 64. New agents also wait for 5 GB of disk each above the free-space floor. |
 | Agents running at once, fleet-wide | The machines' caps added up, unless a person set a fleet cap. |
 | Calls a task's agent may make | `report`, `ask_lead`. Every other call is refused. |

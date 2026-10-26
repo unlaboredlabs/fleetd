@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
 import type { SlotState } from "../../../shared/contracts";
-import { agentsLabel, appliedLine, changeLine, clampMax, extrasLine, extrasOver, fleetTop, fleetWarning, pauseLine, projectAgents, serialNote } from "./agentsModel";
+import {
+  agentsLabel,
+  appliedLine,
+  changeLine,
+  clampMax,
+  extrasLine,
+  extrasOver,
+  fleetTop,
+  fleetWarning,
+  pauseLine,
+  projectAgents,
+  serialNote,
+  sourceLine,
+} from "./agentsModel";
 
 const storefront = { machineId: "devbox", projectId: "storefront" };
 const billing = { machineId: "devbox", projectId: "billing" };
@@ -46,6 +59,38 @@ describe("max agents", () => {
     expect(projectAgents({ ...machines, cap: 4 }, storefront)).toMatchObject({ max: 4, cap: 4, own: false });
   });
 
+  it("takes whether a max is the project's own from the hub, even at the top of its slider", () => {
+    // storefront set to 12 when the fleet was 12; billing busy on the default.
+    const hub: SlotState = {
+      cap: 12,
+      fleetCap: 12,
+      used: 8,
+      queued: 0,
+      perProject: [
+        { projectRef: storefront, maxAgents: 12, own: true, running: 6, queued: 0 },
+        { projectRef: billing, maxAgents: 12, own: false, running: 2, queued: 0 },
+      ],
+    };
+    const own = projectAgents(hub, storefront);
+    expect(own).toMatchObject({ max: 12, cap: 12, own: true });
+    expect(sourceLine(hub, own)).toBe("Set for this project. The default is 12.");
+    const follows = projectAgents(hub, billing);
+    expect(follows).toMatchObject({ max: 12, own: false });
+    expect(sourceLine(hub, follows)).toBe("Follows the default: the whole fleet's cap.");
+    // The fleet raised to 20 on a machine that runs 16: the default is the machine's, and storefront keeps its 12.
+    const raised: SlotState = {
+      ...hub,
+      cap: 20,
+      fleetCap: 20,
+      perMachine: [{ machineId: "devbox", cap: 16, auto: 16, running: 8, why: "memory 34 GB" }],
+      perProject: [...hub.perProject.slice(0, 1), { projectRef: billing, maxAgents: 16, own: false, running: 2, queued: 0 }],
+    };
+    expect(agentsLabel(projectAgents(raised, storefront))).toBe("agents 6 / 12");
+    expect(agentsLabel(projectAgents(raised, billing))).toBe("agents 2 / 16");
+    expect(sourceLine(raised, projectAgents(raised, billing))).toBe("Follows the default: its machine's cap, within the whole fleet's.");
+    expect(sourceLine(raised, projectAgents(raised, storefront))).toBe("Set for this project. The default is 16.");
+  });
+
   it("says that lowering below the running count lets them finish and makes new ones wait", () => {
     const a = projectAgents(slots, storefront);
     expect(extrasOver(6, 4)).toBe(2);
@@ -85,6 +130,22 @@ describe("max agents", () => {
     expect(fleetWarning(slots, 4, name)).toBe("Below the max of storefront and billing: they run at most 4 until you raise this.");
     const three = { ...slots, perProject: [...slots.perProject, { projectRef: { machineId: "m", projectId: "docs" }, maxAgents: 9, running: 0, queued: 0, used: 0 }] };
     expect(fleetWarning(three, 4, name)).toBe("Below the max of 3 projects: they run at most 4 until you raise this.");
+  });
+
+  it("doesn't warn for a project on the default, which follows the fleet cap down", () => {
+    const name = (r: { projectId: string }) => r.projectId;
+    const hub: SlotState = {
+      cap: 12,
+      fleetCap: 12,
+      used: 8,
+      queued: 0,
+      perProject: [
+        { projectRef: storefront, maxAgents: 10, own: true, running: 6, queued: 0 },
+        { projectRef: billing, maxAgents: 12, own: false, running: 2, queued: 0 },
+      ],
+    };
+    expect(fleetWarning(hub, 8, name)).toBe("Below storefront's max of 10: it runs at most 8 until you raise this.");
+    expect(fleetWarning(hub, 11, name)).toBeNull();
   });
 
   it("lets the fleet slider reach well past today's cap, and any cap set higher", () => {

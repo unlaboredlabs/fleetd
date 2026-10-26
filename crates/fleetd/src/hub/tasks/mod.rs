@@ -2745,6 +2745,7 @@ impl Tasks {
             queued: agents.queued,
             source: match agents.source {
                 crate::hub::slots::MaxSource::Project => "max agents set".to_owned(),
+                crate::hub::slots::MaxSource::Fleet => "fleet cap set".to_owned(),
                 crate::hub::slots::MaxSource::Machine => "machine cap set".to_owned(),
                 crate::hub::slots::MaxSource::Auto(why) => format!("auto: {why}"),
             },

@@ -26,7 +26,7 @@ pub struct AgentsLine {
     pub running: i64,
     pub cap: i64,
     pub queued: i64,
-    /// Where the cap comes from: "auto: memory 18 GB", "max agents set", "machine cap set".
+    /// Where the cap comes from: "auto: memory 18 GB", "max agents set", "fleet cap set", "machine cap set".
     pub source: String,
 }
 

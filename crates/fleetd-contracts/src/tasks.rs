@@ -184,8 +184,12 @@ pub enum RecoveryMode {
 pub struct SlotStatePerProject {
     pub project_ref: ProjectRef,
     /// The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead is not
-    /// one. Its machine's `cap` until set.
+    /// one. Until set, the default: its machine's `cap`, within the fleet cap.
     pub max_agents: Count,
+    /// A person set the project's own max; false: it follows the default. Absent from a hub before this, which
+    /// listed a project only once set or busy.
+    #[serde(default)]
+    pub own: bool,
     /// Its agents running now. Above `maxAgents` right after the cap was lowered: nothing is stopped for it.
     pub running: Count,
     /// Its agents waiting for a slot, paused ones included.

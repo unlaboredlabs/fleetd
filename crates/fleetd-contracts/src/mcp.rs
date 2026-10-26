@@ -683,8 +683,10 @@ output!(TaskGetOutput { task: Task });
 // cap_set: the fleet cap, a project's max agents, or both. Lowering stops nothing; raising starts queued agents at once.
 input!(CapSetProject {
     project_ref: ProjectRef,
-    /// 1 up to the fleet cap.
-    max_agents: Int<1, 1000>,
+    /// 1 up to the fleet cap: the project's own max, which no later fleet or machine cap changes.
+    max_agents: Option<Int<1, 1000>>,
+    /// Drop the project's own max: it follows the default again, its machine's cap within the fleet cap.
+    follow_default: Option<bool>,
     /// Lowering: tell the agents above the new max to push their work in progress and wait; they resume when a slot
     /// frees. Without it they finish their current work.
     pause_extras: Option<bool>,
@@ -700,6 +702,11 @@ input!(
 checked!(CapSetInput, |input| {
     if input.cap.is_none() && input.project.is_none() {
         return Err("expected cap, project or both".into());
+    }
+    if let Some(p) = &input.project
+        && p.max_agents.is_some() == (p.follow_default == Some(true))
+    {
+        return Err("expected project.maxAgents or project.followDefault: true".into());
     }
     Ok(())
 });
@@ -1990,6 +1997,15 @@ mod tests {
         assert!(decode::<CapSetInput>(json!({})).is_err());
         assert!(decode::<CapSetInput>(json!({ "cap": 1001 })).is_err());
         assert!(decode::<CapSetInput>(json!({ "cap": 40 })).is_ok());
+        let project = |mut p: serde_json::Value| {
+            p["projectRef"] = json!({ "machineId": "lab-a", "projectId": "p1" });
+            decode::<CapSetInput>(json!({ "project": p }))
+        };
+        assert!(project(json!({ "maxAgents": 4 })).is_ok());
+        assert!(project(json!({ "followDefault": true })).is_ok());
+        assert!(project(json!({})).is_err());
+        assert!(project(json!({ "followDefault": false })).is_err());
+        assert!(project(json!({ "maxAgents": 4, "followDefault": true })).is_err());
     }
 
     #[test]
