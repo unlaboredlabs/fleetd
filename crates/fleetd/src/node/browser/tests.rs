@@ -142,7 +142,14 @@ async fn site() -> (String, AbortOnDrop) {
                     let body =
                         String::from_utf8_lossy(&request[head_end + 4..head_end + 4 + length])
                             .into_owned();
-                    let page = if text.starts_with("GET /secret") {
+                    let page = if text.starts_with("GET /search-form") {
+                        "<html><body><form method=get action=/found><input id=code name=code><button id=find>Find</button>\
+                         </form></body></html>"
+                            .to_owned()
+                    } else if text.starts_with("GET /found") {
+                        "<html><head><title>Found</title></head><body>Found</body></html>"
+                            .to_owned()
+                    } else if text.starts_with("GET /secret") {
                         // A project secret as a page shows it: HTML-escaped, and inside longer base64.
                         let html = PROJECT_SECRET.replace('&', "&amp;").replace('<', "&lt;");
                         let b64 = B64.encode(format!("key={PROJECT_SECRET};"));
@@ -318,10 +325,25 @@ impl Driver {
         attached["sessionId"].as_str().unwrap().to_owned()
     }
 
+    /// Waits until `expression` is true on the page. A page between documents (a submit navigating) answers with an
+    /// error meanwhile, which only means not yet.
     async fn wait_for(&mut self, page: &str, expression: &str) {
         let deadline = Instant::now() + Duration::from_secs(15);
-        while self.eval(page, expression).await != true {
-            assert!(Instant::now() < deadline, "never true: {expression}");
+        loop {
+            let answer = self
+                .send(
+                    Some(page),
+                    "Runtime.evaluate",
+                    json!({ "expression": expression, "returnByValue": true }),
+                )
+                .await;
+            if answer["result"]["result"]["value"] == true {
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "never true: {expression} ({answer})"
+            );
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
     }
@@ -488,14 +510,13 @@ async fn an_agent_starts_a_session_uses_a_site_and_ends_it_and_its_recording_is_
         tokio::time::sleep(Duration::from_millis(100)).await;
     };
     assert_eq!(recorded["sessionId"], id.as_str());
-    assert!(
-        !rig.node_home
-            .path()
-            .join("browser/recordings")
-            .join(&id)
-            .exists(),
-        "the node let it go"
-    );
+    // The node lets its copy go once the hub has said so.
+    let kept = rig.node_home.path().join("browser/recordings").join(&id);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while kept.exists() {
+        assert!(Instant::now() < deadline, "the node never let it go");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
 
     let actions = String::from_utf8(read_file(&rig.hub, &id, "actions").await).unwrap();
     let lines: Vec<Value> = actions
@@ -1498,5 +1519,119 @@ async fn a_takeover_asked_for_at_once_reaches_the_hub_after_its_session() {
     assert!(asked["result"]["message"].is_string(), "{asked}");
     let waiting = crate::hub::browser::waiting(&rig.hub.hub.db, &rig.hub.project).unwrap();
     assert_eq!(waiting.len(), 1);
+    call(&rig.broker, json!({ "op": "session_end" })).await;
+}
+
+#[test]
+fn a_url_loses_its_query_and_fragment() {
+    use super::session::without_query;
+    assert_eq!(
+        without_query("https://shop.test/a/b?code=1#x"),
+        "https://shop.test/a/b"
+    );
+    assert_eq!(
+        without_query("https://shop.test/a#frag"),
+        "https://shop.test/a"
+    );
+    assert_eq!(without_query("https://shop.test/a"), "https://shop.test/a");
+}
+
+/// A value filled into a form that submits by GET lands in the page's address: the frames the app watches carry
+/// it scrubbed, and once a credential was filled, without the query at all.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_frames_address_never_carries_a_value_a_get_form_submitted() {
+    let Some(rig) = rig_with(vec![("SHOP_KEY".into(), PROJECT_SECRET.into())]).await else {
+        return;
+    };
+    let (site, _site) = site().await;
+    let started = call(
+        &rig.broker,
+        json!({ "op": "session_start", "purpose": "Search" }),
+    )
+    .await;
+    let id = fleetd_contracts::browser::BrowserSessionId::unchecked(
+        started["result"]["sessionId"].as_str().unwrap(),
+    );
+    let mut driver = Driver::connect(started["result"]["cdp"].as_str().unwrap())
+        .await
+        .unwrap();
+    let page = driver.page().await;
+    driver
+        .ok(
+            Some(&page),
+            "Page.navigate",
+            json!({ "url": format!("{site}/search-form") }),
+        )
+        .await;
+    driver
+        .wait_for(
+            &page,
+            "document.readyState === 'complete' && !!document.querySelector('#code')",
+        )
+        .await;
+    // The secret typed into the GET form and submitted: the next page's address holds it, percent-encoded.
+    driver
+        .eval(&page, "document.querySelector('#code').focus()")
+        .await;
+    driver
+        .ok(
+            Some(&page),
+            "Input.insertText",
+            json!({ "text": PROJECT_SECRET }),
+        )
+        .await;
+    driver
+        .eval(&page, "document.querySelector('#find').click()")
+        .await;
+    driver
+        .wait_for(
+            &page,
+            "location.pathname === '/found' && document.readyState === 'complete'",
+        )
+        .await;
+    let address = driver.eval(&page, "location.href").await;
+    assert!(
+        address.as_str().unwrap().contains("code=pa%3Css%26word-77"),
+        "{address}"
+    );
+
+    let frames = Arc::new(super::FrameSlot::default());
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let shown = loop {
+        rig.broker.watch(&id, Some(frames.clone()));
+        let url = next_frame(&frames).await["url"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned();
+        if url.contains("/found") {
+            break url;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the frame never showed the page: {url}"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+    assert!(shown.contains("code=***SHOP_KEY***"), "scrubbed: {shown}");
+    assert!(
+        !shown.contains("pa%3Css") && !shown.contains("word-77"),
+        "{shown}"
+    );
+
+    // Once a credential was filled, the query goes altogether.
+    let session = rig.broker.live(THREAD).unwrap();
+    session
+        .credentials_filled
+        .store(1, std::sync::atomic::Ordering::Relaxed);
+    rig.broker.watch(&id, Some(frames.clone()));
+    let sealed = next_frame(&frames).await["url"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    assert_eq!(
+        sealed,
+        format!("{site}/found"),
+        "no query once a credential was filled"
+    );
     call(&rig.broker, json!({ "op": "session_end" })).await;
 }

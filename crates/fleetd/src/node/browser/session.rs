@@ -253,6 +253,18 @@ impl Session {
         *lock(&self.on_control) = Some(hook);
     }
 
+    /// The followed page's address for its frames, scrubbed as everything else the session sends, so a value a
+    /// form submits by GET, or a redirect puts in a query string, never reaches the hub. Once the session filled a
+    /// credential, its query and fragment go too: a value may be there in a form the scrubber doesn't know.
+    fn frame_url(&self, live: &Live) -> Option<Text<0, 2000>> {
+        let (target, _) = self.page()?;
+        let mut url = self.scrub().text(live.urls.get(&target)?);
+        if self.credentials_filled.load(Ordering::Relaxed) > 0 {
+            url = without_query(&url).to_owned();
+        }
+        Some(Text::unchecked(url.chars().take(2000).collect::<String>()))
+    }
+
     /// Sends this session's frames to the hub from now on (`Some`), the newest at once, or no more.
     pub fn set_watcher(&self, watcher: Option<Arc<super::FrameSlot>>) {
         let mut live = lock(&self.live);
@@ -261,10 +273,7 @@ impl Session {
             let mut last = last.clone();
             // As things are now: a still page sends no new frame, so the newest says who drives and where it is.
             last.control = self.control();
-            last.url = self
-                .page()
-                .and_then(|(target, _)| live.urls.get(&target).cloned())
-                .map(|url| Text::unchecked(url.chars().take(2000).collect::<String>()));
+            last.url = self.frame_url(&live);
             watcher.replace(self.id.as_str(), to_json(&NodeToHub::BrowserFrame(last)));
         }
     }
@@ -289,10 +298,7 @@ impl Session {
             jpeg_b64: NonEmpty::unchecked(data),
             width: Int::unchecked(i64::from(width)),
             height: Int::unchecked(i64::from(height)),
-            url: self
-                .page()
-                .and_then(|(target, _)| live.urls.get(&target).cloned())
-                .map(|url| Text::unchecked(url.chars().take(2000).collect::<String>())),
+            url: self.frame_url(&live),
             control: self.control(),
         };
         // Only this session still holds the slot: its link went, and the hub watches again on the next one.
@@ -1024,4 +1030,9 @@ enum Capture {
     Step(u64, Option<StepTarget>),
     /// Answers once every capture queued before it is written.
     Flush(tokio::sync::oneshot::Sender<()>),
+}
+
+/// A URL without its query and fragment.
+pub fn without_query(url: &str) -> &str {
+    url.find(['?', '#']).map_or(url, |at| &url[..at])
 }
