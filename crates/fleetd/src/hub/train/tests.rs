@@ -3635,6 +3635,47 @@ async fn a_refused_reviewer_for_a_closed_workstream_sends_the_change_to_the_lead
     );
 }
 
+/// A blocking review goes back to its author with every finding, blocking and non-blocking, whole, each at its
+/// path:line, and the tool that reads them again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_blocking_review_hands_back_every_finding_in_full() {
+    let kit = Kit::with_reviews();
+    let writer = kit.running_task("T1", "write");
+    let pr = kit.open_pr(7, "slice-1", &[add("a1.txt", "a\n")]);
+    let head = kit.head_of("slice-1");
+    kit.train
+        .enqueue(
+            &project(),
+            ChangeEnqueueCall {
+                task_id: Some(writer.clone()),
+                ..enqueue_call(pr.clone())
+            },
+        )
+        .await
+        .unwrap();
+    let summary = format!(
+        "blocking: src/a.rs:3 leaks the handle. non-blocking: src/b.rs:9 {}the last nit.",
+        "names a helper twice. ".repeat(120)
+    );
+    let verdict = json!({ "taskId": "T50", "prHeadSha": head, "blocking": 1, "nonBlocking": 1, "summary": summary });
+    super::records::sql(&kit.db, |conn| {
+        conn.execute(
+            "INSERT INTO review_verdicts (task_id, pr_key, sha, blocking, at_ms, data) VALUES ('T50', ?1, ?2, 1, 0, ?3)",
+            rusqlite::params![crate::hub::reviews::verdicts::pr_key(&pr), head, verdict.to_string()],
+        )
+        .unwrap()
+    });
+    kit.host.push_event("review.verdict", verdict);
+    let (to, text) = kit.host.nth_send(0).await;
+    assert_eq!(to, writer.as_str());
+    assert!(
+        text.contains("1 blocking finding (1 non-blocking)"),
+        "{text}"
+    );
+    assert!(text.contains(&summary), "every finding, whole: {text}");
+    assert!(text.contains("`review_read`"), "{text}");
+}
+
 /// The hub's own gate: one fresh reviewer per patch. Nothing merges before a clean verdict on the current patch;
 /// blocking findings go to the author, and its new head is reviewed again by a new reviewer, from the delta.
 #[tokio::test(flavor = "multi_thread")]

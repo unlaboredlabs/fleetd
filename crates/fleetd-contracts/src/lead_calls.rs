@@ -149,6 +149,15 @@ pub struct DecisionsSearchCall {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct BriefReadCall {}
 
+/// `review_read`: every finding of the latest reviews of the caller's PRs, in full. A task reads its own PRs', a lead
+/// its project's; `pr` (a URL or a number) picks one.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ReviewReadCall {
+    /// The PR: its URL or its number. Absent: a task's every PR, a lead's PRs in the merge queue.
+    pub pr: Option<Text<1, 500>>,
+}
+
 fn default_task_kind() -> TaskKind {
     TaskKind::Write
 }
@@ -279,6 +288,7 @@ pub enum LeadCall {
     GatedRun(GatedRunCall),
     AskLead(AskLeadCall),
     BriefRead(BriefReadCall),
+    ReviewRead(ReviewReadCall),
     Remember(RememberCall),
     MemoryRead(MemoryReadCall),
     AutomationCreate(AutomationCreateCall),
@@ -403,6 +413,35 @@ pub struct BriefReadResult {
     pub next: Option<String>,
 }
 
+/// One review of a PR at its latest reviewed head: the reviewer's counts and its findings, whole, each as path:line.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewFindings {
+    pub task_id: TaskId,
+    pub pr_head_sha: Option<crate::verification::CommitSha>,
+    pub blocking: Count,
+    pub non_blocking: Count,
+    pub findings: Text<1, 4000>,
+    pub at: crate::ids::Timestamp,
+}
+
+/// A PR and its latest reviews: every review of the newest head reviewed, newest first; none yet is an empty list.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PrReviews {
+    pub pr: PrUrl,
+    pub reviews: Vec<ReviewFindings>,
+}
+
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewReadResult {
+    pub prs: Vec<PrReviews>,
+    pub next: Option<String>,
+}
+
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -434,6 +473,7 @@ pub enum LeadCallResult {
     GatedRun(RequestResult),
     AskLead(AskLeadResult),
     BriefRead(BriefReadResult),
+    ReviewRead(ReviewReadResult),
     Remember(RememberResult),
     MemoryRead(MemoryReadResult),
     AutomationCreate(AutomationResult),

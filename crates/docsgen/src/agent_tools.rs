@@ -697,6 +697,7 @@ fn example(role: Role, tool: &str) -> Option<Value> {
             "question": "Should the limit apply to admin keys too?",
         }),
         (Role::Worker, "brief_read") => json!({}),
+        (_, "review_read") => json!({ "pr": "https://github.com/acme/storefront/pull/7" }),
         (_, "session_start") => json!({
             "purpose": "Check that signup works on the staging site",
         }),

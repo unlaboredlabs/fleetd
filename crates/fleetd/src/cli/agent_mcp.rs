@@ -19,8 +19,8 @@ use fleetd_contracts::checklist::ChecklistCall;
 use fleetd_contracts::lead_calls::{
     AskLeadCall, BriefCreateCall, BriefReadCall, ChangeEnqueueCall, CloseCall, DecideCall,
     DecisionsSearchCall, GatedRunCall, LeadCall, LeadSocketFrame, RequestSecretCall,
-    RequestWithdrawCall, TaskCancelCall, TaskListCall, TaskMessageCall, TaskSpawnCall,
-    UsageResumeCall,
+    RequestWithdrawCall, ReviewReadCall, TaskCancelCall, TaskListCall, TaskMessageCall,
+    TaskSpawnCall, UsageResumeCall,
 };
 use fleetd_contracts::memory::{MemoryReadCall, RememberCall};
 use fleetd_contracts::schema::inline_schema;
@@ -314,6 +314,17 @@ static TOOLS: &[Tool] = &[
         description: "Read your workstream's brief, whole: its goal, why, pointers, constraints and done-when.",
         schema: inline_schema::<BriefReadCall>,
         human: None,
+    },
+    Tool {
+        worker: true,
+        ..lead(
+            "review_read",
+            "review_read",
+            "Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with \
+             path:line. pr (its URL or number) picks one; without it, a task reads all its own PRs and a lead its \
+             project's PRs in the merge queue. Another project's reviews are refused.",
+            inline_schema::<ReviewReadCall>,
+        )
     },
     browser(
         "session_start",
@@ -710,7 +721,7 @@ mod tests {
     }
 
     #[test]
-    fn a_worker_sees_only_report_ask_lead_its_brief_decisions_and_browser() {
+    fn a_worker_sees_only_report_ask_lead_its_brief_decisions_reviews_and_browser() {
         assert_eq!(
             names(Role::Worker),
             [
@@ -718,6 +729,7 @@ mod tests {
                 "report",
                 "ask_lead",
                 "brief_read",
+                "review_read",
                 "session_start",
                 "session_end",
                 "request_takeover"
@@ -738,6 +750,7 @@ mod tests {
             "memory_read",
             "checklist",
             "skill_install",
+            "review_read",
         ] {
             assert!(lead.contains(&tool.to_owned()), "{tool}");
         }
@@ -784,6 +797,10 @@ mod tests {
         assert_eq!(
             call_of(Role::Worker, "brief_read", json!({})).unwrap(),
             json!({ "op": "brief_read" })
+        );
+        assert_eq!(
+            call_of(Role::Worker, "review_read", json!({ "pr": "#7" })).unwrap(),
+            json!({ "op": "review_read", "pr": "#7" })
         );
         assert_eq!(
             call_of(Role::Worker, "decisions_search", json!({ "query": "D152" })).unwrap(),

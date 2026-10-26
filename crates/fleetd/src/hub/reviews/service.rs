@@ -733,16 +733,7 @@ impl Reviews {
         }
         // Findings on an older patch were already overtaken by a new head.
         if blocking > 0 && change.patch_id.as_deref() == Some(patch_id.as_str()) {
-            let stored: Option<String> = sql(&self.db, |conn| {
-                conn
-                .query_row("SELECT data FROM review_verdicts WHERE task_id = ?1 AND sha = ?2 ORDER BY n DESC LIMIT 1", params![task_id, sha], |r| r.get(0))
-                .optional()
-                .expect("verdict")
-            });
-            let summary = stored
-                .and_then(|d| serde_json::from_str::<Value>(&d).ok())
-                .and_then(|v| v.get("summary").and_then(Value::as_str).map(String::from))
-                .unwrap_or_else(|| "(the verdict had no summary)".into());
+            let summary = self.findings_on(&change, &patch_id, &task_id, &sha);
             let waiting = format!(
                 "waiting for a new head: {task_id} found {blocking} blocking at {}",
                 short(&sha)
@@ -766,7 +757,9 @@ impl Reviews {
                     pr_head_sha: &sha,
                     blocking,
                     non_blocking,
-                    summary: &summary,
+                    summary: &format!(
+                        "{summary}\n\n`review_read` reads these findings again, whole."
+                    ),
                 },
             );
             if let Err(e) = self
@@ -783,6 +776,37 @@ impl Reviews {
         }
         self.evaluate(&change_id);
         Ok(())
+    }
+
+    /// What `task_id` recorded at `sha`, whole.
+    fn summary_of(&self, task_id: &str, sha: &str) -> String {
+        let stored: Option<String> = sql(&self.db, |conn| {
+            conn
+            .query_row("SELECT data FROM review_verdicts WHERE task_id = ?1 AND sha = ?2 ORDER BY n DESC LIMIT 1", params![task_id, sha], |r| r.get(0))
+            .optional()
+            .expect("verdict")
+        });
+        stored
+            .and_then(|d| serde_json::from_str::<Value>(&d).ok())
+            .and_then(|v| v.get("summary").and_then(Value::as_str).map(String::from))
+            .unwrap_or_else(|| "(the verdict had no summary)".into())
+    }
+
+    /// Every finding on the patch, blocking and non-blocking, whole: `task_id`'s at `sha` first, then each other
+    /// review bound to the patch under its reviewer and counts.
+    fn findings_on(&self, change: &Change, patch_id: &str, task_id: &str, sha: &str) -> String {
+        let (_, reviews) = self.gate_for(change, patch_id);
+        let mut parts = vec![self.summary_of(task_id, sha)];
+        for r in reviews.iter().filter(|r| r.task_id.as_str() != task_id) {
+            parts.push(format!(
+                "{} ({} blocking, {} non-blocking):\n{}",
+                r.task_id,
+                r.blocking,
+                r.non_blocking,
+                self.summary_of(r.task_id.as_str(), r.pr_head_sha.as_str())
+            ));
+        }
+        parts.join("\n\n")
     }
 
     /// A review task ended, perhaps without the verdict it owed: then the current patch gets a new reviewer.

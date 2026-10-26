@@ -54,7 +54,7 @@ fn stopping() -> McpToolError {
     )
 }
 
-/// The lead call `review_verdict`, answered by review verdicts.
+/// The lead calls `review_verdict` and `review_read`, answered by review verdicts.
 struct CheckCalls(Weak<Hub>);
 
 impl LeadCallHandler for CheckCalls {
@@ -63,6 +63,10 @@ impl LeadCallHandler for CheckCalls {
         let hub = self.0.upgrade();
         Box::pin(async move {
             let hub = hub.ok_or_else(stopping)?;
+            if let LeadCall::ReviewRead(read) = &call {
+                return crate::hub::reviews::read::review_read(&hub, &caller, read)
+                    .map(LeadCallResult::ReviewRead);
+            }
             let caller = crate::hub::reviews::verdicts::Caller {
                 project_ref: caller.project_ref,
                 by: caller.by,
@@ -95,7 +99,9 @@ fn register_ledger_calls(hub: &Arc<Hub>) {
         hub.lead_calls.register(op, Arc::clone(&calls));
     }
     let checks: Arc<dyn LeadCallHandler> = Arc::new(CheckCalls(Arc::downgrade(hub)));
-    hub.lead_calls.register("review_verdict", checks);
+    hub.lead_calls
+        .register("review_verdict", Arc::clone(&checks));
+    hub.lead_calls.register("review_read", checks);
 }
 
 struct UsageForLeads(Weak<Hub>);
