@@ -17,6 +17,11 @@ export const allowlist: readonly Allowance[] = [
     why: "Code views and the composer show text exactly as written.",
   },
   {
+    check: "raw-text",
+    selector: "[data-screen='updates'], [data-version]",
+    why: "A nightly is named by its build commit (\"Nightly · Oct 26, 10:56 UTC · 1b563d7\"), and a raw version is there to copy.",
+  },
+  {
     check: "overflow",
     selector: "[data-text='code']",
     why: "Code scrolls sideways rather than wrapping.",

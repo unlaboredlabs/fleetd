@@ -90,7 +90,7 @@ export function HubStatus({ hub }: { hub: HubState }) {
               {live === null ? null : (
                 <>
                   <dt>Protocol</dt>
-                  <dd title={live.version}>{live.version === undefined ? `v${String(live.protocol)}` : `v${String(live.protocol)} · fleetd ${versionLabel(live.version)}`}</dd>
+                  <dd title={live.version} data-version>{live.version === undefined ? `v${String(live.protocol)}` : `v${String(live.protocol)} · fleetd ${versionLabel(live.version)}`}</dd>
                 </>
               )}
             </dl>
