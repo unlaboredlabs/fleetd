@@ -174,6 +174,51 @@ impl Decisions {
         self.ctx.read(|db| repo::get_decision(db, decision_id))
     }
 
+    /// The decision `decision_id` when it is global or `project_ref`'s; another project's reads as `None`.
+    pub fn get_in(
+        &self,
+        decision_id: &str,
+        project_ref: &ProjectRef,
+    ) -> Result<Option<Decision>, LedgerError> {
+        self.ctx
+            .read(|db| repo::get_decision_in(db, decision_id, project_ref))
+    }
+
+    /// The decisions `text` cites, oldest first: by id (`D12`), when global or the project's, and the active ones in
+    /// the project's chain by dotted key (`api.health.path`).
+    pub fn cited(
+        &self,
+        project_ref: &ProjectRef,
+        text: &str,
+    ) -> Result<Vec<Decision>, LedgerError> {
+        let words: Vec<&str> = text
+            .split(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')))
+            .map(|w| w.trim_end_matches('.'))
+            .filter(|w| !w.is_empty())
+            .collect();
+        let mut cited = Vec::new();
+        for id in words.iter().filter(|w| repo::decision_n(w).is_some()) {
+            if let Some(decision) = self.get_in(id, project_ref)? {
+                cited.push(decision);
+            }
+        }
+        let active = self.list(&DecisionFilter {
+            chain: Some(Chain {
+                project_ref: project_ref.clone(),
+                workstream_id: None,
+            }),
+            limit: Some(500),
+            ..Default::default()
+        })?;
+        cited.extend(active.into_iter().filter(|d| {
+            let key = d.key.as_str();
+            key.contains('.') && words.contains(&key)
+        }));
+        cited.sort_by_key(|d| repo::decision_n(d.decision_id.as_str()));
+        cited.dedup_by(|a, b| a.decision_id == b.decision_id);
+        Ok(cited)
+    }
+
     /// The active decision for `key`, looked up in the workstream, then the project, then globally.
     pub fn resolve(&self, key: &str, chain: &Chain) -> Result<Option<Decision>, LedgerError> {
         self.ctx.read(|db| repo::resolve(db, key, chain))

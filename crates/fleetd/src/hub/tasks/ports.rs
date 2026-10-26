@@ -5,7 +5,7 @@ use std::pin::Pin;
 
 use fleetd_contracts::effort::TaskProfile;
 use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadId, ThreadRef};
-use fleetd_contracts::ledger::{Brief, Workstream, WorkstreamId};
+use fleetd_contracts::ledger::{Brief, Decision, Workstream, WorkstreamId};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::sessions::WorktreeBase;
 use fleetd_contracts::tasks::TaskId;
@@ -203,6 +203,11 @@ pub trait TaskPorts: Send + Sync {
     /// `leads::digest::done_when_text` of the brief's lines, at most 200 units each, for the task prompt's "Done
     /// when:".
     fn done_when_text(&self, brief: &Brief) -> String;
+    /// Decisions.cited: the decisions `text` (a task's brief) names by id or key, for its first prompt. Plain ports
+    /// know none.
+    fn decisions_cited(&self, _project_ref: &ProjectRef, _text: &str) -> Vec<Decision> {
+        Vec::new()
+    }
     /// Work.scope_of: the repo and base the project's work lands on, as recorded. Plain ports record none, so
     /// nothing is checked.
     fn work_scope<'a>(

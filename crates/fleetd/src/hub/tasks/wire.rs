@@ -6,7 +6,7 @@ use std::sync::{Arc, OnceLock, Weak};
 use fleetd_contracts::events::HubEvent;
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadId, ThreadRef, Timestamp};
 use fleetd_contracts::lead_calls::{AskLeadResult, LeadCall, LeadCallResult};
-use fleetd_contracts::ledger::{Brief, Workstream, WorkstreamId};
+use fleetd_contracts::ledger::{Brief, Decision, Workstream, WorkstreamId};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::mcp_servers::McpAgentRole;
 use fleetd_contracts::model::RuntimeMode;
@@ -412,6 +412,19 @@ impl TaskPorts for HubTaskPorts {
     fn done_when_text(&self, brief: &Brief) -> String {
         crate::hub::leads::digest::done_when_text(&brief.done_when, 2000)
     }
+
+    fn decisions_cited(&self, project_ref: &ProjectRef, text: &str) -> Vec<Decision> {
+        let Some(hub) = self.hub() else {
+            return Vec::new();
+        };
+        hub.decisions
+            .cited(project_ref, text)
+            .unwrap_or_else(|error| {
+                // Unread, the prompt goes without them: the agent can still search.
+                tracing::warn!(message = %error.message, "the brief's decisions were not read");
+                Vec::new()
+            })
+    }
 }
 
 /// The lead's `fleetd task spawn|list|status|message|cancel`.
@@ -435,6 +448,12 @@ impl LeadCallHandler for Calls {
                     ),
                 }));
             }
+            if let LeadCall::BriefRead(_) = &call {
+                let CallerAgent::Task(task_id) = &caller.agent else {
+                    return Err(super::policy::check(&caller.agent, "brief_read").unwrap_err());
+                };
+                return Ok(LeadCallResult::BriefRead(tasks.brief_read(task_id)?));
+            }
             let caller = TaskCaller {
                 project_ref: caller.project_ref,
                 by: caller.by,
@@ -444,12 +463,13 @@ impl LeadCallHandler for Calls {
     }
 }
 
-pub const LEAD_CALL_OPS: [&str; 5] = [
+pub const LEAD_CALL_OPS: [&str; 6] = [
     "task_spawn",
     "task_list",
     "task_message",
     "task_cancel",
     "ask_lead",
+    "brief_read",
 ];
 
 /// Tells the hub's lead-call handling which sessions are tasks' agents and which are leads.

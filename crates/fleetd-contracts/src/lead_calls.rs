@@ -138,11 +138,16 @@ pub struct DecideCall {
     pub workstream_id: Option<WorkstreamId>,
 }
 
-/// `fleetd decisions search "<q>"`, within the calling project's scope chain.
+/// `fleetd decisions search "<q>"`, within the calling project's scope chain. A query that is a decision's id
+/// (`D12`) reads that decision, when it is global or the project's.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DecisionsSearchCall {
     pub query: Text<1, 200>,
 }
+
+/// `brief_read`: a task's agent reads its own workstream's brief, whole.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BriefReadCall {}
 
 fn default_task_kind() -> TaskKind {
     TaskKind::Write
@@ -273,6 +278,7 @@ pub enum LeadCall {
     ChangeEnqueue(ChangeEnqueueCall),
     GatedRun(GatedRunCall),
     AskLead(AskLeadCall),
+    BriefRead(BriefReadCall),
     Remember(RememberCall),
     MemoryRead(MemoryReadCall),
     AutomationCreate(AutomationCreateCall),
@@ -383,6 +389,17 @@ pub struct AskLeadResult {
     pub next: Option<String>,
 }
 
+/// The task's workstream and its brief; no brief while the workstream is a draft.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct BriefReadResult {
+    pub workstream_id: WorkstreamId,
+    pub title: Text<0, 200>,
+    pub brief: Option<Brief>,
+    pub next: Option<String>,
+}
+
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -413,6 +430,7 @@ pub enum LeadCallResult {
     ChangeEnqueue(ChangeResult),
     GatedRun(RequestResult),
     AskLead(AskLeadResult),
+    BriefRead(BriefReadResult),
     Remember(RememberResult),
     MemoryRead(MemoryReadResult),
     AutomationCreate(AutomationResult),

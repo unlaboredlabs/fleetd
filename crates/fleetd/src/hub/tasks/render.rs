@@ -2,7 +2,7 @@
 //! event lines in the lead's wake. Pure. Lengths count UTF-16 units, as older hubs' did.
 use std::sync::LazyLock;
 
-use fleetd_contracts::ledger::Brief;
+use fleetd_contracts::ledger::{Brief, Decision, DecisionState};
 use fleetd_contracts::sessions::WorktreeSource;
 use fleetd_contracts::tasks::{
     BranchPrefix, DEFAULT_BRANCH_PREFIX, Task, TaskKind, TaskRecovery, TaskResult,
@@ -129,6 +129,8 @@ pub struct PromptInput<'a> {
     pub brief: Option<&'a Brief>,
     /// The brief's done-when lines as text, whole (leads' `done_when_text` with the lines' own max).
     pub done_when: Option<String>,
+    /// The decisions the brief names by id or key, whole.
+    pub decisions: &'a [Decision],
     /// Write tasks: their branch. Every task's worktree starts from the remote's copy of `base_branch`.
     pub branch: Option<&'a str>,
     pub base_branch: Option<&'a str>,
@@ -179,6 +181,35 @@ fn workspace_line(kind: TaskKind, base_branch: Option<&str>) -> String {
     }
 }
 
+/// A brief's whole text, to find the decisions it names.
+pub fn brief_text(brief: &Brief) -> String {
+    let mut parts = vec![brief.goal.as_str(), brief.why.as_str()];
+    parts.extend(brief.pointers.iter().map(|l| l.as_str()));
+    parts.extend(brief.constraints.iter().map(|l| l.as_str()));
+    parts.extend(brief.done_when.iter().map(|l| l.as_str()));
+    parts.join("\n")
+}
+
+/// `- D12 api.health.path = /healthz (why: ...)`, whole; one no longer in force says so.
+fn decision_line(d: &Decision) -> String {
+    let why = d
+        .why
+        .as_ref()
+        .map(|w| format!(" (why: {})", w.as_str().trim()))
+        .unwrap_or_default();
+    let state = match d.state {
+        DecisionState::Active => "",
+        DecisionState::Superseded => " [superseded]",
+        DecisionState::Retired => " [retired]",
+    };
+    format!(
+        "- {}{state} {} = {}{why}",
+        d.decision_id,
+        d.key.as_str(),
+        d.value.as_str().trim()
+    )
+}
+
 /// The task's first message: the lead's text with the brief and the rules around it, then the human's
 /// custom instructions.
 pub fn render_task_prompt(set: &PromptSet, input: &PromptInput<'_>) -> String {
@@ -186,10 +217,24 @@ pub fn render_task_prompt(set: &PromptSet, input: &PromptInput<'_>) -> String {
     let mut context = Vec::new();
     if let Some(brief) = input.brief {
         context.push(format!("Goal: {}", one_line(brief.goal.as_str(), 1000)));
+        context.push(format!("Why: {}", brief.why.as_str().trim()));
+        for (name, lines) in [
+            ("Pointers", &brief.pointers),
+            ("Constraints", &brief.constraints),
+        ] {
+            if !lines.is_empty() {
+                context.push(format!("{name}:"));
+                context.extend(lines.iter().map(|l| format!("- {}", l.as_str().trim())));
+            }
+        }
         context.push(format!(
             "Done when: {}",
             input.done_when.as_deref().unwrap_or_default()
         ));
+    }
+    if !input.decisions.is_empty() {
+        context.push("Decisions it names:".to_owned());
+        context.extend(input.decisions.iter().map(decision_line));
     }
     let workstream = if context.is_empty() {
         String::new()

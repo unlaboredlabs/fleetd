@@ -5,6 +5,8 @@
 //! inline, into one lead wake; the slot is released and the queue is tried again.
 pub mod base;
 pub mod breaker;
+#[cfg(test)]
+mod brief_tests;
 pub mod cap;
 #[cfg(test)]
 mod cap_tests;
@@ -40,7 +42,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use fleetd_contracts::events::{Attention, HubEvent, HubEventType};
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef, Timestamp};
-use fleetd_contracts::lead_calls::TaskSpawnCall;
+use fleetd_contracts::lead_calls::{BriefReadResult, TaskSpawnCall};
 use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::prim::NonEmpty;
 use fleetd_contracts::prim::{Int, Text};
@@ -519,6 +521,10 @@ impl Tasks {
         } else {
             String::new()
         };
+        let decisions = brief
+            .as_ref()
+            .map(|b| self.d.ports.decisions_cited(r, &render::brief_text(b)))
+            .unwrap_or_default();
         let mut prompt = render_task_prompt(
             &set,
             &render::PromptInput {
@@ -526,6 +532,7 @@ impl Tasks {
                 project_title: &project.title,
                 brief: brief.as_ref(),
                 done_when: brief.as_ref().map(|b| self.d.ports.done_when_text(b)),
+                decisions: &decisions,
                 branch: branch.as_deref(),
                 base_branch: base_branch.as_deref(),
                 elsewhere: &elsewhere,
@@ -2547,6 +2554,33 @@ impl Tasks {
             .ports
             .wake(&task.project_ref, WakeKind::TaskWaiting, text);
         Ok(task)
+    }
+
+    /// A task's agent reads its workstream's brief (`brief_read`), whole.
+    pub fn brief_read(&self, task_id: &TaskId) -> Result<BriefReadResult, TaskError> {
+        let Some(task) = self.get(task_id).map_err(store_error)? else {
+            return Err(lead_error(
+                ErrorCode::NotFound,
+                format!("No task {}.", task_id.as_str()),
+                None,
+            ));
+        };
+        let Some(workstream) = self.workstream(&task.workstream_id) else {
+            return Err(lead_error(
+                ErrorCode::NotFound,
+                format!("No workstream {}.", task.workstream_id),
+                None,
+            ));
+        };
+        let next = workstream.brief.is_none().then(|| {
+            "Your workstream has no brief yet: your task message is all there is.".to_owned()
+        });
+        Ok(BriefReadResult {
+            workstream_id: workstream.workstream_id,
+            title: workstream.title,
+            brief: workstream.brief,
+            next,
+        })
     }
 
     /// Newest first.

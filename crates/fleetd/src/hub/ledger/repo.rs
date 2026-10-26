@@ -246,6 +246,25 @@ pub fn active_on_key(
 }
 
 /// Every decision recorded in the project at project or workstream scope, in any state, newest first.
+/// The decision `id` when it is global or recorded in `project_ref` (project or workstream scope), in any state.
+pub fn get_decision_in(
+    db: &Connection,
+    id: &str,
+    project_ref: &ProjectRef,
+) -> Result<Option<Decision>, Fail> {
+    let Some(n) = decision_n(id) else {
+        return Ok(None);
+    };
+    let data: Option<String> = db
+        .query_row(
+            "SELECT data FROM decisions WHERE n = ? AND (scope_kind = 'global' OR project_key = ?)",
+            params![n, project_key(project_ref)],
+            |r| r.get(0),
+        )
+        .optional()?;
+    data.map(decode).transpose()
+}
+
 pub fn history_in_project(
     db: &Connection,
     project_ref: &ProjectRef,

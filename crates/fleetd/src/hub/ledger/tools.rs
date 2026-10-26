@@ -334,6 +334,22 @@ pub fn lead_call(
             }))
         }
         LeadCall::DecisionsSearch(call) => {
+            let query = call.query.as_str().trim();
+            if super::repo::decision_n(query).is_some() {
+                let Some(decision) = hub.decisions.get_in(query, &r)? else {
+                    if hub.decisions.get(query)?.is_some() {
+                        return Err(LedgerError::forbidden(
+                            format!("{query} is another project's decision."),
+                            "Search this project's decisions; ask your lead about another project's.",
+                        ));
+                    }
+                    return Err(LedgerError::not_found(format!("No decision {query}.")));
+                };
+                return Ok(LeadCallResult::DecisionsSearch(DecisionsSearchResult {
+                    decisions: List::unchecked(vec![decision]),
+                    next: None,
+                }));
+            }
             let decisions = hub.decisions.search(
                 &call.query,
                 &DecisionFilter {

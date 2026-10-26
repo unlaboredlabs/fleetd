@@ -646,7 +646,7 @@ fn example(role: Role, tool: &str) -> Option<Value> {
             "reason": "Ship the upload rate limit to production.",
             "workstreamId": "W3",
         }),
-        (Role::Lead, "decisions_search") => json!({ "query": "pagination" }),
+        (_, "decisions_search") => json!({ "query": "pagination" }),
         (Role::Lead, "remember") => json!({
             "scope": "project",
             "text": "No npm here: use pnpm.",
@@ -696,6 +696,7 @@ fn example(role: Role, tool: &str) -> Option<Value> {
         (Role::Worker, "ask_lead") => json!({
             "question": "Should the limit apply to admin keys too?",
         }),
+        (Role::Worker, "brief_read") => json!({}),
         (_, "session_start") => json!({
             "purpose": "Check that signup works on the staging site",
         }),
