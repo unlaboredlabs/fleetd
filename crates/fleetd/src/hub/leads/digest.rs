@@ -51,8 +51,8 @@ pub struct DigestInput<'a> {
     pub facts: &'a HashMap<WorkstreamId, WorkstreamFacts>,
 }
 
-/// The pause, when it ends, and who can lift it: "Usage pause on forge: paused until Thu 02:00 UTC (usage limit on
-/// forge's login). …".
+/// The pause, when it ends, and who can lift it: "Usage pause on devbox: paused until Thu 02:00 UTC (usage limit on
+/// devbox's login). …".
 pub fn usage_line(machine: &str, paused: &str) -> String {
     let why = paused.strip_prefix("usage: ").unwrap_or(paused);
     format!(
@@ -442,11 +442,11 @@ mod tests {
         );
     }
 
-    /// forge's pause: the lead reads it in every wake, when it ends, and that the human can press Resume.
+    /// A usage pause: the lead reads it in every wake, when it ends, and that the human can press Resume.
     #[test]
     fn a_usage_pause_says_when_it_ends_and_who_can_resume() {
         let project_ref: ProjectRef =
-            serde_json::from_value(serde_json::json!({ "machineId": "forge", "projectId": "p1" }))
+            serde_json::from_value(serde_json::json!({ "machineId": "devbox", "projectId": "p1" }))
                 .unwrap();
         let text = render_lead_digest(&DigestInput {
             project_ref: &project_ref,
@@ -456,7 +456,7 @@ mod tests {
             open_requests: &[],
             decisions: &[],
             agents: None,
-            usage: Some("usage: paused until Sun 23:40 UTC (usage limit on forge's login)".into()),
+            usage: Some("usage: paused until Sun 23:40 UTC (usage limit on devbox's login)".into()),
             tasks: None,
             train: None,
             elsewhere: None,
@@ -466,9 +466,9 @@ mod tests {
         assert_eq!(
             text.lines().nth(1),
             Some(
-                "Usage pause on forge: paused until Sun 23:40 UTC (usage limit on forge's login). Its parked agents \
+                "Usage pause on devbox: paused until Sun 23:40 UTC (usage limit on devbox's login). Its parked agents \
                  go on by themselves when it ends. The human can press Resume in the app or run `fleetd usage resume \
-                 forge`; once you know the login has capacity again, `usage_resume` lifts it (once per 10 min)."
+                 devbox`; once you know the login has capacity again, `usage_resume` lifts it (once per 10 min)."
             )
         );
     }

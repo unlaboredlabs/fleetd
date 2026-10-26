@@ -118,14 +118,14 @@ mod tests {
     /// 2026-10-25T22:40:38Z.
     const T0: u64 = 1_792_968_038_000;
 
-    fn forge() -> ProjectRef {
+    fn devbox() -> ProjectRef {
         ProjectRef {
-            machine_id: MachineId::unchecked("forge"),
+            machine_id: MachineId::unchecked("devbox"),
             project_id: ProjectId::unchecked("fleetd"),
         }
     }
 
-    /// A hub whose project's lead runs on forge, with forge's login paused: the lead and two other threads hit
+    /// A hub whose project's lead runs on devbox, with devbox's login paused: the lead and two other threads hit
     /// its limit within a minute.
     async fn paused() -> (Arc<Hub>, Arc<ManualClock>, tempfile::TempDir) {
         let home = tempfile::tempdir().unwrap();
@@ -145,7 +145,7 @@ mod tests {
         hub.leads
             .records
             .lead_put(&StoredLead {
-                project_ref: forge(),
+                project_ref: devbox(),
                 thread_id: fleetd_contracts::ids::ThreadId::unchecked("lead"),
                 started_at: crate::hub::store::iso_ms(T0 as i64 - 3_600_000).into(),
                 last_wake_at: None,
@@ -155,7 +155,7 @@ mod tests {
         for (i, thread) in ["lead", "w1", "w2"].iter().enumerate() {
             let event: NewEvent = serde_json::from_value(json!({
                 "at": crate::hub::store::iso_ms(T0 as i64 + i as i64 * 1000), "type": "thread.usage_limited",
-                "machineId": "forge", "projectId": "fleetd", "threadId": thread, "summary": "hit the usage limit",
+                "machineId": "devbox", "projectId": "fleetd", "threadId": thread, "summary": "hit the usage limit",
                 "data": { "usageClass": "usage_limit", "resumeAt": "2026-10-25T23:40:38.000Z",
                           "error": { "class": "usage_limit", "message": "You've hit your limit" } },
             }))
@@ -163,7 +163,7 @@ mod tests {
             hub.events.append(event).unwrap();
         }
         hub.usage.drain().await;
-        assert!(hub.usage.gate("forge").is_some(), "paused");
+        assert!(hub.usage.gate("devbox").is_some(), "paused");
         (hub, clock, home)
     }
 
@@ -193,7 +193,7 @@ mod tests {
             .collect()
     }
 
-    /// Resume in the app and `fleetd usage resume forge` both call usage_resume with the person's key.
+    /// Resume in the app and `fleetd usage resume devbox` both call usage_resume with the person's key.
     #[tokio::test]
     async fn a_persons_usage_resume_lifts_the_pause_recorded_as_theirs() {
         let (hub, _clock, _home) = paused().await;
@@ -203,7 +203,7 @@ mod tests {
         }))
         .unwrap();
         let machine = json!({
-            "machineId": "forge", "name": "forge", "tags": [], "status": "online",
+            "machineId": "devbox", "name": "devbox", "tags": [], "status": "online",
             "lastSeenAt": crate::hub::store::iso_ms(T0 as i64), "nodeVersion": "0.0.0",
         });
         hub.store
@@ -214,19 +214,19 @@ mod tests {
                 &hub,
                 &person,
                 "usage_resume",
-                json!({ "machineId": "forge" }),
+                json!({ "machineId": "devbox" }),
             )
             .await
             .unwrap_or_else(|e| panic!("{e:?}"));
         assert_eq!(out["status"]["breaker"]["state"], "closed");
-        assert_eq!(hub.usage.gate("forge"), None);
+        assert_eq!(hub.usage.gate("devbox"), None);
         assert_eq!(resumed_by(&hub).await, [(true, "desk".to_owned())]);
     }
 
     async fn lead_resume(hub: &Hub, machine: Option<&str>) -> Result<LeadCallResult, String> {
         let caller = LeadCaller {
-            project_ref: forge(),
-            by: lead_by(&forge()),
+            project_ref: devbox(),
+            by: lead_by(&devbox()),
             agent: CallerAgent::Lead,
         };
         let call = LeadCall::UsageResume(UsageResumeCall {
@@ -245,7 +245,7 @@ mod tests {
         let (hub, clock, _home) = paused().await;
         let elsewhere = lead_resume(&hub, Some("lab-a")).await.unwrap_err();
         assert!(
-            elsewhere.starts_with("A lead resumes only the machine its project runs on (forge)"),
+            elsewhere.starts_with("A lead resumes only the machine its project runs on (devbox)"),
             "{elsewhere}"
         );
 
@@ -253,10 +253,10 @@ mod tests {
             panic!("not a usage_resume result");
         };
         assert!(r.breaker_cleared);
-        assert_eq!(hub.usage.gate("forge"), None);
+        assert_eq!(hub.usage.gate("devbox"), None);
         assert_eq!(
             resumed_by(&hub).await,
-            [(true, "lead:forge/fleetd".to_owned())]
+            [(true, "lead:devbox/fleetd".to_owned())]
         );
 
         // Twelve agents hit it again, more than the usage layer's recent events per machine keep: the lead still may
@@ -264,15 +264,15 @@ mod tests {
         for thread in (1..=12).map(|n| format!("w{n}")) {
             let event: NewEvent = serde_json::from_value(json!({
                 "at": crate::hub::store::iso_ms(T0 as i64 + 60_000), "type": "thread.usage_limited",
-                "machineId": "forge", "threadId": thread, "summary": "hit the usage limit",
+                "machineId": "devbox", "threadId": thread, "summary": "hit the usage limit",
                 "data": { "usageClass": "usage_limit", "resumeAt": "2026-10-25T23:40:38.000Z" },
             }))
             .unwrap();
             hub.events.append(event).unwrap();
         }
         hub.usage.drain().await;
-        assert!(hub.usage.gate("forge").is_some());
-        let again = lead_resume(&hub, Some("forge")).await.unwrap_err();
+        assert!(hub.usage.gate("devbox").is_some());
+        let again = lead_resume(&hub, Some("devbox")).await.unwrap_err();
         assert!(
             again.contains("a lead may once every 10 minutes"),
             "{again}"
@@ -283,6 +283,6 @@ mod tests {
         );
         clock.advance(std::time::Duration::from_secs(600));
         assert!(lead_resume(&hub, None).await.is_ok());
-        assert_eq!(hub.usage.gate("forge"), None);
+        assert_eq!(hub.usage.gate("devbox"), None);
     }
 }

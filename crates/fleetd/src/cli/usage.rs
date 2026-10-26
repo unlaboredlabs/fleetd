@@ -141,7 +141,7 @@ fn count(v: &Value, path: &[&str]) -> u64 {
 }
 
 /// What `usage resume` did, from whether the machine was paused before it and usage_resume's answer: "Resumed
-/// forge: lifted its usage pause and sent "continue" to 3 parked agents. …".
+/// devbox: lifted its usage pause and sent "continue" to 3 parked agents. …".
 pub fn resumed_line(machine: &str, was_paused: Option<bool>, out: &Value) -> String {
     let resumed = count(out, &["resumed"]);
     let agents = if resumed == 1 { "agent" } else { "agents" };
@@ -237,34 +237,34 @@ mod tests {
 
     #[test]
     fn resume_takes_one_machine_and_needs_no_key_on_the_hub_machine() {
-        let a = parse_usage_args(&argv(&["resume", "forge"])).unwrap();
+        let a = parse_usage_args(&argv(&["resume", "devbox"])).unwrap();
         assert_eq!(
             a,
             UsageArgs {
                 hub: None,
                 home: None,
                 resume: true,
-                machine: "forge".into(),
+                machine: "devbox".into(),
                 json: false,
             }
         );
         assert!(!parse_usage_args(&argv(&[])).unwrap().resume);
         assert_eq!(
-            parse_usage_args(&argv(&["forge"])).unwrap().machine,
-            "forge"
+            parse_usage_args(&argv(&["devbox"])).unwrap().machine,
+            "devbox"
         );
         assert!(parse_usage_args(&argv(&["resume"])).is_err());
         assert!(parse_usage_args(&argv(&["resume", "Not A Machine"])).is_err());
-        assert!(parse_usage_args(&argv(&["--hub", "http://h:4790", "resume", "forge"])).is_err());
+        assert!(parse_usage_args(&argv(&["--hub", "http://h:4790", "resume", "devbox"])).is_err());
     }
 
     #[test]
     fn a_paused_machine_says_why_until_when_and_how_to_go_on() {
         let out = json!({ "machines": [
-            { "machineId": "forge", "login": "custom_base_url", "parked": { "leads": 0, "tasks": 3 },
+            { "machineId": "devbox", "login": "custom_base_url", "parked": { "leads": 0, "tasks": 3 },
               "breaker": { "state": "open", "class": "usage_limit", "since": "2026-10-25T22:40:38.000Z",
                            "until": "2026-10-25T23:40:38.000Z",
-                           "message": "The usage limit was reached on forge's login; resets Sun 23:40 UTC; 3 tasks parked" },
+                           "message": "The usage limit was reached on devbox's login; resets Sun 23:40 UTC; 3 tasks parked" },
               "lastEvents": [] },
             { "machineId": "lab-a", "login": "subscription", "parked": { "leads": 0, "tasks": 0 },
               "breaker": { "state": "closed" }, "lastEvents": [] },
@@ -272,43 +272,43 @@ mod tests {
         assert_eq!(
             status_lines(&out, chrono_tz::UTC),
             [
-                "forge  paused  3 parked        since 2026-10-25 22:40, until 2026-10-25 23:40",
-                "lab-a  ok      nothing parked",
+                "devbox  paused  3 parked        since 2026-10-25 22:40, until 2026-10-25 23:40",
+                "lab-a   ok      nothing parked",
                 "",
-                "forge: The usage limit was reached on forge's login; resets Sun 23:40 UTC; 3 tasks parked",
-                "  to go on now: fleetd usage resume forge",
+                "devbox: The usage limit was reached on devbox's login; resets Sun 23:40 UTC; 3 tasks parked",
+                "  to go on now: fleetd usage resume devbox",
             ]
         );
         // usage_resume answers with the state after: closed, whether or not it lifted a pause.
         let after =
             |n: u64| json!({ "resumed": n, "status": { "breaker": { "state": "closed" } } });
         assert_eq!(
-            resumed_line("forge", Some(true), &after(3)),
-            "Resumed forge: lifted its usage pause and sent \"continue\" to 3 parked agents. One whose login is \
+            resumed_line("devbox", Some(true), &after(3)),
+            "Resumed devbox: lifted its usage pause and sent \"continue\" to 3 parked agents. One whose login is \
              still limited parks again with the real reset."
         );
         assert_eq!(
-            resumed_line("forge", Some(true), &after(0)),
-            "Resumed forge: lifted its usage pause; nothing was parked there, so its next turn tries the login."
+            resumed_line("devbox", Some(true), &after(0)),
+            "Resumed devbox: lifted its usage pause; nothing was parked there, so its next turn tries the login."
         );
         assert_eq!(
-            resumed_line("forge", Some(false), &after(1)),
-            "Resumed forge: sent \"continue\" to 1 parked agent. One whose login is still limited parks again with \
+            resumed_line("devbox", Some(false), &after(1)),
+            "Resumed devbox: sent \"continue\" to 1 parked agent. One whose login is still limited parks again with \
              the real reset."
         );
         assert_eq!(
-            resumed_line("forge", Some(false), &after(0)),
-            "Nothing to resume on forge: it wasn't paused and nothing was parked there."
+            resumed_line("devbox", Some(false), &after(0)),
+            "Nothing to resume on devbox: it wasn't paused and nothing was parked there."
         );
         // The read before failed: the resume still went, and the line says only what its answer says.
         assert_eq!(
-            resumed_line("forge", None, &after(2)),
-            "Resumed forge: sent \"continue\" to 2 parked agents. One whose login is still limited parks again with \
+            resumed_line("devbox", None, &after(2)),
+            "Resumed devbox: sent \"continue\" to 2 parked agents. One whose login is still limited parks again with \
              the real reset."
         );
         assert_eq!(
-            resumed_line("forge", None, &after(0)),
-            "Resumed forge: nothing was parked there."
+            resumed_line("devbox", None, &after(0)),
+            "Resumed devbox: nothing was parked there."
         );
     }
 }
