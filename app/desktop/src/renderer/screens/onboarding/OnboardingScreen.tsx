@@ -15,6 +15,8 @@ export interface OnboardingProps {
   readonly code?: string | undefined;
   /** Open on the key path (`#/onboarding?key`). */
   readonly useKey?: boolean | undefined;
+  /** Pair with another hub (`#/onboarding?another`, from Settings): the form stays up while this app is connected. */
+  readonly another?: boolean | undefined;
 }
 
 const subscribeHash = (onChange: () => void) => {
@@ -30,7 +32,8 @@ const useHashQuery = (): URLSearchParams => {
 /**
  * #/onboarding: connect to a hub, or see why the app can't use the one it has. What it shows follows the
  * connection: no key or a refused key → the connect form; on the way to the hub → connecting; a hub on another
- * protocol → which side to update; connected → on to the board.
+ * protocol → which side to update; connected → on to the board. Pairing with another hub shows the form throughout,
+ * and the current hub stays connected until the new one gives a key.
  */
 export function OnboardingScreen(props: OnboardingProps) {
   const state = useHubState();
@@ -39,8 +42,9 @@ export function OnboardingScreen(props: OnboardingProps) {
   const hub = props.hub ?? query.get("hub") ?? undefined;
   const code = props.code ?? query.get("code") ?? undefined;
   const useKey = props.useKey ?? query.has("key");
-  // A link to pair with a hub shows the form whatever the connection is doing.
-  if (code === undefined) {
+  const another = props.another ?? query.has("another");
+  // A link to pair with a hub, or pairing with another one, shows the form whatever the connection is doing.
+  if (code === undefined && !another) {
     if (state.phase === "live") {
       const fit = protocolFit(state.protocol);
       return fit === "ok" ? <Connected hub={state.hub} /> : <Mismatch failure={mismatchFailure(fit, state.hub)} />;
@@ -48,7 +52,13 @@ export function OnboardingScreen(props: OnboardingProps) {
     if (reach !== null) return <Connecting reach={reach} />;
   }
   // Remounts on a new phase or link, so a refused key or a fresh link starts a fresh form.
-  return <ConnectForm key={`${state.phase}:${hub ?? ""}:${code ?? ""}:${String(useKey)}`} state={state} link={{ hub, code, useKey }} />;
+  return (
+    <ConnectForm
+      key={`${another ? "another" : state.phase}:${hub ?? ""}:${code ?? ""}:${String(useKey)}`}
+      state={state}
+      link={{ hub, code, useKey, another }}
+    />
+  );
 }
 
 function Page({ id, title, children }: { id: string; title: string; children: ReactNode }) {
@@ -218,7 +228,7 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
     }
   };
 
-  const welcome = form.firstRun && link.code === undefined;
+  const welcome = form.firstRun && link.code === undefined && link.another !== true;
   const connect = (
     <>
       {form.notice === null ? null : <Prose text={form.notice} />}
@@ -286,6 +296,27 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
     </>
   );
   const id = form.useKey ? "onboarding.key" : "onboarding";
+  if (link.another === true) {
+    const current = state.phase === "unpaired" ? null : state.hub;
+    return (
+      <Page id={id} title="Pair with another hub">
+        {current === null ? null : (
+          <Prose text={`This app stays on \`${current}\` until the new hub pairs.`} tone="quiet" />
+        )}
+        {connect}
+        <div>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              window.location.hash = "#/settings/general";
+            }}
+          >
+            {current === null ? "Back to settings" : "Keep this hub"}
+          </Button>
+        </div>
+      </Page>
+    );
+  }
   if (!welcome) {
     return (
       <Page id={id} title="Connect to your fleetd hub">
