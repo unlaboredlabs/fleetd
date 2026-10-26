@@ -219,7 +219,7 @@ fn cards_get_a_short_title() {
 }
 
 /// A parked lane never tells a person to resume by hand unless fleetd can't: a limit with no reset is checked again
-/// by fleetd itself (forge, 2026-10-25: every lane said "resumes on usage_resume").
+/// by fleetd itself (a real pause on 2026-10-25: every lane said "resumes on usage_resume").
 #[test]
 fn a_parked_lane_says_when_it_goes_on_and_asks_for_usage_resume_only_for_a_drained_pool() {
     let parked =

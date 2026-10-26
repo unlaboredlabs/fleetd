@@ -221,7 +221,8 @@ pub fn breaker_message(
     }
 }
 
-/// A limit that named no reset: "Rate-limited by your proxy on forge", "The usage limit was reached on forge's login".
+/// A limit that named no reset: "Rate-limited by your proxy on devbox", "The usage limit was reached on devbox's
+/// login".
 fn unknown_reset_text(machine_id: &str, cls: UsageClass, proxy: bool) -> String {
     if proxy {
         format!("Rate-limited by your proxy on {machine_id}")

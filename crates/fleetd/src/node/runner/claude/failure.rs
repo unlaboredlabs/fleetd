@@ -708,11 +708,11 @@ mod tests {
         }
     }
 
-    /// forge, 2026-10-25 22:40 UTC: every agent behind its CLIProxyAPI gateway failed with this one text. It names
+    /// A real pause, 2026-10-25 22:40 UTC: every agent behind a CLIProxyAPI gateway failed with this one text. It names
     /// no reset, so main's made-up hour parked them all until 23:40; it is the proxy resting its credentials after
     /// a 429, so the hub checks again from a minute on, and says the proxy did it.
     #[test]
-    fn forges_proxy_cooldown_names_no_reset_and_its_model() {
+    fn a_proxy_cooldown_names_no_reset_and_its_model() {
         let e = evidence("claude-2.1.310-proxy-cooldown-429.jsonl");
         assert_eq!(
             (e.assistant_error.as_deref(), e.api_error_status),

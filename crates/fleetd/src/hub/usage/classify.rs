@@ -230,7 +230,7 @@ mod tests {
             classify_limit(&i),
             limit(UsageClass::UsageLimit, None, None)
         );
-        // forge, 2026-10-25 22:40: the proxy's cooldown names its model and no reset.
+        // A real pause, 2026-10-25 22:40: the proxy's cooldown names its model and no reset.
         let cooldown = LimitInput {
             model: Some("claude-opus-5-5"),
             failure_model: Some("claude-opus-5-5"),

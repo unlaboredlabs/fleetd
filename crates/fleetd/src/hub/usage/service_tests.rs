@@ -1,4 +1,4 @@
-//! The usage service over an in-memory event log and a manual clock: forge's 2026-10-25 pause, where a proxy's
+//! The usage service over an in-memory event log and a manual clock: a real 2026-10-25 pause, where a proxy's
 //! cooldown named no reset, every task parked for a made-up hour, and the lead's own turns kept succeeding on the
 //! same login.
 use std::sync::{Arc, Mutex};
@@ -33,14 +33,14 @@ impl Fake {
         let seq = events.len() + 1;
         events.push(
             serde_json::from_value(json!({
-                "seq": seq, "at": iso_ms(at_ms), "type": kind, "machineId": "forge", "threadId": thread,
+                "seq": seq, "at": iso_ms(at_ms), "type": kind, "machineId": "devbox", "threadId": thread,
                 "summary": format!("{thread} {kind}"), "data": data,
             }))
             .unwrap(),
         );
     }
 
-    /// thread.usage_limited as the executor writes it for forge's text.
+    /// thread.usage_limited as the executor writes it for devbox's text.
     fn cooldown(&self, at_ms: i64, thread: &str) {
         let limit = super::classify::classify_limit(&super::classify::LimitInput {
             error_class: Some("rate_limit"),
@@ -174,8 +174,8 @@ async fn advance(clock: &ManualClock, ms: u64) {
     settle().await;
 }
 
-/// forge's three agents hit the cooldown within a second.
-async fn forge_pause(fake: &Fake, usage: &Usage) {
+/// devbox's three agents hit the cooldown within a second.
+async fn proxy_pause(fake: &Fake, usage: &Usage) {
     fake.cooldown(T0, "w1");
     fake.cooldown(T0 + 400, "r1");
     fake.cooldown(T0 + 900, "w2");
@@ -183,23 +183,23 @@ async fn forge_pause(fake: &Fake, usage: &Usage) {
 }
 
 #[tokio::test]
-async fn forges_proxy_cooldown_pauses_with_no_made_up_reset() {
+async fn a_proxy_cooldown_pauses_with_no_made_up_reset() {
     let (fake, _clock, usage) = usage();
-    forge_pause(&fake, &usage).await;
+    proxy_pause(&fake, &usage).await;
     let breaker = fake.last("usage.breaker").expect("trips");
     assert_eq!(
         breaker.summary.as_str(),
-        "Rate-limited by your proxy on forge; checking again shortly; 2 tasks parked"
+        "Rate-limited by your proxy on devbox; checking again shortly; 2 tasks parked"
     );
     let data = breaker.data.unwrap();
     assert_eq!(data.get("until"), None, "main parked until 23:40:38");
     // The hub trips the breaker at its own now; the first check is a minute on.
     assert_eq!(data["checkAt"], iso_ms(T0 + MIN as i64));
     assert_eq!(
-        usage.gate("forge").as_deref(),
-        Some("usage: rate-limited by your proxy on forge, checking again shortly")
+        usage.gate("devbox").as_deref(),
+        Some("usage: rate-limited by your proxy on devbox, checking again shortly")
     );
-    let status = usage.status("forge", Err("offline".into())).await;
+    let status = usage.status("devbox", Err("offline".into())).await;
     assert_eq!(
         (
             status.breaker.until,
@@ -210,7 +210,7 @@ async fn forges_proxy_cooldown_pauses_with_no_made_up_reset() {
     );
 }
 
-/// The case behind this: during forge's pause the lead kept taking turns on the same login while every task stayed
+/// The case behind this: during devbox's pause the lead kept taking turns on the same login while every task stayed
 /// parked. A turn that started after the pause and completed proves the login, on whatever model id it names (an
 /// alias, a dated id, a proxy's own name), so it lifts the pause.
 #[tokio::test]
@@ -218,11 +218,11 @@ async fn the_leads_successful_turn_on_the_paused_login_resumes_every_parked_agen
     let (fake, _clock, usage) = usage();
     // The lead's turn already running when the limit hit proves nothing.
     fake.turn(T0 - 5_000, "thread.started", "lead");
-    forge_pause(&fake, &usage).await;
+    proxy_pause(&fake, &usage).await;
     fake.turn(T0 + 2_000, "thread.completed", "lead");
     usage.drain().await;
     assert!(
-        usage.gate("forge").is_some(),
+        usage.gate("devbox").is_some(),
         "a turn from before the pause"
     );
     // A turn that starts after the pause but fails proves nothing, and leaves no start behind for a later
@@ -236,7 +236,7 @@ async fn the_leads_successful_turn_on_the_paused_login_resumes_every_parked_agen
     );
     fake.turn(T0 + 25_000, "thread.completed", "lead");
     usage.drain().await;
-    assert!(usage.gate("forge").is_some(), "a failed turn");
+    assert!(usage.gate("devbox").is_some(), "a failed turn");
     assert!(fake.sent().is_empty());
 
     // The lead's next turn names a dated model id the limit didn't: it completed, so the login answers.
@@ -248,17 +248,17 @@ async fn the_leads_successful_turn_on_the_paused_login_resumes_every_parked_agen
         json!({ "status": "completed", "model": "claude-opus-5-5-20261020" }),
     );
     usage.drain().await;
-    assert_eq!(usage.gate("forge"), None);
+    assert_eq!(usage.gate("devbox"), None);
     assert_eq!(fake.sent(), ["r1", "w1", "w2"], "reviews before writers");
     let resumed = fake.last("usage.resumed").unwrap();
     assert_eq!(
         resumed.summary.as_str(),
-        "Usage pause on forge lifted (a turn on its login succeeded); sent \"continue\" to 3 parked threads"
+        "Usage pause on devbox lifted (a turn on its login succeeded); sent \"continue\" to 3 parked threads"
     );
     assert_eq!(resumed.data.unwrap()["by"], "turn");
 }
 
-/// What the executor logs for one run of a fake claude behind forge's proxy: the run starts, claude retries the 429
+/// What the executor logs for one run of a fake claude behind devbox's proxy: the run starts, claude retries the 429
 /// inside the turn for `retrying_ms`, then either gives up (thread.usage_limited) or gets a response and completes.
 fn fake_run(fake: &Fake, at_ms: i64, thread: &str, retrying_ms: i64, gets_through: bool) {
     fake.turn(at_ms, "thread.started", thread);
@@ -275,15 +275,15 @@ fn fake_run(fake: &Fake, at_ms: i64, thread: &str, retrying_ms: i64, gets_throug
 #[tokio::test]
 async fn with_no_reset_one_parked_thread_is_tried_on_a_backoff_until_its_turn_completes() {
     let (fake, clock, usage) = usage();
-    forge_pause(&fake, &usage).await;
+    proxy_pause(&fake, &usage).await;
     advance(&clock, MIN - 1).await;
     assert!(fake.sent().is_empty());
     advance(&clock, 1).await;
     assert_eq!(fake.sent(), ["r1"], "one check, the review first");
-    assert!(usage.gate("forge").is_some(), "the rest stay parked");
+    assert!(usage.gate("devbox").is_some(), "the rest stay parked");
     assert_eq!(
         fake.last("usage.resumed").unwrap().summary.as_str(),
-        "Trying forge's login again; sent \"continue\" to 1 parked thread"
+        "Trying devbox's login again; sent \"continue\" to 1 parked thread"
     );
 
     // r1's run starts, and claude is still retrying the 429 at the next check, 2 minutes on: not through.
@@ -292,7 +292,7 @@ async fn with_no_reset_one_parked_thread_is_tried_on_a_backoff_until_its_turn_co
     usage.drain().await;
     advance(&clock, 2 * MIN).await;
     assert!(
-        usage.gate("forge").is_some(),
+        usage.gate("devbox").is_some(),
         "a started turn proves nothing"
     );
     assert_eq!(
@@ -308,23 +308,23 @@ async fn with_no_reset_one_parked_thread_is_tried_on_a_backoff_until_its_turn_co
     assert_eq!(fake.sent(), ["r1"]);
     advance(&clock, 1).await;
     assert_eq!(fake.sent(), ["r1", "r1"]);
-    assert!(usage.gate("forge").is_some());
+    assert!(usage.gate("devbox").is_some());
 
     // That run retries 40 s and fails again; the one after retries 40 s, then the proxy answers and the turn
     // completes: the pause lifts at once.
     let second = failed + 2 * MIN as i64;
     fake_run(&fake, second + 1_000, "r1", 40_000, false);
     usage.drain().await;
-    assert!(usage.gate("forge").is_some(), "retried, then failed again");
+    assert!(usage.gate("devbox").is_some(), "retried, then failed again");
     advance(&clock, 10 * MIN).await;
     assert_eq!(fake.sent(), ["r1", "r1", "r1"]);
     fake_run(&fake, second + 10 * MIN as i64 + 1_000, "r1", 40_000, true);
     usage.drain().await;
-    assert_eq!(usage.gate("forge"), None);
+    assert_eq!(usage.gate("devbox"), None);
     assert_eq!(fake.sent(), ["r1", "r1", "r1", "w1", "w2"]);
     assert_eq!(
         fake.last("usage.resumed").unwrap().summary.as_str(),
-        "Usage pause on forge lifted (a turn on its login succeeded); sent \"continue\" to 2 parked threads"
+        "Usage pause on devbox lifted (a turn on its login succeeded); sent \"continue\" to 2 parked threads"
     );
 }
 
@@ -336,14 +336,14 @@ async fn a_check_with_nothing_left_to_try_says_so() {
     fake.cooldown(T0, "x1");
     fake.cooldown(T0 + 500, "x2");
     usage.drain().await;
-    assert!(usage.gate("forge").is_some());
+    assert!(usage.gate("devbox").is_some());
     advance(&clock, MIN).await;
-    assert_eq!(usage.gate("forge"), None);
+    assert_eq!(usage.gate("devbox"), None);
     assert!(fake.sent().is_empty());
     let lifted = fake.last("usage.resumed").unwrap();
     assert_eq!(
         lifted.summary.as_str(),
-        "Usage pause on forge lifted (nothing was left parked to check it with; the next turn there tries the login)"
+        "Usage pause on devbox lifted (nothing was left parked to check it with; the next turn there tries the login)"
     );
     assert_eq!(lifted.data.unwrap()["by"], "unchecked");
 }
@@ -357,7 +357,7 @@ async fn a_park_alone_with_no_reset_is_tried_again_after_a_minute_then_two() {
     assert!(fake.last("usage.breaker").is_none());
     let parked = usage
         .parked_of(&ThreadRef {
-            machine_id: "forge".into(),
+            machine_id: "devbox".into(),
             thread_id: "w1".into(),
         })
         .unwrap();
