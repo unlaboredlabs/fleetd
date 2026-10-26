@@ -3,7 +3,7 @@
 // gated command), and the composer, which has the cursor as soon as the chat opens, with the live strip docked to its
 // top. Above them, a line says what the lead waits on you for; an empty chat asks what to do. It opens where you
 // stopped reading, under a "New" divider.
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { BubbleActionsContext, type BubbleActions, type ReplyTarget } from "./actions";
 import { Button, FrameTitle, IdChip, StatusChip, Text, type StatusTone } from "../../ui";
 import { STATE_WORDS } from "../status/rows";
@@ -82,12 +82,21 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   );
   const items = view?.items;
   const older = view?.hasOlder === true;
+  const openItems = useData((d) => d.chatStates[key]?.openItems);
   const waiting = useMemo(
     // "asked at 09:02" (or "yesterday at …") is read when the chat changes; nothing ticks while it waits.
     // eslint-disable-next-line react-hooks/purity
-    () => (needsYou === true && items !== undefined ? waitingOn(items, older, Date.now()) : undefined),
-    [needsYou, items, older],
+    () => (needsYou === true && items !== undefined ? waitingOn(items, { older, open: openItems }, Date.now()) : undefined),
+    [needsYou, items, older, openItems],
   );
+  // Show to what isn't loaded yet (an approval pages back): older pages load until it is, or there are none.
+  const away = shown !== undefined && items !== undefined && !items.some((i) => i.id === shown.id);
+  // A page that failed stops it: no retrying in a loop.
+  const loadOlder = data.loadOlder;
+  const halted = view?.loadingOlder === true || view?.error !== undefined;
+  useEffect(() => {
+    if (away && older && !halted) loadOlder();
+  }, [away, older, halted, loadOlder]);
   const recall = useMemo(() => items?.findLast((i) => i.author === "human" && i.text.trim() !== "")?.text, [items]);
   // Once you send, the chat follows the newest message instead.
   const target = shown?.id ?? (sent === 0 ? message : undefined);

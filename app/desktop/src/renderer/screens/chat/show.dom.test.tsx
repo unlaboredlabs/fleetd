@@ -4,7 +4,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
-import type { ChatMessage } from "../../src/data/chat-contract";
+import type { ChatMessage, ProjectChatState } from "../../src/data/chat-contract";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { AT, live, project, snapshot } from "../../src/data/fixtures.test-util";
@@ -87,12 +87,26 @@ const settle = async () => {
   for (let i = 0; i < 5; i++) await act(() => new Promise((done) => setTimeout(done, 0)));
 };
 
-/** The chat on a live hub, waiting on you, with `messages` as its newest page. */
-const mount = async (messages: ChatMessage[]) => {
+/**
+ * The chat on a live hub, waiting on you, with `messages` as its newest page; `older`, the pages before it, newest
+ * first, one per request, once `hold` has settled.
+ */
+const mount = async (
+  messages: ChatMessage[],
+  opts: { older?: ChatMessage[][]; openItems?: ProjectChatState["openItems"]; hold?: Promise<void> } = {},
+) => {
+  const older = [...(opts.older ?? [])];
   let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
-  const page = { messages, moreBefore: false, moreAfter: false, state: { projectRef: project, needsYou: true, leadWorking: false, lastSeq: messages.at(-1)?.seq ?? 0 } };
+  const state = { projectRef: project, needsYou: true, leadWorking: false, lastSeq: messages.at(-1)?.seq ?? 0, openItems: opts.openItems };
+  const page = { messages, moreBefore: older.length > 0, moreAfter: false, state };
+  const before = () => ({ messages: older.shift() ?? [], moreBefore: older.length > 0, moreAfter: true, state });
   const hub: HubApi = {
-    call: (tool) => Promise.resolve({ ok: true, output: tool === "chat_history" ? page : tool === "status_get" ? { rows: [] } : {} }),
+    call: async (tool, input) => {
+      if (tool !== "chat_history") return { ok: true, output: tool === "status_get" ? { rows: [] } : tool === "requests_list" ? { requests: [] } : {} };
+      if ((input as { before?: number }).before === undefined) return { ok: true, output: page };
+      await opts.hold;
+      return { ok: true, output: before() };
+    },
     subscribe: (l) => ((send = l), () => undefined),
     resync: () => Promise.resolve(),
     focus: () => Promise.resolve(),
@@ -183,4 +197,25 @@ it("brings the bubble itself into view in a message taller than the view, and th
   expect(marked()).toEqual(["Merge #12 now?"]);
   expect(inView("Merge #12 now?")).toBe(true);
   expect(inView("Ship it?")).toBe(false);
+});
+
+it("counts an approval on a page not loaded yet, and Show goes to it once that page is in", async () => {
+  const approval = msg(1, {
+    text: "",
+    item: { kind: "command_approval", requestId: "Q1", machineId: "devbox", state: "open", gated: { argv: ["./deploy.sh", "prod"], class: "irreversible", reason: "prod deploy", timeoutSec: 600 } },
+  });
+  let release: () => void = () => undefined;
+  const hold = new Promise<void>((done) => (release = done));
+  await mount([msg(2, { author: "human", text: "ship it" }), msg(3, { text: "Done. Over to you." })], {
+    older: [[approval]],
+    openItems: [{ messageId: "m1", kind: "command_approval" }],
+    hold,
+  });
+  // The newest page asks nothing; the hub's list says what still waits.
+  expect(line()).toContain("1 command to approve");
+  expect(host.textContent).not.toContain("./deploy.sh");
+  await show();
+  act(() => release());
+  await vi.waitFor(() => expect(marked().join("")).toContain("./deploy.sh"));
+  expect(focused()).toContain("./deploy.sh");
 });

@@ -11,9 +11,10 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use fleetd_contracts::chat::{
-    AttachmentRef, ChatAuthor, ChatClient, ChatDelivery, ChatDelta, ChatHistorySource, ChatItem,
-    ChatMessage, ChatMessageEventData, ChatMessageId, ChatMessageState, ChatRequestId,
-    CommandApprovalState, ProjectChatState, SecretRequestState,
+    AttachmentRef, CHAT_OPEN_ITEMS_MAX, ChatAuthor, ChatClient, ChatDelivery, ChatDelta,
+    ChatHistorySource, ChatItem, ChatMessage, ChatMessageEventData, ChatMessageId,
+    ChatMessageState, ChatOpenItem, ChatOpenItemKind, ChatRequestId, CommandApprovalState,
+    ProjectChatState, SecretRequestState,
 };
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{ProjectRef, Timestamp};
@@ -122,13 +123,16 @@ pub fn needs_you(messages: &[ChatMessage]) -> bool {
     })
 }
 
+/// What `chat.waiting` said: needs-you, working, and the open items' message ids.
+type Said = (bool, bool, Vec<String>);
+
 pub struct Chat {
     db: Arc<HubDb>,
     events: Arc<EventLog>,
     clock: Arc<dyn Clock>,
     deltas: broadcast::Sender<ChatDelta>,
     /// What `chat.waiting` last said per project, so it fires only on a change.
-    said: Mutex<HashMap<String, (bool, bool)>>,
+    said: Mutex<HashMap<String, Said>>,
     /// One history read per project at a time.
     reading: tokio::sync::Mutex<()>,
     /// When each agent key wrote its messages of the last minute.
@@ -733,9 +737,25 @@ impl Chat {
         lead_working: bool,
     ) -> Result<ProjectChatState, StoreError> {
         let (recent, _, _) = self.page(r, None, None, 1)?;
+        // Every open item, however far back, for the chat to count and go to even when it hasn't loaded its page.
+        let open = self.open_items(r)?;
+        let open_items: Vec<ChatOpenItem> = open
+            .iter()
+            .filter_map(|m| {
+                let kind = match m.item.as_ref().filter(|i| item_open(i))? {
+                    ChatItem::SecretRequest(_) => ChatOpenItemKind::SecretRequest,
+                    ChatItem::CommandApproval(_) => ChatOpenItemKind::CommandApproval,
+                };
+                Some(ChatOpenItem {
+                    message_id: m.message_id.clone(),
+                    kind,
+                })
+            })
+            .take(CHAT_OPEN_ITEMS_MAX)
+            .collect();
         // Everything since the human's last message (however many status lines followed), and every open item.
         let mut considered = self.since_human(r)?;
-        considered.extend(self.open_items(r)?);
+        considered.extend(open);
         let last = recent.last();
         Ok(ProjectChatState {
             project_ref: r.clone(),
@@ -743,6 +763,7 @@ impl Chat {
             lead_working,
             last_seq: last.map_or_else(Count::default, |m| m.seq),
             last_message_at: last.map(|m| m.created_at.clone()),
+            open_items: (!open_items.is_empty()).then(|| List::unchecked(open_items)),
         })
     }
 
@@ -791,11 +812,20 @@ impl Chat {
         })
     }
 
-    /// Announces `chat.waiting` when the project's needs-you or working state changed since it last did.
+    /// Announces `chat.waiting` when the project's needs-you or working state, or its open items, changed since it
+    /// last did.
     pub fn tell_state(&self, state: &ProjectChatState) -> Result<(), StoreError> {
-        let now = (state.needs_you, state.lead_working);
+        let open = state
+            .open_items
+            .as_ref()
+            .map(|l| l.iter().map(|i| i.message_id.to_string()).collect());
+        let now = (
+            state.needs_you,
+            state.lead_working,
+            open.unwrap_or_default(),
+        );
         let k = key(&state.project_ref);
-        if self.said.lock().unwrap().insert(k, now) == Some(now) {
+        if self.said.lock().unwrap().insert(k, now.clone()) == Some(now) {
             return Ok(());
         }
         let r = &state.project_ref;

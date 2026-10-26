@@ -269,6 +269,29 @@ pub struct ProjectChatState {
     /// The newest message's `seq`; 0 for an empty chat.
     pub last_seq: ChatSeq,
     pub last_message_at: Option<Timestamp>,
+    /// The inline items still open, oldest first, however far back: the chat may not have their page loaded. Absent
+    /// when none is (and from older hubs).
+    pub open_items: Option<List<ChatOpenItem, 1, CHAT_OPEN_ITEMS_MAX>>,
+}
+
+/// The most open items a chat state lists.
+pub const CHAT_OPEN_ITEMS_MAX: usize = 20;
+
+/// An inline item that waits on the human: which message, and what it asks for.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatOpenItem {
+    pub message_id: ChatMessageId,
+    pub kind: ChatOpenItemKind,
+}
+
+/// `ChatItem`'s kind.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
+pub enum ChatOpenItemKind {
+    SecretRequest,
+    CommandApproval,
 }
 
 /// `chat.message` data: on each new message, and again when a streamed message is final or an inline item changes

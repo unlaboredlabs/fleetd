@@ -2366,6 +2366,31 @@
       ],
       "x-open": true
     },
+    "ChatOpenItem": {
+      "description": "An inline item that waits on the human: which message, and what it asks for.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/ChatOpenItemKind"
+        },
+        "messageId": {
+          "$ref": "#/$defs/ChatMessageId"
+        }
+      },
+      "required": [
+        "messageId",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "ChatOpenItemKind": {
+      "description": "`ChatItem`'s kind.",
+      "enum": [
+        "secret_request",
+        "command_approval"
+      ],
+      "type": "string",
+      "x-open": true
+    },
     "ChatPart": {
       "description": "One bubble of a lead message: `text.slice(start, end)` (UTF-16 offsets, like `ChatDelta.offset`), shown as\nmarkdown, or as `block` when it has one (the slice is then the block's fence, its readable fallback).",
       "properties": {
@@ -9069,6 +9094,15 @@
         "needsYou": {
           "description": "The lead's last message waits for a human reply, or an inline item is open.",
           "type": "boolean"
+        },
+        "openItems": {
+          "description": "The inline items still open, oldest first, however far back: the chat may not have their page loaded. Absent\nwhen none is (and from older hubs).",
+          "items": {
+            "$ref": "#/$defs/ChatOpenItem"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "type": "array"
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"

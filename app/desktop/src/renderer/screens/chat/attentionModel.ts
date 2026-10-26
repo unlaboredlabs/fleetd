@@ -1,6 +1,7 @@
 // What the lead is waiting on you for, in a few words, for the quiet line above the composer: an open approval or
-// secret first (the lead can't go on without it), else the questions of its newest message since you last wrote that
+// secret first (the lead can't go on without it), loaded or not, else the questions of its newest message since you last wrote that
 // asks any; nothing when it asks nothing. Pure.
+import type { ChatOpenItem } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
 import { bubblesOf } from "./bubbles";
 import { plural, shortClock } from "./format";
@@ -20,6 +21,14 @@ export interface Waiting {
   readonly targets: readonly WaitTarget[];
 }
 
+/** What the chat knows beyond its loaded items. */
+export interface Unloaded {
+  /** Older pages aren't loaded. */
+  readonly older: boolean;
+  /** The hub's open items (ProjectChatState.openItems), on any page. */
+  readonly open?: readonly ChatOpenItem[] | undefined;
+}
+
 const openItem = (i: ChatItem): boolean => (i.kind === "secret" || i.kind === "gated") && i.message?.item?.state === "open";
 
 /** Numbered items at the start of a line ("1. …", "2) …"): the lead asks its questions as a numbered list. */
@@ -35,11 +44,14 @@ const when = (iso: string, nowMs: number, timeZone?: string): string => {
   return `${day === "Yesterday" ? "yesterday" : day} at ${clock}`;
 };
 
-/** `older`: the chat has older pages not loaded, where what it waits on may be (the hub says it waits). */
-export function waitingOn(items: readonly ChatItem[], older: boolean, nowMs: number, timeZone?: string): Waiting | undefined {
-  const open = items.filter(openItem);
+export function waitingOn(items: readonly ChatItem[], { older, open: away = [] }: Unloaded, nowMs: number, timeZone?: string): Waiting | undefined {
+  // A loaded item goes by its own state, which may be newer than the hub's list; the rest by the list, oldest first,
+  // which comes before what's loaded.
+  const loaded = new Set(items.map((i) => i.id));
+  const unloaded = away.filter((o) => !loaded.has(o.messageId) && (o.kind === "command_approval" || o.kind === "secret_request"));
+  const open = [...unloaded.map((o) => ({ id: o.messageId, gated: o.kind === "command_approval" })), ...items.filter(openItem).map((i) => ({ id: i.id, gated: i.kind === "gated" }))];
   if (open.length > 0) {
-    const approvals = open.filter((i) => i.kind === "gated").length;
+    const approvals = open.filter((i) => i.gated).length;
     const secrets = open.length - approvals;
     const parts = [approvals > 0 ? `${plural(approvals, "command")} to approve` : "", secrets > 0 ? `${plural(secrets, "secret")} to enter` : ""];
     return { what: parts.filter((p) => p !== "").join(", "), targets: open.map((i) => ({ id: i.id })) };
