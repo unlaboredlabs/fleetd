@@ -3,6 +3,7 @@
 // Pure, so the grouping is tested without a screen.
 import type { HubEvent, HubEventType } from "../../../shared/contracts";
 import { dayLabel } from "../chat/model";
+import { keyWords } from "../decisions/model";
 import type { PanelView, PrKey } from "../shell/routes";
 
 export type ActivityKind = "agents" | "reviews" | "merges" | "asks" | "other";
@@ -203,8 +204,12 @@ export function describe(e: HubEvent): Line | undefined {
   }
 }
 
-/** "D4 merge.style = squash" without its id. */
-const decision = (summary: string): string | undefined => str(summary.replace(/^D\d+\s+/u, ""));
+/** "D4 merge.style = squash" as the Decisions tab words it: "Merge style = squash", without its id. */
+const decision = (summary: string): string | undefined => {
+  const said = summary.replace(/^D\d+\s+/u, "");
+  const kv = /^(\S+)\s*=\s*(.*)$/su.exec(said);
+  return str(kv === null ? said : `${keyWords(kv[1] ?? "")} = ${kv[2] ?? ""}`);
+};
 
 /**
  * A secret or an approval asked for or answered. The summary names the secret by its key and the approval by its

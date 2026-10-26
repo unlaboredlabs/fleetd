@@ -1,7 +1,45 @@
 // The Train tab's model: a project's merge train from the hub's changes (changes_list) and its PRs (pr_list) — what
 // merges now and at which stage, the queue in train order with what holds each one, and the merges and refusals of
 // late. Pure, so the shape is tested on its own. No ETAs: only when each thing happened.
-import type { Change, ChecksSummary, PrCheck, PrRow } from "../../../shared/contracts";
+import type { Change, ChangesListInput, ChangesListOutput, ChangeState, ChecksSummary, PrCheck, PrRow, ProjectRef } from "../../../shared/contracts";
+
+/** On the train: in line, then merging. The tab's count reads only these. */
+export const LINE_STATES = ["queued", "reviewing", "ready", "rebasing", "ci", "merging"] as const satisfies readonly ChangeState[];
+/** ...and sent back to its writer, which the queue lists last. */
+export const OPEN_STATES = [...LINE_STATES, "needs_rebase", "ci_failed"] as const satisfies readonly ChangeState[];
+/** The hub's most per read (changes_list's limit). */
+const READ_MAX = 100;
+
+const read = (project: ProjectRef, state: ChangeState, limit = READ_MAX): ChangesListInput => ({ projectRef: project, state, limit });
+
+/** The tab's count's reads: the line, each state whole. The pane's first reads are these, so the two share them. */
+export const lineReads = (project: ProjectRef): ChangesListInput[] => LINE_STATES.map((state) => read(project, state));
+
+/**
+ * The pane's changes_list reads: each open state whole, so the line is never cut by how many merged since, then the
+ * newest merges and refusals for Recent.
+ */
+export const trainReads = (project: ProjectRef): ChangesListInput[] => [
+  ...lineReads(project),
+  read(project, "needs_rebase"),
+  read(project, "ci_failed"),
+  read(project, "merged", 24),
+  read(project, "refused", RECENT_MAX),
+];
+
+/**
+ * The reads' answers (in trainReads' order) as one list, each change once (one that moved between two reads, the
+ * newer), and whether an open state had more than one read holds.
+ */
+export const changesOf = (answers: readonly ChangesListOutput[]): { readonly changes: Change[]; readonly cut: boolean } => {
+  const byId = new Map<string, Change>();
+  for (const c of answers.flatMap((a) => a.changes)) {
+    const had = byId.get(c.changeId);
+    if (had === undefined || had.updatedAt < c.updatedAt) byId.set(c.changeId, c);
+  }
+  const cut = answers.some((a, i) => a.truncated === true && i < OPEN_STATES.length);
+  return { changes: [...byId.values()], cut };
+};
 
 /** The stage of what merges now: brought up to date with the base, its CI run, the merge itself. */
 export type Stage = "rebasing" | "ci" | "merging";
@@ -32,6 +70,8 @@ export interface QueueRow {
   readonly state: Waiting;
   /** Why it is blocked: the conflict, the failing checks, the hold. */
   readonly why?: string;
+  /** The train's own words under it, as it gave them: the conflicting paths, the failing checks and their output. */
+  readonly detail?: string;
   /** 1-based place in line, for the PRs the train has put in order. */
   readonly place?: number;
   /** Conflicted or failed its checks: back with its writer, off the line until a new head comes. */
@@ -71,15 +111,16 @@ const whyOf = (change: Change): string | undefined => {
   return e.startsWith(HELD) ? e.slice(HELD.length) : e;
 };
 
-const blockedWhy = (change: Change): string => {
+const blockedWhy = (change: Change): { readonly why: string; readonly detail?: string } => {
   const said = whyOf(change);
+  const detail = said === undefined ? {} : { detail: said };
   switch (change.state) {
     case "needs_rebase":
-      return said === undefined ? "Conflicts with the base; back with its writer" : `Conflicts with the base: ${said}`;
+      return { why: said === undefined ? "Conflicts with the base; back with its writer" : "Conflicts with the base", ...detail };
     case "ci_failed":
-      return said === undefined ? "Checks failed; back with its writer" : `Checks failed: ${said}`;
+      return { why: said === undefined ? "Checks failed; back with its writer" : "Checks failed", ...detail };
     default:
-      return said ?? "Held";
+      return { why: said ?? "Held" };
   }
 };
 
@@ -128,9 +169,9 @@ export const trainViews = (changes: readonly Change[], prs: readonly PrRow[] | u
         const held = c.state === "ready" && c.lastError?.startsWith(HELD) === true;
         const state: Waiting = held ? "blocked" : (c.state as Waiting);
         const at = c.position === undefined ? {} : { place: ++place };
-        return { pr: trainPr(c), state, ...at, ...(held ? { why: blockedWhy(c) } : {}) };
+        return { pr: trainPr(c), state, ...at, ...(held ? blockedWhy(c) : {}) };
       }),
-      ...back.map((c): QueueRow => ({ pr: trainPr(c), state: "blocked", why: blockedWhy(c), sentBack: true })),
+      ...back.map((c): QueueRow => ({ pr: trainPr(c), state: "blocked", ...blockedWhy(c), sentBack: true })),
     ];
 
     // A batch lands as one squash commit: its members share the merged sha.

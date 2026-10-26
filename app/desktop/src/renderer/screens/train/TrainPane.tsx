@@ -3,16 +3,13 @@
 // one group. Each PR opens in the PRs tab. Read through the data layer and refetched on the hub's change and PR
 // events; nothing polls, and nothing here moves the train.
 import { useMemo, type ReactNode } from "react";
-import type { ProjectRef } from "../../../shared/contracts";
-import { useData, useToolQuery } from "../../src/data/react";
+import type { ChangesListInput, ProjectRef } from "../../../shared/contracts";
+import { useData, useToolQueries, useToolQuery } from "../../src/data/react";
 import { Button, Dot, EmptyState, StatusChip, Text, Truncate } from "../../ui";
 import { when } from "../prs/words";
 import { panelRoute, toHash, type ProjectKey } from "../shell/routes";
-import { checkLines, onTrain, STAGE_WORD, stageLine, trainViews, WAITING_WORD, type Moving, type QueueRow, type Recent, type TrainPr, type TrainView } from "./model";
+import { changesOf, checkLines, lineReads, onTrain, trainReads, STAGE_WORD, stageLine, trainViews, WAITING_WORD, type Moving, type QueueRow, type Recent, type TrainPr, type TrainView } from "./model";
 import s from "./train.module.css";
-
-/** The project's changes, newest first: its train's head, queue and recent landings are among the last hundred. */
-const changesInput = (project: ProjectRef) => ({ projectRef: project, limit: 100 });
 
 const useMissing = (project: ProjectRef): boolean => {
   const title = useData((st) => st.projects[`${project.machineId}/${project.projectId}`]?.title);
@@ -21,12 +18,38 @@ const useMissing = (project: ProjectRef): boolean => {
   return fresh && title === undefined;
 };
 
+/** `reads`' answers as one list; undefined until every read answered. A failed read fails them all. */
+const useChanges = (reads: readonly ChangesListInput[]) => {
+  const results = useToolQueries("changes_list", reads);
+  const answers = results.map((r) => r.data);
+  // Each read's answer changes only when it answers anew: one stamp for all of them.
+  const stamp = results.map((r) => r.dataUpdatedAt).join();
+  const merged = useMemo(
+    () => (answers.every((a) => a !== undefined) ? changesOf(answers) : undefined),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [stamp],
+  );
+  return {
+    data: merged,
+    isError: results.some((r) => r.isError),
+    retry: () => {
+      for (const r of results) if (r.isError) void r.refetch();
+    },
+  };
+};
+
 /** PRs on the project's train (merging now or in line), for the tab's count; undefined until the hub answers. */
 export const useTrainCount = (project: ProjectKey): number | undefined => {
   const missing = useMissing(project);
-  const changes = useToolQuery("changes_list", changesInput(project), { enabled: !missing });
-  return useMemo(() => (changes.data === undefined ? undefined : onTrain(trainViews(changes.data.changes, undefined))), [changes.data]);
+  const changes = useChanges(missing ? [] : lineReads(project)).data?.changes;
+  return useMemo(() => (changes === undefined ? undefined : onTrain(trainViews(changes, undefined))), [changes]);
 };
+
+/** The tab's badge: the PRs on the train, none while it's empty or unread. */
+export function TrainCount({ project }: { project: ProjectKey }) {
+  const n = useTrainCount(project) ?? 0;
+  return n > 0 ? String(n) : null;
+}
 
 const whenAt = (iso: string, nowMs: number | undefined): string => when(iso, nowMs ?? Date.parse(iso));
 
@@ -36,7 +59,7 @@ const prHref = (project: ProjectRef, pr: Pick<TrainPr, "repo" | "number">): stri
 export function TrainPane({ project }: { project: ProjectKey }) {
   const fresh = useData((st) => st.fresh);
   const missing = useMissing(project);
-  const changes = useToolQuery("changes_list", changesInput(project), { enabled: !missing });
+  const changes = useChanges(missing ? [] : trainReads(project));
   // The PRs tab's own read: titles and checks. Without it the rows read by branch.
   const prs = useToolQuery("pr_list", { projectRef: project }, { enabled: !missing });
   const views = useMemo(() => (changes.data === undefined ? undefined : trainViews(changes.data.changes, prs.data?.prs)), [changes.data, prs.data]);
@@ -66,6 +89,11 @@ export function TrainPane({ project }: { project: ProjectKey }) {
           </div>
         ) : (
           <div className={s.scroll}>
+            {changes.data?.cut === true ? (
+              <Text as="p" size="xs" tone="quiet" className={s.quietLine}>
+                More PRs wait than the hub sends at once; the rest show as these move on.
+              </Text>
+            ) : null}
             {views.map((v) => (
               <Train key={v.repo} view={v} project={project} nowMs={nowMs} named={views.length > 1} />
             ))}
@@ -79,7 +107,7 @@ export function TrainPane({ project }: { project: ProjectKey }) {
       ) : changes.isError ? (
         <div className={s.note} role="alert">
           <Text tone="quiet">Couldn’t read the merge train.</Text>
-          <Button onClick={() => void changes.refetch()}>Retry</Button>
+          <Button onClick={changes.retry}>Retry</Button>
         </div>
       ) : (
         <div className={s.skeleton} aria-busy="true" aria-label="Loading the merge train">
@@ -251,6 +279,13 @@ function QueueItem({ row, project }: { row: QueueRow; project: ProjectRef }) {
           <span className={s.why}>
             <Truncate size="xs" tone="quiet" lines={2} expand="none">
               {row.why}
+            </Truncate>
+          </span>
+        ) : null}
+        {row.detail !== undefined ? (
+          <span className={s.why}>
+            <Truncate as="code" size="xs" tone="quiet" mono lines={2} expand="none">
+              {row.detail}
             </Truncate>
           </span>
         ) : null}

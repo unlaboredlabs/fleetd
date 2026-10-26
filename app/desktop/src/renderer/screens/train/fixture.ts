@@ -1,8 +1,9 @@
 // Screenshot and test data for the Train tab, shaped as the hub's changes_list, pr_list and pr_get return it: one
 // repo's train with a PR in CI, a queue in every state (in review, ready, held, sent back), a batch that landed as one
 // commit, a refusal and a lone merge. `batch` swaps the head for a batch of three in CI. Fixture data only.
-// Imports are types only: `pnpm fixtures` runs this file under plain Node (fixtures/train/index.ts).
-import type { Change, ChangeState, PrCheck, PrGetOutput, PrRow, ProjectRef } from "../../../shared/contracts";
+// Value imports carry ".ts": `pnpm fixtures` runs this file under plain Node (fixtures/train/index.ts).
+import type { Change, ChangesListInput, ChangesListOutput, ChangeState, PrCheck, PrGetOutput, PrRow, ProjectRef } from "../../../shared/contracts";
+import { trainReads } from "./model.ts";
 
 export const TRAIN_REPO = "acme/storefront";
 
@@ -157,3 +158,11 @@ export const trainFixture = (project: ProjectRef, nowIso: string, batch = false)
     );
   return { changes, prs, heads };
 };
+
+/** changes_list's answer to each of the pane's reads (model.ts trainReads), as the hub would give it. */
+export const changesAnswers = (project: ProjectRef, changes: readonly Change[]): Array<{ readonly input: ChangesListInput; readonly output: ChangesListOutput }> =>
+  trainReads(project).map((input) => {
+    const of = changes.filter((c) => c.state === input.state);
+    const limit = input.limit ?? 50;
+    return { input, output: { changes: of.slice(0, limit), ...(of.length > limit ? { truncated: true } : {}) } };
+  });

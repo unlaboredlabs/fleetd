@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Change, PrCheck } from "../../../shared/contracts";
 import { effectsOf } from "../../src/data/effects";
 import { trainFixture, TRAIN_REPO } from "./fixture";
-import { checkLines, onTrain, RECENT_MAX, stageLine, trainViews, type Recent } from "./model";
+import { changesOf, checkLines, LINE_STATES, lineReads, onTrain, OPEN_STATES, RECENT_MAX, stageLine, trainReads, trainViews, type Recent } from "./model";
 
 const NOW = "2026-10-19T10:30:00.000Z";
 const PROJECT = { machineId: "devbox", projectId: "storefront" };
@@ -56,11 +56,11 @@ describe("the train pane's model", () => {
       ],
       undefined,
     )[0];
-    expect(view?.queue.map((q) => q.why)).toEqual([
-      "the PR has the hold label; the train takes it once the label is gone",
-      "Checks failed; back with its writer",
-      "Checks failed: unit tests, e2e",
-      "Conflicts with the base: src/a.ts",
+    expect(view?.queue.map((q) => [q.why, q.detail])).toEqual([
+      ["the PR has the hold label; the train takes it once the label is gone", undefined],
+      ["Checks failed; back with its writer", undefined],
+      ["Checks failed", "unit tests, e2e"],
+      ["Conflicts with the base", "src/a.ts"],
     ]);
     expect(view?.queue.map((q) => q.sentBack)).toEqual([undefined, true, true, true]);
   });
@@ -116,6 +116,28 @@ describe("the train pane's model", () => {
     expect(lines.more).toBe(2);
     const running = checkLines([c("a", "pending"), c("b", "pending"), c("c", "pending")], 1);
     expect(running.shown).toHaveLength(3);
+  });
+
+  it("reads each open state whole, then the newest merges and refusals; the count reads only the line", () => {
+    const reads = trainReads(PROJECT);
+    expect(reads.slice(0, OPEN_STATES.length)).toEqual(OPEN_STATES.map((state) => ({ projectRef: PROJECT, state, limit: 100 })));
+    expect(reads.slice(OPEN_STATES.length).map((r) => r.state)).toEqual(["merged", "refused"]);
+    expect(lineReads(PROJECT).map((r) => r.state)).toEqual([...LINE_STATES]);
+  });
+
+  it("joins the reads' answers, a change that moved between two reads once and as it is now, and says when the line was cut", () => {
+    const before = change(7, "ci");
+    const after = change(7, "merged", { updatedAt: "2026-10-19T10:30:00.000Z" });
+    const joined = changesOf([{ changes: [before] }, { changes: [after, change(8, "merged")] }]);
+    expect(joined.changes.map((c) => [c.prNumber, c.state])).toEqual([
+      [7, "merged"],
+      [8, "merged"],
+    ]);
+    expect(joined.cut).toBe(false);
+    expect(changesOf([{ changes: [], truncated: true }]).cut).toBe(true);
+    // A cut Recent is just Recent.
+    const answers = trainReads(PROJECT).map((_, i) => ({ changes: [], ...(i >= OPEN_STATES.length ? { truncated: true } : {}) }));
+    expect(changesOf(answers).cut).toBe(false);
   });
 
   it("refetches the train on the hub's change and PR events", () => {

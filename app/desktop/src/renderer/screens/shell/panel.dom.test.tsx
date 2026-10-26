@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
-import type { AgentRow, ChecklistGetOutput, PrGetOutput, PrRow, TodoItem } from "../../../shared/contracts";
+import type { AgentRow, Change, ChecklistGetOutput, Decision, PrGetOutput, PrRow, TodoItem } from "../../../shared/contracts";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { AT, event, live, snapshot } from "../../src/data/fixtures.test-util";
@@ -45,7 +45,37 @@ const agents: AgentRow[] = [
   agentRow("storefront", "storefront", "T1", "Receipts show the shop's local time"),
 ];
 
+// storefront's train: #11 in CI, #12 next in line.
+const change = (n: number, state: Change["state"], position?: number): Change => ({
+  changeId: `X${n}`,
+  projectRef: { machineId: "devbox", projectId: "storefront" },
+  repo: "acme/storefront",
+  prNumber: n,
+  prUrl: `https://github.com/acme/storefront/pull/${n}`,
+  branch: `fleetd/pr-${n}`,
+  headSha: "b".repeat(40),
+  state,
+  reviews: [],
+  workstreamId: "W1",
+  createdAt: AT,
+  updatedAt: AT,
+  ...(position === undefined ? {} : { position }),
+});
+const TRAIN = [change(11, "ci"), change(12, "ready", 0)];
+// Two settled questions: one in force, one it replaced.
+const decision = (decisionId: string, state: Decision["state"]): Decision => ({
+  decisionId,
+  key: "api.health.path",
+  value: state === "active" ? "/healthz" : "/health",
+  scope: { kind: "project", projectRef: { machineId: "devbox", projectId: "storefront" } },
+  source: "lead",
+  state,
+  at: AT,
+});
+
 const ANSWERS: Readonly<Record<string, unknown>> = {
+  decisions_list: { decisions: [decision("D2", "active"), decision("D1", "superseded")], orders: [] },
+  events_list: { events: [], more: false },
   pr_list: { at: AT, prs: [pr] },
   pr_get: detail,
   pr_files: { files: [], total: 0 },
@@ -71,9 +101,9 @@ const listOf = (items: TodoItem[]): ChecklistGetOutput => ({ projectRef: STORE, 
 let host: HTMLDivElement;
 let root: Root | undefined;
 
-// The panel's own chunk, loaded once up front as the app's first opening would, so each step waits on answers only.
+// The panel's own chunk and its tabs' counts, loaded once up front as the app's first opening would, so each step waits on answers only.
 beforeAll(async () => {
-  await import("../panel/ProjectPanel");
+  await Promise.all([import("../panel/ProjectPanel"), import("../panel/counts"), import("../train/TrainPane")]);
 });
 
 /** happy-dom's window size, which its media queries follow. */
@@ -125,7 +155,13 @@ let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
 /** The panel's frame on a hub that answers at once: a launch of the app. Without `online`, the hub is out of reach. */
 const mount = async ({ online = true }: { online?: boolean } = {}) => {
   const hub: HubApi = {
-    call: (tool) => Promise.resolve({ ok: true, output: tool === "checklist_get" ? checklist : (ANSWERS[tool] ?? {}) }),
+    call: (tool, input) => {
+      if (tool === "changes_list") {
+        const state = (input as { state?: string }).state;
+        return Promise.resolve({ ok: true, output: { changes: TRAIN.filter((c) => c.state === state) } });
+      }
+      return Promise.resolve({ ok: true, output: tool === "checklist_get" ? checklist : (ANSWERS[tool] ?? {}) });
+    },
     subscribe: (l) => ((send = l), () => undefined),
     resync: () => Promise.resolve(),
     focus: () => Promise.resolve(),
@@ -345,6 +381,30 @@ it("lists its tabs from the one tab list, in its order, each a route of its own"
   }
 });
 
+it("opens the merge train, the activity and the decisions from their tabs, each with its count, and a train row opens its PR", async () => {
+  await mount();
+  const tab = (id: string) => panel()?.querySelector(`[role='tab'][data-tab='${id}']`);
+  // On the train: #11 merging and #12 in line. In force: one decision. Activity counts only after a first look.
+  expect(tab("train")?.textContent).toBe("Train2");
+  expect(tab("decisions")?.textContent).toBe("Decisions1");
+  expect(tab("activity")?.textContent).toBe("Activity");
+
+  await go(`${CHAT}/train`);
+  const train = panel()?.querySelector("[data-screen='train']");
+  expect(train?.querySelector("section[aria-label='Merging now']")?.textContent).toContain("#11");
+  expect(train?.querySelector("section[aria-label='In line']")?.textContent).toContain("#12");
+  const row = train?.querySelector<HTMLAnchorElement>("a[data-pr='12']");
+  expect(row?.getAttribute("href")).toBe(`${CHAT}/prs/acme/storefront/12`);
+  act(() => row?.click());
+  await settle();
+  expect(tab("prs")?.getAttribute("aria-selected")).toBe("true");
+
+  await go(`${CHAT}/activity`);
+  expect(panel()?.querySelector("[data-screen^='activity']")).not.toBeNull();
+  await go(`${CHAT}/decisions`);
+  expect(panel()?.querySelector("[data-screen^='decisions']")).not.toBeNull();
+});
+
 it("resizes from its edge by keyboard and by drag, keeps the width across a relaunch, and a double-click resets it", async () => {
   vi.spyOn(HTMLElement.prototype, "setPointerCapture").mockImplementation(() => undefined);
   vi.spyOn(HTMLElement.prototype, "hasPointerCapture").mockImplementation(() => true);
@@ -461,7 +521,8 @@ it("says the lead keeps a checklist while there is none, and that it shows once 
 
 it("fits its tabs to its width: icons with their labels as names, then the rest under More, the open tab kept", async () => {
   // The measuring copy: 160 px a tab with its label, 40 as an icon, 28 for More; the bar has `room` px.
-  let room = 150;
+  // Six tabs: 960 px with their labels, 240 as icons.
+  let room = 300;
   vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (this: HTMLElement) {
     if (this.dataset["more"] !== undefined) return 28;
     const row = this.parentElement?.dataset["row"];
@@ -490,7 +551,9 @@ it("fits its tabs to its width: icons with their labels as names, then the rest 
     more?.dispatchEvent(new PointerEvent("pointerdown", { button: 0, bubbles: true, cancelable: true }));
   });
   await settle();
-  const item = [...document.querySelectorAll<HTMLElement>("[role='menuitem']")].find((el) => el.textContent.startsWith("Pull requests"));
+  const items = [...document.querySelectorAll<HTMLElement>("[role='menuitem']")];
+  expect(items.map((el) => el.textContent.replace(/[0-9]+$/u, ""))).toEqual(["Pull requests", "Train", "Activity", "Decisions"]);
+  const item = items.find((el) => el.textContent.startsWith("Pull requests"));
   expect(item).toBeDefined();
   act(() => item?.click());
   await settle();

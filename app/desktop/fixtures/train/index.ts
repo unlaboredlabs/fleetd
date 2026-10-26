@@ -6,7 +6,8 @@ import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import { firstProject } from "../kit/chat.ts";
 import { asText, isObject, type JsonObject, type JsonValue } from "../kit/json.ts";
-import { trainFixture } from "../../src/renderer/screens/train/fixture.ts";
+import type { Change } from "../../src/shared/contracts";
+import { changesAnswers, trainFixture } from "../../src/renderer/screens/train/fixture.ts";
 
 /** The changes behind the PRs a fixture's pr_list has on the train, newest first as the hub sends them. */
 const changesOfPrs = (f: Fixture): JsonObject[] => {
@@ -40,20 +41,24 @@ const changesOfPrs = (f: Fixture): JsonObject[] => {
     .toSorted((a, b) => asText(b["createdAt"]).localeCompare(asText(a["createdAt"])));
 };
 
-const changesInput = (f: Fixture): JsonObject => ({ projectRef: firstProject(f), limit: 100 });
+/** changes_list's answer to each of the pane's reads, from these changes. */
+const answerChanges = (f: Fixture, changes: readonly Change[]): Fixture => {
+  for (const a of changesAnswers(firstProject(f), changes)) f.answer("changes_list", a.input, a.output);
+  return f;
+};
 
 /** The pane's own train: its changes, the PR list that titles them, and the head's checks. */
 const answerTrain = (f: Fixture, batch = false): Fixture => {
   const projectRef = firstProject(f);
   const t = trainFixture(projectRef, f.now, batch);
-  f.answer("changes_list", changesInput(f), { changes: t.changes as unknown as JsonValue });
+  answerChanges(f, t.changes);
   f.answer("pr_list", { projectRef }, { at: f.now, prs: t.prs as unknown as JsonValue });
   for (const h of t.heads) f.answer("pr_get", { repo: h.pr.repo, number: h.pr.number }, h);
   return f;
 };
 
 const fromPrs = (f: Fixture): void => {
-  f.answer("changes_list", changesInput(f), { changes: changesOfPrs(f) });
+  answerChanges(f, changesOfPrs(f) as unknown as Change[]);
 };
 
 export default defineGroup({
@@ -67,8 +72,7 @@ export default defineGroup({
     answerTrain(Fixture.from(base("typical"), "train-batch", "storefront's train merging a batch of three together."), true),
     (() => {
       const f = Fixture.from(base("typical"), "train-empty", "Nothing on storefront's train, and nothing landed lately.");
-      f.answer("changes_list", changesInput(f), { changes: [] });
-      return f;
+      return answerChanges(f, []);
     })(),
     (() => {
       const f = answerTrain(Fixture.from(base("typical"), "train-loading", "The train still on its way from the hub."));
@@ -78,7 +82,7 @@ export default defineGroup({
     })(),
     (() => {
       const f = Fixture.from(base("typical"), "train-error", "The hub fails to read storefront's train.");
-      f.fail("changes_list", changesInput(f), { code: "failed", message: "the hub's database is busy" });
+      for (const a of changesAnswers(firstProject(f), [])) f.fail("changes_list", a.input, { code: "failed", message: "the hub's database is busy" });
       return f;
     })(),
   ],

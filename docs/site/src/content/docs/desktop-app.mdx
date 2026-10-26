@@ -52,7 +52,7 @@ To change hubs, open Settings (⌘,) → General → Hub.
 | Sidebar | Your projects, each saying why it wants you: "reply", "approve", "secret" or "blocked". Otherwise it says how many agents are working. A project in bold has a new message from its lead. Below them: Status, Time, Machines and Settings. |
 | The top row | The page's title and its controls, then Commands. In a chat: the project's name, its state word and its [Max agents](/docs/projects#max-agents) control, and the panel's toggle. |
 | The chat | The selected project's conversation with its lead. |
-| The panel | Beside a chat, on the right: a tab each for the project's [agents](#agents), its [pull requests](/docs/chat#prs) and its [checklist](#checklist). Open it with the toggle at the top right or ⌥⌘B. |
+| The panel | Beside a chat, on the right: a tab each for the project's [agents](#agents), its [pull requests](/docs/chat#prs), its [merge train](#train), its [checklist](#checklist), its [activity](#activity) and its [decisions](#decisions). Open it with the toggle at the top right or ⌥⌘B. |
 
 In a window narrower than about 1000 px the sidebar and the panel hide themselves; ⌘B and ⌥⌘B show them again. The
 app remembers whether you left the panel open, the tab you had and its width. On macOS the Dock icon shows how many
@@ -67,7 +67,8 @@ is set the same way and kept apart from the other. The panel never grows so wide
 
 When the tabs don't fit, they show as icons with their counts (point at one for its name), and if even those don't
 fit, the rest go under **More** (···). The tab you're on always stays in view. Each tab is a link too:
-`#/project/<machine>/<project>/checklist` opens the checklist, as the palette's **Checklist** does.
+`#/project/<machine>/<project>/checklist` opens the checklist, as the palette's **Checklist** does, and `/train`,
+`/activity` and `/decisions` open those tabs the same way.
 
 Click a project to open its chat. ⌥⌘A jumps to the next project that wants you. To add a project, click "Add" next to Projects, then paste a GitHub URL or
 `owner/repo`. You can also drop a folder or a GitHub link anywhere on the window, a chat included. Other files dropped
@@ -114,6 +115,17 @@ first message and prompts it started with; **All agents** or Esc goes back to th
 agent waiting on you first. Click an agent of another project to open its work beside that project's chat.
 **This project** goes back. The panel remembers which you chose.
 
+## Train {#train}
+
+The Train tab shows the project's merge train: the pull request merging now and its stage (rebasing onto the base,
+running CI, merging) with the checks it waits on, then the pull requests in line, in the order they'll merge. Each
+one says whether it's waiting for review, in review, ready, or blocked, and what blocks it: a `hold` label, a conflict
+with the base, or failed checks that sent it back to the agent that wrote it. Pull requests that go through together
+as a batch show as one group, while they merge and after. Below them are the latest merges and refusals, with the fix
+a refusal asks for. Click any of them to open the pull request. The tab follows the train as it moves, shows when
+each thing happened and never guesses how long something will take. Its count is the pull requests merging or in
+line. It only reads: the train itself decides what merges.
+
 ## Checklist {#checklist}
 
 The Checklist tab shows the project's to-dos as its lead keeps them: how many are done, then what's being done now,
@@ -122,6 +134,20 @@ updates the list as the work moves, and the tab follows along as it does. The ta
 
 You can't edit the list yourself: to change it, tell the lead in the chat. A project's lead starts a checklist when
 it plans work; until then the tab says there is none yet.
+
+## Activity {#activity}
+
+The Activity tab shows what happened in the project while you were away, newest first: agents starting and
+finishing, reviews, merges, what was asked of you and what you answered. A line marks what came in since you last
+looked, and a run of the same thing (a pull request reviewed again and again) folds into one row. A line that names
+an agent or a pull request opens it. The tab's count is what came in since you last looked.
+
+## Decisions {#decisions}
+
+The Decisions tab lists what the lead and you have decided in the project, one row per question with the answer in
+force first. What it replaced, or that you revoked it, folds under it. Search, or narrow the list to who decided and
+where it applies; open a row for its why and history, and change or revoke the decision there. The tab's count is
+the decisions in force.
 
 ## Status {#status}
 
