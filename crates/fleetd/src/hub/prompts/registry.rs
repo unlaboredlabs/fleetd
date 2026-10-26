@@ -282,7 +282,7 @@ pub const ENTRIES: &[Entry] = &[
         Task,
         "Writer brief",
         "every write task attempt",
-        "taskId!=T<n>; kind=write; workstreamId=W<n>; project=the project's title; title=the task's title; task!=the lead's task text; workstream=the order's goal and done-when, or nothing; elsewhere=work in flight elsewhere it may overlap, or nothing; branch!=the task's branch; baseBranch=the default branch",
+        "taskId!=T<n>; kind=write; workstreamId=W<n>; project=the project's title; title=the task's title; task!=the lead's task text; workstream=the order's whole brief (goal, why, pointers, constraints, done-when) and the decisions it names by id or key, or nothing; elsewhere=work in flight elsewhere it may overlap, or nothing; branch!=the task's branch; baseBranch=the default branch",
         &[(
             "train-only-merges",
             "never merges; the train does",
@@ -297,7 +297,7 @@ pub const ENTRIES: &[Entry] = &[
         Task,
         "Reader brief",
         "every read task attempt",
-        "taskId!=T<n>; kind=read; workstreamId=W<n>; project=the project's title; title=the task's title; task!=the lead's task text; workstream=the order's goal and done-when, or nothing; baseBranch=the default branch; workspace!=where it works: its own worktree, or the project's checkout on an older node",
+        "taskId!=T<n>; kind=read; workstreamId=W<n>; project=the project's title; title=the task's title; task!=the lead's task text; workstream=the order's whole brief (goal, why, pointers, constraints, done-when) and the decisions it names by id or key, or nothing; baseBranch=the default branch; workspace!=where it works: its own worktree, or the project's checkout on an older node",
         &[READ_ONLY]
     ),
     entry!(
@@ -307,7 +307,7 @@ pub const ENTRIES: &[Entry] = &[
         Task,
         "Review task brief",
         "every attempt of a review task the lead spawns (the train's reviews use Reviewer)",
-        "taskId!=T<n>; kind=review; workstreamId=W<n>; project=the project's title; title=the task's title; task!=the lead's task text; workstream=the order's goal and done-when, or nothing; baseBranch=the default branch; workspace!=where it works: its own worktree, or the project's checkout on an older node",
+        "taskId!=T<n>; kind=review; workstreamId=W<n>; project=the project's title; title=the task's title; task!=the lead's task text; workstream=the order's whole brief (goal, why, pointers, constraints, done-when) and the decisions it names by id or key, or nothing; baseBranch=the default branch; workspace!=where it works: its own worktree, or the project's checkout on an older node",
         &[READ_ONLY, VERDICT]
     ),
     entry!(

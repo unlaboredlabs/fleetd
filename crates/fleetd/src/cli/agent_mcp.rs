@@ -15,9 +15,10 @@ use fleetd_contracts::automations::{
 use fleetd_contracts::browser::{BrowserCall, SessionEndCall, SessionStartCall};
 use fleetd_contracts::checklist::ChecklistCall;
 use fleetd_contracts::lead_calls::{
-    AskLeadCall, BriefCreateCall, ChangeEnqueueCall, CloseCall, DecideCall, DecisionsSearchCall,
-    GatedRunCall, LeadCall, LeadSocketFrame, RequestSecretCall, RequestWithdrawCall,
-    TaskCancelCall, TaskListCall, TaskMessageCall, TaskSpawnCall, UsageResumeCall,
+    AskLeadCall, BriefCreateCall, BriefReadCall, ChangeEnqueueCall, CloseCall, DecideCall,
+    DecisionsSearchCall, GatedRunCall, LeadCall, LeadSocketFrame, RequestSecretCall,
+    RequestWithdrawCall, TaskCancelCall, TaskListCall, TaskMessageCall, TaskSpawnCall,
+    UsageResumeCall,
 };
 use fleetd_contracts::memory::{MemoryReadCall, RememberCall};
 use fleetd_contracts::schema::inline_schema;
@@ -172,12 +173,16 @@ static TOOLS: &[Tool] = &[
         inline_schema::<GatedRunCall>,
     )
     .needs("A human approves the exact command in chat before the node runs it."),
-    lead(
-        "decisions_search",
-        "decisions_search",
-        "Search the decision log.",
-        inline_schema::<DecisionsSearchCall>,
-    ),
+    Tool {
+        worker: true,
+        ..lead(
+            "decisions_search",
+            "decisions_search",
+            "Search this project's decisions (and the global ones) by words, or read one by its id (D12), whole. \
+             Another project's decisions are refused.",
+            inline_schema::<DecisionsSearchCall>,
+        )
+    },
     lead(
         "remember",
         "remember",
@@ -296,6 +301,16 @@ static TOOLS: &[Tool] = &[
                       can't go on without it, end your turn: the answer continues this thread. For a variable that \
                       is not set, name it and say why; never put a secret's value in the question.",
         schema: inline_schema::<AskLeadCall>,
+        human: None,
+    },
+    Tool {
+        name: "brief_read",
+        op: "brief_read",
+        worker: true,
+        lead: false,
+        browser: false,
+        description: "Read your workstream's brief, whole: its goal, why, pointers, constraints and done-when.",
+        schema: inline_schema::<BriefReadCall>,
         human: None,
     },
     browser(
@@ -682,10 +697,17 @@ mod tests {
     }
 
     #[test]
-    fn a_worker_sees_only_report_ask_lead_and_its_browser() {
+    fn a_worker_sees_only_report_ask_lead_its_brief_decisions_and_browser() {
         assert_eq!(
             names(Role::Worker),
-            ["report", "ask_lead", "session_start", "session_end"]
+            [
+                "decisions_search",
+                "report",
+                "ask_lead",
+                "brief_read",
+                "session_start",
+                "session_end"
+            ]
         );
         let lead = names(Role::Lead);
         for tool in [
@@ -744,6 +766,14 @@ mod tests {
         assert_eq!(
             call_of(Role::Worker, "ask_lead", json!({ "question": "Postgres?" })).unwrap(),
             json!({ "op": "ask_lead", "question": "Postgres?" })
+        );
+        assert_eq!(
+            call_of(Role::Worker, "brief_read", json!({})).unwrap(),
+            json!({ "op": "brief_read" })
+        );
+        assert_eq!(
+            call_of(Role::Worker, "decisions_search", json!({ "query": "D152" })).unwrap(),
+            json!({ "op": "decisions_search", "query": "D152" })
         );
     }
 

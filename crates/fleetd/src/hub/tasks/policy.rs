@@ -16,9 +16,14 @@ pub fn max_open_tasks(max_agents: i64) -> usize {
     MAX_OPEN_TASKS.max(2 * max_agents.max(0) as usize)
 }
 
-/// The calls a task's agent makes: its review verdict (`report`) and a question for its lead. Only a lead closes
-/// work.
-pub const WORKER_OPS: &[&str] = &["review_verdict", "ask_lead"];
+/// The calls a task's agent makes: its review verdict (`report`), a question for its lead, and reading its brief and
+/// its project's decisions. Only a lead closes work.
+pub const WORKER_OPS: &[&str] = &[
+    "review_verdict",
+    "ask_lead",
+    "brief_read",
+    "decisions_search",
+];
 /// The calls a task's node makes for it: its browser sessions (node/browser).
 pub const NODE_OPS: &[&str] = &["browser_session", "browser_recording_part"];
 /// The calls that start an agent.
@@ -68,8 +73,9 @@ pub fn check(agent: &CallerAgent, op: &str) -> Result<(), McpToolError> {
                     format!("{op} is a lead's call, and {task} is a task."),
                 )
                 .with_fix(
-                    "A task reports its review verdict (report) and asks its lead (ask_lead). Put anything else in \
-                     your result or ask your lead.",
+                    "A task reports its review verdict (report), asks its lead (ask_lead), and reads its brief \
+                     (brief_read) and decisions (decisions_search). Put anything else in your result or ask your \
+                     lead.",
                 ));
             }
             Ok(())
@@ -79,6 +85,11 @@ pub fn check(agent: &CallerAgent, op: &str) -> Result<(), McpToolError> {
             "ask_lead is a task's question for its lead, and this call comes from no task.",
         )
         .with_fix("A lead asks the human with ask.")),
+        CallerAgent::Person | CallerAgent::Lead if op == "brief_read" => Err(McpToolError::new(
+            ErrorCode::Invalid,
+            "brief_read reads a task's own brief, and this call comes from no task.",
+        )
+        .with_fix("A lead reads its workstreams' briefs in its state block.")),
         CallerAgent::Person | CallerAgent::Lead => Ok(()),
     }
 }

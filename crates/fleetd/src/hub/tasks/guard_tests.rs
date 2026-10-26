@@ -19,7 +19,7 @@ fn lab_a() -> MachineId {
     MachineId::unchecked("lab-a")
 }
 
-fn insert(hub: &Hub, task: serde_json::Value) -> Task {
+pub(super) fn insert(hub: &Hub, task: serde_json::Value) -> Task {
     let mut base = json!({
         "projectRef": { "machineId": "lab-a", "projectId": "p1" }, "workstreamId": "W1", "prompt": "do it",
         "kind": "read", "model": "claude-haiku-5-5", "effort": "low", "attempt": 1, "createdAt": AT,
@@ -45,7 +45,7 @@ async fn catch_up(tasks: &Arc<super::Tasks>) {
 
 /// Answers every call the hub sends the node (a file read finds nothing, the default branch is main; anything else is done) and hands each one
 /// to the test.
-fn serve(hub: &Arc<Hub>, node: Node) -> mpsc::UnboundedReceiver<SessionCall> {
+pub(super) fn serve(hub: &Arc<Hub>, node: Node) -> mpsc::UnboundedReceiver<SessionCall> {
     serve_with(hub, node, Some("main"))
 }
 
@@ -268,13 +268,13 @@ async fn a_project_that_keeps_worktrees_keeps_a_merged_writers() {
 }
 
 /// Tries every queued task, as a freed slot does.
-async fn start_queued(tasks: &Arc<super::Tasks>) {
+pub(super) async fn start_queued(tasks: &Arc<super::Tasks>) {
     let _guard = tasks.lock.lock().await;
     tasks.retry_queue().await;
 }
 
 /// The next launch the hub sends the node.
-async fn next_launch(
+pub(super) async fn next_launch(
     calls: &mut mpsc::UnboundedReceiver<SessionCall>,
 ) -> fleetd_contracts::sessions::SessionLaunch {
     loop {

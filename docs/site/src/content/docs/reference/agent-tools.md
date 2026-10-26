@@ -32,7 +32,7 @@ The hub checks these on every fleetd call a session makes, through its MCP tools
 | Agents running at once, per project | The project's max agents, which a person sets (`cap_set`, the chat's Max agents); unset, its machine's cap within the fleet cap. A spawn over it queues and starts by itself; a review goes ahead of queued writers. The lead is not an agent and doesn't count. |
 | Agents running at once, per machine | The machine's max agents, which a person may set up to the fleet cap (`cap_set`, `fleetd machine set`, Settings > Agents). Unset: what the machine fits, one per CPU less one in eight, and 2 GB of memory each after a quarter (4 to 16 GB) is left for the system, at most 64. Either way new agents pause while memory in use runs short, and wait for 5 GB of disk each above the free-space floor. |
 | Agents running at once, fleet-wide | The machines' caps added up, unless a person set a fleet cap. |
-| Calls a task's agent may make | `report`, `ask_lead`. Every other call is refused. |
+| Calls a task's agent may make | `report`, `ask_lead`, `brief_read`, `decisions_search`. Every other call is refused. |
 | Gated commands (`gated_run`) | Classes `irreversible`, `money`, `credential`. Run only after a human approves; at most 14400 s. |
 
 These limits cover calls to fleetd, not what the agent's own shell can do. A task runs with full Bash, so `gated_run` is not the only way it could run a command. A process that leaves its session's process tree (for example with `setsid`) and scrubs its environment counts as you, with no limits: see "Known limit" on the Security page. Run agents you don't trust as a different OS user.
@@ -53,7 +53,7 @@ Every lead gets these.
 | [`decide`](#decide) | Log a decision: one you made yourself, or the human's answer to a question you asked in chat (so you never ask it twice). | No |
 | [`close`](#close) | The workstream is done: say why in one line. | No |
 | [`gated_run`](#gated_run) | A prod write, spend, delete or credential use: the chat shows the human exactly this argv with Approve / Deny, and the node runs it only once approved; secrets come from the node's own sinks. | A human approves the exact command in chat before the node runs it. |
-| [`decisions_search`](#decisions_search) | Search the decision log. | No |
+| [`decisions_search`](#decisions_search) | Search this project's decisions (and the global ones) by words, or read one by its id (D12), whole. | No |
 | [`remember`](#remember) | Keep one entry in memory, in plain words, for every later session: scope user for how the human works everywhere (tone, taste, standing rules), project for this project (MEMORY.md, or a topic file for detail). | No |
 | [`memory_read`](#memory_read) | Read one of this project's memory topic files (MEMORY.md lists them). | No |
 | [`automation_create`](#automation_create) | Make an automation for this project: a name, the prompt each run gives you as a new order, and optionally a schedule (5-field cron and an IANA tz, such as 0 9 \* \* 1-5 in Europe/Berlin). | No |
@@ -332,13 +332,13 @@ A prod write, spend, delete or credential use: the chat shows the human exactly 
 
 ### decisions_search
 
-Search the decision log.
+Search this project's decisions (and the global ones) by words, or read one by its id (D12), whole. Another project's decisions are refused.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `query` | string | yes | At most 200 characters. |
 
-**Who may call:** a lead, checked by the hub. **Needs a human:** no.
+**Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** no.
 
 ```json
 {
@@ -690,10 +690,31 @@ Every task's agent gets these: implementers, readers, reviewers and QA.
 
 | Tool | What it does | Needs a human |
 |---|---|---|
+| [`decisions_search`](#decisions_search-task) | Search this project's decisions (and the global ones) by words, or read one by its id (D12), whole. | No |
 | [`report`](#report) | Record your review verdict once, before your final message: the number of blocking and non-blocking findings and a summary of each. | No |
 | [`ask_lead`](#ask_lead) | Ask your lead a question. | No |
+| [`brief_read`](#brief_read) | Read your workstream's brief, whole: its goal, why, pointers, constraints and done-when. | No |
 | [`session_start`](#session_start-task) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. | No |
 | [`session_end`](#session_end-task) | Close your browser session: the browser and its profile are thrown away, and its recording goes to the hub. | No |
+
+### decisions_search (task)
+
+Search this project's decisions (and the global ones) by words, or read one by its id (D12), whole. Another project's decisions are refused.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `query` | string | yes | At most 200 characters. |
+
+**Who may call:** a lead, a task's agent, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "decisions_search",
+  "arguments": {
+    "query": "pagination"
+  }
+}
+```
 
 ### report
 
@@ -734,6 +755,21 @@ Ask your lead a question. Carry on with what you can; the answer arrives as a me
   "arguments": {
     "question": "Should the limit apply to admin keys too?"
   }
+}
+```
+
+### brief_read
+
+Read your workstream's brief, whole: its goal, why, pointers, constraints and done-when.
+
+No parameters.
+
+**Who may call:** a task's agent, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "brief_read",
+  "arguments": {}
 }
 ```
 
