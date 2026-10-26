@@ -280,9 +280,14 @@ missing or logged out runs no sessions until it is fixed. fleetd turns claude’
 <td>Nothing: new agents start below 85% or at the reset; a reading with no reset time counts for 15 minutes. Running agents keep going.</td>
 </tr>
 <tr>
-<td>“New turns on laptop are paused by the usage breaker” <code dir="auto">[usage_breaker]</code></td>
-<td>Its Claude login hit a plan or rate limit.</td>
-<td>Wait for the reset (the finding says when), or, once it has capacity, call <code dir="auto">usage_resume</code> from an <a href="/docs/mcp-clients">MCP client</a>.</td>
+<td>“New turns on laptop are paused by the usage breaker”, “The usage limit was reached on laptop’s login; resets …” <code dir="auto">[usage_breaker]</code></td>
+<td>Its Claude login hit a plan or rate limit, and claude’s message said when it resets.</td>
+<td>Nothing: agents go on at that reset, or as soon as any turn on that login completes (the lead’s included). To go on sooner, call <code dir="auto">usage_resume</code> from an <a href="/docs/mcp-clients">MCP client</a> once it has capacity.</td>
+</tr>
+<tr>
+<td>“Rate-limited by your proxy on laptop; checking again shortly” <code dir="auto">[usage_breaker]</code></td>
+<td>claude goes through a proxy (such as CLIProxyAPI) that rests its credentials for a model after a 429, and the message names no reset. fleetd never makes one up.</td>
+<td>Nothing: fleetd sends one parked agent on after 1, 2, 5 and 10 minutes, then every 15, and lifts the pause once that agent’s turn completes (a turn that has only started proves nothing: claude may still be retrying the 429), or as soon as any turn on that login completes. A check with no parked agent left to try lifts the pause and says so, and the next turn there tries the login. To go on sooner, call <code dir="auto">usage_resume</code>.</td>
 </tr>
 <tr>
 <td>“Automatic recovery is paused on laptop: 3 agents died there within 10 min (…)” <code dir="auto">[recovery]</code></td>
