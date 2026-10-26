@@ -499,7 +499,8 @@ struct State {
     /// claude, `Some(false)` when the start failed.
     setting_up: HashMap<String, watch::Receiver<Option<bool>>>,
     /// Cancels a session's running setup (`true`): an interrupt or stop ends it, killing its command.
-    setup_cancel: HashMap<String, watch::Sender<bool>>,
+    /// The run each setup is for, too: only that run's interrupt ends it.
+    setup_cancel: HashMap<String, (String, watch::Sender<bool>)>,
 }
 
 impl State {
@@ -820,6 +821,7 @@ impl SessionService {
                 project_id,
                 order_id,
                 name,
+                fingerprint,
             } => {
                 let home = self.inner.config.home.clone();
                 blocking(move || match name {
@@ -828,6 +830,7 @@ impl SessionService {
                         project_id.as_str(),
                         order_id.as_str(),
                         name.as_str(),
+                        fingerprint.as_ref().map(|f| f.as_str()),
                     ),
                     None => super::order_env::forget(&home, project_id.as_str(), order_id.as_str()),
                 })
@@ -2852,7 +2855,7 @@ impl SessionService {
             .filter(|r| !r.trim().is_empty())
             .unwrap_or_else(|| "interrupted".into());
         // A run still in its worktree's setup: the setup ends, its command killed, and no claude starts for it.
-        let setting_up = self.cancel_setup(id);
+        let setting_up = self.cancel_setup(id, Some(active.id.as_str()));
         let target = self.st().live.get_mut(id).map(|live| {
             live.ending = Some(EndCause::Requested(reason.clone()));
             (live.commands.clone(), live.generation)
@@ -2908,7 +2911,7 @@ impl SessionService {
 
     async fn stop(&self, id: &str, remove_worktree: bool) -> Reply {
         // A run still in its worktree's setup ends with it: its command is killed and no claude starts.
-        if let Some(mut done) = self.cancel_setup(id) {
+        if let Some(mut done) = self.cancel_setup(id, None) {
             self.update(id, |c| {
                 state::close_out(&mut c.runs, &EndCause::Requested("stopped".into()), &c.at);
                 c.cancel_pending();

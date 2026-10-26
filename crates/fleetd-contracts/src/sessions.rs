@@ -199,15 +199,17 @@ pub enum SessionCall {
         project_id: Option<ProjectId>,
         server: crate::mcp_servers::McpSessionServer,
     },
-    /// The order closed: forget the variables delivered for it, or only `name` (one the hub could not record). Its
-    /// sessions run on without them from their next turn. Only nodes listing [`crate::node_link::CAP_ORDER_ENV`] get
-    /// it.
+    /// The order closed: forget the variables delivered for it, or only `name` (one the hub could not record), and
+    /// then only while its value is still the one `fingerprint` names, so a value delivered since stays. Its sessions
+    /// run on without them from their next turn. Only nodes listing [`crate::node_link::CAP_ORDER_ENV`] get it.
     #[serde(rename_all = "camelCase")]
     OrderEnvDrop {
         project_id: ProjectId,
         order_id: crate::ledger::WorkstreamId,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         name: Option<crate::project_settings::EnvVarName>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fingerprint: Option<crate::secrets::SecretFingerprint>,
     },
     /// Where the project's worktrees live, the branch new ones start from, and the worktrees there now. Only nodes
     /// listing [`crate::node_link::CAP_PROJECT_SETTINGS`] get it.

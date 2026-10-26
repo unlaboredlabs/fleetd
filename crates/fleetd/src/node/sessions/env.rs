@@ -44,12 +44,30 @@ impl SessionService {
 
     /// For masking the fleetd calls a session makes (`report`, `ask_lead`, any agent tool) before they leave the
     /// machine: the secrets its process holds and its project's and order's now.
-    pub fn call_masker(&self, id: &str) -> Masker {
+    ///
+    /// Fails closed: when the session or a file of its secrets can't be read, there is no masker, and the caller
+    /// sends nothing. The reason names the file, never a value.
+    pub fn call_masker(&self, id: &str) -> Result<Masker, String> {
         let spawned = self.st().live.get(id).map(|l| l.spawned.clone());
-        let now = match self.store().session(id) {
-            Ok(Some(row)) => self.secrets_now(&row),
-            _ => Secrets::default(),
+        let row = match self.store().session(id) {
+            Ok(Some(row)) => row,
+            Ok(None) => return Err(format!("no session {id} on this machine")),
+            Err(e) => return Err(format!("cannot read session {id}: {e}")),
         };
+        let home = &self.inner.config.home;
+        let project = row.summary.project_id.as_str();
+        let mut secrets = super::super::project_env::secrets_checked(home, project)?;
+        if let Some(order) = &row.local.order_id {
+            secrets.extend(super::super::order_env::secrets_checked(
+                home, project, order,
+            )?);
+        }
+        // An MCP server whose secrets the node can't resolve is left out of the session, so it never had them.
+        secrets.extend(super::super::mcp_servers::secrets(
+            home,
+            &home.join("sessions").join(id),
+        ));
+        let now = Secrets(secrets);
         let all = Secrets(
             spawned
                 .iter()
@@ -58,7 +76,7 @@ impl SessionService {
                 .cloned()
                 .collect(),
         );
-        Masker::new(&all.0)
+        Ok(Masker::new(&all.0))
     }
 
     /// The prompt with the names of the variables the session gets: a plain one's short value too, a secret's never.
@@ -205,7 +223,8 @@ impl SessionService {
         {
             let mut st = self.st();
             st.setting_up.insert(id.to_owned(), waiting);
-            st.setup_cancel.insert(id.to_owned(), cancel);
+            st.setup_cancel
+                .insert(id.to_owned(), (run_id.to_string(), cancel));
         }
         let (service, id, run_id) = (self.clone(), id.to_owned(), run_id.clone());
         tokio::spawn(async move {
@@ -221,18 +240,20 @@ impl SessionService {
         });
     }
 
-    /// Ends the session's running setup, if any: its command is killed and no claude starts. Returns what to wait on
-    /// for it to have ended.
+    /// Ends the session's running setup, if any, and when `run` is given only the setup for that run: its command is
+    /// killed and no claude starts. Returns what to wait on for it to have ended.
     pub(super) fn cancel_setup(
         &self,
         id: &str,
+        run: Option<&str>,
     ) -> Option<tokio::sync::watch::Receiver<Option<bool>>> {
         let st = self.st();
-        let done = st.setting_up.get(id)?.clone();
-        if let Some(cancel) = st.setup_cancel.get(id) {
-            cancel.send_replace(true);
+        let (for_run, cancel) = st.setup_cancel.get(id)?;
+        if run.is_some_and(|r| r != for_run) {
+            return None;
         }
-        Some(done)
+        cancel.send_replace(true);
+        st.setting_up.get(id).cloned()
     }
 
     fn run_active(&self, id: &str, run_id: &NonEmpty) -> bool {

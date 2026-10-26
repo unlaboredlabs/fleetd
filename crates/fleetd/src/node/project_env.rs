@@ -190,6 +190,11 @@ pub fn for_spawn(home: &Path, project_id: &str) -> (Vars, Vars) {
 
 /// The project's secrets, `(name, value)`, for masking what its sessions report (mask.rs).
 pub fn secrets(home: &Path, project_id: &str) -> Vec<(String, String)> {
+    secrets_checked(home, project_id).unwrap_or_default()
+}
+
+/// [`secrets`], or why the file can't be read (never its contents): for what must not go out unmasked.
+pub fn secrets_checked(home: &Path, project_id: &str) -> Result<Vars, String> {
     read_file(home, project_id)
         .map(|env| {
             env.vars
@@ -198,7 +203,7 @@ pub fn secrets(home: &Path, project_id: &str) -> Vec<(String, String)> {
                 .map(|(name, entry)| (name.clone(), entry.value.clone()))
                 .collect()
         })
-        .unwrap_or_default()
+        .map_err(|e| format!("cannot read {DIR}/{project_id}.json: {}", io_why(&e)))
 }
 
 /// Deletes the project's file and its orders' variables, when its project goes.

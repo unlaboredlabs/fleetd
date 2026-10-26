@@ -169,7 +169,15 @@ pub async fn saved(
     let m = &r.machine_id;
     match hub
         .executors
-        .order_env_drop(m, &r.project_id, &order, Some(name))
+        .order_env_drop(
+            m,
+            &r.project_id,
+            &order,
+            Some((
+                name,
+                fleetd_contracts::secrets::SecretFingerprint::unchecked(saved.fingerprint.clone()),
+            )),
+        )
         .await
     {
         Ok(()) => Err(format!(

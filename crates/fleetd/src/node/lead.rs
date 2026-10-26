@@ -192,8 +192,8 @@ fn decode_call(line: &str) -> Result<LeadCallFrame, String> {
 /// Which session a calling process runs in, from its pid (blocking).
 pub type Identify = Arc<dyn Fn(i32) -> PeerSession + Send + Sync>;
 
-/// The masker for a session's calls, by its id (blocking: it reads the secrets).
-pub type MaskFor = Arc<dyn Fn(&str) -> Masker + Send + Sync>;
+/// The masker for a session's calls, by its id (blocking: it reads the secrets); `Err` is why there is none.
+pub type MaskFor = Arc<dyn Fn(&str) -> Result<Masker, String> + Send + Sync>;
 
 /// The call with every secret of its session masked; refused when masking broke its shape (a length limit), so the
 /// value never goes out.
@@ -312,19 +312,24 @@ async fn serve_connection(
             match attribute(frame, peer) {
                 Ok(frame) => match frame.thread_id.as_ref().map(|t| t.to_string()) {
                     Some(session) => {
-                        // No masker, no call: it never goes out unmasked.
-                        match tokio::task::spawn_blocking(move || mask_for(&session)).await {
+                        // No masker, no call: a session's call goes out masked or not at all.
+                        let masker = tokio::task::spawn_blocking(move || mask_for(&session))
+                            .await
+                            .unwrap_or_else(|_| Err("reading them failed".to_owned()));
+                        match masker {
                             Ok(masker) => match mask_call(frame, &masker) {
                                 Ok(frame) => relay.call(frame).await,
                                 Err(refused) => *refused,
                             },
-                            Err(_) => error_frame(
+                            Err(why) => error_frame(
                                 frame.id.as_str(),
                                 McpToolError::new(
                                     ErrorCode::Failed,
-                                    "the node could not read the session's secrets to mask this call, so it was not sent",
+                                    format!(
+                                        "the node could not read the session's secrets to mask this call ({why}), so it was not sent"
+                                    ),
                                 )
-                                .with_fix("try again; if it keeps failing, restart the node"),
+                                .with_fix("try again; if it keeps failing, check the node's log and restart it"),
                             ),
                         }
                     }

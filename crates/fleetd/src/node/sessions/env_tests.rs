@@ -117,6 +117,7 @@ async fn an_order_variable_reaches_only_that_orders_agents_from_their_next_turn(
             project_id: ProjectId::unchecked("p1"),
             order_id: WorkstreamId::unchecked("W1"),
             name: None,
+            fingerprint: None,
         })
         .await,
         SessionOutput::Done
@@ -225,6 +226,21 @@ async fn a_secret_in_a_sessions_own_fleetd_call_reaches_the_hub_masked() {
         "{answer}"
     );
     assert!(link.try_recv().is_err(), "nothing went out");
+
+    // The project's secrets can't be read now (the file doesn't parse): no masker, so the call is refused, never
+    // sent with the secret in it.
+    let env_file = home.join("project-env/p1.json");
+    let kept = std::fs::read(&env_file).unwrap();
+    std::fs::write(&env_file, b"{ not json").unwrap();
+    let answer = ask(format!("The key {secret} again")).await;
+    assert!(
+        answer.contains("could not read the session's secrets"),
+        "{answer}"
+    );
+    assert!(answer.contains("project-env/p1.json"), "{answer}");
+    assert!(!answer.contains(secret));
+    assert!(link.try_recv().is_err(), "nothing went out");
+    std::fs::write(&env_file, kept).unwrap();
 
     // No masker (reading the secrets failed): the call is refused, never sent unmasked.
     drop(_serving);
@@ -412,6 +428,21 @@ async fn an_interrupt_or_stop_during_setup_ends_it_and_starts_no_claude() {
     node.ok(with_setup("s1", "fleetd/T1-slow", slow.clone()))
         .await;
     until_item(&node, "s1", "setup-s1-r1-0").await;
+    // An interrupt for another run leaves the setup of this one running.
+    node.ok(SessionCall::Interrupt {
+        session_id: ThreadId::unchecked("s1"),
+        run_id: Some(NonEmpty::unchecked("s1-other")),
+        reason: None,
+    })
+    .await;
+    assert!(node.service.st().setting_up.contains_key("s1"));
+    assert!(
+        node.service
+            .st()
+            .setup_cancel
+            .get("s1")
+            .is_some_and(|(_, c)| !*c.borrow())
+    );
     node.ok(SessionCall::Interrupt {
         session_id: ThreadId::unchecked("s1"),
         run_id: None,

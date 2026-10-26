@@ -201,6 +201,24 @@ pub fn for_spawn(home: &Path, project_id: &str, order_id: &str) -> (Vars, Option
     }
 }
 
+/// The order's variables, or why its file can't be read (never its contents): for what must not go out unmasked.
+pub fn secrets_checked(home: &Path, project_id: &str, order_id: &str) -> Result<Vars, String> {
+    let Some(path) = file(home, project_id, order_id) else {
+        return Ok(Vec::new());
+    };
+    let (order, _) = read_file(&path).map_err(|e| {
+        format!(
+            "cannot read {DIR}/{project_id}/{order_id}.json: {}",
+            io_why(&e)
+        )
+    })?;
+    Ok(order
+        .vars
+        .iter()
+        .map(|(name, value)| (name.clone(), value.0.clone()))
+        .collect())
+}
+
 /// The digest [`for_spawn`] gives, without the values.
 pub fn digest_of(home: &Path, project_id: &str, order_id: &str) -> Option<String> {
     let path = file(home, project_id, order_id)?;
@@ -232,8 +250,15 @@ pub fn forget(home: &Path, project_id: &str, order_id: &str) -> Result<(), Strin
     }
 }
 
-/// Forgets one of the order's variables: one the hub could not record.
-pub fn forget_one(home: &Path, project_id: &str, order_id: &str, name: &str) -> Result<(), String> {
+/// Forgets one of the order's variables: one the hub could not record. With `fingerprint`, only while its value is
+/// still that one: a value delivered since stays.
+pub fn forget_one(
+    home: &Path,
+    project_id: &str,
+    order_id: &str,
+    name: &str,
+    fingerprint: Option<&str>,
+) -> Result<(), String> {
     let Some(path) = file(home, project_id, order_id) else {
         return Ok(());
     };
@@ -243,7 +268,10 @@ pub fn forget_one(home: &Path, project_id: &str, order_id: &str, name: &str) -> 
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let (mut order, _) =
         read_file(&path).map_err(|e| format!("cannot read {shown}: {}", io_why(&e)))?;
-    if order.vars.remove(name).is_none() {
+    let other = order.vars.get(name).is_some_and(|v| {
+        fingerprint.is_some_and(|f| super::secrets::fingerprint_of(v.0.as_bytes()) != f)
+    });
+    if other || order.vars.remove(name).is_none() {
         return Ok(());
     }
     if order.vars.is_empty() {
@@ -299,7 +327,12 @@ mod tests {
         deliver(home, "p", "W1", "API_KEY", b"k-123456").unwrap();
         assert_ne!(digest_of(home, "p", "W1"), digest);
         assert_eq!(for_spawn(home, "p", "W1").0.len(), 2);
-        forget_one(home, "p", "W1", "API_KEY").unwrap();
+        // A drop for a value since replaced leaves the new one.
+        let old = crate::node::secrets::fingerprint_of(b"k-old");
+        forget_one(home, "p", "W1", "API_KEY", Some(&old)).unwrap();
+        assert_eq!(for_spawn(home, "p", "W1").0.len(), 2);
+        let now = crate::node::secrets::fingerprint_of(b"k-123456");
+        forget_one(home, "p", "W1", "API_KEY", Some(&now)).unwrap();
         assert_eq!(for_spawn(home, "p", "W1").0.len(), 1);
         forget(home, "p", "W1").unwrap();
         assert_eq!(for_spawn(home, "p", "W1"), (Vec::new(), None));

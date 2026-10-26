@@ -128,6 +128,7 @@ async fn a_closed_orders_variables_go_from_its_node_and_the_hub() {
             project_id,
             order_id,
             name: None,
+            fingerprint: None,
         } = calls.recv().await.unwrap()
         {
             assert_eq!(
@@ -172,9 +173,17 @@ async fn a_variable_the_hub_cant_record_is_dropped_from_its_node() {
         .unwrap_err();
     assert!(why.contains("dropped it again"), "{why}");
     loop {
-        if let SessionCall::OrderEnvDrop { order_id, name, .. } = calls.recv().await.unwrap() {
+        if let SessionCall::OrderEnvDrop {
+            order_id,
+            name,
+            fingerprint,
+            ..
+        } = calls.recv().await.unwrap()
+        {
             assert_eq!(order_id, WorkstreamId::unchecked("W1"));
             assert_eq!(name.as_ref().map(|n| n.as_str()), Some("DB_URL"));
+            // Only the value whose record failed: one delivered since stays.
+            assert_eq!(fingerprint.as_ref().map(|f| f.as_str()), Some("ab12cd34"));
             break;
         }
     }
