@@ -263,6 +263,7 @@ async fn an_agent_opens_settings_on_an_android_session_and_its_recording_is_on_t
     let router = Router {
         browser: None,
         devices: Some(devices.clone()),
+        live: Default::default(),
     };
 
     // A browser session needs a browser broker, which this node lacks; an android one starts from the pool.
@@ -447,6 +448,7 @@ async fn a_machine_without_android_sessions_says_so_and_one_session_kind_at_a_ti
     let router = Router {
         browser: None,
         devices: None,
+        live: Default::default(),
     };
     let refused = call(
         &router,
@@ -532,6 +534,7 @@ async fn a_machine_not_set_up_keeps_agents_sdk_and_path_and_installs_nothing() {
     let router = Router {
         browser: None,
         devices: Some(devices.clone()),
+        live: Default::default(),
     };
     assert!(!devices.offered());
     assert_eq!(router.env(THREAD, Some("/usr/bin")), Vec::new());

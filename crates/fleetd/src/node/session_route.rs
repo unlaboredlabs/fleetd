@@ -61,6 +61,8 @@ impl Router {
         device::Router {
             browser: self.broker.clone(),
             devices: self.devices.clone(),
+            // Session calls only; live view goes through the link's own router.
+            live: Default::default(),
         }
     }
 }

@@ -367,10 +367,9 @@ async fn run_link_once(
         ]
         .into_iter()
         .chain(
-            shared
-                .browser
-                .as_ref()
-                .map(|_| fleetd_contracts::node_link::CAP_BROWSER.to_owned()),
+            // Live view and takeover, for a browser's sessions or an emulator's.
+            (shared.browser.is_some() || shared.sessions.is_some())
+                .then(|| fleetd_contracts::node_link::CAP_BROWSER.to_owned()),
         )
         .chain(
             shared
@@ -454,11 +453,14 @@ async fn run_link_once(
             _ = woke.changed() => return LinkEnd::Woke,
         };
         match frame {
-            // Only to nodes listing CAP_BROWSER, which have a broker.
+            // Only to nodes listing CAP_BROWSER: a browser session's go to its broker, an Android session's to its
+            // device (node/device/live.rs).
             frame @ (HubToNode::BrowserWatch(_)
             | HubToNode::BrowserInput(_)
             | HubToNode::BrowserControl(_)) => {
-                if let Some(broker) = &shared.browser {
+                if let Some(router) = &shared.sessions {
+                    router.from_hub(frame, &frames);
+                } else if let Some(broker) = &shared.browser {
                     broker.from_hub(frame, &frames);
                 }
             }
