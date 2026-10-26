@@ -71,6 +71,7 @@ Every lead gets these.
 | [`session_start`](#session_start) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. | No |
 | [`session_end`](#session_end) | Close your browser session: the browser and its profile are thrown away, and its recording goes to the hub. | No |
 | [`request_takeover`](#request_takeover) | Ask a person to take your browser over, for what only they can do: a captcha, a login confirmation only they can give, a judgement call. | No |
+| [`fill_credential`](#fill_credential) | Fill a login field of your browser session from 1Password without seeing the value: ref is its secret reference (op://&lt;vault>/&lt;item>/&lt;field>, ?attribute=otp for a one-time code), target the field's CSS selector. | No |
 
 ### spawn_agent
 
@@ -724,6 +725,28 @@ Ask a person to take your browser over, for what only they can do: a captcha, a 
 }
 ```
 
+### fill_credential
+
+Fill a login field of your browser session from 1Password without seeing the value: ref is its secret reference (op://&lt;vault>/&lt;item>/&lt;field>, ?attribute=otp for a one-time code), target the field's CSS selector. The node fills it only on the item's own website, then submits the field's form in the same step; submit: false fills a field before the last of its form (a username before its password). From the first fill on, the session refuses reading values back (agent-browser eval and get value among them). Ask your lead for the reference; never ask anyone for a password.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `ref` | string | yes | A 1Password secret reference: `op://<vault>/<item>/<field>`, `?attribute=otp` for a one-time code. |
+| `submit` | boolean | no | False to fill without submitting, for a field before the last of its form (a username before its password). Absent: true. |
+| `target` | string | yes | The field to fill: a CSS selector (`input[name=password]`, `#otp`). At most 500 characters. |
+
+**Who may call:** a lead, a task's agent, answered by its node, which runs the browser. **Needs a human:** no.
+
+```json
+{
+  "name": "fill_credential",
+  "arguments": {
+    "ref": "op://Staging/Shop admin/password",
+    "target": "input[name=password]"
+  }
+}
+```
+
 ## Task tools
 
 Every task's agent gets these: implementers, readers, reviewers and QA.
@@ -738,6 +761,7 @@ Every task's agent gets these: implementers, readers, reviewers and QA.
 | [`session_start`](#session_start-task) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. | No |
 | [`session_end`](#session_end-task) | Close your browser session: the browser and its profile are thrown away, and its recording goes to the hub. | No |
 | [`request_takeover`](#request_takeover-task) | Ask a person to take your browser over, for what only they can do: a captcha, a login confirmation only they can give, a judgement call. | No |
+| [`fill_credential`](#fill_credential-task) | Fill a login field of your browser session from 1Password without seeing the value: ref is its secret reference (op://&lt;vault>/&lt;item>/&lt;field>, ?attribute=otp for a one-time code), target the field's CSS selector. | No |
 
 ### decisions_search (task)
 
@@ -883,6 +907,28 @@ Ask a person to take your browser over, for what only they can do: a captcha, a 
   "name": "request_takeover",
   "arguments": {
     "reason": "Solve the captcha on the signup page, then hand the browser back"
+  }
+}
+```
+
+### fill_credential (task)
+
+Fill a login field of your browser session from 1Password without seeing the value: ref is its secret reference (op://&lt;vault>/&lt;item>/&lt;field>, ?attribute=otp for a one-time code), target the field's CSS selector. The node fills it only on the item's own website, then submits the field's form in the same step; submit: false fills a field before the last of its form (a username before its password). From the first fill on, the session refuses reading values back (agent-browser eval and get value among them). Ask your lead for the reference; never ask anyone for a password.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `ref` | string | yes | A 1Password secret reference: `op://<vault>/<item>/<field>`, `?attribute=otp` for a one-time code. |
+| `submit` | boolean | no | False to fill without submitting, for a field before the last of its form (a username before its password). Absent: true. |
+| `target` | string | yes | The field to fill: a CSS selector (`input[name=password]`, `#otp`). At most 500 characters. |
+
+**Who may call:** a lead, a task's agent, answered by its node, which runs the browser. **Needs a human:** no.
+
+```json
+{
+  "name": "fill_credential",
+  "arguments": {
+    "ref": "op://Staging/Shop admin/password",
+    "target": "input[name=password]"
   }
 }
 ```

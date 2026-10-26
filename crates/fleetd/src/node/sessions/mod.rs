@@ -910,7 +910,10 @@ impl SessionService {
                         let root = self.project_root(project_id)?;
                         let mut project_env =
                             super::project_env::vars(&config.home, project_id.as_str());
-                        project_env.retain(|(p, _)| !env.iter().any(|(k, _)| k == p));
+                        project_env.retain(|(p, _)| {
+                            !env.iter().any(|(k, _)| k == p)
+                                && p != super::browser::onepassword::TOKEN_ENV
+                        });
                         env.extend(project_env);
                         root
                     }
@@ -2056,6 +2059,8 @@ impl SessionService {
         project_env.extend(order_env);
         let secrets = super::mask::Secrets(secrets);
         project_env.retain(|(p, _)| !env.iter().any(|(k, _)| k == p));
+        // The 1Password token is the node's alone, for fill_credential: no agent gets it. It stays in `secrets`, masked.
+        project_env.retain(|(p, _)| p != super::browser::onepassword::TOKEN_ENV);
         env.extend(project_env);
         let mut role_env = config.prompt_cache_env(row.local.role, &env);
         role_env.extend(claude::role_env(row.local.role, &env));
@@ -2160,9 +2165,11 @@ impl SessionService {
         let mut usage: Option<(String, RunUsage)> = None;
         let mut usage_sent: Option<Instant> = None;
         let mut run_id: Option<String> = None;
+        // What its browser sessions filled from 1Password, masked like its secrets from the fill on.
+        let mut filled = super::mask::Secrets::default();
         // The secrets the process was started with, which it holds until it exits, and the project's as they are now,
         // read again at each run's start.
-        let mut masker = self.masker(&id, &spawned);
+        let mut masker = self.masker(&id, &spawned, &filled);
         loop {
             let delta_due = delta
                 .as_ref()
@@ -2203,8 +2210,13 @@ impl SessionService {
             if let Some(live) = self.st().live.get_mut(&id) {
                 live.last_active = Instant::now();
             }
-            if matches!(event, RunnerEvent::RunStarted { .. }) {
-                masker = self.masker(&id, &spawned);
+            if let Some(browser) = self.inner.browser.get()
+                && let Some(more) = browser.filled_since(&id, filled.0.len())
+            {
+                filled = more;
+                masker = self.masker(&id, &spawned, &filled);
+            } else if matches!(event, RunnerEvent::RunStarted { .. }) {
+                masker = self.masker(&id, &spawned, &filled);
             }
             // Nothing the agent's session reports leaves this machine with a secret of its project in it.
             let Some(event) = masker.event(event) else {
@@ -2415,15 +2427,21 @@ impl SessionService {
     }
 
     /// For masking what the session reports: the secrets its process was `spawned` with (a rotated or removed one is
-    /// still in its environment) and its project's, order's and MCP servers' secrets now.
-    fn masker(&self, id: &str, spawned: &super::mask::Secrets) -> super::mask::Masker {
+    /// still in its environment), its project's, order's and MCP servers' secrets now, and each value its browser
+    /// sessions `filled` in every form a page may show it.
+    fn masker(
+        &self,
+        id: &str,
+        spawned: &super::mask::Secrets,
+        filled: &super::mask::Secrets,
+    ) -> super::mask::Masker {
         let now = match self.store().session(id) {
             Ok(Some(row)) => self.secrets_now(&row),
             _ => super::mask::Secrets::default(),
         };
         let all: Vec<(String, String)> = spawned.0.iter().chain(&now.0).cloned().collect();
         let all = super::mask::Secrets(all);
-        super::mask::Masker::new(&all.0)
+        super::mask::Masker::new(&all.0).and(super::mask::Masker::thorough(&filled.0))
     }
 
     /// Sends the live text so far, masked. `hold` keeps back an end that could be the start of a secret, until the

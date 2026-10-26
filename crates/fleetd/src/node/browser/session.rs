@@ -69,6 +69,8 @@ pub struct Session {
     secrets: Mutex<Secrets>,
     scrub: Mutex<Arc<Scrub>>,
     pub credentials_filled: AtomicU64,
+    /// The fields filled from 1Password, by `backendNodeId`: the driver may not write to them.
+    filled_fields: Mutex<std::collections::HashSet<i64>>,
     last_active: Mutex<Instant>,
     /// The hash of the last DOM snapshot written: an unchanged page isn't written again.
     last_dom: Mutex<Option<[u8; 32]>>,
@@ -155,6 +157,7 @@ impl Session {
             scrub: Mutex::new(scrub),
             secrets: Mutex::new(opened.secrets),
             credentials_filled: AtomicU64::new(0),
+            filled_fields: Mutex::default(),
             last_active: Mutex::new(Instant::now()),
             last_dom: Mutex::default(),
             dom_turn: tokio::sync::Mutex::new(()),
@@ -358,6 +361,15 @@ impl Session {
         }
         secrets.0.push((name.to_owned(), value.to_owned()));
         *lock(&self.scrub) = Arc::new(Scrub::new(&secrets.0));
+    }
+
+    /// A field the node fills from 1Password, by its `backendNodeId`.
+    pub fn filled_field(&self, backend: i64) {
+        lock(&self.filled_fields).insert(backend);
+    }
+
+    pub fn is_filled_field(&self, backend: i64) -> bool {
+        lock(&self.filled_fields).contains(&backend)
     }
 
     /// The page the session follows: (targetId, CDP sessionId).

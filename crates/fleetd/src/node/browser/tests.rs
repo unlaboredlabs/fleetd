@@ -2,7 +2,8 @@
 //! session, drives it through the node's proxy as agent-browser does, ends it, and its recording is on the hub. They
 //! need a Chrome (FLEETD_TEST_CHROME, Playwright's headless shell in ~/.cache/ms-playwright, or google-chrome) and say
 //! so and pass without one; the video also needs an ffmpeg (FLEETD_TEST_FFMPEG, Playwright's, or one on PATH). The
-//! agent-browser test runs when FLEETD_TEST_AGENT_BROWSER names its binary.
+//! agent-browser tests run when FLEETD_TEST_AGENT_BROWSER names its binary. CI sets FLEETD_REQUIRE_AGENT_BROWSER too,
+//! so that they fail, not pass, without it or a Chrome.
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -27,6 +28,11 @@ use crate::hub::store::HubDb;
 use crate::node::mask::Masker;
 use crate::node::util::AbortOnDrop;
 
+/// Logins from 1Password, with a fake one.
+mod credentials;
+/// agent-browser's own script shapes.
+mod shapes;
+
 const THREAD: &str = "th-browser-1";
 
 fn on_path(name: &str) -> Option<PathBuf> {
@@ -37,6 +43,24 @@ fn on_path(name: &str) -> Option<PathBuf> {
 
 fn playwright_cache() -> PathBuf {
     crate::node::util::home_dir().join(".cache/ms-playwright")
+}
+
+/// Whether CI asked for the agent-browser tests to run, not skip.
+fn required() -> bool {
+    std::env::var_os("FLEETD_REQUIRE_AGENT_BROWSER").is_some()
+}
+
+/// The agent-browser binary the agent-browser tests drive, or None (said why).
+fn agent_browser() -> Option<PathBuf> {
+    let binary = std::env::var_os("FLEETD_TEST_AGENT_BROWSER").map(PathBuf::from);
+    assert!(
+        binary.is_some() || !required(),
+        "FLEETD_REQUIRE_AGENT_BROWSER is set but FLEETD_TEST_AGENT_BROWSER isn't"
+    );
+    if binary.is_none() {
+        eprintln!("skipped: set FLEETD_TEST_AGENT_BROWSER to an agent-browser binary");
+    }
+    binary
 }
 
 pub(crate) fn chrome() -> Option<PathBuf> {
@@ -201,6 +225,10 @@ async fn rig() -> Option<Rig> {
 
 async fn rig_with(secrets: Vec<(String, String)>) -> Option<Rig> {
     let Some(chrome) = chrome() else {
+        assert!(
+            !required(),
+            "FLEETD_REQUIRE_AGENT_BROWSER is set but there is no Chrome"
+        );
         eprintln!("skipped: no Chrome on this machine (set FLEETD_TEST_CHROME)");
         return None;
     };
@@ -653,8 +681,7 @@ async fn one_session_per_agent_session_and_none_to_end_twice() {
 /// names block reading a value back.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn agent_browser_drives_the_session_through_the_proxy_and_its_policy_blocks_reads() {
-    let Some(binary) = std::env::var_os("FLEETD_TEST_AGENT_BROWSER").map(PathBuf::from) else {
-        eprintln!("skipped: set FLEETD_TEST_AGENT_BROWSER to an agent-browser binary");
+    let Some(binary) = agent_browser() else {
         return;
     };
     let Some(rig) = rig().await else { return };

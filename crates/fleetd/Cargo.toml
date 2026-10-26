@@ -32,6 +32,13 @@ nix = { version = "0.30", features = ["fs", "process", "signal", "time"] }
 rand = { workspace = true }
 reqwest = { workspace = true }
 sha2 = { workspace = true }
+# browser sessions: the shapes of the scripts a sealed session lets through
+oxc_allocator = "0.155"
+oxc_ast = "0.155"
+oxc_ast_visit = "0.155"
+oxc_codegen = { version = "0.155", default-features = false }
+oxc_parser = "0.155"
+oxc_span = "0.155"
 # cli
 clap = { workspace = true }
 tokio-tungstenite = { workspace = true }
