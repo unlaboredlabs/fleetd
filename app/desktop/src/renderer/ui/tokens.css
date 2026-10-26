@@ -174,12 +174,21 @@
   --dur-fast: 120ms;
   --dur-base: 180ms;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-  /* A chat bubble coming in: up a little from where it lands, grown a touch, faded in; a reply's bubbles a step apart. */
-  --dur-enter: 280ms;
-  --ease-enter: cubic-bezier(0.2, 0.9, 0.3, 1);
+  /* The motion language: ui/DESIGN.md. Short and crisp: things arrive fast and stop dead, loops step rather than
+     glide, and only what is live moves. */
+  --ease-snap: cubic-bezier(0.2, 0, 0, 1);
+  --dur-quick: 140ms;
+  /* Arriving: a chat bubble rises a few pixels into place as it fades in, never scaled; a reply's bubbles a beat
+     apart. Your own send is quicker still: you made it happen. A list row rises less. */
+  --dur-enter: 200ms;
+  --dur-enter-mine: 140ms;
+  --ease-enter: var(--ease-snap);
   --enter-rise: 6px;
-  --enter-scale: 0.97;
-  --enter-stagger: 60ms;
+  --enter-scale: 1;
+  --enter-stagger: 50ms;
+  --dur-row-in: 160ms;
+  --row-rise: 3px;
+  /* Loops are not CSS animations: they step on the app's one beat, 120 ms (ui/lib/beat). */
 }
 
 :root[data-platform="darwin"] {
@@ -194,5 +203,6 @@
     --enter-rise: 0px;
     --enter-scale: 1;
     --enter-stagger: 0ms;
+    --row-rise: 0px;
   }
 }

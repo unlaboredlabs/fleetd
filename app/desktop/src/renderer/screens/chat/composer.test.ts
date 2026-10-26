@@ -6,7 +6,7 @@ import { ATTACHMENT_MAX_BYTES, ATTACHMENT_PART_BYTES } from "../../../shared/con
 import { MAX_CALL_INPUT_BYTES } from "../../../shared/ipc";
 import type { DataLayer } from "../../src/data/queries";
 import { pastedName } from "./attachments";
-import { checkMessage, placeholder, receiptFor, recallsOn, sendsOn, stopFailed, type Sendable } from "./composerModel";
+import { checkMessage, placeholder, recallsOn, receiptFor, receiptMark, type Sendable, sendsOn, stopFailed } from "./composerModel";
 import { createDrafts, emptyDraft, persistDrafts, readSaved } from "./drafts";
 
 const key = (k: string, over: Partial<Parameters<typeof sendsOn>[0]> = {}) => ({ key: k, shiftKey: false, altKey: false, isComposing: false, ...over });
@@ -231,5 +231,23 @@ describe("a draft after quitting", () => {
   it("reads nothing from a damaged store", () => {
     expect(readSaved({ getItem: () => "{not json" })).toEqual({});
     expect(readSaved({ getItem: () => JSON.stringify({ "devbox/api": 3, "devbox/web": "ok" }) })).toEqual({ "devbox/web": "ok" });
+  });
+});
+
+describe("a quiet receipt as a mark", () => {
+  const sent = (delivery?: "turn" | "steer" | "queued" | "now") => ({ state: "sent" as const, ...(delivery === undefined ? {} : { delivery }) });
+  it("waits, an open ring, while sending or queued for the lead; else it is delivered", () => {
+    expect(receiptMark({ state: "pending" }, true)).toMatchObject({ mark: "waiting", word: "Sending" });
+    expect(receiptMark(sent("queued"), true)).toEqual({ mark: "waiting", word: "Queued", words: "Sent; the lead takes it when it’s free" });
+    expect(receiptMark(sent("steer"), true)).toMatchObject({ mark: "delivered", word: "Delivered" });
+    expect(receiptMark(sent("turn"), true)).toMatchObject({ mark: "delivered" });
+    // Stopping the lead's step says so even on an older message.
+    expect(receiptMark(sent("now"), false)).toMatchObject({ mark: "delivered", words: "Delivered; the lead stopped its step to read this" });
+  });
+
+  it("leaves trouble and anything to act on as its line, and an older message bare", () => {
+    expect(receiptMark({ state: "failed" }, true)).toBeUndefined();
+    expect(receiptMark({ state: "queued" }, true)).toBeUndefined();
+    expect(receiptMark(sent("turn"), false)).toBeUndefined();
   });
 });

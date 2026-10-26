@@ -1,0 +1,111 @@
+/* The panel's sections (Sections.tsx), by ui/DESIGN.md: one compact row of four tabs, 26 px, icon beside word and
+   centred, the count bare figures on the word's baseline; the open one a soft fill. Under it the section's line and,
+   for a section of two views, a 22 px segmented row of their tabs. Rules are doubled up (.bar .section) to outrank
+   the Tabs primitive's underlined tabs. */
+.bar.bar {
+  display: flex;
+  gap: 2px;
+  border: none;
+  overflow: visible;
+}
+.bar .section {
+  flex: 1 1 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  height: 26px;
+  padding: 0 var(--space-1-5);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  font-weight: 400;
+  transition:
+    background-color var(--dur-quick) var(--ease-snap),
+    color var(--dur-quick) var(--ease-snap);
+}
+.bar .section:hover {
+  background: var(--hover);
+}
+.bar .section[data-state="active"] {
+  background: var(--selected);
+  font-weight: 500;
+}
+.bar .section::after,
+.switch .option::after {
+  display: none;
+}
+.bar .section:focus-visible,
+.switch .option:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.icon {
+  flex: none;
+  width: 13px;
+  height: 13px;
+}
+/* The word and its count, on one baseline. */
+.words {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+}
+.label {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.count {
+  flex: none;
+  color: var(--faint);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.count:empty {
+  display: none;
+}
+/* The section's line, and its views' row, over a hairline. */
+.under {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  padding: var(--space-1-5) var(--space-3) var(--space-2);
+  border-bottom: 1px solid var(--hairline);
+}
+.line {
+  margin: 0;
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+.switch.switch {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 1px;
+  padding: 2px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--hover);
+  overflow: visible;
+}
+.switch .option {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  font-weight: 400;
+  transition: color var(--dur-quick) var(--ease-snap);
+}
+.switch .option[data-state="active"] {
+  background: var(--raised);
+  box-shadow: 0 0 0 1px var(--hairline);
+  font-weight: 500;
+}

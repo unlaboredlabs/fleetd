@@ -59,6 +59,7 @@ function composerSends(f: Fixture): void {
   // when the shot is taken, so Stop shows pressed.
   f.fail("chat_stop", undefined, { code: "invalid", message: "chat_stop: missing field `projectRef`." });
   f.answer("chat_stop", { projectRef: STOREFRONT }, { stopped: true, message: msg(8, "lead", "Stopped the lead and 2 agents.", 0, { author: "system" }) }, 600_000);
+  f.answer("chat_send", { text: CHAT_SENDS.queued }, { message: sent(10, CHAT_SENDS.queued) }, 900);
   f.answer("chat_send", { text: CHAT_SENDS.now, now: true }, { message: msg(9, "human", CHAT_SENDS.now, 0, { clientRequestId: "qa-9", delivery: "now" }) });
   f.settleAt(f.settleMs ?? 0);
 }

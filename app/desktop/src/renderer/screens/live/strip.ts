@@ -25,7 +25,7 @@ const shownLanes = (w: ProjectWork): AgentLane[] => w.lanes.filter((l) => l.role
 const isOn = (l: AgentLane, pr: PrRef): boolean =>
   l.pr?.number === pr.number || (!isChecker(l.role) && pr.taskId !== undefined && l.taskId === pr.taskId);
 
-/** An agent's dot: at work (it breathes), waiting on you (the attention color), on hold, or queued (hollow). */
+/** An agent's state on the strip, as its glyph shows it: at work, waiting on you, on hold, or queued. */
 export type AgentState = "working" | "needsYou" | "onHold" | "queued";
 
 const stateOf = (l: AgentLane): AgentState =>

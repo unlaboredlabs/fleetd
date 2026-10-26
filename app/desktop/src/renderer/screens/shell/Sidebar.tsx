@@ -19,6 +19,7 @@ import {
   Sidebar as Frame,
   SidebarItem,
   SidebarSection,
+  StateGlyph,
   Text,
   Tooltip,
 } from "../../ui";
@@ -56,15 +57,13 @@ const mark = (p: SidebarProject): { readonly node: ReactNode; readonly tip: stri
     if (want.word === "blocked") {
       return { node: <Text size="xs" tone="danger">blocked</Text>, tip: want.label };
     }
+    // The word in the warning colour and weight carries it: no dot (DESIGN.md).
     return {
       node: (
         <>
-          <Dot color="var(--warning)" />
-          {want.word === undefined ? null : (
-            <Text size="xs" tone="warning">
-              {want.word}
-            </Text>
-          )}
+          <Text size="xs" tone="warning" strong>
+            {want.word ?? "needs you"}
+          </Text>
           {want.count > 1 ? <span>{`· ${String(want.count)}`}</span> : null}
         </>
       ),
@@ -72,8 +71,18 @@ const mark = (p: SidebarProject): { readonly node: ReactNode; readonly tip: stri
     };
   }
   if (p.unread) return { node: <Dot color="var(--accent)" label={UNREAD} />, tip: UNREAD };
-  if (p.running > 0) return { node: `${String(p.running)} working`, tip: `${String(p.running)} ${p.running === 1 ? "agent" : "agents"} working` };
-  if (p.working) return { node: "working", tip: "The lead is working" };
+  if (p.running > 0) {
+    return {
+      node: (
+        <>
+          <StateGlyph state="working" size="sm" />
+          {String(p.running)}
+        </>
+      ),
+      tip: `${String(p.running)} ${p.running === 1 ? "agent" : "agents"} working`,
+    };
+  }
+  if (p.working) return { node: <StateGlyph state="thinking" size="sm" />, tip: "The lead is working" };
   return null;
 };
 
@@ -121,9 +130,10 @@ export function Sidebar({ projects, machinesDown, screen, hub, jumpHints, factor
     <Frame
       aria-label="Sidebar"
       footer={
+        // The hub and any update on one row.
         <div className={s.footer}>
-          <UpdatesLine />
           <HubStatus hub={hub} />
+          <UpdatesLine />
         </div>
       }
     >

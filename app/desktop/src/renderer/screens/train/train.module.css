@@ -1,6 +1,8 @@
 /*
- * The panel's Train: what merges now on a quiet raised card, then the line and what landed lately as plain rows.
- * Titles carry the weight; numbers, times and reasons stay small and quiet. Nothing animates.
+ * The panel's Train: what merges now on a quiet raised card (the one card here), then the line and what landed
+ * lately as rows between hairlines. Titles carry the weight; numbers, times and reasons stay small and quiet; states
+ * are words. Only what merges now moves: a short band of dither steps along its card's top edge while CI runs
+ * (ui/DESIGN.md).
  */
 .screen {
   --pad: var(--space-4);
@@ -71,7 +73,7 @@
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
-  padding: var(--space-3) var(--pad) var(--space-1);
+  padding: var(--space-4) var(--pad) var(--space-2);
 }
 .quietLine {
   padding: var(--space-1) var(--pad);
@@ -121,10 +123,12 @@
 
 /* What merges now. */
 .head {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  margin: 0 var(--space-2);
+  margin: 0 var(--space-3);
   padding: var(--space-3) var(--space-2) var(--space-2);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-md);
@@ -187,18 +191,136 @@
   padding: 0 var(--space-2);
 }
 
-/* The line: its place, then the PR. */
+/* The line: rows between hairlines, each led by its place in tabular figures (DESIGN.md: cards only where they earn
+   it; here only what merges now). */
 .queued {
   display: flex;
   align-items: flex-start;
-  margin: 0 var(--space-2);
+  margin: 0 var(--space-3);
   min-width: 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.queued .rowTitle {
+  font-weight: 500;
 }
 .place {
   flex: none;
   width: var(--space-6);
-  padding: var(--space-2) 0 0 var(--space-2);
+  padding: 9px 0 0 var(--space-1);
+  font-variant-numeric: tabular-nums;
+}
+/* A state in words: quiet, failure in the danger colour, waiting on you in the warning one. No dot. */
+.word {
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  white-space: nowrap;
+}
+.word[data-tone="failed"] {
+  color: var(--danger);
+  font-weight: 500;
+}
+.word[data-tone="needs-you"] {
+  color: var(--warning);
+  font-weight: 500;
+}
+.stage {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  font-weight: 500;
+}
+/* While CI runs on what merges now: a short band of 2 px dither steps along the card's top edge on the app's beat
+   (ui/lib/beat), then rests. Without a beat (the window hidden, reduced motion) the edge is a still, faint dither. */
+.progress {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+}
+.progress::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-conic-gradient(var(--accent) 0 25%, transparent 0 50%) 0 0 / 2px 2px;
+  opacity: 0.35;
+}
+:root[data-beat] .progress::after {
+  right: auto;
+  width: 24%;
+  opacity: 1;
+  transform: translateX(420%);
+}
+:root[data-beat="0"] .progress::after {
+  transform: translateX(-100%);
+}
+:root[data-beat="1"] .progress::after {
+  transform: translateX(-69%);
+}
+:root[data-beat="2"] .progress::after {
+  transform: translateX(-39%);
+}
+:root[data-beat="3"] .progress::after {
+  transform: translateX(-8%);
+}
+:root[data-beat="4"] .progress::after {
+  transform: translateX(22%);
+}
+:root[data-beat="5"] .progress::after {
+  transform: translateX(53%);
+}
+:root[data-beat="6"] .progress::after {
+  transform: translateX(84%);
+}
+:root[data-beat="7"] .progress::after {
+  transform: translateX(114%);
+}
+:root[data-beat="8"] .progress::after {
+  transform: translateX(145%);
+}
+:root[data-beat="9"] .progress::after {
+  transform: translateX(175%);
+}
+:root[data-beat="10"] .progress::after {
+  transform: translateX(206%);
+}
+:root[data-beat="11"] .progress::after {
+  transform: translateX(236%);
+}
+:root[data-beat="12"] .progress::after {
+  transform: translateX(267%);
+}
+:root[data-beat="13"] .progress::after {
+  transform: translateX(298%);
+}
+:root[data-beat="14"] .progress::after {
+  transform: translateX(328%);
+}
+:root[data-beat="15"] .progress::after {
+  transform: translateX(359%);
+}
+:root[data-beat="16"] .progress::after {
+  transform: translateX(389%);
+}
+:root[data-beat="17"] .progress::after {
+  transform: translateX(420%);
+}
+/* What landed lately: plain rows between hairlines. */
+.recent > li {
+  margin: 0 var(--space-3);
+  border-bottom: 1px solid var(--hairline);
+}
+.list.recent > li > .row {
+  margin: 0;
 }
 .list > li > .row {
   margin: 0 var(--space-2);
+}
+.merged {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
 }

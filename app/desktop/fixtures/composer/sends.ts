@@ -8,4 +8,6 @@ export const CHAT_SENDS = {
   offline: "Hold the release until the headline PR merges.",
   /** ⌘Enter while the lead works: chat_send with now. */
   now: "Stop the public link work; ship the card first.",
+  /** Taken by the hub while the lead works: it waits for the lead to be free (W42's receipt mark). */
+  queued: "Can you also check the receipts on mobile?",
 } as const;

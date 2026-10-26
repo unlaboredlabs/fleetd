@@ -75,11 +75,13 @@
 .filters {
   flex: none;
   display: flex;
-  padding: var(--space-3) var(--pad) var(--space-1);
+  padding: var(--space-2) var(--space-3) 0;
 }
+/* A compact segmented control (DESIGN.md): 22 px, the words and the count both xs so they share a baseline; the count
+   faint, no pill. */
 .segmented {
   display: inline-flex;
-  gap: 2px;
+  gap: 1px;
   padding: 2px;
   border-radius: var(--radius-md);
   background: var(--hover);
@@ -87,21 +89,34 @@
 .segment {
   display: inline-flex;
   align-items: baseline;
-  gap: var(--space-1-5);
-  padding: 2px var(--space-3);
+  gap: 5px;
+  height: 22px;
+  padding: 3px 10px 0;
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--quiet);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
   cursor: pointer;
+  transition: color var(--dur-quick) var(--ease-snap);
 }
 .segment:hover {
   color: var(--text);
 }
+.segmentCount {
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
 .segment[aria-pressed="true"] {
   background: var(--raised);
   color: var(--text);
+  font-weight: 500;
   box-shadow: 0 0 0 1px var(--hairline);
+}
+.segment[aria-pressed="true"] .segmentCount {
+  color: var(--quiet);
+  font-weight: 400;
 }
 .listScroll {
   flex: 1;
@@ -130,32 +145,54 @@
   display: flex;
   margin-top: var(--space-2);
 }
+/* A group's heading: its name and count, with room above it so groups read as blocks. */
 .group {
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
-  padding: var(--space-4) var(--pad) var(--space-1);
+  padding: 20px var(--space-2) var(--space-1);
+  margin: 0 var(--space-2);
 }
 .cutNote {
   padding: var(--space-3) var(--pad);
 }
-/* A row: the title, the one line that reads at a glance; under it its state and figures, quiet. */
+/* A PR: rows, not cards (DESIGN.md). The title is the one line in full voice, a touch heavier; under it its state
+   in words (coloured only for failure) and its figures, quiet. A hairline between rows, room above each group.
+   Merged and closed rows step back a shade, so the open ones lead. */
 .row {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: 3px;
   margin: 0 var(--space-2);
-  padding: var(--space-2) var(--space-2);
-  border-radius: var(--radius-sm);
+  padding: 10px var(--space-2);
+  border-bottom: 1px solid var(--hairline);
   color: var(--text);
   text-decoration: none;
+  transition: background var(--dur-quick) var(--ease-snap);
 }
 .row:hover {
   background: var(--hover);
 }
-/* Merged and closed rows step back a shade, so the open ones lead. */
 .rowDone {
   color: var(--quiet);
+}
+.rowDone .rowTitle {
+  font-weight: 400;
+}
+/* A row's state word: plain, quiet; failure in the danger colour. No dot. */
+.stateWord {
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  white-space: nowrap;
+}
+.stateWord[data-tone="failed"] {
+  color: var(--danger);
+  font-weight: 500;
+}
+.stateWord[data-tone="needs-you"] {
+  color: var(--warning);
+  font-weight: 500;
 }
 .rowTop,
 .rowMeta {
@@ -167,6 +204,7 @@
 .rowTitle {
   flex: 1;
   min-width: 0;
+  font-weight: 500;
 }
 .rowWhen,
 .rowRef {
@@ -649,4 +687,15 @@
 /* "Show more" sits at the start of its list, not stretched across it. */
 .moreRow {
   display: flex;
+}
+
+/* A PR just come in (ui/lib/arrival): it rises into place once. */
+.arrive {
+  animation: rowIn var(--dur-row-in) var(--ease-snap) backwards;
+}
+@keyframes rowIn {
+  from {
+    opacity: 0;
+    transform: translateY(var(--row-rise));
+  }
 }

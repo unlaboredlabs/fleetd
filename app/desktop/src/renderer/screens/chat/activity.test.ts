@@ -38,7 +38,7 @@ describe("the lead's activity line", () => {
     };
     const s = state({ chatStates: { [KEY]: working(true) }, events, live: { ...createDataStore().getState().live, lanes } });
     // Only this project's events since it started working: the task before the turn and the other project's don't count.
-    expect(leadActivity(s, KEY)).toBe("planning · opened an order · started 2 agents");
+    expect(leadActivity(s, KEY)).toBe("planning · planned a piece of work · started 2 agents");
     // No lane yet (an older hub) and nothing done: the hub's word that it works.
     expect(leadActivity(state({ chatStates: { [KEY]: working(true) } }), KEY)).toBe("working");
   });
@@ -53,7 +53,7 @@ describe("the lead's activity line", () => {
       ev(5, "chat.waiting", { ...working(true), needsYou: true }),
       ev(6, "task.started", started("T2")),
     ];
-    expect(turnTally(events, ref)).toEqual(["opened an order", "started 2 agents"]);
+    expect(turnTally(events, ref)).toEqual(["planned a piece of work", "started 2 agents"]);
     // The turn's start is no longer among the events: no count rather than part of one.
     expect(turnTally(events.slice(1), ref)).toEqual([]);
   });
@@ -81,8 +81,8 @@ describe("the lead's activity line", () => {
     expect(doingWords({ kind: "read", path: "app/desktop/src/renderer/screens/chat/ChatList.tsx" })).toBe("reading `ChatList.tsx`");
     expect(doingWords({ kind: "read", pattern: "chat_delta" })).toBe("searching the code");
     expect(doingWords({ kind: "command", text: "cargo test -p fleetd" })).toBe("running a command");
-    expect(doingWords({ kind: "tool", name: "brief", server: "fleetd" })).toBe("writing the brief");
-    expect(doingWords({ kind: "tool", name: "something_new", server: "fleetd" })).toBe("asking fleetd");
+    expect(doingWords({ kind: "tool", name: "brief", server: "fleetd" })).toBe("briefing an agent");
+    expect(doingWords({ kind: "tool", name: "something_new", server: "fleetd" })).toBe("checking with fleetd");
     expect(doingWords({ kind: "tool", name: "x", server: "other" })).toBe("working");
     expect(doingWords({ kind: "web", detail: "github.com" })).toBe("reading the web");
     expect(doingWords({ kind: "planning" })).toBe("planning");

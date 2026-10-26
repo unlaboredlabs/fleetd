@@ -2,13 +2,15 @@
 // project's under its name; one calm row each (its state as a dot, its title and role, and under them what it is doing
 // now and where its work is), those waiting on you first. A row opens that agent's live work in their place,
 // read-only. The rows come from the data layer (agents_list, refetched on events, merged with the live feed) and the
-// orders' titles from the board, so nothing here polls. Under the project's own agents, Elsewhere: the work on its
-// repo and base that isn't theirs (work_list, refetched on work, task and change events), read-only.
+// orders' titles from the board, so nothing here polls. Under the project's own agents, folded, Also on this repo: the
+// live work on its repo and base that isn't theirs (work_list, refetched on work, task and change events), read-only;
+// nothing at all when there is none.
+import { ChevronRight } from "lucide-react";
 import { memo, useEffect, useMemo, useState } from "react";
 import { useData, useToolQuery } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
 import { selectLiveAgents, selectProjects, type LiveAgent } from "../../src/data/selectors";
-import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, Dot, EmptyState, IdChip, PROFILE_WORD, Text, Truncate, VirtualList, cx } from "../../ui";
+import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, Dot, EmptyState, IdChip, PROFILE_WORD, Text, Truncate, VirtualList, cx, useArrivals, useArrived, useLeavers } from "../../ui";
 import { ActivityLine } from "../live/parts";
 import { steerNext } from "../live/Steer";
 import { describe, isFinal } from "../live/words";
@@ -16,7 +18,7 @@ import { useNow } from "../live/clock";
 import { useRoute } from "../shell/navigation";
 import { panelRoute, toHash, type ProjectKey } from "../shell/routes";
 import { AgentWork } from "./AgentWork";
-import { allAgents, elsewhere, nextExpiry, onItsPr, projectGroups, tally, type ElsewhereRow, type GroupLine, type OrderTitle } from "./model";
+import { allAgents, alsoOnRepo, nextExpiry, onItsPr, projectGroups, tally, type ElsewhereRow, type GroupLine, type OrderTitle } from "./model";
 import { RolePill, StateDot, WorkPlaceTag } from "./parts";
 import s from "./agents.module.css";
 
@@ -52,9 +54,10 @@ export const scopedAgents = (agents: readonly LiveAgent[], project: string, scop
 
 export const isLine = (item: GroupLine | LiveAgent): item is GroupLine => "group" in item;
 
-/** The Elsewhere group's line, above its rows: the base they are on. */
+/** The Also on this repo line, above its rows: how many, and whether they show. */
 interface ElsewhereLine {
   readonly elsewhere: string;
+  readonly count: number;
 }
 
 type Item = GroupLine | LiveAgent | ElsewhereLine | { readonly row: ElsewhereRow; readonly other: true };
@@ -85,7 +88,7 @@ function useElsewhere(project: ProjectKey, enabled: boolean): { base: string; ro
   return useMemo(() => {
     if (!enabled || query.data === undefined) return undefined;
     const titles = new Map((projects ?? []).map((p) => [projectKey(p), p.title]));
-    return { base: query.data.scope.base, rows: elsewhere(query.data, key, now, (k) => titles.get(k)) };
+    return { base: query.data.scope.base, rows: alsoOnRepo(query.data, key, now, (k) => titles.get(k)) };
   }, [enabled, query.data, projects, key, now]);
 }
 
@@ -108,23 +111,29 @@ function AgentList({ project: ref, scope, onScope }: { project: ProjectKey; scop
     return scopedAgents(all, project, scope, titleOf);
   }, [all, orders, project, scope]);
   const other = useElsewhere(ref, scope === "project");
+  // Folded until asked for: the project's own agents are the point, the rest is context.
+  const [unfolded, setUnfolded] = useState(false);
   const items = useMemo((): readonly Item[] | undefined => {
     if (agents === undefined || other === undefined || other.rows.length === 0) return agents;
-    return [...agents, { elsewhere: `Elsewhere on ${other.base}` }, ...other.rows.map((row) => ({ row, other: true as const }))];
-  }, [agents, other]);
+    const line = { elsewhere: "Also on this repo", count: other.rows.length };
+    return [...agents, line, ...(unfolded ? other.rows.map((row) => ({ row, other: true as const })) : [])];
+  }, [agents, other, unfolded]);
+  const shown = useLeavers(items, keyOf, `${project}:${scope}`);
   const counts = agents === undefined ? undefined : tally(agents.filter((a): a is LiveAgent => !isLine(a)));
+  // Rows that join the list later enter once; those it opened with, or scrolled to, don't.
+  useArrivals(`agents:${project}`, all?.filter((a) => a.project === project).map((a) => a.id));
   const none = agents?.every(isLine) === true;
 
   return (
     <div className={s.pane} data-screen="agents">
       <div className={s.top}>
         <div className={s.scope} role="group" aria-label="Whose agents">
-          <Button variant={scope === "project" ? "secondary" : "quiet"} size="sm" aria-pressed={scope === "project"} onClick={() => onScope("project")}>
+          <button type="button" className={s.scopeOption} aria-pressed={scope === "project"} onClick={() => onScope("project")}>
             This project
-          </Button>
-          <Button variant={scope === "all" ? "secondary" : "quiet"} size="sm" aria-pressed={scope === "all"} onClick={() => onScope("all")}>
+          </button>
+          <button type="button" className={s.scopeOption} aria-pressed={scope === "all"} onClick={() => onScope("all")}>
             All projects
-          </Button>
+          </button>
         </div>
         {!fresh ? (
           <span className={s.liveness} role="status">
@@ -163,19 +172,36 @@ function AgentList({ project: ref, scope, onScope }: { project: ProjectKey; scop
             </div>
           ) : null}
           <VirtualList
-            items={items}
-            getKey={keyOf}
-            renderItem={(a) =>
-              "elsewhere" in a ? (
-                <GroupLineRow line={{ group: "elsewhere", title: a.elsewhere, level: "order", count: 0, waiting: 0 }} />
-              ) : "other" in a ? (
-                <ElsewhereRowView row={a.row} />
-              ) : isLine(a) ? (
-                <GroupLineRow line={a} />
+            items={shown ?? []}
+            getKey={(x) => keyOf(x.item)}
+            renderItem={({ item: a, leaving }) => {
+              const row =
+                "elsewhere" in a ? (
+                  <button type="button" className={s.fold} aria-expanded={unfolded} onClick={() => setUnfolded((u) => !u)}>
+                    <ChevronRight aria-hidden className={s.foldIcon} />
+                    <Text size="xs" tone="quiet" strong>
+                      {a.elsewhere}
+                    </Text>
+                    <Text size="xs" tone="faint" tabular>
+                      {String(a.count)}
+                    </Text>
+                  </button>
+                ) : "other" in a ? (
+                  <ElsewhereRowView row={a.row} />
+                ) : isLine(a) ? (
+                  <GroupLineRow line={a} />
+                ) : (
+                  <AgentRowLink agent={a} />
+                );
+              // A row that left fades where it stood (ui/lib/leaving), then goes.
+              return leaving ? (
+                <div data-leaving="" inert aria-hidden>
+                  {row}
+                </div>
               ) : (
-                <AgentRowLink agent={a} />
-              )
-            }
+                row
+              );
+            }}
             estimateSize={52}
             aria-label="Agents"
           />
@@ -193,19 +219,19 @@ function Counts({ counts }: { counts: ReturnType<typeof tally> }) {
     <span className={s.counts}>
       {waiting > 0 ? (
         <span className={cx(s.count, s.countWaiting)}>
-          <StateDot status="waiting" />
+          <StateDot status="waiting" still />
           <Text size="xs" tone="inherit" strong tabular>{`${String(waiting)} ${waiting === 1 ? "needs" : "need"} you`}</Text>
         </span>
       ) : null}
       {working > 0 ? (
         <span className={s.count}>
-          <StateDot status="working" />
+          <StateDot status="working" still />
           <Text size="xs" tone="quiet" tabular>{`${String(working)} working`}</Text>
         </span>
       ) : null}
       {queued > 0 ? (
         <span className={s.count}>
-          <StateDot status="queued" />
+          <StateDot status="queued" still />
           <Text size="xs" tone="quiet" tabular>{`${String(queued)} queued`}</Text>
         </span>
       ) : null}
@@ -277,6 +303,8 @@ export const AgentRowLink = memo(function AgentRowLink({ agent }: { agent: LiveA
   const onPr = onItsPr(useRoute(), row);
   const href = toHash(panelRoute(row.projectRef, { tab: "agents", agent: row.laneId }));
   const { taskId, branch } = row;
+  const line = describe(row);
+  const fresh = useArrived(`agents:${agent.project}`, agent.id);
   const menu = () => (
     <>
       <ContextMenuItem onSelect={() => (window.location.hash = href)}>Open</ContextMenuItem>
@@ -297,8 +325,8 @@ export const AgentRowLink = memo(function AgentRowLink({ agent }: { agent: LiveA
   );
   return (
     <ContextMenu menu={menu}>
-      <a className={cx(s.row, row.status === "waiting" && s.waiting, row.role === "lead" && s.lead)} href={href} data-state={row.status}>
-        <StateDot status={row.status} />
+      <a className={cx(s.row, fresh && s.arrive, row.status === "waiting" && s.waiting)} href={href} data-state={row.status}>
+        <StateDot status={row.status} thinking={line.thinking} seed={agent.id} />
         <span className={s.line}>
           <span className={s.task}>
             <Truncate size="sm" expand="none">
@@ -313,7 +341,7 @@ export const AgentRowLink = memo(function AgentRowLink({ agent }: { agent: LiveA
           <RolePill role={row.role} />
         </span>
         <span className={s.doing}>
-          <ActivityLine line={describe(row)} />
+          <ActivityLine line={line} />
           {onPr ? null : <WorkPlaceTag row={row} />}
         </span>
       </a>

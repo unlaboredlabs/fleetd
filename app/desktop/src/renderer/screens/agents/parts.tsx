@@ -1,14 +1,31 @@
 // The agents' small parts, shared by the list and one agent's head: the state dot, the role pill and where the work
 // is. Kept here until another screen wants them.
 import type { AgentRole, AgentRow } from "../../../shared/contracts";
-import { cx, ROLE_WORD, roleTint, Truncate } from "../../ui";
+import { cx, ROLE_WORD, roleTint, StateGlyph, Truncate, type GlyphState } from "../../ui";
 import { MiddleCut } from "../live/parts";
 import { agentState, STATE_WORD, workPlace } from "./model";
 import s from "./agents.module.css";
 
-/** The agent's state as a dot: working breathes as it starts (still when motion is reduced), waiting is amber, failed is danger. */
-export function StateDot({ status }: { status: AgentRow["status"] }) {
-  return <span className={s.state} data-state={agentState(status)} role="img" aria-label={STATE_WORD[status]} />;
+/** The glyph for a lane's status; a working lane with nothing to show yet is thinking. */
+export const glyphOf = (status: AgentRow["status"], thinking = false): GlyphState => {
+  if (status === "parked") return "paused";
+  const state = agentState(status);
+  return state === "working" && thinking ? "thinking" : state;
+};
+
+/**
+ * The agent's state as a 3×3 dither glyph (StateGlyph): working is grain, thinking walks its ring, the rest hold a
+ * shape of their own, and it morphs as the state changes; `still` for a count, where only the shape speaks.
+ */
+export function StateDot({ status, thinking = false, still = false, seed }: { status: AgentRow["status"]; thinking?: boolean; still?: boolean; seed?: string }) {
+  // Seeded by the agent, each glyph keeps its own place in the loop: a list of them never steps as one.
+  let hash = 7;
+  for (let i = 0; i < (seed?.length ?? 0); i++) hash = (hash * 31 + (seed?.charCodeAt(i) ?? 0)) % 997;
+  return (
+    <span className={s.state} data-state={agentState(status)}>
+      <StateGlyph state={glyphOf(status, thinking)} still={still} phase={hash % 4} label={thinking && agentState(status) === "working" ? "thinking" : STATE_WORD[status]} />
+    </span>
+  );
 }
 
 /** The role's word in its tint on a faint wash of it. */

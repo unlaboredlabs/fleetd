@@ -119,14 +119,17 @@
   color: var(--faint);
   font-variant-numeric: tabular-nums;
 }
-/* A row dot is drawn anew when its agent appears or changes state (LiveStrip.tsx keys it so): one pulse, then still. */
-.dots > .dot {
-  animation: pulse 900ms var(--ease-out);
+/* Each agent's glyph (StateGlyph), in a 10 px cell; a new one fades in. */
+.glyph {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  animation: glyphIn var(--dur-row-in) var(--ease-snap) backwards;
 }
-@keyframes pulse {
+@keyframes glyphIn {
   from {
-    opacity: 0.3;
-    transform: scale(1.7);
+    opacity: 0;
+    transform: scale(0.6);
   }
 }
 
@@ -175,7 +178,7 @@
 @keyframes roll {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(var(--row-rise));
   }
 }
 

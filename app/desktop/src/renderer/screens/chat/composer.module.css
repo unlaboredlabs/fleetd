@@ -55,7 +55,7 @@
   min-width: 0;
   margin: var(--space-2) var(--space-3) 0;
   padding: 2px var(--space-1) 2px var(--space-2);
-  border-left: 2px solid var(--accent);
+  border-left: 2px solid var(--hairline);
 }
 .replyIcon {
   flex: none;
@@ -155,4 +155,30 @@
   text-decoration: underline;
   text-underline-offset: 2px;
   cursor: pointer;
+}
+
+/* A quiet receipt's mark, beside your bubble's foot: faint, an open ring while it waits for the lead, a check once taken. */
+.receiptMark {
+  flex: none;
+  align-self: flex-end;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-bottom: 3px;
+  border-radius: 999px;
+}
+.receiptMark > span[data-state] {
+  color: var(--faint);
+}
+.receiptCheck {
+  width: 12px;
+  height: 12px;
+  color: var(--quiet);
+  animation: checkIn var(--dur-quick) var(--ease-snap) backwards;
+}
+@keyframes checkIn {
+  from {
+    opacity: 0;
+  }
 }

@@ -146,6 +146,24 @@ const steers = (base: Fixture): Fixture => {
 const elsewhere = (base: Fixture): Fixture =>
   withElsewhere(Fixture.from(base, "agents-elsewhere", "Agents: storefront's agents, and under them the work elsewhere on its repo; checkout's, with none of its own."));
 
+// One storefront agent in each state the list shows, for the state glyphs (W42): working (a command, an edit),
+// thinking, waiting on you, queued and paused; a moment in, one queued agent starts and one working agent pauses.
+const states = (base: Fixture): Fixture => {
+  const f = Fixture.from(base, "agents-states", "Agents: storefront's agents in every live state, two of them changing.");
+  const iso = (agoMs: number) => new Date(Date.parse(f.now) - agoMs).toISOString();
+  f.live.push({
+    at: iso(0),
+    full: false,
+    lanes: [
+      { laneId: "T2", status: "working" },
+      { laneId: "T5", status: "parked" },
+      { laneId: "T7", status: "working", activity: { activity: { kind: "edit", path: "src/checkout/receipt/formatReceiptDate.ts" }, since: iso(4_000) } },
+    ],
+  });
+  f.timeline.push({ ms: 1_600, kind: "live", payload: { at: iso(0), full: false, lanes: [{ laneId: "T9", status: "working", activity: { activity: { kind: "thinking" }, since: iso(0) } }] } });
+  return f;
+};
+
 export default defineGroup({
-  fixtures: (base) => [work(base("many-agents")), steers(base("many-agents")), elsewhere(base("typical"))],
+  fixtures: (base) => [work(base("many-agents")), steers(base("many-agents")), elsewhere(base("typical")), states(base("many-agents"))],
 });

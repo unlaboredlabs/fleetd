@@ -116,6 +116,23 @@ describe("the list", () => {
     expect(inFilter(row({ state: "queued" }), "open")).toBe(false);
   });
 
+  it("groups open PRs by where they stand: a look needed, on the merge train, the rest", () => {
+    const failed = row({ number: 10, checks: { state: "failing", passed: 4, failed: 2, pending: 0 } });
+    const queued = row({ number: 9, queue: queue("queued", { position: 1 }) });
+    const open = [row({ number: 14 }), queued, failed];
+    expect(words(listItems(open, "open"))).toEqual(["Needs a look 1", 10, "On the merge train 1", 9, "Open 1", 14]);
+    expect(words(listItems([...open, row({ number: 8, state: "merged" })], "all"))).toEqual([
+      "Needs a look 1",
+      10,
+      "On the merge train 1",
+      9,
+      "Open 1",
+      14,
+      "Merged or closed 1",
+      8,
+    ]);
+  });
+
   it("counts each filter's rows", () => {
     expect(filterCounts(rows)).toEqual({ open: 2, merged: 1, all: 4 });
     expect(filterCounts([])).toEqual({ open: 0, merged: 0, all: 0 });

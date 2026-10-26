@@ -3,6 +3,9 @@ export { UiProvider } from "./UiProvider";
 export { applyTheme, resolveTheme, isThemeMode, storedMode, useTheme, THEME_MODES, type ThemeMode, type ResolvedTheme } from "./theme";
 export { cx } from "./lib/cx";
 export { copyText } from "./lib/clipboard";
+export { arrived, forgetList, noteKeys, useArrivals, useArrived } from "./lib/arrival";
+export { LEAVE_MS, useLeavers, type Shown } from "./lib/leaving";
+export { BEAT_MS, BEATS, useBeat } from "./lib/beat";
 
 export { Text, textClass, type TextProps, type TextSize, type TextTone, type TextStyleProps } from "./text/Text";
 export { Truncate, type TruncateProps } from "./text/Truncate";
@@ -30,6 +33,7 @@ export { Tooltip, type TooltipProps } from "./primitives/Tooltip";
 export { Popover, PopoverTrigger, PopoverContent } from "./primitives/Popover";
 export { Tabs, TabList, Tab, TabPanel } from "./primitives/Tabs";
 export { toast, type ToastInput, type ToastTone } from "./primitives/Toast";
+export { StateGlyph, type GlyphState } from "./primitives/StateGlyph";
 export { Dot, StatusChip, RoleTag, roleTint, Separator, type StatusTone } from "./primitives/Chips";
 export { ROLE_WORD, type AgentRole } from "./primitives/roles";
 export { PROFILE_LINE, PROFILE_WORD } from "./primitives/profiles";

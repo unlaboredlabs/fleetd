@@ -147,3 +147,77 @@ ol {
 ::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/*
+ * Words being made (the lead thinking, an agent's line): a narrow band of 2 px dither, in the colour of the surface
+ * they sit on (`--sweep-bg`), steps across them on the app's beat (ui/lib/beat) and rests, so a few letters at a time
+ * read as half-rendered. No gradient and no glide. Without a beat (the window hidden, reduced motion) it isn't there.
+ * The element carrying [data-sweep] keeps the beat going while it shows (useBeat). ui/DESIGN.md.
+ */
+[data-sweep] {
+  position: relative;
+  overflow: hidden;
+}
+[data-sweep]::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 22%;
+  pointer-events: none;
+  background: repeating-conic-gradient(var(--sweep-bg, var(--bg)) 0 25%, transparent 0 50%) 0 0 / 2px 2px;
+  transform: translateX(-110%);
+}
+:root[data-beat="0"] [data-sweep]::after {
+  transform: translateX(-110%);
+}
+:root[data-beat="1"] [data-sweep]::after {
+  transform: translateX(-65%);
+}
+:root[data-beat="2"] [data-sweep]::after {
+  transform: translateX(-19%);
+}
+:root[data-beat="3"] [data-sweep]::after {
+  transform: translateX(26%);
+}
+:root[data-beat="4"] [data-sweep]::after {
+  transform: translateX(72%);
+}
+:root[data-beat="5"] [data-sweep]::after {
+  transform: translateX(117%);
+}
+:root[data-beat="6"] [data-sweep]::after {
+  transform: translateX(162%);
+}
+:root[data-beat="7"] [data-sweep]::after {
+  transform: translateX(208%);
+}
+:root[data-beat="8"] [data-sweep]::after {
+  transform: translateX(253%);
+}
+:root[data-beat="9"] [data-sweep]::after {
+  transform: translateX(298%);
+}
+:root[data-beat="10"] [data-sweep]::after {
+  transform: translateX(344%);
+}
+:root[data-beat="11"] [data-sweep]::after {
+  transform: translateX(389%);
+}
+:root[data-beat="12"] [data-sweep]::after {
+  transform: translateX(435%);
+}
+:root[data-beat="13"] [data-sweep]::after {
+  transform: translateX(480%);
+}
+
+/* A row leaving a list (ui/lib/leaving): one quick fade where it stood, then it goes and the gap closes. Inert while
+   it fades. A plain fade with reduced motion too. */
+[data-leaving] {
+  pointer-events: none;
+  animation: leave var(--dur-quick) var(--ease-snap) forwards;
+}
+@keyframes leave {
+  to {
+    opacity: 0;
+  }
+}

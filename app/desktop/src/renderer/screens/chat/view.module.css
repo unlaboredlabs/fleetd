@@ -127,6 +127,7 @@
 }
 .mine .enter {
   transform-origin: bottom right;
+  animation-duration: var(--dur-enter-mine);
 }
 @keyframes enter {
   from {
@@ -380,14 +381,21 @@
   gap: 4px;
   height: var(--leading-md);
 }
+/* The lead writing: three square cells, one lit at a time, stepping left to right like a cursor on the app's beat
+   (ui/lib/beat), two beats each. Without a beat (the window hidden, reduced motion) all three are half lit, still. */
 .dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
   background: var(--quiet);
-  opacity: 0.45;
+  opacity: 0.6;
 }
-.lit {
+:root[data-beat] .dot {
+  opacity: 0.3;
+}
+:root:is([data-beat="0"], [data-beat="1"], [data-beat="6"], [data-beat="7"], [data-beat="12"], [data-beat="13"], [data-beat="18"], [data-beat="19"]) .dot:nth-child(1),
+:root:is([data-beat="2"], [data-beat="3"], [data-beat="8"], [data-beat="9"], [data-beat="14"], [data-beat="15"], [data-beat="20"], [data-beat="21"]) .dot:nth-child(2),
+:root:is([data-beat="4"], [data-beat="5"], [data-beat="10"], [data-beat="11"], [data-beat="16"], [data-beat="17"], [data-beat="22"], [data-beat="23"]) .dot:nth-child(3) {
   opacity: 1;
 }
 
@@ -644,4 +652,35 @@
   text-decoration: underline;
   text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent);
   text-underline-offset: 2px;
+}
+
+/* The turn line: the glyph, what the lead does now (the line's one strong voice) and the time, faint; under them what
+   the turn did, quiet. Laid out as a grid so the second line starts under the words, not the glyph. */
+.turn {
+  display: grid;
+  grid-template-columns: 14px auto auto 1fr;
+  align-items: center;
+  column-gap: var(--space-2);
+  row-gap: 2px;
+}
+.turn > :first-child {
+  justify-self: center;
+}
+.turnNow {
+  --sweep-bg: var(--bg);
+  min-width: 0;
+  color: var(--text);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  font-weight: 500;
+}
+.turnTime {
+  color: var(--faint);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  font-variant-numeric: tabular-nums;
+}
+.turnDid {
+  grid-column: 2 / -1;
+  min-width: 0;
 }

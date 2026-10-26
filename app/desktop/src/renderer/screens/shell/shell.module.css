@@ -37,13 +37,15 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* The sidebar's footer, below the rows that scroll: the update line (screens/updates), if any, then the connection.
-   No background of its own, so the translucent sidebar shows through it too. */
+/* The sidebar's footer, below the rows that scroll, with no background of its own so the translucent sidebar shows
+   through: one row like the rows above it, no rule over it; the hub, and any update as a pill at its end. */
 .footer {
   flex: none;
-  margin: 0 var(--space-2) var(--space-2);
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0 var(--space-2) var(--space-2);
+  padding-right: var(--space-1);
 }
 
 .conn {

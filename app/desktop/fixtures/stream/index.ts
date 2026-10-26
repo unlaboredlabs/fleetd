@@ -2,6 +2,9 @@
 // quote, in many small deltas over the live chat feed, and is still writing at the last one. The chat shows the typing
 // bubble for it until it is final; this is the screen that must stay right while the deltas land.
 import { fromLines, firstProject, streamReply, writeChat } from "../kit/chat.ts";
+import { at } from "../kit/ids.ts";
+import { arr, obj } from "../kit/stress.ts";
+import { isObject } from "../kit/json.ts";
 import { QUESTION } from "../kit/chatText.ts";
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
@@ -69,6 +72,30 @@ export default defineGroup({
     f.settleMs = undefined;
     const ref = firstProject(f);
     writeChat(f, ref, [...fromLines(QUESTION), { author: "human", text: "sounds good, go ahead and tell me the plan" }, { author: "lead", text: REPLY.slice(0, SO_FAR), state: "streaming" }], { leadWorking: true });
-    return [streamReply(f, ref, deltas(REPLY.slice(SO_FAR), 24), 25)];
+    // W42's motion: the lead writing a moment, then its reply final, its bubbles rising in one after another.
+    const r = Fixture.from(base("chat-streaming"), "stream-reply", "The lead writes for a moment, then its reply arrives whole: the typing bubble gives way to its bubbles.");
+    r.timeline = r.timeline.filter((t) => t.kind !== "chat_delta");
+    const rref = firstProject(r);
+    writeChat(r, rref, [...fromLines(QUESTION), { author: "human", text: "sounds good, go ahead and tell me the plan" }, { author: "lead", text: "", state: "streaming" }], { leadWorking: true });
+    const last = arr(obj(r.output("chat_history", { projectRef: { ...rref } }))["messages"]).filter(isObject).at(-1) ?? {};
+    // Past every event the fixture has, timed ones included, or the app takes it for one it has seen.
+    const seq =
+      Math.max(
+        Number(r.snapshot?.["cursor"] ?? 0),
+        ...r.events.map((e) => Number(e["seq"] ?? 0)),
+        ...r.timeline.filter((x) => x.kind === "event").map((x) => Number(x.payload["seq"] ?? 0)),
+      ) + 1;
+    const text = "Here's the plan.\n\nTwo writers start now: one on the receipt dates, one on the totals.\n\nQA checks both on a phone-sized window once the PRs are up. Nothing needs you yet.";
+    r.later(1400, "event", {
+      seq,
+      at: at(r.now, 1400),
+      type: "chat.message",
+      summary: "The lead in the chat",
+      machineId: rref.machineId,
+      projectId: rref.projectId,
+      data: { projectRef: { ...rref }, messageId: last["messageId"] ?? "m1", seq: last["seq"] ?? 1, author: "lead", state: "final", message: { ...last, text, state: "final", updatedAt: at(r.now, 1400) } },
+    });
+    r.settleAt(2000);
+    return [streamReply(f, ref, deltas(REPLY.slice(SO_FAR), 24), 25), r];
   },
 });

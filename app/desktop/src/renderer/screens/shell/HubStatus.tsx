@@ -1,4 +1,4 @@
-// The sidebar's last line: a small chip naming the hub ("devbox") with a soft dot, quiet while all is well and saying
+// The sidebar's last line: a row naming the hub ("devbox") beside a plain dot, quiet while all is well and saying
 // so when it isn't ("Reconnecting…", "Offline", "Key refused"). Hovering shows the hub's address; clicking (or Enter)
 // opens the details: the address in full, the machines online, protocol and version, and what can be done from here
 // (Retry now, Hub settings, Disconnect), each only when it applies. A paired app switches hub from Settings' Hub

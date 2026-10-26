@@ -338,3 +338,32 @@ export const elsewhere = (
     ...items.filter(isExpired).map((i) => claimRow(i, nowMs, titleOf)),
   ];
 };
+
+/** A change still in flight: not refused, merged or closed. */
+const LIVE_CHANGE = new Set(["queued", "reviewing", "ready", "rebasing", "ci", "merging", "needs_rebase", "ci_failed"]);
+
+/** Live work: a claim still held, an agent queued, running or idle, a PR still open or on its way. Not what landed, expired or was refused. */
+export const isLiveWork = (item: WorkItem): boolean => {
+  if (item.kind === "claim") return item.state === "active";
+  // work_list sends only tasks in flight (queued, running, idle): another project's agent in line is a collision too.
+  if (item.kind === "task") return item.state === "queued" || item.state === "running" || item.state === "idle";
+  if (item.kind === "change") return LIVE_CHANGE.has(item.state);
+  return true;
+};
+
+/**
+ * "Also on this repo": only the live work on the project's repo that isn't its own, a person's
+ * claims first, then the rest in the hub's order. What landed, expired claims and refused PRs are gone: they were
+ * most of the old Elsewhere, and none of it is anything to steer around.
+ */
+export const alsoOnRepo = (
+  out: WorkListAnswer,
+  project: ProjectKey,
+  nowMs: number,
+  titleOf: (key: ProjectKey) => string | undefined = () => undefined,
+): readonly ElsewhereRow[] => {
+  const items = out.items.filter((i) => !isOwn(i, project) && isLiveWork(i));
+  const person = items.filter((i) => i.kind === "claim" && i.owner?.kind === "human_session");
+  const others = items.filter((i) => !person.includes(i));
+  return [...person.map((i) => claimRow(i, nowMs, titleOf)), ...others.map((i) => (i.kind === "claim" ? claimRow(i, nowMs, titleOf) : workRow(i, titleOf)))];
+};

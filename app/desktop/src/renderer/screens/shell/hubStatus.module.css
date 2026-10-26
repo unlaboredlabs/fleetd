@@ -1,27 +1,30 @@
-/* The sidebar's hub chip (HubStatus.tsx) and its popover. No divider and no background at rest: the chip sits on the
-   translucent sidebar like the rows above it and takes a fill only under the pointer, or while its popover is open. */
+/* The sidebar's hub chip (HubStatus.tsx) and its popover. One row as tall as the sidebar's rows, its dot in their icon
+   column, no divider and no background at rest: it takes a fill only under the pointer, or while its popover is open.
+   Any update sits at the row's end (UpdatesLine). */
 .row {
+  flex: 1;
   display: flex;
-  padding-top: var(--space-1);
+  min-width: 0;
 }
 
 .chip {
+  flex: 1;
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1-5);
-  max-width: 100%;
-  min-height: 24px;
-  /* The ring's dot lines up with the update line's dot above it. */
-  padding: 0 var(--space-2) 0 var(--space-1);
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: var(--row);
+  padding: 0 var(--space-2);
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--radius-md);
   background: none;
   color: var(--quiet);
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  text-align: left;
   transition:
-    background var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out);
+    background var(--dur-quick) var(--ease-snap),
+    color var(--dur-quick) var(--ease-snap);
 }
 .chip:hover,
 .chip[data-state="open"] {
@@ -42,15 +45,13 @@
   text-overflow: ellipsis;
 }
 
-/* A 6 px dot in a 12 px ring of its own color, faint: soft, not a warning light. */
+/* The hub's one dot, plain: no ring and no halo (ui/DESIGN.md), in a 12 px cell so it lines up with the rows' icons. */
 .dot {
   flex: none;
   display: inline-grid;
   place-items: center;
   width: 12px;
   height: 12px;
-  border-radius: 999px;
-  background: color-mix(in srgb, currentColor 22%, transparent);
 }
 
 .card {
@@ -99,3 +100,4 @@
   gap: var(--space-2);
   padding-top: var(--space-1);
 }
+

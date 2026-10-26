@@ -23,13 +23,13 @@ import {
   Text,
   Tooltip,
   Truncate,
+  useBeat,
 } from "../../ui";
-import { useNow, useOnScreen } from "../live";
 import { useBubbleActions } from "./actions";
 import { fmtBytes } from "./attachments";
 import { Block } from "./blocks/Block";
 import { bubblesOf, isWide, quoteOf, TAPBACK_WORD, TAPBACKS, tapbackSend, type Bubble, type Tapback } from "./bubbles";
-import { MessageReceipt } from "./Composer";
+import { MessageReceipt, ReceiptMarkView } from "./Composer";
 import { shortClock } from "./format";
 import { authorLabel, ENTER_MS, type Arrival, type Row } from "./model";
 import { plainText } from "./plain";
@@ -89,21 +89,14 @@ export function useEnter(arrival: Arrival | undefined, step = 0): { className?: 
 /** One to three emoji and nothing else: shown large, without a bubble, as a messaging app does. */
 const EMOJI_ONLY = /^(?:\p{Extended_Pictographic}(?:️|‍\p{Extended_Pictographic})*\s*){1,3}$/u;
 
-/**
- * The lead writing: three dots, one lit at a time, stepping on the app's one 1 Hz clock (so nothing animates
- * between steps), and still while off screen or when the system asks for reduced motion.
- */
+/** The lead writing: three square cells, one lit at a time, on the app's beat (view.module.css). */
 function TypingBubble() {
-  const box = useRef<HTMLDivElement>(null);
-  const onScreen = useOnScreen(box);
-  const [still] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
-  const now = useNow(onScreen && !still);
-  const lit = still ? -1 : Math.floor(now / 1000) % 3;
+  useBeat(true);
   return (
-    <div ref={box} className={cx(s.bubble, s.theirs, s.first, s.last)} role="status" aria-label="The lead is writing" data-typing>
+    <div className={cx(s.bubble, s.theirs, s.first, s.last)} role="status" aria-label="The lead is writing" data-typing>
       <span className={s.typing} aria-hidden>
         {[0, 1, 2].map((d) => (
-          <span key={d} className={cx(s.dot, d === lit && s.lit)} />
+          <span key={d} className={s.dot} />
         ))}
       </span>
     </div>
@@ -162,6 +155,8 @@ function BubbleLine(props: {
   enter: Arrival | undefined;
   /** Its place in the message, for the stagger as the message enters. */
   step: number;
+  /** Your message's last bubble: its receipt mark goes beside it; true when it's your latest message. */
+  receipt?: boolean | undefined;
 }) {
   const { item, bubble, first, last, lead } = props;
   const actions = useBubbleActions();
@@ -238,6 +233,7 @@ function BubbleLine(props: {
           ) : null}
         </div>
       </ContextMenu>
+      {props.receipt !== undefined ? <ReceiptMarkView item={item} latest={props.receipt} /> : null}
       <span className={s.aside}>
         {lead && actions !== undefined ? (
           <>
@@ -313,6 +309,7 @@ export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, {
             tapback={lead ? marks[bubbleKey(i.id, b.key)] : undefined}
             enter={enter}
             step={n}
+            receipt={mine && n === bubbles.length - 1 ? mineLatest : undefined}
           />
         ))
       )}
