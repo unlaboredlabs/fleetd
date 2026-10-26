@@ -48,6 +48,12 @@ group("describe", () => {
     expect(refused).toMatchObject({ text: "#7 refused by the merge train", detail: "Open it from a fleetd/ branch.", tone: "failed" });
   });
 
+  it("words a decision's key as the Decisions tab does, never its id or raw key", () => {
+    const line = describe(ev("decision.recorded", today("09:00"), { decisionId: "D4", key: "merge.style", scope: "project" }, "D4 merge.style = squash"));
+    expect(line?.detail).toBe("Merge style = squash");
+    expect(describe(ev("decision.recorded", today("09:00"), undefined, "D5 something else"))?.detail).toBe("something else");
+  });
+
   it("names a secret by its key and never anything else", () => {
     const asked = describe(ev("request.opened", today("09:00"), { requestId: "R4", kind: "secret", state: "open" }, "R4 open: secret STRIPE_KEY"));
     expect(asked).toMatchObject({ text: "Secret asked for", detail: "STRIPE_KEY", tone: "needs-you" });

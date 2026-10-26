@@ -43,6 +43,10 @@ const answer = (tool: string, input: Record<string, unknown>): unknown => {
       return { scope: { repoKey: "github.com/acme/storefront", base: "main" }, items: [], recentLandings: [] };
     case "pr_list":
       return { at: AT, prs: PRS };
+    case "changes_list":
+      return { changes: [] };
+    case "decisions_list":
+      return { decisions: [], orders: [] };
     case "pr_get": {
       const found = PRS.find((p) => p.number === input["number"] && (input["repo"] === undefined || p.repo === input["repo"]));
       return found === undefined ? {} : detail(found);

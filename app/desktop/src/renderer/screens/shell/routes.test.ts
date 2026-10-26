@@ -69,6 +69,11 @@ describe("routes", () => {
     expect(parseHash("#/project/devbox/storefront/nope")).toEqual({ id: "project", project: storefront, message: null });
     // A tab without items ignores what follows its name.
     expect(parseHash("#/project/devbox/storefront/checklist/x")).toEqual(panelRoute(storefront, { tab: "checklist" }));
+    for (const tab of ["train", "activity", "decisions"] as const) {
+      expect(parseHash(`#/project/devbox/storefront/${tab}`)).toEqual(panelRoute(storefront, { tab }));
+      expect(parseHash(`#/project/devbox/storefront/${tab}/12`)).toEqual(panelRoute(storefront, { tab }));
+      expect(toHash(panelRoute(storefront, { tab }))).toBe(`#/project/devbox/storefront/${tab}`);
+    }
   });
 
   it("gives every tab of the panel's list a route of its own name, its list with no item", () => {
