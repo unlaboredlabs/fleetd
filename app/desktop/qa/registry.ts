@@ -187,6 +187,8 @@ export const fixtures = [
   "updates-run-hub-rolled-back",
   "updates-run-nodes-mixed",
   "updates-refused",
+  // fleetd.sh's showcase: one request played from send to merge, recorded by showcase.spec.ts (fixtures/showcase).
+  "showcase-order",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 

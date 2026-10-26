@@ -18,6 +18,9 @@ const State = z.discriminatedUnion("phase", [
   z.object({ phase: z.literal("refused"), hub: z.string(), message: z.string() }),
 ]);
 
+/** Items of `tool`'s answers under `field` that match `where` (a deep subset), e.g. requests_list's open Q1. */
+const Rows = z.object({ tool: z.string(), field: z.string(), where: z.json() });
+
 const Frame = z.discriminatedUnion("t", [
   // The connection changing mid-run, as a hub restart does: retrying, then live again and a fresh snapshot.
   z.object({ t: z.literal("state"), state: State, afterMs: delay }),
@@ -31,10 +34,10 @@ const Frame = z.discriminatedUnion("t", [
     delta: z.looseObject({ messageId: z.string(), offset: z.int().min(0), append: z.string() }),
     afterMs: delay,
   }),
+  // Not sent to the window: rows later answers leave out or include again from now on, so a fixture's answers move on
+  // over time as a hub's do (fixtures/showcase plays one order from request to merge).
+  z.object({ t: z.literal("rows"), hide: z.array(Rows).optional(), show: z.array(Rows).optional(), afterMs: delay }),
 ]);
-
-/** Items of `tool`'s answers under `field` that match `where` (a deep subset), e.g. requests_list's open Q1. */
-const Rows = z.object({ tool: z.string(), field: z.string(), where: z.json() });
 
 /**
  * What answering a call changes, as a hub would: frames it emits (each `afterMs` after the call, e.g. a request's
@@ -66,6 +69,8 @@ const FixtureFile = z.object({
   connect: z.union([z.object({ ok: z.literal(true) }), z.object({ ok: z.literal(false), message: z.string() })]).optional(),
   /** The renderer's disk cache as an earlier launch left it (src/renderer/src/data/cache.ts); never written over. */
   cache: z.json().optional(),
+  /** Rows hidden from the first answer on, until a rows frame shows them. */
+  hidden: z.array(Rows).optional(),
 });
 export type FixtureFile = z.infer<typeof FixtureFile>;
 
@@ -119,8 +124,8 @@ export class FixtureSource implements HubSource {
   readonly #file: FixtureFile;
   readonly #emit: (frame: HubFrame) => void;
   #replay: Array<ReturnType<typeof setTimeout>> = [];
-  /** Rows answered calls have hidden (see Then); a resync keeps them, as a hub keeps what was answered. */
-  #hidden: Array<z.infer<typeof Rows>> = [];
+  /** Rows answered calls and rows frames have hidden (see Then); a resync keeps them, as a hub keeps what was answered. */
+  #hidden: Array<z.infer<typeof Rows>>;
   /** The last event number sent: a call's events are numbered as they happen, after everything sent before. */
   #seq = 0;
   /** The connection as the replay left it; a window subscribing later starts from it. */
@@ -129,6 +134,7 @@ export class FixtureSource implements HubSource {
   constructor(file: FixtureFile, emit: (frame: HubFrame) => void) {
     this.#file = file;
     this.#state = file.state;
+    this.#hidden = [...(file.hidden ?? [])];
     this.#emit = (frame) => {
       if (frame.t === "state") this.#state = frame.state;
       if (frame.t === "event") this.#seq = Math.max(this.#seq, frame.event.seq);
@@ -158,11 +164,11 @@ export class FixtureSource implements HubSource {
     if (this.#file.state.phase !== "live") return;
     let at = 0;
     for (const { afterMs, ...checked } of this.#file.frames) {
-      // Fixtures are recorded hub frames, checked at the fields main relies on, like a live hub's.
-      const frame = checked as HubFrame;
       at += afterMs ?? 0;
-      if (at === 0) this.#emit(frame);
-      else this.#replay.push(setTimeout(() => this.#emit(frame), at));
+      // Fixtures are recorded hub frames, checked at the fields main relies on, like a live hub's.
+      const play = checked.t === "rows" ? () => this.#rows(checked) : () => this.#emit(checked as HubFrame);
+      if (at === 0) play();
+      else this.#replay.push(setTimeout(play, at));
     }
   }
 
@@ -180,19 +186,24 @@ export class FixtureSource implements HubSource {
   }
 
   #apply(then: z.infer<typeof Then>): void {
-    const same = (a: z.infer<typeof Rows>, b: z.infer<typeof Rows>) => JSON.stringify(a) === JSON.stringify(b);
-    for (const rows of then.show ?? []) this.#hidden = this.#hidden.filter((h) => !same(h, rows));
-    for (const rows of then.hide ?? []) if (!this.#hidden.some((h) => same(h, rows))) this.#hidden.push(rows);
+    this.#rows(then);
     let at = 0;
     for (const { afterMs, ...checked } of then.frames ?? []) {
       at += afterMs ?? 0;
       this.#replay.push(
         setTimeout(() => {
+          if (checked.t === "rows") return this.#rows(checked);
           const frame = checked as HubFrame;
           this.#emit(frame.t === "event" ? { ...frame, event: { ...frame.event, seq: this.#seq + 1 } } : frame);
         }, at),
       );
     }
+  }
+
+  #rows({ hide, show }: { hide?: Array<z.infer<typeof Rows>> | undefined; show?: Array<z.infer<typeof Rows>> | undefined }): void {
+    const same = (a: z.infer<typeof Rows>, b: z.infer<typeof Rows>) => JSON.stringify(a) === JSON.stringify(b);
+    for (const rows of show ?? []) this.#hidden = this.#hidden.filter((h) => !same(h, rows));
+    for (const rows of hide ?? []) if (!this.#hidden.some((h) => same(h, rows))) this.#hidden.push(rows);
   }
 
   #withoutHidden(tool: string, outcome: CallOutcome): CallOutcome {

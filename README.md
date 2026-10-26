@@ -1,7 +1,7 @@
 # fleetd
 
-<!-- Clip slot: replace this screenshot with a 10–20 s clip of the app once it exists. -->
-![The fleetd app: a project's chat with its lead, three agents at work under its reply](site/chat-hero.png)
+<!-- The showcase's last frame; the recording itself plays on https://fleetd.sh (site/README.md). -->
+[![The fleetd app after one request ran through: you asked to let shoppers save their cart, the lead split it between two writers with a reviewer per PR, and the panel's merge line shows the first PR merged](site/showcase-light.jpg)](https://fleetd.sh)
 
 fleetd runs Claude Code on your machines: you type what you want, and it plans the work, runs the agents, opens pull
 requests it has checked, and asks you only about real decisions.

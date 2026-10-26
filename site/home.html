@@ -1,15 +1,21 @@
 <!doctype html>
-<!-- Type: IBM Plex Sans for every human sentence and Lilex for machine text, because they are the two faces the fleetd app itself renders in, so the page and the captured app read as one document. -->
+<!-- Type: IBM Plex Sans for every human sentence and Lilex for machine text, because they are the two faces the fleetd app itself renders in, so the page and the recorded app read as one document. Light or dark follows the reader's system, as the app does. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>fleetd: Claude Code on your machines, run by a lead you chat with</title>
-<meta name="description" content="fleetd runs Claude Code on your machines: you type what you want, and it plans the work, runs the agents, opens pull requests it has checked, and asks you only about real decisions.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f2f2ef" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121212" media="(prefers-color-scheme: dark)">
+<title>fleetd: a software factory on your own machines</title>
+<meta name="description" content="fleetd is a software factory, not another coding assistant. You give it work; a lead plans it; Claude Code agents build in parallel on your machines; a separate reviewer checks every change; a merge train lands it. You are asked only for decisions.">
+<meta property="og:title" content="fleetd: a software factory on your own machines">
+<meta property="og:description" content="You give it work. A lead plans it, agents build it in parallel on your machines, a reviewer checks every change, and a merge train lands it.">
+<meta property="og:image" content="https://fleetd.sh/showcase-light.jpg">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="alternate" type="text/plain" href="/fleetd.txt" title="fleetd.sh as plain text">
 <link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/fonts/lilex-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/plex-sans-Medium.woff2" as="font" type="font/woff2" crossorigin>
 <style>
 @font-face{font-family:"Plex";src:url(/fonts/plex-sans-Regular.woff2) format("woff2");font-weight:400;font-display:swap}
 @font-face{font-family:"Plex";src:url(/fonts/plex-sans-Medium.woff2) format("woff2");font-weight:500;font-display:swap}
@@ -23,15 +29,33 @@
   --tone:#e9e9e5;
   --ink:#18191b;
   --grey:#5d5f63;
-  --faint:#8b8d90;
+  --faint:#86888b;
   --rule:#cfcfca;
   --mark:#c2410c;
+  --ring:rgba(0,0,0,.14);
+  --drop:0 18px 40px -22px rgba(0,0,0,.45);
   --sans:"Plex",ui-sans-serif,-apple-system,"Segoe UI",sans-serif;
   --mono:"Lilex",ui-monospace,"SF Mono",Menlo,monospace;
   --pad:clamp(20px,4.4vw,64px);
   --max:1240px;
   --gap:clamp(24px,3.2vw,48px);
   --sec:clamp(48px,6vw,88px);
+  --snap:cubic-bezier(.2,0,0,1);
+}
+/* Dark: the app's own dark greys, one step darker around it so the recording sits on the page as a window does. */
+@media (prefers-color-scheme:dark){
+  :root{
+    color-scheme:dark;
+    --paper:#121212;
+    --tone:#1d1d1d;
+    --ink:#ececea;
+    --grey:#a4a5a7;
+    --faint:#7c7e81;
+    --rule:#313133;
+    --mark:#f0884e;
+    --ring:rgba(255,255,255,.12);
+    --drop:0 18px 40px -22px rgba(0,0,0,.9);
+  }
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
@@ -52,9 +76,10 @@ h1,h2,h3{margin:0;font-weight:500}
 .nav a:hover{color:var(--ink);text-decoration:underline;text-decoration-color:var(--rule)}
 
 /* hero */
-.hero{display:grid;grid-template-columns:minmax(0,7fr) minmax(0,5fr);gap:32px var(--gap);align-items:end;padding-top:clamp(32px,6vw,88px);padding-bottom:clamp(32px,4vw,56px)}
-.hero h1{font-size:clamp(30px,3.6vw,46px);line-height:1.12;letter-spacing:-.02em;text-wrap:balance}
-.sub{margin-top:18px;max-width:32em;color:var(--grey);font-size:clamp(17px,1.5vw,19px)}
+.hero{display:grid;grid-template-columns:minmax(0,7fr) minmax(0,5fr);gap:32px var(--gap);align-items:end;padding-top:clamp(28px,5vw,72px);padding-bottom:clamp(28px,3.4vw,48px)}
+.hero h1{font-size:clamp(30px,3.8vw,48px);line-height:1.1;letter-spacing:-.022em;text-wrap:balance}
+.sub{margin-top:18px;max-width:34em;color:var(--grey);font-size:clamp(17px,1.5vw,19px)}
+.sub b{color:var(--ink);font-weight:500}
 .cmd{display:flex;align-items:center;gap:14px;border-top:1px solid var(--ink);border-bottom:1px solid var(--rule);padding:13px 0}
 .cmd code{flex:1;min-width:0;font-size:16px;white-space:nowrap;overflow-x:auto;scrollbar-width:none}
 .cmd code::before{content:"$ ";color:var(--faint)}
@@ -63,18 +88,32 @@ h1,h2,h3{margin:0;font-weight:500}
 .copy:active{background:var(--tone)}
 .facts{margin-top:12px;font-size:14px;color:var(--grey)}
 
-/* screenshots: 1400x900 at 2x */
+/* app pictures: 1400x900 windows at 2x */
 figure{margin:0}
-.shot{display:block;border-radius:7px;overflow:hidden;box-shadow:0 0 0 1px rgba(0,0,0,.14),0 18px 40px -22px rgba(0,0,0,.45)}
-.shot img{display:block;width:100%;height:auto;aspect-ratio:14/9}
-figcaption{margin-top:14px;font-size:15px;color:var(--grey);max-width:46em}
+.shot{display:block;position:relative;border-radius:7px;overflow:hidden;box-shadow:0 0 0 1px var(--ring),var(--drop);background:var(--tone)}
+.shot img,.shot video{display:block;width:100%;height:auto;aspect-ratio:14/9}
+figcaption{margin-top:14px;font-size:15px;color:var(--grey);max-width:50em}
 figcaption b{color:var(--ink);font-weight:500}
-.lead-shot{padding-bottom:var(--sec)}
+
+/* the showcase: the still is the page's picture; the recording plays over it once it can, and never with reduced motion */
+.show{padding-bottom:var(--sec)}
+.show video{position:absolute;inset:0;opacity:0}
+.show .on video{opacity:1}
+.play{position:absolute;right:10px;bottom:10px;font:500 13px/1 var(--sans);color:var(--ink);background:var(--paper);border:1px solid var(--rule);border-radius:4px;padding:6px 9px;cursor:pointer;opacity:0}
+.show .on .play{opacity:1}
+.play:hover{border-color:var(--ink)}
+.line{list-style:none;margin:20px 0 0;padding:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:0 clamp(14px,1.8vw,28px);counter-reset:s}
+.line li{border-top:1px solid var(--rule);padding:12px 0 0;counter-increment:s;color:var(--grey)}
+.line h3{font-size:15px;line-height:1.35;color:var(--ink)}
+.line h3::before{content:counter(s);display:inline-block;width:1.4em;color:var(--faint);font-variant-numeric:tabular-nums}
+.line p{font-size:14px;margin-top:3px}
+.line .now{border-top-color:var(--ink)}
+.line .now h3::before{color:var(--ink)}
 
 /* sections */
 .sec{padding-top:var(--sec);padding-bottom:var(--sec);background:linear-gradient(var(--rule),var(--rule)) no-repeat center top/calc(100% - 2*var(--pad)) 1px}
 .head{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:8px var(--gap);align-items:baseline;margin-bottom:clamp(24px,3vw,40px)}
-.head h2{font-size:clamp(22px,2.2vw,28px);line-height:1.2;letter-spacing:-.012em}
+.head h2{font-size:clamp(22px,2.2vw,28px);line-height:1.2;letter-spacing:-.012em;text-wrap:balance}
 .head p{color:var(--grey);font-size:16px;max-width:40em}
 
 .feats{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 var(--gap)}
@@ -82,16 +121,13 @@ figcaption b{color:var(--ink);font-weight:500}
 .feats h3{font-size:17px;line-height:1.35}
 .feats p{margin-top:6px;color:var(--grey);font-size:15px}
 .feats a{display:inline-block;margin-top:8px;font-size:14px;color:var(--ink)}
+.feats.quiet li{border-top-color:var(--rule)}
+.pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--gap);margin-top:clamp(8px,1.5vw,16px)}
 
-.pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--gap)}
-
-.train{margin:0;padding:0;list-style:none;font:400 13.5px/1.55 var(--mono);font-variant-ligatures:none;border-top:1px solid var(--ink)}
-.train li{display:grid;grid-template-columns:5.6em 11.6em minmax(0,1fr);gap:0 1em;padding:6px 0;border-bottom:1px solid var(--rule)}
-.train .t,.train .e{color:var(--faint)}
-.train .s{overflow-wrap:anywhere}
-.train .bad .e{color:var(--mark)}
-.train .ok .e{color:#2d6a3e}
-.train .x{color:var(--faint)}
+.fact{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:8px var(--gap);align-items:baseline}
+.fig{font-size:clamp(44px,6vw,72px);line-height:1;font-weight:500;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.fact p{color:var(--grey);font-size:16px;max-width:40em}
+.fact p+p{margin-top:10px;font-size:14px}
 
 .steps{list-style:none;margin:0;padding:0;counter-reset:s;display:grid;gap:28px}
 .steps>li{display:grid;grid-template-columns:2.2em minmax(0,1fr);border-top:1px solid var(--ink);padding-top:14px;counter-increment:s}
@@ -117,18 +153,22 @@ summary:hover{color:var(--ink)}
 .end a:hover{color:var(--ink);text-decoration:underline}
 
 @media (max-width:1000px){
-  .hero,.head{grid-template-columns:minmax(0,1fr)}
+  .hero,.head,.fact{grid-template-columns:minmax(0,1fr)}
   .install{max-width:36em}
   .feats,.docs{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .line{grid-template-columns:repeat(3,minmax(0,1fr));gap:0 20px}
+  .line li{padding-bottom:16px}
 }
 @media (max-width:640px){
   body{font-size:16px}
   .nav{gap:16px;font-size:14px}
   .shot{border-radius:4px}
+  .play{right:6px;bottom:6px;font-size:12px;padding:4px 7px}
   .feats,.docs,.pair{grid-template-columns:minmax(0,1fr)}
   .feats li{padding-bottom:24px}
-  .train li{grid-template-columns:5.2em minmax(0,1fr);font-size:12.5px}
-  .train .s{grid-column:1/-1}
+  .line{grid-template-columns:minmax(0,1fr)}
+  .line li{display:grid;grid-template-columns:minmax(0,9em) minmax(0,1fr);gap:0 12px;padding:9px 0}
+  .line p{margin-top:0}
   .lines{font-size:12.5px}
   .cmd code{font-size:14px}
   .steps>li{grid-template-columns:1.6em minmax(0,1fr)}
@@ -138,9 +178,12 @@ summary:hover{color:var(--ink)}
   .cmd code{font-size:12.5px}
   .cmd code::before{content:none}
   .copy{min-width:0}
+  .line li{grid-template-columns:minmax(0,1fr)}
 }
+/* Snappy, as in the app (app/desktop/src/renderer/ui/DESIGN.md): state changes in 140 ms, only colour and opacity. */
 @media (prefers-reduced-motion:no-preference){
-  .copy,.nav a,a,summary{transition:color .15s,border-color .15s,text-decoration-color .15s}
+  .copy,.nav a,a,summary,.line li,.line h3::before{transition:color .14s var(--snap),border-color .14s var(--snap),text-decoration-color .14s var(--snap)}
+  .show video,.play{transition:opacity .14s var(--snap)}
 }
 </style>
 </head>
@@ -158,73 +201,98 @@ summary:hover{color:var(--ink)}
 <main>
 <section class="w hero">
   <div>
-    <h1>fleetd runs Claude Code on your machines.</h1>
-    <p class="sub">You type what you want, and it plans the work, runs the agents, opens pull requests it has checked, and asks you only about real decisions.</p>
+    <h1>A software factory on your own machines.</h1>
+    <p class="sub">fleetd isn’t another coding assistant. <b>You give it work; a lead plans it; agents build in parallel on your machines; a separate reviewer checks every change; a merge train lands it.</b> You’re asked only for decisions.</p>
   </div>
   <div class="install">
     <div class="cmd"><code id="cmd">curl -fsSL https://fleetd.sh | sh</code><button class="copy" type="button" data-copy="cmd">Copy</button></div>
-    <p class="facts">Installs the fleetd CLI and desktop app, then runs <code>fleetd init</code> to set up the hub and pair the app. You need macOS or Linux x64, the <code>claude</code> CLI logged in (fleetd uses your own claude setup, including any proxy), <code>git</code>, and <code>gh</code> for pull requests. MIT.</p>
+    <p class="facts">Installs the fleetd CLI and desktop app, then runs <code>fleetd init</code> to set up the hub and pair the app. You need macOS or Linux x64, the <code>claude</code> CLI logged in (fleetd uses your own Claude Code setup, including any proxy), <code>git</code>, and <code>gh</code> for pull requests. Open source, MIT.</p>
   </div>
 </section>
 
-<!-- To re-shoot the screenshots: `pnpm site:shots` in app/desktop (site/README.md), then keep each alt text and caption
-     true to its picture. -->
-<figure class="w lead-shot">
-  <a class="shot" href="/chat-hero.png"><img src="/chat-hero.png" width="2800" height="1800" alt="The fleetd app on storefront’s chat: you asked to round the cart totals once, in one place; the lead answered that the writers start from PR #10’s branch and split the change into three PRs. On top of the message box, the live strip: 3 agents working, a reviewer running the cart tests. The panel’s Agents tab lists them: reviewers on #221 and #222 and a writer editing src/cart/total.ts. In the sidebar, billing waits on a reply and checkout is blocked."></a>
-  <figcaption><b>One chat per project.</b> Tell the lead what you want; it splits the work and runs the agents. The panel beside the chat shows what each agent is doing now.</figcaption>
+<!-- To record the showcase again: `pnpm site:showcase` in app/desktop (site/README.md). Keep the alt text, the steps
+     and the caption true to the recording. -->
+<figure class="w show" aria-labelledby="show-cap">
+  <div class="shot" id="show">
+    <picture>
+      <source srcset="/showcase-dark.jpg" media="(prefers-color-scheme: dark)">
+      <img src="/showcase-light.jpg" width="2800" height="1800" fetchpriority="high" alt="The fleetd app on the storefront project, after one request has run through. You asked: let shoppers save their cart and pick it up on any device. The lead answered that one writer saves the cart and one brings it back at sign-in, each PR with its own reviewer; then that #231 is up with a reviewer on it; then that #231 is merged and the second PR opens next. The panel’s merge line lists Saved carts are stored per shopper, #231, as merged, above two earlier merges. Under the chat, one writer is still at work.">
+    </picture>
+    <video muted loop playsinline preload="none" disablepictureinpicture aria-hidden="true" tabindex="-1" data-light="/showcase-light.webm" data-dark="/showcase-dark.webm"></video>
+    <button class="play" type="button" aria-controls="show">Pause</button>
+  </div>
+  <ol class="line" id="line">
+    <li data-step="ask"><h3>You ask</h3><p>Say what you want in the project’s chat.</p></li>
+    <li data-step="plan"><h3>The lead plans</h3><p>It splits the work and starts agents.</p></li>
+    <li data-step="build"><h3>Agents build</h3><p>In parallel, each on its own branch.</p></li>
+    <li data-step="review"><h3>A reviewer checks</h3><p>Every pull request, before it merges.</p></li>
+    <li data-step="merge"><h3>The train merges</h3><p>Rebased onto main, merged on green CI.</p></li>
+  </ol>
+  <figcaption id="show-cap"><b>One request, from message to merged pull request.</b> Recorded from the fleetd app on sample data, with the waits cut short: a real change takes minutes to hours, and you can close the app meanwhile.</figcaption>
 </figure>
 
-<section class="w sec" aria-labelledby="what">
+<section class="w sec" aria-labelledby="line-h">
   <div class="head">
-    <h2 id="what">What fleetd does</h2>
-    <p>A hub keeps your projects, a node on each of your machines runs the agents, and the desktop app is where you talk to them.</p>
+    <h2 id="line-h">The whole line, not one more chat window</h2>
+    <p>A coding assistant waits for you at every step. fleetd runs the steps between your request and a merged pull request, on machines you own, and comes back to you only for the calls that are yours.</p>
   </div>
   <ul class="feats">
-    <li><h3>Chat with the lead</h3><p>Each project has one lead. It decides everything that isn’t a product, money, credential or irreversible call, asks you the rest in the chat, and logs each answer as a decision.</p><a href="/docs/chat">Chat with the lead</a></li>
-    <li><h3>Agents and the merge train</h3><p>Writers open pull requests and reviewers check them. Only fleetd merges: each PR is reviewed, rebased onto its base branch and merged on green CI.</p><a href="/docs/merge-train">Merge train</a></li>
-    <li><h3>The panel</h3><p>Beside each chat, a tab each for the project’s Agents, Pull requests, Train, Checklist, Activity and Decisions. Watch an agent work, read a PR’s changes, see what merges next.</p><a href="/docs/desktop-app#panel">The desktop app</a></li>
-    <li><h3>Project settings and env vars</h3><p>Environment variables every agent of a project gets, plain or secret. A secret lives only on the project’s machine and is masked in agents’ output.</p><a href="/docs/projects#env">Projects</a></li>
-    <li><h3>Automations</h3><p>A stored prompt that runs on a schedule, from a webhook, or with Run now. Each run becomes work the lead starts on its own.</p><a href="/docs/automations">Automations</a></li>
-    <li><h3>Skills</h3><p>SKILL.md workflows from the repo, the project or the whole hub, for every agent. skills.sh and Claude Code skills work as they are.</p><a href="/docs/skills">Skills</a></li>
-    <li><h3>MCP servers</h3><p>More tools for agents: a command on their machine or a service over HTTP, for every project or one, with a choice of which roles get each.</p><a href="/docs/mcp-servers">MCP servers</a></li>
-    <li><h3>Memory</h3><p>When you correct the lead or state a rule, it remembers, for you everywhere or for one project. Read, edit or delete it in Settings → Memory.</p><a href="/docs/what-agents-are-told#memory">Memory</a></li>
-    <li><h3>Usage limits</h3><p>An agent that hits a Claude usage or rate limit pauses, and carries on by itself once it can: at the reset, or when a later check gets through. A machine near the end of a usage window takes no new agents until it has room.</p><a href="/docs/machines#guard">Machines</a></li>
+    <li><h3>A lead for each project</h3><p>Each project has one lead: a Claude Code session you chat with. It turns what you ask into work, starts agents for it, follows them through review and merge, and tells you when it’s done.</p><a href="/docs/chat">Chat with the lead</a></li>
+    <li><h3>Agents in parallel, on your machines</h3><p>Writers run Claude Code on the machines you add, over SSH or with a join code. Each gets its own git worktree and branch and opens a pull request. You set how many run at once.</p><a href="/docs/machines">Machines</a></li>
+    <li><h3>A merge train that lands it</h3><p>Only fleetd merges. It rebases each reviewed PR onto its base branch, waits for every required check on that exact commit, and merges. Red CI or a conflict goes back to the agent that wrote it.</p><a href="/docs/merge-train">Merge train</a></li>
   </ul>
 </section>
 
-<section class="w sec" aria-labelledby="ask">
+<section class="w sec" aria-labelledby="trust">
   <div class="head">
-    <h2 id="ask">What waits for you</h2>
-    <p>Plain chat can’t carry two things safely, so they show as items in the chat that only your app can act on.</p>
+    <h2 id="trust">What keeps it trustworthy</h2>
+    <p>Agents do the work; the checks around them don’t depend on any one agent getting it right.</p>
   </div>
+  <ul class="feats">
+    <li><h3>A review on every change</h3><p>Every pull request gets a fresh reviewer, a separate agent from the one that wrote it. Blocking findings go back to the writer, and a new commit gets a new review.</p><a href="/docs/merge-train#review">Review</a></li>
+    <li><h3>You approve what can’t be undone</h3><p>A command that can’t be undone, costs money or needs a credential waits, exactly as it will run, until you approve it in the app. No agent can approve itself.</p><a href="/docs/approvals-and-secrets#approve">Approvals</a></li>
+    <li><h3>Secrets stay secret</h3><p>You type a secret into a masked field. It is sealed to the one machine that uses it, never reaches the hub in plain text, and is masked in everything agents send back.</p><a href="/docs/approvals-and-secrets#secrets">Secrets</a></li>
+    <li><h3>Decisions stay yours</h3><p>The lead asks you only about product calls, money and irreversible steps, as numbered questions in the chat. It decides the rest itself, and logs each of your answers as a decision.</p><a href="/docs/chat#reply">Reply to the lead</a></li>
+    <li><h3>Updates that roll back</h3><p>One Update button updates the hub, every machine and the app. A new build that doesn’t come up healthy within 90 seconds is put back, and agents carry on where they were.</p><a href="/docs/updating-and-uninstall#everything">Updating</a></li>
+    <li><h3>Your machines, your login</h3><p>The hub and agents run on hardware you choose, with your own Claude Code login, git and GitHub. fleetd is open source under the MIT licence.</p><a href="/docs/security">Security</a></li>
+  </ul>
   <div class="pair">
     <figure>
-      <a class="shot" href="/chat-approve.png"><img src="/chat-approve.png" width="2800" height="1800" loading="lazy" alt="storefront’s chat in the fleetd app: the lead says the command writes to the production database and asks you to approve it exactly as below. A Command card marked Can’t be undone shows pnpm --filter storefront db:migrate --env production on devbox, the secret DATABASE_URL gets, and Approve and Deny. Above it, last week’s migration, approved and run, and a denied request to use Bash. The panel’s Agents tab lists the two agents shipping the share snapshots table: a writer on the share route and a reviewer on the migration."></a>
-      <figcaption><b>Approve what can’t be undone.</b> A command that can’t be undone, costs money or needs a credential waits, exactly as it will run, until you approve it.</figcaption>
+      <a class="shot" href="/chat-approve.png"><picture><source srcset="/chat-approve-dark.png" media="(prefers-color-scheme: dark)"><img src="/chat-approve.png" width="2800" height="1800" loading="lazy" decoding="async" alt="storefront’s chat in the fleetd app: the lead says the command writes to the production database and asks you to approve it exactly as below. A Command card marked Can’t be undone shows pnpm --filter storefront db:migrate --env production on devbox, the secret DATABASE_URL gets, and Approve and Deny. Above it, last week’s migration, approved and run, and a denied request to use Bash. The panel’s Agents tab lists the two agents shipping the share snapshots table: a writer on the share route and a reviewer on the migration."></picture></a>
+      <figcaption><b>An approval in the chat.</b> The exact command, where it runs and the secret it gets, with Approve and Deny.</figcaption>
     </figure>
     <figure>
-      <a class="shot" href="/chat-secret.png"><img src="/chat-secret.png" width="2800" height="1800" loading="lazy" alt="storefront’s chat in the fleetd app: the lead needs the Stripe test key, which goes to devbox only. A Secret card says it is saved as STRIPE_TEST_KEY in the project’s .env.test on devbox, with a masked field and Save secret. Above it, a secret saved earlier, shown only as saved. The panel’s Agents tab lists the two agents on the checkout tests against Stripe test mode."></a>
-      <figcaption><b>Secrets stay out of the chat.</b> You type a key into a masked field. It is sealed to the machine that uses it; the chat and the hub never see it.</figcaption>
+      <a class="shot" href="/chat-secret.png"><picture><source srcset="/chat-secret-dark.png" media="(prefers-color-scheme: dark)"><img src="/chat-secret.png" width="2800" height="1800" loading="lazy" decoding="async" alt="storefront’s chat in the fleetd app: the lead needs the Stripe test key, which goes to devbox only. A Secret card says it is saved as STRIPE_TEST_KEY in the project’s .env.test on devbox, with a masked field and Save secret. Above it, a secret saved earlier, shown only as saved. The panel’s Agents tab lists the two agents on the checkout tests against Stripe test mode."></picture></a>
+      <figcaption><b>A secret, kept out of the chat.</b> The value is sealed to devbox’s key on your computer; fleetd never shows it again.</figcaption>
     </figure>
   </div>
 </section>
 
-<section class="w sec" aria-labelledby="train">
-  <div class="head">
-    <h2 id="train">“Done” is checked by fleetd</h2>
-    <p>Merge-train events from a lab run against the public <a href="https://github.com/unlaboredlabs/fleetd-lab">fleetd-lab</a> repo, 18 Oct 2026, UTC: the hub’s own summaries. Red CI goes back to the agent that wrote the PR.</p>
+<section class="w sec" aria-labelledby="dogfood">
+  <div class="fact">
+    <div>
+      <h2 id="dogfood" class="fig">87</h2>
+    </div>
+    <div>
+      <p>pull requests landed by fleetd’s merge train in fleetd’s own repository in one week, 20 to 26 October 2026. fleetd is built with fleetd: the lead plans, agents write and review, the train merges, and the people behind it answer the lead’s questions.</p>
+      <p>Counted by <code>fleetd metrics --days 7</code> on the hub that builds fleetd, from GitHub’s record of the merges. <a href="https://github.com/unlaboredlabs/fleetd/pulls?q=is%3Apr+is%3Amerged">See the merged pull requests</a>.</p>
+    </div>
   </div>
-  <ol class="train">
-    <!-- capture:train -->
-    <li><span class="t">13:15:17</span><span class="e">change.queued</span><span class="s">X1 queued: unlaboredlabs/fleetd-lab#160 (tier S, done:0)</span></li>
-    <li><span class="t">13:15:17</span><span class="e">change.ready</span><span class="s">X1 ready for the train: unlaboredlabs/fleetd-lab#160</span></li>
-    <li><span class="t">13:15:18</span><span class="e">change.queued</span><span class="s">X2 queued: unlaboredlabs/fleetd-lab#161 (tier S, done:0)</span></li>
-    <li><span class="t">13:15:18</span><span class="e">change.ready</span><span class="s">X2 ready for the train: unlaboredlabs/fleetd-lab#161</span></li>
-    <li class="ok"><span class="t">13:16:14</span><span class="e">pr.merged</span><span class="s">X1 merged: unlaboredlabs/fleetd-lab#160 as 2220967ee70a in batch #163</span></li>
-    <li class="ok"><span class="t">13:16:17</span><span class="e">pr.merged</span><span class="s">X2 merged: unlaboredlabs/fleetd-lab#161 as 2220967ee70a in batch #163</span></li>
-    <li class="bad"><span class="t">13:18:23</span><span class="e">change.ci_failed</span><span class="s">X6 CI failed on dda108b7c6b8: ci (failure) (log: …)</span></li>
-    <!-- /capture:train -->
-  </ol>
+</section>
+
+<section class="w sec" aria-labelledby="more">
+  <div class="head">
+    <h2 id="more">Also in the box</h2>
+    <p>A hub keeps your projects, a node on each machine runs the agents, and the desktop app is where you talk to them and watch the work.</p>
+  </div>
+  <ul class="feats quiet">
+    <li><h3>Status and Factory</h3><p>One row per project: what it’s doing, what waits on you, what merged last. Factory charts what came out: pull requests merged per day, time from request to merge, and your minutes per merged PR.</p><a href="/docs/status">Status</a></li>
+    <li><h3>Steer mid-run</h3><p>Write to the lead or to one agent while it works. Your message lands at its next step, or at once if you say so.</p><a href="/docs/steering">Steering</a></li>
+    <li><h3>Automations</h3><p>A stored prompt that runs on a schedule, from a webhook, or with Run now. Each run becomes work the lead starts on its own.</p><a href="/docs/automations">Automations</a></li>
+    <li><h3>Skills and MCP servers</h3><p>SKILL.md workflows from the repo, the project or the whole hub, and more tools for agents over MCP, for every project or one.</p><a href="/docs/skills">Skills</a></li>
+    <li><h3>Memory</h3><p>When you correct the lead or state a rule, it remembers, for you everywhere or for one project. Read, edit or delete it in Settings.</p><a href="/docs/what-agents-are-told#memory">Memory</a></li>
+    <li><h3>Usage limits</h3><p>An agent that hits a Claude usage limit pauses and carries on by itself at the reset. A machine near the end of its usage window takes no new agents until it has room.</p><a href="/docs/machines#guard">Machines</a></li>
+  </ul>
 </section>
 
 <section class="w sec" aria-labelledby="start">
@@ -291,8 +359,8 @@ Then run fleetd init again; it keeps what's done.
       </details>
     </div></li>
     <li><div>
-      <h3>Add a project and say hi to its lead</h3>
-      <p>In the app, click Add next to Projects and paste a GitHub URL. Then tell the lead what you want.</p>
+      <h3>Add a project and tell its lead what you want</h3>
+      <p>In the app, click Add next to Projects and paste a GitHub URL. Then write to the lead as you would to an engineer.</p>
     </div></li>
   </ol>
 </section>
@@ -305,7 +373,7 @@ Then run fleetd init again; it keeps what's done.
   <ul class="docs">
     <li><a href="/docs/install">Install</a><span>The CLI and the desktop app on a machine.</span></li>
     <li><a href="/docs/quick-start">Quick start</a><span>Set up the hub, open a project, chat with its lead.</span></li>
-    <li><a href="/docs/concepts">Concepts</a><span>The hub, nodes, leads and their chats.</span></li>
+    <li><a href="/docs/concepts">Concepts</a><span>The hub, machines, leads and agents.</span></li>
     <li><a href="/docs/machines">Machines</a><span>Add a machine that runs agents.</span></li>
     <li><a href="/docs/reference/cli">CLI reference</a><span>Every command and option.</span></li>
     <li><a href="/docs/troubleshooting">Troubleshooting</a><span>What <code>fleetd doctor</code> reports, and the fix.</span></li>
@@ -331,6 +399,55 @@ document.querySelectorAll("[data-copy]").forEach(function(b){
     else{var r=document.createRange();r.selectNodeContents(document.getElementById(b.dataset.copy));var s=getSelection();s.removeAllRanges();s.addRange(r);try{document.execCommand("copy");done()}catch(e){}}
   });
 });
+
+// The showcase. The still is what everyone gets first, and all a reader with reduced motion gets. Otherwise the
+// recording loads once the page has and the frame is near the screen, plays only while it is on screen, follows the
+// system theme, and marks the step it is on.
+(function(){
+  var box=document.getElementById("show"),video=box.querySelector("video"),button=box.querySelector(".play");
+  var steps=[].slice.call(document.querySelectorAll("#line [data-step]"));
+  var calm=matchMedia("(prefers-reduced-motion: reduce)"),dark=matchMedia("(prefers-color-scheme: dark)");
+  var chapters,seen=false,paused=false;
+  var mark=function(){
+    if(!chapters)return;
+    var t=video.currentTime,now;
+    steps.forEach(function(li){if(t>=chapters[li.dataset.step])now=li});
+    steps.forEach(function(li){li.classList.toggle("now",li===now);if(li===now)li.setAttribute("aria-current","step");else li.removeAttribute("aria-current")});
+  };
+  var clear=function(){steps.forEach(function(li){li.classList.remove("now");li.removeAttribute("aria-current")})};
+  var source=function(){
+    var want=dark.matches?video.dataset.dark:video.dataset.light;
+    if(video.getAttribute("src")===want)return;
+    var at=video.currentTime||0;
+    video.src=want;
+    video.addEventListener("loadedmetadata",function(){video.currentTime=at},{once:true});
+    if(!paused&&seen)video.play().catch(function(){});
+    fetch("/showcase.json").then(function(r){return r.json()}).then(function(j){chapters=j[dark.matches?"dark":"light"];mark()}).catch(function(){});
+  };
+  var start=function(){
+    if(calm.matches)return;
+    source();
+    if(!paused)video.play().catch(function(){});
+  };
+  video.addEventListener("playing",function(){box.classList.add("on")});
+  video.addEventListener("timeupdate",mark);
+  button.addEventListener("click",function(){
+    paused=!paused;
+    if(paused){video.pause();button.textContent="Play"}else{video.play().catch(function(){});button.textContent="Pause"}
+  });
+  calm.addEventListener("change",function(){
+    if(calm.matches){video.pause();box.classList.remove("on");clear()}else if(seen)start();
+  });
+  dark.addEventListener("change",function(){if(video.getAttribute("src"))source()});
+  var watch=function(){
+    new IntersectionObserver(function(es){
+      var e=es[es.length-1];
+      seen=e.isIntersecting;
+      if(seen)start();else video.pause();
+    },{rootMargin:"200px 0px"}).observe(box);
+  };
+  if(document.readyState==="complete")watch();else addEventListener("load",watch);
+})();
 </script>
 </body>
 </html>

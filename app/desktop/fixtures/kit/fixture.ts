@@ -14,7 +14,8 @@ export interface HubErrorJson {
   readonly fix?: string | undefined;
 }
 
-type TimedKind = "event" | "live" | "snapshot" | "chat_delta" | "state";
+// "rows": not a frame the window sees, but rows later answers leave out or show again from then on (see Rows).
+type TimedKind = "event" | "live" | "snapshot" | "chat_delta" | "state" | "rows";
 
 /** Rows of `tool`'s answers under `field` matching `where`, e.g. requests_list's requests with requestId Q1. */
 export interface Rows {
@@ -51,6 +52,7 @@ const timedFrame = (kind: TimedKind, payload: JsonObject, afterMs: number): Fixt
   if (kind === "snapshot") return { t: "snapshot", snapshot: { ...payload, cursor: num(payload["cursor"]) }, afterMs };
   if (kind === "event") return { t: "event", event: { ...payload, seq: num(payload["seq"]), type: asText(payload["type"]) }, afterMs };
   if (kind === "state") return { t: "state", state: payload as unknown as HubState, afterMs };
+  if (kind === "rows") return { t: "rows", ...(payload as { hide?: Rows[]; show?: Rows[] }), afterMs };
   if (kind === "chat_delta") {
     const delta = { ...payload, messageId: asText(payload["messageId"]), offset: num(payload["offset"]), append: asText(payload["append"]) };
     return { t: "chat_delta", delta, afterMs };
@@ -89,6 +91,8 @@ export class Fixture {
   agentsFromSlots = false;
   /** Frames that arrive `ms` after the app subscribes, for progress over time; see later(). */
   timeline: Array<{ ms: number; kind: TimedKind; payload: JsonObject }> = [];
+  /** Rows every answer leaves out until a "rows" frame shows them (an order that doesn't exist yet). */
+  hidden: Array<Rows> = [];
   /** When the screen is final, for the QA harness to screenshot; defaults to the last timed frame. */
   settleMs: number | undefined;
   calls: Array<{ tool: string; input: JsonObject | undefined; output?: JsonValue; error?: HubErrorJson; delayMs?: number; then?: CallThen }> = [];
@@ -129,6 +133,7 @@ export class Fixture {
     f.pendingContracts = new Map(base.pendingContracts);
     f.agentsFromSlots = base.agentsFromSlots;
     f.timeline = base.timeline.map((t) => ({ ...t, payload: clone(t.payload) }));
+    f.hidden = clone(base.hidden as unknown as JsonValue) as unknown as Rows[];
     f.settleMs = base.settleMs;
     f.calls = base.calls.map((c) => ({ ...c, ...(c.input === undefined ? {} : { input: clone(c.input) }), ...(c.output === undefined ? {} : { output: clone(c.output) }) }));
     return f;
@@ -141,13 +146,14 @@ export class Fixture {
     f.state = file.state;
     f.connect = file.connect;
     if (file.cache !== undefined) f.cache = clone(file.cache as JsonObject);
+    if (file.hidden !== undefined) f.hidden = file.hidden.map((r) => ({ ...r, where: clone(r.where) as JsonObject }));
     const settle = (file as { settleMs?: unknown }).settleMs;
     if (typeof settle === "number") f.settleMs = settle;
     let ms = 0;
     for (const frame of file.frames) {
       ms += frame.afterMs ?? 0;
       // A streamed chat frame or a change of connection only makes sense on the timeline, after the first page.
-      if ((ms > 0 || frame.t === "chat_delta" || frame.t === "state") && frame.t !== "error") {
+      if ((ms > 0 || frame.t === "chat_delta" || frame.t === "state" || frame.t === "rows") && frame.t !== "error") {
         const payload =
           frame.t === "snapshot"
             ? frame.snapshot
@@ -157,7 +163,9 @@ export class Fixture {
                 ? frame.delta
                 : frame.t === "state"
                   ? frame.state
-                  : frame.frame;
+                  : frame.t === "rows"
+                    ? { hide: frame.hide ?? [], show: frame.show ?? [] }
+                    : frame.frame;
         f.timeline.push({ ms, kind: frame.t, payload: clone(payload as JsonObject) });
       } else if (frame.t === "snapshot") f.snapshot = clone(frame.snapshot as JsonObject);
       else if (frame.t === "event") f.events.push(clone(frame.event as JsonObject));
@@ -278,6 +286,7 @@ export class Fixture {
       ...(this.pair === undefined ? {} : { pair: this.pair }),
       ...(this.appUpdate === undefined ? {} : { update: this.appUpdate }),
       ...(this.cache === undefined ? {} : { cache: this.cache }),
+      ...(this.hidden.length === 0 ? {} : { hidden: this.hidden }),
     };
   }
 }

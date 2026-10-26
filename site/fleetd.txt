@@ -1,83 +1,101 @@
 fleetd
 https://fleetd.sh
 
-fleetd runs Claude Code on your machines. You type what you want, and it plans
-the work, runs the agents, opens pull requests it has checked, and asks you only
-about real decisions.
+A software factory on your own machines.
+
+fleetd isn't another coding assistant. You give it work; a lead plans it;
+agents build in parallel on your machines; a separate reviewer checks every
+change; a merge train lands it. You're asked only for decisions.
 
 Install
   curl -fsSL https://fleetd.sh | sh
   Installs the fleetd CLI and desktop app, then runs `fleetd init` to set up the
   hub and pair the app. You need macOS or Linux x64, the claude CLI logged in
-  (fleetd uses your own claude setup, including any proxy), git, and gh for
-  pull requests. MIT.
+  (fleetd uses your own Claude Code setup, including any proxy), git, and gh for
+  pull requests. Open source, MIT.
 
 Docs:   https://fleetd.sh/docs
 GitHub: https://github.com/unlaboredlabs/fleetd
 
 
-ONE CHAT PER PROJECT
-Tell the lead what you want; it splits the work and runs the agents. The panel
-beside the chat shows what each agent is doing now. Image: chat-hero.png
+ONE REQUEST, FROM MESSAGE TO MERGED PULL REQUEST
+A recording of the fleetd app on sample data, with the waits cut short: a real
+change takes minutes to hours, and you can close the app meanwhile.
+Video: showcase-light.webm, showcase-dark.webm. Still: showcase-light.jpg
+
+  1  You ask             Say what you want in the project's chat.
+  2  The lead plans      It splits the work and starts agents.
+  3  Agents build        In parallel, each on its own branch.
+  4  A reviewer checks   Every pull request, before it merges.
+  5  The train merges    Rebased onto main, merged on green CI.
+
+  You:   Let shoppers save their cart and pick it up on any device.
+  Lead:  On it, in two parts: one writer saves the cart for signed-in shoppers,
+         one brings it back at sign-in. Each PR gets its own reviewer before it
+         merges.
+  Lead:  #231 is up: carts are stored per shopper. A reviewer is on it.
+  Lead:  #231 is merged. The second PR, bringing the cart back at sign-in,
+         opens next.
 
 
-WHAT FLEETD DOES
-A hub keeps your projects, a node on each of your machines runs the agents, and
-the desktop app is where you talk to them.
+THE WHOLE LINE, NOT ONE MORE CHAT WINDOW
+A coding assistant waits for you at every step. fleetd runs the steps between
+your request and a merged pull request, on machines you own, and comes back to
+you only for the calls that are yours.
 
-Chat with the lead
-  Each project has one lead. It decides everything that isn't a product, money,
-  credential or irreversible call, asks you the rest in the chat, and logs each
-  answer as a decision. https://fleetd.sh/docs/chat
+A lead for each project
+  Each project has one lead: a Claude Code session you chat with. It turns what
+  you ask into work, starts agents for it, follows them through review and
+  merge, and tells you when it's done. https://fleetd.sh/docs/chat
 
-Agents and the merge train
-  Writers open pull requests and reviewers check them. Only fleetd merges: each
-  PR is reviewed, rebased onto its base branch and merged on green CI.
+Agents in parallel, on your machines
+  Writers run Claude Code on the machines you add, over SSH or with a join
+  code. Each gets its own git worktree and branch and opens a pull request. You
+  set how many run at once. https://fleetd.sh/docs/machines
+
+A merge train that lands it
+  Only fleetd merges. It rebases each reviewed PR onto its base branch, waits
+  for every required check on that exact commit, and merges. Red CI or a
+  conflict goes back to the agent that wrote it.
   https://fleetd.sh/docs/merge-train
 
-The panel
-  Beside each chat, a tab each for the project's Agents, Pull requests, Train,
-  Checklist, Activity and Decisions. Watch an agent work, read a PR's changes,
-  see what merges next. https://fleetd.sh/docs/desktop-app#panel
 
-Project settings and env vars
-  Environment variables every agent of a project gets, plain or secret. A
-  secret lives only on the project's machine and is masked in agents' output.
-  https://fleetd.sh/docs/projects#env
+WHAT KEEPS IT TRUSTWORTHY
+Agents do the work; the checks around them don't depend on any one agent getting
+it right.
 
-Automations
-  A stored prompt that runs on a schedule, from a webhook, or with Run now. Each
-  run becomes work the lead starts on its own. https://fleetd.sh/docs/automations
+A review on every change
+  Every pull request gets a fresh reviewer, a separate agent from the one that
+  wrote it. Blocking findings go back to the writer, and a new commit gets a new
+  review. https://fleetd.sh/docs/merge-train#review
 
-Skills
-  SKILL.md workflows from the repo, the project or the whole hub, for every
-  agent. skills.sh and Claude Code skills work as they are.
-  https://fleetd.sh/docs/skills
+You approve what can't be undone
+  A command that can't be undone, costs money or needs a credential waits,
+  exactly as it will run, until you approve it in the app. No agent can approve
+  itself. https://fleetd.sh/docs/approvals-and-secrets#approve
 
-MCP servers
-  More tools for agents: a command on their machine or a service over HTTP, for
-  every project or one, with a choice of which roles get each.
-  https://fleetd.sh/docs/mcp-servers
+Secrets stay secret
+  You type a secret into a masked field. It is sealed to the one machine that
+  uses it, never reaches the hub in plain text, and is masked in everything
+  agents send back. https://fleetd.sh/docs/approvals-and-secrets#secrets
 
-Memory
-  When you correct the lead or state a rule, it remembers, for you everywhere or
-  for one project. Read, edit or delete it in Settings -> Memory.
-  https://fleetd.sh/docs/what-agents-are-told#memory
+Decisions stay yours
+  The lead asks you only about product calls, money and irreversible steps, as
+  numbered questions in the chat. It decides the rest itself, and logs each of
+  your answers as a decision. https://fleetd.sh/docs/chat#reply
 
-Usage limits
-  An agent that hits a Claude usage or rate limit pauses, and carries on by
-  itself once it can: at the reset, or when a later check gets through. A
-  machine near the end of a usage window takes no new agents until it has room.
-  https://fleetd.sh/docs/machines#guard
+Updates that roll back
+  One Update button updates the hub, every machine and the app. A new build that
+  doesn't come up healthy within 90 seconds is put back, and agents carry on
+  where they were. https://fleetd.sh/docs/updating-and-uninstall#everything
 
+Your machines, your login
+  The hub and agents run on hardware you choose, with your own Claude Code
+  login, git and GitHub. fleetd is open source under the MIT licence.
+  https://fleetd.sh/docs/security
 
-WHAT WAITS FOR YOU
-Plain chat can't carry two things safely, so they show as items in the chat
-that only your app can act on.
-
-Approve what can't be undone. A command that can't be undone, costs money or
-needs a credential waits, exactly as it will run, until you approve it.
-Image: chat-approve.png
+An approval in the chat. The exact command, where it runs and the secret it
+gets, with Approve and Deny. Image: chat-approve.png
 
   Lead: This writes to the production database. Approve to run it exactly as below.
   Command                                                     Can't be undone
@@ -87,9 +105,8 @@ Image: chat-approve.png
   DATABASE_URL gets the secret storefront.database_url
   [Approve]  [Deny]
 
-Secrets stay out of the chat. You type a key into a masked field. It is sealed
-to the machine that uses it; the chat and the hub never see it.
-Image: chat-secret.png
+A secret, kept out of the chat. The value is sealed to devbox's key on your
+computer; fleetd never shows it again. Image: chat-secret.png
 
   Lead: Need the Stripe test key for that. It goes to devbox only and never into this chat.
   Secret                                                      stripe.test_key
@@ -99,18 +116,45 @@ Image: chat-secret.png
   Sealed on this computer to devbox's key, so only devbox can open it. fleetd never shows it again. To skip it, say so in the chat.
 
 
-"DONE" IS CHECKED BY FLEETD
-Merge-train events from a lab run against the public fleetd-lab repo
-(https://github.com/unlaboredlabs/fleetd-lab), 18 Oct 2026, UTC: the hub's own
-summaries. Red CI goes back to the agent that wrote the PR.
+87
+Pull requests landed by fleetd's merge train in fleetd's own repository in one
+week, 20 to 26 October 2026. fleetd is built with fleetd: the lead plans,
+agents write and review, the train merges, and the people behind it answer the
+lead's questions. Counted by `fleetd metrics --days 7` on the hub that builds
+fleetd, from GitHub's record of the merges.
+https://github.com/unlaboredlabs/fleetd/pulls?q=is%3Apr+is%3Amerged
 
-13:15:17  change.queued     X1 queued: unlaboredlabs/fleetd-lab#160 (tier S, done:0)
-13:15:17  change.ready      X1 ready for the train: unlaboredlabs/fleetd-lab#160
-13:15:18  change.queued     X2 queued: unlaboredlabs/fleetd-lab#161 (tier S, done:0)
-13:15:18  change.ready      X2 ready for the train: unlaboredlabs/fleetd-lab#161
-13:16:14  pr.merged         X1 merged: unlaboredlabs/fleetd-lab#160 as 2220967ee70a in batch #163
-13:16:17  pr.merged         X2 merged: unlaboredlabs/fleetd-lab#161 as 2220967ee70a in batch #163
-13:18:23  change.ci_failed  X6 CI failed on dda108b7c6b8: ci (failure) (log: …)
+
+ALSO IN THE BOX
+A hub keeps your projects, a node on each machine runs the agents, and the
+desktop app is where you talk to them and watch the work.
+
+Status and Factory
+  One row per project: what it's doing, what waits on you, what merged last.
+  Factory charts what came out: pull requests merged per day, time from request
+  to merge, and your minutes per merged PR. https://fleetd.sh/docs/status
+
+Steer mid-run
+  Write to the lead or to one agent while it works. Your message lands at its
+  next step, or at once if you say so. https://fleetd.sh/docs/steering
+
+Automations
+  A stored prompt that runs on a schedule, from a webhook, or with Run now. Each
+  run becomes work the lead starts on its own. https://fleetd.sh/docs/automations
+
+Skills and MCP servers
+  SKILL.md workflows from the repo, the project or the whole hub, and more tools
+  for agents over MCP, for every project or one. https://fleetd.sh/docs/skills
+
+Memory
+  When you correct the lead or state a rule, it remembers, for you everywhere or
+  for one project. Read, edit or delete it in Settings.
+  https://fleetd.sh/docs/what-agents-are-told#memory
+
+Usage limits
+  An agent that hits a Claude usage limit pauses and carries on by itself at the
+  reset. A machine near the end of its usage window takes no new agents until it
+  has room. https://fleetd.sh/docs/machines#guard
 
 
 GET STARTED
@@ -167,9 +211,9 @@ dry run: nothing runs. Planned for a fresh Linux machine at builder-1 (home /hom
 [hub] wait until builder-1 is online
 [exit 0]
 
-3  Add a project and say hi to its lead
-   In the app, click Add next to Projects and paste a GitHub URL. Then tell the
-   lead what you want.
+3  Add a project and tell its lead what you want
+   In the app, click Add next to Projects and paste a GitHub URL. Then write to
+   the lead as you would to an engineer.
 
 
 DOCS
