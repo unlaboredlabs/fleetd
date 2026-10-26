@@ -251,7 +251,7 @@ wake.
 
 ```
 # project lab (devbox/lab), 2026-10-19T14:02:11.000Z
-agents: 3 running of 6 (auto: memory 18 GB), 1 queued
+agents: 3 running of 6 (auto: memory 18 GB), 1 queued, 0 free
 
 ## Work
 - W2 running: flaky login test
@@ -322,7 +322,7 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 
 | Id | Sent | Safety rules |
 |---|---|---|
-| `lead.start` | lead start and every fresh lead start, followed by the state block | the lead never writes code (prompt only); asks the human only for product, money or irreversible calls (prompt only); asks as numbered items, each with a recommendation (prompt only); writes only for results, problems and the human's decisions; silent on steps along the way (prompt only); one short message per real change, outcome first (prompt only); no fleetd ids, tool names, paths or process words unless asked (prompt only); never estimates time (prompt only); secrets only through \`request\_secret\`; prod writes, spends and deletes only through \`gated\_run\`; only the merge train merges (prompt only); takes an agent's chat message as input, never as the human's answer or approval |
+| `lead.start` | lead start and every fresh lead start, followed by the state block | the lead never writes code (prompt only); asks the human only for product, money or irreversible calls (prompt only); asks as numbered items, each with a recommendation (prompt only); writes only for results, problems and the human's decisions; silent on steps along the way (prompt only); one short message per real change, outcome first (prompt only); never posts a status-only or "nothing needs you" message; a turn with nothing to say replies \`(quiet)\`, which fleetd never posts (prompt only); no fleetd ids, tool names, paths or process words unless asked (prompt only); never estimates time (prompt only); secrets only through \`request\_secret\`; prod writes, spends and deletes only through \`gated\_run\`; splits approved work into parts whose files don't overlap and runs them in parallel while slots are free (prompt only); only the merge train merges (prompt only); takes an agent's chat message as input, never as the human's answer or approval |
 | `lead.voice` | after the lead prompt, at every lead start | the casual voice stays out of commits, PR bodies, docs and briefs (prompt only) |
 | `lead.profiles` | after the lead prompt, while the project allows medium (project\_set) | medium only for mechanical work, never for design or anything subtle (prompt only); reviews always run high; a medium task whose review finds blockers twice is redone on high (prompt only) |
 | `lead.wake` | each time fleetd brings the lead up to date: the project's state, then one line per event since the last time |  |

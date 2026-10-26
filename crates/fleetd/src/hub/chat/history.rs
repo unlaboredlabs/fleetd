@@ -126,11 +126,21 @@ pub fn lead_source(thread_id: &str, message_id: &str) -> String {
     format!("lead:{thread_id}:{message_id}")
 }
 
+/// A lead reply that says nothing to the person: a wake with no news ends with exactly this, since claude re-prompts
+/// a turn that ends with no text, which only forces filler.
+pub const QUIET: &str = "(quiet)";
+
+/// The lead's reply has words for the person: not blank, not [`QUIET`].
+pub fn said(text: &str) -> bool {
+    let text = text.trim();
+    !text.is_empty() && text != QUIET
+}
+
 /// The lead's own words from its session, before the chat: its assistant messages.
 pub fn lead_messages(thread_id: &str, messages: &[ThreadMessage]) -> Vec<NewMessage> {
     messages
         .iter()
-        .filter(|m| m.role == MessageRole::Assistant && !m.text.trim().is_empty())
+        .filter(|m| m.role == MessageRole::Assistant && said(&m.text))
         .map(|m| {
             entry(
                 ChatAuthor::Lead,
@@ -204,5 +214,26 @@ mod tests {
             question(&check)[0].text,
             "Did the answer explain which and why?"
         );
+    }
+
+    /// A lead's quiet reply and its blank ones never read back into the chat; its words do.
+    #[test]
+    fn the_quiet_reply_never_reads_back() {
+        let messages: Vec<ThreadMessage> = ["(quiet)", " (quiet)\n", "\n", "login fix is live"]
+            .iter()
+            .enumerate()
+            .map(|(n, text)| {
+                serde_json::from_value(json!({
+                    "id": format!("m{n}"), "role": "assistant", "text": text,
+                    "createdAt": "2026-10-19T08:00:00.000Z",
+                }))
+                .unwrap()
+            })
+            .collect();
+        let read: Vec<String> = lead_messages("t1", &messages)
+            .into_iter()
+            .map(|m| m.text)
+            .collect();
+        assert_eq!(read, ["login fix is live"]);
     }
 }

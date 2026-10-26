@@ -124,23 +124,31 @@ async fn lowering_stops_no_agent_and_raising_starts_queued_ones_at_once() {
     let waiting = running(&hub, 4);
     assert!(!acquire(&hub, &waiting), "a new agent waits");
     assert_eq!(
-        hub.slots.agents(&r),
+        Agents {
+            moved_ms: 0,
+            ..hub.slots.agents(&r)
+        },
         Agents {
             running: 3,
             max_agents: 1,
             queued: 1,
             source: MaxSource::Project,
+            moved_ms: 0,
         }
     );
 
     let raised = hub.tasks.set_caps(set(5, false)).await.unwrap();
     assert_eq!(
-        hub.slots.agents(&r),
+        Agents {
+            moved_ms: 0,
+            ..hub.slots.agents(&r)
+        },
         Agents {
             running: 4,
             max_agents: 5,
             queued: 0,
             source: MaxSource::Project,
+            moved_ms: 0,
         },
         "the queued agent took its slot before set_caps returned"
     );
@@ -236,7 +244,7 @@ async fn every_digest_says_how_many_agents_run_of_the_max_and_wait() {
     assert_eq!((a.running, a.cap, a.queued), (2, 2, 1));
     assert_eq!(
         a.to_string(),
-        "agents: 2 running of 2 (max agents set), 1 queued"
+        "agents: 2 running of 2 (max agents set), 1 queued, 0 free"
     );
     // A project nobody set a max for runs what its machine fits, and the line names the term that binds.
     let other = ProjectRef {
@@ -245,7 +253,7 @@ async fn every_digest_says_how_many_agents_run_of_the_max_and_wait() {
     };
     assert_eq!(
         hub.tasks.agents(&other).to_string(),
-        "agents: 0 running of 28 (auto: 28 of 32 CPUs), 0 queued"
+        "agents: 0 running of 28 (auto: 28 of 32 CPUs), 0 queued, 28 free"
     );
     let mut queued = hub
         .tasks
@@ -659,7 +667,7 @@ async fn a_project_without_its_own_max_follows_the_fleet_cap() {
     assert_eq!(hub.slots.agents(&r).max_agents, 10, "within the fleet cap");
     assert_eq!(
         hub.tasks.agents(&r).to_string(),
-        "agents: 0 running of 10 (fleet cap set), 0 queued"
+        "agents: 0 running of 10 (fleet cap set), 0 queued, 10 free"
     );
     hub.tasks.set_caps(fleet(20)).await.unwrap();
     assert_eq!(hub.slots.agents(&r).max_agents, 20, "raised");
@@ -698,7 +706,7 @@ async fn a_projects_own_max_holds_until_it_goes_back_to_the_default() {
     assert_eq!(row(&raised.slots), (6, true), "its own max stays");
     assert_eq!(
         hub.tasks.agents(&r).to_string(),
-        "agents: 0 running of 6 (max agents set), 0 queued"
+        "agents: 0 running of 6 (max agents set), 0 queued, 6 free"
     );
 
     let back = hub
@@ -739,4 +747,96 @@ async fn a_projects_own_max_holds_until_it_goes_back_to_the_default() {
         .unwrap();
     assert_eq!(same.next, "Max agents 12, the default now.");
     assert_eq!(row(&same.slots), (12, false));
+}
+
+/// Free slots sit idle from the last time one of the project's slots was taken or freed, for any reason: time
+/// passing adds minutes, a start or an end starts the count again, and another project's agents don't touch it.
+#[tokio::test]
+async fn idle_minutes_count_from_the_last_slot_taken_or_freed() {
+    let clock = ManualClock::at(1_792_000_000_000);
+    let (hub, _home) = hub_on(clock.clone());
+    hub.tasks.set_caps(set(4, false)).await.unwrap();
+    let r = project();
+    let minutes = |m: u64| std::time::Duration::from_secs(60 * m);
+    let idle = || hub.tasks.agents(&r).idle_minutes;
+
+    clock.advance(minutes(12));
+    assert_eq!(idle(), 12, "nothing moved since the hub started");
+    let first = running(&hub, 1);
+    assert_eq!(idle(), 0, "a start");
+    let since = hub.tasks.agents(&r).idle_since_ms;
+    clock.advance(minutes(11));
+    assert_eq!(idle(), 11);
+    hub.slots
+        .acquire(SlotRequest {
+            holder: "T9",
+            project_ref: &ProjectRef {
+                project_id: ProjectId::unchecked("p2"),
+                ..project()
+            },
+            priority: SlotPriority::Work,
+        })
+        .unwrap();
+    assert_eq!(idle(), 11, "another project's start");
+    assert_eq!(
+        hub.tasks.agents(&r).idle_since_ms,
+        since,
+        "the same stretch"
+    );
+    hub.slots.release(first.task_id.as_str()).unwrap();
+    assert_eq!(idle(), 0, "an end");
+    assert!(hub.tasks.agents(&r).idle_since_ms > since, "a new stretch");
+    clock.advance(minutes(10));
+    let a = hub.tasks.agents(&r);
+    assert_eq!((a.idle_minutes, a.free()), (10, 4));
+}
+
+/// The idle line reaches the lead once per idle stretch, not at every wake: the next stretch, after a slot was taken
+/// or freed, earns it again.
+#[tokio::test]
+async fn the_idle_line_comes_once_per_idle_stretch() {
+    let clock = ManualClock::at(1_792_000_000_000);
+    let (hub, _home) = hub_on(clock.clone());
+    hub.tasks.set_caps(set(4, false)).await.unwrap();
+    let r = project();
+    let (mut order, _) = hub
+        .leads
+        .records
+        .workstream_create(crate::hub::leads::records::NewWorkstream {
+            project_ref: r.clone(),
+            title: "dark mode".into(),
+            text: "dark mode".into(),
+            channel: fleetd_contracts::ledger::IntakeChannel::App,
+            by: "human".into(),
+            at: AT.into(),
+            client_request_id: None,
+        })
+        .unwrap();
+    order.brief = Some(
+        serde_json::from_value(json!({
+            "goal": "dark mode", "why": "asked", "pointers": [], "constraints": [],
+            "doneWhen": ["the app follows the system theme"],
+        }))
+        .unwrap(),
+    );
+    hub.leads.records.workstream_put(&order).unwrap();
+    let idle = || async {
+        hub.leads
+            .wakes
+            .digest(&r)
+            .await
+            .unwrap()
+            .contains("\nIdle: ")
+    };
+
+    clock.advance(std::time::Duration::from_secs(9 * 60));
+    assert!(!idle().await, "not yet");
+    clock.advance(std::time::Duration::from_secs(60));
+    assert!(idle().await, "10 min idle");
+    clock.advance(std::time::Duration::from_secs(30 * 60));
+    assert!(!idle().await, "said once for this stretch");
+    let t = running(&hub, 1);
+    hub.slots.release(t.task_id.as_str()).unwrap();
+    clock.advance(std::time::Duration::from_secs(10 * 60));
+    assert!(idle().await, "a new stretch");
 }

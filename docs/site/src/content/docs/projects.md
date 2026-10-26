@@ -205,8 +205,10 @@ whole fleet. The hub enforces all of them; the lead plans to them.
 
 New agents on a machine also wait for disk: 5 GB each (`diskPerAgentGb`) above the free-space floor, with agents started
 in the last 10 minutes still counted, since their worktrees haven't grown yet. The lead's state line names what sets
-its cap, e.g. "agents: 4 running of 6 (auto: memory 18 GB, about 2 GB an agent), 2 queued", or "fleet cap set",
-"machine cap set" and "max agents set".
+its cap, e.g. "agents: 4 running of 6 (auto: memory 18 GB, about 2 GB an agent), 2 queued, 0 free", or "fleet cap
+set", "machine cap set" and "max agents set". When slots have sat free for 10 minutes, with no agent starting or ending,
+while approved work is open, the state says so in one line, and the lead splits that work into parts whose files don't
+overlap and runs them at once.
 
 The memory figure only sizes a machine's auto cap. No agent waits for the memory it might take: a Max agents you set
 starts that many, as far as the machine's cap and disk allow, and a machine you set runs that many whatever it is

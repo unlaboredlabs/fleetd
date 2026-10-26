@@ -20,7 +20,7 @@ pub enum Ended {
 }
 
 /// The project's agents against its cap, the second line of every state block: "agents: 4 running of 6 (auto:
-/// memory 18 GB), 2 queued".
+/// memory 18 GB), 2 queued, 0 free".
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentsLine {
     pub running: i64,
@@ -28,14 +28,33 @@ pub struct AgentsLine {
     pub queued: i64,
     /// Where the cap comes from: "auto: memory 18 GB, about 2 GB an agent", "max agents set", "fleet cap set", "machine cap set".
     pub source: String,
+    /// When one of the project's slots was last taken or freed, for any reason: its idle stretch's start.
+    pub idle_since_ms: i64,
+    /// Minutes since then: how long its free slots have sat free.
+    pub idle_minutes: i64,
+}
+
+impl AgentsLine {
+    /// Slots a spawn would start in now; none while one waits in line.
+    pub fn free(&self) -> i64 {
+        if self.queued > 0 {
+            0
+        } else {
+            (self.cap - self.running).max(0)
+        }
+    }
 }
 
 impl Display for AgentsLine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "agents: {} running of {} ({}), {} queued",
-            self.running, self.cap, self.source, self.queued
+            "agents: {} running of {} ({}), {} queued, {} free",
+            self.running,
+            self.cap,
+            self.source,
+            self.queued,
+            self.free()
         )
     }
 }

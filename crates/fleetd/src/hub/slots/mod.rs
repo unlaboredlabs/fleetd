@@ -54,13 +54,15 @@ pub struct CapInput {
     pub max_agents: Option<(ProjectRef, Option<i64>)>,
 }
 
-/// A project's agents as its lead is told them: "agents: 7 running of 12 (auto: memory 32 GB), 2 queued".
+/// A project's agents as its lead is told them: "agents: 7 running of 12 (auto: memory 32 GB), 2 queued, 0 free".
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Agents {
     pub running: i64,
     pub max_agents: i64,
     pub queued: i64,
     pub source: MaxSource,
+    /// When one of its slots was last taken or freed ([`Board::moved_at`]).
+    pub moved_ms: i64,
 }
 
 pub struct SlotRequest<'a> {
@@ -316,11 +318,13 @@ impl Slots {
         let (result, freed) = {
             let mut board = self.board();
             let settled = board.tick(now_ms(self.clock.as_ref()));
+            let held = board.held_counts();
             let (result, freed) = body(&mut board);
             let freed = freed || settled;
             if freed {
                 board.evaluate();
             }
+            board.note_moves(&held);
             persist(&self.db, board.take_ops())?;
             (result, freed)
         };
@@ -386,7 +390,9 @@ impl Slots {
         self.listeners.lock().unwrap().push(listener.clone());
         {
             let mut board = self.board();
+            let held = board.held_counts();
             board.evaluate();
+            board.note_moves(&held);
             persist(&self.db, board.take_ops())?;
         }
         listener();
@@ -414,6 +420,7 @@ impl Slots {
             max_agents: board.max_agents_of(r),
             queued,
             source: board.max_source(r),
+            moved_ms: board.moved_at(r),
         }
     }
 
@@ -536,12 +543,16 @@ mod tests {
         });
         assert_eq!(granted, 2);
         assert_eq!(
-            slots.agents(&r),
+            Agents {
+                moved_ms: 0,
+                ..slots.agents(&r)
+            },
             Agents {
                 running: 2,
                 max_agents: 2,
                 queued: n as i64 - 2,
                 source: MaxSource::Project,
+                moved_ms: 0,
             }
         );
     }

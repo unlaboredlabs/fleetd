@@ -93,7 +93,7 @@ Gates run in this order at every start (`hub/tasks/mod.rs:527` `try_start_inner`
   3. Logins on an API key or gateway report no windows, so only the breaker applies to them.
   4. The human's own Claude Code sessions on the same login show up in the same utilization, so the brake allows for them.
 - **Open tasks:** `MAX_OPEN_TASKS` becomes `max(32, 2 × the project's effective max)`, so a 56-agent server isn't held to 32.
-- **Lead line:** "agents: 4 running of 6 (auto: memory 18 GB), 2 queued". The binding term is named, so a human can see why.
+- **Lead line:** "agents: 4 running of 6 (auto: memory 18 GB), 2 queued, 0 free". The binding term is named, so a human can see why.
 
 ## 2. Worktree base: a fresh fetch of the remote's default branch
 

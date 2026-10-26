@@ -1785,6 +1785,53 @@ fn lead_parts(
     }
 }
 
+/// A lead turn that ends with no text, or with the quiet reply (claude re-prompts a turn with no text, so a lead
+/// with nothing to say replies `(quiet)`), posts nothing to the chat: blank text or the start of `(quiet)` opens no
+/// bubble, and a reply with words streams and lands as usual.
+#[tokio::test]
+async fn a_lead_turn_with_no_text_posts_nothing() {
+    let (hub, _home) = hub();
+    give_lead(&hub);
+    let r = project();
+    hub.chat
+        .read_history(&r, || async { Vec::new() })
+        .await
+        .unwrap();
+    let mut sent = HashMap::new();
+    let mut deltas = hub.chat.subscribe();
+    let tick = |sent: &mut HashMap<String, u64>, parts: crate::hub::executor::LiveParts| {
+        flow::stream_pass_with(&hub, sent, |_| Some(parts.clone()));
+    };
+    let latest = || hub.chat.page(&r, None, None, 10).unwrap().0;
+
+    tick(&mut sent, lead_parts(Some(("m1", "\n\n")), &[]));
+    tick(&mut sent, lead_parts(None, &[]));
+    assert!(latest().is_empty(), "{:?}", latest());
+    assert!(deltas.try_recv().is_err(), "nothing streamed");
+    let mut ended = lead_parts(Some(("m1", "\n\n")), &[]);
+    ended.run_active = false;
+    tick(&mut sent, ended);
+    assert!(latest().is_empty(), "{:?}", latest());
+
+    for streamed in ["(", "(qui", "(quiet)"] {
+        tick(&mut sent, lead_parts(Some(("m2", streamed)), &[]));
+    }
+    tick(&mut sent, lead_parts(None, &[("m2", "(quiet)\n")]));
+    assert!(latest().is_empty(), "{:?}", latest());
+    assert!(deltas.try_recv().is_err(), "nothing streamed");
+
+    tick(&mut sent, lead_parts(Some(("m3", "(heads up) login")), &[]));
+    tick(
+        &mut sent,
+        lead_parts(None, &[("m3", "(heads up) login fix is live")]),
+    );
+    let m = &latest()[0];
+    assert_eq!(
+        (m.text.as_str(), m.state),
+        ("(heads up) login fix is live", ChatMessageState::Final)
+    );
+}
+
 /// The dogfood bug: the node drops a delta still pending when its complete message lands, so a reply's last words
 /// never stream. The chat lands the complete reply, final, as soon as the session has it (not when the turn ends,
 /// minutes later), and a reply none of whose words streamed lands too, in its place.
