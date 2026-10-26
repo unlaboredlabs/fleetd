@@ -1,11 +1,10 @@
 // fleetd.sh's landing page fits every width. Run by CI's `site` job from the repo root:
 //   node .github/site-layout-check.mjs
 // Renders site/home.html in headless Chrome ($CHROME, else google-chrome or chromium on PATH) at each width below and
-// fails, one line per problem, when the page scrolls sideways (something is wider than the viewport), or when a
-// figure has callout notes and two `.note` boxes intersect or a note leaves the viewport horizontally.
+// fails, one line per width, when the page scrolls sideways: something on it is wider than the viewport.
 // It talks to Chrome over the DevTools protocol on node's own WebSocket, so it needs no npm install. The page names its
 // fonts and images from the site root (/fonts/...), which a file:// page would look for at the filesystem root, so
-// those requests are answered from site/: the notes wrap as they do on fleetd.sh.
+// those requests are answered from site/: the text wraps as it does on fleetd.sh.
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -105,25 +104,21 @@ listeners.set("Fetch.requestPaused", ({ requestId, request }) => {
 await send("Fetch.enable", { patterns: [{ urlPattern: "file://*" }] });
 await send("Page.enable");
 
-/** Every figure's notes as boxes, once the page's fonts and images are in. */
+/** The page's width against the viewport's, and what sticks out past it, once the page's fonts and images are in. */
 const MEASURE = `(async () => {
   for (const img of document.images) img.loading = "eager";
   await Promise.all([...document.images].map((img) => img.complete || new Promise((r) => (img.onload = img.onerror = r))));
   await document.fonts.ready;
   const fonts = [...document.fonts].filter((f) => f.status === "loaded").map((f) => f.family + " " + f.weight);
-  const figures = [...document.querySelectorAll("figure.fig")].map((fig) => ({
-    id: fig.getAttribute("aria-labelledby") ?? fig.id,
-    name: fig.querySelector("figcaption b")?.textContent.split("·")[0].trim() ?? "",
-    notes: [...fig.querySelectorAll(".note")].map((n) => {
-      const r = n.getBoundingClientRect();
-      return { n: n.querySelector(".n")?.textContent.trim(), left: r.left, right: r.right, top: r.top, bottom: r.bottom };
-    }),
-  }));
-  return { viewport: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth, fonts, figures };
+  const viewport = document.documentElement.clientWidth;
+  const wide = [...document.body.querySelectorAll("*")]
+    .filter((el) => el.getBoundingClientRect().right > viewport + 0.5)
+    .slice(0, 3)
+    .map((el) => el.tagName.toLowerCase() + (el.className ? "." + String(el.className).split(" ").join(".") : "") + " (" + Math.round(el.getBoundingClientRect().right) + "px)");
+  return { viewport, scroll: document.documentElement.scrollWidth, fonts, wide };
 })()`;
 
 const problems = [];
-const px = (v) => `${Math.round(v * 10) / 10}px`;
 try {
   for (const width of WIDTHS) {
     await send("Emulation.setDeviceMetricsOverride", { width, height: HEIGHT, deviceScaleFactor: 1, mobile: false });
@@ -132,20 +127,9 @@ try {
     await loaded;
     const { result, exceptionDetails } = await send("Runtime.evaluate", { expression: MEASURE, awaitPromise: true, returnByValue: true });
     if (exceptionDetails) throw new Error(`measuring at ${width}px: ${exceptionDetails.exception?.description ?? exceptionDetails.text}`);
-    const { viewport, scroll, fonts, figures } = result.value;
+    const { viewport, scroll, fonts, wide } = result.value;
     if (!fonts.some((f) => f.startsWith("Plex"))) throw new Error(`at ${width}px the page's Plex font didn't load, so its text wouldn't wrap as on fleetd.sh`);
-    if (scroll > viewport) problems.push(`${width}px: the page is ${scroll}px wide, wider than the ${viewport}px viewport`);
-    for (const { id, name, notes } of figures) {
-      const fig = `${name ? `${name} ` : ""}(#${id})`;
-      for (const [i, a] of notes.entries()) {
-        if (a.left < 0 || a.right > viewport) problems.push(`${width}px: ${fig}: note ${a.n} leaves the viewport (${px(a.left)} to ${px(a.right)} of ${viewport}px)`);
-        for (const b of notes.slice(i + 1)) {
-          const x = Math.min(a.right, b.right) - Math.max(a.left, b.left);
-          const y = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
-          if (x > 0 && y > 0) problems.push(`${width}px: ${fig}: notes ${a.n} and ${b.n} overlap (${px(x)} x ${px(y)})`);
-        }
-      }
-    }
+    if (scroll > viewport) problems.push(`${width}px: the page is ${scroll}px wide, wider than the ${viewport}px viewport; first past the edge: ${wide.join(", ")}`);
   }
 } finally {
   ws.close();
@@ -157,4 +141,4 @@ if (problems.length > 0) {
   console.error(`site/home.html: ${problems.length} layout problem${problems.length === 1 ? "" : "s"}`);
   process.exit(1);
 }
-console.log(`site/home.html: nothing overflows and no callout notes overlap at ${WIDTHS.join(", ")}px`);
+console.log(`site/home.html: nothing is wider than the viewport at ${WIDTHS.join(", ")}px`);

@@ -36,9 +36,9 @@ Agents and the merge train
   https://fleetd.sh/docs/merge-train
 
 The panel
-  Beside each chat, a tab each for the project's Agents, PRs, Checklist, Train,
-  Activity and Decisions. Watch an agent work, read a PR's changes, see what
-  merges next. https://fleetd.sh/docs/desktop-app#panel
+  Beside each chat, a tab each for the project's Agents, Pull requests, Train,
+  Checklist, Activity and Decisions. Watch an agent work, read a PR's changes,
+  see what merges next. https://fleetd.sh/docs/desktop-app#panel
 
 Project settings and env vars
   Environment variables every agent of a project gets, plain or secret. A

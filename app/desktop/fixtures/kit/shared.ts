@@ -9,7 +9,7 @@ import { at } from "./ids.ts";
 import { isObject, type JsonObject, asText } from "./json.ts";
 import { arr, longText, manyAgents, manyPrompts, NODE_TOO_OLD } from "./stress.ts";
 import { explainLoss } from "../../src/main/hub/explain.ts";
-import { agentsAt, answerRows, commandApproval, LOG, SCREENSHOT, type Draft, firstProject, fromLines, liveStrip, migrated, type Ref, secretRequest, statusRow, streamReply, writeChat } from "./chat.ts";
+import { agentsAt, answerRows, commandApproval, LOG, SCREENSHOT, type Draft, firstProject, fromLines, liveStrip, migrated, type Ref, type SceneAgent, sceneStrip, secretRequest, statusRow, streamReply, writeChat } from "./chat.ts";
 import { longChat, QUESTION, STREAMING_REST, STREAMING_SO_FAR, TERSE } from "./chatText.ts";
 import { uuid } from "./ids.ts";
 import { LONG_TITLES, ofLength } from "./text.ts";
@@ -113,6 +113,7 @@ const withProjectsMix = (f: Fixture): Fixture => {
 
 const chatFixtures = (copy: (name: SharedName, note: string) => Fixture): Array<Fixture> => {
   const strip = (f: Fixture, n: number) => liveStrip(f, firstProject(f), n);
+  const scene = (f: Fixture, title: string, agents: ReadonlyArray<SceneAgent>) => sceneStrip(f, firstProject(f), title, agents);
   return [
     withChat(copy("chat-long", `${String(LONG)}+ messages in the first project's chat, paged 50 at a time: migrated past orders first, Markdown, code, lists, the lead's numbered question and terse replies.`), longDrafts()),
     (() => {
@@ -132,28 +133,44 @@ const chatFixtures = (copy: (name: SharedName, note: string) => Fixture): Array<
       { author: "human", text: "", attachments: [SCREENSHOT] },
       { author: "lead", text: "Got both. The date wraps under the total on narrow screens; a writer is fixing the layout." },
     ]),
-    withChat(
-      copy("chat-secret", "The lead needs a secret: an open masked entry inline, and an earlier one already stored."),
+    // The agents beside each item work on what its chat asked for, so the panel and the strip fit the scene (the
+    // site's approve and secret shots are these chats).
+    scene(
+      withChat(
+        copy("chat-secret", "The lead needs a secret: an open masked entry inline, and an earlier one already stored; two agents work on the checkout tests."),
+        [
+          { author: "lead", text: "Stored earlier for the receipt tests." },
+          { author: "lead", text: "", item: secretRequest("stored", copy("empty", "")) },
+          { author: "human", text: "run the checkout tests against Stripe test mode" },
+          { author: "lead", text: "Need the Stripe test key for that. It goes to devbox only and never into this chat." },
+          { author: "lead", text: "", item: secretRequest("open", copy("empty", "")) },
+        ],
+        { needsYou: true },
+      ),
+      "Run the checkout tests against Stripe test mode",
       [
-        { author: "lead", text: "Stored earlier for the receipt tests." },
-        { author: "lead", text: "", item: secretRequest("stored", copy("empty", "")) },
-        { author: "human", text: "run the checkout tests against Stripe test mode" },
-        { author: "lead", text: "Need the Stripe test key for that. It goes to devbox only and never into this chat." },
-        { author: "lead", text: "", item: secretRequest("open", copy("empty", "")) },
+        { role: "implementer", title: "Point the checkout tests at Stripe test mode", activity: { kind: "edit", path: "tests/checkout/stripe.setup.ts" } },
+        { role: "reader", title: "Read how the receipt tests use Stripe", activity: { kind: "read", path: "tests/receipt/charge.test.ts" } },
       ],
-      { needsYou: true },
     ),
-    withChat(
-      copy("chat-gated", "A risky command waits for Approve / Deny: the exact command inline; an earlier one ran, one was denied, and an agent's permission prompt."),
+    scene(
+      withChat(
+        copy("chat-gated", "A risky command waits for Approve / Deny: the exact command inline; an earlier one ran, one was denied, and an agent's permission prompt; two agents work on the share snapshots."),
+        [
+          { author: "lead", text: "Last week's migration ran:" },
+          { author: "lead", text: "", item: commandApproval("ran", copy("empty", "")) },
+          { author: "lead", text: "", item: commandApproval("denied", copy("empty", ""), true) },
+          { author: "human", text: "ship the share snapshots table" },
+          { author: "lead", text: "This writes to the production database. Approve to run it exactly as below." },
+          { author: "lead", text: "", item: commandApproval("open", copy("empty", "")) },
+        ],
+        { needsYou: true },
+      ),
+      "Ship the share snapshots table",
       [
-        { author: "lead", text: "Last week's migration ran:" },
-        { author: "lead", text: "", item: commandApproval("ran", copy("empty", "")) },
-        { author: "lead", text: "", item: commandApproval("denied", copy("empty", ""), true) },
-        { author: "human", text: "ship the share snapshots table" },
-        { author: "lead", text: "This writes to the production database. Approve to run it exactly as below." },
-        { author: "lead", text: "", item: commandApproval("open", copy("empty", "")) },
+        { role: "implementer", title: "Serve share links from the snapshots table", activity: { kind: "edit", path: "src/share/route.ts" } },
+        { role: "reviewer", title: "Review the share snapshots migration", activity: { kind: "read", path: "db/migrations/20261019_share_snapshots.sql" } },
       ],
-      { needsYou: true },
     ),
     strip(withChat(copy("chat-waiting", "The lead asked its numbered question and waits on you: the needs-you dot, no agents running."), fromLines(QUESTION).slice(0, 1), { needsYou: true }), 0),
     strip(withChat(copy("chat-empty", "A project whose chat has no messages yet, and no agents at work."), []), 0),

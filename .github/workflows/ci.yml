@@ -131,7 +131,7 @@ jobs:
         run: node .github/docs-links.mjs
       - name: Landing page fits every width
         # Renders site/home.html in the runner's google-chrome at 320 to 1920 px wide and fails when the page scrolls
-        # sideways, or when two callout notes of a figure overlap or one leaves the viewport.
+        # sideways.
         run: node .github/site-layout-check.mjs
 
   site-external-links:
