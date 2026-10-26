@@ -1,5 +1,6 @@
 import type { WebContents } from "electron";
 import { IPC } from "../../shared/channels";
+import type { BrowserInput } from "../../shared/contracts";
 import type { CallOutcome, ConnectOutcome, HubFrame, HubState } from "../../shared/hub";
 import type { CallRequest, ChatScope, ConnectRequest, OrderFocus } from "../../shared/ipc";
 import type { HubCacheFile } from "./cache";
@@ -35,6 +36,9 @@ export class HubService {
   /** The chat on screen, kept here so a client made later (a first pairing, a re-pair) starts with it. */
   #chat: ChatScope | null = null;
   #focus: OrderFocus | null = null;
+  /** Each window's watched browser session: the hub watches the one asked for last (a pop-out over its main window). */
+  readonly #watches = new Map<WebContents, string>();
+  #watching: string | null = null;
 
   constructor(mode: HubMode) {
     this.#mode = mode;
@@ -69,6 +73,26 @@ export class HubService {
   unsubscribe(contents: WebContents): void {
     this.#subscribers.delete(contents);
     this.#awaitingSnapshot.delete(contents);
+    if (this.#watches.delete(contents)) this.#rewatch();
+  }
+
+  /** The browser session `contents` shows live, or null when it shows none. */
+  watch(contents: WebContents, session: string | null): void {
+    // Asked again, it is the newest ask.
+    this.#watches.delete(contents);
+    if (session !== null) this.#watches.set(contents, session);
+    this.#rewatch();
+  }
+
+  #rewatch(): void {
+    const last = [...this.#watches.values()].at(-1) ?? null;
+    if (last === this.#watching) return;
+    this.#watching = last;
+    this.#source?.watch(last);
+  }
+
+  input(session: string, input: BrowserInput): void {
+    this.#source?.input(session, input);
   }
 
   call(request: CallRequest): Promise<CallOutcome> {
@@ -167,6 +191,7 @@ export class HubService {
     this.#source = client;
     client.chat(this.#chat);
     client.focus(this.#focus);
+    client.watch(this.#watching);
     client.start();
   }
 

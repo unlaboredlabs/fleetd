@@ -18,11 +18,12 @@ export interface PrKey {
   readonly number: number;
 }
 
-/** What the panel beside a project's chat shows: a tab's list, or one agent's work or one PR from it. */
+/** What the panel beside a project's chat shows: a tab's list, or one agent's work, one PR or one session from it. */
 export type PanelView =
   | { readonly tab: "agents"; readonly agent: string | null }
   | { readonly tab: "prs"; readonly pr: PrKey | null }
-  | { readonly tab: Exclude<PanelTab, "agents" | "prs"> };
+  | { readonly tab: "sessions"; readonly session: string | null }
+  | { readonly tab: Exclude<PanelTab, "agents" | "prs" | "sessions"> };
 
 /** A tab's own view: its list, no item. */
 export const listView = (tab: PanelTab): PanelView => {
@@ -31,13 +32,16 @@ export const listView = (tab: PanelTab): PanelView => {
       return { tab, agent: null };
     case "prs":
       return { tab, pr: null };
+    case "sessions":
+      return { tab, session: null };
     default:
       return { tab };
   }
 };
 
-/** Whether the view is one item of its tab (an agent, a PR), with its list a Back away. */
-export const hasItem = (view: PanelView): boolean => (view.tab === "agents" ? view.agent !== null : view.tab === "prs" ? view.pr !== null : false);
+/** Whether the view is one item of its tab (an agent, a PR, a session), with its list a Back away. */
+export const hasItem = (view: PanelView): boolean =>
+  view.tab === "agents" ? view.agent !== null : view.tab === "prs" ? view.pr !== null : view.tab === "sessions" ? view.session !== null : false;
 
 export const SETTINGS_TABS = ["general", "notifications", "agents", "projects", "mcp", "prompts", "instructions", "memory", "automations", "skills"] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
@@ -61,7 +65,9 @@ export type Screen =
   /** A tab; `prompt`, `for` ("<machine>/<project>") and `view` link one prompt, a project's texts or a prompt's update. */
   | { readonly id: "settings"; readonly tab: SettingsTab; readonly prompt?: string; readonly for?: string; readonly view?: SettingsView }
   /** A fleetd://pair link prefills the hub and code; the screen still asks before it pairs. */
-  | { readonly id: "onboarding"; readonly hub: string | null; readonly code: string | null };
+  | { readonly id: "onboarding"; readonly hub: string | null; readonly code: string | null }
+  /** One session in a window of its own (the pop-out, for taking over); the main window shows it in the panel. */
+  | { readonly id: "session"; readonly project: ProjectKey; readonly session: string };
 
 export const HOME: Screen = { id: "home" };
 
@@ -90,11 +96,12 @@ const prKey = (rest: ReadonlyArray<string>): PrKey | null => {
   return rest.length === 3 && number !== null ? { repo: `${a ?? ""}/${b ?? ""}`, number } : null;
 };
 
-/** `prs[/<pr>]`, `agents[/<lane>]` or another tab's name after the project; anything else, no view. */
+/** `prs[/<pr>]`, `agents[/<lane>]`, `sessions[/<id>]` or another tab's name after the project; else, no view. */
 const panelView = (rest: ReadonlyArray<string>): PanelView | null => {
   const [tab, ...item] = rest;
   if (tab === "prs") return { tab, pr: prKey(item) };
   if (tab === "agents") return { tab, agent: item.length === 1 ? (item[0] ?? null) : null };
+  if (tab === "sessions") return { tab, session: item.length === 1 ? (item[0] ?? null) : null };
   return isPanelTab(tab) ? listView(tab) : null;
 };
 
@@ -115,6 +122,10 @@ const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): Screen 
     }
     case "status":
       return { id: "status" };
+    case "session": {
+      const id = parts[3];
+      return a === undefined || b === undefined || id === undefined ? HOME : { id: "session", project: { machineId: a, projectId: b }, session: id };
+    }
     case "factory":
       return { id: "factory", project: projectParam(query.get("project")) };
     case "time":
@@ -159,6 +170,7 @@ export const parseHash = (hash: string): Screen => {
 
 const panelPath = (view: PanelView): Array<string> => {
   if (view.tab === "agents") return view.agent === null ? ["agents"] : ["agents", view.agent];
+  if (view.tab === "sessions") return view.session === null ? ["sessions"] : ["sessions", view.session];
   if (view.tab !== "prs") return [view.tab];
   const pr = view.pr;
   return pr === null ? ["prs"] : ["prs", ...(pr.repo === null ? [] : pr.repo.split("/", 2)), String(pr.number)];
@@ -176,6 +188,8 @@ const path = (screen: Screen): Array<string> => {
       return ["projects", "add"];
     case "settings":
       return ["settings", screen.tab];
+    case "session":
+      return ["session", screen.project.machineId, screen.project.projectId, screen.session];
     case "status":
     case "factory":
     case "machines":

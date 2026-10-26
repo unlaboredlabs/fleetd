@@ -1,3 +1,4 @@
+import type { BrowserInput } from "../../shared/contracts";
 import type { CallOutcome, HubState } from "../../shared/hub";
 import type { CallRequest, ChatScope, OrderFocus } from "../../shared/ipc";
 import type { PresenceFrame } from "../presence";
@@ -20,4 +21,8 @@ export interface HubSource {
   reconnectNow(): void;
   /** This minute's app presence, sent only on a live link and never answered. */
   presence(frame: PresenceFrame): void;
+  /** The browser session whose frames to forward, or null for none; kept across reconnects. */
+  watch(session: string | null): void;
+  /** A person's input to a session they have taken over; dropped while the link is down. */
+  input(session: string, input: BrowserInput): void;
 }

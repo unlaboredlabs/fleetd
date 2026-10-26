@@ -29,6 +29,22 @@ describe("connection", () => {
     expect(work(s)).toBeUndefined();
   });
 
+  it("keeps what the hub serves while the link retries, takes it fresh on each connection, and drops it with the pairing", () => {
+    let s = run([live(["presence", "browser_sessions"])]);
+    expect(s.features).toEqual(["presence", "browser_sessions"]);
+    s = run([{ t: "state", state: { phase: "retrying", hub: "devbox:4710", reason: "closed", retryAt: 1 } }], s);
+    expect(s.features).toEqual(["presence", "browser_sessions"]);
+    expect(run([live()], s).features).toEqual([]);
+    expect(run([{ t: "state", state: { phase: "unpaired" } }], s).features).toEqual([]);
+  });
+
+  it("shows the watched session's newest frame and drops an older one a slow link brings late", () => {
+    const frame = (seq: number) => ({ t: "browser_frame" as const, frame: { sessionId: "B1", seq, jpegB64: `f${String(seq)}`, width: 2, height: 2, control: "agent" } });
+    const s = run([live(), frame(2), frame(1)]);
+    expect(s.browserFrame?.jpegB64).toBe("f2");
+    expect(run([frame(3)], s).browserFrame?.jpegB64).toBe("f3");
+  });
+
   it("ignores an event it already applied", () => {
     const s = run([live(), snapshot(10), event(9, "workstream.state", { workstreamId: "W1", state: "stopped" })]);
     expect(s.cursor).toBe(10);

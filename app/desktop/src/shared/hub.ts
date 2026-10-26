@@ -1,7 +1,7 @@
 // The hub data the renderer sees: the /app protocol's own shapes, generated from crates/fleetd-contracts.
-import type { ChatDelta, FleetStatus, HubEvent, LiveFrame } from "./contracts";
+import type { BrowserFrame, ChatDelta, FleetStatus, HubEvent, LiveFrame } from "./contracts";
 
-export type { HubEvent, LiveFrame };
+export type { BrowserFrame, HubEvent, LiveFrame };
 /** The answer to `snapshot`: fleetd_status's data, with the event cursor to resume from. */
 export type Snapshot = FleetStatus;
 
@@ -9,8 +9,11 @@ export type Snapshot = FleetStatus;
 export type HubState =
   | { readonly phase: "unpaired"; readonly note?: string | undefined }
   | { readonly phase: "connecting"; readonly hub: string; readonly attempt: number }
-  /** `version`: the hub's fleetd version from its ready frame, absent from hubs before it; fresh on each connection. */
-  | { readonly phase: "live"; readonly hub: string; readonly protocol: number; readonly version?: string | undefined }
+  /**
+   * `version`: the hub's fleetd version from its ready frame, absent from hubs before it; `features`: what newer the
+   * hub serves, from the same frame (`browser_sessions`: the Agents section's Sessions). Both fresh on each connection.
+   */
+  | { readonly phase: "live"; readonly hub: string; readonly protocol: number; readonly version?: string | undefined; readonly features?: readonly string[] | undefined }
   /** `retryAt` is epoch ms. */
   /** `reason`: what went wrong, one sentence without a final period; `fix`: what to do about it. `retryAt` is epoch ms. */
   | { readonly phase: "retrying"; readonly hub: string; readonly reason: string; readonly fix?: string | undefined; readonly retryAt: number }
@@ -36,6 +39,8 @@ export type HubFrame =
   | { readonly t: "live"; readonly frame: LiveFrame }
   /** Streamed text of the subscribed chat's lead message (see hub.chat). */
   | { readonly t: "chat_delta"; readonly delta: ChatDelta }
+  /** The watched browser session's newest page (see hub.watch); never kept, only shown. */
+  | { readonly t: "browser_frame"; readonly frame: BrowserFrame }
   /** A session-level hub error (not an answer to a call). */
   | { readonly t: "error"; readonly error: HubError };
 

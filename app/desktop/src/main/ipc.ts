@@ -2,6 +2,7 @@ import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeTheme, shell, type 
 import { IPC, type InvokeChannel } from "../shared/channels";
 import type { AppLog } from "./applog";
 import { parseRequest, type RequestArgs } from "../shared/ipc";
+import type { BrowserInput } from "../shared/contracts";
 import type { OpenOutcome } from "../shared/hub";
 import { externalUrl } from "./external";
 import type { HubService } from "./hub/service";
@@ -14,6 +15,7 @@ import type { Notifier } from "./notify";
 import type { Opener } from "./opener";
 import { hostName, pickFolder, readDrop } from "./projects";
 import { isOwnPage } from "./security";
+import type { SessionWindows } from "./sessionWindow";
 import type { Updates } from "./updater";
 
 /** Only our own top-level page may call main: not a subframe, not a local file, not a page navigated elsewhere. */
@@ -36,7 +38,7 @@ const handle = <C extends InvokeChannel>(
 
 export const registerIpc = (
   hub: HubService,
-  frame: { opener: Opener; notifier: Notifier; log: AppLog; updates: Updates; presence: PresenceSetting },
+  frame: { opener: Opener; notifier: Notifier; log: AppLog; updates: Updates; presence: PresenceSetting; sessionWindows: SessionWindows },
   pairing: PairingService,
 ): void => {
   handle(IPC.hubSubscribe, (event) => hub.subscribe(event.sender));
@@ -44,6 +46,9 @@ export const registerIpc = (
   handle(IPC.hubCall, (_event, request) => hub.call(request));
   handle(IPC.hubChat, (_event, project) => hub.chat(project));
   handle(IPC.hubFocus, (_event, workstreamId) => hub.focus(workstreamId));
+  handle(IPC.hubWatch, (event, session) => hub.watch(event.sender, session));
+  // Checked against the contract's shape above; an absent field may arrive as undefined, which JSON leaves out.
+  handle(IPC.hubInput, (_event, session, input) => hub.input(session, input as BrowserInput));
   handle(IPC.hubResync, () => hub.resync());
   handle(IPC.hubRetryNow, () => hub.retryNow());
   handle(IPC.hubCacheRead, () => hub.cacheRead());
@@ -63,6 +68,7 @@ export const registerIpc = (
   handle(IPC.pairAuto, () => pairing.auto());
   handle(IPC.pairStore, () => pairing.store());
   handle(IPC.pairSetup, () => pairing.setup());
+  handle(IPC.appSessionWindow, (_event, request) => frame.sessionWindows.show(request));
   handle(IPC.openExternal, async (_event, url): Promise<OpenOutcome> => {
     const checked = externalUrl(url);
     if (!checked.ok) return checked;

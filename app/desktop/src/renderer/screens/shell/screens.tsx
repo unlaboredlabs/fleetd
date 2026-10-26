@@ -37,6 +37,8 @@ export const screenPart = (screen: Screen): { key: string; words: string } => {
       return { key: "onboarding", words: "the connect screen" };
     case "home":
       return { key: "home", words: "the home screen" };
+    case "session":
+      return { key: `session:${screen.session}`, words: "the session" };
   }
 };
 
@@ -48,6 +50,9 @@ function screenFor(screen: Screen): ReactNode {
   switch (screen.id) {
     case "home":
       // Resolved by the frame to the last project; this shows only while the projects load or when there are none.
+      return null;
+    case "session":
+      // A window of its own shows it (sessions/SessionWindow); the main window opens it in its project's panel.
       return null;
     case "project":
       return (

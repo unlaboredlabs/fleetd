@@ -18,6 +18,7 @@
 import { type ElectronApplication, expect, type Locator, type Page } from "@playwright/test";
 import { AGENT_ROUTE, ELSEWHERE_IDLE_ROUTE } from "../fixtures/agents/route.ts";
 import { STEER_WORDS } from "../fixtures/agents/steers.ts";
+import { SESSION } from "../fixtures/sessions/ids.ts";
 import { CHAT_SENDS } from "../fixtures/composer/sends.ts";
 import { OFFLINE_SENDS } from "../fixtures/offline/sends.ts";
 
@@ -150,6 +151,9 @@ export const fixtures = [
   // ...and the work elsewhere on storefront's repo, seen from storefront and from checkout (fixtures/agents).
   "agents-elsewhere",
   "agents-states",
+  // W46's design preview: storefront's browser sessions, one agent driving and one asking you to take over
+  // (fixtures/sessions).
+  "sessions-preview",
   "stream-reply",
   // UX [7]: no hub, and the last launch's disk cache on screen with a message queued; back online with that chat not
   // read again yet, and with that read failed (fixtures/offline).
@@ -237,6 +241,8 @@ export interface Screen {
 // The fixtures' storefront project, a real hub project from the sanitized recording, so its id is a UUID; it shows
 // only in the route, never as text.
 const CHAT = "#/project/devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22";
+/** One of storefront's browser sessions, open in the panel (fixtures/sessions). */
+const SESSION_ROUTE = (id: string) => `${CHAT}/sessions/${id}`;
 
 /** Makes a part throw while rendering, in the QA build (src/renderer/src/Boundary.tsx), so its error card shows. */
 const crash = (part: string) => async (page: Page) => {
@@ -1260,6 +1266,97 @@ export const screens: readonly Screen[] = [
     route: `${CHAT}/agents`,
     fixtures: ["typical", "many-agents", "long-text", "hub-unreachable", "live-20", "agents-work"],
   },
+  // W46: the Agents section's Sessions from a hub that serves them (fixtures/sessions): needs you, live and recent; one
+  // live, one asking you to take over, one taken over (the page yours), handed back with ⌘⇧↩; recorded ones replayed,
+  // with a video and without, a step's page snapshot open; one being saved, one lost and one expired.
+  { id: "sessions", route: `${CHAT}/sessions`, fixtures: ["sessions-preview"] },
+  // ...and a hub that doesn't serve them (every other fixture's): the link opens Agents, with no Sessions beside it.
+  {
+    id: "agents",
+    route: `${CHAT}/sessions`,
+    fixtures: ["typical"],
+    variant: "no-sessions",
+    open: async (page) => {
+      await expect(page.locator('[data-screen="agents"]')).toBeVisible();
+      await expect(page.getByRole("tab", { name: /^Sessions/u })).toHaveCount(0);
+    },
+  },
+  {
+    id: "sessions",
+    route: SESSION_ROUTE(SESSION.checkout),
+    fixtures: ["sessions-preview"],
+    variant: "live",
+    open: (page) => expect(page.getByRole("img", { name: /^The page: https:\/\/staging\.shop/u })).toBeVisible(),
+  },
+  { id: "sessions", route: SESSION_ROUTE(SESSION.payouts), fixtures: ["sessions-preview"], variant: "asking" },
+  {
+    id: "sessions",
+    route: SESSION_ROUTE(SESSION.payouts),
+    fixtures: ["sessions-preview"],
+    variant: "yours",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Take over", exact: true }).click();
+      await expect(page.getByRole("button", { name: /^Hand back/u })).toBeVisible();
+      await expect(page.getByRole("application", { name: "The page: your clicks and keys go to it" })).toBeFocused();
+    },
+  },
+  // ...taken over, ⌘⇧↩ (Ctrl+Shift+Enter) hands it back: the keymap takes the keys before the page does.
+  {
+    id: "sessions",
+    route: SESSION_ROUTE(SESSION.payouts),
+    fixtures: ["sessions-preview"],
+    variant: "handed-back",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Take over", exact: true }).click();
+      await page.getByRole("application").focus();
+      await page.keyboard.press("ControlOrMeta+Shift+Enter");
+      await expect(page.getByText("handing back", { exact: true })).toBeVisible();
+    },
+  },
+  // ...and in a window of its own, the pop-out for taking over: the session alone, its page yours.
+  {
+    id: "session-window",
+    route: `#/session/devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22/${SESSION.payouts}`,
+    fixtures: ["sessions-preview"],
+    open: async (page) => {
+      await page.reload();
+      await page.getByRole("button", { name: "Take over", exact: true }).click();
+      await expect(page.getByRole("button", { name: /^Hand back/u })).toBeVisible();
+    },
+  },
+  { id: "sessions", route: SESSION_ROUTE(SESSION.share), fixtures: ["sessions-preview"], variant: "replay", open: (page) => expect(page.locator("video")).toHaveCount(1) },
+  // ...with a step's page snapshot open: the structure as the step found it, what it clicked highlighted.
+  {
+    id: "sessions",
+    route: SESSION_ROUTE(SESSION.share),
+    fixtures: ["sessions-preview"],
+    variant: "snapshot",
+    open: async (page) => {
+      // A click by the agent's ref: the node's target finds it in the page and on the video.
+      await page.getByRole("button", { name: "The page at 0:06" }).click();
+      await expect(page.getByRole("list", { name: "The page’s structure" })).toBeVisible();
+      await expect(page.locator("[data-target]")).toHaveText(/button.*Share.*clicked/u);
+      await expect(page.locator("[data-target-box]")).toHaveCount(1);
+    },
+  },
+  // ...recorded without a video (no ffmpeg on its machine), a login filled from 1Password in its steps and its
+  // snapshot.
+  {
+    id: "sessions",
+    route: SESSION_ROUTE(SESSION.pricing),
+    fixtures: ["sessions-preview"],
+    variant: "no-video",
+    open: async (page) => {
+      await expect(page.getByText("Filled login for staging.shop.example.com from 1Password")).toBeVisible();
+      await page.getByRole("button", { name: "The page at 0:04" }).click();
+      await expect(page.getByText("filled from 1Password, hidden")).toBeVisible();
+    },
+  },
+  { id: "sessions", route: SESSION_ROUTE(SESSION.saving), fixtures: ["sessions-preview"], variant: "saving" },
+  { id: "sessions", route: SESSION_ROUTE(SESSION.receipt), fixtures: ["sessions-preview"], variant: "lost" },
+  { id: "sessions", route: SESSION_ROUTE(SESSION.expired), fixtures: ["sessions-preview"], variant: "expired" },
+  // ...and an agent asking you to take over its browser, in its own view.
+  { id: "agents", route: `${CHAT}/agents/T4`, fixtures: ["sessions-preview"], variant: "browser" },
   // ...and offline with nothing held: it says they show once you're connected, never loading bars.
   {
     id: "agents",

@@ -1,7 +1,7 @@
 // The /app WebSocket protocol as main speaks it (crates/fleetd-contracts/src/app.rs). Server frames are checked at
 // the fields the client relies on; payloads go on to the renderer as they came.
 import { z } from "zod";
-import type { AppServerMessage } from "../../shared/contracts";
+import type { AppServerMessage, BrowserInput } from "../../shared/contracts";
 
 /** The hub's close code for a refused key. */
 export const CLOSE_UNAUTHORIZED = 4401;
@@ -13,7 +13,9 @@ export type ClientMessage =
   | { t: "call"; id: string; tool: string; input: unknown }
   | { t: "live"; board: true; focus?: string }
   | { t: "chat"; project?: { machineId: string; projectId: string } }
-  | { t: "presence"; id: string; focused: boolean; input: boolean; project?: { machineId: string; projectId: string } };
+  | { t: "presence"; id: string; focused: boolean; input: boolean; project?: { machineId: string; projectId: string } }
+  | { t: "browser_watch"; session?: string }
+  | { t: "browser_input"; session: string; input: BrowserInput };
 
 const cursor = z.int().min(0);
 
@@ -36,6 +38,15 @@ export const ServerFrame = z.discriminatedUnion("t", [
   }),
   z.looseObject({ t: z.literal("live"), full: z.boolean() }),
   z.looseObject({ t: z.literal("chat_delta"), messageId: z.string(), offset: z.int().min(0), append: z.string() }),
+  z.looseObject({
+    t: z.literal("browser_frame"),
+    sessionId: z.string(),
+    seq: z.int().min(0),
+    jpegB64: z.string(),
+    width: z.int().min(1),
+    height: z.int().min(1),
+    control: z.string(),
+  }),
 ]);
 /** Checked at the fields above; the rest is typed by the contracts the hub validated it against. */
 export type ServerFrame = AppServerMessage;

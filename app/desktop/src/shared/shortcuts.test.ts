@@ -37,6 +37,16 @@ describe("shortcut map", () => {
     expect(shortcutFor(key("1", "Numpad1", { ctrlKey: true }), "linux")).toBe("project.open.1");
   });
 
+  it("hands a page back on ⌘⇧↩ (Ctrl+Shift+Enter), the keypad's Enter too, and never on Enter alone", () => {
+    expect(shortcutFor(key("Enter", "Enter", { metaKey: true, shiftKey: true }), "darwin")).toBe("session.handBack");
+    expect(shortcutFor(key("Enter", "NumpadEnter", { ctrlKey: true, shiftKey: true }), "linux")).toBe("session.handBack");
+    expect(shortcutFor(key("Enter", "Enter", { ctrlKey: true }), "linux")).toBeUndefined();
+    expect(shortcutFor(key("Enter", "Enter", { shiftKey: true }), "linux")).toBeUndefined();
+    expect(display("session.handBack", "darwin")).toBe("⇧⌘↩");
+    expect(display("session.handBack", "linux")).toBe("Ctrl+Shift+Enter");
+    expect(accelerator("session.handBack")).toBe("CmdOrCtrl+Shift+Enter");
+  });
+
   it("matches ⌥⌘A though Option types another letter on macOS", () => {
     expect(shortcutFor(key("å", "KeyA", { metaKey: true, altKey: true }), "darwin")).toBe("project.nextNeedsYou");
     expect(shortcutFor(key("a", "KeyA", { ctrlKey: true, altKey: true }), "linux")).toBe("project.nextNeedsYou");

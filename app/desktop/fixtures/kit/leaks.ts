@@ -55,10 +55,34 @@ const asText = (data: Buffer): string => {
   return `${data.toString("utf8")}\n${le.subarray(0, le.length - (le.length % 2)).toString("utf16le")}`;
 };
 
-/** Problems with one attached file's bytes: text is scanned whole; a PNG may only hold pixel chunks; nothing else. */
-const attachmentLeaks = (mime: string, data: Buffer, name: string): Array<string> => {
+const EBML = Buffer.from([0x1a, 0x45, 0xdf, 0xa3]);
+/** A JPEG's markers that only draw pixels (SOF, DHT, DQT, DRI, SOS, APP0); EXIF, XMP and comments carry text. */
+const PIXEL_MARKERS = new Set([0xc0, 0xc1, 0xc2, 0xc4, 0xdb, 0xdd, 0xda, 0xe0]);
+
+/** Problems with a JPEG's bytes: any segment that isn't pixels. */
+const jpegLeaks = (data: Buffer, where: string): Array<string> => {
+  if (data[0] !== 0xff || data[1] !== 0xd8) return [`a JPEG that isn't one${where}`];
+  const out: Array<string> = [];
+  for (let at = 2; at + 4 <= data.length; ) {
+    const marker = data[at + 1] ?? 0;
+    if (data[at] !== 0xff) break;
+    if (!PIXEL_MARKERS.has(marker)) out.push(`JPEG metadata (0x${marker.toString(16)})${where}`);
+    // The scan's entropy-coded data runs to the end: nothing after SOS is a segment the check needs.
+    if (marker === 0xda) break;
+    at += 2 + data.readUInt16BE(at + 2);
+  }
+  return out;
+};
+
+/**
+ * Problems with one attached file's bytes: text (and NDJSON) is scanned whole; a PNG may only hold pixel chunks; a WebM
+ * (a session's video, from its first byte) is scanned for text leaks in its header; nothing else.
+ */
+const attachmentLeaks = (mime: string, data: Buffer, name: string, first = true): Array<string> => {
   const where = ` in attachment ${name}`;
-  if (mime.startsWith("text/")) return scan(asText(data), where);
+  if (mime.startsWith("text/") || mime === "application/x-ndjson" || mime === "application/json") return scan(asText(data), where);
+  if (mime === "video/webm") return first && !data.subarray(0, 4).equals(EBML) ? [`a WebM that isn't one${where}`] : scan(data.toString("latin1"), where);
+  if (mime === "image/jpeg") return jpegLeaks(data, where);
   if (mime !== "image/png") return [`an attachment the check can't read${where} (${mime}): use text/* or a metadata-free PNG`];
   if (!data.subarray(0, 8).equals(PNG_SIGNATURE)) return [`a PNG that isn't one${where}`];
   const out: Array<string> = [];
@@ -78,8 +102,11 @@ const attachedFiles = (v: unknown, out: Array<string>): void => {
     const o = v as Record<string, unknown>;
     if (typeof o["dataB64"] === "string") {
       const mime = typeof o["mime"] === "string" ? o["mime"] : "unknown";
-      out.push(...attachmentLeaks(mime, Buffer.from(o["dataB64"], "base64"), typeof o["name"] === "string" ? o["name"] : "unnamed"));
+      // A recording's file comes a piece at a time: only the first starts with its header.
+      out.push(...attachmentLeaks(mime, Buffer.from(o["dataB64"], "base64"), typeof o["name"] === "string" ? o["name"] : "unnamed", o["offset"] === undefined || o["offset"] === 0));
     }
+    // A live session's frame.
+    if (typeof o["jpegB64"] === "string") out.push(...attachmentLeaks("image/jpeg", Buffer.from(o["jpegB64"], "base64"), "a browser frame"));
     for (const x of Object.values(o)) attachedFiles(x, out);
   }
 };

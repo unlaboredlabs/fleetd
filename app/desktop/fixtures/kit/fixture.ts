@@ -15,7 +15,7 @@ export interface HubErrorJson {
 }
 
 // "rows": not a frame the window sees, but rows later answers leave out or show again from then on (see Rows).
-type TimedKind = "event" | "live" | "snapshot" | "chat_delta" | "state" | "rows";
+type TimedKind = "event" | "live" | "snapshot" | "chat_delta" | "state" | "rows" | "browser_frame";
 
 /** Rows of `tool`'s answers under `field` matching `where`, e.g. requests_list's requests with requestId Q1. */
 export interface Rows {
@@ -56,6 +56,18 @@ const timedFrame = (kind: TimedKind, payload: JsonObject, afterMs: number): Fixt
   if (kind === "chat_delta") {
     const delta = { ...payload, messageId: asText(payload["messageId"]), offset: num(payload["offset"]), append: asText(payload["append"]) };
     return { t: "chat_delta", delta, afterMs };
+  }
+  if (kind === "browser_frame") {
+    const frame = {
+      ...payload,
+      sessionId: asText(payload["sessionId"]),
+      seq: num(payload["seq"]),
+      jpegB64: asText(payload["jpegB64"]),
+      width: num(payload["width"]),
+      height: num(payload["height"]),
+      control: asText(payload["control"]),
+    };
+    return { t: "browser_frame", frame, afterMs };
   }
   return { t: "live", frame: { ...payload, full: payload["full"] === true }, afterMs };
 };
@@ -153,7 +165,7 @@ export class Fixture {
     for (const frame of file.frames) {
       ms += frame.afterMs ?? 0;
       // A streamed chat frame or a change of connection only makes sense on the timeline, after the first page.
-      if ((ms > 0 || frame.t === "chat_delta" || frame.t === "state" || frame.t === "rows") && frame.t !== "error") {
+      if ((ms > 0 || frame.t === "chat_delta" || frame.t === "state" || frame.t === "rows" || frame.t === "browser_frame") && frame.t !== "error") {
         const payload =
           frame.t === "snapshot"
             ? frame.snapshot

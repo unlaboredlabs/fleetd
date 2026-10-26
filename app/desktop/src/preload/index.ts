@@ -57,6 +57,8 @@ const api: FleetdApi = {
       ipcRenderer.invoke(IPC.hubCall, { tool, input, ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }) }) as Promise<CallOutcome>,
     chat: (project) => ipcRenderer.invoke(IPC.hubChat, project) as Promise<void>,
     focus: (workstreamId) => ipcRenderer.invoke(IPC.hubFocus, workstreamId) as Promise<void>,
+    watch: (session) => ipcRenderer.invoke(IPC.hubWatch, session) as Promise<void>,
+    input: (session, input) => ipcRenderer.invoke(IPC.hubInput, session, input) as Promise<void>,
     resync: () => ipcRenderer.invoke(IPC.hubResync) as Promise<void>,
     retryNow: () => ipcRenderer.invoke(IPC.hubRetryNow) as Promise<void>,
     cache: {
@@ -112,6 +114,7 @@ const api: FleetdApi = {
     },
     notify: (request) => ipcRenderer.invoke(IPC.appNotify, request) as Promise<boolean>,
     setBadge: (count) => ipcRenderer.invoke(IPC.appBadge, count) as Promise<void>,
+    sessionWindow: (request) => ipcRenderer.invoke(IPC.appSessionWindow, request) as Promise<void>,
     setTheme: (mode) => ipcRenderer.invoke(IPC.appTheme, mode) as Promise<void>,
     linkHandler: (claim) => ipcRenderer.invoke(IPC.appLinkHandler, claim) as Promise<LinkHandlerStatus>,
     presence: (on) => ipcRenderer.invoke(IPC.appPresence, on) as Promise<boolean>,

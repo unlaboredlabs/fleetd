@@ -13,7 +13,7 @@ const hubError = z.object({ code: z.string(), message: z.string(), fix: z.string
 const State = z.discriminatedUnion("phase", [
   z.object({ phase: z.literal("unpaired"), note: z.string().optional() }),
   z.object({ phase: z.literal("connecting"), hub: z.string(), attempt: z.int().min(0) }),
-  z.object({ phase: z.literal("live"), hub: z.string(), protocol: z.int(), version: z.string().optional() }),
+  z.object({ phase: z.literal("live"), hub: z.string(), protocol: z.int(), version: z.string().optional(), features: z.array(z.string()).readonly().optional() }),
   z.object({ phase: z.literal("retrying"), hub: z.string(), reason: z.string(), fix: z.string().optional(), retryAt: z.number() }),
   z.object({ phase: z.literal("refused"), hub: z.string(), message: z.string() }),
 ]);
@@ -37,6 +37,12 @@ const Frame = z.discriminatedUnion("t", [
   // Not sent to the window: rows later answers leave out or include again from now on, so a fixture's answers move on
   // over time as a hub's do (fixtures/showcase plays one order from request to merge).
   z.object({ t: z.literal("rows"), hide: z.array(Rows).optional(), show: z.array(Rows).optional(), afterMs: delay }),
+  // A browser session's page, replayed whatever is watched (the renderer shows the watched session's only).
+  z.object({
+    t: z.literal("browser_frame"),
+    frame: z.looseObject({ sessionId: z.string(), seq: z.int().min(0), jpegB64: z.string(), width: z.int().min(1), height: z.int().min(1), control: z.string() }),
+    afterMs: delay,
+  }),
 ]);
 
 /**
@@ -130,12 +136,21 @@ export class FixtureSource implements HubSource {
   #seq = 0;
   /** The connection as the replay left it; a window subscribing later starts from it. */
   #state: HubState;
+  /** The watched browser session, and each session's newest frame: as a hub, it sends only the watched one's. */
+  #watch: string | null = null;
+  readonly #frames = new Map<string, HubFrame & { t: "browser_frame" }>();
+  readonly #out: (frame: HubFrame) => void;
 
   constructor(file: FixtureFile, emit: (frame: HubFrame) => void) {
     this.#file = file;
+    this.#out = emit;
     this.#state = file.state;
     this.#hidden = [...(file.hidden ?? [])];
     this.#emit = (frame) => {
+      if (frame.t === "browser_frame") {
+        this.#frames.set(frame.frame.sessionId, frame);
+        if (frame.frame.sessionId !== this.#watch) return;
+      }
       if (frame.t === "state") this.#state = frame.state;
       if (frame.t === "event") this.#seq = Math.max(this.#seq, frame.event.seq);
       if (frame.t === "snapshot") this.#seq = Math.max(this.#seq, frame.snapshot.cursor);
@@ -222,6 +237,14 @@ export class FixtureSource implements HubSource {
   focus(): void {}
 
   presence(): void {}
+
+  watch(session: string | null): void {
+    this.#watch = session;
+    const newest = session === null ? undefined : this.#frames.get(session);
+    if (newest !== undefined) this.#out(newest);
+  }
+
+  input(): void {}
 
   refreshLive(): void {}
 

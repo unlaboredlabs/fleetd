@@ -3,6 +3,7 @@
 // refused (close 4401, or an error before `ready`) or the client is stopped. The hub never pings and the event
 // long-poll is silent when nothing happens, so the client pings and drops a link that goes quiet: a half-open socket
 // (Wi-Fi or tailnet gone without a sleep) must not keep showing as live.
+import type { BrowserInput } from "../../shared/contracts";
 import type { CallOutcome, HubError, HubFrame, HubState } from "../../shared/hub";
 import { MAX_CALL_INPUT_BYTES, type CallRequest, type ChatScope, type OrderFocus } from "../../shared/ipc";
 import { appUrl, backoff, CLOSE_UNAUTHORIZED, parseServerFrame, type ClientMessage, type ServerFrame } from "./protocol";
@@ -64,6 +65,10 @@ export class HubClient implements HubSource {
   #heartbeat: ReturnType<typeof setInterval> | null = null;
   /** This connection's hub reads presence: its `ready` named it, and it hasn't refused a presence frame since. */
   #presence = false;
+  /** The hub serves browser sessions (ready's `browser_sessions`): only then go browser_watch and browser_input. */
+  #browser = false;
+  /** The browser session whose frames to forward; sent again on each connection. */
+  #watch: string | null = null;
   #nextPresenceId = 0;
 
   constructor(options: HubClientOptions) {
@@ -148,6 +153,16 @@ export class HubClient implements HubSource {
    * Sent only to a hub whose `ready` names presence, so an older hub never sees it. Dropped while the link is down:
    * a minute missed is a minute not counted, never one sent late.
    */
+  watch(session: string | null): void {
+    if (this.#watch === session) return;
+    this.#watch = session;
+    if (this.#ready && this.#browser) this.#sendWatch();
+  }
+
+  input(session: string, input: BrowserInput): void {
+    if (this.#ready && this.#browser) this.#send({ t: "browser_input", session, input });
+  }
+
   presence(frame: PresenceFrame): void {
     if (!this.#ready || !this.#presence) return;
     // Its own id, which the hub echoes only on an error for a frame it can't read; calls' ids start with "c".
@@ -214,13 +229,21 @@ export class HubClient implements HubSource {
         this.#readyAt = Date.now();
         this.#cursor = null;
         this.#presence = frame.features?.includes("presence") ?? false;
+        this.#browser = frame.features?.includes("browser_sessions") ?? false;
         if (this.#readyTimer !== null) clearTimeout(this.#readyTimer);
         this.#readyTimer = null;
         this.#startHeartbeat();
-        this.#setState({ phase: "live", hub: this.#options.hub, protocol: frame.protocol, ...(frame.version === undefined ? {} : { version: frame.version }) });
+        this.#setState({
+          phase: "live",
+          hub: this.#options.hub,
+          protocol: frame.protocol,
+          ...(frame.version === undefined ? {} : { version: frame.version }),
+          ...(frame.features === undefined ? {} : { features: frame.features }),
+        });
         this.#send({ t: "snapshot" });
         this.#sendLive();
         if (this.#chat !== null) this.#sendChat();
+        if (this.#browser && this.#watch !== null) this.#sendWatch();
         return;
       }
       case "snapshot": {
@@ -248,6 +271,12 @@ export class HubClient implements HubSource {
       case "chat_delta": {
         const { t: _t, ...delta } = frame;
         this.#options.emit({ t: "chat_delta", delta });
+        return;
+      }
+      case "browser_frame": {
+        const { t: _t, ...browser } = frame;
+        // Only the watched session's: one that was watched before a change can still be on its way.
+        if (browser.sessionId === this.#watch) this.#options.emit({ t: "browser_frame", frame: browser });
         return;
       }
       case "result": {
@@ -348,6 +377,10 @@ export class HubClient implements HubSource {
     this.#resumeTimer = null;
     this.#readyTimer = null;
     this.#heartbeat = null;
+  }
+
+  #sendWatch(): void {
+    this.#send(this.#watch === null ? { t: "browser_watch" } : { t: "browser_watch", session: this.#watch });
   }
 
   #sendChat(): void {
