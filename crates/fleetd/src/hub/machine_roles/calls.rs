@@ -14,7 +14,8 @@ use fleetd_contracts::machine_roles::{
     SessionRouteCall, SessionRouteResult, SessionStepCall, SessionStepFrame, SessionStepResult,
 };
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
-use fleetd_contracts::node_link::HubToNode;
+use fleetd_contracts::node_link::{CAP_SESSION_SEAL, HubToNode};
+use fleetd_contracts::prim::NonEmpty;
 
 use super::{
     Place, drop_place, end_place, insert_place, new_key, open_hosted, place, remote_on, runners,
@@ -72,6 +73,7 @@ fn here(machine: &MachineId) -> LeadCallResult {
         here: true,
         answer: None,
         relay: None,
+        seal_to: None,
     })
 }
 
@@ -81,6 +83,7 @@ fn relayed(runner: &MachineId, answer: BrowserResultFrame) -> LeadCallResult {
         here: false,
         answer: Some(answer),
         relay: None,
+        seal_to: None,
     })
 }
 
@@ -117,7 +120,12 @@ pub async fn route(
             return Ok(here(&origin));
         };
         let ending = matches!(call.frame.call, BrowserCall::SessionEnd(_));
-        let answer = forward(&hub, &open, call.frame, CALL_WAIT).await;
+        // A fill carries the value the agent's node read, sealed to this session's runner: passed on as it is.
+        let sealed = call
+            .sealed
+            .filter(|s| s.runner == open.runner)
+            .map(|s| s.data_b64);
+        let answer = forward(&hub, &open, call.frame, sealed, CALL_WAIT).await;
         // Ended, or no longer there to end: a runner gone offline took its session with it.
         let gone = match &answer {
             Ok(frame) => {
@@ -152,8 +160,55 @@ pub async fn route(
         .into_iter()
         .map(|(r, _, _)| r)
         .collect();
-    let remote = hub.db.with(remote_on).map_err(failed)?;
-    let runner = place(&origin, call.host, &all, remote)?;
+    // Across machines only from an agent's node that seals its session's secrets to the runner.
+    let remote =
+        hub.db.with(remote_on).map_err(failed)? && hub.link.node_can(&origin, CAP_SESSION_SEAL);
+    let runner = match &call.sealed {
+        // The second step: the runner the first named, if it can still take the session.
+        Some(sealed) => {
+            let ready = all
+                .iter()
+                .find(|r| r.machine_id == sealed.runner)
+                .filter(|r| {
+                    remote
+                        && r.machine_id != origin
+                        && r.online
+                        && r.able(call.host, &origin)
+                        && r.free() > 0
+                });
+            if ready.is_none() {
+                return Err(McpToolError::new(
+                    ErrorCode::Failed,
+                    format!("{} can't take this session any more.", sealed.runner),
+                )
+                .with_fix("call session_start again"));
+            }
+            sealed.runner.clone()
+        }
+        None => place(&origin, call.host, &all, remote)?,
+    };
+    if runner != origin && call.sealed.is_none() {
+        // The first step: nothing starts until the agent's node seals the session's secrets to the runner.
+        let key = hub
+            .store
+            .machine_get(&runner)
+            .map_err(failed)?
+            .and_then(|m| m.box_pub_key)
+            .ok_or_else(|| {
+                McpToolError::new(
+                    ErrorCode::Failed,
+                    format!("{runner} has no key to seal to."),
+                )
+            })?;
+        return Ok(LeadCallResult::SessionRoute(SessionRouteResult {
+            runner,
+            here: false,
+            answer: None,
+            relay: None,
+            seal_to: Some(key),
+        }));
+    }
+    let sealed = call.sealed.map(|s| s.data_b64);
     let placed = Place {
         key: new_key(),
         hosted: runner != origin,
@@ -174,7 +229,7 @@ pub async fn route(
         hub: hub.clone(),
         place: Some(placed.clone()),
     };
-    let answer = forward(&hub, &placed, call.frame, START_WAIT).await;
+    let answer = forward(&hub, &placed, call.frame, sealed, START_WAIT).await;
     let started = match &answer {
         Ok(BrowserResultFrame {
             result: Some(BrowserCallResult::SessionStart(s)),
@@ -270,7 +325,7 @@ async fn cancel(hub: &Hub, place: &Place) {
     .expect("a session_end frame");
     if let Err(e) = hub
         .node_commands
-        .host_session(&place.runner, &place.key, &end, CANCEL_WAIT)
+        .host_session(&place.runner, &place.key, &end, None, CANCEL_WAIT)
         .await
     {
         tracing::warn!(runner = %place.runner, error = %e, "cancelled session start not ended on its runner");
@@ -285,12 +340,13 @@ async fn forward(
     hub: &Hub,
     place: &Place,
     mut frame: BrowserCallFrame,
+    sealed: Option<NonEmpty>,
     wait: Duration,
 ) -> Result<BrowserResultFrame, McpToolError> {
     // The runner knows the session by its key alone.
     frame.thread_id = None;
     hub.node_commands
-        .host_session(&place.runner, &place.key, &frame, wait)
+        .host_session(&place.runner, &place.key, &frame, sealed.as_ref(), wait)
         .await
         .map_err(|e| {
             McpToolError::new(

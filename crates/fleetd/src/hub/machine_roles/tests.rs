@@ -4,7 +4,7 @@ use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
 use fleetd_contracts::machine_roles::{HostCheck, SessionHost, SessionRouteResult};
 use fleetd_contracts::mcp::McpToolError;
-use fleetd_contracts::node_link::{CAP_SESSION_HOST, HubToNode};
+use fleetd_contracts::node_link::{CAP_SESSION_HOST, CAP_SESSION_SEAL, HubToNode};
 use fleetd_contracts::prim::{Line, List};
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
@@ -19,6 +19,10 @@ use crate::hub::store::test_clock::ManualClock;
 const AT: &str = "2026-10-26T10:00:00.000Z";
 const NOW_MS: u64 = 1_792_000_000_000;
 const SESSION: &str = "B0123456789abcdef0123456789abcdef";
+/// Each machine's box key, as its hello gave it.
+const BOX_KEY: &str = "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=";
+/// What the agent's node sealed to the runner: the hub relays it as it is.
+const SEALED: &str = "c2VhbGVkIGZvciBtYWMx";
 
 fn mid(m: &str) -> MachineId {
     MachineId::unchecked(m)
@@ -50,10 +54,12 @@ fn hub() -> (Arc<Hub>, tempfile::TempDir) {
     for m in ["devbox", "mac1"] {
         let machine = serde_json::from_value(json!({
             "machineId": m, "name": m, "tags": [], "status": "online", "lastSeenAt": AT, "nodeVersion": "0.1.0",
+            "boxPubKey": BOX_KEY,
         }))
         .unwrap();
         hub.store.machine_upsert(&machine, None).unwrap();
-        hub.link.set_capabilities(&mid(m), &[CAP_SESSION_HOST]);
+        hub.link
+            .set_capabilities(&mid(m), &[CAP_SESSION_HOST, CAP_SESSION_SEAL]);
     }
     hub.store
         .projects_upsert_many(
@@ -120,11 +126,34 @@ async fn route(
     host: SessionHost,
     call: Value,
 ) -> Result<SessionRouteResult, McpToolError> {
-    let call: LeadCall = serde_json::from_value(json!({
+    let first = route_once(hub, thread, host, call.clone(), None).await?;
+    match &first.seal_to {
+        // As the agent's node does: seal to the runner the hub named, and start again.
+        Some(key) => {
+            assert_eq!(key.as_str(), BOX_KEY);
+            assert!(first.answer.is_none(), "nothing starts before the seal");
+            let sealed = json!({ "runner": first.runner, "dataB64": SEALED });
+            route_once(hub, thread, host, call, Some(sealed)).await
+        }
+        None => Ok(first),
+    }
+}
+
+async fn route_once(
+    hub: &Hub,
+    thread: &str,
+    host: SessionHost,
+    call: Value,
+    sealed: Option<Value>,
+) -> Result<SessionRouteResult, McpToolError> {
+    let mut call = json!({
         "op": "session_route", "host": host,
         "frame": { "id": "1", "cwd": "/work/app", "call": call, "threadId": thread },
-    }))
-    .unwrap();
+    });
+    if let Some(sealed) = sealed {
+        call["sealed"] = sealed;
+    }
+    let call: LeadCall = serde_json::from_value(call).unwrap();
     let handler = hub.lead_calls.handler("session_route").unwrap();
     match handler.handle(task_caller(), call).await? {
         LeadCallResult::SessionRoute(out) => Ok(out),
@@ -174,6 +203,10 @@ fn mac1_node(
                 continue;
             };
             let op = host.frame.call.op();
+            if op == "session_start" {
+                // What the agent's node sealed reaches the runner as it was: the hub never opens it.
+                assert_eq!(host.sealed.as_ref().map(|s| s.as_str()), Some(SEALED));
+            }
             let result = match op {
                 "session_start" => {
                     let id = match started {
@@ -658,10 +691,10 @@ async fn the_runner_reports_a_hosted_session_in_the_agents_name_and_no_one_else_
 }
 
 #[tokio::test]
-async fn by_default_a_session_runs_only_on_its_agents_machine() {
+async fn with_remote_placement_off_a_session_runs_only_on_its_agents_machine() {
     let (hub, _home) = hub();
-    // Off until the runner can scrub a hosted session with its agent's secrets.
-    assert!(!hub.db.with(super::remote_on).unwrap());
+    assert!(hub.db.with(super::remote_on).unwrap(), "on by default");
+    hub.db.transaction(|c| super::set_remote(c, false)).unwrap();
     let (_link, _seen) = mac1_node(&hub);
     // mac1 could host an iOS simulator, but sessions stay on their agent's machine: a plain refusal instead.
     let ios = route(&hub, "th-1", SessionHost::Ios, start())
@@ -845,4 +878,61 @@ async fn places_nobody_needs_are_pruned() {
         .with(|c| super::hosted(c, fresh.key.as_str()))
         .unwrap();
     assert!(left.is_some());
+}
+
+#[tokio::test]
+async fn an_agents_node_that_cant_seal_keeps_its_sessions_at_home() {
+    let (hub, _home) = hub();
+    let _devbox = remote(&hub);
+    let (_link, _seen) = mac1_node(&hub);
+    // devbox's node is older: it can't seal its session's secrets to mac1, which could host an iOS simulator.
+    hub.link
+        .set_capabilities(&mid("devbox"), &[CAP_SESSION_HOST]);
+    let refused = route(&hub, "th-1", SessionHost::Ios, start())
+        .await
+        .unwrap_err();
+    assert_eq!(
+        refused.message,
+        "devbox can't host an iOS simulator session: as tested."
+    );
+}
+
+#[tokio::test]
+async fn a_sealed_start_goes_only_to_the_runner_it_was_sealed_for_while_it_can_take_it() {
+    let (hub, _home) = hub();
+    let _devbox = remote(&hub);
+    let (_link, _seen) = mac1_node(&hub);
+    tool(
+        &hub,
+        "machine_roles_set",
+        json!({ "machineId": "mac1", "maxSessions": 1 }),
+    )
+    .await
+    .unwrap();
+    // Sealed for devbox itself, which hosts no iOS: refused.
+    let wrong = route_once(
+        &hub,
+        "th-1",
+        SessionHost::Ios,
+        start(),
+        Some(json!({ "runner": "devbox", "dataB64": SEALED })),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(wrong.message, "devbox can't take this session any more.");
+    // mac1 fills up between the two steps: the second is refused, and nothing started.
+    route(&hub, "th-2", SessionHost::Ios, start())
+        .await
+        .unwrap();
+    let late = route_once(
+        &hub,
+        "th-1",
+        SessionHost::Ios,
+        start(),
+        Some(json!({ "runner": "mac1", "dataB64": SEALED })),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(late.message, "mac1 can't take this session any more.");
+    assert_eq!(late.fix.as_deref(), Some("call session_start again"));
 }

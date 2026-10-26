@@ -350,6 +350,6 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "machine_roles_set",
-        "Set what a machine is for: roles [agents, sessions] (one or both), and the most sessions it hosts at once (maxSessions 1 to 64, or autoSessions: true for what it fits). A session an agent starts runs on its own machine, and is refused when that has no sessions role, can't host the kind, or has no free slot. Turning agents off stops nothing: running agents finish, new ones wait. Admin on the machine.",
+        "Set what a machine is for: roles [agents, sessions] (one or both), and the most sessions it hosts at once (maxSessions 1 to 64, or autoSessions: true for what it fits). A session an agent starts runs on its own machine when it can host it, else on another that can, driven through the hub's relay. Turning agents off stops nothing: running agents finish, new ones wait. Admin on the machine.",
     ),
 ];

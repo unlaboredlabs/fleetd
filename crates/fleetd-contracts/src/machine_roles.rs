@@ -137,6 +137,7 @@ brand!(
 
 /// One of an agent's session tool calls, which its node hands to the hub: `session_start` to be placed, and the rest
 /// of a session the hub placed elsewhere. Refused when a process in a session sends it itself.
+#[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionRouteCall {
@@ -144,6 +145,20 @@ pub struct SessionRouteCall {
     pub frame: BrowserCallFrame,
     #[serde(default)]
     pub host: SessionHost,
+    /// A `session_start` again, after the hub answered the first with `sealTo`: the session's secrets and relay key,
+    /// sealed by the agent's node to that runner. A `fill_credential` of a session hosted there: the value the agent's
+    /// node read from its 1Password, sealed to the runner, which fills it and never holds the token.
+    pub sealed: Option<SealedForRunner>,
+}
+
+/// What the agent's node hands the machine that will host its session, sealed (libsodium's `crypto_box_seal`) to that
+/// machine's box key: the hub relays it and never opens it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SealedForRunner {
+    pub runner: MachineId,
+    /// The sealed box, base64.
+    pub data_b64: NonEmpty,
 }
 
 /// Where the call goes. `here`: the node answers it itself, the session runs on the agent's machine; else `answer` is
@@ -158,6 +173,9 @@ pub struct SessionRouteResult {
     /// The agent's side of the session's relay on the hub, in the answer to the start that placed it elsewhere: its
     /// node connects the agent's driver to `/relay/<relay>`. Held by that node alone; never given to the agent.
     pub relay: Option<RelayToken>,
+    /// The hub would place the session on `runner`: seal the session's secrets and relay key to this key and start
+    /// it again with them (`sealed`). Nothing started yet.
+    pub seal_to: Option<crate::secrets::BoxPublicKey>,
 }
 
 brand!(
@@ -211,12 +229,16 @@ pub struct SessionStepResult {
 
 /// A session tool call the runner's node answers for an agent on another machine, as for one of its own sessions
 /// named `hostKey`.
+#[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionHostFrame {
     pub id: NonEmpty,
     pub host_key: HostKey,
     pub frame: BrowserCallFrame,
+    /// With `session_start` or `fill_credential`: the agent's node's sealed box for this runner
+    /// ([`SealedForRunner::data_b64`]).
+    pub sealed: Option<NonEmpty>,
 }
 
 /// Hub -> the runner's node: a step of the agent's for the recording of the session it hosts under `hostKey`.

@@ -17,9 +17,9 @@ export const rolesOf = (choice: RolesChoice): MachineRole[] => (choice === "both
 
 /** What the choice means, under the control. */
 export const ROLE_HELP: Readonly<Record<RolesChoice, string>> = {
-  agents: "Runs agents, and no browser or device sessions: its agents can't open one.",
-  sessions: "Hosts browser and device sessions, and runs no agents.",
-  both: "Runs agents and hosts their browser and device sessions.",
+  agents: "Runs agents. Their browser and device sessions run on a machine that hosts sessions.",
+  sessions: "Hosts browser and device sessions for agents on any machine, and runs no agents.",
+  both: "Runs agents and hosts sessions, its own agents' first.",
 };
 
 /** "2 of 4 sessions now (auto: 8 CPUs, 16 GB)"; "set" reads as "you set it". */
@@ -48,9 +48,10 @@ export const capChoices = (m: MachineRolesEntry): Array<{ value: string; label: 
   return [{ value: "auto", label: auto === null ? "Auto" : `Auto (${auto})` }, ...numbers.map((n) => ({ value: String(n), label: String(n) }))];
 };
 
-/** Why the list of what it can host is empty, when it is. */
+/** Why what it can host is unknown, or why other machines' agents can't use it, when either is so. */
 export const hostsNote = (m: MachineRolesEntry): string | null => {
   if (!m.roles.includes("sessions")) return null;
   if ((m.hosts ?? []).length === 0) return m.online ? "Hasn't said what it can host yet." : "Offline: what it can host shows once it is back.";
+  if (!m.hostsOthers) return "Its fleetd is older: it hosts only its own agents' sessions until it is updated.";
   return null;
 };

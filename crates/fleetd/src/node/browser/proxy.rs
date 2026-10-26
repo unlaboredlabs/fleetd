@@ -93,7 +93,7 @@ fn reject(status: u16, text: &str) -> ErrorResponse {
 #[allow(clippy::result_large_err)]
 async fn serve(tcp: tokio::net::TcpStream, proxy: Weak<Proxy>, broker: Weak<Broker>) {
     let mut found: Option<Arc<Session>> = None;
-    let mut remote: Option<String> = None;
+    let mut remote: Option<(String, crate::node::relay::Remote)> = None;
     let config = WebSocketConfig::default()
         .max_frame_size(Some(MAX_MESSAGE))
         .max_message_size(Some(MAX_MESSAGE));
@@ -106,11 +106,12 @@ async fn serve(tcp: tokio::net::TcpStream, proxy: Weak<Proxy>, broker: Weak<Brok
         let broker = broker.upgrade();
         match broker.as_ref().and_then(|b| b.live(&thread)) {
             Some(session) => found = Some(session),
-            // On another machine: the hub's relay carries the driver there, frame for frame.
+            // On another machine: the hub's relay carries the driver there, sealed.
             None => {
-                remote = Some(broker.and_then(|b| b.remote(&thread)).ok_or_else(|| {
+                let relay = broker.and_then(|b| b.remote(&thread)).ok_or_else(|| {
                     reject(409, "No browser session is open: call session_start first.")
-                })?);
+                })?;
+                remote = Some((thread, relay));
             }
         }
         Ok(response)
@@ -119,8 +120,13 @@ async fn serve(tcp: tokio::net::TcpStream, proxy: Weak<Proxy>, broker: Weak<Brok
     else {
         return;
     };
-    if let Some(relay) = remote {
-        crate::node::relay::to_hub(ws, &relay).await;
+    if let Some((thread, relay)) = remote {
+        // A session that ended there by itself (idle, a person, a lost runner): forget its relay here too.
+        if crate::node::relay::to_hub(ws, &relay).await == crate::node::relay::ToHub::Gone
+            && let Some(broker) = broker.upgrade()
+        {
+            broker.set_remote(&thread, None);
+        }
         return;
     }
     let Some(session) = found else {

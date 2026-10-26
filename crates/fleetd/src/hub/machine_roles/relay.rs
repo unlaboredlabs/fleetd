@@ -31,6 +31,9 @@ pub const MAX_MESSAGE: usize = 128 << 20;
 #[derive(Default)]
 pub struct Relays {
     waiting: Mutex<HashMap<String, (Instant, oneshot::Sender<WebSocket>)>>,
+    /// Every payload the hub piped, for tests that it carried only what the nodes encrypted.
+    #[cfg(test)]
+    pub piped: Mutex<Vec<u8>>,
 }
 
 impl Relays {
@@ -111,7 +114,7 @@ async fn channel(hub: Arc<Hub>, place: Place, agent: WebSocket) {
         return;
     }
     match tokio::time::timeout(DIAL_WAIT, runner).await {
-        Ok(Ok(runner)) => pipe(agent, runner).await,
+        Ok(Ok(runner)) => pipe(&hub.relays, agent, runner).await,
         _ => {
             hub.relays.forget(&token);
             tracing::info!(runner = %place.runner, "session relay: runner did not connect");
@@ -125,11 +128,27 @@ async fn close(mut socket: WebSocket) -> Result<(), axum::Error> {
 }
 
 /// Each side's frames to the other, as they come, until either side closes.
-async fn pipe(a: WebSocket, b: WebSocket) {
+async fn pipe(relays: &Relays, a: WebSocket, b: WebSocket) {
+    #[cfg(not(test))]
+    let _ = relays;
+    #[cfg(test)]
+    let tap = |message: &Message| {
+        if let Message::Text(_) | Message::Binary(_) = message {
+            let bytes = message.clone().into_data();
+            relays
+                .piped
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .extend_from_slice(&bytes);
+        }
+    };
+    #[cfg(not(test))]
+    let tap = |_: &Message| {};
     let (mut a_out, mut a_in) = a.split();
     let (mut b_out, mut b_in) = b.split();
     let a_to_b = async {
         while let Some(Ok(message)) = a_in.next().await {
+            tap(&message);
             let end = matches!(message, Message::Close(_));
             if b_out.send(message).await.is_err() || end {
                 break;
@@ -139,6 +158,7 @@ async fn pipe(a: WebSocket, b: WebSocket) {
     };
     let b_to_a = async {
         while let Some(Ok(message)) = b_in.next().await {
+            tap(&message);
             let end = matches!(message, Message::Close(_));
             if a_out.send(message).await.is_err() || end {
                 break;

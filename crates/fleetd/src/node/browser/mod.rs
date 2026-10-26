@@ -133,7 +133,7 @@ pub struct Broker {
     reports: tokio::sync::mpsc::UnboundedSender<Report>,
     /// Agent sessions whose browser the hub placed on another machine: the proxy pipes their driver to the hub's
     /// relay at this URL instead (node/relay.rs).
-    remotes: Mutex<HashMap<String, String>>,
+    remotes: Mutex<HashMap<String, crate::node::relay::Remote>>,
     /// One install of agent-browser at a time: the first session's, or a session on another machine's.
     driver_install: tokio::sync::Mutex<()>,
     _loop: Mutex<Option<AbortOnDrop>>,
@@ -390,14 +390,14 @@ impl Broker {
 
     /// An agent session's browser runs on another machine (Some: the hub's relay for it), or no longer does (None).
     /// Its driver's connections to the proxy then go there, under the same agent-browser policy as a session here.
-    pub fn set_remote(&self, thread: &str, relay: Option<String>) {
+    pub fn set_remote(&self, thread: &str, relay: Option<crate::node::relay::Remote>) {
         let mut remotes = lock(&self.remotes);
         match relay {
-            Some(url) => {
+            Some(remote) => {
                 if let Err(e) = agent_browser::write_policy(&self.home, thread, false) {
                     tracing::warn!(error = %e, "agent-browser policy not written");
                 }
-                remotes.insert(thread.to_owned(), url);
+                remotes.insert(thread.to_owned(), remote);
             }
             None => {
                 remotes.remove(thread);
@@ -419,7 +419,7 @@ impl Broker {
     }
 
     /// The hub's relay for an agent session whose browser runs on another machine.
-    pub fn remote(&self, thread: &str) -> Option<String> {
+    pub fn remote(&self, thread: &str) -> Option<crate::node::relay::Remote> {
         lock(&self.remotes).get(thread).cloned()
     }
 
