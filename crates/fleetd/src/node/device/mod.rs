@@ -867,6 +867,13 @@ impl SessionHooks for Router {
         }
     }
 
+    /// Only browsers fill logins from 1Password; an Android session fills none.
+    fn filled_since(&self, thread: &str, known: usize) -> Option<crate::node::mask::Secrets> {
+        self.browser
+            .as_ref()
+            .and_then(|b| b.filled_since(thread, known))
+    }
+
     fn ended(&self, thread: &str) {
         if let Some(browser) = &self.browser {
             browser.ended(thread);
