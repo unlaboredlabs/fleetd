@@ -269,6 +269,7 @@ pub async fn send(hub: &Hub, by: By<'_>, req: SteerRequest<'_>) -> Result<Steer,
         tell_lead(hub, &steer, task);
     }
     let text = message(hub, &steer, &to, &by, &req);
+    store::keep_message(&hub.db, &steer.id, &text)?;
     // A task that is not running gets it with its next run (a queued task when it starts, an ended one as its
     // continuation): held until then, and sent tagged with that run, so its receipts are the run's.
     if let Some(task) = to.task.as_ref().filter(|t| t.state != TaskState::Running) {
@@ -396,6 +397,35 @@ pub fn take_held(
     })
 }
 
+/// Task `task_id`'s run was cut for steer run `run_id`, which then never ran: each steer it carried that claude never
+/// took in is held again, for the task's resumed run to carry, and keeps its receipts. Returns their messages, oldest
+/// first, for that run's message.
+pub fn hold_unrun(db: &crate::hub::store::HubDb, task_id: &str, run_id: &str) -> Vec<String> {
+    let Ok(steers) = store::of_run(db, task_id, run_id) else {
+        return Vec::new();
+    };
+    let mut messages = Vec::new();
+    for (mut steer, message) in steers {
+        if steer.delivered_at.is_some()
+            || !matches!(steer.stage, SteerStage::Queued | SteerStage::Failed)
+        {
+            continue;
+        }
+        let message = message.unwrap_or_else(|| steer.text.to_string());
+        steer.stage = SteerStage::Queued;
+        steer.detail = Some(Text::unchecked(format!(
+            "its run never began; it goes again with {task_id}'s resumed run"
+        )));
+        let held = store::put(db, &steer, None, None)
+            .and_then(|()| store::hold(db, &steer.id, Some(&message)));
+        match held {
+            Ok(()) => messages.push(message),
+            Err(error) => tracing::warn!(steer = %steer.id, %error, "unrun steer not held again"),
+        }
+    }
+    messages
+}
+
 /// The run it was bound to never went out (the machine was away): it and its riders are held again.
 pub fn rehold(db: &crate::hub::store::HubDb, id: &SteerId) {
     let riders = store::riders(db, id).unwrap_or_default();
@@ -437,7 +467,11 @@ pub fn on_receipt(hub: &Hub, machine_id: &MachineId, r: &SteerReceipt) {
     if steer.thread.machine_id != *machine_id || steer.run_id != r.run_id {
         return tracing::warn!(steer = %r.steer_id, "a receipt from another thread");
     }
-    if steer.stage.is_final() || rank(r.stage) <= rank(steer.stage) {
+    // Held again for its task's resumed run: what its earlier run says of it is over.
+    if steer.stage.is_final()
+        || rank(r.stage) <= rank(steer.stage)
+        || store::is_held(&hub.db, &steer.id).unwrap_or(false)
+    {
         return;
     }
     // When the hub heard it, so the sweep's grace runs on the hub's own clock.

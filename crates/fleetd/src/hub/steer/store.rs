@@ -162,6 +162,50 @@ pub fn hold(db: &HubDb, id: &SteerId, message: Option<&str>) -> Result<(), Store
     })
 }
 
+/// The message a steer went out as, so it can go again if its run never ran.
+pub fn keep_message(db: &HubDb, id: &SteerId, message: &str) -> Result<(), StoreError> {
+    db.with(|conn| {
+        conn.execute(
+            "UPDATE steers SET message = ? WHERE n = ?",
+            params![message, id.n()],
+        )?;
+        Ok(())
+    })
+}
+
+/// Whether a steer is held for its task's next run.
+pub fn is_held(db: &HubDb, id: &SteerId) -> Result<bool, StoreError> {
+    db.with(|conn| {
+        Ok(conn
+            .query_row("SELECT held FROM steers WHERE n = ?", [id.n()], |r| {
+                r.get::<_, bool>(0)
+            })
+            .optional()?
+            .unwrap_or(false))
+    })
+}
+
+/// A task's steers that went out as run `run_id`, oldest first, each with the message it went out as.
+pub fn of_run(
+    db: &HubDb,
+    task_id: &str,
+    run_id: &str,
+) -> Result<Vec<(Steer, Option<String>)>, StoreError> {
+    db.with(|conn| {
+        let mut stmt = conn.prepare(
+            "SELECT data, message FROM steers WHERE task_id = ? AND run_id = ? AND held = 0 ORDER BY n",
+        )?;
+        let rows = stmt.query_map([task_id, run_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?))
+        })?;
+        rows.map(|r| {
+            let (data, message) = r?;
+            Ok((decode(data)?, message))
+        })
+        .collect()
+    })
+}
+
 /// A held steer's pending text, while it is still held.
 pub fn held_message(db: &HubDb, id: &SteerId) -> Result<Option<String>, StoreError> {
     db.with(|conn| {
