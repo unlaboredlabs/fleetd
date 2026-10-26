@@ -488,11 +488,11 @@
   gap: var(--space-3);
   padding: var(--space-1-5) var(--space-2);
   border-radius: var(--radius-sm);
-  border-left: 2px solid transparent;
 }
+/* The item the span points at: the selected fill and a hairline ring, never a coloured edge. */
 .trFocus {
   background: var(--selected);
-  border-left-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--hairline);
 }
 .trAt {
   width: 56px;

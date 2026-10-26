@@ -791,10 +791,10 @@ async fn idle_minutes_count_from_the_last_slot_taken_or_freed() {
     assert_eq!((a.idle_minutes, a.free()), (10, 4));
 }
 
-/// The idle line reaches the lead once per idle stretch, not at every wake: the next stretch, after a slot was taken
-/// or freed, earns it again.
+/// The idle line shows once slots have sat free 10 minutes beside an approved order; a slot taken or freed starts
+/// the count again. (Once per stretch is the sender's: `leads::auto_start_tests`.)
 #[tokio::test]
-async fn the_idle_line_comes_once_per_idle_stretch() {
+async fn the_idle_line_shows_after_ten_idle_minutes() {
     let clock = ManualClock::at(1_792_000_000_000);
     let (hub, _home) = hub_on(clock.clone());
     hub.tasks.set_caps(set(4, false)).await.unwrap();
@@ -833,10 +833,9 @@ async fn the_idle_line_comes_once_per_idle_stretch() {
     assert!(!idle().await, "not yet");
     clock.advance(std::time::Duration::from_secs(60));
     assert!(idle().await, "10 min idle");
-    clock.advance(std::time::Duration::from_secs(30 * 60));
-    assert!(!idle().await, "said once for this stretch");
     let t = running(&hub, 1);
     hub.slots.release(t.task_id.as_str()).unwrap();
+    assert!(!idle().await, "a slot moved");
     clock.advance(std::time::Duration::from_secs(10 * 60));
     assert!(idle().await, "a new stretch");
 }

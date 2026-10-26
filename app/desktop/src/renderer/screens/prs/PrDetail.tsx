@@ -7,7 +7,7 @@ import { useData, useToolQuery } from "../../src/data/react";
 import { selectLiveAgents } from "../../src/data/selectors";
 import type { PrCheck, PrGetOutput, PrReviewEntry, PrRow } from "../../../shared/contracts";
 import { codeRuns, machineCode } from "../chat/format";
-import { Button, InlineCode, Markdown, StatusChip, Tab, TabList, TabPanel, Tabs, Text, Truncate, cx, toast } from "../../ui";
+import { Button, InlineCode, Markdown, StatusChip, Tab, TabList, TabPanel, Tabs, Text, Truncate, cx, toast, type TextTone } from "../../ui";
 import { AgentRowLink } from "../agents/AgentsPane";
 import { CheckIcon, ChecksMark } from "./Bits";
 import { DiffPane } from "./DiffPane";
@@ -173,9 +173,9 @@ function Overview({ data, now, githubSaid }: { data: PrGetOutput; now: number; g
           </Text>
         </div>
       ) : null}
-      <div className={cx(s.summary, TONE_CLASS[state.tone])} aria-label="Summary" role="group">
+      <div className={s.summary} aria-label="Summary" role="group">
         <div className={s.summaryState}>
-          <Text size="md" strong={state.tone === "failed" || state.tone === "needs-you"}>
+          <Text size="md" tone={SUMMARY_TONE[state.tone]} strong={state.tone === "failed" || state.tone === "needs-you"}>
             {state.sentence}
           </Text>
           {pr.queue?.reason !== undefined && pr.queue.reason !== "" ? (
@@ -265,8 +265,8 @@ function Overview({ data, now, githubSaid }: { data: PrGetOutput; now: number; g
   );
 }
 
-/** The summary's edge in the state's colour: only a failure or a wait on you stands out. */
-const TONE_CLASS: Partial<Record<Tone, string | undefined>> = { failed: s.summaryFailed, "needs-you": s.summaryNeedsYou, done: s.summaryDone };
+/** The summary's sentence in the state's colour: a failure, a wait on you, or a merge. */
+const SUMMARY_TONE: Partial<Record<Tone, TextTone>> = { failed: "danger", "needs-you": "warning", done: "success" };
 
 const ALL_AGENTS = {} as const;
 

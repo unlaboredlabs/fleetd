@@ -520,6 +520,12 @@ fn the_lead_never_posts_a_status_only_message() {
     ] {
         assert!(line.contains(says), "the rule says {says}? {line}");
     }
+    // Nothing in it tells the lead to end a turn empty: an empty turn is what claude re-prompts.
+    let empty =
+        regex::Regex::new(r"(?i)say nothing|write nothing|without a message|no text at all")
+            .unwrap();
+    assert!(!empty.is_match(lead.default), "{}", lead.default);
+    assert!(lead.default.contains("Never end a turn with no text"));
     let examples = lead.default.split("## Examples").nth(1).unwrap();
     for said in examples.lines().filter(|l| l.starts_with("You:")) {
         assert!(

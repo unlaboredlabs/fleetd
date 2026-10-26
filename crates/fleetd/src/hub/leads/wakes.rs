@@ -409,6 +409,22 @@ impl LeadWakes {
 
     /// The lead digest as of now: the state block at the top of its first message and of every wake.
     pub async fn digest(&self, r: &ProjectRef) -> Result<String, LeadError> {
+        Ok(self.digest_to_send(r).await?.0)
+    }
+
+    /// The idle line of stretch `since` reached the lead: later digests leave it out until the next stretch.
+    pub(super) fn idle_sent(&self, r: &ProjectRef, since: Option<i64>) {
+        if let Some(since) = since {
+            self.idle_shown.lock().unwrap().insert(r.clone(), since);
+        }
+    }
+
+    /// The digest, and the idle stretch whose line it carries: the sender passes that to `idle_sent` once the
+    /// message is out, so a wake that never went doesn't use up the line.
+    pub(super) async fn digest_to_send(
+        &self,
+        r: &ProjectRef,
+    ) -> Result<(String, Option<i64>), LeadError> {
         let ctx = &self.ctx;
         let project = ctx.store.project_get(r)?;
         let workstreams = self.records.workstreams_list(&WorkstreamFilter {
@@ -438,12 +454,13 @@ impl LeadWakes {
         };
         let idle = agents.as_ref().and_then(|a| {
             let line = idle_line(a, &workstreams, &open_requests, usage.is_some())?;
-            let mut shown = self.idle_shown.lock().unwrap();
-            (shown.insert(r.clone(), a.idle_since_ms) != Some(a.idle_since_ms)).then_some(line)
+            let shown = self.idle_shown.lock().unwrap().get(r) == Some(&a.idle_since_ms);
+            (!shown).then_some((line, a.idle_since_ms))
         });
+        let (idle, idle_since) = idle.unzip();
         let facts = self.workstream_facts(&workstreams);
         let at = now_iso(ctx);
-        Ok(render_lead_digest(&DigestInput {
+        let text = render_lead_digest(&DigestInput {
             project_ref: r,
             title: project
                 .as_ref()
@@ -460,7 +477,8 @@ impl LeadWakes {
             elsewhere,
             checklist: crate::hub::checklist::digest_lines(&ctx.db, r),
             facts: &facts,
-        }))
+        });
+        Ok((text, idle_since))
     }
 
     /// Per workstream with a brief: its steers and plan figure.
@@ -567,11 +585,15 @@ impl LeadWakes {
         let (lead, queued) = match fresh {
             Some(fresh) => (fresh, false),
             None => {
-                let message = render_wake(&set, &self.digest(r).await?, &triggers);
+                let (digest, idle) = self.digest_to_send(r).await?;
+                let message = render_wake(&set, &digest, &triggers);
                 let crid = format!("fleetd-wake:{}:{}:{at}", key_of(r), lead.session_generation);
                 // Through the offline write queue, so a wake to an offline machine waits for it instead of being dropped.
                 match self.ctx.ports().send(thread, message, crid).await {
-                    Ok(queued) => (lead, queued),
+                    Ok(queued) => {
+                        self.idle_sent(r, idle);
+                        (lead, queued)
+                    }
                     Err(reason) => {
                         tracing::warn!(project = %key_of(r), %reason, "lead wake not delivered");
                         return Ok(());
