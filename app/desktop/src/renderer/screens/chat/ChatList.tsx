@@ -120,13 +120,12 @@ function LeadActivity({ project }: { project: ProjectRef }) {
     );
     return () => clearTimeout(timer);
   }, [now, shown]);
-  const box = useRef<HTMLDivElement>(null);
-  // The count stops while the line is out of view or the window hidden (useNow).
-  const onScreen = useOnScreen(box);
+  // The count and the beat stop while the line is out of view, the count too while the window is hidden (useNow).
+  const [onScreen, box] = useOnScreen();
   const running = shown !== undefined && since !== undefined && until === undefined;
   const clock = useNow(running && onScreen) + skew;
-  // The scan over what it does now steps on the app's beat.
-  useBeat(shown !== undefined);
+  // The scan over what it does now, and its glyph, step on the app's beat while on screen.
+  useBeat(shown !== undefined && onScreen);
   if (shown === undefined) {
     const line = turnLine({ since, until }, undefined, clock);
     if (line?.words === undefined) return null;
@@ -143,7 +142,7 @@ function LeadActivity({ project }: { project: ProjectRef }) {
   const thinking = doing === "thinking" || doing === "planning";
   return (
     <div ref={box} className={cx(s.quietRow, s.turn)} data-entry="activity" data-turn="running" role="status">
-      <StateGlyph state={thinking ? "thinking" : "working"} size="sm" />
+      <StateGlyph state={thinking ? "thinking" : "working"} size="sm" still={!onScreen} />
       <span className={s.turnNow} data-sweep="">
         <InlineText size="xs" text={sentenceCase(doing)} />
       </span>

@@ -39,6 +39,9 @@ const AGENTS = [
   row("T3", "waiting", "W2", { role: "reader" }),
 ];
 
+/** Live work on the same repo from another project, for Also on this repo; none unless a test sets it. */
+let elsewhere: unknown[] = [];
+
 const answer = (tool: string): unknown => {
   switch (tool) {
     case "orders_board":
@@ -46,7 +49,7 @@ const answer = (tool: string): unknown => {
     case "agents_list":
       return { at: AT, agents: AGENTS };
     case "work_list":
-      return { scope: { repoKey: "github.com/acme/storefront", base: "main" }, items: [], recentLandings: [] };
+      return { scope: { repoKey: "github.com/acme/storefront", base: "main" }, items: elsewhere, recentLandings: [] };
     default:
       return {};
   }
@@ -79,6 +82,7 @@ beforeEach(() => {
   document.body.appendChild(host);
 });
 afterEach(() => {
+  elsewhere = [];
   act(() => root?.unmount());
   root = undefined;
   host.remove();
@@ -209,4 +213,18 @@ it("a row with no steer box yet has no Steer, so no box takes the cursor later",
     link.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
   });
   expect([...document.querySelectorAll("[role='menuitem']")].map((i) => i.textContent)).toEqual(["Open"]);
+});
+
+it("folding Also on this repo hides its rows at once, with no leaving fade", async () => {
+  const web = { machineId: "devbox", projectId: "web" };
+  elsewhere = [{ id: "T7", kind: "task", title: "Checkout in one step", state: "running", keys: [], paths: [], since: AT, projectRef: web, taskId: "T7" }];
+  await mount();
+  const fold = host.querySelector<HTMLButtonElement>("button[aria-expanded]");
+  expect(fold?.textContent).toBe("Also on this repo1");
+  expect(host.querySelector("[data-elsewhere]")).toBeNull();
+  act(() => fold?.click());
+  expect(host.querySelector("[data-elsewhere='T7']")).not.toBeNull();
+  act(() => fold?.click());
+  expect(host.querySelector("[data-elsewhere]")).toBeNull();
+  expect(host.querySelector("[data-leaving]")).toBeNull();
 });

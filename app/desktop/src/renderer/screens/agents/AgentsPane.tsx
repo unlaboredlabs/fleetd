@@ -118,7 +118,8 @@ function AgentList({ project: ref, scope, onScope }: { project: ProjectKey; scop
     const line = { elsewhere: "Also on this repo", count: other.rows.length };
     return [...agents, line, ...(unfolded ? other.rows.map((row) => ({ row, other: true as const })) : [])];
   }, [agents, other, unfolded]);
-  const shown = useLeavers(items, keyOf, `${project}:${scope}`);
+  // Folding is a new view, not rows leaving: its rows go at once, with no fade.
+  const shown = useLeavers(items, keyOf, `${project}:${scope}:${unfolded ? "unfolded" : "folded"}`);
   const counts = agents === undefined ? undefined : tally(agents.filter((a): a is LiveAgent => !isLine(a)));
   // Rows that join the list later enter once; those it opened with, or scrolled to, don't.
   useArrivals(`agents:${project}`, all?.filter((a) => a.project === project).map((a) => a.id));
