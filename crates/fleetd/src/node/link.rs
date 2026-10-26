@@ -101,6 +101,8 @@ pub struct RunNodeOptions {
     pub browser: Option<Arc<crate::node::browser::Broker>>,
     /// Previews, when this machine runs them.
     pub previews: Option<Arc<crate::node::preview::Previews>>,
+    /// Both kinds of session, for one the hub places here for an agent elsewhere: a browser or an Android emulator.
+    pub sessions: Option<Arc<crate::node::device::Router>>,
 }
 
 /// Everything one link needs, shared with the tasks it starts.
@@ -114,6 +116,7 @@ struct Shared {
     secrets: Option<NodeSecrets>,
     browser: Option<Arc<crate::node::browser::Broker>>,
     previews: Option<Arc<crate::node::preview::Previews>>,
+    sessions: Option<Arc<crate::node::device::Router>>,
 }
 
 impl Shared {
@@ -142,6 +145,7 @@ pub async fn run_node(options: RunNodeOptions) -> LinkFatal {
         secrets: options.secrets,
         browser: options.browser,
         previews: options.previews,
+        sessions: options.sessions,
     });
     let mut enroll_token = options.enroll_token;
     let mut on_enrolled = options.on_enrolled;
@@ -380,6 +384,7 @@ async fn run_link_once(
                 .as_ref()
                 .map(|_| fleetd_contracts::node_link::CAP_PREVIEWS.to_owned()),
         )
+        .chain(super::device::capabilities(&shared.node_sessions.home()))
         .collect(),
     }));
     let hub_id = match next_frame(&mut stream, HANDSHAKE_TIMEOUT, "welcome").await {
@@ -505,19 +510,20 @@ async fn run_link_once(
                     let _ = tx.send(to_json(&NodeToHub::SessionReply(reply)));
                 });
             }
-            // Off the link's task set too: a browser that started is the broker's, and ends with its session.
             // Sessions hosted here for agents on other machines. Off the link's task set: a browser that started is
             // the broker's, and a relay channel lives as long as the agent's driver keeps it open.
             frame @ (HubToNode::SessionHost(_)
             | HubToNode::RelayDial(_)
             | HubToNode::SessionStep(_)) => {
-                let (broker, hub, tx) = (
+                let (broker, sessions, hub, tx) = (
                     shared.browser.clone(),
+                    shared.sessions.clone(),
                     shared.settings.hub.clone(),
                     tx.clone(),
                 );
                 tokio::spawn(async move {
-                    if let Some(result) = super::session_route::host(broker, &hub, frame).await {
+                    let hosted = super::session_route::host(broker, sessions, &hub, frame).await;
+                    if let Some(result) = hosted {
                         let _ = tx.send(to_json(&NodeToHub::SessionHostResult(result)));
                     }
                 });

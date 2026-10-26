@@ -1,7 +1,7 @@
 //! What this machine can host for sessions (machine roles, W46), sent with each heartbeat's load: a browser (the
-//! broker's Chrome, or its install on the first session), an Android emulator (the SDK's emulator, with KVM on Linux),
-//! iOS simulators (Xcode on macOS) and a Linux desktop (docker or Xvfb). Each says why in plain words. Read at most
-//! every few minutes: `xcrun simctl` takes a second.
+//! broker's Chrome, or its install on the first session), an Android emulator (fleetd's own pinned one, node/device,
+//! with KVM), iOS simulators (Xcode on macOS) and a Linux desktop (docker or Xvfb). Each says why in plain words. Read
+//! at most every few minutes: `xcrun simctl` takes a second.
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
@@ -10,8 +10,11 @@ use std::time::{Duration, Instant};
 use fleetd_contracts::machine_roles::{HostCheck, HostChecks, SessionHost};
 use fleetd_contracts::prim::{Line, List};
 
+use fleetd_contracts::node_link::AndroidState;
+
 use super::browser::BrowserConfig;
 use super::browser::chrome;
+use super::device::{self, DeviceConfig};
 
 const FRESH: Duration = Duration::from_secs(300);
 
@@ -40,10 +43,6 @@ fn on_path(names: &[&str]) -> Option<PathBuf> {
         .find(|p| p.is_file())
 }
 
-fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(PathBuf::from)
-}
-
 pub fn browser(home: &Path, config: &BrowserConfig) -> HostCheck {
     let host = SessionHost::Browser;
     if !config.enabled() {
@@ -69,82 +68,29 @@ pub fn browser(home: &Path, config: &BrowserConfig) -> HostCheck {
     }
 }
 
-/// What /dev/kvm allows this user.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Kvm {
-    Usable,
-    Missing,
-    Denied,
-}
-
-fn kvm() -> Kvm {
-    let path = Path::new("/dev/kvm");
-    if !path.exists() {
-        return Kvm::Missing;
-    }
-    match nix::unistd::access(
-        path,
-        nix::unistd::AccessFlags::R_OK | nix::unistd::AccessFlags::W_OK,
-    ) {
-        Ok(()) => Kvm::Usable,
-        Err(_) => Kvm::Denied,
-    }
-}
-
-/// The Android SDK: ANDROID_HOME, ANDROID_SDK_ROOT, else where Android Studio puts it.
-fn android_sdk() -> Option<PathBuf> {
-    let named = ["ANDROID_HOME", "ANDROID_SDK_ROOT"]
-        .into_iter()
-        .filter_map(std::env::var_os)
-        .map(PathBuf::from);
-    let usual = home_dir()
-        .into_iter()
-        .flat_map(|h| [h.join("Android/Sdk"), h.join("Library/Android/sdk")]);
-    named.chain(usual).find(|p| p.is_dir())
-}
-
-/// The Android check from its facts: the SDK, its emulator, and on Linux, KVM.
-pub fn android_from(sdk: Option<&Path>, emulator: bool, linux: bool, kvm: Kvm) -> HostCheck {
+/// fleetd's own Android emulator (node/device): ready where it is installed, or the machine is opted in so the first
+/// session installs it, and /dev/kvm opens; else what stands in the way, as the doctor says it.
+pub fn android(home: &Path, config: &DeviceConfig) -> HostCheck {
     let host = SessionHost::Android;
-    let Some(sdk) = sdk else {
-        return check(host, false, "no Android SDK (set ANDROID_HOME)");
-    };
-    let at = sdk.display();
-    if !emulator {
-        return check(
-            host,
-            false,
-            format!("Android SDK at {at}, but no emulator in it (sdkmanager emulator)"),
-        );
+    if !config.enabled() {
+        let why = match device::sdk::supported() {
+            true => "Android sessions are off in node.json",
+            false => "Android sessions run on Linux x86_64 with KVM",
+        };
+        return check(host, false, why);
     }
-    if !linux {
-        return check(host, true, format!("Android SDK at {at}"));
-    }
-    match kvm {
-        Kvm::Usable => check(host, true, format!("Android SDK at {at}, with KVM")),
-        Kvm::Missing => check(
+    match device::health(home, config) {
+        Some(health) => check(
             host,
-            false,
-            format!("Android SDK at {at}, but no /dev/kvm: the emulator needs KVM"),
+            matches!(health.state, AndroidState::Ready | AndroidState::Wanted),
+            health.message.as_str(),
         ),
-        Kvm::Denied => check(
+        None => check(
             host,
             false,
-            format!(
-                "Android SDK at {at}, but this user can't use /dev/kvm (add it to the kvm group)"
-            ),
+            "not set up: opt this machine in with \"device\": {\"enabled\": true} in node.json",
         ),
     }
-}
-
-fn android() -> HostCheck {
-    let sdk = android_sdk();
-    let emulator = sdk
-        .as_ref()
-        .is_some_and(|s| s.join("emulator").join("emulator").is_file());
-    let linux = cfg!(target_os = "linux");
-    let kvm = if linux { kvm() } else { Kvm::Usable };
-    android_from(sdk.as_deref(), emulator, linux, kvm)
 }
 
 /// iOS simulators from `xcrun simctl list devices available -j`'s JSON: how many are iOS.
@@ -211,7 +157,7 @@ fn desktop() -> HostCheck {
 }
 
 /// What this machine can host now, read at most every few minutes. Blocking: run it off the async threads.
-pub fn checks(home: &Path, config: &BrowserConfig) -> HostChecks {
+pub fn checks(home: &Path, config: &BrowserConfig, device: &DeviceConfig) -> HostChecks {
     static LAST: Mutex<Option<(Instant, Vec<HostCheck>)>> = Mutex::new(None);
     let mut last = LAST
         .lock()
@@ -221,7 +167,12 @@ pub fn checks(home: &Path, config: &BrowserConfig) -> HostChecks {
     {
         return List::unchecked(checks.clone());
     }
-    let checks = vec![browser(home, config), android(), ios(), desktop()];
+    let checks = vec![
+        browser(home, config),
+        android(home, device),
+        ios(),
+        desktop(),
+    ];
     *last = Some((Instant::now(), checks.clone()));
     List::unchecked(checks)
 }
@@ -231,25 +182,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn android_says_what_is_missing_in_plain_words() {
-        let sdk = Path::new("/home/dev/Android/Sdk");
-        let none = android_from(None, false, true, Kvm::Usable);
-        assert!(!none.ready);
-        assert_eq!(none.detail.as_str(), "no Android SDK (set ANDROID_HOME)");
-        let no_kvm = android_from(Some(sdk), true, true, Kvm::Missing);
-        assert!(!no_kvm.ready);
-        assert!(no_kvm.detail.as_str().contains("no /dev/kvm"));
-        let denied = android_from(Some(sdk), true, true, Kvm::Denied);
-        assert!(denied.detail.as_str().contains("kvm group"));
-        let ok = android_from(Some(sdk), true, true, Kvm::Usable);
-        assert!(ok.ready);
+    fn android_is_fleetds_own_emulator_and_only_where_set_up() {
+        let home = tempfile::tempdir().unwrap();
+        let off = DeviceConfig {
+            enabled: Some(false),
+            ..DeviceConfig::default()
+        };
+        assert!(!android(home.path(), &off).ready);
+        let unset = android(home.path(), &DeviceConfig::default());
+        assert!(!unset.ready, "neither installed nor opted in");
+        if device::sdk::supported() {
+            assert!(
+                unset.detail.as_str().contains("opt this machine in"),
+                "{unset:?}"
+            );
+        }
+        let opted_in = DeviceConfig {
+            enabled: Some(true),
+            ..DeviceConfig::default()
+        };
+        let asked = android(home.path(), &opted_in);
         assert_eq!(
-            ok.detail.as_str(),
-            "Android SDK at /home/dev/Android/Sdk, with KVM"
+            asked.ready,
+            device::sdk::kvm().is_ok(),
+            "installs at the first session where KVM opens: {asked:?}"
         );
-        // macOS runs the emulator on its own hypervisor.
-        assert!(android_from(Some(sdk), true, false, Kvm::Missing).ready);
-        assert!(!android_from(Some(sdk), false, true, Kvm::Usable).ready);
     }
 
     #[test]

@@ -202,6 +202,55 @@
       ],
       "type": "object"
     },
+    "AndroidHealth": {
+      "properties": {
+        "fix": {
+          "description": "The command a person runs to fix it, when there is one.",
+          "maxLength": 500,
+          "type": "string"
+        },
+        "message": {
+          "description": "Plain words: what is installed, or what is wrong.",
+          "maxLength": 500,
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/AndroidState"
+        }
+      },
+      "required": [
+        "state",
+        "message"
+      ],
+      "type": "object"
+    },
+    "AndroidState": {
+      "description": "Where a node's android sessions stand, for the doctor.",
+      "oneOf": [
+        {
+          "enum": [
+            "installing"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "ready",
+          "description": "Installed, with KVM usable: sessions start.",
+          "type": "string"
+        },
+        {
+          "const": "wanted",
+          "description": "Not installed yet; the first android `session_start` installs it.",
+          "type": "string"
+        },
+        {
+          "const": "unavailable",
+          "description": "Can't run here until a person fixes something (no KVM, or the install failed).",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
     "AppError": {
       "description": "A `call` failed, or (without `id`) the session did.",
       "properties": {
@@ -1251,6 +1300,10 @@
     "NodeLoad": {
       "description": "What a machine reports about itself with each heartbeat.",
       "properties": {
+        "android": {
+          "$ref": "#/$defs/AndroidHealth",
+          "description": "Whether the machine can host android sessions; absent where node.json turns them off and from older nodes."
+        },
         "cpus": {
           "description": "Logical CPUs.",
           "maximum": 4096,

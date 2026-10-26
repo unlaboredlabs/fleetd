@@ -200,7 +200,7 @@ fn mac1_link(
         while let Some(frame) = rx.recv().await {
             let (hub, broker, url) = (hub.clone(), broker.clone(), url.clone());
             tokio::spawn(async move {
-                if let Some(result) = host(Some(broker), &url, frame).await {
+                if let Some(result) = host(Some(broker), None, &url, frame).await {
                     hub.node_commands
                         .resolve(&mid("mac1"), NodeToHub::SessionHostResult(result));
                 }
@@ -264,6 +264,7 @@ async fn an_agent_on_one_node_drives_a_browser_on_another_through_the_hub() {
     let (relay, _devbox_link) = devbox_link(&hub);
     let router = Arc::new(Router {
         broker: Some(devbox.clone()),
+        devices: None,
         relay,
         hub: url.clone(),
         mask_for: Arc::new(|_| Ok(Masker::new(&[]))),

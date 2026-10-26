@@ -256,6 +256,10 @@ impl DoctorFleet for OpsPorts {
         let link = &self.hub().link;
         (link.load(&m).and_then(|l| l.disk), link.paused(&m))
     }
+    fn android(&self, machine_id: &str) -> Option<fleetd_contracts::node_link::AndroidHealth> {
+        let m = machine(machine_id)?;
+        self.hub().link.load(&m).and_then(|l| l.android)
+    }
     fn repos_without_ci(&self) -> Vec<String> {
         self.hub().train.repos_without_ci()
     }
