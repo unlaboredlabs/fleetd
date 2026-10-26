@@ -3,7 +3,7 @@ import { app, shell } from "electron";
 import type { AppImageUpdater, DebUpdater, MacUpdater } from "electron-updater";
 import { z } from "zod";
 import { DEB, type AppUpdate, type Release, type UpdatesState } from "../shared/updates";
-import type { SetupOutcome } from "../shared/pairing";
+import { compareVersions, type SetupOutcome } from "../shared/pairing";
 import { RELEASE_BUILD } from "./build";
 import { openUpdate, realTerminalDeps } from "./pairing/terminal";
 import { feedUrl } from "./update-feed";
@@ -11,12 +11,23 @@ import { failureReason } from "./update-messages";
 import { fetchRelease } from "./update-release";
 import { step, type UpdateEffect, type UpdateInput } from "./update-state";
 
-const CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
+/**
+ * A background check runs when this much wall-clock time has passed since the last one. The timer only looks at the
+ * clock: a timer's own clock stops while the computer sleeps, so a long interval on it alone almost never fires on a
+ * laptop that sleeps between uses.
+ */
+export const CHECK_EVERY_MS = 10 * 60 * 1000;
+/** How often the timer looks. */
+const TICK_MS = 60 * 1000;
+/** A window coming to the front checks too, unless a check ran this recently. */
+export const FOCUS_GAP_MS = 60 * 1000;
 
 /** The app's own update, for the page (IPC.updates*) and the app menu. */
 export interface Updates {
-  /** Loads electron-updater and starts the checks: now, then every few hours. Call once the window is up. */
+  /** Loads electron-updater and starts the checks: now, then every 10 minutes. Call once the window is up. */
   readonly start: () => void;
+  /** A window came to the front: checks unless one just ran. */
+  readonly focused: () => void;
   readonly state: () => UpdatesState;
   /** A check someone asked for: "Checking…", then its answer, failure included. */
   readonly check: () => void;
@@ -86,6 +97,7 @@ const fixtureUpdates = (file: string): Updates => {
   const version = section?.current;
   return {
     start: () => undefined,
+    focused: () => undefined,
     state: () => (version === undefined ? h.state() : { ...h.state(), current: version }),
     // A fixture's answer is the state it starts in.
     check: () => undefined,
@@ -104,6 +116,7 @@ const unsupported = (): Updates => {
   const h = holder({ kind: "unsupported" }, false, () => undefined);
   return {
     start: () => undefined,
+    focused: () => undefined,
     state: h.state,
     check: () => undefined,
     install: () => undefined,
@@ -114,9 +127,9 @@ const unsupported = (): Updates => {
 };
 
 /**
- * Checks the release feed at launch and every few hours. The packaged macOS app and the AppImage download an update
- * in the background; the page offers "Update and restart", and the next quit installs it anyway (Squirrel.Mac
- * requires it signed by the same team). Any other Linux install is the deb (the installer only installs the
+ * Checks the release feed at launch, every 10 minutes and when a window comes to the front. The packaged macOS app
+ * and the AppImage download an update in the background; the page offers "Update and restart", and the next quit
+ * installs it anyway (Squirrel.Mac requires it signed by the same team). Any other Linux install is the deb (the installer only installs the
  * AppImage), which can't update itself because dpkg needs root: it only checks, and the page offers the download and
  * the command. Dev and test builds have nothing to update to; a fixture (`fixtureFile`) stands in for the feed.
  */
@@ -166,17 +179,27 @@ export const updates = (fixtureFile: string | null): Updates => {
       return false;
     }));
 
+  let checkedAt = 0;
   const run = (manual: boolean): void => {
+    checkedAt = Date.now();
     h.send({ type: "check", manual });
     // What's new and the hub's newest build, read on every check: the hub can fall behind while this app is current.
-    void fetchRelease(url).then(h.setRelease);
-    void loaded().then((ok) => {
+    const release = fetchRelease(url).then((r) => {
+      h.setRelease(r);
+      return r;
+    });
+    void loaded().then(async (ok) => {
       if (!ok) {
         if (manual) h.send({ type: "error", reason: "The updater didn't load. Reinstall fleetd to get updates again." });
         return;
       }
-      // A ready update needs no check; the restart installs it.
-      if (h.get().kind === "ready") return;
+      // A ready update is checked against release.json first: electron-updater would fetch it again for nothing, but a
+      // newer build than the ready one is downloaded, or the restart would install a stale one.
+      const ready = h.get();
+      if (ready.kind === "ready") {
+        const newest = (await release).app;
+        if (newest === null || compareVersions(newest, ready.version) !== 1) return;
+      }
       updater?.checkForUpdates().catch((error: unknown) => {
         console.warn("update check failed:", error instanceof Error ? error.message : error);
         h.send({ type: "error", reason: failureReason(error) });
@@ -187,7 +210,12 @@ export const updates = (fixtureFile: string | null): Updates => {
   return {
     start: () => {
       run(false);
-      setInterval(() => run(false), CHECK_EVERY_MS).unref();
+      setInterval(() => {
+        if (Date.now() - checkedAt >= CHECK_EVERY_MS) run(false);
+      }, TICK_MS).unref();
+    },
+    focused: () => {
+      if (Date.now() - checkedAt >= FOCUS_GAP_MS) run(false);
     },
     state: h.state,
     check: () => run(true),

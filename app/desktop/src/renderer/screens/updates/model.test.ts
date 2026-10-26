@@ -13,6 +13,7 @@ const release: Release = {
     { commit: "abc1234aaaa", date: "2026-10-22T10:30:00Z", subject: "fix(hub): the hub says its version (#275)", areas: ["hub"] },
   ],
   cli: MINE,
+  app: MINE,
 };
 
 const hubOf = (over: Partial<HubInput> = {}): HubInput => ({ url: "http://devbox:4790", version: MINE, ...over });

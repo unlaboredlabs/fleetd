@@ -42,6 +42,8 @@ export interface Release {
   readonly changes: readonly Change[];
   /** release.json's `cliVersion`: the newest fleetd CLI and hub on the channel. */
   readonly cli: string | null;
+  /** release.json's `appVersion`: the newest desktop app on the channel. */
+  readonly app: string | null;
 }
 
 export interface UpdatesState {

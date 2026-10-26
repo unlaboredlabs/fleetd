@@ -25,6 +25,7 @@ const RELEASE: Release = {
     change("3e5f6a7a", "fix(hub): a lead turn resumes after the hub restarts (#230)", ["hub"]),
   ],
   cli: MINE,
+  app: MINE,
 };
 
 const state = (app: UpdatesState["app"], release: Release | null = RELEASE): JsonObject => ({ current: MINE, app, release }) as unknown as JsonObject;

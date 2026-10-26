@@ -48,8 +48,8 @@ Keep fleetd up to date, or remove it.
 
 ### The desktop app {#app}
 
-The app checks for updates when it opens and every few hours, and downloads them in the background. When one is
-found, the sidebar says **Update available**: click it to see what's new, then **Update and restart**. A message you
+The app checks for updates when it opens, every 10 minutes and when you come back to its window, and downloads them
+in the background; a newer build than one already downloaded replaces it. When one is found, the sidebar says **Update available**: click it to see what's new, then **Update and restart**. A message you
 were typing is still there after the restart. An update you don't install now installs the next time you quit.
 
 - **Check for Updates…** is in the fleetd menu on macOS, in Help on Linux, and in the command palette.
