@@ -489,6 +489,7 @@ async fn a_launch_carries_them_and_a_send_only_a_change() {
                 workspace: None,
                 role: fleetd_contracts::sessions::SessionRole::Worker,
                 mcp_role: Some(McpAgentRole::Writer),
+                ..Default::default()
             },
         )
         .await

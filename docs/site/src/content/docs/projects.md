@@ -146,6 +146,9 @@ another, up to an hour), stops the rest.
 - **Skip when unchanged**: name the files whose contents decide what setup makes, such as `pnpm-lock.yaml`. A worktree
   set up before (a task restarted on its own worktree) is not set up again while the commands and those files are
   unchanged. With none named, setup runs every time.
+- A worktree that is gone when its agent goes on (removed, or deleted) comes back and is set up again first. Setup
+  counts as done only once it has run to its end: if the machine's fleetd stops in the middle, it runs again at the
+  agent's next start. Stopping or interrupting the agent during setup ends it there, and the agent doesn't start.
 - Setup runs only in agents' worktrees, never in the project's checkout, and only on machines whose fleetd is new
   enough; the page says when it isn't.
 

@@ -33,8 +33,7 @@ impl SessionService {
     /// The project's, the order's and the session's MCP servers' secrets as they are now.
     pub(super) fn secrets_now(&self, row: &SessionRow) -> Secrets {
         let home = &self.inner.config.home;
-        let mut secrets =
-            super::super::project_env::secrets(home, row.summary.project_id.as_str());
+        let mut secrets = super::super::project_env::secrets(home, row.summary.project_id.as_str());
         secrets.extend(self.order_vars(row).0);
         secrets.extend(super::super::mcp_servers::secrets(
             home,
@@ -171,35 +170,119 @@ impl SessionService {
         prompt: String,
         setup: WorktreeSetup,
     ) -> Result<(), SessionError> {
-        let (done, waiting) = tokio::sync::watch::channel(None);
         {
             let workspace = self.workspace_lock(id);
             let _workspace = workspace.lock().await;
             if self.record_run(id, run_id, &prompt, None)?.is_err() {
                 return Ok(());
             }
-            self.st().setting_up.insert(id.to_owned(), waiting);
         }
-        let (service, id, run_id) = (self.clone(), id.to_owned(), run_id.clone());
-        tokio::spawn(async move {
-            let started = service.set_up(&id, &run_id, prompt, &setup).await;
-            service.st().setting_up.remove(&id);
-            done.send_replace(Some(started));
-        });
+        self.set_up_then_send(id, run_id, prompt, SendMode::Plain, setup);
         Ok(())
     }
 
-    /// Runs the setup commands, each shown as an item of the first run; true once the brief went to claude.
+    /// The setup due before the session's claude next starts: one the node stopped in the middle of (or that failed),
+    /// or one for a worktree that is gone and comes back first.
+    pub(super) fn setup_due(&self, id: &str) -> Option<WorktreeSetup> {
+        let row = self.session(id).ok()?;
+        let lost = row.local.base_ref.is_some() && !row.local.cwd.exists();
+        (row.local.setup_pending || lost)
+            .then_some(row.local.setup)
+            .flatten()
+    }
+
+    /// Runs setup in the background, then sends the recorded run's message; sends that come meanwhile wait for it.
+    pub(super) fn set_up_then_send(
+        &self,
+        id: &str,
+        run_id: &NonEmpty,
+        text: String,
+        mode: SendMode,
+        setup: WorktreeSetup,
+    ) {
+        let (done, waiting) = tokio::sync::watch::channel(None);
+        let (cancel, cancelled) = tokio::sync::watch::channel(false);
+        {
+            let mut st = self.st();
+            st.setting_up.insert(id.to_owned(), waiting);
+            st.setup_cancel.insert(id.to_owned(), cancel);
+        }
+        let (service, id, run_id) = (self.clone(), id.to_owned(), run_id.clone());
+        tokio::spawn(async move {
+            let started = service
+                .set_up(&id, &run_id, text, mode, &setup, cancelled)
+                .await;
+            {
+                let mut st = service.st();
+                st.setting_up.remove(&id);
+                st.setup_cancel.remove(&id);
+            }
+            done.send_replace(Some(started));
+        });
+    }
+
+    /// Ends the session's running setup, if any: its command is killed and no claude starts. Returns what to wait on
+    /// for it to have ended.
+    pub(super) fn cancel_setup(
+        &self,
+        id: &str,
+    ) -> Option<tokio::sync::watch::Receiver<Option<bool>>> {
+        let st = self.st();
+        let done = st.setting_up.get(id)?.clone();
+        if let Some(cancel) = st.setup_cancel.get(id) {
+            cancel.send_replace(true);
+        }
+        Some(done)
+    }
+
+    fn run_active(&self, id: &str, run_id: &NonEmpty) -> bool {
+        self.store()
+            .runs(id)
+            .is_ok_and(|runs| runs.iter().any(|r| r.id == *run_id && r.status.is_active()))
+    }
+
+    /// Brings a lost worktree back, runs the setup commands, each shown as an item of the run, and sends the run's
+    /// message with what setup did; true once it went to claude. Setup is due again until it has run to its end.
     async fn set_up(
         &self,
         id: &str,
         run_id: &NonEmpty,
-        prompt: String,
+        text: String,
+        mode: SendMode,
         setup: &WorktreeSetup,
+        mut cancelled: tokio::sync::watch::Receiver<bool>,
     ) -> bool {
-        let Ok(row) = self.session(id) else {
+        let Ok(mut row) = self.session(id) else {
             return false;
         };
+        let rebuilt = match self.restore_worktree(id, &mut row, None).await {
+            Ok((true, note)) => {
+                let frame = {
+                    let st = self.st();
+                    let frame = self.store().commit(&row, &[], true);
+                    if let Ok(Some(frame)) = &frame {
+                        st.machine(frame.clone());
+                    }
+                    frame
+                };
+                if let Err(e) = frame {
+                    self.fail_run(id, run_id, FailureClass::Other, &e.to_string());
+                    return false;
+                }
+                note
+            }
+            Ok((false, _)) => None,
+            Err(e) => {
+                self.fail_run(id, run_id, FailureClass::Other, e.message.as_str());
+                return false;
+            }
+        };
+        let first = self
+            .store()
+            .runs(id)
+            .ok()
+            .and_then(|runs| runs.first().map(|r| r.id == *run_id))
+            .unwrap_or(false);
         let env = self.setup_env(&row).await;
         let secrets = self.secrets_now(&row);
         let masker = Masker::new(&secrets.0);
@@ -250,7 +333,7 @@ impl SessionService {
             }
         };
         let commands: Vec<String> = setup.commands.iter().map(|c| c.to_string()).collect();
-        let outcome = worktree_setup::run(
+        let running = worktree_setup::run(
             setup,
             &row.local.cwd,
             &env,
@@ -262,8 +345,43 @@ impl SessionService {
                 item(i, &commands[i], None);
             },
             |i, ran| item(i, &commands[i], Some(ran)),
-        )
-        .await;
+        );
+        // An interrupt or stop ends setup: dropping it kills the command's process group. Setup stays due.
+        let outcome = tokio::select! {
+            outcome = running => outcome,
+            _ = cancelled.wait_for(|c| *c) => {
+                let at = started_at.lock().map(|s| s.len()).unwrap_or(0);
+                if let Some(i) = at.checked_sub(1) {
+                    let stopped = ThreadItem {
+                        id: NonEmpty::unchecked(format!("setup-{run_id}-{i}")),
+                        run_id: Some(run_id.clone()),
+                        status: ItemStatus::Cancelled,
+                        title: super::super::util::head_utf16(
+                            &format!("Setup: {}", masker.text(&commands[i])),
+                            200,
+                        )
+                        .to_owned(),
+                        started_at: started_at
+                            .lock()
+                            .ok()
+                            .and_then(|s| s.get(i).cloned())
+                            .unwrap_or_else(now),
+                        completed_at: Some(now()),
+                        updated_at: now(),
+                        kind: ItemKind::Command {
+                            command: masker.text(&commands[i]).into_owned(),
+                            timeout_ms: Some(timeout_sec * 1000),
+                            output: None,
+                            output_omitted: false,
+                            exit_code: None,
+                        },
+                    };
+                    let _ = self.update(id, |c| c.put_item(stopped));
+                }
+                tracing::info!(session_id = id, "worktree setup stopped: the agent does not start");
+                return false;
+            }
+        };
         if !setup.run_anyway
             && let Some(why) = worktree_setup::failure(&outcome, timeout_sec)
         {
@@ -274,24 +392,37 @@ impl SessionService {
             self.fail_run(id, run_id, FailureClass::Other, &masker.text(&why));
             return false;
         }
-        let note = worktree_setup::note(&outcome, timeout_sec);
-        let text = match &note {
-            Some(note) => format!("{}\n\n## Setup\n{}\n", prompt.trim_end(), masker.text(note)),
-            None => prompt,
-        };
-        // The stored message is what claude is sent, so a resend of the brief sends the same.
-        if note.is_some() {
-            let stored = self.store().message(id, run_id.as_str()).ok().flatten();
-            if let Some(mut message) = stored {
-                message.text = text.clone();
-                if let Err(e) = self.update(id, |c| c.put_message(message)) {
-                    tracing::warn!(session_id = id, error = %e.message, "the brief's setup note not recorded");
-                }
-            }
+        if let Err(e) = self.update(id, |c| c.row.local.setup_pending = false) {
+            tracing::warn!(session_id = id, error = %e.message, "setup's end not recorded");
         }
-        self.send_run(id, run_id, &text, SendMode::Plain)
-            .await
-            .is_ok()
+        let note = worktree_setup::note(&outcome, timeout_sec, !first)
+            .map(|n| masker.text(&n).into_owned());
+        let text = match (&note, first) {
+            (None, _) => text,
+            // The brief: what setup did goes after it, and the stored message is what claude is sent, so a resend of
+            // the brief sends the same.
+            (Some(note), true) => {
+                let text = format!("{}\n\n## Setup\n{note}\n", text.trim_end());
+                let stored = self.store().message(id, run_id.as_str()).ok().flatten();
+                if let Some(mut message) = stored {
+                    message.text = text.clone();
+                    if let Err(e) = self.update(id, |c| c.put_message(message)) {
+                        tracing::warn!(session_id = id, error = %e.message, "the brief's setup note not recorded");
+                    }
+                }
+                text
+            }
+            (Some(note), false) => format!("{note}\n\n{text}"),
+        };
+        let text = match rebuilt {
+            Some(rebuilt) => format!("{rebuilt}\n\n{text}"),
+            None => text,
+        };
+        // Ended while setup ran (an interrupt, a stop, the watchdog): no claude for it.
+        if *cancelled.borrow() || !self.run_active(id, run_id) {
+            return false;
+        }
+        self.send_run(id, run_id, &text, mode).await.is_ok()
     }
 
     /// What setup commands run with: the node's plain environment and git's SSH agent, the project's and order's

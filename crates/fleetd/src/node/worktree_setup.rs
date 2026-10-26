@@ -193,12 +193,18 @@ fn tail(text: &str, max: usize) -> &str {
     super::util::tail_utf16(text.trim_end(), max)
 }
 
-/// What the agent hears first about setup, or `None` when there was none.
-pub fn note(outcome: &Outcome, timeout_sec: u64) -> Option<String> {
+/// What the agent hears first about setup, or `None` when there was none. `again`: it ran before the agent went on
+/// (its worktree rebuilt, or the node stopped in the middle of it), not before it started.
+pub fn note(outcome: &Outcome, timeout_sec: u64, again: bool) -> Option<String> {
+    let when = if again {
+        "before you went on"
+    } else {
+        "before you started"
+    };
     match outcome {
         Outcome::Done(ran) if ran.is_empty() => None,
         Outcome::Done(ran) => Some(format!(
-            "Setup ran in this worktree before you started: {}.",
+            "Setup ran in this worktree {when}: {}.",
             ran.iter()
                 .map(|r| format!("{} ({})", code(&r.command), r.how(timeout_sec)))
                 .collect::<Vec<_>>()
@@ -210,7 +216,7 @@ pub fn note(outcome: &Outcome, timeout_sec: u64) -> Option<String> {
         Outcome::Failed { ran, skipped } => {
             let last = ran.last()?;
             let mut note = format!(
-                "Setup failed in this worktree before you started, and the project starts its agents anyway: {} {}.",
+                "Setup failed in this worktree {when}, and the project starts its agents anyway: {} {}.",
                 code(&last.command),
                 last.how(timeout_sec)
             );
@@ -315,7 +321,7 @@ mod tests {
         );
         assert!(why.contains("1 not run after it"), "{why}");
         assert!(!why.contains("tok-secret-1"));
-        let told = note(&outcome, 5).unwrap();
+        let told = note(&outcome, 5, false).unwrap();
         assert!(told.contains("starts its agents anyway"), "{told}");
     }
 
@@ -359,7 +365,7 @@ mod tests {
         );
         assert_eq!(count(), 1);
         assert!(
-            note(&Outcome::Reused, 5)
+            note(&Outcome::Reused, 5, false)
                 .unwrap()
                 .contains("did not run again")
         );

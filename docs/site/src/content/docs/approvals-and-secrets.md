@@ -71,6 +71,7 @@ value. The lead relays it to you as a secret request whose item says **for W27's
   claude starts again with it and resumes its conversation), and each new one from the start. No other order's agents
   and no other project's see it.
 - It is masked like a project's secret, as `***NAME***`, in everything those agents report.
+- A value entered after the order closed is refused.
 - It goes when the order closes, done or stopped: the node forgets it, and the hub drops its record (name,
   fingerprint and size). A machine offline then forgets it once it is back.
 - Its limits are a project variable's: up to 64 KiB, any number of lines, no NUL character, and the order's values
@@ -84,7 +85,8 @@ secret's value.
 Before anything an agent reports leaves its machine, the node replaces each of its project's and order's secrets with
 `***NAME***` (see [what is masked](/docs/projects#env)). That covers the agent's own fleetd calls as well: a secret
 pasted into `ask_lead`, a `report` or any other fleetd tool reaches the hub, its records and the app masked. A call
-that masking would make too long for its field is refused at the machine, so it is never sent.
+that masking would make too long for its field, or one the machine can't read the secrets to mask, is refused there, so
+it is never sent.
 
 From an MCP client, a secret is entered with `secret_submit` and an item is answered with `approval_answer`. Both
 take only a human key. `requests_list` lists every secret and approval request with its state.

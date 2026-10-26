@@ -135,13 +135,25 @@ pub fn refusal(hub: &Hub, r: &ProjectRef, order: &str) -> Option<String> {
     None
 }
 
-/// Records what the node saved; the rows go once the order closes.
-pub fn saved(hub: &Hub, saved: &crate::hub::approvals::OrderEnvSaved, at: &Timestamp) {
-    let Ok(r) = serde_json::from_value::<ProjectRef>(serde_json::json!({
-        "machineId": saved.project.machine_id,
-        "projectId": saved.project.project_id,
-    })) else {
-        return;
+/// Records what the node saved; the rows go once the order closes. A variable the hub can't record would never be
+/// dropped with its order, so the node is told to forget it again, and the person to enter it again.
+pub async fn saved(
+    hub: &Hub,
+    saved: &crate::hub::approvals::OrderEnvSaved,
+    at: &Timestamp,
+) -> Result<(), String> {
+    let (Ok(r), Ok(order), Ok(name)) = (
+        serde_json::from_value::<ProjectRef>(serde_json::json!({
+            "machineId": saved.project.machine_id,
+            "projectId": saved.project.project_id,
+        })),
+        WorkstreamId::new(saved.order_id.clone()),
+        fleetd_contracts::project_settings::EnvVarName::new(saved.name.clone()),
+    ) else {
+        return Err(format!(
+            "{} for {} is not a variable the hub can record",
+            saved.name, saved.order_id
+        ));
     };
     let row = OrderEnvRow {
         name: saved.name.clone(),
@@ -150,8 +162,24 @@ pub fn saved(hub: &Hub, saved: &crate::hub::approvals::OrderEnvSaved, at: &Times
         request_id: saved.request_id.clone(),
         updated_at: at.to_string(),
     };
-    if let Err(e) = hub.db.order_env().save(&r, &saved.order_id, &row) {
-        tracing::warn!(order = saved.order_id.as_str(), error = %e, "an order's variable not recorded");
+    let Err(e) = hub.db.order_env().save(&r, &saved.order_id, &row) else {
+        return Ok(());
+    };
+    tracing::warn!(order = saved.order_id.as_str(), error = %e, "an order's variable not recorded: its node drops it");
+    let m = &r.machine_id;
+    match hub
+        .executors
+        .order_env_drop(m, &r.project_id, &order, Some(name))
+        .await
+    {
+        Ok(()) => Err(format!(
+            "The hub could not record {} for {}, so {m}'s node dropped it again: {e}",
+            saved.name, saved.order_id
+        )),
+        Err(drop) => Err(format!(
+            "The hub could not record {} for {} ({e}), and {m}'s node could not drop it: {drop}",
+            saved.name, saved.order_id
+        )),
     }
 }
 
@@ -176,7 +204,11 @@ pub async fn drop_closed(hub: &Hub) -> Result<usize, StoreError> {
             hub.db.order_env().forget(&r, &order)?;
             continue;
         };
-        match hub.executors.order_env_drop(m, &r.project_id, &id).await {
+        match hub
+            .executors
+            .order_env_drop(m, &r.project_id, &id, None)
+            .await
+        {
             Ok(()) => {
                 hub.db.order_env().forget(&r, &order)?;
                 tracing::info!(order = order.as_str(), machine = %m, "the closed order's variables are gone");

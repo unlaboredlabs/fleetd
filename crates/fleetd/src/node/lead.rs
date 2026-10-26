@@ -312,12 +312,20 @@ async fn serve_connection(
             match attribute(frame, peer) {
                 Ok(frame) => match frame.thread_id.as_ref().map(|t| t.to_string()) {
                     Some(session) => {
-                        let masker = tokio::task::spawn_blocking(move || mask_for(&session))
-                            .await
-                            .unwrap_or_default();
-                        match mask_call(frame, &masker) {
-                            Ok(frame) => relay.call(frame).await,
-                            Err(refused) => *refused,
+                        // No masker, no call: it never goes out unmasked.
+                        match tokio::task::spawn_blocking(move || mask_for(&session)).await {
+                            Ok(masker) => match mask_call(frame, &masker) {
+                                Ok(frame) => relay.call(frame).await,
+                                Err(refused) => *refused,
+                            },
+                            Err(_) => error_frame(
+                                frame.id.as_str(),
+                                McpToolError::new(
+                                    ErrorCode::Failed,
+                                    "the node could not read the session's secrets to mask this call, so it was not sent",
+                                )
+                                .with_fix("try again; if it keeps failing, restart the node"),
+                            ),
                         }
                     }
                     None => relay.call(frame).await,

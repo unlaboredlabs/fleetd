@@ -2120,16 +2120,18 @@ impl Executors {
         }
     }
 
-    /// Has the node forget the variables delivered for a closed order. Only to a node listing `CAP_ORDER_ENV`.
+    /// Has the node forget the variables delivered for a closed order (or only `name`). Only to a node listing `CAP_ORDER_ENV`.
     pub async fn order_env_drop(
         &self,
         machine_id: &MachineId,
         project_id: &ProjectId,
         order_id: &fleetd_contracts::ledger::WorkstreamId,
+        name: Option<fleetd_contracts::project_settings::EnvVarName>,
     ) -> Result<(), ExecutorError> {
         let call = SessionCall::OrderEnvDrop {
             project_id: project_id.clone(),
             order_id: order_id.clone(),
+            name,
         };
         self.call(machine_id, NodeOperation::Project, call, READ_TIMEOUT)
             .await?;

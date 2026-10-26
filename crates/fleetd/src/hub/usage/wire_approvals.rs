@@ -150,13 +150,13 @@ impl ApprovalHub for OpsPorts {
         })
     }
 
-    fn order_env_saved(&self, saved: OrderEnvSaved) -> BoxFut<'_, ()> {
+    fn order_env_saved(&self, saved: OrderEnvSaved) -> BoxFut<'_, Result<(), String>> {
         Box::pin(async move {
             let hub = self.hub();
             let at = fleetd_contracts::ids::Timestamp(crate::hub::store::iso_ms(
                 crate::hub::store::now_ms(hub.clock.as_ref()),
             ));
-            crate::hub::projects::order_env::saved(&hub, &saved, &at);
+            crate::hub::projects::order_env::saved(&hub, &saved, &at).await
         })
     }
 }

@@ -519,6 +519,8 @@ mod tests {
             disallowed_tools: vec![],
             role: Default::default(),
             order_id: None,
+            setup: None,
+            setup_pending: false,
         };
         assert_eq!(start_mode(&local, &new, "s1"), Ok(false));
         local.started = true;

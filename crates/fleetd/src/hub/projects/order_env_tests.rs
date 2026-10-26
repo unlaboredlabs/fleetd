@@ -127,6 +127,7 @@ async fn a_closed_orders_variables_go_from_its_node_and_the_hub() {
         if let SessionCall::OrderEnvDrop {
             project_id,
             order_id,
+            name: None,
         } = calls.recv().await.unwrap()
         {
             assert_eq!(
@@ -142,4 +143,39 @@ async fn a_closed_orders_variables_go_from_its_node_and_the_hub() {
     order(&hub, "W2", WorkstreamState::Stopped);
     assert_eq!(drop_closed(&hub).await.unwrap(), 1);
     assert!(hub.db.order_env().held().unwrap().is_empty());
+}
+
+/// A variable the node saved but the hub can't record would never go with its order: the node drops it again, alone.
+#[tokio::test]
+async fn a_variable_the_hub_cant_record_is_dropped_from_its_node() {
+    let (hub, _home) = hub();
+    let mut calls = node(&hub, true).await;
+    hub.link
+        .set_capabilities(&lab(), &[CAP_PROJECT_SETTINGS, CAP_ORDER_ENV]);
+    hub.db
+        .with(|c| Ok(c.execute_batch("DROP TABLE order_env")?))
+        .unwrap();
+    let saved = crate::hub::approvals::OrderEnvSaved {
+        project: crate::hub::usage::ports::ProjectRef {
+            machine_id: "lab".into(),
+            project_id: "p1".into(),
+        },
+        order_id: "W1".into(),
+        name: "DB_URL".into(),
+        fingerprint: "ab12cd34".into(),
+        bytes: 24,
+        request_id: "Q1".into(),
+    };
+    let at = fleetd_contracts::ids::Timestamp(AT.into());
+    let why = crate::hub::projects::order_env::saved(&hub, &saved, &at)
+        .await
+        .unwrap_err();
+    assert!(why.contains("dropped it again"), "{why}");
+    loop {
+        if let SessionCall::OrderEnvDrop { order_id, name, .. } = calls.recv().await.unwrap() {
+            assert_eq!(order_id, WorkstreamId::unchecked("W1"));
+            assert_eq!(name.as_ref().map(|n| n.as_str()), Some("DB_URL"));
+            break;
+        }
+    }
 }

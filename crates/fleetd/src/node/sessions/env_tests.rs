@@ -116,6 +116,7 @@ async fn an_order_variable_reaches_only_that_orders_agents_from_their_next_turn(
         node.ok(SessionCall::OrderEnvDrop {
             project_id: ProjectId::unchecked("p1"),
             order_id: WorkstreamId::unchecked("W1"),
+            name: None,
         })
         .await,
         SessionOutput::Done
@@ -223,6 +224,25 @@ async fn a_secret_in_a_sessions_own_fleetd_call_reaches_the_hub_masked() {
         answer.contains("masking it left the call too long"),
         "{answer}"
     );
+    assert!(link.try_recv().is_err(), "nothing went out");
+
+    // No masker (reading the secrets failed): the call is refused, never sent unmasked.
+    drop(_serving);
+    let broken: MaskFor = Arc::new(|_| panic!("the project env does not read"));
+    let _serving = serve_lead_socket(
+        socket.clone(),
+        relay.clone(),
+        Arc::new(|_| PeerSession::Session("s1".into())),
+        broken,
+    )
+    .await
+    .unwrap();
+    let answer = ask(format!("The key {secret} again")).await;
+    assert!(
+        answer.contains("could not read the session's secrets"),
+        "{answer}"
+    );
+    assert!(!answer.contains(secret));
     assert!(link.try_recv().is_err(), "nothing went out");
 }
 
@@ -349,4 +369,214 @@ async fn setup_runs_before_the_agent_starts_and_a_failure_is_surfaced() {
     let brief = store.message("s3", "s3-r1").unwrap().unwrap().text;
     assert!(brief.contains("starts its agents anyway"), "{brief}");
     assert!(brief.contains("ERR! 404 left-pad"), "{brief}");
+}
+
+async fn until_item(node: &Hub, id: &str, item: &str) {
+    tokio::time::timeout(Duration::from_secs(60), async {
+        while node.service.store().item(id, item).unwrap().is_none() {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the setup command never started");
+}
+
+async fn until_setup_ends(node: &Hub, id: &str) {
+    tokio::time::timeout(Duration::from_secs(60), async {
+        while node.service.st().setting_up.contains_key(id) {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("setup never ended");
+}
+
+/// An interrupt or a stop during setup ends it there: the command is killed, the run closes, no claude starts, and a
+/// stop that removes the worktree removes it.
+#[tokio::test]
+async fn an_interrupt_or_stop_during_setup_ends_it_and_starts_no_claude() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, root) = cloned(dir.path(), "repo", "origin");
+    let mut node = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    node.project(&root).await;
+    let after = dir.path().join("after-sleep.txt");
+    let slow = setup(
+        &[&format!("sleep 30; touch {}", after.display()), "true"],
+        true,
+    );
+    node.ok(with_setup("s1", "fleetd/T1-slow", slow.clone()))
+        .await;
+    until_item(&node, "s1", "setup-s1-r1-0").await;
+    node.ok(SessionCall::Interrupt {
+        session_id: ThreadId::unchecked("s1"),
+        run_id: None,
+        reason: None,
+    })
+    .await;
+    let ended = node.settled("s1-r1").await;
+    assert_eq!(ended.latest_run.unwrap().status, RunStatus::Interrupted);
+    until_setup_ends(&node, "s1").await;
+    let service = node.service.clone();
+    let store = service.store();
+    let item = store.item("s1", "setup-s1-r1-0").unwrap().unwrap();
+    assert_eq!(item.status, ItemStatus::Cancelled);
+    assert!(store.item("s1", "setup-s1-r1-1").unwrap().is_none());
+    assert!(
+        node.runner.spawned().is_empty(),
+        "no claude for an interrupted run"
+    );
+    assert!(!after.exists(), "the command was killed");
+    // Setup stays due: it never ran to its end.
+    assert!(store.session("s1").unwrap().unwrap().local.setup_pending);
+
+    node.ok(with_setup("s2", "fleetd/T2-slow", slow)).await;
+    until_item(&node, "s2", "setup-s2-r1-0").await;
+    let cwd = store.session("s2").unwrap().unwrap().local.cwd;
+    assert!(cwd.exists());
+    node.ok(SessionCall::Stop {
+        session_id: ThreadId::unchecked("s2"),
+        remove_worktree: true,
+    })
+    .await;
+    until_setup_ends(&node, "s2").await;
+    assert!(!cwd.exists(), "the stop removed the worktree");
+    assert!(node.runner.spawned().is_empty());
+}
+
+/// A worktree that is gone when its session goes on comes back and is set up again before claude starts there.
+#[tokio::test]
+async fn a_rebuilt_worktree_is_set_up_again_before_the_agent_goes_on() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, root) = cloned(dir.path(), "repo", "origin");
+    let mut node = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    node.project(&root).await;
+    node.ok(with_setup(
+        "s1",
+        "fleetd/T1-rebuild",
+        setup(&["echo dep >> deps.txt"], false),
+    ))
+    .await;
+    node.settled("s1-r1").await;
+    let cwd = node.runner.spawned()[0].cwd.clone();
+    assert!(cwd.join("deps.txt").is_file());
+    node.ok(SessionCall::Stop {
+        session_id: ThreadId::unchecked("s1"),
+        remove_worktree: false,
+    })
+    .await;
+    std::fs::remove_dir_all(&cwd).unwrap();
+
+    node.ok(send_as("s1", "s1-r2")).await;
+    node.settled("s1-r2").await;
+    assert!(
+        cwd.join("deps.txt").is_file(),
+        "setup ran in the rebuilt worktree"
+    );
+    let service = node.service.clone();
+    let store = service.store();
+    let again = store.item("s1", "setup-s1-r2-0").unwrap().unwrap();
+    assert_eq!(again.status, ItemStatus::Completed);
+    assert_eq!(node.runner.spawned().len(), 2);
+    let sent = node
+        .runner
+        .received()
+        .into_iter()
+        .rev()
+        .find_map(|c| match c {
+            SessionCommand::Send { text, .. } => Some(text),
+            _ => None,
+        })
+        .unwrap();
+    assert!(
+        sent.contains("Setup ran in this worktree before you went on"),
+        "{sent}"
+    );
+    assert!(!store.session("s1").unwrap().unwrap().local.setup_pending);
+}
+
+/// The node stops in the middle of setup: nothing marks it done, so the session's next start runs it again first.
+#[tokio::test]
+async fn a_node_restart_mid_setup_runs_it_again_at_the_next_start() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, root) = cloned(dir.path(), "repo", "origin");
+    let db = dir.path().join("sessions.sqlite");
+    let hold = dir.path().join("hold");
+    std::fs::write(&hold, "").unwrap();
+    let runs = dir.path().join("setup-runs.txt");
+    let command = format!(
+        "if [ -f {} ]; then sleep 300; fi; echo ran >> {}",
+        hold.display(),
+        runs.display()
+    );
+    let before = hub(
+        dir.path(),
+        NodeStore::open(&db).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    before.project(&root).await;
+    before
+        .ok(with_setup(
+            "s1",
+            "fleetd/T1-restart",
+            setup(&[&command], false),
+        ))
+        .await;
+    until_item(&before, "s1", "setup-s1-r1-0").await;
+    assert!(
+        before
+            .service
+            .store()
+            .session("s1")
+            .unwrap()
+            .unwrap()
+            .local
+            .setup_pending,
+        "no done mark while it runs"
+    );
+
+    // The node stops; the next one finds setup still due.
+    std::fs::remove_file(&hold).unwrap();
+    let mut after = hub(
+        dir.path(),
+        NodeStore::open(&db).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    let row = after.service.store().session("s1").unwrap().unwrap();
+    assert!(row.local.setup_pending);
+    assert_eq!(
+        row.summary.latest_run.unwrap().status,
+        RunStatus::Interrupted
+    );
+    assert!(!runs.exists());
+    after.ok(send_as("s1", "s1-r2")).await;
+    after.settled("s1-r2").await;
+    assert_eq!(std::fs::read_to_string(&runs).unwrap(), "ran\n");
+    assert_eq!(after.runner.spawned().len(), 1);
+    let store = after.service.clone();
+    assert!(
+        !store
+            .store()
+            .session("s1")
+            .unwrap()
+            .unwrap()
+            .local
+            .setup_pending
+    );
+    // Done now: the next turn doesn't run it again.
+    after.ok(send_as("s1", "s1-r3")).await;
+    after.settled("s1-r3").await;
+    assert_eq!(std::fs::read_to_string(&runs).unwrap(), "ran\n");
+    drop(before);
 }

@@ -232,6 +232,32 @@ pub fn forget(home: &Path, project_id: &str, order_id: &str) -> Result<(), Strin
     }
 }
 
+/// Forgets one of the order's variables: one the hub could not record.
+pub fn forget_one(home: &Path, project_id: &str, order_id: &str, name: &str) -> Result<(), String> {
+    let Some(path) = file(home, project_id, order_id) else {
+        return Ok(());
+    };
+    let shown = format!("{DIR}/{project_id}/{order_id}.json");
+    let _writing = WRITING
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let (mut order, _) =
+        read_file(&path).map_err(|e| format!("cannot read {shown}: {}", io_why(&e)))?;
+    if order.vars.remove(name).is_none() {
+        return Ok(());
+    }
+    if order.vars.is_empty() {
+        return match std::fs::remove_file(&path) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                Err(format!("cannot remove {shown}: {}", io_why(&e)))
+            }
+            _ => Ok(()),
+        };
+    }
+    let bytes = Zeroizing::new(serde_json::to_vec(&order).map_err(|e| e.to_string())?);
+    write_atomic(&path, &bytes).map_err(|e| format!("cannot write {shown}: {}", io_why(&e)))
+}
+
 /// Forgets every order's variables of the project, when the project goes.
 pub fn forget_project(home: &Path, project_id: &str) {
     if !plain(project_id) {
@@ -273,6 +299,8 @@ mod tests {
         deliver(home, "p", "W1", "API_KEY", b"k-123456").unwrap();
         assert_ne!(digest_of(home, "p", "W1"), digest);
         assert_eq!(for_spawn(home, "p", "W1").0.len(), 2);
+        forget_one(home, "p", "W1", "API_KEY").unwrap();
+        assert_eq!(for_spawn(home, "p", "W1").0.len(), 1);
         forget(home, "p", "W1").unwrap();
         assert_eq!(for_spawn(home, "p", "W1"), (Vec::new(), None));
         forget(home, "p", "W1").unwrap();

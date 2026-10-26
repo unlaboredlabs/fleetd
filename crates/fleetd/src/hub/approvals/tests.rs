@@ -18,7 +18,9 @@ struct Fake {
     /// Each sealed secret the node took: machine and input.
     secrets: Mutex<Vec<(String, Value)>>,
     /// The project's open orders; every other order is refused.
-    open_orders: Vec<&'static str>,
+    open_orders: Mutex<Vec<&'static str>>,
+    /// The hub fails to record an order's variable.
+    order_save_fails: Mutex<bool>,
     /// Each variable recorded for an order.
     order_saved: Mutex<Vec<OrderEnvSaved>>,
 }
@@ -38,7 +40,8 @@ impl Default for Fake {
                 ..Default::default()
             })),
             secrets: Mutex::default(),
-            open_orders: vec!["W7"],
+            open_orders: Mutex::new(vec!["W7"]),
+            order_save_fails: Mutex::new(false),
             order_saved: Mutex::default(),
         }
     }
@@ -124,12 +127,18 @@ impl ApprovalHub for Fake {
         Box::pin(async {})
     }
     fn order_refusal(&self, _: &ProjectRef, order_id: &str) -> BoxFut<'_, Option<String>> {
-        let why = (!self.open_orders.contains(&order_id)).then(|| format!("{order_id} is closed."));
+        let why = (!self.open_orders.lock().unwrap().contains(&order_id))
+            .then(|| format!("{order_id} is closed."));
         Box::pin(async move { why })
     }
-    fn order_env_saved(&self, saved: OrderEnvSaved) -> BoxFut<'_, ()> {
-        self.order_saved.lock().unwrap().push(saved);
-        Box::pin(async {})
+    fn order_env_saved(&self, saved: OrderEnvSaved) -> BoxFut<'_, Result<(), String>> {
+        let result = if *self.order_save_fails.lock().unwrap() {
+            Err("the hub could not record it, so the node dropped it again".to_owned())
+        } else {
+            self.order_saved.lock().unwrap().push(saved);
+            Ok(())
+        };
+        Box::pin(async move { result })
     }
 }
 
@@ -459,6 +468,33 @@ async fn an_order_sink_reaches_that_orders_node_and_is_recorded_for_it() {
         fake.request(open.request_id.as_str()).state,
         RequestState::Stored
     );
+
+    // A record the hub can't keep: refused, so the person enters it again; the request stays open.
+    let again = a
+        .request_secret(&p1(), ask("order:lab-a:W7", Some("API_KEY")))
+        .await
+        .unwrap();
+    *fake.order_save_fails.lock().unwrap() = true;
+    let refused = a
+        .submit_secret(&person(), again.request_id.as_str(), &sealed)
+        .await
+        .unwrap_err();
+    assert_eq!(refused.code, "failed");
+    assert_eq!(
+        fake.request(again.request_id.as_str()).state,
+        RequestState::Open
+    );
+    *fake.order_save_fails.lock().unwrap() = false;
+
+    // The order closed before the person entered it: nothing reaches the node.
+    fake.open_orders.lock().unwrap().clear();
+    let delivered = fake.secrets.lock().unwrap().len();
+    let late = a
+        .submit_secret(&person(), again.request_id.as_str(), &sealed)
+        .await
+        .unwrap_err();
+    assert!(late.message.contains("W7 is closed"), "{late:?}");
+    assert_eq!(fake.secrets.lock().unwrap().len(), delivered);
 }
 
 #[tokio::test]

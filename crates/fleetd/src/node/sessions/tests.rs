@@ -3236,6 +3236,7 @@ async fn configured_mcp_servers_reach_each_role_with_secrets_resolved_on_the_nod
                         fleetd_contracts::sessions::SessionRole::Worker
                     },
                     mcp_role: Some(mcp_role),
+                    ..Default::default()
                 },
             )
             .await

@@ -498,6 +498,8 @@ struct State {
     /// Sessions whose worktree setup still runs: a send waits for it to end, `Some(true)` once the brief went to
     /// claude, `Some(false)` when the start failed.
     setting_up: HashMap<String, watch::Receiver<Option<bool>>>,
+    /// Cancels a session's running setup (`true`): an interrupt or stop ends it, killing its command.
+    setup_cancel: HashMap<String, watch::Sender<bool>>,
 }
 
 impl State {
@@ -817,10 +819,17 @@ impl SessionService {
             SessionCall::OrderEnvDrop {
                 project_id,
                 order_id,
+                name,
             } => {
                 let home = self.inner.config.home.clone();
-                blocking(move || {
-                    super::order_env::forget(&home, project_id.as_str(), order_id.as_str())
+                blocking(move || match name {
+                    Some(name) => super::order_env::forget_one(
+                        &home,
+                        project_id.as_str(),
+                        order_id.as_str(),
+                        name.as_str(),
+                    ),
+                    None => super::order_env::forget(&home, project_id.as_str(), order_id.as_str()),
                 })
                 .await
                 .map_err(invalid)?;
@@ -1440,6 +1449,8 @@ impl SessionService {
                         "recreated a lost worktree to take over"
                     );
                     recreated_from = Some(lost.kind());
+                    // Rebuilt, it has none of what setup made there before.
+                    super::worktree_setup::record(&local.cwd, None);
                     prompt = format!("{}\n\n{prompt}", lost.note(branch));
                 }
                 (local.cwd, local.add_dirs, local.base_ref, local.branch)
@@ -1480,6 +1491,11 @@ impl SessionService {
             )
         });
         let runs_on = self.inner.runner.profile(profile);
+        // Setup applies to a session in a worktree of its own.
+        let setup = launch
+            .setup
+            .map(|s| *s)
+            .filter(|s| !s.is_empty() && base_ref.is_some());
         let row = SessionRow {
             summary: SessionSummary {
                 session_id: launch.session_id.clone(),
@@ -1516,6 +1532,8 @@ impl SessionService {
                 disallowed_tools: launch.disallowed_tools.clone(),
                 role: launch.role,
                 order_id: launch.order_id.as_ref().map(|o| o.to_string()),
+                setup_pending: setup.is_some(),
+                setup: setup.clone(),
             },
         };
         self.store().commit(&row, &[], false)?;
@@ -1541,12 +1559,9 @@ impl SessionService {
         };
         let prompt = self.with_env_note(&row, prompt);
         // A new worktree is set up first, while the run shows as starting; the brief goes to claude once it is done.
-        match launch
-            .setup
-            .filter(|s| !s.is_empty() && row.local.base_ref.is_some())
-        {
+        match setup {
             Some(setup) => {
-                self.begin_after_setup(&id, &launch.run_id, prompt, *setup)
+                self.begin_after_setup(&id, &launch.run_id, prompt, setup)
                     .await?
             }
             None => {
@@ -1588,11 +1603,17 @@ impl SessionService {
                 if started == Some(true) {
                     let _ = service.send_run(&id, &run_id, &text, mode).await;
                 } else {
-                    let why = "the session did not start: its worktree setup failed";
+                    let why = "the session did not start: its worktree setup failed or was stopped";
                     service.fail_run(&id, &run_id, FailureClass::Other, why);
                     service.steer_failed(&run_id, why);
                 }
             });
+            return Ok(queued);
+        }
+        // Setup is due (the node stopped before it ended, or the worktree is gone and comes back): it runs again
+        // first, in the background, and the message goes once it has ended.
+        if !queued && let Some(setup) = self.setup_due(id) {
+            self.set_up_then_send(id, run_id, text.to_owned(), mode, setup);
             return Ok(queued);
         }
         self.send_run(id, run_id, text, mode).await?;
@@ -1786,44 +1807,7 @@ impl SessionService {
         let mut row = self.session(id)?;
         let resume = state::start_mode(&row.local, &setup::config_dir(&config.runner_env()), id)
             .map_err(|m| error(SessionErrorCode::RunnerUnavailable, m))?;
-        // A worktree that is gone (removed by `stop{removeWorktree}`, or deleted) comes back at the same path, so the
-        // session still resumes, from what is left of its branch.
-        let mut recreated = false;
-        let mut note = None;
-        let from = match found {
-            Some(from) if !row.local.cwd.exists() => Some(from),
-            // Only when the worktree went missing meanwhile.
-            _ => self.lost_worktree(&row).await?,
-        };
-        if let (Some(from), Some(branch)) = (from, &row.local.branch) {
-            let (r, p, b, f) = (
-                row.local.workspace_root.clone(),
-                row.local.cwd.clone(),
-                branch.clone(),
-                from.clone(),
-            );
-            blocking(move || worktree::restore(&r, &p, &b, &f)).await?;
-            tracing::info!(session_id = id, ?from, "recreated a lost worktree");
-            note = Some(from.note(branch));
-            row.summary.recreated_from = Some(from.kind());
-            row.summary.recreated_at = Some(now());
-            row.summary.worktree_path = Some(row.local.cwd.to_string_lossy().into_owned());
-            row.summary.branch = row.local.branch.clone();
-            recreated = true;
-        }
-        // A reader's detached worktree, removed at its task's end, comes back at the same commit.
-        if let (Some(at), None) = (&row.local.base_ref, &row.local.branch)
-            && !row.local.cwd.exists()
-        {
-            let (r, p, a) = (
-                row.local.workspace_root.clone(),
-                row.local.cwd.clone(),
-                at.clone(),
-            );
-            blocking(move || worktree::ensure_detached(&r, &p, &a)).await?;
-            row.summary.worktree_path = Some(row.local.cwd.to_string_lossy().into_owned());
-            recreated = true;
-        }
+        let (recreated, note) = self.restore_worktree(id, &mut row, found).await?;
         if !row.local.cwd.is_dir() {
             return Err(invalid(format!(
                 "the session's workspace {} is missing",
@@ -1927,6 +1911,63 @@ impl SessionService {
         if let Err(e) = done {
             tracing::warn!(session = id, "the session's skills were not refreshed: {e}");
         }
+    }
+
+    /// Brings a session's worktree back at its path when it is gone: a writer's from what is left of its branch
+    /// (`found`, or looked up now), a reader's detached one at its commit. Returns whether it did, and the note for the
+    /// agent when a writer's was rebuilt. The caller commits the row.
+    async fn restore_worktree(
+        &self,
+        id: &str,
+        row: &mut SessionRow,
+        found: Option<worktree::Source>,
+    ) -> Result<(bool, Option<String>), SessionError> {
+        // A worktree that is gone (removed by `stop{removeWorktree}`, or deleted) comes back at the same path, so the
+        // session still resumes, from what is left of its branch.
+        let mut recreated = false;
+        let mut note = None;
+        let from = match found {
+            Some(from) if !row.local.cwd.exists() => Some(from),
+            // Only when the worktree went missing meanwhile.
+            _ => self.lost_worktree(row).await?,
+        };
+        if let (Some(from), Some(branch)) = (from, &row.local.branch) {
+            let (r, p, b, f) = (
+                row.local.workspace_root.clone(),
+                row.local.cwd.clone(),
+                branch.clone(),
+                from.clone(),
+            );
+            blocking(move || worktree::restore(&r, &p, &b, &f)).await?;
+            tracing::info!(session_id = id, ?from, "recreated a lost worktree");
+            note = Some(from.note(branch));
+            row.summary.recreated_from = Some(from.kind());
+            row.summary.recreated_at = Some(now());
+            row.summary.worktree_path = Some(row.local.cwd.to_string_lossy().into_owned());
+            row.summary.branch = row.local.branch.clone();
+            recreated = true;
+        }
+        // A reader's detached worktree, removed at its task's end, comes back at the same commit.
+        if let (Some(at), None) = (&row.local.base_ref, &row.local.branch)
+            && !row.local.cwd.exists()
+        {
+            let (r, p, a) = (
+                row.local.workspace_root.clone(),
+                row.local.cwd.clone(),
+                at.clone(),
+            );
+            blocking(move || worktree::ensure_detached(&r, &p, &a)).await?;
+            row.summary.worktree_path = Some(row.local.cwd.to_string_lossy().into_owned());
+            recreated = true;
+        }
+        // A rebuilt worktree has none of what setup made: setup runs again before its agent goes on.
+        if recreated {
+            super::worktree_setup::record(&row.local.cwd, None);
+            if row.local.setup.is_some() {
+                row.local.setup_pending = true;
+            }
+        }
+        Ok((recreated, note))
     }
 
     /// Where a writer's worktree that is gone comes back from; `None` while it is there, or for a session in the root.
@@ -2328,9 +2369,8 @@ impl SessionService {
     }
 
     /// For masking what the session reports: the secrets its process was `spawned` with (a rotated or removed one is
-    /// still in its environment) and its project's and order's secrets now.
+    /// still in its environment) and its project's, order's and MCP servers' secrets now.
     fn masker(&self, id: &str, spawned: &super::mask::Secrets) -> super::mask::Masker {
-        let home = &self.inner.config.home;
         let now = match self.store().session(id) {
             Ok(Some(row)) => self.secrets_now(&row),
             _ => super::mask::Secrets::default(),
@@ -2811,6 +2851,8 @@ impl SessionService {
         let reason = reason
             .filter(|r| !r.trim().is_empty())
             .unwrap_or_else(|| "interrupted".into());
+        // A run still in its worktree's setup: the setup ends, its command killed, and no claude starts for it.
+        let setting_up = self.cancel_setup(id);
         let target = self.st().live.get_mut(id).map(|live| {
             live.ending = Some(EndCause::Requested(reason.clone()));
             (live.commands.clone(), live.generation)
@@ -2821,6 +2863,9 @@ impl SessionService {
                 state::close_out(&mut c.runs, &EndCause::Requested(reason), &c.at);
                 c.cancel_pending();
             })?;
+            if let Some(mut done) = setting_up {
+                let _ = tokio::time::timeout(EXIT_WAIT, done.wait_for(Option::is_some)).await;
+            }
             return Ok(SessionOutput::Done);
         };
         let _ = commands.send(SessionCommand::Interrupt).await;
@@ -2862,6 +2907,14 @@ impl SessionService {
     }
 
     async fn stop(&self, id: &str, remove_worktree: bool) -> Reply {
+        // A run still in its worktree's setup ends with it: its command is killed and no claude starts.
+        if let Some(mut done) = self.cancel_setup(id) {
+            self.update(id, |c| {
+                state::close_out(&mut c.runs, &EndCause::Requested("stopped".into()), &c.at);
+                c.cancel_pending();
+            })?;
+            let _ = tokio::time::timeout(EXIT_WAIT, done.wait_for(Option::is_some)).await;
+        }
         let workspace = self.workspace_lock(id);
         let _workspace = if remove_worktree {
             let held = workspace.lock().await;

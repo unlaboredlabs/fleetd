@@ -182,8 +182,9 @@ pub trait ApprovalHub: Send + Sync {
     /// Why the project's order can't take a variable now (no such order, another project's, closed, a node too old
     /// for it); `None` when it can.
     fn order_refusal(&self, project: &ProjectRef, order_id: &str) -> BoxFut<'_, Option<String>>;
-    /// Records a variable the node saved for an order: its name, fingerprint and size.
-    fn order_env_saved(&self, saved: OrderEnvSaved) -> BoxFut<'_, ()>;
+    /// Records a variable the node saved for an order: its name, fingerprint and size. `Err`: it could not, and the
+    /// node was told to forget the value again.
+    fn order_env_saved(&self, saved: OrderEnvSaved) -> BoxFut<'_, Result<(), String>>;
 }
 
 /// A variable a node saved for one order's agents.
@@ -611,6 +612,16 @@ impl Approvals {
                 Some("Nothing to enter: it is settled."),
             ));
         }
+        // The order may have closed since the lead asked: its variable would outlive it.
+        if let Some(order) = &sink.order
+            && let Some(why) = self.deps.hub.order_refusal(&project_of(&r), order).await
+        {
+            return Err(refuse(
+                "invalid",
+                why,
+                Some("Nothing to enter: tell the lead in chat if an open order still needs it."),
+            ));
+        }
         let m = &sink.machine_id;
         match self.deps.hub.box_key(m).await {
             None => {
@@ -686,7 +697,14 @@ impl Approvals {
                     bytes,
                     request_id: id.to_string(),
                 })
-                .await;
+                .await
+                .map_err(|why| {
+                    refuse(
+                        "failed",
+                        why,
+                        Some("Enter it again; the request is still open."),
+                    )
+                })?;
         }
         let by = format!("human:{}", caller.name);
         let at = self.now();
