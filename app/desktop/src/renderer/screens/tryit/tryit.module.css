@@ -1,0 +1,456 @@
+/* A PR's Try it, in the wide panel: the head (state in words, what to try), then the app in its frame beside the
+   steps, feedback and sign-off. The frame is the one card: an app stands apart from everything around it. Separation
+   by space and hairlines, no coloured edge, and only a run that is starting moves (ui/DESIGN.md). */
+
+.view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.head {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-4) var(--space-2);
+  border-bottom: 1px solid var(--hairline);
+}
+.headRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--control);
+}
+.headRow > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+.state {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* What to try: a compact segmented control (ui/DESIGN.md Controls). A target with a run says so after its word. */
+.segments {
+  flex: none;
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-md);
+  background: var(--hover);
+}
+.segment {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1-5);
+  height: 22px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--quiet);
+  font: inherit;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  cursor: pointer;
+  transition:
+    background var(--dur-quick) var(--ease-snap),
+    color var(--dur-quick) var(--ease-snap);
+}
+.segment[aria-checked="true"] {
+  background: var(--raised);
+  box-shadow: 0 0 0 1px var(--hairline);
+  color: var(--text);
+  font-weight: 500;
+}
+.segmentIcon {
+  width: 13px;
+  height: 13px;
+}
+.segmentWord {
+  color: var(--faint);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-3) var(--space-4);
+  container-type: inline-size;
+}
+
+/* The app and the side column: stacked, and side by side once there is room for both. */
+.stage {
+  display: grid;
+  gap: var(--space-4);
+}
+@container (min-width: 660px) {
+  .stage {
+    grid-template-columns: minmax(0, 1fr) minmax(230px, 32%);
+  }
+}
+.player {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.frame {
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--raised);
+}
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--control);
+  padding: 0 var(--space-1) 0 var(--space-2);
+  border-bottom: 1px solid var(--hairline);
+  color: var(--quiet);
+  transition:
+    background var(--dur-quick) var(--ease-snap),
+    color var(--dur-quick) var(--ease-snap);
+}
+.barIcon {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+.url {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  color: inherit;
+}
+/* The app's screen is the container its units are sized by. */
+.screen {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  container-type: size;
+  background: var(--bg);
+}
+
+/* Marking up: the bar turns over, in the text colour, as a taken-over session's does; the screen takes pins. */
+.marking.frame,
+.marking .phone {
+  border-color: var(--text);
+}
+.marking .bar {
+  border-bottom-color: var(--text);
+  background: var(--text);
+  color: var(--bg);
+}
+.markLayer {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+}
+.pin {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border-radius: var(--radius-sm);
+  background: var(--text);
+  color: var(--bg);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  outline: 2px solid var(--bg);
+}
+
+/* Starting: the step at work over a still dither field; its words take the beat's scan. */
+.starting {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: repeating-conic-gradient(var(--hover) 0 25%, transparent 0 50%) 0 0 / 4px 4px;
+}
+.startingWords {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  --sweep-bg: var(--bg);
+}
+
+/* The emulator: the phone at its own shape, centred in a well as wide as a page frame; its keys under it. */
+.well {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-3) var(--space-1);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: repeating-conic-gradient(var(--hover) 0 25%, transparent 0 50%) 0 0 / 4px 4px;
+}
+.marking.well {
+  border-color: var(--text);
+}
+.phone {
+  width: 228px;
+  padding: 7px;
+  border: 1px solid var(--hairline);
+  border-radius: 30px;
+  background: #121413;
+}
+.phoneScreen {
+  position: relative;
+  aspect-ratio: 412 / 892;
+  overflow: hidden;
+  border-radius: 23px;
+  container-type: size;
+  background: var(--bg);
+}
+.phoneScreen .starting {
+  padding: 0 var(--space-2);
+  text-align: center;
+}
+.keys {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.keys > :last-child {
+  margin-left: var(--space-2);
+}
+.backKey {
+  transform: rotate(-90deg);
+}
+
+.under {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--row);
+}
+.underWords {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The side column: blocks with a heading each, separated by space and a hairline. */
+.side {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--hairline);
+}
+.block:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+.blockHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 22px;
+}
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.step {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  column-gap: var(--space-2);
+  align-items: baseline;
+}
+.step > :first-child {
+  align-self: center;
+}
+.stepWords {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.notes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.note {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: start;
+}
+.noteN {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 6px;
+  border-radius: var(--radius-sm);
+  background: var(--text);
+  color: var(--bg);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+.attach {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  padding-top: var(--space-1);
+}
+.file {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+.fileIcon {
+  width: 13px;
+  height: 13px;
+}
+.files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+.actions {
+  display: flex;
+  gap: var(--space-2);
+  padding-top: var(--space-1);
+}
+
+/* What the writer got: its words as they arrive, set off by an indent rule in the hairline's colour. */
+.arrives {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  margin-top: var(--space-1);
+  padding-left: var(--space-3);
+  border-left: 1px solid var(--hairline);
+}
+.message {
+  margin: 0;
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.phoneWays {
+  display: flex;
+  gap: var(--space-2);
+}
+.codePop {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  width: 240px;
+}
+.code {
+  width: 132px;
+  height: 132px;
+  color: var(--text);
+}
+
+.off {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  max-width: 460px;
+  padding: var(--space-6) 0;
+}
+.offWords {
+  margin-bottom: var(--space-1);
+}
+
+/* Outside the view: the writer's suggestion and the PR's sign-off, one plain line with its buttons beside it. */
+.suggest {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.suggestWords {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The merge line's Waiting on you row, as its In line rows: the title and number, the state in words, why. */
+.waitRow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 var(--space-3);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-6);
+  border-bottom: 1px solid var(--hairline);
+}
+.waitTop {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+  color: inherit;
+  font-weight: 500;
+  text-decoration: none;
+}
+.waitTop:hover .waitTitle {
+  text-decoration: underline;
+  text-decoration-color: var(--hairline);
+}
+.waitTitle {
+  flex: 1;
+  min-width: 0;
+}
+.waitWord {
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+.waitWord[data-tone="needs-you"] {
+  color: var(--warning);
+  font-weight: 500;
+}
+.waitWord[data-tone="done"] {
+  color: var(--success);
+  font-weight: 500;
+}
+.waitActions {
+  display: flex;
+  gap: var(--space-2);
+  padding-top: var(--space-1);
+}

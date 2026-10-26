@@ -14,6 +14,7 @@ import { seenOf } from "../../src/data/seen";
 import { projectKey } from "../../src/data/store";
 import { Boundary } from "../../src/Boundary";
 import { LiveStrip } from "../live";
+import { useSignOffAttention } from "../tryit/SignOff";
 import { AttentionLine } from "./Attention";
 import { waitingOn } from "./attentionModel";
 import { leadTurnSince, leadTurnUntil } from "./activity";
@@ -89,6 +90,8 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
     () => (needsYou === true && items !== undefined ? waitingOn(items, { older, open: openItems }, Date.now()) : undefined),
     [needsYou, items, older, openItems],
   );
+  // The design preview's sign-off (screens/tryit): a PR the person asked to try, once nothing else waits on them.
+  const signOff = useSignOffAttention(project);
   // Show to what isn't loaded yet (an approval pages back): older pages load until it is, or there are none.
   const away = shown !== undefined && items !== undefined && !items.some((i) => i.id === shown.id);
   // A page that failed stops it: no retrying in a loop.
@@ -202,7 +205,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
       {data.missing ? null : (
         <div className={s.composer}>
           <AttentionLine
-            waiting={waiting}
+            waiting={waiting ?? signOff}
             // As the header chip: a held chat doesn't say what the project is now.
             blocked={view?.held === true ? undefined : data.blocked}
             which={showing >= 0 && targets !== undefined && targets.length > 1 ? `${String(showing + 1)} of ${String(targets.length)}` : undefined}

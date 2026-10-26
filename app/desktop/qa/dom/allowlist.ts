@@ -22,6 +22,11 @@ export const allowlist: readonly Allowance[] = [
     why: "A nightly is named by its build commit (\"Nightly · Oct 26, 10:56 UTC · 1b563d7\"), and a raw version is there to copy.",
   },
   {
+    check: "overlap",
+    selector: "[data-app-under-test]",
+    why: "Try it shows a project's own app, not the app's text, and the person's feedback pins sit on it on purpose.",
+  },
+  {
     check: "overflow",
     selector: "[data-text='code']",
     why: "Code scrolls sideways rather than wrapping.",
