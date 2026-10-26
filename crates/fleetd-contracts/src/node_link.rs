@@ -84,6 +84,10 @@ pub const CAP_PROJECT_SETTINGS: &str = "project_settings";
 /// The node takes `mcp_secrets` and `mcp_test`, and a launch's and a send's MCP servers.
 pub const CAP_MCP_SERVERS: &str = "mcp_servers";
 
+/// `skills_list` (a project's repo skills, for Settings → Skills). Hub-kept skills ride on `launch`, which an older
+/// node ignores.
+pub const CAP_SKILLS: &str = "skills";
+
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]

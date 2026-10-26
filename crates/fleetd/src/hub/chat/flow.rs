@@ -261,6 +261,11 @@ pub async fn send(
                         author: Some(writer.author),
                         text: input.text.to_string(),
                         attachments: attachments::refs(hub, &ids)?,
+                        skills: input
+                            .skills
+                            .as_ref()
+                            .map(|s| s.iter().cloned().collect())
+                            .unwrap_or_default(),
                         request: Some(request),
                         by: Some(writer.by),
                         client: writer.client,
@@ -499,7 +504,7 @@ async fn deliver(
     message: &fleetd_contracts::chat::ChatMessage,
     now: bool,
 ) -> Result<bool, ToolError> {
-    let files = files_of(hub, r, message).await?;
+    let files = files_of(hub, r, message).await? + &skills_of(hub, r, message);
     let set = hub
         .db
         .prompts()
@@ -539,6 +544,46 @@ async fn files_of(
     } else {
         format!("\n\nAttached:\n{}", files.join("\n"))
     })
+}
+
+/// The skills a person named with `$name`, as the lines the lead reads after the text: each as the session lists it
+/// (`fleetd:<name>`) with where it comes from and what it does, so the lead uses it or names it in a brief.
+pub(crate) fn skills_of(
+    hub: &Hub,
+    r: &ProjectRef,
+    message: &fleetd_contracts::chat::ChatMessage,
+) -> String {
+    use fleetd_contracts::skills::{SkillScope, description_of};
+    let Some(names) = &message.skills else {
+        return String::new();
+    };
+    let skills = hub.db.skills();
+    let lines: Vec<String> = names
+        .iter()
+        .map(|name| {
+            let kept = skills
+                .get(SkillScope::Project, Some(r), name)
+                .or_else(|| skills.get(SkillScope::Global, None, name));
+            match kept {
+                Some(k) => format!(
+                    "- fleetd:{name} ({} skill): {}",
+                    match k.scope {
+                        SkillScope::Project => "this project's",
+                        SkillScope::Global => "a global",
+                    },
+                    description_of(&k.text)
+                ),
+                None => {
+                    format!("- fleetd:{name} (from the repo's .agents/skills or .claude/skills)")
+                }
+            }
+        })
+        .collect();
+    format!(
+        "\n\nSkills the human named: use each with the Skill tool, or name it in an agent's brief. One added since \
+         your session started isn't in your skill list yet: read $FLEETD_SKILLS_DIR/<name>/SKILL.md instead.\n{}",
+        lines.join("\n")
+    )
 }
 
 /// Every held message of the project, oldest first; one that can't go stops the rest, so they stay in order.

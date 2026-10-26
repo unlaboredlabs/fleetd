@@ -48,7 +48,7 @@ export interface ChatActions {
    */
   send(
     key: ProjectKey,
-    input: { text: string; attachments?: readonly AttachmentRef[]; now?: boolean; replyTo?: ChatReplyTo },
+    input: { text: string; attachments?: readonly AttachmentRef[]; now?: boolean; replyTo?: ChatReplyTo; skills?: readonly string[] },
     clientRequestId?: string,
   ): Promise<SendOutcome>;
   /** Sends a row again under its own id. */
@@ -179,6 +179,7 @@ export const createChatActions = (
       ...(row.attachments.length === 0 ? {} : { attachments: row.attachments.map((a) => a.attachmentId) }),
       ...(row.now === true ? { now: true } : {}),
       ...(row.replyTo === undefined ? {} : { replyTo: row.replyTo }),
+      ...(row.skills !== undefined && row.skills.length > 0 ? { skills: [...row.skills] } : {}),
     };
     for (let attempt = 0; ; attempt++) {
       const r = await call("chat_send", input);
@@ -228,6 +229,7 @@ export const createChatActions = (
       state: { t: "sending" },
       ...(input.now === true ? { now: true } : {}),
       ...(input.replyTo === undefined ? {} : { replyTo: input.replyTo }),
+      ...(input.skills !== undefined && input.skills.length > 0 ? { skills: input.skills } : {}),
     };
     return sendRow(key, row);
   };

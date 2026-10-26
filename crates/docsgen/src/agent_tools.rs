@@ -670,6 +670,9 @@ fn example(role: Role, tool: &str) -> Option<Value> {
                 { "text": "Ship the rate limit to production" },
             ],
         }),
+        (Role::Lead, "skill_install") => {
+            json!({ "source": "vercel-labs/agent-skills@web-design-guidelines", "scope": "project" })
+        }
         (Role::Lead, "change_enqueue") => json!({
             "prUrl": "https://github.com/acme/shop/pull/42",
             "workstreamId": "W3",
@@ -821,8 +824,11 @@ fn switches() -> Result<String, String> {
         .chain(WORKER_ENV.iter().map(|(k, _)| k))
         .map(|v| ((*v).to_owned(), String::new()))
         .collect();
-    let overlay: Value = serde_json::from_str(&fleetd::node::sessions::settings_overlay(&cache))
-        .map_err(|e| format!("agent tools: the settings overlay: {e}"))?;
+    let overlay: Value = serde_json::from_str(&fleetd::node::sessions::settings_overlay(
+        &cache,
+        Default::default(),
+    ))
+    .map_err(|e| format!("agent tools: the settings overlay: {e}"))?;
     let mut md = String::from(
         "## Settings fleetd forces\n\nSet in the claude process's environment. \"In settings\" marks the ones also \
          in fleetd's settings file for a session, which outranks the `env` in your own settings.\n\n| Variable | \

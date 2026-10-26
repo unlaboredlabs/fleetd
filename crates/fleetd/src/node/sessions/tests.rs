@@ -89,6 +89,7 @@ fn launch(id: &str, mode: RuntimeMode, workspace: SessionWorkspace) -> SessionCa
         role: fleetd_contracts::sessions::SessionRole::Worker,
         mcp_role: None,
         mcp: None,
+        skills: Vec::new(),
     })
 }
 
@@ -100,6 +101,7 @@ fn send(id: &str, run_id: &str) -> SessionCall {
         mode: SendMode::Plain,
         steer: None,
         mcp: None,
+        skills: None,
     }
 }
 
@@ -1865,6 +1867,7 @@ async fn a_task_session_must_resume_for_anything_but_its_first_message() {
         mode: SendMode::Plain,
         steer: None,
         mcp: None,
+        skills: None,
     })
     .await;
     let spawned: Vec<(bool, bool)> = hub
@@ -2626,6 +2629,7 @@ fn steer(id: &str, run_id: &str, mode: SendMode, tag: Option<&str>) -> SessionCa
             riders: vec![],
         }),
         mcp: None,
+        skills: None,
     }
 }
 
@@ -2820,6 +2824,7 @@ async fn each_steer_a_run_carries_gets_its_own_receipts() {
             riders: vec![SteerId::unchecked("S1")],
         }),
         mcp: None,
+        skills: None,
     })
     .await;
     let mut finals = std::collections::BTreeMap::new();
@@ -3014,6 +3019,7 @@ async fn a_sessions_mcp_servers_change_at_its_next_start() {
         mode,
         steer,
         mcp: Some(mcp_session_config(false, "https://docs2.example.com/mcp")),
+        skills: None,
     })
     .await;
     hub.settled("r2").await;
@@ -3299,4 +3305,145 @@ async fn configured_mcp_servers_reach_each_role_with_secrets_resolved_on_the_nod
         assert!(!rows.contains(secret), "a hub row holds {secret}");
         assert!(!answers.contains(secret), "an answer holds {secret}");
     }
+}
+
+/// A new session gets a skill of the repo's `.agents/skills`, one of its `.claude/skills` and the hub's, from one
+/// plugin claude loads for that session only, the first source winning on a name clash; claude's own copy of a name the
+/// plugin has is turned off. The checkout is left as it was.
+#[tokio::test]
+async fn a_new_session_gets_the_repos_and_the_hubs_skills_the_first_source_winning() {
+    use fleetd_contracts::skills::{SkillBundle, SkillFile, SkillOrigin};
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("project");
+    let put = |rel: &str, says: &str| {
+        let path = root.join(rel);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let name = rel.split('/').nth(2).unwrap();
+        std::fs::write(
+            path,
+            format!("---\nname: {name}\ndescription: {says}\n---\n"),
+        )
+        .unwrap();
+    };
+    put(".agents/skills/release/SKILL.md", "repo agents");
+    put(".claude/skills/release/SKILL.md", "repo claude");
+    put(".claude/skills/triage/SKILL.md", "repo claude");
+    let bundle = |name: &str, origin, says: &str| SkillBundle {
+        name: fleetd_contracts::skills::SkillName::unchecked(name),
+        origin,
+        files: fleetd_contracts::prim::List::unchecked(vec![SkillFile {
+            path: fleetd_contracts::prim::Line::unchecked("SKILL.md"),
+            text: fleetd_contracts::prim::Text::unchecked(format!(
+                "---\nname: {name}\ndescription: {says}\n---\n"
+            )),
+        }]),
+    };
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.project(&root).await;
+    let mut call = launch("s1", RuntimeMode::FullAccess, SessionWorkspace::Root);
+    if let SessionCall::Launch(l) = &mut call {
+        l.skills = vec![
+            bundle("triage", SkillOrigin::Project, "hub project"),
+            bundle("release", SkillOrigin::Global, "hub global"),
+            bundle("standup", SkillOrigin::Global, "hub global"),
+        ];
+    }
+    hub.ok(call).await;
+    hub.settled("r1").await;
+
+    let spec = &hub.runner.spawned()[0];
+    let plugin = dir.path().join("node/sessions/s1/plugin");
+    assert_eq!(spec.plugin_dirs, std::slice::from_ref(&plugin));
+    let args = crate::node::runner::claude::ClaudeRunner::new("claude".into()).args(spec);
+    let at = args.iter().position(|a| a == "--plugin-dir").unwrap();
+    assert_eq!(args[at + 1], plugin.display().to_string());
+    let says = |name: &str| {
+        let text =
+            std::fs::read_to_string(plugin.join("skills").join(name).join("SKILL.md")).unwrap();
+        fleetd_contracts::skills::description_of(&text)
+    };
+    assert_eq!(says("release"), "repo agents");
+    assert_eq!(says("triage"), "repo claude");
+    assert_eq!(says("standup"), "hub global");
+    let overlay: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(spec.settings.as_ref().unwrap()).unwrap())
+            .unwrap();
+    assert_eq!(
+        overlay["skillOverrides"],
+        serde_json::json!({ "release": "off", "standup": "off", "triage": "off" })
+    );
+    // An agent keeps the Skill tool.
+    assert!(!spec.disallowed_tools.iter().any(|t| t == "Skill"));
+    // Nothing of fleetd's in the checkout.
+    let mut top: Vec<_> = std::fs::read_dir(&root)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    top.sort();
+    assert_eq!(top, [".agents", ".claude"]);
+
+    // Settings > Skills reads the same checkout.
+    let SessionOutput::Skills { skills } = hub
+        .ok(SessionCall::SkillsList {
+            project_id: ProjectId::unchecked("p1"),
+        })
+        .await
+    else {
+        panic!("no skills")
+    };
+    let listed: Vec<_> = skills
+        .iter()
+        .map(|s| (s.origin, s.name.as_str(), s.path.as_str()))
+        .collect();
+    assert_eq!(
+        listed,
+        [
+            (
+                SkillOrigin::RepoAgents,
+                "release",
+                ".agents/skills/release/SKILL.md"
+            ),
+            (
+                SkillOrigin::RepoClaude,
+                "release",
+                ".claude/skills/release/SKILL.md"
+            ),
+            (
+                SkillOrigin::RepoClaude,
+                "triage",
+                ".claude/skills/triage/SKILL.md"
+            ),
+        ]
+    );
+    // The session reads its skills folder by name.
+    let skills_dir = plugin.join("skills");
+    assert!(
+        spec.env
+            .iter()
+            .any(|(k, v)| k == "FLEETD_SKILLS_DIR" && *v == skills_dir.to_string_lossy())
+    );
+    // A skill the hub adds later rides on the next send: in the folder at once, and kept for the next start; one
+    // the hub dropped goes.
+    let mut next = send("s1", "r2");
+    if let SessionCall::Send { skills, .. } = &mut next {
+        *skills = Some(vec![bundle(
+            "deploy-check",
+            SkillOrigin::Global,
+            "hub global, later",
+        )]);
+    }
+    hub.ok(next).await;
+    hub.settled("r2").await;
+    assert_eq!(says("deploy-check"), "hub global, later");
+    assert!(!plugin.join("skills/standup").exists());
+    assert_eq!(says("release"), "repo agents");
+    let kept =
+        std::fs::read_to_string(dir.path().join("node/sessions/s1/hub-skills.json")).unwrap();
+    assert!(kept.contains("deploy-check") && !kept.contains("standup"));
 }

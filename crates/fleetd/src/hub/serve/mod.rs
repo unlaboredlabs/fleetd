@@ -249,6 +249,7 @@ pub fn build_on_with(
     hosts: crate::hub::metrics::source::HostSources,
 ) -> anyhow::Result<Arc<Hub>> {
     db.set_memory_dir(config.home.join("memory"));
+    db.set_skills_dir(config.home.join("skills"));
     let store = Arc::new(HubStore::new(db.clone()));
     let events = Arc::new(EventLog::new(db.clone(), clock.clone())?);
     crate::hub::prompts::start(
@@ -324,6 +325,7 @@ pub fn build_on_with(
     let policies = crate::hub::policy::Policies::new(Arc::new(source), clock.clone());
     executors.set_tool_policy(policies.clone());
     executors.set_mcp_servers(db.clone());
+    executors.set_skills(db.clone());
     let tasks = crate::hub::tasks::Tasks::new(crate::hub::tasks::TaskDeps {
         db: db.clone(),
         store: store.clone(),
@@ -417,6 +419,7 @@ pub fn build_on_with(
     crate::hub::memory::calls::register_lead_calls(&hub);
     crate::hub::automations::calls::register_lead_calls(&hub);
     crate::hub::checklist::calls::register_lead_calls(&hub);
+    crate::hub::skills::calls::register_lead_calls(&hub);
     crate::hub::steer::wire(&hub);
     crate::hub::chat::tools::extend_status(&hub);
     crate::hub::work::register_sweep(&hub);

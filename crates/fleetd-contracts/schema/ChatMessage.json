@@ -513,6 +513,16 @@
           "minimum": 0,
           "type": "integer"
         },
+        "skills": {
+          "description": "A human message: the skills it named with `$name`, which the lead's copy lists.",
+          "items": {
+            "$ref": "#/$defs/SkillName"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
         "state": {
           "$ref": "#/$defs/ChatMessageState"
         },
@@ -1029,6 +1039,11 @@
       "x-open": true
     },
     "SecretSink": {
+      "type": "string"
+    },
+    "SkillName": {
+      "description": "Lowercase letters, digits and single hyphens, at most 64 characters",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
       "type": "string"
     },
     "TableBlock": {

@@ -31,6 +31,7 @@ pub mod queue;
 pub mod redact;
 pub mod reviews;
 pub mod serve;
+pub mod skills;
 pub mod slots;
 pub mod status;
 pub mod steer;

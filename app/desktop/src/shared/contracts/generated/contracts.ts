@@ -843,6 +843,8 @@ export type ChatMessage = {
   /** A human message: the bubble it answers. */
   replyTo?: ChatReplyTo;
   seq: number;
+  /** A human message: the skills it named with `$name`, which the lead's copy lists. */
+  skills?: SkillName[];
   state: ChatMessageState;
   /** Markdown. Empty while a streamed message has no text yet, and for an inline `item`. */
   text: string;
@@ -914,6 +916,8 @@ export type ChatSendInput = {
    * not this field, carries authority.
    */
   session?: ThreadId;
+  /** Skills the person named with `$name`: the lead's message lists them, so it uses them. */
+  skills?: SkillName[];
   text: string;
 };
 
@@ -1663,7 +1667,8 @@ export type KnownHubEventType =
   | "memory.changed"
   | "automation.changed"
   | "automation.run"
-  | "checklist.changed";
+  | "checklist.changed"
+  | "skills.changed";
 /** KnownHubEventType, or a value from a newer hub. */
 export type HubEventType = KnownHubEventType | (string & {});
 
@@ -3681,6 +3686,136 @@ export type SessionPromptRef = {
   scope: PromptScope;
 };
 
+export type SkillDeleteInput = {
+  name: SkillName;
+  /** Required with scope project. */
+  projectRef?: ProjectRef;
+  scope: SkillScope;
+};
+
+export type SkillDeleteOutput = {
+  next?: string;
+  ok: true;
+  truncated?: boolean;
+};
+
+export type SkillGetInput = {
+  name: SkillName;
+  origin: SkillOrigin;
+  /** Required for every origin but global. */
+  projectRef?: ProjectRef;
+};
+
+export type SkillGetOutput = {
+  next?: string;
+  skill: SkillSummary;
+  text: string;
+  truncated?: boolean;
+};
+
+/**
+ * Where an installed skill came from, pinned: Update fetches the same source again and moves the pin. Nothing
+ * updates on its own.
+ */
+export type SkillInstall = {
+  /** The commit the files are from. */
+  commit: string;
+  installedAt: Timestamp;
+  /** The skill's folder in the repo; empty for a repo that is one skill. */
+  path: string;
+  /** The branch or tag followed; `HEAD` for the default branch. */
+  ref: string;
+  /** As given: `owner/repo`, `owner/repo@skill`, a GitHub URL (`/tree/<ref>/<path>` too) or any git URL. */
+  source: string;
+  /** What was cloned. */
+  url: string;
+};
+
+export type SkillInstallInput = {
+  /** Required with scope project. */
+  projectRef?: ProjectRef;
+  scope: SkillScope;
+  /** Only this skill of the source; absent, every skill it has. */
+  skill?: SkillName;
+  source: string;
+};
+
+export type SkillInstallOutput = {
+  installed: SkillSummary[];
+  next?: string;
+  truncated?: boolean;
+};
+
+/** Lowercase letters, digits and single hyphens, at most 64 characters */
+export type SkillName = string;
+
+/** Where a skill comes from, in precedence order: on a name clash the first wins. */
+export type SkillOrigin = "repo_agents" | "repo_claude" | "project" | "global";
+
+/** The hub's two scopes, which a person (and a lead's `skill_install`) writes. */
+export type SkillScope = "project" | "global";
+
+export type SkillSetInput = {
+  /** Refuse when a skill of that name is already in the scope (New). */
+  create?: boolean;
+  name: SkillName;
+  /** Required with scope project. */
+  projectRef?: ProjectRef;
+  scope: SkillScope;
+  text: string;
+};
+
+export type SkillSetOutput = {
+  next?: string;
+  skill: SkillSummary;
+  truncated?: boolean;
+};
+
+/** One skill as Settings → Skills and the composer list it. */
+export type SkillSummary = {
+  /** From the frontmatter; empty when it has none. */
+  description: string;
+  /** The folder's other files, folder-relative. */
+  files?: string[];
+  /** Installed from a source. */
+  install?: SkillInstall;
+  name: SkillName;
+  origin: SkillOrigin;
+  /** A repo skill: its `SKILL.md`, repo-relative. */
+  path?: string;
+  /** The origin whose skill of the same name sessions get instead. */
+  shadowedBy?: SkillOrigin;
+  updatedAt?: Timestamp;
+};
+
+export type SkillUpdateInput = {
+  name: SkillName;
+  /** Required with scope project. */
+  projectRef?: ProjectRef;
+  scope: SkillScope;
+};
+
+export type SkillUpdateOutput = {
+  next?: string;
+  skill: SkillSummary;
+  truncated?: boolean;
+  /** The pin moved: the source had a newer commit. */
+  updated: boolean;
+};
+
+export type SkillsListInput = {
+  projectRef?: ProjectRef;
+};
+
+export type SkillsListOutput = {
+  next?: string;
+  /** Why the repo's skills are missing from the list (the machine is offline, or its node can't list them). */
+  repoUnavailable?: string;
+  /** In precedence order, then by name. */
+  skills: SkillSummary[];
+  truncated?: boolean;
+};
+
 /** Merges that are not landed changes, by why. */
 export type SkipCount = {
   n: number;
@@ -5092,6 +5227,12 @@ export interface ToolMap {
   requests_list: { input: RequestsListInput; output: RequestsListOutput };
   secret_submit: { input: SecretSubmitInput; output: SecretSubmitOutput };
   session_prompt_get: { input: SessionPromptGetInput; output: SessionPromptGetOutput };
+  skill_delete: { input: SkillDeleteInput; output: SkillDeleteOutput };
+  skill_get: { input: SkillGetInput; output: SkillGetOutput };
+  skill_install: { input: SkillInstallInput; output: SkillInstallOutput };
+  skill_set: { input: SkillSetInput; output: SkillSetOutput };
+  skill_update: { input: SkillUpdateInput; output: SkillUpdateOutput };
+  skills_list: { input: SkillsListInput; output: SkillsListOutput };
   status_get: { input: StatusGetInput; output: StatusGetOutput };
   steer_send: { input: SteerSendInput; output: SteerSendOutput };
   steer_withdraw: { input: SteerWithdrawInput; output: SteerWithdrawOutput };

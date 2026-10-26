@@ -319,6 +319,21 @@ export const screens: readonly Screen[] = [
       await expect(page.getByText(/the lead doesn’t have it yet/)).toBeVisible();
     },
   },
+  // `$` in the box: storefront's skills that fit, the repo's first; the outranked project copy of release is not
+  // offered twice.
+  {
+    id: "chat.composer",
+    route: CHAT,
+    fixtures: ["typical"],
+    variant: "skills",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      const box = page.getByRole("textbox", { name: "Message the lead" });
+      await box.fill("Ship today with $");
+      await expect(page.getByRole("listbox", { name: "Skills" }).getByRole("option")).toHaveCount(5);
+      await box.press("ArrowDown");
+    },
+  },
   // Stop beside Send while the lead works, pressed: the hub's answer is still on its way.
   {
     id: "chat.composer",
@@ -1471,6 +1486,63 @@ export const screens: readonly Screen[] = [
     fixtures: ["typical"],
     variant: "editor",
     open: (page) => page.getByRole("region", { name: "Weekday dependency check" }).getByRole("button", { name: "Edit" }).click(),
+  },
+  // Skills: the global ones (one installed and pinned), then storefront's: its repo's .agents/skills and
+  // .claude/skills, its own (one outranked by the repo's of the same name) and the global ones; a hub skill open to
+  // edit, a repo skill open to read, New and Install.
+  { id: "settings.skills", route: "#/settings/skills", fixtures: ["typical", "empty", "hub-unreachable"] },
+  { id: "settings.skills", route: "#/settings/skills?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22", fixtures: ["typical", "long-text"], variant: "project" },
+  {
+    id: "settings.skills",
+    route: "#/settings/skills?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["typical"],
+    variant: "edit",
+    open: async (page) => {
+      await page.getByRole("button", { name: /^checkout-qa/u }).click();
+      await expect(page.getByRole("textbox", { name: "SKILL.md" })).toHaveValue(/name: checkout-qa/u);
+    },
+  },
+  {
+    id: "settings.skills",
+    route: "#/settings/skills?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["typical"],
+    variant: "repo",
+    open: async (page) => {
+      await page.getByRole("button", { name: /^triage/u }).click();
+      await expect(page.getByRole("textbox", { name: "SKILL.md" })).toHaveValue(/name: triage/u);
+    },
+  },
+  {
+    id: "settings.skills",
+    route: "#/settings/skills",
+    fixtures: ["typical"],
+    variant: "installed",
+    open: async (page) => {
+      await page.getByRole("button", { name: /^pr-review/u }).click();
+      await expect(page.getByRole("button", { name: "Update" })).toBeVisible();
+    },
+  },
+  {
+    id: "settings.skills",
+    route: "#/settings/skills?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["typical"],
+    variant: "new",
+    open: async (page) => {
+      await page.getByRole("button", { name: "New skill" }).click();
+      await page.getByRole("textbox", { name: "Name" }).fill("Release Notes");
+    },
+  },
+  {
+    id: "settings.skills",
+    route: "#/settings/skills",
+    fixtures: ["typical"],
+    variant: "install",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Install from a source…" }).click();
+      await page.getByRole("textbox", { name: "Source" }).fill("acme/agent-skills");
+      await page.getByRole("button", { name: "Install", exact: true }).click();
+      await page.getByText(/^Installed pr-review, pinned/u).waitFor();
+    },
   },
   // Prompts before one is picked.
   { id: "settings.prompts", route: "#/settings/prompts", fixtures: ["settings-prompts"], variant: "none" },

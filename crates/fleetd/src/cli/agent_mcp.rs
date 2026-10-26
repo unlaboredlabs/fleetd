@@ -20,6 +20,7 @@ use fleetd_contracts::lead_calls::{
 };
 use fleetd_contracts::memory::{MemoryReadCall, RememberCall};
 use fleetd_contracts::schema::inline_schema;
+use fleetd_contracts::skills::SkillInstallCall;
 use fleetd_contracts::verification::ReviewVerdict;
 use serde_json::{Value, json};
 
@@ -227,6 +228,15 @@ static TOOLS: &[Tool] = &[
          words. Add items without an id, change one by its id (text, state, link to its PR, agent or workstream), or \
          remove it; replace sets the whole list. Returns the list.",
         inline_schema::<ChecklistCall>,
+    ),
+    lead(
+        "skill_install",
+        "skill_install",
+        "Install skills (SKILL.md workflows) from a skills.sh source (owner/repo, owner/repo@skill, a GitHub URL) \
+         for this project (scope project; global skills take an admin, so the human installs those); pinned to the \
+         commit fetched, and the human updates it from Settings > Skills. Agents list it as fleetd:<name> and run it \
+         with the Skill tool.",
+        inline_schema::<SkillInstallCall>,
     ),
     lead(
         "change_enqueue",
@@ -567,6 +577,7 @@ mod tests {
             "remember",
             "memory_read",
             "checklist",
+            "skill_install",
         ] {
             assert!(lead.contains(&tool.to_owned()), "{tool}");
         }

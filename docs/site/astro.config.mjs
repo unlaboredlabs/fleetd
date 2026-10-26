@@ -46,6 +46,7 @@ export default defineConfig({
             "time-inspector",
             "what-agents-are-told",
             "mcp-servers",
+            "skills",
             "mcp-clients",
           ],
         },
