@@ -908,6 +908,9 @@ struct FakeHost {
     watched: Mutex<HashSet<String>>,
     /// The project's train settings; None reads as unreadable.
     train: Mutex<Option<fleetd_contracts::project_settings::TrainSettings>>,
+    /// Orders opened through the host, in order: request id and text. Each is `W<100 + n>`, open until closed.
+    orders: Mutex<Vec<(String, String)>>,
+    closed_orders: Mutex<HashSet<String>>,
 }
 
 impl FakeHost {
@@ -1048,7 +1051,41 @@ impl TrainHost for FakeHost {
         self.push_event("task.cancelled", json!({ "taskId": task_id }));
         Box::pin(async { Ok(()) })
     }
+    fn open_order<'a>(
+        &'a self,
+        _: &'a ProjectRef,
+        text: String,
+        request_id: String,
+    ) -> BoxFut<'a, Result<WorkstreamId, String>> {
+        let mut orders = self.orders.lock().unwrap();
+        let n = match orders.iter().position(|(r, _)| *r == request_id) {
+            Some(n) => n,
+            None => {
+                orders.push((request_id, text));
+                orders.len() - 1
+            }
+        };
+        Box::pin(async move { Ok(WorkstreamId::unchecked(format!("W{}", 100 + n))) })
+    }
     fn workstream(&self, workstream_id: &WorkstreamId) -> Option<WorkstreamView> {
+        if let Some(n) = workstream_id
+            .as_str()
+            .strip_prefix('W')
+            .and_then(|n| n.parse::<usize>().ok())
+            && n >= 100
+            && n - 100 < self.orders.lock().unwrap().len()
+        {
+            return Some(WorkstreamView {
+                workstream_id: workstream_id.clone(),
+                project_ref: project(),
+                has_brief: true,
+                open: !self
+                    .closed_orders
+                    .lock()
+                    .unwrap()
+                    .contains(workstream_id.as_str()),
+            });
+        }
         (*workstream_id == ws()).then(|| WorkstreamView {
             workstream_id: ws(),
             project_ref: project(),
@@ -1260,6 +1297,8 @@ impl Kit {
             branches: Mutex::default(),
             watched: Mutex::default(),
             train: Mutex::new(Some(Default::default())),
+            orders: Mutex::default(),
+            closed_orders: Mutex::default(),
         });
         let gate = Arc::new(FakeGate::default());
         let mut options = TrainOptions {
@@ -5563,4 +5602,213 @@ async fn a_review_whose_tools_fail_is_re_run_automatically_within_minutes() {
     assert_eq!(kit.spawned(), 5, "started at once, no wait");
     let spawns = kit.host.review_spawns.lock().unwrap();
     assert!(spawns[4].pr.ends_with("/pull/7"));
+}
+
+/// A clock the post-merge watch tests turn by hand; its sleeps return at once.
+#[derive(Default)]
+struct Dial(Mutex<Duration>);
+
+impl Dial {
+    fn turn(&self, by: Duration) {
+        *self.0.lock().unwrap() += by;
+    }
+}
+
+impl Clock for Dial {
+    fn now(&self) -> std::time::SystemTime {
+        std::time::UNIX_EPOCH + Duration::from_secs(1_800_000_000) + *self.0.lock().unwrap()
+    }
+    fn sleep(
+        &self,
+        _: Duration,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+        Box::pin(std::future::ready(()))
+    }
+}
+
+/// A repo's checks for the watch: what main requires, what the project adds, and the slow check the train doesn't
+/// wait for.
+struct Slow {
+    required: &'static [&'static str],
+    fast: &'static [&'static str],
+    slow: &'static str,
+}
+
+const SLOW: [Slow; 2] = [
+    Slow {
+        required: &["build"],
+        fast: &[],
+        slow: "e2e (macos-latest)",
+    },
+    Slow {
+        required: &["fmt", "unit (linux)"],
+        fast: &["integration"],
+        slow: "bench",
+    },
+];
+
+/// W54: after a merge, the train watches the checks it didn't wait for on the merged commit, in any repo. One that
+/// fails opens a fix order for the project, plainly worded with the run's link, once per failure: the same check
+/// failing again on the next merge, while that order is open, opens none, and once the order is closed a new failure
+/// opens a new one. Once every check finished, the watch ends.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_check_that_fails_after_the_merge_opens_one_fix_order() {
+    for repo in &SLOW {
+        let clock = Arc::new(Dial::default());
+        let kit = Kit::build(FakeCi::Actions, |_| {}, false, clock.clone());
+        *kit.gh.required.lock().unwrap() =
+            Some(repo.required.iter().map(|s| s.to_string()).collect());
+        *kit.host.train.lock().unwrap() = Some(train_settings(repo.fast, &[]));
+        // The slow check runs while the train merges, then fails on main.
+        let failed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (now, slow, names) = (
+            failed.clone(),
+            repo.slow,
+            repo.required
+                .iter()
+                .chain(repo.fast)
+                .copied()
+                .collect::<Vec<_>>(),
+        );
+        answer_checks(&kit, move || {
+            let mut runs: Vec<Value> = names
+                .iter()
+                .enumerate()
+                .map(|(i, n)| run(i as u64 + 1, n, Some("success")))
+                .collect();
+            let done = now.load(std::sync::atomic::Ordering::SeqCst);
+            runs.push(run(50, slow, done.then_some("failure")));
+            runs
+        });
+        let orders = || kit.host.orders.lock().unwrap().clone();
+
+        let a = kit
+            .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+            .await;
+        assert!(kit.train.step(REPO).await);
+        assert_eq!(
+            state_of(&kit, &a),
+            ChangeState::Merged,
+            "the train doesn't wait for {slow}"
+        );
+        let merged = kit.head_of("main");
+        assert!(orders().is_empty(), "nothing failed yet");
+
+        failed.store(true, std::sync::atomic::Ordering::SeqCst);
+        kit.train.step(REPO).await;
+        let opened = orders();
+        assert_eq!(opened.len(), 1, "{:?}", repo.required);
+        let text = &opened[0].1;
+        assert!(text.starts_with(&format!("Fix the check `{slow}` on main: it failed after the merge train merged https://github.com/{REPO}/pull/7 as {}.", &merged[..12])), "{text}");
+        assert!(
+            text.contains(&format!("https://github.com/{REPO}/actions/runs/50/job/50")),
+            "{text}"
+        );
+        kit.train.step(REPO).await;
+        assert_eq!(orders().len(), 1, "once per failure");
+
+        // The next merge's commit fails the same check while the order is open: still that order's.
+        let b = kit
+            .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]))
+            .await;
+        failed.store(false, std::sync::atomic::Ordering::SeqCst);
+        assert!(kit.train.step(REPO).await);
+        assert_eq!(state_of(&kit, &b), ChangeState::Merged);
+        failed.store(true, std::sync::atomic::Ordering::SeqCst);
+        kit.train.step(REPO).await;
+        assert_eq!(orders().len(), 1, "the open order has it");
+
+        // Its order closed, a new failure opens a new one.
+        kit.host.closed_orders.lock().unwrap().insert("W100".into());
+        let c = kit
+            .enqueue(kit.open_pr(9, "c", &[add("c1.txt", "c\n")]))
+            .await;
+        failed.store(false, std::sync::atomic::Ordering::SeqCst);
+        assert!(kit.train.step(REPO).await);
+        assert_eq!(state_of(&kit, &c), ChangeState::Merged);
+        failed.store(true, std::sync::atomic::Ordering::SeqCst);
+        kit.train.step(REPO).await;
+        assert_eq!(orders().len(), 2);
+
+        // Every check finished: the watches end once they settled.
+        clock.turn(Duration::from_secs(6 * 60));
+        kit.train.step(REPO).await;
+        assert!(kit.train.records.watches(REPO).is_empty());
+    }
+}
+
+/// With nothing required and nothing added, the train waited for every check before merging: nothing is watched after.
+#[tokio::test(flavor = "multi_thread")]
+async fn with_an_empty_fast_set_nothing_fails_after_the_merge() {
+    let kit = Kit::new();
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &a), ChangeState::Merged);
+    answer_checks(&kit, || vec![run(1, "ci", Some("failure"))]);
+    kit.train.step(REPO).await;
+    assert!(kit.host.orders.lock().unwrap().is_empty());
+}
+
+/// Review of #554: a re-review still at work `review_wait` after CI passed leaves the train for review and waits
+/// there, out of the line: the train doesn't take it again, rebase it or run its CI again until the review is done,
+/// and then it merges on that CI.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_overdue_re_review_waits_out_of_the_line_until_it_is_done() {
+    let kit = Kit::with_reviews_waiting(Duration::from_millis(200));
+    let change = kit
+        .approved(
+            7,
+            "m",
+            &[("a.txt", Some(&a_with(&[(6, "pr line 6")])))],
+            "T50",
+        )
+        .await;
+    kit.commit(
+        "main",
+        &[("a.txt", Some(&a_with(&[(4, "main line 4")])))],
+        None,
+    );
+    let into_ci = || {
+        kit.host
+            .events_of("change.state")
+            .iter()
+            .filter(|e| e["changeId"] == json!(change.change_id) && e["to"] == json!("ci"))
+            .count()
+    };
+
+    assert!(kit.train.step(REPO).await);
+    let waiting = kit.get(&change.change_id);
+    assert_eq!(waiting.state, ChangeState::Reviewing);
+    assert!(
+        waiting
+            .last_error
+            .as_deref()
+            .unwrap()
+            .contains("it waits in review, out of the line"),
+        "{:?}",
+        waiting.last_error
+    );
+    assert_eq!(into_ci(), 1);
+    let tested = kit.head_of("m");
+
+    for _ in 0..3 {
+        kit.train.step(REPO).await;
+    }
+    assert_eq!(state_of(&kit, &change), ChangeState::Reviewing);
+    assert_eq!(
+        into_ci(),
+        1,
+        "never taken into CI again while its review runs"
+    );
+    assert_eq!(kit.head_of("m"), tested, "never rebased again");
+    assert_eq!(kit.spawned(), 2, "the one re-review goes on");
+
+    let cursor = kit.host.events_head();
+    kit.verdict("T51", &tested, 0);
+    kit.host.next_event(cursor, "change.ready").await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &change), ChangeState::Merged);
+    assert_eq!(*kit.gh.merges.lock().unwrap(), [(7, tested)]);
 }

@@ -105,6 +105,7 @@ pub enum WorkstreamState {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
+#[schemars(extend("x-open" = true))]
 pub enum IntakeChannel {
     // The removed phone app wrote "phone"; old records read back as the app.
     #[serde(alias = "phone")]
@@ -113,6 +114,8 @@ pub enum IntakeChannel {
     Lead,
     /// A run of one of the project's automations; `by` is "automation:<automationId>".
     Automation,
+    /// The merge train's watch after a merge: a check it doesn't wait for failed on the base; `by` is "hub:train".
+    Train,
 }
 
 /// The one-line intent as submitted.

@@ -106,6 +106,28 @@ impl TrainHost for HubHost {
         }
     }
 
+    fn open_order<'a>(
+        &'a self,
+        project_ref: &'a ProjectRef,
+        text: String,
+        request_id: String,
+    ) -> BoxFut<'a, Result<WorkstreamId, String>> {
+        Box::pin(async move {
+            let hub = self.hub().ok_or("the hub is stopping")?;
+            hub.leads
+                .workstreams
+                .intake(crate::hub::leads::workstreams::IntakeInput {
+                    project_ref: project_ref.clone(),
+                    text,
+                    client_request_id: request_id,
+                    channel: fleetd_contracts::ledger::IntakeChannel::Train,
+                    by: super::service::TRAIN_BY.to_string(),
+                })
+                .map(|o| o.workstream_id)
+                .map_err(|e| e.message)
+        })
+    }
+
     fn task(&self, task_id: &TaskId) -> Option<TaskView> {
         match self.hub()?.tasks.get(task_id) {
             Ok(task) => task.map(task_view),

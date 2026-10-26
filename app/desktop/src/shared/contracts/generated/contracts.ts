@@ -2019,7 +2019,9 @@ export type KnownInsightRule = "full_suite_repeat" | "repeat_no_change" | "slow_
 /** KnownInsightRule, or a value from a newer hub. */
 export type InsightRule = KnownInsightRule | (string & {});
 
-export type IntakeChannel = "app" | "mcp" | "lead" | "automation";
+export type KnownIntakeChannel = "app" | "mcp" | "lead" | "automation" | "train";
+/** KnownIntakeChannel, or a value from a newer hub. */
+export type IntakeChannel = KnownIntakeChannel | (string & {});
 
 /**
  * Something an order or note points at: a file of the project, another order, or a PR. The hub renders these into
@@ -5069,7 +5071,9 @@ export type TrainLive = {
  * branch requires, read from its ruleset or branch protection, plus `fastChecks`, each until it reports, however late
  * it starts. It never waits for any other check; one of those that has already failed when the fast set is green
  * still stops the merge, unless it is in `afterMerge`. A check the base requires is always in the fast set: GitHub
- * won't merge without it. With no required check and none added, it waits for every check.
+ * won't merge without it. With no required check and none added, it waits for every check. After a merge it watches
+ * every check outside the fast set on the merged commit; one that fails there opens a fix order for the project,
+ * once per failure.
  */
 export type TrainSettings = {
   /** Checks that never stop a merge, even once failed: they only run after it. */

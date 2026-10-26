@@ -14,6 +14,7 @@ pub mod records;
 pub mod rules;
 pub mod service;
 pub mod tools;
+pub mod watch;
 
 #[cfg(test)]
 mod tests;

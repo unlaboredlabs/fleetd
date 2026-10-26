@@ -44,6 +44,15 @@ fleetd project set lab-a/storefront --fast-check "test (ubuntu-latest)" --after-
 
 Each option may repeat, and replaces its list; `none` empties it. The train uses new settings from its next pass.
 
+## After the merge {#after-merge}
+
+The train watches the checks it didn't wait for on the commit it merged onto the base. When one fails there, fleetd
+opens a fix order for the project, so its lead takes it up like any order: it names the check, the base, the PR that
+merged and the run's link. One failure opens one order. The same check failing again on the next merges, while that
+order is open, is that order's; once it is closed, a new failure opens a new one. A cancelled run is no failure. The
+watch ends once every check on the commit has finished, and after 6 hours at most. With an empty fast set the train
+waited for every check, so there is nothing to watch.
+
 ## How long CI may take {#ci-time}
 
 The train gives a commit's CI 45 minutes of running time, counted from when its first check starts. Time the checks

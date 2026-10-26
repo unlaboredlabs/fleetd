@@ -474,9 +474,11 @@ impl Train {
     }
 
     /// A Change in review, approved at an earlier patch, whose re-review is at work: it may go through the train
-    /// meanwhile, the merge waiting for both.
+    /// meanwhile, the merge waiting for both. Not once that review outlasted `review_wait` in the train: it then waits
+    /// out of the line until the review is done.
     pub(super) fn rereviewing(&self, change: &Change) -> bool {
         change.state == ChangeState::Reviewing
+            && !self.overdue_review(change)
             && change.patch_id.as_ref().is_some_and(|patch| {
                 change
                     .reviews
@@ -692,7 +694,7 @@ impl Train {
                         ));
                     }
                     ReviewWait::Waiting => {
-                        self.to_review(change, Some(&self.review_overdue(&change.head_sha)));
+                        self.to_review(change, Some(&self.review_overdue(change)));
                         dropped.push(format!(
                             "#{}'s re-review is still at work",
                             change.pr_number
@@ -754,6 +756,8 @@ impl Train {
             .await
         {
             Ok(MergeOutcome::Merged { sha: merged_sha }) => {
+                let batch_url = format!("https://github.com/{repo}/pull/{pr}");
+                self.watch_merge(repo, base, &merged_sha, &batch_url);
                 let landed = Landed {
                     pr_number: pr,
                     merged_sha,
