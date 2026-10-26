@@ -2824,6 +2824,66 @@ async fn only_reviewed_held_free_and_own_green_prs_join_a_batch() {
     assert!(kit.main_file("m1.txt").is_none());
 }
 
+fn set_draft(kit: &Kit, number: i64, draft: bool) {
+    kit.gh.pulls.lock().unwrap().get_mut(&number).unwrap().draft = draft;
+}
+
+/// A draft is recorded but never reviewed, rebased, tested or merged, and never holds the front of the line: the ready
+/// PR behind it merges. Turned into a draft once ready, a PR waits the same way. Marked ready, each is taken.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_draft_waits_at_the_back_of_the_line_and_is_taken_once_marked_ready() {
+    let kit = Kit::new();
+    let pr = kit.open_pr(7, "d", &[add("d1.txt", "d\n")]);
+    set_draft(&kit, 7, true);
+    let draft = kit.enqueue(pr).await;
+    let ready = kit
+        .enqueue(kit.open_pr(8, "r", &[add("r1.txt", "r\n")]))
+        .await;
+    let head = kit.head_of("d");
+
+    assert_eq!(draft.state, ChangeState::Queued);
+    assert_eq!(draft.last_error.as_deref(), Some(super::records::DRAFT));
+    assert_eq!(
+        kit.get(&draft.change_id).position.map(|p| p.get()),
+        Some(1),
+        "behind the ready PR"
+    );
+    let queue: Vec<ChangeId> = kit.train.state(REPO).queue.iter().cloned().collect();
+    assert_eq!(queue, [ready.change_id.clone(), draft.change_id.clone()]);
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(merged_prs(&kit), [8], "only the ready PR");
+    assert_eq!(state_of(&kit, &ready), ChangeState::Merged);
+    let waiting = kit.get(&draft.change_id);
+    assert_eq!(waiting.state, ChangeState::Queued, "never sent to review");
+    assert_eq!(waiting.last_error.as_deref(), Some(super::records::DRAFT));
+    assert!(!kit.train.step(REPO).await, "the draft alone is not taken");
+    assert_eq!(kit.head_of("d"), head, "never rebased or pushed");
+    assert!(
+        !kit.gh.statuses.lock().unwrap().iter().any(|s| s.2 == head),
+        "no status on the draft's head"
+    );
+
+    set_draft(&kit, 7, false);
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(merged_prs(&kit), [8, 7]);
+    assert_eq!(state_of(&kit, &draft), ChangeState::Merged);
+
+    // Ready, then turned back into a draft: it stays ready but is not taken.
+    let later = kit
+        .enqueue(kit.open_pr(9, "l", &[add("l1.txt", "l\n")]))
+        .await;
+    assert_eq!(later.state, ChangeState::Ready);
+    set_draft(&kit, 9, true);
+    assert!(!kit.train.step(REPO).await);
+    let held = kit.get(&later.change_id);
+    assert_eq!(held.state, ChangeState::Ready);
+    assert_eq!(held.last_error.as_deref(), Some(super::records::DRAFT));
+    set_draft(&kit, 9, false);
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(merged_prs(&kit), [8, 7, 9]);
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn required_checks_and_githubs_rules_still_block_a_batch() {
     // Checks the base requires never report: neither is green on its own, so no batch forms, and each alone times out,

@@ -21,7 +21,7 @@ use super::github::{
 };
 use super::host::{BoxFut, TrainHost};
 use super::main_ci::{GithubSync, MainCi, ci_state};
-use super::records::{ChangeRecords, Db, HEAD_STATES, ListFilter, QUEUED_STATES};
+use super::records::{ChangeRecords, DRAFT, Db, HEAD_STATES, ListFilter, QUEUED_STATES, is_draft};
 use super::rules::Refusal;
 use crate::clock::Clock;
 use crate::hub::leads::events::Event;
@@ -570,7 +570,7 @@ impl Train {
                 queues.insert(
                     c.repo.to_string(),
                     self.records
-                        .in_train(&c.repo, QUEUED_STATES)
+                        .line(&c.repo)
                         .into_iter()
                         .map(|c| c.change_id)
                         .collect(),
@@ -1647,6 +1647,8 @@ impl Train {
                 self.abandon(&change, "was merged outside the train").await;
             } else if pull.state != "open" {
                 self.abandon(&change, "was closed").await;
+            } else if change.state == ChangeState::Queued && pull.draft {
+                self.hold_draft(&change);
             } else if change.state == ChangeState::Queued
                 || pull.head.sha.to_lowercase() != change.head_sha.as_str()
             {
@@ -1664,6 +1666,16 @@ impl Train {
             } else if timed_out(&change) {
                 self.after_timeout(&change).await;
             }
+        }
+    }
+
+    /// A queued Change whose PR is a draft waits there, saying so, until the PR is marked ready.
+    fn hold_draft(&self, change: &Change) {
+        if !is_draft(change) {
+            self.update(&change.change_id, Some(&[ChangeState::Queued]), |mut c| {
+                c.last_error = Some(last_error(DRAFT));
+                c
+            });
         }
     }
 
@@ -2235,7 +2247,9 @@ impl Train {
             json!({ "changeId": change.change_id, "workstreamId": change.workstream_id, "repo": repo, "prNumber": change.pr_number }),
         );
         // If reading the patch id fails, the loop retries it from `queued`.
-        if let Err(e) = self.admit(&change, &pull).await {
+        if pull.draft {
+            self.hold_draft(&change);
+        } else if let Err(e) = self.admit(&change, &pull).await {
             let why = error_text(&format!("GitHub: {}", e.message));
             self.update(&change.change_id, Some(&[ChangeState::Queued]), |mut c| {
                 c.last_error = Some(why);
