@@ -729,3 +729,56 @@ async fn a_takeover_holds_only_once_the_node_says_it_acted() {
     assert_eq!(took["session"]["control"], "human");
     node.await.unwrap();
 }
+
+#[tokio::test]
+async fn a_browser_control_whose_send_failed_or_that_was_dropped_leaves_no_wait() {
+    let (hub, _clock, _home) = hub();
+    let r = project("storefront");
+    node_call(&hub, &r, report(S1, "live", json!([])), "browser_session")
+        .await
+        .unwrap();
+    let id = fleetd_contracts::browser::BrowserSessionId::unchecked(S1);
+    let devbox = MachineId::unchecked("devbox");
+    let operator = person(json!([{ "role": "operate", "machines": "*" }]));
+    let input = json!({ "sessionId": S1, "control": "human" });
+
+    // The node says it takes takeovers, but its link is gone by the time the frame goes out.
+    hub.link
+        .set_capabilities(&devbox, &[fleetd_contracts::node_link::CAP_BROWSER]);
+    let offline = tool(&hub, &operator, "browser_control", input.clone())
+        .await
+        .unwrap_err();
+    assert!(
+        format!("{offline:?}").contains("isn't connected"),
+        "{offline:?}"
+    );
+    assert_eq!(
+        hub.link.browser_live.awaiting(&id),
+        0,
+        "a failed send leaves no wait"
+    );
+
+    // A call dropped while it waits (its client went) leaves none either.
+    let _to_node = hub
+        .link
+        .test_link(&devbox, &[fleetd_contracts::node_link::CAP_BROWSER]);
+    let calling = {
+        let (hub, operator, input) = (hub.clone(), operator.clone(), input.clone());
+        tokio::spawn(async move { tool(&hub, &operator, "browser_control", input).await })
+    };
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while hub.link.browser_live.awaiting(&id) == 0 {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the call never waited"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    calling.abort();
+    assert!(calling.await.unwrap_err().is_cancelled());
+    assert_eq!(
+        hub.link.browser_live.awaiting(&id),
+        0,
+        "a dropped call leaves no wait"
+    );
+}

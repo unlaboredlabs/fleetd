@@ -142,7 +142,13 @@ impl Masker {
         for (name, value) in secrets.iter().filter(|(_, v)| v.len() >= MIN_LEN) {
             let shown = format!("***{name}***");
             let json = serde_json::to_string(value).unwrap_or_default();
-            let mut forms = vec![json.trim_matches('"').to_owned(), html_escaped(value)];
+            let mut forms = vec![
+                json.trim_matches('"').to_owned(),
+                html_escaped(value),
+                // As a page's script posts it: encodeURIComponent with `+` for a space (a form encodes it as
+                // form_encoded does, which Masker::new matches).
+                percent(value).replace("%20", "+"),
+            ];
             for prefix in 0..3 {
                 let mut bytes = vec![0u8; prefix];
                 bytes.extend_from_slice(value.as_bytes());
@@ -306,6 +312,18 @@ impl Masker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_thorough_masker_also_catches_what_a_script_posts_with_plus_for_space() {
+        let value = "it's a top secret!";
+        let m = Masker::thorough(&[("CODE".into(), value.into())]);
+        let posted = format!("code={}", percent(value).replace("%20", "+"));
+        assert_eq!(posted, "code=it's+a+top+secret!");
+        assert_eq!(m.text(&posted), "code=***CODE***");
+        // And as a form encodes it.
+        let submitted = format!("code={}", form_encoded(value));
+        assert_eq!(m.text(&submitted), "code=***CODE***");
+    }
 
     #[test]
     fn a_secret_is_masked_as_a_form_sends_it() {

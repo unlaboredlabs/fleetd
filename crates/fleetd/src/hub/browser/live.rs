@@ -111,11 +111,8 @@ impl Live {
             .collect()
     }
 
-    /// The control the node reports for `session` from now on, report by report.
-    pub fn await_control(
-        &self,
-        session: &BrowserSessionId,
-    ) -> tokio::sync::mpsc::UnboundedReceiver<BrowserControl> {
+    /// The control the node reports for `session` from now on, report by report, until the wait is dropped.
+    pub fn await_control(self: &Arc<Self>, session: &BrowserSessionId) -> ControlWait {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         self.controls
             .lock()
@@ -123,7 +120,11 @@ impl Live {
             .entry(session.clone())
             .or_default()
             .push(tx);
-        rx
+        ControlWait {
+            reports: rx,
+            live: Arc::downgrade(self),
+            session: session.clone(),
+        }
     }
 
     /// Drops the waits on `session` whose call has stopped waiting (it gave up, or was answered), and the session's
@@ -166,6 +167,30 @@ impl Live {
 
     pub fn watchers(&self, session: &BrowserSessionId) -> usize {
         self.lock().get(session).map_or(0, |(_, n)| *n)
+    }
+}
+
+/// A `browser_control` call's wait for its node's report. However the call ends (answered, timed out, its send
+/// failed, or the call itself was dropped), dropping this leaves no wait behind for the session.
+pub struct ControlWait {
+    reports: tokio::sync::mpsc::UnboundedReceiver<BrowserControl>,
+    live: Weak<Live>,
+    session: BrowserSessionId,
+}
+
+impl ControlWait {
+    /// The next control the node reports for the session.
+    pub async fn recv(&mut self) -> Option<BrowserControl> {
+        self.reports.recv().await
+    }
+}
+
+impl Drop for ControlWait {
+    fn drop(&mut self) {
+        self.reports.close();
+        if let Some(live) = self.live.upgrade() {
+            live.drop_closed(&self.session);
+        }
     }
 }
 
