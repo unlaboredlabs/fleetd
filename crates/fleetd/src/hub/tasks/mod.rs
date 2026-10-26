@@ -1036,7 +1036,12 @@ impl Tasks {
                 .recovery
                 .as_ref()
                 .is_some_and(|r| r.next_at.is_some());
-            if recovering && self.stopped(&stored.task).unwrap_or(false) {
+            if recovering
+                && self
+                    .cut_off_at(&stored.task)
+                    .and_then(|at| self.stopped(&stored.task, at))
+                    .unwrap_or(false)
+            {
                 tracing::info!(
                     task_id = stored.task.task_id.as_str(),
                     "recovering task not resumed: its work is over"
@@ -1257,10 +1262,16 @@ impl Tasks {
             last.as_deref(),
         );
         let opened = ran.then(|| self.count_death(task, death.kind)).flatten();
+        // A node going away says nothing of the work: a merge it ran on past (T514's first PR, then more work) ends
+        // nothing. Any other death counts a merge since its run started.
+        let merged_after = match death.kind {
+            recovery::Kind::NodeLost => event.seq.get(),
+            _ => self.run_started_at(thread, event)?,
+        };
         let action = recovery::decide(
             &death,
             task.recovery.as_ref(),
-            !ran || self.stopped(task)?,
+            !ran || self.stopped(task, merged_after)?,
             now_ms(self.d.clock.as_ref()),
             rand::random(),
             recovery::max(),
@@ -1353,7 +1364,7 @@ impl Tasks {
         let action = recovery::decide(
             &death,
             task.recovery.as_ref(),
-            self.stopped(task)?,
+            self.stopped(task, self.cut_off_at(task)?)?,
             now_ms(self.d.clock.as_ref()),
             rand::random(),
             recovery::max(),
@@ -1598,8 +1609,9 @@ impl Tasks {
     }
 
     /// Whether the task's work is over, so a dead run of it isn't resumed: it was cancelled, its workstream is closed,
-    /// or its PR merged.
-    fn stopped(&self, task: &Task) -> Result<bool, StoreError> {
+    /// or its PR merged after event `merged_after`. A merge from before that is a PR it went on past: a lead that
+    /// continues a task after its first PR merged has more for it to do.
+    fn stopped(&self, task: &Task, merged_after: i64) -> Result<bool, StoreError> {
         if task.state == TaskState::Cancelled
             || self
                 .workstream(&task.workstream_id)
@@ -1609,11 +1621,49 @@ impl Tasks {
         }
         let merged = self.db(|c| {
             c.prepare_cached(
-                "SELECT EXISTS (SELECT 1 FROM events WHERE type = 'pr.merged' AND json_extract(data, '$.data.taskId') = ?)",
+                "SELECT EXISTS (SELECT 1 FROM events WHERE type = 'pr.merged' AND seq > ?2
+                   AND json_extract(data, '$.data.taskId') = ?1)",
             )?
-            .query_row([task.task_id.as_str()], |r| r.get::<_, bool>(0))
+            .query_row(
+                rusqlite::params![task.task_id.as_str(), merged_after],
+                |r| r.get::<_, bool>(0),
+            )
         })?;
         Ok(merged)
+    }
+
+    /// The event that started the run a death `event` ended; 0 when the hub saw none start.
+    fn run_started_at(&self, thread: &ThreadRef, event: &HubEvent) -> Result<i64, StoreError> {
+        let Some(run) = event.data.as_ref().and_then(|d| d["runId"].as_str()) else {
+            return Ok(0);
+        };
+        self.db(|c| {
+            c.prepare_cached(
+                "SELECT COALESCE(MAX(seq), 0) FROM events WHERE type = 'thread.started' AND machine_id = ?1
+                   AND json_extract(data, '$.threadId') = ?2 AND json_extract(data, '$.data.runId') = ?3",
+            )?
+            .query_row(
+                [thread.machine_id.as_str(), thread.thread_id.as_str(), run],
+                |r| r.get(0),
+            )
+        })
+    }
+
+    /// The death that cut the task's thread off last; 0 when none did. Its PR merged since: its work is in.
+    fn cut_off_at(&self, task: &Task) -> Result<i64, StoreError> {
+        let Some(thread) = &task.thread_ref else {
+            return Ok(0);
+        };
+        self.db(|c| {
+            c.prepare_cached(
+                "SELECT COALESCE(MAX(seq), 0) FROM events WHERE type IN ('thread.failed', 'thread.interrupted')
+                   AND machine_id = ?1 AND json_extract(data, '$.threadId') = ?2",
+            )?
+            .query_row(
+                [thread.machine_id.as_str(), thread.thread_id.as_str()],
+                |r| r.get(0),
+            )
+        })
     }
 
     /// Runs again the pending PR lookups (of the machine's tasks, or all): at start, for those a hub restart cut
