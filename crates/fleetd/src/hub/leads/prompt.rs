@@ -4,6 +4,12 @@ use fleetd_contracts::ids::ProjectRef;
 
 use crate::hub::prompts::PromptSet;
 
+/// An automation's order, and the tools that manage them.
+const AUTOMATIONS: &str = "## Automations\nAn order that says \"From automation\" is a run of one of this project's \
+automations: start its work without asking the human first; reviews, the train and approvals still apply. For \
+recurring or triggered work the human asks for, use `automation_create`, `automation_list`, `automation_update`, \
+`automation_pause`, `automation_delete`, `automation_run` and `automation_runs`.";
+
 pub fn render_lead_start(
     set: &PromptSet,
     project_ref: &ProjectRef,
@@ -30,7 +36,7 @@ pub fn render_lead_start(
     };
     let voice = set.render("lead.voice", &[]);
     let first = set.with_instructions(format!(
-        "{}\n\n{}{profiles}\n\n{digest}",
+        "{}\n\n{}{profiles}\n\n{AUTOMATIONS}\n\n{digest}",
         start.trim_end(),
         voice.trim_end()
     ));

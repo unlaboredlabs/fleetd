@@ -117,12 +117,21 @@
       "type": "string"
     },
     "IntakeChannel": {
-      "enum": [
-        "app",
-        "mcp",
-        "lead"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "enum": [
+            "app",
+            "mcp",
+            "lead"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "automation",
+          "description": "A run of one of the project's automations; `by` is \"automation:<automationId>\".",
+          "type": "string"
+        }
+      ]
     },
     "Lead": {
       "properties": {

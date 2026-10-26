@@ -114,11 +114,27 @@ impl Trigger {
     }
 }
 
+/// The longest order said in one line, as `Event::Order` quotes it.
+const ORDER_LINE: usize = 300;
+
 /// One event line per trigger, in the order they came.
 pub fn trigger_lines(triggers: &[Trigger]) -> Vec<String> {
     triggers
         .iter()
         .map(|t| match t {
+            Trigger::Intent {
+                workstream_id,
+                text,
+            } if text.contains('\n') || text.chars().count() > ORDER_LINE => {
+                // An order that says more than a line (an automation's prompt, trigger and body) goes in whole: the
+                // one line would cut it.
+                let body: Vec<String> = text
+                    .trim()
+                    .lines()
+                    .map(|l| format!("  {l}").trim_end().to_owned())
+                    .collect();
+                format!("- new order {workstream_id}, in full:\n{}", body.join("\n"))
+            }
             Trigger::Intent {
                 workstream_id,
                 text,

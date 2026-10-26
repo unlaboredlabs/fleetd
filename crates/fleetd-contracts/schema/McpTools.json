@@ -889,6 +889,508 @@
       ],
       "type": "string"
     },
+    "Automation": {
+      "properties": {
+        "automationId": {
+          "$ref": "#/$defs/AutomationId"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "createdBy": {
+          "description": "Who made it: a keyId, \"human\" or \"lead:<machineId>/<projectId>\".",
+          "type": "string"
+        },
+        "lastRun": {
+          "$ref": "#/$defs/AutomationRun"
+        },
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "nextRunAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "The schedule's next run; absent while paused or without a schedule."
+        },
+        "paused": {
+          "description": "A paused automation's schedule and webhook start nothing; Run now still runs it.",
+          "type": "boolean"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "prompt": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "schedule": {
+          "$ref": "#/$defs/AutomationSchedule",
+          "description": "Absent: no schedule."
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "webhook": {
+          "description": "Whether it has a webhook URL. The URL holds a secret, shown once when it is made or rotated.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "automationId",
+        "projectRef",
+        "name",
+        "prompt",
+        "webhook",
+        "paused",
+        "createdBy",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "AutomationCreateInput": {
+      "properties": {
+        "clientRequestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "prompt": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "schedule": {
+          "$ref": "#/$defs/AutomationSchedule"
+        },
+        "webhook": {
+          "default": false,
+          "description": "Give it a webhook URL.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "projectRef",
+        "name",
+        "prompt",
+        "clientRequestId"
+      ],
+      "type": "object"
+    },
+    "AutomationCreateOutput": {
+      "properties": {
+        "automation": {
+          "$ref": "#/$defs/Automation"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "webhookUrl": {
+          "description": "Shown once: POST to it to start a run with the body as context.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "automation"
+      ],
+      "type": "object"
+    },
+    "AutomationDeleteInput": {
+      "properties": {
+        "automationId": {
+          "$ref": "#/$defs/AutomationId"
+        }
+      },
+      "required": [
+        "automationId"
+      ],
+      "type": "object"
+    },
+    "AutomationDeleteOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "ok": {
+          "enum": [
+            true
+          ],
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "type": "object"
+    },
+    "AutomationId": {
+      "pattern": "^au_[A-Za-z0-9_-]{6,40}$",
+      "type": "string"
+    },
+    "AutomationListInput": {
+      "properties": {
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "projectRef"
+      ],
+      "type": "object"
+    },
+    "AutomationListOutput": {
+      "properties": {
+        "automations": {
+          "items": {
+            "$ref": "#/$defs/Automation"
+          },
+          "maxItems": 50,
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "automations"
+      ],
+      "type": "object"
+    },
+    "AutomationPauseInput": {
+      "properties": {
+        "automationId": {
+          "$ref": "#/$defs/AutomationId"
+        },
+        "paused": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "automationId",
+        "paused"
+      ],
+      "type": "object"
+    },
+    "AutomationPauseOutput": {
+      "properties": {
+        "automation": {
+          "$ref": "#/$defs/Automation"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "automation"
+      ],
+      "type": "object"
+    },
+    "AutomationRotateInput": {
+      "properties": {
+        "automationId": {
+          "$ref": "#/$defs/AutomationId"
+        }
+      },
+      "required": [
+        "automationId"
+      ],
+      "type": "object"
+    },
+    "AutomationRotateOutput": {
+      "properties": {
+        "automation": {
+          "$ref": "#/$defs/Automation"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "webhookUrl": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "automation",
+        "webhookUrl"
+      ],
+      "type": "object"
+    },
+    "AutomationRun": {
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "automationId": {
+          "$ref": "#/$defs/AutomationId"
+        },
+        "by": {
+          "description": "Who pressed Run now: a keyId, \"human\" or \"lead:<machineId>/<projectId>\".",
+          "type": "string"
+        },
+        "endedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "lateMin": {
+          "description": "A scheduled run the hub was down for, run once on its return: by how many minutes.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "payloadBytes": {
+          "description": "A webhook run: the size of the body it carried. The body itself is in automation_runs only.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "runId": {
+          "$ref": "#/$defs/AutomationRunId"
+        },
+        "scheduledAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "A scheduled run: the time it was due."
+        },
+        "state": {
+          "$ref": "#/$defs/AutomationRunState"
+        },
+        "trigger": {
+          "$ref": "#/$defs/AutomationTrigger"
+        },
+        "why": {
+          "description": "Why it was skipped or failed.",
+          "maxLength": 200,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId",
+          "description": "The order it opened."
+        }
+      },
+      "required": [
+        "runId",
+        "automationId",
+        "trigger",
+        "at",
+        "state"
+      ],
+      "type": "object"
+    },
+    "AutomationRunId": {
+      "pattern": "^ar_[A-Za-z0-9_-]{6,40}$",
+      "type": "string"
+    },
+    "AutomationRunInput": {
+      "properties": {
+        "automationId": {
+          "$ref": "#/$defs/AutomationId"
+        }
+      },
+      "required": [
+        "automationId"
+      ],
+      "type": "object"
+    },
+    "AutomationRunOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "run": {
+          "$ref": "#/$defs/AutomationRun"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "run"
+      ],
+      "type": "object"
+    },
+    "AutomationRunState": {
+      "oneOf": [
+        {
+          "const": "running",
+          "description": "Its order is open.",
+          "type": "string"
+        },
+        {
+          "const": "done",
+          "description": "Its order was closed as done.",
+          "type": "string"
+        },
+        {
+          "const": "stopped",
+          "description": "Its order was stopped.",
+          "type": "string"
+        },
+        {
+          "const": "skipped",
+          "description": "It came while another run was going, or while the automation was paused; `why` says which.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "Its order could not be opened; `why` says why.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "AutomationRunsInput": {
+      "properties": {
+        "automationId": {
+          "$ref": "#/$defs/AutomationId"
+        },
+        "limit": {
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "automationId",
+        "limit"
+      ],
+      "type": "object"
+    },
+    "AutomationRunsOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "runs": {
+          "items": {
+            "$ref": "#/$defs/AutomationRun"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "runs"
+      ],
+      "type": "object"
+    },
+    "AutomationSchedule": {
+      "description": "Standard 5-field cron (or @daily, @hourly…) read in `tz`; the hub parses it.",
+      "properties": {
+        "cron": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "tz": {
+          "$ref": "#/$defs/TimeZone"
+        }
+      },
+      "required": [
+        "cron",
+        "tz"
+      ],
+      "type": "object"
+    },
+    "AutomationTrigger": {
+      "description": "What started a run.",
+      "oneOf": [
+        {
+          "enum": [
+            "schedule",
+            "webhook"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "manual",
+          "description": "Run now, from the app or the lead.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "AutomationUpdateInput": {
+      "properties": {
+        "automationId": {
+          "$ref": "#/$defs/AutomationId"
+        },
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "prompt": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "removeSchedule": {
+          "description": "true: take its schedule off.",
+          "type": "boolean"
+        },
+        "schedule": {
+          "$ref": "#/$defs/AutomationSchedule"
+        },
+        "webhook": {
+          "description": "true adds a webhook URL (kept if it has one); false removes it.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "automationId"
+      ],
+      "type": "object"
+    },
+    "AutomationUpdateOutput": {
+      "properties": {
+        "automation": {
+          "$ref": "#/$defs/Automation"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "webhookUrl": {
+          "description": "Only when this update made its webhook URL.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "automation"
+      ],
+      "type": "object"
+    },
     "BaseError": {
       "properties": {
         "kind": {
@@ -4225,6 +4727,16 @@
           "const": "memory.changed",
           "description": "A memory file changed (a lead's `remember`, an Undo, an edit in the app): `data.scope`, `data.projectRef`\n(project scope), `data.topic`, `data.by`. The text is not in the event; memory_get reads it.",
           "type": "string"
+        },
+        {
+          "const": "automation.changed",
+          "description": "An automation was made, edited, paused, resumed, deleted or had its webhook URL rotated: `data.projectRef`,\n`data.automationId`, `data.change`. automation_list reads it.",
+          "type": "string"
+        },
+        {
+          "const": "automation.run",
+          "description": "An automation ran (its order opened) or a trigger was skipped: `data.projectRef`, `data.automationId`,\n`data.runId`, `data.trigger`, `data.state`, `data.workstreamId`. Never the webhook body.",
+          "type": "string"
         }
       ],
       "x-open": true
@@ -4554,12 +5066,21 @@
       "x-open": true
     },
     "IntakeChannel": {
-      "enum": [
-        "app",
-        "mcp",
-        "lead"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "enum": [
+            "app",
+            "mcp",
+            "lead"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "automation",
+          "description": "A run of one of the project's automations; `by` is \"automation:<automationId>\".",
+          "type": "string"
+        }
+      ]
     },
     "IntakeRef": {
       "description": "Something an order or note points at: a file of the project, another order, or a PR. The hub renders these into\nthe lead's wake as a \"References:\" block.",
@@ -5452,6 +5973,54 @@
         "attachment_put.output": {
           "$ref": "#/$defs/AttachmentPutOutput"
         },
+        "automation_create.input": {
+          "$ref": "#/$defs/AutomationCreateInput"
+        },
+        "automation_create.output": {
+          "$ref": "#/$defs/AutomationCreateOutput"
+        },
+        "automation_delete.input": {
+          "$ref": "#/$defs/AutomationDeleteInput"
+        },
+        "automation_delete.output": {
+          "$ref": "#/$defs/AutomationDeleteOutput"
+        },
+        "automation_list.input": {
+          "$ref": "#/$defs/AutomationListInput"
+        },
+        "automation_list.output": {
+          "$ref": "#/$defs/AutomationListOutput"
+        },
+        "automation_pause.input": {
+          "$ref": "#/$defs/AutomationPauseInput"
+        },
+        "automation_pause.output": {
+          "$ref": "#/$defs/AutomationPauseOutput"
+        },
+        "automation_rotate.input": {
+          "$ref": "#/$defs/AutomationRotateInput"
+        },
+        "automation_rotate.output": {
+          "$ref": "#/$defs/AutomationRotateOutput"
+        },
+        "automation_run.input": {
+          "$ref": "#/$defs/AutomationRunInput"
+        },
+        "automation_run.output": {
+          "$ref": "#/$defs/AutomationRunOutput"
+        },
+        "automation_runs.input": {
+          "$ref": "#/$defs/AutomationRunsInput"
+        },
+        "automation_runs.output": {
+          "$ref": "#/$defs/AutomationRunsOutput"
+        },
+        "automation_update.input": {
+          "$ref": "#/$defs/AutomationUpdateInput"
+        },
+        "automation_update.output": {
+          "$ref": "#/$defs/AutomationUpdateOutput"
+        },
         "cap_set.input": {
           "$ref": "#/$defs/CapSetInput"
         },
@@ -5876,6 +6445,22 @@
         "attachment_part.output",
         "attachment_put.input",
         "attachment_put.output",
+        "automation_create.input",
+        "automation_create.output",
+        "automation_delete.input",
+        "automation_delete.output",
+        "automation_list.input",
+        "automation_list.output",
+        "automation_pause.input",
+        "automation_pause.output",
+        "automation_rotate.input",
+        "automation_rotate.output",
+        "automation_run.input",
+        "automation_run.output",
+        "automation_runs.input",
+        "automation_runs.output",
+        "automation_update.input",
+        "automation_update.output",
         "cap_set.input",
         "cap_set.output",
         "changes_list.input",

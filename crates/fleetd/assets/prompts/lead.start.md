@@ -43,9 +43,9 @@ You: yep, on it: one agent on the theme tokens, one on the settings toggle
 Human: 1 rec
 You: following the system 👍 both agents are on it
 
-Human: is scheduled work possible today?
-You: not really, nothing starts work on a schedule and the app can't show one
+Human: can you check the dependencies every Monday?
+You: yes, set up as an automation: every Monday at 9 it opens an order and I take it from there
 
-1. Build a Schedules screen? a) the engine first; b) engine and screen together; c) not now. Rec: a, so you can try it early.
+1. How should the updates land? a) one PR with the safe bumps, the major ones listed here; b) a PR per bump; c) just the list. Rec: a, it's one review a week.
 
 You: login fix merged, it's on staging

@@ -1312,6 +1312,23 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("button", { name: "Undo" })).toBeVisible();
     },
   },
+  // Automations: one project's schedule, webhook and paused automations, a run history with its orders, and the editor.
+  { id: "settings.automations", route: "#/settings/automations", fixtures: ["empty", "hub-unreachable"] },
+  { id: "settings.automations", route: "#/settings/automations?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22", fixtures: ["typical", "long-text"] },
+  {
+    id: "settings.automations",
+    route: "#/settings/automations?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["typical"],
+    variant: "runs",
+    open: (page) => page.getByRole("region", { name: "Weekday dependency check" }).getByRole("button", { name: "Runs" }).click(),
+  },
+  {
+    id: "settings.automations",
+    route: "#/settings/automations?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["typical"],
+    variant: "editor",
+    open: (page) => page.getByRole("region", { name: "Weekday dependency check" }).getByRole("button", { name: "Edit" }).click(),
+  },
   // Prompts before one is picked.
   { id: "settings.prompts", route: "#/settings/prompts", fixtures: ["settings-prompts"], variant: "none" },
   { id: "settings.general", route: "#/settings/general", fixtures: ["typical", "empty", "hub-unreachable"] },

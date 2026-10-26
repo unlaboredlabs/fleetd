@@ -39,6 +39,7 @@ export default defineConfig({
             "chat",
             "merge-train",
             "steering",
+            "automations",
             "approvals-and-secrets",
             "desktop-app",
             "status",

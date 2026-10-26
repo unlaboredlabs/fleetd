@@ -134,7 +134,9 @@ pub fn get(db: &HubDb, w: &Workstream) -> Result<Requested, StoreError> {
     }
     let (at, basis) = match w.source.channel {
         IntakeChannel::Lead => (&w.created_at, RequestedBasis::Opened),
-        IntakeChannel::App | IntakeChannel::Mcp => (&w.source.at, RequestedBasis::Source),
+        IntakeChannel::App | IntakeChannel::Mcp | IntakeChannel::Automation => {
+            (&w.source.at, RequestedBasis::Source)
+        }
     };
     Ok(Requested {
         at_ms: parse_ms(at.as_str()).unwrap_or(0),

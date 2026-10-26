@@ -411,6 +411,166 @@ export type AttachmentRef = {
  */
 export type Attention = "loud" | "urgent";
 
+export type Automation = {
+  automationId: AutomationId;
+  createdAt: Timestamp;
+  /** Who made it: a keyId, "human" or "lead:<machineId>/<projectId>". */
+  createdBy: string;
+  lastRun?: AutomationRun;
+  name: string;
+  /** The schedule's next run; absent while paused or without a schedule. */
+  nextRunAt?: Timestamp;
+  /** A paused automation's schedule and webhook start nothing; Run now still runs it. */
+  paused: boolean;
+  projectRef: ProjectRef;
+  prompt: string;
+  /** Absent: no schedule. */
+  schedule?: AutomationSchedule;
+  updatedAt: Timestamp;
+  /** Whether it has a webhook URL. The URL holds a secret, shown once when it is made or rotated. */
+  webhook: boolean;
+};
+
+export type AutomationCreateInput = {
+  clientRequestId: string;
+  name: string;
+  projectRef: ProjectRef;
+  prompt: string;
+  schedule?: AutomationSchedule;
+  /** Give it a webhook URL. */
+  webhook?: boolean;
+};
+
+export type AutomationCreateOutput = {
+  automation: Automation;
+  next?: string;
+  truncated?: boolean;
+  /** Shown once: POST to it to start a run with the body as context. */
+  webhookUrl?: string;
+};
+
+export type AutomationDeleteInput = {
+  automationId: AutomationId;
+};
+
+export type AutomationDeleteOutput = {
+  next?: string;
+  ok: true;
+  truncated?: boolean;
+};
+
+export type AutomationId = string;
+
+export type AutomationListInput = {
+  projectRef: ProjectRef;
+};
+
+export type AutomationListOutput = {
+  automations: Automation[];
+  next?: string;
+  truncated?: boolean;
+};
+
+export type AutomationPauseInput = {
+  automationId: AutomationId;
+  paused: boolean;
+};
+
+export type AutomationPauseOutput = {
+  automation: Automation;
+  next?: string;
+  truncated?: boolean;
+};
+
+export type AutomationRotateInput = {
+  automationId: AutomationId;
+};
+
+export type AutomationRotateOutput = {
+  automation: Automation;
+  next?: string;
+  truncated?: boolean;
+  webhookUrl: string;
+};
+
+export type AutomationRun = {
+  at: Timestamp;
+  automationId: AutomationId;
+  /** Who pressed Run now: a keyId, "human" or "lead:<machineId>/<projectId>". */
+  by?: string;
+  endedAt?: Timestamp;
+  /** A scheduled run the hub was down for, run once on its return: by how many minutes. */
+  lateMin?: number;
+  /** A webhook run: the size of the body it carried. The body itself is in automation_runs only. */
+  payloadBytes?: number;
+  runId: AutomationRunId;
+  /** A scheduled run: the time it was due. */
+  scheduledAt?: Timestamp;
+  state: AutomationRunState;
+  trigger: AutomationTrigger;
+  /** Why it was skipped or failed. */
+  why?: string;
+  /** The order it opened. */
+  workstreamId?: WorkstreamId;
+};
+
+export type AutomationRunId = string;
+
+export type AutomationRunInput = {
+  automationId: AutomationId;
+};
+
+export type AutomationRunOutput = {
+  next?: string;
+  run: AutomationRun;
+  truncated?: boolean;
+};
+
+export type KnownAutomationRunState = "running" | "done" | "stopped" | "skipped" | "failed";
+/** KnownAutomationRunState, or a value from a newer hub. */
+export type AutomationRunState = KnownAutomationRunState | (string & {});
+
+export type AutomationRunsInput = {
+  automationId: AutomationId;
+  limit: number;
+};
+
+export type AutomationRunsOutput = {
+  next?: string;
+  runs: AutomationRun[];
+  truncated?: boolean;
+};
+
+/** Standard 5-field cron (or @daily, @hourly…) read in `tz`; the hub parses it. */
+export type AutomationSchedule = {
+  cron: string;
+  tz: TimeZone;
+};
+
+/** What started a run. */
+export type KnownAutomationTrigger = "schedule" | "webhook" | "manual";
+/** KnownAutomationTrigger, or a value from a newer hub. */
+export type AutomationTrigger = KnownAutomationTrigger | (string & {});
+
+export type AutomationUpdateInput = {
+  automationId: AutomationId;
+  name?: string;
+  prompt?: string;
+  /** true: take its schedule off. */
+  removeSchedule?: boolean;
+  schedule?: AutomationSchedule;
+  /** true adds a webhook URL (kept if it has one); false removes it. */
+  webhook?: boolean;
+};
+
+export type AutomationUpdateOutput = {
+  automation: Automation;
+  next?: string;
+  truncated?: boolean;
+  /** Only when this update made its webhook URL. */
+  webhookUrl?: string;
+};
+
 export type BaseError = {
   kind: BaseErrorKind;
   /** git's first line, e.g. "fatal: Authentication failed for 'https://github.com/a/b.git/'"; "offline". */
@@ -1478,7 +1638,9 @@ export type KnownHubEventType =
   | "work.claimed"
   | "work.ended"
   | "work.landed"
-  | "memory.changed";
+  | "memory.changed"
+  | "automation.changed"
+  | "automation.run";
 /** KnownHubEventType, or a value from a newer hub. */
 export type HubEventType = KnownHubEventType | (string & {});
 
@@ -1588,7 +1750,7 @@ export type KnownInsightRule = "full_suite_repeat" | "repeat_no_change" | "slow_
 /** KnownInsightRule, or a value from a newer hub. */
 export type InsightRule = KnownInsightRule | (string & {});
 
-export type IntakeChannel = "app" | "mcp" | "lead";
+export type IntakeChannel = "app" | "mcp" | "lead" | "automation";
 
 /**
  * Something an order or note points at: a file of the project, another order, or a PR. The hub renders these into
@@ -4849,6 +5011,14 @@ export interface ToolMap {
   attachment_get: { input: AttachmentGetInput; output: AttachmentGetOutput };
   attachment_part: { input: AttachmentPartInput; output: AttachmentPartOutput };
   attachment_put: { input: AttachmentPutInput; output: AttachmentPutOutput };
+  automation_create: { input: AutomationCreateInput; output: AutomationCreateOutput };
+  automation_delete: { input: AutomationDeleteInput; output: AutomationDeleteOutput };
+  automation_list: { input: AutomationListInput; output: AutomationListOutput };
+  automation_pause: { input: AutomationPauseInput; output: AutomationPauseOutput };
+  automation_rotate: { input: AutomationRotateInput; output: AutomationRotateOutput };
+  automation_run: { input: AutomationRunInput; output: AutomationRunOutput };
+  automation_runs: { input: AutomationRunsInput; output: AutomationRunsOutput };
+  automation_update: { input: AutomationUpdateInput; output: AutomationUpdateOutput };
   cap_set: { input: CapSetInput; output: CapSetOutput };
   changes_list: { input: ChangesListInput; output: ChangesListOutput };
   chat_history: { input: ChatHistoryInput; output: ChatHistoryOutput };

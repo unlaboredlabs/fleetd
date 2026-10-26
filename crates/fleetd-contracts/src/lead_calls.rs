@@ -7,6 +7,11 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
+use crate::automations::{
+    AutomationCreateCall, AutomationDeleteCall, AutomationDeleteResult, AutomationListCall,
+    AutomationListResult, AutomationPauseCall, AutomationResult, AutomationRunCall,
+    AutomationRunResult, AutomationRunsCall, AutomationRunsResult, AutomationUpdateCall,
+};
 use crate::chat::ChatRequestId;
 use crate::checked;
 use crate::effort::TaskProfile;
@@ -252,6 +257,13 @@ pub enum LeadCall {
     AskLead(AskLeadCall),
     Remember(RememberCall),
     MemoryRead(MemoryReadCall),
+    AutomationCreate(AutomationCreateCall),
+    AutomationList(AutomationListCall),
+    AutomationUpdate(AutomationUpdateCall),
+    AutomationPause(AutomationPauseCall),
+    AutomationDelete(AutomationDeleteCall),
+    AutomationRun(AutomationRunCall),
+    AutomationRuns(AutomationRunsCall),
 }
 
 #[skip_serializing_none]
@@ -359,6 +371,13 @@ pub enum LeadCallResult {
     AskLead(AskLeadResult),
     Remember(RememberResult),
     MemoryRead(MemoryReadResult),
+    AutomationCreate(AutomationResult),
+    AutomationList(AutomationListResult),
+    AutomationUpdate(AutomationResult),
+    AutomationPause(AutomationResult),
+    AutomationDelete(AutomationDeleteResult),
+    AutomationRun(AutomationRunResult),
+    AutomationRuns(AutomationRunsResult),
 }
 
 /// CLI -> node on the local socket, and node -> hub on the link.

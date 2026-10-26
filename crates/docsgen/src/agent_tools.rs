@@ -643,6 +643,26 @@ fn example(role: Role, tool: &str) -> Option<Value> {
             "replaces": "Use npm",
         }),
         (Role::Lead, "memory_read") => json!({ "topic": "deploys" }),
+        (Role::Lead, "automation_create") => json!({
+            "name": "Weekly dependency check",
+            "prompt": "Check the dependencies for updates and open one PR with the safe ones.",
+            "schedule": { "cron": "0 9 * * 1", "tz": "Europe/Berlin" },
+        }),
+        (Role::Lead, "automation_list") => json!({}),
+        (Role::Lead, "automation_update") => json!({
+            "automationId": "au_k3Jd8sQp2xYz",
+            "schedule": { "cron": "0 9 * * 1-5", "tz": "Europe/Berlin" },
+        }),
+        (Role::Lead, "automation_pause") => json!({
+            "automationId": "au_k3Jd8sQp2xYz",
+            "paused": true,
+        }),
+        (Role::Lead, "automation_delete") => json!({ "automationId": "au_k3Jd8sQp2xYz" }),
+        (Role::Lead, "automation_run") => json!({ "automationId": "au_k3Jd8sQp2xYz" }),
+        (Role::Lead, "automation_runs") => json!({
+            "automationId": "au_k3Jd8sQp2xYz",
+            "runId": "ar_Qm7tZr1vBn4w",
+        }),
         (Role::Lead, "change_enqueue") => json!({
             "prUrl": "https://github.com/acme/shop/pull/42",
             "workstreamId": "W3",
