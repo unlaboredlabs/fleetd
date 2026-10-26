@@ -1294,10 +1294,20 @@ export const screens: readonly Screen[] = [
     route: SESSION_ROUTE(SESSION.payouts),
     fixtures: ["sessions-preview"],
     variant: "yours",
-    open: async (page) => {
+    open: async (page, app) => {
       await page.getByRole("button", { name: "Take over", exact: true }).click();
       await expect(page.getByRole("button", { name: /^Hand back/u })).toBeVisible();
       await expect(page.getByRole("application", { name: "The page: your clicks and keys go to it" })).toBeFocused();
+      // ⌘V (Ctrl+V) pastes this computer's clipboard into the page: the paste reaches the frame, which sends its text.
+      await app.evaluate(({ clipboard }) => clipboard.writeText("482913"));
+      const pasted = page.evaluate(
+        () =>
+          new Promise<{ text: string; taken: boolean }>((done) =>
+            window.addEventListener("paste", (e) => done({ text: e.clipboardData?.getData("text/plain") ?? "", taken: e.defaultPrevented }), { once: true }),
+          ),
+      );
+      await page.keyboard.press("ControlOrMeta+V");
+      expect(await pasted).toEqual({ text: "482913", taken: true });
     },
   },
   // ...taken over, ⌘⇧↩ (Ctrl+Shift+Enter) hands it back: the keymap takes the keys before the page does.
@@ -1519,6 +1529,8 @@ export const screens: readonly Screen[] = [
   // keys and titles; settings-prompts is the real registry with edits. Compare and Update are deep links.
   // Max agents: the fleet cap and each project's slider.
   { id: "settings.agents", route: "#/settings/agents", fixtures: ["settings-agents", "long-text", "empty", "hub-unreachable"] },
+  // Machines: one machine for agents and sessions, one for sessions only (macOS, iOS simulators), and what each can host.
+  { id: "settings.machines", route: "#/settings/machines", fixtures: ["settings-agents", "empty", "hub-unreachable"] },
   // Machines: devbox's auto 22 and where it comes from, a machine set to 40 with the way back to auto; storefront set to
   // 30 on devbox, which holds it at 22 and offers to raise it.
   {

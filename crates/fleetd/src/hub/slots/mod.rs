@@ -188,7 +188,15 @@ fn load(db: &HubDb) -> Result<Board, StoreError> {
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(Board::new(cap, shares, machines, claims))
+        let sessions_only = db
+            .prepare("SELECT machine_id FROM machine_roles WHERE agents = 0")?
+            .query_map([], |r| r.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut board = Board::new(cap, shares, machines, claims);
+        for m in sessions_only {
+            board.set_runs_agents(&MachineId::unchecked(m), false);
+        }
+        Ok(board)
     })
 }
 
@@ -407,6 +415,16 @@ impl Slots {
                 b.set_machine(m, *n);
             }
             b.set_cap(input.cap, input.max_agents);
+            ((), true)
+        })?;
+        Ok(self.state())
+    }
+
+    /// A machine's agents role (`machine_roles_set`): off, it runs no agents and its projects' agents wait; on again,
+    /// queued agents that now fit start before it returns.
+    pub fn set_runs_agents(&self, m: &MachineId, on: bool) -> Result<SlotState, StoreError> {
+        self.locked(|b| {
+            b.set_runs_agents(m, on);
             ((), true)
         })?;
         Ok(self.state())

@@ -43,6 +43,12 @@ export const framePoint = (clientX: number, clientY: number, box: { left: number
   y: Math.round(((clientY - box.top) / Math.max(1, box.height)) * frame.height),
 });
 
+/** ⌘V on macOS, Ctrl+V elsewhere (Shift too, as a plain-text paste): a paste, not a key for the page. */
+export const isPaste = (e: { key: string; code: string; altKey: boolean; ctrlKey: boolean; metaKey: boolean }, platform: string): boolean => {
+  const mod = platform === "darwin" ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
+  return mod && !e.altKey && (e.code === "KeyV" || e.key.toLowerCase() === "v");
+};
+
 /** A key as the page should get it; a printable one carries its text. */
 export const keyInput = (e: { key: string; code: string; altKey: boolean; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }, action: "down" | "up"): BrowserInput => ({
   kind: "key",
@@ -87,11 +93,15 @@ export function useFrameInput(sessionId: string, frame: { width: number; height:
     },
     onWheel: (e: WheelEvent<HTMLElement>) => send({ kind: "mouse", action: "wheel", ...at(e), deltaX: e.deltaX, deltaY: e.deltaY, modifiers: modifiersOf(e) }),
     onKeyDown: (e: KeyboardEvent<HTMLElement>) => {
+      // ⌘V (Ctrl+V) pastes: left alone, it becomes the paste event below, which sends this computer's clipboard. As a
+      // key, it would paste the remote browser's own clipboard, which is empty.
+      if (isPaste(e, window.fleetd.platform)) return;
       // The page has the keys: none of them moves focus or scrolls the app.
       e.preventDefault();
       send(keyInput(e, "down"));
     },
     onKeyUp: (e: KeyboardEvent<HTMLElement>) => {
+      if (isPaste(e, window.fleetd.platform)) return;
       e.preventDefault();
       send(keyInput(e, "up"));
     },

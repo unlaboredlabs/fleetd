@@ -100,6 +100,8 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   // recording, once read, never changes.
   if (type === "browser.session") out.push({ tool: "browser_sessions" });
   if (type === "doctor.changed") out.push({ tool: "doctor_list" });
+  // Settings → Machines: a machine coming and going, and a session starting or ending, move its rows.
+  if (type.startsWith("machine.") || type === "browser.session") out.push({ tool: "machine_roles" });
   // The hub's attention policy is a global decision. Only the open Decisions tab has its list mounted, so this
   // refetches one read.
   if (type === "decision.recorded" || type === "decision.retired") out.push({ tool: "fleetd_status" }, { tool: "decisions_list" });

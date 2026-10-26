@@ -4763,6 +4763,29 @@
       ],
       "type": "object"
     },
+    "HostCheck": {
+      "description": "Whether a machine can host one kind of session, and why, in plain words: \"Chrome 131 at /usr/bin/google-chrome\",\n\"Android SDK at ~/Android/Sdk, but no /dev/kvm\".",
+      "properties": {
+        "detail": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "host": {
+          "$ref": "#/$defs/SessionHost"
+        },
+        "ready": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "host",
+        "ready",
+        "detail"
+      ],
+      "type": "object"
+    },
     "HubBusyItem": {
       "description": "One thing in flight on the hub.",
       "properties": {
@@ -5990,6 +6013,163 @@
       ],
       "type": "object"
     },
+    "MachineRole": {
+      "description": "What a machine is for.",
+      "oneOf": [
+        {
+          "const": "agents",
+          "description": "It runs agents: its projects' leads and tasks.",
+          "type": "string"
+        },
+        {
+          "const": "sessions",
+          "description": "It hosts browser and device sessions, its own agents' and other machines'.",
+          "type": "string"
+        }
+      ]
+    },
+    "MachineRolesEntry": {
+      "description": "A machine as Settings > Machines shows it: its roles, its session slots and what it can host.",
+      "properties": {
+        "hosts": {
+          "default": [],
+          "description": "What it can host, as its node last reported; empty until it reports.",
+          "items": {
+            "$ref": "#/$defs/HostCheck"
+          },
+          "maxItems": 4,
+          "type": "array"
+        },
+        "hostsOthers": {
+          "description": "Its node hosts sessions for agents on other machines (newer nodes).",
+          "type": "boolean"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "maxSessions": {
+          "description": "The sessions it hosts at once: a person's setting, else what it fits.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "maxSessionsSet": {
+          "description": "A person's setting; absent: auto.",
+          "maximum": 64,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "maxSessionsWhy": {
+          "description": "Where `maxSessions` comes from: \"set\", \"auto: 8 CPUs, 16 GB\".",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "online": {
+          "description": "Its node is linked to the hub now.",
+          "type": "boolean"
+        },
+        "roles": {
+          "items": {
+            "$ref": "#/$defs/MachineRole"
+          },
+          "maxItems": 2,
+          "minItems": 1,
+          "type": "array"
+        },
+        "sessionsLive": {
+          "description": "Its sessions live now, its own agents' and other machines'.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "machineId",
+        "name",
+        "online",
+        "roles",
+        "maxSessions",
+        "maxSessionsWhy",
+        "sessionsLive",
+        "hostsOthers"
+      ],
+      "type": "object"
+    },
+    "MachineRolesInput": {
+      "type": "object"
+    },
+    "MachineRolesOutput": {
+      "properties": {
+        "machines": {
+          "items": {
+            "$ref": "#/$defs/MachineRolesEntry"
+          },
+          "maxItems": 1000,
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "machines"
+      ],
+      "type": "object"
+    },
+    "MachineRolesSetInput": {
+      "properties": {
+        "autoSessions": {
+          "description": "Drop the session cap: it hosts what it fits again.",
+          "type": "boolean"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "maxSessions": {
+          "description": "The most sessions it hosts at once, in place of what it fits.",
+          "maximum": 64,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "roles": {
+          "items": {
+            "$ref": "#/$defs/MachineRole"
+          },
+          "maxItems": 2,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "machineId"
+      ],
+      "type": "object"
+    },
+    "MachineRolesSetOutput": {
+      "properties": {
+        "machine": {
+          "$ref": "#/$defs/MachineRolesEntry"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "machine"
+      ],
+      "type": "object"
+    },
     "MachineStatus": {
       "enum": [
         "online",
@@ -6650,6 +6830,18 @@
         "lead_start.output": {
           "$ref": "#/$defs/LeadStartOutput"
         },
+        "machine_roles.input": {
+          "$ref": "#/$defs/MachineRolesInput"
+        },
+        "machine_roles.output": {
+          "$ref": "#/$defs/MachineRolesOutput"
+        },
+        "machine_roles_set.input": {
+          "$ref": "#/$defs/MachineRolesSetInput"
+        },
+        "machine_roles_set.output": {
+          "$ref": "#/$defs/MachineRolesSetOutput"
+        },
         "mcp_server_remove.input": {
           "$ref": "#/$defs/McpServerRemoveInput"
         },
@@ -7076,6 +7268,10 @@
         "hub_update_status.output",
         "lead_start.input",
         "lead_start.output",
+        "machine_roles.input",
+        "machine_roles.output",
+        "machine_roles_set.input",
+        "machine_roles_set.output",
         "mcp_server_remove.input",
         "mcp_server_remove.output",
         "mcp_server_set.input",
@@ -11474,6 +11670,32 @@
         "fingerprint"
       ],
       "type": "object"
+    },
+    "SessionHost": {
+      "description": "A kind of session a machine can host.",
+      "oneOf": [
+        {
+          "const": "browser",
+          "description": "A fresh Chrome per session.",
+          "type": "string"
+        },
+        {
+          "const": "android",
+          "description": "An Android emulator: the Android SDK, with KVM on Linux.",
+          "type": "string"
+        },
+        {
+          "const": "ios",
+          "description": "An iOS simulator: Xcode on macOS.",
+          "type": "string"
+        },
+        {
+          "const": "desktop",
+          "description": "A Linux desktop: docker or Xvfb.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
     },
     "SessionPrompt": {
       "description": "`session_prompt_get`: exactly what a session was told at its start.",

@@ -188,6 +188,39 @@ Agents on one machine share its CPUs, memory and disk. Each session gets:
 A node unit written before this has no `OOMPolicy=continue`; run `fleetd machine add` again on that machine to rewrite
 it.
 
+## Machine roles {#roles}
+
+Each machine runs **agents**, hosts **sessions** (an agent's [browser](/docs/browser-sessions) and, later, its devices),
+or **both**, the default. Set it in **Settings > Machines** in the app, or with an admin key:
+
+```sh
+fleetd machine set mac1 --roles sessions --max-sessions 2
+fleetd machine set devbox --roles agents,sessions --max-sessions auto
+```
+
+- **Agents only.** The machine hosts no sessions, so its agents can't open one.
+- **Sessions only.** The machine runs no agents: those running finish their work, and its projects' agents wait until
+  it runs agents again.
+
+Session slots are counted apart from agent slots. A machine hosts at most its session cap at once: what it fits (one
+session per two CPUs and about 2 GB of memory each, at most 16, and never fewer than its agent slots and leads), or
+the number you set, 1 to 64.
+
+Each node reports what it can host, in plain words, and Settings > Machines shows it:
+
+| Kind | Needs |
+|---|---|
+| Browser | Chrome: the node's own, which it installs with the first session, or the one `browser.chrome` names in node.json. |
+| Android emulator | The Android SDK (`ANDROID_HOME`, `ANDROID_SDK_ROOT`, or where Android Studio puts it) with its emulator, and on Linux a `/dev/kvm` this user can use. |
+| iOS simulator | macOS with Xcode and at least one iOS simulator runtime. |
+| Desktop | Linux with docker or Xvfb. |
+
+When an agent starts a session, the hub places it on the agent's own machine. It refuses, in one line that says
+why, when that machine has no sessions role, can't host that kind, or has all its session slots in use. A session on
+another machine waits for the hub to relay its page or screen to the agent, which isn't in this release yet, so a
+machine whose agents need a browser keeps the sessions role. The default cap is never lower than the machine's agent
+slots and leads together, one session each, as before session caps.
+
 ## Check health {#health}
 
 ```sh

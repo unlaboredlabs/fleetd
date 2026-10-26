@@ -123,6 +123,7 @@ fn reply_of(frame: &NodeToHub) -> Option<(&'static str, &str)> {
         NodeToHub::SecretResult(r) => Some(("secret_result", r.id.as_str())),
         NodeToHub::GatedResult(r) => Some(("gated_result", r.id.as_str())),
         NodeToHub::NodeActionResult(r) => Some(("node_action_result", r.id.as_str())),
+        NodeToHub::SessionHostResult(r) => Some(("session_host_result", r.id.as_str())),
         _ => None,
     }
 }
@@ -156,6 +157,11 @@ impl NodeCommands {
             machine_id: machine_id.clone(),
             id,
         }
+    }
+
+    /// Whether the machine's node is linked now.
+    pub fn linked(&self, machine_id: &MachineId) -> bool {
+        self.state.lock().unwrap().links.contains_key(machine_id)
     }
 
     /// The node link hands over each reply frame. Only the machine a request went to may answer it, and only with the
@@ -367,6 +373,25 @@ impl NodeCommands {
         };
         match frame {
             NodeToHub::NodeActionResult(r) => Ok((r, refusal)),
+            _ => unreachable!("resolve matches the reply tag"),
+        }
+    }
+
+    /// `session_host` -> `session_host_result`: one of an agent's session calls, answered by the runner's node for a
+    /// session it hosts under `host_key`. Waits at most `wait` (a start launches a browser or a device).
+    pub async fn host_session(
+        &self,
+        machine_id: &MachineId,
+        host_key: &fleetd_contracts::machine_roles::HostKey,
+        frame: &fleetd_contracts::browser::BrowserCallFrame,
+        wait: Duration,
+    ) -> Result<fleetd_contracts::browser::BrowserResultFrame, NodeCommandError> {
+        let request = json!({ "t": "session_host", "hostKey": host_key, "frame": frame });
+        match self
+            .request(machine_id, request, "session_host_result", wait)
+            .await?
+        {
+            NodeToHub::SessionHostResult(r) => Ok(r.frame),
             _ => unreachable!("resolve matches the reply tag"),
         }
     }

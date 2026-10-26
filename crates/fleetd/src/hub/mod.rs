@@ -18,6 +18,7 @@ pub mod intake;
 pub mod leads;
 pub mod ledger;
 pub mod link;
+pub mod machine_roles;
 pub mod mcp;
 pub mod mcp_servers;
 pub mod memory;

@@ -5,7 +5,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, OnceLock, RwLock};
 
-use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef};
+use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadId, ThreadRef};
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::model::ProjectSummary;
@@ -27,6 +27,21 @@ pub trait AgentDirectory: Send + Sync + 'static {
     /// The agent running in `thread` and the project it works for. A session that is neither a project's lead nor a
     /// task, and a lookup that failed, are refusals.
     fn agent_of(&self, thread: &ThreadRef) -> Result<(CallerAgent, ProjectRef), McpToolError>;
+}
+
+/// The agent a runner's node hosts a session for, on another machine (hub/machine_roles).
+#[derive(Debug, Clone)]
+pub struct HostedCaller {
+    pub project_ref: ProjectRef,
+    pub agent: CallerAgent,
+    /// The agent's session, on its own machine.
+    pub thread_id: ThreadId,
+}
+
+/// Tells whose session a runner hosts under a key; the machine roles area provides it.
+pub trait HostedCallers: Send + Sync + 'static {
+    /// The agent behind `thread` when it is a key the hub gave `runner` for a session it hosts.
+    fn caller_of(&self, runner: &MachineId, thread: &ThreadId) -> Option<HostedCaller>;
 }
 
 /// The hub said no; `fix` tells the lead what to do instead. Sent to the CLI as the result frame's error.
@@ -54,11 +69,22 @@ where
 pub struct LeadCalls {
     handlers: RwLock<HashMap<String, Arc<dyn LeadCallHandler>>>,
     directory: OnceLock<Arc<dyn AgentDirectory>>,
+    hosts: OnceLock<Arc<dyn HostedCallers>>,
 }
 
 impl LeadCalls {
     pub fn set_directory(&self, directory: Arc<dyn AgentDirectory>) {
         let _ = self.directory.set(directory);
+    }
+
+    pub fn set_hosts(&self, hosts: Arc<dyn HostedCallers>) {
+        let _ = self.hosts.set(hosts);
+    }
+
+    /// The agent a call from `runner` naming `thread` is for, when `thread` is a session the runner hosts for an
+    /// agent on another machine.
+    pub fn hosted(&self, runner: &MachineId, thread: &ThreadId) -> Option<HostedCaller> {
+        self.hosts.get()?.caller_of(runner, thread)
     }
 
     /// The agent behind a call the node attributed to `thread` (none: a person's own shell, outside every session),

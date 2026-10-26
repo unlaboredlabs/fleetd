@@ -430,6 +430,7 @@ pub fn build_on_with(
     crate::hub::automations::calls::register_lead_calls(&hub);
     crate::hub::checklist::calls::register_lead_calls(&hub);
     crate::hub::browser::calls::register_lead_calls(&hub);
+    crate::hub::machine_roles::wire(&hub);
     crate::hub::skills::calls::register_lead_calls(&hub);
     crate::hub::usage::calls::register_lead_calls(&hub);
     crate::hub::steer::wire(&hub);
@@ -451,6 +452,9 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
         hub.clone(),
     )));
     loops.push(tokio::spawn(crate::hub::browser::run_prune(hub.clone())));
+    loops.push(tokio::spawn(crate::hub::machine_roles::run_prune(
+        hub.clone(),
+    )));
     loops.push(hub.sweep.start(crate::hub::sweep::SWEEP_EVERY_MS));
     loops.push(crate::hub::queue::start_loops(hub));
     loops.extend(crate::hub::usage::wire::start(hub));

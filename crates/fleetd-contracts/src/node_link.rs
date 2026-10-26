@@ -103,6 +103,9 @@ pub const CAP_BROWSER: &str = "browser";
 /// the frame, so the hub asks only nodes that list it.
 pub const CAP_SELF_UPDATE: &str = "self_update";
 
+/// `session_host`: the node hosts sessions for agents on other machines (machine_roles.rs).
+pub const CAP_SESSION_HOST: &str = "session_host";
+
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -110,7 +113,14 @@ pub struct HubWelcome {
     pub hub_id: String,
     pub protocol: ProtocolVersion,
     pub nonce: Option<String>,
+    /// Calls this hub takes beyond the protocol's base set, e.g. [`HUB_CAP_SESSION_ROUTE`]. An older hub drops the
+    /// link on a frame it can't decode, so the node sends newer calls only to hubs that list them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub capabilities: Vec<String>,
 }
+
+/// The hub takes `session_route`, and places every session an agent starts (machine_roles.rs).
+pub const HUB_CAP_SESSION_ROUTE: &str = "session_route";
 
 /// Both directions every 15 s; a link silent for 45 s is offline.
 #[skip_serializing_none]
@@ -150,6 +160,9 @@ pub struct NodeLoad {
     pub limits: List<LoginLimit, 0, 4>,
     /// The volume holding the node's worktrees and build cache; absent from older nodes and when it can't be read.
     pub disk: Option<NodeDisk>,
+    /// What the machine can host for sessions (a browser, an Android emulator, an iOS simulator, a desktop); absent
+    /// from older nodes.
+    pub hosts: Option<crate::machine_roles::HostChecks>,
 }
 
 /// Space on the volume holding a node's worktrees and build cache.
@@ -374,6 +387,7 @@ pub enum NodeToHub {
     CloneProgress(CloneProgressFrame),
     /// A watched browser session's screen; only while the hub watches it.
     BrowserFrame(crate::browser::BrowserFrame),
+    SessionHostResult(crate::machine_roles::SessionHostResult),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -395,6 +409,8 @@ pub enum HubToNode {
     BrowserWatch(crate::browser::BrowserWatchFrame),
     BrowserInput(crate::browser::BrowserInputFrame),
     BrowserControl(crate::browser::BrowserControlFrame),
+    /// Only to nodes that list [`CAP_SESSION_HOST`].
+    SessionHost(crate::machine_roles::SessionHostFrame),
 }
 
 #[cfg(test)]

@@ -295,6 +295,8 @@ pub enum LeadCall {
     BrowserSession(BrowserSessionCall),
     BrowserRecordingPart(BrowserRecordingPartCall),
     BrowserTakeover(BrowserTakeoverCall),
+    /// Made by the node for its agent's session tools (machine_roles.rs): placed by the hub, relayed when elsewhere.
+    SessionRoute(crate::machine_roles::SessionRouteCall),
 }
 
 /// The call's `op` tag, as on the wire.
@@ -447,6 +449,7 @@ pub enum LeadCallResult {
     BrowserSession(BrowserSessionResult),
     BrowserRecordingPart(BrowserRecordingPartResult),
     BrowserTakeover(BrowserSessionResult),
+    SessionRoute(crate::machine_roles::SessionRouteResult),
 }
 
 /// CLI -> node on the local socket, and node -> hub on the link.

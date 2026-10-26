@@ -1766,6 +1766,16 @@ export type GitHubRepos = {
   repos: GitHubCandidate[];
 };
 
+/**
+ * Whether a machine can host one kind of session, and why, in plain words: "Chrome 131 at /usr/bin/google-chrome",
+ * "Android SDK at ~/Android/Sdk, but no /dev/kvm".
+ */
+export type HostCheck = {
+  detail: string;
+  host: SessionHost;
+  ready: boolean;
+};
+
 /** One thing in flight on the hub. */
 export type HubBusyItem = {
   kind: HubBusyKind;
@@ -2213,6 +2223,53 @@ export type MachineRepos = {
   /** Why this machine could not be scanned (offline, an older node), with its fix. */
   problem?: ProjectProblem;
   repos: FoundRepo[];
+};
+
+/** What a machine is for. */
+export type MachineRole = "agents" | "sessions";
+
+/** A machine as Settings > Machines shows it: its roles, its session slots and what it can host. */
+export type MachineRolesEntry = {
+  /** What it can host, as its node last reported; empty until it reports. */
+  hosts?: HostCheck[];
+  /** Its node hosts sessions for agents on other machines (newer nodes). */
+  hostsOthers: boolean;
+  machineId: MachineId;
+  /** The sessions it hosts at once: a person's setting, else what it fits. */
+  maxSessions: number;
+  /** A person's setting; absent: auto. */
+  maxSessionsSet?: number;
+  /** Where `maxSessions` comes from: "set", "auto: 8 CPUs, 16 GB". */
+  maxSessionsWhy: string;
+  name: string;
+  /** Its node is linked to the hub now. */
+  online: boolean;
+  roles: MachineRole[];
+  /** Its sessions live now, its own agents' and other machines'. */
+  sessionsLive: number;
+};
+
+export type MachineRolesInput = { [key: string]: unknown };
+
+export type MachineRolesOutput = {
+  machines: MachineRolesEntry[];
+  next?: string;
+  truncated?: boolean;
+};
+
+export type MachineRolesSetInput = {
+  /** Drop the session cap: it hosts what it fits again. */
+  autoSessions?: boolean;
+  machineId: MachineId;
+  /** The most sessions it hosts at once, in place of what it fits. */
+  maxSessions?: number;
+  roles?: MachineRole[];
+};
+
+export type MachineRolesSetOutput = {
+  machine: MachineRolesEntry;
+  next?: string;
+  truncated?: boolean;
 };
 
 /** `machine.slept`: epoch milliseconds. */
@@ -2702,6 +2759,11 @@ export type NodeLoad = {
   disk?: NodeDisk;
   /** Disk to allow per new agent's worktree: node.json's `diskPerAgentGb`, else 5 GB. Absent from older nodes. */
   diskPerAgentBytes?: number;
+  /**
+   * What the machine can host for sessions (a browser, an Android emulator, an iOS simulator, a desktop); absent
+   * from older nodes.
+   */
+  hosts?: HostCheck[];
   /**
    * The latest claude.ai subscription limit of each type claude reported. Empty behind API keys and gateways,
    * which send none.
@@ -3916,6 +3978,11 @@ export type SecretSubmitOutput = {
   requestId: ChatRequestId;
   truncated?: boolean;
 };
+
+/** A kind of session a machine can host. */
+export type KnownSessionHost = "browser" | "android" | "ios" | "desktop";
+/** KnownSessionHost, or a value from a newer hub. */
+export type SessionHost = KnownSessionHost | (string & {});
 
 /** `session_prompt_get`: exactly what a session was told at its start. */
 export type SessionPrompt = {
@@ -5581,6 +5648,8 @@ export interface ToolMap {
   hub_update: { input: HubUpdateInput; output: HubUpdateOutput };
   hub_update_status: { input: HubUpdateStatusInput; output: HubUpdateOutput };
   lead_start: { input: LeadStartInput; output: LeadStartOutput };
+  machine_roles: { input: MachineRolesInput; output: MachineRolesOutput };
+  machine_roles_set: { input: MachineRolesSetInput; output: MachineRolesSetOutput };
   mcp_server_remove: { input: McpServerRemoveInput; output: McpServerRemoveOutput };
   mcp_server_set: { input: McpServerSetInput; output: McpServerSetOutput };
   mcp_server_test: { input: McpServerTestInput; output: McpServerTestOutput };

@@ -5,9 +5,9 @@
 import { useMemo, useState, type KeyboardEvent } from "react";
 import type { ProjectRef } from "../../../shared/contracts";
 import type { PrRow } from "../../../shared/contracts";
-import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSeparator, Text, Truncate, VirtualList, cx, useArrivals, useArrived, useLeavers } from "../../ui";
+import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSeparator, Segmented, Text, Truncate, VirtualList, cx, useArrivals, useArrived, useLeavers } from "../../ui";
 import { panelRoute, toHash } from "../shell/routes";
-import { ChecksMark, HintText, PaneEmpty, Segmented } from "./Bits";
+import { ChecksMark, HintText, PaneEmpty } from "./Bits";
 import { openExternal } from "./PrDetail";
 import { PR_FILTERS, emptyWords, filterCounts, listItems, rowMeta, type Item, type PrFilter } from "./listModel";
 import { checksWord, isOpen, when } from "./words";
