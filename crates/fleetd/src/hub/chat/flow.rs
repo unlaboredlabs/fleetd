@@ -1018,6 +1018,11 @@ pub(super) fn stream_pass_with(
             continue;
         }
         let append = text.since(done).to_owned();
+        // A turn that ends with no text, or with the quiet reply, posts nothing: no bubble opens before the reply
+        // has words in it that can't still turn out to be `QUIET`.
+        if done == 0 && history::QUIET.starts_with(append.trim()) {
+            continue;
+        }
         let message = match hub.chat.by_source(&r, &source) {
             Ok(Some(m)) => Some(m),
             Ok(None) => hub
@@ -1053,6 +1058,9 @@ pub(super) fn stream_pass_with(
 /// A complete reply in the chat: its streaming message finished, or a final one added when none streamed. False
 /// when the store failed, to try again on the next tick.
 fn land(hub: &Hub, r: &ProjectRef, source: &str, text: &str) -> bool {
+    if !history::said(text) {
+        return true;
+    }
     let result = match hub.chat.by_source(r, source) {
         Ok(Some(mut m)) if m.state == fleetd_contracts::chat::ChatMessageState::Streaming => {
             hub.chat.finish(&mut m, text)

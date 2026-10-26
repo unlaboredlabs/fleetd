@@ -28,9 +28,10 @@ pub struct AgentsLine {
     pub queued: i64,
     /// Where the cap comes from: "auto: memory 18 GB, about 2 GB an agent", "max agents set", "fleet cap set", "machine cap set".
     pub source: String,
-    /// Minutes since one of the project's agents last started or ended: how long its free slots have sat free.
-    /// None when it never ran one.
-    pub idle_minutes: Option<i64>,
+    /// When one of the project's slots was last taken or freed, for any reason: its idle stretch's start.
+    pub idle_since_ms: i64,
+    /// Minutes since then: how long its free slots have sat free.
+    pub idle_minutes: i64,
 }
 
 impl AgentsLine {

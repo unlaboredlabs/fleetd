@@ -10,7 +10,7 @@ use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{ProjectRef, ThreadRef};
 use fleetd_contracts::ledger::{LeadState, WorkstreamId, WorkstreamState};
 
-use super::digest::{DigestInput, WorkstreamFacts, render_lead_digest};
+use super::digest::{DigestInput, WorkstreamFacts, idle_line, render_lead_digest};
 use super::error::LeadError;
 use super::events::Event;
 use super::hooks::BoxFuture;
@@ -326,6 +326,9 @@ pub struct LeadWakes {
     /// Quiet lines that came while no wake was on its way, per project: they go first in the next one. Lost on a
     /// hub restart; the digest still shows the tasks' state.
     quiet: std::sync::Mutex<HashMap<ProjectRef, Vec<Trigger>>>,
+    /// The idle stretch (when its slots last moved) whose idle line the project's lead was shown: one line per
+    /// stretch, not one per wake. Lost on a hub restart, which starts a new stretch anyway.
+    idle_shown: std::sync::Mutex<HashMap<ProjectRef, i64>>,
     /// Set once by `Area::new`: a wake to a cold lead starts a fresh session (`Leads::fresh_if_cold`).
     pub leads: OnceLock<Weak<Leads>>,
 }
@@ -345,6 +348,7 @@ impl LeadWakes {
             flushing: tokio::sync::Mutex::new(()),
             first: std::sync::Mutex::new(HashMap::new()),
             quiet: std::sync::Mutex::new(HashMap::new()),
+            idle_shown: std::sync::Mutex::new(HashMap::new()),
             leads: OnceLock::new(),
         })
     }
@@ -432,6 +436,11 @@ impl LeadWakes {
             Some(work) => work.elsewhere(r).await,
             None => None,
         };
+        let idle = agents.as_ref().and_then(|a| {
+            let line = idle_line(a, &workstreams, &open_requests, usage.is_some())?;
+            let mut shown = self.idle_shown.lock().unwrap();
+            (shown.insert(r.clone(), a.idle_since_ms) != Some(a.idle_since_ms)).then_some(line)
+        });
         let facts = self.workstream_facts(&workstreams);
         let at = now_iso(ctx);
         Ok(render_lead_digest(&DigestInput {
@@ -444,6 +453,7 @@ impl LeadWakes {
             open_requests: &open_requests,
             decisions: &decisions,
             agents,
+            idle,
             usage,
             tasks,
             train,

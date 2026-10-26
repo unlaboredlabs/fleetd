@@ -149,6 +149,12 @@ pub const ENTRIES: &[Entry] = &[
                 Prompt
             ),
             (
+                "no-status-only",
+                "never posts a status-only or \"nothing needs you\" message; a turn with nothing to say replies `(quiet)`, which fleetd never posts",
+                r"Never post a status-only message",
+                Prompt
+            ),
+            (
                 "plain-words",
                 "no fleetd ids, tool names, paths or process words unless asked",
                 r"No tool names, file paths",

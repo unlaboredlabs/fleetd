@@ -37,6 +37,8 @@ pub struct DigestInput<'a> {
     pub decisions: &'a [Decision],
     /// The agents line; None leaves it out.
     pub agents: Option<AgentsLine>,
+    /// The idle line under it (`idle_line`), once per idle stretch; None leaves it out.
+    pub idle: Option<String>,
     /// The usage layer's pause on the project's machine, as it holds new turns ("usage: paused until …"); None
     /// when there is none.
     pub usage: Option<String>,
@@ -64,12 +66,26 @@ pub fn usage_line(machine: &str, paused: &str) -> String {
     )
 }
 
-/// One plain line when the project's free slots have sat idle a while and approved work is open to split; None
-/// otherwise.
-pub fn idle_line(agents: &AgentsLine, workstreams: &[Workstream]) -> Option<String> {
-    let (free, minutes) = (agents.free(), agents.idle_minutes?);
-    let approved = workstreams.iter().filter(|w| w.brief.is_some()).count();
-    if free == 0 || minutes < IDLE_SLOTS_MINUTES || approved == 0 {
+/// One plain line when the project's free slots have sat idle a while and approved work could take more agents;
+/// None otherwise. An order waiting on the person in chat can't, nor can any while a usage pause holds new turns;
+/// one with agents running still can, since the lead may split it further.
+pub fn idle_line(
+    agents: &AgentsLine,
+    workstreams: &[Workstream],
+    open_requests: &[HumanRequest],
+    paused: bool,
+) -> Option<String> {
+    let (free, minutes) = (agents.free(), agents.idle_minutes);
+    let waiting = |w: &Workstream| {
+        open_requests
+            .iter()
+            .any(|r| r.workstream_id.as_ref() == Some(&w.workstream_id))
+    };
+    let approved = workstreams
+        .iter()
+        .filter(|w| w.brief.is_some() && !waiting(w))
+        .count();
+    if paused || free == 0 || minutes < IDLE_SLOTS_MINUTES || approved == 0 {
         return None;
     }
     let slots = if free == 1 { "slot has" } else { "slots have" };
@@ -296,9 +312,9 @@ pub fn render_lead_digest(input: &DigestInput) -> String {
     );
     if let Some(agents) = &input.agents {
         head.push_str(&format!("\n{agents}"));
-        if let Some(idle) = idle_line(agents, input.workstreams) {
-            head.push_str(&format!("\n{idle}"));
-        }
+    }
+    if let Some(idle) = &input.idle {
+        head.push_str(&format!("\n{idle}"));
     }
     if let Some(paused) = &input.usage {
         head.push_str(&format!(
@@ -452,6 +468,7 @@ mod tests {
             open_requests: &[],
             decisions: &decisions,
             agents: None,
+            idle: None,
             usage: None,
             tasks: None,
             train: None,
@@ -481,6 +498,7 @@ mod tests {
             open_requests: &[],
             decisions: &[],
             agents: None,
+            idle: None,
             usage: Some("usage: paused until Sun 23:40 UTC (usage limit on devbox's login)".into()),
             tasks: None,
             train: None,
@@ -511,6 +529,7 @@ mod tests {
             open_requests: &[],
             decisions: &[],
             agents: None,
+            idle: None,
             usage: None,
             tasks: Some(Vec::new()),
             train: Some(vec!["- #4 merged".into()]),
@@ -542,8 +561,9 @@ mod tests {
         assert!(clipped.ends_with("🙂…"));
     }
 
-    /// Free slots that sat idle 10 minutes while approved work is open earn one plain line under the agents line;
-    /// busy slots, a short lull or no approved work say nothing more.
+    /// Free slots that sat idle 10 minutes while an approved order could take more agents earn one plain line under
+    /// the agents line. Busy slots, a short lull, a usage pause, or orders that are drafts or wait on the person say
+    /// nothing more; an order with agents running still counts.
     #[test]
     fn idle_slots_beside_approved_work_get_one_plain_line() {
         let project_ref: ProjectRef =
@@ -564,52 +584,79 @@ mod tests {
             }
             serde_json::from_value(w).unwrap()
         };
-        let agents = |running: i64, queued: i64, idle: Option<i64>| AgentsLine {
+        let asks: HumanRequest = serde_json::from_value(serde_json::json!({
+            "requestId": "Q1", "projectRef": { "machineId": "devbox", "projectId": "p1" }, "workstreamId": "W2",
+            "kind": "secret", "text": "The Stripe test key", "state": "open", "createdAt": "2026-10-26T09:00:00.000Z",
+            "secret": { "key": "stripe.test_key", "sink": "order:devbox:W2" },
+        }))
+        .unwrap();
+        let agents = |running: i64, queued: i64, idle: i64| AgentsLine {
             running,
             cap: 4,
             queued,
             source: "max agents set".into(),
+            idle_since_ms: 0,
             idle_minutes: idle,
         };
-        let digest = |agents: AgentsLine, workstreams: &[Workstream]| {
-            render_lead_digest(&DigestInput {
-                project_ref: &project_ref,
-                title: "app",
-                at: "2026-10-26T10:00:00.000Z",
-                workstreams,
-                open_requests: &[],
-                decisions: &[],
-                agents: Some(agents),
-                usage: None,
-                tasks: None,
-                train: None,
-                elsewhere: None,
-                checklist: None,
-                facts: &HashMap::new(),
-            })
-        };
         let approved = [order(1, true), order(2, true), order(3, false)];
-        let text = digest(agents(1, 0, Some(12)), &approved);
+        let line = idle_line(&agents(1, 0, 12), &approved, &[], false);
         assert_eq!(
-            text.lines().nth(1),
-            Some("agents: 1 running of 4 (max agents set), 0 queued, 3 free")
-        );
-        assert_eq!(
-            text.lines().nth(2),
+            line.as_deref(),
             Some(
                 "Idle: 3 slots have sat free for 12 min while 2 approved orders are open. Split the work into parts \
                  that touch different files and spawn them now; sequence only parts that share code."
             )
         );
-        for (line, workstreams) in [
-            (agents(1, 0, Some(9)), &approved[..]),
-            (agents(4, 0, Some(30)), &approved[..]),
-            (agents(1, 2, Some(30)), &approved[..]),
-            (agents(0, 0, None), &approved[..]),
-            (agents(1, 0, Some(30)), &approved[2..]),
+        assert_eq!(
+            idle_line(
+                &agents(3, 0, 12),
+                &approved,
+                std::slice::from_ref(&asks),
+                false
+            )
+            .as_deref(),
+            Some(
+                "Idle: 1 slot has sat free for 12 min while 1 approved order is open. Split the work into parts that \
+                 touch different files and spawn them now; sequence only parts that share code."
+            ),
+            "W2 waits on the person"
+        );
+        for (a, workstreams, requests, paused) in [
+            (agents(1, 0, 9), &approved[..], &[][..], false),
+            (agents(4, 0, 30), &approved[..], &[], false),
+            (agents(1, 2, 30), &approved[..], &[], false),
+            (agents(1, 0, 30), &approved[..], &[], true),
+            (agents(1, 0, 30), &approved[2..], &[], false),
+            (
+                agents(1, 0, 30),
+                &approved[1..],
+                std::slice::from_ref(&asks),
+                false,
+            ),
         ] {
-            let text = digest(line, workstreams);
-            assert!(!text.contains("Idle:"), "{text}");
+            assert_eq!(idle_line(&a, workstreams, requests, paused), None, "{a}");
         }
+
+        let text = render_lead_digest(&DigestInput {
+            project_ref: &project_ref,
+            title: "app",
+            at: "2026-10-26T10:00:00.000Z",
+            workstreams: &approved,
+            open_requests: &[],
+            decisions: &[],
+            agents: Some(agents(1, 0, 12)),
+            idle: line.clone(),
+            usage: None,
+            tasks: None,
+            train: None,
+            elsewhere: None,
+            checklist: None,
+            facts: &HashMap::new(),
+        });
+        assert_eq!(
+            text.lines().nth(1),
+            Some("agents: 1 running of 4 (max agents set), 0 queued, 3 free")
+        );
+        assert_eq!(text.lines().nth(2), line.as_deref());
     }
 }

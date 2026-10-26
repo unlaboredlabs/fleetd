@@ -2751,20 +2751,9 @@ impl Tasks {
                 crate::hub::slots::MaxSource::Machine => "machine cap set".to_owned(),
                 crate::hub::slots::MaxSource::Auto(why) => format!("auto: {why}"),
             },
-            idle_minutes: self.idle_minutes(project_ref),
+            idle_since_ms: agents.moved_ms,
+            idle_minutes: (now_ms(self.d.clock.as_ref()) - agents.moved_ms).max(0) / 60_000,
         }
-    }
-
-    /// Minutes since one of the project's tasks last started or ended; None when none ever did.
-    fn idle_minutes(&self, project_ref: &ProjectRef) -> Option<i64> {
-        let at = match self.db(|c| TaskRecords::last_start_or_end(c, project_ref)) {
-            Ok(at) => parse_ms(&at?)?,
-            Err(error) => {
-                tracing::warn!(%error, "tasks: last start or end not read");
-                return None;
-            }
-        };
-        Some((now_ms(self.d.clock.as_ref()) - at).max(0) / 60_000)
     }
 
     pub fn live(&self, project_ref: Option<&ProjectRef>) -> Vec<(TaskId, ProjectRef)> {
