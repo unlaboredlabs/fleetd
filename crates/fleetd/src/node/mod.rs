@@ -6,6 +6,7 @@ pub mod actions;
 pub mod browser;
 pub mod cmd;
 pub mod config;
+pub mod device;
 pub mod hosts;
 pub mod identity;
 pub mod landed;
@@ -132,6 +133,7 @@ pub async fn join(args: JoinArgs) -> Result<(), NodeError> {
         enrolled: false,
         browser: None,
         preview: None,
+        device: None,
     };
     write_config(&home, &config).map_err(|_| {
         NodeError::Setup(format!(
@@ -246,13 +248,42 @@ async fn run_node(
         }
         false => None,
     };
+    let device_config = config.device.clone().unwrap_or_default();
+    let devices = match device_config.enabled() {
+        true => Some(
+            device::Devices::start(
+                home,
+                device_config,
+                Arc::new(browser::upload::RelayHub(relay.clone())),
+                {
+                    let sessions = node_sessions.clone();
+                    Arc::new(move |session| {
+                        if session_route::hosted(session) {
+                            // Hosted for an agent on another machine: none of its secrets are here.
+                            return Ok(mask::Secrets(Vec::new()));
+                        }
+                        sessions.call_secrets(session)
+                    })
+                },
+            )
+            .await,
+        ),
+        false => None,
+    };
+    let sessions_router = (broker.is_some() || devices.is_some()).then(|| {
+        Arc::new(device::Router {
+            browser: broker.clone(),
+            devices: devices.clone(),
+        })
+    });
     let router = Arc::new(session_route::Router {
         broker: broker.clone(),
+        devices,
         relay: relay.clone(),
         hub: config.hub.clone(),
         mask_for: mask_for.clone(),
     });
-    if broker.is_some() {
+    if sessions_router.is_some() {
         node_sessions.set_browser(router.clone());
     }
     let preview_config = config.preview.clone().unwrap_or_default();
@@ -317,6 +348,7 @@ async fn run_node(
         }),
         browser: broker.clone(),
         previews: previews.clone(),
+        sessions: sessions_router.clone(),
     };
     let enrolled = async {
         if !exit_when_enrolled || enrolled_rx.await.is_err() {
@@ -331,8 +363,8 @@ async fn run_node(
             if let Some(previews) = &previews {
                 previews.stop_all().await;
             }
-            if let Some(broker) = &broker {
-                broker.shutdown().await;
+            if let Some(router) = &sessions_router {
+                router.shutdown().await;
             }
             Ok(())
         }

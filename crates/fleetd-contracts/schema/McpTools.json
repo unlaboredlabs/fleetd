@@ -1728,6 +1728,10 @@
           "maxItems": 3,
           "type": "array"
         },
+        "kind": {
+          "$ref": "#/$defs/SessionKind",
+          "default": "browser"
+        },
         "note": {
           "description": "Why a session is lost, or what its recording lacks (\"no video: this machine has no ffmpeg\").",
           "maxLength": 500,
@@ -12309,6 +12313,15 @@
           "type": "string"
         }
       ],
+      "x-open": true
+    },
+    "SessionKind": {
+      "description": "What a session drives: a fresh Chrome with an empty profile (`browser`, driven with agent-browser), or a fresh\n`-read-only` copy of an Android emulator booted from its Quick Boot snapshot (`android`, driven with agent-device at\nthe copy's serial). Both kinds share the session tools, the action log, the video and the hub's storage; an android\nrecording has no `dom` file. A node hosts android sessions when it lists the `session_android` capability.",
+      "enum": [
+        "browser",
+        "android"
+      ],
+      "type": "string",
       "x-open": true
     },
     "SessionPrompt": {

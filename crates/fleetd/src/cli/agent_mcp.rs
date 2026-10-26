@@ -331,7 +331,9 @@ static TOOLS: &[Tool] = &[
         "Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. It is \
          recorded (video, the page after each step, a line per agent-browser command) for the person to replay. \
          Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no \
-         browser of your own. purpose: one line on what for.",
+         browser of your own. purpose: one line on what for. kind android instead opens a fresh Android emulator \
+         (Android 15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or \
+         --platform.",
         inline_schema::<SessionStartCall>,
     ),
     browser(
@@ -408,6 +410,30 @@ pub fn call_of(role: Role, name: &str, arguments: Value) -> Result<Value, String
 pub fn browser_result(answer: &Value) -> Value {
     let result = &answer["result"];
     let text = match result["op"].as_str() {
+        Some("session_start") if result["serial"].is_string() => format!(
+            "Android session {} is open ({} ms): a fresh Android emulator, thrown away at session_end, recorded. \
+             Drive it with agent-device in Bash; it is already pointed at this emulator, so pass no --serial or \
+             --platform. Start with `agent-device open <app>` (`agent-device open settings`). End it with \
+             session_end when done.",
+            result["sessionId"].as_str().unwrap_or_default(),
+            result["startMs"]
+        ),
+        Some("session_end") if result["kind"] == "android" => format!(
+            "Android session {} ended; the emulator and everything done in it are gone. Its recording ({}) goes to \
+             the hub.{}",
+            result["sessionId"].as_str().unwrap_or_default(),
+            result["files"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|f| f["file"].as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
+            result["note"]
+                .as_str()
+                .map(|note| format!(" Note: {note}."))
+                .unwrap_or_default()
+        ),
         Some("session_start") => format!(
             "Browser session {} is open ({} ms): a fresh Chrome with an empty profile, recorded. Drive it with \
              agent-browser in Bash; it is already pointed at this session. If you haven't yet, run `agent-browser \
