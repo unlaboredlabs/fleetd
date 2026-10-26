@@ -211,8 +211,9 @@ fn kvm_at(dev: &Path, group_file: &Path) -> Result<(), (String, Option<String>)>
             None,
         ));
     }
-    let flags = nix::unistd::AccessFlags::R_OK | nix::unistd::AccessFlags::W_OK;
-    if nix::unistd::access(dev, flags).is_ok() {
+    // Open it as the emulator will: whatever grants it (a group, an ACL, a udev rule), this is the answer.
+    let opened = std::fs::OpenOptions::new().read(true).write(true).open(dev);
+    if opened.is_ok() {
         return Ok(());
     }
     let user = std::env::var("USER").unwrap_or_else(|_| "$USER".to_owned());
@@ -235,7 +236,10 @@ fn kvm_at(dev: &Path, group_file: &Path) -> Result<(), (String, Option<String>)>
         ));
     }
     Err((
-        format!("{user} may not use /dev/kvm: add them to group kvm, then restart fleetd's node."),
+        format!(
+            "{user} can't open /dev/kvm read-write: add them to group kvm, then restart fleetd's node (an ACL set \
+             with setfacl is lost whenever udev makes /dev/kvm again)."
+        ),
         Some(format!("sudo usermod -aG kvm {user}")),
     ))
 }
@@ -437,7 +441,7 @@ mod tests {
         std::fs::write(&dev, "").unwrap();
         std::fs::set_permissions(&dev, std::os::unix::fs::PermissionsExt::from_mode(0o000))
             .unwrap();
-        if nix::unistd::access(&dev, nix::unistd::AccessFlags::R_OK).is_ok() {
+        if std::fs::File::open(&dev).is_ok() {
             return; // root opens anything
         }
         let user = std::env::var("USER").unwrap_or_else(|_| "$USER".to_owned());
