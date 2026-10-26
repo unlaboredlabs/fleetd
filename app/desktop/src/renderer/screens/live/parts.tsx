@@ -1,6 +1,6 @@
 // What an agent is doing, as the agents view draws it: words, then its machine text cut in the middle.
 import { useLayoutEffect, useRef, useState } from "react";
-import { Tooltip, Truncate, cx, useBeat } from "../../ui";
+import { Tooltip, Truncate, cx, useBeatRef } from "../../ui";
 import { middleEllipsis } from "./format";
 import type { Tone } from "./words";
 import s from "./lanes.module.css";
@@ -58,10 +58,10 @@ export function MiddleCut({ text }: { text: string }) {
  * What an agent is doing now: words in the UI voice, then machine text in mono cut in the middle to the room it has.
  */
 export function ActivityLine({ line }: { line: { readonly words: string; readonly machine?: string | undefined; readonly tone: Tone; readonly thinking?: boolean } }) {
-  useBeat(line.thinking === true);
+  const scan = useBeatRef<HTMLSpanElement>(line.thinking === true);
   return (
     // Thinking, its words carry the sweep (base.css): alive, without a letter changing.
-    <span className={cx(s.activity, TONE_CLASS[line.tone] ?? s.quietText)} data-sweep={line.thinking === true ? "" : undefined}>
+    <span ref={scan} className={cx(s.activity, TONE_CLASS[line.tone] ?? s.quietText)} data-sweep={line.thinking === true ? "" : undefined}>
       {line.machine !== undefined ? (
         <>
           <span className={s.words}>{line.words}</span>

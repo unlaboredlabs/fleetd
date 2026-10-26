@@ -233,7 +233,7 @@
   font-weight: 500;
 }
 /* While CI runs on what merges now: a short band of 2 px dither steps along the card's top edge on the app's beat
-   (ui/lib/beat), then rests. Without a beat (the window hidden, reduced motion) the edge is a still, faint dither. */
+   (ui/lib/beat: data-step on the band), then rests. Without a beat (the window hidden, reduced motion) the edge is a still, faint dither. */
 .progress {
   position: absolute;
   inset: 0 0 auto 0;
@@ -254,58 +254,58 @@
   opacity: 1;
   transform: translateX(420%);
 }
-:root[data-beat="0"] .progress::after {
+:root[data-beat] .progress[data-step="0"]::after {
   transform: translateX(-100%);
 }
-:root[data-beat="1"] .progress::after {
+:root[data-beat] .progress[data-step="1"]::after {
   transform: translateX(-69%);
 }
-:root[data-beat="2"] .progress::after {
+:root[data-beat] .progress[data-step="2"]::after {
   transform: translateX(-39%);
 }
-:root[data-beat="3"] .progress::after {
+:root[data-beat] .progress[data-step="3"]::after {
   transform: translateX(-8%);
 }
-:root[data-beat="4"] .progress::after {
+:root[data-beat] .progress[data-step="4"]::after {
   transform: translateX(22%);
 }
-:root[data-beat="5"] .progress::after {
+:root[data-beat] .progress[data-step="5"]::after {
   transform: translateX(53%);
 }
-:root[data-beat="6"] .progress::after {
+:root[data-beat] .progress[data-step="6"]::after {
   transform: translateX(84%);
 }
-:root[data-beat="7"] .progress::after {
+:root[data-beat] .progress[data-step="7"]::after {
   transform: translateX(114%);
 }
-:root[data-beat="8"] .progress::after {
+:root[data-beat] .progress[data-step="8"]::after {
   transform: translateX(145%);
 }
-:root[data-beat="9"] .progress::after {
+:root[data-beat] .progress[data-step="9"]::after {
   transform: translateX(175%);
 }
-:root[data-beat="10"] .progress::after {
+:root[data-beat] .progress[data-step="10"]::after {
   transform: translateX(206%);
 }
-:root[data-beat="11"] .progress::after {
+:root[data-beat] .progress[data-step="11"]::after {
   transform: translateX(236%);
 }
-:root[data-beat="12"] .progress::after {
+:root[data-beat] .progress[data-step="12"]::after {
   transform: translateX(267%);
 }
-:root[data-beat="13"] .progress::after {
+:root[data-beat] .progress[data-step="13"]::after {
   transform: translateX(298%);
 }
-:root[data-beat="14"] .progress::after {
+:root[data-beat] .progress[data-step="14"]::after {
   transform: translateX(328%);
 }
-:root[data-beat="15"] .progress::after {
+:root[data-beat] .progress[data-step="15"]::after {
   transform: translateX(359%);
 }
-:root[data-beat="16"] .progress::after {
+:root[data-beat] .progress[data-step="16"]::after {
   transform: translateX(389%);
 }
-:root[data-beat="17"] .progress::after {
+:root[data-beat] .progress[data-step="17"]::after {
   transform: translateX(420%);
 }
 /* What landed lately: plain rows between hairlines. */

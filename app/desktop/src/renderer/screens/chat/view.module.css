@@ -382,7 +382,7 @@
   height: var(--leading-md);
 }
 /* The lead writing: three square cells, one lit at a time, stepping left to right like a cursor on the app's beat
-   (ui/lib/beat), two beats each. Without a beat (the window hidden, reduced motion) all three are half lit, still. */
+   (ui/lib/beat: data-step on .typing), two beats each. Without a beat (the window hidden, reduced motion) all three are half lit, still. */
 .dot {
   width: 5px;
   height: 5px;
@@ -393,9 +393,9 @@
 :root[data-beat] .dot {
   opacity: 0.3;
 }
-:root:is([data-beat="0"], [data-beat="1"], [data-beat="6"], [data-beat="7"], [data-beat="12"], [data-beat="13"], [data-beat="18"], [data-beat="19"]) .dot:nth-child(1),
-:root:is([data-beat="2"], [data-beat="3"], [data-beat="8"], [data-beat="9"], [data-beat="14"], [data-beat="15"], [data-beat="20"], [data-beat="21"]) .dot:nth-child(2),
-:root:is([data-beat="4"], [data-beat="5"], [data-beat="10"], [data-beat="11"], [data-beat="16"], [data-beat="17"], [data-beat="22"], [data-beat="23"]) .dot:nth-child(3) {
+:root[data-beat] .typing:is([data-step="0"], [data-step="1"], [data-step="6"], [data-step="7"], [data-step="12"], [data-step="13"], [data-step="18"], [data-step="19"]) .dot:nth-child(1),
+:root[data-beat] .typing:is([data-step="2"], [data-step="3"], [data-step="8"], [data-step="9"], [data-step="14"], [data-step="15"], [data-step="20"], [data-step="21"]) .dot:nth-child(2),
+:root[data-beat] .typing:is([data-step="4"], [data-step="5"], [data-step="10"], [data-step="11"], [data-step="16"], [data-step="17"], [data-step="22"], [data-step="23"]) .dot:nth-child(3) {
   opacity: 1;
 }
 

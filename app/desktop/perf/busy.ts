@@ -6,6 +6,7 @@
 //   CPU             the app's whole process tree over 10 s idle, % of one core (Linux: /proc/<pid>/stat)
 //   frames          requestAnimationFrame rate and long frames over 5 s idle
 //   keypress p95    Chromium's EventLatency per key press into the composer, as `pnpm perf` reads it
+//   beats typing    how many times the loops stepped while those keys went in, out of the beats that fell due
 //
 //   --entry FILE    measure another build (another checkout's out/main/index.js) the same way, for a before/after
 //   --runs N        launches to take the median of (default 3)
@@ -25,6 +26,8 @@ const RUNS = Number(flags.runs ?? "3");
 const CHAT = "#/project/devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22";
 const FIXTURE = flags.fixture ?? "live-20";
 const ROUTE = flags.route === "chat" ? CHAT : (flags.route ?? `${CHAT}/agents`);
+/** ui/lib/beat's step. */
+const BEAT_MS = 120;
 const KEYS = "the writer ran the tests again and asked for a review. ".repeat(2).trim();
 
 /** CPU seconds the process tree under `root` has used so far (utime + stime, Linux). */
@@ -68,6 +71,8 @@ interface Run {
   readonly keyP95: number;
   readonly keyP50: number;
   readonly keys: number;
+  readonly steps: number;
+  readonly due: number;
 }
 
 const once = async (): Promise<Run> => {
@@ -92,12 +97,26 @@ const once = async (): Promise<Run> => {
       const frames = frameStats(await rafStamps(page, 5000), refreshMs);
       const composer = page.getByLabel("Message the lead");
       await composer.click();
+      // A step is one batch of the beat's writes: data-beat on :root (an older build), or the loops' cells and steps.
+      await page.evaluate(() => {
+        const w = window as { beatSteps?: number; beatObserver?: MutationObserver };
+        w.beatSteps = 0;
+        w.beatObserver = new MutationObserver(() => (w.beatSteps = (w.beatSteps ?? 0) + 1));
+        w.beatObserver.observe(document.documentElement, { subtree: true, attributeFilter: ["data-beat", "data-lit", "data-step"] });
+      });
+      const typing = performance.now();
       const events = await traced(browser, async () => {
         await page.keyboard.type(KEYS, { delay: 60 });
         await sleep(500);
       });
+      const due = Math.floor((performance.now() - typing) / BEAT_MS);
+      const steps = await page.evaluate(() => {
+        const w = window as { beatSteps?: number; beatObserver?: MutationObserver };
+        w.beatObserver?.disconnect();
+        return w.beatSteps ?? 0;
+      });
       const keys = keyLatencies(events);
-      return { animations, cpu, fps: frames.fps, longFrames: frames.dropped * 100, keyP95: quantile(keys, 0.95), keyP50: quantile(keys, 0.5), keys: keys.length };
+      return { animations, cpu, fps: frames.fps, longFrames: frames.dropped * 100, keyP95: quantile(keys, 0.95), keyP50: quantile(keys, 0.5), keys: keys.length, steps, due };
     } finally {
       await browser.close();
     }
@@ -115,6 +134,7 @@ const main = async () => {
   console.log(`  CPU, 10 s idle      ${m((r) => r.cpu).toFixed(1)} % of a core (runs: ${runs.map((r) => r.cpu.toFixed(1)).join(", ")})`);
   console.log(`  frames, 5 s idle    ${m((r) => r.fps).toFixed(0)} fps, ${m((r) => r.longFrames).toFixed(1)}% long`);
   console.log(`  keypress to screen  p95 ${m((r) => r.keyP95).toFixed(1)} ms, p50 ${m((r) => r.keyP50).toFixed(1)} ms over ${m((r) => r.keys).toFixed(0)} keys`);
+  console.log(`  beats while typing  ${m((r) => r.steps).toFixed(0)} steps of ${m((r) => r.due).toFixed(0)} due`);
 };
 
 await main();
