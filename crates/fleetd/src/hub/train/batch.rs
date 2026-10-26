@@ -12,7 +12,7 @@ use super::github::{
     BATCH_MARKER, BranchMerge, CheckRun, CommitStatus, MergeOutcome, NEXT_LABEL, Pull, batch_heads,
 };
 use super::records::DRAFT;
-use super::service::{Checks, CiOutcome, Fast, Train, checks, error_text, is_red, lock, short};
+use super::service::{CiOutcome, Fast, Train, error_text, is_red, lock, short};
 
 const BATCH_MAX: usize = 8;
 
@@ -35,22 +35,26 @@ fn named(runs: &[String]) -> String {
         .join(", ")
 }
 
-/// Why a ready PR's own head keeps it out of a batch, by its fast set: a check there failed or still runs, or one the
-/// base requires never reported (`statuses` are read for those). A cancelled or superseded run, and any check outside
-/// the fast set, doesn't count: the batch's own CI decides. None when it may join. `runs` are the newest of each check;
-/// `fast` None when the base's rules or the settings can't be read, and then every check counts.
+/// Why a ready PR's own head keeps it out of a batch, by its fast set: a check there failed or still runs, or one of
+/// it, required or added, never reported (`statuses` are read for those), or the head has no checks at all. A cancelled
+/// or superseded run, and any check outside the fast set, doesn't count: the batch's own CI decides. None when it may
+/// join. `runs` are the newest of each check; `fast` None when the base's rules or the settings can't be read, and an
+/// empty fast set, judge by every check.
 pub(super) fn own_checks(
     runs: &[CheckRun],
     statuses: &[CommitStatus],
     fast: Option<&Fast>,
 ) -> Option<String> {
+    if runs.is_empty() && statuses.is_empty() {
+        return Some("its own head has no checks yet".into());
+    }
     let cancelled = |r: &CheckRun| r.conclusion.as_deref() == Some("cancelled");
-    let judged: Vec<&CheckRun> = match fast {
-        Some(fast) if !fast.required.is_empty() || runs.iter().any(|r| fast.holds(&r.name)) => runs
+    let judged: Vec<&CheckRun> = match fast.filter(|f| !f.set.is_empty()) {
+        Some(fast) => runs
             .iter()
             .filter(|r| fast.holds(&r.name) && !cancelled(r))
             .collect(),
-        Some(_) => runs.iter().filter(|r| !cancelled(r)).collect(),
+        None if fast.is_some() => runs.iter().filter(|r| !cancelled(r)).collect(),
         None => runs.iter().collect(),
     };
     let names = |f: &dyn Fn(&CheckRun) -> bool| -> Vec<String> {
@@ -61,12 +65,9 @@ pub(super) fn own_checks(
             .collect()
     };
     let mut red = names(&|r| is_red(r));
-    let required = fast.map(|f| f.required.as_slice()).unwrap_or_default();
+    let set = fast.map(|f| f.set.as_slice()).unwrap_or_default();
     let mut missing = Vec::new();
-    for name in required
-        .iter()
-        .filter(|n| !runs.iter().any(|r| &r.name == *n))
-    {
+    for name in set.iter().filter(|n| !runs.iter().any(|r| &r.name == *n)) {
         match statuses
             .iter()
             .find(|s| &s.context == name)
@@ -84,11 +85,9 @@ pub(super) fn own_checks(
         Some(format!("its own head's {} still running", named(&running)))
     } else if !missing.is_empty() {
         Some(format!(
-            "its own head hasn't reported {}, which the base requires",
+            "its own head hasn't reported {} yet",
             named(&missing)
         ))
-    } else if fast.is_none() && matches!(checks(runs), Checks::None) {
-        Some("its own head has no checks yet".into())
     } else {
         None
     }
@@ -396,12 +395,11 @@ impl Train {
             }
         };
         let fast = self.fast(repo, base).await;
-        let unrun = fast.as_ref().is_some_and(|f| {
-            f.required
-                .iter()
-                .any(|n| !runs.iter().any(|r| &r.name == n))
-        });
-        let statuses = if unrun {
+        let unrun = fast
+            .as_ref()
+            .is_some_and(|f| f.set.iter().any(|n| !runs.iter().any(|r| &r.name == n)));
+        // A head with no check runs may still carry statuses.
+        let statuses = if unrun || runs.is_empty() {
             match self.github.statuses(repo, change.head_sha.as_str()).await {
                 Ok(statuses) => statuses,
                 Err(e) => {

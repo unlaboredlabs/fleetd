@@ -4921,10 +4921,10 @@ export type TrainLive = {
 
 /**
  * How the merge train treats the checks of the project's repo. It waits only for its fast set: the checks the base
- * branch requires, read from its ruleset or branch protection, plus `fastChecks`. It never waits for any other
- * check; one of those that has already failed when the fast set is green still stops the merge, unless it is in
- * `afterMerge`. After a merge the train watches every check outside the fast set on the base branch, and a failure
- * there opens a fix order. A check the base requires is always in the fast set: GitHub won't merge without it.
+ * branch requires, read from its ruleset or branch protection, plus `fastChecks`, each until it reports, however late
+ * it starts. It never waits for any other check; one of those that has already failed when the fast set is green
+ * still stops the merge, unless it is in `afterMerge`. A check the base requires is always in the fast set: GitHub
+ * won't merge without it. With no required check and none added, it waits for every check.
  */
 export type TrainSettings = {
   /** Checks that never stop a merge, even once failed: they only run after it. */

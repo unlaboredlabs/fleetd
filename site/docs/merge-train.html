@@ -91,11 +91,12 @@ exists.</p>
 <li>the checks the base branch requires, read from its ruleset or branch protection;</li>
 <li>the checks you add in the project’s settings.</li>
 </ul>
-<p>It never waits for any other check. A check outside the fast set that has already failed when the fast set is green
-still stops the merge, unless you mark it <strong>after merge only</strong>. A required check is always in the fast set, since
-GitHub won’t merge without it. A cancelled run of a check that isn’t required doesn’t count. A base that requires
-nothing, on a repo whose checks include none you added, waits for every check, so such a repo still merges only on
-green CI. When the train can’t read the base’s rules or the project’s settings, it also waits for every check.</p>
+<p>Each check of the fast set is waited for until it reports, however late its workflow starts; one that never reports
+times out by name. The train never waits for any other check. A check outside the fast set that has already failed
+when the fast set is green still stops the merge, unless you mark it <strong>after merge only</strong>. A required check is always
+in the fast set, since GitHub won’t merge without it. A cancelled run of a check that isn’t required doesn’t count.
+With no required check and none added, the train waits for every check, so such a repo still merges only on green
+CI. When the train can’t read the base’s rules or the project’s settings, it also waits for every check.</p>
 <p>Set the checks in the desktop app under <strong>Settings › Projects › Merge train</strong>, with the <code dir="auto">project_settings_set</code> tool
 (<code dir="auto">train</code>), or from a terminal:</p>
 <div class="expressive-code"><link rel="stylesheet" href="/docs/_astro/ec.83jdg.css"><script type="module" src="/docs/_astro/ec.0vx5m.js"></script><figure class="frame is-terminal not-content"><figcaption class="header"><span class="title"></span><span class="sr-only">Terminal window</span></figcaption><pre data-language="sh"><code><div class="ec-line"><div class="code"><span style="--0:#B392F0;--1:#6F42C1">fleetd</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">project</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">set</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">lab-a/storefront</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#79B8FF;--1:#005CC5">--fast-check</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">"test (ubuntu-latest)"</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#79B8FF;--1:#005CC5">--after-merge</span><span style="--0:#E1E4E8;--1:#24292E"> </span><span style="--0:#9ECBFF;--1:#032F62">"e2e (macos-latest)"</span></div></div></code></pre><div class="copy"><div aria-live="polite"></div><button title="Copy to clipboard" data-copied="Copied!" data-code="fleetd project set lab-a/storefront --fast-check &quot;test (ubuntu-latest)&quot; --after-merge &quot;e2e (macos-latest)&quot;"><div></div></button></div></figure></div>
@@ -137,8 +138,9 @@ patch: a rebase that keeps the patch keeps the review, and a new commit gets a n
 changed. Blocking findings go to the agent that wrote the PR, and the PR waits for its next commit.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="batches">Batches</h2><a class="sl-anchor-link" href="#batches"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Batches”</span></a></div>
 <p>When several PRs are ready at once, the train merges them together in one CI run. It takes up to 8 ready PRs in
-line that go into the same base branch and whose fast set passed on their own commit. A cancelled or superseded run,
-and any check outside the fast set, doesn’t keep a PR out: the batch’s own CI decides. Then:</p>
+line that go into the same base branch and whose fast set passed on their own commit, every check of it reported. A
+PR whose commit has no checks yet stays out. A cancelled or superseded run, and any check outside the fast set, doesn’t
+keep a PR out: the batch’s own CI decides. Then:</p>
 <ol>
 <li>It makes its own branch from the base on GitHub, <code dir="auto">train/batch</code> under the project’s branch prefix
 (<code dir="auto">fleetd/train/batch</code> by default), and merges each PR into it in order.</li>

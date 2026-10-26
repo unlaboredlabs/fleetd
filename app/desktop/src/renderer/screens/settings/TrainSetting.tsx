@@ -39,7 +39,7 @@ export function TrainSetting({ settings }: { settings: Settings }) {
     <Setting
       reveal="projects.train"
       label="Merge train"
-      help="The train merges once the checks the base branch requires pass, with the checks you add here. It never waits for any other check; those are watched on the base branch after the merge, and a failure there opens a fix order."
+      help="The train merges once the checks the base branch requires pass, with the checks you add here, each waited for until it reports. It never waits for any other check. With none required and none added, it waits for every check."
     >
       <Field label="Also wait for" description="Checks to pass before a merge besides the required ones, one a line, named as GitHub shows them.">
         <Textarea mono minRows={1} value={draft.fast} disabled={busy} spellCheck={false} placeholder="test (ubuntu-latest)" onChange={(e) => edit({ fast: e.target.value })} />

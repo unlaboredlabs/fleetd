@@ -5110,3 +5110,123 @@ async fn after_a_restart_a_batch_in_ci_is_still_watched_and_merges_when_green() 
     }
     assert!(!kit.reset_from_ci(&[&a, &b]));
 }
+
+/// Review of #542: a check the project added to the fast set is waited for until it reports, however late its
+/// workflow starts, as a required one is; one that never comes times out by name.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_added_fast_check_that_reports_late_is_waited_for() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Actions, clock);
+    *kit.gh.required.lock().unwrap() = Some(vec!["build".into()]);
+    *kit.host.train.lock().unwrap() = Some(train_settings(&["integration"], &[]));
+    let (reads, log) = (Arc::new(Mutex::new(0u32)), kit.gh.log.clone());
+    let seen = reads.clone();
+    answer_checks(&kit, move || {
+        let mut n = seen.lock().unwrap();
+        *n += 1;
+        // `build` is green at once; `integration` registers only on the sixth read, then passes.
+        let mut runs = vec![run(1, "build", Some("success"))];
+        if *n >= 6 {
+            log.lock().unwrap().push("integration green".into());
+            runs.push(run(2, "integration", Some("success")));
+        }
+        runs
+    });
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &a), ChangeState::Merged);
+    let log = gh_log(&kit);
+    assert!(
+        log_at(&log, "integration green") < log_at(&log, "merge #7"),
+        "merged before integration reported: {log:?}"
+    );
+
+    // Never registered: CI times out naming it, and nothing merges.
+    let kit = Kit::with(FakeCi::Actions, one_poll);
+    *kit.gh.required.lock().unwrap() = Some(vec!["build".into()]);
+    *kit.host.train.lock().unwrap() = Some(train_settings(&["integration"], &[]));
+    answer_checks(&kit, || vec![run(1, "build", Some("success"))]);
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    assert!(kit.train.step(REPO).await);
+    let parked = kit.get(&a.change_id);
+    assert_eq!(parked.state, ChangeState::CiFailed);
+    let why = parked.last_error.unwrap_or_default();
+    assert!(
+        why.contains("the check integration never reported"),
+        "{why}"
+    );
+    assert!(merged_prs(&kit).is_empty());
+}
+
+/// A base that requires nothing: the train waits for the added checks only, never for every check; with nothing
+/// added either, every check counts.
+#[tokio::test(flavor = "multi_thread")]
+async fn with_no_required_checks_the_train_waits_for_the_added_ones_only() {
+    let kit = Kit::with(FakeCi::Actions, one_poll);
+    *kit.host.train.lock().unwrap() = Some(train_settings(&["integration"], &[]));
+    answer_checks(&kit, || {
+        vec![run(1, "integration", Some("success")), run(2, "slow", None)]
+    });
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(state_of(&kit, &a), ChangeState::Merged);
+
+    *kit.host.train.lock().unwrap() = Some(train_settings(&[], &[]));
+    let b = kit
+        .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]))
+        .await;
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(
+        state_of(&kit, &b),
+        ChangeState::CiFailed,
+        "the slow check is waited for"
+    );
+}
+
+/// A PR whose own head shows no checks at all, or hasn't reported an added check yet, stays out of the batch, saying
+/// so.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pr_with_no_checks_or_an_unreported_fast_check_stays_out_of_a_batch() {
+    let kit = kit_on(&REPOS[1]);
+    let a = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    let bare = kit
+        .enqueue(kit.open_pr(8, "n", &[add("n1.txt", "n\n")]))
+        .await;
+    let late = kit
+        .enqueue(kit.open_pr(9, "l", &[add("l1.txt", "l\n")]))
+        .await;
+    let b = kit
+        .enqueue(kit.open_pr(10, "b", &[add("b1.txt", "b\n")]))
+        .await;
+    let heads = &kit.gh.head_runs;
+    heads.lock().unwrap().insert(kit.head_of("n"), json!([]));
+    heads.lock().unwrap().insert(
+        kit.head_of("l"),
+        json!([
+            run(1, "fmt", Some("success")),
+            run(2, "unit (linux)", Some("success"))
+        ]),
+    );
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(members_of_batch(&kit), [7, 10]);
+    assert_eq!(state_of(&kit, &a), ChangeState::Merged);
+    assert_eq!(state_of(&kit, &b), ChangeState::Merged);
+    let why = |c: &Change| kit.get(&c.change_id).last_error;
+    assert_eq!(
+        why(&bare).as_deref(),
+        Some("not in this batch: its own head has no checks yet")
+    );
+    assert_eq!(
+        why(&late).as_deref(),
+        Some("not in this batch: its own head hasn't reported `integration` yet")
+    );
+}

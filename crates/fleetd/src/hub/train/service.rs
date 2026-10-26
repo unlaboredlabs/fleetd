@@ -215,16 +215,14 @@ impl Fast {
 }
 
 /// The runs of `runs` (the newest of each check) the train waits on: those in the fast set, a cancelled one that is not
-/// required left out, and any other that already failed, unless it is left for after the merge. A base that requires
-/// nothing, on a head that shows no check of the fast set, is judged by every check, so a repo with CI but no rules
-/// still merges on green CI only. `fast` None when the base's rules or the repo's settings can't be read: every check.
+/// required left out, and any other that already failed, unless it is left for after the merge. A check of the fast set
+/// with no run yet is waited for by name (`must_report`). An empty fast set (a base that requires nothing, and nothing
+/// added) is judged by every check, so a repo with CI but no rules still merges on green CI only. `fast` None when the
+/// base's rules or the repo's settings can't be read: every check.
 pub(super) fn gated(runs: &[CheckRun], fast: Option<&Fast>) -> Vec<CheckRun> {
-    let Some(fast) = fast else {
+    let Some(fast) = fast.filter(|f| !f.set.is_empty()) else {
         return runs.to_vec();
     };
-    if fast.required.is_empty() && !runs.iter().any(|r| fast.holds(&r.name)) {
-        return runs.to_vec();
-    }
     let cancelled = |r: &CheckRun| r.conclusion.as_deref() == Some("cancelled");
     runs.iter()
         .filter(|r| {
@@ -236,6 +234,13 @@ pub(super) fn gated(runs: &[CheckRun], fast: Option<&Fast>) -> Vec<CheckRun> {
         })
         .cloned()
         .collect()
+}
+
+/// The checks that must report on a head before it counts as green: its fast set, or the base's `required` checks
+/// alone while the repo's settings can't be read. None when neither can be read.
+pub(super) fn must_report(fast: Option<&Fast>, required: Option<&[String]>) -> Option<Vec<String>> {
+    fast.map(|f| f.set.clone())
+        .or_else(|| required.map(<[String]>::to_vec))
 }
 
 /// Whether GitHub refused a merge for required checks that haven't reported on the head yet, or still run, rather than
@@ -355,9 +360,16 @@ pub(super) enum Stall {
     Queued(usize),
     /// It ran for `ci_timeout` from its first check's start without finishing.
     Running,
-    /// Its checks finished green, but these checks the base requires never reported, within `ci_timeout` of its first
-    /// check's start.
-    Unreported(Vec<String>),
+    /// Its checks finished green, but these checks of its fast set never reported, within `ci_timeout` of its first
+    /// check's start; whether they are all ones the base requires.
+    Unreported(Vec<String>, Required),
+}
+
+/// Whether checks that never reported are all ones the base requires, or include ones the repo added to its fast set.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Required {
+    All,
+    NotAll,
 }
 
 /// Whether a check run has a runner: a check still waiting for one doesn't count toward CI's running time.
@@ -950,8 +962,13 @@ impl Train {
                     "it did not finish within {} min of its first check starting",
                     min(self.options.ci_timeout)
                 ),
-                Stall::Unreported(names) => format!(
-                    "the required check{} {} never reported within {} min; every other check passed",
+                Stall::Unreported(names, required) => format!(
+                    "the {}check{} {} never reported within {} min; every other check passed",
+                    if *required == Required::All {
+                        "required "
+                    } else {
+                        ""
+                    },
                     if names.len() == 1 { "" } else { "s" },
                     names.join(", "),
                     min(self.options.ci_timeout)
@@ -1049,8 +1066,10 @@ impl Train {
         let (mut tried_label, mut told) = (start, false);
         loop {
             let mut all = Vec::new();
-            // The required checks that have neither a run nor a status on `sha` while every other check is green.
+            // The checks of the fast set that have neither a run nor a status on `sha` while every other is green, and
+            // what the base requires.
             let mut unreported = Vec::new();
+            let mut base_requires: Vec<String> = Vec::new();
             let runs = match self.github.all_check_runs(repo, sha).await {
                 Ok(runs) => {
                     all = runs.clone();
@@ -1133,8 +1152,11 @@ impl Train {
                         .await
                         .ok()
                         .map(|c| c.required_checks);
+                    // Every check of the fast set, an added one as a required one, reports before the merge.
+                    let waits = must_report(fast.as_ref(), required.as_deref());
+                    base_requires = required.clone().unwrap_or_default();
                     let (reported, missing) = self
-                        .required_reported(repo, sha, &runs, required.as_deref())
+                        .required_reported(repo, sha, &runs, waits.as_deref())
                         .await;
                     unreported = missing;
                     match reported {
@@ -1170,7 +1192,11 @@ impl Train {
                 self.check_spans(change, sha, &last);
                 // Every run finished: it is the required checks that never came, not CI that ran long.
                 let stall = match stall {
-                    Stall::Running if !unreported.is_empty() => Stall::Unreported(unreported),
+                    Stall::Running if !unreported.is_empty() => {
+                        let all = unreported.iter().all(|n| base_requires.contains(n));
+                        let required = if all { Required::All } else { Required::NotAll };
+                        Stall::Unreported(unreported, required)
+                    }
                     stall => stall,
                 };
                 return CiOutcome::Timeout(stall);
@@ -1789,7 +1815,25 @@ impl Train {
             }
         };
         let fast = self.fast(&change.repo, &base).await;
-        match checks(&gated(&runs, fast.as_ref())) {
+        let judged = match checks(&gated(&runs, fast.as_ref())) {
+            Checks::None if !runs.is_empty() => Checks::Green,
+            judged => judged,
+        };
+        let judged = match judged {
+            Checks::Green => {
+                let required = self
+                    .ci_config(&change.repo, &base)
+                    .await
+                    .ok()
+                    .map(|c| c.required_checks);
+                let waits = must_report(fast.as_ref(), required.as_deref());
+                self.required_reported(&change.repo, &change.head_sha, &runs, waits.as_deref())
+                    .await
+                    .0
+            }
+            judged => judged,
+        };
+        match judged {
             Checks::Green => {
                 if self.set_ready(change, Vec::new()).is_some() {
                     let line = Event::PrNote {

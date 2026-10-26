@@ -28,11 +28,12 @@ The train waits only for the repo's fast set, the same way in every repo:
 - the checks the base branch requires, read from its ruleset or branch protection;
 - the checks you add in the project's settings.
 
-It never waits for any other check. A check outside the fast set that has already failed when the fast set is green
-still stops the merge, unless you mark it **after merge only**. A required check is always in the fast set, since
-GitHub won't merge without it. A cancelled run of a check that isn't required doesn't count. A base that requires
-nothing, on a repo whose checks include none you added, waits for every check, so such a repo still merges only on
-green CI. When the train can't read the base's rules or the project's settings, it also waits for every check.
+Each check of the fast set is waited for until it reports, however late its workflow starts; one that never reports
+times out by name. The train never waits for any other check. A check outside the fast set that has already failed
+when the fast set is green still stops the merge, unless you mark it **after merge only**. A required check is always
+in the fast set, since GitHub won't merge without it. A cancelled run of a check that isn't required doesn't count.
+With no required check and none added, the train waits for every check, so such a repo still merges only on green
+CI. When the train can't read the base's rules or the project's settings, it also waits for every check.
 
 Set the checks in the desktop app under **Settings › Projects › Merge train**, with the `project_settings_set` tool
 (`train`), or from a terminal:
@@ -92,8 +93,9 @@ changed. Blocking findings go to the agent that wrote the PR, and the PR waits f
 ## Batches {#batches}
 
 When several PRs are ready at once, the train merges them together in one CI run. It takes up to 8 ready PRs in
-line that go into the same base branch and whose fast set passed on their own commit. A cancelled or superseded run,
-and any check outside the fast set, doesn't keep a PR out: the batch's own CI decides. Then:
+line that go into the same base branch and whose fast set passed on their own commit, every check of it reported. A
+PR whose commit has no checks yet stays out. A cancelled or superseded run, and any check outside the fast set, doesn't
+keep a PR out: the batch's own CI decides. Then:
 
 1. It makes its own branch from the base on GitHub, `train/batch` under the project's branch prefix
    (`fleetd/train/batch` by default), and merges each PR into it in order.

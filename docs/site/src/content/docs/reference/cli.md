@@ -187,7 +187,7 @@ fleetd project set <machine>/<project> [--fast-check <check>]... [--after-merge 
     [--home <dir>] [--hub <url>]
 ```
 
-how the merge train treats the repo's checks. It waits only for its fast set: the checks the base branch requires, plus each `--fast-check`. Each `--after-merge` never stops a merge, even once failed; it is watched on the base after the merge. Each option replaces its list; none empties it
+how the merge train treats the repo's checks. It waits only for its fast set: the checks the base branch requires, plus each `--fast-check`, each until it reports. Each `--after-merge` never stops a merge, even once failed. Each option replaces its list; none empties it
 
 
 ## Running by hand {#running-by-hand}
