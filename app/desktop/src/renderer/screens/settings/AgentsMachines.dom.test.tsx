@@ -82,7 +82,8 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-const render = async () => {
+/** `admin`: what hub_info says of the key; undefined, a hub from before it said. */
+const render = async (admin?: boolean) => {
   let listener: (frame: HubFrame) => void = () => undefined;
   let now = slots;
   const hub: HubApi = {
@@ -93,6 +94,7 @@ const render = async () => {
         if (machine !== undefined) now = setMachine(now, machine);
         return Promise.resolve({ ok: true, output: { slots: now } });
       }
+      if (tool === "hub_info") return Promise.resolve({ ok: true, output: { version: "0.0.0", protocol: 1, busy: [], ...(admin === undefined ? {} : { admin }) } });
       return Promise.resolve({ ok: true, output: { machineId: "devbox", projectId: "storefront", mediumAllowed: true } });
     },
     subscribe: (l) => ((listener = l), () => undefined),
@@ -181,4 +183,32 @@ it("takes a project's slider to the fleet cap, says when its machine holds it, a
   expect(calls).toEqual([{ tool: "cap_set", input: { machine: { machineId: "devbox", maxAgents: 30 } } }]);
   expect(section("storefront").textContent).not.toContain("runs at most");
   expect(section("devbox").querySelector("[role='slider']")?.getAttribute("aria-valuenow")).toBe("30");
+});
+
+it("greys out the fleet and machine caps, and the machine's raise, for a key without Admin", async () => {
+  await render(false);
+  // Its answer lands after the snapshot.
+  await act(async () => new Promise((r) => setTimeout(r, 0)));
+  const disabled = (el: Element | null | undefined) => el?.getAttribute("data-disabled") !== null && el?.getAttribute("data-disabled") !== undefined;
+  const fleet = host.querySelector("section[aria-labelledby='agents-fleet-label']");
+  expect(disabled(fleet?.querySelector("[role='slider']"))).toBe(true);
+  expect(fleet?.textContent).toContain("This key can't change it: that needs an admin key.");
+  expect(disabled(section("devbox").querySelector("[role='slider']"))).toBe(true);
+  expect(button(section("builder"), "Use auto").disabled).toBe(true);
+  const project = section("storefront");
+  expect(button(project, "Raise devbox to 30").disabled).toBe(true);
+  expect(project.textContent).toContain("This key can't change it: that needs an admin key.");
+  // The project's own max is an operator's to change.
+  expect(disabled(project.querySelector("[role='slider']"))).toBe(false);
+});
+
+it("keeps them on for an admin key, and for a hub from before it said", async () => {
+  for (const admin of [true, undefined]) {
+    await render(admin);
+    await act(async () => new Promise((r) => setTimeout(r, 0)));
+    expect(button(section("storefront"), "Raise devbox to 30").disabled).toBe(false);
+    expect(host.textContent).not.toContain("This key can't change it");
+    act(() => root.unmount());
+    root = createRoot(host);
+  }
 });

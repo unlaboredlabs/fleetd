@@ -1701,6 +1701,11 @@ export type HubInfoInput = {
 };
 
 export type HubInfoOutput = {
+  /**
+   * The caller's key holds Admin on every machine, so it may change the fleet and machine caps. Absent from a hub
+   * before this, which leaves an app to try.
+   */
+  admin?: boolean;
   /** Empty when nothing is in flight. A restart interrupts each item. */
   busy: HubBusyItem[];
   /** Absent for a local build. */

@@ -103,7 +103,14 @@ export function changeLine(a: ProjectAgents, next: number): string {
     const until = next === 1 ? "until none is running" : `until fewer than ${next} run`;
     return `${a.running} running now, ${over} over the new max: they finish their current work, and new agents wait ${until}.`;
   }
-  if (a.queued > 0 && next > a.max) return `Up to ${next} at once. ${Math.min(a.queued, next - a.max)} of the ${a.queued} queued can start now.`;
+  if (a.queued > 0 && next > a.max) {
+    // Its machine (or the fleet, when lower) still holds it at `cap`: only what fits under both starts.
+    const start = Math.min(a.queued, Math.max(0, Math.min(next, a.cap) - a.running));
+    const holder = a.cap < a.machineCap ? "the whole fleet" : "its machine";
+    if (start === 0) return `Up to ${next} at once, but ${holder} runs ${a.cap} at most: the ${a.queued} queued wait for it.`;
+    const rest = start < a.queued && next > a.cap ? `; the rest wait for ${holder}` : "";
+    return `Up to ${next} at once. ${start} of the ${a.queued} queued can start now${rest}.`;
+  }
   if (next > a.max) return `Up to ${next} at once. Queued agents start as soon as there is room.`;
   return `Up to ${next} at once. New agents wait while ${next} run.`;
 }

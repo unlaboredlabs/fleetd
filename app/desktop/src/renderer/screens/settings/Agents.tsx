@@ -32,6 +32,17 @@ import { promptHref } from "./route";
 import { useReveal } from "./search";
 import s from "./settings.module.css";
 
+const noInput = {};
+
+/**
+ * Whether this key may change the fleet and machine caps (Admin on every machine), as hub_info says. True until it
+ * answers, and with a hub from before it said: the hub refuses the change, and the line under the slider says why.
+ */
+const useAdmin = (): boolean => useToolQuery("hub_info", noInput).data?.admin !== false;
+
+/** Under a control a key without Admin can't use. */
+const NOT_ADMIN = "This key can't change it: that needs an admin key.";
+
 /** The hub's slot state for this connection; undefined until it is fresh (never the last connection's numbers). */
 const useSlots = (): SlotState | undefined => useData((st) => (st.fresh ? (st.live.slots ?? st.slots) : undefined));
 
@@ -292,6 +303,7 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
 /** Under a project's slider past its machine's cap: the machine holds it there, and one click raises the machine. */
 function MachineHolds(props: { machineId: string; note: string | null; to: number; busy: boolean }) {
   const live = useLive();
+  const admin = useAdmin();
   const call = useHubCall();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -308,9 +320,14 @@ function MachineHolds(props: { machineId: string; note: string | null; to: numbe
       <Text size="xs" tone="warning">
         {props.note}
       </Text>
-      <Button size="sm" disabled={!live || busy || props.busy} onClick={raise}>
+      <Button size="sm" disabled={!live || !admin || busy || props.busy} onClick={raise}>
         {`Raise ${props.machineId} to ${props.to}`}
       </Button>
+      {admin ? null : (
+        <Text size="xs" tone="quiet">
+          {NOT_ADMIN}
+        </Text>
+      )}
       {error === undefined ? null : (
         <p role="alert" className={s.alertLine}>
           <Text size="xs" tone="danger">{`Not changed: ${error}`}</Text>
@@ -322,6 +339,7 @@ function MachineHolds(props: { machineId: string; note: string | null; to: numbe
 
 /** Each machine's max agents: what it runs at once, where that comes from, and the slider that changes it. */
 function MachineCaps({ slots }: { slots: SlotState }) {
+  const admin = useAdmin();
   const ref = useReveal<HTMLElement>("agents.machines");
   const machines = machineAgents(slots);
   return (
@@ -331,7 +349,7 @@ function MachineCaps({ slots }: { slots: SlotState }) {
           Machines
         </Text>
         <Text size="xs" tone="quiet">
-          Every project's agents on a machine together, up to the whole fleet's cap. Changing one needs an admin key.
+          {`Every project's agents on a machine together, up to the whole fleet's cap. ${admin ? "Changing one needs an admin key." : NOT_ADMIN}`}
         </Text>
       </div>
       {machines.length === 0 ? (
@@ -339,7 +357,7 @@ function MachineCaps({ slots }: { slots: SlotState }) {
       ) : (
         machines.map((m) => (
           <section key={m.machineId} className={s.agentsRow} aria-label={m.machineId}>
-            <MachinePanel machine={m} top={Math.max(1, sliderTop(slots), m.cap)} />
+            <MachinePanel machine={m} top={Math.max(1, sliderTop(slots), m.cap)} admin={admin} />
           </section>
         ))
       )}
@@ -347,7 +365,7 @@ function MachineCaps({ slots }: { slots: SlotState }) {
   );
 }
 
-function MachinePanel({ machine: m, top }: { machine: MachineAgents; top: number }) {
+function MachinePanel({ machine: m, top, admin }: { machine: MachineAgents; top: number; admin: boolean }) {
   const live = useLive();
   const call = useHubCall();
   const state = useApplySlider(m.cap, !m.set, (maxAgents, _pause, auto) =>
@@ -367,12 +385,12 @@ function MachinePanel({ machine: m, top }: { machine: MachineAgents; top: number
           {m.source}
         </Text>
         {m.set ? (
-          <Button size="sm" variant="quiet" disabled={!live || state.busy} onClick={() => state.toDefault(m.auto)}>
+          <Button size="sm" variant="quiet" disabled={!live || !admin || state.busy} onClick={() => state.toDefault(m.auto)}>
             Use auto
           </Button>
         ) : null}
       </div>
-      <CapSlider id={id} max={top} disabled={!live || top <= 1} state={state} />
+      <CapSlider id={id} max={top} disabled={!live || !admin || top <= 1} state={state} />
       <ResultLine
         id={id}
         state={state}
@@ -500,6 +518,7 @@ function MediumSwitch({ projectRef }: { projectRef: ProjectRef }) {
 
 /** The fleet-wide cap: every project's agents together, across every machine. */
 function FleetCap({ slots }: { slots: SlotState }) {
+  const admin = useAdmin();
   const call = useHubCall();
   const projects = useProjects();
   const live = useLive();
@@ -517,9 +536,9 @@ function FleetCap({ slots }: { slots: SlotState }) {
           <Text tabular strong>{`${state.value}`}</Text>
         </div>
         <Text size="xs" tone="quiet">
-          All projects together, leads included. Changing it needs an admin key.
+          {`All projects together, leads included. ${admin ? "Changing it needs an admin key." : NOT_ADMIN}`}
         </Text>
-        <CapSlider id={id} max={fleetTop(slots.cap)} disabled={!live} state={state} />
+        <CapSlider id={id} max={fleetTop(slots.cap)} disabled={!live || !admin} state={state} />
         {warning ? (
           <Text size="xs" tone="warning">
             {warning}

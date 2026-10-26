@@ -4876,6 +4876,10 @@
     },
     "HubInfoOutput": {
       "properties": {
+        "admin": {
+          "description": "The caller's key holds Admin on every machine, so it may change the fleet and machine caps. Absent from a hub\nbefore this, which leaves an app to try.",
+          "type": "boolean"
+        },
         "busy": {
           "description": "Empty when nothing is in flight. A restart interrupts each item.",
           "items": {

@@ -1478,6 +1478,9 @@ output!(HubInfoOutput {
     started_at: Option<Timestamp>,
     /// Empty when nothing is in flight. A restart interrupts each item.
     busy: List<HubBusyItem, 0, 50>,
+    /// The caller's key holds Admin on every machine, so it may change the fleet and machine caps. Absent from a hub
+    /// before this, which leaves an app to try.
+    admin: Option<bool>,
 });
 
 /// The release channel a hub's build follows: nightly when its version contains "-nightly.", stable otherwise.

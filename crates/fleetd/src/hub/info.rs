@@ -9,7 +9,9 @@ use fleetd_contracts::prim::{List, Text};
 use fleetd_contracts::tasks::TaskState;
 use fleetd_contracts::train::{Change, ChangeState};
 
-use crate::hub::api::{Caller, Hub, Registry, ToolError, readable};
+use fleetd_contracts::auth::Role;
+
+use crate::hub::api::{Caller, Hub, Registry, ToolError, allows_everywhere, readable};
 use crate::hub::approvals::store::RequestFilter;
 use crate::hub::executor::shell_mapper::js_take;
 use crate::hub::tasks::TaskFilter;
@@ -59,6 +61,7 @@ async fn hub_info(
         started_at: None,
         busy: List::new(busy)
             .map_err(|e| ToolError::new(fleetd_contracts::mcp::ErrorCode::Failed, e))?,
+        admin: Some(allows_everywhere(&caller, Role::Admin)),
         next: Some(next.to_owned()),
         truncated,
     })

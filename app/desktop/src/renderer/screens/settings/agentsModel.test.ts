@@ -57,6 +57,14 @@ describe("machines", () => {
     expect(a).toMatchObject({ max: 30, cap: 22, machineCap: 22, top: 50, limit: 22, own: true });
     expect(agentsLabel(a)).toBe("agents 22 / 22 · 8 queued");
     expect(machineHolds(a, 22, "devbox")).toBeNull();
+    // Raising it while devbox runs its 22: the queued wait for the machine, not start.
+    expect(changeLine(a, 40)).toBe("Up to 40 at once, but its machine runs 22 at most: the 8 queued wait for it.");
+    const room = projectAgents({ ...fleet, perProject: [{ projectRef: storefront, maxAgents: 20, own: true, running: 20, queued: 8 }] }, storefront);
+    expect(changeLine(room, 40)).toBe("Up to 40 at once. 2 of the 8 queued can start now; the rest wait for its machine.");
+    expect(changeLine(room, 21)).toBe("Up to 21 at once. 1 of the 8 queued can start now.");
+    // Under a fleet cap below devbox's, the fleet holds them.
+    const fleet20: SlotState = { ...fleet, cap: 20, fleetCap: 20, perProject: [{ projectRef: storefront, maxAgents: 19, own: true, running: 20, queued: 8 }] };
+    expect(changeLine(projectAgents(fleet20, storefront), 20)).toBe("Up to 20 at once, but the whole fleet runs 20 at most: the 8 queued wait for it.");
     expect(machineHolds(a, 30, "devbox")).toBe("devbox runs at most 22 agents at once, so this project runs 22 until you raise devbox.");
     // A busy project on the default: its row says the fleet's number, and it follows its machine's.
     const busy = { projectRef: billing, maxAgents: 50, own: false, running: 2, queued: 0 };
