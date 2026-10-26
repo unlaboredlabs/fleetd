@@ -89,6 +89,41 @@ fn put_on(c: &Connection, p: &Preview) -> Result<(), StoreError> {
     Ok(())
 }
 
+/// Writes a preview a report moved, only while it still runs: ended and failed are final, whatever a late report
+/// says. False: it was over by then, and nothing changed.
+pub fn put_running_on(c: &Connection, p: &Preview) -> Result<bool, StoreError> {
+    let n = c.execute(
+        "UPDATE previews SET state = ?2, data = ?3 WHERE preview_id = ?1 AND state IN ('starting', 'ready')",
+        params![
+            p.preview_id.as_str(),
+            state_text(p.state),
+            serde_json::to_string(p)?
+        ],
+    )?;
+    Ok(n == 1)
+}
+
+/// Stores a new preview unless one of the same PR or order and target already runs in its project; that one is
+/// returned instead. One write at a time, so two quick asks start one preview.
+pub fn claim_on(c: &Connection, p: &Preview) -> Result<Option<Preview>, StoreError> {
+    let running = rows(
+        c,
+        "SELECT data FROM previews WHERE machine_id = ?1 AND project_id = ?2 AND state IN ('starting', 'ready')",
+        params![
+            p.project_ref.machine_id.as_str(),
+            p.project_ref.project_id.as_str()
+        ],
+    )?;
+    if let Some(same) = running
+        .into_iter()
+        .find(|q| q.of == p.of && q.target == p.target)
+    {
+        return Ok(Some(same));
+    }
+    put_on(c, p)?;
+    Ok(None)
+}
+
 fn state_text(state: PreviewState) -> &'static str {
     match state {
         PreviewState::Starting => "starting",
@@ -294,7 +329,11 @@ pub async fn start(hub: &Hub, r: &ProjectRef, ask: Ask) -> Result<Preview, ToolE
         idle_until: None,
         note: None,
     };
-    save(hub, &preview)?;
+    // Another ask may have started it meanwhile (it read GitHub, as this one did): that one is the preview.
+    if let Some(same) = hub.db.transaction(|c| claim_on(c, &preview))? {
+        return Ok(same);
+    }
+    announce(hub, &preview)?;
     heard(hub, &runner, &preview.preview_id);
     let frame = PreviewRunFrame {
         id: NonEmpty::unchecked("-"),
@@ -431,16 +470,12 @@ async fn heads(hub: &Hub, r: &ProjectRef, of: &PreviewOf) -> Result<Checkout, To
                     format!("#{n} is {}: there's nothing left to try.", pull.state),
                 ));
             }
-            if pull
-                .head
-                .repo
-                .as_ref()
-                .is_some_and(|h| !h.full_name.eq_ignore_ascii_case(repo.as_str()))
-            {
+            if !head_in(&pull.head, repo.as_str()) {
                 return Err(ToolError::new(
                     ErrorCode::Invalid,
                     format!(
-                        "#{n} comes from a fork, and a preview checks out branches of {repo} only."
+                        "#{n} comes from a fork, or from a repo that no longer exists, and a preview checks out \
+                         branches of {repo} only."
                     ),
                 ));
             }
@@ -508,6 +543,14 @@ async fn heads(hub: &Hub, r: &ProjectRef, of: &PreviewOf) -> Result<Checkout, To
             })
         }
     }
+}
+
+/// Whether a PR's head is a branch of `repo` itself. A fork's, or one whose repo GitHub no longer names (deleted), is
+/// not: a preview runs the code it checks out on our machine.
+pub fn head_in(head: &crate::hub::train::github::PullHead, repo: &str) -> bool {
+    head.repo
+        .as_ref()
+        .is_some_and(|h| h.full_name.eq_ignore_ascii_case(repo))
 }
 
 /// The machine a preview of `r` runs on: the project's own, where its repo is checked out, when its node runs
@@ -605,7 +648,13 @@ pub fn on_report(hub: &Hub, machine: &MachineId, report: PreviewReport) {
             p.idle_until = Some(iso_ms(now + idle_ms(hub, &p.project_ref)).into());
         }
         let after = (p.state, p.steps.len(), p.url.clone(), p.session_id.clone());
-        hub.db.transaction(|c| put_on(c, &p))?;
+        if !hub.db.transaction(|c| put_running_on(c, &p))? {
+            // It ended here after the read above: ended stays ended, and the node is told again.
+            if !report.state.is_over() {
+                stop(hub, machine, &p.preview_id, PreviewEndReason::Ended);
+            }
+            return Ok(());
+        }
         // A "used" report only pushes idleUntil: the app needs no event for it.
         if before != after || report.end_reason.is_some() {
             announce(hub, &p)?;

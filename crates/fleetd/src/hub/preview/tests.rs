@@ -1151,3 +1151,82 @@ async fn a_held_sessions_report_and_upload_go_under_its_live_preview() {
         .unwrap_err();
     assert!(why.contains("has ended"), "{why}");
 }
+
+/// A preview runs the PR's code on our machine, so only a head that is a branch of the repo itself is checked out: a
+/// fork's is refused, and so is one whose repo was deleted (GitHub names none).
+#[test]
+fn a_head_from_a_fork_or_a_deleted_repo_is_never_checked_out() {
+    let head = |repo: Value| -> crate::hub::train::github::PullHead {
+        serde_json::from_value(json!({ "ref": "fix", "sha": SHA, "repo": repo })).unwrap()
+    };
+    assert!(super::head_in(
+        &head(json!({ "full_name": "Acme/Shop" })),
+        "acme/shop"
+    ));
+    assert!(!super::head_in(
+        &head(json!({ "full_name": "mallory/shop" })),
+        "acme/shop"
+    ));
+    assert!(!super::head_in(&head(Value::Null), "acme/shop"));
+}
+
+/// Two quick asks for the same PR start one preview: the second, which read GitHub while the first did, gets the
+/// first one back when it comes to store its own.
+#[tokio::test]
+async fn two_quick_asks_for_one_pr_start_one_preview() {
+    let (hub, _clock, _home) = hub();
+    let devbox = node(&hub, "devbox", None);
+    let first = started(start(&hub, &person(), 14).await.unwrap());
+    let mut second = stored(&hub, &first);
+    second.preview_id = super::new_id();
+    let claimed = hub.db.transaction(|c| super::claim_on(c, &second)).unwrap();
+    assert_eq!(
+        claimed.map(|p| p.preview_id.to_string()),
+        Some(first.clone())
+    );
+    assert!(super::get(&hub, &second.preview_id).unwrap().is_none());
+    assert_eq!(super::running(&hub).unwrap().len(), 1);
+    // Another PR is a preview of its own.
+    second.of = serde_json::from_value(of_pr(15)).unwrap();
+    assert!(
+        hub.db
+            .transaction(|c| super::claim_on(c, &second))
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(super::running(&hub).unwrap().len(), 2);
+    assert_eq!(devbox.runs().len(), 1);
+}
+
+/// Ended is final: a report the node sent before it heard the stop, written after the preview ended, changes
+/// nothing.
+#[tokio::test]
+async fn a_late_report_never_moves_an_ended_preview_back() {
+    let (hub, _clock, _home) = hub();
+    let devbox = node(&hub, "devbox", None);
+    let id = started(start(&hub, &person(), 14).await.unwrap());
+    super::on_report(&hub, &mid("devbox"), report(&id, "ready", json!({})));
+    let read_before_the_end = stored(&hub, &id);
+    tool(&hub, &person(), "preview_end", json!({ "previewId": id }))
+        .await
+        .unwrap();
+    assert!(
+        !hub.db
+            .transaction(|c| super::put_running_on(c, &read_before_the_end))
+            .unwrap()
+    );
+    let ended = stored(&hub, &id);
+    assert_eq!(
+        (ended.state, ended.end_reason),
+        (PreviewState::Ended, Some(PreviewEndReason::Ended))
+    );
+    super::on_report(
+        &hub,
+        &mid("devbox"),
+        report(&id, "ready", json!({ "url": "http://devbox:8414" })),
+    );
+    let still = stored(&hub, &id);
+    assert_eq!((still.state, still.url), (PreviewState::Ended, None));
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    assert_eq!(devbox.stops().len(), 2, "told to stop, then told again");
+}
