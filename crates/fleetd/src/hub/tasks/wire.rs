@@ -499,6 +499,23 @@ impl AgentDirectory for Directory {
             .hub
             .upgrade()
             .ok_or_else(|| failed("the hub is shutting down".into()))?;
+        // A preview's session, held by the person: its node names it by the preview's id.
+        if let Ok(id) = fleetd_contracts::preview::PreviewId::new(thread.thread_id.as_str()) {
+            let preview = crate::hub::preview::get(&hub, &id)
+                .map_err(|e| failed(e.to_string()))?
+                .filter(|p| p.machine_id == thread.machine_id);
+            return match preview {
+                Some(p) if !p.state.is_over() => Ok((CallerAgent::Preview(id), p.project_ref)),
+                Some(_) => Err(McpToolError::new(
+                    ErrorCode::Forbidden,
+                    format!("preview {id} has ended, so its session makes no more calls"),
+                )),
+                None => Err(McpToolError::new(
+                    ErrorCode::Forbidden,
+                    format!("the hub holds no preview {id} on {}", thread.machine_id),
+                )),
+            };
+        }
         let leads = hub
             .leads
             .records

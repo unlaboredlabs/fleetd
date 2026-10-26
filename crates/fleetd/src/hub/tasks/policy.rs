@@ -2,6 +2,7 @@
 //! offers. A lead is depth 0 and its tasks depth 1; nothing goes deeper, so a task's agent never starts another agent.
 //! A lead has at most [`max_open_tasks`] tasks open at once.
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
+use fleetd_contracts::preview::PreviewId;
 use fleetd_contracts::tasks::TaskId;
 
 /// A lead's tasks are depth 1; a call that would start an agent below that is refused.
@@ -16,14 +17,17 @@ pub fn max_open_tasks(max_agents: i64) -> usize {
     MAX_OPEN_TASKS.max(2 * max_agents.max(0) as usize)
 }
 
-/// The calls a task's agent makes: its review verdict (`report`), a question for its lead, and reading its brief, its
-/// project's decisions and its PRs' reviews. Only a lead closes work.
+/// The calls a task's agent makes: its review verdict (`report`), a question for its lead, reading its brief, its
+/// project's decisions and its PRs' reviews, and Try it's suggestion and proposed setting (never a preview's start:
+/// only the person or a lead answering them starts one, D161). Only a lead closes work.
 pub const WORKER_OPS: &[&str] = &[
     "review_verdict",
     "ask_lead",
     "brief_read",
     "decisions_search",
     "review_read",
+    "preview_suggest",
+    "preview_config_propose",
 ];
 /// The calls a task's node makes for it: its browser sessions (node/browser).
 pub const NODE_OPS: &[&str] = &[
@@ -45,13 +49,16 @@ pub enum CallerAgent {
     Lead,
     /// A task's agent.
     Task(TaskId),
+    /// No agent: a preview's browser session, which the person holds from the start (hub/preview). Its node reports
+    /// the session and uploads its recording under the preview's id.
+    Preview(PreviewId),
 }
 
 impl CallerAgent {
     pub fn depth(&self) -> u32 {
         match self {
             CallerAgent::Person | CallerAgent::Lead => 0,
-            CallerAgent::Task(_) => 1,
+            CallerAgent::Task(_) | CallerAgent::Preview(_) => 1,
         }
     }
 }
@@ -80,13 +87,21 @@ pub fn check(agent: &CallerAgent, op: &str) -> Result<(), McpToolError> {
                     format!("{op} is a lead's call, and {task} is a task."),
                 )
                 .with_fix(
-                    "A task reports its review verdict (report), asks its lead (ask_lead), and reads its brief \
-                     (brief_read), decisions (decisions_search) and its PRs' reviews (review_read). Put anything \
-                     else in your result or ask your lead.",
+                    "A task reports its review verdict (report), asks its lead (ask_lead), reads its brief \
+                     (brief_read), decisions (decisions_search) and its PRs' reviews (review_read), and may suggest \
+                     the person try its PR (preview_suggest) or propose how to run it (preview_config_propose). Put \
+                     anything else in your result or ask your lead.",
                 ));
             }
             Ok(())
         }
+        CallerAgent::Preview(preview) if !NODE_OPS.contains(&op) => Err(McpToolError::new(
+            ErrorCode::Forbidden,
+            format!(
+                "{op} isn't a call of preview {preview}'s session, which only reports itself and its recording."
+            ),
+        )),
+        CallerAgent::Preview(_) => Ok(()),
         CallerAgent::Person | CallerAgent::Lead if op == "ask_lead" => Err(McpToolError::new(
             ErrorCode::Invalid,
             "ask_lead is a task's question for its lead, and this call comes from no task.",
@@ -149,6 +164,7 @@ mod tests {
             "close",
             "gated_run",
             "claim_done",
+            "preview_start",
         ] {
             let refused = check(&task(), op).unwrap_err();
             assert_eq!(
@@ -167,6 +183,27 @@ mod tests {
             assert_eq!(
                 check(&agent, "ask_lead").unwrap_err().code,
                 ErrorCode::Invalid
+            );
+        }
+    }
+
+    #[test]
+    fn a_previews_session_only_reports_itself() {
+        let preview = CallerAgent::Preview(PreviewId::unchecked(format!("P{}", "a".repeat(32))));
+        for op in NODE_OPS {
+            assert_eq!(check(&preview, op), Ok(()), "{op}");
+        }
+        for op in [
+            "task_spawn",
+            "preview_start",
+            "preview_suggest",
+            "ask_lead",
+            "gated_run",
+        ] {
+            assert_eq!(
+                check(&preview, op).unwrap_err().code,
+                ErrorCode::Forbidden,
+                "{op}"
             );
         }
     }

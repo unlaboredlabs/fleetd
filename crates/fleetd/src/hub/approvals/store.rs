@@ -19,6 +19,7 @@ pub struct NewRequest {
     pub secret: Option<fleetd_contracts::ledger::SecretRequest>,
     pub gated: Option<fleetd_contracts::ledger::GatedRunSpec>,
     pub permission: Option<fleetd_contracts::ledger::ToolPermission>,
+    pub preview_config: Option<fleetd_contracts::preview::PreviewConfigProposeCall>,
     pub at: Timestamp,
     pub at_ms: i64,
 }
@@ -78,6 +79,7 @@ impl Requests {
                 "secret": new.secret,
                 "gated": new.gated,
                 "permission": new.permission,
+                "previewConfig": new.preview_config,
                 "createdAt": new.at,
             }))
         };

@@ -51,6 +51,8 @@ pub struct NewMessage {
     pub held: bool,
     /// Defaults to now.
     pub created_ms: Option<i64>,
+    /// An agent's suggestion to try a PR (hub/preview).
+    pub preview_suggestion: Option<fleetd_contracts::preview::PreviewSuggestion>,
 }
 
 fn key(r: &ProjectRef) -> String {
@@ -302,8 +304,7 @@ impl Chat {
                 history: new.history,
                 remembered: new.remembered,
                 skills: (!new.skills.is_empty()).then(|| List::unchecked(new.skills)),
-                // Posted by the hub's preview_suggest (W58), which comes next.
-                preview_suggestion: None,
+                preview_suggestion: new.preview_suggestion,
                 parts: (author == ChatAuthor::Lead && !new.streaming)
                     .then(|| parts::parts(&text))
                     .flatten(),

@@ -124,6 +124,7 @@ fn reply_of(frame: &NodeToHub) -> Option<(&'static str, &str)> {
         NodeToHub::GatedResult(r) => Some(("gated_result", r.id.as_str())),
         NodeToHub::NodeActionResult(r) => Some(("node_action_result", r.id.as_str())),
         NodeToHub::SessionHostResult(r) => Some(("session_host_result", r.id.as_str())),
+        NodeToHub::PreviewRunResult(r) => Some(("preview_run_result", r.id.as_str())),
         _ => None,
     }
 }
@@ -167,6 +168,16 @@ impl NodeCommands {
             .get(machine_id)
             .ok_or_else(|| NodeCommandError::offline(machine_id))?;
         link.send.send(frame).map_err(|_| lost(machine_id))
+    }
+
+    /// Which link the machine's node is on now: a new number each time it links again.
+    pub fn link_id(&self, machine_id: &MachineId) -> Option<u64> {
+        self.state
+            .lock()
+            .unwrap()
+            .links
+            .get(machine_id)
+            .map(|l| l.id)
     }
 
     /// Whether the machine's node is linked now.
@@ -402,6 +413,27 @@ impl NodeCommands {
             .await?
         {
             NodeToHub::SessionHostResult(r) => Ok(r.frame),
+            _ => unreachable!("resolve matches the reply tag"),
+        }
+    }
+
+    /// `preview_run` -> `preview_run_result`: the node took the preview (it reports with `preview_report` as it goes)
+    /// or refused it. Waits at most `wait`.
+    pub async fn run_preview(
+        &self,
+        machine_id: &MachineId,
+        frame: &fleetd_contracts::preview::PreviewRunFrame,
+        wait: Duration,
+    ) -> Result<fleetd_contracts::preview::PreviewRunResult, NodeCommandError> {
+        let mut request = serde_json::to_value(frame).map_err(|e| {
+            NodeCommandError::new(machine_id, NodeCommandErrorReason::Invalid, e.to_string())
+        })?;
+        request["t"] = json!("preview_run");
+        match self
+            .request(machine_id, request, "preview_run_result", wait)
+            .await?
+        {
+            NodeToHub::PreviewRunResult(r) => Ok(r),
             _ => unreachable!("resolve matches the reply tag"),
         }
     }
