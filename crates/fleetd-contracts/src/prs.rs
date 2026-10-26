@@ -17,8 +17,11 @@ use crate::prim::{Count, NonEmpty, Positive, Text};
 use crate::tasks::TaskId;
 use crate::train::{ChangeId, ChangeState, GitHubPrUrl, GitHubRepo};
 
-/// The most rows `pr_list` answers.
+/// The most rows `pr_list` answers per page.
 pub const PR_LIST_MAX: usize = 60;
+
+/// Where a `pr_list` page ended, from its `nextCursor`; opaque.
+pub type PrListCursor = Text<1, 300>;
 /// Files per `pr_files` page.
 pub const PR_FILES_PAGE: usize = 100;
 /// Diff lines per `pr_diff` page, at most.

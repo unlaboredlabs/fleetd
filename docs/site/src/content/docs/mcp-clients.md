@@ -167,13 +167,14 @@ as stopping a project, answering an approval or entering a secret, need one.
 | `decisions_overturn {decisionId, value?, why}` | Take back a decision in force. Without `value` it is revoked and the lead asks again when it comes up; with `value` a new decision on the same question replaces it, as yours. The lead reads the change, and your why, at its next wake. | operate, human key |
 | `requests_list {projectRef?, state?}` | Secret and approval requests, newest first, with their state. A secret's value is never in it, only its fingerprint. | read |
 | `project_stop {projectRef, reason?}` | Stop every running and queued agent of the project and tell the lead in its chat. Merged PRs, the lead and the chat stay. | operate, human key |
-| `attachment_put {name, mime, dataB64}` | Upload a file (image, text or PDF, at most 5 MiB) for a message. | operate |
+| `attachment_put {name, mime, dataB64, uploadId?}` | Upload a file (image, text or PDF, at most 25 MiB) for a message; up to 20 go with one message. | operate |
+| `attachment_part {dataB64, uploadId?, offset?}` | One piece of a file too large for one request, in order: pass the `uploadId` it returns and the bytes sent so far as `offset` with the next piece, and the last piece to `attachment_put` with the `uploadId`. | operate |
 | `attachment_get {projectRef, attachmentId}` | Read a file attached to a project's chat. | read |
 | `project_files {machineId, projectId, query}` | A project's files, for `@`-mentions. | read |
 | `status_get` | One row per project: its state word, its work in groups, agents running and the last merge. | read |
 | `agents_list {projectRef?, endedSince?}` | Every agent of your projects: its role, task, what it's doing now, when it started and its PR. | read |
 | `agent_work {machineId, threadId, before?, limit?}` | A page of one agent's recent messages, commands and edits, oldest first. Secrets show as `[secret]`. | read |
-| `pr_list {projectRef, closedSince?}`, `pr_get {repo, number}` | A project's PRs, and one in detail: description, checks, reviews with their findings, its place in the merge queue and the agent that wrote it. | read |
+| `pr_list {projectRef, closedSince?, cursor?}`, `pr_get {repo, number}` | A project's PRs, up to 60 a page (`nextCursor`, passed as `cursor`, reads the next), and one in detail: description, checks, reviews with their findings, its place in the merge queue and the agent that wrote it. | read |
 | `pr_files {repo, number, offset?}`, `pr_diff {repo, number, path, offset?}` | A PR's changed files, and one file's diff a page at a time. | read |
 | `workstream_list`, `order_get`, `thread_tail`, `fleetd_status` | Lower-level views of the lead's work. | read |
 

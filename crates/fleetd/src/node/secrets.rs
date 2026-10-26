@@ -357,6 +357,65 @@ pub async fn run_gated(frame: GatedRun, ctx: &SecretsContext<'_>) -> GatedResult
 mod tests {
     use super::*;
 
+    /// The largest secret goes end to end: sealed to the node's key, opened, written to an env sink, and read back
+    /// into an approved command's environment whole. One byte more is no sealed secret at all.
+    #[tokio::test]
+    async fn a_64_kib_secret_reaches_its_sink_and_a_gated_run() {
+        use fleetd_contracts::secrets::{SEAL_OVERHEAD, SECRET_MAX_BYTES, SealedSecret};
+        let home = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let root_path = root.path().canonicalize().unwrap();
+        let roots = [root_path.to_string_lossy().into_owned()];
+        let key = super::super::identity::load_or_create_box_key(home.path()).unwrap();
+        let ctx = SecretsContext {
+            machine_id: "devbox",
+            roots: &roots,
+            home: home.path(),
+            box_key: Some(&key),
+        };
+        let public: [u8; 32] = B64.decode(key.public_key()).unwrap().try_into().unwrap();
+        let seal = |value: &[u8]| {
+            B64.encode(
+                crypto_box::PublicKey::from(public)
+                    .seal(&mut crypto_box::aead::OsRng, value)
+                    .unwrap(),
+            )
+        };
+        let value = "k".repeat(SECRET_MAX_BYTES);
+        let frame: SecretDeliver = serde_json::from_value(serde_json::json!({
+            "id": "1",
+            "sink": format!("env:devbox:{}/.env", roots[0]),
+            "sealed": seal(value.as_bytes()),
+            "secretKey": "big.key",
+        }))
+        .unwrap();
+        let result = deliver_secret(&frame, &ctx);
+        assert_eq!(result.error, None);
+        assert_eq!(read_secret("big.key", &ctx).unwrap().as_str(), value);
+
+        let run: GatedRun = serde_json::from_value(serde_json::json!({
+            "id": "2",
+            "argv": ["sh", "-c", "printf %s \"$BIG_KEY\" | wc -c"],
+            "cwd": roots[0],
+            "timeoutSec": 60,
+            "secretEnv": [{ "name": "BIG_KEY", "secretKey": "big.key" }],
+        }))
+        .unwrap();
+        let ran = run_gated(run, &ctx).await;
+        assert_eq!(ran.error, None);
+        assert_eq!(
+            ran.output_tail.as_str().trim(),
+            SECRET_MAX_BYTES.to_string()
+        );
+
+        let over = seal("k".repeat(SECRET_MAX_BYTES + 1).as_bytes());
+        assert_eq!(
+            B64.decode(&over).unwrap().len(),
+            SEAL_OVERHEAD + SECRET_MAX_BYTES + 1
+        );
+        assert!(SealedSecret::new(over).is_err());
+    }
+
     #[test]
     fn env_sink_replaces_the_first_line_in_place_and_drops_duplicates() {
         let existing = "# app\nA=1\nexport STRIPE_TEST_KEY=old\nB=2\nSTRIPE_TEST_KEY=older\n";

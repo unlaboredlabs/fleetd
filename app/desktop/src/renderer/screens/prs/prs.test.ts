@@ -124,7 +124,7 @@ describe("the list", () => {
   it("says what an empty filter has instead, and offers the filter that has something", () => {
     const merged = [row({ number: 8, state: "merged" })];
     expect(listItems(merged, "open")).toEqual([]);
-    expect(emptyWords("open", filterCounts(merged))).toEqual({ title: "Nothing open", body: "1 merged in the last week.", offer: { filter: "merged", label: "Show merged" } });
+    expect(emptyWords("open", filterCounts(merged))).toEqual({ title: "Nothing open", body: "1 merged.", offer: { filter: "merged", label: "Show merged" } });
     expect(emptyWords("open", filterCounts([row({ state: "closed" })])).offer?.filter).toBe("all");
     expect(emptyWords("merged", filterCounts([row()])).offer).toEqual({ filter: "open", label: "Show open" });
     expect(emptyWords("all", filterCounts([]))).toMatchObject({ title: "No pull requests yet", offer: undefined });

@@ -12,7 +12,7 @@ use crate::checked;
 use crate::effort::TaskProfile;
 use crate::ids::ThreadId;
 use crate::ledger::{
-    Brief, Decision, DecisionKey, DecisionValue, DecisionWhy, EnvName, GATED_MAX_TIMEOUT_SEC,
+    Brief, Decision, DecisionKey, DecisionValue, DecisionWhy, EnvName, GATED_DEFAULT_TIMEOUT_SEC,
     GatedArgv, GatedClass, GatedCwd, GatedTimeoutSec, IntakeText, RequestState, SecretEnv,
     WorkstreamId, WorkstreamState,
 };
@@ -76,8 +76,8 @@ checked!(RequestSecretCall, |call| {
     Ok(())
 });
 
-fn gated_max_timeout() -> GatedTimeoutSec {
-    GatedTimeoutSec::unchecked(GATED_MAX_TIMEOUT_SEC)
+fn gated_default_timeout() -> GatedTimeoutSec {
+    GatedTimeoutSec::unchecked(GATED_DEFAULT_TIMEOUT_SEC)
 }
 
 /// `request_withdraw`: the lead takes back a secret request it no longer needs (the human said so in chat), or a
@@ -99,7 +99,7 @@ pub struct GatedRunCall {
     pub class: GatedClass,
     pub reason: Text<1, 500>,
     pub secret_env: Option<SecretEnv>,
-    #[serde(default = "gated_max_timeout")]
+    #[serde(default = "gated_default_timeout")]
     pub timeout_sec: GatedTimeoutSec,
     pub workstream_id: Option<WorkstreamId>,
 }
@@ -452,15 +452,29 @@ mod tests {
     }
 
     #[test]
-    fn gated_run_defaults_to_thirty_minutes_and_refuses_longer() {
+    fn gated_run_defaults_to_thirty_minutes_and_refuses_past_four_hours() {
         let gated = serde_json::json!({ "op": "gated_run", "argv": ["echo", "hi"], "class": "irreversible", "reason": "deploy" });
         let LeadCall::GatedRun(run) = call(gated.clone()).unwrap() else {
             panic!("not a gated run")
         };
         assert_eq!(run.timeout_sec.get(), 1800);
+        let mut four_hours = gated.clone();
+        four_hours["timeoutSec"] = 14_400.into();
+        let LeadCall::GatedRun(run) = call(four_hours).unwrap() else {
+            panic!("not a gated run")
+        };
+        assert_eq!(run.timeout_sec.get(), 14_400);
         let mut longer = gated;
-        longer["timeoutSec"] = 1801.into();
+        longer["timeoutSec"] = 14_401.into();
         assert!(call(longer).is_err());
+        // The node takes the same four hours from the hub.
+        let run = |timeout: i64| {
+            serde_json::from_value::<crate::node_link::GatedRun>(serde_json::json!({
+                "id": "g1", "argv": ["./deploy.sh"], "cwd": "/work/app", "timeoutSec": timeout,
+            }))
+        };
+        assert!(run(14_400).is_ok());
+        assert!(run(14_401).is_err());
     }
 
     #[test]

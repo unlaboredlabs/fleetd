@@ -24,7 +24,7 @@ as soon as a chat opens. A new chat asks what the lead should do, with a few sta
 | You can | How |
 |---|---|
 | Describe work | In your own words. The lead turns it into tasks itself. |
-| Attach files | Paste, drop, or attach images, text or PDF. The lead gets them with your message. |
+| Attach files | Paste, drop, or attach images, text or PDF: up to 20 files a message, 25 MB each. The lead gets them with your message. |
 | Paste a screenshot | Paste it into the box. |
 | Send it again | Press ↑ in the empty box to bring back your last message. |
 
@@ -140,7 +140,8 @@ For a project's work at a glance, see [Status](/docs/status). For where the time
 ## Read a pull request {#prs}
 
 The Pull requests tab of the panel beside the chat (⌥⌘B) lists the project's PRs: open ones first, then those merged
-or closed in the last week, each with its checks, its reviews and the agent that wrote it. A PR named in the chat
+or closed, most recent first, each with its checks, its reviews and the agent that wrote it. **Load more** at the end
+reads older ones, back to the repo's first PR. A PR named in the chat
 ("#221", "PR #221" or its GitHub link), in the agents strip or in [Agents](/docs/desktop-app#agents) opens it there too. For another project's, open the command palette
 (⌘K), select the project, press ⌘K again and choose **Pull requests in this project**.
 

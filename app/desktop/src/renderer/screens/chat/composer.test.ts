@@ -2,6 +2,8 @@
 // receipts stay quiet unless something needs you, ↑ brings back your last message, and a project's draft and files
 // outlive the view (its words outlive the app).
 import { describe, expect, it, vi } from "vitest";
+import { ATTACHMENT_MAX_BYTES, ATTACHMENT_PART_BYTES } from "../../../shared/contracts";
+import { MAX_CALL_INPUT_BYTES } from "../../../shared/ipc";
 import type { DataLayer } from "../../src/data/queries";
 import { pastedName } from "./attachments";
 import { checkMessage, placeholder, receiptFor, recallsOn, sendsOn, stopFailed, type Sendable } from "./composerModel";
@@ -23,8 +25,9 @@ describe("the box", () => {
     expect(checkMessage("nvm", 0)).toEqual({ ok: true, text: "nvm" });
     expect(checkMessage("", 1)).toEqual({ ok: false, reason: "Add a few words about the files." });
     expect(checkMessage("   ", 0)).toEqual({ ok: false, reason: "" });
-    const long = checkMessage("x".repeat(20_001), 0);
-    expect(long.ok ? "" : long.reason).toMatch(/20,001/);
+    expect(checkMessage("x".repeat(100_000), 0).ok).toBe(true);
+    const long = checkMessage("x".repeat(100_001), 0);
+    expect(long.ok ? "" : long.reason).toMatch(/at most 100,000 characters; this is 100,001/);
   });
 
   it("says a message to a working lead lands at its next step", () => {
@@ -133,11 +136,47 @@ describe("a project's draft", () => {
   it("keeps a restored message's files within the per-message limit, and says how many didn't fit", () => {
     const d = createDrafts(layer(() => Promise.resolve({ ok: true, output: {} })));
     const ref = (n: number) => ({ attachmentId: `F${n}`, name: `f${n}.png`, mime: "image/png", bytes: 1 }) as const;
-    d.restore("devbox/api", "one", [1, 2, 3, 4, 5].map(ref));
-    d.restore("devbox/api", "two", [6, 7, 8, 9, 10].map(ref));
+    d.restore("devbox/api", "one", Array.from({ length: 12 }, (_, i) => ref(i + 1)));
+    d.restore("devbox/api", "two", Array.from({ length: 10 }, (_, i) => ref(i + 13)));
     const draft = d.store.getState()["devbox/api"];
-    expect(draft?.attached).toHaveLength(8);
+    expect(draft?.attached).toHaveLength(20);
     expect(draft?.error).toMatch(/2 of its files didn’t fit/);
+  });
+
+  it("sends a 25 MB file in pieces in order, takes 20 files, and refuses a 21st or a larger one", async () => {
+    const calls: Array<{ tool: string; input: Record<string, unknown> }> = [];
+    let n = 0;
+    const call = vi.fn((tool: string, input: Record<string, unknown>) => {
+      calls.push({ tool, input });
+      const bytes = calls.filter((c) => c.tool === "attachment_part").length * ATTACHMENT_PART_BYTES;
+      return Promise.resolve(
+        tool === "attachment_part"
+          ? { ok: true, output: { uploadId: `U${"0".repeat(32)}`, bytes } }
+          : { ok: true, output: { attachmentId: `F${++n}`, bytes: input["uploadId"] === undefined ? 2 : ATTACHMENT_MAX_BYTES, sha256: "x" } },
+      );
+    });
+    const d = createDrafts({ call: call as unknown as DataLayer["call"] });
+    const big = new File([new Uint8Array(ATTACHMENT_MAX_BYTES).fill(0x61)], "big.txt", { type: "text/plain" });
+    const small = (i: number) => new File(["hi"], `note-${i}.txt`, { type: "text/plain" });
+    d.attach("devbox/api", [big, ...Array.from({ length: 19 }, (_, i) => small(i))]);
+    await vi.waitFor(() => expect(d.store.getState()["devbox/api"]?.attached.every((a) => a.upload !== undefined)).toBe(true));
+    const draft = d.store.getState()["devbox/api"];
+    expect(draft?.attached).toHaveLength(20);
+    const first = draft?.attached[0]?.upload;
+    expect(first?.ok === true ? { name: first.ref.name, mime: first.ref.mime, bytes: first.ref.bytes } : first).toEqual({ name: "big.txt", mime: "text/plain", bytes: ATTACHMENT_MAX_BYTES });
+    const parts = calls.filter((c) => c.tool === "attachment_part");
+    expect(parts).toHaveLength(ATTACHMENT_MAX_BYTES / ATTACHMENT_PART_BYTES - 1);
+    expect(parts.map((c) => c.input["offset"])).toEqual([undefined, ...parts.slice(1).map((_, i) => (i + 1) * ATTACHMENT_PART_BYTES)]);
+    // Each piece fits one call to main.
+    expect(Math.max(...calls.map((c) => JSON.stringify(c.input).length))).toBeLessThan(MAX_CALL_INPUT_BYTES);
+    const last = calls.find((c) => c.tool === "attachment_put" && c.input["uploadId"] !== undefined);
+    expect(atob(String(last?.input["dataB64"])).length).toBe(ATTACHMENT_PART_BYTES);
+
+    d.attach("devbox/api", [small(20)]);
+    expect(d.store.getState()["devbox/api"]?.error).toBe("A message carries at most 20 files.");
+    const e = createDrafts({ call: call as unknown as DataLayer["call"] });
+    e.attach("devbox/web", [new File([new Uint8Array(ATTACHMENT_MAX_BYTES + 1)], "huge.pdf")]);
+    expect(e.store.getState()["devbox/web"]?.error).toBe("huge.pdf is 25.0 MB; a file is at most 25 MB.");
   });
 
   it("counts a file the hub refused as not uploaded", async () => {

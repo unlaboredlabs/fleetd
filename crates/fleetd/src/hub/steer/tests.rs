@@ -186,6 +186,44 @@ async fn a_resent_steer_with_the_same_key_and_request_id_is_one_steer() {
     );
 }
 
+/// A steer of 20,000 characters goes to the agent whole; one more character is refused before anything is sent.
+#[tokio::test]
+async fn a_steer_is_at_most_20000_characters() {
+    let lab = lab();
+    let tools = crate::hub::api::registry();
+    let steer = |text: String, crid: &str| json!({ "target": { "workstreamId": "W1" }, "text": text, "clientRequestId": crid });
+    let long = "x".repeat(STEER_TEXT_MAX);
+    let sent = tools
+        .call(
+            &lab.hub,
+            &person("k1"),
+            "steer_send",
+            steer(long.clone(), "r1"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(sent["text"], long);
+    let message: String = lab
+        .hub
+        .db
+        .with(|c| Ok(c.query_row("SELECT message FROM queued_writes", [], |r| r.get(0))?))
+        .unwrap();
+    assert!(message.contains(&long), "the agent gets every character");
+    let Err(crate::hub::api::CallError::Invalid(why)) = tools
+        .call(
+            &lab.hub,
+            &person("k1"),
+            "steer_send",
+            steer(format!("{long}x"), "r2"),
+        )
+        .await
+    else {
+        panic!("a steer past the limit was taken")
+    };
+    assert!(why.contains("20000"), "{why}");
+    assert_eq!(events_of(&lab.hub, HubEventType::SteerQueued), 1);
+}
+
 #[tokio::test]
 async fn receipts_move_a_steer_forward_once_and_replays_change_nothing() {
     let lab = lab();

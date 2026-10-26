@@ -749,10 +749,56 @@
       ],
       "type": "string"
     },
+    "AttachmentPartInput": {
+      "properties": {
+        "dataB64": {
+          "description": "Standard base64.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "offset": {
+          "description": "With uploadId: the bytes sent so far, which must match the hub's count.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "uploadId": {
+          "$ref": "#/$defs/UploadId"
+        }
+      },
+      "required": [
+        "dataB64"
+      ],
+      "type": "object"
+    },
+    "AttachmentPartOutput": {
+      "properties": {
+        "bytes": {
+          "description": "Received so far.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "uploadId": {
+          "$ref": "#/$defs/UploadId"
+        }
+      },
+      "required": [
+        "uploadId",
+        "bytes"
+      ],
+      "type": "object"
+    },
     "AttachmentPutInput": {
       "properties": {
         "dataB64": {
-          "description": "Standard base64; at most 5 MiB decoded.",
+          "description": "Standard base64: the whole file, or with uploadId its last piece. At most 25 MiB decoded, all pieces together.",
           "minLength": 1,
           "type": "string"
         },
@@ -764,6 +810,10 @@
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
           "type": "string"
+        },
+        "uploadId": {
+          "$ref": "#/$defs/UploadId",
+          "description": "The pieces sent with attachment_part, which come before dataB64."
         }
       },
       "required": [
@@ -1696,7 +1746,7 @@
           "items": {
             "$ref": "#/$defs/AttachmentRef"
           },
-          "maxItems": 8,
+          "maxItems": 20,
           "type": "array"
         },
         "author": {
@@ -1856,7 +1906,7 @@
           "items": {
             "$ref": "#/$defs/AttachmentId"
           },
-          "maxItems": 8,
+          "maxItems": 20,
           "type": "array",
           "uniqueItems": true
         },
@@ -1884,7 +1934,7 @@
           "description": "Sent from inside a fleetd session: its thread id (FLEETD_THREAD_ID), as the caller reports it. The project's own\nlead and tasks are refused (they use their fleetd tools), and so is a human key. It catches mistakes; the key,\nnot this field, carries authority."
         },
         "text": {
-          "maxLength": 20000,
+          "maxLength": 100000,
           "minLength": 1,
           "type": "string"
         }
@@ -3532,7 +3582,7 @@
           "type": "array"
         },
         "timeoutSec": {
-          "maximum": 1800,
+          "maximum": 14400,
           "minimum": 1,
           "type": "integer"
         }
@@ -4863,6 +4913,12 @@
         "attachment_get.output": {
           "$ref": "#/$defs/AttachmentGetOutput"
         },
+        "attachment_part.input": {
+          "$ref": "#/$defs/AttachmentPartInput"
+        },
+        "attachment_part.output": {
+          "$ref": "#/$defs/AttachmentPartOutput"
+        },
         "attachment_put.input": {
           "$ref": "#/$defs/AttachmentPutInput"
         },
@@ -4958,6 +5014,12 @@
         },
         "lead_start.output": {
           "$ref": "#/$defs/LeadStartOutput"
+        },
+        "memory_caps_set.input": {
+          "$ref": "#/$defs/MemoryCapsSetInput"
+        },
+        "memory_caps_set.output": {
+          "$ref": "#/$defs/MemoryCapsSetOutput"
         },
         "memory_get.input": {
           "$ref": "#/$defs/MemoryGetInput"
@@ -5229,6 +5291,8 @@
         "approval_answer.output",
         "attachment_get.input",
         "attachment_get.output",
+        "attachment_part.input",
+        "attachment_part.output",
         "attachment_put.input",
         "attachment_put.output",
         "cap_set.input",
@@ -5261,6 +5325,8 @@
         "hub_info.output",
         "lead_start.input",
         "lead_start.output",
+        "memory_caps_set.input",
+        "memory_caps_set.output",
         "memory_get.input",
         "memory_get.output",
         "memory_set.input",
@@ -5350,6 +5416,120 @@
       ],
       "type": "object"
     },
+    "MemoryCaps": {
+      "description": "What memory writes are held to, in characters. A write past a cap is refused; a file already past a lowered cap\nstays as it is until it is next written.",
+      "properties": {
+        "index": {
+          "description": "Each project's `MEMORY.md`.",
+          "maximum": 100000,
+          "minimum": 1000,
+          "type": "integer"
+        },
+        "project": {
+          "description": "A project's files together, `MEMORY.md` included.",
+          "maximum": 400000,
+          "minimum": 1000,
+          "type": "integer"
+        },
+        "topic": {
+          "description": "Each topic file.",
+          "maximum": 100000,
+          "minimum": 1000,
+          "type": "integer"
+        },
+        "user": {
+          "description": "`user.md`.",
+          "maximum": 100000,
+          "minimum": 1000,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "user",
+        "index",
+        "topic",
+        "project"
+      ],
+      "type": "object"
+    },
+    "MemoryCapsSetInput": {
+      "description": "What memory writes are held to, in characters. A write past a cap is refused; a file already past a lowered cap\nstays as it is until it is next written.",
+      "properties": {
+        "index": {
+          "description": "Each project's `MEMORY.md`.",
+          "maximum": 100000,
+          "minimum": 1000,
+          "type": "integer"
+        },
+        "project": {
+          "description": "A project's files together, `MEMORY.md` included.",
+          "maximum": 400000,
+          "minimum": 1000,
+          "type": "integer"
+        },
+        "topic": {
+          "description": "Each topic file.",
+          "maximum": 100000,
+          "minimum": 1000,
+          "type": "integer"
+        },
+        "user": {
+          "description": "`user.md`.",
+          "maximum": 100000,
+          "minimum": 1000,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "user",
+        "index",
+        "topic",
+        "project"
+      ],
+      "type": "object"
+    },
+    "MemoryCapsSetOutput": {
+      "description": "What memory writes are held to, in characters. A write past a cap is refused; a file already past a lowered cap\nstays as it is until it is next written.",
+      "properties": {
+        "index": {
+          "description": "Each project's `MEMORY.md`.",
+          "maximum": 100000,
+          "minimum": 1000,
+          "type": "integer"
+        },
+        "next": {
+          "type": "string"
+        },
+        "project": {
+          "description": "A project's files together, `MEMORY.md` included.",
+          "maximum": 400000,
+          "minimum": 1000,
+          "type": "integer"
+        },
+        "topic": {
+          "description": "Each topic file.",
+          "maximum": 100000,
+          "minimum": 1000,
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "user": {
+          "description": "`user.md`.",
+          "maximum": 100000,
+          "minimum": 1000,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "user",
+        "index",
+        "topic",
+        "project"
+      ],
+      "type": "object"
+    },
     "MemoryFile": {
       "properties": {
         "cap": {
@@ -5374,7 +5554,7 @@
           "$ref": "#/$defs/MemoryScope"
         },
         "text": {
-          "maxLength": 8000,
+          "maxLength": 100000,
           "type": "string"
         },
         "topic": {
@@ -5405,6 +5585,10 @@
     },
     "MemoryGetOutput": {
       "properties": {
+        "caps": {
+          "$ref": "#/$defs/MemoryCaps",
+          "description": "The hub's caps. Absent from older hubs."
+        },
         "files": {
           "description": "With projectRef: MEMORY.md first, then the topic files by name.",
           "items": {
@@ -5490,7 +5674,7 @@
         },
         "text": {
           "description": "The whole file. Empty deletes it (a topic's index line too).",
-          "maxLength": 8000,
+          "maxLength": 100000,
           "type": "string"
         },
         "topic": {
@@ -6993,6 +7177,11 @@
         "closedSince": {
           "$ref": "#/$defs/Timestamp"
         },
+        "cursor": {
+          "maxLength": 300,
+          "minLength": 1,
+          "type": "string"
+        },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
         }
@@ -7013,6 +7202,12 @@
           "type": "string"
         },
         "next": {
+          "type": "string"
+        },
+        "nextCursor": {
+          "description": "There are more rows: pass it as cursor for the next page.",
+          "maxLength": 300,
+          "minLength": 1,
           "type": "string"
         },
         "prs": {
@@ -10008,7 +10203,7 @@
           "$ref": "#/$defs/SteerTarget"
         },
         "text": {
-          "maxLength": 4000,
+          "maxLength": 20000,
           "minLength": 1,
           "type": "string"
         },
@@ -10092,7 +10287,7 @@
           "items": {
             "$ref": "#/$defs/AttachmentId"
           },
-          "maxItems": 8,
+          "maxItems": 20,
           "type": "array",
           "uniqueItems": true
         },
@@ -10115,7 +10310,7 @@
           "$ref": "#/$defs/SteerTarget"
         },
         "text": {
-          "maxLength": 4000,
+          "maxLength": 20000,
           "minLength": 1,
           "type": "string"
         }
@@ -10185,7 +10380,7 @@
           "$ref": "#/$defs/SteerTarget"
         },
         "text": {
-          "maxLength": 4000,
+          "maxLength": 20000,
           "minLength": 1,
           "type": "string"
         },
@@ -10352,7 +10547,7 @@
           "$ref": "#/$defs/SteerTarget"
         },
         "text": {
-          "maxLength": 4000,
+          "maxLength": 20000,
           "minLength": 1,
           "type": "string"
         },
@@ -11689,6 +11884,10 @@
         "queue"
       ],
       "type": "object"
+    },
+    "UploadId": {
+      "pattern": "^U[0-9a-f]{32}$",
+      "type": "string"
     },
     "UsageBreaker": {
       "description": "Open: no new turns start on the machine's login until `until` or usage_resume.",

@@ -289,8 +289,10 @@ impl JsonSchema for SecretEnv {
     }
 }
 
-/// The node runs at most 30 minutes.
-pub const GATED_MAX_TIMEOUT_SEC: i64 = 1800;
+/// The node runs at most 4 hours.
+pub const GATED_MAX_TIMEOUT_SEC: i64 = 14_400;
+/// A gated run without a timeout gets 30 minutes.
+pub const GATED_DEFAULT_TIMEOUT_SEC: i64 = 1800;
 pub type GatedTimeoutSec = Int<1, GATED_MAX_TIMEOUT_SEC>;
 
 /// argv only, no shell unless argv itself invokes one; at most 64 entries like a `cmd` check.

@@ -19,6 +19,8 @@ A steer goes straight to the agent. It doesn't wait for the lead's next wake, an
 2. While the lead works, type in the box at the bottom. It says "Message the lead. It reads this at its next step."
 3. Press Enter.
 
+A steer holds up to 20,000 characters, and a chat message up to 100,000; attach anything longer as a file.
+
 The lead reads your message at its [next step](#next-step). Nothing it is doing is cut short. When the lead is idle,
 the same message starts its next turn instead.
 

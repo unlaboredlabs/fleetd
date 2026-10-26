@@ -58,7 +58,7 @@ fn answer(hub: &Hub, caller: &LeadCaller, call: LeadCall) -> Result<LeadCallResu
             let memory = hub.db.memory();
             let (t, item, len) = memory.remember(r, &call)?;
             let file = Line::unchecked(t.name());
-            let cap = t.cap();
+            let cap = memory.cap(&t);
             let next = match item {
                 None => "Already remembered, word for word.".to_owned(),
                 Some(item) => {

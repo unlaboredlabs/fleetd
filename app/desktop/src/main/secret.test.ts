@@ -2,6 +2,8 @@ import sodium from "libsodium-wrappers";
 import { describe, expect, it } from "vitest";
 import rust from "./secret.rust-seal.json";
 import { SECRET_MAX_BYTES } from "../shared/contracts";
+import { IPC } from "../shared/channels";
+import { parseRequest } from "../shared/ipc";
 import { seal, submitSecret } from "./secret";
 
 const bytes = (b64: string) => new Uint8Array(Buffer.from(b64, "base64"));
@@ -33,6 +35,27 @@ describe("sealing a secret ask's value", () => {
       if (!out.ok) expect(out.error.fix).toBeTruthy();
     }
     expect((await seal(rust.publicKey, "x".repeat(SECRET_MAX_BYTES))).ok).toBe(true);
+  });
+
+  it("takes a 64 KB value from the page to the hub, and refuses one byte more with why", async () => {
+    const fromPage = (value: string) => parseRequest(IPC.secretSubmit, [{ requestId: "Q7", boxPubKey: rust.publicKey, value }]);
+    const submit = async (value: string) => {
+      const parsed = fromPage(value);
+      if (!parsed.ok) throw new Error("refused at the IPC boundary");
+      let sealed = "";
+      const out = await submitSecret(parsed.args[0], (_tool, input) => {
+        sealed = input.sealed;
+        return Promise.resolve({ ok: true, output: { requestId: "Q7", fingerprint: "ab12cd34" } });
+      });
+      return { out, sealed };
+    };
+    const full = await submit("k".repeat(SECRET_MAX_BYTES));
+    expect(full.out).toEqual({ ok: true, fingerprint: "ab12cd34" });
+    expect(bytes(full.sealed).length).toBe(48 + SECRET_MAX_BYTES);
+    expect(fromPage("k".repeat(SECRET_MAX_BYTES + 1)).ok).toBe(false);
+    // Within the string bound, past the byte cap: main says so.
+    const wide = await submit("é".repeat(SECRET_MAX_BYTES / 2 + 1));
+    expect(wide.out).toMatchObject({ ok: false, error: { message: `The secret is over ${SECRET_MAX_BYTES} bytes.` } });
   });
 
   it("submits only the sealed box and returns only the fingerprint", async () => {

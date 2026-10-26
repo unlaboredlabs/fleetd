@@ -276,7 +276,7 @@ impl Chat {
                 project_ref: r.clone(),
                 seq: Count::unchecked(seq),
                 author,
-                attachments: List::unchecked(new.attachments.into_iter().take(8).collect()),
+                attachments: List::unchecked(new.attachments.into_iter().take(fleetd_contracts::mcp::ATTACHMENTS_MAX).collect()),
                 created_at: iso_ms(created_ms).into(),
                 updated_at: None,
                 state: if new.streaming {

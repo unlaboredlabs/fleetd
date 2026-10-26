@@ -311,8 +311,10 @@ never sees it.</li>
 get them in their brief. A lead opens a topic file when it needs one. Something remembered mid-session reaches the
 next session.</p>
 <p>Read, edit or delete any of it in Settings → Memory. The files are plain markdown in the hub’s home (<code dir="auto">memory/</code>), in no
-repo. Each file has a cap (4,000 characters for <code dir="auto">user.md</code> and <code dir="auto">MEMORY.md</code>, 8,000 per topic, 32,000 per project): a
-write past one is refused, and the lead merges entries instead. Memory never holds a secret.</p>
+repo. Each file has a cap, by default 16,000 characters for <code dir="auto">user.md</code> and each <code dir="auto">MEMORY.md</code>, 32,000 per topic and
+128,000 per project: a write past one is refused, and the lead merges entries instead. Change the caps under Caps in
+Settings → Memory (an app paired with admin, or <code dir="auto">memory_caps_set</code> with an admin key for every machine): 1,000 to 100,000
+per file, up to 400,000 per project. Memory never holds a secret.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="updates">When fleetd changes a default you edited</h2><a class="sl-anchor-link" href="#updates"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “When fleetd changes a default you edited”</span></a></div>
 <p>Your version stays in use.</p>
 <ul>

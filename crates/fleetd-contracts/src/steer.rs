@@ -18,6 +18,10 @@ brand!(
     SteerId, name = "SteerId", pattern = r"^S[1-9][0-9]*$"
 );
 
+/// The longest steer, in UTF-16 units as the app counts them.
+pub const STEER_TEXT_MAX: usize = 20_000;
+pub type SteerText = Text<1, STEER_TEXT_MAX>;
+
 impl SteerId {
     pub fn from_n(n: i64) -> Self {
         Self::unchecked(format!("S{n}"))
@@ -132,7 +136,7 @@ pub struct Steer {
     pub run_id: NonEmpty,
     pub by: SteerBy,
     pub mode: SteerMode,
-    pub text: Text<1, 4000>,
+    pub text: SteerText,
     pub stage: SteerStage,
     pub queued_at: Timestamp,
     pub delivered_at: Option<Timestamp>,

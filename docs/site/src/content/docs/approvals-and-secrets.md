@@ -27,7 +27,8 @@ command as a [gated command](/docs/glossary#gated-command).
 1. The item shows the command, the reason and the machine.
 2. Click Approve to run it, or Deny to refuse. A command marked "Can't be undone" asks once more: click "Yes, run
    it". With the item focused, Enter approves and Esc denies.
-3. The node runs exactly the stored command, in the project's workspace.
+3. The node runs exactly the stored command, in the project's workspace. It is killed after the lead's timeout: 30
+   minutes unless the lead asked for more, at most 4 hours.
 4. The exit code and output go back to the lead. The item folds to one line, such as "Approved, ran in 12s"; click
    it to see the command and its output again.
 
@@ -41,7 +42,7 @@ the value goes: a line in an env file, or a file.
 
 ![A secret item in storefront's chat: the lead needs the Stripe test key, which goes to devbox only. The card names where it is saved, with a masked field and Save secret. Above it, a secret already saved, folded to one line; below it, one line for the agents at work.](/docs/img/chat-secret.png)
 
-1. Type the value in the masked field.
+1. Type or paste the value in the masked field: up to 64 KB.
 2. The app seals it to that machine's key (a libsodium sealed box). The field clears once the value is saved; if
    saving fails, what you typed stays so you can click Retry.
 3. The hub passes the sealed value on without storing it.

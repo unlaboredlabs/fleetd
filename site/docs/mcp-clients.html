@@ -295,8 +295,13 @@ as stopping a project, answering an approval or entering a secret, need one.</p>
 <td>operate, human key</td>
 </tr>
 <tr>
-<td><code dir="auto">attachment_put {name, mime, dataB64}</code></td>
-<td>Upload a file (image, text or PDF, at most 5 MiB) for a message.</td>
+<td><code dir="auto">attachment_put {name, mime, dataB64, uploadId?}</code></td>
+<td>Upload a file (image, text or PDF, at most 25 MiB) for a message; up to 20 go with one message.</td>
+<td>operate</td>
+</tr>
+<tr>
+<td><code dir="auto">attachment_part {dataB64, uploadId?, offset?}</code></td>
+<td>One piece of a file too large for one request, in order: pass the <code dir="auto">uploadId</code> it returns and the bytes sent so far as <code dir="auto">offset</code> with the next piece, and the last piece to <code dir="auto">attachment_put</code> with the <code dir="auto">uploadId</code>.</td>
 <td>operate</td>
 </tr>
 <tr>
@@ -325,8 +330,8 @@ as stopping a project, answering an approval or entering a secret, need one.</p>
 <td>read</td>
 </tr>
 <tr>
-<td><code dir="auto">pr_list {projectRef, closedSince?}</code>, <code dir="auto">pr_get {repo, number}</code></td>
-<td>A project’s PRs, and one in detail: description, checks, reviews with their findings, its place in the merge queue and the agent that wrote it.</td>
+<td><code dir="auto">pr_list {projectRef, closedSince?, cursor?}</code>, <code dir="auto">pr_get {repo, number}</code></td>
+<td>A project’s PRs, up to 60 a page (<code dir="auto">nextCursor</code>, passed as <code dir="auto">cursor</code>, reads the next), and one in detail: description, checks, reviews with their findings, its place in the merge queue and the agent that wrote it.</td>
 <td>read</td>
 </tr>
 <tr>
