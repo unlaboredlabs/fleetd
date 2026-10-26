@@ -1665,7 +1665,7 @@ impl SessionService {
         // a later message alone (a recovery note) would leave it with no idea of its task. Refused, so the hub restarts
         // it with its brief and a handoff. Only its first message itself may start over.
         let must_resume = resume && !opening && row.local.role == SessionRole::Worker;
-        let spec = self.spec(&row, resume, must_resume).map_err(|e| {
+        let (spec, secrets) = self.spec(&row, resume, must_resume).map_err(|e| {
             error(
                 SessionErrorCode::Internal,
                 format!("cannot prepare the session's files: {e}"),
@@ -1700,10 +1700,13 @@ impl SessionService {
             );
             generation
         };
-        tokio::spawn(
-            self.clone()
-                .pump(id.to_owned(), generation, handle.events, exited_tx),
-        );
+        tokio::spawn(self.clone().pump(
+            id.to_owned(),
+            generation,
+            handle.events,
+            exited_tx,
+            secrets,
+        ));
         Ok((handle.commands, note))
     }
 
@@ -1735,7 +1738,7 @@ impl SessionService {
         row: &SessionRow,
         resume: bool,
         must_resume: bool,
-    ) -> std::io::Result<SessionSpec> {
+    ) -> std::io::Result<(SessionSpec, super::mask::Secrets)> {
         let config = &self.inner.config;
         let id = row.summary.session_id.as_str();
         let dir = config.home.join("sessions").join(id);
@@ -1750,8 +1753,9 @@ impl SessionService {
         let mut env = config.runner_env();
         // The project's own variables, re-read per spawn. What the node already gives claude (its login, gateway,
         // claude.env) keeps the node's value, and fleetd's values below still win.
-        let mut project_env =
-            super::project_env::vars(&config.home, row.summary.project_id.as_str());
+        let (mut project_env, secrets) =
+            super::project_env::for_spawn(&config.home, row.summary.project_id.as_str());
+        let secrets = super::mask::Secrets(secrets);
         project_env.retain(|(p, _)| !env.iter().any(|(k, _)| k == p));
         env.extend(project_env);
         let mut role_env = config.prompt_cache_env(row.local.role, &env);
@@ -1795,7 +1799,7 @@ impl SessionService {
         let scratch = share::scratch_env(&scratch);
         env.retain(|(k, _)| !scratch.iter().any(|(s, _)| s == k));
         env.extend(scratch);
-        Ok(SessionSpec {
+        let spec = SessionSpec {
             session_id: id.to_owned(),
             resume,
             must_resume,
@@ -1816,7 +1820,8 @@ impl SessionService {
             settings: Some(settings),
             env,
             transcript: Some(transcript),
-        })
+        };
+        Ok((spec, secrets))
     }
 
     /// Applies one process's events in order until it exits. Text deltas go only to followers, at most one frame
@@ -1827,14 +1832,16 @@ impl SessionService {
         generation: u64,
         mut events: mpsc::Receiver<RunnerEvent>,
         exited: watch::Sender<bool>,
+        spawned: super::mask::Secrets,
     ) {
         let mut delta: Option<(String, String)> = None;
         let mut flushed: Option<Instant> = None;
         let mut usage: Option<(String, RunUsage)> = None;
         let mut usage_sent: Option<Instant> = None;
         let mut run_id: Option<String> = None;
-        // The project's secrets as they are now, read again at each run's start.
-        let mut masker = self.masker(&id);
+        // The secrets the process was started with, which it holds until it exits, and the project's as they are now,
+        // read again at each run's start.
+        let mut masker = self.masker(&id, &spawned);
         loop {
             let delta_due = delta
                 .as_ref()
@@ -1876,7 +1883,7 @@ impl SessionService {
                 live.last_active = Instant::now();
             }
             if matches!(event, RunnerEvent::RunStarted { .. }) {
-                masker = self.masker(&id);
+                masker = self.masker(&id, &spawned);
             }
             // Nothing the agent's session reports leaves this machine with a secret of its project in it.
             let Some(event) = masker.event(event) else {
@@ -2077,15 +2084,19 @@ impl SessionService {
         }
     }
 
-    /// The session's project's secrets, for masking what it reports.
-    fn masker(&self, id: &str) -> super::mask::Masker {
-        let Ok(Some(row)) = self.store().session(id) else {
-            return super::mask::Masker::default();
+    /// For masking what the session reports: the secrets its process was `spawned` with (a rotated or removed one is
+    /// still in its environment) and its project's secrets now.
+    fn masker(&self, id: &str, spawned: &super::mask::Secrets) -> super::mask::Masker {
+        let now = match self.store().session(id) {
+            Ok(Some(row)) => super::mask::Secrets(super::project_env::secrets(
+                &self.inner.config.home,
+                row.summary.project_id.as_str(),
+            )),
+            _ => super::mask::Secrets::default(),
         };
-        super::mask::Masker::new(&super::project_env::secrets(
-            &self.inner.config.home,
-            row.summary.project_id.as_str(),
-        ))
+        let all: Vec<(String, String)> = spawned.0.iter().chain(&now.0).cloned().collect();
+        let all = super::mask::Secrets(all);
+        super::mask::Masker::new(&all.0)
     }
 
     /// Sends the live text so far, masked. `hold` keeps back an end that could be the start of a secret, until the

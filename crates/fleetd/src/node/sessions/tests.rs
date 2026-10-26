@@ -2195,6 +2195,97 @@ async fn project_env_reaches_a_new_session_and_deleting_the_project_leaves_the_c
     assert!(crate::node::project_env::vars(&home, "p1").is_empty());
 }
 
+/// The recorded `echo hi` turn, as a `printenv` that prints `printed` and a reply that repeats it.
+fn printenv_turn(printed: &str) -> String {
+    fn swap(v: &mut serde_json::Value, printed: &str) {
+        match v {
+            serde_json::Value::String(s) if s == "hi" => *s = printed.to_owned(),
+            serde_json::Value::String(s) if s == "echo hi" => *s = "printenv".to_owned(),
+            serde_json::Value::Array(a) => a.iter_mut().for_each(|v| swap(v, printed)),
+            serde_json::Value::Object(o) => o.values_mut().for_each(|v| swap(v, printed)),
+            _ => {}
+        }
+    }
+    let fixture = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src/node/runner/fixtures/claude-2.1.302-allowlisted-tool.jsonl"),
+    )
+    .unwrap();
+    fixture
+        .lines()
+        .map(|line| {
+            let mut v: serde_json::Value = serde_json::from_str(line).unwrap();
+            swap(&mut v, printed);
+            format!("{v}\n")
+        })
+        .collect()
+}
+
+/// A secret rotated (or removed) while its session's claude lives on is still in that process's environment: what it
+/// prints in a later run is masked as the value it was started with, not only as the file's value now.
+#[tokio::test]
+async fn a_secret_rotated_mid_session_stays_masked_as_the_process_holds_it() {
+    use fleetd_contracts::project_settings::{EnvVarName, EnvVarSet};
+    let (old, new) = ("sk_live_old_9f2c41", "sk_live_new_7d03aa");
+    let printed = format!("STRIPE_KEY={old}\n");
+    // Two runs in one process, each printing the value the process was started with.
+    let lines = format!("{}{}", printenv_turn(&printed), printenv_turn(&printed));
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("node");
+    let mut node = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::from_lines(&lines),
+    )
+    .await;
+    node.project(dir.path()).await;
+    let set = |value: &str| SessionCall::ProjectEnv {
+        project_id: ProjectId::unchecked("p1"),
+        set: vec![EnvVarSet::Secret {
+            name: EnvVarName::new("STRIPE_KEY").unwrap(),
+            sealed: crate::node::project_env::seal(&home, value),
+        }],
+        remove: vec![],
+    };
+    node.ok(set(old)).await;
+    node.ok(launch(
+        "s1",
+        RuntimeMode::FullAccess,
+        SessionWorkspace::Root,
+    ))
+    .await;
+    node.ok(SessionCall::Follow {
+        session_id: ThreadId::unchecked("s1"),
+    })
+    .await;
+    node.settled("r1").await;
+    node.ok(set(new)).await;
+    node.ok(send("s1", "r2")).await;
+    let mut frames = Vec::new();
+    tokio::time::timeout(Duration::from_secs(600), async {
+        loop {
+            let raw = node.rx.recv().await.unwrap();
+            let done = matches!(serde_json::from_str(&raw).unwrap(), NodeToHub::MachineEvent(f)
+                if matches!(&f.event, MachineEvent::SessionUpdated(s)
+                    if s.active_run_id.is_none() && s.latest_run.as_ref().is_some_and(|r| r.id == "r2")));
+            frames.push(raw);
+            if done {
+                break;
+            }
+        }
+    })
+    .await
+    .expect("the second run never settled");
+    assert_eq!(
+        node.runner.spawned().len(),
+        1,
+        "the second run is the same process"
+    );
+    let frames = frames.join("\n");
+    assert!(frames.contains("***STRIPE_KEY***"), "{frames}");
+    assert!(!frames.contains(old), "the rotated value left the node");
+}
+
 /// A command that prints a project's secret (`printenv`) gets it to neither the hub nor the app: the node masks the
 /// value, its base64 and its URL encoding in the tool's output, the live text and the reply before any frame leaves,
 /// and a real hub fed every frame the node sent keeps it in no row and returns it in no answer.
@@ -2212,29 +2303,7 @@ async fn a_printed_secret_never_leaves_the_node() {
         "HOME=/home/w\nSTRIPE_KEY={}\nSTRIPE_KEY_B64={}\nCALLBACK=https://pay.test/cb?key={}\n",
         forms[0], forms[1], forms[2]
     );
-    // The recorded `echo hi` turn, as a `printenv` that prints the secret and a reply that repeats it.
-    fn swap(v: &mut serde_json::Value, printed: &str) {
-        match v {
-            serde_json::Value::String(s) if s == "hi" => *s = printed.to_owned(),
-            serde_json::Value::String(s) if s == "echo hi" => *s = "printenv".to_owned(),
-            serde_json::Value::Array(a) => a.iter_mut().for_each(|v| swap(v, printed)),
-            serde_json::Value::Object(o) => o.values_mut().for_each(|v| swap(v, printed)),
-            _ => {}
-        }
-    }
-    let fixture = std::fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("src/node/runner/fixtures/claude-2.1.302-allowlisted-tool.jsonl"),
-    )
-    .unwrap();
-    let lines: String = fixture
-        .lines()
-        .map(|line| {
-            let mut v: serde_json::Value = serde_json::from_str(line).unwrap();
-            swap(&mut v, &printed);
-            format!("{v}\n")
-        })
-        .collect();
+    let lines = printenv_turn(&printed);
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().join("node");
     let mut node = hub(

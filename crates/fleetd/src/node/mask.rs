@@ -17,6 +17,18 @@ use super::runner::{RunOutcome, RunnerEvent};
 /// The shortest value masked.
 pub const MIN_LEN: usize = 4;
 
+/// A process's secrets, `(name, value)`, wiped when it goes.
+#[derive(Default)]
+pub struct Secrets(pub Vec<(String, String)>);
+
+impl Drop for Secrets {
+    fn drop(&mut self) {
+        for (_, value) in &mut self.0 {
+            value.zeroize();
+        }
+    }
+}
+
 /// The forms of each secret to replace, longest first, so a value inside another's form is not masked half-way.
 #[derive(Default)]
 pub struct Masker {

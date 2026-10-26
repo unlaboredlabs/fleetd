@@ -142,19 +142,32 @@ pub fn apply(
     Ok(saved)
 }
 
+/// `(name, value)` pairs.
+pub type Vars = Vec<(String, String)>;
+
 /// The project's variables, for a claude the node starts now. A file that can't be read gives none, logged without
 /// its contents.
 pub fn vars(home: &Path, project_id: &str) -> Vec<(String, String)> {
+    for_spawn(home, project_id).0
+}
+
+/// The project's variables for a claude the node starts now, and, from the same read, the secrets among them: what
+/// that process holds for its whole life, however the file changes after.
+pub fn for_spawn(home: &Path, project_id: &str) -> (Vars, Vars) {
     match read_file(home, project_id) {
-        Ok(env) => env
-            .vars
-            .iter()
-            .filter(|(name, _)| !env_name_reserved(name))
-            .map(|(name, entry)| (name.clone(), entry.value.clone()))
-            .collect(),
+        Ok(env) => {
+            let given = |secret: bool| -> Vec<(String, String)> {
+                env.vars
+                    .iter()
+                    .filter(|(name, entry)| !env_name_reserved(name) && (!secret || entry.secret))
+                    .map(|(name, entry)| (name.clone(), entry.value.clone()))
+                    .collect()
+            };
+            (given(false), given(true))
+        }
         Err(e) => {
             tracing::warn!(project_id, "project env not read: {}", io_why(&e));
-            Vec::new()
+            (Vec::new(), Vec::new())
         }
     }
 }
