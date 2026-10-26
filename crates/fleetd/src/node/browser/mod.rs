@@ -24,9 +24,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use fleetd_contracts::browser::{
-    BrowserCall, BrowserCallFrame, BrowserCallResult, BrowserRecordingEntry, BrowserResultFrame,
-    BrowserSessionId, BrowserSessionState, SessionEnded, SessionStarted,
+    BrowserCall, BrowserCallFrame, BrowserCallResult, BrowserControl, BrowserControlTo,
+    BrowserInput, BrowserRecordingEntry, BrowserResultFrame, BrowserSessionId,
+    BrowserSessionState, BrowserTakeoverCall, SessionEnded, SessionStarted, TakeoverRequested,
 };
+use fleetd_contracts::lead_calls::LeadCall;
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
 use fleetd_contracts::prim::{Count, Text};
 use fleetd_contracts::sessions::{ItemKind, ItemStatus, ThreadItem};
@@ -108,6 +110,8 @@ pub struct Broker {
     mask_for: MaskFor,
     /// Recordings being uploaded now: one upload each.
     uploading: Mutex<HashSet<PathBuf>>,
+    /// Reports for the hub, sent in order by one task.
+    reports: tokio::sync::mpsc::UnboundedSender<(String, String, LeadCall)>,
     _loop: Mutex<Option<AbortOnDrop>>,
 }
 
@@ -193,9 +197,21 @@ impl Broker {
             ffmpeg: Mutex::new(ffmpeg),
             proxy: Mutex::default(),
             sessions: Mutex::default(),
-            hub,
+            hub: hub.clone(),
             mask_for,
             uploading: Mutex::default(),
+            reports: {
+                let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<(String, String, LeadCall)>();
+                let hub = hub.clone();
+                tokio::spawn(async move {
+                    while let Some((thread, cwd, call)) = rx.recv().await {
+                        if let Err(e) = hub.call(&thread, &cwd, call).await {
+                            tracing::warn!(error = %e.message, "browser session not reported to the hub");
+                        }
+                    }
+                });
+                tx
+            },
             _loop: Mutex::default(),
             config,
         });
@@ -325,7 +341,8 @@ impl Broker {
                     .await
             }
             BrowserCall::SessionEnd(_) => self.session_end(&thread).await,
-            BrowserCall::FillCredential(_) | BrowserCall::RequestTakeover(_) => Err(refuse(
+            BrowserCall::RequestTakeover(call) => self.request_takeover(&thread, call.reason).await,
+            BrowserCall::FillCredential(_) => Err(refuse(
                 ErrorCode::Invalid,
                 format!("{} is not available on this machine yet.", frame.call.op()),
                 "do without it and say so in your result",
@@ -411,6 +428,18 @@ impl Broker {
             }
             sessions.insert(thread.clone(), session.clone());
         }
+        {
+            let broker = Arc::downgrade(self);
+            let thread = thread.clone();
+            session.on_control(Arc::new(move |_| {
+                if let Some(broker) = broker.upgrade()
+                    && let Some(session) = broker.live(&thread)
+                {
+                    session.step("agent_resumed", json!({}), true, None, 0);
+                    broker.report(&session, BrowserSessionState::Live);
+                }
+            }));
+        }
         if let Err(e) = agent_browser::write_policy(&self.home, &thread, false) {
             tracing::warn!(session = %session.id, error = %e, "agent-browser policy not written");
         }
@@ -484,19 +513,70 @@ impl Broker {
         lock(&self.uploading).remove(dir);
     }
 
-    /// Tells the hub where a session is now, in the background.
+    /// Tells the hub where a session is now, in the background, after what was reported before.
     fn report(&self, session: &Session, state: BrowserSessionState) {
         let call = upload::report(&session.meta(None), state, session.control(), &[]);
-        let (hub, thread, cwd) = (
-            self.hub.clone(),
-            session.thread.clone(),
-            session.cwd.clone(),
-        );
-        tokio::spawn(async move {
-            if let Err(e) = hub.call(&thread, &cwd, call).await {
-                tracing::warn!(error = %e.message, "browser session not reported to the hub");
-            }
+        let _ = self
+            .reports
+            .send((session.thread.clone(), session.cwd.clone(), call));
+    }
+
+    /// A live session by its id.
+    fn by_id(&self, id: &BrowserSessionId) -> Option<Arc<Session>> {
+        lock(&self.sessions).values().find(|s| s.id == *id).cloned()
+    }
+
+    /// The hub watches a session (its link, to send frames on) or no more.
+    pub fn watch(&self, id: &BrowserSessionId, link: Option<tokio::sync::mpsc::UnboundedSender<String>>) {
+        if let Some(session) = self.by_id(id) {
+            session.set_watcher(link);
+        }
+    }
+
+    /// A person's input from the app, for a session they took over.
+    pub async fn input(&self, id: &BrowserSessionId, input: BrowserInput) {
+        let Some(session) = self.by_id(id) else { return };
+        if let Err(why) = session.input(input).await {
+            tracing::debug!(session = %id, error = %why, "browser input not delivered");
+        }
+    }
+
+    /// A person takes a session over, or hands it back: the agent's commands wait meanwhile (the proxy answers them
+    /// that a person has control), and its next command after a handback takes control again.
+    pub fn control(&self, id: &BrowserSessionId, to: BrowserControlTo, by: &str) {
+        let Some(session) = self.by_id(id) else { return };
+        let (next, step) = match (to, session.control()) {
+            (BrowserControlTo::Human, BrowserControl::Human) => return,
+            (BrowserControlTo::Human, _) => (BrowserControl::Human, "takeover"),
+            (BrowserControlTo::Agent, BrowserControl::Human) => (BrowserControl::HandingBack, "handback"),
+            (BrowserControlTo::Agent, _) => return,
+        };
+        session.set_control(next);
+        session.step(step, json!({ "by": by }), true, None, 0);
+        self.report(&session, BrowserSessionState::Live);
+    }
+
+    /// An agent's `request_takeover`: the hub lists it under "waiting on you".
+    async fn request_takeover(
+        &self,
+        thread: &str,
+        reason: fleetd_contracts::prim::Line<1, 500>,
+    ) -> Result<BrowserCallResult, McpToolError> {
+        let session = self.live(thread).ok_or_else(|| {
+            refuse(ErrorCode::NotFound, "No browser session is open.", "start one with session_start")
+        })?;
+        let call = LeadCall::BrowserTakeover(BrowserTakeoverCall {
+            session_id: session.id.clone(),
+            reason: reason.clone(),
         });
+        self.hub.call(thread, &session.cwd, call).await?;
+        session.step("request_takeover", json!({ "reason": reason.as_str() }), true, None, 0);
+        Ok(BrowserCallResult::RequestTakeover(TakeoverRequested {
+            message: "Asked: it shows under waiting on you. Carry on with what you can; while a person has control \
+                      your browser commands answer so, and after they hand it back your next one sees the page as \
+                      they left it."
+                .into(),
+        }))
     }
 
     /// Ends every live session (the node stops); their recordings go at the node's next start.

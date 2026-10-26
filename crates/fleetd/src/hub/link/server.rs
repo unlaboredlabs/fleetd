@@ -217,6 +217,8 @@ impl NodeLinkServer {
 pub struct NodeLinkServer {
     deps: LinkDeps,
     state: Mutex<State>,
+    /// Browser sessions' live view: who watches which, and their frames.
+    pub browser_live: Arc<crate::hub::browser::live::Live>,
     heartbeat_every: Duration,
     silence_timeout: Duration,
     hello_timeout: Duration,
@@ -306,6 +308,7 @@ impl NodeLinkServer {
         Arc::new(Self {
             deps,
             state: Mutex::default(),
+            browser_live: Arc::default(),
             heartbeat_every,
             silence_timeout,
             hello_timeout,
@@ -776,6 +779,9 @@ impl NodeLinkServer {
         let _runner = AbortOnDrop(self.follow_runner(&machine_id));
         self.check_runner(&machine_id);
         tracing::info!(machine_id = %machine_id, link_id = id, "node link: welcomed");
+        for watch in self.browser_live.rewatch(&machine_id) {
+            send(&tx, watch);
+        }
 
         let heartbeat = {
             let tx = tx.clone();
@@ -875,7 +881,7 @@ impl NodeLinkServer {
                         }),
                     });
                 }
-                NodeToHub::BrowserFrame(_) => {}
+                NodeToHub::BrowserFrame(frame) => self.browser_live.frame(&machine_id, frame),
                 NodeToHub::Hello(_) => return refuse(close::BAD_FRAME, "hello after welcome"),
             }
         }

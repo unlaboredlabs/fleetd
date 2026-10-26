@@ -10,8 +10,11 @@ use std::time::{Duration, Instant};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use fleetd_contracts::browser::{
-    BrowserAction, BrowserControl, BrowserSessionId, DomSnapshot, RecordingFile,
+    BrowserAction, BrowserControl, BrowserFrame, BrowserInput, BrowserSessionId, DomSnapshot,
+    KeyAction, MouseAction, MouseButton, RecordingFile,
 };
+use fleetd_contracts::node_link::NodeToHub;
+use fleetd_contracts::prim::{Int, NonEmpty};
 use fleetd_contracts::ids::Timestamp;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -21,6 +24,7 @@ use super::chrome::{Browser, HEIGHT, WIDTH};
 use super::record::{self, Meta, Scrub, VideoSink};
 use crate::node::mask::{Masker, Secrets};
 use crate::node::util::AbortOnDrop;
+use crate::node::wire::to_json;
 
 /// The start of a result's text the action log keeps.
 const RESULT_CHARS: usize = 500;
@@ -70,8 +74,25 @@ pub struct Session {
     last_dom: Mutex<Option<[u8; 32]>>,
     /// One DOM capture at a time, in order.
     dom_turn: tokio::sync::Mutex<()>,
+    /// The live view: who watches, and the newest frame.
+    live: Mutex<Live>,
+    /// Called when control changes here (a handback completes): the broker tells the hub.
+    on_control: Mutex<Option<ControlHook>>,
     _screencast: Mutex<Option<AbortOnDrop>>,
     _ticker: Mutex<Option<AbortOnDrop>>,
+}
+
+pub type ControlHook = Arc<dyn Fn(BrowserControl) + Send + Sync>;
+
+/// The live view's state.
+#[derive(Default)]
+struct Live {
+    /// The hub's link, while the hub watches the session: `browser_frame`s go out on it.
+    watcher: Option<tokio::sync::mpsc::UnboundedSender<String>>,
+    seq: u64,
+    last: Option<BrowserFrame>,
+    /// The page's size in CSS pixels, as the last frame's metadata gave it: a person's input is scaled to it.
+    page: (f64, f64),
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -127,6 +148,8 @@ impl Session {
             dom_turn: tokio::sync::Mutex::new(()),
             _screencast: Mutex::default(),
             _ticker: Mutex::default(),
+            live: Mutex::default(),
+            on_control: Mutex::default(),
         });
         // Listen before discovering: the existing page arrives as a targetCreated event.
         let events = cdp.events();
@@ -176,6 +199,70 @@ impl Session {
 
     pub fn set_control(&self, control: BrowserControl) {
         *lock(&self.control) = control;
+    }
+
+    pub fn on_control(&self, hook: ControlHook) {
+        *lock(&self.on_control) = Some(hook);
+    }
+
+    /// Sends this session's frames to the hub from now on (`Some`), the newest at once, or no more.
+    pub fn set_watcher(&self, watcher: Option<tokio::sync::mpsc::UnboundedSender<String>>) {
+        let mut live = lock(&self.live);
+        live.watcher = watcher;
+        if let (Some(watcher), Some(last)) = (&live.watcher, &live.last) {
+            let mut last = last.clone();
+            last.control = self.control();
+            let _ = watcher.send(to_json(&NodeToHub::BrowserFrame(last)));
+        }
+    }
+
+    /// One screencast frame of the followed page: kept as the newest, and sent while the hub watches.
+    fn live_frame(&self, data: &str, jpeg: &[u8], metadata: &Value) {
+        let Some((width, height)) = jpeg_size(jpeg) else {
+            return;
+        };
+        let mut live = lock(&self.live);
+        live.seq += 1;
+        let css = |key: &str, or: u32| metadata[key].as_f64().filter(|v| *v > 0.0).unwrap_or(f64::from(or));
+        live.page = (css("deviceWidth", width), css("deviceHeight", height));
+        let frame = BrowserFrame {
+            session_id: self.id.clone(),
+            seq: live.seq,
+            jpeg_b64: NonEmpty::unchecked(data),
+            width: Int::unchecked(i64::from(width)),
+            height: Int::unchecked(i64::from(height)),
+            url: None,
+            control: self.control(),
+        };
+        if let Some(watcher) = &live.watcher
+            && watcher.send(to_json(&NodeToHub::BrowserFrame(frame.clone()))).is_err()
+        {
+            live.watcher = None;
+        }
+        live.last = Some(frame);
+    }
+
+    /// A person's input, on the followed page, while they have control. Coordinates come in the last frame's pixels.
+    pub async fn input(&self, input: BrowserInput) -> Result<(), String> {
+        if self.control() != BrowserControl::Human {
+            return Err("the agent has control".into());
+        }
+        let Some((_, page)) = self.page() else {
+            return Err("no page".into());
+        };
+        let (scale_x, scale_y) = {
+            let live = lock(&self.live);
+            match &live.last {
+                Some(last) => (
+                    live.page.0 / last.width.get() as f64,
+                    live.page.1 / last.height.get() as f64,
+                ),
+                None => (1.0, 1.0),
+            }
+        };
+        self.touch();
+        let (method, params) = cdp_input(&input, scale_x, scale_y);
+        self.cdp.call(Some(&page), method, params).await.map(drop)
     }
 
     pub fn scrub(&self) -> Arc<Scrub> {
@@ -233,7 +320,16 @@ impl Session {
     pub fn refusal(&self, _method: &str, _params: &Value) -> Option<String> {
         match self.control() {
             BrowserControl::Agent => None,
-            _ => Some(PAUSED.to_owned()),
+            // Handed back: the agent's first command takes control again and sees the page as the person left it.
+            BrowserControl::HandingBack => {
+                self.set_control(BrowserControl::Agent);
+                let hook = lock(&self.on_control).clone();
+                if let Some(hook) = hook {
+                    hook(BrowserControl::Agent);
+                }
+                None
+            }
+            BrowserControl::Human => Some(PAUSED.to_owned()),
         }
     }
 
@@ -421,7 +517,11 @@ async fn screencast(
                     .get("data")
                     .and_then(Value::as_str)
                     .unwrap_or_default();
-                if let (Some(video), Ok(jpeg)) = (&session.video, B64.decode(data)) {
+                let Ok(jpeg) = B64.decode(data) else {
+                    continue;
+                };
+                session.live_frame(data, &jpeg, &event.params["metadata"]);
+                if let Some(video) = &session.video {
                     video.frame(jpeg, session.start.elapsed());
                 }
             }
@@ -490,5 +590,103 @@ async fn follow(session: &Session, page: Option<(String, String)>) {
         .await;
     if let Err(e) = started {
         tracing::warn!(session = %session.id, error = %e, "screencast not started");
+    }
+}
+
+/// A JPEG's width and height, from its first start-of-frame marker.
+pub fn jpeg_size(jpeg: &[u8]) -> Option<(u32, u32)> {
+    let mut at = 2;
+    while at + 9 < jpeg.len() {
+        if jpeg[at] != 0xff {
+            return None;
+        }
+        let marker = jpeg[at + 1];
+        let len = usize::from(u16::from_be_bytes([jpeg[at + 2], jpeg[at + 3]]));
+        // SOF0..SOF15 but DHT (c4), JPG (c8) and DAC (cc).
+        if (0xc0..=0xcf).contains(&marker) && ![0xc4, 0xc8, 0xcc].contains(&marker) {
+            let height = u16::from_be_bytes([jpeg[at + 5], jpeg[at + 6]]);
+            let width = u16::from_be_bytes([jpeg[at + 7], jpeg[at + 8]]);
+            return (width > 0 && height > 0).then(|| (u32::from(width), u32::from(height)));
+        }
+        at += 2 + len;
+    }
+    None
+}
+
+/// The Windows virtual key code of a key the browser names, for the keys whose default action needs one.
+fn key_code(key: &str) -> Option<u32> {
+    Some(match key {
+        "Backspace" => 8,
+        "Tab" => 9,
+        "Enter" => 13,
+        "Escape" => 27,
+        " " => 32,
+        "PageUp" => 33,
+        "PageDown" => 34,
+        "End" => 35,
+        "Home" => 36,
+        "ArrowLeft" => 37,
+        "ArrowUp" => 38,
+        "ArrowRight" => 39,
+        "ArrowDown" => 40,
+        "Delete" => 46,
+        k if k.chars().count() == 1 => {
+            let c = k.chars().next()?.to_ascii_uppercase();
+            if c.is_ascii_alphanumeric() { c as u32 } else { return None }
+        }
+        _ => return None,
+    })
+}
+
+/// The CDP command for a person's input, its coordinates scaled from frame to page pixels.
+pub fn cdp_input(input: &BrowserInput, scale_x: f64, scale_y: f64) -> (&'static str, Value) {
+    match input {
+        BrowserInput::Mouse { action, x, y, button, click_count, delta_x, delta_y, modifiers } => {
+            let kind = match action {
+                MouseAction::Pressed => "mousePressed",
+                MouseAction::Released => "mouseReleased",
+                MouseAction::Moved => "mouseMoved",
+                MouseAction::Wheel => "mouseWheel",
+            };
+            let button = match button {
+                MouseButton::None => "none",
+                MouseButton::Left => "left",
+                MouseButton::Middle => "middle",
+                MouseButton::Right => "right",
+            };
+            (
+                "Input.dispatchMouseEvent",
+                json!({
+                    "type": kind, "x": x * scale_x, "y": y * scale_y, "button": button,
+                    "clickCount": click_count.get(), "deltaX": delta_x, "deltaY": delta_y,
+                    "modifiers": modifiers.get(),
+                }),
+            )
+        }
+        BrowserInput::Key { action, key, code, text, modifiers } => {
+            let text = text
+                .as_ref()
+                .map(|t| t.to_string())
+                .or_else(|| (key.as_str() == "Enter").then(|| "\r".to_owned()));
+            let kind = match (action, &text) {
+                (KeyAction::Down, Some(_)) => "keyDown",
+                (KeyAction::Down, None) => "rawKeyDown",
+                (KeyAction::Up, _) => "keyUp",
+            };
+            let mut params = json!({ "type": kind, "key": key.as_str(), "modifiers": modifiers.get() });
+            if let Some(code) = code {
+                params["code"] = code.as_str().into();
+            }
+            if let Some(vk) = key_code(key.as_str()) {
+                params["windowsVirtualKeyCode"] = vk.into();
+                params["nativeVirtualKeyCode"] = vk.into();
+            }
+            if let (Some(text), KeyAction::Down) = (text, action) {
+                params["text"] = text.clone().into();
+                params["unmodifiedText"] = text.into();
+            }
+            ("Input.dispatchKeyEvent", params)
+        }
+        BrowserInput::Text { text } => ("Input.insertText", json!({ "text": text.as_str() })),
     }
 }

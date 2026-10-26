@@ -12,7 +12,9 @@ use fleetd_contracts::automations::{
     AutomationCreateCall, AutomationDeleteCall, AutomationListCall, AutomationPauseCall,
     AutomationRunCall, AutomationRunsCall, AutomationUpdateCall,
 };
-use fleetd_contracts::browser::{BrowserCall, SessionEndCall, SessionStartCall};
+use fleetd_contracts::browser::{
+    BrowserCall, RequestTakeoverCall, SessionEndCall, SessionStartCall,
+};
 use fleetd_contracts::checklist::ChecklistCall;
 use fleetd_contracts::lead_calls::{
     AskLeadCall, BriefCreateCall, ChangeEnqueueCall, CloseCall, DecideCall, DecisionsSearchCall,
@@ -311,6 +313,14 @@ static TOOLS: &[Tool] = &[
         "Close your browser session: the browser and its profile are thrown away, and its recording goes to the hub.",
         inline_schema::<SessionEndCall>,
     ),
+    browser(
+        "request_takeover",
+        "Ask a person to take your browser over, for what only they can do: a captcha, a login confirmation \
+         only they can give, a judgement call. reason says what they should do, in one line; it shows under waiting on you \
+         in the app, and they watch the page live. Carry on meanwhile: while they drive, your agent-browser commands \
+         answer that a person has control; after they hand it back, your next command sees the page as they left it.",
+        inline_schema::<RequestTakeoverCall>,
+    ),
 ];
 
 /// A verdict without what the hub fills in from the session: its task and the head it reviewed.
@@ -386,6 +396,7 @@ pub fn browser_result(answer: &Value) -> Value {
             }
             text
         }
+        Some(_) if result["message"].is_string() => result["message"].as_str().unwrap_or_default().to_owned(),
         _ => return tool_result(answer),
     };
     json!({ "content": [{ "type": "text", "text": text }], "isError": false })
@@ -685,7 +696,13 @@ mod tests {
     fn a_worker_sees_only_report_ask_lead_and_its_browser() {
         assert_eq!(
             names(Role::Worker),
-            ["report", "ask_lead", "session_start", "session_end"]
+            [
+                "report",
+                "ask_lead",
+                "session_start",
+                "session_end",
+                "request_takeover"
+            ]
         );
         let lead = names(Role::Lead);
         for tool in [

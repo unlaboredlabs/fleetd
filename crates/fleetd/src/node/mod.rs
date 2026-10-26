@@ -277,6 +277,7 @@ async fn run_node(
             box_key,
             home: home.to_path_buf(),
         }),
+        browser: broker.clone(),
     };
     let enrolled = async {
         if !exit_when_enrolled || enrolled_rx.await.is_err() {

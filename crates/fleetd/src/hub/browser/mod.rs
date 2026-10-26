@@ -5,6 +5,7 @@
 //! the retention (`browser_settings`): each one after its days, and a project's oldest while its recordings together
 //! are over its size.
 pub mod calls;
+pub mod live;
 pub mod tools;
 
 #[cfg(test)]
@@ -113,6 +114,26 @@ pub fn save(hub: &Hub, s: &BrowserSession) -> Result<(), StoreError> {
     let started_ms = crate::hub::store::parse_ms(s.started_at.as_str()).unwrap_or_default();
     hub.db.transaction(|c| put_on(c, s, started_ms))?;
     announce(hub, s, now_ms(hub.clock.as_ref()))
+}
+
+/// A project's live sessions whose agent asked for a person (`request_takeover`) and has no one yet.
+pub fn waiting(db: &HubDb, r: &ProjectRef) -> Result<Vec<BrowserSession>, StoreError> {
+    db.with(|c| {
+        let mut stmt = c.prepare(
+            "SELECT data FROM browser_sessions WHERE machine_id = ?1 AND project_id = ?2 AND state = 'live'",
+        )?;
+        let rows = stmt.query_map(params![r.machine_id.as_str(), r.project_id.as_str()], |row| {
+            row.get::<_, String>(0)
+        })?;
+        let mut out = Vec::new();
+        for data in rows {
+            let s: BrowserSession = serde_json::from_str(&data?)?;
+            if s.takeover_reason.is_some() {
+                out.push(s);
+            }
+        }
+        Ok(out)
+    })
 }
 
 /// A project's sessions, newest first.

@@ -141,7 +141,11 @@ fn session(
         started_at: call.started_at,
         ended_at: call.ended_at,
         files: call.files,
-        takeover_reason: stored.as_ref().and_then(|s| s.takeover_reason.clone()),
+        // Waiting on a person only while the agent still drives a live session.
+        takeover_reason: stored
+            .as_ref()
+            .and_then(|s| s.takeover_reason.clone())
+            .filter(|_| call.state == BrowserSessionState::Live && call.control == BrowserControl::Agent),
         credentials_filled: call.credentials_filled,
         note: call.note,
     };

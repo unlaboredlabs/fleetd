@@ -97,6 +97,8 @@ pub struct RunNodeOptions {
     /// Directories `cmd_check` and approved commands may run in (and below), and secret sinks may be written in.
     pub cmd_roots: Vec<String>,
     pub secrets: Option<NodeSecrets>,
+    /// Browser sessions' broker, when this machine runs them: live view and takeover reach it over the link.
+    pub browser: Option<Arc<crate::node::browser::Broker>>,
 }
 
 /// Everything one link needs, shared with the tasks it starts.
@@ -108,6 +110,7 @@ struct Shared {
     lead_calls: LeadRelay,
     cmd_roots: Vec<String>,
     secrets: Option<NodeSecrets>,
+    browser: Option<Arc<crate::node::browser::Broker>>,
 }
 
 impl Shared {
@@ -134,6 +137,7 @@ pub async fn run_node(options: RunNodeOptions) -> LinkFatal {
         lead_calls: options.lead_calls,
         cmd_roots: options.cmd_roots,
         secrets: options.secrets,
+        browser: options.browser,
     });
     let mut enroll_token = options.enroll_token;
     let mut on_enrolled = options.on_enrolled;
@@ -331,7 +335,15 @@ async fn run_link_once(
             fleetd_contracts::node_link::CAP_ORDER_ENV.to_owned(),
             fleetd_contracts::node_link::CAP_WORKTREE_SETUP.to_owned(),
             fleetd_contracts::node_link::CAP_SELF_UPDATE.to_owned(),
-        ],
+        ]
+        .into_iter()
+        .chain(
+            shared
+                .browser
+                .as_ref()
+                .map(|_| fleetd_contracts::node_link::CAP_BROWSER.to_owned()),
+        )
+        .collect(),
     }));
     let hub_id = match next_frame(&mut stream, HANDSHAKE_TIMEOUT, "welcome").await {
         Ok(HubToNode::Welcome(welcome)) if welcome.protocol.get() != PROTOCOL_VERSION => {
@@ -394,10 +406,22 @@ async fn run_link_once(
             _ = woke.changed() => return LinkEnd::Woke,
         };
         match frame {
-            // The broker takes these from the next commit on; the hub sends them only to nodes listing CAP_BROWSER.
-            HubToNode::BrowserWatch(_)
-            | HubToNode::BrowserInput(_)
-            | HubToNode::BrowserControl(_) => {}
+            // Only to nodes listing CAP_BROWSER, which have a broker.
+            HubToNode::BrowserWatch(watch) => {
+                if let Some(broker) = &shared.browser {
+                    broker.watch(&watch.session_id, watch.on.then(|| tx.clone()));
+                }
+            }
+            HubToNode::BrowserInput(input) => {
+                if let Some(broker) = shared.browser.clone() {
+                    tasks.spawn(async move { broker.input(&input.session_id, input.input).await });
+                }
+            }
+            HubToNode::BrowserControl(control) => {
+                if let Some(broker) = shared.browser.clone() {
+                    broker.control(&control.session_id, control.control, control.by.as_str());
+                }
+            }
             HubToNode::LeadResult(result) => shared.lead_calls.resolve(result),
             HubToNode::CmdCheck(check) => {
                 let shared = shared.clone();

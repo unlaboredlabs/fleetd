@@ -135,6 +135,9 @@ struct Session {
     live: Option<tokio::task::JoinHandle<()>>,
     /// The chat subscription's forwarder of `chat_delta` frames.
     chat: Option<tokio::task::JoinHandle<()>>,
+    /// The browser watch's forwarder, which holds the watch, and the slot for its newest frame.
+    browser: Option<tokio::task::JoinHandle<()>>,
+    browser_slot: Arc<live::LiveSlot>,
     live_slot: Arc<live::LiveSlot>,
     budget: Arc<live::ConnBudget>,
 }
@@ -190,13 +193,43 @@ impl Session {
         };
         match message {
             AppClientMessage::Auth { .. } => unreachable!("handled above"),
-            AppClientMessage::BrowserWatch { .. } | AppClientMessage::BrowserInput { .. } => {
-                let unread = ToolError::new(
-                    ErrorCode::Invalid,
-                    "This hub doesn't take browser_watch or browser_input yet.",
-                )
-                .with_fix("Send them only to a hub whose ready names browser_sessions.");
-                self.send(error_frame(&unread, None));
+            AppClientMessage::BrowserWatch { session } => {
+                // A new watch replaces the running one; none stops it.
+                if let Some(old) = self.browser.take() {
+                    old.abort();
+                }
+                self.browser_slot.clear();
+                let Some(session) = session else {
+                    return After::Continue;
+                };
+                match crate::hub::browser::live::start_watch(&self.hub, &info, &session) {
+                    Ok(mut watch) => {
+                        let slot = self.browser_slot.clone();
+                        self.browser = Some(tokio::spawn(async move {
+                            loop {
+                                match watch.frames.recv().await {
+                                    Ok(frame) if frame.session_id == session => {
+                                        let mut value = serde_json::to_value(&frame).unwrap_or_default();
+                                        value["t"] = json!("browser_frame");
+                                        slot.replace(value.to_string());
+                                    }
+                                    Ok(_) => {}
+                                    // Behind: the next frame is the newest anyway.
+                                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                                    Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+                                }
+                            }
+                        }));
+                    }
+                    Err(refused) => self.send(error_frame(&refused, None)),
+                }
+            }
+            AppClientMessage::BrowserInput { session, input } => {
+                if let Err(refused) =
+                    crate::hub::browser::live::input(&self.hub, &info, &session, input)
+                {
+                    self.send(error_frame(&refused, None));
+                }
             }
             AppClientMessage::Chat { project } => {
                 // A new `chat` request replaces the running one; none stops it.
@@ -354,10 +387,13 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
         calls: JoinSet::new(),
         live: None,
         chat: None,
+        browser: None,
+        browser_slot: Arc::default(),
         live_slot: Arc::default(),
         budget: Arc::default(),
     };
     let live_slot = session.live_slot.clone();
+    let browser_slot = session.browser_slot.clone();
     let close = loop {
         tokio::select! {
             () = shutdown.wait() => break Some((CLOSE_GOING_AWAY, "hub shutting down")),
@@ -368,6 +404,13 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
             }
             () = live_slot.notify.notified() => {
                 if let Some(frame) = live_slot.take()
+                    && socket.send(Message::Text(frame.into())).await.is_err()
+                {
+                    break None;
+                }
+            }
+            () = browser_slot.notify.notified() => {
+                if let Some(frame) = browser_slot.take()
                     && socket.send(Message::Text(frame.into())).await.is_err()
                 {
                     break None;
@@ -403,6 +446,9 @@ pub async fn handle(hub: Arc<Hub>, tools: Arc<Registry>, mut socket: WebSocket) 
     }
     if let Some(chat) = session.chat.take() {
         chat.abort();
+    }
+    if let Some(browser) = session.browser.take() {
+        browser.abort();
     }
     session.calls.abort_all();
     if let Some((code, reason)) = close {
