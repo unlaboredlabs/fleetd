@@ -1332,9 +1332,11 @@ export const screens: readonly Screen[] = [
     fixtures: ["sessions-preview"],
     variant: "snapshot",
     open: async (page) => {
-      await page.getByRole("button", { name: "The page at 0:09" }).click();
+      // A click by the agent's ref: the node's target finds it in the page and on the video.
+      await page.getByRole("button", { name: "The page at 0:06" }).click();
       await expect(page.getByRole("list", { name: "The page’s structure" })).toBeVisible();
-      await expect(page.locator("[data-target]")).toHaveText(/menuitem.*Copy link.*clicked/u);
+      await expect(page.locator("[data-target]")).toHaveText(/button.*Share.*clicked/u);
+      await expect(page.locator("[data-target-box]")).toHaveCount(1);
     },
   },
   // ...recorded without a video (no ffmpeg on its machine), a login filled from 1Password in its steps and its

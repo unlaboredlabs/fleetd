@@ -50,11 +50,14 @@ const recordingOf = (steps: readonly Step[], startMs: number) => {
     ...(step.result === undefined ? {} : { result: step.result }),
     durationMs: 400,
     ...(step.url === undefined ? {} : { url: step.url }),
+    ...(step.target === undefined ? {} : { target: step.target }),
   }));
   let url = "";
   const doms = steps.flatMap((step, i) => {
     url = step.url ?? url;
-    return step.html === undefined ? [] : [{ seq: i + 1, offsetMs: step.at + 400, url, title: /<title>([^<]*)<\/title>/u.exec(step.html)?.[1] ?? "", html: step.html }];
+    if (step.html === undefined) return [];
+    const title = /<title>([^<]*)<\/title>/u.exec(step.html)?.[1] ?? "";
+    return [{ seq: i + 1, offsetMs: step.at + 400, url, title, html: step.html, ...(step.target === undefined ? {} : { target: step.target }) }];
   });
   const jsonl = (rows: readonly object[]) => Buffer.from(rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
   return { actions: jsonl(actions), dom: jsonl(doms) };

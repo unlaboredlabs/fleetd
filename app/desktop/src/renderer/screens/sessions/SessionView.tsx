@@ -29,7 +29,9 @@ import {
   STATE_TONE,
   STATE_WORD,
   TARGET_WORD,
+  FRAME,
   type BrowserSession,
+  type FrameBox,
   type PageSnapshot,
   type SessionAction,
 } from "./model";
@@ -241,6 +243,7 @@ function Frame({
   media,
   caption,
   url: given,
+  mark,
   input,
   pageRef,
 }: {
@@ -256,6 +259,8 @@ function Frame({
   caption?: string | undefined;
   /** The page's address when there is no live frame (a replay's step's). */
   url?: string | undefined;
+  /** What a step acted on, outlined where it was (in the video frame's pixels). */
+  mark?: FrameBox | undefined;
   input?: ReturnType<typeof useFrameInput>;
   pageRef?: RefObject<HTMLDivElement | null>;
 }) {
@@ -284,6 +289,18 @@ function Frame({
           ) : (
             <img src={image.src} alt="" draggable={false} />
           ))}
+        {mark === undefined ? null : (
+          <span
+            className={s.mark}
+            data-target-box=""
+            style={{
+              left: `${String((mark.x / FRAME.width) * 100)}%`,
+              top: `${String((mark.y / FRAME.height) * 100)}%`,
+              width: `${String((mark.width / FRAME.width) * 100)}%`,
+              height: `${String((mark.height / FRAME.height) * 100)}%`,
+            }}
+          />
+        )}
       </div>
     </div>
   );
@@ -477,6 +494,7 @@ function Player({ session: x, actions, video }: { session: BrowserSession; actio
           <Frame
             caption={video === undefined ? (x.note ?? "This recording has no video. Its steps and pages are beside it.") : undefined}
             url={actions.slice(0, step + 1).findLast((a) => a.page !== undefined)?.page?.url}
+            mark={shown?.box}
             media={
               video === undefined ? undefined : (
                 <video

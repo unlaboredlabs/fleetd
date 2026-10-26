@@ -78,6 +78,15 @@ export interface HubAction {
   readonly ok: boolean;
   readonly result?: string;
   readonly url?: string;
+  readonly target?: HubTarget;
+}
+
+/** The element a step acted on, as the node read it just before (contracts StepTarget). */
+export interface HubTarget {
+  readonly ref?: string;
+  readonly selector: string;
+  readonly backendNodeId?: number;
+  readonly frameBox?: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
 }
 
 /** One line of dom.jsonl (contracts DomSnapshot). */
@@ -219,6 +228,14 @@ const commandStep = (base: Pick<SessionAction, "at" | "by" | "ok">, words: reado
 
 /** One line of actions.jsonl as a step; the 1Password reference a fill names is never part of it. */
 export const stepOf = (a: HubAction): SessionAction => {
+  const step = stepWithout(a);
+  const t = a.target;
+  if (t === undefined) return step;
+  // What the node saw the step act on outranks what the command named: a ref (`@e3`) has a selector here too.
+  return { ...step, ...(t.selector === "" ? {} : { selector: t.selector }), ...(t.frameBox === undefined ? {} : { box: t.frameBox }) };
+};
+
+const stepWithout = (a: HubAction): SessionAction => {
   const base = { at: a.offsetMs, by: "agent" as const, ...(a.ok ? {} : { ok: false }) };
   switch (a.tool) {
     case "agent-browser":

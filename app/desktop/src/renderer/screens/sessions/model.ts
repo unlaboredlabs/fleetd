@@ -14,6 +14,17 @@ import { fmtElapsed, parseMs } from "../live/format";
  */
 export type SessionState = "starting" | "running" | "asking" | "yours" | "handingBack" | "saving" | "ended" | "lost" | "expired";
 
+/** A rectangle in the video frame's pixels, from its top left corner. */
+export interface FrameBox {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** The video frame's size (contracts browser.rs): a FrameBox is in its pixels. */
+export const FRAME = { width: 1280, height: 800 } as const;
+
 /** Where a login came from: a 1Password reference, resolved on the node. The value never leaves it. */
 export interface CredentialRef {
   readonly site: string;
@@ -72,8 +83,10 @@ export interface SessionAction {
   readonly credential?: CredentialRef;
   /** False when the step failed. */
   readonly ok?: boolean;
-  /** The CSS selector it acted on, when it named one (not an agent-browser `@e3` ref): found in its snapshot. */
+  /** The CSS selector of what it acted on (as the node read it, or as the command named it): found in its snapshot. */
   readonly selector?: string;
+  /** Where what it acted on was, in the video frame's pixels (1280×800): outlined on the video at its moment. */
+  readonly box?: FrameBox;
   /** The page as this step found it, as structure, or as the HTML the node read (dom.jsonl), parsed when opened. */
   readonly snapshot?: PageSnapshot;
   readonly page?: { readonly url: string; readonly title: string; readonly html: string };

@@ -92,6 +92,18 @@ describe("an agent-browser command", () => {
   });
 });
 
+describe("what a step acted on", () => {
+  it("is the element the node saw, its selector and box outranking what the command named", () => {
+    const step = stepOf(
+      act(4, "agent-browser", { command: "agent-browser click @e14" }, { target: { ref: "@e14", selector: "#share", backendNodeId: 141, frameBox: { x: 672, y: 482, width: 96, height: 36 } } }),
+    );
+    expect(step).toMatchObject({ kind: "click", target: "@e14", selector: "#share", box: { x: 672, y: 482, width: 96, height: 36 } });
+    // The words still name what the agent said.
+    expect(actionLine(step)).toMatchObject({ words: "Clicked", machine: "@e14" });
+    expect(stepOf(act(5, "agent-browser", { command: "agent-browser click @e2" }))).not.toHaveProperty("selector");
+  });
+});
+
 describe("fleetd's own steps", () => {
   it("says a login was filled from 1Password for the page's site, and never names the reference", () => {
     const step = stepOf(act(3, "fill_credential", { ref: "op://Team/Staging shop/password", target: "#password" }, { url: "https://staging.shop.example.com/account/sign-in" }));
