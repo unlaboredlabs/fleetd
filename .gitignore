@@ -14,3 +14,5 @@ GEMINI.md
 .clinerules
 .github/copilot-instructions.md
 /.local/
+# The docs' search index: Starlight's build writes it locally and the Vercel build of site/ regenerates it (site/README.md).
+/site/docs/pagefind/

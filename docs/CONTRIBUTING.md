@@ -103,7 +103,8 @@ started, so it is safe to run next to a fleetd you use day to day.
 ## The site
 
 `site/` is fleetd.sh: the landing page and the docs at `/docs`, built from `docs/site/` with Starlight
-(`npm run build --prefix docs/site`, then commit `site/docs`; CI fails while it is out of date). The site shows real app
+(`npm run build --prefix docs/site`, then commit `site/docs`; CI fails while it is out of date). Its search index,
+`site/docs/pagefind`, is ignored, not committed: the Vercel build generates it. The site shows real app
 screenshots and real setup output. A change that alters what the app shows or what `fleetd
 init` or `fleetd machine add` prints reruns `tests/lab/site-capture.ts` and commits the updated `site/` in the same
 PR (see `site/README.md`); `node tests/lab/site-capture.ts --docs` recaptures only the docs' output blocks. A change
