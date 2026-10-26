@@ -11,3 +11,5 @@ wins.
   is told.
 - [factory-metrics.md](factory-metrics.md): PRs merged per day, time from order to merged, human minutes per merged PR,
   and the share of merged work that went through fleetd.
+- [try-it.md](try-it.md): try it yourself: the person runs what a PR built (web, Android, iOS, desktop) when they ask,
+  sends marked-up feedback to its agents, and can make their sign-off part of what lets a PR merge.

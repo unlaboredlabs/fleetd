@@ -1498,6 +1498,9 @@
         "pr.merged_outside": {
           "$ref": "#/$defs/TrainEventData"
         },
+        "preview.state": {
+          "$ref": "#/$defs/PreviewEventData"
+        },
         "project.add_failed": {
           "$ref": "#/$defs/ProjectAddFailedData"
         },
@@ -1629,6 +1632,7 @@
         "machine.slept",
         "pr.merged",
         "pr.merged_outside",
+        "preview.state",
         "project.add_failed",
         "project.added",
         "project.clone_progress",
@@ -1822,6 +1826,102 @@
         "number"
       ],
       "type": "object"
+    },
+    "PreviewEventData": {
+      "description": "`preview.state`: a preview started, moved a step, became ready, ended or failed. previews_list reads the rest.",
+      "properties": {
+        "of": {
+          "$ref": "#/$defs/PreviewOf"
+        },
+        "previewId": {
+          "$ref": "#/$defs/PreviewId"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "state": {
+          "$ref": "#/$defs/PreviewState"
+        }
+      },
+      "required": [
+        "projectRef",
+        "previewId",
+        "of",
+        "state"
+      ],
+      "type": "object"
+    },
+    "PreviewId": {
+      "pattern": "^P[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "PreviewOf": {
+      "description": "What a preview is of: one PR, or an order's PRs merged together onto their base on a scratch branch (D162).",
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "const": "pr",
+              "type": "string"
+            },
+            "number": {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "repo": {
+              "$ref": "#/$defs/GitHubRepo"
+            }
+          },
+          "required": [
+            "kind",
+            "repo",
+            "number"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "order",
+              "type": "string"
+            },
+            "workstreamId": {
+              "$ref": "#/$defs/WorkstreamId"
+            }
+          },
+          "required": [
+            "kind",
+            "workstreamId"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "PreviewState": {
+      "oneOf": [
+        {
+          "const": "starting",
+          "description": "Checking out, setting up, building or starting: `steps` says which.",
+          "type": "string"
+        },
+        {
+          "const": "ready",
+          "description": "It answers: the person can use it.",
+          "type": "string"
+        },
+        {
+          "const": "ended",
+          "description": "Thrown away: its processes, port and worktree are gone. `endReason` says why.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "A step failed: `steps` names it with the end of its output. Nothing of it runs.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
     },
     "ProjectAddFailedData": {
       "description": "`HubEvent.data` on `project.add_failed`: a clone that was accepted, then failed.",

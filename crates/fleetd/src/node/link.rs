@@ -187,6 +187,8 @@ fn tag(frame: &HubToNode) -> &'static str {
         HubToNode::BrowserInput(_) => "browser_input",
         HubToNode::BrowserControl(_) => "browser_control",
         HubToNode::SessionHost(_) => "session_host",
+        HubToNode::PreviewRun(_) => "preview_run",
+        HubToNode::PreviewStop(_) => "preview_stop",
     }
 }
 
@@ -512,6 +514,10 @@ async fn run_link_once(
             HubToNode::SpansAck(ack) => shared
                 .node_sessions
                 .spans_acked(ack.upto, ack.rewind == Some(true)),
+            // Previews (W58): this node doesn't list `previews`, so a hub sends neither until the runner lands.
+            HubToNode::PreviewRun(_) | HubToNode::PreviewStop(_) => {
+                tracing::debug!("node link: a preview frame, but this node runs no previews yet");
+            }
             HubToNode::Challenge(_) | HubToNode::Welcome(_) | HubToNode::Heartbeat(_) => {}
         }
     }

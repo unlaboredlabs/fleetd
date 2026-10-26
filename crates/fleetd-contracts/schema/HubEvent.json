@@ -374,6 +374,11 @@
           "const": "browser.session",
           "description": "A browser session started, changed hands, ended, or its recording landed or was lost; `data` is\n`browser::BrowserSessionEventData`. browser_sessions reads the rest.",
           "type": "string"
+        },
+        {
+          "const": "preview.state",
+          "description": "A preview started, moved a step, became ready, ended or failed; `data` is `preview::PreviewEventData`.\npreviews_list reads the rest.",
+          "type": "string"
         }
       ],
       "x-open": true

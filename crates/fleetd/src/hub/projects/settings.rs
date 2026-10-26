@@ -296,6 +296,8 @@ async fn settings_of(hub: &Hub, r: &ProjectRef) -> Result<ProjectSettings, ToolE
         env: store.env(r)?,
         setup: store.setup(r)?.unwrap_or_default(),
         train: store.train(r)?,
+        // Kept by the hub's preview tools (W58), which come next; none until then.
+        preview: None,
         worktrees,
         worktrees_unknown,
     })
@@ -326,6 +328,12 @@ async fn set(
     let Some(project) = hub.store.project_get(&r)? else {
         return Err(unknown_project(&r));
     };
+    if input.preview.is_some() {
+        return Err(ToolError::new(
+            ErrorCode::Invalid,
+            "this hub doesn't run previews yet, so it keeps no preview setting",
+        ));
+    }
     // The name lives on the node, which renames it in place: the machine stream then brings it back to every cache.
     if let Some(title) = &input.title
         && title.as_str() != project.title
