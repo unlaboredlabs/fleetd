@@ -818,6 +818,11 @@
           "const": "checklist.changed",
           "description": "A project's checklist changed (the lead's `checklist`); `data` is `checklist::ChecklistChangedData`.",
           "type": "string"
+        },
+        {
+          "const": "skills.changed",
+          "description": "A hub-kept skill was created, edited, installed, updated or deleted: `data.scope`, `data.projectRef` (project\nscope), `data.names`, `data.by`. skills_list reads them.",
+          "type": "string"
         }
       ],
       "x-open": true

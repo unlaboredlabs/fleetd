@@ -64,6 +64,7 @@ Every lead gets these.
 | [`automation_run`](#automation_run) | Run an automation now: it opens its order, which reaches you in a later wake. | No |
 | [`automation_runs`](#automation_runs) | An automation's runs, newest first, with the order each opened; with runId, that run and its whole webhook body. | No |
 | [`checklist`](#checklist) | Keep the project's checklist: the to-dos the human sees beside the chat, each todo, doing or done, in plain words. | No |
+| [`skill_install`](#skill_install) | Install skills (SKILL.md workflows) from a skills.sh source (owner/repo, owner/repo@skill, a GitHub URL) for this project (scope project; global skills take an admin, so the human installs those); pinned to the commit fetched, and the human updates it from Settings > Skills. | No |
 | [`change_enqueue`](#change_enqueue) | Put a PR no task's result put there on its repo's merge train; only the train merges. | No |
 
 ### spawn_agent
@@ -583,6 +584,28 @@ Keep the project's checklist: the to-dos the human sees beside the chat, each to
 }
 ```
 
+### skill_install
+
+Install skills (SKILL.md workflows) from a skills.sh source (owner/repo, owner/repo@skill, a GitHub URL) for this project (scope project; global skills take an admin, so the human installs those); pinned to the commit fetched, and the human updates it from Settings > Skills. Agents list it as fleetd:&lt;name> and run it with the Skill tool.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `scope` | string | yes | The hub's two scopes, which a person (and a lead's `skill_install`) writes. One of `project`, `global`. |
+| `skill` | string | no | Only this skill of the source; absent, every skill it has. |
+| `source` | string | yes | `owner/repo`, `owner/repo@skill`, a GitHub URL (`/tree/<ref>/<path>` too) or any git URL. At most 500 characters. |
+
+**Who may call:** a lead, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "skill_install",
+  "arguments": {
+    "scope": "project",
+    "source": "vercel-labs/agent-skills@web-design-guidelines"
+  }
+}
+```
+
 ### change_enqueue
 
 Put a PR no task's result put there on its repo's merge train; only the train merges.
@@ -682,7 +705,7 @@ fleetd also blocks any tool like these that a newer Claude Code adds: a session 
 | Tool | Sessions | Why |
 |---|---|---|
 | `ReportFindings` | Leads and task agents | Agents report a review with fleetd's own `report`. |
-| `DesignSync`, `Skill`, `NotebookEdit` | Leads and task agents | Unused by fleetd's agents, and tool schemas ride on every request. |
+| `DesignSync`, `NotebookEdit` | Leads and task agents | Unused by fleetd's agents, and tool schemas ride on every request. |
 | `Edit`, `Write` | Leads | The lead never changes files: its agents do. |
 | `WebFetch`, `WebSearch` | Leads | The lead's agents read the web; the lead routes. |
 

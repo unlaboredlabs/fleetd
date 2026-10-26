@@ -2312,6 +2312,16 @@
           "minimum": 0,
           "type": "integer"
         },
+        "skills": {
+          "description": "A human message: the skills it named with `$name`, which the lead's copy lists.",
+          "items": {
+            "$ref": "#/$defs/SkillName"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
         "state": {
           "$ref": "#/$defs/ChatMessageState"
         },
@@ -2434,6 +2444,16 @@
         "session": {
           "$ref": "#/$defs/ThreadId",
           "description": "Sent from inside a fleetd session: its thread id (FLEETD_THREAD_ID), as the caller reports it. The project's own\nlead and tasks are refused (they use their fleetd tools), and so is a human key. It catches mistakes; the key,\nnot this field, carries authority."
+        },
+        "skills": {
+          "description": "Skills the person named with `$name`: the lead's message lists them, so it uses them.",
+          "items": {
+            "$ref": "#/$defs/SkillName"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
         },
         "text": {
           "maxLength": 100000,
@@ -4783,6 +4803,11 @@
           "const": "checklist.changed",
           "description": "A project's checklist changed (the lead's `checklist`); `data` is `checklist::ChecklistChangedData`.",
           "type": "string"
+        },
+        {
+          "const": "skills.changed",
+          "description": "A hub-kept skill was created, edited, installed, updated or deleted: `data.scope`, `data.projectRef` (project\nscope), `data.names`, `data.by`. skills_list reads them.",
+          "type": "string"
         }
       ],
       "x-open": true
@@ -6361,6 +6386,42 @@
         "session_prompt_get.output": {
           "$ref": "#/$defs/SessionPromptGetOutput"
         },
+        "skill_delete.input": {
+          "$ref": "#/$defs/SkillDeleteInput"
+        },
+        "skill_delete.output": {
+          "$ref": "#/$defs/SkillDeleteOutput"
+        },
+        "skill_get.input": {
+          "$ref": "#/$defs/SkillGetInput"
+        },
+        "skill_get.output": {
+          "$ref": "#/$defs/SkillGetOutput"
+        },
+        "skill_install.input": {
+          "$ref": "#/$defs/SkillInstallInput"
+        },
+        "skill_install.output": {
+          "$ref": "#/$defs/SkillInstallOutput"
+        },
+        "skill_set.input": {
+          "$ref": "#/$defs/SkillSetInput"
+        },
+        "skill_set.output": {
+          "$ref": "#/$defs/SkillSetOutput"
+        },
+        "skill_update.input": {
+          "$ref": "#/$defs/SkillUpdateInput"
+        },
+        "skill_update.output": {
+          "$ref": "#/$defs/SkillUpdateOutput"
+        },
+        "skills_list.input": {
+          "$ref": "#/$defs/SkillsListInput"
+        },
+        "skills_list.output": {
+          "$ref": "#/$defs/SkillsListOutput"
+        },
         "status_get.input": {
           "$ref": "#/$defs/StatusGetInput"
         },
@@ -6611,6 +6672,18 @@
         "secret_submit.output",
         "session_prompt_get.input",
         "session_prompt_get.output",
+        "skill_delete.input",
+        "skill_delete.output",
+        "skill_get.input",
+        "skill_get.output",
+        "skill_install.input",
+        "skill_install.output",
+        "skill_set.input",
+        "skill_set.output",
+        "skill_update.input",
+        "skill_update.output",
+        "skills_list.input",
+        "skills_list.output",
         "status_get.input",
         "status_get.output",
         "steer_send.input",
@@ -10970,6 +11043,396 @@
         "id",
         "ref",
         "scope"
+      ],
+      "type": "object"
+    },
+    "SkillDeleteInput": {
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/SkillName"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "Required with scope project."
+        },
+        "scope": {
+          "$ref": "#/$defs/SkillScope"
+        }
+      },
+      "required": [
+        "scope",
+        "name"
+      ],
+      "type": "object"
+    },
+    "SkillDeleteOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "ok": {
+          "enum": [
+            true
+          ],
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "type": "object"
+    },
+    "SkillGetInput": {
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/SkillName"
+        },
+        "origin": {
+          "$ref": "#/$defs/SkillOrigin"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "Required for every origin but global."
+        }
+      },
+      "required": [
+        "origin",
+        "name"
+      ],
+      "type": "object"
+    },
+    "SkillGetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "skill": {
+          "$ref": "#/$defs/SkillSummary"
+        },
+        "text": {
+          "maxLength": 64000,
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "skill",
+        "text"
+      ],
+      "type": "object"
+    },
+    "SkillInstall": {
+      "description": "Where an installed skill came from, pinned: Update fetches the same source again and moves the pin. Nothing\nupdates on its own.",
+      "properties": {
+        "commit": {
+          "description": "The commit the files are from.",
+          "maxLength": 40,
+          "minLength": 40,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "installedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "path": {
+          "description": "The skill's folder in the repo; empty for a repo that is one skill.",
+          "maxLength": 300,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "ref": {
+          "description": "The branch or tag followed; `HEAD` for the default branch.",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "source": {
+          "description": "As given: `owner/repo`, `owner/repo@skill`, a GitHub URL (`/tree/<ref>/<path>` too) or any git URL.",
+          "maxLength": 500,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "url": {
+          "description": "What was cloned.",
+          "maxLength": 500,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "url",
+        "ref",
+        "commit",
+        "path",
+        "installedAt"
+      ],
+      "type": "object"
+    },
+    "SkillInstallInput": {
+      "properties": {
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "Required with scope project."
+        },
+        "scope": {
+          "$ref": "#/$defs/SkillScope"
+        },
+        "skill": {
+          "$ref": "#/$defs/SkillName",
+          "description": "Only this skill of the source; absent, every skill it has."
+        },
+        "source": {
+          "maxLength": 500,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "scope",
+        "source"
+      ],
+      "type": "object"
+    },
+    "SkillInstallOutput": {
+      "properties": {
+        "installed": {
+          "items": {
+            "$ref": "#/$defs/SkillSummary"
+          },
+          "maxItems": 200,
+          "minItems": 1,
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "installed"
+      ],
+      "type": "object"
+    },
+    "SkillName": {
+      "description": "Lowercase letters, digits and single hyphens, at most 64 characters",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "type": "string"
+    },
+    "SkillOrigin": {
+      "description": "Where a skill comes from, in precedence order: on a name clash the first wins.",
+      "oneOf": [
+        {
+          "const": "repo_agents",
+          "description": "`.agents/skills/<name>` in the session's checkout: skills.sh's project folder.",
+          "type": "string"
+        },
+        {
+          "const": "repo_claude",
+          "description": "`.claude/skills/<name>` in the session's checkout: Claude Code's project folder.",
+          "type": "string"
+        },
+        {
+          "const": "project",
+          "description": "The project's skills, kept by the hub.",
+          "type": "string"
+        },
+        {
+          "const": "global",
+          "description": "Every project's, kept by the hub.",
+          "type": "string"
+        }
+      ]
+    },
+    "SkillScope": {
+      "description": "The hub's two scopes, which a person (and a lead's `skill_install`) writes.",
+      "enum": [
+        "project",
+        "global"
+      ],
+      "type": "string"
+    },
+    "SkillSetInput": {
+      "properties": {
+        "create": {
+          "description": "Refuse when a skill of that name is already in the scope (New).",
+          "type": "boolean"
+        },
+        "name": {
+          "$ref": "#/$defs/SkillName"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "Required with scope project."
+        },
+        "scope": {
+          "$ref": "#/$defs/SkillScope"
+        },
+        "text": {
+          "maxLength": 64000,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "scope",
+        "name",
+        "text"
+      ],
+      "type": "object"
+    },
+    "SkillSetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "skill": {
+          "$ref": "#/$defs/SkillSummary"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "skill"
+      ],
+      "type": "object"
+    },
+    "SkillSummary": {
+      "description": "One skill as Settings → Skills and the composer list it.",
+      "properties": {
+        "description": {
+          "description": "From the frontmatter; empty when it has none.",
+          "maxLength": 1024,
+          "type": "string"
+        },
+        "files": {
+          "default": [],
+          "description": "The folder's other files, folder-relative.",
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "pattern": "^[^\\r\\n]*$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "type": "array"
+        },
+        "install": {
+          "$ref": "#/$defs/SkillInstall",
+          "description": "Installed from a source."
+        },
+        "name": {
+          "$ref": "#/$defs/SkillName"
+        },
+        "origin": {
+          "$ref": "#/$defs/SkillOrigin"
+        },
+        "path": {
+          "description": "A repo skill: its `SKILL.md`, repo-relative.",
+          "maxLength": 400,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "shadowedBy": {
+          "$ref": "#/$defs/SkillOrigin",
+          "description": "The origin whose skill of the same name sessions get instead."
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "name",
+        "origin",
+        "description"
+      ],
+      "type": "object"
+    },
+    "SkillUpdateInput": {
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/SkillName"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "Required with scope project."
+        },
+        "scope": {
+          "$ref": "#/$defs/SkillScope"
+        }
+      },
+      "required": [
+        "scope",
+        "name"
+      ],
+      "type": "object"
+    },
+    "SkillUpdateOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "skill": {
+          "$ref": "#/$defs/SkillSummary"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "updated": {
+          "description": "The pin moved: the source had a newer commit.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "skill",
+        "updated"
+      ],
+      "type": "object"
+    },
+    "SkillsListInput": {
+      "properties": {
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "type": "object"
+    },
+    "SkillsListOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "repoUnavailable": {
+          "description": "Why the repo's skills are missing from the list (the machine is offline, or its node can't list them).",
+          "type": "string"
+        },
+        "skills": {
+          "description": "In precedence order, then by name.",
+          "items": {
+            "$ref": "#/$defs/SkillSummary"
+          },
+          "maxItems": 1000,
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "skills"
       ],
       "type": "object"
     },
