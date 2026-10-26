@@ -131,6 +131,7 @@ pub async fn join(args: JoinArgs) -> Result<(), NodeError> {
         disk_per_agent_gb: None,
         enrolled: false,
         browser: None,
+        preview: None,
     };
     write_config(&home, &config).map_err(|_| {
         NodeError::Setup(format!(
@@ -254,6 +255,15 @@ async fn run_node(
     if broker.is_some() {
         node_sessions.set_browser(router.clone());
     }
+    let preview_config = config.preview.clone().unwrap_or_default();
+    let previews = preview_config.enabled().then(|| {
+        let sessions = node_sessions.clone();
+        preview::Previews::for_node(
+            home,
+            &preview_config,
+            Arc::new(move |id| sessions.project_workspace(id)),
+        )
+    });
     let _socket = lead::serve_lead_socket(
         lead::lead_socket_path(home),
         relay.clone(),
@@ -302,6 +312,7 @@ async fn run_node(
             home: home.to_path_buf(),
         }),
         browser: broker.clone(),
+        previews: previews.clone(),
     };
     let enrolled = async {
         if !exit_when_enrolled || enrolled_rx.await.is_err() {
@@ -313,6 +324,9 @@ async fn run_node(
         () = enrolled => Ok(()),
         () = shutdown_signal() => {
             node_sessions.shutdown().await;
+            if let Some(previews) = &previews {
+                previews.stop_all();
+            }
             if let Some(broker) = &broker {
                 broker.shutdown().await;
             }

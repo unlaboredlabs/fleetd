@@ -99,6 +99,8 @@ pub struct RunNodeOptions {
     pub secrets: Option<NodeSecrets>,
     /// Browser sessions' broker, when this machine runs them: live view and takeover reach it over the link.
     pub browser: Option<Arc<crate::node::browser::Broker>>,
+    /// Previews, when this machine runs them.
+    pub previews: Option<Arc<crate::node::preview::Previews>>,
 }
 
 /// Everything one link needs, shared with the tasks it starts.
@@ -111,6 +113,7 @@ struct Shared {
     cmd_roots: Vec<String>,
     secrets: Option<NodeSecrets>,
     browser: Option<Arc<crate::node::browser::Broker>>,
+    previews: Option<Arc<crate::node::preview::Previews>>,
 }
 
 impl Shared {
@@ -138,6 +141,7 @@ pub async fn run_node(options: RunNodeOptions) -> LinkFatal {
         cmd_roots: options.cmd_roots,
         secrets: options.secrets,
         browser: options.browser,
+        previews: options.previews,
     });
     let mut enroll_token = options.enroll_token;
     let mut on_enrolled = options.on_enrolled;
@@ -370,6 +374,12 @@ async fn run_link_once(
                 .as_ref()
                 .map(|_| fleetd_contracts::node_link::CAP_SESSION_HOST.to_owned()),
         )
+        .chain(
+            shared
+                .previews
+                .as_ref()
+                .map(|_| fleetd_contracts::node_link::CAP_PREVIEWS.to_owned()),
+        )
         .collect(),
     }));
     let hub_id = match next_frame(&mut stream, HANDSHAKE_TIMEOUT, "welcome").await {
@@ -425,6 +435,9 @@ async fn run_link_once(
     }
     let _attached = shared.lead_calls.attach(tx.clone());
     let _sessions_attached = shared.node_sessions.attach(tx.clone());
+    if let Some(previews) = &shared.previews {
+        previews.attach(tx.clone());
+    }
 
     loop {
         while tasks.try_join_next().is_some() {}
@@ -512,9 +525,24 @@ async fn run_link_once(
             HubToNode::SpansAck(ack) => shared
                 .node_sessions
                 .spans_acked(ack.upto, ack.rewind == Some(true)),
-            // Previews (W58): this node doesn't list `previews`, so a hub sends neither until the runner lands.
-            HubToNode::PreviewRun(_) | HubToNode::PreviewStop(_) => {
-                tracing::debug!("node link: a preview frame, but this node runs no previews yet");
+            // Only to nodes listing CAP_PREVIEWS: a run is taken at once and reports as it goes.
+            HubToNode::PreviewRun(run) => {
+                let result = match &shared.previews {
+                    Some(previews) => previews.run(run),
+                    None => fleetd_contracts::preview::PreviewRunResult {
+                        id: run.id,
+                        error: Some(fleetd_contracts::mcp::McpToolError::new(
+                            fleetd_contracts::mcp::ErrorCode::Invalid,
+                            "this machine runs no previews",
+                        )),
+                    },
+                };
+                let _ = tx.send(to_json(&NodeToHub::PreviewRunResult(result)));
+            }
+            HubToNode::PreviewStop(stop) => {
+                if let Some(previews) = &shared.previews {
+                    previews.stop(stop);
+                }
             }
             HubToNode::Challenge(_) | HubToNode::Welcome(_) | HubToNode::Heartbeat(_) => {}
         }

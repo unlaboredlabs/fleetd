@@ -35,6 +35,7 @@ Where fleetd keeps everything, and the settings you can change. The [hub](/docs/
     project-env/<project>.json   a project's environment variables, secrets included (mode 0600; Settings → Projects)
     mcp-secrets/         the secrets of the MCP servers agents get, global and per project (mode 0600; Settings → MCP servers)
     browser/             browser sessions: the pinned Chrome, ffmpeg and agent-browser, and recordings not yet on the hub
+    previews/<project>/  up to 3 worktrees for previews of the project's PRs, each kept as the next preview's build cache
   claude.env             optional extra environment for every claude fleetd starts
   logs/node.log          the node service's log
 ```
@@ -76,6 +77,7 @@ after you change it.
 | `memPerAgentGb` | GB of memory to allow per agent when the hub works out how many agents this machine runs at once by default. It sizes the default only: no agent waits for the memory it might take. Absent or `0`: 2 GB. Read with every heartbeat. |
 | `diskPerAgentGb` | GB of disk to allow per new agent's worktree when the hub works out how many more fit above `minFreeGb`. Absent or `0`: 5 GB, about a Rust worktree with a build cache; a JS project needs 1 to 2. Read with every heartbeat. |
 | `browser` | How this machine runs [browser sessions](/docs/browser-sessions#setup): `enabled`, `chrome`, `ffmpeg`, `pool`, `sandbox`, `idleMinutes`. |
+| `preview` | Previews of PRs someone asked to try: `enabled` (`false`: this machine runs none) and `slots`, the previews of one project at once, each in a worktree of its own (default 3). |
 
 ## The Claude login {#claude}
 
@@ -231,6 +233,7 @@ folder above it, so `--home $T/hub` works like `FLEETD_HOME=$T`. `FLEETD_HOME` w
 | Address | Your tailnet address when `fleetd init` finds Tailscale, otherwise `127.0.0.1` only. |
 | MCP endpoint | `<hub url>/mcp` |
 | Workers | Open no port: their nodes connect out. |
+| Previews | A machine running a preview opens one port for it from 8400–8499, on its tailnet address only, and only for devices of the tailnet user who owns the hub. It closes when the preview ends. |
 
 Change it with `fleetd init --listen <host:port> --url <url>`.
 

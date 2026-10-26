@@ -1195,6 +1195,11 @@ impl SessionService {
             .ok_or_else(|| not_found(format!("no session {id} on this machine")))
     }
 
+    /// A project's checkout on this machine, for its previews.
+    pub fn project_workspace(&self, project_id: &str) -> Option<PathBuf> {
+        self.project_root(project_id).ok()
+    }
+
     fn project_root(&self, project_id: &str) -> Result<PathBuf, SessionError> {
         let project = self
             .store()
