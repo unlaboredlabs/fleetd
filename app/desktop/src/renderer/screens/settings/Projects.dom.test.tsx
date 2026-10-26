@@ -101,6 +101,7 @@ const render = async () => {
     call: (tool, input) => {
       calls.push({ tool, input });
       const now = (tool === "project_settings_get" && answers.length > 1 ? answers.shift() : answers[0]) ?? settings;
+      if (tool === "mcp_servers_get") return Promise.resolve({ ok: true, output: { global: [], project: [], userServers: true } });
       return Promise.resolve({ ok: true, output: tool === "project_settings_get" || tool === "project_settings_set" ? { settings: now } : { ok: true } });
     },
     subscribe: (l) => ((listener = l), () => undefined),

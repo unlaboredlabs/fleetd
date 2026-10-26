@@ -129,6 +129,38 @@ export const ProjectEnvRequest = z.strictObject({
   remove: z.array(EnvName).max(100),
 });
 export type ProjectEnvRequest = z.infer<typeof ProjectEnvRequest>;
+
+/** mcp_servers.rs McpValueName: an HTTP token (an env name is also checked as a shell name by the hub). */
+const McpValueName = z.string().regex(/^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,128}$/u);
+const McpValueRequest = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("plain"), name: McpValueName, value: z.string().max(ENV_VALUE_MAX_BYTES) }),
+  z.strictObject({ kind: z.literal("secret"), name: McpValueName, value: z.string().min(1).max(ENV_VALUE_MAX_BYTES) }),
+  /** The secret saved under this name, as it is. */
+  z.strictObject({ kind: z.literal("keep"), name: McpValueName }),
+]);
+/**
+ * An MCP server to save (Settings › MCP servers, a project's MCP section): main seals each secret value to every box
+ * key in `boxes` (a project server's machine; for a global one, every machine) and calls mcp_server_set. The hub gets
+ * the boxes, never a secret's value.
+ */
+export const McpServerRequest = z.strictObject({
+  scope: z.discriminatedUnion("kind", [
+    z.strictObject({ kind: z.literal("global") }),
+    z.strictObject({ kind: z.literal("project"), machineId: z.string().min(1).max(64), projectId: z.string().min(1).max(200) }),
+  ]),
+  name: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/u),
+  enabled: z.boolean(),
+  roles: z.strictObject({ lead: z.boolean(), writers: z.boolean(), reviewers: z.boolean() }),
+  transport: z.discriminatedUnion("type", [
+    z.strictObject({ type: z.literal("stdio"), command: z.string().min(1).max(4096), args: z.array(z.string().max(4096)).max(100) }),
+    z.strictObject({ type: z.literal("http"), url: z.string().min(1).max(2048) }),
+    z.strictObject({ type: z.literal("sse"), url: z.string().min(1).max(2048) }),
+  ]),
+  env: z.array(McpValueRequest).max(50),
+  headers: z.array(McpValueRequest).max(50),
+  boxes: z.array(z.strictObject({ machineId: z.string().min(1).max(64), boxPubKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/u) })).max(500),
+});
+export type McpServerRequest = z.infer<typeof McpServerRequest>;
 /** An error the page caught, for the app log: what failed, the error's own text and the route. Main scrubs it. */
 export const ErrorReport = z.strictObject({
   /** The part whose card is up ("the conversation"), or "uncaught error" / "unhandled rejection". */
@@ -178,6 +210,7 @@ export const REQUESTS = {
   [IPC.pairSetup]: none,
   [IPC.secretSubmit]: z.tuple([SecretRequest]),
   [IPC.projectEnvSubmit]: z.tuple([ProjectEnvRequest]),
+  [IPC.mcpServerSubmit]: z.tuple([McpServerRequest]),
   [IPC.systemHostName]: none,
   [IPC.projectsPickFolder]: none,
   [IPC.projectsReadDrop]: z.tuple([DropPath]),

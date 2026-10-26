@@ -4,7 +4,7 @@ import rust from "./secret.rust-seal.json";
 import { SECRET_MAX_BYTES } from "../shared/contracts";
 import { IPC } from "../shared/channels";
 import { parseRequest } from "../shared/ipc";
-import { seal, submitProjectEnv, submitSecret } from "./secret";
+import { seal, submitMcpServer, submitProjectEnv, submitSecret } from "./secret";
 
 const bytes = (b64: string) => new Uint8Array(Buffer.from(b64, "base64"));
 
@@ -107,5 +107,50 @@ describe("sealing a secret ask's value", () => {
     expect((await submitProjectEnv({ ...request, set: [{ kind: "secret", name: "TLS_CHAIN", value: chain }] }, call)).ok).toBe(true);
     const sealed = (sent[1] as { set: Array<{ sealed?: string }> }).set[0]?.sealed ?? "";
     expect(sodium.to_string(sodium.crypto_box_seal_open(bytes(sealed), pk, sk))).toBe(chain);
+  });
+
+  it("seals an MCP server's secret to every machine given, sends plain and kept values as they are, and checks the request", async () => {
+    await sodium.ready;
+    const [pk, sk] = [bytes(rust.publicKey), bytes(rust.secretKey)];
+    const other = sodium.crypto_box_keypair();
+    const otherKey = Buffer.from(other.publicKey).toString("base64");
+    const sent: unknown[] = [];
+    const call = (tool: string, input: unknown) => {
+      sent.push(tool, input);
+      return Promise.resolve({ ok: true as const, output: {} });
+    };
+    const request = {
+      scope: { kind: "global" as const },
+      name: "github",
+      enabled: true,
+      roles: { lead: true, writers: true, reviewers: false },
+      transport: { type: "http" as const, url: "https://api.example.com/mcp" },
+      env: [],
+      headers: [
+        { kind: "secret" as const, name: "Authorization", value: "Bearer ghp_hunter2" },
+        { kind: "plain" as const, name: "X-Team", value: "core" },
+        { kind: "keep" as const, name: "X-Old" },
+      ],
+      boxes: [
+        { machineId: "devbox", boxPubKey: rust.publicKey },
+        { machineId: "laptop", boxPubKey: otherKey },
+      ],
+    };
+    expect(parseRequest(IPC.mcpServerSubmit, [request]).ok).toBe(true);
+    expect(parseRequest(IPC.mcpServerSubmit, [{ ...request, name: "a b" }]).ok).toBe(false);
+    expect((await submitMcpServer(request, call)).ok).toBe(true);
+    expect(sent[0]).toBe("mcp_server_set");
+    const input = sent[1] as { headers: Array<{ kind: string; sealed?: Array<{ machineId: string; sealed: string }> }> };
+    expect(JSON.stringify(input)).not.toContain("ghp_hunter2");
+    const [secret, plain, keep] = input.headers;
+    expect(secret?.sealed?.map((s) => s.machineId)).toEqual(["devbox", "laptop"]);
+    expect(sodium.to_string(sodium.crypto_box_seal_open(bytes(secret?.sealed?.[0]?.sealed ?? ""), pk, sk))).toBe("Bearer ghp_hunter2");
+    expect(sodium.to_string(sodium.crypto_box_seal_open(bytes(secret?.sealed?.[1]?.sealed ?? ""), other.publicKey, other.privateKey))).toBe("Bearer ghp_hunter2");
+    expect(plain).toEqual({ kind: "plain", name: "X-Team", value: "core" });
+    expect(keep).toEqual({ kind: "keep", name: "X-Old" });
+
+    sent.length = 0;
+    expect((await submitMcpServer({ ...request, boxes: [] }, call)).ok).toBe(false);
+    expect(sent).toEqual([]);
   });
 });

@@ -1,9 +1,9 @@
 // Secret requests and a project's secret environment variables: the value is sealed here, in main, to the sink machine's X25519 box key with libsodium's
 // crypto_box_seal (the same construction as the node's crypto_box_seal_open and the old app's seal.rs), so the hub
 // only relays ciphertext and the renderer never gets the plaintext back. It is never logged.
-import { SECRET_MAX_BYTES, type EnvVarSet, type ToolInput } from "../shared/contracts";
+import { SECRET_MAX_BYTES, type EnvVarSet, type McpValueSet, type ToolInput } from "../shared/contracts";
 import type { CallOutcome, HubError, SecretOutcome } from "../shared/hub";
-import type { ProjectEnvRequest, SecretRequest } from "../shared/ipc";
+import type { McpServerRequest, ProjectEnvRequest, SecretRequest } from "../shared/ipc";
 
 
 const refused = (message: string, fix?: string): { ok: false; error: HubError } => ({
@@ -70,4 +70,50 @@ export const submitProjectEnv = async (
     set.push({ kind: "secret", name: v.name, sealed: sealed.sealed });
   }
   return call("project_env_set", { machineId: request.machineId, projectId: request.projectId, set, remove: request.remove });
+};
+
+/**
+ * An MCP server to save: each secret value sealed to every machine in `boxes` (a project server's machine, or every
+ * machine for a global one), then mcp_server_set. Plain values and kept secrets go as they are. The hub's answer has
+ * the server with a secret by the machines that hold it, never its value.
+ */
+export const submitMcpServer = async (
+  request: McpServerRequest,
+  call: (tool: "mcp_server_set", input: ToolInput<"mcp_server_set">) => Promise<CallOutcome>,
+): Promise<CallOutcome> => {
+  const values = async (list: McpServerRequest["env"]): Promise<{ ok: true; set: McpValueSet[] } | { ok: false; error: HubError }> => {
+    const set: McpValueSet[] = [];
+    for (const v of list) {
+      if (v.kind !== "secret") {
+        set.push(v);
+        continue;
+      }
+      if (v.value.includes("\0")) return refused(`${v.name}'s value holds a NUL character.`, "Remove it, then save.");
+      if (request.boxes.length === 0) {
+        return refused("No machine takes secrets yet: no node has a box key.", "Update fleetd on your machines, then save.");
+      }
+      const sealed: Array<{ machineId: string; sealed: string }> = [];
+      for (const box of request.boxes) {
+        const one = await seal(box.boxPubKey, v.value);
+        if (!one.ok) return { ok: false, error: { ...one.error, message: `${v.name} for ${box.machineId}: ${one.error.message}` } };
+        sealed.push({ machineId: box.machineId, sealed: one.sealed });
+      }
+      set.push({ kind: "secret", name: v.name, sealed });
+    }
+    return { ok: true, set };
+  };
+  const env = await values(request.env);
+  if (!env.ok) return env;
+  const headers = await values(request.headers);
+  if (!headers.ok) return headers;
+  const transport = request.transport.type === "stdio" ? { type: "stdio" as const, command: request.transport.command, args: request.transport.args } : request.transport;
+  return call("mcp_server_set", {
+    scope: request.scope,
+    name: request.name,
+    enabled: request.enabled,
+    roles: request.roles,
+    transport,
+    env: env.set,
+    headers: headers.set,
+  });
 };

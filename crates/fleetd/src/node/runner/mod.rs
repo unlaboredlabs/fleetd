@@ -69,6 +69,8 @@ pub struct SessionSpec {
     pub disallowed_tools: Vec<String>,
     /// fleetd's MCP servers, written by the node; the user's own servers load too.
     pub mcp_config: Option<PathBuf>,
+    /// `--strict-mcp-config`: claude loads only `mcp_config`'s servers, none of the person's own.
+    pub strict_mcp: bool,
     /// fleetd's settings overlay (`--settings`), which claude merges over the user's own settings.
     pub settings: Option<PathBuf>,
     /// The whole child environment. Nothing is inherited: no CLAUDE* variable of the node's own parent leaks in.

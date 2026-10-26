@@ -1,11 +1,12 @@
-//! The little of an MCP Streamable HTTP client the CLI needs: initialize once, then call tools.
+//! The little of an MCP Streamable HTTP client the CLI needs: initialize once, then call tools. The node's connection
+//! test (node/mcp_probe.rs) uses it too, against any server, with that server's headers and no key.
 //! Answers may come as JSON or as an SSE stream; both are read to the matching response.
 
 use std::time::Duration;
 
 use serde_json::{Value, json};
 
-const PROTOCOL_VERSION: &str = "2025-06-18";
+pub const PROTOCOL_VERSION: &str = "2025-06-18";
 
 pub enum McpError {
     /// HTTP 401: the hub refused the key.
@@ -31,8 +32,12 @@ pub struct ToolResult {
 pub struct McpClient {
     http: reqwest::Client,
     url: String,
-    key: String,
+    /// The hub's bearer key; none for another server, whose own headers say who calls.
+    key: Option<String>,
+    headers: Vec<(String, String)>,
     session: Option<String>,
+    /// The server's `serverInfo`: `name version`.
+    pub server: Option<String>,
     protocol: String,
     next_id: u64,
 }
@@ -53,15 +58,36 @@ impl McpClient {
         name: &str,
         timeout: Duration,
     ) -> Result<Self, McpError> {
+        Self::connect_to(
+            endpoint(hub),
+            Some(key.to_owned()),
+            Vec::new(),
+            name,
+            timeout,
+        )
+        .await
+    }
+
+    /// Any streamable HTTP server at `url`, `headers` on every request.
+    pub async fn connect_to(
+        url: String,
+        key: Option<String>,
+        headers: Vec<(String, String)>,
+        name: &str,
+        timeout: Duration,
+    ) -> Result<Self, McpError> {
         let http = reqwest::Client::builder()
             .user_agent(format!("{name}/{}", env!("CARGO_PKG_VERSION")))
+            .redirect(same_origin_redirects())
             .build()
             .map_err(|error| McpError::Other(error.to_string()))?;
         let mut client = McpClient {
             http,
-            url: endpoint(hub),
-            key: key.to_owned(),
+            url,
+            key,
+            headers,
             session: None,
+            server: None,
             protocol: PROTOCOL_VERSION.into(),
             next_id: 0,
         };
@@ -79,6 +105,7 @@ impl McpClient {
         if let Some(version) = init.get("protocolVersion").and_then(Value::as_str) {
             client.protocol = version.to_owned();
         }
+        client.server = server_info(&init);
         client
             .post(
                 &json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }),
@@ -117,6 +144,33 @@ impl McpClient {
         })
     }
 
+    /// `tools/list`, every page: each tool's object as the server sent it.
+    pub async fn list_tools(&mut self, timeout: Duration) -> Result<Vec<Value>, McpError> {
+        let mut tools = Vec::new();
+        let mut cursor: Option<String> = None;
+        for _ in 0..TOOL_PAGES {
+            let params = match &cursor {
+                Some(c) => json!({ "cursor": c }),
+                None => json!({}),
+            };
+            let page = self.request("tools/list", params, timeout).await?;
+            tools.extend(
+                page.get("tools")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default(),
+            );
+            cursor = page
+                .get("nextCursor")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            if cursor.is_none() {
+                break;
+            }
+        }
+        Ok(tools)
+    }
+
     async fn request(
         &mut self,
         method: &str,
@@ -132,14 +186,7 @@ impl McpClient {
             .ok_or_else(|| McpError::Other(format!("no answer to {method}")))?;
         let reply = find_response(&response, id)
             .ok_or_else(|| McpError::Other(format!("no answer to {method}")))?;
-        if let Some(error) = reply.get("error") {
-            return Err(McpError::Other(format!(
-                "MCP error {}: {}",
-                error.get("code").map(Value::to_string).unwrap_or_default(),
-                error.get("message").and_then(Value::as_str).unwrap_or("")
-            )));
-        }
-        Ok(reply.get("result").cloned().unwrap_or(Value::Null))
+        result_of(reply)
     }
 
     /// The raw body of the answer, or `None` for 202 Accepted.
@@ -148,11 +195,14 @@ impl McpClient {
         message: &Value,
         timeout: Duration,
     ) -> Result<Option<String>, McpError> {
-        let mut request = self
-            .http
-            .post(&self.url)
-            .timeout(timeout)
-            .bearer_auth(&self.key)
+        let mut request = self.http.post(&self.url).timeout(timeout);
+        if let Some(key) = &self.key {
+            request = request.bearer_auth(key);
+        }
+        for (name, value) in &self.headers {
+            request = request.header(name, value);
+        }
+        let mut request = request
             .header("accept", "application/json, text/event-stream")
             .header("content-type", "application/json")
             .header("mcp-protocol-version", &self.protocol)
@@ -193,7 +243,48 @@ impl McpClient {
     }
 }
 
-fn describe(error: &reqwest::Error) -> String {
+/// Redirects followed only within the first URL's origin: a request's headers (a key, a server's secrets) never go
+/// to another.
+pub fn same_origin_redirects() -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(|attempt| {
+        let same = attempt
+            .previous()
+            .first()
+            .is_some_and(|first| first.origin() == attempt.url().origin());
+        if same && attempt.previous().len() < 10 {
+            attempt.follow()
+        } else {
+            attempt.stop()
+        }
+    })
+}
+
+/// Pages of `tools/list` read at most.
+const TOOL_PAGES: usize = 20;
+
+/// A JSON-RPC response's result, or its error as text.
+pub fn result_of(reply: Value) -> Result<Value, McpError> {
+    if let Some(error) = reply.get("error") {
+        return Err(McpError::Other(format!(
+            "MCP error {}: {}",
+            error.get("code").map(Value::to_string).unwrap_or_default(),
+            error.get("message").and_then(Value::as_str).unwrap_or("")
+        )));
+    }
+    Ok(reply.get("result").cloned().unwrap_or(Value::Null))
+}
+
+/// `name version` from an initialize result's `serverInfo`.
+pub fn server_info(init: &Value) -> Option<String> {
+    let info = init.get("serverInfo")?;
+    let name = info.get("name").and_then(Value::as_str)?;
+    Some(match info.get("version").and_then(Value::as_str) {
+        Some(version) => format!("{name} {version}"),
+        None => name.to_owned(),
+    })
+}
+
+pub fn describe(error: &reqwest::Error) -> String {
     let mut text = error.to_string();
     let mut source = std::error::Error::source(error);
     while let Some(cause) = source {

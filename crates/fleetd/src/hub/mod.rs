@@ -16,6 +16,7 @@ pub mod leads;
 pub mod ledger;
 pub mod link;
 pub mod mcp;
+pub mod mcp_servers;
 pub mod memory;
 pub mod metrics;
 pub mod orders;

@@ -57,6 +57,26 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "Human keys only. Add, replace (set) and remove environment variables of a project's agents. A plain variable carries its value; a secret carries sealed: its value sealed on the client (the desktop app) with libsodium's crypto_box_seal to the project machine's boxPubKey. The project's node keeps them and adds them to every claude it starts for the project from then on, and masks a secret printed by an agent as ***NAME*** before its output leaves the machine; the hub keeps a plain value and a secret's fingerprint, never a secret's value. ANTHROPIC_*, CLAUDE* and FLEETD_* names are refused. A value is up to 64 KiB, any number of lines, no NUL; a project's values together up to 512 KiB. All or nothing; refused with machine_offline when the node is down.",
     ),
     (
+        "mcp_servers_get",
+        "The MCP servers fleetd gives its agents: the global ones (every project), with project also that project's own (each replaces a global one of the same name there, even while off), and userServers: whether agents also get the person's own MCP servers from their claude setup (on by default). Each server: enabled, roles (lead, writers for write tasks, reviewers for review and read tasks), transport (stdio command and args, or an http or sse url) and its env or headers: a plain value, or for a secret only the machines whose node holds it (sealedOn), never its value.",
+    ),
+    (
+        "mcp_server_set",
+        "Human keys only. Add or replace an MCP server, global (operate on every machine) or a project's (operate on its machine). env (stdio) or headers (http, sse) is the whole list: a plain value carries value; a secret carries sealed, its value sealed on the client with crypto_box_seal to each machine's boxPubKey (a project server's: its machine; a global one's: every machine its agents run on); keep keeps a saved secret as it is. The hub relays each box to its node and keeps the fingerprint, never the value; missingOn names machines that were offline, whose agents go without the server until it is saved again. fleetd is fleetd's own server's name and can't be taken. Agents started from then on get it; a running one at its next start.",
+    ),
+    (
+        "mcp_server_remove",
+        "Human keys only. Remove an MCP server; each online node holding its secrets forgets them. Agents started from then on go without it.",
+    ),
+    (
+        "mcp_settings_set",
+        "Human keys only, operate on every machine. userServers: whether agents also get the person's own MCP servers from their claude setup (~/.claude.json, a repo's .mcp.json). Off: claude runs with --strict-mcp-config, fleetd's servers only; fleetd's own tools are always there.",
+    ),
+    (
+        "mcp_server_test",
+        "Test connection: the node starts the server (stdio, in the project's checkout with its variables, or the home directory for a global one) or connects to it (http, sse) with its secrets resolved there, initializes it and lists its tools within 30 s. result has the server's name and tools, or error: what went wrong, a command's stderr tail with its secrets masked. A global server is tested on machineId, by default the first machine online.",
+    ),
+    (
         "thread_tail",
         "A thread's newest messages and actions, newest first (n defaults to 10, max 50; kinds filters to message or action), plus its summary.",
     ),

@@ -1803,6 +1803,187 @@ export type MachineStatus = "online" | "offline" | "degraded";
 /** How sure the matcher is that new work repeats a piece in flight. */
 export type MatchStrength = "weak" | "strong" | "exact";
 
+export type McpArg = string;
+
+/** Which of fleetd's agents get a server. A plain thread a person starts gets none. */
+export type McpRoles = {
+  /** The project's lead. */
+  lead: boolean;
+  /** Review and read tasks' agents: the ones that only read. */
+  reviewers: boolean;
+  /** Write tasks' agents. */
+  writers: boolean;
+};
+
+/** Where a server is configured. */
+export type McpScope = {
+  kind: "global";
+} | {
+  kind: "project";
+  machineId: MachineId;
+  projectId: ProjectId;
+};
+
+/** One machine's box of a secret value. */
+export type McpSeal = {
+  machineId: MachineId;
+  /** `crypto_box_seal` of the value to that machine's `boxPubKey`: up to 64 KiB, no NUL. */
+  sealed: SealedSecret;
+};
+
+/** The machine a secret value was sealed to, with the fingerprint its node computed. */
+export type McpSealedOn = {
+  fingerprint: SecretFingerprint;
+  machineId: MachineId;
+};
+
+/** One configured server as the hub keeps it. A secret has no value here. */
+export type McpServer = {
+  enabled: boolean;
+  /** A stdio server's env. */
+  env?: McpValue[];
+  /** An HTTP or SSE server's headers. */
+  headers?: McpValue[];
+  name: McpServerName;
+  roles: McpRoles;
+  scope: McpScope;
+  transport: McpTransport;
+  updatedAt: Timestamp;
+};
+
+export type McpServerName = string;
+
+export type McpServerRemoveInput = {
+  name: McpServerName;
+  scope: McpScope;
+};
+
+export type McpServerRemoveOutput = {
+  next?: string;
+  ok: true;
+  truncated?: boolean;
+};
+
+export type McpServerSetInput = {
+  enabled: boolean;
+  /** A stdio server's env, the whole list: a value saved before and not here is removed. */
+  env?: McpValueSet[];
+  /** An HTTP or SSE server's headers, the whole list. */
+  headers?: McpValueSet[];
+  name: McpServerName;
+  roles: McpRoles;
+  scope: McpScope;
+  transport: McpTransport;
+};
+
+export type McpServerSetOutput = {
+  /**
+   * Machines whose node doesn't hold all of its secrets (offline when it was saved): their agents go without it
+   * until it is saved again while they are online.
+   */
+  missingOn?: MachineId[];
+  next?: string;
+  server: McpServer;
+  truncated?: boolean;
+};
+
+export type McpServerTestInput = {
+  /** Where to test a global server; default: the first machine online. A project server is tested on its machine. */
+  machineId?: MachineId;
+  name: McpServerName;
+  scope: McpScope;
+};
+
+export type McpServerTestOutput = {
+  machineId: MachineId;
+  next?: string;
+  result: McpTestResult;
+  truncated?: boolean;
+};
+
+export type McpServersGetInput = {
+  /** Also this project's own servers. */
+  project?: ProjectRef;
+};
+
+export type McpServersGetOutput = {
+  /** Every project's, by name. */
+  global: McpServer[];
+  next?: string;
+  /** The asked project's own, by name; each replaces a global one of the same name there. */
+  project?: McpServer[];
+  truncated?: boolean;
+  /** Agents also get the person's own MCP servers from their claude setup (on by default). */
+  userServers: boolean;
+};
+
+export type McpSettingsSetInput = {
+  /** Agents also get the person's own MCP servers from their claude setup. */
+  userServers: boolean;
+};
+
+export type McpSettingsSetOutput = {
+  next?: string;
+  truncated?: boolean;
+  userServers: boolean;
+};
+
+/** What a connection test found: the tools a server lists, or why it couldn't be reached. */
+export type McpTestResult = {
+  /** Why the test failed: what went wrong, the server's stderr tail for a command. */
+  error?: string;
+  /** The name and version the server gave, e.g. `github-mcp 1.2.0`. */
+  server?: string;
+  tools?: McpToolInfo[];
+};
+
+/** One tool a server lists. */
+export type McpToolInfo = {
+  description?: string;
+  name: string;
+};
+
+/** How claude reaches a server. */
+export type McpTransport = {
+  args?: McpArg[];
+  command: McpArg;
+  type: "stdio";
+} | {
+  type: "http";
+  url: McpUrl;
+} | {
+  type: "sse";
+  url: McpUrl;
+};
+
+export type McpUrl = string;
+
+/** One env variable or header as the hub keeps it: a plain one's value, or the machines a secret's node holds it on. */
+export type McpValue = {
+  kind: EnvVarKind;
+  name: McpValueName;
+  /** A secret's: each machine whose node holds it. A project server's, its machine. */
+  sealedOn?: McpSealedOn[];
+  /** A plain value. */
+  value?: EnvValue;
+};
+
+export type McpValueName = string;
+
+/** One env variable or header of a server being saved. */
+export type McpValueSet = {
+  kind: "plain";
+  name: McpValueName;
+  value: EnvValue;
+} | {
+  kind: "secret";
+  name: McpValueName;
+  sealed: McpSeal[];
+} | {
+  kind: "keep";
+  name: McpValueName;
+};
+
 /**
  * What memory writes are held to, in characters. A write past a cap is refused; a file already past a lowered cap
  * stays as it is until it is next written.
@@ -4684,6 +4865,11 @@ export interface ToolMap {
   fleetd_status: { input: FleetdStatusInput; output: FleetdStatusOutput };
   hub_info: { input: HubInfoInput; output: HubInfoOutput };
   lead_start: { input: LeadStartInput; output: LeadStartOutput };
+  mcp_server_remove: { input: McpServerRemoveInput; output: McpServerRemoveOutput };
+  mcp_server_set: { input: McpServerSetInput; output: McpServerSetOutput };
+  mcp_server_test: { input: McpServerTestInput; output: McpServerTestOutput };
+  mcp_servers_get: { input: McpServersGetInput; output: McpServersGetOutput };
+  mcp_settings_set: { input: McpSettingsSetInput; output: McpSettingsSetOutput };
   memory_caps_set: { input: MemoryCapsSetInput; output: MemoryCapsSetOutput };
   memory_get: { input: MemoryGetInput; output: MemoryGetOutput };
   memory_set: { input: MemorySetInput; output: MemorySetOutput };

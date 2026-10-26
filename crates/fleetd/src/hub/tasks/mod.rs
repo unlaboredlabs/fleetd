@@ -546,6 +546,7 @@ impl Tasks {
             ),
             // The node's launch is idempotent on the request id, so a retried launch returns the same thread.
             client_request_id: request_id(task, &[&task.attempt.get().to_string()]),
+            kind: task.kind,
             worktree: base_branch.map(|base_ref| Worktree {
                 base_ref,
                 branch: branch.clone(),

@@ -69,6 +69,7 @@ Open a project's settings in the desktop app: Settings → Projects, then pick t
 | Name | How fleetd shows the project. Its folder keeps its own name. |
 | Keep finished worktrees | Off (the default): a reader's worktree goes when its task finishes, and a writer's once its pull request merges. On: they stay on the machine. |
 | Environment variables | Variables every new agent of the project gets. See [Environment variables](#env). |
+| MCP servers | The project's own MCP servers for its agents, and the global ones it gets. See [MCP servers](/docs/mcp-servers). |
 | Delete project | See [Delete a project](#delete). |
 
 The page also shows where the project's worktrees live on its machine (`~/.fleetd/node/worktrees/<project>/`, one per
