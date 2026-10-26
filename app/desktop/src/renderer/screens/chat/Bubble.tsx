@@ -105,7 +105,9 @@ function TapbackPicker({ current, onPick }: { current: Tapback | undefined; onPi
           </Button>
         </PopoverTrigger>
       </Tooltip>
-      <PopoverContent side="top" aria-label="Tapbacks">
+      {/* Above the bubble, or below it when there's no room above. Once the bubble scrolls out of the chat the
+          picker hides with it rather than following it past the window's edge. */}
+      <PopoverContent side="top" hideWhenDetached aria-label="Tapbacks">
         <div className={s.picker}>
           {TAPBACKS.map((t) => (
             <button

@@ -674,12 +674,41 @@ export const screens: readonly Screen[] = [
     fixtures: ["bubbles-casual"],
     variant: "tapback",
     open: async (page) => {
+      // From the top of the chat, so the shot doesn't depend on where hovering the bubble scrolled it.
+      await page.getByLabel("Conversation with the lead").evaluate((el) => el.scrollTo({ top: 0, behavior: "instant" }));
       const bubble = page.locator('[data-bubble="text"]').filter({ hasText: "Nightly was green" }).locator("..");
       await bubble.hover();
       await bubble.getByRole("button", { name: "Tapback" }).click();
       await page.getByRole("button", { name: "Love" }).click();
       await page.getByRole("img", { name: "You reacted: Love" }).waitFor({ timeout: 5_000 });
+      await page.getByRole("dialog", { name: "Tapbacks" }).waitFor({ state: "hidden", timeout: 5_000 });
       await page.mouse.move(0, 0);
+    },
+  },
+  // The tapback picker open while its bubble scrolls up out of the chat: it hides with the bubble rather than
+  // following it to the window's top edge.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["bubbles-casual"],
+    variant: "tapback-scrolled",
+    sizes: ["small"],
+    open: async (page) => {
+      const log = page.getByLabel("Conversation with the lead");
+      await log.evaluate((el) => el.scrollTo({ top: 0, behavior: "instant" }));
+      const bubble = page.locator('[data-bubble="text"]').filter({ hasText: "Morning." }).locator("..");
+      const tapback = bubble.getByRole("button", { name: "Tapback" });
+      await bubble.hover();
+      await tapback.click();
+      const picker = page.getByRole("dialog", { name: "Tapbacks" });
+      await picker.waitFor({ timeout: 5_000 });
+      // Scrolled so that the picker, flipped below the button (6 px under it), would put its tapbacks 2 px from the
+      // window's top.
+      const [box, surface, pick] = await Promise.all([tapback.boundingBox(), picker.boundingBox(), picker.getByRole("button").first().boundingBox()]);
+      if (box === null || surface === null || pick === null) throw new Error("the Tapback button or its picker has no box");
+      await log.evaluate((el, by) => el.scrollBy({ top: by, behavior: "instant" }), box.y + box.height + 6 + (pick.y - surface.y) - 2);
+      const after = await tapback.boundingBox();
+      if (after === null || after.y + after.height > -5) throw new Error("the chat didn't scroll the bubble past the window's top");
     },
   },
   // Replying to a bubble: its quote over the box, with what you write under it.
