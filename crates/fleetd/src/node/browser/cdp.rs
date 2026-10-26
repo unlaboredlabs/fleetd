@@ -15,6 +15,7 @@ use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{ChildStdin, ChildStdout};
 use tokio::sync::{mpsc, oneshot};
+use zeroize::Zeroize;
 
 use crate::node::util::AbortOnDrop;
 
@@ -160,8 +161,13 @@ impl Cdp {
         let writer = tokio::spawn(async move {
             let mut stdin = stdin;
             while let Some(mut message) = outbox.recv().await {
-                message.push(0);
-                if stdin.write_all(&message).await.is_err() {
+                // A secret's message comes framed already, so it is never grown into a second buffer.
+                if message.last() != Some(&0) {
+                    message.push(0);
+                }
+                let written = stdin.write_all(&message).await;
+                message.zeroize();
+                if written.is_err() {
                     break;
                 }
             }
@@ -288,6 +294,34 @@ impl Cdp {
         self.wait(id, method, rx).await
     }
 
+    /// As [`Cdp::call`], for params that hold a secret (a filled value): the message is written into one buffer of
+    /// its exact size, framed, the params are wiped once it is, and the writer wipes the buffer once it is sent.
+    pub async fn call_secret(
+        &self,
+        session: Option<&str>,
+        method: &str,
+        params: Value,
+    ) -> Result<Value, String> {
+        let id = self.next.fetch_add(1, Ordering::Relaxed);
+        let mut message = json!({ "id": id, "method": method, "params": params });
+        if let Some(session) = session {
+            message["sessionId"] = session.into();
+        }
+        let (tx, rx) = oneshot::channel();
+        lock(&self.routes).waiting.insert(id, Waiter::Broker(tx));
+        let mut length = Counter(0);
+        let _ = serde_json::to_writer(&mut length, &message);
+        let mut framed = Vec::with_capacity(length.0 + 1);
+        let serialized = serde_json::to_writer(&mut framed, &message);
+        framed.push(0);
+        wipe(&mut message);
+        if serialized.is_err() || self.send.send(framed).is_err() {
+            lock(&self.routes).waiting.remove(&id);
+            return Err("the browser closed".to_owned());
+        }
+        self.wait(id, method, rx).await
+    }
+
     /// Attaches the broker to a target (flattened): the session is its own, hidden from the agent's driver.
     pub async fn attach(&self, target: &str) -> Result<String, String> {
         let id = self.next.fetch_add(1, Ordering::Relaxed);
@@ -346,9 +380,43 @@ impl Cdp {
     }
 }
 
+/// Counts the bytes written to it.
+struct Counter(usize);
+
+impl std::io::Write for Counter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0 += bytes.len();
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// Wipes every string in `value`.
+fn wipe(value: &mut Value) {
+    match value {
+        Value::String(s) => s.zeroize(),
+        Value::Array(items) => items.iter_mut().for_each(wipe),
+        Value::Object(map) => map.values_mut().for_each(wipe),
+        _ => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_secrets_message_is_wiped_to_the_last_string() {
+        let mut params = json!({ "text": "Pw-1", "nested": [{ "v": "Pw-2" }], "n": 3 });
+        wipe(&mut params);
+        assert_eq!(
+            params,
+            json!({ "text": "", "nested": [{ "v": "" }], "n": 3 })
+        );
+    }
 
     fn attached(target: &str, session: &str) -> Event {
         Event {

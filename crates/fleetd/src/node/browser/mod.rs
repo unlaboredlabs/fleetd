@@ -9,9 +9,11 @@ pub mod agent_browser;
 pub mod cdp;
 pub mod chrome;
 pub mod credentials;
+pub mod onepassword;
 pub mod proxy;
 pub mod record;
 pub mod session;
+pub mod shapes;
 pub mod upload;
 
 #[cfg(test)]
@@ -104,6 +106,9 @@ pub trait SessionHooks: Send + Sync + 'static {
     fn item(&self, thread: &str, item: &ThreadItem);
     /// The session's claude exited (it finished, was stopped or idled out, or crashed).
     fn ended(&self, thread: &str);
+    /// The values filled into the session's browsers from 1Password, when there are more than `known`: masked in what
+    /// the session reports, as its own secrets are.
+    fn filled_since(&self, thread: &str, known: usize) -> Option<Secrets>;
 }
 
 pub struct Broker {
@@ -120,6 +125,8 @@ pub struct Broker {
     starting: Mutex<HashSet<String>>,
     hub: Arc<dyn HubCalls>,
     secrets_for: SecretsFor,
+    /// 1Password: each session's vault and what it resolved (credentials.rs).
+    credentials: credentials::Credentials,
     /// Recordings being uploaded now: one upload each.
     uploading: Mutex<HashSet<PathBuf>>,
     /// Reports for the hub, sent in order by one task.
@@ -259,6 +266,7 @@ impl Broker {
             starting: Mutex::default(),
             hub: hub.clone(),
             secrets_for,
+            credentials: credentials::Credentials::new(home),
             uploading: Mutex::default(),
             reports: {
                 let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Report>();
@@ -580,6 +588,7 @@ impl Broker {
     /// Ends a session the broker already took out of its map, and starts its upload.
     async fn close(self: &Arc<Self>, session: Arc<Session>) -> SessionEnded {
         session.step("session_end", json!({}), true, None, 0);
+        self.credentials.forget(session.id.as_str());
         let files = session.close().await;
         let ended = SessionEnded {
             session_id: session.id.clone(),
@@ -770,6 +779,10 @@ impl Broker {
 }
 
 impl SessionHooks for Broker {
+    fn filled_since(&self, thread: &str, known: usize) -> Option<Secrets> {
+        self.credentials.filled_since(thread, known)
+    }
+
     fn env(&self, thread: &str, path: Option<&str>) -> Vec<(String, String)> {
         match self.cdp_url(thread) {
             Some(cdp) => agent_browser::env(&self.home, thread, &cdp, path),
@@ -780,6 +793,7 @@ impl SessionHooks for Broker {
     /// Ends the agent session's browser session, if it has one: its recording goes to the hub now, not after the
     /// idle timeout.
     fn ended(&self, thread: &str) {
+        self.credentials.ended(thread);
         let Some(session) = lock(&self.sessions).remove(thread) else {
             return;
         };

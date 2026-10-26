@@ -13,7 +13,7 @@ use fleetd_contracts::automations::{
     AutomationRunCall, AutomationRunsCall, AutomationUpdateCall,
 };
 use fleetd_contracts::browser::{
-    BrowserCall, RequestTakeoverCall, SessionEndCall, SessionStartCall,
+    BrowserCall, FillCredentialCall, RequestTakeoverCall, SessionEndCall, SessionStartCall,
 };
 use fleetd_contracts::checklist::ChecklistCall;
 use fleetd_contracts::lead_calls::{
@@ -346,6 +346,16 @@ static TOOLS: &[Tool] = &[
          in the app, and they watch the page live. Carry on meanwhile: while they drive, your agent-browser commands \
          answer that a person has control; after they hand it back, your next command sees the page as they left it.",
         inline_schema::<RequestTakeoverCall>,
+    ),
+    browser(
+        "fill_credential",
+        "Fill a login field of your browser session from 1Password without seeing the value: ref is its secret \
+         reference (op://<vault>/<item>/<field>, ?attribute=otp for a one-time code), target the field's CSS \
+         selector. The node fills it only on the item's own website, then submits the field's form in the same step; \
+         submit: false fills a field before the last of its form (a username before its password). From the first \
+         fill on, the session refuses reading values back (agent-browser eval and get value among them). Ask your \
+         lead for the reference; never ask anyone for a password.",
+        inline_schema::<FillCredentialCall>,
     ),
 ];
 
@@ -732,7 +742,8 @@ mod tests {
                 "review_read",
                 "session_start",
                 "session_end",
-                "request_takeover"
+                "request_takeover",
+                "fill_credential"
             ]
         );
         let lead = names(Role::Lead);
