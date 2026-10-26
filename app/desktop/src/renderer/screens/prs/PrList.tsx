@@ -1,6 +1,6 @@
 // The project's PRs, open ones by default, merged ones or all a click away: each row its title, and under it, quietly,
-// where it stands, its place in line, its checks and reviews, and its repo and number. A row opens the PR in the list's
-// place; ↑ and ↓ move between rows.
+// where it stands, its place in line, its checks and reviews, and its repo and number, a page at a time (Load more). A
+// row opens the PR in the list's place; ↑ and ↓ move between rows.
 import { useMemo, useState, type KeyboardEvent } from "react";
 import type { ProjectRef } from "../../../shared/contracts";
 import type { PrRow } from "../../../shared/contracts";
@@ -21,15 +21,23 @@ export const forgetFilters = (): void => lastFilter.clear();
 export const prHref = (project: ProjectRef, row: Pick<PrRow, "repo" | "number">): string =>
   toHash(panelRoute(project, { tab: "prs", pr: { repo: row.repo, number: row.number } }));
 
+/** Older PRs past these: read them, while it reads, and why the last read failed. */
+export interface More {
+  readonly load: () => void;
+  readonly loading: boolean;
+  readonly error?: string;
+}
+
 interface PrListProps {
   readonly rows: readonly PrRow[];
-  /** The hub sent only the most recent. */
-  readonly cut: boolean;
+  /** There are older PRs past these. */
+  readonly more: More | undefined;
   readonly project: ProjectRef;
   readonly nowMs: number;
 }
 
-export function PrList({ rows, cut, project, nowMs }: PrListProps) {
+export function PrList({ rows, more, project, nowMs }: PrListProps) {
+  const cut = more !== undefined;
   const key = `${project.machineId}/${project.projectId}`;
   const [filter, setFilterState] = useState<PrFilter>(() => lastFilter.get(key) ?? "open");
   const setFilter = (next: PrFilter) => {
@@ -76,7 +84,7 @@ export function PrList({ rows, cut, project, nowMs }: PrListProps) {
           >
             {empty.body}
           </PaneEmpty>
-          {cut ? <CutNote count={rows.length} /> : null}
+          {more !== undefined ? <LoadMore more={more} /> : null}
         </div>
       ) : (
         <div className={s.listScroll} onKeyDown={onKeyDown}>
@@ -96,7 +104,7 @@ export function PrList({ rows, cut, project, nowMs }: PrListProps) {
                   </Text>
                 </div>
               ) : it.kind === "cut" ? (
-                <CutNote count={it.count} />
+                more !== undefined ? <LoadMore more={more} /> : null
               ) : (
                 <Row row={it.row} project={project} nowMs={nowMs} />
               )
@@ -108,11 +116,20 @@ export function PrList({ rows, cut, project, nowMs }: PrListProps) {
   );
 }
 
-/** The hub sent only the most recent: said under the rows, or under an empty filter, since the rest may hold its PRs. */
-function CutNote({ count }: { count: number }) {
+/** Older PRs to read: under the rows, or under an empty filter, since the older ones may hold its PRs. */
+function LoadMore({ more }: { more: More }) {
   return (
     <div className={s.cutNote}>
-      <Text size="xs" tone="faint">{`Only the ${count} most recent are here; the rest are on GitHub.`}</Text>
+      <Button variant="quiet" size="sm" onClick={more.load} disabled={more.loading}>
+        {more.loading ? "Loading…" : "Load more"}
+      </Button>
+      {more.error !== undefined ? (
+        <span role="alert">
+          <Text size="xs" tone="danger">
+            {more.error}
+          </Text>
+        </span>
+      ) : null}
     </div>
   );
 }

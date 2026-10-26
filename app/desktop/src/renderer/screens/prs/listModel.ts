@@ -77,13 +77,13 @@ export const emptyWords = (
   filter: PrFilter,
   counts: Readonly<Record<PrFilter, number>>,
 ): { readonly title: string; readonly body: string; readonly offer: { readonly filter: PrFilter; readonly label: string } | undefined } => {
-  if (counts.all === 0) return { title: "No pull requests yet", body: "Open PRs show here, and those merged or closed in the last week.", offer: undefined };
+  if (counts.all === 0) return { title: "No pull requests yet", body: "Open PRs show here, and those merged or closed.", offer: undefined };
   if (filter === "open") {
     return counts.merged > 0
-      ? { title: "Nothing open", body: `${counts.merged} merged in the last week.`, offer: { filter: "merged", label: "Show merged" } }
-      : { title: "Nothing open", body: "Nothing merged in the last week either.", offer: { filter: "all", label: "Show all" } };
+      ? { title: "Nothing open", body: `${counts.merged} merged.`, offer: { filter: "merged", label: "Show merged" } }
+      : { title: "Nothing open", body: "Nothing merged either.", offer: { filter: "all", label: "Show all" } };
   }
   return counts.open > 0
-    ? { title: "Nothing merged lately", body: "Nothing merged in the last week.", offer: { filter: "open", label: "Show open" } }
-    : { title: "Nothing merged lately", body: "Nothing merged in the last week.", offer: { filter: "all", label: "Show all" } };
+    ? { title: "Nothing merged", body: "Nothing merged yet.", offer: { filter: "open", label: "Show open" } }
+    : { title: "Nothing merged", body: "Nothing merged yet.", offer: { filter: "all", label: "Show all" } };
 };

@@ -64,6 +64,25 @@ fn person() -> Caller {
     }
 }
 
+/// A person's device paired with admin on every machine.
+fn admin() -> Caller {
+    let c = serde_json::from_value::<Caller>(json!({
+        "keyId": "k9", "name": "admin", "prefix": "fld_abcdef", "createdAt": AT,
+        "grants": [{ "role": "admin", "machines": "*" }],
+    }))
+    .unwrap();
+    Caller {
+        kind: Some(KeyKind::Human),
+        ..c
+    }
+}
+
+async fn set_caps(hub: &Arc<Hub>, caller: &Caller, caps: Value) -> Result<Value, CallError> {
+    crate::hub::api::registry()
+        .call(hub, caller, "memory_caps_set", caps)
+        .await
+}
+
 fn agent_key() -> Caller {
     Caller {
         kind: Some(KeyKind::Agent),
@@ -247,6 +266,14 @@ async fn a_topic_gets_its_index_line_and_is_read_on_demand() {
 async fn a_write_past_a_cap_is_refused_whole_and_tells_the_lead_to_merge() {
     let (hub, _home) = hub();
     let r = project("fleetd");
+    // The caps before they were raised: every one is held at what is set.
+    set_caps(
+        &hub,
+        &admin(),
+        json!({ "user": 4000, "index": 4000, "topic": 8000, "project": 32000 }),
+    )
+    .await
+    .unwrap();
     let long = |c: char| c.to_string().repeat(1000);
     for c in ['a', 'b', 'c'] {
         remember(&hub, &r, json!({ "scope": "user", "text": long(c) }))
@@ -447,7 +474,7 @@ async fn memory_get_shows_each_file_with_when_and_where_an_entry_was_written() {
         .await
         .unwrap();
     assert_eq!(out["user"]["text"], "- Concise.\n");
-    assert_eq!(out["user"]["cap"], 4000);
+    assert_eq!(out["user"]["cap"], 16000);
     let note = &out["user"]["notes"][0];
     assert_eq!(
         (
@@ -465,9 +492,9 @@ async fn memory_get_shows_each_file_with_when_and_where_an_entry_was_written() {
     assert_eq!(files[0]["text"], "- [deploys](deploys.md)\n");
     assert_eq!(
         (files[1]["topic"].as_str(), files[1]["cap"].as_i64()),
-        (Some("deploys"), Some(8000))
+        (Some("deploys"), Some(32000))
     );
-    assert_eq!(out["projectCap"], 32000);
+    assert_eq!(out["projectCap"], 128000);
     // Deleting a topic in the app takes its index line with it.
     tools
         .call(
@@ -557,4 +584,98 @@ async fn a_lead_starts_with_user_md_and_its_projects_memory_after_the_instructio
         first.contains("memory_read") && !first.contains("Private"),
         "{first}"
     );
+}
+
+/// The caps default to 16,000 for user.md and each MEMORY.md, 32,000 per topic and 128,000 per project; an admin
+/// changes them from the app, memory_get shows them, and `remember` is held to what is set.
+#[tokio::test]
+async fn memory_caps_are_a_hub_setting_and_remember_is_held_to_them() {
+    let (hub, _home) = hub();
+    let r = project("fleetd");
+    let tools = crate::hub::api::registry();
+    let got = tools
+        .call(&hub, &person(), "memory_get", json!({ "projectRef": r }))
+        .await
+        .unwrap();
+    assert_eq!(
+        got["caps"],
+        json!({ "user": 16000, "index": 16000, "topic": 32000, "project": 128000 })
+    );
+    assert_eq!(got["user"]["cap"], 16000);
+    assert_eq!(got["projectCap"], 128000);
+
+    // At the default cap user.md takes a full file and not a character more.
+    let full = format!("{}\n", "u".repeat(15_999));
+    tools
+        .call(
+            &hub,
+            &person(),
+            "memory_set",
+            json!({ "scope": "user", "text": full }),
+        )
+        .await
+        .unwrap();
+    let Err(CallError::Tool(e)) = tools
+        .call(
+            &hub,
+            &person(),
+            "memory_set",
+            json!({ "scope": "user", "text": format!("u{full}") }),
+        )
+        .await
+    else {
+        panic!("past the default cap")
+    };
+    assert!(e.message.contains("past its cap of 16000"), "{}", e.message);
+
+    // Only an admin on every machine sets them, within their range.
+    let Err(CallError::Tool(e)) = set_caps(
+        &hub,
+        &person(),
+        json!({ "user": 20000, "index": 16000, "topic": 32000, "project": 128000 }),
+    )
+    .await
+    else {
+        panic!("an operate key set the caps")
+    };
+    assert_eq!(e.code, ErrorCode::Forbidden);
+    for out_of_range in [
+        json!({ "user": 100_001, "index": 16000, "topic": 32000, "project": 128000 }),
+        json!({ "user": 16000, "index": 16000, "topic": 32000, "project": 400_001 }),
+        json!({ "user": 999, "index": 16000, "topic": 32000, "project": 128000 }),
+    ] {
+        assert!(matches!(
+            set_caps(&hub, &admin(), out_of_range).await,
+            Err(CallError::Invalid(_))
+        ));
+    }
+    let caps = json!({ "user": 2000, "index": 100_000, "topic": 32000, "project": 400_000 });
+    assert_eq!(
+        set_caps(&hub, &admin(), caps.clone()).await.unwrap()["user"],
+        2000
+    );
+    let got = tools
+        .call(&hub, &person(), "memory_get", json!({}))
+        .await
+        .unwrap();
+    assert_eq!(got["caps"], caps);
+    assert_eq!(got["user"]["cap"], 2000);
+
+    // user.md is over its lowered cap: kept as it is, and the next remember is refused at 2,000.
+    assert_eq!(user_md(&hub).chars().count(), 16_000);
+    let refused = remember(&hub, &r, json!({ "scope": "user", "text": "one more" }))
+        .await
+        .unwrap_err();
+    assert!(refused.contains("past its cap of 2000"), "{refused}");
+    // MEMORY.md takes far more than its old 4,000 at the raised cap.
+    for c in 'a'..='z' {
+        remember(
+            &hub,
+            &r,
+            json!({ "scope": "project", "text": c.to_string().repeat(1000) }),
+        )
+        .await
+        .unwrap();
+    }
+    assert!(memory_md(&hub, &r).chars().count() > 26_000);
 }

@@ -1,11 +1,12 @@
-//! orders_board, order_get, attachment_put, attachment_get and project_files.
+//! orders_board, order_get, attachment_part, attachment_put, attachment_get and project_files.
 use std::sync::Arc;
 
 use fleetd_contracts::auth::Role;
 use fleetd_contracts::ids::ProjectRef;
 use fleetd_contracts::mcp::{
-    AttachmentPutInput, AttachmentPutOutput, ErrorCode, OrderGetInput, OrderGetOutput,
-    OrdersBoardInput, OrdersBoardOutput, ProjectFilesInput, ProjectFilesOutput,
+    AttachmentPartInput, AttachmentPartOutput, AttachmentPutInput, AttachmentPutOutput, ErrorCode,
+    OrderGetInput, OrderGetOutput, OrdersBoardInput, OrdersBoardOutput, ProjectFilesInput,
+    ProjectFilesOutput,
 };
 use fleetd_contracts::prim::{List, Text};
 
@@ -23,6 +24,7 @@ const BOARD_MAX_BYTES: usize = 64 * 1024;
 pub fn register(tools: &mut Registry) {
     tools.add("orders_board", orders_board);
     tools.add("order_get", order_get);
+    tools.add("attachment_part", attachment_part);
     tools.add("attachment_put", attachment_put);
     tools.add("attachment_get", attachment_get);
     tools.add("project_files", project_files);
@@ -138,6 +140,14 @@ async fn order_get(
         ),
         truncated: truncated.then_some(true),
     })
+}
+
+async fn attachment_part(
+    hub: Arc<Hub>,
+    caller: Caller,
+    input: AttachmentPartInput,
+) -> Result<AttachmentPartOutput, ToolError> {
+    crate::hub::intake::attachments::part(&hub, &caller, input).await
 }
 
 async fn attachment_put(

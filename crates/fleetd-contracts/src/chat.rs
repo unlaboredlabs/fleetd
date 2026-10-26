@@ -229,7 +229,7 @@ pub struct ChatMessage {
     /// Markdown. Empty while a streamed message has no text yet, and for an inline `item`.
     pub text: Text<0, CHAT_TEXT_MAX>,
     #[serde(default)]
-    pub attachments: List<AttachmentRef, 0, 8>,
+    pub attachments: List<AttachmentRef, 0, { crate::mcp::ATTACHMENTS_MAX }>,
     pub created_at: Timestamp,
     /// Set when the text was last appended to, or an item's state changed.
     pub updated_at: Option<Timestamp>,

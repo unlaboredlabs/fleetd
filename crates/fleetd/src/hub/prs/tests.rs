@@ -12,9 +12,11 @@ use serde_json::{Value, json};
 
 use super::github::{GhCheck, GhPull, GhReview, PrsGitHub};
 use super::join::{self, RowCtx};
+use super::tools::list_page;
 use crate::hub::store::test_clock::ManualClock;
 use crate::hub::train::github::{GhOut, GhRunner};
 use crate::hub::train::host::BoxFut;
+use fleetd_contracts::prs::PR_LIST_MAX;
 
 const AT: &str = "2026-10-22T10:00:00.000Z";
 const SHA: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
@@ -346,31 +348,60 @@ fn canned(replies: Vec<(i32, &str, &str)>) -> Arc<Canned> {
     })
 }
 
+/// A page of PRs as `gh api graphql` answers it; `next` is the end cursor when there are more.
+fn gql_page(pulls: Vec<Value>, next: Option<&str>) -> String {
+    json!({ "data": { "repository": { "pullRequests": {
+        "pageInfo": { "hasNextPage": next.is_some(), "endCursor": next },
+        "nodes": pulls,
+    } } } })
+    .to_string()
+}
+
+/// PR `number`, updated `minutes` after AT's hour, as the GraphQL list carries it.
+fn gql_pull(number: i64, state: &str, minutes: i64) -> Value {
+    let at = format!(
+        "2026-10-22T{:02}:{:02}:00Z",
+        10 + minutes / 60,
+        minutes % 60
+    );
+    json!({ "number": number, "title": format!("PR {number}"), "state": state, "isDraft": false,
+            "author": { "login": "octo" }, "headRefName": format!("f-{number}"), "headRefOid": SHA,
+            "createdAt": AT, "updatedAt": at, "closedAt": (state != "OPEN").then_some(&at),
+            "commits": { "nodes": [{ "commit": { "statusCheckRollup": { "contexts": { "nodes": [
+                { "__typename": "CheckRun", "name": "ci", "status": "COMPLETED", "conclusion": "SUCCESS" }
+            ] } } } }] } })
+}
+
 #[tokio::test]
 async fn a_burst_of_reads_asks_github_once_per_minute() {
-    let list = json!([{ "number": 4, "title": "Fix login", "state": "OPEN", "headRefName": "fix", "headRefOid": SHA,
-                        "createdAt": AT, "updatedAt": AT, "statusCheckRollup": [] }])
-    .to_string();
+    let list = gql_page(vec![gql_pull(4, "OPEN", 0)], None);
     let gh = canned(vec![(0, &list, ""), (0, &list, "")]);
     let clock = ManualClock::at(1_792_000_000_000);
     let github = Arc::new(PrsGitHub::new(gh.clone(), clock.clone()));
     let reads = (0..5).map(|_| {
         let github = github.clone();
-        tokio::spawn(async move { github.list("acme/web", false).await })
+        tokio::spawn(async move { github.page("acme/web", false, None).await })
     });
     for read in futures_util::future::join_all(reads).await {
         let read = read.unwrap();
-        assert_eq!(read.value.unwrap()[0].title, "Fix login");
+        let page = read.value.unwrap();
+        assert_eq!(page.pulls[0].title, "PR 4");
+        assert_eq!(
+            page.pulls[0].status_check_rollup[0].name.as_deref(),
+            Some("ci")
+        );
+        assert_eq!(page.next, None);
         assert!(read.error.is_none());
     }
     assert_eq!(gh.runs.lock().unwrap().len(), 1, "five reads, one gh run");
     let argv = gh.runs.lock().unwrap()[0].join(" ");
+    assert!(argv.starts_with("api graphql -f query="), "{argv}");
     assert!(
-        argv.starts_with("pr list --repo acme/web --state open"),
+        argv.contains("states: [OPEN]") && argv.contains("-f owner=acme -f name=web"),
         "{argv}"
     );
     clock.advance(Duration::from_secs(61));
-    github.list("acme/web", false).await;
+    github.page("acme/web", false, None).await;
     assert_eq!(
         gh.runs.lock().unwrap().len(),
         2,
@@ -431,4 +462,71 @@ fn gh_failures_read_as_what_to_do() {
     );
     let other = super::github::explain(1, "gh: something broke");
     assert_eq!(other, "GitHub couldn't be read: something broke");
+}
+
+/// The first page costs one GitHub read per list; Load more pages on into older PRs by GitHub's cursor, reading each
+/// GitHub page once, and the last page says there is no more.
+#[tokio::test]
+async fn the_list_loads_older_prs_past_the_first_page() {
+    let open_1 = gql_page(
+        (1..=50)
+            .map(|n| gql_pull(200 - n, "OPEN", 200 - n))
+            .collect(),
+        Some("open-2"),
+    );
+    let closed_1 = gql_page(
+        (1..=30)
+            .map(|n| gql_pull(100 - n, "MERGED", 100 - n))
+            .collect(),
+        None,
+    );
+    let open_2 = gql_page(
+        (51..=70)
+            .map(|n| gql_pull(200 - n, "OPEN", 200 - n))
+            .collect(),
+        None,
+    );
+    let gh = canned(vec![(0, &open_1, ""), (0, &closed_1, ""), (0, &open_2, "")]);
+    let github = PrsGitHub::new(gh.clone(), ManualClock::at(1_792_000_000_000));
+    let tasks: Vec<Task> = Vec::new();
+    let ctx = RowCtx::with_tasks(&tasks);
+    let repos = [repo()];
+    let numbers = |rows: &[fleetd_contracts::prs::PrRow]| {
+        rows.iter().map(|r| r.number.get()).collect::<Vec<_>>()
+    };
+
+    let first = list_page(&github, &repos, &[], "", &ctx, None).await;
+    assert!(first.error.is_none());
+    assert_eq!(
+        numbers(&first.rows),
+        (150..=199).rev().collect::<Vec<_>>(),
+        "open ones before any closed"
+    );
+    assert!(first.more);
+    assert_eq!(
+        gh.runs.lock().unwrap().len(),
+        2,
+        "the first page of each list, no more"
+    );
+
+    let cursor = join::cursor_of(&join::row_key(first.rows.last().unwrap()));
+    let key = join::key_of_cursor(&cursor).unwrap();
+    let second = list_page(&github, &repos, &[], "", &ctx, Some(&key)).await;
+    let runs = gh.runs.lock().unwrap().clone();
+    assert_eq!(
+        runs.len(),
+        3,
+        "the first pages are reused; the open list's second is read"
+    );
+    assert!(
+        runs[2].join(" ").ends_with("-f after=open-2"),
+        "{:?}",
+        runs[2]
+    );
+    assert!(!second.more, "nothing past the last page");
+    let open_after: Vec<i64> = (130..=149).rev().collect();
+    let merged: Vec<i64> = (70..=99).rev().collect();
+    assert_eq!(numbers(&second.rows), [open_after, merged].concat());
+    assert!(second.rows.len() <= PR_LIST_MAX);
+    assert!(join::key_of_cursor("not a cursor").is_none());
 }

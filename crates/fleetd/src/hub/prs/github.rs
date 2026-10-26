@@ -1,6 +1,6 @@
 //! What the PR views read from GitHub, through `gh` on the hub's machine, cached briefly so a burst of refetches
-//! costs one call: a repo's open and recently closed PRs (one GraphQL query each, checks and review decision
-//! included), one PR's detail (one query: description, checks, people's reviews), and its changed files (REST, per
+//! costs one call: a repo's open or closed PRs a page at a time, most recently updated first (one GraphQL query per
+//! page, checks and review decision included, the next page by GitHub's cursor), one PR's detail (one query: description, checks, people's reviews), and its changed files (REST, per
 //! page of 100, kept per head so a page is read once per push).
 //!
 //! Only the PR views call this, when a person opens one; nothing here runs on a timer. A failed read is remembered
@@ -20,18 +20,32 @@ pub const LIST_TTL_MS: i64 = 60_000;
 pub const DETAIL_TTL_MS: i64 = 30_000;
 /// How long a failed read is remembered before GitHub is asked again.
 pub const ERROR_TTL_MS: i64 = 60_000;
-/// Open PRs read per repo.
-pub const OPEN_LIMIT: usize = 50;
-/// Closed and merged PRs read per repo, most recent first.
-pub const CLOSED_LIMIT: usize = 20;
+/// PRs per page read from GitHub.
+pub const PAGE_SIZE: usize = 50;
 /// A file's patch kept for paging; GitHub itself leaves out the patch of very large files.
 const PATCH_MAX_BYTES: usize = 512 * 1024;
 
-const MAX_LISTS: usize = 32;
+const MAX_LISTS: usize = 128;
 const MAX_DETAILS: usize = 64;
 const MAX_FILE_PAGES: usize = 16;
 
-const LIST_FIELDS: &str = "number,title,state,isDraft,author,headRefName,headRefOid,createdAt,updatedAt,mergedAt,closedAt,reviewDecision,statusCheckRollup,url";
+/// A page of a repo's PRs, as `gh pr list --json` would give them; `$after` is the last page's end cursor.
+const LIST_QUERY: &str = "query($owner: String!, $name: String!, $first: Int!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(states: STATES, first: $first, after: $after, orderBy: {field: UPDATED_AT, direction: DESC}) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        number title state isDraft author { login } headRefName headRefOid createdAt updatedAt mergedAt closedAt
+        reviewDecision url
+        commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
+          __typename
+          ... on CheckRun { name status conclusion detailsUrl startedAt completedAt }
+          ... on StatusContext { context state targetUrl }
+        } } } } } }
+      }
+    }
+  }
+}";
 const DETAIL_FIELDS: &str = "number,title,state,isDraft,author,headRefName,headRefOid,createdAt,updatedAt,mergedAt,closedAt,reviewDecision,statusCheckRollup,url,body,baseRefName,additions,deletions,changedFiles,mergeCommit,reviews";
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
@@ -87,6 +101,104 @@ pub struct GhPull {
     pub review_decision: Option<String>,
     #[serde(default)]
     pub status_check_rollup: Vec<GhCheck>,
+}
+
+/// One page of a repo's PRs, and the cursor of the next when there is one.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct GhPage {
+    pub pulls: Vec<GhPull>,
+    pub next: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct Nodes<T> {
+    #[serde(default = "Vec::new")]
+    nodes: Vec<T>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PageInfo {
+    has_next_page: bool,
+    end_cursor: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Rollup {
+    contexts: Nodes<GhCheck>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Commit {
+    status_check_rollup: Option<Rollup>,
+}
+
+#[derive(Deserialize)]
+struct CommitNode {
+    commit: Commit,
+}
+
+#[derive(Deserialize)]
+struct GqlPull {
+    #[serde(flatten)]
+    pull: GhPull,
+    commits: Option<Nodes<CommitNode>>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GqlPulls {
+    page_info: PageInfo,
+    nodes: Vec<GqlPull>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GqlRepo {
+    pull_requests: GqlPulls,
+}
+
+#[derive(Deserialize)]
+struct GqlData {
+    repository: Option<GqlRepo>,
+}
+
+#[derive(Deserialize)]
+struct GqlAnswer {
+    data: GqlData,
+}
+
+impl GqlAnswer {
+    fn page(self) -> Result<GhPage, String> {
+        let Some(repo) = self.data.repository else {
+            return Err(
+                "GitHub doesn't know this repository or PR, or the signed-in account can't see it."
+                    .into(),
+            );
+        };
+        let list = repo.pull_requests;
+        let pulls = list
+            .nodes
+            .into_iter()
+            .map(|node| {
+                let mut pull = node.pull;
+                pull.status_check_rollup = node
+                    .commits
+                    .and_then(|c| c.nodes.into_iter().next())
+                    .and_then(|n| n.commit.status_check_rollup)
+                    .map(|r| r.contexts.nodes)
+                    .unwrap_or_default();
+                pull
+            })
+            .collect();
+        let next = list
+            .page_info
+            .end_cursor
+            .filter(|_| list.page_info.has_next_page);
+        Ok(GhPage { pulls, next })
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
@@ -250,11 +362,13 @@ pub fn explain(exit_code: i32, stderr: &str) -> String {
 
 /// Repo (lowercase), PR number, head sha and 0-based page.
 type FilePage = (String, i64, String, usize);
+/// Repo (lowercase), open or closed, and the cursor the page starts after (none: the first).
+type ListPage = (String, &'static str, Option<String>);
 
 pub struct PrsGitHub {
     gh: Arc<dyn GhRunner>,
     clock: Arc<dyn Clock>,
-    lists: Mutex<Cache<(String, &'static str), Vec<GhPull>>>,
+    lists: Mutex<Cache<ListPage, GhPage>>,
     details: Mutex<Cache<(String, i64), GhDetail>>,
     files: Mutex<Cache<FilePage, Vec<GhFile>>>,
     /// One read from GitHub at a time: a burst of refetches waits for the first and takes its answer from the cache.
@@ -295,10 +409,11 @@ impl PrsGitHub {
             .map_err(|_| "GitHub answered in a shape fleetd doesn't read.".to_owned())
     }
 
-    /// The repo's open PRs (`closed` false) or its most recently closed and merged ones.
-    pub async fn list(&self, repo: &str, closed: bool) -> Read<Vec<GhPull>> {
+    /// A page of the repo's open PRs (`closed` false) or of its closed and merged ones, most recently updated first:
+    /// the first, or the one after cursor `after`.
+    pub async fn page(&self, repo: &str, closed: bool, after: Option<&str>) -> Read<GhPage> {
         let state = if closed { "closed" } else { "open" };
-        let key = (repo.to_lowercase(), state);
+        let key = (repo.to_lowercase(), state, after.map(str::to_owned));
         if let Some(hit) = self
             .lists
             .lock()
@@ -316,22 +431,27 @@ impl PrsGitHub {
         {
             return hit;
         }
-        let limit = if closed { CLOSED_LIMIT } else { OPEN_LIMIT };
-        let args = [
-            "pr",
-            "list",
-            "--repo",
-            repo,
-            "--state",
-            state,
-            "--limit",
-            &limit.to_string(),
-            "--json",
-            LIST_FIELDS,
-        ]
-        .map(String::from)
-        .to_vec();
-        let result = self.run_json(args).await;
+        let (owner, name) = repo.split_once('/').unwrap_or((repo, ""));
+        let states = if closed { "[CLOSED, MERGED]" } else { "[OPEN]" };
+        let mut args: Vec<String> = vec![
+            "api".into(),
+            "graphql".into(),
+            "-f".into(),
+            format!("query={}", LIST_QUERY.replace("STATES", states)),
+            "-f".into(),
+            format!("owner={owner}"),
+            "-f".into(),
+            format!("name={name}"),
+            "-F".into(),
+            format!("first={PAGE_SIZE}"),
+        ];
+        if let Some(after) = after {
+            args.extend(["-f".into(), format!("after={after}")]);
+        }
+        let result = self
+            .run_json::<GqlAnswer>(args)
+            .await
+            .and_then(GqlAnswer::page);
         self.lists.lock().unwrap().put(key, result, self.now())
     }
 

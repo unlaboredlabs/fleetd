@@ -118,11 +118,6 @@ pub fn fill_ctx(hub: &Hub, ctx: &mut RowCtx<'_>, repos: &[GitHubRepo]) {
     }
 }
 
-/// The default `closedSince`: a week before `now_ms`.
-pub fn default_closed_since(now_ms: i64) -> String {
-    iso_ms(now_ms - 7 * 24 * 60 * 60 * 1000)
-}
-
 /// Agent verdicts on the PR, newest first: `(task id, head sha, at, verdict)`.
 pub fn verdicts(hub: &Hub, pr_url: &str) -> Vec<(String, String, String, ReviewVerdict)> {
     let key = crate::hub::reviews::verdicts::pr_key(pr_url);

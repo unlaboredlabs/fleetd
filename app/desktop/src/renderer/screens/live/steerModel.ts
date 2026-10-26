@@ -2,7 +2,7 @@
 // stage from the agent's own frames (steer_send, order_get, steer.*); these only word them. A steer speaks for the
 // person, so it goes with the app's own key, as chat does. The lead's are chat messages (chat_send's `now`).
 
-import type { Steer, SteerMode } from "../../../shared/contracts";
+import { STEER_TEXT_MAX, type Steer, type SteerMode } from "../../../shared/contracts";
 import { sendsOn, type KeyLike } from "../chat/composerModel";
 
 export type SteerKey = KeyLike & { readonly metaKey: boolean; readonly ctrlKey: boolean };
@@ -20,8 +20,8 @@ export const composerSendOn = (e: SteerKey, leadWorking: boolean): "now" | "chat
   return mode === "now" && leadWorking ? "now" : "chat";
 };
 
-/** steer_send's limit on a steer's text (IntakeText). */
-export const STEER_MAX = 4000;
+/** steer_send's limit on a steer's text (SteerText). */
+export const STEER_MAX = STEER_TEXT_MAX;
 
 /** Why these words can't go as a steer, or undefined when they can. */
 export const steerTooLong = (text: string): string | undefined =>

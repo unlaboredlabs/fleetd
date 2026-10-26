@@ -5,10 +5,10 @@
 
 import { useStore } from "zustand";
 import { createStore, type StoreApi } from "zustand/vanilla";
-import type { AttachmentRef } from "../../../shared/contracts";
+import type { AttachmentMime, AttachmentRef } from "../../../shared/contracts";
 import type { DataLayer } from "../../src/data/queries";
 import { useDataLayer } from "../../src/data/react";
-import { ATTACHMENT_MAX_BYTES } from "../../../shared/contracts";
+import { ATTACHMENT_MAX_BYTES, ATTACHMENT_PART_BYTES } from "../../../shared/contracts";
 import { fmtBytes, looksText, MAX_ATTACHMENTS, mimeFor, toBase64 } from "./attachments";
 
 /** Uploaded: the hub's reference to the file, which a message carries. */
@@ -43,6 +43,21 @@ export interface Drafts {
 }
 
 const isEmpty = (d: Draft) => d.text === "" && d.attached.length === 0 && d.error === undefined;
+
+/** A call carries at most a piece's worth, so a larger file goes as attachment_part pieces, in order, then its last. */
+export async function upload(layer: Pick<DataLayer, "call">, file: File, mime: AttachmentMime): Promise<Upload> {
+  const piece = (at: number) => file.slice(at, Math.min(at + ATTACHMENT_PART_BYTES, file.size)).arrayBuffer().then(toBase64);
+  const failed = (o: { readonly error: { readonly message: string } }): Upload => ({ ok: false, message: o.error.message });
+  let uploadId: string | undefined;
+  let at = 0;
+  for (; at + ATTACHMENT_PART_BYTES < file.size; at += ATTACHMENT_PART_BYTES) {
+    const o = await layer.call("attachment_part", { ...(uploadId === undefined ? {} : { uploadId, offset: at }), dataB64: await piece(at) }, { timeoutMs: 120_000 });
+    if (!o.ok) return failed(o);
+    uploadId = o.output.uploadId;
+  }
+  const o = await layer.call("attachment_put", { name: file.name, mime, dataB64: await piece(at), ...(uploadId === undefined ? {} : { uploadId }) }, { timeoutMs: 120_000 });
+  return o.ok ? { ok: true, ref: { attachmentId: o.output.attachmentId, name: file.name, mime, bytes: o.output.bytes } } : failed(o);
+}
 
 export function createDrafts(layer: Pick<DataLayer, "call">, saved: Readonly<Record<string, string>> = {}): Drafts {
   const store = createStore<State>(() => Object.fromEntries(Object.entries(saved).map(([k, text]) => [k, { text, attached: [] }])));
@@ -80,7 +95,7 @@ export function createDrafts(layer: Pick<DataLayer, "call">, saved: Readonly<Rec
           return;
         }
         if (file.size > ATTACHMENT_MAX_BYTES) {
-          set(key, (d) => ({ ...d, error: `${file.name} is ${fmtBytes(file.size)}; a file is at most 5 MB.` }));
+          set(key, (d) => ({ ...d, error: `${file.name} is ${fmtBytes(file.size)}; a file is at most ${ATTACHMENT_MAX_BYTES / 1_048_576} MB.` }));
           continue;
         }
         count++;
@@ -89,11 +104,10 @@ export function createDrafts(layer: Pick<DataLayer, "call">, saved: Readonly<Rec
           const { error: _, ...rest } = d;
           return { ...rest, attached: [...d.attached, { local, name: file.name, bytes: file.size }] };
         });
-        void file.arrayBuffer().then(async (buf) => {
-          const mime = mimeFor(file.name, looksText(buf));
+        void file.slice(0, 4096).arrayBuffer().then(async (head) => {
+          const mime = mimeFor(file.name, looksText(head));
           if (!mime) return settle(key, local, undefined, `${file.name}: only images, text and PDF files attach.`);
-          const o = await layer.call("attachment_put", { name: file.name, mime, dataB64: toBase64(buf) }, { timeoutMs: 120_000 });
-          settle(key, local, o.ok ? { ok: true, ref: { attachmentId: o.output.attachmentId, name: file.name, mime, bytes: o.output.bytes } } : { ok: false, message: o.error.message });
+          settle(key, local, await upload(layer, file, mime));
         });
       }
     },

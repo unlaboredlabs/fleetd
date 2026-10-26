@@ -42,8 +42,8 @@ describe("steering keys", () => {
   });
 
   it("refuses a steer over steer_send's limit before it goes", () => {
-    expect(steerTooLong("x".repeat(4000))).toBeUndefined();
-    expect(steerTooLong("x".repeat(4001))).toMatch(/at most 4,000/);
+    expect(steerTooLong("x".repeat(20_000))).toBeUndefined();
+    expect(steerTooLong("x".repeat(20_001))).toMatch(/at most 20,000 characters; this is 20,001/);
   });
 });
 

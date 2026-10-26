@@ -1,20 +1,21 @@
-// One agent's live work, read-only: what it is on, what it is doing now, and its newest steps (what it wrote, what it
-// ran and edited), with the message it is writing streaming in at the end. Under it, a box steers it directly. Its
-// head opens what it was told at its start: its first message and the prompts it pinned.
+// One agent's live work, read-only: its state, role and order, where its work is (its PR, or its branch), what it is
+// doing now, and its newest steps (what it wrote, what it ran and edited), with the message it is writing streaming in
+// at the end. Under it, a box steers it directly. Its head opens what it was told at its start: its first message and
+// the prompts it pinned.
 import { useMemo, useState } from "react";
 import type { WorkStep } from "../../../shared/contracts";
 import { useAgentWork, useData } from "../../src/data/react";
 import { selectLiveAgent, selectLiveAgents } from "../../src/data/selectors";
-import { Button, cx, EmptyState, Markdown, PROFILE_LINE, ROLE_WORD, RoleTag, Text, Truncate, VirtualList } from "../../ui";
+import { Button, cx, EmptyState, Markdown, PROFILE_LINE, ROLE_WORD, Text, Truncate, VirtualList } from "../../ui";
 import { roleWords } from "../chat/told";
 import { ToldPanel } from "../chat/ToldPanel";
 import { ActivityLine, MiddleCut } from "../live/parts";
 import { SteerBox } from "../live/Steer";
-import { describe, isRunning } from "../live/words";
+import { describe } from "../live/words";
 import { navigate } from "../shell/navigation";
 import { panelRoute } from "../shell/routes";
-import { Elapsed } from "./AgentsPane";
-import { actionLine } from "./model";
+import { actionLine, agentState, STATE_WORD, workPlace } from "./model";
+import { RolePill, StateDot, WorkPlaceTag } from "./parts";
 import s from "./agents.module.css";
 
 type FeedItem = WorkStep | { readonly kind: "writing"; readonly id: string; readonly text: string };
@@ -23,6 +24,8 @@ export function AgentWork({ id }: { id: string }) {
   const agent = useData(selectLiveAgent(id));
   const listed = useData((st) => selectLiveAgents(st) !== undefined);
   const fresh = useData((st) => st.fresh);
+  const workstream = agent?.row.workstreamId;
+  const order = useData((st) => (workstream === undefined ? undefined : st.orders?.[workstream]?.title));
   const work = useAgentWork(agent);
   const [told, setTold] = useState(false);
   const row = agent?.row;
@@ -56,29 +59,48 @@ export function AgentWork({ id }: { id: string }) {
   return (
     <section className={s.workBody} aria-label={`What ${row.title} is doing`} data-screen="agents.work">
       <div className={s.workHead}>
-        <Text as="h2" strong>
+        <span className={s.headState}>
+          <StateDot status={row.status} />
+          <Text size="xs" tone={STATE_TONE[agentState(row.status)]} strong={row.status === "waiting"}>
+            {STATE_WORD[row.status]}
+          </Text>
+          <RolePill role={row.role} />
+          {order === undefined ? null : (
+            <span className={s.order}>
+              <Truncate size="xs" tone="quiet">
+                {order}
+              </Truncate>
+            </span>
+          )}
+        </span>
+        <Text as="h2" size="md" strong>
           {row.title}
         </Text>
         <span className={s.meta}>
-          <RoleTag role={row.role} />
-          {row.profile === undefined ? null : (
-            <Text size="xs" tone="quiet">
-              {PROFILE_LINE[row.profile]}
-            </Text>
-          )}
           {pr !== undefined ? (
-            <Button variant="quiet" size="sm" onClick={() => navigate(panelRoute(row.projectRef, { tab: "prs", pr: { repo: pr.repo, number: pr.number } }))}>
-              {`PR #${String(pr.number)}`}
+            <Button variant="secondary" size="sm" onClick={() => navigate(panelRoute(row.projectRef, { tab: "prs", pr: { repo: pr.repo, number: pr.number } }))}>
+              {prLabel(row)}
             </Button>
-          ) : null}
+          ) : (
+            <WorkPlaceTag row={row} />
+          )}
           {thread !== undefined ? (
             <Button variant="quiet" size="sm" onClick={() => setTold(true)}>
               What it was told
             </Button>
           ) : null}
-          <Elapsed startedAt={row.startedAt} running={isRunning(row.status)} />
+          {row.profile === undefined ? null : (
+            <Text size="xs" tone="quiet">
+              {PROFILE_LINE[row.profile]}
+            </Text>
+          )}
         </span>
-        <ActivityLine line={describe(row)} />
+        <div className={cx(s.now, row.status === "waiting" && s.nowWaiting)}>
+          <Text size="xs" tone="faint">
+            Now
+          </Text>
+          <ActivityLine line={describe(row)} />
+        </div>
       </div>
       <div className={s.feed}>
         {!work.hasThread ? (
@@ -114,6 +136,14 @@ export function AgentWork({ id }: { id: string }) {
     </section>
   );
 }
+
+const STATE_TONE = { working: "default", queued: "quiet", waiting: "warning", done: "success", failed: "danger" } as const;
+
+/** "PR #212 · in CI": the button that opens it in the panel's PRs. */
+const prLabel = (row: Parameters<typeof workPlace>[0]): string => {
+  const place = workPlace(row);
+  return place === undefined ? "PR" : `PR ${place.text}${place.state === undefined ? "" : ` · ${place.state}`}`;
+};
 
 function Step({ item }: { item: FeedItem }) {
   if (item.kind === "writing") {

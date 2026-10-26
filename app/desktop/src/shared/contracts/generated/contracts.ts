@@ -26,10 +26,31 @@ export const BLOCK_FENCE = "fleetd-block";
 export const BLOCK_VERSION = 1;
 
 /** Largest secret a secret ask takes. */
-export const SECRET_MAX_BYTES = 8192;
+export const SECRET_MAX_BYTES = 65536;
 
 /** Largest attachment attachment_put takes. */
-export const ATTACHMENT_MAX_BYTES = 5242880;
+export const ATTACHMENT_MAX_BYTES = 26214400;
+
+/** Largest piece of a file attachment_part and attachment_put take in one call. */
+export const ATTACHMENT_PART_BYTES = 524288;
+
+/** Most attachments one message or steer carries. */
+export const ATTACHMENTS_MAX = 20;
+
+/** Longest chat message, in UTF-16 units. */
+export const CHAT_TEXT_MAX = 100000;
+
+/** Longest steer, in UTF-16 units. */
+export const STEER_TEXT_MAX = 20000;
+
+/** Highest cap memory_caps_set gives one memory file. */
+export const MEMORY_FILE_CAP_MAX = 100000;
+
+/** Highest cap memory_caps_set gives one project's memory together. */
+export const MEMORY_PROJECT_CAP_MAX = 400000;
+
+/** Lowest cap memory_caps_set gives a memory file or a project. */
+export const MEMORY_CAP_MIN = 1000;
 
 /** How long a machine's sleep stays shown. */
 export const SLEPT_SHOWN_MS = 3600000;
@@ -336,11 +357,29 @@ export type AttachmentId = string;
 
 export type AttachmentMime = "image/png" | "image/jpeg" | "image/webp" | "image/gif" | "text/plain" | "application/pdf";
 
+export type AttachmentPartInput = {
+  /** Standard base64. */
+  dataB64: string;
+  /** With uploadId: the bytes sent so far, which must match the hub's count. */
+  offset?: number;
+  uploadId?: UploadId;
+};
+
+export type AttachmentPartOutput = {
+  /** Received so far. */
+  bytes: number;
+  next?: string;
+  truncated?: boolean;
+  uploadId: UploadId;
+};
+
 export type AttachmentPutInput = {
-  /** Standard base64; at most 5 MiB decoded. */
+  /** Standard base64: the whole file, or with uploadId its last piece. At most 25 MiB decoded, all pieces together. */
   dataB64: string;
   mime: AttachmentMime;
   name: string;
+  /** The pieces sent with attachment_part, which come before dataB64. */
+  uploadId?: UploadId;
 };
 
 export type AttachmentPutOutput = {
@@ -1722,6 +1761,53 @@ export type MachineStatus = "online" | "offline" | "degraded";
 /** How sure the matcher is that new work repeats a piece in flight. */
 export type MatchStrength = "weak" | "strong" | "exact";
 
+/**
+ * What memory writes are held to, in characters. A write past a cap is refused; a file already past a lowered cap
+ * stays as it is until it is next written.
+ */
+export type MemoryCaps = {
+  /** Each project's `MEMORY.md`. */
+  index: number;
+  /** A project's files together, `MEMORY.md` included. */
+  project: number;
+  /** Each topic file. */
+  topic: number;
+  /** `user.md`. */
+  user: number;
+};
+
+/**
+ * What memory writes are held to, in characters. A write past a cap is refused; a file already past a lowered cap
+ * stays as it is until it is next written.
+ */
+export type MemoryCapsSetInput = {
+  /** Each project's `MEMORY.md`. */
+  index: number;
+  /** A project's files together, `MEMORY.md` included. */
+  project: number;
+  /** Each topic file. */
+  topic: number;
+  /** `user.md`. */
+  user: number;
+};
+
+/**
+ * What memory writes are held to, in characters. A write past a cap is refused; a file already past a lowered cap
+ * stays as it is until it is next written.
+ */
+export type MemoryCapsSetOutput = {
+  /** Each project's `MEMORY.md`. */
+  index: number;
+  next?: string;
+  /** A project's files together, `MEMORY.md` included. */
+  project: number;
+  /** Each topic file. */
+  topic: number;
+  truncated?: boolean;
+  /** `user.md`. */
+  user: number;
+};
+
 export type MemoryFile = {
   cap: number;
   chars: number;
@@ -1740,6 +1826,8 @@ export type MemoryGetInput = {
 };
 
 export type MemoryGetOutput = {
+  /** The hub's caps. Absent from older hubs. */
+  caps?: MemoryCaps;
   /** With projectRef: MEMORY.md first, then the topic files by name. */
   files?: MemoryFile[];
   next?: string;
@@ -2270,6 +2358,7 @@ export type PrLinks = {
 
 export type PrListInput = {
   closedSince?: Timestamp;
+  cursor?: string;
   projectRef: ProjectRef;
 };
 
@@ -2278,6 +2367,8 @@ export type PrListOutput = {
   /** GitHub couldn't be reached: the list holds only the PRs fleetd records, without checks. Why, and what to do. */
   githubError?: string;
   next?: string;
+  /** There are more rows: pass it as cursor for the next page. */
+  nextCursor?: string;
   prs: PrRow[];
   truncated?: boolean;
 };
@@ -4000,6 +4091,8 @@ export type TrainState = {
   repo: GitHubRepo;
 };
 
+export type UploadId = string;
+
 /** Open: no new turns start on the machine's login until `until` or usage_resume. */
 export type UsageBreaker = {
   class?: UsageClass;
@@ -4433,6 +4526,7 @@ export interface ToolMap {
   agents_list: { input: AgentsListInput; output: AgentsListOutput };
   approval_answer: { input: ApprovalAnswerInput; output: ApprovalAnswerOutput };
   attachment_get: { input: AttachmentGetInput; output: AttachmentGetOutput };
+  attachment_part: { input: AttachmentPartInput; output: AttachmentPartOutput };
   attachment_put: { input: AttachmentPutInput; output: AttachmentPutOutput };
   cap_set: { input: CapSetInput; output: CapSetOutput };
   changes_list: { input: ChangesListInput; output: ChangesListOutput };
@@ -4449,6 +4543,7 @@ export interface ToolMap {
   fleetd_status: { input: FleetdStatusInput; output: FleetdStatusOutput };
   hub_info: { input: HubInfoInput; output: HubInfoOutput };
   lead_start: { input: LeadStartInput; output: LeadStartOutput };
+  memory_caps_set: { input: MemoryCapsSetInput; output: MemoryCapsSetOutput };
   memory_get: { input: MemoryGetInput; output: MemoryGetOutput };
   memory_set: { input: MemorySetInput; output: MemorySetOutput };
   memory_undo: { input: MemoryUndoInput; output: MemoryUndoOutput };

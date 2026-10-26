@@ -14,7 +14,8 @@ use serde_json::{Value, json};
 use tokio::sync::{mpsc, oneshot};
 
 pub const DEFAULT_TIMEOUT_SEC: u32 = 120;
-pub const MAX_TIMEOUT_SEC: u32 = 1800;
+/// A command's longest run: a gated run's cap.
+pub const MAX_TIMEOUT_SEC: u32 = fleetd_contracts::ledger::GATED_MAX_TIMEOUT_SEC as u32;
 /// How long past the command's own timeout the hub waits for the node's answer.
 const REPLY_GRACE_SEC: u64 = 30;
 /// How long the hub waits for a node to write a secret.
@@ -26,7 +27,7 @@ pub struct CommandInput {
     pub cwd: String,
     /// Run as given, never through a shell.
     pub argv: Vec<String>,
-    /// Default 120, at most 1800.
+    /// Default 120, at most MAX_TIMEOUT_SEC.
     pub timeout_sec: Option<u32>,
 }
 

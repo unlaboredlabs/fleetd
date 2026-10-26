@@ -1,4 +1,6 @@
-/* The panel's agents: the project's agents, or one's work in their place. Dense like the sidebar, nothing animates. */
+/* The panel's agents: the project's agents under their orders, or one's work in their place. Calm and dense like the
+   sidebar: hierarchy from weight, grey and space; colour only for state and role; only a working dot moves, briefly,
+   and not when motion is reduced. */
 
 .pane {
   flex: 1;
@@ -8,23 +10,49 @@
   min-height: 0;
 }
 
-/* What works and what waits, or that the list isn't live, above the rows. */
-.liveness {
+/* Whose agents, then what works and what waits (or that the list isn't live), above the rows. */
+.top {
   flex: none;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2);
-  min-height: var(--row);
-  padding: var(--space-1) var(--space-4) 0;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-2) var(--space-3) var(--space-1);
 }
 
-/* This project or All projects. */
+/* This project or All projects, as one segmented control. */
 .scope {
   flex: none;
   display: flex;
   align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-2) var(--space-2) 0;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-md);
+  background: var(--hover);
+}
+
+.liveness {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--row);
+}
+
+.counts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  min-height: var(--row);
+}
+.count {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+}
+.countWaiting {
+  color: var(--warning);
 }
 
 .list {
@@ -33,24 +61,63 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  padding: var(--space-1) var(--space-2) 0;
+  padding: 0 var(--space-2);
 }
 
-/* One agent: role, task and clock; under it what it is doing now. */
-.row {
+/* An order's title above its agents; a project's name above its orders in All projects, a step louder. */
+.group {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-3) var(--space-2) var(--space-1);
+}
+.projectGroup {
+  margin-top: var(--space-2);
+  padding-bottom: 0;
+  border-top: 1px solid var(--hairline);
+}
+.groupTitle {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+}
+
+/* One agent: its dot in a gutter, title and role; under them what it is doing now and where its work is. */
+.row {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  column-gap: var(--space-2);
+  row-gap: 2px;
+  align-items: center;
   min-width: 0;
   padding: var(--space-1-5) var(--space-2);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   color: inherit;
   text-decoration: none;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 .row:hover {
   background: var(--hover);
 }
+.row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+/* Waiting on you: a faint amber wash and edge, enough to find it, not an alarm. */
+.waiting {
+  background: color-mix(in srgb, var(--warning) 7%, transparent);
+  box-shadow: inset 2px 0 0 var(--warning);
+}
+.waiting:hover {
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+}
+/* A lead (in a chat card or a PR's agents): its own tint along its edge. */
+.lead {
+  box-shadow: inset 2px 0 0 var(--role-lead);
+}
 .line {
+  grid-column: 2;
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -60,18 +127,114 @@
   flex: 1;
   min-width: 0;
 }
-/* A project's name above its agents, in All projects. */
-.group {
-  display: flex;
-  min-width: 0;
-  padding: var(--space-2) var(--space-2) var(--space-1);
-}
 .doing {
+  grid-column: 2;
   display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
   min-width: 0;
-  padding-left: calc(88px + var(--space-2));
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
+}
+
+/* The state dot: working is the success colour, waiting amber, failed danger, done quiet, queued an open ring. A
+   working dot breathes twice as it appears or starts working, then rests: never continuous, as a running animation
+   keeps every frame drawing and slows what a key press shows. */
+.state {
+  position: relative;
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: center;
+  flex: none;
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  color: var(--quiet);
+  background: currentColor;
+}
+.state[data-state="working"] {
+  color: var(--success);
+}
+.state[data-state="waiting"] {
+  color: var(--warning);
+}
+.state[data-state="failed"] {
+  color: var(--danger);
+}
+.state[data-state="done"] {
+  color: var(--quiet);
+}
+.state[data-state="queued"] {
+  color: var(--faint);
+  background: none;
+  box-shadow: inset 0 0 0 1.5px currentColor;
+}
+.state[data-state="working"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: currentColor;
+  opacity: 0;
+  animation: breathe 2.4s var(--ease-out) 2;
+}
+/* The head's counts: a dot each, still. */
+.count .state::after {
+  animation: none;
+}
+@keyframes breathe {
+  from {
+    opacity: 0.45;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .state[data-state="working"]::after {
+    animation: none;
+  }
+}
+
+/* The role's word on a faint wash of its tint. */
+.pill {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 var(--space-1-5);
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  font-size: var(--text-xs);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* Where its work is: a PR with the train's word, or a branch in mono, at the end of the line under the title. */
+.place {
+  flex: 0 1 auto;
+  display: flex;
+  min-width: 0;
+  max-width: 45%;
+  color: var(--quiet);
+}
+.branch {
+  flex: 0 1 auto;
+  display: flex;
+  min-width: 0;
+  max-width: 45%;
+  color: var(--quiet);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+.branch > * {
+  font-size: var(--text-xs);
+}
+.merged {
+  color: var(--success);
 }
 
 .note {
@@ -81,19 +244,32 @@
 .skeleton {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-4);
 }
-.skeleton > span {
-  height: var(--space-3);
-  border-radius: var(--radius-sm);
+.skeletonRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.skeletonDot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin: 3px 3px 0;
+  border-radius: 999px;
   background: var(--selected);
 }
-.skeleton > span:nth-child(2) {
-  width: 70%;
+.skeletonLines {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
 }
-.skeleton > span:nth-child(3) {
-  width: 55%;
+.skeletonLines > span {
+  height: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--selected);
 }
 
 /* The opened agent. */
@@ -107,11 +283,23 @@
 .workHead {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: var(--space-1-5);
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--hairline);
   flex: none;
   overflow-wrap: anywhere;
+}
+/* Its state, role and order, above its title. */
+.headState {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.order {
+  flex: 1;
+  display: flex;
+  min-width: 0;
 }
 .meta {
   display: flex;
@@ -119,6 +307,25 @@
   align-items: center;
   gap: var(--space-1) var(--space-3);
   min-width: 0;
+}
+.meta > .branch {
+  max-width: 100%;
+}
+/* What it is doing now, on a quiet strip; amber when it waits on you. */
+.now {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+  margin-top: var(--space-1);
+  padding: var(--space-1-5) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--hover);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+.nowWaiting {
+  background: color-mix(in srgb, var(--warning) 9%, transparent);
 }
 .feed {
   flex: 1;
@@ -139,16 +346,19 @@
   padding-left: var(--space-3);
   border-left: 2px solid var(--hairline);
 }
+/* Its actions on a quiet rail, the verbs in one column, so a run of them reads down at a glance. */
 .action {
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
   min-width: 0;
   max-width: var(--measure);
-  padding: 2px 0;
+  padding: 2px 0 2px var(--space-3);
+  border-left: 1px solid var(--hairline);
 }
 .verb {
   flex: none;
+  min-width: 48px;
 }
 .machine {
   flex: 1;
@@ -162,16 +372,20 @@
 
 /* Elsewhere: work on the repo that isn't this project's, laid out as an agent's row but not a link. */
 .none {
-  padding: var(--space-2) var(--space-2) 0;
+  padding: var(--space-3) var(--space-2) 0;
 }
 .other:hover {
   background: none;
 }
+/* Where an agent's dot is, a small open square: not an agent of this project's. */
+.otherMark {
+  border-radius: 2px;
+  color: var(--faint);
+  background: none;
+  box-shadow: inset 0 0 0 1.5px currentColor;
+}
 .tag {
-  flex: none;
-  display: flex;
-  width: 88px;
-  min-width: 0;
+  color: var(--quiet);
 }
 /* An expired claim, last: its title as quiet as the line under it. */
 .dim .task > * {

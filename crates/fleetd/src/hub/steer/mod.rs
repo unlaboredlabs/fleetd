@@ -15,7 +15,8 @@ use fleetd_contracts::mcp::ErrorCode;
 use fleetd_contracts::prim::{NonEmpty, Text};
 use fleetd_contracts::sessions::SendMode;
 use fleetd_contracts::steer::{
-    Steer, SteerBy, SteerEventData, SteerId, SteerMode, SteerReceipt, SteerStage, SteerTarget,
+    STEER_TEXT_MAX, Steer, SteerBy, SteerEventData, SteerId, SteerMode, SteerReceipt, SteerStage,
+    SteerTarget,
 };
 use fleetd_contracts::tasks::{Task, TaskState};
 
@@ -213,7 +214,7 @@ fn message(hub: &Hub, steer: &Steer, to: &Resolved, by: &By, req: &SteerRequest)
                 ("id", &steer.id),
                 ("who", &who),
                 ("scope", &scope),
-                ("text", &one_line(req.text, 4000)),
+                ("text", &one_line(req.text, STEER_TEXT_MAX)),
                 ("references", &references(&req.refs, &req.attached)),
             ],
         )
@@ -238,7 +239,7 @@ pub async fn send(hub: &Hub, by: By<'_>, req: SteerRequest<'_>) -> Result<Steer,
         run_id: NonEmpty::unchecked(run_id),
         by: by.steer_by(),
         mode: req.mode,
-        text: Text::new(js_take(req.text, 4000)).map_err(invalid)?,
+        text: Text::new(js_take(req.text, STEER_TEXT_MAX)).map_err(invalid)?,
         stage: SteerStage::Queued,
         queued_at: iso_ms(now).into(),
         delivered_at: None,

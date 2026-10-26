@@ -124,7 +124,8 @@ pub async fn gated_run_call(
         class: convert(&call.class).unwrap_or_default(),
         reason: convert(&call.reason).unwrap_or_default(),
         secret_env: call.secret_env.as_ref().and_then(convert),
-        timeout_sec: convert(&call.timeout_sec).unwrap_or(1800),
+        timeout_sec: convert(&call.timeout_sec)
+            .unwrap_or(fleetd_contracts::ledger::GATED_DEFAULT_TIMEOUT_SEC as u64),
         workstream_id: call.workstream_id.as_ref().and_then(convert),
     };
     let r = hub

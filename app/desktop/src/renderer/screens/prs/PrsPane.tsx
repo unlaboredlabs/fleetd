@@ -9,6 +9,7 @@ import type { PrKey } from "../shell/routes";
 import { PaneEmpty } from "./Bits";
 import { PrDetail, WithCode, type PrTab } from "./PrDetail";
 import { PrList } from "./PrList";
+import { useOlderPrs } from "./pages";
 import { githubLine } from "./words";
 import s from "./prs.module.css";
 
@@ -33,7 +34,7 @@ export const usePrList = (project: ProjectRef, enabled: boolean) => {
 export function PrsPane({ project, pr, tab, onTab }: { project: ProjectRef; pr: PrKey | null; tab: PrTab; onTab: (tab: PrTab) => void }) {
   const fresh = useData((st) => st.fresh);
   const { missing, list } = usePrList(project, true);
-  const rows = list.data?.prs;
+  const { rows, more, older } = useOlderPrs(project, list.data);
   const picked = resolvePr(pr, rows);
   const selected = picked === undefined || picked === "unknown" ? undefined : picked;
   const row = useMemo(() => (selected === undefined ? undefined : rows?.find((r) => r.repo === selected.repo && r.number === selected.number)), [rows, selected]);
@@ -61,7 +62,7 @@ export function PrsPane({ project, pr, tab, onTab }: { project: ProjectRef; pr: 
         <PrDetail key={`${selected.repo}#${selected.number}`} repo={selected.repo} number={selected.number} row={row} nowMs={hubNow} tab={tab} onTab={onTab} githubSaid={list.data?.githubError !== undefined} />
       ) : picked === "unknown" ? (
         <div data-screen="prs.detail.missing" className={s.detailEmpty}>
-          <EmptyState title={`#${pr?.number ?? ""} isn’t in this project`}>It may be in another project, or closed more than a week ago.</EmptyState>
+          <EmptyState title={`#${pr?.number ?? ""} isn’t in this project`}>It may be in another project, or further down the list.</EmptyState>
         </div>
       ) : rows === undefined && !fresh ? (
         // Nothing held and no hub to ask: "Loading" and bars would never finish.
@@ -74,7 +75,7 @@ export function PrsPane({ project, pr, tab, onTab }: { project: ProjectRef; pr: 
           <Text tone="quiet">Loading #{pr.number}…</Text>
         </div>
       ) : rows !== undefined ? (
-        <PrList rows={rows} cut={list.data?.truncated === true} project={project} nowMs={hubNow ?? 0} />
+        <PrList rows={rows} more={more === undefined ? undefined : { load: more, loading: older.loading, ...(older.error === undefined ? {} : { error: older.error }) }} project={project} nowMs={hubNow ?? 0} />
       ) : list.isError ? (
         <div className={s.listEmpty} role="alert">
           <PaneEmpty title="Couldn’t read the pull requests" action={<Button size="sm" onClick={() => void list.refetch()}>Retry</Button>}>

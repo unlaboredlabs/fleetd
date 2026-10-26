@@ -52,7 +52,7 @@
           "type": "array"
         },
         "timeoutSec": {
-          "maximum": 1800,
+          "maximum": 14400,
           "minimum": 1,
           "type": "integer"
         }
