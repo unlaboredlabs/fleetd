@@ -26,6 +26,8 @@ export interface ChatData {
   readonly leadWorking: boolean | undefined;
   /** Blocked (the state word says so): the hub's reason, "" when it gave none. */
   readonly blocked: string | undefined;
+  /** Blocked by this machine's usage pause, which Resume lifts. */
+  readonly usagePausedOn: string | undefined;
   /** The newest page couldn't be read (before any page landed): the chat shows why, with retry. */
   readonly loadError: HubError | undefined;
   readonly retry: () => void;
@@ -51,8 +53,9 @@ export function useChatData(project: ProjectRef): ChatData {
   const row = status.data?.rows?.find((r) => r.projectRef.machineId === project.machineId && r.projectRef.projectId === project.projectId);
   const state = projectRow === undefined ? undefined : projectStateWord(projectRow.needsYou, projectRow.working, row?.state);
   const blocked = state === "blocked" ? (row?.blockedReason ?? "") : undefined;
+  const usagePausedOn = state === "blocked" ? row?.usagePausedOn : undefined;
   const loadOlder = useCallback(() => layer.chat.loadOlder(key), [layer, key]);
   // open() reads the newest page again while none has landed.
   const retry = useCallback(() => layer.chat.open(key), [layer, key]);
-  return { view, state, blocked, leadWorking, loadError, retry, strip, title, missing, loadOlder };
+  return { view, state, blocked, usagePausedOn, leadWorking, loadError, retry, strip, title, missing, loadOlder };
 }

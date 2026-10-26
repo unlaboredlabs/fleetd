@@ -16,7 +16,7 @@ use crate::chat::ChatRequestId;
 use crate::checked;
 use crate::checklist::{ChecklistCall, ChecklistResult};
 use crate::effort::TaskProfile;
-use crate::ids::ThreadId;
+use crate::ids::{MachineId, ThreadId};
 use crate::ledger::{
     Brief, Decision, DecisionKey, DecisionValue, DecisionWhy, EnvName, GATED_DEFAULT_TIMEOUT_SEC,
     GatedArgv, GatedClass, GatedCwd, GatedTimeoutSec, IntakeText, RequestState, SecretEnv,
@@ -24,7 +24,7 @@ use crate::ledger::{
 };
 use crate::mcp::McpToolError;
 use crate::memory::{MemoryReadCall, MemoryReadResult, RememberCall, RememberResult};
-use crate::prim::{Line, List, NonEmpty, Text};
+use crate::prim::{Count, Line, List, NonEmpty, Text};
 use crate::secrets::SecretSink;
 use crate::skills::{SkillInstallCall, SkillInstallResult};
 use crate::steer::SteerId;
@@ -240,6 +240,16 @@ pub struct AskLeadCall {
     pub question: Text<1, 4000>,
 }
 
+/// `usage_resume` for a lead: lifts the usage pause on the machine its project runs on (the only one it may name) and
+/// sends every thread parked there "continue". At most once per 10 minutes per machine; recorded as the lead's.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageResumeCall {
+    /// The project's machine; absent means it.
+    pub machine_id: Option<MachineId>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum LeadCall {
@@ -270,6 +280,7 @@ pub enum LeadCall {
     AutomationRuns(AutomationRunsCall),
     Checklist(ChecklistCall),
     SkillInstall(SkillInstallCall),
+    UsageResume(UsageResumeCall),
 }
 
 #[skip_serializing_none]
@@ -357,6 +368,18 @@ pub struct AskLeadResult {
     pub next: Option<String>,
 }
 
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageResumeResult {
+    pub machine_id: MachineId,
+    /// Parked threads sent "continue".
+    pub resumed: Count,
+    /// The pause was lifted.
+    pub breaker_cleared: bool,
+    pub next: Option<String>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "op", rename_all = "snake_case")]
 #[allow(clippy::large_enum_variant)]
@@ -386,6 +409,7 @@ pub enum LeadCallResult {
     AutomationRuns(AutomationRunsResult),
     Checklist(ChecklistResult),
     SkillInstall(SkillInstallResult),
+    UsageResume(UsageResumeResult),
 }
 
 /// CLI -> node on the local socket, and node -> hub on the link.

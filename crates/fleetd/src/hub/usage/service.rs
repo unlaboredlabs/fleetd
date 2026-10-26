@@ -427,6 +427,13 @@ impl Usage {
         self.inner.state.lock().unwrap().hold(thread, self.now_ms())
     }
 
+    /// When `by` last lifted something on the machine (epoch ms), from every usage.resumed since the hub started its
+    /// replay.
+    pub fn last_resumed_by(&self, machine_id: &str, by: &str) -> Option<i64> {
+        let s = self.inner.state.lock().unwrap();
+        s.machines.get(machine_id)?.resumed_by.get(by).copied()
+    }
+
     pub fn parked_of(&self, thread: &ThreadRef) -> Option<UsageParked> {
         self.inner.state.lock().unwrap().parked(thread).cloned()
     }

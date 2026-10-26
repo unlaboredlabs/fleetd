@@ -1,7 +1,8 @@
 // Status (⌘.): one row per project under one line of column names. A state word, its work counted by group (waiting
 // on you, in review, working, landing, idle, done), agents running, last merged; under it, the items of each group,
 // each opening its agent or PR in the project's panel. A row opens the project's chat; its PRs link opens the
-// project's PR list, and its 7-day count opens the project's Factory numbers. Nothing is scored or estimated.
+// project's PR list, and its 7-day count opens the project's Factory numbers. A row its machine's usage pause blocks
+// says so under it, with Resume. Nothing is scored or estimated.
 // It cannot be stale: the rows come from the data layer (status_get, refetched on events), which drops every
 // answer on a reconnect, so the view is a skeleton until this connection has answered; a row whose source went
 // quiet says so.
@@ -16,6 +17,7 @@ import { Button, cx, Dot, FrameTitle, Text, Tooltip, Truncate } from "../../ui";
 import { toHash } from "../shell/routes";
 import { countsLine, GROUP_WORDS, groupsOf, itemHref, itemRefs, orderRows, STATE_WORDS, type StateWord } from "./rows";
 import { fullWhen, staleWords, weekLine, when } from "./view";
+import { ResumeButton } from "./Resume";
 import s from "./status.module.css";
 
 const ALL = {} as const;
@@ -95,6 +97,8 @@ function Row({ row, state, now }: { row: ProjectStatusRow; state: StateWord; now
   const merged = row.lastMerged;
   const week = weekLine(row.merged7d, row.throughFleetdPct7d);
   const mergedAt = merged === undefined ? "" : when(merged.at, now);
+  // The pause in its own words: the blocked reason may be the machine's (degraded) instead.
+  const pausedWhy = row.usagePausedReason ?? row.blockedReason;
   const label = [
     `${row.title}: ${STATE_WORDS[state]}`,
     ...(row.stale ? [staleWords(row.stale, now)] : []),
@@ -171,6 +175,17 @@ function Row({ row, state, now }: { row: ProjectStatusRow; state: StateWord; now
           PRs
         </Text>
       </a>
+      {row.usagePausedOn === undefined ? null : (
+        <div className={cx(s.paused)} data-paused={row.usagePausedOn}>
+          <Text size="xs" tone="quiet">
+            <Text size="xs" strong tone="warning">
+              Usage paused:
+            </Text>
+            {pausedWhy === undefined ? null : ` ${pausedWhy}`}
+          </Text>
+          <ResumeButton machineId={row.usagePausedOn} />
+        </div>
+      )}
       {groups.length === 0 ? null : (
         <ul className={cx(s.groups)} aria-label={`${row.title}: work`}>
           {groups.map((g) => (

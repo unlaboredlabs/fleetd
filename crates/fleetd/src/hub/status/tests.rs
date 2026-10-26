@@ -405,3 +405,53 @@ fn merged_change(hub: &Hub, pr: i64) {
 fn iso_ms_of(ms: i64) -> String {
     crate::hub::store::iso_ms(ms)
 }
+
+/// A usage pause blocks the row and offers Resume; on a machine that is also degraded, the row names both and the
+/// pause keeps its own words.
+#[tokio::test]
+async fn a_usage_pause_blocks_the_row_and_names_itself_beside_a_degraded_machine() {
+    let clock = ManualClock::at(T0);
+    let (hub, _home) = hub(clock);
+    hub.ops.bind(&hub);
+    for (i, thread) in ["w1", "w2"].iter().enumerate() {
+        let event: crate::hub::store::NewEvent = serde_json::from_value(json!({
+            "at": crate::hub::store::iso_ms(T0 as i64 + i as i64 * 1000), "type": "thread.usage_limited",
+            "machineId": "devbox", "threadId": thread, "summary": "hit the usage limit",
+            "data": { "usageClass": "usage_limit", "resumeAt": "2026-10-18T15:00:00.000Z" },
+        }))
+        .unwrap();
+        hub.events.append(event).unwrap();
+    }
+    hub.usage.drain().await;
+    let paused = "paused until Sun 15:00 UTC (usage limit on devbox's login)";
+    let r = row(&hub);
+    assert_eq!(r.state, ProjectRowState::Blocked);
+    assert_eq!(r.blocked_reason.as_ref().map(|l| l.as_str()), Some(paused));
+    assert_eq!(r.usage_paused_on, Some(MachineId::unchecked("devbox")));
+    assert_eq!(
+        r.usage_paused_reason.as_ref().map(|l| l.as_str()),
+        Some(paused)
+    );
+
+    let machine = json!({
+        "machineId": "devbox", "name": "devbox", "tags": [], "status": "degraded",
+        "lastSeenAt": crate::hub::store::iso_ms(T0 as i64), "nodeVersion": "0.0.0",
+    });
+    hub.store
+        .machine_upsert(&serde_json::from_value(machine).unwrap(), None)
+        .unwrap();
+    announce(
+        &hub,
+        fleetd_contracts::events::HubEventType::MachineDegraded,
+    );
+    let r = row(&hub);
+    assert_eq!(
+        r.blocked_reason.as_ref().map(|l| l.as_str()),
+        Some("devbox can't run agents (see Machines), and its usage is paused")
+    );
+    assert_eq!(r.usage_paused_on, Some(MachineId::unchecked("devbox")));
+    assert_eq!(
+        r.usage_paused_reason.as_ref().map(|l| l.as_str()),
+        Some(paused)
+    );
+}

@@ -673,6 +673,7 @@ fn example(role: Role, tool: &str) -> Option<Value> {
         (Role::Lead, "skill_install") => {
             json!({ "source": "vercel-labs/agent-skills@web-design-guidelines", "scope": "project" })
         }
+        (Role::Lead, "usage_resume") => json!({ "machineId": "devbox" }),
         (Role::Lead, "change_enqueue") => json!({
             "prUrl": "https://github.com/acme/shop/pull/42",
             "workstreamId": "W3",

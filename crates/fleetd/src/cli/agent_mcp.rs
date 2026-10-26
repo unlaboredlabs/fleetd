@@ -16,7 +16,7 @@ use fleetd_contracts::checklist::ChecklistCall;
 use fleetd_contracts::lead_calls::{
     AskLeadCall, BriefCreateCall, ChangeEnqueueCall, CloseCall, DecideCall, DecisionsSearchCall,
     GatedRunCall, LeadCall, LeadSocketFrame, RequestSecretCall, RequestWithdrawCall,
-    TaskCancelCall, TaskListCall, TaskMessageCall, TaskSpawnCall,
+    TaskCancelCall, TaskListCall, TaskMessageCall, TaskSpawnCall, UsageResumeCall,
 };
 use fleetd_contracts::memory::{MemoryReadCall, RememberCall};
 use fleetd_contracts::schema::inline_schema;
@@ -238,6 +238,15 @@ static TOOLS: &[Tool] = &[
          commit fetched, and the human updates it from Settings > Skills. Agents list it as fleetd:<name> and run it \
          with the Skill tool.",
         inline_schema::<SkillInstallCall>,
+    ),
+    lead(
+        "usage_resume",
+        "usage_resume",
+        "Lift the usage pause on your project's machine now and send every agent parked there \"continue\": only once \
+         you know its login has capacity again (the human says so, or a turn of yours just went through). At most \
+         once per 10 minutes per machine; an agent whose login is still limited parks again with the real reset. \
+         The human can also press Resume in the app or run fleetd usage resume <machine>.",
+        inline_schema::<UsageResumeCall>,
     ),
     lead(
         "change_enqueue",

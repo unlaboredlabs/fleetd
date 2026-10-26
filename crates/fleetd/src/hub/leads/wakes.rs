@@ -419,6 +419,7 @@ impl LeadWakes {
             .get()
             .map(|t| t.digest_lines(r, since.as_ref(), 50));
         let agents = ctx.hooks.tasks.get().map(|t| t.agents(r));
+        let usage = ctx.hooks.usage.get().and_then(|u| u.gate(&r.machine_id));
         let train = ctx
             .hooks
             .train
@@ -440,6 +441,7 @@ impl LeadWakes {
             open_requests: &open_requests,
             decisions: &decisions,
             agents,
+            usage,
             tasks,
             train,
             elsewhere,
