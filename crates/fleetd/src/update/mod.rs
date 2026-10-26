@@ -257,12 +257,42 @@ pub fn installed_exe() -> std::io::Result<PathBuf> {
     Ok(fs::canonicalize(&exe).unwrap_or(exe))
 }
 
+/// A binary held open: [`replace_file`] renames a new file over its path and never writes into the old one, so this
+/// still reads the bytes it opened, whatever has been installed there since.
+pub struct Kept(fs::File);
+
+impl Kept {
+    pub fn open(path: &Path) -> std::io::Result<Self> {
+        fs::File::open(path).map(Self)
+    }
+
+    pub fn bytes(&self) -> std::io::Result<Vec<u8>> {
+        use std::os::unix::fs::FileExt;
+        let mut bytes = vec![0; usize::try_from(self.0.metadata()?.len()).unwrap_or(0)];
+        self.0.read_exact_at(&mut bytes, 0)?;
+        Ok(bytes)
+    }
+}
+
+static RUNNING: std::sync::OnceLock<Kept> = std::sync::OnceLock::new();
+
+/// Called first thing in `main`: holds this process's binary before anything can install over its path. On the hub's
+/// Mac the hub and the node run one binary, and the hub's update replaces it before the node's starts; the node's
+/// rollback must put back what the node runs, not what the hub just installed.
+pub fn keep_running_binary() {
+    if let Ok(kept) = std::env::current_exe().and_then(|exe| Kept::open(&exe)) {
+        let _ = RUNNING.set(kept);
+    }
+}
+
 /// The running process's own binary, whatever has been installed over its path since: what a rollback puts back.
 pub fn running_binary() -> std::io::Result<Vec<u8>> {
-    if cfg!(target_os = "linux") {
-        fs::read("/proc/self/exe")
-    } else {
-        fs::read(std::env::current_exe()?)
+    match RUNNING.get() {
+        Some(kept) => kept.bytes(),
+        None if cfg!(target_os = "linux") => fs::read("/proc/self/exe"),
+        None => Err(std::io::Error::other(
+            "this process's binary wasn't kept when it started",
+        )),
     }
 }
 

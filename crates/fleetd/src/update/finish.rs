@@ -48,7 +48,8 @@ pub enum Health {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Verdict {
-    /// `done`, `rolled_back`, or `failed` when even the previous build couldn't be put back.
+    /// `done`, `rolled_back`, or `failed` when the service couldn't be restarted or even the previous build couldn't
+    /// be put back.
     pub state: UpdateState,
     pub stage: Option<UpdateStage>,
     pub message: String,
@@ -68,30 +69,42 @@ pub trait Ports: Sync {
     fn now_ms(&self) -> i64;
 }
 
-/// Restarts onto `plan.to`, or back onto `plan.from` when it doesn't come up.
+/// Restarts onto `plan.to`, or back onto `plan.from` when it doesn't come up; a restart the service manager refuses
+/// only puts the previous binary back.
 pub async fn finish(plan: &Plan, ports: &dyn Ports) -> Verdict {
     let to = crate::version_shown(&plan.to);
     let from = crate::version_shown(&plan.from);
     ports.sleep(SETTLE).await;
     let started = ports.now_ms();
-    let (stage, why) = match ports.restart(&plan.service) {
-        Ok(()) if up(plan, ports, &plan.to, started).await => {
-            return Verdict {
-                state: UpdateState::Done,
-                stage: None,
-                message: format!("runs {to}"),
-            };
-        }
-        Ok(()) => (
-            UpdateStage::Health,
-            format!("{to} didn't come up healthy within {} s", plan.wait_secs),
-        ),
-        Err(e) => (UpdateStage::Restart, e),
-    };
+    if let Err(e) = ports.restart(&plan.service) {
+        // The service manager refused: nothing restarted and the service runs what it ran, so only the binary at the
+        // path goes back. Were the service down, its manager (`Restart=always`, `KeepAlive`) starts that one.
+        return Verdict {
+            state: UpdateState::Failed,
+            stage: Some(UpdateStage::Restart),
+            message: match super::restore(&plan.exe, &plan.prev) {
+                Ok(()) => format!(
+                    "{e}, so it never restarted onto {to} and still runs {from}; its previous binary was put back"
+                ),
+                Err(back) => format!(
+                    "{e}, so it never restarted onto {to} and still runs {from}, but its previous binary couldn't be \
+                     put back ({back}): run `fleetd update` on that machine"
+                ),
+            },
+        };
+    }
+    if up(plan, ports, &plan.to, started).await {
+        return Verdict {
+            state: UpdateState::Done,
+            stage: None,
+            message: format!("runs {to}"),
+        };
+    }
+    let why = format!("{to} didn't come up healthy within {} s", plan.wait_secs);
     if let Err(e) = super::restore(&plan.exe, &plan.prev) {
         return Verdict {
             state: UpdateState::Failed,
-            stage: Some(stage),
+            stage: Some(UpdateStage::Health),
             message: format!(
                 "{why}, and putting {from} back failed ({e}): run `fleetd update` on that machine"
             ),
@@ -101,7 +114,7 @@ pub async fn finish(plan: &Plan, ports: &dyn Ports) -> Verdict {
     let back = ports.restart(&plan.service).is_ok() && up(plan, ports, &plan.from, again).await;
     Verdict {
         state: UpdateState::RolledBack,
-        stage: Some(stage),
+        stage: Some(UpdateStage::Health),
         message: if back {
             format!("{why}, so {from} was put back and runs again")
         } else {

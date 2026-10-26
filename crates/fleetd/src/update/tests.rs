@@ -161,7 +161,7 @@ pub struct FakeRunner {
     /// comes up.
     pub comes_up: Mutex<Vec<Option<String>>>,
     pub restarts: Mutex<Vec<String>>,
-    pub refuse_restart: bool,
+    refuse_restart: bool,
     running: Mutex<Option<String>>,
     now: AtomicI64,
 }
@@ -180,6 +180,14 @@ impl FakeRunner {
             refuse_restart: false,
             running: Mutex::default(),
             now: AtomicI64::new(1_000_000),
+        }
+    }
+
+    /// A service manager that refuses every restart.
+    pub fn refusing() -> Self {
+        Self {
+            refuse_restart: true,
+            ..Self::new(&[])
         }
     }
 }
@@ -280,21 +288,30 @@ async fn a_new_build_that_doesnt_come_up_healthy_is_put_back() {
     );
 }
 
+/// The service manager refused: nothing restarted, so the old build still runs; only its binary goes back, and the
+/// verdict says that, not that it was rolled back or didn't come up.
 #[tokio::test]
-async fn a_restart_that_fails_puts_the_previous_build_back() {
+async fn a_restart_that_fails_says_so_and_puts_the_previous_binary_back() {
     let dir = tempfile::tempdir().unwrap();
     let plan = plan(dir.path());
-    let runner = FakeRunner {
-        refuse_restart: true,
-        ..FakeRunner::new(&[])
-    };
+    let runner = FakeRunner::refusing();
     let verdict = finish(&plan, &runner).await;
-    assert_eq!(verdict.state, UpdateState::RolledBack);
-    assert_eq!(verdict.stage, Some(UpdateStage::Restart));
-    assert!(
-        verdict.message.contains("didn't come up either"),
-        "{}",
-        verdict.message
+    assert_eq!(
+        verdict,
+        Verdict {
+            state: UpdateState::Failed,
+            stage: Some(UpdateStage::Restart),
+            message: format!(
+                "restarting fleetd-hub.service exited with exit status: 1, so it never restarted onto \
+                 Nightly · Oct 26, 10:56 UTC · 1b563d7 ({NEW}) and still runs Nightly · Oct 25, 10:00 UTC · aaaaaaa \
+                 ({OLD}); its previous binary was put back"
+            ),
+        }
     );
     assert_eq!(fs::read(&plan.exe).unwrap(), b"old");
+    assert_eq!(
+        runner.restarts.lock().unwrap().len(),
+        1,
+        "a refused restart isn't asked for again"
+    );
 }

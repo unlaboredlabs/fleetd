@@ -254,20 +254,30 @@ mod tests {
         assert_eq!(fs::read(&place.exe).unwrap(), b"old");
     }
 
+    /// The hub's Mac: the node runs the hub's binary, and the hub's update replaced it before asking the node. The
+    /// node only restarts, and keeps the build it runs for its rollback, not the one the hub just put at the path.
     #[tokio::test]
-    async fn the_hubs_machine_already_has_it_and_only_restarts() {
+    async fn on_the_hubs_machine_it_only_restarts_and_keeps_the_build_it_runs() {
         let dir = tempfile::tempdir().unwrap();
         let place = place(dir.path());
-        fs::write(&place.exe, b"new").unwrap();
+        let running = crate::update::Kept::open(&place.exe).unwrap();
+        crate::update::swap(
+            &place.exe,
+            b"new",
+            b"old",
+            &dir.path().join("hub/update/fleetd.prev"),
+        )
+        .unwrap();
         let empty = feed(b"new");
         // Downloading would fail: the binary in place is the one the sums name.
         empty.files.lock().unwrap().remove("fleetd-linux-x64");
-        let staged = stage(&to(NEW), &place, &empty, || Ok(b"old".to_vec()))
+        let staged = stage(&to(NEW), &place, &empty, || running.bytes())
             .await
             .unwrap();
         let Staged::Restarting(plan) = staged else {
             panic!("not staged");
         };
+        assert_eq!(fs::read(&place.exe).unwrap(), b"new");
         assert_eq!(fs::read(&plan.prev).unwrap(), b"old");
     }
 
