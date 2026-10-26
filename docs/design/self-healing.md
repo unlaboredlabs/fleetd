@@ -122,7 +122,7 @@ Action = Resume { delay, note }        // same thread, same worktree, claude --r
 **Never recover** in these cases, but still finish with the plain result:
 
 - the task was cancelled, or its workstream is not `Open` (order stopped or closed);
-- the task's PR merged (`pr.merged` for its `taskId`), or its plan item is done;
+- the task's PR merged (`pr.merged` for its `taskId`) after the run was cut off (after the dead run started, for a death other than node-lost), or its plan item is done. A merge from before that is a PR the task went on past, like T514's first PR before the lead continued it for a second;
 - the project's lead has an unanswered `ask_lead` from this task. Then deliver the answer when it comes, and the note with it.
 
 When the lead (or a person) has already sent a message into the gap (`pending_message`), recovery only prepends the note to it. That avoids a double continue like S7 and S9.

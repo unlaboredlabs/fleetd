@@ -895,3 +895,127 @@ async fn a_run_started_while_recovering_continues_the_task_without_the_note() {
     nothing_sent(&mut calls).await;
     completes(&hub, "r9", 5).await;
 }
+
+/// T514 on Oct 26: its first PR merged, then the lead continued it for a second one and steered it mid-turn; the node
+/// stopped while it pushed a branch, and the old merge read as its work being over, so it failed. A merge from
+/// before the cut-off ends nothing: it resumes like any task the stop cut off.
+#[tokio::test]
+async fn a_task_continued_after_its_pr_merged_resumes_when_its_node_stops() {
+    let (hub, clock, mut calls, _home) = running_t1().await;
+    let t1 = TaskId::unchecked("T1");
+    let caller = TaskCaller {
+        project_ref: project(),
+        by: "lead".into(),
+    };
+    session(&hub, 3, "r1", "running", json!({}));
+    merged(&hub, 7);
+    completes_after(&hub, "r1", 4).await;
+
+    // The lead continues it for the second PR, then steers it mid-turn: the steer's run starts at the boundary.
+    hub.tasks
+        .message(&caller, &t1, "#7 merged. Start the second PR.")
+        .await
+        .unwrap();
+    let (r2, _) = sent(&mut calls).await;
+    session(&hub, 6, &r2, "running", json!({}));
+    logged(&hub, "thread.started", &r2).await;
+    catch_up(&hub.tasks).await;
+    hub.tasks
+        .message(&caller, &t1, "Move the 1Password part to a new agent.")
+        .await
+        .unwrap();
+    let (r3, _) = sent(&mut calls).await;
+    session(&hub, 7, &r3, "running", json!({}));
+    logged(&hub, "thread.started", &r3).await;
+    catch_up(&hub.tasks).await;
+    assert_eq!(task(&hub).state, TaskState::Running);
+
+    // The node stops mid-push.
+    session(
+        &hub,
+        8,
+        &r3,
+        "interrupted",
+        json!({ "end": "node_stopping", "failure": { "class": "process_exited", "message": "the node stopped" } }),
+    );
+    logged(&hub, "thread.interrupted", &r3).await;
+    catch_up(&hub.tasks).await;
+    assert!(
+        reason(&hub).starts_with("recovering: the node on lab-a stopped; resumes at "),
+        "{:?}",
+        task(&hub)
+    );
+    clock.advance(Duration::from_secs(41));
+    let (_, text) = sent(&mut calls).await;
+    assert!(
+        text.starts_with("fleetd: your run was cut off (the node on lab-a stopped)."),
+        "{text}"
+    );
+    assert_eq!(task(&hub).state, TaskState::Running);
+}
+
+/// One of its PRs merges while it runs on to the next, and then its node stops: it resumes too. A merge while it waits
+/// to resume still ends it (`a_task_whose_pr_merged_while_it_waited_is_not_resumed`).
+#[tokio::test]
+async fn a_task_whose_pr_merged_mid_run_resumes_when_its_node_stops() {
+    let (hub, clock, mut calls, _home) = running_t1().await;
+    session(&hub, 3, "r1", "running", json!({}));
+    merged(&hub, 7);
+    session(
+        &hub,
+        4,
+        "r1",
+        "interrupted",
+        json!({ "end": "node_stopping", "failure": { "class": "process_exited", "message": "the node stopped" } }),
+    );
+    logged(&hub, "thread.interrupted", "r1").await;
+    catch_up(&hub.tasks).await;
+    assert!(reason(&hub).starts_with("recovering: the node on lab-a stopped; resumes at "));
+    clock.advance(Duration::from_secs(41));
+    let (_, text) = sent(&mut calls).await;
+    assert!(text.starts_with("fleetd: your run was cut off"), "{text}");
+    assert_eq!(task(&hub).state, TaskState::Running);
+}
+
+/// A task held on a tool's permission when its node stops resumes like one at work.
+#[tokio::test]
+async fn a_task_holding_a_pending_tool_call_resumes_when_its_node_stops() {
+    let (hub, clock, mut calls, _home) = running_t1().await;
+    session(&hub, 3, "r1", "waiting", json!({}));
+    logged(&hub, "thread.waiting", "r1").await;
+    catch_up(&hub.tasks).await;
+    assert_eq!(task(&hub).state, TaskState::Idle);
+    session(
+        &hub,
+        4,
+        "r1",
+        "interrupted",
+        json!({ "end": "node_stopping", "failure": { "class": "process_exited", "message": "the node stopped" } }),
+    );
+    logged(&hub, "thread.interrupted", "r1").await;
+    catch_up(&hub.tasks).await;
+    assert!(reason(&hub).starts_with("recovering: the node on lab-a stopped; resumes at "));
+    clock.advance(Duration::from_secs(41));
+    let (_, text) = sent(&mut calls).await;
+    assert!(text.starts_with("fleetd: your run was cut off"), "{text}");
+    assert_eq!(task(&hub).state, TaskState::Running);
+}
+
+/// The train merged T1's PR `number`.
+fn merged(hub: &Hub, number: u64) {
+    let merged: NewEvent = serde_json::from_value(json!({
+        "at": AT, "type": "pr.merged", "machineId": "lab-a", "projectId": "p1",
+        "summary": format!("C1 merged: o/r#{number}"),
+        "data": { "changeId": "C1", "workstreamId": "W1", "taskId": "T1", "repo": "o/r", "prNumber": number },
+    }))
+    .unwrap();
+    hub.events.append(merged).unwrap();
+}
+
+/// Run `run`, already started, completes: T1 is done.
+async fn completes_after(hub: &Hub, run: &str, seq: u64) {
+    session(hub, seq, run, "completed", json!({ "end": "completed" }));
+    logged(hub, "thread.completed", run).await;
+    catch_up(&hub.tasks).await;
+    assert_eq!(task(hub).state, TaskState::Done);
+}
