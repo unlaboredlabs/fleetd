@@ -780,7 +780,7 @@ impl NodeLinkServer {
         self.check_runner(&machine_id);
         tracing::info!(machine_id = %machine_id, link_id = id, "node link: welcomed");
         for watch in self.browser_live.rewatch(&machine_id) {
-            send(&tx, watch);
+            send(tx, watch);
         }
 
         let heartbeat = {
