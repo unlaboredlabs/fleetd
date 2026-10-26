@@ -11,6 +11,7 @@
   /* The box's corner radius (chat/composer.module.css): how far the fillets reach down beside it. */
   --tuck: 18px;
   position: relative;
+  container-type: inline-size;
   /* The lanes follow the row in the DOM (the tab order) and are drawn above it. */
   display: flex;
   flex-direction: column-reverse;
@@ -156,8 +157,16 @@
   line-height: var(--leading-xs);
   animation: roll 360ms var(--ease-out);
 }
+/* The role gives way before the activity does: it shrinks to an ellipsis. */
 .roll > :first-child {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+/* Too narrow a strip (the chat beside a wide panel) has no room for a useful now-line: the headline takes it all. */
+@container (width < 420px) {
+  .now {
+    display: none;
+  }
 }
 .now:hover .roll {
   text-decoration: underline;
@@ -172,6 +181,7 @@
 
 .chevron {
   flex: none;
+  margin-left: auto;
   color: var(--faint);
   pointer-events: none;
   transition: transform var(--dur-base) var(--ease-out);
