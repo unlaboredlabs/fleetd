@@ -114,7 +114,8 @@ pub enum Op {
     Save(Claim),
     Remove(String),
     Cap(i64),
-    MaxAgents(ProjectRef, i64),
+    /// A project's own max; None: it follows the default again.
+    MaxAgents(ProjectRef, Option<i64>),
     /// A machine's measure, not a person's setting.
     Machine(MachineId, String, Auto),
 }
@@ -123,6 +124,8 @@ pub enum Op {
 pub struct ProjectRow {
     pub project_ref: ProjectRef,
     pub max_agents: i64,
+    /// A person set it; false: the default.
+    pub own: bool,
     pub running: i64,
     pub queued: i64,
 }
@@ -153,6 +156,8 @@ pub struct BoardState {
 pub enum MaxSource {
     /// A person set the project's max agents.
     Project,
+    /// The fleet cap a person set, below its machine's cap.
+    Fleet,
     /// A person set its machine's cap.
     Machine,
     /// Its machine's own measure, and the term that sets it.
@@ -302,17 +307,36 @@ impl Board {
         self.ops.push(Op::Save(self.claims[i].clone()));
     }
 
-    /// The project's max agents: until set, its machine's cap.
+    /// The project's max agents: its own once a person sets it, else the default, so a change to the fleet or
+    /// machine cap reaches it at once.
     pub fn max_agents_of(&self, r: &ProjectRef) -> i64 {
+        self.own_max(r)
+            .unwrap_or_else(|| self.default_max(&r.machine_id))
+    }
+
+    /// The max a person set for the project; None: it follows the default.
+    fn own_max(&self, r: &ProjectRef) -> Option<i64> {
         self.max_agents
             .iter()
             .find(|(s, _)| same(s, r))
-            .map_or_else(|| self.machine_cap(&r.machine_id), |(_, n)| *n)
+            .map(|(_, n)| *n)
+    }
+
+    /// A project's max until a person sets one: its machine's cap, within the fleet cap.
+    fn default_max(&self, m: &MachineId) -> i64 {
+        let machine = self.machine_cap(m);
+        self.cap.map_or(machine, |cap| cap.min(machine))
     }
 
     pub fn max_source(&self, r: &ProjectRef) -> MaxSource {
-        if self.max_agents.iter().any(|(s, _)| same(s, r)) {
+        if self.own_max(r).is_some() {
             return MaxSource::Project;
+        }
+        if self
+            .cap
+            .is_some_and(|cap| cap < self.machine_cap(&r.machine_id))
+        {
+            return MaxSource::Fleet;
         }
         match self.machine(&r.machine_id) {
             Some(m) if m.max_agents.is_some() => MaxSource::Machine,
@@ -549,16 +573,22 @@ impl Board {
         }
     }
 
-    /// `cap_set`. Always counts as freeing capacity, so the caller evaluates and notifies. Lowering revokes nothing.
-    pub fn set_cap(&mut self, cap: Option<i64>, max_agents: Option<(ProjectRef, i64)>) {
+    /// `cap_set`: the fleet cap, and a project's own max (None: back to the default). Always counts as freeing
+    /// capacity, so the caller evaluates and notifies. Lowering revokes nothing.
+    pub fn set_cap(&mut self, cap: Option<i64>, max_agents: Option<(ProjectRef, Option<i64>)>) {
         if let Some(cap) = cap {
             self.cap = Some(cap);
             self.ops.push(Op::Cap(cap));
         }
         if let Some((r, n)) = max_agents {
-            match self.max_agents.iter_mut().find(|(s, _)| same(s, &r)) {
-                Some(entry) => entry.1 = n,
-                None => self.max_agents.push((r.clone(), n)),
+            let at = self.max_agents.iter().position(|(s, _)| same(s, &r));
+            match (at, n) {
+                (Some(i), Some(n)) => self.max_agents[i].1 = n,
+                (None, Some(n)) => self.max_agents.push((r.clone(), n)),
+                (Some(i), None) => {
+                    self.max_agents.remove(i);
+                }
+                (None, None) => {}
             }
             self.ops.push(Op::MaxAgents(r, n));
         }
@@ -592,6 +622,7 @@ impl Board {
             .map(|(r, n)| ProjectRow {
                 project_ref: r.clone(),
                 max_agents: *n,
+                own: true,
                 running: 0,
                 queued: 0,
             })
@@ -606,6 +637,7 @@ impl Board {
                     rows.push(ProjectRow {
                         project_ref: c.project_ref.clone(),
                         max_agents: self.max_agents_of(&c.project_ref),
+                        own: false,
                         running: 0,
                         queued: 0,
                     });
@@ -752,7 +784,8 @@ mod tests {
             cap: Option<i64>,
             max_agents: Option<(ProjectRef, i64)>,
         ) -> BoardState {
-            self.board.set_cap(cap, max_agents);
+            self.board
+                .set_cap(cap, max_agents.map(|(r, n)| (r, Some(n))));
             self.freed();
             self.board.state()
         }
@@ -774,6 +807,32 @@ mod tests {
         assert_eq!((k.board.room(&a), k.board.room(&b)), (0, 8));
         k.release("T1");
         assert_eq!(k.board.room(&a), 1);
+    }
+
+    /// A project's own max holds whatever the fleet cap does; back to the default, it follows the fleet cap again.
+    #[test]
+    fn a_project_follows_the_default_until_it_has_a_max_of_its_own() {
+        let a = project("pa");
+        let mut k = Kit::new(10);
+        assert_eq!(
+            (k.board.max_agents_of(&a), k.board.max_source(&a)),
+            (10, MaxSource::Fleet)
+        );
+        k.set_cap(Some(4), None);
+        assert_eq!(k.board.max_agents_of(&a), 4);
+        k.set_cap(None, Some((a.clone(), 3)));
+        k.set_cap(Some(8), None);
+        assert_eq!(
+            (k.board.max_agents_of(&a), k.board.max_source(&a)),
+            (3, MaxSource::Project)
+        );
+        k.board.set_cap(None, Some((a.clone(), None)));
+        assert_eq!(
+            (k.board.max_agents_of(&a), k.board.max_source(&a)),
+            (8, MaxSource::Fleet)
+        );
+        assert!(matches!(k.board.take_ops().last(), Some(Op::MaxAgents(r, None)) if *r == a));
+        assert!(k.board.state().per_project.is_empty());
     }
 
     #[test]
@@ -819,13 +878,15 @@ mod tests {
             [
                 ProjectRow {
                     project_ref: b.clone(),
-                    max_agents: sizing::HARD_TOP,
+                    max_agents: 3,
+                    own: false,
                     running: 2,
                     queued: 1
                 },
                 ProjectRow {
                     project_ref: a.clone(),
                     max_agents: 1,
+                    own: true,
                     running: 1,
                     queued: 1
                 },

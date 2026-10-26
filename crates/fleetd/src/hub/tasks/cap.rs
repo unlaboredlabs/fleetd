@@ -12,7 +12,7 @@ use fleetd_contracts::tasks::{AgentsCapData, SlotState, TaskId, TaskState};
 
 use super::ports::{TaskError, WakeKind};
 use super::{StoredTask, TaskRecords, Tasks, lead_error, request_id, store_error};
-use crate::hub::slots::CapInput;
+use crate::hub::slots::{CapInput, MaxSource};
 use crate::hub::store::NewEvent;
 
 pub struct CapChange {
@@ -22,7 +22,8 @@ pub struct CapChange {
 
 pub struct ProjectCap {
     pub project_ref: ProjectRef,
-    pub max_agents: i64,
+    /// Its own max; None: back to the default, its machine's cap within the fleet cap.
+    pub max_agents: Option<i64>,
     /// Lowering: pause the agents above the new max now instead of letting them finish.
     pub pause_extras: bool,
 }
@@ -83,15 +84,13 @@ impl Tasks {
         // Unset until someone sets it: the machines' own caps are the only limit across projects.
         let (cap_before, total_before) = (slots.cap(), slots.total());
         if let Some(p) = &change.project
+            && let Some(max) = p.max_agents
             && let Some(cap) = change.cap.or(cap_before)
-            && p.max_agents > cap
+            && max > cap
         {
             return Err(lead_error(
                 ErrorCode::Invalid,
-                format!(
-                    "Max agents {} is above the fleet's {cap} slots.",
-                    p.max_agents
-                ),
+                format!("Max agents {max} is above the fleet's {cap} slots."),
                 Some(&format!("Pick 1 to {cap}, or raise the fleet cap first.")),
             ));
         }
@@ -139,7 +138,9 @@ impl Tasks {
         }
         if let (Some(p), Some(before)) = (&change.project, before) {
             let r = &p.project_ref;
-            let (from, to) = (before.max_agents, p.max_agents);
+            let (from, to) = (before.max_agents, slots.agents(r).max_agents);
+            // Back to the default from a max of its own: a change even at the same number.
+            let back = p.max_agents.is_none() && before.source == MaxSource::Project;
             // At the same max too: the app applies a lower max first and offers the pause after it.
             if to <= from && p.pause_extras {
                 paused = self.pause_extras(r, to).await;
@@ -165,10 +166,17 @@ impl Tasks {
                     "Max agents {from} → {to}: {} running {finish}; new agents wait.",
                     after.running
                 )
+            } else if back && to == from {
+                format!("Max agents {to}, the default now.")
             } else {
                 format!("Max agents {from} → {to}.")
             };
-            if to != from || !paused.is_empty() {
+            let line = if back && to != from {
+                format!("{line} It follows the default now.")
+            } else {
+                line
+            };
+            if to != from || back || !paused.is_empty() {
                 self.cap_event(
                     Some(r),
                     from,

@@ -69,16 +69,19 @@ export const syncAgents = (f: Fixture): void => {
     const ref = refOf(p);
     const { running, queued } = counts(ref);
     const row = before.get(keyOf(ref));
-    // A recording's max (the lab runs 40) reads as no setting at all: only a fixture about the slot state keeps its own.
-    const kept = f.agentsFromSlots && typeof row?.["maxAgents"] === "number" && row["maxAgents"] >= running ? row["maxAgents"] : plausibleMax(running);
+    // A recording's max (the lab runs 40) reads as no setting at all: only a fixture about the slot state keeps its own,
+    // and there a project without one follows the default, the fleet cap.
+    const own = f.agentsFromSlots && row?.["own"] === true;
+    const fallback = f.agentsFromSlots && typeof set["cap"] === "number" ? set["cap"] : plausibleMax(running);
+    const kept = f.agentsFromSlots && typeof row?.["maxAgents"] === "number" && row["maxAgents"] >= running ? row["maxAgents"] : fallback;
     const waiting = f.agentsFromSlots && typeof row?.["queued"] === "number" ? row["queued"] : queued;
-    return { projectRef: ref, maxAgents: kept, running, queued: waiting };
+    return { projectRef: ref, maxAgents: own ? kept : fallback, ...(f.agentsFromSlots ? { own } : {}), running, queued: waiting };
   });
   const used = perProject.reduce((n, r) => n + (r["running"] as number), 0);
   const queued = perProject.reduce((n, r) => n + (r["queued"] as number), 0);
   const largest = Math.max(0, ...perProject.map((r) => r["maxAgents"] as number));
   const cap = f.agentsFromSlots && typeof set["cap"] === "number" ? set["cap"] : Math.max(12, largest, Math.ceil(used / 6) * 6);
-  const slots: JsonObject = { cap, used, queued, perProject };
+  const slots: JsonObject = { cap, ...(f.agentsFromSlots && typeof set["fleetCap"] === "number" ? { fleetCap: set["fleetCap"] } : {}), used, queued, perProject };
   f.snapshot["slots"] = slots;
   for (const frame of f.live) if (frame["slots"] !== undefined || frame["full"] === true) frame["slots"] = structuredClone(slots);
 

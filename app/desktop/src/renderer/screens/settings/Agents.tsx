@@ -6,7 +6,7 @@ import { Slider } from "radix-ui";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ProjectRef, SlotState } from "../../../shared/contracts";
 import { useData, useToolQuery } from "../../src/data/react";
-import { Button, PROFILE_LINE, Popover, PopoverContent, PopoverTrigger, Separator, Switch, Text, textClass } from "../../ui";
+import { Button, cx, PROFILE_LINE, Popover, PopoverContent, PopoverTrigger, Separator, Switch, Text, textClass } from "../../ui";
 import {
   agentsLabel,
   appliedLine,
@@ -19,6 +19,7 @@ import {
   pauseLine,
   projectAgents,
   serialNote,
+  sourceLine,
 } from "./agentsModel";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { useFocusProjectSlider } from "./focusProject";
@@ -40,7 +41,7 @@ export function AgentsCapControl({ projectRef }: { projectRef: ProjectRef }) {
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button size="sm" variant="ghost" aria-label={`Max agents: ${a.running} running of ${a.max}${a.queued > 0 ? `, ${a.queued} queued` : ""}`}>
-          <span className={textClass({ size: "xs", tabular: true })}>{agentsLabel(a)}</span>
+          <span className={cx(textClass({ size: "xs", tabular: true }), s.agentsLabel)}>{agentsLabel(a)}</span>
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end">
@@ -52,18 +53,22 @@ export function AgentsCapControl({ projectRef }: { projectRef: ProjectRef }) {
   );
 }
 
-/** A change applied: from what, to what, and how many agents it paused. */
-type Done = { from: number; to: number; paused: number };
-type Attempt = { to: number; from: number; pause: boolean; undo: boolean };
+/**
+ * A change applied: from what, to what, and how many agents it paused. `follow`: it went back to the default;
+ * `fromDefault`: it left the default, so Undo goes back to it rather than setting the number it was then.
+ */
+type Done = { from: number; to: number; paused: number; follow: boolean; fromDefault: boolean };
+type Attempt = Omit<Done, "paused"> & { pause: boolean; undo: boolean };
 
 /** A keyboard change applies once the keys rest, so arrowing 6 → 3 is one change (and one line in the chat). */
 const KEYS_REST_MS = 600;
 
 /**
- * A slider that applies when you let go. `hub` is the value in effect; `write` sets one and answers how many agents
- * it paused. The value moved to stays on screen until the hub's slot state shows it, so the thumb doesn't jump back.
+ * A slider that applies when you let go. `hub` is the value in effect, and `onDefault` whether it is a default that
+ * follows another cap; `write` sets one, or goes back to the default with `follow`, and answers how many agents it
+ * paused. The value moved to stays on screen until the hub's slot state shows it, so the thumb doesn't jump back.
  */
-function useApplySlider(hub: number, write: (to: number, pause: boolean) => Promise<number>) {
+function useApplySlider(hub: number, onDefault: boolean, write: (to: number, pause: boolean, follow: boolean) => Promise<number>) {
   const [draft, setDraft] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<Done | null>(null);
@@ -74,10 +79,10 @@ function useApplySlider(hub: number, write: (to: number, pause: boolean) => Prom
   const run = (attempt: Attempt) => {
     setBusy(true);
     setFailed(null);
-    write(attempt.to, attempt.pause).then(
+    write(attempt.to, attempt.pause, attempt.follow).then(
       (paused) => {
         setBusy(false);
-        setDone(attempt.undo ? null : { from: attempt.from, to: attempt.to, paused });
+        setDone(attempt.undo ? null : { from: attempt.from, to: attempt.to, paused, follow: attempt.follow, fromDefault: attempt.fromDefault });
       },
       (e: unknown) => {
         setBusy(false);
@@ -88,7 +93,7 @@ function useApplySlider(hub: number, write: (to: number, pause: boolean) => Prom
   };
   const commit = (to: number) => {
     if (to === hub) return setDraft(null);
-    run({ to, from: hub, pause: false, undo: false });
+    run({ to, from: hub, pause: false, undo: false, follow: false, fromDefault: onDefault });
   };
 
   // A keyboard change waiting for the keys to rest; it still applies if the popover closes first.
@@ -141,9 +146,15 @@ function useApplySlider(hub: number, write: (to: number, pause: boolean) => Prom
     sliderProps,
     undo: (d: Done) => {
       setDraft(d.from);
-      run({ to: d.from, from: d.to, pause: false, undo: true });
+      run({ to: d.from, from: d.to, pause: false, undo: true, follow: d.fromDefault, fromDefault: false });
     },
-    pause: (d: Done) => run({ to: d.to, from: d.from, pause: true, undo: false }),
+    pause: (d: Done) => run({ ...d, pause: true, undo: false }),
+    /** Back to the default, `to` as it stands now: the slider follows the hub's answer. */
+    toDefault: (to: number) => {
+      setDraft(to);
+      setDone(null);
+      run({ to, from: hub, pause: false, undo: false, follow: true, fromDefault: false });
+    },
     retry: () => {
       if (failed === null) return;
       setDraft(failed.attempt.to);
@@ -210,8 +221,10 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
   const live = useLive();
   const call = useHubCall();
   const a = projectAgents(props.slots, props.projectRef);
-  const state = useApplySlider(a.max, (maxAgents, pauseExtras) =>
-    call("cap_set", { project: { projectRef: props.projectRef, maxAgents, ...(pauseExtras ? { pauseExtras: true } : {}) } }).then((o) => o.paused?.length ?? 0),
+  const state = useApplySlider(a.max, !a.own, (maxAgents, pauseExtras, follow) =>
+    call("cap_set", {
+      project: { projectRef: props.projectRef, ...(follow ? { followDefault: true } : { maxAgents }), ...(pauseExtras ? { pauseExtras: true } : {}) },
+    }).then((o) => o.paused?.length ?? 0),
   );
   const value = clampMax(state.value, a.cap);
   const id = `agents-${props.projectRef.machineId}-${props.projectRef.projectId}`;
@@ -224,6 +237,16 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
           {props.title ?? "Max agents"}
         </span>
         <Text tabular strong>{`${value}`}</Text>
+      </div>
+      <div className={s.agentsSource}>
+        <Text size="xs" tone="quiet">
+          {sourceLine(props.slots, a)}
+        </Text>
+        {a.own ? (
+          <Button size="sm" variant="quiet" disabled={!live || state.busy} onClick={() => state.toDefault(a.cap)}>
+            Use the default
+          </Button>
+        ) : null}
       </div>
       <CapSlider id={id} max={Math.max(1, a.cap)} disabled={!live || a.cap <= 1} state={state} />
       {props.scale ? (
@@ -238,7 +261,9 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
         id={id}
         state={state}
         idle={changeLine(a, value)}
-        done={(d) => [appliedLine("Max agents", d.from, d.to), extrasLine(extrasOver(a.running, d.to), d.paused)].filter(Boolean).join(" ")}
+        done={(d) =>
+          [appliedLine(d.follow ? "Max agents, the default" : "Max agents", d.from, d.to), extrasLine(extrasOver(a.running, d.to), d.paused)].filter(Boolean).join(" ")
+        }
         actions={(d) => {
           const over = extrasOver(a.running, d.to);
           return d.to < d.from && d.paused === 0 && over > 0 ? (
@@ -375,7 +400,7 @@ function FleetCap({ slots }: { slots: SlotState }) {
   const call = useHubCall();
   const projects = useProjects();
   const live = useLive();
-  const state = useApplySlider(slots.cap, (cap) => call("cap_set", { cap }).then(() => 0));
+  const state = useApplySlider(slots.cap, false, (cap) => call("cap_set", { cap }).then(() => 0));
   const ref = useReveal<HTMLElement>("agents.fleet");
   const warning = fleetWarning(slots, state.value, (r) => scopeName({ kind: "project", ref: r }, projects));
   const id = "agents-fleet";

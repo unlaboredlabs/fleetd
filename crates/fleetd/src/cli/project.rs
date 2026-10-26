@@ -26,12 +26,13 @@ pub const PROJECT_USAGE: &str =
              and the chat says what stopped
   project remove <machine>/<project> [--yes] [--home <dir>] [--hub <url>]
              stop its agents and forget it; its files, branches and worktrees stay
-  project set <machine>/<project> --max-agents <n> [--pause-extras] [--home <dir>] [--hub <url>]
+  project set <machine>/<project> --max-agents <n>|default [--pause-extras] [--home <dir>] [--hub <url>]
   project set --fleet-cap <n> [--home <dir>] [--hub <url>]
              the most agents the project runs at once (its lead not counted), or the
              fleet's cap on running agents (admin key); more wait queued and start as
-             slots free. Lowering stops nothing; --pause-extras has the newest agents
-             above the new max push their work and wait
+             slots free. default: its machine's cap within the fleet cap, following
+             both. Lowering stops nothing; --pause-extras has the newest agents above
+             the new max push their work and wait
   project set <machine>/<project> --medium on|off [--home <dir>] [--hub <url>]
              whether the lead may run mechanical tasks on the medium profile (on by
              default); off runs every task on high
@@ -409,7 +410,18 @@ fn count_of(v: &args::Parsed, name: &str) -> Result<Option<u32>, Stop> {
             n.parse::<u32>()
                 .ok()
                 .filter(|n| (1..=1000).contains(n))
-                .ok_or_else(|| Stop(2, format!("--{name} takes a number from 1 to 1000"), None))
+                .ok_or_else(|| {
+                    let or = if name == "max-agents" {
+                        " or default"
+                    } else {
+                        ""
+                    };
+                    Stop(
+                        2,
+                        format!("--{name} takes a number from 1 to 1000{or}"),
+                        None,
+                    )
+                })
         })
         .transpose()
 }
@@ -427,7 +439,11 @@ async fn set(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(), 
             ));
         }
     };
-    let max_agents = count_of(v, "max-agents")?;
+    // "default": back to its machine's cap within the fleet cap.
+    let max_agents = match v.str("max-agents") {
+        Some("default") => Some(None),
+        _ => count_of(v, "max-agents")?.map(Some),
+    };
     let fleet_cap = count_of(v, "fleet-cap")?;
     if let Some(allowed) = medium {
         let (machine, project) = find(client, v).await?;
@@ -451,9 +467,12 @@ async fn set(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(), 
             let (machine, project) = find(client, v).await?;
             input["project"] = json!({
                 "projectRef": { "machineId": machine, "projectId": s(&project, "/projectId") },
-                "maxAgents": n,
                 "pauseExtras": v.flag("pause-extras"),
             });
+            match n {
+                Some(n) => input["project"]["maxAgents"] = json!(n),
+                None => input["project"]["followDefault"] = json!(true),
+            }
         }
         (Some(_), None) if medium.is_none() => {
             return Err(Stop(

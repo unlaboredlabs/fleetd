@@ -200,12 +200,12 @@ whole fleet. The hub enforces all of them; the lead plans to them.
 | Cap | Counts | Default | Set it |
 |---|---|---|---|
 | Per machine | Every project's agents on the machine. Not the leads. | What it fits: one per CPU less one in eight, and 2 GB of memory each after a quarter of it (4 to 16 GB) is left for the system, at most 64. An 8 GB laptop fits 2, a 32 GB one 12. | node.json's `memPerAgentGb` changes the 2 GB. |
-| Per project: Max agents | The project's agents: writers, readers, reviewers. Not the lead. | Its machine's cap | Click "agents 6 / 12" in the project's chat header, or use Settings → Agents. |
+| Per project: Max agents | The project's agents: writers, readers, reviewers. Not the lead. | Its machine's cap, within the fleet cap: it follows a change to either at once | Click "agents 6 / 12" in the project's chat header, or use Settings → Agents. Once set it is the project's own, which no fleet or machine change moves; "Use the default" goes back. |
 | Fleet-wide | Every project's agents together. Not the leads. | None: the machines' caps added up | Settings → Agents → Whole fleet. Needs an admin key. A fleet cap saved before stays until you change it. |
 
 New agents on a machine also wait for disk: 5 GB each (`diskPerAgentGb`) above the free-space floor, with agents started
 in the last 10 minutes still counted, since their worktrees haven't grown yet. The lead's state line names what sets
-its cap, e.g. "agents: 4 running of 6 (auto: memory 18 GB), 2 queued".
+its cap, e.g. "agents: 4 running of 6 (auto: memory 18 GB), 2 queued", or "fleet cap set" and "max agents set".
 
 The memory figure only sizes a machine's default cap. No agent waits for the memory it might take: a Max agents you set
 starts that many, as far as the machine's cap and disk allow. What does hold new agents back is memory really in use, the
@@ -217,18 +217,19 @@ applies when you let go, with Undo. A fleet cap below a project's own max gets a
 Writers in a project run side by side, each in its own worktree and branch. The lead gives them slices that touch
 separate files; if two PRs still conflict, the [merge train](/docs/merge-train) sends the later one back to its writer.
 
-![The Max agents control open in storefront's chat header: a slider set to 12, from 1 up to "16, the most it can run", with "6 agents running now".](/docs/img/max-agents.png)
+![The Max agents control open in storefront's chat header: "Set for this project. The default is 16." with Use the default, a slider set to 12, from 1 up to "16, the most it can run", with "6 agents running now".](/docs/img/max-agents.png)
 
 From a terminal:
 
 ```sh
 fleetd project set devbox/storefront --max-agents 3
 fleetd project set devbox/storefront --max-agents 2 --pause-extras
+fleetd project set devbox/storefront --max-agents default
 fleetd project set --fleet-cap 20        # needs an admin key
 ```
 
 From an [MCP client](/docs/mcp-clients): `cap_set {project: {projectRef, maxAgents, pauseExtras?}}` with an operate
-key, or `cap_set {cap}` for the fleet cap with an admin key.
+key (`followDefault: true` in place of `maxAgents` goes back to the default), or `cap_set {cap}` for the fleet cap with an admin key.
 
 When the cap is reached:
 

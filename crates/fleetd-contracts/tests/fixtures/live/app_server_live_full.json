@@ -210,6 +210,7 @@
           "projectId": "storefront"
         },
         "maxAgents": 20,
+        "own": true,
         "running": 3,
         "queued": 1
       }

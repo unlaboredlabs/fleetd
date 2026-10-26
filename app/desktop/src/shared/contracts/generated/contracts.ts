@@ -608,8 +608,10 @@ export type CapSetOutput = {
 };
 
 export type CapSetProject = {
-  /** 1 up to the fleet cap. */
-  maxAgents: number;
+  /** Drop the project's own max: it follows the default again, its machine's cap within the fleet cap. */
+  followDefault?: boolean;
+  /** 1 up to the fleet cap: the project's own max, which no later fleet or machine cap changes. */
+  maxAgents?: number;
   /**
    * Lowering: tell the agents above the new max to push their work in progress and wait; they resume when a slot
    * frees. Without it they finish their current work.
@@ -3894,9 +3896,14 @@ export type SlotStatePerMachine = {
 export type SlotStatePerProject = {
   /**
    * The most of the project's agents (its tasks: writers, readers, reviewers) that run at once; its lead is not
-   * one. Its machine's `cap` until set.
+   * one. Until set, the default: its machine's `cap`, within the fleet cap.
    */
   maxAgents: number;
+  /**
+   * A person set the project's own max; false: it follows the default. Absent from a hub before this, which
+   * listed a project only once set or busy.
+   */
+  own?: boolean;
   projectRef: ProjectRef;
   /** Its agents waiting for a slot, paused ones included. */
   queued: number;
