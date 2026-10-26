@@ -47,6 +47,7 @@ export default defineConfig({
             "what-agents-are-told",
             "mcp-servers",
             "skills",
+            "browser-sessions",
             "mcp-clients",
           ],
         },

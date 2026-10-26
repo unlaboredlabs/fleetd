@@ -3,6 +3,7 @@
 //! The CLI calls [`join`] for `fleetd node join` and [`run`] for `fleetd node run` / `node serve`. Both run until
 //! SIGINT or SIGTERM (`Ok`) or a failure the node cannot retry past (`Err`, exit 1 with `fleetd: <message>`).
 pub mod actions;
+pub mod browser;
 pub mod cmd;
 pub mod config;
 pub mod identity;
@@ -123,6 +124,7 @@ pub async fn join(args: JoinArgs) -> Result<(), NodeError> {
         mem_per_agent_gb: None,
         disk_per_agent_gb: None,
         enrolled: false,
+        browser: None,
     };
     write_config(&home, &config).map_err(|_| {
         NodeError::Setup(format!(
@@ -213,11 +215,27 @@ async fn run_node(
         let sessions = node_sessions.clone();
         Arc::new(move |session| sessions.call_masker(session))
     };
+    let browser_config = config.browser.clone().unwrap_or_default();
+    let broker = match browser_config.enabled() {
+        true => {
+            let broker = browser::Broker::start(
+                home,
+                browser_config,
+                Arc::new(browser::upload::RelayHub(relay.clone())),
+                mask_for.clone(),
+            )
+            .await;
+            node_sessions.set_browser(broker.clone());
+            Some(broker)
+        }
+        false => None,
+    };
     let _socket = lead::serve_lead_socket(
         lead::lead_socket_path(home),
         relay.clone(),
         identify,
         mask_for,
+        broker.as_ref().map(browser::Broker::handler),
     )
     .await
     .map_err(NodeError::LeadSocket)?;
@@ -270,6 +288,9 @@ async fn run_node(
         () = enrolled => Ok(()),
         () = shutdown_signal() => {
             node_sessions.shutdown().await;
+            if let Some(broker) = &broker {
+                broker.shutdown().await;
+            }
             Ok(())
         }
     }

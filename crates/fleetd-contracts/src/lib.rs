@@ -9,6 +9,7 @@ pub mod app;
 pub mod auth;
 pub mod automations;
 pub mod blocks;
+pub mod browser;
 pub mod chat;
 pub mod checklist;
 pub mod doctor;

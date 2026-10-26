@@ -135,10 +135,7 @@ impl LeadCalls {
 
 /// The call's `op` tag, as on the wire.
 pub fn op_of(call: &LeadCall) -> String {
-    serde_json::to_value(call)
-        .ok()
-        .and_then(|v| v.get("op")?.as_str().map(str::to_owned))
-        .unwrap_or_default()
+    fleetd_contracts::lead_calls::op_name(call)
 }
 
 pub fn lead_by(r: &ProjectRef) -> String {

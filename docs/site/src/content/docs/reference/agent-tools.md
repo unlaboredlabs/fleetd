@@ -67,6 +67,8 @@ Every lead gets these.
 | [`skill_install`](#skill_install) | Install skills (SKILL.md workflows) from a skills.sh source (owner/repo, owner/repo@skill, a GitHub URL) for this project (scope project; global skills take an admin, so the human installs those); pinned to the commit fetched, and the human updates it from Settings > Skills. | No |
 | [`usage_resume`](#usage_resume) | Lift the usage pause on your project's machine now and send every agent parked there "continue": only once you know its login has capacity again (the human says so, or a turn of yours just went through). | No |
 | [`change_enqueue`](#change_enqueue) | Put a PR no task's result put there on its repo's merge train; only the train merges. | No |
+| [`session_start`](#session_start) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. | No |
+| [`session_end`](#session_end) | Close your browser session: the browser and its profile are thrown away, and its recording goes to the hub. | No |
 
 ### spawn_agent
 
@@ -648,6 +650,40 @@ Put a PR no task's result put there on its repo's merge train; only the train me
 }
 ```
 
+### session_start
+
+Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. It is recorded (video, the page after each step, a line per agent-browser command) for the person to replay. Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no browser of your own. purpose: one line on what for.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `purpose` | string | yes | What you need the browser for, in one line; the person replaying it sees it. At most 200 characters. |
+
+**Who may call:** a lead, a task's agent, answered by its node, which runs the browser. **Needs a human:** no.
+
+```json
+{
+  "name": "session_start",
+  "arguments": {
+    "purpose": "Check that signup works on the staging site"
+  }
+}
+```
+
+### session_end
+
+Close your browser session: the browser and its profile are thrown away, and its recording goes to the hub.
+
+No parameters.
+
+**Who may call:** a lead, a task's agent, answered by its node, which runs the browser. **Needs a human:** no.
+
+```json
+{
+  "name": "session_end",
+  "arguments": {}
+}
+```
+
 ## Task tools
 
 Every task's agent gets these: implementers, readers, reviewers and QA.
@@ -656,6 +692,8 @@ Every task's agent gets these: implementers, readers, reviewers and QA.
 |---|---|---|
 | [`report`](#report) | Record your review verdict once, before your final message: the number of blocking and non-blocking findings and a summary of each. | No |
 | [`ask_lead`](#ask_lead) | Ask your lead a question. | No |
+| [`session_start`](#session_start-task) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. | No |
+| [`session_end`](#session_end-task) | Close your browser session: the browser and its profile are thrown away, and its recording goes to the hub. | No |
 
 ### report
 
@@ -696,6 +734,40 @@ Ask your lead a question. Carry on with what you can; the answer arrives as a me
   "arguments": {
     "question": "Should the limit apply to admin keys too?"
   }
+}
+```
+
+### session_start (task)
+
+Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. It is recorded (video, the page after each step, a line per agent-browser command) for the person to replay. Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no browser of your own. purpose: one line on what for.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `purpose` | string | yes | What you need the browser for, in one line; the person replaying it sees it. At most 200 characters. |
+
+**Who may call:** a lead, a task's agent, answered by its node, which runs the browser. **Needs a human:** no.
+
+```json
+{
+  "name": "session_start",
+  "arguments": {
+    "purpose": "Check that signup works on the staging site"
+  }
+}
+```
+
+### session_end (task)
+
+Close your browser session: the browser and its profile are thrown away, and its recording goes to the hub.
+
+No parameters.
+
+**Who may call:** a lead, a task's agent, answered by its node, which runs the browser. **Needs a human:** no.
+
+```json
+{
+  "name": "session_end",
+  "arguments": {}
 }
 ```
 

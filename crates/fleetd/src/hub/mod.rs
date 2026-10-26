@@ -6,6 +6,7 @@ pub mod approvals;
 pub mod attention;
 pub mod auth;
 pub mod automations;
+pub mod browser;
 pub mod chat;
 pub mod checklist;
 pub mod checks;

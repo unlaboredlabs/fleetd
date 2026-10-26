@@ -555,6 +555,9 @@ struct Inner {
     running: watch::Sender<usize>,
     /// Wakes the span flusher.
     span_wake: Arc<tokio::sync::Notify>,
+    /// The node's browser broker, once it runs: a lead's and a task's claude get agent-browser pointed at their
+    /// session, and their browser commands are logged.
+    browser: std::sync::OnceLock<Arc<dyn crate::node::browser::SessionHooks>>,
 }
 
 /// A project's file list and when it was read.
@@ -665,6 +668,11 @@ impl Drop for Attached {
 }
 
 impl SessionService {
+    /// Hands the node's browser broker to its sessions; the sessions started from then on get agent-browser.
+    pub fn set_browser(&self, hooks: Arc<dyn crate::node::browser::SessionHooks>) {
+        let _ = self.inner.browser.set(hooks);
+    }
+
     /// Opens the service over `store`, settling what a previous node process left: recorded claude processes are
     /// killed (only when pid and start time still match) and their active runs closed as interrupted.
     pub async fn start(
@@ -688,6 +696,7 @@ impl SessionService {
                 files: Mutex::default(),
                 running: watch::Sender::new(0),
                 span_wake: Arc::new(tokio::sync::Notify::new()),
+                browser: std::sync::OnceLock::new(),
             }),
         };
         let rows = service.inner.store.sessions()?;
@@ -2084,6 +2093,19 @@ impl SessionService {
         let scratch = share::scratch_env(&scratch);
         env.retain(|(k, _)| !scratch.iter().any(|(s, _)| s == k));
         env.extend(scratch);
+        let mut plugin_dirs: Vec<PathBuf> = skills.plugin_dir.into_iter().collect();
+        if let Some(browser) = self.inner.browser.get()
+            && row.local.role.cli_arg().is_some()
+        {
+            let path = env
+                .iter()
+                .find(|(k, _)| k == "PATH")
+                .map(|(_, v)| v.clone());
+            let browser_env = browser.env(id, path.as_deref());
+            env.retain(|(k, _)| !browser_env.iter().any(|(b, _)| b == k));
+            env.extend(browser_env);
+            plugin_dirs.extend(browser.plugin_dir());
+        }
         let spec = SessionSpec {
             session_id: id.to_owned(),
             resume,
@@ -2104,7 +2126,7 @@ impl SessionService {
             mcp_config: Some(mcp),
             strict_mcp: session_mcp.strict,
             settings: Some(settings),
-            plugin_dirs: skills.plugin_dir.into_iter().collect(),
+            plugin_dirs,
             env,
             transcript: Some(transcript),
         };
@@ -2292,7 +2314,12 @@ impl SessionService {
                     kind: ItemKind::Permission { request_id, .. },
                     ..
                 }) => self.log(self.update(&id, |c| c.withdraw_prompt(&request_id))),
-                RunnerEvent::Item(item) => self.log(self.update(&id, |c| c.put_item(item))),
+                RunnerEvent::Item(item) => {
+                    if let Some(browser) = self.inner.browser.get() {
+                        browser.item(&id, &item);
+                    }
+                    self.log(self.update(&id, |c| c.put_item(item)))
+                }
                 // Progress for the watchdog: a long compaction is not a stall.
                 RunnerEvent::Compacting(_) => self.log(self.update(&id, |c| c.announce = true)),
                 RunnerEvent::PermissionRequest {
