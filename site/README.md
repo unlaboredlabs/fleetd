@@ -130,7 +130,8 @@ $ fleetd doctor
 - **Build Command:** Override on, left empty; `buildCommand` in `vercel.json` takes precedence and runs Pagefind
   1.5.2 on `docs/`, writing the docs' search index. Bump that version with the `pagefind` in
   `docs/site/package-lock.json`, so the deployed index matches a local build.
-- **Output Directory:** leave the default; with no `public/` folder, Vercel serves the root directory as is
+- **Output Directory:** leave the default; `outputDirectory` in `vercel.json` is `.`, the root directory as is (with a
+  build command, Vercel would otherwise look for a `public/` folder and fail)
 - **Install Command:** Override on, left empty
 - **Production Branch:** `main`
 - **Ignored Build Step** (Settings → Git): `git diff --quiet HEAD^ HEAD -- .`, so commits that don't touch `site/`
