@@ -534,3 +534,24 @@ fn the_lead_never_posts_a_status_only_message() {
         );
     }
 }
+
+/// Try it is on demand (D161): the lead starts a preview only in the turn answering the human's ask, and otherwise
+/// only suggests one; the hub refuses its preview_start in any other turn.
+#[test]
+fn the_lead_starts_a_preview_only_when_the_human_asks() {
+    let lead = super::registry::entry("lead.start");
+    let rule = lead
+        .safety_rules()
+        .into_iter()
+        .find(|r| r.id == "try-it-on-demand")
+        .expect("lead.start has no try-it-on-demand rule");
+    assert!(super::render::rule_present(&rule.needle, lead.default));
+    let line = lead
+        .default
+        .lines()
+        .find(|l| l.contains("Try it is on demand only"))
+        .unwrap();
+    for words in ["`preview_start`", "`preview_suggest`", "never start one"] {
+        assert!(line.contains(words), "{words}");
+    }
+}

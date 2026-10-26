@@ -23,6 +23,7 @@ use fleetd_contracts::lead_calls::{
     TaskSpawnCall, UsageResumeCall,
 };
 use fleetd_contracts::memory::{MemoryReadCall, RememberCall};
+use fleetd_contracts::preview::{PreviewConfigProposeCall, PreviewStartCall, PreviewSuggestCall};
 use fleetd_contracts::schema::inline_schema;
 use fleetd_contracts::skills::SkillInstallCall;
 use fleetd_contracts::verification::ReviewVerdict;
@@ -326,6 +327,37 @@ static TOOLS: &[Tool] = &[
             inline_schema::<ReviewReadCall>,
         )
     },
+    Tool {
+        worker: true,
+        ..lead(
+            "preview_suggest",
+            "preview_suggest",
+            "Suggest the person try a PR themselves, where a human test clearly matters (a UI change, copy in \
+             several languages, a mobile build): one line with a Try it button in the chat and the PR, once per PR. \
+             why says what to look at, in plain words. Nothing starts from it: only the person starts a preview.",
+            inline_schema::<PreviewSuggestCall>,
+        )
+    },
+    Tool {
+        worker: true,
+        ..lead(
+            "preview_config_propose",
+            "preview_config_propose",
+            "Propose how Try it runs this project's web app, once you know: setup commands (install), build, a start \
+             command that serves on 127.0.0.1:$PORT, the ready path and the lockfiles setup depends on. The person \
+             sees it as an approval card; nothing is saved until they approve, and the outcome arrives in a wake.",
+            inline_schema::<PreviewConfigProposeCall>,
+        )
+    }
+    .needs("A person approves the proposed setting in chat before it is saved."),
+    lead(
+        "preview_start",
+        "preview_start",
+        "Start a preview of a PR (or an order's PRs merged together) for the person to try: only when the person \
+         asked for it in the message you are answering, never on your own (use preview_suggest for that). It runs \
+         on a machine that can host it and opens in the app; previews_list in the app shows it.",
+        inline_schema::<PreviewStartCall>,
+    ),
     browser(
         "session_start",
         "Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. It is \
@@ -731,7 +763,7 @@ mod tests {
     }
 
     #[test]
-    fn a_worker_sees_only_report_ask_lead_its_brief_decisions_reviews_and_browser() {
+    fn a_worker_sees_only_report_ask_lead_its_brief_decisions_reviews_previews_and_browser() {
         assert_eq!(
             names(Role::Worker),
             [
@@ -740,6 +772,8 @@ mod tests {
                 "ask_lead",
                 "brief_read",
                 "review_read",
+                "preview_suggest",
+                "preview_config_propose",
                 "session_start",
                 "session_end",
                 "request_takeover",
@@ -762,9 +796,16 @@ mod tests {
             "checklist",
             "skill_install",
             "review_read",
+            "preview_suggest",
+            "preview_config_propose",
+            "preview_start",
         ] {
             assert!(lead.contains(&tool.to_owned()), "{tool}");
         }
+        assert!(
+            !names(Role::Worker).contains(&"preview_start".to_owned()),
+            "a task never starts a preview"
+        );
         assert!(!lead.contains(&"report".to_owned()) && !lead.contains(&"ask_lead".to_owned()));
         // A worker calling a lead's tool by name gets nothing sent.
         assert_eq!(

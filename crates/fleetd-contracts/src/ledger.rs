@@ -413,6 +413,9 @@ pub struct HumanRequest {
     pub gated: Option<GatedRunSpec>,
     /// approval of a session's tool prompt, instead of a gated run.
     pub permission: Option<ToolPermission>,
+    /// approval of an agent's proposed preview setting (preview_config_propose), instead of a gated run: approving it
+    /// saves it as the project's `preview`.
+    pub preview_config: Option<crate::preview::PreviewConfigProposeCall>,
     /// What happened, in one line: "fingerprint ab12cd34", "exit 0 on devbox, approved by human:desk", or why it did
     /// not run (and so is open again).
     pub evidence: Option<Text<0, 2000>>,
@@ -429,11 +432,16 @@ pub struct HumanRequest {
 }
 checked!(HumanRequest, |r| request_kind_rule(r));
 
-/// Each kind carries its own fields only: a secret its `secret`; an approval exactly one of `gated` and `permission`.
+/// Each kind carries its own fields only: a secret its `secret`; an approval exactly one of `gated`, `permission` and
+/// `previewConfig`.
 pub fn request_kind_rule(r: &HumanRequest) -> Result<(), String> {
     match r.kind {
         RequestKind::Secret => {
-            if r.secret.is_none() || r.gated.is_some() || r.permission.is_some() {
+            if r.secret.is_none()
+                || r.gated.is_some()
+                || r.permission.is_some()
+                || r.preview_config.is_some()
+            {
                 return Err("a secret request has a secret and nothing else".into());
             }
             if let Some(secret) = &r.secret
@@ -445,8 +453,15 @@ pub fn request_kind_rule(r: &HumanRequest) -> Result<(), String> {
             }
         }
         RequestKind::Approval => {
-            if r.secret.is_some() || r.gated.is_some() == r.permission.is_some() {
-                return Err("an approval has exactly one of a gated run and a tool prompt".into());
+            let held = [
+                r.gated.is_some(),
+                r.permission.is_some(),
+                r.preview_config.is_some(),
+            ];
+            if r.secret.is_some() || held.iter().filter(|h| **h).count() != 1 {
+                return Err(
+                    "an approval has exactly one of a gated run, a tool prompt and a preview setting".into(),
+                );
             }
         }
     }

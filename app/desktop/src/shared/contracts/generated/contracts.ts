@@ -1967,6 +1967,11 @@ export type HumanRequest = {
   outputTail?: string;
   /** approval of a session's tool prompt, instead of a gated run. */
   permission?: ToolPermission;
+  /**
+   * approval of an agent's proposed preview setting (preview_config_propose), instead of a gated run: approving it
+   * saves it as the project's `preview`.
+   */
+  previewConfig?: PreviewConfigProposeCall;
   projectRef: ProjectRef;
   requestId: ChatRequestId;
   /** secret only. */
