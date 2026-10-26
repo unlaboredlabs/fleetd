@@ -322,26 +322,16 @@
   gap: 2px;
 }
 
-/* The summary: where it is and what it waits on, then its facts; its edge takes the state's colour only for a
-   failure, a wait on you, or a merge. */
+/* The summary: where it is and what it waits on, then its facts. Its state is said in the sentence's colour and
+   weight, never with a coloured edge. */
 .summary {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--hairline);
-  border-left: 3px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--raised);
-}
-.summaryFailed {
-  border-left-color: var(--danger);
-}
-.summaryNeedsYou {
-  border-left-color: var(--warning);
-}
-.summaryDone {
-  border-left-color: var(--success);
 }
 .summaryState {
   display: flex;

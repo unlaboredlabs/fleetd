@@ -11,6 +11,7 @@ breaks a rule changes this page in the same PR and says why.
 - **Cards only where they earn it:** one thing that stands apart from the list around it (what merges now, a PR's
   summary, a floating surface). Never a card per row.
 - **No coloured left edge** on a card, row or callout. A quote or indent rule is a neutral `--hairline`.
+  `leftEdges.test.ts` fails on a coloured `border-left`, `border-inline-start` or left-stripe `box-shadow`.
 - **Colour is for meaning only:** danger for failure, warning for waiting on you, success for done and at work. A
   state is said in words, coloured and weighted, before it is said with a mark.
 
