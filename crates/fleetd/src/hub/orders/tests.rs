@@ -217,3 +217,33 @@ fn cards_get_a_short_title() {
     );
     assert_eq!(short_title(&w), "Three pages on the merge train");
 }
+
+/// A parked lane never tells a person to resume by hand unless fleetd can't: a limit with no reset is checked again
+/// by fleetd itself (forge, 2026-10-25: every lane said "resumes on usage_resume").
+#[test]
+fn a_parked_lane_says_when_it_goes_on_and_asks_for_usage_resume_only_for_a_drained_pool() {
+    let parked =
+        |v: Value| -> fleetd_contracts::usage::UsageParked { serde_json::from_value(v).unwrap() };
+    let since = "2026-10-25T22:40:38.000Z";
+    let cases = [
+        (
+            json!({ "class": "usage_limit", "since": since, "resumeAt": "2026-10-26T03:00:00.000Z" }),
+            "usage limit: resumes 03:00",
+        ),
+        (
+            json!({ "class": "rate_limit", "since": since, "checkAt": "2026-10-25T22:41:38.000Z", "proxy": true }),
+            "rate-limited by your proxy: checking again at 22:41",
+        ),
+        (
+            json!({ "class": "rate_limit", "since": since }),
+            "usage limit: checking again shortly",
+        ),
+        (
+            json!({ "class": "pool_exhausted", "since": since, "proxy": true }),
+            "usage limit: resumes on usage_resume",
+        ),
+    ];
+    for (p, want) in cases {
+        assert_eq!(parked_reason(&parked(p)), want);
+    }
+}

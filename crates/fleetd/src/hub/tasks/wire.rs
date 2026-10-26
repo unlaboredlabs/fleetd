@@ -500,8 +500,20 @@ impl UsageGate for UsageFromArea {
     }
     fn parked_of(&self, event: &HubEvent) -> Option<UsageParked> {
         // Usage keeps its own copy of the event's wire shape.
-        let event = serde_json::from_value(serde_json::to_value(event).ok()?).ok()?;
-        let parked = crate::hub::usage::classify::parked_of(&event)?;
+        let event: HubEvent = serde_json::from_value(serde_json::to_value(event).ok()?).ok()?;
+        let mut parked = crate::hub::usage::classify::parked_of(&event)?;
+        // The usage layer's own park of it, once applied, also knows when it tries a limit with no reset again.
+        let thread = crate::hub::usage::ports::ThreadRef {
+            machine_id: event.machine_id.as_ref()?.to_string(),
+            thread_id: event.thread_id.as_ref()?.to_string(),
+        };
+        if let Some(own) = self
+            .0
+            .parked_of(&thread)
+            .filter(|p| p.since == parked.since)
+        {
+            parked.check_at = own.check_at;
+        }
         serde_json::to_value(parked)
             .ok()
             .and_then(|v| serde_json::from_value(v).ok())

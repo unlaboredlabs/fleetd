@@ -179,10 +179,9 @@ fn reason_of(task: &Task, status: LaneStatus) -> Option<String> {
     match status {
         LaneStatus::Queued => task.queued_reason.as_ref().map(|r| r.as_str().to_owned()),
         LaneStatus::Parked => Some(
-            match task.parked.as_ref().and_then(|p| p.resume_at.as_ref()) {
-                Some(at) => format!("usage limit: resumes {}", hhmm(at.as_str())),
-                None => "usage limit: resumes on usage_resume".to_owned(),
-            },
+            task.parked
+                .as_ref()
+                .map_or_else(|| "usage limit".to_owned(), parked_reason),
         ),
         LaneStatus::Failed => task
             .result
@@ -191,6 +190,23 @@ fn reason_of(task: &Task, status: LaneStatus) -> Option<String> {
             .and_then(|r| r.tail.lines().rev().find(|l| !l.trim().is_empty()))
             .map(|l| l.trim().to_owned()),
         _ => None,
+    }
+}
+
+/// Why a parked task waits and until when. Only a proxy with no account waits for a person (usage_resume); a limit
+/// that named no reset is tried again by fleetd itself, so it never says to act by hand.
+fn parked_reason(p: &fleetd_contracts::usage::UsageParked) -> String {
+    use fleetd_contracts::usage::UsageClass;
+    let what = if p.proxy == Some(true) {
+        "rate-limited by your proxy"
+    } else {
+        "usage limit"
+    };
+    match (&p.resume_at, &p.check_at, p.class) {
+        (Some(at), _, _) => format!("{what}: resumes {}", hhmm(at.as_str())),
+        (None, _, UsageClass::PoolExhausted) => "usage limit: resumes on usage_resume".to_owned(),
+        (None, Some(at), _) => format!("{what}: checking again at {}", hhmm(at.as_str())),
+        (None, None, _) => format!("{what}: checking again shortly"),
     }
 }
 
