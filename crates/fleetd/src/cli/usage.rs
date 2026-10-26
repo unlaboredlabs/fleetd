@@ -11,10 +11,11 @@ use super::time::{Hub, local};
 
 pub const USAGE_USAGE: &str = r#"  usage [<machine>] [--json] [--hub <url> --key-file <path> | --home <dir>]
              each machine's Claude usage pause: open or not, why, until when, and how much is parked
-  usage resume <machine> [--hub <url> --key-file <path> | --home <dir>]
+  usage resume <machine> [--json] [--hub <url> --key-file <path> | --home <dir>]
              lift the machine's usage pause now and send every parked agent "continue", like
              Resume in the app; one whose login is still limited parks again with the real reset.
-             On the hub machine neither needs --hub or --key-file
+             --json adds pauseLifted (null when the pause couldn't be read first). On the hub
+             machine neither needs --hub or --key-file
 "#;
 
 #[derive(Debug, PartialEq)]
@@ -92,19 +93,20 @@ pub async fn usage_command(argv: &[String]) -> u8 {
 
 async fn run(hub: &mut Hub, args: &UsageArgs, zone: Tz) -> Result<(), u8> {
     if args.resume {
-        // Read first: usage_resume answers with the state after, when the pause is already gone.
-        let before = hub
-            .call("usage_status", json!({ "machineId": args.machine }))
-            .await?;
-        let was_paused = before
-            .get("machines")
-            .and_then(Value::as_array)
-            .and_then(|ms| ms.first())
-            .is_some_and(|m| text(m, &["breaker", "state"]) == Some("open"));
-        let out = hub
+        // Read first, best-effort: usage_resume answers with the state after, when the pause is already gone. A failed
+        // read never holds the resume back; it only leaves out whether the pause was lifted.
+        let was_paused = hub
+            .try_call("usage_status", json!({ "machineId": args.machine }))
+            .await
+            .as_ref()
+            .and_then(|before| before.get("machines")?.as_array()?.first().cloned())
+            .map(|m| text(&m, &["breaker", "state"]) == Some("open"));
+        let mut out = hub
             .call("usage_resume", json!({ "machineId": args.machine }))
             .await?;
         if args.json {
+            // Whether this lifted the pause; null when the read before it failed.
+            out["pauseLifted"] = json!(was_paused);
             println!("{out}");
         } else {
             println!("{}", resumed_line(&args.machine, was_paused, &out));
@@ -140,20 +142,22 @@ fn count(v: &Value, path: &[&str]) -> u64 {
 
 /// What `usage resume` did, from whether the machine was paused before it and usage_resume's answer: "Resumed
 /// forge: lifted its usage pause and sent "continue" to 3 parked agents. …".
-pub fn resumed_line(machine: &str, was_paused: bool, out: &Value) -> String {
+pub fn resumed_line(machine: &str, was_paused: Option<bool>, out: &Value) -> String {
     let resumed = count(out, &["resumed"]);
     let agents = if resumed == 1 { "agent" } else { "agents" };
     let sent = format!("sent \"continue\" to {resumed} parked {agents}");
     let still = "One whose login is still limited parks again with the real reset.";
     match (was_paused, resumed) {
-        (false, 0) => format!(
+        (Some(false), 0) => format!(
             "Nothing to resume on {machine}: it wasn't paused and nothing was parked there."
         ),
-        (true, 0) => format!(
+        (Some(true), 0) => format!(
             "Resumed {machine}: lifted its usage pause; nothing was parked there, so its next turn tries the login."
         ),
-        (true, _) => format!("Resumed {machine}: lifted its usage pause and {sent}. {still}"),
-        (false, _) => format!("Resumed {machine}: {sent}. {still}"),
+        (Some(true), _) => format!("Resumed {machine}: lifted its usage pause and {sent}. {still}"),
+        // Unknown whether it was paused (the read before failed): only what the resume says.
+        (None, 0) => format!("Resumed {machine}: nothing was parked there."),
+        (_, _) => format!("Resumed {machine}: {sent}. {still}"),
     }
 }
 
@@ -279,22 +283,32 @@ mod tests {
         let after =
             |n: u64| json!({ "resumed": n, "status": { "breaker": { "state": "closed" } } });
         assert_eq!(
-            resumed_line("forge", true, &after(3)),
+            resumed_line("forge", Some(true), &after(3)),
             "Resumed forge: lifted its usage pause and sent \"continue\" to 3 parked agents. One whose login is \
              still limited parks again with the real reset."
         );
         assert_eq!(
-            resumed_line("forge", true, &after(0)),
+            resumed_line("forge", Some(true), &after(0)),
             "Resumed forge: lifted its usage pause; nothing was parked there, so its next turn tries the login."
         );
         assert_eq!(
-            resumed_line("forge", false, &after(1)),
+            resumed_line("forge", Some(false), &after(1)),
             "Resumed forge: sent \"continue\" to 1 parked agent. One whose login is still limited parks again with \
              the real reset."
         );
         assert_eq!(
-            resumed_line("forge", false, &after(0)),
+            resumed_line("forge", Some(false), &after(0)),
             "Nothing to resume on forge: it wasn't paused and nothing was parked there."
+        );
+        // The read before failed: the resume still went, and the line says only what its answer says.
+        assert_eq!(
+            resumed_line("forge", None, &after(2)),
+            "Resumed forge: sent \"continue\" to 2 parked agents. One whose login is still limited parks again with \
+             the real reset."
+        );
+        assert_eq!(
+            resumed_line("forge", None, &after(0)),
+            "Resumed forge: nothing was parked there."
         );
     }
 }

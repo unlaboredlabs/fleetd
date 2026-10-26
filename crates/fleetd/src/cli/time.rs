@@ -472,6 +472,14 @@ impl Hub {
         }
     }
 
+    /// One tool call whose failure is no reason to stop: its answer, or `None` (nothing printed).
+    pub(super) async fn try_call(&mut self, tool: &str, input: Value) -> Option<Value> {
+        match self.client.call_tool(tool, input, self.timeout).await {
+            Ok(result) if !result.is_error => Some(result.body),
+            _ => None,
+        }
+    }
+
     pub(super) async fn typed<A: DeserializeOwned>(
         &mut self,
         tool: &str,

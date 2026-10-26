@@ -345,10 +345,10 @@ each machine's Claude usage pause: open or not, why, until when, and how much is
 ### fleetd usage resume {#usage-resume}
 
 ```text
-fleetd usage resume <machine> [--hub <url> --key-file <path> | --home <dir>]
+fleetd usage resume <machine> [--json] [--hub <url> --key-file <path> | --home <dir>]
 ```
 
-lift the machine's usage pause now and send every parked agent "continue", like Resume in the app; one whose login is still limited parks again with the real reset. On the hub machine neither needs `--hub` or `--key-file`
+lift the machine's usage pause now and send every parked agent "continue", like Resume in the app; one whose login is still limited parks again with the real reset. `--json` adds pauseLifted (null when the pause couldn't be read first). On the hub machine neither needs `--hub` or `--key-file`
 
 ### fleetd steer {#steer}
 
