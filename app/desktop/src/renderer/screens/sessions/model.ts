@@ -1,15 +1,15 @@
 // What the panel's browser sessions show, as plain view data: a session's state in words and as a glyph, the list's
 // groups (needs you, live, recent), how long it ran, where it is, one line per step of its action log, and a step's
-// page snapshot as lines of structure. The session's shape is the broker's likely contract (T514 defines the real
-// one): an id, its agent, its purpose, its state, the frames it recorded and its action log, each step with a snapshot
-// of the page it acted on. Pure, so it is unit-tested.
+// page snapshot as lines of structure. The session's shape is the broker's likely contract (T514 defines the real one):
+// an id, its agent, its purpose, its state, the frames it recorded and its action log, each step with a snapshot of the
+// page it acted on. Pure, so it is unit-tested.
 import type { AgentRole, GlyphState } from "../../ui";
 import type { ProjectKey } from "../shell/routes";
 import { fmtElapsed, parseMs } from "../live/format";
 
 /**
- * Where a session stands. `asking`: the agent asked a person to take over, and waits. `yours`: a person took over;
- * the agent waits and sees the page as they leave it.
+ * Where a session stands. `asking`: the agent asked a person to take over, and waits. `yours`: a person took over; the
+ * agent waits and sees the page as they leave it.
  */
 export type SessionState = "starting" | "running" | "asking" | "yours" | "ended" | "failed";
 
@@ -36,8 +36,8 @@ export interface Box {
 
 /**
  * One element of a page snapshot, in document order: its role, its accessible name and its value, `depth` under the
- * page. A field holding a secret (a password, a code a person typed) has `secret`, never its value: the node redacts
- * it before the snapshot leaves it.
+ * page. A field holding a secret (a password, a code a person typed) has `secret`, never its value: the node redacts it
+ * before the snapshot leaves it.
  */
 export interface SnapshotNode {
   readonly depth: number;
@@ -59,8 +59,8 @@ export interface PageSnapshot {
 export type ActionKind = "open" | "click" | "type" | "fill_login" | "read" | "ask" | "take_over" | "hand_back" | "resume" | "end" | "fail";
 
 /**
- * One step of the action log, `at` ms after the session started. What a person types while in control is never
- * logged, only where they typed: it may be a code or a password.
+ * One step of the action log, `at` ms after the session started. What a person types while in control is never logged,
+ * only where they typed: it may be a code or a password.
  */
 export interface SessionAction {
   readonly at: number;

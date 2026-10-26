@@ -32,6 +32,8 @@ export interface PanelTabEntry {
   readonly back?: string;
   readonly pane: () => Promise<ComponentType<PaneProps>>;
   readonly count?: () => Promise<ComponentType<CountProps>>;
+  /** The hub feature it needs (its ready frame's `features`): a hub that doesn't serve it shows no such tab. */
+  readonly feature?: string;
 }
 
 export const PANEL_TABS = [
@@ -54,6 +56,7 @@ export const PANEL_TABS = [
     back: "All sessions",
     pane: () => import("./panes").then((m) => m.SessionsTab),
     count: () => import("./panes").then((m) => m.SessionCount),
+    feature: "browser_sessions",
   },
   {
     id: "prs",
@@ -108,3 +111,9 @@ export type PanelTab = (typeof PANEL_TABS)[number]["id"];
 export const isPanelTab = (value: unknown): value is PanelTab => PANEL_TABS.some((t) => t.id === value);
 
 export const tabEntry = (id: PanelTab): PanelTabEntry => PANEL_TABS.find((t) => t.id === id) ?? PANEL_TABS[0];
+
+/** Whether the hub serves `id`: a tab that needs no feature always, one that does once the hub says it has it. */
+export const served = (id: PanelTab, features: readonly string[]): boolean => {
+  const feature = tabEntry(id).feature;
+  return feature === undefined || features.includes(feature);
+};

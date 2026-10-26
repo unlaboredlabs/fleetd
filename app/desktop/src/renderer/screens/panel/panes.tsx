@@ -1,7 +1,7 @@
 // The Agents, Browser sessions and Pull requests tabs as the tab list (tabs.ts) loads them: AgentsPane, SessionsPane
-// and PrsPane with the state they share with their counts. The agents' scope (this project or all) is the panel's, so the tab's count follows the
-// list; the PR tab you read (Overview or Changes) is kept while the app runs, so reading diffs one PR after another
-// stays on Changes, and Changes asks the frame for its wide width.
+// and PrsPane with the state they share with their counts. The agents' scope (this project or all) is the panel's, so
+// the tab's count follows the list; the PR tab you read (Overview or Changes) is kept while the app runs, so reading
+// diffs one PR after another stays on Changes, and Changes asks the frame for its wide width.
 import { createContext, useContext, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
 import { useData, useToolQuery } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";

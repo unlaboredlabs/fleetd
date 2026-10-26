@@ -1,7 +1,7 @@
-// The design preview's web pages: a made-up shop and a made-up payments dashboard, drawn as 1280×800 SVG so a
-// session's frames look like screenshots of a real page without a real site in them, and each page's structure as a
-// snapshot would hold it (its elements' roles, names, values and boxes). The broker's frames are JPEG screenshots and
-// its snapshots come from the page; these stand in for them until the hub serves sessions.
+// The design preview's web pages: a made-up shop and a made-up payments dashboard, drawn as 1280×800 SVG so a session's
+// frames look like screenshots of a real page without a real site in them, and each page's structure as a snapshot
+// would hold it (its elements' roles, names, values and boxes). The broker's frames are JPEG screenshots and its
+// snapshots come from the page; these stand in for them until the hub serves sessions.
 import type { Box, PageSnapshot, SnapshotNode } from "./model";
 
 const W = 1280;

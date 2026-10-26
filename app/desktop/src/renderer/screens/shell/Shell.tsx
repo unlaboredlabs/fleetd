@@ -11,11 +11,11 @@ import { ProjectsHost } from "../projects";
 import { useMetricsSupport } from "../factory/support";
 import { useDockBadge, useMainProcess, useMenuState, useModHeld, useNotifications } from "./effects";
 import { useHubState } from "./hubFeed";
-import { useDataLayer } from "../../src/data/react";
+import { useData, useDataLayer } from "../../src/data/react";
 import { homeProject, nextWanting, projectId, routeOf, stepProject } from "./model";
 import { useMachinesDown, useSidebarProjects } from "./data";
 import { navigate, useRoute } from "./navigation";
-import { PANEL_TABS } from "../panel/tabs";
+import { PANEL_TABS, served } from "../panel/tabs";
 import { HOME, listView, panelRoute, type Screen } from "./routes";
 import { PanelSlot, PanelToggle, useProjectPanel } from "./panel";
 import { ConnectionBanner, GetStarted, needsOnboarding } from "../onboarding";
@@ -47,6 +47,7 @@ export function Shell() {
   const route = useRoute();
   const layer = useDataLayer();
   const hub = useHubState();
+  const features = useData((st) => st.features);
   // The route's project, not the resolved home: `#/` becomes a project's own route at once.
   const projects = useSidebarProjects(route.id === "project" ? route.project : null);
   const machinesDown = useMachinesDown();
@@ -140,7 +141,7 @@ export function Shell() {
           if (next !== null) go({ id: "project", project: next, message: null });
         },
       },
-      // One per panel tab, from its list: a new tab is in the palette too.
+      // One per panel tab, from its list: a new tab is in the palette too, once the hub serves it.
       ...PANEL_TABS.map(
         (tab): Command => ({
           id: `go:${tab.id}`,
@@ -148,7 +149,7 @@ export function Shell() {
           detail: tab.detail,
           group: "go-to",
           keywords: [...tab.keywords],
-          enabled: () => chrome && panelProject !== null,
+          enabled: () => chrome && panelProject !== null && served(tab.id, features),
           run: () => {
             if (panelProject !== null) go(panelRoute(panelProject, listView(tab.id)));
           },

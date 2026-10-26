@@ -6,12 +6,13 @@
 import { ChevronLeft } from "lucide-react";
 import { lazy, Suspense, type ComponentType, type LazyExoticComponent } from "react";
 import { Boundary } from "../../src/Boundary";
+import { useData } from "../../src/data/react";
 import { Button, TabPanel, Tabs } from "../../ui";
 import { navigate } from "../shell/navigation";
 import { hasItem, listView, panelRoute, type PanelView, type ProjectKey } from "../shell/routes";
 import { PanesProvider } from "./panes";
-import { noteView, SectionHead, sectionOf, SectionTabs, viewOf } from "./Sections";
-import { isPanelTab, PANEL_TABS, tabEntry, type CountProps, type PanelTab, type PanelTabEntry, type PaneProps } from "./tabs";
+import { noteView, SectionHead, sectionOf, SectionTabs, servedSection, viewOf } from "./Sections";
+import { isPanelTab, PANEL_TABS, served, tabEntry, type CountProps, type PanelTab, type PanelTabEntry, type PaneProps } from "./tabs";
 import s from "./panel.module.css";
 
 // Each tab's pane and count, loaded the first time the panel renders them (lazy loads nothing until then).
@@ -24,9 +25,12 @@ const COUNTS: Readonly<Partial<Record<PanelTab, Lazy<CountProps>>>> = Object.fro
   }),
 );
 
-export function ProjectPanel({ project, view, onWide }: { project: ProjectKey; view: PanelView; onWide: (wide: boolean) => void }) {
+export function ProjectPanel({ project, view: asked, onWide }: { project: ProjectKey; view: PanelView; onWide: (wide: boolean) => void }) {
+  const features = useData((st) => st.features);
+  // A link to a view this hub doesn't serve opens its section's first.
+  const view = served(asked.tab, features) ? asked : listView(sectionOf(asked.tab).views[0]?.[0] ?? "agents");
   const entry = tabEntry(view.tab);
-  const section = sectionOf(view.tab);
+  const section = servedSection(sectionOf(view.tab), features);
   const Pane = PANES[view.tab];
   noteView(project, view.tab);
   const pick = (tab: string) => {
@@ -51,7 +55,7 @@ export function ProjectPanel({ project, view, onWide }: { project: ProjectKey; v
   );
   return (
     <PanesProvider>
-      <Tabs className={s.panel} value={section.id} onValueChange={(id) => pick(viewOf(project, id))}>
+      <Tabs className={s.panel} value={section.id} onValueChange={(id) => pick(viewOf(project, id, features))}>
         <div className={s.head}>
           <SectionTabs count={count} />
         </div>

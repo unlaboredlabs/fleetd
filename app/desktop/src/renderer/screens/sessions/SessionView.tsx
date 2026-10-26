@@ -1,13 +1,13 @@
-// One browser session, in the panel's wide width. While it runs: the page as the agent sees it, what the agent is
-// doing now, Take over, and its steps as they come. Taken over, the page is yours: the frame's bar turns to say so,
-// your clicks and keys go to the page, and Hand back gives it to the agent, which looks at the page again and goes
-// on; meanwhile it waits, and its line says so. An agent that asks you to take over says why above the page. Once
-// it has ended: its replay, the recording with its steps beside it, each step a jump to its moment and a way into
-// the page's snapshot at that step. A login filled from 1Password is a step in words; its value is never on the hub
-// to show, nor in a snapshot.
+// One browser session, in the panel's wide width. While it runs: the page as the agent sees it, what the agent is doing
+// now, Take over, and its steps as they come. Taken over, the page is yours: the frame's bar turns to say so, your
+// clicks and keys go to the page, and Hand back gives it to the agent, which looks at the page again and goes on;
+// meanwhile it waits, and its line says so. An agent that asks you to take over says why above the page. Once it has
+// ended: its replay, the recording with its steps beside it, each step a jump to its moment and a way into the page's
+// snapshot at that step. A login filled from 1Password is a step in words; its value is never on the hub to show, nor
+// in a snapshot.
 import { ChevronLeft, CornerUpLeft, Hand, KeyRound, ListTree, Pause, Play } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
-import { Button, EmptyState, StateGlyph, Text, Tooltip, Truncate, cx, useBeat } from "../../ui";
+import { Button, EmptyState, StateGlyph, Text, Tooltip, Truncate, cx, useBeatRef } from "../../ui";
 import { RolePill } from "../agents/parts";
 import { useNow } from "../live/clock";
 import { MiddleCut } from "../live/parts";
@@ -55,7 +55,7 @@ export function SessionView({ project, id }: { project: ProjectKey; id: string }
   );
 }
 
-/** Its state in words beside its glyph, its agent (a link to its work); its purpose; the site, when it started, how long. */
+/** Its state in words beside its glyph, its agent (a link to its work); its purpose; the site, its start, how long. */
 function Head({ session: x }: { session: BrowserSession }) {
   const now = useNow(isLive(x));
   const agent = toHash(panelRoute(x.projectRef, { tab: "agents", agent: x.agent.laneId }));
@@ -89,7 +89,8 @@ function Head({ session: x }: { session: BrowserSession }) {
 /** The page now, what the agent does, the one control (Take over or Hand back) and its steps as they come. */
 function Live({ session: x }: { session: BrowserSession }) {
   const yours = x.state === "yours";
-  useBeat(x.state === "starting");
+  // The scan over its line steps on the app's beat while the browser starts.
+  const scan = useBeatRef<HTMLSpanElement>(x.state === "starting");
   const page = useRef<HTMLDivElement>(null);
   // Taken over, the keys go to the page at once.
   useEffect(() => {
@@ -118,7 +119,7 @@ function Live({ session: x }: { session: BrowserSession }) {
               <Text size="xs" tone="faint">
                 {yours ? "The agent" : "Now"}
               </Text>
-              <span className={s.nowWords} data-sweep={x.state === "starting" ? "" : undefined}>
+              <span ref={scan} className={s.nowWords} data-sweep={x.state === "starting" ? "" : undefined}>
                 <Text size="xs" tone={x.state === "asking" ? "warning" : yours ? "quiet" : "default"}>
                   {nowLine(x)}
                 </Text>
@@ -142,8 +143,8 @@ function Live({ session: x }: { session: BrowserSession }) {
 }
 
 /**
- * The page in a frame: its address and who drives it on a bar above. Yours, the bar turns over (the page's words on
- * the text colour) and the page takes your clicks and keys; the agent's, it only shows. With a snapshot's `marks`, the
+ * The page in a frame: its address and who drives it on a bar above. Yours, the bar turns over (the page's words on the
+ * text colour) and the page takes your clicks and keys; the agent's, it only shows. With a snapshot's `marks`, the
  * elements its step acted on are outlined on the page.
  */
 function Frame({
@@ -244,10 +245,10 @@ function Steps({ actions }: { actions: readonly SessionAction[] }) {
 const SPEEDS = [1, 2, 4] as const;
 
 /**
- * The recording and its steps beside it. Play runs it; the scrubber's ticks are the steps, a dithered stretch the
- * time a person had the page; a step jumps to its moment, and the step on screen is marked. A step's snapshot, opened
- * from its line, takes the steps' place: the page's structure as that step found it, what it acted on highlighted there
- * and outlined on the page. Play, the scrubber, Back or Escape close it.
+ * The recording and its steps beside it. Play runs it; the scrubber's ticks are the steps, a dithered stretch the time
+ * a person had the page; a step jumps to its moment, and the step on screen is marked. A step's snapshot, opened from
+ * its line, takes the steps' place: the page's structure as that step found it, what it acted on highlighted there and
+ * outlined on the page. Play, the scrubber, Back or Escape close it.
  */
 function Replay({ session: x }: { session: BrowserSession }) {
   const duration = x.recording?.durationMs ?? x.actions.at(-1)?.at ?? 0;
@@ -272,6 +273,8 @@ function Replay({ session: x }: { session: BrowserSession }) {
     timeline.current?.querySelector('[aria-current="step"]')?.scrollIntoView({ block: "nearest" });
   }, [step, open]);
   const yours = spans(x.actions, duration);
+  // Where `t` is along the scrubber, in percent; a recording with no length puts everything at its start.
+  const place = (t: number): string => `${String(duration === 0 ? 0 : (t / duration) * 100)}%`;
   const shown = open === null ? undefined : x.actions[open];
   const play = () => {
     setOpen(null);
@@ -304,10 +307,10 @@ function Replay({ session: x }: { session: BrowserSession }) {
               <span className={s.track} />
               <span className={s.played} style={{ "--at": String(duration === 0 ? 0 : at / duration) } as CSSProperties} />
               {yours.map(([a, b]) => (
-                <span key={a} className={s.yoursSpan} style={{ left: `${String((a / duration) * 100)}%`, width: `${String(((b - a) / duration) * 100)}%` }} />
+                <span key={a} className={s.yoursSpan} style={{ left: place(a), width: place(b - a) }} />
               ))}
               {x.actions.map((a, i) => (
-                <span key={`${String(a.at)}:${String(i)}`} className={s.tick} style={{ left: `${String((a.at / duration) * 100)}%` }} />
+                <span key={`${String(a.at)}:${String(i)}`} className={s.tick} style={{ left: place(a.at) }} />
               ))}
               <input
                 className={s.range}

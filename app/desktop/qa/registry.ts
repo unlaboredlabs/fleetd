@@ -150,7 +150,8 @@ export const fixtures = [
   // ...and the work elsewhere on storefront's repo, seen from storefront and from checkout (fixtures/agents).
   "agents-elsewhere",
   "agents-states",
-  // W46's design preview: storefront's browser sessions, one agent driving and one asking you to take over (fixtures/sessions).
+  // W46's design preview: storefront's browser sessions, one agent driving and one asking you to take over
+  // (fixtures/sessions).
   "sessions-preview",
   "stream-reply",
   // UX [7]: no hub, and the last launch's disk cache on screen with a message queued; back online with that chat not
@@ -1262,9 +1263,21 @@ export const screens: readonly Screen[] = [
     route: `${CHAT}/agents`,
     fixtures: ["typical", "many-agents", "long-text", "hub-unreachable", "live-20", "agents-work"],
   },
-  // W46 (design preview): the Agents section's Browser sessions, needs you, live and recent; one opened live, one asking
-  // you to take over, one taken over (the page yours), an ended one's replay and a step's page snapshot in it.
-  { id: "sessions", route: `${CHAT}/sessions`, fixtures: ["sessions-preview", "typical"] },
+  // W46 (design preview): the Agents section's Browser sessions, needs you, live and recent; one opened live, one
+  // asking you to take over, one taken over (the page yours), an ended one's replay and a step's page snapshot in it.
+  { id: "sessions", route: `${CHAT}/sessions`, fixtures: ["sessions-preview"] },
+  // ...and a hub that doesn't serve browser sessions (every other fixture's): the link opens Agents, with no Browser
+  // sessions view beside it.
+  {
+    id: "agents",
+    route: `${CHAT}/sessions`,
+    fixtures: ["typical"],
+    variant: "no-sessions",
+    open: async (page) => {
+      await expect(page.locator('[data-screen="agents"]')).toBeVisible();
+      await expect(page.getByRole("tab", { name: /^Browser sessions/u })).toHaveCount(0);
+    },
+  },
   { id: "sessions", route: `${CHAT}/sessions/bs-checkout`, fixtures: ["sessions-preview"], variant: "live" },
   { id: "sessions", route: `${CHAT}/sessions/bs-payouts`, fixtures: ["sessions-preview"], variant: "asking" },
   {

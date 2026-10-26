@@ -1,6 +1,6 @@
-// One agent's browser, in its own view (agents/AgentWork): under what it is doing now (which says why, when it asks
-// you to take over), the session it has open, if any, and the site it is on, with Watch; asking, Take over, which
-// opens the session with the page yours.
+// One agent's browser, in its own view (agents/AgentWork): under what it is doing now (which says why, when it asks you
+// to take over), the session it has open, if any, and the site it is on, with Watch; asking, Take over, which opens the
+// session with the page yours.
 import { Hand } from "lucide-react";
 import { Button, StateGlyph, Text } from "../../ui";
 import { navigate } from "../shell/navigation";

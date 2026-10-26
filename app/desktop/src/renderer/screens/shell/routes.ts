@@ -18,7 +18,7 @@ export interface PrKey {
   readonly number: number;
 }
 
-/** What the panel beside a project's chat shows: a tab's list, or one agent's work, one PR or one browser session from it. */
+/** What the panel beside a project's chat shows: a tab's list, or one agent's work, one PR or one session from it. */
 export type PanelView =
   | { readonly tab: "agents"; readonly agent: string | null }
   | { readonly tab: "prs"; readonly pr: PrKey | null }
@@ -94,7 +94,7 @@ const prKey = (rest: ReadonlyArray<string>): PrKey | null => {
   return rest.length === 3 && number !== null ? { repo: `${a ?? ""}/${b ?? ""}`, number } : null;
 };
 
-/** `prs[/<pr>]`, `agents[/<lane>]`, `sessions[/<id>]` or another tab's name after the project; anything else, no view. */
+/** `prs[/<pr>]`, `agents[/<lane>]`, `sessions[/<id>]` or another tab's name after the project; else, no view. */
 const panelView = (rest: ReadonlyArray<string>): PanelView | null => {
   const [tab, ...item] = rest;
   if (tab === "prs") return { tab, pr: prKey(item) };
