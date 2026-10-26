@@ -81,6 +81,9 @@ pub const CAP_LANDED_LOG: &str = "landed_log";
 /// `project_env`, `project_worktrees`, and `project_remove` with `removeWorktrees` (a project's settings).
 pub const CAP_PROJECT_SETTINGS: &str = "project_settings";
 
+/// The node takes `mcp_secrets` and `mcp_test`, and a launch's and a send's MCP servers.
+pub const CAP_MCP_SERVERS: &str = "mcp_servers";
+
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]

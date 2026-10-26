@@ -189,7 +189,13 @@ impl HubStore {
     /// Drops the project, its cached threads and its settings, once its node no longer has it.
     pub fn project_remove(&self, r: &ProjectRef) -> Result<(), StoreError> {
         self.db.transaction(|conn| {
-            for table in ["projects", "threads", "project_settings", "project_env"] {
+            for table in [
+                "projects",
+                "threads",
+                "project_settings",
+                "project_env",
+                "mcp_servers",
+            ] {
                 conn.prepare_cached(&format!(
                     "DELETE FROM {table} WHERE machine_id = ? AND project_id = ?"
                 ))?

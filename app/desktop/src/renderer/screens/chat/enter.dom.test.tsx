@@ -3,7 +3,7 @@
 // reads back show still.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import type { HubFrame } from "../../../shared/hub";
 import type { ChatMessage } from "../../src/data/chat-contract";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
@@ -22,6 +22,10 @@ const realRect = proto.getBoundingClientRect.bind(proto);
 
 let host: HTMLDivElement;
 let root: Root | undefined;
+// The markdown parser, loaded once up front as the app's first opening would.
+beforeAll(async () => {
+  await import("../../ui/markdown/MarkdownBody");
+});
 beforeEach(() => {
   window.localStorage.clear();
   vi.spyOn(proto, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {

@@ -31,6 +31,7 @@ Where fleetd keeps everything, and the settings you can change. The [hub](/docs/
     sessions.sqlite      the node's sessions, and timings not yet sent to the hub
     worktrees/           one git worktree per task session, readers' and reviewers' too
     project-env/<project>.json   a project's environment variables, secrets included (mode 0600; Settings → Projects)
+    mcp-secrets/         the secrets of the MCP servers agents get, global and per project (mode 0600; Settings → MCP servers)
   claude.env             optional extra environment for every claude fleetd starts
   logs/node.log          the node service's log
 ```

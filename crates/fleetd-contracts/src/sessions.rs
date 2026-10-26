@@ -88,6 +88,13 @@ pub struct SessionLaunch {
     /// Which fleetd management tools the session's MCP server offers.
     #[serde(default)]
     pub role: SessionRole,
+    /// The role whose configured MCP servers the session gets (lead, writer or reviewer); absent for a plain thread,
+    /// which gets none.
+    pub mcp_role: Option<crate::mcp_servers::McpAgentRole>,
+    /// The configured MCP servers for the session's project, and whether the person's own MCP servers come too. The
+    /// node keeps them for every start of the session's process. Absent: the session runs as before MCP servers
+    /// (the person's own servers, fleetd's tools). An older node ignores it.
+    pub mcp: Option<crate::mcp_servers::McpSessionConfig>,
 }
 
 /// A session's place among fleetd's agents, which decides the MCP tools it gets. The hub enforces the same split on
@@ -162,6 +169,27 @@ pub enum SessionCall {
         set: Vec<crate::project_settings::EnvVarSet>,
         remove: Vec<crate::project_settings::EnvVarName>,
     },
+    /// Replace the secrets the node keeps for one MCP server: afterwards it holds those in `set` (each opened with
+    /// the node's box key) and those in `keep` it already had, and no other. Empty both to forget the server. The reply
+    /// has each saved secret's fingerprint. All or nothing. Only nodes listing [`crate::node_link::CAP_MCP_SERVERS`]
+    /// get it.
+    #[serde(rename_all = "camelCase")]
+    McpSecrets {
+        scope: crate::mcp_servers::McpSecretScope,
+        server: crate::mcp_servers::McpServerName,
+        #[serde(default)]
+        set: Vec<crate::mcp_servers::McpSecretSet>,
+        #[serde(default)]
+        keep: Vec<crate::mcp_servers::McpSecretKey>,
+    },
+    /// Start or connect to an MCP server as an agent's claude would, its secrets resolved on the node, and list its
+    /// tools. For a project's server (`projectId`) it runs in the project's checkout with the project's variables.
+    /// Only nodes listing [`crate::node_link::CAP_MCP_SERVERS`] get it.
+    #[serde(rename_all = "camelCase")]
+    McpTest {
+        project_id: Option<ProjectId>,
+        server: crate::mcp_servers::McpSessionServer,
+    },
     /// Where the project's worktrees live, the branch new ones start from, and the worktrees there now. Only nodes
     /// listing [`crate::node_link::CAP_PROJECT_SETTINGS`] get it.
     #[serde(rename_all = "camelCase")]
@@ -180,6 +208,10 @@ pub enum SessionCall {
         mode: SendMode,
         /// Set when the send is a steer: the node reports its receipts as `MachineEvent::Steer`.
         steer: Option<SteerTag>,
+        /// The session's MCP servers as they are now (see [`SessionLaunch::mcp`]), sent when they changed since the
+        /// session last got them. The node keeps them for the session's next process start; a running claude keeps
+        /// the servers it started with. An older node ignores them.
+        mcp: Option<crate::mcp_servers::McpSessionConfig>,
     },
     /// Withdraw a send claude still holds queued (`cancel_async_message`). A no-op once it has started.
     #[serde(rename_all = "camelCase")]
@@ -540,6 +572,12 @@ pub enum SessionOutput {
     },
     /// Answer to `project_worktrees`.
     ProjectWorktrees(crate::project_settings::ProjectWorktrees),
+    /// Answer to `mcp_secrets`: each secret it saved.
+    McpSecrets {
+        secrets: Vec<crate::mcp_servers::McpSecretSaved>,
+    },
+    /// Answer to `mcp_test`.
+    McpTested(crate::mcp_servers::McpTestResult),
 }
 
 /// The default branch's first-parent line, newest first, at most [`LandedLog::MAX`] commits.

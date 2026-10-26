@@ -1,7 +1,7 @@
 import type { LinkHandlerClaim, LinkHandlerStatus, NotifyRequest, OpenTarget } from "../shared/app";
 import type { MenuCommand } from "../shared/menu";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
-import type { ChatScope, ErrorReport, OrderFocus, ProjectEnvRequest, SecretRequest } from "../shared/ipc";
+import type { ChatScope, ErrorReport, McpServerRequest, OrderFocus, ProjectEnvRequest, SecretRequest } from "../shared/ipc";
 import type { KeyStore, PairOutcome, PairRequest, PairStart, Probe, SetupOutcome } from "../shared/pairing";
 import type { UpdatesState } from "../shared/updates";
 
@@ -24,6 +24,11 @@ export interface FleetdApi {
      * output lists the project's variables, a secret's by fingerprint only.
      */
     projectEnv(request: ProjectEnvRequest): Promise<CallOutcome>;
+    /**
+     * An MCP server to save: main seals each secret value to every machine in `boxes` and calls mcp_server_set. The
+     * output has the server as the hub keeps it, a secret's by the machines holding it only.
+     */
+    mcpServer(request: McpServerRequest): Promise<CallOutcome>;
   };
   /**
    * Opens an https link to github.com (or a subdomain) or fleetd.sh in the user's browser. Anything else comes back

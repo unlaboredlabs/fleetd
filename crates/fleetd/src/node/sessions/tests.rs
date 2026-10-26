@@ -87,6 +87,8 @@ fn launch(id: &str, mode: RuntimeMode, workspace: SessionWorkspace) -> SessionCa
         allowed_tools: vec!["Bash(npm test:*)".into()],
         disallowed_tools: vec!["WebFetch".into()],
         role: fleetd_contracts::sessions::SessionRole::Worker,
+        mcp_role: None,
+        mcp: None,
     })
 }
 
@@ -97,6 +99,7 @@ fn send(id: &str, run_id: &str) -> SessionCall {
         text: NonEmpty::unchecked("Reply with the word TWO and nothing else."),
         mode: SendMode::Plain,
         steer: None,
+        mcp: None,
     }
 }
 
@@ -1861,6 +1864,7 @@ async fn a_task_session_must_resume_for_anything_but_its_first_message() {
         text: NonEmpty::unchecked("Reply with the word OK and nothing else."),
         mode: SendMode::Plain,
         steer: None,
+        mcp: None,
     })
     .await;
     let spawned: Vec<(bool, bool)> = hub
@@ -2621,6 +2625,7 @@ fn steer(id: &str, run_id: &str, mode: SendMode, tag: Option<&str>) -> SessionCa
             id: SteerId::unchecked(t),
             riders: vec![],
         }),
+        mcp: None,
     }
 }
 
@@ -2814,6 +2819,7 @@ async fn each_steer_a_run_carries_gets_its_own_receipts() {
             id: SteerId::unchecked("S2"),
             riders: vec![SteerId::unchecked("S1")],
         }),
+        mcp: None,
     })
     .await;
     let mut finals = std::collections::BTreeMap::new();
@@ -2928,4 +2934,369 @@ fn agent_server_child() {
         "{command:?} is not this binary: {listed:?}"
     );
     assert!(String::from_utf8_lossy(&listed.stdout).contains("agent_server_child"));
+}
+
+/// The `--mcp-config` a session's claude starts with, as the node wrote it.
+fn mcp_written(spec: &crate::node::runner::SessionSpec) -> serde_json::Value {
+    serde_json::from_str(&std::fs::read_to_string(spec.mcp_config.as_ref().unwrap()).unwrap())
+        .unwrap()
+}
+
+fn mcp_session_config(
+    user_servers: bool,
+    url: &str,
+) -> fleetd_contracts::mcp_servers::McpSessionConfig {
+    serde_json::from_value(serde_json::json!({
+        "userServers": user_servers,
+        "servers": [{ "name": "docs", "secrets": { "kind": "global" },
+            "roles": { "lead": false, "writers": true, "reviewers": false },
+            "transport": { "type": "http", "url": url },
+            "headers": [{ "kind": "plain", "name": "X-Team", "value": "core" }] }]
+    }))
+    .unwrap()
+}
+
+/// A launch's MCP servers are the session's from its first start; ones a later send carries apply at its next start,
+/// while the claude running keeps the servers it started with. Off, the person's own servers stay out
+/// (`--strict-mcp-config`) and fleetd's own tools are still there.
+#[tokio::test]
+async fn a_sessions_mcp_servers_change_at_its_next_start() {
+    use fleetd_contracts::mcp_servers::McpAgentRole;
+    let dir = tempfile::tempdir().unwrap();
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    hub.project(dir.path()).await;
+    let SessionCall::Launch(mut l) = launch("s1", RuntimeMode::FullAccess, SessionWorkspace::Root)
+    else {
+        unreachable!()
+    };
+    l.mcp_role = Some(McpAgentRole::Writer);
+    l.mcp = Some(mcp_session_config(true, "https://docs.example.com/mcp"));
+    hub.ok(SessionCall::Launch(l)).await;
+    hub.settled("r1").await;
+    let first = hub.runner.spawned()[0].clone();
+    let written = mcp_written(&first);
+    assert_eq!(
+        written["mcpServers"]["docs"],
+        serde_json::json!({ "type": "http", "url": "https://docs.example.com/mcp", "headers": { "X-Team": "core" } })
+    );
+    assert_eq!(
+        written["mcpServers"]["fleetd"]["args"],
+        serde_json::json!(["agent-mcp", "--role", "worker"])
+    );
+    assert!(!first.strict_mcp);
+
+    // The person turns their own servers off and moves the docs server; the session is stopped meanwhile.
+    hub.ok(SessionCall::Stop {
+        session_id: ThreadId::unchecked("s1"),
+        remove_worktree: false,
+    })
+    .await;
+    let SessionCall::Send {
+        session_id,
+        run_id,
+        text,
+        mode,
+        steer,
+        ..
+    } = send("s1", "r2")
+    else {
+        unreachable!()
+    };
+    hub.ok(SessionCall::Send {
+        session_id,
+        run_id,
+        text,
+        mode,
+        steer,
+        mcp: Some(mcp_session_config(false, "https://docs2.example.com/mcp")),
+    })
+    .await;
+    hub.settled("r2").await;
+    let spawned = hub.runner.spawned();
+    assert_eq!(spawned.len(), 2, "the next start");
+    let second = &spawned[1];
+    assert!(second.strict_mcp, "--strict-mcp-config");
+    let written = mcp_written(second);
+    assert_eq!(
+        written["mcpServers"]["docs"]["url"],
+        "https://docs2.example.com/mcp"
+    );
+    assert_eq!(
+        written["mcpServers"]["fleetd"]["args"],
+        serde_json::json!(["agent-mcp", "--role", "worker"])
+    );
+    assert_eq!(
+        crate::node::runner::claude::ClaudeRunner::new("claude".into())
+            .args(second)
+            .iter()
+            .filter(|a| *a == "--strict-mcp-config")
+            .count(),
+        1
+    );
+}
+
+/// done:0 end to end, a real hub on the link: a global and a project MCP server set through the hub's tools reach a
+/// newly launched agent's `--mcp-config` for their roles only, a project's server replacing the global one of its name,
+/// each secret resolved by the node, and neither secret in any hub row or answer.
+#[tokio::test]
+async fn configured_mcp_servers_reach_each_role_with_secrets_resolved_on_the_node_only() {
+    use fleetd_contracts::mcp_servers::McpAgentRole;
+    const TOKEN: &str = "Bearer ghp_only_on_the_node";
+    const PASSWORD: &str = "pg-only-on-the-node";
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("node");
+    let node = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    node.project(dir.path()).await;
+
+    let hub_home = tempfile::tempdir().unwrap();
+    let central = crate::hub::serve::build_on(
+        crate::hub::store::HubDb::open_memory().unwrap(),
+        crate::hub::api::HubConfig {
+            home: hub_home.path().to_path_buf(),
+            listen: Default::default(),
+            url: None,
+            queue_ttl_sec: None,
+        },
+        crate::hub::store::test_clock::ManualClock::at(1_792_000_000_000),
+    )
+    .unwrap();
+    let lab = fleetd_contracts::ids::MachineId::unchecked("lab");
+    let at = "2026-10-19T10:00:00.000Z";
+    central
+        .store
+        .machine_upsert(
+            &serde_json::from_value(
+                serde_json::json!({ "machineId": "lab", "name": "lab", "tags": [],
+                "status": "online", "lastSeenAt": at, "nodeVersion": "0.1.0" }),
+            )
+            .unwrap(),
+            None,
+        )
+        .unwrap();
+    let (to_node, mut calls) = mpsc::unbounded_channel();
+    let (service, answer, m) = (node.service.clone(), central.clone(), lab.clone());
+    tokio::spawn(async move {
+        while let Some(frame) = calls.recv().await {
+            let fleetd_contracts::node_link::HubToNode::SessionCall(call) = frame else {
+                continue;
+            };
+            let (service, answer, m) = (service.clone(), answer.clone(), m.clone());
+            tokio::spawn(async move {
+                let reply = service.handle(call).await;
+                answer
+                    .executors
+                    .handle_frame(&m, NodeToHub::SessionReply(reply));
+            });
+        }
+    });
+    let mut outlet = node.rx;
+    let (forward, m) = (central.clone(), lab.clone());
+    tokio::spawn(async move {
+        while let Some(raw) = outlet.recv().await {
+            forward
+                .executors
+                .handle_frame(&m, serde_json::from_str(&raw).unwrap());
+        }
+    });
+    central
+        .executors
+        .attach(
+            &lab,
+            crate::hub::executor::NodeSessions {
+                link_id: 1,
+                send: to_node,
+            },
+        )
+        .await;
+    central.executors.await_live(&lab).await;
+    central
+        .link
+        .set_capabilities(&lab, &[fleetd_contracts::node_link::CAP_MCP_SERVERS]);
+    let person = {
+        let c = serde_json::from_value::<crate::hub::api::Caller>(serde_json::json!({
+            "keyId": "k1", "name": "desk", "prefix": "fld_abcdef", "createdAt": at,
+            "grants": [{ "role": "operate", "machines": "*" }],
+        }))
+        .unwrap();
+        crate::hub::api::Caller {
+            kind: Some(fleetd_contracts::auth::KeyKind::Human),
+            ..c
+        }
+    };
+    let mut answers = String::new();
+    let project = serde_json::json!({ "kind": "project", "machineId": "lab", "projectId": "p1" });
+    for input in [
+        // Global, for the lead and writers, a secret header sealed to the machine as the app seals it.
+        serde_json::json!({ "scope": { "kind": "global" }, "name": "github", "enabled": true,
+            "roles": { "lead": true, "writers": true, "reviewers": false },
+            "transport": { "type": "http", "url": "https://api.example.com/mcp" },
+            "headers": [{ "kind": "secret", "name": "Authorization",
+                "sealed": [{ "machineId": "lab", "sealed": crate::node::project_env::seal(&home, TOKEN) }] }] }),
+        // Global search for everyone, which the project replaces with its own for writers only.
+        serde_json::json!({ "scope": { "kind": "global" }, "name": "search", "enabled": true,
+            "roles": { "lead": true, "writers": true, "reviewers": true },
+            "transport": { "type": "sse", "url": "https://search.example.com/sse" } }),
+        serde_json::json!({ "scope": project, "name": "search", "enabled": true,
+            "roles": { "lead": false, "writers": true, "reviewers": false },
+            "transport": { "type": "http", "url": "https://search.internal/mcp" } }),
+        // The project's database for reviewers, a secret env variable.
+        serde_json::json!({ "scope": project, "name": "db", "enabled": true,
+            "roles": { "lead": false, "writers": false, "reviewers": true },
+            "transport": { "type": "stdio", "command": "db-mcp", "args": ["--read-only"] },
+            "env": [{ "kind": "secret", "name": "DB_PASSWORD",
+                "sealed": [{ "machineId": "lab", "sealed": crate::node::project_env::seal(&home, PASSWORD) }] },
+                { "kind": "plain", "name": "DB_HOST", "value": "localhost" }] }),
+        // Off: nobody gets it.
+        serde_json::json!({ "scope": { "kind": "global" }, "name": "off", "enabled": false,
+            "roles": { "lead": true, "writers": true, "reviewers": true },
+            "transport": { "type": "http", "url": "https://off.example.com/mcp" } }),
+    ] {
+        let out = crate::hub::api::registry()
+            .call(&central, &person, "mcp_server_set", input)
+            .await
+            .unwrap();
+        assert_eq!(out["missingOn"], serde_json::json!(null), "{out}");
+        answers.push_str(&out.to_string());
+    }
+    let got = crate::hub::api::registry()
+        .call(
+            &central,
+            &person,
+            "mcp_servers_get",
+            serde_json::json!({ "project": { "machineId": "lab", "projectId": "p1" } }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(got["global"].as_array().unwrap().len(), 3);
+    assert_eq!(got["project"].as_array().unwrap().len(), 2);
+    answers.push_str(&got.to_string());
+
+    let fleetd = |role: &str| -> serde_json::Value {
+        let config: serde_json::Value = serde_json::from_str(&mcp_config(
+            if role == "lead" {
+                fleetd_contracts::sessions::SessionRole::Lead
+            } else {
+                fleetd_contracts::sessions::SessionRole::Worker
+            },
+            &crate::node::lead::lead_socket_path(&home),
+            "SESSION",
+        ))
+        .unwrap();
+        config["mcpServers"]["fleetd"].clone()
+    };
+    let mut written = std::collections::BTreeMap::new();
+    for (n, (role, mcp_role)) in [
+        ("lead", McpAgentRole::Lead),
+        ("writer", McpAgentRole::Writer),
+        ("reviewer", McpAgentRole::Reviewer),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let (thread, _) = central
+            .executors
+            .launch(
+                &lab,
+                &crate::hub::executor::LaunchInput {
+                    project_id: ProjectId::unchecked("p1"),
+                    prompt: "Reply with the word OK and nothing else.".into(),
+                    profile: Default::default(),
+                    runtime_mode: RuntimeMode::FullAccess,
+                    title: Some(role.into()),
+                    client_request_id: format!("req-{role}"),
+                },
+                crate::hub::executor::LaunchOptions {
+                    workspace: None,
+                    role: if role == "lead" {
+                        fleetd_contracts::sessions::SessionRole::Lead
+                    } else {
+                        fleetd_contracts::sessions::SessionRole::Worker
+                    },
+                    mcp_role: Some(mcp_role),
+                },
+            )
+            .await
+            .unwrap();
+        let spec = node.runner.spawned()[n].clone();
+        assert_eq!(spec.session_id, thread.as_str());
+        let mut config = mcp_written(&spec);
+        // fleetd's own server names its session; compare it apart.
+        let own = config["mcpServers"]
+            .as_object_mut()
+            .unwrap()
+            .remove("fleetd")
+            .unwrap();
+        let mut expected = fleetd(role);
+        expected["env"]["FLEETD_THREAD_ID"] = thread.as_str().into();
+        assert_eq!(own, expected, "{role}");
+        written.insert(role, config["mcpServers"].clone());
+    }
+    // The project's search replaces the global one in the project, for every role: the lead gets neither.
+    assert_eq!(
+        written["lead"],
+        serde_json::json!({
+            "github": { "type": "http", "url": "https://api.example.com/mcp", "headers": { "Authorization": TOKEN } },
+        })
+    );
+    assert_eq!(
+        written["writer"],
+        serde_json::json!({
+            "github": { "type": "http", "url": "https://api.example.com/mcp", "headers": { "Authorization": TOKEN } },
+            "search": { "type": "http", "url": "https://search.internal/mcp", "headers": {} },
+        })
+    );
+    assert_eq!(
+        written["reviewer"],
+        serde_json::json!({
+            "db": { "type": "stdio", "command": "db-mcp", "args": ["--read-only"],
+                    "env": { "DB_PASSWORD": PASSWORD, "DB_HOST": "localhost" } },
+        })
+    );
+    // The file claude reads holds the secrets, so only the node's user may read it.
+    let mode = std::os::unix::fs::PermissionsExt::mode(
+        &std::fs::metadata(node.runner.spawned()[0].mcp_config.as_ref().unwrap())
+            .unwrap()
+            .permissions(),
+    );
+    assert_eq!(mode & 0o777, 0o600);
+
+    let rows = central
+        .db
+        .with(|c| {
+            let tables: Vec<String> = c
+                .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")?
+                .query_map([], |r| r.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            let mut out = String::new();
+            for table in tables {
+                let mut stmt = c.prepare(&format!("SELECT * FROM \"{table}\""))?;
+                let n = stmt.column_count();
+                let mut rows = stmt.query([])?;
+                while let Some(row) = rows.next()? {
+                    for i in 0..n {
+                        if let rusqlite::types::ValueRef::Text(t) = row.get_ref(i)? {
+                            out.push_str(&String::from_utf8_lossy(t));
+                            out.push('\n');
+                        }
+                    }
+                }
+            }
+            Ok(out)
+        })
+        .unwrap();
+    assert!(rows.contains("search.internal"), "the servers are stored");
+    for secret in [TOKEN, PASSWORD] {
+        assert!(!rows.contains(secret), "a hub row holds {secret}");
+        assert!(!answers.contains(secret), "an answer holds {secret}");
+    }
 }

@@ -41,6 +41,7 @@ const api: FleetdApi = {
   secret: {
     submit: (request) => ipcRenderer.invoke(IPC.secretSubmit, request) as Promise<SecretOutcome>,
     projectEnv: (request) => ipcRenderer.invoke(IPC.projectEnvSubmit, request) as Promise<CallOutcome>,
+    mcpServer: (request) => ipcRenderer.invoke(IPC.mcpServerSubmit, request) as Promise<CallOutcome>,
   },
   openExternal: (url) => ipcRenderer.invoke(IPC.openExternal, url) as Promise<OpenOutcome>,
   hub: {

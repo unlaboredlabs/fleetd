@@ -974,6 +974,111 @@ output!(ProjectEnvSetOutput {
     env: Vec<crate::project_settings::ProjectEnvVar>
 });
 
+// mcp_servers_get, mcp_server_set, mcp_server_remove, mcp_settings_set, mcp_server_test: the MCP servers fleetd gives
+// its agents (Settings › MCP servers, and each project's MCP section).
+input!(McpServersGetInput {
+    /// Also this project's own servers.
+    project: Option<ProjectRef>,
+});
+output!(McpServersGetOutput {
+    /// Every project's, by name.
+    global: Vec<crate::mcp_servers::McpServer>,
+    /// The asked project's own, by name; each replaces a global one of the same name there.
+    #[serde(default)]
+    project: Vec<crate::mcp_servers::McpServer>,
+    /// Agents also get the person's own MCP servers from their claude setup (on by default).
+    user_servers: bool,
+});
+input!(
+    #[serde(remote = "Self")]
+    McpServerSetInput {
+        scope: crate::mcp_servers::McpScope,
+        name: crate::mcp_servers::McpServerName,
+        enabled: bool,
+        roles: crate::mcp_servers::McpRoles,
+        transport: crate::mcp_servers::McpTransport,
+        /// A stdio server's env, the whole list: a value saved before and not here is removed.
+        #[serde(default)]
+        env: List<crate::mcp_servers::McpValueSet, 0, 50>,
+        /// An HTTP or SSE server's headers, the whole list.
+        #[serde(default)]
+        headers: List<crate::mcp_servers::McpValueSet, 0, 50>,
+    }
+);
+checked!(McpServerSetInput, |input| {
+    if crate::mcp_servers::mcp_name_reserved(input.name.as_str()) {
+        return Err("fleetd is fleetd's own tools server: pick another name".into());
+    }
+    if input.transport.is_stdio() && !input.headers.is_empty() {
+        return Err("a stdio server takes env, not headers".into());
+    }
+    if !input.transport.is_stdio() && !input.env.is_empty() {
+        return Err("an HTTP or SSE server takes headers, not env".into());
+    }
+    for list in [&input.env, &input.headers] {
+        let mut seen = std::collections::BTreeSet::new();
+        for name in list.iter().map(|v| v.name()) {
+            if !seen.insert(name.to_ascii_lowercase()) {
+                return Err(format!("{name} is set twice"));
+            }
+        }
+    }
+    for name in input.env.iter().map(|v| v.name()) {
+        crate::project_settings::EnvVarName::new(name.as_str())
+            .map_err(|_| format!("{name} is not an environment variable name"))?;
+    }
+    // A line break would end the header: claude's connection and the test both break on it.
+    for v in input.headers.iter() {
+        if let crate::mcp_servers::McpValueSet::Plain { name, value } = v
+            && value.contains(['\r', '\n'])
+        {
+            return Err(format!("the header {name} holds a line break"));
+        }
+    }
+    for v in input.env.iter().chain(input.headers.iter()) {
+        if let crate::mcp_servers::McpValueSet::Secret { name, sealed } = v {
+            if sealed.is_empty() {
+                return Err(format!("{name} is sealed to no machine"));
+            }
+            let mut machines = std::collections::BTreeSet::new();
+            if !sealed
+                .iter()
+                .all(|s| machines.insert(s.machine_id.as_str()))
+            {
+                return Err(format!("{name} is sealed to a machine twice"));
+            }
+        }
+    }
+    Ok(())
+});
+output!(McpServerSetOutput {
+    server: crate::mcp_servers::McpServer,
+    /// Machines whose node doesn't hold all of its secrets (offline when it was saved): their agents go without it
+    /// until it is saved again while they are online.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    missing_on: Vec<MachineId>,
+});
+input!(McpServerRemoveInput {
+    scope: crate::mcp_servers::McpScope,
+    name: crate::mcp_servers::McpServerName,
+});
+output!(McpServerRemoveOutput { ok: True });
+input!(McpSettingsSetInput {
+    /// Agents also get the person's own MCP servers from their claude setup.
+    user_servers: bool,
+});
+output!(McpSettingsSetOutput { user_servers: bool });
+input!(McpServerTestInput {
+    scope: crate::mcp_servers::McpScope,
+    name: crate::mcp_servers::McpServerName,
+    /// Where to test a global server; default: the first machine online. A project server is tested on its machine.
+    machine_id: Option<MachineId>,
+});
+output!(McpServerTestOutput {
+    machine_id: MachineId,
+    result: crate::mcp_servers::McpTestResult,
+});
+
 // prompt_get, prompt_set, session_prompt_get: every prompt fleetd sends a model.
 input!(PromptGetInput {
     /// Absent: list every prompt.
@@ -1499,6 +1604,12 @@ tools! {
     project_settings_set => ProjectSettingsSet, Operate, ProjectSettingsSetInput, ProjectSettingsSetOutput;
     // Human keys only (the handler checks): a person sets a project's environment.
     project_env_set => ProjectEnvSet, Operate, ProjectEnvSetInput, ProjectEnvSetOutput;
+    mcp_servers_get => McpServersGet, Read, McpServersGetInput, McpServersGetOutput;
+    // Human keys only (the handlers check): a person decides what commands and services agents get.
+    mcp_server_set => McpServerSet, Operate, McpServerSetInput, McpServerSetOutput;
+    mcp_server_remove => McpServerRemove, Operate, McpServerRemoveInput, McpServerRemoveOutput;
+    mcp_settings_set => McpSettingsSet, Operate, McpSettingsSetInput, McpSettingsSetOutput;
+    mcp_server_test => McpServerTest, Operate, McpServerTestInput, McpServerTestOutput;
     wake_set => WakeSet, Operate, WakeSetInput, WakeSetOutput;
     wake_list => WakeList, Read, WakeListInput, WakeListOutput;
     wake_cancel => WakeCancel, Operate, WakeCancelInput, WakeCancelOutput;

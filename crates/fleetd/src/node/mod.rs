@@ -11,6 +11,8 @@ pub mod lead;
 pub mod link;
 pub mod load;
 pub mod mask;
+pub mod mcp_probe;
+pub mod mcp_servers;
 pub mod power;
 pub mod project_env;
 pub mod repos;
