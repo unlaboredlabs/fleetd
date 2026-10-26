@@ -1,5 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npx --yes pagefind@1.5.2 --site docs",
+  "outputDirectory": ".",
   "cleanUrls": true,
   "github": {
     "silent": true

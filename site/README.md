@@ -36,7 +36,9 @@ a key. Review the result with `git diff site/`.
 ## Docs (fleetd.sh/docs)
 
 The docs are an [Astro Starlight](https://starlight.astro.build) site in `docs/site/`. Its build, `site/docs/`, is
-committed, because the Vercel project has no build step. After editing a page, rebuild and commit both:
+committed, so the Vercel project needs no Node install. Its search index, `site/docs/pagefind`, is not: git ignores it,
+and the Vercel build regenerates it from the committed HTML (`buildCommand` in `vercel.json`, a pinned Pagefind), so
+docs PRs don't conflict on it. After editing a page, rebuild and commit both:
 
 ```sh
 cargo run -q -p docsgen                  # only when the CLI or the prompt registry changed
@@ -44,9 +46,9 @@ npm ci --prefix docs/site
 npm run build --prefix docs/site
 ```
 
-CI fails while the generated pages or `site/docs/` are out of date. To read the docs locally with clean URLs, run
-`node .github/docs-serve.mjs` and open http://127.0.0.1:4791/docs, or `npm run dev --prefix docs/site` while
-writing.
+CI fails while the generated pages or `site/docs/` are out of date, or while `site/docs/pagefind` is tracked. To read
+the docs locally with clean URLs, run `node .github/docs-serve.mjs` and open http://127.0.0.1:4791/docs (search
+works once a build has written the ignored index), or `npm run dev --prefix docs/site` while writing.
 
 ### Where
 
@@ -125,8 +127,11 @@ $ fleetd doctor
 - **Import** the GitHub repo `unlaboredlabs/fleetd`.
 - **Root Directory:** `site`
 - **Framework Preset:** Other
-- **Build Command:** Override on, left empty (nothing to build)
-- **Output Directory:** leave the default; with no `public/` folder, Vercel serves the root directory as is
+- **Build Command:** Override on, left empty; `buildCommand` in `vercel.json` takes precedence and runs Pagefind
+  1.5.2 on `docs/`, writing the docs' search index. Bump that version with the `pagefind` in
+  `docs/site/package-lock.json`, so the deployed index matches a local build.
+- **Output Directory:** leave the default; `outputDirectory` in `vercel.json` is `.`, the root directory as is (with a
+  build command, Vercel would otherwise look for a `public/` folder and fail)
 - **Install Command:** Override on, left empty
 - **Production Branch:** `main`
 - **Ignored Build Step** (Settings → Git): `git diff --quiet HEAD^ HEAD -- .`, so commits that don't touch `site/`
@@ -142,7 +147,8 @@ curl -fsSL https://<deployment>/ | head -3     # the installer: "#!/bin/sh" ...
 curl -fsSI https://<deployment>/install.sh      # content-type: text/plain
 ```
 
-A browser at the same URL should show the landing page.
+A browser at the same URL should show the landing page, and a search on `https://<deployment>/docs` should list
+results. The deployment's build log shows Pagefind's `Indexed <n> pages`.
 
 ## Testing the installer without a release
 
