@@ -1,11 +1,11 @@
 // THE shortcut map. The native menu (main) shows these accelerators and the renderer's keymap runs them, so a key
 // is defined once. Each id is also the palette command id that the key runs (renderer/src/palette/registry.ts).
 //
-// `Mod` is ⌘ on macOS and Ctrl elsewhere. A key is a letter, a digit, or one of the punctuation keys in CODES.
+// `Mod` is ⌘ on macOS and Ctrl elsewhere. A key is a letter, a digit, or one of the named or punctuation keys in CODES.
 
 export type Platform = "darwin" | "linux" | "win32" | "other";
 
-export type ShortcutSection = "General" | "Projects" | "Go to" | "Composer";
+export type ShortcutSection = "General" | "Projects" | "Go to" | "Composer" | "Sessions";
 
 export interface Shortcut {
   readonly keys: string;
@@ -32,6 +32,8 @@ export const SHORTCUTS = {
   "factory.open": { keys: "Mod+;", title: "Factory", section: "Go to" },
   "settings.open": { keys: "Mod+,", title: "Settings…", section: "Go to" },
   "composer.attach": { keys: "Mod+Shift+A", title: "Attach a File", section: "Composer" },
+  // Caught in the capture phase, so a page you have taken over never sees it (screens/sessions).
+  "session.handBack": { keys: "Mod+Shift+Enter", title: "Hand Back the Page", section: "Sessions" },
 } as const satisfies Record<string, Shortcut>;
 
 export type ShortcutId = keyof typeof SHORTCUTS;
@@ -51,8 +53,12 @@ export const LOCAL_KEYS: readonly { readonly where: string; readonly keys: reado
   { where: "Anywhere", keys: ["Esc"], title: "Close the menu, panel or sheet" },
 ];
 
-/** Punctuation and digits match on the physical key, because Shift changes their character ("." becomes ">"). */
+/**
+ * Named keys, punctuation and digits match on the physical key, because Shift changes their character ("." becomes
+ * ">"). A named key keeps its case in a chord.
+ */
 const CODES: Readonly<Record<string, string>> = {
+  Enter: "Enter",
   ".": "Period",
   ",": "Comma",
   "/": "Slash",
@@ -79,7 +85,7 @@ export const parseChord = (keys: string): Chord => {
   // "Mod++" would be a literal plus; none of ours use it.
   const key = parts.pop() ?? "";
   if (!/^[a-z0-9]$/iu.test(key) && CODES[key] === undefined) throw new Error(`unsupported key in shortcut "${keys}"`);
-  return { mod: parts.includes("Mod"), shift: parts.includes("Shift"), alt: parts.includes("Alt"), key: key.toLowerCase() };
+  return { mod: parts.includes("Mod"), shift: parts.includes("Shift"), alt: parts.includes("Alt"), key: CODES[key] === undefined ? key.toLowerCase() : key };
 };
 
 /** The fields of a KeyboardEvent the matcher reads, so it is testable without a DOM. */
@@ -98,6 +104,8 @@ export const chordMatches = (chord: Chord, event: KeyInput, platform: Platform):
   // The other platform modifier must be up, or Ctrl+⌘+K on a Mac would also count.
   const other = mac ? event.ctrlKey : event.metaKey;
   if (mod !== chord.mod || other || event.shiftKey !== chord.shift || event.altKey !== chord.alt) return false;
+  // The keypad's Enter is Enter too.
+  if (chord.key === "Enter") return event.code === "Enter" || event.code === "NumpadEnter";
   const code = CODES[chord.key];
   if (code !== undefined) return event.code === code;
   if (/^[0-9]$/u.test(chord.key)) return event.code === `Digit${chord.key}` || event.code === `Numpad${chord.key}`;
@@ -118,15 +126,17 @@ export const shortcutFor = (event: KeyInput, platform: Platform): ShortcutId | u
 /** For Electron's MenuItem `accelerator`. */
 export const accelerator = (id: ShortcutId): string => SHORTCUTS[id].keys.replace("Mod", "CmdOrCtrl");
 
-const MAC_SYMBOLS: Readonly<Record<string, string>> = { Mod: "⌘", Shift: "⇧", Alt: "⌥" };
+const MAC_SYMBOLS: Readonly<Record<string, string>> = { Mod: "⌘", Shift: "⇧", Alt: "⌥", Enter: "↩" };
 
 /** As people read it: "⇧⌘." on macOS (Apple's modifier order), "Ctrl+Shift+." elsewhere. */
 export const displayKeys = (keys: string, platform: Platform): string => {
   const parts = keys.split("+");
-  const key = (parts.pop() ?? "").toUpperCase();
+  const last = parts.pop() ?? "";
+  // A named key reads as its name ("Enter"), a letter in capitals.
+  const key = CODES[last] !== undefined && /^[A-Z]/u.test(last) ? last : last.toUpperCase();
   if (platform === "darwin") {
     const order = ["Alt", "Shift", "Mod"].filter((m) => parts.includes(m));
-    return order.map((m) => MAC_SYMBOLS[m]).join("") + key;
+    return order.map((m) => MAC_SYMBOLS[m]).join("") + (MAC_SYMBOLS[key] ?? key);
   }
   return [...parts.map((m) => (m === "Mod" ? "Ctrl" : m)), key].join("+");
 };

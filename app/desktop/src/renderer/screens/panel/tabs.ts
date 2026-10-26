@@ -1,8 +1,7 @@
 // The panel's tabs, in the order its tab bar shows them: the one list the bar, the routes (`/<tab>` after a project),
 // the palette's Go to commands and the remembered tab all read. A new tab is one entry here: its words, its icon, its
-// pane and, if it has one, its count, each loaded the first time the panel shows it. Agents, Browser sessions and Pull
-// requests also name an item in their routes (one agent's work, one session, one PR); every other tab's view is
-// `{ tab }`.
+// pane and, if it has one, its count, each loaded the first time the panel shows it. Agents, Sessions and Pull requests
+// also name an item in their routes (one agent's work, one session, one PR); every other tab's view is `{ tab }`.
 import { Activity, AppWindow, Bot, GitPullRequest, ListChecks, Scale, TrainFront, type LucideIcon } from "lucide-react";
 import type { ComponentType } from "react";
 import type { PanelView, ProjectKey } from "../shell/routes";
@@ -49,7 +48,7 @@ export const PANEL_TABS = [
   },
   {
     id: "sessions",
-    label: "Browser sessions",
+    label: "Sessions",
     icon: AppWindow,
     detail: "The browsers this project’s agents use: watch live, take over, replay",
     keywords: ["browser", "session", "chrome", "takeover", "take over", "replay", "recording", "web"],

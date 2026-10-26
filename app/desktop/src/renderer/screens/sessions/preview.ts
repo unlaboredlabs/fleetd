@@ -205,8 +205,19 @@ const due = new Map<string, number>();
 const listeners = new Set<() => void>();
 let timer: number | undefined;
 
+// Across the app's windows (a session's own window beside the main one), the main window's store is the one that plays:
+// a session's window asks it for the sessions, sends it what you do there, and shows what it sends back, as both would
+// show the hub's. A session's window that no main window answers (QA opens one on its own) plays itself.
+type Sync = { readonly t: "ask" } | { readonly t: "sessions"; readonly sessions: readonly BrowserSession[] } | { readonly t: "act"; readonly act: "take" | "page" | "back"; readonly id: string };
+let leads = typeof window === "undefined" || !window.location.hash.startsWith("#/session/");
+/** How long a session's window waits for the main window's sessions before it plays its own. */
+const ANSWER_MS = 400;
+const sync = PREVIEW && typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("fleetd-preview-sessions") : undefined;
+const post = (m: Sync) => sync?.postMessage(m);
+
 const emit = () => {
   for (const l of listeners) l();
+  if (leads && sessions !== undefined) post({ t: "sessions", sessions });
 };
 
 const update = (id: string, change: (s: BrowserSession) => BrowserSession) => {
@@ -243,7 +254,7 @@ const tick = () => {
 };
 
 const ensure = () => {
-  if (sessions !== undefined) return;
+  if (sessions !== undefined || !leads) return;
   const now = Date.now();
   sessions = initial(now);
   todo = scripts();
@@ -253,7 +264,16 @@ const ensure = () => {
 const subscribe = (l: () => void) => {
   ensure();
   listeners.add(l);
-  timer ??= window.setInterval(tick, 250);
+  if (!leads) {
+    post({ t: "ask" });
+    window.setTimeout(() => {
+      if (sessions !== undefined || leads) return;
+      leads = true;
+      ensure();
+      timer ??= window.setInterval(tick, 250);
+      emit();
+    }, ANSWER_MS);
+  } else timer ??= window.setInterval(tick, 250);
   return () => {
     listeners.delete(l);
     if (listeners.size === 0) {
@@ -276,21 +296,44 @@ export function useBrowserSessions(project: ProjectKey): readonly BrowserSession
   return useMemo(() => all.filter((s) => s.projectRef.machineId === machineId && s.projectRef.projectId === projectId), [all, machineId, projectId]);
 }
 
-/** You take the page: the agent waits, and sees the page as you leave it. */
-export const takeOver = (id: string): void =>
+const take = (id: string): void =>
   update(id, (s) => (s.state === "running" || s.state === "asking" ? apply({ ...s, state: "yours" }, { action: { by: "person", kind: "take_over" } }) : s));
 
-/** A click or a key in the page while you have it: the preview plays the next of your steps, if it has one. */
-export const actInPage = (id: string): void => {
+const inPage = (id: string): void => {
   const next = todo.get(`${id}:person`)?.shift();
   if (next !== undefined) update(id, (s) => (s.state === "yours" ? apply(s, next) : s));
 };
 
-/** You hand the page back: the agent looks at it again and goes on. */
-export const handBack = (id: string): void => {
+const back = (id: string): void => {
   due.set(id, Date.now() + STEP_MS / 2);
   update(id, (s) => (s.state === "yours" ? apply({ ...s, state: "running" }, { action: { by: "person", kind: "hand_back" }, now: "Looking at the page again" }) : s));
 };
+
+const ACTS = { take, page: inPage, back } as const;
+
+/** Runs `act` here in the main window; a session's own window sends it there. */
+const run = (act: keyof typeof ACTS, id: string): void => (leads ? ACTS[act](id) : post({ t: "act", act, id }));
+
+/** You take the page: the agent waits, and sees the page as you leave it. */
+export const takeOver = (id: string): void => run("take", id);
+
+/** A click or a key in the page while you have it: the preview plays the next of your steps, if it has one. */
+export const actInPage = (id: string): void => run("page", id);
+
+/** You hand the page back: the agent looks at it again and goes on. */
+export const handBack = (id: string): void => run("back", id);
+
+sync?.addEventListener("message", (e: MessageEvent<Sync>) => {
+  const m = e.data;
+  if (leads && m.t === "ask") {
+    ensure();
+    if (sessions !== undefined) post({ t: "sessions", sessions });
+  } else if (leads && m.t === "act") ACTS[m.act](m.id);
+  else if (!leads && m.t === "sessions") {
+    sessions = m.sessions;
+    for (const l of listeners) l();
+  }
+});
 
 /** A new session starts (QA's `fleetd:preview-session`): an agent opens a fresh browser. */
 const start = () => {

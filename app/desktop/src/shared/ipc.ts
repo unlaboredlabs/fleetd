@@ -185,6 +185,11 @@ const ProbeRequest = z.string().trim().min(1).max(2048);
 /** The enabled commands; any menu command left out is disabled. */
 const MenuState = z.array(z.enum(MENU_COMMANDS)).max(MENU_COMMANDS.length);
 
+/** A session to open in a window of its own; main builds the route from these, never from a URL the page sends. */
+const Segment = z.string().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/u);
+export const SessionWindowRequest = z.strictObject({ machineId: Segment, projectId: Segment, session: Segment });
+export type SessionWindowRequest = z.infer<typeof SessionWindowRequest>;
+
 const none = z.tuple([]);
 
 /** The argument list each invoke channel accepts. */
@@ -223,6 +228,7 @@ export const REQUESTS = {
   [IPC.appLinkHandler]: z.tuple([LinkHandlerClaim.nullable()]),
   [IPC.appPresence]: z.tuple([z.boolean().nullable()]),
   [IPC.appLog]: z.tuple([ErrorReport]),
+  [IPC.appSessionWindow]: z.tuple([SessionWindowRequest]),
   [IPC.updatesState]: none,
   [IPC.updatesCheck]: none,
   [IPC.updatesInstall]: none,

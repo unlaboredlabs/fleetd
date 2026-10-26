@@ -619,3 +619,31 @@ section + section .group {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* A session's own window: a title row the window drags by (past the traffic lights on macOS), then the session. */
+.window {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--bg);
+}
+.windowBar {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  height: var(--top-bar-height);
+  padding-inline: max(var(--space-4), var(--traffic-lights-inset)) var(--space-4);
+  padding-top: calc((var(--top-bar-height) - var(--leading-sm)) / 2);
+  border-bottom: 1px solid var(--hairline);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+/* The pop-out beside Take over, the two as one group. */
+.controls {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}

@@ -17,6 +17,7 @@ describe("routes", () => {
       panelRoute(storefront, { tab: "agents", agent: "lead:devbox/storefront" }),
       panelRoute(storefront, { tab: "sessions", session: null }),
       panelRoute(storefront, { tab: "sessions", session: "bs-checkout" }),
+      { id: "session", project: storefront, session: "bs-checkout" },
       panelRoute(storefront, { tab: "checklist" }),
       { id: "project", project: storefront, message: "m-42", panel: { tab: "agents", agent: "T1" } },
       { id: "status" },

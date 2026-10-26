@@ -11,8 +11,7 @@ export type HubState =
   | { readonly phase: "connecting"; readonly hub: string; readonly attempt: number }
   /**
    * `version`: the hub's fleetd version from its ready frame, absent from hubs before it; `features`: what newer the
-   * hub serves, from the same frame (`browser_sessions`: the Agents section's Browser sessions). Both fresh on each
-   * connection.
+   * hub serves, from the same frame (`browser_sessions`: the Agents section's Sessions). Both fresh on each connection.
    */
   | { readonly phase: "live"; readonly hub: string; readonly protocol: number; readonly version?: string | undefined; readonly features?: readonly string[] | undefined }
   /** `retryAt` is epoch ms. */
