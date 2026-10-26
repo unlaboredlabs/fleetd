@@ -24,7 +24,8 @@ use crate::node::util::exec;
 /// The preview ports, one per running preview.
 pub const PORTS: RangeInclusive<u16> = 8400..=8499;
 const TAILSCALE_TIMEOUT: Duration = Duration::from_secs(5);
-/// How long [`Config::detect`]'s whois keeps an address's answer.
+/// How long [`Config::detect`]'s whois keeps an address's answer. A device removed from the tailnet, or moved to
+/// another user, keeps getting in for up to this long after the change.
 pub const WHOIS_TTL: Duration = Duration::from_secs(30);
 /// How much of a refused request is read before the answer, and for how long.
 const MAX_HEAD: usize = 16 << 10;
@@ -73,8 +74,9 @@ impl Whois for Tailscale {
     }
 }
 
-/// Each address's answer kept for `ttl`. Connections from the same address wait for the one question in flight
-/// instead of asking again. Errors aren't kept: the next connection asks again.
+/// Each address's answer kept for `ttl` ([`WHOIS_TTL`], 30 s, in [`Config::detect`]), so a page loading 50 assets
+/// asks tailscaled once instead of starting 50 `tailscale whois`. Connections from the same address wait for the one
+/// question in flight instead of asking again. Errors aren't kept: the next connection asks again.
 pub struct Cached<W> {
     inner: W,
     ttl: Duration,
@@ -99,13 +101,15 @@ impl<W: Whois> Whois for Cached<W> {
         Box::pin(async move {
             let slot = {
                 let mut answers = lock(&self.answers);
-                // Forget stale answers no one is asking about.
+                // Forget answers that are stale (or never came) and that no caller holds: callers take their clone
+                // under this lock, so a slot someone is about to ask through is never swapped for a new one.
                 answers.retain(|_, slot| {
-                    slot.try_lock().map_or(true, |answer| {
-                        answer
-                            .as_ref()
-                            .is_some_and(|(at, _)| at.elapsed() < self.ttl)
-                    })
+                    Arc::strong_count(slot) > 1
+                        || slot.try_lock().is_ok_and(|answer| {
+                            answer
+                                .as_ref()
+                                .is_some_and(|(at, _)| at.elapsed() < self.ttl)
+                        })
                 });
                 answers.entry(peer.ip()).or_default().clone()
             };
@@ -289,7 +293,7 @@ pub struct Proxy {
 }
 
 impl Proxy {
-    /// Exposes `127.0.0.1:target` on the first free port of `config.ports` at `config.addr`.
+    /// Exposes the preview on `127.0.0.1:target` (or `[::1]:target` when nothing listens on the first) on the first free port of `config.ports` at `config.addr`.
     pub async fn start(config: &Config, target: u16) -> io::Result<Self> {
         if !bindable(config.addr) {
             return Err(io::Error::new(
@@ -409,8 +413,10 @@ async fn serve(
     }
     // A server started on `localhost` may have bound only ::1.
     let upstream = match TcpStream::connect((Ipv4Addr::LOCALHOST, target)).await {
-        Ok(upstream) => Ok(upstream),
-        Err(_) => TcpStream::connect((Ipv6Addr::LOCALHOST, target)).await,
+        Err(error) if error.kind() == io::ErrorKind::ConnectionRefused => {
+            TcpStream::connect((Ipv6Addr::LOCALHOST, target)).await
+        }
+        upstream => upstream,
     };
     // A preview that isn't answering doesn't keep itself alive: only a connection that reached it counts.
     let Ok(mut upstream) = upstream else {
@@ -448,6 +454,7 @@ async fn refuse(mut client: TcpStream, status: &str, body: &str) {
 mod tests {
     use super::*;
     use futures_util::{SinkExt, StreamExt};
+    use std::sync::atomic::{AtomicU16, Ordering};
     use tokio_tungstenite::tungstenite::Message;
 
     const OWNER: &str = "me@example.com";
@@ -486,10 +493,19 @@ mod tests {
         })
     }
 
-    /// A port nothing listens on right now.
+    /// Ports of 18000–18399 handed out in turn (the preview runner's tests use 18400–18499).
+    static NEXT_PORT: AtomicU16 = AtomicU16::new(0);
+
+    /// A port nothing listens on right now. Below every OS's ephemeral range, so no other test's outgoing connection
+    /// (nor a listener on port 0) takes it between this check and the proxy's bind.
     async fn free_port() -> u16 {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        listener.local_addr().unwrap().port()
+        for _ in 0..400 {
+            let port = 18000 + NEXT_PORT.fetch_add(1, Ordering::Relaxed) % 400;
+            if TcpListener::bind((Ipv4Addr::LOCALHOST, port)).await.is_ok() {
+                return port;
+            }
+        }
+        panic!("no free test port in 18000–18399");
     }
 
     async fn config(whois: Arc<dyn Whois>) -> Config {
@@ -833,6 +849,37 @@ mod tests {
             assert!(cached.whois(at("100.64.0.4", 50000)).await.is_err());
         }
         assert_eq!(lock(&unknown.asked).len(), 2);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn callers_at_once_share_one_question_while_other_addresses_come_and_go() {
+        let fake = FakeWhois::new(device(OWNER, &[]));
+        let cached = Arc::new(Cached::new(fake.clone(), WHOIS_TTL));
+        let asks = (0..200u16).map(|i| {
+            let cached = cached.clone();
+            // Every other caller is a new address, which prunes the map on its way in.
+            let ip = if i % 2 == 0 {
+                "100.64.0.2".to_owned()
+            } else {
+                format!("100.64.1.{}", i / 2)
+            };
+            tokio::spawn(async move {
+                cached
+                    .whois(SocketAddr::new(ip.parse().unwrap(), 50000 + i))
+                    .await
+                    .unwrap();
+            })
+        });
+        for ask in futures_util::future::join_all(asks).await {
+            ask.unwrap();
+        }
+        let asked = lock(&fake.asked);
+        let shared = asked
+            .iter()
+            .filter(|peer| peer.ip() == "100.64.0.2".parse::<IpAddr>().unwrap())
+            .count();
+        assert_eq!(shared, 1);
+        assert_eq!(asked.len(), 101);
     }
 
     #[tokio::test]
