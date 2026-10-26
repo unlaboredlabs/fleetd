@@ -67,7 +67,7 @@ pub(super) fn git(dir: &Path, args: &[&str]) -> Result<String, GitError> {
 
 /// `git` that talks to a remote: never waits on ssh for a passphrase or a host key, and is killed with whatever it
 /// started (ssh, a credential helper) at `timeout`.
-fn git_remote(dir: &Path, args: &[&str], timeout: Duration) -> Result<String, GitError> {
+pub(super) fn git_remote(dir: &Path, args: &[&str], timeout: Duration) -> Result<String, GitError> {
     let mut cmd = command(dir, args);
     let ssh_set = std::env::var_os("GIT_SSH_COMMAND").is_some()
         || std::env::var_os("GIT_SSH").is_some()

@@ -23,8 +23,8 @@ Most PRs need no human test, so try it yourself never runs on every PR. It costs
 - **Sign-off is off by default, and per project.** Even when a project turns it on, it applies only to PRs the person
   marked "I want to try this", or to orders whose brief says the person tries it first. It never applies to all PRs.
 - **Previews are thrown away.** A preview ends when the person presses End, after 30 minutes without use, when the PR
-  merges or closes, or after 4 hours at most. Its processes, port, emulator copy and worktree go with it. Only the build
-  cache stays.
+  merges or closes, or after 4 hours at most. Its processes, port and emulator copy go with it. Its worktree stays as
+  the build cache: each project keeps up to 3, and the next preview of the same commits reuses its setup and build.
 
 ## 1. Web
 
