@@ -31,7 +31,9 @@ describe("this app's update", () => {
     expect(v.line).toEqual({ tone: "accent", text: "Update available" });
     expect(v.app?.action).toEqual({ label: "Update and restart", run: "install", primary: true });
     expect(v.app?.notes).toEqual({ lines: ["Updates show in the app"], more: false });
-    expect(v.app?.title).not.toMatch(/def5678/u);
+    expect(v.app?.title).toBe("fleetd Nightly · Oct 23, 10:30 UTC · def5678 is available");
+    // The label is for reading; the raw version is there to copy.
+    expect(v.app?.raw).toBe(MINE);
   });
 
   it("shows the download once asked to restart, with a way back", () => {

@@ -23,12 +23,16 @@ export interface AppPart {
   readonly action?: { readonly label: string; readonly run: AppAction; readonly primary: boolean };
   /** A check is running: the action shows, greyed. */
   readonly busy?: boolean;
+  /** The running app's raw version, to copy; the title and detail show its label. */
+  readonly raw: string;
 }
 
 export interface HubPart {
   readonly title: string;
   readonly detail?: string;
   readonly notes: Notes;
+  /** The hub's raw version, to copy, once it says one. */
+  readonly raw?: string;
   /**
    * Update the hub: the command to run, with Copy, and a note saying where and when it restarts the hub. `terminal`:
    * the hub is on this computer and the command is the bare `fleetd update` main opens (updates:hubTerminal takes no
@@ -56,7 +60,9 @@ const channelOf = (version: string): "nightly" | "stable" => (version.includes("
 
 const found = (app: AppUpdate): boolean => app.kind === "available" || app.kind === "ready" || app.kind === "manual";
 
-const appPart = (state: UpdatesState): AppPart => {
+const appPart = (state: UpdatesState): AppPart => ({ ...appWords(state), raw: state.current });
+
+const appWords = (state: UpdatesState): Omit<AppPart, "raw"> => {
   const app: AppUpdate = state.app;
   const mine = versionLabel(state.current);
   const notes = found(app) && state.release !== null ? notesSince(state.release.changes, state.current, "app") : NO_NOTES;
@@ -151,13 +157,14 @@ const hubPart = (hub: HubInput, state: UpdatesState | null): HubPart | null => {
   const behind = knownVersion(appVersion) && compareVersions(version, appVersion) === -1;
   const cli = state?.release?.cli ?? null;
   const available = knownVersion(cli) && channelOf(cli) === channelOf(version) && compareVersions(version, cli) === -1;
-  if (!behind && !available) return { title: "The hub is up to date", detail: `It runs ${has}.`, notes: NO_NOTES };
+  if (!behind && !available) return { title: "The hub is up to date", detail: `It runs ${has}.`, notes: NO_NOTES, raw: version };
   const host = hubHost(hub.url);
   const command = updateCommand(version, appVersion);
   return {
     title: behind ? "The hub runs an older fleetd than this app" : `fleetd ${versionLabel(cli ?? version)} is available for the hub`,
     detail: `It runs ${has}.`,
     notes: notesSince(state?.release?.changes ?? [], version, "hub"),
+    raw: version,
     update: {
       command,
       // fleetd update (#287) restarts the hub only when hub_info says nothing runs; else it lists what does.

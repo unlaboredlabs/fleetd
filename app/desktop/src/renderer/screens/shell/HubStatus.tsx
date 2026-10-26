@@ -5,6 +5,7 @@
 // section, not #/onboarding: that page sends a connected app straight back to the board.
 import { useState } from "react";
 import type { HubState } from "../../../shared/hub";
+import { versionLabel } from "../../../shared/updates";
 import { useData, useDataLayer } from "../../src/data/react";
 import { selectMachines } from "../../src/data/selectors";
 import { Button, Dot, Popover, PopoverContent, PopoverTrigger, Text, Tooltip } from "../../ui";
@@ -89,7 +90,7 @@ export function HubStatus({ hub }: { hub: HubState }) {
               {live === null ? null : (
                 <>
                   <dt>Protocol</dt>
-                  <dd>{live.version === undefined ? `v${String(live.protocol)}` : `v${String(live.protocol)} · fleetd ${live.version}`}</dd>
+                  <dd title={live.version}>{live.version === undefined ? `v${String(live.protocol)}` : `v${String(live.protocol)} · fleetd ${versionLabel(live.version)}`}</dd>
                 </>
               )}
             </dl>

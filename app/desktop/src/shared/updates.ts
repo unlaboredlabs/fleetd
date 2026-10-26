@@ -124,30 +124,33 @@ export const localHub = (hubUrl: string): boolean => URL.canParse(hubUrl) && LOO
 
 const withoutBuild = (version: string): string => version.trim().replace(/^v/u, "").split("+", 1)[0] ?? "";
 
-/**
- * The About panel's version fields. Without them macOS shows Info.plist's, which carry only the numeric 0.0.0 Apple
- * accepts there (build-release.yml), so a nightly read "0.0.0 (0.0.0)". macOS puts `version` in parentheses, so the
- * build commit goes there; Linux has only `applicationVersion` and gets the whole string.
- */
-export const aboutVersions = (version: string, mac: boolean): { applicationVersion: string; version?: string } => {
-  if (!mac) return { applicationVersion: version };
-  const bare = withoutBuild(version);
-  return { applicationVersion: bare, version: buildCommit(version) ?? bare };
-};
-
-const NIGHTLY = /^(\d+\.\d+\.\d+)-nightly\.(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})$/u;
+const NIGHTLY = /^\d+\.\d+\.\d+-nightly\.(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})$/u;
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /**
- * A version as people read it: no build hash, and a nightly by its date ("0.6.0 nightly (Oct 22, 10:30)"), since its
- * minute stamp is what tells two nightlies apart. `timeZone` is for tests; the app shows local time.
+ * A version as people read it. A nightly by when it was built and from which commit, since its minute stamp is what
+ * tells two nightlies apart: `0.0.0-nightly.202610261056+1b563d7` reads "Nightly · Oct 26, 10:56 UTC · 1b563d7".
+ * Any other version is itself, without a build part. Only for showing: the updaters compare the raw version, and the
+ * raw version is what gets copied. The CLI's twin is `crate::version_label` (crates/fleetd/src/lib.rs).
  */
-export const versionLabel = (version: string, timeZone?: string): string => {
+export const versionLabel = (version: string): string => {
   const bare = withoutBuild(version);
   const nightly = NIGHTLY.exec(bare);
-  if (nightly === null) return bare;
-  const [, base, y, mo, d, h, mi] = nightly;
-  const at = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi)));
-  if (Number.isNaN(at.getTime())) return bare;
-  const when = at.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone });
-  return `${base ?? bare} nightly (${when})`;
+  const month = MONTHS[Number(nightly?.[2]) - 1];
+  if (nightly === null || month === undefined) return bare;
+  const [, , , d, h, mi] = nightly;
+  const sha = buildCommit(version);
+  return ["Nightly", `${month} ${String(Number(d))}, ${h ?? ""}:${mi ?? ""} UTC`, ...(sha === null ? [] : [sha.slice(0, 7)])].join(" · ");
+};
+
+/**
+ * The About panel's version fields: the label, then the raw version to copy. Without them macOS shows Info.plist's,
+ * which carry only the numeric 0.0.0 Apple accepts there (build-release.yml), so a nightly read "0.0.0 (0.0.0)".
+ * macOS puts `version` in parentheses; Linux has only `applicationVersion` and gets both there.
+ */
+export const aboutVersions = (version: string, mac: boolean): { applicationVersion: string; version?: string } => {
+  const label = versionLabel(version);
+  const raw = version.trim();
+  if (mac) return { applicationVersion: label, version: raw };
+  return { applicationVersion: label === raw ? raw : `${label} (${raw})` };
 };
