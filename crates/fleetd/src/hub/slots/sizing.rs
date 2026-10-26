@@ -25,7 +25,7 @@ pub const UNMEASURED_WHY: &str = "not measured yet";
 const MEM_PER_AGENT: i64 = 2_000_000_000;
 const DISK_PER_AGENT: i64 = 5_000_000_000;
 
-/// A machine's own cap and the term that sets it, e.g. "memory 18 GB" or "14 of 16 CPUs".
+/// A machine's own cap and the term that sets it, e.g. "memory 18 GB, about 2 GB an agent" or "14 of 16 CPUs".
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Auto {
     pub cap: i64,
@@ -44,6 +44,16 @@ fn usable_gb(total: i64) -> f64 {
     (total as f64 - reserve).max(0.0)
 }
 
+/// "2" or "2.5": GB as a person reads them.
+fn gb(n: f64) -> String {
+    let tenths = (n * 10.0).round() as i64;
+    if tenths % 10 == 0 {
+        (tenths / 10).to_string()
+    } else {
+        format!("{}.{}", tenths / 10, tenths % 10)
+    }
+}
+
 pub fn auto_cap(load: &NodeLoad) -> Auto {
     let cpus = load.cpus.get();
     let cpu_term = (cpus - (cpus + 7) / 8).max(1);
@@ -56,7 +66,10 @@ pub fn auto_cap(load: &NodeLoad) -> Auto {
     let (mem_term, mem_why) = match load.mem_total_bytes.map(|b| sold_gb(b.get())) {
         Some(total) => {
             let term = ((usable_gb(total) / per_agent_gb).floor() as i64).max(1);
-            (term, format!("memory {total} GB"))
+            (
+                term,
+                format!("memory {total} GB, about {} GB an agent", gb(per_agent_gb)),
+            )
         }
         None => (UNKNOWN_MEM_TERM, "memory unknown".to_owned()),
     };
@@ -130,11 +143,20 @@ mod tests {
     #[test]
     fn the_example_machines() {
         // MacBook Air, 8 CPU, 8 GB: (8 − 4) / 2.
-        assert_eq!(auto_cap(&machine(8, Some(8))), auto(2, "memory 8 GB"));
+        assert_eq!(
+            auto_cap(&machine(8, Some(8))),
+            auto(2, "memory 8 GB, about 2 GB an agent")
+        );
         // MacBook Pro, 12 CPU, 18 GB: (18 − 4.5) / 2.
-        assert_eq!(auto_cap(&machine(12, Some(18))), auto(6, "memory 18 GB"));
+        assert_eq!(
+            auto_cap(&machine(12, Some(18))),
+            auto(6, "memory 18 GB, about 2 GB an agent")
+        );
         // Linux laptop, 16 threads, 32 GB: (32 − 8) / 2 under 14 CPUs.
-        assert_eq!(auto_cap(&machine(16, Some(32))), auto(12, "memory 32 GB"));
+        assert_eq!(
+            auto_cap(&machine(16, Some(32))),
+            auto(12, "memory 32 GB, about 2 GB an agent")
+        );
         // Workstation, 32 threads, 128 GB: the CPUs bind.
         assert_eq!(auto_cap(&machine(32, Some(128))), auto(28, "28 of 32 CPUs"));
         // Big server, 64 threads, 256 GB.
@@ -142,7 +164,10 @@ mod tests {
         // 128 threads, 512 GB: the hard top.
         assert_eq!(auto_cap(&machine(128, Some(512))), auto(64, "top of 64"));
         // Small VM, 2 vCPU, 4 GB: never below one.
-        assert_eq!(auto_cap(&machine(2, Some(4))), auto(1, "memory 4 GB"));
+        assert_eq!(
+            auto_cap(&machine(2, Some(4))),
+            auto(1, "memory 4 GB, about 2 GB an agent")
+        );
     }
 
     #[test]
@@ -150,7 +175,10 @@ mod tests {
         let mut linux = machine(16, None);
         // What /proc/meminfo says on a 32 GB machine.
         linux.mem_total_bytes = Some(Count::unchecked(33_520_000_000));
-        assert_eq!(auto_cap(&linux), auto(12, "memory 32 GB"));
+        assert_eq!(
+            auto_cap(&linux),
+            auto(12, "memory 32 GB, about 2 GB an agent")
+        );
     }
 
     #[test]
@@ -164,10 +192,21 @@ mod tests {
         // What a node sends by default: the same 2 GB.
         let mut load = machine(12, Some(18));
         load.mem_per_agent_bytes = Some(Count::unchecked(2 * GB));
-        assert_eq!(auto_cap(&load), auto(6, "memory 18 GB"));
+        assert_eq!(
+            auto_cap(&load),
+            auto(6, "memory 18 GB, about 2 GB an agent")
+        );
         let mut load = machine(16, Some(32));
         load.mem_per_agent_bytes = Some(Count::unchecked(4 * GB));
-        assert_eq!(auto_cap(&load), auto(6, "memory 32 GB"));
+        assert_eq!(
+            auto_cap(&load),
+            auto(6, "memory 32 GB, about 4 GB an agent")
+        );
+        load.mem_per_agent_bytes = Some(Count::unchecked(2_500_000_000));
+        assert_eq!(
+            auto_cap(&load),
+            auto(9, "memory 32 GB, about 2.5 GB an agent")
+        );
     }
 
     #[test]

@@ -113,6 +113,35 @@ async fn an_idle_hub_reports_its_version_and_nothing_busy() {
         fleetd_contracts::hello::ProtocolVersion::CURRENT
     );
     assert!(out.busy.is_empty(), "{:?}", out.busy);
+    assert_eq!(out.admin, Some(false), "a read key");
+}
+
+/// The app greys out the fleet and machine caps for a key that can't change them.
+#[tokio::test]
+async fn it_says_whether_the_key_may_change_the_fleet_and_machine_caps() {
+    let (hub, _home) = hub();
+    let key = |grants: Value| -> Caller {
+        serde_json::from_value(json!({
+            "keyId": "k2", "name": "laptop", "prefix": "fld_abcdef", "createdAt": AT, "grants": grants,
+        }))
+        .unwrap()
+    };
+    let admin_of = |caller: Caller| {
+        let hub = hub.clone();
+        async move {
+            let out = crate::hub::api::registry()
+                .call(&hub, &caller, "hub_info", json!({}))
+                .await
+                .unwrap();
+            serde_json::from_value::<HubInfoOutput>(out).unwrap().admin
+        }
+    };
+    let everywhere = key(json!([{ "role": "admin", "machines": "*" }]));
+    assert_eq!(admin_of(everywhere).await, Some(true));
+    let one_machine = key(json!([{ "role": "admin", "machines": ["devbox"] }]));
+    assert_eq!(admin_of(one_machine).await, Some(false));
+    let operator = key(json!([{ "role": "operate", "machines": "*" }]));
+    assert_eq!(admin_of(operator).await, Some(false));
 }
 
 #[tokio::test]

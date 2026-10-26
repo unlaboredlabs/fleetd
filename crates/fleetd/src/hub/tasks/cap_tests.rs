@@ -76,6 +76,7 @@ fn acquire(hub: &Hub, task: &Task) -> bool {
 fn set(max_agents: i64, pause_extras: bool) -> CapChange {
     CapChange {
         cap: None,
+        machine: None,
         project: Some(ProjectCap {
             project_ref: project(),
             max_agents: Some(max_agents),
@@ -188,6 +189,7 @@ async fn max_agents_stays_within_the_fleet_cap() {
     assert_eq!(hub.slots.state().cap.get(), 28);
     let fleet = CapChange {
         cap: Some(20),
+        machine: None,
         project: None,
     };
     let outcome = hub.tasks.set_caps(fleet).await.unwrap();
@@ -642,6 +644,7 @@ async fn a_task_result_says_why_its_run_ended() {
 fn fleet(cap: i64) -> CapChange {
     CapChange {
         cap: Some(cap),
+        machine: None,
         project: None,
     }
 }
@@ -702,6 +705,7 @@ async fn a_projects_own_max_holds_until_it_goes_back_to_the_default() {
         .tasks
         .set_caps(CapChange {
             cap: None,
+            machine: None,
             project: Some(ProjectCap {
                 project_ref: r.clone(),
                 max_agents: None,
@@ -724,6 +728,7 @@ async fn a_projects_own_max_holds_until_it_goes_back_to_the_default() {
         .tasks
         .set_caps(CapChange {
             cap: None,
+            machine: None,
             project: Some(ProjectCap {
                 project_ref: r.clone(),
                 max_agents: None,

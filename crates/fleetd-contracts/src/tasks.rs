@@ -205,10 +205,12 @@ pub struct SlotStatePerMachine {
     pub machine_id: MachineId,
     /// The most agents that run on it at once: a person's setting for the machine, else `auto`.
     pub cap: Count,
+    /// A person's setting for the machine (`cap_set`); absent: it runs `auto`.
+    pub max_agents: Option<Count>,
     /// What the machine fits: one agent per CPU less a reserve, and 2 GB of memory each after the OS's share, at
     /// most 64.
     pub auto: Count,
-    /// The term that sets `auto`, e.g. "memory 18 GB" or "14 of 16 CPUs".
+    /// The term that sets `auto`, e.g. "memory 18 GB, about 2 GB an agent" or "14 of 16 CPUs".
     pub why: Text<1, 200>,
     /// Agents running there now.
     pub running: Count,

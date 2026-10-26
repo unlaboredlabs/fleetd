@@ -50,7 +50,7 @@ impl Machine {
         self.max_agents.unwrap_or(self.auto.cap)
     }
 
-    /// Why it fits that many: "memory 18 GB", or "set" for a person's setting.
+    /// Why it fits that many: "memory 18 GB, about 2 GB an agent", or "set" for a person's setting.
     pub fn why(&self) -> &str {
         if self.max_agents.is_some() {
             "set"
@@ -118,6 +118,8 @@ pub enum Op {
     MaxAgents(ProjectRef, Option<i64>),
     /// A machine's measure, not a person's setting.
     Machine(MachineId, String, Auto),
+    /// A person's setting for the machine, with its measure for a machine not seen yet; None: auto again.
+    MachineMax(Machine),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -134,6 +136,8 @@ pub struct ProjectRow {
 pub struct MachineRow {
     pub machine_id: MachineId,
     pub cap: i64,
+    /// A person's setting; None: auto.
+    pub max_agents: Option<i64>,
     pub auto: i64,
     pub why: String,
     pub running: i64,
@@ -243,6 +247,11 @@ impl Board {
     /// The machine's cap: a person's setting, else what it fits; [`sizing::UNMEASURED`] until its node reports.
     pub fn machine_cap(&self, m: &MachineId) -> i64 {
         self.machine(m).map_or(sizing::UNMEASURED, Machine::cap)
+    }
+
+    /// A person's setting for the machine; None: auto.
+    pub fn machine_setting(&self, m: &MachineId) -> Option<i64> {
+        self.machine(m)?.max_agents
     }
 
     /// New agents the machine's disk takes now: its last room less the agents started there since they settle.
@@ -573,6 +582,29 @@ impl Board {
         }
     }
 
+    /// `cap_set`: a machine's max agents in place of what it fits; None: auto again. A machine whose node has not
+    /// reported yet is kept as unmeasured until it does. Always counts as freeing capacity, like [`Board::set_cap`].
+    pub fn set_machine(&mut self, m: &MachineId, max_agents: Option<i64>) {
+        let i = match self.machines.iter().position(|x| x.machine_id == *m) {
+            Some(i) => i,
+            None => {
+                self.machines.push(Machine {
+                    machine_id: m.clone(),
+                    name: m.to_string(),
+                    auto: Auto {
+                        cap: sizing::UNMEASURED,
+                        why: sizing::UNMEASURED_WHY.to_owned(),
+                    },
+                    max_agents: None,
+                    disk_room: None,
+                });
+                self.machines.len() - 1
+            }
+        };
+        self.machines[i].max_agents = max_agents;
+        self.ops.push(Op::MachineMax(self.machines[i].clone()));
+    }
+
     /// `cap_set`: the fleet cap, and a project's own max (None: back to the default). Always counts as freeing
     /// capacity, so the caller evaluates and notifies. Lowering revokes nothing.
     pub fn set_cap(&mut self, cap: Option<i64>, max_agents: Option<(ProjectRef, Option<i64>)>) {
@@ -661,6 +693,7 @@ impl Board {
             .map(|m| MachineRow {
                 machine_id: m.machine_id.clone(),
                 cap: m.cap(),
+                max_agents: m.max_agents,
                 auto: m.auto.cap,
                 why: m.auto.why.clone(),
                 running: self

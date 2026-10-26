@@ -18,7 +18,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "hub_info",
-        "The hub's fleetd version, protocol and release channel, and busy: everything a restart would interrupt now (a lead's turn, running agents, a merge or rebase the hub is doing, an approved command still running, a clone; a change waiting on CI is not), one plain line each. machineId keeps only what runs on that machine (before restarting its node). Empty busy: a restart interrupts nothing.",
+        "The hub's fleetd version, protocol and release channel, and busy: everything a restart would interrupt now (a lead's turn, running agents, a merge or rebase the hub is doing, an approved command still running, a clone; a change waiting on CI is not), one plain line each. machineId keeps only what runs on that machine (before restarting its node). Empty busy: a restart interrupts nothing. admin: whether this key may change the fleet and machine caps.",
     ),
     (
         "hub_update",
@@ -162,7 +162,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "cap_set",
-        "Set the fleet cap on running agents (1-1000, admin key) and/or one project's max agents (1 up to the fleet cap, or followDefault: its machine's cap within the fleet cap). Applies at once; queued agents start as soon as they fit. Returns the slot board.",
+        "Set the fleet cap on running agents (1-1000, admin key), one machine's max agents (1 up to the fleet cap in place of what it is measured to fit, or auto: true; admin key), and/or one project's max agents (1 up to the fleet cap, or followDefault: its machine's cap within the fleet cap). Applies at once; queued agents start as soon as they fit. Returns the slot board.",
     ),
     (
         "usage_status",

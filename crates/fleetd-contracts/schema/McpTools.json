@@ -1516,10 +1516,35 @@
           "minimum": 1,
           "type": "integer"
         },
+        "machine": {
+          "$ref": "#/$defs/CapSetMachine",
+          "description": "A machine's max agents. Needs an admin key."
+        },
         "project": {
           "$ref": "#/$defs/CapSetProject"
         }
       },
+      "type": "object"
+    },
+    "CapSetMachine": {
+      "properties": {
+        "auto": {
+          "description": "Drop the setting: the machine runs what it is measured to fit again.",
+          "type": "boolean"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "maxAgents": {
+          "description": "1 up to the fleet cap: the most agents that run on the machine at once, in place of what it is measured to fit.",
+          "maximum": 1000,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "machineId"
+      ],
       "type": "object"
     },
     "CapSetOutput": {
@@ -4851,6 +4876,10 @@
     },
     "HubInfoOutput": {
       "properties": {
+        "admin": {
+          "description": "The caller's key holds Admin on every machine, so it may change the fleet and machine caps. Absent from a hub\nbefore this, which leaves an app to try.",
+          "type": "boolean"
+        },
         "busy": {
           "description": "Empty when nothing is in flight. A restart interrupts each item.",
           "items": {
@@ -11670,6 +11699,12 @@
         "machineId": {
           "$ref": "#/$defs/MachineId"
         },
+        "maxAgents": {
+          "description": "A person's setting for the machine (`cap_set`); absent: it runs `auto`.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
         "running": {
           "description": "Agents running there now.",
           "maximum": 9007199254740991,
@@ -11677,7 +11712,7 @@
           "type": "integer"
         },
         "why": {
-          "description": "The term that sets `auto`, e.g. \"memory 18 GB\" or \"14 of 16 CPUs\".",
+          "description": "The term that sets `auto`, e.g. \"memory 18 GB, about 2 GB an agent\" or \"14 of 16 CPUs\".",
           "maxLength": 200,
           "minLength": 1,
           "type": "string"

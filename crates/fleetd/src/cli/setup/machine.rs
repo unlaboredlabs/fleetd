@@ -33,7 +33,8 @@ pub fn machine_usage() -> String {
              stop and remove the node's service on the machine and revoke its key on the hub; --purge
              also deletes ~/.fleetd/node and ~/.fleetd/claude.env there, and
              what an older fleetd installed for T3 Code
-"
+{}",
+        crate::cli::project::MACHINE_SET_USAGE
     )
 }
 
@@ -834,6 +835,7 @@ pub async fn machine_command(argv: &[String]) -> u8 {
     match argv.first().map(String::as_str) {
         Some("add") => add_command(&argv[1..]).await,
         Some("remove") => remove_command(&argv[1..]).await,
+        Some("set") => crate::cli::project::machine_set_command(&argv[1..]).await,
         Some(other) => usage(&format!("unknown machine command '{other}'")),
         None => usage("missing machine command"),
     }

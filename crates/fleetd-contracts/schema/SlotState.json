@@ -95,6 +95,12 @@
         "machineId": {
           "$ref": "#/$defs/MachineId"
         },
+        "maxAgents": {
+          "description": "A person's setting for the machine (`cap_set`); absent: it runs `auto`.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
         "running": {
           "description": "Agents running there now.",
           "maximum": 9007199254740991,
@@ -102,7 +108,7 @@
           "type": "integer"
         },
         "why": {
-          "description": "The term that sets `auto`, e.g. \"memory 18 GB\" or \"14 of 16 CPUs\".",
+          "description": "The term that sets `auto`, e.g. \"memory 18 GB, about 2 GB an agent\" or \"14 of 16 CPUs\".",
           "maxLength": 200,
           "minLength": 1,
           "type": "string"

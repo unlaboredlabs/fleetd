@@ -1,5 +1,6 @@
 //! `fleetd project add|list|stop|remove|set`: the hub's add-a-project service (project_discover and
-//! project_add) from a terminal, one question at a time like `fleetd init`, or flags only without one.
+//! project_add) from a terminal, one question at a time like `fleetd init`, or flags only without one. Also
+//! `fleetd machine set`, the machine's max agents, beside the project's.
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -502,6 +503,67 @@ async fn set(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(), 
     let body = call(client, "cap_set", input).await?;
     out.success(body.get("next").and_then(Value::as_str).unwrap_or("Set."));
     Ok(())
+}
+
+pub const MACHINE_SET_USAGE: &str =
+    "  machine set <id> --max-agents <n>|auto [--home <dir>] [--hub <url>]
+             the most agents the machine runs at once (admin key), up to the fleet cap,
+             in place of what it is measured to fit; auto: what it fits again. Raising
+             starts queued agents at once; lowering stops nothing
+";
+
+const MACHINE_SET_SPEC: Spec = Spec {
+    options: &[
+        ("max-agents", Kind::Str),
+        ("home", Kind::Str),
+        ("hub", Kind::Str),
+    ],
+    positionals: true,
+};
+
+fn machine_usage(message: &str) -> u8 {
+    eprint!("fleetd: {message}\n\nusage:\n{MACHINE_SET_USAGE}");
+    2
+}
+
+/// `fleetd machine set <id> --max-agents <n>|auto`: cap_set with the machine.
+pub async fn machine_set_command(argv: &[String]) -> u8 {
+    let v = match args::parse(argv, &MACHINE_SET_SPEC) {
+        Ok(v) => v,
+        Err(message) => return machine_usage(&message),
+    };
+    let [machine] = v.positionals.as_slice() else {
+        return machine_usage(
+            "give the machine's id: fleetd machine set <id> --max-agents <n>|auto",
+        );
+    };
+    let mut input = json!({ "machine": { "machineId": machine } });
+    match v.str("max-agents") {
+        None => return machine_usage("give --max-agents <n> or --max-agents auto"),
+        Some("auto") => input["machine"]["auto"] = json!(true),
+        Some(_) => match count_of(&v, "max-agents") {
+            Ok(n) => input["machine"]["maxAgents"] = json!(n),
+            Err(_) => return machine_usage("--max-agents takes a number from 1 to 1000 or auto"),
+        },
+    }
+    let home = match resolve_home(v.str("home")) {
+        Ok(h) => h,
+        Err(message) => return machine_usage(&message),
+    };
+    let out = Out {
+        tty: std::io::stdin().is_terminal() && std::io::stdout().is_terminal(),
+    };
+    let mut client = match connect_to(&home, v.str("hub"), "fleetd-machine").await {
+        Ok(c) => c,
+        Err(f) => return out.fail(&Stop(4, f.message, Some(f.fix))),
+    };
+    match call(&mut client, "cap_set", input).await {
+        Ok(body) => {
+            out.success(body.get("next").and_then(Value::as_str).unwrap_or("Set."));
+            0
+        }
+        Err(stop) => out.fail(&stop),
+    }
 }
 
 /// What to add, after the argument or the pick.

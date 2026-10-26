@@ -680,7 +680,15 @@ output!(TasksListOutput {
 input!(TaskGetInput { task_id: TaskId });
 output!(TaskGetOutput { task: Task });
 
-// cap_set: the fleet cap, a project's max agents, or both. Lowering stops nothing; raising starts queued agents at once.
+// cap_set: the fleet cap, a machine's max agents, a project's max agents, or any of them. Lowering stops nothing;
+// raising starts queued agents at once.
+input!(CapSetMachine {
+    machine_id: MachineId,
+    /// 1 up to the fleet cap: the most agents that run on the machine at once, in place of what it is measured to fit.
+    max_agents: Option<Int<1, 1000>>,
+    /// Drop the setting: the machine runs what it is measured to fit again.
+    auto: Option<bool>,
+});
 input!(CapSetProject {
     project_ref: ProjectRef,
     /// 1 up to the fleet cap: the project's own max, which no later fleet or machine cap changes.
@@ -696,12 +704,19 @@ input!(
     CapSetInput {
         /// The fleet cap: agents running at once across every project. Needs an admin key.
         cap: Option<Int<1, 1000>>,
+        /// A machine's max agents. Needs an admin key.
+        machine: Option<CapSetMachine>,
         project: Option<CapSetProject>,
     }
 );
 checked!(CapSetInput, |input| {
-    if input.cap.is_none() && input.project.is_none() {
-        return Err("expected cap, project or both".into());
+    if input.cap.is_none() && input.machine.is_none() && input.project.is_none() {
+        return Err("expected cap, machine, project or more".into());
+    }
+    if let Some(m) = &input.machine
+        && m.max_agents.is_some() == (m.auto == Some(true))
+    {
+        return Err("expected machine.maxAgents or machine.auto: true".into());
     }
     if let Some(p) = &input.project
         && p.max_agents.is_some() == (p.follow_default == Some(true))
@@ -1463,6 +1478,9 @@ output!(HubInfoOutput {
     started_at: Option<Timestamp>,
     /// Empty when nothing is in flight. A restart interrupts each item.
     busy: List<HubBusyItem, 0, 50>,
+    /// The caller's key holds Admin on every machine, so it may change the fleet and machine caps. Absent from a hub
+    /// before this, which leaves an app to try.
+    admin: Option<bool>,
 });
 
 /// The release channel a hub's build follows: nightly when its version contains "-nightly.", stable otherwise.
@@ -2126,6 +2144,16 @@ mod tests {
         assert!(project(json!({})).is_err());
         assert!(project(json!({ "followDefault": false })).is_err());
         assert!(project(json!({ "maxAgents": 4, "followDefault": true })).is_err());
+        let machine = |mut m: serde_json::Value| {
+            m["machineId"] = json!("devbox");
+            decode::<CapSetInput>(json!({ "machine": m }))
+        };
+        assert!(machine(json!({ "maxAgents": 40 })).is_ok());
+        assert!(machine(json!({ "auto": true })).is_ok());
+        assert!(machine(json!({})).is_err());
+        assert!(machine(json!({ "auto": false })).is_err());
+        assert!(machine(json!({ "maxAgents": 40, "auto": true })).is_err());
+        assert!(machine(json!({ "maxAgents": 1001 })).is_err());
     }
 
     #[test]

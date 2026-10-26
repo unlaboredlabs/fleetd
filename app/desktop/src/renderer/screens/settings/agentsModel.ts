@@ -1,7 +1,7 @@
-// Max agents: how many of a project's agents may run at once, and the fleet-wide cap above every project. The hub
-// enforces both (a spawn past the cap queues and starts when a slot frees); this is how the app reads and words
+// Max agents: how many of a project's agents may run at once, how many a machine runs, and the fleet-wide cap above
+// every project. The hub enforces all three (a spawn past the cap queues and starts when a slot frees); this is how the app reads and words
 // them. Pure, so it is tested without a screen.
-import type { ProjectRef, SlotState } from "../../../shared/contracts";
+import type { ProjectRef, SlotState, SlotStatePerMachine } from "../../../shared/contracts";
 
 export interface ProjectAgents {
   /** Agents of the project running now (its lead's own turns aside). Above `max` right after a lower. */
@@ -10,27 +10,38 @@ export interface ProjectAgents {
   readonly queued: number;
   /** The project's max: its own, or the default (`cap`) it follows. */
   readonly max: number;
-  /**
-   * The most it can run, the slider's top and the default: its machine's cap, or the fleet cap when that is lower.
-   */
+  /** The default: its machine's cap, or the fleet cap when that is lower. */
   readonly cap: number;
+  /** Its machine's cap, which holds a higher max back until the machine is raised. */
+  readonly machineCap: number;
+  /** The slider's top: the fleet cap, which a machine may be raised to. */
+  readonly top: number;
+  /** What it runs at most now: its max, within its machine's cap and the fleet cap. */
+  readonly limit: number;
   /** Whether a person set the project's own max, which no fleet or machine change moves; false: it follows `cap`. */
   readonly own: boolean;
 }
 
 const sameRef = (a: ProjectRef, b: ProjectRef) => a.machineId === b.machineId && a.projectId === b.projectId;
 
+/**
+ * The top of the project and machine sliders: the fleet cap when set, else room to raise past what the machines fit. A
+ * hub from before machine caps sends no `perMachine`, and its cap is the fleet's.
+ */
+export const sliderTop = (slots: SlotState): number => (slots.perMachine === undefined ? slots.cap : (slots.fleetCap ?? fleetTop(slots.cap)));
+
 export function projectAgents(slots: SlotState, project: ProjectRef): ProjectAgents {
   const row = slots.perProject.find((p) => sameRef(p.projectRef, project));
-  // `slots.cap` is every machine's cap added up, so a project is held to its own machine's. A hub from before machine
-  // caps sends no `perMachine`, and its cap is the fleet's.
-  const machine = slots.perMachine?.find((m) => m.machineId === project.machineId)?.cap ?? slots.cap;
-  const cap = Math.min(machine, slots.cap);
-  // No row: the default, with nothing running or waiting.
-  const max = Math.min(row?.maxAgents ?? cap, cap);
+  // `slots.cap` is every machine's cap added up, so a project is held to its own machine's.
+  const machineCap = slots.perMachine?.find((m) => m.machineId === project.machineId)?.cap ?? slots.cap;
+  const cap = Math.min(machineCap, slots.cap);
+  const top = Math.max(1, sliderTop(slots));
   // A hub from before `own` lists only projects set or busy, and says nothing of which: a max at the top reads as the
   // default.
-  return { running: row?.running ?? 0, queued: row?.queued ?? 0, max, cap, own: row?.own ?? max < cap };
+  const own = row?.own ?? (row !== undefined && row.maxAgents < cap);
+  // On the default (or no row: nothing running or waiting), it follows `cap` whatever the row says.
+  const max = own && row !== undefined ? Math.min(row.maxAgents, top) : cap;
+  return { running: row?.running ?? 0, queued: row?.queued ?? 0, max, cap, machineCap, top, limit: Math.min(max, cap), own };
 }
 
 /** Where the max comes from, beside the slider: its own setting, or the default it follows and what sets it. */
@@ -41,7 +52,42 @@ export function sourceLine(slots: SlotState, a: ProjectAgents): string {
 }
 
 /** The header control's words: "agents 6 / 12", and "· 2 queued" when some wait their turn. */
-export const agentsLabel = (a: ProjectAgents): string => `agents ${a.running} / ${a.max}${a.queued > 0 ? ` · ${a.queued} queued` : ""}`;
+export const agentsLabel = (a: ProjectAgents): string => `agents ${a.running} / ${a.limit}${a.queued > 0 ? ` · ${a.queued} queued` : ""}`;
+
+/**
+ * Said under a project's slider moved past its machine's cap: the machine holds it there. Null within it. `machineId`
+ * names the machine.
+ */
+export function machineHolds(a: ProjectAgents, value: number, machineId: string): string | null {
+  if (value <= a.machineCap) return null;
+  return `${machineId} runs at most ${a.machineCap} agents at once, so this project runs ${a.machineCap} until you raise ${machineId}.`;
+}
+
+/** One machine as Settings shows it. */
+export interface MachineAgents {
+  readonly machineId: string;
+  /** What it runs at once: a person's setting, else auto. */
+  readonly cap: number;
+  /** A person set it; false: auto. */
+  readonly set: boolean;
+  /** What it is measured to fit, which "Use auto" goes back to. */
+  readonly auto: number;
+  readonly running: number;
+  /** Where the number comes from, in plain words. */
+  readonly source: string;
+}
+
+const sentence = (text: string): string => (text.endsWith(".") ? text : `${text}.`);
+
+/** Where a machine's number comes from: "Auto: memory 60 GB, about 2 GB an agent.", or a person's setting. */
+export function machineSource(m: SlotStatePerMachine): string {
+  if (m.maxAgents === undefined) return sentence(`Auto: ${m.why}`);
+  return sentence(`Set by you. Auto would be ${m.auto}: ${m.why}`);
+}
+
+/** Every machine the hub has measured or a person has set, in the hub's order. */
+export const machineAgents = (slots: SlotState): MachineAgents[] =>
+  (slots.perMachine ?? []).map((m) => ({ machineId: m.machineId, cap: m.cap, set: m.maxAgents !== undefined, auto: m.auto, running: m.running, source: machineSource(m) }));
 
 /** How many running agents a new max leaves over it: they finish their work, and no new one starts until under. */
 export const extrasOver = (running: number, next: number): number => Math.max(0, running - next);
@@ -57,7 +103,14 @@ export function changeLine(a: ProjectAgents, next: number): string {
     const until = next === 1 ? "until none is running" : `until fewer than ${next} run`;
     return `${a.running} running now, ${over} over the new max: they finish their current work, and new agents wait ${until}.`;
   }
-  if (a.queued > 0 && next > a.max) return `Up to ${next} at once. ${Math.min(a.queued, next - a.max)} of the ${a.queued} queued can start now.`;
+  if (a.queued > 0 && next > a.max) {
+    // Its machine (or the fleet, when lower) still holds it at `cap`: only what fits under both starts.
+    const start = Math.min(a.queued, Math.max(0, Math.min(next, a.cap) - a.running));
+    const holder = a.cap < a.machineCap ? "the whole fleet" : "its machine";
+    if (start === 0) return `Up to ${next} at once, but ${holder} runs ${a.cap} at most: the ${a.queued} queued wait for it.`;
+    const rest = start < a.queued && next > a.cap ? `; the rest wait for ${holder}` : "";
+    return `Up to ${next} at once. ${start} of the ${a.queued} queued can start now${rest}.`;
+  }
   if (next > a.max) return `Up to ${next} at once. Queued agents start as soon as there is room.`;
   return `Up to ${next} at once. New agents wait while ${next} run.`;
 }

@@ -199,16 +199,18 @@ whole fleet. The hub enforces all of them; the lead plans to them.
 
 | Cap | Counts | Default | Set it |
 |---|---|---|---|
-| Per machine | Every project's agents on the machine. Not the leads. | What it fits: one per CPU less one in eight, and 2 GB of memory each after a quarter of it (4 to 16 GB) is left for the system, at most 64. An 8 GB laptop fits 2, a 32 GB one 12. | node.json's `memPerAgentGb` changes the 2 GB. |
-| Per project: Max agents | The project's agents: writers, readers, reviewers. Not the lead. | Its machine's cap, within the fleet cap: it follows a change to either at once | Click "agents 6 / 12" in the project's chat header, or use Settings → Agents. Once set it is the project's own, which no fleet or machine change moves; "Use the default" goes back. |
+| Per machine | Every project's agents on the machine. Not the leads. | Auto, what it fits: one per CPU less one in eight, and 2 GB of memory each after a quarter of it (4 to 16 GB) is left for the system, at most 64. An 8 GB laptop fits 2, a 32 GB one 12, a 60 GB one 22. | Settings → Agents → Machines, up to the fleet cap; "Use auto" goes back. Needs an admin key. node.json's `memPerAgentGb` changes the 2 GB of auto. |
+| Per project: Max agents | The project's agents: writers, readers, reviewers. Not the lead. | Its machine's cap, within the fleet cap: it follows a change to either at once | Click "agents 6 / 12" in the project's chat header, or use Settings → Agents, up to the fleet cap. Once set it is the project's own, which no fleet or machine change moves; "Use the default" goes back. Past its machine's cap, the slider says the machine holds it there and offers to raise the machine. |
 | Fleet-wide | Every project's agents together. Not the leads. | None: the machines' caps added up | Settings → Agents → Whole fleet. Needs an admin key. A fleet cap saved before stays until you change it. |
 
 New agents on a machine also wait for disk: 5 GB each (`diskPerAgentGb`) above the free-space floor, with agents started
 in the last 10 minutes still counted, since their worktrees haven't grown yet. The lead's state line names what sets
-its cap, e.g. "agents: 4 running of 6 (auto: memory 18 GB), 2 queued", or "fleet cap set" and "max agents set".
+its cap, e.g. "agents: 4 running of 6 (auto: memory 18 GB, about 2 GB an agent), 2 queued", or "fleet cap set",
+"machine cap set" and "max agents set".
 
-The memory figure only sizes a machine's default cap. No agent waits for the memory it might take: a Max agents you set
-starts that many, as far as the machine's cap and disk allow. What does hold new agents back is memory really in use, the
+The memory figure only sizes a machine's auto cap. No agent waits for the memory it might take: a Max agents you set
+starts that many, as far as the machine's cap and disk allow, and a machine you set runs that many whatever it is
+estimated to fit. What does hold new agents back is memory really in use, the
 [guard's pause](/docs/machines#guard) at 90%.
 
 The header shows "· 2 queued" when agents wait their turn. While you move the slider it says what the change will do; it
@@ -226,10 +228,13 @@ fleetd project set devbox/storefront --max-agents 3
 fleetd project set devbox/storefront --max-agents 2 --pause-extras
 fleetd project set devbox/storefront --max-agents default
 fleetd project set --fleet-cap 20        # needs an admin key
+fleetd machine set devbox --max-agents 40   # needs an admin key
+fleetd machine set devbox --max-agents auto
 ```
 
 From an [MCP client](/docs/mcp-clients): `cap_set {project: {projectRef, maxAgents, pauseExtras?}}` with an operate
-key (`followDefault: true` in place of `maxAgents` goes back to the default), or `cap_set {cap}` for the fleet cap with an admin key.
+key (`followDefault: true` in place of `maxAgents` goes back to the default), or `cap_set {cap}` for the fleet cap with an admin key, or `cap_set {machine: {machineId, maxAgents}}` for a machine with an
+admin key (`auto: true` in place of `maxAgents` goes back to what it fits).
 
 When the cap is reached:
 

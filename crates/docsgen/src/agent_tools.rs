@@ -294,9 +294,11 @@ fn limits(lead: &[&Tool], task: &[&Tool]) -> Result<String, String> {
          ahead of queued writers. The lead is not an agent and doesn't count. |\n",
     );
     md.push_str(&format!(
-        "| Agents running at once, per machine | What the machine fits: one per CPU less one in eight, and 2 GB of \
-         memory each after a quarter (4 to 16 GB) is left for the system, at most {HARD_TOP}. New agents also wait \
-         for 5 GB of disk each above the free-space floor. |\n"
+        "| Agents running at once, per machine | The machine's max agents, which a person may set up to the fleet cap \
+         (`cap_set`, `fleetd machine set`, Settings > Agents). Unset: what the machine fits, one per CPU less one in \
+         eight, and 2 GB of memory each after a quarter (4 to 16 GB) is left for the system, at most {HARD_TOP}. \
+         Either way new agents pause while memory in use runs short, and wait for 5 GB of disk each above the \
+         free-space floor. |\n"
     ));
     md.push_str(
         "| Agents running at once, fleet-wide | The machines' caps added up, unless a person set a fleet cap. |\n",
