@@ -267,7 +267,7 @@ async fn an_agent_opens_settings_on_an_android_session_and_its_recording_is_on_t
 
     // A browser session needs a browser broker, which this node lacks; an android one starts from the pool.
     let refused = call(&router, json!({ "op": "session_start", "purpose": "Shop" })).await;
-    assert_eq!(refused["error"]["code"], "failed", "{refused}");
+    assert_eq!(refused["error"]["code"], "invalid", "{refused}");
     let started = call(
         &router,
         json!({ "op": "session_start", "purpose": "Check the Settings app", "kind": "android" }),
