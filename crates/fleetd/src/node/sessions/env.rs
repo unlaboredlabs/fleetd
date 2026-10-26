@@ -7,6 +7,7 @@ use fleetd_contracts::sessions::{
     FailureClass, ItemKind, ItemStatus, SendMode, SessionError, SessionRole, ThreadItem,
 };
 
+use super::super::browser::onepassword::TOKEN_ENV;
 use super::super::mask::{Masker, Secrets};
 use super::super::project_env::Vars;
 use super::super::worktree_setup::{self, Ran};
@@ -92,12 +93,17 @@ impl SessionService {
         }
         let home = &self.inner.config.home;
         let project = row.summary.project_id.as_str();
-        let (vars, _) = super::super::project_env::for_spawn(home, project);
+        let (mut vars, _) = super::super::project_env::for_spawn(home, project);
         let secret: Vec<String> = super::super::project_env::secrets(home, project)
             .into_iter()
             .map(|(n, _)| n)
             .collect();
-        let (order, _) = self.order_vars(row);
+        let (mut order, _) = self.order_vars(row);
+        // The 1Password token is the node's, never in an agent's environment (spawn leaves it out).
+        let token = TOKEN_ENV;
+        let has_token = vars.iter().chain(&order).any(|(n, _)| n == token);
+        vars.retain(|(n, _)| n != token);
+        order.retain(|(n, _)| n != token);
         let shown = |(name, value): &(String, String)| {
             if secret.contains(name)
                 || value.contains(['\n', '\r'])
@@ -137,6 +143,12 @@ impl SessionService {
             lines.push(format!(
                 "- Set for order {order_id}'s agents: {}.",
                 names.join(", ")
+            ));
+        }
+        if has_token {
+            lines.push(format!(
+                "- `{token}` is set, for this machine's node only: it isn't in your environment. Fill a login from \
+                 1Password with fill_credential in a browser session."
             ));
         }
         if lines.is_empty() {
@@ -462,7 +474,7 @@ impl SessionService {
         let (order, _) = self.order_vars(row);
         vars.retain(|(p, _)| !order.iter().any(|(o, _)| o == p));
         vars.extend(order);
-        vars.retain(|(k, _)| !env.iter().any(|(e, _)| e == k));
+        vars.retain(|(k, _)| !env.iter().any(|(e, _)| e == k) && k != TOKEN_ENV);
         env.extend(vars);
         let jobs_home = home.clone();
         let n = blocking(move || super::super::load::build_jobs_here(&jobs_home)).await;

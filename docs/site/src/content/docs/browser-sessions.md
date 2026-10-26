@@ -61,14 +61,75 @@ recorded. They can't stop an agent that sets out to get around them, for example
 | File | Holds |
 |---|---|
 | `video` | A WebM (VP9, 1280×800, 25 frames a second), made from the node's own screencast of the page the agent is on. |
-| `actions` | One JSON line per step: `session_start`, each `agent-browser` command with the start of its output, how long it took and when in the video it ran, and `session_end`. A step that clicked or typed names the element it acted on: the agent's ref for it (`@e3`), a CSS selector, and its box in the video's pixels. A person's takeover and handback are steps too. |
+| `actions` | One JSON line per step: `session_start`, each `agent-browser` command with the start of its output, how long it took and when in the video it ran, each `fill_credential` with its reference, and `session_end`. A step that clicked or typed names the element it acted on: the agent's ref for it (`@e3`), a CSS selector, and its box in the video's pixels. A person's takeover and handback are steps too. |
 | `dom` | The page's HTML after each step that changed it, with its URL and title, and that step's element. |
 
 Before anything leaves the machine, the node scrubs the text files. The project's
 [secret variables](/docs/projects#env) and the session's MCP secrets are masked as `***NAME***`, in every form a page
 shows them: as written, JSON- or HTML-escaped, URL-encoded or encoded as a form submits it, and in base64, inside a
-longer string too. A video can't be
+longer string too. Each value filled from 1Password is masked so too, as `***op://…***`. A video can't be
 scrubbed: whatever showed on the page is in it.
+
+## Logins from 1Password {#1password}
+
+An agent signs in to a site without seeing the password. It names a 1Password secret reference, and the node types
+the value into the page itself.
+
+1. **Give the project a service account token.** In 1Password, make a service account that can read the vault with
+   the agents' logins. Set its token as `OP_SERVICE_ACCOUNT_TOKEN`, a secret [project variable](/docs/projects#env), or
+   enter it when the lead asks for it with `request_secret` (an [order's variable](/docs/approvals-and-secrets#order-variables)).
+   The node keeps it to itself: no agent, worktree setup command or MCP server gets it in its environment (the node's
+   1Password helper reads it on its standard input, not from its environment either), and it is masked like any
+   secret.
+2. **Give each login item its website.** The node fills a field only on a page of the item's website (the same host,
+   or a subdomain of it), and submits only to a form that sends there. An item with no website fills nowhere. The
+   website is the one of exactly the item the reference names: by its ID, or by its title when no other item in that
+   vault has it (if two do, put the item's ID in the reference).
+3. **The agent fills and submits in one step.** It opens the login page with agent-browser, then calls
+   [`fill_credential`](/docs/reference/agent-tools#fill_credential) with the reference and the field's CSS selector:
+   `op://Agents/Shop/username` into `#email` with `submit: false`, then `op://Agents/Shop/password` into `#password`,
+   which submits the form. A one-time code is `op://Agents/Shop/one-time password?attribute=otp`.
+
+The node reads references with the 1Password SDK (`@1password/sdk` 0.5.0, run with Node.js and installed at the
+first fill under `~/.fleetd/node/browser/onepassword`; an install that takes over 3 minutes is stopped). A session
+lists the vaults and a vault's items once, keeps what it read, except one-time codes, and waits and tries again when
+1Password rate-limits the token. Service accounts have hourly and daily read limits, and a
+machine stuck in a loop could use up the account's day for every machine, so agents are told not to retry a failed
+fill in a loop.
+
+### What keeps the value from the agent {#sealed}
+
+- The node types the value over its own connection, never through the agent's proxy, and submits in the same step.
+- From the first fill, the session is sealed until it ends:
+  - every answer and event the agent's browser connection gets is scrubbed of each filled value, in every form a page
+    or an encoding shows it (base64, URL encoding, HTML and JSON escapes), request bodies in network events included;
+  - only agent-browser's own scripts run: the proxy parses each script the agent's connection sends and compares its
+    shape (the script with its strings, numbers and booleans left out) with the shapes of the scripts agent-browser
+    0.39.4 runs, pinned in fleetd. So snapshots, clicks, typing, scrolling and `get text` work as before, and a script
+    that reads a field and reshapes or sends it is refused;
+  - nothing may change where a form sends, what a page loads or links to, its event handlers or HTML, or a field's
+    type or style, by script or by DOM command, nor read the clipboard;
+  - nothing may test a filled value against guesses: a field's validation (`pattern`, `minlength`, `maxlength`, `min`,
+    `max`, `required`, `step`) can't be set, selectors that ask a field's state (`:invalid`, `:valid`,
+    `:user-invalid`, `:user-valid`, `:placeholder-shown`, `:autofill`, `[value…]`) are refused however they're
+    escaped, style rules can't be added, and a filled field takes no DOM write at all;
+  - the proxy refuses page and DOM snapshots, MHTML and PDF, request bodies and request interception;
+  - agent-browser's `eval` and `get value` are denied (its policy file names its internal actions, `evaluate` and
+    `inputvalue`).
+- A filled field that isn't a password field, such as a one-time code or a username, shows as dots and blurred, so
+  the video and the live view don't show it either.
+- The action log, the DOM trace and everything the agent's session reports are scrubbed of filled values. The hub gets
+  how many logins were filled, never a value.
+
+:::caution
+Agents aren't sandboxed on their machine. These measures cover the agent's tools and its connection to the browser.
+An agent that sets out to get around them can: by reading the token from the node's files, or with a script it put in
+the page before the fill. And a page that shows a filled value, as text or in an attribute, could still be probed one
+guess at a time (agent-browser's `wait --text` answers yes or no). Copy and paste isn't covered either: part of a
+filled field that isn't a password field (a username, a one-time code) could be copied into another field and read
+there. Give the service account access only to a vault of
+logins made for agents.
+:::
 
 ## On the hub {#hub}
 

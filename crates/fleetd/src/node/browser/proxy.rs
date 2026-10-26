@@ -152,6 +152,12 @@ async fn serve(tcp: tokio::net::TcpStream, proxy: Weak<Proxy>, broker: Weak<Brok
                 if session.control() != fleetd_contracts::browser::BrowserControl::Human {
                     session.note_target(&command).await;
                 }
+                // A write to a field the session filled: the browser says which node it names first.
+                if let Some(why) = super::credentials::filled_field_refusal(&session, &command).await {
+                    let id = command.get("id").cloned().unwrap_or(Value::Null);
+                    let _ = out.send(refused(&id, &why).to_string());
+                    continue;
+                }
                 command_in(&session, command, &out);
             }
             message = events.recv() => {
