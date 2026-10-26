@@ -13,7 +13,7 @@ use fleetd_contracts::node_link::{NodeActionResult, NodeUpdate};
 use fleetd_contracts::prim::Text;
 use serde_json::json;
 
-use super::{NodeFacts, Timing, UpdatePorts, Updates, by_machine};
+use super::{NodeAnswer, NodeFacts, Refusal, Timing, UpdatePorts, Updates, by_machine};
 use crate::clock::SystemClock;
 use crate::hub::store::test_clock::ManualClock;
 use crate::update::finish::{Plan, Verdict};
@@ -31,6 +31,17 @@ enum Answer {
     /// Staged it, then reconnects on this version (the old one: its watcher put it back).
     BackOn(&'static str),
     Refuses(UpdateStage, &'static str),
+    /// Staged it, but its service manager refused the restart: it stays on its link and build, and says so.
+    RestartRefused(&'static str),
+}
+
+/// The fake node's second answer, already there.
+struct Said(Option<NodeActionResult>);
+
+impl Refusal for Said {
+    fn try_take(&mut self) -> Option<NodeActionResult> {
+        self.0.take()
+    }
 }
 
 struct Fake {
@@ -125,7 +136,7 @@ impl UpdatePorts for Fake {
         &'a self,
         machine_id: &'a MachineId,
         _: &'a NodeUpdate,
-    ) -> BoxFuture<'a, Result<NodeActionResult, String>> {
+    ) -> BoxFuture<'a, Result<NodeAnswer, String>> {
         self.asked.lock().unwrap().push(machine_id.to_string());
         let answer = self.answers.get(machine_id.as_str()).cloned();
         let result = match answer {
@@ -141,11 +152,18 @@ impl UpdatePorts for Fake {
                     n.live_since = Some(i64::MAX / 2);
                     n.version = version.into();
                 }
-                Ok(result(true, None, "restarting"))
+                Ok((result(true, None, "restarting"), Said(None)))
             }
-            Some(Answer::Refuses(stage, message)) => Ok(result(false, Some(stage), message)),
+            Some(Answer::Refuses(stage, message)) => {
+                Ok((result(false, Some(stage), message), Said(None)))
+            }
+            Some(Answer::RestartRefused(message)) => Ok((
+                result(true, None, "restarting"),
+                Said(Some(result(false, Some(UpdateStage::Restart), message))),
+            )),
             None => Err("the link to its node dropped while the command ran".into()),
-        };
+        }
+        .map(|(r, said)| (r, Box::new(said) as Box<dyn Refusal>));
         Box::pin(async move { result })
     }
 }
@@ -462,6 +480,37 @@ async fn a_refused_restart_of_the_hubs_service_says_so() {
     assert_eq!(fs::read(&fake.exe).unwrap(), b"old");
     assert_eq!(state(&run, Some("builder")).0, UpdateState::Skipped);
     assert!(fake.asked.lock().unwrap().is_empty());
+}
+
+/// A node's service manager refused its restart: the node, still running its build, says so at once, and the run shows
+/// that rather than a node that "didn't come back".
+#[tokio::test]
+async fn a_refused_restart_of_a_nodes_service_says_so() {
+    let home = tempfile::tempdir().unwrap();
+    let refused = "restarting fleetd-node.service exited with exit status: 1, so it never restarted onto the new \
+                   build and still runs the old one; its previous binary was put back";
+    let fake = Fake::new(home.path(), b"new").node(
+        "builder",
+        OLD,
+        true,
+        true,
+        Some(Answer::RestartRefused(refused)),
+    );
+    *fake.running.lock().unwrap() = NEW.into();
+    let fake = Arc::new(fake);
+    let updates = area(home.path(), &fake);
+    updates.start(None).unwrap();
+    let run = until(&updates, |r| r.finished_at.is_some()).await;
+    assert_eq!(
+        state(&run, Some("builder")),
+        (UpdateState::Failed, Some(UpdateStage::Restart))
+    );
+    let said = by_machine(&run)[&Some(MachineId::unchecked("builder"))]
+        .message
+        .as_ref()
+        .unwrap()
+        .to_string();
+    assert_eq!(said, refused);
 }
 
 #[tokio::test]

@@ -48,16 +48,23 @@ pub async fn probe_host() -> NodeProbe {
     }
 }
 
-/// `home` is the node's home: an update keeps its previous binary and the watcher's plan there.
-pub async fn run_node_action(frame: NodeAction, home: &std::path::Path) -> NodeActionResult {
+/// `home` is the node's home: an update keeps its previous binary and the watcher's plan there. With the answer, the
+/// watcher's verdict file when an update started one.
+pub async fn run_node_action(
+    frame: NodeAction,
+    home: &std::path::Path,
+) -> (NodeActionResult, Option<std::path::PathBuf>) {
     match frame.action {
-        NodeActionKind::Probe => NodeActionResult {
-            id: frame.id,
-            ok: true,
-            message: head_text("probed"),
-            probe: Some(probe_host().await),
-            stage: None,
-        },
+        NodeActionKind::Probe => (
+            NodeActionResult {
+                id: frame.id,
+                ok: true,
+                message: head_text("probed"),
+                probe: Some(probe_host().await),
+                stage: None,
+            },
+            None,
+        ),
         NodeActionKind::Update => {
             let done = match &frame.update {
                 Some(update) => super::update::run(update, home).await,
@@ -66,13 +73,33 @@ pub async fn run_node_action(frame: NodeAction, home: &std::path::Path) -> NodeA
                     "the hub named no build to update to",
                 )),
             };
-            NodeActionResult {
-                id: frame.id,
-                ok: done.is_ok(),
-                stage: done.as_ref().err().map(|f| f.stage),
-                message: head_text(&done.unwrap_or_else(|f| f.message)),
-                probe: None,
+            match done {
+                Ok(answer) => (
+                    NodeActionResult {
+                        id: frame.id,
+                        ok: true,
+                        stage: None,
+                        message: head_text(&answer.message),
+                        probe: None,
+                    },
+                    answer.verdict,
+                ),
+                Err(f) => (failed(frame.id, &f), None),
             }
         }
+    }
+}
+
+/// An update that failed, as the answer to its action.
+pub fn failed(
+    id: fleetd_contracts::prim::NonEmpty,
+    f: &crate::update::Failure,
+) -> NodeActionResult {
+    NodeActionResult {
+        id,
+        ok: false,
+        stage: Some(f.stage),
+        message: head_text(&f.message),
+        probe: None,
     }
 }
