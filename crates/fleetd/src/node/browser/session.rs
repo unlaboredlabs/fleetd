@@ -83,6 +83,9 @@ pub struct Session {
     /// A person's input, applied one at a time in the order it came: a click focuses before the typing after it.
     inputs: tokio::sync::mpsc::UnboundedSender<BrowserInput>,
     _inputs: Mutex<Option<AbortOnDrop>>,
+    /// The DOM captures after each step, taken one at a time in order; `close` waits for those queued.
+    captures: tokio::sync::mpsc::UnboundedSender<Capture>,
+    _captures: Mutex<Option<AbortOnDrop>>,
     _screencast: Mutex<Option<AbortOnDrop>>,
     _ticker: Mutex<Option<AbortOnDrop>>,
 }
@@ -133,6 +136,7 @@ impl Session {
         let started_at = Timestamp(crate::node::util::now_iso());
         let scrub = Arc::new(Scrub::new(&opened.secrets.0));
         let (inputs, mut queued) = tokio::sync::mpsc::unbounded_channel::<BrowserInput>();
+        let (captures, mut steps) = tokio::sync::mpsc::unbounded_channel::<Capture>();
         let session = Arc::new(Self {
             id: opened.id,
             thread: opened.thread,
@@ -160,8 +164,28 @@ impl Session {
             on_control: Mutex::default(),
             inputs,
             _inputs: Mutex::default(),
+            captures,
+            _captures: Mutex::default(),
             target: Mutex::default(),
         });
+        {
+            let weak = Arc::downgrade(&session);
+            *lock(&session._captures) = Some(AbortOnDrop(tokio::spawn(async move {
+                while let Some(capture) = steps.recv().await {
+                    match capture {
+                        Capture::Step(seq, target) => {
+                            let Some(session) = weak.upgrade() else {
+                                return;
+                            };
+                            session.capture_dom(seq, target).await;
+                        }
+                        Capture::Flush(done) => {
+                            let _ = done.send(());
+                        }
+                    }
+                }
+            })));
+        }
         {
             let weak = Arc::downgrade(&session);
             *lock(&session._inputs) = Some(AbortOnDrop(tokio::spawn(async move {
@@ -235,7 +259,12 @@ impl Session {
         live.watcher = watcher;
         if let (Some(watcher), Some(last)) = (&live.watcher, &live.last) {
             let mut last = last.clone();
+            // As things are now: a still page sends no new frame, so the newest says who drives and where it is.
             last.control = self.control();
+            last.url = self
+                .page()
+                .and_then(|(target, _)| live.urls.get(&target).cloned())
+                .map(|url| Text::unchecked(url.chars().take(2000).collect::<String>()));
             watcher.replace(self.id.as_str(), to_json(&NodeToHub::BrowserFrame(last)));
         }
     }
@@ -588,8 +617,13 @@ impl Session {
         }
     }
 
+    /// Queues the DOM capture after action `seq`, behind those before it.
+    pub fn queue_capture(&self, seq: u64, target: Option<StepTarget>) {
+        let _ = self.captures.send(Capture::Step(seq, target));
+    }
+
     /// Writes the page's HTML to the DOM trace after action `seq`, unless it is as the last one left it.
-    pub async fn capture_dom(&self, seq: u64, target: Option<StepTarget>) {
+    async fn capture_dom(&self, seq: u64, target: Option<StepTarget>) {
         let _turn = self.dom_turn.lock().await;
         let Some((target_id, page)) = self.page() else {
             return;
@@ -666,7 +700,16 @@ impl Session {
     /// Stops recording and the browser: the video is finished, the text files scrubbed once more with every value the
     /// session knew, and the browser killed with its profile. Returns the files there are.
     pub async fn close(&self) -> Vec<(RecordingFile, u64)> {
-        // Held to the end: a DOM capture still running finishes before the files are scrubbed and closed.
+        // Every step's DOM capture queued so far lands first, while the page is still there.
+        let (done, flushed) = tokio::sync::oneshot::channel();
+        if self.captures.send(Capture::Flush(done)).is_ok()
+            && tokio::time::timeout(Duration::from_secs(30), flushed)
+                .await
+                .is_err()
+        {
+            tracing::warn!(session = %self.id, "DOM captures not finished in 30 s");
+        }
+        // Held to the end: no capture runs while the files are scrubbed and closed.
         let _turn = self.dom_turn.lock().await;
         lock(&self._ticker).take();
         if let Some((_, page)) = self.page() {
@@ -973,4 +1016,12 @@ pub fn element_ref(command: &str) -> Option<String> {
                 .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
         })
         .map(str::to_owned)
+}
+
+/// A job for a session's DOM capture queue.
+enum Capture {
+    /// The page after step `seq`, with the element it acted on.
+    Step(u64, Option<StepTarget>),
+    /// Answers once every capture queued before it is written.
+    Flush(tokio::sync::oneshot::Sender<()>),
 }

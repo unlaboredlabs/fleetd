@@ -834,11 +834,17 @@ async fn a_person_watches_takes_over_and_types_and_the_agent_sees_it_after_the_h
     let frame = next_frame(&frames).await;
     assert_eq!(frame["sessionId"], id.as_str());
     assert_eq!(frame["control"], "agent");
-    assert!(
-        frame["url"].as_str().is_some_and(|u| u.starts_with(&site)),
-        "the page the frame shows: {}",
-        frame["url"]
-    );
+    // The frame says which page it shows: the site, once the node has heard where the page went.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut shown = frame["url"].clone();
+    while !shown.as_str().is_some_and(|u| u.starts_with(&site)) {
+        assert!(
+            Instant::now() < deadline,
+            "the page the frame shows: {shown}"
+        );
+        rig.broker.watch(&id, Some(frames.clone()));
+        shown = next_frame(&frames).await["url"].clone();
+    }
     let (width, height) = (
         frame["width"].as_f64().unwrap(),
         frame["height"].as_f64().unwrap(),

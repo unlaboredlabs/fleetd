@@ -785,7 +785,7 @@ impl SessionHooks for Broker {
             .unwrap_or_default();
         let ok = item.status == ItemStatus::Completed && exit_code.is_none_or(|c| c == 0);
         let (seq, target) = session.agent_step(command, ok, output.as_deref(), duration_ms);
-        tokio::spawn(async move { session.capture_dom(seq, target).await });
+        session.queue_capture(seq, target);
     }
 }
 
