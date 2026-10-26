@@ -9762,6 +9762,13 @@
         "usagePausedOn": {
           "$ref": "#/$defs/MachineId",
           "description": "Blocked by a usage pause on this machine's login: the app offers Resume (usage_resume) for it."
+        },
+        "usagePausedReason": {
+          "description": "With `usage_paused_on`: the pause in its own words (\"paused until Sun 23:40 UTC (usage limit on forge's\nlogin)\"), which `blocked_reason` may not be when the machine is also degraded.",
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
         }
       },
       "required": [

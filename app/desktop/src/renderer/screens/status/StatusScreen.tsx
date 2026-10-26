@@ -97,6 +97,8 @@ function Row({ row, state, now }: { row: ProjectStatusRow; state: StateWord; now
   const merged = row.lastMerged;
   const week = weekLine(row.merged7d, row.throughFleetdPct7d);
   const mergedAt = merged === undefined ? "" : when(merged.at, now);
+  // The pause in its own words: the blocked reason may be the machine's (degraded) instead.
+  const pausedWhy = row.usagePausedReason ?? row.blockedReason;
   const label = [
     `${row.title}: ${STATE_WORDS[state]}`,
     ...(row.stale ? [staleWords(row.stale, now)] : []),
@@ -179,7 +181,7 @@ function Row({ row, state, now }: { row: ProjectStatusRow; state: StateWord; now
             <Text size="xs" strong tone="warning">
               Usage paused:
             </Text>
-            {row.blockedReason === undefined ? null : ` ${row.blockedReason}`}
+            {pausedWhy === undefined ? null : ` ${pausedWhy}`}
           </Text>
           <ResumeButton machineId={row.usagePausedOn} />
         </div>

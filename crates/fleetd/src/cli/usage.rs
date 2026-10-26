@@ -92,13 +92,22 @@ pub async fn usage_command(argv: &[String]) -> u8 {
 
 async fn run(hub: &mut Hub, args: &UsageArgs, zone: Tz) -> Result<(), u8> {
     if args.resume {
+        // Read first: usage_resume answers with the state after, when the pause is already gone.
+        let before = hub
+            .call("usage_status", json!({ "machineId": args.machine }))
+            .await?;
+        let was_paused = before
+            .get("machines")
+            .and_then(Value::as_array)
+            .and_then(|ms| ms.first())
+            .is_some_and(|m| text(m, &["breaker", "state"]) == Some("open"));
         let out = hub
             .call("usage_resume", json!({ "machineId": args.machine }))
             .await?;
         if args.json {
             println!("{out}");
         } else {
-            println!("{}", resumed_line(&args.machine, &out));
+            println!("{}", resumed_line(&args.machine, was_paused, &out));
         }
         return Ok(());
     }
@@ -129,18 +138,23 @@ fn count(v: &Value, path: &[&str]) -> u64 {
         .unwrap_or(0)
 }
 
-/// "Resumed forge: the pause is lifted; sent "continue" to 3 parked agents. …".
-pub fn resumed_line(machine: &str, out: &Value) -> String {
+/// What `usage resume` did, from whether the machine was paused before it and usage_resume's answer: "Resumed
+/// forge: lifted its usage pause and sent "continue" to 3 parked agents. …".
+pub fn resumed_line(machine: &str, was_paused: bool, out: &Value) -> String {
     let resumed = count(out, &["resumed"]);
-    let open = text(out, &["status", "breaker", "state"]) == Some("open");
     let agents = if resumed == 1 { "agent" } else { "agents" };
-    if resumed == 0 && !open {
-        return format!("Resumed {machine}: nothing was parked there.");
+    let sent = format!("sent \"continue\" to {resumed} parked {agents}");
+    let still = "One whose login is still limited parks again with the real reset.";
+    match (was_paused, resumed) {
+        (false, 0) => format!(
+            "Nothing to resume on {machine}: it wasn't paused and nothing was parked there."
+        ),
+        (true, 0) => format!(
+            "Resumed {machine}: lifted its usage pause; nothing was parked there, so its next turn tries the login."
+        ),
+        (true, _) => format!("Resumed {machine}: lifted its usage pause and {sent}. {still}"),
+        (false, _) => format!("Resumed {machine}: {sent}. {still}"),
     }
-    format!(
-        "Resumed {machine}: sent \"continue\" to {resumed} parked {agents}. One whose login is still limited parks \
-         again with the real reset."
-    )
 }
 
 /// One block per machine: its state and why, then since and until when paused, with the way on.
@@ -261,11 +275,26 @@ mod tests {
                 "  to go on now: fleetd usage resume forge",
             ]
         );
-        let resumed = json!({ "resumed": 3, "status": { "breaker": { "state": "closed" } } });
+        // usage_resume answers with the state after: closed, whether or not it lifted a pause.
+        let after =
+            |n: u64| json!({ "resumed": n, "status": { "breaker": { "state": "closed" } } });
         assert_eq!(
-            resumed_line("forge", &resumed),
-            "Resumed forge: sent \"continue\" to 3 parked agents. One whose login is still limited parks again \
-             with the real reset."
+            resumed_line("forge", true, &after(3)),
+            "Resumed forge: lifted its usage pause and sent \"continue\" to 3 parked agents. One whose login is \
+             still limited parks again with the real reset."
+        );
+        assert_eq!(
+            resumed_line("forge", true, &after(0)),
+            "Resumed forge: lifted its usage pause; nothing was parked there, so its next turn tries the login."
+        );
+        assert_eq!(
+            resumed_line("forge", false, &after(1)),
+            "Resumed forge: sent \"continue\" to 1 parked agent. One whose login is still limited parks again with \
+             the real reset."
+        );
+        assert_eq!(
+            resumed_line("forge", false, &after(0)),
+            "Nothing to resume on forge: it wasn't paused and nothing was parked there."
         );
     }
 }

@@ -295,7 +295,10 @@ pub fn read(hub: &Hub, fresh: &Fresh, now: i64) -> anyhow::Result<Vec<ProjectSta
             .map(|(repo, _)| repo)
             .collect();
         // The usage layer's pause (its breaker holds new turns on the login), else a window claude rejected.
-        let usage_paused = hub.usage.gate(r.machine_id.as_str());
+        let usage_paused = hub
+            .usage
+            .gate(r.machine_id.as_str())
+            .map(|why| why.strip_prefix("usage: ").unwrap_or(&why).to_owned());
         let usage_hit = hub
             .link
             .load(&r.machine_id)
@@ -307,12 +310,13 @@ pub fn read(hub: &Hub, fresh: &Fresh, now: i64) -> anyhow::Result<Vec<ProjectSta
         });
         let blocked = match machine.map(|m| m.status) {
             Some(MachineStatus::Offline) => Some(format!("{mname} is offline")),
+            Some(MachineStatus::Degraded) if usage_paused.is_some() => Some(format!(
+                "{mname} can't run agents (see Machines), and its usage is paused"
+            )),
             Some(MachineStatus::Degraded) => {
                 Some(format!("{mname} can't run agents (see Machines)"))
             }
-            _ if usage_paused.is_some() => usage_paused
-                .as_deref()
-                .map(|why| why.strip_prefix("usage: ").unwrap_or(why).to_owned()),
+            _ if usage_paused.is_some() => usage_paused.clone(),
             _ if usage_hit => Some(format!("usage limit reached on {mname}")),
             _ => hub
                 .link
@@ -355,6 +359,10 @@ pub fn read(hub: &Hub, fresh: &Fresh, now: i64) -> anyhow::Result<Vec<ProjectSta
             title: line(title),
             state: state_of(&facts),
             blocked_reason: facts.blocked.as_deref().map(line),
+            usage_paused_reason: usage_paused
+                .as_deref()
+                .filter(|_| usage_paused_on.is_some())
+                .map(line),
             usage_paused_on,
             counts,
             items: List::unchecked(items),

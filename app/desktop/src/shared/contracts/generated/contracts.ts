@@ -3198,6 +3198,11 @@ export type ProjectStatusRow = {
   title: string;
   /** Blocked by a usage pause on this machine's login: the app offers Resume (usage_resume) for it. */
   usagePausedOn?: MachineId;
+  /**
+   * With `usage_paused_on`: the pause in its own words ("paused until Sun 23:40 UTC (usage limit on forge's
+   * login)"), which `blocked_reason` may not be when the machine is also degraded.
+   */
+  usagePausedReason?: string;
 };
 
 export type ProjectStopInput = {

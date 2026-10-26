@@ -164,6 +164,19 @@ it("says when its machine's usage pause blocks it, and Resume lifts the pause th
   expect(inputs.filter(([tool]) => tool === "usage_resume")).toEqual([["usage_resume", { machineId: project.machineId }]]);
 });
 
+it("names the pause in its own words on a machine that is also degraded", async () => {
+  await mount({
+    ...row,
+    state: "blocked",
+    blockedReason: "devbox can't run agents (see Machines), and its usage is paused",
+    usagePausedOn: project.machineId,
+    usagePausedReason: "rate-limited by your proxy on devbox, checking again shortly",
+  });
+  expect(host.querySelector(`[data-paused='${project.machineId}']`)?.textContent).toBe(
+    "Usage paused: rate-limited by your proxy on devbox, checking again shortlyResume",
+  );
+});
+
 it("offers no Resume on a row no usage pause blocks", async () => {
   await mount();
   expect(host.querySelector("[data-paused]")).toBeNull();

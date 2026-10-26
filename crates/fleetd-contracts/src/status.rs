@@ -146,6 +146,9 @@ pub struct ProjectStatusRow {
     pub blocked_reason: Option<Line<1, 160>>,
     /// Blocked by a usage pause on this machine's login: the app offers Resume (usage_resume) for it.
     pub usage_paused_on: Option<MachineId>,
+    /// With `usage_paused_on`: the pause in its own words ("paused until Sun 23:40 UTC (usage limit on forge's
+    /// login)"), which `blocked_reason` may not be when the machine is also degraded.
+    pub usage_paused_reason: Option<Line<1, 160>>,
     pub counts: StatusCounts,
     /// Group by group in `StatusGroup` order, newest first in each, at most `STATUS_ITEMS_PER_GROUP` per group.
     pub items: List<StatusItem, 0, 48>,
