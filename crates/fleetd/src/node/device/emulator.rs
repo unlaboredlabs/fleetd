@@ -4,6 +4,7 @@
 use std::collections::{HashSet, VecDeque};
 use std::net::{Ipv4Addr, TcpListener};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -174,6 +175,45 @@ pub async fn wait_booted(
     }
 }
 
+/// Kills the emulators of this node's virtual device that run with no node holding them (one that died, or was
+/// killed, leaves its copies running: about 2 GB each). Found by their command line: this SDK's emulator, this AVD.
+/// Returns how many.
+pub fn kill_leftovers(sdk: &Sdk) -> usize {
+    let Ok(procs) = std::fs::read_dir("/proc") else {
+        return 0;
+    };
+    let ours = sdk.root.join("emulator");
+    let mut killed = 0;
+    for entry in procs.filter_map(Result::ok) {
+        let Some(pid) = entry
+            .file_name()
+            .to_str()
+            .and_then(|n| n.parse::<i32>().ok())
+        else {
+            continue;
+        };
+        let Ok(cmdline) = std::fs::read(entry.path().join("cmdline")) else {
+            continue;
+        };
+        if is_leftover(&cmdline, &ours) {
+            let _ = nix::sys::signal::kill(Pid::from_raw(pid), Signal::SIGKILL);
+            killed += 1;
+        }
+    }
+    killed
+}
+
+/// Whether a process's command line (NUL-separated) is an emulator of `ours` (the SDK's emulator directory) for the
+/// node's AVD.
+fn is_leftover(cmdline: &[u8], ours: &std::path::Path) -> bool {
+    let args: Vec<&[u8]> = cmdline.split(|b| *b == 0).collect();
+    let program = args.first().map(|a| String::from_utf8_lossy(a));
+    program.is_some_and(|p| std::path::Path::new(p.as_ref()).starts_with(ours))
+        && args
+            .windows(2)
+            .any(|w| w[0] == b"-avd" && w[1] == AVD.as_bytes())
+}
+
 /// Booted copies waiting for a session: taking one costs no boot, and the pool boots a new one behind it.
 pub struct Pool {
     sdk: Sdk,
@@ -182,6 +222,28 @@ pub struct Pool {
     /// The ports of every copy the pool started that still runs, waiting or in a session.
     ports: Arc<Mutex<HashSet<u16>>>,
     filling: tokio::sync::Mutex<()>,
+    /// Drained (the node stops): a boot still under way kills its copy instead of keeping it.
+    closed: AtomicBool,
+}
+
+/// A port taken for a boot, given back when dropped unless the copy booted (a start that goes away mid-boot frees it).
+struct PortClaim {
+    ports: Arc<Mutex<HashSet<u16>>>,
+    port: Option<u16>,
+}
+
+impl PortClaim {
+    fn keep(mut self) -> u16 {
+        self.port.take().expect("a claimed port")
+    }
+}
+
+impl Drop for PortClaim {
+    fn drop(&mut self) {
+        if let Some(port) = self.port {
+            lock(&self.ports).remove(&port);
+        }
+    }
 }
 
 /// A copy a session holds: its port goes back to the pool when it is dropped, with the emulator.
@@ -205,6 +267,7 @@ impl Pool {
             warm: Mutex::default(),
             ports: Arc::default(),
             filling: tokio::sync::Mutex::new(()),
+            closed: AtomicBool::new(false),
         })
     }
 
@@ -214,25 +277,23 @@ impl Pool {
 
     /// Boots a copy now.
     async fn boot(&self) -> Result<Emulator, String> {
-        let port = {
+        let claim = {
             let mut ports = lock(&self.ports);
             let port = free_port(&ports).ok_or_else(|| {
                 "every emulator port adb watches (5554-5584) is in use".to_owned()
             })?;
             ports.insert(port);
-            port
+            PortClaim {
+                ports: self.ports.clone(),
+                port: Some(port),
+            }
         };
-        let booted = async {
-            let mut emulator = spawn(&self.sdk, port, true)?;
-            let serial = emulator.serial.clone();
-            wait_booted(&self.sdk, &serial, &mut emulator, BOOT_TIMEOUT).await?;
-            Ok(emulator)
-        }
-        .await;
-        if booted.is_err() {
-            lock(&self.ports).remove(&port);
-        }
-        booted
+        let port = claim.port.expect("a claimed port");
+        let mut emulator = spawn(&self.sdk, port, true)?;
+        let serial = emulator.serial.clone();
+        wait_booted(&self.sdk, &serial, &mut emulator, BOOT_TIMEOUT).await?;
+        claim.keep();
+        Ok(emulator)
     }
 
     /// A booted copy, or one booted now when none waits; the pool refills behind it.
@@ -269,7 +330,13 @@ impl Pool {
                 return;
             };
             while lock(&pool.warm).len() < pool.size {
+                if pool.closed.load(Ordering::Relaxed) {
+                    return;
+                }
                 match pool.boot().await {
+                    Ok(emulator) if pool.closed.load(Ordering::Relaxed) => {
+                        lock(&pool.ports).remove(&emulator.port);
+                    }
                     Ok(emulator) => lock(&pool.warm).push_back(emulator),
                     Err(e) => {
                         tracing::warn!(error = %e, "emulator pool not refilled");
@@ -286,6 +353,7 @@ impl Pool {
 
     /// Kills every waiting copy.
     pub fn drain(&self) {
+        self.closed.store(true, Ordering::Relaxed);
         let drained: Vec<Emulator> = lock(&self.warm).drain(..).collect();
         let mut ports = lock(&self.ports);
         for emulator in drained {
@@ -309,6 +377,38 @@ mod tests {
         let golden = args(5554, false);
         assert!(!golden.contains(&"-read-only".to_owned()));
         assert!(golden.contains(&"-no-snapshot-load".to_owned()));
+    }
+
+    #[test]
+    fn leftovers_are_this_sdks_emulators_of_this_avd() {
+        let ours = std::path::Path::new("/n/device/sdk/emulator");
+        let line = |args: &[&str]| args.join("\0").into_bytes();
+        assert!(is_leftover(
+            &line(&["/n/device/sdk/emulator/emulator", "-avd", AVD, "-read-only"]),
+            ours
+        ));
+        assert!(is_leftover(
+            &line(&[
+                "/n/device/sdk/emulator/qemu/linux-x86_64/qemu-system-x86_64",
+                "-avd",
+                AVD
+            ]),
+            ours
+        ));
+        assert!(
+            !is_leftover(
+                &line(&["/opt/android/emulator/emulator", "-avd", AVD]),
+                ours
+            ),
+            "a person's own emulator"
+        );
+        assert!(
+            !is_leftover(
+                &line(&["/n/device/sdk/emulator/emulator", "-avd", "Pixel_9"]),
+                ours
+            ),
+            "another AVD"
+        );
     }
 
     #[test]

@@ -45,8 +45,9 @@ use super::util::AbortOnDrop;
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeviceConfig {
-    /// False turns android sessions off; true also installs them as the node starts. Absent: on where the machine
-    /// can run them (Linux x86_64 with KVM), installed when an agent first asks for one.
+    /// True opts this machine in: the first android `session_start` installs the emulator (about 2 GB). False turns
+    /// android sessions off. Absent: on only where they are installed already; nothing is installed. Either way they
+    /// run only while /dev/kvm opens read-write.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
     /// Emulators kept booted for the next sessions. Absent: 1.
@@ -58,15 +59,21 @@ pub struct DeviceConfig {
 }
 
 impl DeviceConfig {
+    /// Whether the node runs its android side at all (they may still be unusable: see [`Devices::usable`]).
     pub fn enabled(&self) -> bool {
         self.enabled != Some(false) && sdk::supported()
+    }
+
+    /// Whether a person opted this machine in, so an agent's session may install the emulator.
+    pub fn opted_in(&self) -> bool {
+        self.enabled == Some(true)
     }
 }
 
 /// Where the node's install stands.
 enum Install {
     Ready(Arc<Pool>),
-    /// Not installed, and nobody asked for a session yet: the first `session_start` installs it.
+    /// Not installed: on a machine opted in, the first `session_start` installs it.
     Wanted,
     Installing,
     Missing(String),
@@ -114,10 +121,11 @@ pub fn drives_device(command: &str) -> bool {
     command.contains("agent-device")
 }
 
-/// Whether android sessions can run here, for the doctor (each heartbeat): None where they are off, and on a machine
-/// without /dev/kvm that didn't ask for them.
+/// Whether android sessions can run here, for the doctor (each heartbeat): None where they are off, or neither
+/// installed nor opted in.
 pub fn health(home: &Path, config: &DeviceConfig) -> Option<AndroidHealth> {
-    if config.enabled == Some(false) {
+    let installed = sdk::find(home).is_some() && agent_device::find(home).is_some();
+    if !config.enabled() || !(installed || config.opted_in()) {
         return None;
     }
     let health = |state, message: String, fix: Option<String>| AndroidHealth {
@@ -126,11 +134,9 @@ pub fn health(home: &Path, config: &DeviceConfig) -> Option<AndroidHealth> {
         fix: fix.map(|f| Text::unchecked(f.chars().take(500).collect::<String>())),
     };
     if let Err((why, fix)) = sdk::kvm() {
-        let asked = config.enabled == Some(true);
-        let has_kvm = sdk::supported() && Path::new("/dev/kvm").exists();
-        return (asked || has_kvm).then(|| health(AndroidState::Unavailable, why, fix));
+        return Some(health(AndroidState::Unavailable, why, fix));
     }
-    if sdk::find(home).is_some() && agent_device::find(home).is_some() {
+    if installed {
         return Some(health(
             AndroidState::Ready,
             format!(
@@ -177,7 +183,7 @@ pub fn capabilities(home: &Path) -> Vec<String> {
         .and_then(|c| c.device)
         .unwrap_or_default();
     match health(home, &config) {
-        Some(h) if config.enabled() && h.state == AndroidState::Ready => {
+        Some(h) if h.state == AndroidState::Ready => {
             vec![CAP_SESSION_ANDROID.to_owned()]
         }
         _ => Vec::new(),
@@ -191,6 +197,8 @@ pub struct Devices {
     install: Mutex<Install>,
     /// Live sessions by the agent session they belong to: one each.
     sessions: Mutex<HashMap<String, Arc<Session>>>,
+    /// Agent sessions whose `session_start` is under way: a second one waits its turn by being refused.
+    starting: Arc<Mutex<HashSet<String>>>,
     hub: Arc<dyn HubCalls>,
     mask_for: MaskFor,
     uploading: Mutex<HashSet<PathBuf>>,
@@ -198,8 +206,9 @@ pub struct Devices {
 }
 
 impl Devices {
-    /// The node's android sessions: ready when the pinned install is there, else installed when an agent first asks
-    /// for one, or at once when node.json turns them on explicitly.
+    /// The node's android sessions: ready when the pinned install is there and KVM opens. Nothing installs here: on a
+    /// machine opted in, the first android `session_start` does. Emulators a node left running when it died, and an
+    /// install it stopped during, are cleared first.
     pub async fn start(
         home: &Path,
         config: DeviceConfig,
@@ -210,22 +219,26 @@ impl Devices {
             home: home.to_owned(),
             install: Mutex::new(Install::Wanted),
             sessions: Mutex::default(),
+            starting: Arc::default(),
             hub,
             mask_for,
             uploading: Mutex::default(),
             _loop: Mutex::default(),
             config,
         });
-        match sdk::find(home) {
-            Some(sdk) if agent_device::find(home).is_some() && sdk::kvm().is_ok() => {
-                devices.ready(sdk)
-            }
-            _ => {
-                if devices.config.enabled == Some(true) {
-                    devices.begin_install();
-                }
-            }
+        let killed = emulator::kill_leftovers(&sdk::Sdk::at(home));
+        if killed > 0 {
+            tracing::info!(killed, "emulators a stopped node left running were killed");
         }
+        if std::fs::read(state_path(home))
+            .ok()
+            .and_then(|b| serde_json::from_slice::<InstallState>(&b).ok())
+            .is_some_and(|s| s.installing)
+        {
+            // The node stopped during an install; the next session that asks starts it again.
+            write_state(home, &InstallState::default());
+        }
+        devices.ready_if_installed();
         let weak = Arc::downgrade(&devices);
         *lock(&devices._loop) = Some(AbortOnDrop(tokio::spawn(housekeeping(weak))));
         devices
@@ -276,6 +289,29 @@ impl Devices {
         });
     }
 
+    /// Makes the pool when the install is there and KVM opens, unless it is made.
+    fn ready_if_installed(&self) {
+        if matches!(*lock(&self.install), Install::Ready(_)) || sdk::kvm().is_err() {
+            return;
+        }
+        if let Some(sdk) = sdk::find(&self.home)
+            && agent_device::find(&self.home).is_some()
+        {
+            self.ready(sdk);
+        }
+    }
+
+    /// Whether sessions start here now: installed, with KVM opening. Only then do agents get agent-device.
+    pub fn usable(&self) -> bool {
+        matches!(*lock(&self.install), Install::Ready(_)) && sdk::kvm().is_ok()
+    }
+
+    /// Whether agents get agent-device: where sessions start, or the machine is opted in (an install an agent set
+    /// going finishes while it runs). The wrapper alone goes on their PATH; the SDK stays in it.
+    pub fn offered(&self) -> bool {
+        self.config.opted_in() || self.usable()
+    }
+
     /// Makes the pool and starts filling it.
     pub fn ready(&self, sdk: sdk::Sdk) {
         let pool = Pool::new(sdk, self.config.pool.unwrap_or(1));
@@ -294,6 +330,16 @@ impl Devices {
                     }
                     None => "say so in your result: a person must fix this machine".to_owned(),
                 },
+            ));
+        }
+        self.ready_if_installed();
+        let ready = matches!(*lock(&self.install), Install::Ready(_));
+        if !ready && !self.config.opted_in() {
+            return Err(refuse(
+                ErrorCode::Failed,
+                "This machine isn't set up for Android sessions.",
+                "say so in your result: a person opts a machine in with \"device\": {\"enabled\": true} in its \
+                 node.json (fleetd docs: Android sessions)",
             ));
         }
         if matches!(*lock(&self.install), Install::Missing(_)) {
@@ -343,6 +389,14 @@ impl Devices {
         purpose: String,
     ) -> Result<BrowserCallResult, McpToolError> {
         let started = Instant::now();
+        // Held until the session is in the map (or the start fails, or its call goes away): the only way in.
+        let _starting = Starting::claim(&self.starting, &thread).ok_or_else(|| {
+            refuse(
+                ErrorCode::Invalid,
+                "Another session_start of yours is under way.",
+                "wait for its answer and use that session",
+            )
+        })?;
         if let Some(open) = self.live(&thread) {
             return Err(refuse(
                 ErrorCode::Invalid,
@@ -372,6 +426,7 @@ impl Devices {
                     "try again; if it keeps failing, check the node's log",
                 )
             })?;
+        // From here to the map nothing waits, so a start that goes away leaves no half-made session behind.
         let serial = lent.emulator.serial.clone();
         agent_device::write_config(&self.home, &thread, &serial).map_err(|e| {
             refuse(
@@ -395,23 +450,14 @@ impl Devices {
             },
         )
         .map_err(|why| {
+            agent_device::release(&self.home, &thread);
             refuse(
                 ErrorCode::Failed,
                 format!("The Android session did not start: {why}."),
                 "try session_start again",
             )
         })?;
-        {
-            let mut sessions = lock(&self.sessions);
-            if sessions.contains_key(&thread) {
-                return Err(refuse(
-                    ErrorCode::Invalid,
-                    "Another Android session of yours opened meanwhile.",
-                    "use it, or end it with session_end",
-                ));
-            }
-            sessions.insert(thread.clone(), session.clone());
-        }
+        lock(&self.sessions).insert(thread.clone(), session.clone());
         session.step(
             "session_start",
             json!({ "purpose": purpose, "kind": "android", "serial": serial }),
@@ -590,6 +636,27 @@ impl Devices {
     }
 }
 
+/// An agent session's claim on starting a session, given up when dropped.
+struct Starting {
+    set: Arc<Mutex<HashSet<String>>>,
+    thread: String,
+}
+
+impl Starting {
+    fn claim(set: &Arc<Mutex<HashSet<String>>>, thread: &str) -> Option<Self> {
+        lock(set).insert(thread.to_owned()).then(|| Self {
+            set: set.clone(),
+            thread: thread.to_owned(),
+        })
+    }
+}
+
+impl Drop for Starting {
+    fn drop(&mut self) {
+        lock(&self.set).remove(&self.thread);
+    }
+}
+
 /// Every minute: ends sessions idle past the limit, and sends the recordings still waiting for the hub.
 async fn housekeeping(devices: std::sync::Weak<Devices>) {
     let mut uploading: Option<tokio::task::JoinHandle<()>> = None;
@@ -745,7 +812,7 @@ impl SessionHooks for Router {
             .as_ref()
             .map(|b| b.env(thread, path))
             .unwrap_or_default();
-        if let Some(devices) = &self.devices {
+        if let Some(devices) = self.devices.as_ref().filter(|d| d.offered()) {
             let path = env
                 .iter()
                 .find(|(k, _)| k == "PATH")
@@ -764,7 +831,7 @@ impl SessionHooks for Router {
             .as_ref()
             .map(|b| b.plugin_dirs())
             .unwrap_or_default();
-        if let Some(devices) = &self.devices {
+        if let Some(devices) = self.devices.as_ref().filter(|d| d.offered()) {
             dirs.extend(devices.plugin_dirs());
         }
         dirs

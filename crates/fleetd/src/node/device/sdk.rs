@@ -19,6 +19,10 @@ pub const PINS: &str = "platform-tools 37.0.1, emulator 37.2.12, android-35 goog
 /// scrcpy's server: the node speaks its protocol itself, so the version must match the jar exactly.
 pub const SCRCPY_VERSION: &str = "5.0.1";
 
+/// The port of the node's own adb server: never a person's 5037, whose adb may be another version (each would kill
+/// the other's server) and whose own devices aren't the agents'.
+pub const ADB_SERVER_PORT: u16 = 15037;
+
 /// The virtual device sessions copy.
 pub const AVD: &str = "fleetd-android-35";
 
@@ -132,14 +136,16 @@ impl Sdk {
     }
 
     /// The environment the emulator and adb run with.
-    pub fn env(&self) -> Vec<(&'static str, PathBuf)> {
+    pub fn env(&self) -> Vec<(&'static str, String)> {
+        let lossy = |p: &Path| p.to_string_lossy().into_owned();
         vec![
-            ("ANDROID_HOME", self.root.clone()),
-            ("ANDROID_SDK_ROOT", self.root.clone()),
-            ("ANDROID_AVD_HOME", self.avd_home.clone()),
-            ("ANDROID_EMULATOR_HOME", self.emulator_home.clone()),
+            ("ANDROID_HOME", lossy(&self.root)),
+            ("ANDROID_SDK_ROOT", lossy(&self.root)),
+            ("ANDROID_AVD_HOME", lossy(&self.avd_home)),
+            ("ANDROID_EMULATOR_HOME", lossy(&self.emulator_home)),
             // The copies' temporary files, which may be large: on disk, not in a /tmp that may be memory.
-            ("ANDROID_TMP", self.emulator_home.join("tmp")),
+            ("ANDROID_TMP", lossy(&self.emulator_home.join("tmp"))),
+            ("ANDROID_ADB_SERVER_PORT", ADB_SERVER_PORT.to_string()),
         ]
     }
 

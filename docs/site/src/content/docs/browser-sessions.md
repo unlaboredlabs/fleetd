@@ -85,7 +85,8 @@ An agent that needs a phone app (to check an Android build, or a site on a phone
 **`session_start`** with `kind` `android`. It gets a fresh Android 15 emulator on its machine, drives it with
 Callstack's [agent-device](https://github.com/callstack/agent-device) CLI (`agent-device open settings`, `snapshot -i`,
 `press @e3 --settle`), and ends it with **`session_end`**. agent-device is on its `PATH` with its skill, already
-pointed at the session's emulator. The session tools, the one-session-at-a-time rule, the action log, the hub's
+pointed at the session's emulator. Only agent-device gets the node's SDK and adb (on adb server port 15037, never a
+person's 5037): an agent's own `ANDROID_HOME`, `PATH` and adb stay as they were. The session tools, the one-session-at-a-time rule, the action log, the hub's
 storage and its limits are the same as a browser session's.
 
 - **A fresh emulator per session.** The node boots its virtual device once, cold, and saves its Quick Boot snapshot.
@@ -97,18 +98,24 @@ storage and its limits are the same as a browser session's.
   and decodes its screen stream itself. The recording is an `actions` file as a browser session's, and a `video` (a
   WebM, VP9, 576×1280). There's no `dom` file.
 
+Emulators are kept apart from each other, not from the agents on their machine: an agent with adb can reach another
+session's emulator by its serial. Run agents that mustn't see each other's devices on different machines.
+
 ### On each machine {#android-setup}
 
-Android sessions need Linux on x86_64 with KVM: the user running the node must be able to open `/dev/kvm`. The doctor's
-`android` check says when it can't, and the fix (usually `sudo usermod -aG kvm $USER`, then a restart of the node).
-A node that can host them lists `session_android` to the hub.
+Android sessions need Linux on x86_64 with KVM: the user running the node must be able to open `/dev/kvm` read-write.
+The doctor's `android` check says when it can't, and the fix (usually `sudo usermod -aG kvm $USER`, then a restart of
+the node; an ACL set with `setfacl` is lost whenever udev makes `/dev/kvm` again). A machine runs them only while that
+check passes, and lists `session_android` to the hub.
 
-The node installs everything the first time an agent asks for an Android session (or as soon as it starts, with
-`"enabled": true`), about 2 GB under `~/.fleetd/node/device`, each download checked against its pinned digest:
+Nothing is installed until a person opts a machine in with `"device": {"enabled": true}` in its node.json. The node
+then installs everything the first time an agent asks for an Android session, about 2 GB under
+`~/.fleetd/node/device`, each download checked against its pinned digest:
 
 - Google's platform-tools 37.0.1 (adb), emulator 37.2.12 and the Android 15 (API 35) Google APIs x86_64 system image;
 - scrcpy's server 5.0.1, and an ffmpeg 6.0.1 static build that decodes its stream;
-- agent-device 0.21.31 from npm (it needs Node.js 22.12 or later), with its skill.
+- agent-device 0.21.31, its npm package checked against npm's integrity digest (it has no dependencies, and runs on
+  Node.js 22.12 or later), with its skill.
 
 It then boots the emulator once to save its snapshot. Until that's done, `session_start` says it is still installing.
 
@@ -116,6 +123,6 @@ Settings go under `device` in [node.json](/docs/config-and-files#node-json):
 
 | Key | Means |
 |---|---|
-| `enabled` | `false` turns Android sessions off on this machine. `true` installs them when the node starts rather than at the first session. Absent: on where the machine has KVM, installed at the first session. |
+| `enabled` | `true` opts this machine in: the first Android session installs the emulator. `false` turns Android sessions off. Absent: on only where they are installed already; nothing is installed. |
 | `pool` | Emulators kept booted for the next sessions. Absent: 1. Each takes about 2 GB of memory. |
 | `idleMinutes` | End a session after this many minutes without an `agent-device` command. Absent: 30. |

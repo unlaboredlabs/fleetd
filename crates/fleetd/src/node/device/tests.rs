@@ -466,35 +466,102 @@ async fn a_machine_without_android_sessions_says_so_and_one_session_kind_at_a_ti
 }
 
 #[test]
-fn the_doctor_hears_nothing_where_android_sessions_are_off() {
+fn the_doctor_hears_only_of_machines_opted_in_or_installed() {
+    use fleetd_contracts::node_link::AndroidState;
     let home = tempfile::tempdir().unwrap();
     let off = DeviceConfig {
         enabled: Some(false),
         ..DeviceConfig::default()
     };
+    let opted_in = DeviceConfig {
+        enabled: Some(true),
+        ..DeviceConfig::default()
+    };
     assert_eq!(super::health(home.path(), &off), None);
+    assert_eq!(
+        super::health(home.path(), &DeviceConfig::default()),
+        None,
+        "neither opted in nor installed: nothing to say"
+    );
     assert!(
         super::capabilities(home.path()).is_empty(),
         "nothing installed"
     );
-    if sdk::kvm().is_ok() {
-        let wanted = super::health(home.path(), &DeviceConfig::default()).unwrap();
-        assert_eq!(
-            wanted.state,
-            fleetd_contracts::node_link::AndroidState::Wanted
-        );
-        super::write_state(
-            home.path(),
-            &super::InstallState {
-                installing: false,
-                failed: Some("no network".into()),
-            },
-        );
-        let failed = super::health(home.path(), &DeviceConfig::default()).unwrap();
-        assert_eq!(
-            failed.state,
-            fleetd_contracts::node_link::AndroidState::Unavailable
-        );
-        assert!(failed.message.as_str().contains("no network"));
+    let asked = super::health(home.path(), &opted_in).unwrap();
+    if sdk::kvm().is_err() {
+        assert_eq!(asked.state, AndroidState::Unavailable, "KVM doesn't open");
+        return;
     }
+    assert_eq!(asked.state, AndroidState::Wanted);
+    super::write_state(
+        home.path(),
+        &super::InstallState {
+            installing: false,
+            failed: Some("no network".into()),
+        },
+    );
+    let failed = super::health(home.path(), &opted_in).unwrap();
+    assert_eq!(failed.state, AndroidState::Unavailable);
+    assert!(failed.message.as_str().contains("no network"));
+}
+
+#[tokio::test]
+async fn a_machine_not_set_up_keeps_agents_sdk_and_path_and_installs_nothing() {
+    let home = tempfile::tempdir().unwrap();
+    let hub_home = tempfile::tempdir().unwrap();
+    let hub = hub(hub_home.path());
+    // A node that stopped during an install left this; nothing installs at the start, so it is cleared.
+    super::write_state(
+        home.path(),
+        &super::InstallState {
+            installing: true,
+            failed: None,
+        },
+    );
+    let devices = Devices::start(
+        home.path(),
+        DeviceConfig::default(),
+        hub.clone(),
+        Arc::new(|_| Ok(Masker::default())),
+    )
+    .await;
+    assert_eq!(
+        std::fs::read_to_string(super::state_path(home.path())).unwrap(),
+        r#"{"installing":false,"failed":null}"#
+    );
+    let router = Router {
+        browser: None,
+        devices: Some(devices.clone()),
+    };
+    assert!(!devices.offered());
+    assert_eq!(router.env(THREAD, Some("/usr/bin")), Vec::new());
+    assert!(router.plugin_dirs().is_empty());
+    let refused = call(
+        &router,
+        json!({ "op": "session_start", "purpose": "Settings", "kind": "android" }),
+    )
+    .await;
+    assert_eq!(refused["error"]["code"], "failed", "{refused}");
+    let message = refused["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains("isn't set up") || message.contains("/dev/kvm"),
+        "{message}"
+    );
+    assert!(
+        !sdk::device_dir(home.path()).join("downloads").exists(),
+        "nothing downloads"
+    );
+}
+
+#[test]
+fn one_start_at_a_time_per_agent_session() {
+    let set = Arc::default();
+    let first = super::Starting::claim(&set, THREAD).expect("the first");
+    assert!(super::Starting::claim(&set, THREAD).is_none());
+    assert!(super::Starting::claim(&set, "another").is_some());
+    drop(first);
+    assert!(
+        super::Starting::claim(&set, THREAD).is_some(),
+        "given up when dropped"
+    );
 }

@@ -9,11 +9,17 @@
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as B64;
 use serde_json::json;
 use sha2::Digest;
 
 /// The agent-device release the node installs.
 pub const VERSION: &str = "0.21.31";
+
+/// Its npm package, checked against npm's own integrity digest for it.
+const TARBALL_URL: &str = "https://registry.npmjs.org/agent-device/-/agent-device-0.21.31.tgz";
+const TARBALL_INTEGRITY: &str = "sha512-541X/tXHqQS3Xg5PutPSek1nQFLgEJEXFdLPiZ9jTvSb+SMHr/Z4kzVCnBkGza59R+EHO1atLWx0ZAW5vK84IQ==";
 
 /// Its skill, from the same tag (the npm package leaves it out), checked by digest.
 const SKILL_URL: &str = "https://raw.githubusercontent.com/callstack/agent-device/v0.21.31/skills/agent-device/SKILL.md";
@@ -43,47 +49,45 @@ pub fn find(home: &Path) -> Option<PathBuf> {
     (version.trim() == VERSION && bin.is_file() && entry(home).is_file()).then_some(bin)
 }
 
-/// Installs the pinned release from npm without its install scripts (its Android helpers ship built), its skill as a
-/// plugin, and the wrapper. Needs Node.js 22.12 or later, as agent-device does.
+/// Installs the pinned release (its npm tarball, checked against npm's integrity digest: the package has no
+/// dependencies and its Android helpers ship built, so nothing else comes down and no install script runs), its skill
+/// as a plugin, and the wrapper. Running it needs Node.js 22.12 or later, as agent-device does.
 pub async fn install(home: &Path) -> Result<PathBuf, String> {
     let dir = install_dir(home);
-    std::fs::create_dir_all(&dir).map_err(|e| format!("cannot make {}: {e}", dir.display()))?;
-    let out = tokio::process::Command::new("npm")
-        .args([
-            "install",
-            "--ignore-scripts",
-            "--no-audit",
-            "--no-fund",
-            "--prefix",
-        ])
-        .arg(&dir)
-        .arg(format!("agent-device@{VERSION}"))
+    let package = dir.join("node_modules/agent-device");
+    let _ = std::fs::remove_dir_all(&package);
+    std::fs::create_dir_all(&package)
+        .map_err(|e| format!("cannot make {}: {e}", package.display()))?;
+    let tarball = fetch(TARBALL_URL, "agent-device").await?;
+    let integrity = format!("sha512-{}", B64.encode(sha2::Sha512::digest(&tarball)));
+    if integrity != TARBALL_INTEGRITY {
+        return Err(format!(
+            "agent-device's package is not the pinned one (integrity {integrity})"
+        ));
+    }
+    let file = dir.join("agent-device.tgz");
+    std::fs::write(&file, &tarball).map_err(|e| format!("cannot write {}: {e}", file.display()))?;
+    let out = tokio::process::Command::new("tar")
+        .arg("-xzf")
+        .arg(&file)
+        .arg("-C")
+        .arg(&package)
+        .arg("--strip-components=1")
         .stdin(Stdio::null())
         .output()
         .await
-        .map_err(|e| format!("cannot run npm (Node.js) to install agent-device: {e}"))?;
+        .map_err(|e| format!("cannot unpack agent-device: {e}"))?;
+    let _ = std::fs::remove_file(&file);
     if !out.status.success() {
-        let err = String::from_utf8_lossy(&out.stderr);
-        let tail: String = err
-            .chars()
-            .rev()
-            .take(400)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect();
-        return Err(format!("installing agent-device failed: {tail}"));
+        return Err(format!(
+            "unpacking agent-device failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
     }
     if !entry(home).is_file() {
         return Err("the agent-device package has no bin/agent-device.mjs".to_owned());
     }
-    let skill = reqwest::get(SKILL_URL)
-        .await
-        .and_then(reqwest::Response::error_for_status)
-        .map_err(|e| format!("cannot download agent-device's skill: {e}"))?
-        .bytes()
-        .await
-        .map_err(|e| format!("cannot download agent-device's skill: {e}"))?;
+    let skill = fetch(SKILL_URL, "agent-device's skill").await?;
     let digest: String = sha2::Sha256::digest(&skill)
         .iter()
         .map(|b| format!("{b:02x}"))
@@ -97,7 +101,8 @@ pub async fn install(home: &Path) -> Result<PathBuf, String> {
     let bin = bin_dir(home);
     std::fs::create_dir_all(&bin).map_err(|e| format!("cannot make {}: {e}", bin.display()))?;
     let wrapper = bin.join("agent-device");
-    crate::node::secrets::write_atomic(&wrapper, wrapper_script(&entry(home)).as_bytes())
+    let script = wrapper_script(&entry(home), &super::sdk::Sdk::at(home));
+    crate::node::secrets::write_atomic(&wrapper, script.as_bytes())
         .map_err(|e| format!("cannot write {}: {e}", wrapper.display()))?;
     std::fs::set_permissions(
         &wrapper,
@@ -108,16 +113,37 @@ pub async fn install(home: &Path) -> Result<PathBuf, String> {
     Ok(wrapper)
 }
 
-/// The wrapper: refuses while the session's control file says a person has the device, else runs agent-device.
-pub fn wrapper_script(entry: &Path) -> String {
-    let quoted = entry.to_string_lossy().replace('\'', r"'\''");
+async fn fetch(url: &str, what: &str) -> Result<Vec<u8>, String> {
+    let bytes = reqwest::get(url)
+        .await
+        .and_then(reqwest::Response::error_for_status)
+        .map_err(|e| format!("cannot download {what}: {e}"))?
+        .bytes()
+        .await
+        .map_err(|e| format!("cannot download {what}: {e}"))?;
+    Ok(bytes.to_vec())
+}
+
+/// The wrapper: refuses while the session's control file says a person has the device, else runs agent-device with
+/// the node's SDK and adb (on the node's own adb server port). Those are set here only, for agent-device: an agent's own `ANDROID_HOME`, `PATH` and adb
+/// stay as they were for its own Android work.
+pub fn wrapper_script(entry: &Path, sdk: &super::sdk::Sdk) -> String {
+    let quote = |p: &Path| p.to_string_lossy().replace('\'', r"'\''");
     let paused = PAUSED.replace('\'', r"'\''");
+    let tools = sdk.adb.parent().unwrap_or(Path::new("/"));
     format!(
         "#!/bin/sh\n\
          # fleetd's: agent-device {VERSION}, pointed at this session's emulator.\n\
          if [ -n \"$FLEETD_DEVICE_CONTROL\" ] && [ -e \"$FLEETD_DEVICE_CONTROL\" ]; then\n  \
          echo '{paused}' >&2\n  exit 75\nfi\n\
-         exec node '{quoted}' \"$@\"\n"
+         ANDROID_HOME='{root}'\nANDROID_SDK_ROOT='{root}'\nPATH='{tools}':\"$PATH\"\n\
+         ANDROID_ADB_SERVER_PORT={port}\n\
+         export ANDROID_HOME ANDROID_SDK_ROOT PATH ANDROID_ADB_SERVER_PORT\n\
+         exec node '{entry}' \"$@\"\n",
+        root = quote(&sdk.root),
+        port = super::sdk::ADB_SERVER_PORT,
+        tools = quote(tools),
+        entry = quote(entry),
     )
 }
 
@@ -179,16 +205,10 @@ pub fn release(home: &Path, thread: &str) {
     let _ = std::fs::remove_file(control_path(home, thread));
 }
 
-/// What a session's claude gets in its environment: the wrapper and adb first on PATH, its own agent-device home and
-/// state, and the control file the wrapper checks.
+/// What a session's claude gets in its environment: the wrapper first on PATH (it alone, not adb), its own
+/// agent-device home and state, and the control file the wrapper checks. The SDK's variables stay in the wrapper.
 pub fn env(home: &Path, thread: &str, path: Option<&str>) -> Vec<(String, String)> {
-    let sdk = super::sdk::Sdk::at(home);
-    let tools = sdk
-        .adb
-        .parent()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let bin = format!("{}:{tools}", bin_dir(home).to_string_lossy());
+    let bin = bin_dir(home).to_string_lossy().into_owned();
     let path = match path.filter(|p| !p.is_empty()) {
         Some(path) => format!("{bin}:{path}"),
         None => bin,
@@ -197,8 +217,6 @@ pub fn env(home: &Path, thread: &str, path: Option<&str>) -> Vec<(String, String
     let lossy = |p: &Path| p.to_string_lossy().into_owned();
     vec![
         ("PATH".to_owned(), path),
-        ("ANDROID_HOME".to_owned(), lossy(&sdk.root)),
-        ("ANDROID_SDK_ROOT".to_owned(), lossy(&sdk.root)),
         ("AGENT_DEVICE_HOME".to_owned(), lossy(&dir)),
         (
             "AGENT_DEVICE_STATE_DIR".to_owned(),
@@ -216,12 +234,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_session_finds_the_wrapper_and_adb_first_and_its_own_home() {
+    fn a_session_finds_the_wrapper_first_and_its_own_home_but_keeps_its_own_sdk() {
         let env = env(Path::new("/n"), "s1", Some("/usr/bin"));
         let get = |k: &str| env.iter().find(|(n, _)| n == k).map(|(_, v)| v.as_str());
         assert_eq!(
             get("PATH"),
-            Some("/n/device/agent-device/bin:/n/device/sdk/platform-tools:/usr/bin")
+            Some("/n/device/agent-device/bin:/usr/bin"),
+            "the node's adb isn't the agent's"
         );
         assert_eq!(
             get("AGENT_DEVICE_HOME"),
@@ -231,7 +250,9 @@ mod tests {
             get("AGENT_DEVICE_STATE_DIR"),
             Some("/n/sessions/s1/agent-device/state")
         );
-        assert_eq!(get("ANDROID_HOME"), Some("/n/device/sdk"));
+        for own in ["ANDROID_HOME", "ANDROID_SDK_ROOT"] {
+            assert_eq!(get(own), None, "{own} stays the agent's");
+        }
         assert_eq!(
             get("FLEETD_DEVICE_CONTROL"),
             Some("/n/sessions/s1/device-control")
@@ -263,11 +284,13 @@ mod tests {
         let fake = dir.path().join("fake's agent-device.mjs");
         std::fs::write(
             &fake,
-            "console.log('ran', process.argv.slice(2).join(' '))\n",
+            "console.log('ran', process.argv.slice(2).join(' '), process.env.ANDROID_HOME, \
+             process.env.PATH.split(':')[0], process.env.ANDROID_ADB_SERVER_PORT)\n",
         )
         .unwrap();
         let wrapper = dir.path().join("agent-device");
-        std::fs::write(&wrapper, wrapper_script(&fake)).unwrap();
+        let sdk = super::super::sdk::Sdk::at(Path::new("/n"));
+        std::fs::write(&wrapper, wrapper_script(&fake, &sdk)).unwrap();
         std::fs::set_permissions(
             &wrapper,
             std::os::unix::fs::PermissionsExt::from_mode(0o755),
@@ -278,6 +301,7 @@ mod tests {
             std::process::Command::new(&wrapper)
                 .args(["open", "settings"])
                 .env("FLEETD_DEVICE_CONTROL", &control)
+                .env("ANDROID_HOME", "/home/me/Android/Sdk")
                 .output()
                 .unwrap()
         };
@@ -291,7 +315,8 @@ mod tests {
             assert!(ran.status.success(), "{ran:?}");
             assert_eq!(
                 String::from_utf8_lossy(&ran.stdout).trim(),
-                "ran open settings"
+                "ran open settings /n/device/sdk /n/device/sdk/platform-tools 15037",
+                "agent-device alone gets the node's SDK and adb"
             );
         }
     }

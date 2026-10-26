@@ -182,7 +182,8 @@ can’t start one. A machine without an ffmpeg records sessions without their vi
 <strong><code dir="auto">session_start</code></strong> with <code dir="auto">kind</code> <code dir="auto">android</code>. It gets a fresh Android 15 emulator on its machine, drives it with
 Callstack’s <a href="https://github.com/callstack/agent-device">agent-device</a> CLI (<code dir="auto">agent-device open settings</code>, <code dir="auto">snapshot -i</code>,
 <code dir="auto">press @e3 --settle</code>), and ends it with <strong><code dir="auto">session_end</code></strong>. agent-device is on its <code dir="auto">PATH</code> with its skill, already
-pointed at the session’s emulator. The session tools, the one-session-at-a-time rule, the action log, the hub’s
+pointed at the session’s emulator. Only agent-device gets the node’s SDK and adb (on adb server port 15037, never a
+person’s 5037): an agent’s own <code dir="auto">ANDROID_HOME</code>, <code dir="auto">PATH</code> and adb stay as they were. The session tools, the one-session-at-a-time rule, the action log, the hub’s
 storage and its limits are the same as a browser session’s.</p>
 <ul>
 <li><strong>A fresh emulator per session.</strong> The node boots its virtual device once, cold, and saves its Quick Boot snapshot.
@@ -194,16 +195,21 @@ next session and boots another behind it, so <code dir="auto">session_start</cod
 and decodes its screen stream itself. The recording is an <code dir="auto">actions</code> file as a browser session’s, and a <code dir="auto">video</code> (a
 WebM, VP9, 576×1280). There’s no <code dir="auto">dom</code> file.</li>
 </ul>
+<p>Emulators are kept apart from each other, not from the agents on their machine: an agent with adb can reach another
+session’s emulator by its serial. Run agents that mustn’t see each other’s devices on different machines.</p>
 <div class="sl-heading-wrapper level-h3"><h3 id="android-setup">On each machine</h3><a class="sl-anchor-link" href="#android-setup"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “On each machine”</span></a></div>
-<p>Android sessions need Linux on x86_64 with KVM: the user running the node must be able to open <code dir="auto">/dev/kvm</code>. The doctor’s
-<code dir="auto">android</code> check says when it can’t, and the fix (usually <code dir="auto">sudo usermod -aG kvm $USER</code>, then a restart of the node).
-A node that can host them lists <code dir="auto">session_android</code> to the hub.</p>
-<p>The node installs everything the first time an agent asks for an Android session (or as soon as it starts, with
-<code dir="auto">"enabled": true</code>), about 2 GB under <code dir="auto">~/.fleetd/node/device</code>, each download checked against its pinned digest:</p>
+<p>Android sessions need Linux on x86_64 with KVM: the user running the node must be able to open <code dir="auto">/dev/kvm</code> read-write.
+The doctor’s <code dir="auto">android</code> check says when it can’t, and the fix (usually <code dir="auto">sudo usermod -aG kvm $USER</code>, then a restart of
+the node; an ACL set with <code dir="auto">setfacl</code> is lost whenever udev makes <code dir="auto">/dev/kvm</code> again). A machine runs them only while that
+check passes, and lists <code dir="auto">session_android</code> to the hub.</p>
+<p>Nothing is installed until a person opts a machine in with <code dir="auto">"device": {"enabled": true}</code> in its node.json. The node
+then installs everything the first time an agent asks for an Android session, about 2 GB under
+<code dir="auto">~/.fleetd/node/device</code>, each download checked against its pinned digest:</p>
 <ul>
 <li>Google’s platform-tools 37.0.1 (adb), emulator 37.2.12 and the Android 15 (API 35) Google APIs x86_64 system image;</li>
 <li>scrcpy’s server 5.0.1, and an ffmpeg 6.0.1 static build that decodes its stream;</li>
-<li>agent-device 0.21.31 from npm (it needs Node.js 22.12 or later), with its skill.</li>
+<li>agent-device 0.21.31, its npm package checked against npm’s integrity digest (it has no dependencies, and runs on
+Node.js 22.12 or later), with its skill.</li>
 </ul>
 <p>It then boots the emulator once to save its snapshot. Until that’s done, <code dir="auto">session_start</code> says it is still installing.</p>
 <p>Settings go under <code dir="auto">device</code> in <a href="/docs/config-and-files#node-json">node.json</a>:</p>
@@ -217,7 +223,7 @@ A node that can host them lists <code dir="auto">session_android</code> to the h
 <tbody>
 <tr>
 <td><code dir="auto">enabled</code></td>
-<td><code dir="auto">false</code> turns Android sessions off on this machine. <code dir="auto">true</code> installs them when the node starts rather than at the first session. Absent: on where the machine has KVM, installed at the first session.</td>
+<td><code dir="auto">true</code> opts this machine in: the first Android session installs the emulator. <code dir="auto">false</code> turns Android sessions off. Absent: on only where they are installed already; nothing is installed.</td>
 </tr>
 <tr>
 <td><code dir="auto">pool</code></td>

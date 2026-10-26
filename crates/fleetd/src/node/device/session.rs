@@ -2,7 +2,7 @@
 //! person watches), and the action log, a line per tool call of the agent's that drove the device (its `agent-device`
 //! commands, fleetd's session tools) as a browser session keeps it (node/browser/record.rs).
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -41,6 +41,8 @@ pub struct Session {
     lent: Mutex<Option<Lent>>,
     stream: Mutex<Option<Stream>>,
     video: Arc<Mutex<Option<VideoSink>>>,
+    /// Set by [`Session::close`] under the video's lock: a stream or frame that comes late starts nothing.
+    closed: Arc<AtomicBool>,
     /// The newest frame, for whoever watches.
     frames: watch::Sender<Option<Frame>>,
     note: Arc<Mutex<Option<String>>>,
@@ -81,6 +83,7 @@ impl Session {
             lent: Mutex::new(Some(lent)),
             stream: Mutex::default(),
             video: Arc::default(),
+            closed: Arc::default(),
             frames: watch::channel(None).0,
             note: Arc::default(),
             seq: AtomicU64::new(0),
@@ -93,9 +96,10 @@ impl Session {
         let weak = Arc::downgrade(&session);
         tokio::spawn(async move {
             let Some(this) = weak.upgrade() else { return };
-            let (start, video, note, frames, dir) = (
+            let (start, video, closed, note, frames, dir) = (
                 this.start,
                 this.video.clone(),
+                this.closed.clone(),
                 this.note.clone(),
                 this.frames.clone(),
                 this.dir.clone(),
@@ -104,6 +108,9 @@ impl Session {
             let encoder = sdk.ffmpeg.clone();
             let on_frame = move |frame: Frame| {
                 let mut sink = lock(&video);
+                if closed.load(Ordering::Relaxed) {
+                    return;
+                }
                 if sink.is_none() && lock(&note).is_none() {
                     match VideoSink::start(
                         Some(&encoder),
@@ -124,7 +131,12 @@ impl Session {
             let Some(this) = weak.upgrade() else { return };
             match stream {
                 Ok(stream) => {
-                    *lock(&this.stream) = Some(stream);
+                    let mut held = lock(&this.stream);
+                    if this.closed.load(Ordering::Relaxed) {
+                        // The session ended while the stream connected: it goes, with the server and decoder.
+                        return;
+                    }
+                    *held = Some(stream);
                     let video = this.video.clone();
                     *lock(&this._ticker) = Some(AbortOnDrop(tokio::spawn(async move {
                         loop {
@@ -134,6 +146,7 @@ impl Session {
                             }
                         }
                     })));
+                    drop(held);
                 }
                 Err(why) => {
                     tracing::warn!(session = %this.id, error = %why, "device stream not started");
@@ -269,9 +282,15 @@ impl Session {
     /// Stops the stream, finishes the video and throws the emulator away with everything done in it. Returns the
     /// files there are.
     pub async fn close(&self) -> Vec<(RecordingFile, u64)> {
-        lock(&self._ticker).take();
-        lock(&self.stream).take();
-        let sink = lock(&self.video).take();
+        let sink = {
+            let mut video = lock(&self.video);
+            self.closed.store(true, Ordering::Relaxed);
+            video.take()
+        };
+        {
+            let _stream = lock(&self.stream).take();
+            lock(&self._ticker).take();
+        }
         if let Some(sink) = sink
             && let Err(why) = sink.finish(self.start.elapsed()).await
         {

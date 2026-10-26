@@ -101,7 +101,7 @@ fleetd adds its own settings on top of yours, per session:
 | `--mcp-config` | fleetd's agent tools. |
 | A `--settings` overlay | Pins claude's version, turns claude's auto memory and its own subagents off ([why](/docs/what-agents-are-told#no-subagents)), and denies tools agents never get: plan mode, worktrees, cron. |
 | agent-browser on `PATH`, its `AGENT_BROWSER_*` variables and its skill | A lead's and a task's [browser session](/docs/browser-sessions#use). |
-| agent-device and adb on `PATH`, its `AGENT_DEVICE_*` and `ANDROID_HOME` variables and its skill | A lead's and a task's [Android session](/docs/browser-sessions#android). |
+| agent-device on `PATH` (it alone: the node's SDK and adb stay inside it), its `AGENT_DEVICE_*` variables and its skill, on a machine with Android sessions | A lead's and a task's [Android session](/docs/browser-sessions#android). |
 
 ### A dedicated claude profile {#claude-profile}
 
