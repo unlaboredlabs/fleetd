@@ -1223,6 +1223,65 @@ fn a_now_steer_falls_back_by_capability() {
 }
 
 #[test]
+fn back_to_back_steers_hand_over_turn_by_turn_and_the_last_one_runs() {
+    // T588's frames: two steers claude merged into one turn, whose `result` names the second. That ended the second
+    // twice and never the first, whose late end then landed on the next steer's run before it began.
+    let mut mapper = mid_turn(&[]);
+    let mut events = Vec::new();
+    let mut feed = |mapper: &mut StreamMapper, lines: &[Value]| {
+        for line in lines {
+            events.extend(
+                mapper
+                    .feed(serde_json::from_value(line.clone()).unwrap(), &now())
+                    .events,
+            );
+        }
+    };
+    let lifecycle = |run: &str, state: &str| json!({"type": "command_lifecycle", "command_uuid": run, "state": state});
+    let cut = |run: &str, why: &str| {
+        json!({"type": "result", "subtype": "success", "is_error": false, "result": "",
+            "terminal_reason": why, "user_message_uuid": run})
+    };
+    for steer in ["s1", "s2"] {
+        mapper.send(steer, "the answer", SendMode::Boundary);
+        feed(&mut mapper, &[lifecycle(steer, "queued")]);
+    }
+    feed(
+        &mut mapper,
+        &[
+            cut("task", "aborted_tools"),
+            lifecycle("task", "cancelled"),
+            lifecycle("s1", "started"),
+            lifecycle("s2", "started"),
+        ],
+    );
+    mapper.send("s3", "and this", SendMode::Boundary);
+    feed(
+        &mut mapper,
+        &[
+            lifecycle("s3", "queued"),
+            cut("s2", "aborted_streaming"),
+            lifecycle("s1", "cancelled"),
+            lifecycle("s2", "cancelled"),
+            lifecycle("s3", "started"),
+        ],
+    );
+    let by = |run: &str| RunOutcome::Superseded { by: run.into() };
+    let (s1, s3) = (by("s1"), by("s3"));
+    assert_eq!(
+        run_ends(&events),
+        vec![("task", &s1), ("s1", &s3), ("s2", &s3)]
+    );
+    assert!(events.contains(&RunnerEvent::Joined {
+        run_id: "s2".into()
+    }));
+    assert!(events.contains(&RunnerEvent::RunStarted {
+        run_id: "s3".into()
+    }));
+    assert!(mapper.has_open_run());
+}
+
+#[test]
 fn a_persons_stop_ends_the_turn_interrupted_and_withdraws_the_waiting_steer() {
     let mut mapper = mid_turn(&["interrupt_receipt_v1", "msg_lifecycle_v1"]);
     mapper.send("steer", "do this instead", SendMode::Boundary);

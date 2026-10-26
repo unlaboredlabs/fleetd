@@ -56,6 +56,8 @@ pub enum Kind {
     ContextFull,
     /// The node would not resume its thread: claude's conversation is gone, or the claude config dir changed.
     Refused,
+    /// Stopped for a steer that then never ran: nothing went wrong, so it goes on at once, using none of the budget.
+    Cut,
     /// A failure a resume doesn't fix: the login, a bad request, anything else.
     Fatal,
     /// Not a death: someone stopped it, or nothing says otherwise.
@@ -131,12 +133,13 @@ pub fn death(
                 "its context is full".to_owned(),
             ),
             Some(RunEnd::Failed) => (by_class(), message.clone()),
+            // The steer's own run carries on from a superseded one; only one that never ran leaves it as the end.
+            Some(RunEnd::Superseded) => (
+                (Kind::Cut, RunEnd::Superseded),
+                "it was stopped for a message that then never ran".to_owned(),
+            ),
             Some(
-                end @ (RunEnd::Requested
-                | RunEnd::Superseded
-                | RunEnd::Completed
-                | RunEnd::Limited
-                | RunEnd::Stalled),
+                end @ (RunEnd::Requested | RunEnd::Completed | RunEnd::Limited | RunEnd::Stalled),
             ) => ((Kind::NotDead, end), message.clone()),
             // A node that records no cause (like the one on Oct 22): an interrupt reported on the node's
             // return is the node going away.
@@ -239,7 +242,7 @@ pub fn decide(
     };
     let delay = match death.kind {
         Kind::NodeLost => Ok(NODE_SETTLE_MS + (jitter * NODE_JITTER_MS as f64) as i64),
-        Kind::ContextFull => Ok(0),
+        Kind::ContextFull | Kind::Cut => Ok(0),
         Kind::Refused if streak == 1 => Ok(0),
         Kind::Refused => Err(format!("{}, again in a fresh thread", death.text)),
         Kind::Exited | Kind::Stalled if streak == 1 => Ok(MINUTE_MS),
@@ -268,6 +271,9 @@ pub fn decide(
             node_lost: Count::unchecked(node_lost + 1),
             ..recovery(death, prior, streak, used, max, now_ms + delay, mode)
         });
+    }
+    if death.kind == Kind::Cut {
+        return Action::Resume(recovery(death, prior, streak, used, max, now_ms, mode));
     }
     // A full context or a refused resume says nothing about whether the run got anywhere.
     let unproductive = matches!(death.kind, Kind::Exited | Kind::Stalled | Kind::Unreachable)
@@ -494,6 +500,26 @@ mod tests {
             assert_eq!(d.kind, Kind::NotDead);
             assert_eq!(decide(&d, None, false, NOW, 0.0, 3), Action::Finish);
         }
+    }
+
+    /// A run stopped for a steer that then never ran (T588) did nothing wrong: it goes on at once, however often,
+    /// using none of the budget, and is never escalated as a failure.
+    #[test]
+    fn a_superseded_end_resumes_at_once_and_is_never_a_failure() {
+        let d = interrupted(json!({ "endCause": "superseded" }));
+        assert_eq!(
+            (d.kind, d.reported, d.cause),
+            (Kind::Cut, Some(RunEnd::Superseded), RunEnd::Superseded)
+        );
+        let mut prior = None;
+        for _ in 0..5 {
+            let next = resume(decide(&d, prior.as_ref(), false, NOW, 0.5, 3));
+            assert_eq!((next.count.get(), due_in(&next)), (0, 0));
+            assert_eq!(next.mode, RecoveryMode::Resume);
+            prior = Some(next);
+        }
+        // Its work is over: it ends (done, not failed: see `Tasks::died`).
+        assert_eq!(decide(&d, None, true, NOW, 0.0, 3), Action::Finish);
     }
 
     /// Back from a stop: it resumes after the settle, 30 to 40 s, every time the node goes away. A planned stop or an

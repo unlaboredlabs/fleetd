@@ -1283,7 +1283,23 @@ impl Tasks {
             .filter(|_| death.kind == recovery::Kind::Stalled)
             .and_then(|d| d["error"]["message"].as_str())
             .map(|m| format!("[stalled] {m}"));
+        // A task its run's end ends is over on the node too: T588's claude ran on, unseen, for 20 minutes after its
+        // task read as failed. Under the lock, so a message that continues it goes after the stop, never before.
+        if !matches!(action, recovery::Action::Resume(_))
+            && let Err(error) = self.d.ports.stop(thread).await
+        {
+            tracing::warn!(
+                task_id = task.task_id.as_str(),
+                ?error,
+                "ended task: its process not stopped"
+            );
+        }
         match action {
+            // A run stopped for a steer is never a failure: one whose work is over ends done.
+            recovery::Action::Finish if death.kind == recovery::Kind::Cut => {
+                self.finish(stored, TaskResultStatus::Done, None, death.reported, None)
+                    .await
+            }
             recovery::Action::Finish => {
                 self.finish(
                     stored,

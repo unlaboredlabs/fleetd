@@ -426,6 +426,86 @@ async fn a_task_whose_claude_keeps_crashing_is_escalated_once_its_recoveries_are
     nothing_sent(&mut calls).await;
 }
 
+/// T588: its run was stopped for each of its lead's steers, and the node ended the steer's run before it began, so
+/// the thread's last word was `superseded` with nothing running. That failed the task three times; it now resumes at
+/// once, as often as it happens, using none of its budget.
+#[tokio::test]
+async fn a_run_superseded_by_a_steer_that_never_ran_resumes_at_once_and_never_fails() {
+    let (hub, _clock, mut calls, _home) = running_t1().await;
+    let (mut run, mut seq) = ("r1".to_owned(), 3);
+    for steer in ["s1", "s2", "s3", "s4"] {
+        let superseded = json!({ "end": "superseded", "supersededBy": steer });
+        session(&hub, seq, &run, "interrupted", superseded);
+        logged(&hub, "thread.interrupted", &run).await;
+        catch_up(&hub.tasks).await;
+        assert_ne!(task(&hub).state, TaskState::Failed);
+        let (next, text) = sent_unstopped(&mut calls).await;
+        assert!(
+            text.starts_with(
+                "fleetd: your run was cut off (it was stopped for a message that then never ran)."
+            ),
+            "{text}"
+        );
+        assert!(
+            text.ends_with("(Automatic recovery: 0 of 3 recoveries used.)"),
+            "{text}"
+        );
+        session(&hub, seq + 1, &next, "running", json!({}));
+        logged(&hub, "thread.started", &next).await;
+        catch_up(&hub.tasks).await;
+        assert_eq!(task(&hub).state, TaskState::Running);
+        (run, seq) = (next, seq + 2);
+    }
+}
+
+/// The next send, with no stop of the thread's process before it: the run goes on in the claude that has it.
+async fn sent_unstopped(calls: &mut Calls) -> (String, String) {
+    loop {
+        match calls.recv().await.unwrap() {
+            SessionCall::Send { run_id, text, .. } => {
+                return (run_id.as_str().to_owned(), text.as_str().to_owned());
+            }
+            call @ SessionCall::Stop { .. } => panic!("a resumed task is never stopped: {call:?}"),
+            _ => {}
+        }
+    }
+}
+
+/// A run's end that ends the task ends its claude too, so the hub never reads a task as over while its process works
+/// on unseen (T588 ran on for 20 minutes after it read as failed). A message to it then resumes the thread.
+#[tokio::test]
+async fn a_task_its_runs_end_ends_has_its_process_stopped() {
+    let (hub, _clock, mut calls, _home) = running_t1().await;
+    session(&hub, 3, "r1", "interrupted", json!({ "end": "requested" }));
+    logged(&hub, "thread.interrupted", "r1").await;
+    catch_up(&hub.tasks).await;
+    assert_eq!(task(&hub).state, TaskState::Failed);
+    loop {
+        match calls.recv().await.unwrap() {
+            SessionCall::Stop {
+                session_id,
+                remove_worktree,
+            } => {
+                assert_eq!((session_id.as_str(), remove_worktree), ("t1", false));
+                break;
+            }
+            call @ SessionCall::Send { .. } => panic!("sent before the stop: {call:?}"),
+            _ => {}
+        }
+    }
+    let caller = TaskCaller {
+        project_ref: project(),
+        by: "lead".into(),
+    };
+    hub.tasks
+        .message(&caller, &TaskId::unchecked("T1"), "Go on with slice 2.")
+        .await
+        .unwrap();
+    let (_, text) = sent(&mut calls).await;
+    assert!(text.contains("Go on with slice 2."), "{text}");
+    assert_eq!(task(&hub).state, TaskState::Running);
+}
+
 /// claude is killed the same way twice while running the same command: resumed once, then escalated.
 #[tokio::test]
 async fn a_task_killed_the_same_way_twice_is_escalated() {

@@ -122,6 +122,16 @@ pub fn close_out(runs: &mut [RunInfo], cause: &EndCause, at: &Timestamp) -> Vec<
     changed
 }
 
+/// The run a runner's end of run `run_id` ends: that run while it is active, else the active one when no run has that
+/// id. A run that already ended stays ended: its end told twice is never another run's, which cut a steer's run before
+/// it began (T588).
+pub fn ending(runs: &[RunInfo], run_id: &str) -> Option<usize> {
+    if let Some(index) = runs.iter().position(|r| r.id == run_id) {
+        return runs[index].status.is_active().then_some(index);
+    }
+    runs.iter().position(|r| r.status.is_active())
+}
+
 /// Why a run claude ended itself (with a `result`, or cut by an interrupt) ended. `asked`: why the node was asked
 /// to end it, if it was; `slept`: the node cut it after the machine woke.
 pub fn run_end(outcome: &RunOutcome, asked: Option<&EndCause>, slept: bool) -> RunEnd {
@@ -394,6 +404,20 @@ mod tests {
             failure.message.as_str(),
             "the agent was killed by signal 9 before the run ended\n--- stderr tail ---\nboom"
         );
+    }
+
+    #[test]
+    fn a_run_ends_once_and_its_second_end_is_no_other_runs() {
+        let runs = [
+            run("r1", 1, RunStatus::Interrupted),
+            run("r2", 2, RunStatus::Running),
+            run("r3", 3, RunStatus::Queued),
+        ];
+        assert_eq!(ending(&runs, "r2"), Some(1));
+        assert_eq!(ending(&runs, "r1"), None);
+        // An end that names no run of the session's is the active run's.
+        assert_eq!(ending(&runs, "claude-own"), Some(1));
+        assert_eq!(ending(&runs[..1], "r2"), None);
     }
 
     #[test]
