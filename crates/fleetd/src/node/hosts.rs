@@ -69,7 +69,8 @@ pub fn browser(home: &Path, config: &BrowserConfig) -> HostCheck {
 }
 
 /// fleetd's own Android emulator (node/device): ready where it is installed, or the machine is opted in so the first
-/// session installs it, and /dev/kvm opens; else what stands in the way, as the doctor says it.
+/// session installs it (again, after an install that failed), and /dev/kvm opens; else what stands in the way, as the
+/// doctor says it.
 pub fn android(home: &Path, config: &DeviceConfig) -> HostCheck {
     let host = SessionHost::Android;
     if !config.enabled() {
@@ -82,7 +83,12 @@ pub fn android(home: &Path, config: &DeviceConfig) -> HostCheck {
     match device::health(home, config) {
         Some(health) => check(
             host,
-            matches!(health.state, AndroidState::Ready | AndroidState::Wanted),
+            match health.state {
+                AndroidState::Ready | AndroidState::Wanted => true,
+                AndroidState::Installing => false,
+                // With KVM opening, only a failed install: the next session tries it again, so the hub must send it.
+                _ => device::sdk::kvm().is_ok(),
+            },
             health.message.as_str(),
         ),
         None => check(
@@ -207,6 +213,24 @@ mod tests {
             device::sdk::kvm().is_ok(),
             "installs at the first session where KVM opens: {asked:?}"
         );
+        // An install that failed is tried again by the next session, so it stays placeable where KVM opens.
+        let state = device::sdk::device_dir(home.path()).join("state.json");
+        std::fs::create_dir_all(state.parent().unwrap()).unwrap();
+        std::fs::write(
+            &state,
+            r#"{"installing":false,"failed":"the download broke"}"#,
+        )
+        .unwrap();
+        let failed = android(home.path(), &opted_in);
+        assert_eq!(failed.ready, device::sdk::kvm().is_ok(), "{failed:?}");
+        if device::sdk::kvm().is_ok() {
+            assert!(
+                failed.detail.as_str().contains("the download broke"),
+                "{failed:?}"
+            );
+        }
+        std::fs::write(&state, r#"{"installing":true,"failed":null}"#).unwrap();
+        assert!(!android(home.path(), &opted_in).ready, "installing now");
     }
 
     #[test]
