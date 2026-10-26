@@ -10,7 +10,7 @@ use fleetd_contracts::prim::Count;
 use crate::hub::api::Hub;
 use crate::hub::link::lead_calls::LeadCallFuture;
 use crate::hub::link::{LeadCaller, LeadCalls};
-use crate::hub::store::{iso_ms, now_ms};
+use crate::hub::store::iso_ms;
 
 pub const OPS: [&str; 1] = ["usage_resume"];
 /// How often a lead may lift one machine's pause: a login still limited parks again on the next turn, so a lead
@@ -61,28 +61,35 @@ async fn resume(
         )));
     }
     let before = hub.usage.status(machine, Err(String::new())).await;
-    let now = now_ms(hub.clock.as_ref());
-    if let Some(at) = hub
+    let resumed = match hub
         .usage
-        .last_resumed_by(machine, &caller.by)
-        .filter(|at| now - at < LEAD_RESUME_EVERY_MS)
+        .resume_as_lead(machine, &caller.by, LEAD_RESUME_EVERY_MS)
+        .await
     {
-        let again = iso_ms(at + LEAD_RESUME_EVERY_MS);
-        return Err(McpToolError::new(
-            ErrorCode::Invalid,
-            format!(
-                "You resumed {machine} at {}; a lead may once every {} minutes.",
-                iso_ms(at),
-                LEAD_RESUME_EVERY_MS / 60_000
-            ),
-        )
-        .with_fix(format!(
-            "If the login is still limited, the agents parked again with its reset: wait for it. To go on sooner, ask \
-             the human to press Resume in the app (or run fleetd usage resume {machine}); you may again from {again}."
-        )));
-    }
+        Ok(resumed) => resumed,
+        Err((who, at)) => {
+            let again = iso_ms(at + LEAD_RESUME_EVERY_MS);
+            let whose = if who == caller.by {
+                "You".to_string()
+            } else {
+                format!("The lead {who}")
+            };
+            return Err(McpToolError::new(
+                ErrorCode::Invalid,
+                format!(
+                    "{whose} resumed {machine} at {}; the leads on a machine may once every {} minutes between them.",
+                    iso_ms(at),
+                    LEAD_RESUME_EVERY_MS / 60_000
+                ),
+            )
+            .with_fix(format!(
+                "If the login is still limited, the agents parked again with its reset: wait for it. To go on sooner, \
+                 ask the human to press Resume in the app (or run fleetd usage resume {machine}); you may again from \
+                 {again}."
+            )));
+        }
+    };
     let open = before.breaker.state == "open";
-    let resumed = hub.usage.resume(machine, &caller.by).await;
     let next = if !open && resumed == 0 {
         format!("Nothing was paused on {machine}.")
     } else {
@@ -117,11 +124,17 @@ mod tests {
 
     /// 2026-10-25T22:40:38Z.
     const T0: u64 = 1_792_968_038_000;
+    /// The usage.continue prompt's text.
+    const CONTINUE: &str = "Continue where you left off; the usage limit has reset.";
 
     fn devbox() -> ProjectRef {
+        on_devbox("fleetd")
+    }
+
+    fn on_devbox(project: &str) -> ProjectRef {
         ProjectRef {
             machine_id: MachineId::unchecked("devbox"),
-            project_id: ProjectId::unchecked("fleetd"),
+            project_id: ProjectId::unchecked(project),
         }
     }
 
@@ -193,6 +206,35 @@ mod tests {
             .collect()
     }
 
+    /// Each "continue" waiting in the write queue (devbox is not connected): its thread and message.
+    fn continued(hub: &Hub) -> Vec<(String, String)> {
+        hub.db
+            .with(|c| {
+                let mut q = c.prepare(
+                    "SELECT thread_id, message FROM queued_writes WHERE client_request_id LIKE 'fleetd-usage:%' \
+                     ORDER BY queued_ms",
+                )?;
+                let rows = q.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+                Ok(rows.collect::<Result<_, _>>()?)
+            })
+            .unwrap()
+    }
+
+    /// Twelve agents hit devbox's limit again, more than the usage layer's recent events per machine keep.
+    async fn limited_again(hub: &Hub) {
+        for thread in (1..=12).map(|n| format!("w{n}")) {
+            let event: NewEvent = serde_json::from_value(json!({
+                "at": crate::hub::store::iso_ms(T0 as i64 + 60_000), "type": "thread.usage_limited",
+                "machineId": "devbox", "threadId": thread, "summary": "hit the usage limit",
+                "data": { "usageClass": "usage_limit", "resumeAt": "2026-10-25T23:40:38.000Z" },
+            }))
+            .unwrap();
+            hub.events.append(event).unwrap();
+        }
+        hub.usage.drain().await;
+        assert!(hub.usage.gate("devbox").is_some());
+    }
+
     /// Resume in the app and `fleetd usage resume devbox` both call usage_resume with the person's key.
     #[tokio::test]
     async fn a_persons_usage_resume_lifts_the_pause_recorded_as_theirs() {
@@ -221,12 +263,22 @@ mod tests {
         assert_eq!(out["status"]["breaker"]["state"], "closed");
         assert_eq!(hub.usage.gate("devbox"), None);
         assert_eq!(resumed_by(&hub).await, [(true, "desk".to_owned())]);
+        // The lead was parked (w1 and w2 are no task's): it is sent "continue".
+        assert_eq!(continued(&hub), [("lead".to_owned(), CONTINUE.to_owned())]);
     }
 
     async fn lead_resume(hub: &Hub, machine: Option<&str>) -> Result<LeadCallResult, String> {
+        lead_of(hub, devbox(), machine).await
+    }
+
+    async fn lead_of(
+        hub: &Hub,
+        project: ProjectRef,
+        machine: Option<&str>,
+    ) -> Result<LeadCallResult, String> {
         let caller = LeadCaller {
-            project_ref: devbox(),
-            by: lead_by(&devbox()),
+            by: lead_by(&project),
+            project_ref: project,
             agent: CallerAgent::Lead,
         };
         let call = LeadCall::UsageResume(UsageResumeCall {
@@ -259,22 +311,11 @@ mod tests {
             [(true, "lead:devbox/fleetd".to_owned())]
         );
 
-        // Twelve agents hit it again, more than the usage layer's recent events per machine keep: the lead still may
-        // not lift it again within 10 minutes.
-        for thread in (1..=12).map(|n| format!("w{n}")) {
-            let event: NewEvent = serde_json::from_value(json!({
-                "at": crate::hub::store::iso_ms(T0 as i64 + 60_000), "type": "thread.usage_limited",
-                "machineId": "devbox", "threadId": thread, "summary": "hit the usage limit",
-                "data": { "usageClass": "usage_limit", "resumeAt": "2026-10-25T23:40:38.000Z" },
-            }))
-            .unwrap();
-            hub.events.append(event).unwrap();
-        }
-        hub.usage.drain().await;
-        assert!(hub.usage.gate("devbox").is_some());
+        // Agents hit it again: the lead still may not lift it again within 10 minutes.
+        limited_again(&hub).await;
         let again = lead_resume(&hub, Some("devbox")).await.unwrap_err();
         assert!(
-            again.contains("a lead may once every 10 minutes"),
+            again.contains("You resumed devbox at 2026-10-25T22:40:38.000Z; the leads on a machine may once every 10 minutes"),
             "{again}"
         );
         assert!(
@@ -284,5 +325,48 @@ mod tests {
         clock.advance(std::time::Duration::from_secs(600));
         assert!(lead_resume(&hub, None).await.is_ok());
         assert_eq!(hub.usage.gate("devbox"), None);
+    }
+
+    #[tokio::test]
+    async fn two_projects_leads_on_one_machine_share_its_10_minutes() {
+        let (hub, clock, _home) = paused().await;
+        assert!(lead_of(&hub, devbox(), None).await.is_ok());
+        limited_again(&hub).await;
+        let site = lead_of(&hub, on_devbox("site"), None).await.unwrap_err();
+        assert!(
+            site.starts_with(
+                "The lead lead:devbox/fleetd resumed devbox at 2026-10-25T22:40:38.000Z"
+            ),
+            "{site}"
+        );
+        assert!(hub.usage.gate("devbox").is_some(), "still paused");
+        clock.advance(std::time::Duration::from_secs(600));
+        assert!(lead_of(&hub, on_devbox("site"), None).await.is_ok());
+        assert_eq!(hub.usage.gate("devbox"), None);
+        assert_eq!(
+            resumed_by(&hub).await,
+            [
+                (true, "lead:devbox/fleetd".to_owned()),
+                (true, "lead:devbox/site".to_owned())
+            ]
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn of_two_lead_resumes_of_one_machine_at_once_one_is_refused() {
+        let (hub, _clock, _home) = paused().await;
+        let (a, b) = tokio::join!(lead_resume(&hub, None), lead_resume(&hub, None));
+        assert!(a.is_ok() != b.is_ok(), "{a:?} {b:?}");
+        let refused = a.err().or(b.err()).unwrap();
+        assert!(
+            refused.contains("the leads on a machine may once every 10 minutes"),
+            "{refused}"
+        );
+        assert_eq!(resumed_by(&hub).await.len(), 1);
+        assert_eq!(
+            continued(&hub).len(),
+            1,
+            "one \"continue\" to the parked lead"
+        );
     }
 }
