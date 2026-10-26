@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use fleetd_contracts::project_settings::{
-    EnvSecretSaved, EnvVarName, EnvVarSet, PROJECT_ENV_MAX, env_name_reserved,
+    ENV_VALUE_MAX_BYTES, EnvSecretSaved, EnvVarName, EnvVarSet, PROJECT_ENV_MAX, env_name_reserved,
 };
 use fleetd_contracts::secrets::SecretFingerprint;
 use serde::{Deserialize, Serialize};
@@ -101,6 +101,11 @@ pub fn apply(
                 };
                 if plain.is_empty() {
                     return Err(format!("{name}'s value is empty"));
+                }
+                if plain.len() > ENV_VALUE_MAX_BYTES {
+                    return Err(format!(
+                        "{name}'s value is over {ENV_VALUE_MAX_BYTES} bytes"
+                    ));
                 }
                 if plain.iter().any(|&b| b == b'\n' || b == b'\r' || b == 0) {
                     return Err(format!("{name} takes a one-line value"));

@@ -12,10 +12,14 @@ use serde_with::skip_serializing_none;
 
 use crate::brand;
 use crate::ids::{ThreadId, Timestamp};
-use crate::secrets::{SECRET_MAX_BYTES, SealedSecret, SecretFingerprint};
+use crate::secrets::{SealedSecret, SecretFingerprint};
 
 /// Variables one project may have.
 pub const PROJECT_ENV_MAX: usize = 100;
+
+/// Largest value of one variable, plain or secret: its own limit, not a secret ask's (`SECRET_MAX_BYTES`), since
+/// every one goes into every session's environment.
+pub const ENV_VALUE_MAX_BYTES: usize = 8192;
 
 brand!(
     /// An environment variable's name: a letter or `_`, then letters, digits and `_`, at most 128 characters.
@@ -38,7 +42,7 @@ brand!(
     /// A plain variable's value: up to 8192 bytes, no NUL (a process environment can't hold one).
     EnvValue,
     name = "EnvValue",
-    check = |s| s.len() <= SECRET_MAX_BYTES && !s.contains('\0'),
+    check = |s| s.len() <= ENV_VALUE_MAX_BYTES && !s.contains('\0'),
     expected = "a value of at most 8192 bytes with no NUL"
 );
 
@@ -142,7 +146,7 @@ mod tests {
         assert!(!env_name_reserved("FLEETDX"));
         assert!(!env_name_reserved("DATABASE_URL"));
         assert!(EnvValue::new("a\0b").is_err());
-        assert!(EnvValue::new("x".repeat(SECRET_MAX_BYTES + 1)).is_err());
+        assert!(EnvValue::new("x".repeat(ENV_VALUE_MAX_BYTES + 1)).is_err());
         assert!(EnvValue::new("").is_ok());
     }
 

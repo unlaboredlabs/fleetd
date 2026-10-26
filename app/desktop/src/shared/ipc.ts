@@ -120,7 +120,7 @@ export const ProjectEnvRequest = z.strictObject({
     .array(
       z.discriminatedUnion("kind", [
         z.strictObject({ kind: z.literal("plain"), name: EnvName, value: z.string().max(8192) }),
-        // One line; main checks the byte length.
+        // One line; main checks the byte length (project_settings.rs ENV_VALUE_MAX_BYTES).
         z.strictObject({ kind: z.literal("secret"), name: EnvName, value: z.string().min(1).max(8192) }),
       ]),
     )

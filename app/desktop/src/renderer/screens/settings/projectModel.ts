@@ -11,7 +11,7 @@ const NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/u;
 export const reservedName = (name: string): boolean =>
   ["HOME", "PATH", "USER", "TMPDIR", "TMP", "TEMP"].includes(name) || ["FLEETD_", "ANTHROPIC_", "CLAUDE"].some((p) => name.startsWith(p));
 
-/** secrets.rs SECRET_MAX_BYTES, for plain values too. */
+/** project_settings.rs ENV_VALUE_MAX_BYTES, plain and secret alike. */
 const MAX_BYTES = 8192;
 
 /** project_settings.rs PROJECT_ENV_MAX. */
