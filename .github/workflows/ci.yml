@@ -329,6 +329,7 @@ jobs:
         # run against the real package in build-release.yml.
         if: steps.scope.outputs.run == 'true'
         run: pnpm debug-guard-check
+
   desktop-packaged:
     # The test build of app/desktop, packed and run: the nightly's smoke, the recordings and the Linux budgets. Same
     # scope as desktop.
