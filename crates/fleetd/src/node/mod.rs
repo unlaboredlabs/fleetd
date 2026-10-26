@@ -18,6 +18,7 @@ pub mod project_env;
 pub mod repos;
 pub mod runner;
 pub mod secrets;
+pub mod self_exe;
 pub mod sessions;
 pub mod store;
 pub mod util;
@@ -184,6 +185,9 @@ async fn run_node(
     tracing::info!(machine_id = %config.machine_id, hub = %config.hub, "fleetd node starting");
     let store = store::NodeStore::open(&home.join("sessions.sqlite"))
         .map_err(|e| NodeError::Setup(format!("cannot open the session store in {shown}: {e}")))?;
+    // Before any session starts: their fleetd tools run this binary, wherever an update moves the installed one.
+    let pin_home = home.to_owned();
+    let _ = tokio::task::spawn_blocking(move || self_exe::pin(&pin_home)).await;
     let session_config = sessions::SessionConfig::for_node(home);
     let runner = Arc::new(runner::claude::ClaudeRunner::new(claude_binary()));
     // Probed off the async threads now rather than by the first spawn.

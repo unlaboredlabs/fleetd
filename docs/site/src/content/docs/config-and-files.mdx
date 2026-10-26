@@ -28,6 +28,7 @@ Where fleetd keeps everything, and the settings you can change. The [hub](/docs/
     node-key.pem         proves the node to the hub
     node-box-key.pem     opens secrets sealed to this machine
     node.sock            the socket agents' fleetd tools use to reach the hub
+    bin/                 the running node's own binary, linked here so its agents' fleetd tools survive an update
     sessions.sqlite      the node's sessions, and timings not yet sent to the hub
     worktrees/           one git worktree per task session, readers' and reviewers' too
     project-env/<project>.json   a project's environment variables, secrets included (mode 0600; Settings → Projects)

@@ -293,7 +293,10 @@ fn mcp_config(role: SessionRole, sock: &Path, session_id: &str) -> String {
 /// fleetd's own server's entry in a session's `mcpServers` (see [`mcp_config`]); none for a plain thread.
 fn fleetd_server(role: SessionRole, sock: &Path, session_id: &str) -> Option<serde_json::Value> {
     let role = role.cli_arg()?;
-    let exe = agent_exe(std::env::current_exe(), std::process::id());
+    let exe = match super::self_exe::pinned() {
+        Some(pinned) => pinned.to_string_lossy().into_owned(),
+        None => agent_exe(std::env::current_exe(), std::process::id()),
+    };
     Some(serde_json::json!({
         "type": "stdio",
         "command": exe,
@@ -306,7 +309,8 @@ fn fleetd_server(role: SessionRole, sock: &Path, session_id: &str) -> Option<ser
     }))
 }
 
-/// The command for `fleetd agent-mcp`: the node's own running binary, which speaks the node's socket. Once `fleetd
+/// The command for `fleetd agent-mcp` when the node couldn't pin its binary (self_exe.rs), which it otherwise uses on
+/// every platform: the node's own running binary, which speaks the node's socket. Once `fleetd
 /// update` replaces that binary on disk while the node keeps running, Linux names it `<path> (deleted)`, a file that
 /// doesn't exist: claude can't start the server (`ENOENT`) and every session from then on goes without fleetd's tools.
 /// `/proc/<pid>/exe` still opens the running binary for as long as the node lives, and its sessions don't outlive it.
