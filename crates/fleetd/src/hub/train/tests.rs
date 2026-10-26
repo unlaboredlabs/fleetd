@@ -136,7 +136,7 @@ struct FakeGh {
     /// Check-run reads so far, the clock of `FakeCi::Workflow`.
     polls: Mutex<u32>,
     /// What happened on GitHub, in order: `merge #<n>`, `status <context> <state> <sha>`, `close #<n>`.
-    log: Mutex<Vec<String>>,
+    log: Arc<Mutex<Vec<String>>>,
     /// A branch to push an empty commit to the first time CI is read on the batch's head: an author pushing while a
     /// batch is in CI.
     push_during_ci: Mutex<Option<String>>,
@@ -598,6 +598,7 @@ impl FakeGh {
                 }
                 let mut scripted = self.merge_replies.lock().unwrap();
                 if !scripted.is_empty() {
+                    self.log.lock().unwrap().push(format!("refused #{n}"));
                     return scripted.remove(0);
                 }
                 drop(scripted);
@@ -641,6 +642,17 @@ impl FakeGh {
                 ok(
                     json!({ "check_runs": [{ "id": 1, "name": "ci", "status": "completed", "conclusion": if red { "failure" } else { "success" }, "html_url": format!("https://github.com/{REPO}/actions/runs/1") }] }),
                 )
+            }
+            (["commits", sha, "status"], "GET") => {
+                let statuses: Vec<Value> = self
+                    .statuses
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter(|(s, _, _)| s == sha)
+                    .map(|(_, context, state)| json!({ "context": context, "state": state }))
+                    .collect();
+                ok(json!({ "statuses": statuses }))
             }
             (["actions", "workflows"], "GET") => match self.ci {
                 FakeCi::Actions
@@ -1196,7 +1208,7 @@ impl Kit {
             merges: Mutex::default(),
             merge_replies: Mutex::default(),
             polls: Mutex::default(),
-            log: Mutex::default(),
+            log: Arc::default(),
             push_during_ci: Mutex::default(),
             push_on_merge: Mutex::default(),
             fail_close: Mutex::default(),
@@ -3020,6 +3032,138 @@ async fn a_cancelled_check_the_base_does_not_require_is_not_re_run() {
     assert!(kit.train.step(REPO).await);
     assert_eq!(kit.get(&change_id).state, ChangeState::Merged);
     assert!(kit.gh.reruns.lock().unwrap().is_empty());
+}
+
+#[test]
+fn only_a_merge_refused_for_checks_still_to_report_waits_for_them() {
+    use super::service::awaits_checks;
+    for waits in [
+        "3 of 3 required status checks are expected.",
+        "Required status check \"build\" is expected.",
+        "Required status check \"build\" is in progress.",
+    ] {
+        assert!(awaits_checks(waits), "{waits}");
+    }
+    for gives_up in [
+        "Required status check \"build\" has failed.",
+        "At least 1 approving review is required by reviewers with write access.",
+        "Base branch was modified. Review and try the merge again.",
+    ] {
+        assert!(!awaits_checks(gives_up), "{gives_up}");
+    }
+}
+
+/// The index of the first line of `log` that is `line`, after the `after`th.
+fn log_from(log: &[String], after: usize, line: &str) -> Option<usize> {
+    log.iter()
+        .skip(after + 1)
+        .position(|l| l == line)
+        .map(|i| i + after + 1)
+}
+
+/// #522: right after the train's rebase, the new head shows only a check another workflow finished at once; the
+/// required `build` has no run yet, then runs, then passes. The train merges only once `build` passed on that head.
+#[tokio::test(flavor = "multi_thread")]
+async fn after_its_rebase_the_train_merges_only_once_every_required_check_passed_on_the_new_head() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Required, clock);
+    let log = kit.gh.log.clone();
+    let reads = Mutex::new(0u32);
+    answer_checks(&kit, move || {
+        let mut log = log.lock().unwrap();
+        if !log.iter().any(|l| l == "rebase #7") {
+            // The PR's own head before the rebase: all green.
+            return vec![job(1, 1, "stale", "success"), job(2, 2, "build", "success")];
+        }
+        let mut n = reads.lock().unwrap();
+        *n += 1;
+        let (seen, build) = match *n {
+            1 | 2 => ("checks: no build", None),
+            3 | 4 => (
+                "checks: build running",
+                Some(check("build", "in_progress", None, None)),
+            ),
+            _ => ("checks: build green", Some(job(4, 4, "build", "success"))),
+        };
+        log.push(seen.into());
+        std::iter::once(job(3, 3, "stale", "success"))
+            .chain(build)
+            .collect()
+    });
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    kit.commit("main", &[add("other.txt", "other\n")], None);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::Merged);
+    let log = gh_log(&kit);
+    let rebased = log_at(&log, "rebase #7");
+    let green = log_from(&log, rebased, "checks: build green");
+    assert!(
+        log_from(&log, rebased, "checks: no build")
+            < log_from(&log, rebased, "checks: build running")
+            && green.is_some_and(|g| g < log_at(&log, "merge #7")),
+        "merged before `build` passed on the new head: {log:?}"
+    );
+    assert_eq!(
+        *kit.gh.merges.lock().unwrap(),
+        [(7, kit.head_of("docs"))],
+        "pinned to the rebased head"
+    );
+}
+
+/// GitHub refuses the merge while it still expects the checks it requires on the head. The Change waits for them
+/// and merges once they pass on that head, with no try spent, no push and nothing asked of its author.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_merge_refused_for_expected_checks_waits_for_them_and_merges_without_a_push() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Required, clock);
+    let log = kit.gh.log.clone();
+    // Refusals seen, and reads since the last: `build` runs for two reads after each refusal, then passes.
+    let reads = Mutex::new((0usize, 0u32));
+    answer_checks(&kit, move || {
+        let mut log = log.lock().unwrap();
+        let refusals = log.iter().filter(|l| l.starts_with("refused")).count();
+        let mut seen = reads.lock().unwrap();
+        if seen.0 != refusals {
+            *seen = (refusals, 0);
+        }
+        seen.1 += 1;
+        if refusals > 0 && seen.1 <= 2 {
+            log.push("checks: build running".into());
+            return vec![check("build", "in_progress", None, None)];
+        }
+        log.push("checks: build green".into());
+        vec![job(1, 1, "build", "success")]
+    });
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let head = kit.head_of("docs");
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+    let expected = "3 of 3 required status checks are expected.";
+    kit.gh
+        .merge_replies
+        .lock()
+        .unwrap()
+        .extend((0..3).map(|_| http_error(405, expected)));
+
+    for _ in 0..3 {
+        kit.train.step(REPO).await;
+    }
+    let merged = kit.get(&change_id);
+    assert_eq!(merged.state, ChangeState::Merged, "{:?}", merged.last_error);
+    assert_eq!(*kit.gh.merges.lock().unwrap(), [(7, head)], "no new push");
+    assert!(
+        kit.host.sends.lock().unwrap().is_empty(),
+        "nothing asked of the author"
+    );
+    let log = gh_log(&kit);
+    let last = log.iter().rposition(|l| l == "refused #7").unwrap();
+    let green = log_from(&log, last, "checks: build green");
+    assert!(
+        log_from(&log, last, "checks: build running") < green
+            && green.is_some_and(|g| g < log_at(&log, "merge #7")),
+        "merged before the checks passed again: {log:?}"
+    );
 }
 
 /// Three PRs, each adding its own file, reviewed and ready: 7 (a), 8 (b), 9 (c).

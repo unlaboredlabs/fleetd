@@ -243,6 +243,21 @@ struct CheckRuns {
     check_runs: Vec<CheckRun>,
 }
 
+/// A commit status on a head, as GitHub's combined status lists it: a required check may be one, not a check run.
+#[derive(Clone, Debug, Deserialize)]
+pub struct CommitStatus {
+    pub context: String,
+    /// "success", "pending", "failure" or "error".
+    pub state: String,
+    #[serde(default)]
+    pub target_url: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct CombinedStatus {
+    statuses: Vec<CommitStatus>,
+}
+
 #[derive(Deserialize)]
 struct MergeJson {
     sha: String,
@@ -622,6 +637,18 @@ impl TrainGitHub {
             )
             .await?;
         Ok(runs.check_runs)
+    }
+
+    /// The newest commit status of each context on `sha`.
+    pub async fn statuses(&self, repo: &str, sha: &str) -> Result<Vec<CommitStatus>, GhError> {
+        let combined: CombinedStatus = self
+            .json(
+                "GET",
+                &format!("repos/{repo}/commits/{sha}/status?per_page=100"),
+                &[],
+            )
+            .await?;
+        Ok(combined.statuses)
     }
 
     /// Re-runs the failed and cancelled jobs of workflow run `run`.
