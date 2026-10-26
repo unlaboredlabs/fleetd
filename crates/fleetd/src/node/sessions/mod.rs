@@ -2693,12 +2693,7 @@ impl SessionService {
         }
         self.log(self.update(id, |c| {
             let at = c.at.clone();
-            let found = c
-                .runs
-                .iter()
-                .position(|r| r.id == run_id && r.status.is_active());
-            let index = found.or_else(|| c.runs.iter().position(|r| r.status.is_active()));
-            if let Some(run) = index.map(|i| &mut c.runs[i]) {
+            if let Some(run) = state::ending(&c.runs, run_id).map(|i| &mut c.runs[i]) {
                 (run.status, run.failure) = match outcome {
                     RunOutcome::Completed { .. } => (RunStatus::Completed, None),
                     RunOutcome::Interrupted => (

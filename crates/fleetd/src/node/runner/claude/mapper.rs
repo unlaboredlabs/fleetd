@@ -926,14 +926,18 @@ impl StreamMapper {
         if result.user_message_uuid.is_none() && result.origin.is_some() {
             return;
         }
-        let Some(run_id) = result
-            .user_message_uuid
-            .clone()
+        let mut joined = std::mem::take(&mut self.joined);
+        // A turn claude merged sends into names its last one: the turn is still the run that started it, and the
+        // others end with it, each once.
+        let Some(run_id) = (result.user_message_uuid.clone())
+            .filter(|r| !joined.contains(r))
             .or_else(|| self.active_run.clone())
+            .or_else(|| result.user_message_uuid.clone())
             .or_else(|| self.open_runs.first().cloned())
         else {
             return;
         };
+        joined.retain(|r| *r != run_id);
         let usage = result.usage.as_ref().map(|u| RunUsage {
             input_tokens: u.input_tokens,
             output_tokens: u.output_tokens,
@@ -983,7 +987,6 @@ impl StreamMapper {
             )
         };
         let durations = (result.duration_ms, result.duration_api_ms);
-        let joined = std::mem::take(&mut self.joined);
         self.end_run(run_id, outcome.clone(), usage, durations, now, events);
         for run in joined {
             self.end_run(run, outcome.clone(), None, (None, None), now, events);
