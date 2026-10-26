@@ -16,7 +16,7 @@ const item = (id: string, author: ChatItem["author"], time: string, over: Partia
   ...over,
 });
 const rows = (items: ChatItem[], over: Partial<Parameters<typeof chatRows>[0]> = {}) =>
-  chatRows({ items, hasOlder: false, loadingOlder: false, strip: false, nowMs: NOW, timeZone: "UTC", ...over });
+  chatRows({ items, hasOlder: false, loadingOlder: false, nowMs: NOW, timeZone: "UTC", ...over });
 
 describe("the chat's rows", () => {
   it("divide days, show an author once per run and fleetd's own messages as one-liners", () => {
@@ -106,32 +106,14 @@ describe("the chat's rows", () => {
     expect(latestLabel(rows([]), newestKey(rows([])))).toBe("Latest");
   });
 
-  it("put the live strip under the lead's newest message and after the field that answers it, never between them", () => {
-    const r = rows(
-      [
-        item("a", "lead", at(19, 9)),
-        item("b", "human", at(19, 9, 1)),
-        item("c", "lead", at(19, 9, 2), { state: "streaming" }),
-        item("d", "system", at(19, 9, 3), { kind: "event", text: "#12 merged" }),
-        item("e", "lead", at(19, 9, 4), { kind: "secret" }),
-      ],
-      { strip: true },
-    );
-    expect(r.map((x) => x.kind)).toEqual(["top", "day", "message", "message", "message", "event", "inline", "strip"]);
-    expect(rows([item("a", "human", at(19, 9))], { strip: true }).at(-1)?.kind).toBe("strip");
-    expect(rowIndexOf(r, "d")).toBe(5);
-    // A reply after the field: the strip stays under the lead's message, before the reply.
-    const replied = rows(
-      [item("a", "lead", at(19, 9)), item("b", "lead", at(19, 9, 1), { kind: "gated" }), item("c", "human", at(19, 9, 2)), item("d", "lead", at(19, 9, 3), { kind: "secret" })],
-      { strip: true },
-    );
-    expect(replied.map((x) => x.kind)).toEqual(["top", "day", "message", "inline", "strip", "message", "inline"]);
-    // The lead's activity goes after the newest item: under its reply, ahead of the strip there.
+  it("put the lead's activity after the newest item, never under a reply still streaming", () => {
+    const r = rows([item("a", "lead", at(19, 9)), item("d", "system", at(19, 9, 3), { kind: "event", text: "#12 merged" })]);
+    expect(rowIndexOf(r, "d")).toBe(3);
+    // Under its reply, and once asked again, under the person's message.
     const lead = [item("a", "human", at(19, 9)), item("b", "lead", at(19, 9, 1))];
-    expect(rows(lead, { strip: true, activity: true }).slice(-3).map((x) => x.kind)).toEqual(["message", "activity", "strip"]);
-    // Asked again: under the person's message, the strip staying under the lead's reply.
+    expect(rows(lead, { activity: true }).slice(-2).map((x) => x.kind)).toEqual(["message", "activity"]);
     const asked = [...lead, item("c", "human", at(19, 9, 2))];
-    expect(rows(asked, { strip: true, activity: true }).slice(-4).map((x) => x.kind)).toEqual(["message", "strip", "message", "activity"]);
+    expect(rows(asked, { activity: true }).slice(-3).map((x) => x.kind)).toEqual(["message", "message", "activity"]);
     expect(rows([], { activity: true }).map((x) => x.kind)).toEqual(["top", "activity"]);
     const streaming = [item("a", "human", at(19, 9)), item("b", "lead", at(19, 9, 1), { state: "streaming" })];
     expect(rows(streaming, { activity: true }).some((x) => x.kind === "activity")).toBe(false);
@@ -142,7 +124,7 @@ describe("the chat's rows", () => {
     const turn = Date.parse(at(19, 9));
     const lead = [item("a", "human", at(19, 9)), item("b", "lead", at(19, 9, 3)), item("c", "system", at(19, 9, 4), { kind: "event" })];
     const kinds = (r: ReturnType<typeof rows>) => r.map((x) => (x.kind === "message" ? `message:${x.item.id}` : x.kind));
-    expect(kinds(rows(lead, { strip: true, workedSince: turn })).slice(-4)).toEqual(["message:b", "activity", "strip", "event"]);
+    expect(kinds(rows(lead, { workedSince: turn })).slice(-3)).toEqual(["message:b", "activity", "event"]);
     // A person's message after it, waiting for the next turn: the line stays with the reply.
     expect(kinds(rows([...lead, item("d", "human", at(19, 9, 5))], { workedSince: turn })).slice(3)).toEqual(["message:b", "activity", "event", "message:d"]);
     // The lead's newest reply is older than the turn: it didn't write in it, so no line claims it.
@@ -234,7 +216,7 @@ describe("what enters with motion", () => {
     const send = item("r1", "human", at(19, 9), { state: "pending", clientRequestId: "r1" });
     const sent = arrivalsOf(next, [...next.items, send], true, NOW + 20);
     expect(sent.entering.get("r1")).toEqual({ at: NOW + 20, step: 0 });
-    // Updated again (the receipt, a new strip), nothing enters twice.
+    // Updated again (the receipt), nothing enters twice.
     expect(arrivalsOf(sent, [...sent.items], true, NOW + 30).entering).toEqual(sent.entering);
   });
 

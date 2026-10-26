@@ -1,11 +1,13 @@
-// The live strip's model, pure: how many of a project's agents are at work, waiting on you, on hold and queued, and
-// the PRs they are on. It reads only the data layer (src/data). `selectStrip` keeps the same object until a count
-// changes, so a lane's every token doesn't redraw the chat.
+// The live strip's model, pure: how many of a project's agents are at work, waiting on you, on hold and queued, a dot
+// and a line for each, which of them the now-line shows, and the PRs they are on. It reads only the data layer
+// (src/data). `selectStrip` keeps the same object until something it draws changes, so a lane's every token doesn't
+// redraw it.
 import { selectProjectWork, type ProjectWork } from "../../src/data/selectors";
 import type { DataState } from "../../src/data/store";
-import type { AgentLane, PrRef } from "./contracts";
+import type { AgentLane, AgentRole, PrRef } from "./contracts";
+import { parseMs } from "./format";
 import { projectKey } from "./lanes";
-import { isChecker, isFinal, isWorking } from "./words";
+import { describe, isChecker, isFinal, isWorking, type Line } from "./words";
 
 export interface ProjectRef {
   readonly machineId: string;
@@ -23,6 +25,65 @@ const shownLanes = (w: ProjectWork): AgentLane[] => w.lanes.filter((l) => l.role
 const isOn = (l: AgentLane, pr: PrRef): boolean =>
   l.pr?.number === pr.number || (!isChecker(l.role) && pr.taskId !== undefined && l.taskId === pr.taskId);
 
+/** An agent's dot: at work (it breathes), waiting on you (the attention color), on hold, or queued (hollow). */
+export type AgentState = "working" | "needsYou" | "onHold" | "queued";
+
+const stateOf = (l: AgentLane): AgentState =>
+  isWorking(l.status) ? "working" : l.status === "waiting" ? "needsYou" : l.status === "queued" ? "queued" : "onHold";
+
+/** The order the dots and the lanes go in: what wants you first, then what runs, then what doesn't yet. */
+const ORDER: Readonly<Record<AgentState, number>> = { needsYou: 0, working: 1, onHold: 2, queued: 3 };
+
+/** One agent as the strip draws it: a dot, and in the opened strip a row that opens it in the panel. */
+export interface StripAgent {
+  readonly laneId: string;
+  readonly role: AgentRole;
+  readonly title: string;
+  readonly state: AgentState;
+  /** What it is doing now, as the agents view says it. */
+  readonly line: Line;
+}
+
+/** The buckets of an agent's sparkline that count as now: the last 16 seconds. */
+const RECENT = 8;
+/** A sparkline bucket's length (contracts Spark). */
+const BUCKET_MS = 2000;
+
+const sparkEnd = (l: AgentLane): number | undefined => parseMs(l.live?.spark?.endAt);
+
+/**
+ * How much an agent did lately: its sparkline's work in the last 16 seconds before `latest`, the newest sparkline's
+ * end. A frame that leaves a lane's sparkline out keeps the last one it sent, so a lane gone quiet can hold an old
+ * one: the buckets it is behind are buckets it did nothing in, and an old enough one counts for nothing.
+ */
+const recentWork = (l: AgentLane, latest: number | undefined): number => {
+  const samples = l.live?.spark?.samples ?? [];
+  const end = sparkEnd(l);
+  if (end === undefined || latest === undefined) return 0;
+  const behind = Math.max(0, Math.round((latest - end) / BUCKET_MS));
+  if (behind >= RECENT) return 0;
+  return samples.slice(-(RECENT - behind)).reduce((a, b) => a + b, 0);
+};
+
+/** Tool work reads busier than writing or planning, and those than waiting on the model. */
+const lineRank = (line: Line): number => (line.machine !== undefined ? 0 : line.tone === "loud" ? 1 : line.thinking ? 3 : 2);
+
+/**
+ * The agents the now-line may show, the busiest first: those at work by their recent work, then by what they are
+ * doing, then as the board has them. With none at work, those waiting on you, so the line says what for.
+ */
+const nowOrder = (agents: readonly StripAgent[], lanes: readonly AgentLane[]): string[] => {
+  const ends = lanes.map(sparkEnd).filter((t) => t !== undefined);
+  const latest = ends.length === 0 ? undefined : Math.max(...ends);
+  const work = new Map(lanes.map((l) => [l.laneId, recentWork(l, latest)]));
+  const working = agents.filter((a) => a.state === "working");
+  if (working.length === 0) return agents.filter((a) => a.state === "needsYou").map((a) => a.laneId);
+  return working
+    .map((a, i) => ({ a, i, work: work.get(a.laneId) ?? 0, rank: lineRank(a.line) }))
+    .sort((x, y) => y.work - x.work || x.rank - y.rank || x.i - y.i)
+    .map(({ a }) => a.laneId);
+};
+
 export interface Strip {
   /** Every agent counted; nothing is drawn without one. */
   readonly agents: number;
@@ -34,9 +95,24 @@ export interface Strip {
   readonly queued: number;
   /** The PRs the agents are on, lowest first. */
   readonly prs: readonly number[];
+  /** Every agent counted, those waiting on you first, then at work, on hold and queued; the board's order within. */
+  readonly lanes: readonly StripAgent[];
+  /** The agents the now-line may show, the one to show first leading; empty when nothing has anything to say. */
+  readonly now: readonly string[];
 }
 
-export const stripOf = (lanes: readonly AgentLane[], prs: readonly PrRef[] = []): Strip => ({
+const agentOf = (l: AgentLane): StripAgent => ({ laneId: l.laneId, role: l.role, title: l.title, state: stateOf(l), line: describe(l) });
+
+export const stripOf = (lanes: readonly AgentLane[], prs: readonly PrRef[] = []): Strip => {
+  const agents = lanes
+    .map(agentOf)
+    .map((a, i) => ({ a, i }))
+    .sort((x, y) => ORDER[x.a.state] - ORDER[y.a.state] || x.i - y.i)
+    .map(({ a }) => a);
+  return { ...counts(lanes, prs), lanes: agents, now: nowOrder(agents, lanes) };
+};
+
+const counts = (lanes: readonly AgentLane[], prs: readonly PrRef[]): Omit<Strip, "lanes" | "now"> => ({
   agents: lanes.length,
   working: lanes.filter((l) => isWorking(l.status)).length,
   needsYou: lanes.filter((l) => l.status === "waiting").length,
@@ -73,6 +149,23 @@ export const stripPrs = (prs: readonly number[]): Array<string | number> => {
   return out;
 };
 
+/** How long the now-line stays on one agent before it may turn to a busier one. */
+export const NOW_DWELL_MS = 6000;
+
+/**
+ * The agent the now-line shows: the busiest, except that one already shown stays for `dwell` (while it still has
+ * something to say), so the line turns over gently rather than flickering between two agents about as busy.
+ */
+export const nowAgent = (
+  now: readonly string[],
+  shown: { readonly laneId: string; readonly since: number } | undefined,
+  at: number,
+  dwell: number = NOW_DWELL_MS,
+): string | undefined => {
+  if (shown !== undefined && now.includes(shown.laneId) && at - shown.since < dwell) return shown.laneId;
+  return now[0];
+};
+
 /** The hub's clock skew, for elapsed times read against the hub's clock (Status). */
 export const selectSkew = (s: DataState): number => s.live.skewMs ?? 0;
 
@@ -81,7 +174,7 @@ const sameStrip = (a: Strip, b: Strip): boolean => JSON.stringify(a) === JSON.st
 const selectors = new Map<string, (s: DataState) => Strip | undefined>();
 
 /**
- * A project's strip, the same object until its counts change; undefined until the board has loaded (draw nothing,
+ * A project's strip, the same object until what it draws changes (a count, a dot, an agent's line, who is busiest); undefined until the board has loaded (draw nothing,
  * never "0 agents"). One selector per project, memoized on its own.
  */
 export const selectStrip = (project: ProjectRef): ((s: DataState) => Strip | undefined) => {

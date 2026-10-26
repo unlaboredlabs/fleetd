@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// The chat's ways into the panel: the live strip opens its Agents tab, and a PR named in the chat opens that PR there.
+// The chat's ways into the panel: the live strip opens its agents in the Agents tab, and a PR named in the chat opens that PR there.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
@@ -131,25 +131,72 @@ const follow = async (a: HTMLAnchorElement | undefined) => {
   await settle();
 };
 
-it("opens the panel's agents from the strip's headline, even when the panel was closed or on a PR", async () => {
+it("opens an agent, the panel's agents and its PRs from the strip's lanes, even when the panel was closed", async () => {
   await mount("");
   act(() => host.querySelector<HTMLButtonElement>("button[aria-label='Hide agents and PRs']")?.click());
   expect(panel()).toBeNull();
 
-  const headline = [...host.querySelectorAll("section button")].find((b) => b.textContent === "1 agent working");
-  act(() => (headline as HTMLButtonElement | undefined)?.click());
-  await settle();
+  // A click on the strip opens its lanes: a row per agent, and the PRs they are on.
+  const strip = host.querySelector("section[aria-label='1 agent working']");
+  const toggle = strip?.querySelector<HTMLButtonElement>("button[aria-expanded]");
+  expect(toggle?.textContent).toBe("1 agent working");
+  expect(strip?.querySelector("ul")).toBeNull();
+  act(() => toggle?.click());
+  expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+  const lanes = () => [...(strip?.querySelectorAll<HTMLAnchorElement>("ul[aria-label='Agents at work'] a") ?? [])];
+  expect(lanes().map((a) => a.getAttribute("href"))).toEqual([`${CHAT}/agents/T1`]);
+
+  // An agent opens in the panel's agents, and the lanes close behind it.
+  const agent = lanes()[0];
+  act(() => agent?.click());
+  await follow(agent);
+  expect(window.location.hash).toBe(`${CHAT}/agents/T1`);
+  expect(panel()?.querySelector("[data-screen^='agents.work']")).not.toBeNull();
+  expect(strip?.querySelector("ul")).toBeNull();
+
+  // The now-line is a way to the same agent; the opened lanes name the PR it is on and lead to the panel's list.
+  expect(strip?.querySelector<HTMLAnchorElement>(`a[href='${CHAT}/agents/T1']`)).not.toBeNull();
+  act(() => toggle?.click());
+  const onPr = [...(strip?.querySelectorAll<HTMLAnchorElement>("a") ?? [])].find((a) => a.textContent === "#12");
+  await follow(onPr);
+  expect(panel()?.querySelector("[data-screen^='prs.detail']")).not.toBeNull();
+  await follow([...(strip?.querySelectorAll<HTMLAnchorElement>("a") ?? [])].find((a) => a.textContent === "Open in the panel"));
   expect(window.location.hash).toBe(`${CHAT}/agents`);
   expect(panel()?.querySelector("[data-screen='agents']")).not.toBeNull();
+});
 
-  // The strip names the PR its agent is on; it opens there too, and the headline goes back to the agents.
-  const onPr = host.querySelector<HTMLAnchorElement>("section a");
-  expect(onPr?.textContent).toBe("#12");
-  await follow(onPr ?? undefined);
-  expect(panel()?.querySelector("[data-screen^='prs.detail']")).not.toBeNull();
-  act(() => (headline as HTMLButtonElement | undefined)?.click());
-  await settle();
-  expect(panel()?.querySelector("[data-screen='agents']")).not.toBeNull();
+it("closes the strip's lanes on a second click, a press outside it, or Escape; Tab reaches them after the toggle", async () => {
+  await mount("");
+  const strip = host.querySelector("section[aria-label='1 agent working']");
+  const toggle = strip?.querySelector<HTMLButtonElement>("button[aria-expanded]");
+  const opened = () => strip?.querySelector("ul[aria-label='Agents at work']") != null;
+
+  act(() => toggle?.click());
+  expect(opened()).toBe(true);
+  // The toggle comes before the lanes, so Tab goes from it into them.
+  const focusable = [...(strip?.querySelectorAll<HTMLElement>("button, a") ?? [])];
+  const lanes = strip?.querySelector("ul");
+  expect(focusable.indexOf(toggle as HTMLElement)).toBeLessThan(focusable.findIndex((el) => lanes?.contains(el) === true));
+  act(() => toggle?.click());
+  expect(opened()).toBe(false);
+
+  // A press inside leaves it open; one outside closes it.
+  act(() => toggle?.click());
+  act(() => {
+    strip?.querySelector("ul")?.dispatchEvent(new window.PointerEvent("pointerdown", { bubbles: true }));
+  });
+  expect(opened()).toBe(true);
+  act(() => {
+    host.querySelector("[data-testid='message']")?.dispatchEvent(new window.PointerEvent("pointerdown", { bubbles: true }));
+  });
+  expect(opened()).toBe(false);
+
+  act(() => toggle?.click());
+  act(() => {
+    toggle?.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  });
+  expect(opened()).toBe(false);
+  expect(toggle?.getAttribute("aria-expanded")).toBe("false");
 });
 
 it("opens a PR named in a message or an event line, by number or by its GitHub URL, in the panel", async () => {

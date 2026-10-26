@@ -72,8 +72,7 @@
 .quietRow,
 .day,
 .clock,
-.top,
-.strip {
+.top {
   max-width: calc(var(--measure) + 2 * var(--pad));
   margin: 0 auto;
   padding: 0 var(--pad);
@@ -360,12 +359,6 @@
   justify-content: center;
   padding-top: var(--space-4);
   padding-bottom: var(--space-2);
-}
-.strip {
-  padding-top: var(--space-2);
-}
-.strip:empty {
-  display: none;
 }
 /* A message from before the chat existed (an old order's conversation), or from an agent's key: the same message, a
    step quieter. */

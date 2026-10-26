@@ -1,49 +1,271 @@
-/* The live strip in the lead's chat: one quiet line, no motion. On a narrow line the PRs wrap under the headline. */
+/*
+ * The live strip, docked to the composer: a tray the box sits in. It runs the box's width, and two fillets carry its
+ * sides down past the box's rounded top corners, so the corners show the tray behind them and the two read as one
+ * piece. Opened (by a click, never by hovering, so the conversation never moves under a passing pointer), its lanes
+ * grow it upward. Motion only on a change, never a loop (the app draws no frames while nothing changes): a dot
+ * pulses once as it appears or its agent's state changes, then holds still, and a new now-line rolls in; with
+ * reduced motion, neither.
+ */
 
-.strip {
+.dock {
+  /* The box's corner radius (chat/composer.module.css): how far the fillets reach down beside it. */
+  --tuck: 18px;
+  position: relative;
+  container-type: inline-size;
+  /* The lanes follow the row in the DOM (the tab order) and are drawn above it. */
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  column-gap: var(--space-3);
-  row-gap: var(--space-1);
-  min-width: 0;
-  padding: var(--space-2) var(--space-3);
+  flex-direction: column-reverse;
   border: 1px solid var(--hairline);
-  border-radius: var(--radius-md);
+  border-bottom: none;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: var(--sidebar);
+}
+/* The tray's colour in the square beside each top corner of the box, outside the corner's curve. */
+.dock::before,
+.dock::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  width: calc(var(--tuck) - 1px);
+  height: var(--tuck);
+  pointer-events: none;
+}
+.dock::before {
+  left: -1px;
+  border-left: 1px solid var(--hairline);
+  background: radial-gradient(circle at 100% 100%, transparent calc(var(--tuck) - 0.5px), var(--sidebar) var(--tuck));
+}
+.dock::after {
+  right: -1px;
+  border-right: 1px solid var(--hairline);
+  background: radial-gradient(circle at 0 100%, transparent calc(var(--tuck) - 0.5px), var(--sidebar) var(--tuck));
 }
 
-.head {
+.strip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  min-height: var(--row);
+  padding: 0 var(--space-3);
+}
+
+/* Dots and the headline; its hit area stretches over the whole row, under the now-line's link. */
+.toggle {
   all: unset;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   flex: 0 1 auto;
   min-width: 0;
+  color: var(--quiet);
+  cursor: pointer;
+}
+.toggle::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+.toggle:hover,
+.dock[data-open] .toggle {
   color: var(--text);
+}
+/* `all: unset` drops the app's focus outline too, so the row and the links put it back (base.css :focus-visible). */
+.toggle:focus-visible::after,
+.now:focus-visible,
+.lane:focus-visible,
+.all:focus-visible,
+.pr:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.toggle:focus-visible {
+  outline: none;
+}
+.headline {
+  min-width: 0;
+}
+
+.dots {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+}
+.needsYou {
+  color: var(--warning);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--warning) 22%, transparent);
+}
+.onHold {
+  color: var(--faint);
+}
+.queued {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--faint);
+}
+.more {
+  margin-left: 2px;
+  font-size: var(--text-xs);
+  line-height: 1;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+/* A row dot is drawn anew when its agent appears or changes state (LiveStrip.tsx keys it so): one pulse, then still. */
+.dots > .dot {
+  animation: pulse 900ms var(--ease-out);
+}
+@keyframes pulse {
+  from {
+    opacity: 0.3;
+    transform: scale(1.7);
+  }
+}
+
+/* The now-line: what the busiest agent is doing, above the toggle's stretched hit area. */
+.now {
+  all: unset;
+  /* In the strip's quiet voice: what the agent does (parts.tsx ActivityLine) reads in quiet text, its machine text
+     at the strip's size; waiting on you keeps its attention color. */
+  --text: var(--quiet);
+  --text-sm: var(--text-xs);
+  position: relative;
+  z-index: 1;
+  flex: 1 1 0;
+  min-width: 30%;
+  overflow: hidden;
   cursor: pointer;
   border-radius: var(--radius-sm);
 }
-.head:hover {
+.now:empty {
+  pointer-events: none;
+}
+.roll {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  animation: roll 360ms var(--ease-out);
+}
+/* The role gives way before the activity does: it shrinks to an ellipsis. */
+.roll > :first-child {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+/* Too narrow a strip (the chat beside a wide panel) has no room for a useful now-line: the headline takes it all. */
+@container (width < 420px) {
+  .now {
+    display: none;
+  }
+}
+.now:hover .roll {
   text-decoration: underline;
+  text-decoration-color: var(--faint);
 }
-/* `all: unset` drops the app's focus outline too, so the headline and the PR links put it back (base.css :focus-visible). */
-.head:focus-visible,
-.pr:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-/* The PRs the agents are on, pushed to the line's end. */
-.prs {
-  flex: none;
-  margin-left: auto;
-  white-space: nowrap;
+@keyframes roll {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
 }
 
+.chevron {
+  flex: none;
+  margin-left: auto;
+  color: var(--faint);
+  pointer-events: none;
+  transition: transform var(--dur-base) var(--ease-out);
+}
+.dock[data-open] .chevron {
+  transform: rotate(180deg);
+}
+
+/* The lanes: opened above the row, inside the tray, which grows upward with them. */
+.lanes {
+  display: flex;
+  flex-direction: column;
+  max-height: min(360px, 40vh);
+  border-bottom: 1px solid var(--hairline);
+  animation: open var(--dur-base) var(--ease-out);
+}
+@keyframes open {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.lanesHead {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3) var(--space-1);
+}
+.list {
+  margin: 0;
+  padding: 0 0 var(--space-1);
+  list-style: none;
+  overflow-y: auto;
+}
+.lane {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  min-height: var(--row);
+  padding: 0 var(--space-3);
+  cursor: pointer;
+}
+.lane:hover {
+  background: var(--hover);
+}
+.title {
+  flex: 0 1 40%;
+  min-width: 0;
+  color: var(--text);
+}
+
+.all,
 .pr {
   all: unset;
   cursor: pointer;
   border-radius: var(--radius-sm);
+}
+.all {
+  flex: none;
+  color: var(--accent);
+}
+.pr {
   font-family: var(--font-mono);
   font-size: var(--text-sm);
   color: var(--text);
 }
+.all:hover,
 .pr:hover {
   text-decoration: underline;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dots > .dot,
+  .roll,
+  .lanes {
+    animation: none;
+  }
+  .chevron {
+    transition: none;
+  }
 }

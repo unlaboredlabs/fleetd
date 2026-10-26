@@ -17,7 +17,7 @@ export interface SiteShot {
 }
 
 export const siteShots: readonly SiteShot[] = [
-  // The landing page's hero: storefront's chat while its lead works, the live strip under its reply, and billing
+  // The landing page's hero: storefront's chat while its lead works, the live strip docked to its composer, and billing
   // waiting on you in the sidebar.
   { file: "site/chat-hero.png", screen: "chat", variant: "strip", fixture: "live-3" },
   // Fig. 1 and Fig. 2: the two things that stay out of plain chat, a command waiting for Approve and a secret's field.
