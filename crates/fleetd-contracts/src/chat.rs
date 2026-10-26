@@ -174,6 +174,9 @@ pub struct CommandApprovalItem {
     pub gated: Option<GatedRunSpec>,
     /// A session's permission prompt: the tool and what it would do.
     pub permission: Option<ToolPermission>,
+    /// An agent's proposed preview setting (preview_config_propose): approved, it becomes the project's `preview`.
+    /// Older apps show it as an approval with neither command nor permission.
+    pub preview_config: Option<crate::preview::PreviewConfigProposeCall>,
     pub state: CommandApprovalState,
     pub exit_code: Option<i64>,
     /// The end of the output, once it ran.
@@ -254,6 +257,9 @@ pub struct ChatMessage {
     pub remembered: Option<crate::memory::RememberedItem>,
     /// A human message: the skills it named with `$name`, which the lead's copy lists.
     pub skills: Option<List<crate::skills::SkillName, 1, 8, true>>,
+    /// An agent's suggestion to try a PR (preview_suggest), posted once per PR with `text` in its words: the app
+    /// shows it as one line with Try it. Nothing runs from it.
+    pub preview_suggestion: Option<crate::preview::PreviewSuggestion>,
 }
 
 /// One chat's state, for the sidebar and the status row.

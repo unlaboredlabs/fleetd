@@ -303,6 +303,8 @@ pub fn chat_item(r: &HumanRequest) -> ChatItem {
             machine_id: r.project_ref.machine_id.clone(),
             gated: r.gated.clone(),
             permission: r.permission.clone(),
+            // Set by the hub's preview_config_propose (W58), which comes next.
+            preview_config: None,
             state: match r.state {
                 RequestState::Approved => CommandApprovalState::Approved,
                 RequestState::Denied => CommandApprovalState::Denied,

@@ -1037,6 +1037,11 @@ export type ChatMessage = {
    * bubble (and while a message streams).
    */
   parts?: ChatPart[];
+  /**
+   * An agent's suggestion to try a PR (preview_suggest), posted once per PR with `text` in its words: the app
+   * shows it as one line with Try it. Nothing runs from it.
+   */
+  previewSuggestion?: PreviewSuggestion;
   projectRef: ProjectRef;
   /** A system line "Remembered: …": what the lead's `remember` wrote, which `memory_undo` takes back. */
   remembered?: RememberedItem;
@@ -1340,6 +1345,11 @@ export type CommandApprovalItem = {
   outputTail?: string;
   /** A session's permission prompt: the tool and what it would do. */
   permission?: ToolPermission;
+  /**
+   * An agent's proposed preview setting (preview_config_propose): approved, it becomes the project's `preview`.
+   * Older apps show it as an approval with neither command nor permission.
+   */
+  previewConfig?: PreviewConfigProposeCall;
   requestId: ChatRequestId;
   state: CommandApprovalState;
 };
@@ -3208,6 +3218,15 @@ export type PreviewConfig = {
   web?: WebPreview;
 };
 
+/**
+ * `preview_config_propose`: how to run the project's preview, for the person to approve as a card in the chat.
+ * Nothing is saved until they do. Answered with the request, as `gated_run` is.
+ */
+export type PreviewConfigProposeCall = {
+  config: PreviewConfig;
+  why: string;
+};
+
 export type PreviewEndInput = {
   previewId: PreviewId;
 };
@@ -3329,6 +3348,11 @@ export type PreviewsListInput = {
 };
 
 export type PreviewsListOutput = {
+  /**
+   * The caller's key may start previews on this project: a human key with admin or operate on its machine (D162).
+   * False: it only opens running ones. Absent from older hubs: the app offers Try it and shows a refusal.
+   */
+  canStart?: boolean;
   next?: string;
   /** Running ones first, then the newest that ended. */
   previews: Preview[];
