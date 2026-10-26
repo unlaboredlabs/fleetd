@@ -328,4 +328,16 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "automation_runs",
         "An automation's runs, newest first: trigger, state, the order each opened, and why a run was skipped or failed.",
     ),
+    (
+        "browser_sessions",
+        "A project's browser sessions, newest first, or one by sessionId: the agent and task that opened each, its purpose, state (live, uploading, recorded, lost, expired), who has control, and the recording's files (actions, dom, video) once recorded. Also the hub's retention. Read-only.",
+    ),
+    (
+        "browser_recording_get",
+        "One piece (at most 512 KiB) of a recorded browser session's file from offset: actions (one JSON line per tool call), dom (the page's HTML after each), or video (webm). Read on until done. Every secret the node knew was scrubbed before upload; the video can't be. Read-only.",
+    ),
+    (
+        "browser_retention_set",
+        "How long the hub keeps browser recordings: retentionDays (1 to 365, default 30) and maxGbPerProject (default 20; a project's oldest go first past it). Pruned hourly; an expired session keeps its row. Admin on every machine.",
+    ),
 ];

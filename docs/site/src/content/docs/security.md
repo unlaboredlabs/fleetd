@@ -11,7 +11,7 @@ What fleetd trusts and why. fleetd is built for one person or a small team runni
 |---|---|
 | The hub is never public by default | `fleetd init` listens on your tailnet address, or on `127.0.0.1` without Tailscale. |
 | Plain HTTP only on loopback or a tailnet | Tailscale's tunnel is encrypted. Anywhere else, put HTTPS in front: see [the HTTPS check](/docs/troubleshooting#hub). |
-| Nodes connect out | A worker's node connects to the hub and proves itself with its own key pair. No worker opens a port. |
+| Nodes connect out | A worker's node connects to the hub and proves itself with its own key pair. No worker opens a port beyond loopback: the [browser proxy](/docs/browser-sessions#isolation) listens on `127.0.0.1` only, with a token per agent session. |
 | Codes are one-time | Enrollment tokens and pairing codes work once and expire after 15 minutes. |
 
 ## Keys {#keys}

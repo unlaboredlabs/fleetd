@@ -68,6 +68,22 @@ fn percent(value: &str) -> String {
     out
 }
 
+/// `value` as HTML text or an attribute shows it.
+fn html_escaped(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for c in value.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
 impl Masker {
     /// From each secret's `(name, value)`.
     pub fn new(secrets: &[(String, String)]) -> Self {
@@ -98,6 +114,46 @@ impl Masker {
         }
         patterns.sort_by_key(|(p, _)| std::cmp::Reverse(p.len()));
         Self { patterns }
+    }
+
+    /// [`Masker::new`] plus the forms a web page or a browser trace shows a value in: JSON- and HTML-escaped, `+` for
+    /// a space as a form body sends it, and its base64 inside a longer encoded string at any of the three byte
+    /// alignments (the characters that depend only on the value). For browser sessions (node/browser), where a page
+    /// may echo or encode what was typed into it.
+    pub fn thorough(secrets: &[(String, String)]) -> Self {
+        let mut masker = Self::new(secrets);
+        for (name, value) in secrets.iter().filter(|(_, v)| v.len() >= MIN_LEN) {
+            let shown = format!("***{name}***");
+            let json = serde_json::to_string(value).unwrap_or_default();
+            let mut forms = vec![
+                json.trim_matches('"').to_owned(),
+                html_escaped(value),
+                percent(value).replace("%20", "+"),
+            ];
+            for prefix in 0..3 {
+                let mut bytes = vec![0u8; prefix];
+                bytes.extend_from_slice(value.as_bytes());
+                let encoded = STANDARD.encode(&bytes);
+                // Character i covers bits 6i..6i+6; those wholly inside the value's bits depend on it alone.
+                let start = (8 * prefix).div_ceil(6);
+                let end = (8 * (prefix + value.len())) / 6;
+                if end >= start + 6 {
+                    let inner = &encoded[start..end];
+                    forms.push(inner.to_owned());
+                    forms.push(inner.replace('+', "-").replace('/', "_"));
+                }
+                bytes.zeroize();
+            }
+            for form in forms {
+                if form.len() >= MIN_LEN && !masker.patterns.iter().any(|(p, _)| *p == form) {
+                    masker.patterns.push((form, shown.clone()));
+                }
+            }
+        }
+        masker
+            .patterns
+            .sort_by_key(|(p, _)| std::cmp::Reverse(p.len()));
+        masker
     }
 
     pub fn is_empty(&self) -> bool {
@@ -237,6 +293,24 @@ impl Masker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_thorough_masker_also_catches_escaped_and_embedded_encodings() {
+        let value = "hunter2<&>\"pass word";
+        let m = Masker::thorough(&[("LOGIN".into(), value.into())]);
+        let json = serde_json::to_string(&serde_json::json!({ "v": value })).unwrap();
+        assert!(!m.text(&json).contains("hunter2"), "{}", m.text(&json));
+        let html = format!("<input value=\"{}\">", html_escaped(value));
+        assert!(!m.text(&html).contains("hunter2"));
+        let form = format!("user=a&pw={}", percent(value).replace("%20", "+"));
+        assert!(!m.text(&form).contains("hunter2"));
+        // btoa of a longer string the value sits in, at each alignment.
+        for prefix in ["", "a", "ab", "abc"] {
+            let blob = STANDARD.encode(format!("{prefix}{value}{prefix}"));
+            let masked = m.text(&blob);
+            assert!(masked.contains("***LOGIN***"), "{prefix:?}: {masked}");
+        }
+    }
 
     fn masker() -> Masker {
         Masker::new(&[

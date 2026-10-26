@@ -176,6 +176,7 @@ async fn a_secret_in_a_sessions_own_fleetd_call_reaches_the_hub_masked() {
         relay.clone(),
         Arc::new(|_| PeerSession::Session("s1".into())),
         mask_for,
+        None,
     )
     .await
     .unwrap();
@@ -250,6 +251,7 @@ async fn a_secret_in_a_sessions_own_fleetd_call_reaches_the_hub_masked() {
         relay.clone(),
         Arc::new(|_| PeerSession::Session("s1".into())),
         broken,
+        None,
     )
     .await
     .unwrap();
