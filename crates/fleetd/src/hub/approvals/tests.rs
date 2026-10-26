@@ -553,9 +553,43 @@ async fn after_a_restart_an_approved_command_goes_back_to_the_person_and_never_r
             .evidence
             .unwrap()
             .as_str()
-            .starts_with("result unknown: the hub restarted while it ran on lab-a")
+            .starts_with("interrupted, result unknown: the hub restarted while it ran on lab-a")
     );
     assert!(fake.runs.lock().unwrap().is_empty());
+}
+
+/// An update restarts the node while an approved command runs: the link drops, and the command goes back to the person
+/// as interrupted with its result unknown. It never runs again by itself, not even once the node is back.
+#[tokio::test]
+async fn a_command_an_update_cut_off_is_reported_interrupted_and_never_run_again() {
+    let fake = Arc::new(Fake::default());
+    let a = approvals(&fake);
+    a.gated_run(&p1(), migration()).await.unwrap();
+    *fake.gated_reply.lock().unwrap() = Err(NodeCommandError {
+        reason: "lost".into(),
+        message: "the link to lab-a's node dropped while the command ran".into(),
+        fix: None,
+    });
+    a.answer(&person(), "Q1", true, None).await.unwrap();
+    fake.woken_times(1).await;
+    let back = fake.request("Q1");
+    assert_eq!(back.state, RequestState::Open);
+    assert_eq!(
+        back.evidence.as_ref().map(|e| e.as_str()),
+        Some(
+            "interrupted, result unknown: the link to lab-a's node dropped while the command ran; check on lab-a whether it ran \
+             before approving it again"
+        )
+    );
+    // The node is back (and the hub restarted too): nothing runs it again.
+    *fake.linked.lock().unwrap() = true;
+    a.reopen_unfinished().await;
+    assert_eq!(
+        fake.runs.lock().unwrap().len(),
+        1,
+        "it ran once, when it was approved"
+    );
+    assert_eq!(fake.request("Q1").state, RequestState::Open);
 }
 
 /// Two people answer the same approval at once: exactly one answer counts, and the command runs once.

@@ -7,57 +7,57 @@ Keep fleetd up to date, or remove it.
 
 ## Update {#update}
 
-1. Check for an update:
+### From the app {#everything}
 
-   ```sh
-   fleetd update --check
-   ```
+When the hub, one of its machines or the app has a newer build on its channel, the sidebar says **Update available**.
+Click it, then **Update**. One click updates everything, in order:
 
-   Expected output when you are current:
+1. **The hub** downloads the channel's newest build, checks it against the release's `SHA256SUMS`, keeps the binary it
+   runs, and restarts on the new one. If the new build doesn't come up healthy within 90 seconds, the previous one is
+   put back and restarted.
+2. **Every connected machine's node** does the same, once the hub runs the new build.
+3. **The app** installs its own update and restarts. A message you were typing is still there after the restart.
 
-   ```text
-   fleetd 0.0.0-nightly.20261018.832ba8f is up to date (nightly)
-   ```
+The sheet shows each part as it goes: downloading, restarting, updated, up to date, and if something went wrong, which
+part and why. A failed download or a checksum mismatch changes nothing. A build that didn't come up is put back, and
+the hub's machines aren't asked if the hub itself didn't update. A machine that is offline, or that runs a fleetd too old
+to update from the hub, is skipped and says how to update it. When a part fails, the app doesn't restart, so the
+result stays on screen.
 
-2. Update the hub first:
+Updating needs a key with Admin on every machine, as `fleetd pair` gives the app. The first time, a hub from before
+the Update button can't do this yet: the app says so, and `fleetd update` on the hub's machine once (see below) brings it
+in. Machines that were online when you pressed Update get a while to reconnect after the hub restarts; one that was
+offline, or doesn't come back, is skipped and named in the result.
 
-   ```sh
-   fleetd update
-   ```
+An update never waits for work to finish. Restarts happen right away, and what they cut off carries on by itself:
 
-   It replaces the CLI, checked against the release's `SHA256SUMS`. Then it restarts the hub and node services that run this binary, but only when
-   nothing runs on them.
+- A lead's turn and running agents resume in their threads and worktrees once their machine is back.
+- The merge train takes up the change it was merging.
+- An approved command that was running goes back to you as interrupted, with its result unknown. It never runs again
+  by itself: check whether it ran before you approve it again.
 
-   While a lead or agents are working, or a merge the hub is doing, an approved command or a clone is under way, it
-   doesn't restart. It lists what runs, and the hub and node keep the version they run until their next restart. To
-   restart them anyway, or to finish the update later, run:
+### From a terminal {#cli}
 
-   ```sh
-   fleetd update --restart-now
-   ```
+On a machine without the app (a headless worker, say), run:
 
-   An install from before this check still restarts the hub and node unconditionally when it updates, because its
-   own `fleetd update` does the restart. Run that one update while nothing runs.
+```sh
+fleetd update --check
+fleetd update
+```
 
-3. Update each worker. Workers don't update themselves. Either:
-   - run `fleetd update` on the worker, then `fleetd update --restart-now` once its agents are done (a worker can't
-     ask the hub what runs on it), or
-   - run `fleetd machine add <ssh-host>` on the hub, which copies the hub's binary over.
+It replaces the CLI, checked against the release's `SHA256SUMS`, then restarts the hub and node services that run this
+binary right away. What they were running carries on by itself, as above. `fleetd machine add <ssh-host>` on the hub
+also copies the hub's binary to a worker.
 
 `fleetd status` and `fleetd doctor` say when the CLI, the hub and the nodes run different versions.
 
 ### The desktop app {#app}
 
 The app checks for updates when it opens, every 10 minutes and when you come back to its window, and downloads them
-in the background; a newer build than one already downloaded replaces it. When one is found, the sidebar says **Update available**: click it to see what's new, then **Update and restart**. A message you
-were typing is still there after the restart. An update you don't install now installs the next time you quit.
+in the background; a newer build than one already downloaded replaces it. Its own update is also in the sheet, with
+**Update and restart** and what's new. An update you don't install now installs the next time you quit.
 
 - **Check for Updates…** is in the fleetd menu on macOS, in Help on Linux, and in the command palette.
-- The same window shows the hub's version. When the hub is older than the app, the sidebar says **Update the hub**.
-  **Update the hub** lists what's running on the hub and gives you `fleetd update` to run on the hub's machine, with
-  **Copy**; for a hub on this computer, **Run in Terminal** opens it for you and shows its result there. It restarts
-  the hub only when nothing is running there; otherwise it says what is, and the hub keeps its old version until you
-  run `fleetd update --restart-now` or it next restarts. The app's own restart never restarts the hub.
 - The `.deb` install can't update itself: the app offers the download and the `sudo apt install` command.
 
 - An earlier fleetd app is replaced by the current one, which keeps its pairing.

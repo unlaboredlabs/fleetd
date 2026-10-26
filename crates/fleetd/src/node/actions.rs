@@ -48,13 +48,31 @@ pub async fn probe_host() -> NodeProbe {
     }
 }
 
-pub async fn run_node_action(frame: NodeAction) -> NodeActionResult {
+/// `home` is the node's home: an update keeps its previous binary and the watcher's plan there.
+pub async fn run_node_action(frame: NodeAction, home: &std::path::Path) -> NodeActionResult {
     match frame.action {
         NodeActionKind::Probe => NodeActionResult {
             id: frame.id,
             ok: true,
             message: head_text("probed"),
             probe: Some(probe_host().await),
+            stage: None,
         },
+        NodeActionKind::Update => {
+            let done = match &frame.update {
+                Some(update) => super::update::run(update, home).await,
+                None => Err(crate::update::Failure::new(
+                    fleetd_contracts::mcp::UpdateStage::Download,
+                    "the hub named no build to update to",
+                )),
+            };
+            NodeActionResult {
+                id: frame.id,
+                ok: done.is_ok(),
+                stage: done.as_ref().err().map(|f| f.stage),
+                message: head_text(&done.unwrap_or_else(|f| f.message)),
+                probe: None,
+            }
+        }
     }
 }

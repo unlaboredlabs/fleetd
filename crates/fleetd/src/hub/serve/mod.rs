@@ -373,6 +373,11 @@ pub fn build_on_with(
         Arc::new(crate::hub::work::TaskPaths(task_ports)),
     );
 
+    let updates = crate::hub::update::Updates::new(
+        &config.home,
+        clock.clone(),
+        crate::hub::update::Timing::default(),
+    );
     let hub = Arc::new(Hub {
         config,
         clock,
@@ -408,7 +413,12 @@ pub fn build_on_with(
         prs,
         work,
         metrics: crate::hub::metrics::Metrics::new(hosts),
+        updates,
     });
+    hub.updates
+        .set_ports(Arc::new(crate::hub::update::ports::HubPorts(
+            Arc::downgrade(&hub),
+        )));
     checks.ports.bind(&hub);
     train_host.bind(&hub);
     crate::hub::train::calls::register_lead_calls(&hub);
@@ -459,6 +469,8 @@ pub fn start_loops(hub: &Arc<Hub>, tools: &Arc<Registry>) -> Vec<JoinHandle<()>>
     ));
     loops.push(tokio::spawn(hub.tasks.clone().run(hub.shutdown.clone())));
     loops.extend(hub.leads.run());
+    // An update the previous hub process started: the watcher's verdict, then the nodes.
+    loops.push(tokio::spawn(hub.updates.clone().resume()));
     loops.push(hub.automations.start());
     loops.extend(hub.time.start(hub));
     loops.extend(crate::hub::metrics::start(hub));

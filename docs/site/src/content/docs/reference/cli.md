@@ -38,10 +38,10 @@ show this message
 ### fleetd update {#update}
 
 ```text
-fleetd update [--check] [--channel <c>] [--restart-now]
+fleetd update [--check] [--channel <c>]
 ```
 
-replace this fleetd with the latest release, then restart its hub and node when nothing runs on them; while something does, they keep the running version until their next restart. `--restart-now` restarts them anyway
+replace this fleetd with the latest release, then restart its hub and node at once: what they were running carries on by itself. The app's Update button does this for the hub and every node; this is for a machine without the app
 
 
 ## Setting up {#setting-up}

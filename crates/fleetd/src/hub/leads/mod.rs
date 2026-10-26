@@ -3,6 +3,7 @@
 //! `Area` owns every service of leads. `hub/serve` builds it with `Area::new`, sets the hooks of
 //! later areas as they come up (`ctx.hooks`), registers tools and lead calls, and spawns `Area::run`.
 pub mod calls;
+pub mod cut_off;
 pub mod digest;
 pub mod error;
 pub mod events;
@@ -111,12 +112,13 @@ impl Area {
         })
     }
 
-    /// The area's loops: project removals (with their catch-up), and the leads of orders that wait
-    /// for their machine. They run until aborted; `hub/serve` keeps the handles.
+    /// The area's loops: project removals (with their catch-up), the leads of orders that wait for their machine,
+    /// and leads whose node cut their turn off (`cut_off`). They run until aborted; `hub/serve` keeps the handles.
     pub fn run(self: &Arc<Self>) -> Vec<tokio::task::JoinHandle<()>> {
         vec![
             tokio::spawn(Arc::clone(&self.removals).run()),
             tokio::spawn(Arc::clone(&self.leads).run_waiting()),
+            tokio::spawn(Arc::clone(self).run_cut_off()),
         ]
     }
 }

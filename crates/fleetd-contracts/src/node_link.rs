@@ -95,6 +95,10 @@ pub const CAP_ORDER_ENV: &str = "order_env";
 /// `SessionLaunch::setup`: a project's setup commands, run in each new worktree before its agent starts.
 pub const CAP_WORKTREE_SETUP: &str = "worktree_setup";
 
+/// `node_action` `update`: the node updates itself to a build its hub names. A node without it drops the link on
+/// the frame, so the hub asks only nodes that list it.
+pub const CAP_SELF_UPDATE: &str = "self_update";
+
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -273,13 +277,26 @@ pub struct GatedResult {
 #[serde(rename_all = "snake_case")]
 pub enum NodeActionKind {
     Probe,
+    /// Install `update.version` of `update.channel`, checked against the release's SHA256SUMS, then restart the
+    /// node's service; the previous binary comes back if the new one doesn't come up. Answered before the restart.
+    Update,
 }
 
-/// Hub -> node, M11 doctor.
+/// Hub -> node: M11 doctor's probe, and the hub's update of its nodes.
+#[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct NodeAction {
     pub id: NonEmpty,
     pub action: NodeActionKind,
+    /// `update` only.
+    pub update: Option<NodeUpdate>,
+}
+
+/// The build a node updates to: what its hub runs now.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NodeUpdate {
+    pub version: Text<1, 200>,
+    pub channel: crate::mcp::HubChannel,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -309,6 +326,8 @@ pub struct NodeActionResult {
     pub message: Text<0, 500>,
     /// `probe` only.
     pub probe: Option<NodeProbe>,
+    /// `update` that failed: where. Nothing was changed.
+    pub stage: Option<crate::mcp::UpdateStage>,
 }
 
 /// Node -> hub: time spans from the node's outbox rows `fromRid..=toRid`, oldest first. A resend after a

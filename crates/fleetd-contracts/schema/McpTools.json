@@ -4889,6 +4889,33 @@
       ],
       "type": "object"
     },
+    "HubUpdateInput": {
+      "properties": {
+        "channel": {
+          "$ref": "#/$defs/HubChannel",
+          "description": "Absent: the channel the hub's build came from."
+        }
+      },
+      "type": "object"
+    },
+    "HubUpdateOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "run": {
+          "$ref": "#/$defs/UpdateRun",
+          "description": "The update going now or the last one; absent when the hub never updated itself."
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "HubUpdateStatusInput": {
+      "type": "object"
+    },
     "HumanRequest": {
       "description": "One human request, as stored and as every client shows it.",
       "properties": {
@@ -6216,6 +6243,18 @@
         "hub_info.output": {
           "$ref": "#/$defs/HubInfoOutput"
         },
+        "hub_update.input": {
+          "$ref": "#/$defs/HubUpdateInput"
+        },
+        "hub_update.output": {
+          "$ref": "#/$defs/HubUpdateOutput"
+        },
+        "hub_update_status.input": {
+          "$ref": "#/$defs/HubUpdateStatusInput"
+        },
+        "hub_update_status.output": {
+          "$ref": "#/$defs/HubUpdateOutput"
+        },
         "lead_start.input": {
           "$ref": "#/$defs/LeadStartInput"
         },
@@ -6634,6 +6673,10 @@
         "fleetd_status.output",
         "hub_info.input",
         "hub_info.output",
+        "hub_update.input",
+        "hub_update.output",
+        "hub_update_status.input",
+        "hub_update_status.output",
         "lead_start.input",
         "lead_start.output",
         "mcp_server_remove.input",
@@ -14128,6 +14171,177 @@
         "queue"
       ],
       "type": "object"
+    },
+    "UpdatePart": {
+      "description": "The hub or one machine's node in an update.",
+      "properties": {
+        "from": {
+          "description": "The version it ran when the update started.",
+          "maxLength": 200,
+          "type": "string"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId",
+          "description": "A node's machine."
+        },
+        "message": {
+          "description": "One plain sentence: what happened, or why not, with what to do.",
+          "maxLength": 500,
+          "type": "string"
+        },
+        "name": {
+          "description": "For a person: \"the hub\", or the machine's name.",
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "part": {
+          "$ref": "#/$defs/UpdatePartKind"
+        },
+        "stage": {
+          "$ref": "#/$defs/UpdateStage",
+          "description": "Where it failed or was put back."
+        },
+        "state": {
+          "$ref": "#/$defs/UpdateState"
+        }
+      },
+      "required": [
+        "part",
+        "name",
+        "from",
+        "state"
+      ],
+      "type": "object"
+    },
+    "UpdatePartKind": {
+      "oneOf": [
+        {
+          "enum": [
+            "hub",
+            "node"
+          ],
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "UpdateRun": {
+      "description": "One hub update, from its start to the last node's result.",
+      "properties": {
+        "channel": {
+          "$ref": "#/$defs/HubChannel"
+        },
+        "finishedAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "Set once every part has its result."
+        },
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        "parts": {
+          "description": "The hub first, then one per machine, by name.",
+          "items": {
+            "$ref": "#/$defs/UpdatePart"
+          },
+          "maxItems": 201,
+          "minItems": 1,
+          "type": "array"
+        },
+        "startedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "to": {
+          "description": "The build it updates to: the channel's newest fleetd. Absent until the hub read the channel.",
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "channel",
+        "startedAt",
+        "parts"
+      ],
+      "type": "object"
+    },
+    "UpdateStage": {
+      "oneOf": [
+        {
+          "const": "download",
+          "description": "Reading the channel or downloading the binary.",
+          "type": "string"
+        },
+        {
+          "const": "checksum",
+          "description": "The download didn't match the release's SHA256SUMS.",
+          "type": "string"
+        },
+        {
+          "const": "install",
+          "description": "Putting the new binary in place.",
+          "type": "string"
+        },
+        {
+          "const": "restart",
+          "description": "Restarting the service.",
+          "type": "string"
+        },
+        {
+          "const": "health",
+          "description": "The restarted service didn't come up healthy on the new build.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "UpdateState": {
+      "oneOf": [
+        {
+          "const": "waiting",
+          "description": "Its turn hasn't come: a node waits for the hub.",
+          "type": "string"
+        },
+        {
+          "const": "downloading",
+          "description": "Reading the channel and downloading the new binary.",
+          "type": "string"
+        },
+        {
+          "const": "restarting",
+          "description": "The new binary is in place and the service restarts; a health check follows.",
+          "type": "string"
+        },
+        {
+          "const": "done",
+          "description": "Runs the new build.",
+          "type": "string"
+        },
+        {
+          "const": "current",
+          "description": "Already ran the channel's newest build.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "Not updated, and nothing changed: the download, the checksum or the install failed.",
+          "type": "string"
+        },
+        {
+          "const": "rolled_back",
+          "description": "The new build didn't come up healthy, so the previous one was put back.",
+          "type": "string"
+        },
+        {
+          "const": "skipped",
+          "description": "Not tried: offline, or its fleetd is too old to update from the hub (`message` says how).",
+          "type": "string"
+        }
+      ],
+      "x-open": true
     },
     "UploadId": {
       "pattern": "^U[0-9a-f]{32}$",

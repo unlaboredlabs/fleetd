@@ -1703,6 +1703,20 @@ export type HubInfoOutput = {
   version: string;
 };
 
+export type HubUpdateInput = {
+  /** Absent: the channel the hub's build came from. */
+  channel?: HubChannel;
+};
+
+export type HubUpdateOutput = {
+  next?: string;
+  /** The update going now or the last one; absent when the hub never updated itself. */
+  run?: UpdateRun;
+  truncated?: boolean;
+};
+
+export type HubUpdateStatusInput = { [key: string]: unknown };
+
 /** One human request, as stored and as every client shows it. */
 export type HumanRequest = {
   answeredAt?: Timestamp;
@@ -4769,6 +4783,47 @@ export type TrainState = {
   repo: GitHubRepo;
 };
 
+/** The hub or one machine's node in an update. */
+export type UpdatePart = {
+  /** The version it ran when the update started. */
+  from: string;
+  /** A node's machine. */
+  machineId?: MachineId;
+  /** One plain sentence: what happened, or why not, with what to do. */
+  message?: string;
+  /** For a person: "the hub", or the machine's name. */
+  name: string;
+  part: UpdatePartKind;
+  /** Where it failed or was put back. */
+  stage?: UpdateStage;
+  state: UpdateState;
+};
+
+export type KnownUpdatePartKind = "hub" | "node";
+/** KnownUpdatePartKind, or a value from a newer hub. */
+export type UpdatePartKind = KnownUpdatePartKind | (string & {});
+
+/** One hub update, from its start to the last node's result. */
+export type UpdateRun = {
+  channel: HubChannel;
+  /** Set once every part has its result. */
+  finishedAt?: Timestamp;
+  id: string;
+  /** The hub first, then one per machine, by name. */
+  parts: UpdatePart[];
+  startedAt: Timestamp;
+  /** The build it updates to: the channel's newest fleetd. Absent until the hub read the channel. */
+  to?: string;
+};
+
+export type KnownUpdateStage = "download" | "checksum" | "install" | "restart" | "health";
+/** KnownUpdateStage, or a value from a newer hub. */
+export type UpdateStage = KnownUpdateStage | (string & {});
+
+export type KnownUpdateState = "waiting" | "downloading" | "restarting" | "done" | "current" | "failed" | "rolled_back" | "skipped";
+/** KnownUpdateState, or a value from a newer hub. */
+export type UpdateState = KnownUpdateState | (string & {});
+
 export type UploadId = string;
 
 /**
@@ -5282,6 +5337,8 @@ export interface ToolMap {
   events_wait: { input: EventsWaitInput; output: EventsWaitOutput };
   fleetd_status: { input: FleetdStatusInput; output: FleetdStatusOutput };
   hub_info: { input: HubInfoInput; output: HubInfoOutput };
+  hub_update: { input: HubUpdateInput; output: HubUpdateOutput };
+  hub_update_status: { input: HubUpdateStatusInput; output: HubUpdateOutput };
   lead_start: { input: LeadStartInput; output: LeadStartOutput };
   mcp_server_remove: { input: McpServerRemoveInput; output: McpServerRemoveOutput };
   mcp_server_set: { input: McpServerSetInput; output: McpServerSetOutput };

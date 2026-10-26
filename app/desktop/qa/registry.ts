@@ -159,7 +159,7 @@ export const fixtures = [
   "resilience-burst",
   "resilience-hub-restart",
   "resilience-reconnect-streaming",
-  // C1: the app's own update and the hub's (fixtures/updates).
+  // C1 and W38: the app's own update, the hub's and its machines', and the Update button's run (fixtures/updates).
   "updates-idle",
   "updates-checking",
   "updates-unsupported",
@@ -174,12 +174,15 @@ export const fixtures = [
   "updates-hub-unknown",
   "updates-hub-available",
   "updates-hub-behind",
-  "updates-hub-behind-local",
-  "updates-hub-behind-local-channel",
-  "updates-hub-info-failed",
-  "updates-terminal-not-local",
-  "updates-terminal-not-found",
-  "updates-terminal-no-terminal",
+  "updates-node-behind",
+  "updates-everything",
+  "updates-run-hub",
+  "updates-run-nodes",
+  "updates-run-done",
+  "updates-run-hub-failed",
+  "updates-run-hub-rolled-back",
+  "updates-run-nodes-mixed",
+  "updates-refused",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -953,14 +956,15 @@ export const screens: readonly Screen[] = [
       expect(line?.state).toEqual(line?.control);
     },
   },
-  // C1: updates. The sidebar's line above the connection for each state that has one, and the sheet the palette's
-  // "Check for updates" opens, for every state of this app (not checked yet, checking, a build that doesn't update,
-  // up to date, found, downloading to restart, ready, the deb's command, a failed check, a failed download) and of the
-  // hub (up to date, version unknown, a newer build on the channel, older than this app, there or on this computer).
+  // C1 and W38: updates. The sidebar's line above the connection for each state that has one, and the sheet the
+  // palette's "Check for updates" opens, for every state of this app (not checked yet, checking, a build that doesn't
+  // update, up to date, found, downloading to restart, ready, the deb's command, a failed check, a failed download), of
+  // the hub and its machines (up to date, version unknown, a newer build on the channel, older than this app, one
+  // machine behind), and of an Update run already going when the sheet opens (the hub restarting, the machines).
   {
     id: "shell",
     route: "#/",
-    fixtures: ["updates-available", "updates-downloading", "updates-ready", "updates-hub-behind"],
+    fixtures: ["updates-available", "updates-downloading", "updates-ready", "updates-hub-behind", "updates-run-hub"],
     variant: "updates",
   },
   {
@@ -981,59 +985,24 @@ export const screens: readonly Screen[] = [
       "updates-hub-unknown",
       "updates-hub-available",
       "updates-hub-behind",
-      "updates-hub-behind-local",
+      "updates-node-behind",
+      "updates-everything",
+      "updates-run-hub",
+      "updates-run-nodes",
     ],
     open: openUpdates,
   },
-  // Update the hub on devbox: what runs there (hub_info) and the command, saying when it restarts the hub. And on this
-  // computer when the command needs --channel, which Run in Terminal can't run: Copy only.
+  // W38: the one Update button, pressed: how each part ended (all updated and this app last; the hub's download
+  // refused by its checksum; the hub put back; machines put back, failed or offline), and a key the hub refuses.
   {
     id: "updates",
     route: "#/",
-    fixtures: ["updates-hub-behind", "updates-hub-behind-local-channel"],
-    variant: "update-the-hub",
+    fixtures: ["updates-run-done", "updates-run-hub-failed", "updates-run-hub-rolled-back", "updates-run-nodes-mixed", "updates-refused"],
+    variant: "pressed",
     open: async (page) => {
       await openUpdates(page);
-      await page.getByRole("button", { name: "Update the hub" }).click();
-      await page.getByText("Running on the hub now, so it waits for these:").waitFor();
-    },
-  },
-  // Update the hub on this computer, idle: Run in Terminal opens fleetd update (a fixture opens nothing).
-  {
-    id: "updates",
-    route: "#/",
-    fixtures: ["updates-hub-behind-local"],
-    variant: "run-in-terminal",
-    open: async (page) => {
-      await openUpdates(page);
-      await page.getByRole("button", { name: "Update the hub" }).click();
-      await page.getByRole("button", { name: "Run in Terminal" }).click();
-      await page.getByText("fleetd update is running in Terminal.").waitFor();
-    },
-  },
-  // Update the hub when the hub can't say what runs on it.
-  {
-    id: "updates",
-    route: "#/",
-    fixtures: ["updates-hub-info-failed"],
-    variant: "update-the-hub",
-    open: async (page) => {
-      await openUpdates(page);
-      await page.getByRole("button", { name: "Update the hub" }).click();
-      await page.getByText(/^The hub couldn't say what's running/u).waitFor();
-    },
-  },
-  // Run in Terminal's failures: the hub isn't here, no fleetd command, no terminal; each with the command instead.
-  {
-    id: "updates",
-    route: "#/",
-    fixtures: ["updates-terminal-not-local", "updates-terminal-not-found", "updates-terminal-no-terminal"],
-    variant: "run-in-terminal",
-    open: async (page) => {
-      await openUpdates(page);
-      await page.getByRole("button", { name: "Update the hub" }).click();
-      await page.getByRole("button", { name: "Run in Terminal" }).click();
-      await page.getByRole("alert").waitFor();
+      await page.getByRole("button", { name: "Update", exact: true }).click();
+      await page.locator('[data-updates-part="all"] [role="alert"], [data-updates-part="all"] [role="status"]').first().waitFor();
     },
   },
   // UX-1 A3: a project's PRs in the panel. The list (open first, then merged or closed lately); none at all; GitHub

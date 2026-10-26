@@ -1,5 +1,5 @@
 //! `hub_info`: the hub's own fleetd build, and everything a restart of the hub (or of one machine's node) would cut
-//! off, so `fleetd update` and the app restart it only when nothing runs, or when a person said to anyway.
+//! off now. An update restarts at once anyway (`hub_update`, `fleetd update`): what it cuts off carries on by itself.
 use std::sync::Arc;
 
 use fleetd_contracts::ids::{MachineId, ProjectRef};
@@ -50,7 +50,7 @@ async fn hub_info(
     let next = if busy.is_empty() {
         "Nothing runs: restarting the hub now interrupts nothing."
     } else {
-        "Restarting now interrupts each busy item; wait for the list to empty, or ask the person."
+        "Restarting now cuts each busy item off; it carries on by itself once the hub or node is back."
     };
     Ok(HubInfoOutput {
         version: version.to_owned(),

@@ -117,11 +117,6 @@ export const notesSince = (changes: readonly Change[], mine: string, area: strin
 export const knownVersion = (version: string | null | undefined): version is string =>
   version !== null && version !== undefined && (compareVersions(version, "0.0.0") ?? 0) !== 0;
 
-const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
-
-/** A hub on this computer: its URL's host is loopback. Only such a hub gets "Run in Terminal". */
-export const localHub = (hubUrl: string): boolean => URL.canParse(hubUrl) && LOOPBACK.has(new URL(hubUrl).hostname);
-
 const withoutBuild = (version: string): string => version.trim().replace(/^v/u, "").split("+", 1)[0] ?? "";
 
 const NIGHTLY = /^\d+\.\d+\.\d+-nightly\.(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})$/u;
@@ -142,6 +137,14 @@ export const versionLabel = (version: string): string => {
   const sha = buildCommit(version);
   return ["Nightly", `${month} ${String(Number(d))}, ${h ?? ""}:${mi ?? ""} UTC`, ...(sha === null ? [] : [sha.slice(0, 7)])].join(" · ");
 };
+
+const LABEL_IN_TEXT = /(Nightly · [A-Z][a-z]{2} \d{1,2}, \d{2}:\d{2} UTC(?: · [0-9a-f]{7})?)/u;
+
+/**
+ * A line with nightly labels in it, cut around them: the odd parts are labels, so the page can mark them as version
+ * text (`data-version`) while the words around them are held to the text rules.
+ */
+export const splitLabels = (text: string): string[] => text.split(LABEL_IN_TEXT);
 
 /**
  * The About panel's version fields: the label, then the raw version to copy. Without them macOS shows Info.plist's,

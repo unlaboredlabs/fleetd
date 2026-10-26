@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aboutVersions, buildCommit, knownVersion, localHub, MAX_NOTES, notesSince, subjectLines, versionLabel, type Change } from "./updates";
+import { aboutVersions, splitLabels, buildCommit, knownVersion, MAX_NOTES, notesSince, subjectLines, versionLabel, type Change } from "./updates";
 
 const change = (commit: string, subject: string, areas: string[] = ["app"]): Change => ({ commit, date: "2026-10-22T10:30:00Z", subject, areas });
 
@@ -66,6 +66,18 @@ describe("versions", () => {
     expect(versionLabel("0.6.0-nightly.202613221030+abc1234")).toBe("0.6.0-nightly.202613221030");
   });
 
+  it("finds the nightly labels in a line, and only them", () => {
+    const line = `Put back: ${versionLabel("0.0.0-nightly.202610261056+1b563d7")} didn't come up healthy, so ${versionLabel("0.0.0-nightly.202610251000")} runs again`;
+    expect(splitLabels(line)).toEqual([
+      "Put back: ",
+      "Nightly · Oct 26, 10:56 UTC · 1b563d7",
+      " didn't come up healthy, so ",
+      "Nightly · Oct 25, 10:00 UTC",
+      " runs again",
+    ]);
+    expect(splitLabels("checksum mismatch (expected 9f2c1ab7, got 41ab0c9d)")).toEqual(["checksum mismatch (expected 9f2c1ab7, got 41ab0c9d)"]);
+  });
+
   it("gives the About panel the label and the raw version to copy", () => {
     const nightly = "0.0.0-nightly.202610231259+bdd3566";
     expect(aboutVersions(nightly, true)).toEqual({ applicationVersion: "Nightly · Oct 23, 12:59 UTC · bdd3566", version: nightly });
@@ -75,12 +87,3 @@ describe("versions", () => {
   });
 });
 
-describe("localHub", () => {
-  it("is a hub on this computer only", () => {
-    expect(localHub("http://127.0.0.1:4790")).toBe(true);
-    expect(localHub("http://localhost:4790")).toBe(true);
-    expect(localHub("http://[::1]:4790")).toBe(true);
-    expect(localHub("https://devbox.example.ts.net")).toBe(false);
-    expect(localHub("not a url")).toBe(false);
-  });
-});

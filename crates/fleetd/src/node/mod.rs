@@ -23,6 +23,7 @@ pub mod self_exe;
 pub mod sessions;
 pub mod skills;
 pub mod store;
+pub mod update;
 pub mod util;
 pub mod wire;
 pub mod worktree;
