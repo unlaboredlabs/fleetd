@@ -9,15 +9,23 @@
 //! no more until a new head. A reviewer still on an older patch when the Change moves on is stopped, and what it
 //! reports later is ignored. A new patch that only drops commits already on the base from an approved head keeps that
 //! approval (`carry`).
-use std::collections::HashSet;
+//!
+//! A reviewer that ended without a verdict because fleetd's tools failed it (`tools_failed`) is not counted against
+//! `RETRIES`: the Change says so in plain words, the lead hears once, and a new reviewer starts by itself after
+//! `TOOLS_RETRY_FIRST`, the wait doubling up to `TOOLS_RETRY_MAX`, or at once after any review records a verdict, which
+//! shows the tools work again. After `TOOLS_RETRIES` of them it waits for such a verdict.
+//!
+//! A re-review (a patch after an approved one) can run while the train has the Change in CI: the train asks `again`
+//! for its outcome, `Blocked` included, and each verdict bound tells it at once (`Train::review_recorded`).
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, Weak};
 
 use rusqlite::{OptionalExtension, params};
 use serde_json::Value;
 
 use super::rules::{
-    BoundReview, FindingsVerdict, Gate, findings_message, gate, one_line, review_prompt,
-    review_title,
+    BoundReview, FindingsVerdict, Gate, TOOLS_FAILED, findings_message, gate, one_line,
+    review_prompt, review_title, tools_failed,
 };
 use crate::hub::leads::events::Event;
 use crate::hub::train::contract::{
@@ -34,6 +42,12 @@ pub const REVIEWS_BY: &str = "hub:reviews";
 /// New reviewers started for one patch after one ended without a verdict, before the gate stops and tells the lead.
 /// One: a reviewer that can't record (its fleetd tools server down) fails the same way again, and each costs a slot.
 const RETRIES: usize = 1;
+/// Reviewers of one patch whose tools failed, before only a verdict recorded elsewhere starts another.
+const TOOLS_RETRIES: usize = 6;
+/// The wait before a new reviewer after one whose tools failed, doubled for each further one up to `TOOLS_RETRY_MAX`.
+const TOOLS_RETRY_FIRST: i64 = 60_000;
+const TOOLS_RETRY_MAX: i64 = 15 * 60_000;
+
 /// The most commits landed on the base since an approved head whose patches are read to find its dropped commits.
 const LANDED_MAX: usize = 100;
 
@@ -51,6 +65,12 @@ pub struct Reviews {
     lock: tokio::sync::Mutex<()>,
     /// The patches whose approval carry was checked: GitHub is read for it once per patch.
     carry_checked: Mutex<HashSet<(ChangeId, String)>>,
+    /// When each reviewer whose tools failed ended, as this hub saw it: one ended before a restart counts as long ago.
+    broken_at: Mutex<HashMap<String, i64>>,
+    /// When a verdict was last bound, on any Change.
+    verdict_at: Mutex<i64>,
+    /// The patches whose lead heard that their reviewer's tools failed.
+    told_broken: Mutex<HashSet<(ChangeId, String)>>,
 }
 
 /// A review task the gate spawned: the Change, the patch its round was for, and whether a newer patch superseded it.
@@ -72,6 +92,9 @@ impl Reviews {
             train,
             lock: tokio::sync::Mutex::new(()),
             carry_checked: Mutex::default(),
+            broken_at: Mutex::default(),
+            verdict_at: Mutex::default(),
+            told_broken: Mutex::default(),
         }
     }
 
@@ -152,6 +175,28 @@ impl Reviews {
                 .map(|r| r.expect("row"))
                 .collect()
         })
+    }
+
+    /// This patch's reviewers that ended or still work, oldest first, each with whether its tools failed it.
+    fn rounds(&self, change_id: &ChangeId, patch_id: &str) -> Vec<(String, bool)> {
+        sql(&self.db, |conn| {
+            let mut stmt = conn
+                .prepare_cached(
+                    "SELECT task_id, role FROM review_tasks WHERE change_id = ?1 AND patch_id = ?2
+                       AND role IN ('reviewer', 'tools_failed') ORDER BY rowid",
+                )
+                .expect("prepare");
+            stmt.query_map(params![change_id.as_str(), patch_id], |r| {
+                Ok((r.get(0)?, r.get::<_, String>(1)? == "tools_failed"))
+            })
+            .expect("query")
+            .map(|r| r.expect("row"))
+            .collect()
+        })
+    }
+
+    fn now_ms(&self) -> i64 {
+        self.train().map_or(0, |t| t.now_ms())
     }
 
     /// Not ended, or not known now: an unread task is never taken for a dead one, so it is never replaced twice.
@@ -455,20 +500,27 @@ impl Reviews {
             return Verdict::Ready(reviews);
         }
         if before.waiting_for_head {
-            return Verdict::Pending;
+            return Verdict::Blocked;
         }
-        let reviewers = self.reviewers(&change.change_id, patch_id);
+        let rounds = self.rounds(&change.change_id, patch_id);
         // One still at work owes the verdict.
-        if reviewers.iter().any(|t| self.live(t)) {
+        if rounds.iter().any(|(t, _)| self.live(t)) {
             return Verdict::Pending;
         }
-        let Some(last) = reviewers.last() else {
+        let Some((last, broken)) = rounds.last() else {
             if self.carried(change, patch_id).await {
                 return Verdict::Ready(self.gate_for(change, patch_id).1);
             }
             self.spawn_reviewer(change, patch_id).await;
             return Verdict::Pending;
         };
+        if *broken {
+            let failed = rounds.iter().filter(|(_, b)| *b).count();
+            self.after_broken(change, patch_id, last, failed).await;
+            return Verdict::Pending;
+        }
+        let reviewers: Vec<&String> = rounds.iter().filter(|(_, b)| !*b).map(|(t, _)| t).collect();
+        let last = reviewers.last().copied().unwrap_or(last);
         let tries = reviewers.len();
         if tries > RETRIES {
             self.stalled(change, patch_id, last, tries).await;
@@ -492,6 +544,65 @@ impl Reviews {
             self.host.wake_lead(&change.project_ref, line).await;
         }
         Verdict::Pending
+    }
+
+    /// The patch's last reviewer, `last`, couldn't use fleetd's tools, the `failed`th to: a new one starts once its wait is
+    /// over or a verdict was recorded since it ended; after `TOOLS_RETRIES` of them only such a verdict starts one,
+    /// and the lead hears once.
+    async fn after_broken(&self, change: &Change, patch_id: &str, last: &str, failed: usize) {
+        let ended = lock(&self.broken_at).get(last).copied().unwrap_or(0);
+        let fixed = *lock(&self.verdict_at) > ended;
+        let wait = tools_wait(failed);
+        let due = fixed || (failed < TOOLS_RETRIES && self.now_ms() - ended >= wait);
+        if !due {
+            if failed >= TOOLS_RETRIES {
+                self.tools_stalled(change, patch_id, last, failed).await;
+            }
+            return;
+        }
+        if let Some(next) = self.spawn_reviewer(change, patch_id).await {
+            let why = if fixed {
+                "another review recorded a verdict since, so the tools work again"
+            } else {
+                "its wait is over"
+            };
+            self.note(
+                &change.change_id,
+                &format!("{TOOLS_FAILED} for {last}; {why}: {next} reviews it now"),
+            );
+        }
+    }
+
+    /// `failed` reviewers of the patch in a row couldn't use fleetd's tools: the next starts only once a review records
+    /// a verdict. The lead hears once, across restarts.
+    async fn tools_stalled(&self, change: &Change, patch_id: &str, last: &str, failed: usize) {
+        let first = sql(&self.db, |conn| {
+            conn.execute(
+                "INSERT OR IGNORE INTO review_stalls (change_id, patch_id) VALUES (?1, ?2)",
+                params![change.change_id.as_str(), patch_id],
+            )
+            .expect("put review stall")
+        }) == 1;
+        if !first {
+            return;
+        }
+        self.note(
+            &change.change_id,
+            &format!(
+                "{TOOLS_FAILED}: {failed} reviewers in a row, the last {last}, couldn't use fleetd's tools; the next starts as soon as any review records a verdict; the lead was told"
+            ),
+        );
+        let text = format!(
+            "{failed} reviewers in a row, the last {last}, couldn't use fleetd's tools to record a verdict (\"{}\"); the next starts as soon as any review records one",
+            one_line(&self.final_text(last), 200)
+        );
+        let line = Event::PrNote {
+            change: change.change_id.as_str(),
+            pr_url: change.pr_url.as_str(),
+            text: &text,
+        }
+        .render();
+        self.host.wake_lead(&change.project_ref, line).await;
     }
 
     /// The reviewer's final text, which may well say it approved: only a recorded verdict counts.
@@ -616,6 +727,10 @@ impl Reviews {
             )
             .expect("bind verdict")
         });
+        *lock(&self.verdict_at) = self.now_ms();
+        if let Some(train) = self.train() {
+            train.review_recorded();
+        }
         // Findings on an older patch were already overtaken by a new head.
         if blocking > 0 && change.patch_id.as_deref() == Some(patch_id.as_str()) {
             let stored: Option<String> = sql(&self.db, |conn| {
@@ -698,19 +813,63 @@ impl Reviews {
             .event_type
             .strip_prefix("task.")
             .unwrap_or(&event.event_type);
-        self.note(
-            &change_id,
-            &format!("verdict not recorded: the reviewer {task_id} ended ({how}) without one"),
-        );
-        // The Change still waits on this patch's review: a new reviewer, or the lead told.
+        let tail = self.final_text(task_id);
+        let broken = tools_failed(&tail);
+        if broken {
+            sql(&self.db, |conn| {
+                conn.execute(
+                    "UPDATE review_tasks SET role = 'tools_failed' WHERE task_id = ?1",
+                    [task_id],
+                )
+                .expect("mark review task")
+            });
+            lock(&self.broken_at).insert(task_id.to_string(), self.now_ms());
+            let failed = self
+                .rounds(&change_id, &round.patch_id)
+                .iter()
+                .filter(|(_, b)| *b)
+                .count();
+            let text = format!(
+                "{TOOLS_FAILED}: the reviewer {task_id} couldn't use fleetd's tools to record its verdict, saying \"{}\"; a new reviewer starts within {} min, or as soon as another review records a verdict",
+                one_line(&tail, 200),
+                (tools_wait(failed) as u64).div_ceil(60_000)
+            );
+            self.note(&change_id, &text);
+        } else {
+            self.note(
+                &change_id,
+                &format!("verdict not recorded: the reviewer {task_id} ended ({how}) without one"),
+            );
+        }
+        // The Change still waits on this patch's review: in review, or in the train with its re-review alongside CI. A
+        // new reviewer, or the lead told.
+        let waiting = [
+            ChangeState::Reviewing,
+            ChangeState::Rebasing,
+            ChangeState::Ci,
+            ChangeState::Merging,
+        ];
         let Some(change) = self
             .train()
             .and_then(|t| t.records().get(&change_id))
-            .filter(|c| c.state == ChangeState::Reviewing)
+            .filter(|c| waiting.contains(&c.state))
             .filter(|c| c.patch_id.as_deref() == Some(round.patch_id.as_str()))
         else {
             return;
         };
+        if broken && lock(&self.told_broken).insert((change_id.clone(), round.patch_id.clone())) {
+            let text = format!(
+                "its reviewer {task_id} couldn't use fleetd's tools to record a verdict (\"{}\"); fleetd starts a new one by itself, and once the tools work it reviews again at once",
+                one_line(&tail, 200)
+            );
+            let line = Event::PrNote {
+                change: change.change_id.as_str(),
+                pr_url: change.pr_url.as_str(),
+                text: &text,
+            }
+            .render();
+            self.host.wake_lead(&change.project_ref, line).await;
+        }
         if let Verdict::Ready(_) = self.round(&change, &round.patch_id).await {
             self.evaluate(&change_id);
         }
@@ -736,6 +895,23 @@ impl ReviewGate for Reviews {
     fn again(&self, change: Change) -> BoxFut<'_, Verdict> {
         Box::pin(self.again_inner(change))
     }
+
+    fn rereview(&self, change: &Change) -> bool {
+        let Some(patch_id) = change.patch_id.as_deref() else {
+            return false;
+        };
+        !self.gate_for(change, patch_id).0.waiting_for_head
+            && self
+                .reviewers(&change.change_id, patch_id)
+                .iter()
+                .any(|t| self.live(t))
+    }
+}
+
+/// The wait before a new reviewer after the `failed`th whose tools failed.
+fn tools_wait(failed: usize) -> i64 {
+    let doublings = failed.saturating_sub(1).min(10) as u32;
+    (TOOLS_RETRY_FIRST * 2i64.pow(doublings)).min(TOOLS_RETRY_MAX)
 }
 
 /// Whether the approved head's commits `dropped`, below the PR's own, are on `base` already: the last is an ancestor

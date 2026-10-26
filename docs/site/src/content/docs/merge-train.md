@@ -90,6 +90,18 @@ Every PR gets one fresh reviewer, which reports blocking findings only. Its verd
 patch: a rebase that keeps the patch keeps the review, and a new commit gets a new reviewer, who starts from what
 changed. Blocking findings go to the agent that wrote the PR, and the PR waits for its next commit.
 
+A PR already approved at an earlier patch isn't sent back to wait for its new review. When a rebase or a push changes
+its patch, the new review runs while its CI runs, alone or in a batch, and the merge waits for both. If the review
+finds a blocker, the PR leaves the train for its author, and a batch it was in forms again without it, so its code
+never lands. If CI is green and the review is still at work after 15 minutes, the PR waits in review out of the
+train's way, and merges once the review is clean. Re-reviews are never skipped.
+
+A reviewer that couldn't use fleetd's tools, so it couldn't record its verdict, is caught as soon as it ends. Its
+queue entry and the train's line say "review tools failed", and the lead hears once. A new reviewer starts by itself
+a minute later, then after longer waits up to 15 minutes. It starts at once when any other review records a verdict,
+since that shows the tools work again. These don't count toward the one retry a reviewer that ended without a verdict
+for other reasons gets.
+
 ## Batches {#batches}
 
 When several PRs are ready at once, the train merges them together in one CI run. It takes up to 8 ready PRs in
