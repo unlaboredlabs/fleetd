@@ -188,6 +188,55 @@ impl NodeLinkServer {
             .insert(machine_id.clone(), caps);
     }
 
+    /// Sends `frame` to the machine's live node; false when it has none.
+    pub fn send_to(&self, machine_id: &MachineId, frame: HubToNode) -> bool {
+        let tx = self
+            .state
+            .lock()
+            .unwrap()
+            .links
+            .get(machine_id)
+            .map(|(_, tx)| tx.clone());
+        match tx {
+            Some(tx) => tx.send(Out::Frame(Box::new(frame))).is_ok(),
+            None => false,
+        }
+    }
+
+    /// A link for a test standing in for a node that lists `capabilities`: the frames the hub sends it, as values.
+    #[cfg(test)]
+    pub fn test_link(
+        &self,
+        machine_id: &MachineId,
+        capabilities: &[&str],
+    ) -> mpsc::UnboundedReceiver<HubToNode> {
+        let (tx, mut rx) = mpsc::unbounded_channel::<Out>();
+        let (frames, out) = mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            while let Some(Out::Frame(frame)) = rx.recv().await {
+                if frames.send(*frame).is_err() {
+                    return;
+                }
+            }
+        });
+        let mut state = self.state.lock().unwrap();
+        state.next_link_id += 1;
+        let id = state.next_link_id;
+        state.links.insert(machine_id.clone(), (id, tx));
+        drop(state);
+        self.set_capabilities(machine_id, capabilities);
+        out
+    }
+
+    /// A frame from a node, as its link hands it on: a browser session's screen.
+    pub fn browser_frame(
+        &self,
+        machine_id: &MachineId,
+        frame: fleetd_contracts::browser::BrowserFrame,
+    ) {
+        self.browser_live.frame(machine_id, frame);
+    }
+
     /// Whether the machine's live node listed `capability` in its hello.
     pub fn node_can(&self, machine_id: &MachineId, capability: &str) -> bool {
         self.state
@@ -202,6 +251,8 @@ impl NodeLinkServer {
 pub struct NodeLinkServer {
     deps: LinkDeps,
     state: Mutex<State>,
+    /// Browser sessions' live view: who watches which, and their frames.
+    pub browser_live: Arc<crate::hub::browser::live::Live>,
     heartbeat_every: Duration,
     silence_timeout: Duration,
     hello_timeout: Duration,
@@ -291,6 +342,7 @@ impl NodeLinkServer {
         Arc::new(Self {
             deps,
             state: Mutex::default(),
+            browser_live: Arc::default(),
             heartbeat_every,
             silence_timeout,
             hello_timeout,
@@ -761,6 +813,9 @@ impl NodeLinkServer {
         let _runner = AbortOnDrop(self.follow_runner(&machine_id));
         self.check_runner(&machine_id);
         tracing::info!(machine_id = %machine_id, link_id = id, "node link: welcomed");
+        for watch in self.browser_live.rewatch(&machine_id) {
+            send(tx, watch);
+        }
 
         let heartbeat = {
             let tx = tx.clone();
@@ -860,6 +915,7 @@ impl NodeLinkServer {
                         }),
                     });
                 }
+                NodeToHub::BrowserFrame(frame) => self.browser_frame(&machine_id, frame),
                 NodeToHub::Hello(_) => return refuse(close::BAD_FRAME, "hello after welcome"),
             }
         }

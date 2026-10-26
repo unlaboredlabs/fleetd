@@ -138,6 +138,10 @@ async fn serve(tcp: tokio::net::TcpStream, proxy: Weak<Proxy>, broker: Weak<Brok
                 let Ok(command) = serde_json::from_str::<Value>(&text) else {
                     continue;
                 };
+                // Before the input goes: what it is about to act on, for the action log and the replay.
+                if session.control() != fleetd_contracts::browser::BrowserControl::Human {
+                    session.note_target(&command).await;
+                }
                 command_in(&session, command, &out);
             }
             message = events.recv() => {

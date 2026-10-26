@@ -2220,6 +2220,10 @@ impl SessionService {
                     }
                 }
                 RunnerEvent::Exited(exit) => {
+                    // Its agent-browser and its tools went with the process: so does its browser.
+                    if let Some(browser) = self.inner.browser.get() {
+                        browser.ended(&id);
+                    }
                     self.steers_exited(&id, &exit);
                     self.exited(&id, generation, exit);
                     break;

@@ -337,6 +337,10 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
         "One piece (at most 512 KiB) of a recorded browser session's file from offset: actions (one JSON line per tool call), dom (the page's HTML after each), or video (webm). Read on until done. Every secret the node knew was scrubbed before upload; the video can't be. Read-only.",
     ),
     (
+        "browser_control",
+        "Take a live browser session over from its agent (control human): its agent's commands then answer that a person has control, and your mouse and keys go to the page through the app's browser_input. control agent hands it back; the session is handing_back until the agent's next command, which sees the page as you left it. A person's device with operate on the machine only.",
+    ),
+    (
         "browser_retention_set",
         "How long the hub keeps browser recordings: retentionDays (1 to 365, default 30) and maxGbPerProject (default 20; a project's oldest go first past it). Pruned hourly; an expired session keeps its row. Admin on every machine.",
     ),

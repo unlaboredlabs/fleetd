@@ -265,6 +265,13 @@ export type AppClientMessage = {
   input: boolean;
   project?: ProjectRef;
   t: "presence";
+} | {
+  session?: BrowserSessionId;
+  t: "browser_watch";
+} | {
+  input: BrowserInput;
+  session: BrowserSessionId;
+  t: "browser_input";
 };
 
 /** A `call` failed, or (without `id`) the session did. */
@@ -309,6 +316,8 @@ export type AppServerMessage = {
   t: "live";
 } | ChatDelta & {
   t: "chat_delta";
+} | BrowserFrame & {
+  t: "browser_frame";
 };
 
 export type ApprovalAnswerInput = {
@@ -601,6 +610,68 @@ export type Brief = {
 export type KnownBrowserControl = "agent" | "human" | "handing_back";
 /** KnownBrowserControl, or a value from a newer hub. */
 export type BrowserControl = KnownBrowserControl | (string & {});
+
+export type BrowserControlInput = {
+  control: BrowserControlTo;
+  sessionId: BrowserSessionId;
+};
+
+export type BrowserControlOutput = {
+  next?: string;
+  session: BrowserSession;
+  truncated?: boolean;
+};
+
+/**
+ * Who should drive a live session: `human` takes it over from the agent; `agent` hands it back, and the session is
+ * `handing_back` until the agent's next command, which sees the page as the person left it.
+ */
+export type BrowserControlTo = "human" | "agent";
+
+/**
+ * One screencast frame of a live session, for the person watching. Ephemeral: the hub keeps only the newest per
+ * session, and a slow link skips frames rather than queueing them.
+ */
+export type BrowserFrame = {
+  control: BrowserControl;
+  height: number;
+  /** A JPEG, base64. */
+  jpegB64: string;
+  /** 1, 2, ... per watch; a frame older than one already shown is dropped. */
+  seq: number;
+  sessionId: BrowserSessionId;
+  /** The page the frame shows, when the node knows it. */
+  url?: string;
+  /** The image's size in pixels: `browser_input` coordinates are in it. */
+  width: number;
+};
+
+/**
+ * A person's input to a session they have control of (`control` human). Coordinates are in the last frame's pixels;
+ * the node scales them to the page.
+ */
+export type BrowserInput = {
+  action: MouseAction;
+  button?: MouseButton;
+  /** 1 for a click, 2 for a double click. */
+  clickCount?: number;
+  deltaX?: number;
+  deltaY?: number;
+  kind: "mouse";
+  modifiers?: number;
+  x: number;
+  y: number;
+} | {
+  action: KeyAction;
+  code?: string;
+  key: string;
+  kind: "key";
+  modifiers?: number;
+  text?: string;
+} | {
+  kind: "text";
+  text: string;
+};
 
 /** A stored file of a recording. */
 export type BrowserRecordingEntry = {
@@ -1955,6 +2026,8 @@ export type IntakeRef = {
   url: GitHubPrUrl;
 };
 
+export type KeyAction = "down" | "up";
+
 export type KindTotal = {
   kind: SpanKind;
   ms: number;
@@ -2603,6 +2676,11 @@ export type MetricsTiles = {
   orderToMerged: OrderToMergedTile;
   throughFleetd: ThroughFleetdTile;
 };
+
+export type MouseAction = "pressed" | "released" | "moved" | "wheel";
+
+/** A mouse button, as CDP names it. */
+export type MouseButton = "none" | "left" | "middle" | "right";
 
 /** Space on the volume holding a node's worktrees and build cache. */
 export type NodeDisk = {
@@ -5480,6 +5558,7 @@ export interface ToolMap {
   automation_run: { input: AutomationRunInput; output: AutomationRunOutput };
   automation_runs: { input: AutomationRunsInput; output: AutomationRunsOutput };
   automation_update: { input: AutomationUpdateInput; output: AutomationUpdateOutput };
+  browser_control: { input: BrowserControlInput; output: BrowserControlOutput };
   browser_recording_get: { input: BrowserRecordingGetInput; output: BrowserRecordingGetOutput };
   browser_retention_set: { input: BrowserRetentionSetInput; output: BrowserRetentionSetOutput };
   browser_sessions: { input: BrowserSessionsInput; output: BrowserSessionsOutput };

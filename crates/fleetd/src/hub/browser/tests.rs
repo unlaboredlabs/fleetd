@@ -76,6 +76,7 @@ async fn node_call(hub: &Hub, r: &ProjectRef, mut call: Value, op: &str) -> Resu
     match handler.handle(caller, call).await {
         Ok(LeadCallResult::BrowserSession(out)) => Ok(serde_json::to_value(out).unwrap()),
         Ok(LeadCallResult::BrowserRecordingPart(out)) => Ok(serde_json::to_value(out).unwrap()),
+        Ok(LeadCallResult::BrowserTakeover(out)) => Ok(serde_json::to_value(out).unwrap()),
         Ok(other) => Err(format!("not a browser result: {other:?}")),
         Err(e) => Err(format!("{:?} {}", e.code, e.message)),
     }
@@ -428,4 +429,241 @@ async fn a_lost_session_keeps_no_partial_recording() {
     .await
     .unwrap();
     assert_eq!(listed["sessions"][0]["note"], "its upload kept failing");
+}
+
+fn person(grants: Value) -> Caller {
+    Caller {
+        kind: Some(fleetd_contracts::auth::KeyKind::Human),
+        ..caller(grants)
+    }
+}
+
+#[tokio::test]
+async fn only_a_persons_device_takes_a_live_session_over_and_only_through_its_node() {
+    let (hub, _clock, _home) = hub();
+    let r = project("storefront");
+    node_call(&hub, &r, report(S1, "live", json!([])), "browser_session")
+        .await
+        .unwrap();
+    let input = json!({ "sessionId": S1, "control": "human" });
+    let agent_key = caller(json!([{ "role": "operate", "machines": "*" }]));
+    let refused = tool(&hub, &agent_key, "browser_control", input.clone())
+        .await
+        .unwrap_err();
+    assert!(
+        format!("{refused:?}").contains("Only a person's device"),
+        "{refused:?}"
+    );
+    let reader = person(json!([{ "role": "read", "machines": "*" }]));
+    assert!(
+        tool(&hub, &reader, "browser_control", input.clone())
+            .await
+            .is_err()
+    );
+    // No node with the browser capability: it says so, and nothing changes.
+    let operator = person(json!([{ "role": "operate", "machines": "*" }]));
+    let offline = tool(&hub, &operator, "browser_control", input.clone())
+        .await
+        .unwrap_err();
+    assert!(
+        format!("{offline:?}").contains("isn't connected"),
+        "{offline:?}"
+    );
+    let s = super::get(
+        &hub.db,
+        &fleetd_contracts::browser::BrowserSessionId::unchecked(S1),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(s.control, fleetd_contracts::browser::BrowserControl::Agent);
+    // A session that ended can't be taken over.
+    node_call(
+        &hub,
+        &r,
+        report(S1, "uploading", json!([])),
+        "browser_session",
+    )
+    .await
+    .unwrap();
+    let ended = tool(&hub, &operator, "browser_control", input)
+        .await
+        .unwrap_err();
+    assert!(format!("{ended:?}").contains("not live"), "{ended:?}");
+}
+
+#[tokio::test]
+async fn a_takeover_request_waits_on_you_until_a_person_has_control() {
+    let (hub, _clock, _home) = hub();
+    let r = project("storefront");
+    node_call(&hub, &r, report(S1, "live", json!([])), "browser_session")
+        .await
+        .unwrap();
+    node_call(
+        &hub,
+        &r,
+        json!({ "sessionId": S1, "reason": "Solve the captcha" }),
+        "browser_takeover",
+    )
+    .await
+    .unwrap();
+    let (counts, items) = crate::hub::status::groups::read(&hub, &r, false, NOW_MS as i64);
+    assert_eq!(counts.waiting_on_you.get(), 1);
+    let item = items
+        .iter()
+        .find(|i| i.why.as_ref().is_some_and(|w| w.as_str() == "browser"))
+        .unwrap();
+    assert_eq!(
+        item.title.as_str(),
+        "Take over the browser: Solve the captcha"
+    );
+    assert_eq!(item.task_id.as_ref().unwrap().as_str(), "T7");
+    // The node reports the person has control: no longer waiting.
+    let mut human = report(S1, "live", json!([]));
+    human["control"] = "human".into();
+    node_call(&hub, &r, human, "browser_session").await.unwrap();
+    assert!(super::waiting(&hub.db, &r).unwrap().is_empty());
+    let (counts, _) = crate::hub::status::groups::read(&hub, &r, false, NOW_MS as i64);
+    assert_eq!(counts.waiting_on_you.get(), 0);
+}
+
+#[tokio::test]
+async fn live_frames_go_only_to_watchers_of_their_session_and_the_node_hears_the_first_and_last() {
+    use fleetd_contracts::browser::{BrowserFrame, BrowserSessionId};
+    let (hub, _clock, _home) = hub();
+    let live = hub.link.browser_live.clone();
+    let devbox = MachineId::unchecked("devbox");
+    let (s1, s2) = (
+        BrowserSessionId::unchecked(S1),
+        BrowserSessionId::unchecked(S2),
+    );
+    let frame = |id: &str, seq: u64| -> BrowserFrame {
+        serde_json::from_value(json!({
+            "sessionId": id, "seq": seq, "jpegB64": "AA==", "width": 4, "height": 3, "control": "agent",
+        }))
+        .unwrap()
+    };
+    let mut first = live.watch(&hub.link, &devbox, &s1);
+    let second = live.watch(&hub.link, &devbox, &s1);
+    assert_eq!(live.watchers(&s1), 2);
+    assert_eq!(
+        live.rewatch(&devbox).len(),
+        1,
+        "a reconnecting node hears it again"
+    );
+    assert!(live.rewatch(&MachineId::unchecked("laptop")).is_empty());
+    // A frame of an unwatched session, or from another machine, goes nowhere.
+    live.frame(&devbox, frame(S2, 1));
+    live.frame(&MachineId::unchecked("laptop"), frame(S1, 1));
+    live.frame(&devbox, frame(S1, 2));
+    assert_eq!(first.frames.try_recv().unwrap().seq, 2);
+    assert!(first.frames.try_recv().is_err());
+    drop(second);
+    assert_eq!(live.watchers(&s1), 1);
+    drop(first);
+    assert_eq!(live.watchers(&s1), 0);
+    assert_eq!(live.watchers(&s2), 0);
+}
+
+#[tokio::test]
+async fn partial_uploads_count_toward_the_cap_and_go_once_stale_past_the_retention() {
+    let (hub, clock, home) = hub();
+    let r = project("storefront");
+    // An upload a node started and never finished.
+    node_call(
+        &hub,
+        &r,
+        report(S1, "uploading", json!([])),
+        "browser_session",
+    )
+    .await
+    .unwrap();
+    part(&hub, &r, S1, "video", 0, b"0123456789").await.unwrap();
+    assert_eq!(
+        super::prune(&hub).unwrap(),
+        0,
+        "an upload still going is never cut short"
+    );
+
+    // Past its retention it goes, files and all, though it never became a recording.
+    let admin = caller(json!([{ "role": "admin", "machines": "*" }]));
+    let tight = json!({ "retentionDays": 2, "maxGbPerProject": 20 });
+    tool(&hub, &admin, "browser_retention_set", tight)
+        .await
+        .unwrap();
+    clock.advance(Duration::from_secs(3 * 86_400));
+    assert_eq!(super::prune(&hub).unwrap(), 1);
+    let s = super::get(
+        &hub.db,
+        &fleetd_contracts::browser::BrowserSessionId::unchecked(S1),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(s.state.as_str(), "expired");
+    assert!(!home.path().join("browser").join(S1).exists());
+}
+
+#[tokio::test]
+async fn a_fresh_partial_upload_counts_toward_its_projects_size() {
+    let (hub, clock, _home) = hub();
+    let r = project("storefront");
+    // A recording of 0.6 GB as its row says, then, a day later, an upload in progress whose disk use is checked.
+    let s: fleetd_contracts::browser::BrowserSession = serde_json::from_value(json!({
+        "sessionId": S1, "projectRef": r, "threadId": "th-1", "purpose": "p", "state": "recorded",
+        "control": "agent", "startedAt": AT, "files": [{ "file": "video", "bytes": 644_245_094 }],
+    }))
+    .unwrap();
+    hub.db
+        .transaction(|c| super::put_on(c, &s, NOW_MS as i64))
+        .unwrap();
+    hub.db
+        .transaction(|c| {
+            super::set_retention(
+                c,
+                &serde_json::from_value(json!({ "retentionDays": 30, "maxGbPerProject": 1 }))
+                    .unwrap(),
+            )
+        })
+        .unwrap();
+    clock.advance(Duration::from_secs(86_400 + 60));
+    node_call(
+        &hub,
+        &r,
+        report(S2, "uploading", json!([])),
+        "browser_session",
+    )
+    .await
+    .unwrap();
+    // Its file stands in for half a GB on disk: sparse, so the test writes nothing much.
+    let dir = super::dir(
+        &hub,
+        &fleetd_contracts::browser::BrowserSessionId::unchecked(S2),
+    );
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::File::create(dir.join("video.webm"))
+        .unwrap()
+        .set_len(536_870_912)
+        .unwrap();
+    assert_eq!(
+        super::prune(&hub).unwrap(),
+        1,
+        "together over 1 GB: the older recording goes"
+    );
+    let old = super::get(
+        &hub.db,
+        &fleetd_contracts::browser::BrowserSessionId::unchecked(S1),
+    )
+    .unwrap()
+    .unwrap();
+    let new = super::get(
+        &hub.db,
+        &fleetd_contracts::browser::BrowserSessionId::unchecked(S2),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(old.state.as_str(), "expired");
+    assert_eq!(
+        new.state.as_str(),
+        "uploading",
+        "the upload in progress stays"
+    );
 }

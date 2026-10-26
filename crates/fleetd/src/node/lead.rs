@@ -180,7 +180,7 @@ const MAX_FRAME_BYTES: usize = 256 * 1024;
 const MAX_BROWSER_FRAME_BYTES: usize = 8 << 20;
 
 /// Lead calls only the node makes, for a session's browser (node/browser): a process in a session can't send them.
-const NODE_OPS: &[&str] = &["browser_session", "browser_recording_part"];
+const NODE_OPS: &[&str] = crate::hub::tasks::policy::NODE_OPS;
 
 fn bad_frame(message: &str) -> LeadResultFrame {
     error_frame(

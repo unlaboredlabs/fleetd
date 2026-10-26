@@ -142,7 +142,14 @@ async fn site() -> (String, AbortOnDrop) {
                     let body =
                         String::from_utf8_lossy(&request[head_end + 4..head_end + 4 + length])
                             .into_owned();
-                    let page = if text.starts_with("POST /login") {
+                    let page = if text.starts_with("GET /secret") {
+                        // A project secret as a page shows it: HTML-escaped, and inside longer base64.
+                        let html = PROJECT_SECRET.replace('&', "&amp;").replace('<', "&lt;");
+                        let b64 = B64.encode(format!("key={PROJECT_SECRET};"));
+                        format!(
+                            "<html><body><p title=\"{html}\">{html}</p><p>{b64}</p></body></html>"
+                        )
+                    } else if text.starts_with("POST /login") {
                         let user = body
                             .split('&')
                             .find_map(|kv| kv.strip_prefix("user="))
@@ -178,7 +185,14 @@ struct Rig {
 }
 
 /// A broker with a warm Chrome, or None (said why) where this machine has none.
+/// A secret of the agent session's project, as the node reads it for the session.
+const PROJECT_SECRET: &str = "pa<ss&word-77";
+
 async fn rig() -> Option<Rig> {
+    rig_with(Vec::new()).await
+}
+
+async fn rig_with(secrets: Vec<(String, String)>) -> Option<Rig> {
     let Some(chrome) = chrome() else {
         eprintln!("skipped: no Chrome on this machine (set FLEETD_TEST_CHROME)");
         return None;
@@ -194,7 +208,7 @@ async fn rig() -> Option<Rig> {
         node_home.path(),
         config,
         hub.clone(),
-        Arc::new(|_| Ok(Masker::default())),
+        Arc::new(move |_| Ok(crate::node::mask::Secrets(secrets.clone()))),
     )
     .await;
     broker.ready(chrome);
@@ -733,4 +747,646 @@ async fn only_the_node_reports_a_browser_session_and_a_browser_call_is_its_calle
     claims_another["threadId"] = "s2".into();
     let refused = over_socket(PeerSession::Session("s1".into()), claims_another).await;
     assert_eq!(refused["error"]["code"], "forbidden", "{refused}");
+}
+
+/// The next `browser_frame` the node sends the hub, as the link carries it.
+async fn next_frame(link: &mut tokio::sync::mpsc::UnboundedReceiver<String>) -> Value {
+    let line = tokio::time::timeout(Duration::from_secs(10), link.recv())
+        .await
+        .expect("a frame in 10 s")
+        .expect("the link is open");
+    let frame: Value = serde_json::from_str(&line).unwrap();
+    assert_eq!(frame["t"], "browser_frame");
+    frame
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_person_watches_takes_over_and_types_and_the_agent_sees_it_after_the_handback() {
+    use fleetd_contracts::browser::{BrowserControlTo, BrowserInput, BrowserSessionId};
+    let Some(rig) = rig().await else { return };
+    let (site, _site) = site().await;
+    let started = call(
+        &rig.broker,
+        json!({ "op": "session_start", "purpose": "Sign up" }),
+    )
+    .await;
+    let id = BrowserSessionId::unchecked(started["result"]["sessionId"].as_str().unwrap());
+    let url = started["result"]["cdp"].as_str().unwrap().to_owned();
+    let mut driver = Driver::connect(&url).await.unwrap();
+    let page = driver.page().await;
+    driver
+        .ok(Some(&page), "Page.navigate", json!({ "url": site }))
+        .await;
+    driver
+        .wait_for(
+            &page,
+            "document.readyState === 'complete' && !!document.querySelector('#user')",
+        )
+        .await;
+
+    // The agent asks for a person; the hub lists it until one comes.
+    let asked = call(
+        &rig.broker,
+        json!({ "op": "request_takeover", "reason": "Type the user name" }),
+    )
+    .await;
+    assert!(
+        asked["result"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("waiting on you"),
+        "{asked}"
+    );
+    let waiting = crate::hub::browser::waiting(&rig.hub.hub.db, &rig.hub.project).unwrap();
+    assert_eq!(
+        waiting[0].takeover_reason.as_ref().unwrap().as_str(),
+        "Type the user name"
+    );
+
+    // Watching: the newest frame at once, then each new one.
+    let (link, mut frames) = tokio::sync::mpsc::unbounded_channel();
+    rig.broker.watch(&id, Some(link));
+    let frame = next_frame(&mut frames).await;
+    assert_eq!(frame["sessionId"], id.as_str());
+    assert_eq!(frame["control"], "agent");
+    let (width, height) = (
+        frame["width"].as_f64().unwrap(),
+        frame["height"].as_f64().unwrap(),
+    );
+    assert!(width > 100.0 && height > 100.0, "{width}x{height}");
+    let jpeg = B64.decode(frame["jpegB64"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        super::session::jpeg_size(&jpeg),
+        Some((width as u32, height as u32))
+    );
+
+    // A person takes over: the agent's commands wait, and the person's input reaches the page.
+    rig.broker
+        .control(&id, BrowserControlTo::Human, "human:desk");
+    let paused = driver
+        .send(
+            Some(&page),
+            "Runtime.evaluate",
+            json!({ "expression": "1" }),
+        )
+        .await;
+    assert!(
+        paused["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("A person has control")
+    );
+    let rect = rig.broker.live(THREAD).unwrap();
+    let (_, own) = rect.page().unwrap();
+    let box_ = rect
+        .cdp
+        .call(Some(&own), "Runtime.evaluate", json!({
+            "expression": "(() => { const r = document.querySelector('#user').getBoundingClientRect(); \
+                            return [r.x + r.width / 2, r.y + r.height / 2, innerWidth]; })()",
+            "returnByValue": true,
+        }))
+        .await
+        .unwrap();
+    let at = box_["result"]["value"].as_array().unwrap().clone();
+    let scale = width / at[2].as_f64().unwrap();
+    let (x, y) = (
+        at[0].as_f64().unwrap() * scale,
+        at[1].as_f64().unwrap() * scale,
+    );
+    for action in ["pressed", "released"] {
+        let click: BrowserInput = serde_json::from_value(json!({
+            "kind": "mouse", "action": action, "x": x, "y": y, "button": "left", "clickCount": 1,
+        }))
+        .unwrap();
+        rig.broker.input(&id, click);
+    }
+    let typed: BrowserInput =
+        serde_json::from_value(json!({ "kind": "text", "text": "typed-by-human" })).unwrap();
+    rig.broker.input(&id, typed);
+    // The frames say who drives now.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while next_frame(&mut frames).await["control"] != "human" {
+        assert!(Instant::now() < deadline, "no frame said human");
+    }
+
+    // The typing lands (a person's input goes out in order, in the background).
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let value = rect
+            .cdp
+            .call(
+                Some(&own),
+                "Runtime.evaluate",
+                json!({
+                    "expression": "document.querySelector('#user').value", "returnByValue": true,
+                }),
+            )
+            .await
+            .unwrap()["result"]["value"]
+            .clone();
+        if value == "typed-by-human" {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the person's typing never reached the page"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    // Handed back: the agent's next command takes control again and sees what the person typed.
+    rig.broker
+        .control(&id, BrowserControlTo::Agent, "human:desk");
+    assert_eq!(
+        rect.control(),
+        fleetd_contracts::browser::BrowserControl::HandingBack
+    );
+    let value = driver
+        .eval(&page, "document.querySelector('#user').value")
+        .await;
+    assert_eq!(value, "typed-by-human");
+    assert_eq!(
+        rect.control(),
+        fleetd_contracts::browser::BrowserControl::Agent
+    );
+
+    // The hub followed: no longer waiting on anyone, and the agent drives.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let listed = sessions(&rig.hub).await;
+        let s = &listed["sessions"][0];
+        if s["control"] == "agent" && s.get("takeoverReason").is_none() {
+            break;
+        }
+        assert!(Instant::now() < deadline, "{s}");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(
+        crate::hub::browser::waiting(&rig.hub.hub.db, &rig.hub.project)
+            .unwrap()
+            .is_empty()
+    );
+    rig.broker.watch(&id, None);
+    call(&rig.broker, json!({ "op": "session_end" })).await;
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while sessions(&rig.hub).await["sessions"][0]["state"] != "recorded" {
+        assert!(Instant::now() < deadline, "not recorded");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let actions = String::from_utf8(read_file(&rig.hub, id.as_str(), "actions").await).unwrap();
+    let steps: Vec<String> = actions
+        .lines()
+        .map(|l| {
+            serde_json::from_str::<Value>(l).unwrap()["tool"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
+        .collect();
+    assert_eq!(
+        steps,
+        [
+            "session_start",
+            "request_takeover",
+            "takeover",
+            "handback",
+            "agent_resumed",
+            "session_end"
+        ]
+    );
+    assert!(actions.contains("human:desk"), "who took over");
+    assert!(
+        !actions.contains("typed-by-human"),
+        "a person's keys aren't logged one by one"
+    );
+}
+
+async fn recorded(hub: &TestHub) -> String {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        let listed = sessions(hub).await;
+        if listed["sessions"][0]["state"] == "recorded" {
+            return listed["sessions"][0]["sessionId"]
+                .as_str()
+                .unwrap()
+                .to_owned();
+        }
+        assert!(Instant::now() < deadline, "not recorded: {listed}");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_project_secret_is_scrubbed_from_the_dom_trace_in_every_form_the_page_shows_it() {
+    let Some(rig) = rig_with(vec![("SHOP_KEY".into(), PROJECT_SECRET.into())]).await else {
+        return;
+    };
+    let (site, _site) = site().await;
+    let started = call(
+        &rig.broker,
+        json!({ "op": "session_start", "purpose": "Read" }),
+    )
+    .await;
+    let mut driver = Driver::connect(started["result"]["cdp"].as_str().unwrap())
+        .await
+        .unwrap();
+    let page = driver.page().await;
+    driver
+        .ok(
+            Some(&page),
+            "Page.navigate",
+            json!({ "url": format!("{site}/secret") }),
+        )
+        .await;
+    driver
+        .wait_for(
+            &page,
+            "document.readyState === 'complete' && !!document.querySelector('p')",
+        )
+        .await;
+    rig.broker.item(
+        THREAD,
+        &command_item(&format!("agent-browser open {site}/secret"), "✓"),
+    );
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    call(&rig.broker, json!({ "op": "session_end" })).await;
+    let id = recorded(&rig.hub).await;
+    let dom = String::from_utf8(read_file(&rig.hub, &id, "dom").await).unwrap();
+    assert!(dom.contains("***SHOP_KEY***"), "{dom}");
+    let b64 = B64.encode(format!("key={PROJECT_SECRET};"));
+    for form in ["pa&lt;ss&amp;word-77", "pa<ss&word-77", &b64[4..16]] {
+        assert!(!dom.contains(form), "{form} in {dom}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn two_starts_at_once_open_one_session_and_leave_one_recording() {
+    let Some(rig) = rig().await else { return };
+    let (a, b) = tokio::join!(
+        call(
+            &rig.broker,
+            json!({ "op": "session_start", "purpose": "One" })
+        ),
+        call(
+            &rig.broker,
+            json!({ "op": "session_start", "purpose": "Two" })
+        ),
+    );
+    let opened = [&a, &b]
+        .iter()
+        .filter(|r| r["result"]["sessionId"].is_string())
+        .count();
+    assert_eq!(opened, 1, "{a} {b}");
+    let refused = if a.get("error").is_some() { &a } else { &b };
+    let why = refused["error"]["message"].as_str().unwrap();
+    assert!(why.contains("starting") || why.contains("is open"), "{why}");
+    let folders = std::fs::read_dir(rig.node_home.path().join("browser/recordings"))
+        .unwrap()
+        .count();
+    assert_eq!(folders, 1, "the refused start made no recording");
+    call(&rig.broker, json!({ "op": "session_end" })).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_browser_session_ends_with_its_agents_session() {
+    let Some(rig) = rig().await else { return };
+    call(
+        &rig.broker,
+        json!({ "op": "session_start", "purpose": "Look" }),
+    )
+    .await;
+    SessionHooks::ended(rig.broker.as_ref(), "th-someone-else");
+    assert!(
+        rig.broker.live(THREAD).is_some(),
+        "another agent's exit changes nothing"
+    );
+    SessionHooks::ended(rig.broker.as_ref(), THREAD);
+    assert!(rig.broker.live(THREAD).is_none());
+    let id = recorded(&rig.hub).await;
+    let actions = String::from_utf8(read_file(&rig.hub, &id, "actions").await).unwrap();
+    assert!(actions.contains("agent_session_ended"), "{actions}");
+}
+
+/// The hub's link to this node, for a test: what the hub sends goes to the broker as the node's link hands it on, and
+/// what the node sends goes to the hub as its link server does.
+fn bridge(rig: &Rig) {
+    let hub = rig.hub.hub.clone();
+    let devbox = MachineId::unchecked("devbox");
+    let mut to_node = hub
+        .link
+        .test_link(&devbox, &[fleetd_contracts::node_link::CAP_BROWSER]);
+    let (link, mut from_node) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let broker = rig.broker.clone();
+    tokio::spawn(async move {
+        while let Some(frame) = to_node.recv().await {
+            broker.from_hub(frame, &link);
+        }
+    });
+    tokio::spawn(async move {
+        while let Some(line) = from_node.recv().await {
+            if let Ok(fleetd_contracts::node_link::NodeToHub::BrowserFrame(frame)) =
+                serde_json::from_str(&line)
+            {
+                hub.link.browser_frame(&devbox, frame);
+            }
+        }
+    });
+}
+
+fn person(role: &str) -> crate::hub::api::Caller {
+    let caller: crate::hub::api::Caller = serde_json::from_value(json!({
+        "keyId": "k2", "name": "desk", "prefix": "fld_abcdef", "createdAt": "2026-10-26T10:00:00.000Z",
+        "grants": [{ "role": role, "machines": "*" }],
+    }))
+    .unwrap();
+    crate::hub::api::Caller {
+        kind: Some(fleetd_contracts::auth::KeyKind::Human),
+        ..caller
+    }
+}
+
+/// Live view and takeover end to end, through the hub's own entry points: the app's watch and input, browser_control,
+/// the hub's link to the node, and the node's broker.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_app_watches_takes_over_types_and_hands_back_through_the_hub() {
+    use fleetd_contracts::browser::{BrowserInput, BrowserSessionId};
+    let Some(rig) = rig().await else { return };
+    bridge(&rig);
+    let hub = rig.hub.hub.clone();
+    let (site, _site) = site().await;
+    let started = call(
+        &rig.broker,
+        json!({ "op": "session_start", "purpose": "Sign up" }),
+    )
+    .await;
+    let id = BrowserSessionId::unchecked(started["result"]["sessionId"].as_str().unwrap());
+    let mut driver = Driver::connect(started["result"]["cdp"].as_str().unwrap())
+        .await
+        .unwrap();
+    let page = driver.page().await;
+    driver
+        .ok(Some(&page), "Page.navigate", json!({ "url": site }))
+        .await;
+    driver
+        .wait_for(
+            &page,
+            "document.readyState === 'complete' && !!document.querySelector('#user')",
+        )
+        .await;
+    // The hub has the session live once the node reported it.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while sessions(&rig.hub).await["sessions"][0]["state"] != "live" {
+        assert!(Instant::now() < deadline);
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    // The app watches: frames arrive through the hub.
+    let mut watch = crate::hub::browser::live::start_watch(&hub, &person("read"), &id).unwrap();
+    let frame = tokio::time::timeout(Duration::from_secs(10), watch.frames.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(frame.session_id, id);
+    let width = frame.width.get() as f64;
+
+    // Typing before taking over is refused at the hub.
+    let text: BrowserInput =
+        serde_json::from_value(json!({ "kind": "text", "text": "typed-by-human" })).unwrap();
+    let early =
+        crate::hub::browser::live::input(&hub, &person("operate"), &id, text.clone()).unwrap_err();
+    assert!(
+        early.message.contains("its agent has control"),
+        "{}",
+        early.message
+    );
+
+    let control = |to: &str| {
+        let hub = hub.clone();
+        let input = json!({ "sessionId": id.as_str(), "control": to });
+        async move {
+            crate::hub::api::registry()
+                .call(&hub, &person("operate"), "browser_control", input)
+                .await
+        }
+    };
+    let took = control("human").await.unwrap();
+    assert_eq!(took["session"]["control"], "human");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while rig.broker.live(THREAD).unwrap().control()
+        != fleetd_contracts::browser::BrowserControl::Human
+    {
+        assert!(Instant::now() < deadline, "the node never heard");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+
+    // A click on the field and typing, in frame pixels, through the hub.
+    let session = rig.broker.live(THREAD).unwrap();
+    let (_, own) = session.page().unwrap();
+    let at = session
+        .cdp
+        .call(Some(&own), "Runtime.evaluate", json!({
+            "expression": "(() => { const r = document.querySelector('#user').getBoundingClientRect(); \
+                            return [r.x + r.width / 2, r.y + r.height / 2, innerWidth]; })()",
+            "returnByValue": true,
+        }))
+        .await
+        .unwrap()["result"]["value"]
+        .clone();
+    let scale = width / at[2].as_f64().unwrap();
+    for action in ["pressed", "released"] {
+        let click: BrowserInput = serde_json::from_value(json!({
+            "kind": "mouse", "action": action, "x": at[0].as_f64().unwrap() * scale,
+            "y": at[1].as_f64().unwrap() * scale, "button": "left", "clickCount": 1,
+        }))
+        .unwrap();
+        crate::hub::browser::live::input(&hub, &person("operate"), &id, click).unwrap();
+    }
+    crate::hub::browser::live::input(&hub, &person("operate"), &id, text).unwrap();
+
+    // The typing lands (input goes out in the background), read on the node's own connection.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let value = session
+            .cdp
+            .call(
+                Some(&own),
+                "Runtime.evaluate",
+                json!({
+                    "expression": "document.querySelector('#user').value", "returnByValue": true,
+                }),
+            )
+            .await
+            .unwrap()["result"]["value"]
+            .clone();
+        if value == "typed-by-human" {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the person's typing never reached the page"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    // Handed back: the agent's next command sees what the person typed.
+    let back = control("agent").await.unwrap();
+    assert_eq!(back["session"]["control"], "handing_back");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while session.control() != fleetd_contracts::browser::BrowserControl::HandingBack {
+        assert!(
+            Instant::now() < deadline,
+            "the node never heard the handback"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(
+        driver
+            .eval(&page, "document.querySelector('#user').value")
+            .await,
+        "typed-by-human"
+    );
+    assert_eq!(
+        session.control(),
+        fleetd_contracts::browser::BrowserControl::Agent
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while sessions(&rig.hub).await["sessions"][0]["control"] != "agent" {
+        assert!(
+            Instant::now() < deadline,
+            "the hub never heard the agent drives again"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    drop(watch);
+    call(&rig.broker, json!({ "op": "session_end" })).await;
+}
+
+#[test]
+fn a_command_names_its_element_by_ref() {
+    use super::session::element_ref;
+    assert_eq!(
+        element_ref("agent-browser click @e3").as_deref(),
+        Some("@e3")
+    );
+    assert_eq!(
+        element_ref("agent-browser fill \"@e12\" 'ada'").as_deref(),
+        Some("@e12")
+    );
+    assert_eq!(element_ref("agent-browser click '#go'"), None);
+    assert_eq!(element_ref("echo me@example.com"), None);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn each_step_records_the_element_it_acted_on_with_its_box_in_frame_pixels() {
+    let Some(rig) = rig().await else { return };
+    let (site, _site) = site().await;
+    let started = call(
+        &rig.broker,
+        json!({ "op": "session_start", "purpose": "Sign in" }),
+    )
+    .await;
+    let mut driver = Driver::connect(started["result"]["cdp"].as_str().unwrap())
+        .await
+        .unwrap();
+    let page = driver.page().await;
+    driver
+        .ok(Some(&page), "Page.navigate", json!({ "url": site }))
+        .await;
+    driver
+        .wait_for(
+            &page,
+            "document.readyState === 'complete' && !!document.querySelector('#user')",
+        )
+        .await;
+    let center = |selector: &str| {
+        format!(
+            "(() => {{ const r = document.querySelector('{selector}').getBoundingClientRect(); \
+             return [r.x + r.width / 2, r.y + r.height / 2]; }})()"
+        )
+    };
+    // fill @e1: a click on the field, then the text, as agent-browser sends them.
+    let at = driver.eval(&page, &center("#user")).await;
+    for kind in ["mousePressed", "mouseReleased"] {
+        driver
+            .ok(
+                Some(&page),
+                "Input.dispatchMouseEvent",
+                json!({
+                    "type": kind, "x": at[0], "y": at[1], "button": "left", "clickCount": 1,
+                }),
+            )
+            .await;
+    }
+    driver
+        .ok(Some(&page), "Input.insertText", json!({ "text": "ada" }))
+        .await;
+    rig.broker.item(
+        THREAD,
+        &command_item("agent-browser fill @e1 ada", "✓ Done"),
+    );
+    // A command that only reads acts on nothing.
+    rig.broker.item(
+        THREAD,
+        &command_item("agent-browser snapshot -i", "- textbox [ref=e1]: ada"),
+    );
+    // click @e3: the sign-in button.
+    let at = driver.eval(&page, &center("#go")).await;
+    for kind in ["mousePressed", "mouseReleased"] {
+        driver
+            .ok(
+                Some(&page),
+                "Input.dispatchMouseEvent",
+                json!({
+                    "type": kind, "x": at[0], "y": at[1], "button": "left", "clickCount": 1,
+                }),
+            )
+            .await;
+    }
+    rig.broker
+        .item(THREAD, &command_item("agent-browser click @e3", "✓ Done"));
+    driver
+        .wait_for(&page, "document.body.innerText.includes('Welcome ada')")
+        .await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    call(&rig.broker, json!({ "op": "session_end" })).await;
+    let id = recorded(&rig.hub).await;
+
+    let actions: Vec<Value> = String::from_utf8(read_file(&rig.hub, &id, "actions").await)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let fill = &actions[1]["target"];
+    assert_eq!(fill["ref"], "@e1");
+    assert_eq!(fill["selector"], "#user");
+    assert!(fill["backendNodeId"].as_u64().is_some(), "{fill}");
+    let boxed = &fill["frameBox"];
+    let (x, y) = (boxed["x"].as_f64().unwrap(), boxed["y"].as_f64().unwrap());
+    let (w, h) = (
+        boxed["width"].as_f64().unwrap(),
+        boxed["height"].as_f64().unwrap(),
+    );
+    assert!(
+        w > 10.0 && h > 5.0 && x >= 0.0 && y >= 0.0 && x + w <= 1280.0,
+        "{boxed}"
+    );
+    assert!(
+        actions[2].get("target").is_none(),
+        "a snapshot acts on nothing: {}",
+        actions[2]
+    );
+    assert_eq!(actions[3]["target"]["ref"], "@e3");
+    assert_eq!(actions[3]["target"]["selector"], "#go");
+
+    // The DOM trace carries the same element for its step.
+    let dom: Vec<Value> = String::from_utf8(read_file(&rig.hub, &id, "dom").await)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let after_fill = dom
+        .iter()
+        .find(|d| d["seq"] == actions[1]["seq"])
+        .expect("the page after the fill");
+    assert_eq!(after_fill["target"], *fill);
 }

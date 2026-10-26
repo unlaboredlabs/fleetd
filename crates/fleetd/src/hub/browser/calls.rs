@@ -7,8 +7,9 @@ use std::sync::{Arc, Weak};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use fleetd_contracts::browser::{
-    BrowserRecordingPartCall, BrowserRecordingPartResult, BrowserSession, BrowserSessionCall,
-    BrowserSessionResult, BrowserSessionState, RECORDING_PART_BYTES,
+    BrowserControl, BrowserRecordingPartCall, BrowserRecordingPartResult, BrowserSession,
+    BrowserSessionCall, BrowserSessionResult, BrowserSessionState, BrowserTakeoverCall,
+    RECORDING_PART_BYTES,
 };
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallResult};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
@@ -19,7 +20,11 @@ use crate::hub::link::lead_calls::{CallerAgent, LeadCallFuture, op_of};
 use crate::hub::link::{LeadCaller, LeadCalls};
 use crate::hub::store::{StoreError, now_ms, parse_ms};
 
-pub const OPS: [&str; 2] = ["browser_session", "browser_recording_part"];
+pub const OPS: [&str; 3] = [
+    "browser_session",
+    "browser_recording_part",
+    "browser_takeover",
+];
 
 pub fn register_lead_calls(hub: &Arc<Hub>) {
     let weak: Weak<Hub> = Arc::downgrade(hub);
@@ -30,7 +35,7 @@ pub fn register_lead_calls(hub: &Arc<Hub>) {
                 let hub = hub.ok_or_else(|| {
                     McpToolError::new(ErrorCode::Invalid, "The hub is shutting down.")
                 })?;
-                answer(&hub, &caller, call)
+                answer(&hub, &caller, call).await
             })
         },
     );
@@ -49,7 +54,11 @@ fn invalid(message: impl Into<String>) -> McpToolError {
     McpToolError::new(ErrorCode::Invalid, message)
 }
 
-fn answer(hub: &Hub, caller: &LeadCaller, call: LeadCall) -> Result<LeadCallResult, McpToolError> {
+async fn answer(
+    hub: &Hub,
+    caller: &LeadCaller,
+    call: LeadCall,
+) -> Result<LeadCallResult, McpToolError> {
     if caller.agent == CallerAgent::Person {
         return Err(McpToolError::new(
             ErrorCode::Forbidden,
@@ -58,7 +67,8 @@ fn answer(hub: &Hub, caller: &LeadCaller, call: LeadCall) -> Result<LeadCallResu
     }
     match call {
         LeadCall::BrowserSession(call) => session(hub, caller, call),
-        LeadCall::BrowserRecordingPart(call) => part(hub, caller, call),
+        LeadCall::BrowserRecordingPart(call) => part(hub, caller, call).await,
+        LeadCall::BrowserTakeover(call) => takeover(hub, caller, call),
         other => Err(invalid(format!("{} is not a browser call.", op_of(&other)))),
     }
 }
@@ -135,7 +145,13 @@ fn session(
         started_at: call.started_at,
         ended_at: call.ended_at,
         files: call.files,
-        takeover_reason: stored.as_ref().and_then(|s| s.takeover_reason.clone()),
+        // Waiting on a person only while the agent still drives a live session.
+        takeover_reason: stored
+            .as_ref()
+            .and_then(|s| s.takeover_reason.clone())
+            .filter(|_| {
+                call.state == BrowserSessionState::Live && call.control == BrowserControl::Agent
+            }),
         credentials_filled: call.credentials_filled,
         note: call.note,
     };
@@ -160,7 +176,7 @@ fn session(
     }))
 }
 
-fn part(
+async fn part(
     hub: &Hub,
     caller: &LeadCaller,
     call: BrowserRecordingPartCall,
@@ -199,19 +215,27 @@ fn part(
         ))
         .with_fix(format!("send the piece at offset {held}")));
     }
-    let write = || -> std::io::Result<u64> {
-        std::fs::create_dir_all(dir(hub, &call.session_id))?;
+    let (folder, path) = (
+        dir(hub, &call.session_id),
+        file_path(hub, &call.session_id, call.file),
+    );
+    // Off the async threads: half a MB written and synced.
+    let write = move || -> std::io::Result<u64> {
+        std::fs::create_dir_all(folder)?;
         let mut file = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
-            .open(file_path(hub, &call.session_id, call.file))?;
+            .open(path)?;
         // A piece sent again after a lost answer replaces what it wrote the first time.
         file.set_len(offset)?;
         file.write_all(&data)?;
         file.sync_data()?;
         Ok(offset + data.len() as u64)
     };
-    let bytes = write().map_err(|e| {
+    let written = tokio::task::spawn_blocking(write)
+        .await
+        .unwrap_or_else(|e| Err(std::io::Error::other(e)));
+    let bytes = written.map_err(|e| {
         tracing::error!(session = id, error = %e, "browser recording not written");
         McpToolError::new(ErrorCode::Failed, "The hub could not write that piece.")
             .with_fix("try again shortly")
@@ -223,4 +247,34 @@ fn part(
             bytes: count(bytes),
         },
     ))
+}
+
+/// An agent's `request_takeover`: the session waits on a person (status lists it under "waiting on you") until one
+/// takes control or it ends.
+fn takeover(
+    hub: &Hub,
+    caller: &LeadCaller,
+    call: BrowserTakeoverCall,
+) -> Result<LeadCallResult, McpToolError> {
+    let id = call.session_id.as_str();
+    let Some(mut session) = own(hub, caller, id)? else {
+        return Err(McpToolError::new(
+            ErrorCode::NotFound,
+            format!("No browser session {id}."),
+        ));
+    };
+    if session.state != BrowserSessionState::Live {
+        return Err(invalid(format!(
+            "Browser session {id} is {}: nobody can take it over.",
+            session.state.as_str()
+        )));
+    }
+    if session.control == BrowserControl::Agent {
+        session.takeover_reason = Some(call.reason);
+        super::save(hub, &session).map_err(failed)?;
+    }
+    Ok(LeadCallResult::BrowserTakeover(BrowserSessionResult {
+        session_id: session.session_id,
+        state: session.state,
+    }))
 }

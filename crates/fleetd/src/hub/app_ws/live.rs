@@ -110,6 +110,12 @@ impl LiveSlot {
         self.frame.lock().unwrap().take()
     }
 
+    /// Puts a frame in the slot in place of one not yet sent: only the newest goes out.
+    pub fn replace(&self, frame: String) {
+        *self.frame.lock().unwrap() = Some(frame);
+        self.notify.notify_one();
+    }
+
     /// Drops a frame of a subscription that was replaced.
     pub fn clear(&self) {
         self.frame.lock().unwrap().take();

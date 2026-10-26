@@ -95,6 +95,10 @@ pub const CAP_ORDER_ENV: &str = "order_env";
 /// `SessionLaunch::setup`: a project's setup commands, run in each new worktree before its agent starts.
 pub const CAP_WORKTREE_SETUP: &str = "worktree_setup";
 
+/// Browser sessions' live view and takeover: `browser_watch`, `browser_input` and `browser_control`, and the node's
+/// `browser_frame`s.
+pub const CAP_BROWSER: &str = "browser";
+
 /// `node_action` `update`: the node updates itself to a build its hub names. A node without it drops the link on
 /// the frame, so the hub asks only nodes that list it.
 pub const CAP_SELF_UPDATE: &str = "self_update";
@@ -368,6 +372,8 @@ pub enum NodeToHub {
     Slept(SleptSpan),
     Spans(SpansFrame),
     CloneProgress(CloneProgressFrame),
+    /// A watched browser session's screen; only while the hub watches it.
+    BrowserFrame(crate::browser::BrowserFrame),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -385,6 +391,10 @@ pub enum HubToNode {
     NodeAction(NodeAction),
     SessionCall(SessionCallFrame),
     SpansAck(SpansAck),
+    /// Only to nodes listing [`CAP_BROWSER`].
+    BrowserWatch(crate::browser::BrowserWatchFrame),
+    BrowserInput(crate::browser::BrowserInputFrame),
+    BrowserControl(crate::browser::BrowserControlFrame),
 }
 
 #[cfg(test)]

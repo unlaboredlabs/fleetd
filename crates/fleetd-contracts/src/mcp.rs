@@ -1328,6 +1328,16 @@ output!(BrowserRecordingGetOutput {
     done: bool,
 });
 
+// browser_control: a person takes a live browser session over from its agent (human), or hands it back (agent).
+// Human keys with operate on its machine only (the handler checks).
+input!(BrowserControlInput {
+    session_id: crate::browser::BrowserSessionId,
+    control: crate::browser::BrowserControlTo,
+});
+output!(BrowserControlOutput {
+    session: crate::browser::BrowserSession,
+});
+
 // browser_retention_set: how long the hub keeps browser recordings, for every project.
 input!(BrowserRetentionSetInput {
     #[serde(flatten)]
@@ -2062,6 +2072,8 @@ tools! {
     checklist_get => ChecklistGet, Read, ChecklistGetInput, ChecklistGetOutput;
     browser_sessions => BrowserSessions, Read, BrowserSessionsInput, BrowserSessionsOutput;
     browser_recording_get => BrowserRecordingGet, Read, BrowserRecordingGetInput, BrowserRecordingGetOutput;
+    // Human keys only (the handler checks).
+    browser_control => BrowserControl, Operate, BrowserControlInput, BrowserControlOutput;
     browser_retention_set => BrowserRetentionSet, Admin, BrowserRetentionSetInput, BrowserRetentionSetOutput;
     skills_list => SkillsList, Read, SkillsListInput, SkillsListOutput;
     skill_get => SkillGet, Read, SkillGetInput, SkillGetOutput;

@@ -14,7 +14,7 @@ use crate::automations::{
 };
 use crate::browser::{
     BrowserCallFrame, BrowserRecordingPartCall, BrowserRecordingPartResult, BrowserResultFrame,
-    BrowserSessionCall, BrowserSessionResult,
+    BrowserSessionCall, BrowserSessionResult, BrowserTakeoverCall,
 };
 use crate::chat::ChatRequestId;
 use crate::checked;
@@ -294,6 +294,7 @@ pub enum LeadCall {
     /// Made by the node for a session's browser, never by the session itself (the node refuses that).
     BrowserSession(BrowserSessionCall),
     BrowserRecordingPart(BrowserRecordingPartCall),
+    BrowserTakeover(BrowserTakeoverCall),
 }
 
 /// The call's `op` tag, as on the wire.
@@ -445,6 +446,7 @@ pub enum LeadCallResult {
     UsageResume(UsageResumeResult),
     BrowserSession(BrowserSessionResult),
     BrowserRecordingPart(BrowserRecordingPartResult),
+    BrowserTakeover(BrowserSessionResult),
 }
 
 /// CLI -> node on the local socket, and node -> hub on the link.
