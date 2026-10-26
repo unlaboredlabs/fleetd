@@ -14,7 +14,7 @@ import { OnboardingScreen } from "./OnboardingScreen";
 
 // Stubbed before the screens load: the shell reads the platform on import.
 const { redeem, forget } = vi.hoisted(() => {
-  const redeem = vi.fn((_request: PairRequest): Promise<PairOutcome> => Promise.resolve({ ok: true, hubName: "forge" }));
+  const redeem = vi.fn((_request: PairRequest): Promise<PairOutcome> => Promise.resolve({ ok: true, hubName: "devbox" }));
   const forget = vi.fn(() => Promise.resolve());
   vi.stubGlobal("fleetd", {
     platform: "darwin",
@@ -114,12 +114,12 @@ it("Pair with another hub, while connected, opens the pairing form and stays on 
 it("keeps the current hub until the new one pairs, then goes on to the board", async () => {
   click("Pair with another hub");
   await settle();
-  type("Hub address", "http://forge:4790");
+  type("Hub address", "http://devbox:4790");
   type("Pairing code", "ABCD2345");
   click("Connect");
   await settle();
   await settle();
-  expect(redeem).toHaveBeenCalledWith({ hub: "http://forge:4790", code: "ABCD-2345" });
+  expect(redeem).toHaveBeenCalledWith({ hub: "http://devbox:4790", code: "ABCD-2345" });
   expect(forget).not.toHaveBeenCalled();
   expect(window.location.hash).toBe("#/");
 });
