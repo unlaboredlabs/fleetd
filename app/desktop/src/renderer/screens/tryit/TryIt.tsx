@@ -30,7 +30,7 @@ export function TryItView({ project, repo, number }: { project: ProjectKey; repo
     // A preview that couldn't start is the view's own state, not an error page ("tryit.failed" would read as one).
     <div className={s.view} data-screen={p === undefined ? (t.asking ? "tryit.asking" : "tryit.off") : `tryit.${p.state === "failed" ? "start-failed" : p.state}`}>
       <Head t={t} />
-      <div className={s.body}>{live ? <Running key={p.previewId} preview={p} pr={number} canEnd={t.canStart !== false} /> : <Off project={project} t={t} repo={repo} pr={number} />}</div>
+      <div className={s.body}>{live ? <Running key={p.previewId} preview={p} pr={number} mayAct={t.canStart !== false} /> : <Off project={project} t={t} repo={repo} pr={number} />}</div>
     </div>
   );
 }
@@ -140,11 +140,15 @@ function Off({ project, t, repo, pr }: { project: ProjectKey; t: TryItData; repo
   );
 }
 
+/** The page as it was when the first pin went on it: what the pins sit on, and what the screenshot is drawn from. */
+type Still = Pick<BrowserFrame, "jpegB64" | "width" | "height" | "url">;
+
 // What the person marked and wrote, per preview, so switching tabs keeps it until it is sent.
 interface Draft {
   readonly marking: boolean;
   readonly pins: readonly Pin[];
   readonly clip: boolean;
+  readonly still?: Still;
   readonly sent?: { readonly to: string; readonly at: string; readonly pins: readonly Pin[]; readonly clip: boolean; readonly shot: boolean };
 }
 const FRESH: Draft = { marking: false, pins: [], clip: true };
@@ -160,8 +164,11 @@ const subscribeDrafts = (l: () => void) => {
 };
 const useDraft = (id: string): Draft => useSyncExternalStore(subscribeDrafts, () => drafts[id] ?? FRESH);
 
-/** Starting or ready: the page beside its steps, then feedback and its address once it answers. */
-function Running({ preview: p, pr, canEnd }: { preview: Preview; pr: number; canEnd: boolean }) {
+/**
+ * Starting or ready: the page beside its steps, then feedback and its address once it answers. `mayAct`: the key may
+ * start, end and send feedback (canStart's rule, D162); without it the person uses the page and nothing more.
+ */
+function Running({ preview: p, pr, mayAct }: { preview: Preview; pr: number; mayAct: boolean }) {
   const ready = p.state === "ready";
   const d = useDraft(p.previewId);
   const frame = useLiveFrame(p.sessionId ?? "", ready && p.sessionId !== undefined);
@@ -174,31 +181,41 @@ function Running({ preview: p, pr, canEnd }: { preview: Preview; pr: number; can
             <Text size="xs" tone="quiet" className={s.underWords}>
               {d.marking ? "Click where it’s wrong; each click is a pin you can say something about." : "Your clicks and keys go to the page. The session is recorded, as every session is."}
             </Text>
-            <Button
-              variant="secondary"
-              size="sm"
-              icon={d.marking ? <X aria-hidden /> : <MapPin aria-hidden />}
-              onClick={() => setDraft(p.previewId, (x) => ({ ...x, marking: !x.marking }))}
-            >
-              {d.marking ? "Done marking" : "Mark up"}
-            </Button>
+            {mayAct ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={d.marking ? <X aria-hidden /> : <MapPin aria-hidden />}
+                onClick={() => setDraft(p.previewId, (x) => ({ ...x, marking: !x.marking }))}
+              >
+                {d.marking ? "Done marking" : "Mark up"}
+              </Button>
+            ) : null}
           </div>
         ) : null}
       </div>
       <div className={s.side}>
         {ready ? (
           <>
-            <Feedback preview={p} pr={pr} draft={d} frame={frame} />
+            {mayAct ? (
+              <Feedback preview={p} pr={pr} draft={d} frame={frame} />
+            ) : (
+              <section className={s.block} aria-label="Feedback">
+                <div className={s.blockHead}>
+                  <Text size="xs" tone="quiet" strong>
+                    Feedback
+                  </Text>
+                </div>
+                <Text size="sm" tone="quiet">
+                  Sending feedback to the agents, and ending the preview, take a key with admin or operate access. This device’s key can use the page.
+                </Text>
+              </section>
+            )}
             <Elsewhere preview={p} />
             <Steps preview={p} folded />
           </>
         ) : (
           <Steps preview={p} />
-        )}
-        {canEnd ? null : (
-          <Text size="xs" tone="faint" className={s.sideNote}>
-            Someone with admin or operate access started it; this device’s key can use it but not end it.
-          </Text>
         )}
       </div>
     </div>
@@ -209,7 +226,9 @@ function Running({ preview: p, pr, canEnd }: { preview: Preview; pr: number; can
 function Frame({ preview: p, frame, draft: d }: { preview: Preview; frame: BrowserFrame | undefined; draft: Draft }) {
   const ready = p.state === "ready";
   const input = useFrameInput(p.sessionId ?? "", frame, ready && !d.marking && p.sessionId !== undefined);
-  const url = frame?.url ?? p.url;
+  // Marking, the page holds still once a pin is on it, so the pins stay where they were put and match the screenshot.
+  const shown = d.marking && d.still !== undefined ? d.still : frame;
+  const url = shown?.url ?? p.url;
   return (
     <div className={cx(s.frame, d.marking && s.marking)}>
       <div className={s.bar}>
@@ -235,7 +254,7 @@ function Frame({ preview: p, frame, draft: d }: { preview: Preview; frame: Brows
       </div>
       <div
         className={s.screen}
-        style={frame === undefined ? undefined : { aspectRatio: `${String(frame.width)} / ${String(frame.height)}` }}
+        style={shown === undefined ? undefined : { aspectRatio: `${String(shown.width)} / ${String(shown.height)}` }}
         role={input === undefined ? "img" : "application"}
         aria-label={input === undefined ? `The preview${url === undefined ? "" : `: ${url}`}` : "The preview: your clicks and keys go to it"}
         tabIndex={input === undefined ? undefined : 0}
@@ -244,17 +263,18 @@ function Frame({ preview: p, frame, draft: d }: { preview: Preview; frame: Brows
       >
         {!ready ? (
           <Starting steps={p.steps ?? []} />
-        ) : frame === undefined ? (
+        ) : shown === undefined ? (
           <span className={s.blank}>
             <Text size="xs" tone="quiet">
               Waiting for the page…
             </Text>
           </span>
         ) : (
-          <img src={`data:image/jpeg;base64,${frame.jpegB64}`} alt="" draggable={false} />
+          <img src={`data:image/jpeg;base64,${shown.jpegB64}`} alt="" draggable={false} />
         )}
-        {d.marking ? <MarkLayer id={p.previewId} /> : null}
-        {d.pins.map((pin, i) => (
+        {d.marking ? <MarkLayer id={p.previewId} frame={frame} /> : null}
+        {/* Over the page they were put on only: the live page may have moved on since. */}
+        {(d.marking ? d.pins : []).map((pin, i) => (
           <span key={i} className={s.pin} style={{ left: `${String(pin.x * 100)}%`, top: `${String(pin.y * 100)}%` }} aria-label={`Pin ${String(i + 1)}`}>
             {i + 1}
           </span>
@@ -281,11 +301,17 @@ function Starting({ steps }: { steps: readonly PreviewStep[] }) {
 }
 
 /** Marking up: a click anywhere on the page drops the next pin there; the page underneath takes no input. */
-function MarkLayer({ id }: { id: string }) {
+function MarkLayer({ id, frame }: { id: string; frame: BrowserFrame | undefined }) {
   const drop = (e: MouseEvent<HTMLDivElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
     const pin: Pin = { x: (e.clientX - r.left) / Math.max(1, r.width), y: (e.clientY - r.top) / Math.max(1, r.height), note: "" };
-    setDraft(id, (d) => (d.pins.length >= 20 ? d : { marking: d.marking, clip: d.clip, pins: [...d.pins, pin] }));
+    // The first pin keeps the page as it is now: the screenshot is drawn from it, not from the page when it is sent.
+    const now = frame === undefined ? undefined : { jpegB64: frame.jpegB64, width: frame.width, height: frame.height, ...(frame.url === undefined ? {} : { url: frame.url }) };
+    setDraft(id, (d) => {
+      if (d.pins.length >= 20) return d;
+      const still = d.still ?? now;
+      return { marking: d.marking, clip: d.clip, pins: [...d.pins, pin], ...(still === undefined ? {} : { still }) };
+    });
   };
   return <div className={s.markLayer} onClick={drop} role="presentation" data-pin-layer="" />;
 }
@@ -354,9 +380,10 @@ function Feedback({ preview: p, pr, draft: d, frame }: { preview: Preview; pr: n
   const send = () => {
     setBusy(true);
     setFailed(null);
-    const at = frame?.url ?? p.url;
+    const page = d.still ?? frame;
+    const at = page?.url ?? p.url;
     void (async () => {
-      const shot = frame === undefined ? undefined : await shotWithPins(frame, d.pins);
+      const shot = page === undefined ? undefined : await shotWithPins(page, d.pins);
       const out = await sendFeedback(layer, p, { pins: d.pins, at, shotB64: shot, clip: d.clip });
       setBusy(false);
       if (!out.ok) {
@@ -445,7 +472,7 @@ function Feedback({ preview: p, pr, draft: d, frame }: { preview: Preview; pr: n
                   setDraft(id, (x) => ({ ...x, pins: x.pins.map((q, j) => (j === i ? { ...q, note } : q)) }));
                 }}
               />
-              <Button variant="quiet" iconOnly aria-label={`Remove pin ${String(i + 1)}`} onClick={() => setDraft(id, (x) => ({ ...x, pins: x.pins.filter((_, j) => j !== i) }))}>
+              <Button variant="quiet" iconOnly aria-label={`Remove pin ${String(i + 1)}`} onClick={() => setDraft(id, (x) => (x.pins.length === 1 ? { marking: x.marking, clip: x.clip, pins: [] } : { ...x, pins: x.pins.filter((_, j) => j !== i) }))}>
                 <X aria-hidden />
               </Button>
             </li>

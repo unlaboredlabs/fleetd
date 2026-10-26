@@ -330,9 +330,6 @@
   max-height: 200px;
   overflow: auto;
 }
-.sideNote {
-  padding-top: var(--space-2);
-}
 .sentPins {
   display: flex;
   flex-direction: column;
