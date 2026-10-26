@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { completions, namedSkills, pick, skillToken, SKILLS_PER_MESSAGE } from "./skillPicker";
+import { completions, namedSkills, pick, skillToken, SKILLS_PER_MESSAGE } from "./skillPickerModel";
 
 const skills = [
   { name: "release", description: "Cut a release." },

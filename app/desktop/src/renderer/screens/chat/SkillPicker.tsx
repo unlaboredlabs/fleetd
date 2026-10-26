@@ -1,9 +1,9 @@
-// The composer's `$` list (skillPicker.ts has the rules): the project's skills that fit what follows `$`, above the
+// The composer's `$` list (skillPickerModel.ts has the rules): the project's skills that fit what follows `$`, above the
 // box. ↑/↓ move, Tab or Enter picks, Esc closes; the mouse picks too. The composer asks it first on each key.
 import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type RefObject } from "react";
 import { Text } from "../../ui";
 import { useData, useToolQuery } from "../../src/data/react";
-import { completions, namedSkills, pick, skillToken, type SkillOption } from "./skillPicker";
+import { completions, namedSkills, pick, skillToken, type SkillOption } from "./skillPickerModel";
 import s from "./skillPicker.module.css";
 
 interface ProjectRef {
