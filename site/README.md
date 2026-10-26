@@ -11,12 +11,12 @@ would win over the user-agent rewrite at `/`. `docs/index.html` is `/docs` and f
 
 ## Refreshing the captures
 
-The app screenshots (`chat-hero.png` at the top of the page, `chat-approve.png` and `chat-secret.png` in Fig. 1 and 2)
+The app screenshots (`chat-hero.png` at the top of the page, `chat-approve.png` and `chat-secret.png` under "What waits for you")
 and the app shots in the docs (`docs/site/public/img/`) are the app's screens on E3b's fixtures, which are sanitized
 lab hub traffic (`app/desktop/fixtures`), at 1400x900@2x in the light theme, without the sample-data banner.
 `app/desktop/qa/site.ts` lists them; `pnpm fixtures && pnpm qa:build && pnpm site:shots` in `app/desktop` writes them in
-place. Re-shoot them when what those screens show changes, keep the captions and alt texts true to the picture, and
-re-aim the figures' callouts (`--x`, `--y` in `home.html`) if the layout moved.
+place. Re-shoot them when what those screens show changes, and keep the captions and alt texts (on the page, in
+`fleetd.txt` and in the docs) true to the picture.
 
 The `<!-- capture:NAME -->` blocks in `home.html` and the same blocks in `fleetd.txt` (found there by the shape of
 fleetd's output, so the twin carries no markers) come from one command, run from the repo root:

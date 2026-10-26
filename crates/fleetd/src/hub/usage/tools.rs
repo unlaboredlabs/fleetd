@@ -45,7 +45,8 @@ async fn usage_status(
         "No login is paused.".to_string()
     } else {
         format!(
-            "Paused: {}. It lifts at the reset, or run usage_resume once the login has capacity.",
+            "Paused: {}. It lifts at the reset, or press Resume in the app (or run fleetd usage resume <machine>) once \
+             the login has capacity.",
             open.join(", ")
         )
     };

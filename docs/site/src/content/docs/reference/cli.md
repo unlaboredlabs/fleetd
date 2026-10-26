@@ -334,6 +334,22 @@ fleetd status [<project>] [--watch] [--json] [--hub <url> --key-file <path> | --
 
 one row per project, as the app's Status screen shows it: what it is doing (working, waiting on you, blocked and why, idle), its work in groups (waiting on you, in review, working, landing, idle, done), agents running and the last merge; one project by id or title (\<machine\>/\<project\> when two machines have one). `--watch` prints the rows again after each change; a stale row says so. On the hub machine it needs no `--hub` or `--key-file`
 
+### fleetd usage {#usage}
+
+```text
+fleetd usage [<machine>] [--json] [--hub <url> --key-file <path> | --home <dir>]
+```
+
+each machine's Claude usage pause: open or not, why, until when, and how much is parked
+
+### fleetd usage resume {#usage-resume}
+
+```text
+fleetd usage resume <machine> [--json] [--hub <url> --key-file <path> | --home <dir>]
+```
+
+lift the machine's usage pause now and send every parked agent "continue", like Resume in the app; one whose login is still limited parks again with the real reset. `--json` adds pauseLifted (null when the pause couldn't be read first). On the hub machine neither needs `--hub` or `--key-file`
+
 ### fleetd steer {#steer}
 
 ```text

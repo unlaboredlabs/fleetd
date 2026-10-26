@@ -217,7 +217,7 @@ applies when you let go, with Undo. A fleet cap below a project's own max gets a
 Writers in a project run side by side, each in its own worktree and branch. The lead gives them slices that touch
 separate files; if two PRs still conflict, the [merge train](/docs/merge-train) sends the later one back to its writer.
 
-![The Max agents control open in storefront's chat header: a slider set to 12, from 1 up to 16 (the fleet's limit), with "6 agents running now".](/docs/img/max-agents.png)
+![The Max agents control open in storefront's chat header: a slider set to 12, from 1 up to "16, the most it can run", with "6 agents running now".](/docs/img/max-agents.png)
 
 From a terminal:
 

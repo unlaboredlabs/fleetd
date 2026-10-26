@@ -65,6 +65,7 @@ Every lead gets these.
 | [`automation_runs`](#automation_runs) | An automation's runs, newest first, with the order each opened; with runId, that run and its whole webhook body. | No |
 | [`checklist`](#checklist) | Keep the project's checklist: the to-dos the human sees beside the chat, each todo, doing or done, in plain words. | No |
 | [`skill_install`](#skill_install) | Install skills (SKILL.md workflows) from a skills.sh source (owner/repo, owner/repo@skill, a GitHub URL) for this project (scope project; global skills take an admin, so the human installs those); pinned to the commit fetched, and the human updates it from Settings > Skills. | No |
+| [`usage_resume`](#usage_resume) | Lift the usage pause on your project's machine now and send every agent parked there "continue": only once you know its login has capacity again (the human says so, or a turn of yours just went through). | No |
 | [`change_enqueue`](#change_enqueue) | Put a PR no task's result put there on its repo's merge train; only the train merges. | No |
 
 ### spawn_agent
@@ -602,6 +603,25 @@ Install skills (SKILL.md workflows) from a skills.sh source (owner/repo, owner/r
   "arguments": {
     "scope": "project",
     "source": "vercel-labs/agent-skills@web-design-guidelines"
+  }
+}
+```
+
+### usage_resume
+
+Lift the usage pause on your project's machine now and send every agent parked there "continue": only once you know its login has capacity again (the human says so, or a turn of yours just went through). At most once per 10 minutes per machine; an agent whose login is still limited parks again with the real reset. The human can also press Resume in the app or run fleetd usage resume &lt;machine>.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `machineId` | string | no | The project's machine; absent means it. |
+
+**Who may call:** a lead, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "usage_resume",
+  "arguments": {
+    "machineId": "devbox"
   }
 }
 ```

@@ -156,6 +156,25 @@ shows each machine's free space. A writer's worktree, build output included, goe
 uncommitted or unpushed work. A reader's or reviewer's goes when its task ends. When `sccache` is on the node's `PATH`,
 sessions compile through it, so a dependency builds once per machine rather than once per worktree.
 
+## When a Claude login hits its limit {#usage-pause}
+
+When agents on one machine hit their Claude login's usage or rate limit, fleetd parks them and pauses new turns on that
+login. They go on by themselves at the reset claude's message named, or as soon as a turn on that login completes. The
+project's Status row and its chat say so, with **Resume**.
+
+To go on sooner, once the login has capacity again:
+
+- In the app, press **Resume** on the project's Status row or on the chat's blocked line. Your device key needs
+  operate on the machine (a paired app has it).
+- On the hub machine, run `fleetd usage` to see each machine's pause, and `fleetd usage resume <machine>` to lift
+  one. Neither needs a key or `--hub`: they use the hub's own CLI key and reach the hub at the address it listens on.
+  From elsewhere, add `--hub <url> --key-file <path>`.
+
+Resume sends every parked agent "continue". An agent whose login is still limited parks again on its next turn, with
+the real reset. Whenever the lead takes a turn during the pause (you message it, say), its wake states the pause,
+when it ends and that you can press Resume. It can lift the pause on its own project's machine with `usage_resume`, at
+most once every 10 minutes, and that is recorded as the lead's.
+
 ## A fair share for each agent {#fair-share}
 
 Agents on one machine share its CPUs, memory and disk. Each session gets:

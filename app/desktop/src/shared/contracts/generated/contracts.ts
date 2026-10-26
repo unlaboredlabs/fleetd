@@ -3216,6 +3216,13 @@ export type ProjectStatusRow = {
   /** Of `merged_7d`, the share the merge train landed, in percent. Absent when nothing landed. */
   throughFleetdPct7d?: number;
   title: string;
+  /** Blocked by a usage pause on this machine's login: the app offers Resume (usage_resume) for it. */
+  usagePausedOn?: MachineId;
+  /**
+   * With `usage_paused_on`: the pause in its own words ("paused until Sun 23:40 UTC (usage limit on devbox's
+   * login)"), which `blocked_reason` may not be when the machine is also degraded.
+   */
+  usagePausedReason?: string;
 };
 
 export type ProjectStopInput = {

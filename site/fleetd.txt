@@ -1,38 +1,85 @@
 fleetd
 https://fleetd.sh
 
-fleetd runs Claude Code on your machines: you type what you want, and it plans
+fleetd runs Claude Code on your machines. You type what you want, and it plans
 the work, runs the agents, opens pull requests it has checked, and asks you only
 about real decisions.
 
-An agent saying "done" doesn't merge anything. Every change goes through
-fleetd's merge train: reviewed, rebased onto main, merged only on green CI.
-
 Install
   curl -fsSL https://fleetd.sh | sh
-  Installs and sets up fleetd: about a minute later the hub runs, the app is
-  paired, and you send the lead your first message. You need macOS or Linux
-  x64, the claude CLI logged in (your own claude setup, proxy included), git
-  and gh. MIT.
+  Installs the fleetd CLI and desktop app, then runs `fleetd init` to set up the
+  hub and pair the app. You need macOS or Linux x64, the claude CLI logged in
+  (fleetd uses your own claude setup, including any proxy), git, and gh for
+  pull requests. MIT.
 
 Docs:   https://fleetd.sh/docs
 GitHub: https://github.com/unlaboredlabs/fleetd
 
 
-TALK TO THE LEAD
-Each project has one chat with its lead. Say what you want; the lead splits it
-up and runs the agents. Under its reply, one line counts the agents at work and
-names their PRs; open it to see what each is doing now. A dot in the sidebar
-marks a project waiting on you. Image: chat-hero.png
+ONE CHAT PER PROJECT
+Tell the lead what you want; it splits the work and runs the agents. The panel
+beside the chat shows what each agent is doing now. Image: chat-hero.png
 
 
-FIG. 1  APPROVE WHAT CAN'T BE UNDONE
-The lead runs almost everything itself. A command that can't be undone, costs
-money or needs a credential waits in the chat, exactly as it will run, until you
-approve it. Image: chat-approve.png
+WHAT FLEETD DOES
+A hub keeps your projects, a node on each of your machines runs the agents, and
+the desktop app is where you talk to them.
+
+Chat with the lead
+  Each project has one lead. It decides everything that isn't a product, money,
+  credential or irreversible call, asks you the rest in the chat, and logs each
+  answer as a decision. https://fleetd.sh/docs/chat
+
+Agents and the merge train
+  Writers open pull requests and reviewers check them. Only fleetd merges: each
+  PR is reviewed, rebased onto its base branch and merged on green CI.
+  https://fleetd.sh/docs/merge-train
+
+The panel
+  Beside each chat, a tab each for the project's Agents, Pull requests, Train,
+  Checklist, Activity and Decisions. Watch an agent work, read a PR's changes,
+  see what merges next. https://fleetd.sh/docs/desktop-app#panel
+
+Project settings and env vars
+  Environment variables every agent of a project gets, plain or secret. A
+  secret lives only on the project's machine and is masked in agents' output.
+  https://fleetd.sh/docs/projects#env
+
+Automations
+  A stored prompt that runs on a schedule, from a webhook, or with Run now. Each
+  run becomes work the lead starts on its own. https://fleetd.sh/docs/automations
+
+Skills
+  SKILL.md workflows from the repo, the project or the whole hub, for every
+  agent. skills.sh and Claude Code skills work as they are.
+  https://fleetd.sh/docs/skills
+
+MCP servers
+  More tools for agents: a command on their machine or a service over HTTP, for
+  every project or one, with a choice of which roles get each.
+  https://fleetd.sh/docs/mcp-servers
+
+Memory
+  When you correct the lead or state a rule, it remembers, for you everywhere or
+  for one project. Read, edit or delete it in Settings -> Memory.
+  https://fleetd.sh/docs/what-agents-are-told#memory
+
+Usage limits
+  An agent that hits a Claude usage or rate limit pauses, and carries on by
+  itself once it can: at the reset, or when a later check gets through. A
+  machine near the end of a usage window takes no new agents until it has room.
+  https://fleetd.sh/docs/machines#guard
+
+
+WHAT WAITS FOR YOU
+Plain chat can't carry two things safely, so they show as items in the chat
+that only your app can act on.
+
+Approve what can't be undone. A command that can't be undone, costs money or
+needs a credential waits, exactly as it will run, until you approve it.
+Image: chat-approve.png
 
   Lead: This writes to the production database. Approve to run it exactly as below.
-  ▸ 5 agents working
   Command                                                     Can't be undone
   Adds the share snapshots table to the production database.
     pnpm --filter storefront db:migrate --env production
@@ -40,70 +87,40 @@ approve it. Image: chat-approve.png
   DATABASE_URL gets the secret storefront.database_url
   [Approve]  [Deny]
 
-  10  The lead says what it wants to run and why, in a line.
-  12  Why it waits for you: this one can't be undone. Commands that cost money
-      or need a credential wait too.
-  14  The exact command, the machine and folder it runs in, and the secret it
-      gets. Approve runs it as shown; Deny tells the lead, which carries on
-      without it.
-
-
-FIG. 2  SECRETS STAY OUT OF THE CHAT
-When the lead needs a key, you type it into a masked field. It is sealed to the
-machine that uses it; the chat and the hub never see it. Image: chat-secret.png
+Secrets stay out of the chat. You type a key into a masked field. It is sealed
+to the machine that uses it; the chat and the hub never see it.
+Image: chat-secret.png
 
   Lead: Need the Stripe test key for that. It goes to devbox only and never into this chat.
-  ▸ 5 agents working
   Secret                                                      stripe.test_key
   The checkout tests charge a test card; they need the Stripe test key.
   It is saved as STRIPE_TEST_KEY in /home/dev/src/storefront/.env.test on devbox.
   [Paste or type the value]  [Save secret]
-  Sealed on this computer to devbox's key. The hub only passes it on; fleetd never shows it again.
-
-  20  A secret saved earlier shows only that it was saved, never its value.
-  22  The lead asks for the key in the chat, and says where it goes.
-  24  Paste it here. It never enters the transcript.
-  26  Sealed on your computer to that machine's key; the hub only passes it on.
-
-
-WHAT THE LEAD DOES WITHOUT ASKING YOU
-How each project's lead works, in its chat.
-01  The lead decides everything that isn't a product, money, credential or
-    irreversible call.
-02  It asks the rest in the chat: numbered, each with its recommendation. "1 go,
-    2 rec" or "do it" is a whole reply.
-03  It hands the work to Claude Code agents on your machines, never more at once
-    than the project's Max agents.
-04  It logs each answer as a decision, so it never asks the same thing twice.
-05  It keeps your answer when you overrule its recommendation.
-06  No time estimates. It says what is done and what is next.
+  Sealed on this computer to devbox's key, so only devbox can open it. fleetd never shows it again. To skip it, say so in the chat.
 
 
 "DONE" IS CHECKED BY FLEETD
 Merge-train events from a lab run against the public fleetd-lab repo
-(https://github.com/unlaboredlabs/fleetd-lab), 18 Oct 2026, UTC. The hub's
-own summaries, with the commit status the train posts before each merge.
+(https://github.com/unlaboredlabs/fleetd-lab), 18 Oct 2026, UTC: the hub's own
+summaries. Red CI goes back to the agent that wrote the PR.
 
 13:15:17  change.queued     X1 queued: unlaboredlabs/fleetd-lab#160 (tier S, done:0)
 13:15:17  change.ready      X1 ready for the train: unlaboredlabs/fleetd-lab#160
 13:15:18  change.queued     X2 queued: unlaboredlabs/fleetd-lab#161 (tier S, done:0)
 13:15:18  change.ready      X2 ready for the train: unlaboredlabs/fleetd-lab#161
-13:15:21  train.frozen      Train for unlaboredlabs/fleetd-lab frozen: train batch lab: hold until every PR is green
-13:15:42  train.resumed     Train for unlaboredlabs/fleetd-lab resumed
 13:16:14  pr.merged         X1 merged: unlaboredlabs/fleetd-lab#160 as 2220967ee70a in batch #163
 13:16:17  pr.merged         X2 merged: unlaboredlabs/fleetd-lab#161 as 2220967ee70a in batch #163
 13:18:23  change.ci_failed  X6 CI failed on dda108b7c6b8: ci (failure) (log: …)
 
 
-SETUP IS A HUB AND YOUR MACHINES
-After the install, `fleetd init` walks you through the hub, its claude and gh
-logins and the desktop app's pairing. `fleetd machine add` turns a machine you
-can reach over SSH into one that runs agents. Both outputs are real; the tailnet
-name and address are placeholders.
+GET STARTED
+A hub on one machine, and any machines you reach over SSH to run agents. The
+outputs below are real; the tailnet name and address are placeholders.
 
-The hub, on the machine you installed on. --yes takes every default;
---no-service keeps this capture from starting a service, so here the hub, your
-workers, a first project and `fleetd doctor` wait for you:
+1  Run the install line
+   It installs fleetd and starts `fleetd init`, which walks you through the
+   hub, its claude and gh logins and the desktop app's pairing. Run it again any
+   time; it keeps what's done.
 
 $ fleetd init --yes --no-service --git-identity "Demo <demo@users.noreply.github.com>"
 
@@ -135,8 +152,9 @@ App & check  6/6
 Then run fleetd init again; it keeps what's done.
 [exit 0]
 
-A worker. --dry-run prints the plan and runs nothing; the shell command under
-each step is left out here:
+2  fleetd machine add
+   Turns a machine you can reach over SSH into one that runs agents. --dry-run
+   prints the plan and runs nothing.
 
 $ fleetd machine add builder-1 --dry-run
 dry run: nothing runs. Planned for a fresh Linux machine at builder-1 (home /home/demo); a real run first reads the machine's state and leaves out what is already done:
@@ -148,6 +166,19 @@ dry run: nothing runs. Planned for a fresh Linux machine at builder-1 (home /hom
 [5/5] (re)start the node
 [hub] wait until builder-1 is online
 [exit 0]
+
+3  Add a project and say hi to its lead
+   In the app, click Add next to Projects and paste a GitHub URL. Then tell the
+   lead what you want.
+
+
+DOCS
+Install          https://fleetd.sh/docs/install
+Quick start      https://fleetd.sh/docs/quick-start
+Concepts         https://fleetd.sh/docs/concepts
+Machines         https://fleetd.sh/docs/machines
+CLI reference    https://fleetd.sh/docs/reference/cli
+Troubleshooting  https://fleetd.sh/docs/troubleshooting
 
 
 fleetd · MIT

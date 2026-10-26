@@ -124,6 +124,9 @@ pub struct MachineUsage {
     /// Per thread whose turn is running, when it started (ms). A completed turn proves the login only for what
     /// started after it.
     started: BTreeMap<String, i64>,
+    /// Per `by` of a usage.resumed (a person, a lead, "reset"), when it last lifted something here (ms), however many
+    /// events came since: what holds a lead to its once per 10 minutes.
+    pub resumed_by: BTreeMap<String, i64>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -449,6 +452,12 @@ impl UsageState {
             HubEventType::UsageResumed => {
                 let m = self.machine(&machine_id);
                 Self::remember(m, event);
+                if let (Some(by), Some(at)) = (
+                    data.get("by").and_then(Value::as_str),
+                    parse_ms(event.at.as_str()),
+                ) {
+                    m.resumed_by.insert(by.to_owned(), at);
+                }
                 let listed: Vec<String> = data
                     .get("threads")
                     .and_then(Value::as_array)

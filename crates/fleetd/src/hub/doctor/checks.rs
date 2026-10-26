@@ -541,7 +541,9 @@ pub fn usage_breaker(machine_id: &str, breaker: &UsageBreaker) -> Entry {
             format!("New turns on {machine_id} are paused by the usage breaker.")
         }),
         Some(manual(
-            &format!("{wait}, or call usage_resume for {machine_id} once the login has capacity"),
+            &format!(
+                "{wait}, or once the login has capacity press Resume in the app, or run fleetd usage resume {machine_id}"
+            ),
             None,
         )),
     )
