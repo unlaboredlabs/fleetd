@@ -9,6 +9,7 @@ pub mod agent_browser;
 pub mod cdp;
 pub mod chrome;
 pub mod credentials;
+pub mod onepassword;
 pub mod proxy;
 pub mod record;
 pub mod session;
