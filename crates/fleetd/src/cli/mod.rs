@@ -254,6 +254,7 @@ async fn update_command(argv: &[String]) -> u8 {
 }
 
 pub fn main() -> ExitCode {
+    crate::update::keep_running_binary();
     let argv: Vec<String> = std::env::args().skip(1).collect();
     crate::home::init_from_argv(&argv);
     if let Some(text) = help_for(&argv) {

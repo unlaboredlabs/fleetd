@@ -266,8 +266,7 @@ pub fn task_lane(task: &Task, prs: &[(&Change, PrRef)], look: &dyn Lookups) -> A
 }
 
 /// A checker's lane names what it checks, "review #113", "QA #114", so a column of checkers
-/// reads apart; the lead's own titles for them ("Review owner/repo#113 for X3") are long and alike. Other lanes keep
-/// their task's title.
+/// reads apart; their task titles ("Checking: <PR title>") are long and alike. Other lanes keep their task's title.
 fn lane_title(task: &Task, role: AgentRole, number: Option<i64>, pr_url: Option<&str>) -> String {
     let verb = match role {
         AgentRole::Reviewer => "review",

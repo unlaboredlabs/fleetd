@@ -323,7 +323,8 @@ impl Updates {
     }
 
     /// The hub that handed its restart to the watcher, still running long after: the watcher's verdict if it wrote
-    /// one (its restart of the service failed), else the previous binary back and a failed restart.
+    /// one (the service manager refused the restart, and it says so), else the previous binary back and a failed
+    /// restart.
     async fn restart_missed(&self, plan: &Plan) {
         let deadline = now_ms(self.clock.as_ref()) + ms(self.timing.restart);
         let verdict = loop {

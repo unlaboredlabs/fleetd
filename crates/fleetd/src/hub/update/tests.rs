@@ -15,9 +15,10 @@ use serde_json::json;
 
 use super::{NodeFacts, Timing, UpdatePorts, Updates, by_machine};
 use crate::clock::SystemClock;
+use crate::hub::store::test_clock::ManualClock;
 use crate::update::finish::{Plan, Verdict};
 use crate::update::service::Service;
-use crate::update::tests::FakeFeed;
+use crate::update::tests::{FakeFeed, FakeRunner};
 use crate::update::{BoxFuture, Channel, Feed};
 
 const OLD: &str = "0.0.0-nightly.202610251000+aaaaaaa";
@@ -310,17 +311,6 @@ async fn after_the_hub_each_node_updates_and_says_how_it_went() {
             online.push(n.machine_id.clone());
         }
     }
-    {
-        let fake = fake.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(60)).await;
-            for n in fake.nodes.lock().unwrap().iter_mut() {
-                if online.contains(&n.machine_id) {
-                    n.live_since = Some(2);
-                }
-            }
-        });
-    }
     // The new hub comes up; its watcher says so.
     *fake.running.lock().unwrap() = NEW.into();
     let verdict = fake.plans.lock().unwrap()[0].verdict.clone();
@@ -329,9 +319,33 @@ async fn after_the_hub_each_node_updates_and_says_how_it_went() {
         json!({ "state": "done", "message": "runs the new build" }).to_string(),
     )
     .unwrap();
-    let after = area(home.path(), &fake);
+    // Its time only moves here, so the nodes' moment back always falls well inside the while it waits for them.
+    let clock = ManualClock::at(1_792_000_000_000);
+    let after = Updates::new(home.path(), clock.clone(), fast());
+    after.set_ports(fake.clone());
     tokio::spawn(after.clone().resume());
-    let run = until(&after, |r| r.finished_at.is_some()).await;
+    let back_at = Duration::from_millis(60);
+    let mut moved = Duration::ZERO;
+    let run = loop {
+        if let Some(run) = after.status().filter(|r| r.finished_at.is_some()) {
+            break run;
+        }
+        assert!(
+            moved < Duration::from_secs(10),
+            "never got there: {:?}",
+            after.status()
+        );
+        if moved == back_at {
+            for n in fake.nodes.lock().unwrap().iter_mut() {
+                if online.contains(&n.machine_id) {
+                    n.live_since = Some(2);
+                }
+            }
+        }
+        clock.advance(fast().poll);
+        moved += fast().poll;
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    };
     assert_eq!(hub_state(&run), UpdateState::Done);
     let expect = [
         ("builder", UpdateState::Done, None),
@@ -409,6 +423,47 @@ async fn a_restart_that_never_happens_ends_the_run_and_says_so() {
     assert!(fake.asked.lock().unwrap().is_empty());
 }
 
+/// The watcher's restart of the hub's service was refused: the hub, still running its build, says that plainly, not
+/// that it was rolled back or didn't come up.
+#[tokio::test]
+async fn a_refused_restart_of_the_hubs_service_says_so() {
+    let home = tempfile::tempdir().unwrap();
+    let fake = Arc::new(Fake::new(home.path(), b"new").node(
+        "builder",
+        OLD,
+        true,
+        true,
+        Some(Answer::BackOn(NEW)),
+    ));
+    let updates = area(home.path(), &fake);
+    updates.start(None).unwrap();
+    until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
+    let plan = fake.plans.lock().unwrap()[0].clone();
+    let verdict = crate::update::finish::finish(&plan, &FakeRunner::refusing()).await;
+    fs::write(&plan.verdict, serde_json::to_vec(&verdict).unwrap()).unwrap();
+
+    let run = until(&updates, |r| r.finished_at.is_some()).await;
+    assert_eq!(
+        state(&run, None),
+        (UpdateState::Failed, Some(UpdateStage::Restart))
+    );
+    let said = by_machine(&run)[&None]
+        .message
+        .as_ref()
+        .unwrap()
+        .to_string();
+    assert!(
+        said.starts_with(
+            "restarting fleetd-hub.service exited with exit status: 1, so it never restarted onto"
+        ),
+        "{said}"
+    );
+    assert!(said.ends_with("its previous binary was put back"), "{said}");
+    assert_eq!(fs::read(&fake.exe).unwrap(), b"old");
+    assert_eq!(state(&run, Some("builder")).0, UpdateState::Skipped);
+    assert!(fake.asked.lock().unwrap().is_empty());
+}
+
 #[tokio::test]
 async fn a_second_update_while_one_runs_is_the_same_one() {
     let home = tempfile::tempdir().unwrap();
@@ -423,7 +478,6 @@ mod on_a_real_hub {
     use super::*;
     use crate::hub::api::{Caller, Hub, HubConfig};
     use crate::hub::leads::records::StoredLead;
-    use crate::hub::store::test_clock::ManualClock;
     use crate::hub::store::{HubDb, StoredThread};
     use fleetd_contracts::auth::KeyKind;
 
