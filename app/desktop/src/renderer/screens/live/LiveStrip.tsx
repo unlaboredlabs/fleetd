@@ -1,5 +1,6 @@
-// The live strip, docked to the top of the lead chat's composer: one slim row, a dot per agent (at work they breathe,
-// waiting on you they take the attention color, queued they are hollow), "3 agents working · 1 needs you" in a quiet
+// The live strip, docked to the top of the lead chat's composer: one slim row, a dot per agent (at work in their
+// role's tint, waiting on you in the attention color, queued hollow; each pulses once as it appears or changes, then
+// holds still), "3 agents working · 1 needs you" in a quiet
 // voice, and a now-line saying what the busiest agent is doing. A click on the row (or Enter on it) opens the lanes
 // above it, one row per agent, and a second click, a press outside it or Escape closes them; an agent (its row, or
 // the now-line) opens in the panel's agents, where its live work and steer box are. Nothing is drawn when no agent is
@@ -75,12 +76,13 @@ function Dots({ lanes }: { lanes: readonly StripAgent[] }) {
   const more = lanes.length - MAX_DOTS;
   return (
     <span className={s.dots} aria-hidden>
-      {lanes.slice(0, MAX_DOTS).map((a, i) => (
+      {lanes.slice(0, MAX_DOTS).map((a) => (
         <span
-          key={a.laneId}
+          // Keyed by state too, so a change of state draws the dot anew and it pulses once (live.module.css).
+          key={`${a.laneId}:${a.state}`}
           className={cx(s.dot, s[a.state])}
-          // At work, a dot takes its role's tint, and breathes a little out of step with its neighbours.
-          style={a.state === "working" ? { color: roleTint(a.role), animationDelay: `${-((i * 700) % 2800)}ms` } : undefined}
+          // At work, a dot takes its role's tint.
+          style={a.state === "working" ? { color: roleTint(a.role) } : undefined}
         />
       ))}
       {more > 0 ? <span className={s.more}>+{more}</span> : null}
