@@ -571,6 +571,11 @@ impl Broker {
     }
 
     /// A live session by its id.
+    /// Whether a session of this id is live here.
+    pub fn holds(&self, id: &BrowserSessionId) -> bool {
+        self.by_id(id).is_some()
+    }
+
     fn by_id(&self, id: &BrowserSessionId) -> Option<Arc<Session>> {
         lock(&self.sessions).values().find(|s| s.id == *id).cloned()
     }

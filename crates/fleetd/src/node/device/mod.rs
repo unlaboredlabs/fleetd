@@ -9,6 +9,7 @@
 //! messages to call.
 pub mod agent_device;
 pub mod emulator;
+pub mod live;
 pub mod scrcpy;
 pub mod sdk;
 pub mod session;
@@ -549,6 +550,16 @@ impl Devices {
         self.by_id(session).map(|s| s.frames())
     }
 
+    /// Whether a session of this id is live here.
+    pub fn holds(&self, session: &str) -> bool {
+        self.by_id(session).is_some()
+    }
+
+    /// Who drives a live session; None when no such session is live.
+    pub fn control(&self, session: &str) -> Option<BrowserControl> {
+        self.by_id(session).map(|s| s.control())
+    }
+
     /// A person's input to a live session they have control of; false when it didn't go.
     pub fn input(&self, session: &str, input: &Input) -> bool {
         self.by_id(session).is_some_and(|s| s.input(input))
@@ -701,6 +712,8 @@ async fn housekeeping(devices: std::sync::Weak<Devices>) {
 pub struct Router {
     pub browser: Option<Arc<Broker>>,
     pub devices: Option<Arc<Devices>>,
+    /// Android sessions' live view (live.rs).
+    pub live: live::DeviceLive,
 }
 
 impl Router {

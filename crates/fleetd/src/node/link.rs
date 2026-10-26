@@ -98,7 +98,7 @@ pub struct RunNodeOptions {
     pub cmd_roots: Vec<String>,
     pub secrets: Option<NodeSecrets>,
     /// Browser sessions' broker, when this machine runs them: live view and takeover reach it over the link.
-    pub browser: Option<Arc<crate::node::browser::Broker>>,
+    pub browser: Option<Arc<crate::node::device::Router>>,
 }
 
 /// Everything one link needs, shared with the tasks it starts.
@@ -110,7 +110,7 @@ struct Shared {
     lead_calls: LeadRelay,
     cmd_roots: Vec<String>,
     secrets: Option<NodeSecrets>,
-    browser: Option<Arc<crate::node::browser::Broker>>,
+    browser: Option<Arc<crate::node::device::Router>>,
 }
 
 impl Shared {
@@ -427,8 +427,8 @@ async fn run_link_once(
             frame @ (HubToNode::BrowserWatch(_)
             | HubToNode::BrowserInput(_)
             | HubToNode::BrowserControl(_)) => {
-                if let Some(broker) = &shared.browser {
-                    broker.from_hub(frame, &frames);
+                if let Some(router) = &shared.browser {
+                    router.from_hub(frame, &frames);
                 }
             }
             HubToNode::LeadResult(result) => shared.lead_calls.resolve(result),

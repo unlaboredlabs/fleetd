@@ -249,6 +249,7 @@ async fn run_node(
         let router = Arc::new(device::Router {
             browser: broker.clone(),
             devices,
+            live: Default::default(),
         });
         node_sessions.set_browser(router.clone());
         router
@@ -300,7 +301,7 @@ async fn run_node(
             box_key,
             home: home.to_path_buf(),
         }),
-        browser: broker.clone(),
+        browser: sessions_router.clone(),
     };
     let enrolled = async {
         if !exit_when_enrolled || enrolled_rx.await.is_err() {
