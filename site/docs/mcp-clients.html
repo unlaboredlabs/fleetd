@@ -340,6 +340,11 @@ as stopping a project, answering an approval or entering a secret, need one.</p>
 <td>read</td>
 </tr>
 <tr>
+<td><code dir="auto">events_list {projectRef, before?, types?, hubWide?, limit?}</code></td>
+<td>A project’s events, newest first, back through the last 30 days: agents started and finished, reviews, merges, requests. <code dir="auto">hubWide</code> adds the hub’s own, such as a device paired.</td>
+<td>read</td>
+</tr>
+<tr>
 <td><code dir="auto">workstream_list</code>, <code dir="auto">order_get</code>, <code dir="auto">thread_tail</code>, <code dir="auto">fleetd_status</code></td>
 <td>Lower-level views of the lead’s work.</td>
 <td>read</td>
