@@ -1,6 +1,6 @@
 /* The panel's agents: the project's agents under their orders, or one's work in their place. Calm and dense like the
-   sidebar: hierarchy from weight, grey and space; colour only for state and role; only a working dot moves, and not
-   when motion is reduced. */
+   sidebar: hierarchy from weight, grey and space; colour only for state and role; only a working dot moves, briefly,
+   and not when motion is reduced. */
 
 .pane {
   flex: 1;
@@ -137,8 +137,9 @@
   line-height: var(--leading-xs);
 }
 
-/* The state dot: working is the success colour and breathes, waiting amber, failed danger, done quiet, queued an
-   open ring. */
+/* The state dot: working is the success colour, waiting amber, failed danger, done quiet, queued an open ring. A
+   working dot breathes twice as it appears or starts working, then rests: never continuous, as a running animation
+   keeps every frame drawing and slows what a key press shows. */
 .state {
   position: relative;
   grid-column: 1;
@@ -175,7 +176,12 @@
   inset: 0;
   border-radius: inherit;
   background: currentColor;
-  animation: breathe 2.4s var(--ease-out) infinite;
+  opacity: 0;
+  animation: breathe 2.4s var(--ease-out) 2;
+}
+/* The head's counts: a dot each, still. */
+.count .state::after {
+  animation: none;
 }
 @keyframes breathe {
   from {
@@ -190,7 +196,6 @@
 @media (prefers-reduced-motion: reduce) {
   .state[data-state="working"]::after {
     animation: none;
-    opacity: 0;
   }
 }
 

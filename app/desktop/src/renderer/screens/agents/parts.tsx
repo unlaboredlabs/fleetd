@@ -6,7 +6,7 @@ import { MiddleCut } from "../live/parts";
 import { agentState, STATE_WORD, workPlace } from "./model";
 import s from "./agents.module.css";
 
-/** The agent's state as a dot: working breathes (still when motion is reduced), waiting is amber, failed is danger. */
+/** The agent's state as a dot: working breathes as it starts (still when motion is reduced), waiting is amber, failed is danger. */
 export function StateDot({ status }: { status: AgentRow["status"] }) {
   return <span className={s.state} data-state={agentState(status)} role="img" aria-label={STATE_WORD[status]} />;
 }
