@@ -15,7 +15,7 @@ pub mod session;
 pub mod upload;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
@@ -124,6 +124,11 @@ pub struct Broker {
     uploading: Mutex<HashSet<PathBuf>>,
     /// Reports for the hub, sent in order by one task.
     reports: tokio::sync::mpsc::UnboundedSender<Report>,
+    /// Agent sessions whose browser the hub placed on another machine: the proxy pipes their driver to the hub's
+    /// relay at this URL instead (node/relay.rs).
+    remotes: Mutex<HashMap<String, String>>,
+    /// One install of agent-browser at a time: the first session's, or a session on another machine's.
+    driver_install: tokio::sync::Mutex<()>,
     _loop: Mutex<Option<AbortOnDrop>>,
 }
 
@@ -275,6 +280,8 @@ impl Broker {
                 });
                 tx
             },
+            remotes: Mutex::default(),
+            driver_install: tokio::sync::Mutex::const_new(()),
             _loop: Mutex::default(),
             config,
         });
@@ -290,8 +297,9 @@ impl Broker {
     /// Installs what is missing (blocking work, off the async threads), then makes the pool.
     async fn install(&self, chrome: bool, agent_browser: bool) {
         let home = self.home.clone();
+        let _one = self.driver_install.lock().await;
         let installed = tokio::task::spawn_blocking(move || {
-            if agent_browser {
+            if agent_browser && agent_browser::find(&home).is_none() {
                 agent_browser::install(&home)?;
             }
             if chrome {
@@ -370,6 +378,41 @@ impl Broker {
     /// The live session of an agent session.
     pub fn live(&self, thread: &str) -> Option<Arc<Session>> {
         lock(&self.sessions).get(thread).cloned()
+    }
+
+    /// An agent session's browser runs on another machine (Some: the hub's relay for it), or no longer does (None).
+    /// Its driver's connections to the proxy then go there, under the same agent-browser policy as a session here.
+    pub fn set_remote(&self, thread: &str, relay: Option<String>) {
+        let mut remotes = lock(&self.remotes);
+        match relay {
+            Some(url) => {
+                if let Err(e) = agent_browser::write_policy(&self.home, thread, false) {
+                    tracing::warn!(error = %e, "agent-browser policy not written");
+                }
+                remotes.insert(thread.to_owned(), url);
+            }
+            None => {
+                remotes.remove(thread);
+            }
+        }
+    }
+
+    /// agent-browser, for a session whose browser runs on another machine: this machine's agent drives it from here.
+    /// Installs it (and not Chrome) when it is missing, as the first session here would.
+    pub async fn ensure_driver(&self) -> Result<(), String> {
+        let _one = self.driver_install.lock().await;
+        if agent_browser::find(&self.home).is_some() {
+            return Ok(());
+        }
+        let home = self.home.clone();
+        tokio::task::spawn_blocking(move || agent_browser::install(&home).map(|_| ()))
+            .await
+            .unwrap_or_else(|e| Err(e.to_string()))
+    }
+
+    /// The hub's relay for an agent session whose browser runs on another machine.
+    pub fn remote(&self, thread: &str) -> Option<String> {
+        lock(&self.remotes).get(thread).cloned()
     }
 
     /// The proxy URL of an agent session, its `AGENT_BROWSER_CDP`.

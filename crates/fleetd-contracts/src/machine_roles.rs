@@ -1,12 +1,17 @@
 //! Machine roles (W46): each machine runs agents, sessions (browsers and devices), or both, with a session cap of its
 //! own, separate from its agent slots. Each node reports what it can host ([`HostCheck`], with its heartbeat's load),
 //! and the hub places every session an agent starts: on the agent's own machine when it hosts sessions, can run this
-//! kind and has a free session slot, else a plain refusal. Placing on another machine waits for the hub's relay of
-//! what a session streams; the hosting path below is for it.
+//! kind and has a free session slot, else (when the hub places sessions elsewhere) on another machine that can, else a
+//! plain refusal.
 //!
 //! A session placed elsewhere is hosted by the runner's node under a [`HostKey`] the hub mints: the agent's node
 //! relays the agent's session tools to the hub ([`SessionRouteCall`]), which sends them on to the runner
 //! ([`SessionHostFrame`]); the runner reports the session in the agent's name.
+//!
+//! What the session streams (CDP for a browser; later a device's screen) goes through a relay on the hub: the agent's
+//! node connects to `/relay/<token>` with the session's [`RelayToken`], which only the hub and that node hold, and the
+//! hub asks the runner's node to connect a channel of its own ([`RelayDialFrame`]) to the session's local end. The
+//! hub pipes the two, frame for frame, and logs neither frames nor payloads.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -150,6 +155,56 @@ pub struct SessionRouteResult {
     pub runner: MachineId,
     pub here: bool,
     pub answer: Option<BrowserResultFrame>,
+    /// The agent's side of the session's relay on the hub, in the answer to the start that placed it elsewhere: its
+    /// node connects the agent's driver to `/relay/<relay>`. Held by that node alone; never given to the agent.
+    pub relay: Option<RelayToken>,
+}
+
+brand!(
+    /// 64 hex digits: one side of a session's relay on the hub. The hub keeps only its SHA-256.
+    RelayToken, name = "RelayToken", pattern = r"^[0-9a-f]{64}$"
+);
+
+/// Where a relay's paths start on the hub.
+pub const RELAY_PATH: &str = "/relay/";
+
+/// What a relay carries.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
+pub enum RelayStream {
+    /// A browser's DevTools protocol: the session's CDP proxy on the runner.
+    #[default]
+    Cdp,
+}
+
+/// Hub -> the runner's node: an agent's driver connected to a session it hosts; connect a channel to `/relay/<token>`
+/// (good once, for seconds) and pipe it to the session's `stream`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RelayDialFrame {
+    pub host_key: HostKey,
+    pub token: RelayToken,
+    #[serde(default)]
+    pub stream: RelayStream,
+}
+
+/// A finished command of the agent's that drove a session hosted elsewhere (`agent-browser ...`), which its node hands
+/// to the hub for the runner's recording: a line in the action log, and the page after it in the trace. Masked with
+/// the agent's session's secrets before it leaves the agent's machine.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionStepCall {
+    pub thread_id: crate::ids::ThreadId,
+    /// Boxed: every lead call frame is as large as its largest call.
+    pub item: Box<crate::sessions::ThreadItem>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionStepResult {
+    /// It went to the runner: the agent's session has one hosted elsewhere.
+    pub forwarded: bool,
 }
 
 // ---- hub -> the runner's node, and back ----
@@ -162,6 +217,14 @@ pub struct SessionHostFrame {
     pub id: NonEmpty,
     pub host_key: HostKey,
     pub frame: BrowserCallFrame,
+}
+
+/// Hub -> the runner's node: a step of the agent's for the recording of the session it hosts under `hostKey`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionStepFrame {
+    pub host_key: HostKey,
+    pub item: crate::sessions::ThreadItem,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]

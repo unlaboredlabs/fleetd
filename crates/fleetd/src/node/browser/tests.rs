@@ -39,7 +39,7 @@ fn playwright_cache() -> PathBuf {
     crate::node::util::home_dir().join(".cache/ms-playwright")
 }
 
-fn chrome() -> Option<PathBuf> {
+pub(crate) fn chrome() -> Option<PathBuf> {
     std::env::var_os("FLEETD_TEST_CHROME")
         .map(PathBuf::from)
         .or_else(|| super::chrome::find_chrome(&playwright_cache()))
@@ -47,7 +47,7 @@ fn chrome() -> Option<PathBuf> {
         .or_else(|| on_path("chromium"))
 }
 
-fn ffmpeg() -> Option<PathBuf> {
+pub(crate) fn ffmpeg() -> Option<PathBuf> {
     std::env::var_os("FLEETD_TEST_FFMPEG")
         .map(PathBuf::from)
         .or_else(|| super::chrome::find_ffmpeg(&playwright_cache()))
@@ -108,7 +108,7 @@ fn hub(home: &Path) -> Arc<TestHub> {
 }
 
 /// A local site: a login form at /, and /login, which greets whoever signed in.
-async fn site() -> (String, AbortOnDrop) {
+pub(crate) async fn site() -> (String, AbortOnDrop) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
     let serving = tokio::spawn(async move {
@@ -241,7 +241,7 @@ async fn call(broker: &Arc<Broker>, call: Value) -> Value {
 }
 
 /// A raw CDP client, as agent-browser is one, on the session's proxy URL.
-struct Driver {
+pub(crate) struct Driver {
     ws: tokio_tungstenite::WebSocketStream<
         tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
     >,
@@ -251,7 +251,7 @@ struct Driver {
 }
 
 impl Driver {
-    async fn connect(url: &str) -> Result<Self, String> {
+    pub(crate) async fn connect(url: &str) -> Result<Self, String> {
         let (ws, _) = tokio_tungstenite::connect_async(url)
             .await
             .map_err(|e| e.to_string())?;
@@ -263,7 +263,12 @@ impl Driver {
     }
 
     /// The whole answer: `result` or `error`.
-    async fn send(&mut self, session: Option<&str>, method: &str, params: Value) -> Value {
+    pub(crate) async fn send(
+        &mut self,
+        session: Option<&str>,
+        method: &str,
+        params: Value,
+    ) -> Value {
         self.next += 1;
         let mut message = json!({ "id": self.next, "method": method, "params": params });
         if let Some(session) = session {
@@ -288,13 +293,13 @@ impl Driver {
         }
     }
 
-    async fn ok(&mut self, session: Option<&str>, method: &str, params: Value) -> Value {
+    pub(crate) async fn ok(&mut self, session: Option<&str>, method: &str, params: Value) -> Value {
         let answer = self.send(session, method, params).await;
         assert!(answer.get("error").is_none(), "{method}: {answer}");
         answer["result"].clone()
     }
 
-    async fn eval(&mut self, page: &str, expression: &str) -> Value {
+    pub(crate) async fn eval(&mut self, page: &str, expression: &str) -> Value {
         let result = self
             .ok(
                 Some(page),
@@ -306,7 +311,7 @@ impl Driver {
     }
 
     /// Attaches to the page as a driver does, and returns its session.
-    async fn page(&mut self) -> String {
+    pub(crate) async fn page(&mut self) -> String {
         let targets = self.ok(None, "Target.getTargets", json!({})).await;
         let page = targets["targetInfos"]
             .as_array()
@@ -327,7 +332,7 @@ impl Driver {
 
     /// Waits until `expression` is true on the page. A page between documents (a submit navigating) answers with an
     /// error meanwhile, which only means not yet.
-    async fn wait_for(&mut self, page: &str, expression: &str) {
+    pub(crate) async fn wait_for(&mut self, page: &str, expression: &str) {
         let deadline = Instant::now() + Duration::from_secs(15);
         loop {
             let answer = self
@@ -349,7 +354,7 @@ impl Driver {
     }
 }
 
-fn command_item(command: &str, output: &str) -> ThreadItem {
+pub(crate) fn command_item(command: &str, output: &str) -> ThreadItem {
     serde_json::from_value(json!({
         "id": "toolu_1", "status": "completed", "title": command,
         "startedAt": "2026-10-26T10:00:00.000Z", "completedAt": "2026-10-26T10:00:00.120Z",

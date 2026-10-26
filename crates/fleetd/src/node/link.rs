@@ -189,6 +189,8 @@ fn tag(frame: &HubToNode) -> &'static str {
         HubToNode::SessionHost(_) => "session_host",
         HubToNode::PreviewRun(_) => "preview_run",
         HubToNode::PreviewStop(_) => "preview_stop",
+        HubToNode::RelayDial(_) => "relay_dial",
+        HubToNode::SessionStep(_) => "session_step",
     }
 }
 
@@ -491,24 +493,20 @@ async fn run_link_once(
                 });
             }
             // Off the link's task set too: a browser that started is the broker's, and ends with its session.
-            HubToNode::SessionHost(host) => {
-                let broker = shared.browser.clone();
-                let tx = tx.clone();
+            // Sessions hosted here for agents on other machines. Off the link's task set: a browser that started is
+            // the broker's, and a relay channel lives as long as the agent's driver keeps it open.
+            frame @ (HubToNode::SessionHost(_)
+            | HubToNode::RelayDial(_)
+            | HubToNode::SessionStep(_)) => {
+                let (broker, hub, tx) = (
+                    shared.browser.clone(),
+                    shared.settings.hub.clone(),
+                    tx.clone(),
+                );
                 tokio::spawn(async move {
-                    let frame = match broker {
-                        Some(broker) => broker.handle(host.host_key.to_string(), host.frame).await,
-                        None => serde_json::from_value(serde_json::json!({
-                            "id": host.frame.id,
-                            "error": fleetd_contracts::mcp::McpToolError::new(
-                                fleetd_contracts::mcp::ErrorCode::Invalid,
-                                "this machine hosts no sessions",
-                            ),
-                        }))
-                        .expect("an error frame"),
-                    };
-                    let result =
-                        fleetd_contracts::machine_roles::SessionHostResult { id: host.id, frame };
-                    let _ = tx.send(to_json(&NodeToHub::SessionHostResult(result)));
+                    if let Some(result) = super::session_route::host(broker, &hub, frame).await {
+                        let _ = tx.send(to_json(&NodeToHub::SessionHostResult(result)));
+                    }
                 });
             }
             HubToNode::SpansAck(ack) => shared
