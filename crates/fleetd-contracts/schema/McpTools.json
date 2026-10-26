@@ -3394,6 +3394,64 @@
       "minimum": 0,
       "type": "integer"
     },
+    "EventsListInput": {
+      "properties": {
+        "before": {
+          "$ref": "#/$defs/EventSeq"
+        },
+        "hubWide": {
+          "description": "Also the hub's own events, which name no machine or project (a device paired).",
+          "type": "boolean"
+        },
+        "limit": {
+          "default": 50,
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "types": {
+          "description": "Only these types; absent: every type.",
+          "items": {
+            "$ref": "#/$defs/HubEventType"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "projectRef"
+      ],
+      "type": "object"
+    },
+    "EventsListOutput": {
+      "properties": {
+        "events": {
+          "description": "Newest first.",
+          "items": {
+            "$ref": "#/$defs/HubEvent"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "more": {
+          "description": "More events before the last one of this page.",
+          "type": "boolean"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "events",
+        "more"
+      ],
+      "type": "object"
+    },
     "EventsWaitInput": {
       "properties": {
         "cursor": {
@@ -5058,6 +5116,12 @@
         "doctor_list.output": {
           "$ref": "#/$defs/DoctorListOutput"
         },
+        "events_list.input": {
+          "$ref": "#/$defs/EventsListInput"
+        },
+        "events_list.output": {
+          "$ref": "#/$defs/EventsListOutput"
+        },
         "events_wait.input": {
           "$ref": "#/$defs/EventsWaitInput"
         },
@@ -5402,6 +5466,8 @@
         "doctor_fix.output",
         "doctor_list.input",
         "doctor_list.output",
+        "events_list.input",
+        "events_list.output",
         "events_wait.input",
         "events_wait.output",
         "fleetd_status.input",

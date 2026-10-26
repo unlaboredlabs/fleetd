@@ -213,3 +213,119 @@ async fn fleetd_status_says_when_to_notify() {
     assert_eq!(status["notify"]["coalesceSec"], 1200);
     assert!(status["notify"]["quiet"].is_array(), "{status}");
 }
+
+#[tokio::test]
+async fn events_list_pages_back_through_one_projects_events() {
+    use crate::hub::store::NewEvent;
+    use fleetd_contracts::events::HubEventType as T;
+    let (hub, _home) = hub();
+    let append = |t: T, machine: &str, project: &str, summary: &str| {
+        hub.events
+            .append(NewEvent {
+                at: AT.into(),
+                r#type: t,
+                machine_id: Some(MachineId::unchecked(machine)),
+                project_id: Some(ProjectId::unchecked(project)),
+                thread_id: None,
+                summary: summary.into(),
+                data: None,
+                attention: None,
+            })
+            .unwrap()
+            .seq
+            .get()
+    };
+    append(T::TaskStarted, "devbox", "app", "T1 started");
+    append(
+        T::TaskStarted,
+        "devbox",
+        "site",
+        "T2 started, another project",
+    );
+    append(
+        T::TaskStarted,
+        "laptop",
+        "app",
+        "T3 started, the same id on another machine",
+    );
+    append(T::ChatMessage, "devbox", "app", "a chat line");
+    append(T::ReviewVerdict, "devbox", "app", "T1 review verdict");
+    let newest = append(T::TaskCompleted, "devbox", "app", "T1 completed");
+    let summaries = |page: &Value| -> Vec<String> {
+        page["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["summary"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let app = json!({ "machineId": "devbox", "projectId": "app" });
+
+    let first = call(
+        &hub,
+        "events_list",
+        json!({ "projectRef": app, "limit": 2 }),
+    )
+    .await;
+    assert_eq!(summaries(&first), ["T1 completed", "T1 review verdict"]);
+    assert_eq!(first["more"], true);
+    let before = first["events"][1]["seq"].clone();
+    let rest = call(
+        &hub,
+        "events_list",
+        json!({ "projectRef": app, "limit": 2, "before": before }),
+    )
+    .await;
+    assert_eq!(summaries(&rest), ["a chat line", "T1 started"]);
+    assert_eq!(rest["more"], false);
+
+    let typed = call(
+        &hub,
+        "events_list",
+        json!({ "projectRef": app, "types": ["task.started", "task.completed"] }),
+    )
+    .await;
+    assert_eq!(summaries(&typed), ["T1 completed", "T1 started"]);
+    assert_eq!(typed["events"][0]["seq"], newest);
+
+    hub.events
+        .append(NewEvent {
+            at: AT.into(),
+            r#type: T::KeyPaired,
+            machine_id: None,
+            project_id: None,
+            thread_id: None,
+            summary: "phone paired with the hub".into(),
+            data: None,
+            attention: None,
+        })
+        .unwrap();
+    let paired = json!({ "projectRef": app, "types": ["key.paired", "task.completed"] });
+    let own = call(&hub, "events_list", paired.clone()).await;
+    assert_eq!(summaries(&own), ["T1 completed"]);
+    let mut wide = paired;
+    wide["hubWide"] = json!(true);
+    let wide = call(&hub, "events_list", wide).await;
+    assert_eq!(
+        summaries(&wide),
+        ["phone paired with the hub", "T1 completed"]
+    );
+
+    let elsewhere = serde_json::from_value::<Caller>(json!({
+        "keyId": "k2", "name": "laptop only", "prefix": "fld_ghijkl", "createdAt": AT,
+        "grants": [{ "role": "read", "machines": ["laptop"] }],
+    }))
+    .unwrap();
+    assert!(
+        registry()
+            .call(
+                &hub,
+                &elsewhere,
+                "events_list",
+                json!({ "projectRef": app })
+            )
+            .await
+            .is_err(),
+        "a key without devbox reads none of its events"
+    );
+}

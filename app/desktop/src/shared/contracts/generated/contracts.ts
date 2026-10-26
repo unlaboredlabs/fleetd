@@ -1220,6 +1220,25 @@ export type ErrorCode = "machine_offline" | "not_found" | "forbidden" | "invalid
 
 export type EventSeq = number;
 
+export type EventsListInput = {
+  before?: EventSeq;
+  /** Also the hub's own events, which name no machine or project (a device paired). */
+  hubWide?: boolean;
+  limit?: number;
+  projectRef: ProjectRef;
+  /** Only these types; absent: every type. */
+  types?: HubEventType[];
+};
+
+export type EventsListOutput = {
+  /** Newest first. */
+  events: HubEvent[];
+  /** More events before the last one of this page. */
+  more: boolean;
+  next?: string;
+  truncated?: boolean;
+};
+
 export type EventsWaitInput = {
   /** Absent means start at the current end. */
   cursor?: EventSeq;
@@ -4660,6 +4679,7 @@ export interface ToolMap {
   decisions_search: { input: DecisionsSearchInput; output: DecisionsSearchOutput };
   doctor_fix: { input: DoctorFixInput; output: DoctorFixOutput };
   doctor_list: { input: DoctorListInput; output: DoctorListOutput };
+  events_list: { input: EventsListInput; output: EventsListOutput };
   events_wait: { input: EventsWaitInput; output: EventsWaitOutput };
   fleetd_status: { input: FleetdStatusInput; output: FleetdStatusOutput };
   hub_info: { input: HubInfoInput; output: HubInfoOutput };

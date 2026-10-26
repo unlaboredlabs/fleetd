@@ -1,7 +1,7 @@
 use super::{HubDb, StoreError, now_ms};
 use crate::clock::Clock;
 use fleetd_contracts::events::{Attention, HubEvent, HubEventType};
-use fleetd_contracts::ids::{EventSeq, MachineId, ProjectId, ThreadId, Timestamp};
+use fleetd_contracts::ids::{EventSeq, MachineId, ProjectId, ProjectRef, ThreadId, Timestamp};
 use fleetd_contracts::prim::{Count, Text};
 use rusqlite::{OptionalExtension, named_params, params};
 use serde::{Deserialize, Serialize};
@@ -219,6 +219,49 @@ impl EventLog {
                 cursor,
                 more,
             })
+        })
+    }
+
+    /// One project's events before `before` (the newest without it), newest first, and whether older ones remain.
+    /// `hub_wide` adds the events that name no machine or project.
+    pub fn project_page(
+        &self,
+        project: &ProjectRef,
+        before: Option<i64>,
+        types: Option<&[HubEventType]>,
+        hub_wide: bool,
+        limit: usize,
+    ) -> Result<(Vec<HubEvent>, bool), StoreError> {
+        let types = types.map(serde_json::to_string).transpose()?;
+        self.db.with(|conn| {
+            let mut stmt = conn.prepare_cached(
+                "SELECT seq, data FROM events
+       WHERE ($before IS NULL OR seq < $before)
+         AND ($types IS NULL OR type IN (SELECT value FROM json_each($types)))
+         AND ((machine_id = $machine AND json_extract(data, '$.projectId') = $project)
+           OR ($hub_wide AND machine_id IS NULL AND json_extract(data, '$.projectId') IS NULL))
+       ORDER BY seq DESC LIMIT $limit",
+            )?;
+            let rows = stmt.query_map(
+                named_params! {
+                    "$before": before,
+                    "$types": types,
+                    "$machine": project.machine_id.as_str(),
+                    "$project": project.project_id.as_str(),
+                    "$hub_wide": hub_wide,
+                    "$limit": (limit + 1) as i64,
+                },
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+            )?;
+            let mut events = Vec::with_capacity(limit);
+            for row in rows {
+                let (seq, data) = row?;
+                if events.len() == limit {
+                    return Ok((events, true));
+                }
+                events.push(serde_json::from_str::<NewEvent>(&data)?.with_seq(seq));
+            }
+            Ok((events, false))
         })
     }
 

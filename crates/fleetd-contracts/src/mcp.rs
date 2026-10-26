@@ -200,6 +200,25 @@ output!(EventsWaitOutput {
     more: bool,
 });
 
+// events_list: one project's events, newest first, a page at a time back through the log's 30 days (the app's
+// Activity). `before: s` pages back from `s`; events_wait follows what comes next.
+input!(EventsListInput {
+    project_ref: ProjectRef,
+    before: Option<EventSeq>,
+    /// Only these types; absent: every type.
+    types: Option<Vec<HubEventType>>,
+    /// Also the hub's own events, which name no machine or project (a device paired).
+    hub_wide: Option<bool>,
+    #[serde(default)]
+    limit: IntOr<1, 100, 50>,
+});
+output!(EventsListOutput {
+    /// Newest first.
+    events: List<HubEvent, 0, 100>,
+    /// More events before the last one of this page.
+    more: bool,
+});
+
 fn default_true() -> bool {
     true
 }
@@ -1472,6 +1491,7 @@ tools! {
     thread_tail => ThreadTail, Read, ThreadTailInput, ThreadTailOutput;
     actions_list => ActionsList, Read, ActionsListInput, ActionsListOutput;
     events_wait => EventsWait, Read, EventsWaitInput, EventsWaitOutput;
+    events_list => EventsList, Read, EventsListInput, EventsListOutput;
     project_discover => ProjectDiscover, Read, ProjectDiscoverInput, ProjectDiscoverOutput;
     project_add => ProjectAdd, Operate, ProjectAddInput, ProjectAddOutput;
     project_remove => ProjectRemove, Operate, ProjectRemoveInput, ProjectRemoveOutput;
