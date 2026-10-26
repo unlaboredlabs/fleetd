@@ -5,6 +5,7 @@
 //! the retention (`browser_settings`): each one after its days, and a project's oldest while its recordings together
 //! are over its size.
 pub mod calls;
+pub mod live;
 pub mod tools;
 
 #[cfg(test)]
@@ -108,6 +109,33 @@ pub fn put_on(c: &Connection, s: &BrowserSession, started_ms: i64) -> Result<(),
     Ok(())
 }
 
+/// Writes a stored session back after a change, and tells the app.
+pub fn save(hub: &Hub, s: &BrowserSession) -> Result<(), StoreError> {
+    let started_ms = crate::hub::store::parse_ms(s.started_at.as_str()).unwrap_or_default();
+    hub.db.transaction(|c| put_on(c, s, started_ms))?;
+    announce(hub, s, now_ms(hub.clock.as_ref()))
+}
+
+/// A project's live sessions whose agent asked for a person (`request_takeover`) and has no one yet.
+pub fn waiting(db: &HubDb, r: &ProjectRef) -> Result<Vec<BrowserSession>, StoreError> {
+    db.with(|c| {
+        let mut stmt = c.prepare(
+            "SELECT data FROM browser_sessions WHERE machine_id = ?1 AND project_id = ?2 AND state = 'live'",
+        )?;
+        let rows = stmt.query_map(params![r.machine_id.as_str(), r.project_id.as_str()], |row| {
+            row.get::<_, String>(0)
+        })?;
+        let mut out = Vec::new();
+        for data in rows {
+            let s: BrowserSession = serde_json::from_str(&data?)?;
+            if s.takeover_reason.is_some() {
+                out.push(s);
+            }
+        }
+        Ok(out)
+    })
+}
+
 /// A project's sessions, newest first.
 pub fn list(db: &HubDb, r: &ProjectRef, limit: usize) -> Result<Vec<BrowserSession>, StoreError> {
     db.with(|c| {
@@ -165,15 +193,28 @@ fn expire(hub: &Hub, mut s: BrowserSession, started_ms: i64, now: i64) -> Result
     announce(hub, &s, now)
 }
 
+/// A session still live or uploading this long after it started is a partial upload its node never finished (it
+/// went, or lost the files): retention treats it as a recording.
+pub const STALE_MS: i64 = DAY_MS;
+
+/// The bytes a session holds on the hub's disk now, whatever its row says.
+fn on_disk(hub: &Hub, id: &BrowserSessionId) -> i64 {
+    RecordingFile::ALL
+        .iter()
+        .map(|f| stored_bytes(hub, id, *f) as i64)
+        .sum()
+}
+
 /// The recordings past the retention, oldest first: those older than its days, then each project's oldest while its
-/// recordings together are over its size. Returns how many it expired.
+/// recordings together are over its size. A partial upload counts toward the size by what it holds on disk, and goes
+/// once it is stale ([`STALE_MS`]). Returns how many it expired.
 pub fn prune(hub: &Hub) -> Result<usize, StoreError> {
     let now = now_ms(hub.clock.as_ref());
     let (retention, rows) = hub.db.with(|c| {
         let retention = retention_on(c)?;
         let mut stmt = c.prepare(
             "SELECT machine_id, project_id, started_ms, bytes, data FROM browser_sessions
-             WHERE state = 'recorded' ORDER BY started_ms ASC",
+             WHERE state IN ('recorded', 'uploading', 'live') ORDER BY started_ms ASC",
         )?;
         let rows = stmt
             .query_map([], |r| {
@@ -190,20 +231,33 @@ pub fn prune(hub: &Hub) -> Result<usize, StoreError> {
     })?;
     let cutoff = now - retention.retention_days.get() * DAY_MS;
     let max_bytes = retention.max_gb_per_project.get() * GB;
+    let mut sessions = Vec::new();
     let mut totals: std::collections::HashMap<(String, String), i64> = Default::default();
-    for (machine, project, _, bytes, _) in &rows {
+    for (machine, project, started_ms, bytes, data) in rows {
+        let session: BrowserSession = serde_json::from_str(&data)?;
+        let partial = session.state != BrowserSessionState::Recorded;
+        let bytes = if partial {
+            on_disk(hub, &session.session_id)
+        } else {
+            bytes
+        };
         *totals
             .entry((machine.clone(), project.clone()))
             .or_default() += bytes;
+        sessions.push((machine, project, started_ms, bytes, partial, session));
     }
     let mut expired = 0;
-    for (machine, project, started_ms, bytes, data) in rows {
+    for (machine, project, started_ms, bytes, partial, session) in sessions {
+        // An upload still going is never cut short.
+        if partial && started_ms >= now - STALE_MS {
+            continue;
+        }
         let total = totals.entry((machine, project)).or_default();
         if started_ms >= cutoff && *total <= max_bytes {
             continue;
         }
         *total -= bytes;
-        expire(hub, serde_json::from_str(&data)?, started_ms, now)?;
+        expire(hub, session, started_ms, now)?;
         expired += 1;
     }
     Ok(expired)

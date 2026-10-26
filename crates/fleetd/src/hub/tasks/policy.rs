@@ -25,7 +25,11 @@ pub const WORKER_OPS: &[&str] = &[
     "decisions_search",
 ];
 /// The calls a task's node makes for it: its browser sessions (node/browser).
-pub const NODE_OPS: &[&str] = &["browser_session", "browser_recording_part"];
+pub const NODE_OPS: &[&str] = &[
+    "browser_session",
+    "browser_recording_part",
+    "browser_takeover",
+];
 /// The calls that start an agent.
 pub const SPAWN_OPS: &[&str] = &["task_spawn"];
 

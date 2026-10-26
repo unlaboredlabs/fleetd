@@ -69,6 +69,7 @@ Every lead gets these.
 | [`change_enqueue`](#change_enqueue) | Put a PR no task's result put there on its repo's merge train; only the train merges. | No |
 | [`session_start`](#session_start) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. | No |
 | [`session_end`](#session_end) | Close your browser session: the browser and its profile are thrown away, and its recording goes to the hub. | No |
+| [`request_takeover`](#request_takeover) | Ask a person to take your browser over, for what only they can do: a captcha, a login confirmation only they can give, a judgement call. | No |
 
 ### spawn_agent
 
@@ -684,6 +685,25 @@ No parameters.
 }
 ```
 
+### request_takeover
+
+Ask a person to take your browser over, for what only they can do: a captcha, a login confirmation only they can give, a judgement call. reason says what they should do, in one line; it shows under waiting on you in the app, and they watch the page live. Carry on meanwhile: while they drive, your agent-browser commands answer that a person has control; after they hand it back, your next command sees the page as they left it.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `reason` | string | yes | What the person should do, in one line. At most 500 characters. |
+
+**Who may call:** a lead, a task's agent, answered by its node, which runs the browser. **Needs a human:** no.
+
+```json
+{
+  "name": "request_takeover",
+  "arguments": {
+    "reason": "Solve the captcha on the signup page, then hand the browser back"
+  }
+}
+```
+
 ## Task tools
 
 Every task's agent gets these: implementers, readers, reviewers and QA.
@@ -696,6 +716,7 @@ Every task's agent gets these: implementers, readers, reviewers and QA.
 | [`brief_read`](#brief_read) | Read your workstream's brief, whole: its goal, why, pointers, constraints and done-when. | No |
 | [`session_start`](#session_start-task) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. | No |
 | [`session_end`](#session_end-task) | Close your browser session: the browser and its profile are thrown away, and its recording goes to the hub. | No |
+| [`request_takeover`](#request_takeover-task) | Ask a person to take your browser over, for what only they can do: a captcha, a login confirmation only they can give, a judgement call. | No |
 
 ### decisions_search (task)
 
@@ -804,6 +825,25 @@ No parameters.
 {
   "name": "session_end",
   "arguments": {}
+}
+```
+
+### request_takeover (task)
+
+Ask a person to take your browser over, for what only they can do: a captcha, a login confirmation only they can give, a judgement call. reason says what they should do, in one line; it shows under waiting on you in the app, and they watch the page live. Carry on meanwhile: while they drive, your agent-browser commands answer that a person has control; after they hand it back, your next command sees the page as they left it.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `reason` | string | yes | What the person should do, in one line. At most 500 characters. |
+
+**Who may call:** a lead, a task's agent, answered by its node, which runs the browser. **Needs a human:** no.
+
+```json
+{
+  "name": "request_takeover",
+  "arguments": {
+    "reason": "Solve the captcha on the signup page, then hand the browser back"
+  }
 }
 ```
 

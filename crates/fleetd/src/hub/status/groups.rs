@@ -238,6 +238,22 @@ pub fn read(
         asks += 1;
         items.push(request_item(req));
     }
+    // A browser session whose agent asked for a person: only one can take it over.
+    let browsers = crate::hub::browser::waiting(&hub.db, r).unwrap_or_else(|error| {
+        tracing::warn!(%error, "status: browser sessions not read");
+        Vec::new()
+    });
+    for s in browsers {
+        let reason = s.takeover_reason.as_ref().map_or("", |r| r.as_str());
+        items.push(StatusItem {
+            group: StatusGroup::WaitingOnYou,
+            title: line(&format!("Take over the browser: {reason}")),
+            task_id: s.task_id.clone(),
+            pr: None,
+            why: Some(line("browser")),
+            at: Timestamp(iso_ms(now)),
+        });
+    }
     if needs_you && asks == 0 {
         items.push(StatusItem {
             group: StatusGroup::WaitingOnYou,

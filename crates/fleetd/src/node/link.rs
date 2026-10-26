@@ -97,6 +97,8 @@ pub struct RunNodeOptions {
     /// Directories `cmd_check` and approved commands may run in (and below), and secret sinks may be written in.
     pub cmd_roots: Vec<String>,
     pub secrets: Option<NodeSecrets>,
+    /// Browser sessions' broker, when this machine runs them: live view and takeover reach it over the link.
+    pub browser: Option<Arc<crate::node::browser::Broker>>,
 }
 
 /// Everything one link needs, shared with the tasks it starts.
@@ -108,6 +110,7 @@ struct Shared {
     lead_calls: LeadRelay,
     cmd_roots: Vec<String>,
     secrets: Option<NodeSecrets>,
+    browser: Option<Arc<crate::node::browser::Broker>>,
 }
 
 impl Shared {
@@ -134,6 +137,7 @@ pub async fn run_node(options: RunNodeOptions) -> LinkFatal {
         lead_calls: options.lead_calls,
         cmd_roots: options.cmd_roots,
         secrets: options.secrets,
+        browser: options.browser,
     });
     let mut enroll_token = options.enroll_token;
     let mut on_enrolled = options.on_enrolled;
@@ -179,6 +183,9 @@ fn tag(frame: &HubToNode) -> &'static str {
         HubToNode::NodeAction(_) => "node_action",
         HubToNode::SessionCall(_) => "session_call",
         HubToNode::SpansAck(_) => "spans_ack",
+        HubToNode::BrowserWatch(_) => "browser_watch",
+        HubToNode::BrowserInput(_) => "browser_input",
+        HubToNode::BrowserControl(_) => "browser_control",
     }
 }
 
@@ -283,16 +290,32 @@ async fn run_link_once(
     };
     let (mut sink, mut stream) = ws.split();
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
+    // Browser sessions' screens wait in a slot of their own, newest only: they go when nothing else waits.
+    let frames = Arc::new(crate::node::browser::FrameSlot::default());
     // Everything this link starts ends with it: a lost link kills its commands, and the hub fails its waits.
     let mut tasks = tokio::task::JoinSet::new();
-    tasks.spawn(async move {
-        while let Some(frame) = rx.recv().await {
-            if sink.send(Message::Text(frame.into())).await.is_err() {
-                break;
+    {
+        let frames = frames.clone();
+        tasks.spawn(async move {
+            loop {
+                let out = tokio::select! {
+                    biased;
+                    next = rx.recv() => match next {
+                        Some(frame) => vec![frame],
+                        None => break,
+                    },
+                    () = frames.notify.notified() => frames.take(),
+                };
+                for frame in out {
+                    if sink.send(Message::Text(frame.into())).await.is_err() {
+                        let _ = sink.close().await;
+                        return;
+                    }
+                }
             }
-        }
-        let _ = sink.close().await;
-    });
+            let _ = sink.close().await;
+        });
+    }
     let send = {
         let tx = tx.clone();
         move |frame: NodeToHub| {
@@ -328,7 +351,15 @@ async fn run_link_once(
             fleetd_contracts::node_link::CAP_ORDER_ENV.to_owned(),
             fleetd_contracts::node_link::CAP_WORKTREE_SETUP.to_owned(),
             fleetd_contracts::node_link::CAP_SELF_UPDATE.to_owned(),
-        ],
+        ]
+        .into_iter()
+        .chain(
+            shared
+                .browser
+                .as_ref()
+                .map(|_| fleetd_contracts::node_link::CAP_BROWSER.to_owned()),
+        )
+        .collect(),
     }));
     let hub_id = match next_frame(&mut stream, HANDSHAKE_TIMEOUT, "welcome").await {
         Ok(HubToNode::Welcome(welcome)) if welcome.protocol.get() != PROTOCOL_VERSION => {
@@ -391,6 +422,14 @@ async fn run_link_once(
             _ = woke.changed() => return LinkEnd::Woke,
         };
         match frame {
+            // Only to nodes listing CAP_BROWSER, which have a broker.
+            frame @ (HubToNode::BrowserWatch(_)
+            | HubToNode::BrowserInput(_)
+            | HubToNode::BrowserControl(_)) => {
+                if let Some(broker) = &shared.browser {
+                    broker.from_hub(frame, &frames);
+                }
+            }
             HubToNode::LeadResult(result) => shared.lead_calls.resolve(result),
             HubToNode::CmdCheck(check) => {
                 let shared = shared.clone();

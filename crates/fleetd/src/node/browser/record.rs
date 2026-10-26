@@ -5,7 +5,6 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::Arc;
 use std::time::Duration;
 
 use fleetd_contracts::browser::{BrowserAction, DomSnapshot, RecordingFile};
@@ -249,27 +248,20 @@ impl VideoSink {
 
 /// What a session scrubs: its project's and order's secrets as every session's reports are masked, and each value
 /// filled into its browser in every form a page or a trace may show it.
-pub struct Scrub {
-    base: Arc<Masker>,
-    filled: Masker,
-}
+pub struct Scrub(Masker);
 
 impl Scrub {
-    pub fn new(base: Arc<Masker>, filled: &[(String, String)]) -> Self {
-        Self {
-            base,
-            filled: Masker::thorough(filled),
-        }
+    /// Every form a page or a trace may show a value in ([`Masker::thorough`]), for both kinds.
+    pub fn new(secrets: &[(String, String)]) -> Self {
+        Self(Masker::thorough(secrets))
     }
 
     pub fn text(&self, text: &str) -> String {
-        let filled = self.filled.text(text);
-        self.base.text(&filled).into_owned()
+        self.0.text(text).into_owned()
     }
 
     pub fn value(&self, value: &mut serde_json::Value) {
-        self.filled.value(value);
-        self.base.value(value);
+        self.0.value(value);
     }
 }
 

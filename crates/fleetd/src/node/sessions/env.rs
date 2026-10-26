@@ -48,6 +48,12 @@ impl SessionService {
     /// Fails closed: when the session or a file of its secrets can't be read, there is no masker, and the caller
     /// sends nothing. The reason names the file, never a value.
     pub fn call_masker(&self, id: &str) -> Result<Masker, String> {
+        Ok(Masker::new(&self.call_secrets(id)?.0))
+    }
+
+    /// The secrets of a session's calls: its project's and order's variables and its MCP servers', those its claude
+    /// started with too.
+    pub fn call_secrets(&self, id: &str) -> Result<Secrets, String> {
         let spawned = self.st().live.get(id).map(|l| l.spawned.clone());
         let row = match self.store().session(id) {
             Ok(Some(row)) => row,
@@ -76,7 +82,7 @@ impl SessionService {
                 .cloned()
                 .collect(),
         );
-        Ok(Masker::new(&all.0))
+        Ok(all)
     }
 
     /// The prompt with the names of the variables the session gets: a plain one's short value too, a secret's never.

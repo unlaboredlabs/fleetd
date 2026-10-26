@@ -17,7 +17,12 @@ pub type AppCallId = Text<1, 64>;
 
 /// The client messages this hub reads beyond protocol 1's first set, named in `ready`'s `features`. A client sends
 /// one of them only to a hub that names it, so an older hub never sees a message it can't read.
-pub const APP_FEATURES: [&str; 1] = ["presence"];
+/// - `presence`: the app's once-a-minute focus and input.
+/// - `browser_sessions`: browser sessions' live view and takeover. `browser_watch` and `browser_input` are read, the
+///   hub relays `browser_frame`s, and the `browser_sessions`, `browser_recording_get` and `browser_control` tools and
+///   the `browser.session` event exist. A machine whose node is older answers a watch or a takeover with
+///   `machine_offline`.
+pub const APP_FEATURES: [&str; 2] = ["presence", "browser_sessions"];
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "t", rename_all = "snake_case", rename_all_fields = "camelCase")]
@@ -68,6 +73,20 @@ pub enum AppClientMessage {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         project: Option<crate::ids::ProjectRef>,
     },
+    /// Sent only to a hub whose `ready` names `browser_sessions` in its features.
+    /// Watch one live browser session: `browser_frame`s from now on, replacing any earlier watch; without `session`,
+    /// stop. A key that can read the session's machine may watch. Send it again after a reconnect.
+    BrowserWatch {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session: Option<crate::browser::BrowserSessionId>,
+    },
+    /// Sent only to a hub whose `ready` names `browser_sessions` in its features.
+    /// A person's mouse or keys for a session they took over (`browser_control` human): a human key with operate on
+    /// its machine. Refused with an `error` (no id) while the session isn't theirs to drive; never answered otherwise.
+    BrowserInput {
+        session: crate::browser::BrowserSessionId,
+        input: crate::browser::BrowserInput,
+    },
 }
 
 /// A `call` failed, or (without `id`) the session did.
@@ -107,6 +126,8 @@ pub enum AppServerMessage {
     Live(LiveFrame),
     /// On the chat subscription only: the lead's reply as it streams. Ephemeral and never replayed.
     ChatDelta(crate::chat::ChatDelta),
+    /// On the browser watch only: the watched session's newest screen. Ephemeral: a slow link drops frames.
+    BrowserFrame(crate::browser::BrowserFrame),
 }
 
 #[cfg(test)]

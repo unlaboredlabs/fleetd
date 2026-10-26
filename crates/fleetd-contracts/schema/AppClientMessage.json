@@ -144,17 +144,200 @@
             "input"
           ],
           "type": "object"
+        },
+        {
+          "description": "Sent only to a hub whose `ready` names `browser_sessions` in its features.\nWatch one live browser session: `browser_frame`s from now on, replacing any earlier watch; without `session`,\nstop. A key that can read the session's machine may watch. Send it again after a reconnect.",
+          "properties": {
+            "session": {
+              "$ref": "#/$defs/BrowserSessionId"
+            },
+            "t": {
+              "const": "browser_watch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "t"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Sent only to a hub whose `ready` names `browser_sessions` in its features.\nA person's mouse or keys for a session they took over (`browser_control` human): a human key with operate on\nits machine. Refused with an `error` (no id) while the session isn't theirs to drive; never answered otherwise.",
+          "properties": {
+            "input": {
+              "$ref": "#/$defs/BrowserInput"
+            },
+            "session": {
+              "$ref": "#/$defs/BrowserSessionId"
+            },
+            "t": {
+              "const": "browser_input",
+              "type": "string"
+            }
+          },
+          "required": [
+            "t",
+            "session",
+            "input"
+          ],
+          "type": "object"
         }
       ]
+    },
+    "BrowserInput": {
+      "description": "A person's input to a session they have control of (`control` human). Coordinates are in the last frame's pixels;\nthe node scales them to the page.",
+      "oneOf": [
+        {
+          "properties": {
+            "action": {
+              "$ref": "#/$defs/MouseAction"
+            },
+            "button": {
+              "$ref": "#/$defs/MouseButton",
+              "default": "none"
+            },
+            "clickCount": {
+              "default": 0,
+              "description": "1 for a click, 2 for a double click.",
+              "maximum": 3,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "deltaX": {
+              "default": 0.0,
+              "format": "double",
+              "type": "number"
+            },
+            "deltaY": {
+              "default": 0.0,
+              "format": "double",
+              "type": "number"
+            },
+            "kind": {
+              "const": "mouse",
+              "type": "string"
+            },
+            "modifiers": {
+              "default": 0,
+              "maximum": 15,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "x": {
+              "format": "double",
+              "type": "number"
+            },
+            "y": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "action",
+            "x",
+            "y"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A key as the browser's `KeyboardEvent` names it (`key` \"Enter\", `code` \"Enter\"); `text` for one that types.",
+          "properties": {
+            "action": {
+              "$ref": "#/$defs/KeyAction"
+            },
+            "code": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            "key": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            "kind": {
+              "const": "key",
+              "type": "string"
+            },
+            "modifiers": {
+              "default": 0,
+              "maximum": 15,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "text": {
+              "maxLength": 16,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "action",
+            "key"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Text typed or pasted at once.",
+          "properties": {
+            "kind": {
+              "const": "text",
+              "type": "string"
+            },
+            "text": {
+              "maxLength": 10000,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "text"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "BrowserSessionId": {
+      "pattern": "^B[0-9a-f]{32}$",
+      "type": "string"
     },
     "EventSeq": {
       "maximum": 9007199254740991,
       "minimum": 0,
       "type": "integer"
     },
+    "KeyAction": {
+      "enum": [
+        "down",
+        "up"
+      ],
+      "type": "string"
+    },
     "MachineId": {
       "description": "Machine slug, [a-z0-9-]{1,32}",
       "pattern": "^[a-z0-9-]{1,32}$",
+      "type": "string"
+    },
+    "MouseAction": {
+      "enum": [
+        "pressed",
+        "released",
+        "moved",
+        "wheel"
+      ],
+      "type": "string"
+    },
+    "MouseButton": {
+      "description": "A mouse button, as CDP names it.",
+      "enum": [
+        "none",
+        "left",
+        "middle",
+        "right"
+      ],
       "type": "string"
     },
     "ProjectId": {

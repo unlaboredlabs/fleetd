@@ -701,6 +701,9 @@ fn example(role: Role, tool: &str) -> Option<Value> {
             "purpose": "Check that signup works on the staging site",
         }),
         (_, "session_end") => json!({}),
+        (_, "request_takeover") => json!({
+            "reason": "Solve the captcha on the signup page, then hand the browser back",
+        }),
         _ => return None,
     })
 }

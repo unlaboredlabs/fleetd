@@ -350,6 +350,20 @@
             "t"
           ],
           "type": "object"
+        },
+        {
+          "$ref": "#/$defs/BrowserFrame",
+          "description": "On the browser watch only: the watched session's newest screen. Ephemeral: a slow link drops frames.",
+          "properties": {
+            "t": {
+              "const": "browser_frame",
+              "type": "string"
+            }
+          },
+          "required": [
+            "t"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -362,6 +376,67 @@
       "type": "string"
     },
     "BoxPublicKey": {
+      "type": "string"
+    },
+    "BrowserControl": {
+      "description": "Who drives a live session's browser. A person takes it over (human) and hands it back (handing_back, until the\nagent's next tool call sees the page as the person left it, then agent). While it isn't the agent's, the agent's\nbrowser tools answer that a person has control.",
+      "enum": [
+        "agent",
+        "human",
+        "handing_back"
+      ],
+      "type": "string",
+      "x-open": true
+    },
+    "BrowserFrame": {
+      "description": "One screencast frame of a live session, for the person watching. Ephemeral: the hub keeps only the newest per\nsession, and a slow link skips frames rather than queueing them.",
+      "properties": {
+        "control": {
+          "$ref": "#/$defs/BrowserControl"
+        },
+        "height": {
+          "maximum": 8192,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "jpegB64": {
+          "description": "A JPEG, base64.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "seq": {
+          "description": "1, 2, ... per watch; a frame older than one already shown is dropped.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/BrowserSessionId"
+        },
+        "url": {
+          "description": "The page the frame shows, when the node knows it.",
+          "maxLength": 2000,
+          "type": "string"
+        },
+        "width": {
+          "description": "The image's size in pixels: `browser_input` coordinates are in it.",
+          "maximum": 8192,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "sessionId",
+        "seq",
+        "jpegB64",
+        "width",
+        "height",
+        "control"
+      ],
+      "type": "object"
+    },
+    "BrowserSessionId": {
+      "pattern": "^B[0-9a-f]{32}$",
       "type": "string"
     },
     "ChatDelta": {
