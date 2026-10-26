@@ -10,6 +10,10 @@ export const IPC = {
   hubChat: "hub:chat",
   /** invoke(workstreamId | null) → void. The order whose lanes stream their text in live frames; kept across reconnects. */
   hubFocus: "hub:focus",
+  /** invoke(BrowserSessionId | null) → void. The session whose `browser_frame`s come; kept across reconnects. */
+  hubWatch: "hub:watch",
+  /** invoke(BrowserSessionId, BrowserInput) → void. A person's input to a session they took over; never answered. */
+  hubInput: "hub:input",
   /** invoke() → void. A fresh snapshot, then events from its cursor. */
   hubResync: "hub:resync",
   /** invoke() → void. Dials the hub now instead of at the next retry. */

@@ -2,6 +2,7 @@ import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeTheme, shell, type 
 import { IPC, type InvokeChannel } from "../shared/channels";
 import type { AppLog } from "./applog";
 import { parseRequest, type RequestArgs } from "../shared/ipc";
+import type { BrowserInput } from "../shared/contracts";
 import type { OpenOutcome } from "../shared/hub";
 import { externalUrl } from "./external";
 import type { HubService } from "./hub/service";
@@ -45,6 +46,9 @@ export const registerIpc = (
   handle(IPC.hubCall, (_event, request) => hub.call(request));
   handle(IPC.hubChat, (_event, project) => hub.chat(project));
   handle(IPC.hubFocus, (_event, workstreamId) => hub.focus(workstreamId));
+  handle(IPC.hubWatch, (event, session) => hub.watch(event.sender, session));
+  // Checked against the contract's shape above; an absent field may arrive as undefined, which JSON leaves out.
+  handle(IPC.hubInput, (_event, session, input) => hub.input(session, input as BrowserInput));
   handle(IPC.hubResync, () => hub.resync());
   handle(IPC.hubRetryNow, () => hub.retryNow());
   handle(IPC.hubCacheRead, () => hub.cacheRead());

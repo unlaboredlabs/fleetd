@@ -9,7 +9,7 @@ import { parseMs } from "../live/format";
 import { agoText } from "../projects/machineText";
 import { panelRoute, toHash, type ProjectKey } from "../shell/routes";
 import { durationOf, fmtDuration, glyphOf, isLive, sessionGroups, siteOf, STATE_TONE, STATE_WORD, type BrowserSession } from "./model";
-import { useBrowserSessions } from "./preview";
+import { useSessions } from "./hub";
 import { SessionView } from "./SessionView";
 import s from "./sessions.module.css";
 
@@ -19,7 +19,7 @@ export function SessionsPane({ project, session }: { project: ProjectKey; sessio
 }
 
 function SessionList({ project }: { project: ProjectKey }) {
-  const sessions = useBrowserSessions(project);
+  const sessions = useSessions(project);
   const groups = useMemo(() => sessionGroups(sessions), [sessions]);
   const live = sessions.some(isLive);
   // Durations of live sessions count up with the app's one clock; the ended ones say how long ago, by the minute.
@@ -86,7 +86,7 @@ function SessionRow({ list, session: x, now }: { list: string; session: BrowserS
             {x.agent.title}
           </Truncate>
         </span>
-        {x.frames.length > 0 || x.actions.length > 0 ? <span className={s.site}>{siteOf(x)}</span> : null}
+        {siteOf(x) === "" ? null : <span className={s.site}>{siteOf(x)}</span>}
         <span className={s.word}>
           <Text size="xs" tone="faint" tabular>
             {ended === undefined ? fmtDuration(durationOf(x, now)) : `${fmtDuration(durationOf(x, now))} · ${agoText(now - ended)}`}

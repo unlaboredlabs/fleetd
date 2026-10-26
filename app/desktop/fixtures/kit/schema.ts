@@ -107,7 +107,9 @@ const payloads = (f: Fixture, problems: Array<string>): Array<Payload> => {
           ? validator("AppServerMessage.json", "#/$defs/LiveFrame")
           : t.kind === "chat_delta"
             ? validator("AppServerMessage.json", "#/$defs/ChatDelta")
-            : validator("McpTools.json", "#/$defs/McpTools/properties/fleetd_status.output");
+            : t.kind === "browser_frame"
+              ? validator("AppServerMessage.json", "#/$defs/BrowserFrame")
+              : validator("McpTools.json", "#/$defs/McpTools/properties/fleetd_status.output");
     out.push({ what: `${t.kind} at ${t.ms} ms`, fn, value: t.payload });
   }
   for (const c of f.calls) {
@@ -119,6 +121,7 @@ const payloads = (f: Fixture, problems: Array<string>): Array<Payload> => {
     // A misspelled input key would never match the screen's call, so the screen shows not_found and still "passes".
     if (c.input !== undefined) out.push({ what: `${c.tool} input ${JSON.stringify(c.input).slice(0, 80)}`, fn: validator("McpTools.json", `#/$defs/McpTools/properties/${c.tool}.input`, "partial"), value: c.input });
     for (const t of c.then?.frames ?? []) {
+      if (t.kind === "browser_frame") out.push({ what: `${c.tool} then: browser_frame`, fn: validator("AppServerMessage.json", "#/$defs/BrowserFrame"), value: t.payload });
       if (t.kind !== "event") continue;
       out.push({ what: `${c.tool} then: event ${asText(t.payload["type"])}`, fn: validator("HubEvent.json", "#/$defs/HubEvent"), value: t.payload });
     }

@@ -38,6 +38,13 @@ describe("connection", () => {
     expect(run([{ t: "state", state: { phase: "unpaired" } }], s).features).toEqual([]);
   });
 
+  it("shows the watched session's newest frame and drops an older one a slow link brings late", () => {
+    const frame = (seq: number) => ({ t: "browser_frame" as const, frame: { sessionId: "B1", seq, jpegB64: `f${String(seq)}`, width: 2, height: 2, control: "agent" } });
+    const s = run([live(), frame(2), frame(1)]);
+    expect(s.browserFrame?.jpegB64).toBe("f2");
+    expect(run([frame(3)], s).browserFrame?.jpegB64).toBe("f3");
+  });
+
   it("ignores an event it already applied", () => {
     const s = run([live(), snapshot(10), event(9, "workstream.state", { workstreamId: "W1", state: "stopped" })]);
     expect(s.cursor).toBe(10);

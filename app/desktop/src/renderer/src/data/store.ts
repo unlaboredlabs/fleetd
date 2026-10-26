@@ -26,7 +26,7 @@ import {
   type ToolName,
   type ToolOutput,
 } from "../../../shared/contracts";
-import type { HubFrame, HubState } from "../../../shared/hub";
+import type { HubFrame, HubState, BrowserFrame } from "../../../shared/hub";
 import { applyDelta, emptyChat, heldChat, mergeLive, settleSends, type Chat, type ChatSend } from "./chat";
 import type { AgentRow } from "../../../shared/contracts";
 import { CHAT_EVENTS, type ChatDelta, type ProjectChatState } from "./chat-contract";
@@ -71,6 +71,8 @@ export interface DataState {
    * doesn't vanish mid-reconnect, and dropped with the pairing.
    */
   readonly features: readonly string[];
+  /** The watched browser session's newest page (hub.watch): shown while it is the newest, never kept on disk. */
+  readonly browserFrame?: BrowserFrame | undefined;
   /** A snapshot arrived since the link last went down: what the store holds is current. */
   readonly fresh: boolean;
   /** Bumped by every snapshot; call results from an older generation are dropped. */
@@ -210,6 +212,12 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
       return [applyEvent(s, frame.event), {}];
     case "chat_delta":
       return [applyChatDelta(s, frame.delta, nowMs + (s.live.skewMs ?? 0)), {}];
+    case "browser_frame": {
+      // A frame older than one already shown (a slow link's) is dropped.
+      const shown = s.browserFrame;
+      if (shown !== undefined && shown.sessionId === frame.frame.sessionId && shown.seq >= frame.frame.seq) return [s, {}];
+      return [{ ...s, browserFrame: frame.frame }, {}];
+    }
     case "live":
       return [{ ...s, live: applyLive(s.live, frame.frame, nowMs) }, {}];
     case "error":

@@ -1,5 +1,6 @@
 import type { LinkHandlerClaim, LinkHandlerStatus, NotifyRequest, OpenTarget } from "../shared/app";
 import type { MenuCommand } from "../shared/menu";
+import type { BrowserInput } from "../shared/contracts";
 import type { CallOutcome, ConnectOutcome, DropInfo, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { ChatScope, ErrorReport, McpServerRequest, OrderFocus, ProjectEnvRequest, SecretRequest, SessionWindowRequest } from "../shared/ipc";
 import type { KeyStore, PairOutcome, PairRequest, PairStart, Probe, SetupOutcome } from "../shared/pairing";
@@ -47,6 +48,10 @@ export interface FleetdApi {
     chat(project: ChatScope | null): Promise<void>;
     /** The order whose lanes stream their text in live frames, or null for none. Kept across reconnects. */
     focus(workstreamId: OrderFocus | null): Promise<void>;
+    /** The browser session whose frames this window shows, or null for none. Kept across reconnects. */
+    watch(session: string | null): Promise<void>;
+    /** A person's input to a session they took over, in its last frame's pixels; dropped while offline. */
+    input(session: string, input: BrowserInput): Promise<void>;
     resync(): Promise<void>;
     /** Dials the hub now instead of at the next retry (Retry now while offline). */
     retryNow(): Promise<void>;

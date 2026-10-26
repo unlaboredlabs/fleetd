@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { snap, structure } from "./pages";
-import { actionLine, durationOf, frameAt, glyphOf, isLive, nodeLine, nowLine, sessionGroups, siteOf, spans, stepAt, type BrowserSession, type SessionAction, type SessionState } from "./model";
+import { actionLine, durationOf, glyphOf, isLive, nodeLine, nowLine, sessionGroups, siteOf, spans, stepAt, type BrowserSession, type SessionAction, type SessionState } from "./model";
 
 const T0 = Date.parse("2026-10-19T10:00:00.000Z");
 
@@ -11,7 +10,6 @@ const session = (id: string, state: SessionState, startedMin: number, more: Part
   purpose: id,
   state,
   startedAt: new Date(T0 + startedMin * 60_000).toISOString(),
-  frames: [],
   actions: [],
   ...more,
 });
@@ -25,13 +23,14 @@ describe("sessionGroups", () => {
       session("live-late", "running", 5),
       session("asking", "asking", 3),
       session("yours", "yours", 1),
-      session("failed-late", "failed", 4),
+      session("lost-late", "lost", 4),
+      session("handing-back", "handingBack", 2),
       session("starting", "starting", 6),
     ]);
     expect(groups.map((g) => [g.title, g.sessions.map((x) => x.id)])).toEqual([
       ["Needs you", ["asking"]],
-      ["Live", ["yours", "live-late", "starting"]],
-      ["Recent", ["failed-late", "ended-early"]],
+      ["Live", ["yours", "handing-back", "live-late", "starting"]],
+      ["Recent", ["lost-late", "ended-early"]],
     ]);
   });
 
@@ -64,18 +63,7 @@ describe("actionLine", () => {
 });
 
 describe("a replay's position", () => {
-  const frames = [
-    { at: 0, url: "https://a.example.com/", image: "a" },
-    { at: 5_000, url: "https://a.example.com/b", image: "b" },
-  ];
   const actions = [act(0, "open"), act(5_000, "click"), act(9_000, "end")];
-
-  it("shows the last frame taken by then, and the first before any", () => {
-    expect(frameAt(frames, 0)?.image).toBe("a");
-    expect(frameAt(frames, 4_999)?.image).toBe("a");
-    expect(frameAt(frames, 5_000)?.image).toBe("b");
-    expect(frameAt([], 100)).toBeUndefined();
-  });
 
   it("is on the last step taken by then", () => {
     expect(stepAt(actions, 0)).toBe(0);
@@ -97,11 +85,11 @@ describe("a session's words", () => {
   it("counts a live one up to now, and an ended one to its recording's length", () => {
     const live = session("live", "running", 0);
     expect(durationOf(live, T0 + 52_000)).toBe(52_000);
-    expect(durationOf(session("done", "ended", 0, { recording: { video: "v", trace: "t", durationMs: 161_000 } }), T0 + 3_600_000)).toBe(161_000);
+    expect(durationOf(session("done", "ended", 0, { recording: { durationMs: 161_000, files: ["actions", "video"] } }), T0 + 3_600_000)).toBe(161_000);
   });
 
-  it("names the site it is on, from its last frame or the first page it opened", () => {
-    expect(siteOf(session("a", "running", 0, { frames: [{ at: 0, url: "https://staging.shop.example.com/checkout", image: "" }] }))).toBe("staging.shop.example.com");
+  it("names the site of the first page it opened, nothing before its steps are known", () => {
+    expect(siteOf(session("a", "running", 0))).toBe("");
     expect(siteOf(session("b", "starting", 0, { actions: [act(0, "open", { target: "https://pay.example.com/login" })] }))).toBe("pay.example.com");
   });
 
@@ -126,19 +114,4 @@ describe("a step's page snapshot", () => {
     expect(nodeLine({ depth: 2, role: "textbox", name: "Email", value: "qa@acme.test" })).toEqual({ role: "textbox", name: "“Email”", value: "qa@acme.test" });
   });
 
-  it("holds no secret value at all, filled or typed", () => {
-    const json = JSON.stringify([structure.shopSignIn(true), structure.paySignIn(true), structure.payCode("482913")]);
-    expect(json).not.toContain("482913");
-    expect(json).not.toMatch(/"secret":"(vault|person)","value"|"value":[^}]*"secret"/u);
-    for (const n of [...structure.shopSignIn(true), ...structure.payCode("482913")].filter((x) => x.secret !== undefined)) expect(n.value).toBeUndefined();
-  });
-
-  it("finds what the step acted on by role and name", () => {
-    const page = snap(structure.shopSignIn(true), ["textbox", "Email"], ["textbox", "Password"]);
-    expect(page.targets.map((i) => page.nodes[i]?.name)).toEqual(["Email", "Password"]);
-    const click = snap(structure.shopSignIn(true), ["button", "Sign in"]);
-    expect(click.targets.map((i) => click.nodes[i]?.name)).toEqual(["Sign in"]);
-    expect(click.nodes[click.targets[0] ?? -1]?.role).toBe("button");
-    expect(snap(structure.shopHome()).targets).toEqual([]);
-  });
 });

@@ -57,6 +57,8 @@ const api: FleetdApi = {
       ipcRenderer.invoke(IPC.hubCall, { tool, input, ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }) }) as Promise<CallOutcome>,
     chat: (project) => ipcRenderer.invoke(IPC.hubChat, project) as Promise<void>,
     focus: (workstreamId) => ipcRenderer.invoke(IPC.hubFocus, workstreamId) as Promise<void>,
+    watch: (session) => ipcRenderer.invoke(IPC.hubWatch, session) as Promise<void>,
+    input: (session, input) => ipcRenderer.invoke(IPC.hubInput, session, input) as Promise<void>,
     resync: () => ipcRenderer.invoke(IPC.hubResync) as Promise<void>,
     retryNow: () => ipcRenderer.invoke(IPC.hubRetryNow) as Promise<void>,
     cache: {

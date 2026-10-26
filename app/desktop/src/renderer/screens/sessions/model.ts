@@ -1,37 +1,23 @@
 // What the panel's browser sessions show, as plain view data: a session's state in words and as a glyph, the list's
 // groups (needs you, live, recent), how long it ran, where it is, one line per step of its action log, and a step's
-// page snapshot as lines of structure. The session's shape is the broker's likely contract (T514 defines the real one):
-// an id, its agent, its purpose, its state, the frames it recorded and its action log, each step with a snapshot of the
-// page it acted on. Pure, so it is unit-tested.
+// page snapshot as lines of structure. hub.ts makes it from the hub's sessions and recordings (contracts browser.rs).
+// Pure, so it is unit-tested.
 import type { AgentRole, GlyphState } from "../../ui";
 import type { ProjectKey } from "../shell/routes";
 import { fmtElapsed, parseMs } from "../live/format";
 
 /**
  * Where a session stands. `asking`: the agent asked a person to take over, and waits. `yours`: a person took over; the
- * agent waits and sees the page as they leave it.
+ * agent waits and sees the page as they leave it. `handingBack`: until the agent's next step sees the page. `saving`:
+ * ended, its recording on its way to the hub. `lost`: the node couldn't record or upload it. `expired`: retention
+ * deleted its recording.
  */
-export type SessionState = "starting" | "running" | "asking" | "yours" | "ended" | "failed";
-
-/** One picture of the page, `at` ms after the session started. A frame is a screenshot (JPEG) on the hub. */
-export interface SessionFrame {
-  readonly at: number;
-  readonly url: string;
-  readonly image: string;
-}
+export type SessionState = "starting" | "running" | "asking" | "yours" | "handingBack" | "saving" | "ended" | "lost" | "expired";
 
 /** Where a login came from: a 1Password reference, resolved on the node. The value never leaves it. */
 export interface CredentialRef {
   readonly site: string;
   readonly source: "1password";
-}
-
-/** Where an element is on the page, in the page's own pixels (the frame's size). */
-export interface Box {
-  readonly x: number;
-  readonly y: number;
-  readonly width: number;
-  readonly height: number;
 }
 
 /**
@@ -45,18 +31,31 @@ export interface SnapshotNode {
   readonly name?: string;
   readonly value?: string;
   readonly secret?: "vault" | "person";
-  readonly box?: Box;
 }
 
 /** The page's structure as a step found it, and the elements the step acted on (indexes into `nodes`). */
 export interface PageSnapshot {
-  /** The page's size in its pixels, for placing `box`. */
-  readonly page: { readonly width: number; readonly height: number };
   readonly nodes: readonly SnapshotNode[];
   readonly targets: readonly number[];
 }
 
-export type ActionKind = "open" | "click" | "type" | "fill_login" | "read" | "ask" | "take_over" | "hand_back" | "resume" | "end" | "fail";
+export type ActionKind =
+  | "start"
+  | "open"
+  | "click"
+  | "type"
+  | "press"
+  | "fill_login"
+  | "read"
+  | "wait"
+  | "ask"
+  | "take_over"
+  | "hand_back"
+  | "resume"
+  | "end"
+  | "fail"
+  /** Any other command: its verb in `text`, what it named in `target`. */
+  | "command";
 
 /**
  * One step of the action log, `at` ms after the session started. What a person types while in control is never logged,
@@ -71,14 +70,20 @@ export interface SessionAction {
   /** What the agent typed (`type`), what it read (`read`), or the reason it asked or stopped (`ask`, `fail`). */
   readonly text?: string;
   readonly credential?: CredentialRef;
-  /** The page as this step found it; once the session has ended. */
+  /** False when the step failed. */
+  readonly ok?: boolean;
+  /** The CSS selector it acted on, when it named one (not an agent-browser `@e3` ref): found in its snapshot. */
+  readonly selector?: string;
+  /** The page as this step found it, as structure, or as the HTML the node read (dom.jsonl), parsed when opened. */
   readonly snapshot?: PageSnapshot;
+  readonly page?: { readonly url: string; readonly title: string; readonly html: string };
 }
 
 export interface BrowserSession {
   readonly id: string;
   readonly projectRef: ProjectKey;
-  readonly agent: { readonly laneId: string; readonly title: string; readonly role: AgentRole };
+  /** Its agent; the role unknown for one that has finished. */
+  readonly agent: { readonly laneId: string; readonly title: string; readonly role?: AgentRole };
   /** Why the agent opened it, in its words. */
   readonly purpose: string;
   readonly state: SessionState;
@@ -88,10 +93,13 @@ export interface BrowserSession {
   readonly handoff?: { readonly reason: string; readonly at: number };
   /** What the agent is doing now, while it drives. */
   readonly now?: string;
-  readonly frames: readonly SessionFrame[];
   readonly actions: readonly SessionAction[];
-  /** Once ended: the video and the full trace on the hub. */
-  readonly recording?: { readonly video: string; readonly trace: string; readonly durationMs: number };
+  /** Once recorded: how long it ran, and which files the hub has (its video only where the node had ffmpeg). */
+  readonly recording?: { readonly durationMs: number; readonly files: readonly ("actions" | "dom" | "video")[] };
+  /** How many logins the node filled from 1Password; never their values. */
+  readonly credentialsFilled?: number;
+  /** Why it was lost, or what its recording lacks. */
+  readonly note?: string;
 }
 
 export const STATE_WORD: Readonly<Record<SessionState, string>> = {
@@ -99,11 +107,24 @@ export const STATE_WORD: Readonly<Record<SessionState, string>> = {
   running: "live",
   asking: "needs you",
   yours: "you’re in control",
+  handingBack: "handing back",
+  saving: "saving",
   ended: "ended",
-  failed: "failed",
+  lost: "lost",
+  expired: "expired",
 };
 
-export const STATE_TONE = { starting: "quiet", running: "default", asking: "warning", yours: "default", ended: "quiet", failed: "danger" } as const;
+export const STATE_TONE = {
+  starting: "quiet",
+  running: "default",
+  asking: "warning",
+  yours: "default",
+  handingBack: "default",
+  saving: "quiet",
+  ended: "quiet",
+  lost: "danger",
+  expired: "quiet",
+} as const;
 
 /** Its glyph: the agent at work is grain; a person in control holds the agent paused; asking is the solid block. */
 export const glyphOf = (state: SessionState): GlyphState => {
@@ -116,18 +137,25 @@ export const glyphOf = (state: SessionState): GlyphState => {
       return "waiting";
     case "yours":
       return "paused";
+    case "handingBack":
+    case "saving":
+      return "thinking";
     case "ended":
+    case "expired":
       return "done";
-    case "failed":
+    case "lost":
       return "failed";
   }
 };
 
-export const isLive = (s: Pick<BrowserSession, "state">): boolean => s.state !== "ended" && s.state !== "failed";
+const LIVE: ReadonlySet<SessionState> = new Set(["starting", "running", "asking", "yours", "handingBack"]);
 
-/** The host of its page now (the last frame's), or of the first page it opened. */
-export const siteOf = (s: Pick<BrowserSession, "frames" | "actions">): string => {
-  const url = s.frames.at(-1)?.url ?? s.actions.find((a) => a.kind === "open")?.target ?? "";
+export const isLive = (s: Pick<BrowserSession, "state">): boolean => LIVE.has(s.state);
+
+/** The host of the first page it opened; "" before its steps are known (a live one's come with its recording). */
+export const siteOf = (s: Pick<BrowserSession, "actions">): string => {
+  const url = s.actions.find((a) => a.kind === "open")?.target ?? "";
+  if (url === "") return "";
   try {
     return new URL(url).host;
   } catch {
@@ -189,16 +217,36 @@ const path = (url: string): string => {
 const VAULT = { "1password": "1Password" } as const;
 
 export const actionLine = (a: SessionAction): ActionLine => {
+  const line = wordsOf(a);
+  // A step that failed says so, in the danger colour.
+  return a.ok === false ? { ...line, words: `${line.words} · failed`, tone: "danger" } : line;
+};
+
+const wordsOf = (a: SessionAction): ActionLine => {
   const who = a.by === "person" ? "you" : "agent";
   const target = a.target ?? "";
+  // A selector or an agent-browser ref is machine text: in mono after the words.
+  const named = (words: string): ActionLine => ({ who, words, ...(target === "" ? {} : { machine: target }), tone: "default" });
   switch (a.kind) {
+    case "start":
+      return { who, words: "Started a fresh browser", tone: "quiet" };
+    case "press":
+      return { who, words: `Pressed ${target}`, tone: "default" };
+    case "wait":
+      return named("Waited for");
+    case "command":
+      return named(a.text ?? "Ran");
     case "open":
       return { who, words: who === "you" ? "You opened" : "Opened", machine: path(target), tone: "default" };
     case "click":
+      // A selector or ref in mono; a button's own words in quotes.
+      if (a.selector !== undefined || target.startsWith("@")) return named(who === "you" ? "You clicked" : "Clicked");
       return { who, words: `${who === "you" ? "You clicked" : "Clicked"} “${target}”`, tone: "default" };
     case "type":
       // A person's keys are never logged, only the field they went to.
-      return who === "you" ? { who, words: `You typed in ${target}`, tone: "default" } : { who, words: `Typed “${a.text ?? ""}” in ${target}`, tone: "default" };
+      if (who === "you") return { who, words: `You typed in ${target}`, tone: "default" };
+      if (a.selector !== undefined || target.startsWith("@")) return named(`Typed “${a.text ?? ""}” in`);
+      return { who, words: `Typed “${a.text ?? ""}” in ${target}`, tone: "default" };
     case "fill_login":
       return { who, words: `Filled login for ${a.credential?.site ?? target} from ${VAULT[a.credential?.source ?? "1password"]}`, tone: "default", login: true };
     case "read":
@@ -216,16 +264,6 @@ export const actionLine = (a: SessionAction): ActionLine => {
     case "fail":
       return { who, words: `Stopped: ${a.text ?? "the page failed"}`, tone: "danger" };
   }
-};
-
-/** The frame on screen `at` ms in: the last one taken by then (the first, before it). */
-export const frameAt = (frames: readonly SessionFrame[], at: number): SessionFrame | undefined => {
-  let shown = frames[0];
-  for (const f of frames) {
-    if (f.at > at) break;
-    shown = f;
-  }
-  return shown;
 };
 
 /** The step a replay is on `at` ms in: the last one taken by then; -1 before the first. */
@@ -248,8 +286,15 @@ export const nowLine = (s: BrowserSession): string => {
       return "Waiting for you to take over";
     case "yours":
       return "Waits, and sees the page as you leave it";
-    case "ended":
-    case "failed": {
+    case "handingBack":
+      return "Looking at the page as you left it";
+    case "saving":
+      return "Saving the recording";
+    case "lost":
+      return s.note ?? "Its recording was lost";
+    case "expired":
+      return "Its recording expired";
+    case "ended": {
       const last = s.actions.at(-1);
       return last === undefined ? STATE_WORD[s.state] : actionLine(last).words;
     }
@@ -284,4 +329,5 @@ export const TARGET_WORD: Readonly<Partial<Record<ActionKind, string>>> = {
   type: "typed in",
   fill_login: "filled",
   read: "read",
+  wait: "waited for",
 };

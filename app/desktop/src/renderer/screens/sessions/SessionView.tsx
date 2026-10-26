@@ -6,8 +6,9 @@
 // snapshot at that step. A login filled from 1Password is a step in words; its value is never on the hub to show, nor
 // in a snapshot.
 import { AppWindow, ChevronLeft, CornerUpLeft, Hand, KeyRound, ListTree, Pause, Play } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
-import { Button, EmptyState, StateGlyph, Text, Tooltip, Truncate, cx, useBeatRef } from "../../ui";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
+import { Button, EmptyState, StateGlyph, Text, Tooltip, Truncate, cx, toast } from "../../ui";
+import { useDataLayer } from "../../src/data/react";
 import { display } from "../../../shared/shortcuts";
 import { RolePill } from "../agents/parts";
 import { useCommands } from "../palette";
@@ -18,7 +19,6 @@ import {
   actionLine,
   durationOf,
   fmtDuration,
-  frameAt,
   glyphOf,
   isLive,
   nodeLine,
@@ -32,19 +32,18 @@ import {
   type BrowserSession,
   type PageSnapshot,
   type SessionAction,
-  type SessionFrame,
 } from "./model";
-import { actInPage, handBack, takeOver, useBrowserSessions } from "./preview";
+import { structureOf } from "./dom";
+import { useRecording, useSessions } from "./hub";
+import { setControl, useFrameInput, useLiveFrame } from "./live";
 import { showWindow, useInItsWindow } from "./windows";
 import s from "./sessions.module.css";
-
-const MODIFIERS: ReadonlySet<string> = new Set(["Shift", "Control", "Meta", "Alt"]);
 
 const clock = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit" });
 
 /** One session; `windowed` in a window of its own (SessionWindow), which pops nothing out and links nowhere. */
 export function SessionView({ project, id, windowed = false }: { project: ProjectKey; id: string; windowed?: boolean }) {
-  const all = useBrowserSessions(project);
+  const all = useSessions(project);
   const session = all.find((x) => x.id === id);
   // A session's window has its sessions from the main window a moment after it opens.
   if (session === undefined && windowed && all.length === 0) return <div className={s.view} aria-busy="true" />;
@@ -70,7 +69,7 @@ function Head({ session: x, windowed }: { session: BrowserSession; windowed: boo
   const agent = toHash(panelRoute(x.projectRef, { tab: "agents", agent: x.agent.laneId }));
   const who = (
     <>
-      <RolePill role={x.agent.role} />
+      {x.agent.role === undefined ? null : <RolePill role={x.agent.role} />}
       <Truncate size="xs" tone="quiet" expand="none">
         {x.agent.title}
       </Truncate>
@@ -95,31 +94,50 @@ function Head({ session: x, windowed }: { session: BrowserSession; windowed: boo
         {x.purpose}
       </Text>
       <span className={s.headMeta}>
-        <span className={s.site}>{siteOf(x)}</span>
+        {siteOf(x) === "" ? null : <span className={s.site}>{siteOf(x)}</span>}
         <Text size="xs" tone="quiet" tabular>
           {`started ${clock.format(new Date(x.startedAt))} · ${fmtDuration(durationOf(x, now))}`}
         </Text>
+        {x.credentialsFilled === undefined ? null : (
+          <span className={s.filled}>
+            <KeyRound aria-hidden className={s.key} />
+            <Text size="xs" tone="quiet">
+              {`${String(x.credentialsFilled)} ${x.credentialsFilled === 1 ? "login" : "logins"} filled from 1Password`}
+            </Text>
+          </span>
+        )}
       </span>
     </div>
   );
 }
 
 /**
- * The page now, what the agent does, the one control (Take over or Hand back) and its steps as they come. Beside Take
- * over, the pop-out takes the page over in a window of its own; while the session is in its window, this one mirrors it
+ * The page now, what the agent does, the one control (Take over or Hand back) and, once it ends, its steps. Beside Take
+ * over, the pop-out takes the page over in a window of its own; while the session is in its window, this one shows that
  * and offers to bring that window forward. Taken over, ⌘⇧↩ (Ctrl+Shift+Enter) hands back: the app's keymap catches it
  * in the capture phase, so the page never sees those keys.
  */
 function Live({ session: x, windowed }: { session: BrowserSession; windowed: boolean }) {
+  const layer = useDataLayer();
   const yours = x.state === "yours";
   const away = useInItsWindow(x.id) && !windowed;
-  // The scan over its line steps on the app's beat while the browser starts.
-  const scan = useBeatRef<HTMLSpanElement>(x.state === "starting");
+  // This window watches the page, unless the session's own window has it (that one watches it).
+  const frame = useLiveFrame(x.id, !away);
+  const takes = yours && !away;
+  const input = useFrameInput(x.id, frame, takes);
   const page = useRef<HTMLDivElement>(null);
+  const [asking, setAsking] = useState<"human" | "agent" | null>(null);
   // Taken over, the keys go to the page at once (in the window that has it).
   useEffect(() => {
-    if (yours && !away) page.current?.focus();
-  }, [yours, away]);
+    if (takes) page.current?.focus();
+  }, [takes]);
+  const control = (to: "human" | "agent") => {
+    setAsking(to);
+    void setControl(layer, x.id, to).then((ok) => {
+      setAsking(null);
+      if (!ok) toast({ title: to === "human" ? "Couldn’t take over" : "Couldn’t hand back", description: "The hub didn’t take it. Try again.", key: `control:${x.id}` });
+    });
+  };
   useCommands(
     [
       {
@@ -127,20 +145,28 @@ function Live({ session: x, windowed }: { session: BrowserSession; windowed: boo
         title: "Hand back the page",
         detail: "Give the page you took over back to its agent",
         group: "actions",
-        enabled: () => yours && !away,
-        run: () => handBack(x.id),
+        enabled: () => takes,
+        run: () => control("agent"),
       },
     ],
-    [x.id],
+    [x.id, takes],
   );
   const popOut = () => {
-    if (x.state !== "yours") takeOver(x.id);
+    if (!yours) control("human");
     showWindow(x.projectRef, x.id);
   };
   const popOutButton = windowed ? null : (
     <Tooltip content="Take over in its own window">
-      <Button variant="quiet" size="sm" iconOnly icon={<AppWindow aria-hidden />} aria-label="Take over in its own window" onClick={popOut} />
+      <Button variant="quiet" size="sm" iconOnly icon={<AppWindow aria-hidden />} aria-label="Take over in its own window" disabled={asking !== null} onClick={popOut} />
     </Tooltip>
+  );
+  const takeOver = (variant: "primary" | "secondary") => (
+    <span className={s.controls}>
+      {popOutButton}
+      <Button variant={variant} size="sm" icon={<Hand aria-hidden />} disabled={asking !== null} onClick={() => control("human")}>
+        Take over
+      </Button>
+    </span>
   );
   return (
     <div className={s.body}>
@@ -152,23 +178,25 @@ function Live({ session: x, windowed }: { session: BrowserSession; windowed: boo
             </Text>
             <Text size="sm">{x.handoff.reason}</Text>
           </span>
-          <span className={s.controls}>
-            {popOutButton}
-            <Button variant="primary" size="sm" icon={<Hand aria-hidden />} onClick={() => takeOver(x.id)}>
-              Take over
-            </Button>
-          </span>
+          {takeOver("primary")}
         </div>
       ) : null}
       <div className={s.stage}>
         <div className={s.player}>
-          <Frame session={x} frame={x.frames.at(-1)} yours={yours} away={away} pageRef={page} />
+          <Frame
+            {...(frame === undefined ? {} : { image: { src: `data:image/jpeg;base64,${frame.jpegB64}`, url: frame.url, width: frame.width, height: frame.height } })}
+            yours={yours}
+            away={away}
+            pageRef={page}
+            input={input}
+            caption={away ? "It shows in its own window." : "Waiting for the page…"}
+          />
           <div className={s.control}>
             <span className={s.nowLine}>
               <Text size="xs" tone="faint">
                 {yours ? "The agent" : "Now"}
               </Text>
-              <span ref={scan} className={s.nowWords} data-sweep={x.state === "starting" ? "" : undefined}>
+              <span className={s.nowWords}>
                 <Text size="xs" tone={x.state === "asking" ? "warning" : yours ? "quiet" : "default"}>
                   {nowLine(x)}
                 </Text>
@@ -179,16 +207,18 @@ function Live({ session: x, windowed }: { session: BrowserSession; windowed: boo
                 Show its window
               </Button>
             ) : yours ? (
-              <Button variant="primary" size="sm" icon={<CornerUpLeft aria-hidden />} shortcut={display("session.handBack", window.fleetd.platform)} onClick={() => handBack(x.id)}>
+              <Button
+                variant="primary"
+                size="sm"
+                icon={<CornerUpLeft aria-hidden />}
+                shortcut={display("session.handBack", window.fleetd.platform)}
+                disabled={asking !== null}
+                onClick={() => control("agent")}
+              >
                 Hand back
               </Button>
             ) : x.state === "running" ? (
-              <span className={s.controls}>
-                {popOutButton}
-                <Button variant="secondary" size="sm" icon={<Hand aria-hidden />} onClick={() => takeOver(x.id)}>
-                  Take over
-                </Button>
-              </span>
+              takeOver("secondary")
             ) : null}
           </div>
         </div>
@@ -199,62 +229,61 @@ function Live({ session: x, windowed }: { session: BrowserSession; windowed: boo
 }
 
 /**
- * The page in a frame: its address and who drives it on a bar above. Yours, the bar turns over (the page's words on the
- * text colour) and the page takes your clicks and keys; the agent's, it only shows. With a snapshot's `marks`, the
- * elements its step acted on are outlined on the page.
+ * The page in a frame, at the page's own shape: its address and who drives it on a bar above. Yours, the bar turns over
+ * (the page's words on the text colour) and the page takes your clicks, keys and pastes (`input`); the agent's, it only
+ * shows.
  */
 function Frame({
-  session: x,
-  frame,
+  image,
   yours = false,
   away = false,
   right,
-  marks,
+  media,
+  caption,
+  url: given,
+  input,
   pageRef,
 }: {
-  session: BrowserSession;
-  frame: SessionFrame | undefined;
+  /** The page now: a live frame, in its own pixels. */
+  image?: { readonly src: string; readonly url?: string | undefined; readonly width: number; readonly height: number };
   yours?: boolean;
-  /** Yours, but in the session's own window: this one only mirrors it. */
+  /** Yours, but in the session's own window: this one only shows that. */
   away?: boolean;
-  right?: string;
-  marks?: PageSnapshot | undefined;
+  right?: string | undefined;
+  /** What plays in the page's place (a recording's video). */
+  media?: ReactNode;
+  /** Words on an empty page: why nothing shows there. */
+  caption?: string | undefined;
+  /** The page's address when there is no live frame (a replay's step's). */
+  url?: string | undefined;
+  input?: ReturnType<typeof useFrameInput>;
   pageRef?: RefObject<HTMLDivElement | null>;
 }) {
-  const takes = yours && !away;
-  const act = takes ? () => actInPage(x.id) : undefined;
+  const takes = input !== undefined;
+  const url = image?.url ?? given;
   return (
     <div className={cx(s.frame, yours && s.yours)} data-control={yours ? "you" : "agent"}>
       <div className={s.bar}>
-        <span className={s.url}>{frame === undefined ? <span /> : <MiddleCut text={frame.url} />}</span>
+        <span className={s.url}>{url === undefined ? <span /> : <MiddleCut text={url} />}</span>
         <Text size="xs" tone="inherit" strong={yours} tabular>
-          {right ??
-            (away
-              ? "You’re in control, in its own window"
-              : yours
-                ? "You’re in control: mouse and keys go to the page"
-                : x.state === "starting"
-                  ? "Starting"
-                  : "The agent is driving")}
+          {right ?? (away ? "You’re in control, in its own window" : yours ? "You’re in control: mouse and keys go to the page" : "The agent is driving")}
         </Text>
       </div>
       <div
         ref={pageRef}
         className={s.screen}
+        style={image === undefined ? undefined : { aspectRatio: `${String(image.width)} / ${String(image.height)}` }}
         role={takes ? "application" : "img"}
-        aria-label={takes ? "The page: your clicks and keys go to it" : `The page${frame === undefined ? "" : `: ${frame.url}`}`}
+        aria-label={takes ? "The page: your clicks and keys go to it" : `The page${url === undefined ? "" : `: ${url}`}`}
         tabIndex={takes ? 0 : undefined}
-        onPointerDown={act}
-        // A modifier alone types nothing (it may be the start of ⌘⇧↩, which the keymap keeps from the page).
-        onKeyDown={act === undefined ? undefined : (e) => MODIFIERS.has(e.key) || act()}
+        {...input}
       >
-        {frame === undefined ? <span className={s.blank} /> : <img src={frame.image} alt="" draggable={false} />}
-        {marks?.targets.map((i) => {
-          const b = marks.nodes[i]?.box;
-          if (b === undefined) return null;
-          const { width: w, height: h } = marks.page;
-          return <span key={i} className={s.mark} style={{ left: `${String((b.x / w) * 100)}%`, top: `${String((b.y / h) * 100)}%`, width: `${String((b.width / w) * 100)}%`, height: `${String((b.height / h) * 100)}%` }} />;
-        })}
+        {media ??
+          (image === undefined ? (
+            <span className={s.blank}>{caption === undefined ? null : <Text size="xs" tone="quiet">{caption}</Text>}</span>
+          ) : (
+            <img src={image.src} alt="" draggable={false} />
+          ))}
       </div>
     </div>
   );
@@ -295,10 +324,20 @@ function Steps({ actions }: { actions: readonly SessionAction[] }) {
         <Text size="xs" tone="quiet" strong>
           Steps
         </Text>
-        <Text size="xs" tone="faint" tabular>
-          {String(actions.length)}
-        </Text>
+        {actions.length === 0 ? null : (
+          <Text size="xs" tone="faint" tabular>
+            {String(actions.length)}
+          </Text>
+        )}
       </span>
+      {actions.length === 0 ? (
+        // The node logs them as it goes and uploads them with its recording.
+        <p className={s.stepsNote}>
+          <Text size="xs" tone="quiet">
+            Its steps show here once it ends, with its recording.
+          </Text>
+        </p>
+      ) : null}
       <ol ref={list} className={s.log} aria-label="Its steps">
         {actions.map((a, i) => (
           <li key={`${String(a.at)}:${String(i)}`} className={cx(s.step, i >= first && s.arrive)}>
@@ -319,13 +358,72 @@ const SPEEDS = [1, 2, 4] as const;
  * outlined on the page. Play, the scrubber, Back or Escape close it.
  */
 function Replay({ session: x }: { session: BrowserSession }) {
-  const duration = x.recording?.durationMs ?? x.actions.at(-1)?.at ?? 0;
+  if (x.state === "saving" || x.state === "lost" || x.state === "expired") return <NoRecording session={x} />;
+  return x.recording === undefined ? <NoRecording session={x} /> : <Recorded session={x} />;
+}
+
+/** Why there is nothing to play: the recording is on its way, was lost, or retention deleted it. */
+function NoRecording({ session: x }: { session: BrowserSession }) {
+  const words =
+    x.state === "ended"
+      ? "It has no recording."
+      : x.state === "saving"
+      ? "Saving the recording. It plays here once the hub has it."
+      : x.state === "lost"
+        ? `Its recording was lost${x.note === undefined ? "." : `: ${x.note}.`}`
+        : "Its recording expired: the hub keeps recordings for a while, then deletes them.";
+  return (
+    <div className={cx(s.body, s.note)} data-state={x.state}>
+      <Text size="sm" tone={x.state === "lost" ? "danger" : "quiet"}>
+        {words}
+      </Text>
+    </div>
+  );
+}
+
+/** A recorded session's files from the hub, read once, then played. */
+function Recorded({ session: x }: { session: BrowserSession }) {
+  const { data, error } = useRecording(x);
+  if (error) {
+    return (
+      <div className={cx(s.body, s.note)} role="alert">
+        <Text size="sm" tone="danger">
+          Couldn’t read its recording from the hub. Open it again to retry.
+        </Text>
+      </div>
+    );
+  }
+  if (data === undefined) return <div className={s.body} aria-busy="true" aria-label="Reading its recording" />;
+  return <Player session={x} actions={data.actions} {...(data.video === undefined ? {} : { video: data.video })} />;
+}
+
+/**
+ * Plays a recording: its video when it has one (the video's clock leads), else a clock of its own over its steps, its
+ * steps beside it either way.
+ */
+function Player({ session: x, actions, video }: { session: BrowserSession; actions: readonly SessionAction[]; video?: Blob }) {
+  const duration = x.recording?.durationMs ?? actions.at(-1)?.at ?? 0;
+  const media = useRef<HTMLVideoElement>(null);
+  // The video plays from a URL for its blob, made for as long as the player shows it.
+  useEffect(() => {
+    const el = media.current;
+    if (el === null || video === undefined) return undefined;
+    const url = URL.createObjectURL(video);
+    el.src = url;
+    return () => {
+      el.removeAttribute("src");
+      URL.revokeObjectURL(url);
+    };
+  }, [video]);
   const [at, setAt] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(1);
   const [open, setOpen] = useState<number | null>(null);
   useEffect(() => {
-    if (!playing) return undefined;
+    if (media.current !== null) media.current.playbackRate = speed;
+  }, [speed, video]);
+  useEffect(() => {
+    if (!playing || video !== undefined) return undefined;
     const timer = window.setInterval(() => {
       setAt((t) => {
         const next = Math.min(duration, t + 100 * speed);
@@ -334,28 +432,41 @@ function Replay({ session: x }: { session: BrowserSession }) {
       });
     }, 100);
     return () => window.clearInterval(timer);
-  }, [playing, speed, duration]);
-  const step = stepAt(x.actions, at);
+  }, [playing, speed, duration, video]);
+  const step = stepAt(actions, at);
   const timeline = useRef<HTMLOListElement>(null);
   useEffect(() => {
     timeline.current?.querySelector('[aria-current="step"]')?.scrollIntoView({ block: "nearest" });
   }, [step, open]);
-  const yours = spans(x.actions, duration);
+  const yours = spans(actions, duration);
   // Where `t` is along the scrubber, in percent; a recording with no length puts everything at its start.
   const place = (t: number): string => `${String(duration === 0 ? 0 : (t / duration) * 100)}%`;
-  const shown = open === null ? undefined : x.actions[open];
+  const shown = open === null ? undefined : actions[open];
+  // A step's page, as structure: given (the preview), or made from the HTML the node read, only once it is opened.
+  const page = useMemo(() => shown?.snapshot ?? (shown?.page === undefined ? undefined : structureOf(shown.page.html, shown.selector)), [shown]);
+  const to = (t: number) => {
+    setAt(t);
+    if (media.current !== null) media.current.currentTime = t / 1000;
+  };
   const play = () => {
     setOpen(null);
+    const v = media.current;
+    if (v !== null) {
+      if (v.paused) void v.play();
+      else v.pause();
+      return;
+    }
     if (at >= duration) setAt(0);
     setPlaying((p) => !p);
   };
   const seek = (t: number) => {
     setOpen(null);
-    setAt(t);
+    to(t);
   };
   const snapshot = (i: number) => {
+    media.current?.pause();
     setPlaying(false);
-    setAt(x.actions[i]?.at ?? 0);
+    to(actions[i]?.at ?? 0);
     setOpen(i);
   };
 
@@ -364,9 +475,21 @@ function Replay({ session: x }: { session: BrowserSession }) {
       <div className={cx(s.stage, s.replay)}>
         <div className={s.player}>
           <Frame
-            session={x}
-            frame={frameAt(x.frames, at)}
-            marks={shown?.snapshot}
+            caption={video === undefined ? (x.note ?? "This recording has no video. Its steps and pages are beside it.") : undefined}
+            url={actions.slice(0, step + 1).findLast((a) => a.page !== undefined)?.page?.url}
+            media={
+              video === undefined ? undefined : (
+                <video
+                  ref={media}
+                  muted
+                  playsInline
+                  onPlay={() => setPlaying(true)}
+                  onPause={() => setPlaying(false)}
+                  onEnded={() => setPlaying(false)}
+                  onTimeUpdate={(e) => setAt(e.currentTarget.currentTime * 1000)}
+                />
+              )
+            }
             right={shown !== undefined ? `Snapshot at ${fmtDuration(shown.at)}` : yours.some(([a, b]) => at >= a && at < b) ? "You had the page" : "Recording"}
           />
           <div className={s.transport}>
@@ -377,7 +500,7 @@ function Replay({ session: x }: { session: BrowserSession }) {
               {yours.map(([a, b]) => (
                 <span key={a} className={s.yoursSpan} style={{ left: place(a), width: place(b - a) }} />
               ))}
-              {x.actions.map((a, i) => (
+              {actions.map((a, i) => (
                 <span key={`${String(a.at)}:${String(i)}`} className={s.tick} style={{ left: place(a.at) }} />
               ))}
               <input
@@ -404,8 +527,8 @@ function Replay({ session: x }: { session: BrowserSession }) {
             </div>
           </div>
         </div>
-        {shown?.snapshot !== undefined ? (
-          <Snapshot key={open} action={shown} snapshot={shown.snapshot} onClose={() => setOpen(null)} />
+        {shown !== undefined && page !== undefined ? (
+          <Snapshot key={open} action={shown} snapshot={page} onClose={() => setOpen(null)} />
         ) : (
           <div className={s.steps}>
             <span className={s.stepsHead}>
@@ -413,16 +536,16 @@ function Replay({ session: x }: { session: BrowserSession }) {
                 Steps
               </Text>
               <Text size="xs" tone="faint" tabular>
-                {String(x.actions.length)}
+                {String(actions.length)}
               </Text>
             </span>
             <ol ref={timeline} className={s.log} aria-label="Its steps: each jumps the recording to its moment">
-              {x.actions.map((a, i) => (
+              {actions.map((a, i) => (
                 <li key={`${String(a.at)}:${String(i)}`} className={cx(s.stepRow, i === step && s.current)}>
                   <button type="button" className={cx(s.step, s.jump)} aria-current={i === step ? "step" : undefined} onClick={() => seek(a.at)}>
                     <StepWords action={a} />
                   </button>
-                  {a.snapshot === undefined ? (
+                  {a.snapshot === undefined && a.page === undefined ? (
                     <span className={s.snapSlot} />
                   ) : (
                     <Tooltip content="The page at this step">

@@ -146,7 +146,19 @@ describe("attachments", () => {
     expect(withFile("image/png", png([]))).toEqual([]);
     expect(withFile("image/png", png([["tEXt", Buffer.from("Author\0someone")]])).join()).toMatch(/PNG metadata \(tEXt\)/u);
     expect(withFile("image/png", png([["eXIf", Buffer.alloc(4)]]))).not.toEqual([]);
-    expect(withFile("image/jpeg", Buffer.from([0xff, 0xd8]))).not.toEqual([]);
+    expect(withFile("image/gif", Buffer.from("GIF89a"))).not.toEqual([]);
+  });
+
+  it("allows a JPEG with pixels only, scans NDJSON and a WebM's text, and refuses what isn't what it says", () => {
+    const segment = (marker: number, body: Buffer) => Buffer.concat([Buffer.from([0xff, marker]), Buffer.from([0, body.length + 2]), body]);
+    const jpeg = (...segments: Buffer[]) => Buffer.concat([Buffer.from([0xff, 0xd8]), ...segments, Buffer.from([0xff, 0xda, 0, 2, 1, 2, 3])]);
+    expect(withFile("image/jpeg", jpeg(segment(0xe0, Buffer.from("JFIF\0")), segment(0xdb, Buffer.alloc(4))))).toEqual([]);
+    expect(withFile("image/jpeg", jpeg(segment(0xe1, Buffer.from("Exif\0\0"))))).not.toEqual([]);
+    expect(withFile("image/jpeg", jpeg(segment(0xfe, Buffer.from("made by someone"))))).not.toEqual([]);
+    expect(withFile("image/jpeg", Buffer.from("not a jpeg"))).not.toEqual([]);
+    expect(withFile("application/x-ndjson", Buffer.from(`{"result":"sk-ant-api03-${"x1Y2".repeat(6)}"}\n`))).not.toEqual([]);
+    expect(withFile("video/webm", Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.from("Chrome")]))).toEqual([]);
+    expect(withFile("video/webm", Buffer.from("not a webm"))).not.toEqual([]);
   });
 
   it("fails `pnpm fixtures` on a planted token: every shared fixture is checked this way", () => {

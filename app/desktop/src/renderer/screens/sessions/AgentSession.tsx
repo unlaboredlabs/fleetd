@@ -6,11 +6,14 @@ import { Button, StateGlyph, Text } from "../../ui";
 import { navigate } from "../shell/navigation";
 import { panelRoute, type ProjectKey } from "../shell/routes";
 import { glyphOf, isLive, siteOf, STATE_WORD } from "./model";
-import { takeOver, useBrowserSessions } from "./preview";
+import { useSessions } from "./hub";
+import { setControl } from "./live";
+import { useDataLayer } from "../../src/data/react";
 import s from "./sessions.module.css";
 
 export function AgentSession({ project, laneId }: { project: ProjectKey; laneId: string }) {
-  const session = useBrowserSessions(project).find((x) => x.agent.laneId === laneId && isLive(x));
+  const layer = useDataLayer();
+  const session = useSessions(project).find((x) => x.agent.laneId === laneId && isLive(x));
   if (session === undefined) return null;
   const open = () => navigate(panelRoute(project, { tab: "sessions", session: session.id }));
   const asking = session.state === "asking";
@@ -29,7 +32,7 @@ export function AgentSession({ project, laneId }: { project: ProjectKey; laneId:
           size="sm"
           icon={<Hand aria-hidden />}
           onClick={() => {
-            takeOver(session.id);
+            void setControl(layer, session.id, "human");
             open();
           }}
         >

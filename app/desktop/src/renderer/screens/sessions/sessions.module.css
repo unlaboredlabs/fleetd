@@ -647,3 +647,32 @@ section + section .group {
   align-items: center;
   gap: var(--space-1);
 }
+
+/* Why there is nothing to play, or nothing live yet: a quiet line where the page would be. */
+.note {
+  justify-content: flex-start;
+  padding-top: var(--space-6);
+}
+.blank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  text-align: center;
+}
+.screen video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+}
+/* How many logins came from 1Password, with the key every fill has. */
+.filled {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.stepsNote {
+  margin: 0;
+  padding: var(--space-2);
+}

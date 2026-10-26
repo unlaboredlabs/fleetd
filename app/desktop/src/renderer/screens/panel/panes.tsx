@@ -11,7 +11,7 @@ import type { PrTab } from "../prs/PrDetail";
 import { PrsPane, usePrList } from "../prs/PrsPane";
 import { SessionsPane } from "../sessions/SessionsPane";
 import { isLive } from "../sessions/model";
-import { useBrowserSessions } from "../sessions/preview";
+import { useSessions } from "../sessions/hub";
 import { openCount } from "../prs/words";
 import type { CountProps, PaneProps } from "./tabs";
 
@@ -54,7 +54,7 @@ export function SessionsTab({ project, view, onWide }: PaneProps) {
 
 /** The sessions open now, the ones asking for you among them. */
 export function SessionCount({ project }: CountProps) {
-  const n = useBrowserSessions(project).filter(isLive).length;
+  const n = useSessions(project).filter(isLive).length;
   return n > 0 ? String(n) : null;
 }
 

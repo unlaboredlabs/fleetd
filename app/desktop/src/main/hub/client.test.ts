@@ -304,6 +304,35 @@ describe("HubClient", () => {
     expect(presences()).toHaveLength(1);
   });
 
+  it("watches a browser session and sends input only to a hub that serves sessions, again on each connection", () => {
+    const { hub, frames, client } = setup();
+    const session = "B68722f97b065412024c7cda6c636fd9a";
+    const browser = () => hub.sent.filter((m) => m["t"] === "browser_watch" || m["t"] === "browser_input");
+    const input = { kind: "text", text: "482913" } as const;
+    client.watch(session);
+    client.start();
+    hub.open();
+    // A hub that doesn't name browser_sessions is sent neither.
+    hub.frame({ t: "ready", protocol: 1, features: ["presence"] });
+    client.input(session, input);
+    expect(browser()).toEqual([]);
+    hub.close(1006);
+    vi.advanceTimersByTime(500);
+    hub.open();
+    hub.frame({ t: "ready", protocol: 1, features: ["presence", "browser_sessions"] });
+    expect(browser()).toEqual([{ t: "browser_watch", session }]);
+    client.input(session, input);
+    expect(hub.sent.at(-1)).toEqual({ t: "browser_input", session, input });
+    // Its frames come through; another session's, still on its way after a change, don't.
+    const frame = { sessionId: session, seq: 1, jpegB64: "AA==", width: 1280, height: 800, control: "human" };
+    hub.frame({ t: "browser_frame", ...frame });
+    hub.frame({ t: "browser_frame", ...frame, sessionId: "B9a63189230ff64d06936e60523503180" });
+    expect(frames.filter((f) => f.t === "browser_frame")).toEqual([{ t: "browser_frame", frame }]);
+    // No session: it stops watching.
+    client.watch(null);
+    expect(hub.sent.at(-1)).toEqual({ t: "browser_watch" });
+  });
+
   it("stops presence when the hub can't read a presence frame, without an error or a restarted stream, until the next connection", () => {
     const { hub, frames, client, states } = setup();
     const presences = () => hub.sent.filter((m) => m["t"] === "presence");
