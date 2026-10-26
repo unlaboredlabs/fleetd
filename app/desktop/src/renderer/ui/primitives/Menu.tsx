@@ -1,6 +1,6 @@
 import { DropdownMenu as D } from "radix-ui";
 import { Check } from "lucide-react";
-import type { ComponentProps, ReactNode } from "react";
+import { createContext, useContext, useState, type ComponentProps, type ReactNode } from "react";
 import { cx } from "../lib/cx";
 import s from "./Overlay.module.css";
 
@@ -8,16 +8,35 @@ import s from "./Overlay.module.css";
  * A dropdown menu (from a button). Item labels wrap instead of clipping; a hint (shortcut) sits on the right.
  */
 
-export const Menu = D.Root;
+const Open = createContext(false);
+
+export function Menu({ open, onOpenChange, defaultOpen, ...rest }: ComponentProps<typeof D.Root>) {
+  const [own, setOwn] = useState(defaultOpen ?? false);
+  const shown = open ?? own;
+  return (
+    <Open.Provider value={shown}>
+      <D.Root
+        {...rest}
+        open={shown}
+        onOpenChange={(next) => {
+          setOwn(next);
+          onOpenChange?.(next);
+        }}
+      />
+    </Open.Provider>
+  );
+}
 export const MenuTrigger = D.Trigger;
 export const MenuRadioGroup = D.RadioGroup;
 
 export function MenuContent({ className, ...rest }: ComponentProps<typeof D.Content>) {
-  return (
+  // Gone the moment it closes, as a tooltip is: left to Radix, a closed menu stays until its entrance reports an end,
+  // which never comes when its start went unseen.
+  return useContext(Open) ? (
     <D.Portal>
       <D.Content className={cx(s.surface, className)} sideOffset={4} collisionPadding={8} align="start" {...rest} />
     </D.Portal>
-  );
+  ) : null;
 }
 
 interface ItemExtras {
