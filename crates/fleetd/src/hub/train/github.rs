@@ -192,6 +192,38 @@ pub struct CheckRun {
     pub head_sha: Option<String>,
 }
 
+impl CheckRun {
+    /// The workflow run that reported it, from its page (`.../actions/runs/<id>/job/<job>`): a re-run's jobs keep it.
+    pub fn workflow_run(&self) -> Option<u64> {
+        let url = self.html_url.as_deref()?;
+        let (_, rest) = url.split_once("/actions/runs/")?;
+        rest.split('/').next()?.parse().ok()
+    }
+}
+
+/// The latest run of each check in `runs`. A re-run adds a newer run with the same name; only the newest counts. Map
+/// order is first-seen.
+pub fn latest(runs: Vec<CheckRun>) -> Vec<CheckRun> {
+    let mut order: Vec<String> = Vec::new();
+    let mut latest: HashMap<String, CheckRun> = HashMap::new();
+    for r in runs {
+        match latest.get(&r.name) {
+            Some(seen) if !supersedes(&r, seen) => {}
+            Some(_) => {
+                latest.insert(r.name.clone(), r);
+            }
+            None => {
+                order.push(r.name.clone());
+                latest.insert(r.name.clone(), r);
+            }
+        }
+    }
+    order
+        .into_iter()
+        .filter_map(|n| latest.remove(&n))
+        .collect()
+}
+
 /// Whether `new` replaces `seen`, a run of the same check: the newer one does, except that a cancelled twin never
 /// stands in for a run that is still going (a superseded workflow run is cancelled while its replacement runs).
 fn supersedes(new: &CheckRun, seen: &CheckRun) -> bool {
@@ -576,6 +608,12 @@ impl TrainGitHub {
 
     /// The latest run of each check on `sha`.
     pub async fn check_runs(&self, repo: &str, sha: &str) -> Result<Vec<CheckRun>, GhError> {
+        Ok(latest(self.all_check_runs(repo, sha).await?))
+    }
+
+    /// The check runs on `sha` as GitHub lists them: a check that two workflow runs report (a PR's own run and one
+    /// dispatched on its branch) is there once for each.
+    pub async fn all_check_runs(&self, repo: &str, sha: &str) -> Result<Vec<CheckRun>, GhError> {
         let runs: CheckRuns = self
             .json(
                 "GET",
@@ -583,25 +621,18 @@ impl TrainGitHub {
                 &[],
             )
             .await?;
-        // A re-run adds a newer run with the same name; only the newest counts. Map order is first-seen.
-        let mut order: Vec<String> = Vec::new();
-        let mut latest: HashMap<String, CheckRun> = HashMap::new();
-        for r in runs.check_runs {
-            match latest.get(&r.name) {
-                Some(seen) if !supersedes(&r, seen) => {}
-                Some(_) => {
-                    latest.insert(r.name.clone(), r);
-                }
-                None => {
-                    order.push(r.name.clone());
-                    latest.insert(r.name.clone(), r);
-                }
-            }
-        }
-        Ok(order
-            .into_iter()
-            .filter_map(|n| latest.remove(&n))
-            .collect())
+        Ok(runs.check_runs)
+    }
+
+    /// Re-runs the failed and cancelled jobs of workflow run `run`.
+    pub async fn rerun_failed_jobs(&self, repo: &str, run: u64) -> Result<(), GhError> {
+        self.json::<Value>(
+            "POST",
+            &format!("repos/{repo}/actions/runs/{run}/rerun-failed-jobs"),
+            &[],
+        )
+        .await
+        .map(|_| ())
     }
 
     /// Posts `fleetd/train=success` on `sha`.

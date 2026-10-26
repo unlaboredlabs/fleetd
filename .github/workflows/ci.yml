@@ -8,19 +8,22 @@ on:
   workflow_dispatch:
     inputs:
       pr:
-        # Set by macos-label.yml: the run shares the PR's concurrency group, so the PR's next push cancels it.
+        # Set by macos-label.yml: the PR's dispatched runs share a concurrency group of their own.
         description: The pull request this run is for
         type: string
         default: ""
 
-# A newer push to a PR cancels its running CI, and so does a run macos-label.yml dispatches for it (which a newer push
-# cancels in turn). Runs on main and on the merge train's batch PR (<prefix>train/batch) are never cancelled: each gets
-# a group of its own.
+# A newer push to a PR cancels its running CI. A run macos-label.yml dispatches for it has a group of its own, so it
+# never cancels the PR's own run: GitHub's ruleset reads the required checks from that run, and one cancelled by a
+# dispatched run on the same head blocked the merge though the dispatched run passed (#510). A newer dispatch replaces
+# it, and macos-label.yml cancels it once a push moves the PR on. Runs on main and on the merge train's batch PR
+# (<prefix>train/batch) are never cancelled: each gets a group of its own.
 concurrency:
   group: >-
     ${{ (github.ref == 'refs/heads/main' || endsWith(github.head_ref || github.ref, 'train/batch'))
     && format('{0}-{1}', github.workflow, github.run_id)
-    || format('{0}-{1}', github.workflow, github.event.pull_request.number || inputs.pr || github.ref) }}
+    || github.event_name == 'workflow_dispatch' && inputs.pr && format('{0}-{1}-label', github.workflow, inputs.pr)
+    || format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref) }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !endsWith(github.head_ref || github.ref, 'train/batch') }}
 
 permissions:

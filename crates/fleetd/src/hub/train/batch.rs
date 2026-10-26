@@ -412,7 +412,7 @@ impl Train {
         );
         let noted: Vec<_> = in_ci.iter().map(|m| m.change.change_id.clone()).collect();
         let red = match self
-            .wait_ci(&in_ci[0].change, repo, &sha, None, &noted)
+            .wait_ci(&in_ci[0].change, repo, &sha, base, None, &noted)
             .await
         {
             CiOutcome::Green => None,
