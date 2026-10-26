@@ -375,11 +375,14 @@ impl ClaudeRunner {
         }
         args.push("--disallowedTools".into());
         args.extend(disallowed_tools(&spec.disallowed_tools));
-        // No `--strict-mcp-config`: sessions run with the user's own claude setup, MCP servers included, and fleetd's
-        // servers are added to them.
+        // Sessions run with the user's own claude setup, MCP servers included, and fleetd's servers are added to them;
+        // unless a person turned the user's own off: `--strict-mcp-config` loads fleetd's only.
         if let Some(mcp) = &spec.mcp_config {
             args.push("--mcp-config".into());
             args.push(mcp.display().to_string());
+            if spec.strict_mcp {
+                args.push("--strict-mcp-config".into());
+            }
         }
         if let Some(settings) = &spec.settings {
             args.push("--settings".into());
@@ -572,6 +575,7 @@ mod tests {
             ],
             disallowed_tools: vec!["Task".into(), "WebFetch".into()],
             mcp_config: None,
+            strict_mcp: false,
             settings: None,
             env: Vec::new(),
             transcript: None,
@@ -602,6 +606,7 @@ mod tests {
             runtime_mode: RuntimeMode::FullAccess,
             allowed_tools: Vec::new(),
             mcp_config: Some("/n/mcp.json".into()),
+            strict_mcp: false,
             settings: Some("/n/settings.json".into()),
             ..spec()
         };
@@ -611,6 +616,17 @@ mod tests {
         // fleetd's servers and settings are added to the user's own, never in place of them.
         assert!(args.contains("--mcp-config /n/mcp.json --settings /n/settings.json "));
         assert!(!args.contains("--strict-mcp-config"));
+        // With the person's own servers turned off, claude loads fleetd's file only.
+        let strict = SessionSpec {
+            strict_mcp: true,
+            ..resumed
+        };
+        let args = runner.args(&strict).join(" ");
+        assert!(
+            args.contains(
+                "--mcp-config /n/mcp.json --strict-mcp-config --settings /n/settings.json "
+            )
+        );
     }
 
     /// A Bash deny rule as claude matches it against one part of a command, after it split off the other parts and

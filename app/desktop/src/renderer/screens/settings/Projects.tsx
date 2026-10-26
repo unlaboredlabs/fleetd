@@ -11,6 +11,7 @@ import { useData, useToolQuery } from "../../src/data/react";
 import { RemoveProjectDialog, type RemoveTarget } from "../projects/RemoveProjectDialog";
 import { parseScope, projectRefOf, scopeKey, type Scope } from "./editor";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
+import { McpSection } from "./McpServers";
 import { PageHead, ScopeSelect, Setting, useProjects } from "./parts";
 import {
   countAfter,
@@ -127,6 +128,8 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
       <WorktreeSetting settings={settings} />
       <Separator />
       <EnvSetting env={settings.env} projectRef={ref} />
+      <Separator />
+      <McpSection projectRef={ref} />
       <Separator />
       <Setting reveal="projects.delete" label="Delete project" help="Stops its agents and removes it from fleetd, with its fleetd worktrees.">
         <Text size="sm" tone="quiet">

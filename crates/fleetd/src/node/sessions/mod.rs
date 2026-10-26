@@ -281,24 +281,29 @@ pub fn parse_env_file(text: &str) -> Vec<(String, String)> {
 /// CLI does, and names the session so the hub can tell a lead from a task. `alwaysLoad` keeps its tools in the prompt
 /// from the first turn, out of tool search (`ENABLE_TOOL_SEARCH`): every agent calls them, and finding one through a
 /// search costs a model round trip each session. claude 2.1.302 honors it for `--mcp-config` servers.
+#[cfg(test)]
 fn mcp_config(role: SessionRole, sock: &Path, session_id: &str) -> String {
-    let servers = match role.cli_arg() {
+    let servers = match fleetd_server(role, sock, session_id) {
         None => serde_json::json!({}),
-        Some(role) => {
-            let exe = agent_exe(std::env::current_exe(), std::process::id());
-            serde_json::json!({ crate::cli::agent_mcp::SERVER_NAME: {
-                "type": "stdio",
-                "command": exe,
-                "args": ["agent-mcp", "--role", role],
-                "alwaysLoad": true,
-                "env": {
-                    "FLEETD_NODE_SOCK": sock.to_string_lossy(),
-                    "FLEETD_THREAD_ID": session_id,
-                },
-            }})
-        }
+        Some(fleetd) => serde_json::json!({ crate::cli::agent_mcp::SERVER_NAME: fleetd }),
     };
     format!("{}\n", serde_json::json!({ "mcpServers": servers }))
+}
+
+/// fleetd's own server's entry in a session's `mcpServers` (see [`mcp_config`]); none for a plain thread.
+fn fleetd_server(role: SessionRole, sock: &Path, session_id: &str) -> Option<serde_json::Value> {
+    let role = role.cli_arg()?;
+    let exe = agent_exe(std::env::current_exe(), std::process::id());
+    Some(serde_json::json!({
+        "type": "stdio",
+        "command": exe,
+        "args": ["agent-mcp", "--role", role],
+        "alwaysLoad": true,
+        "env": {
+            "FLEETD_NODE_SOCK": sock.to_string_lossy(),
+            "FLEETD_THREAD_ID": session_id,
+        },
+    }))
 }
 
 /// The command for `fleetd agent-mcp`: the node's own running binary, which speaks the node's socket. Once `fleetd
@@ -825,6 +830,52 @@ impl SessionService {
                 .await;
                 Ok(SessionOutput::ProjectWorktrees(worktrees))
             }
+            SessionCall::McpSecrets {
+                scope,
+                server,
+                set,
+                keep,
+            } => {
+                if let fleetd_contracts::mcp_servers::McpSecretScope::Project { project_id } =
+                    &scope
+                {
+                    self.project_root(project_id)?;
+                }
+                let home = self.inner.config.home.clone();
+                let secrets = blocking(move || {
+                    let box_key = super::identity::load_or_create_box_key(&home).ok();
+                    super::mcp_servers::apply(&home, &scope, &server, &set, &keep, box_key.as_ref())
+                })
+                .await
+                .map_err(invalid)?;
+                Ok(SessionOutput::McpSecrets { secrets })
+            }
+            SessionCall::McpTest { project_id, server } => {
+                let config = &self.inner.config;
+                let mut env = config.runner_env();
+                let cwd = match &project_id {
+                    Some(project_id) => {
+                        let root = self.project_root(project_id)?;
+                        let mut project_env =
+                            super::project_env::vars(&config.home, project_id.as_str());
+                        project_env.retain(|(p, _)| !env.iter().any(|(k, _)| k == p));
+                        env.extend(project_env);
+                        root
+                    }
+                    None => super::util::home_dir(),
+                };
+                let result = match super::mcp_servers::resolve(&config.home, &server) {
+                    Ok(resolved) => super::mcp_probe::probe(&resolved, &cwd, &env).await,
+                    Err(missing) => fleetd_contracts::mcp_servers::McpTestResult {
+                        error: Some(format!(
+                            "this machine doesn't hold its {}: save the server again",
+                            missing.join(", ")
+                        )),
+                        ..Default::default()
+                    },
+                };
+                Ok(SessionOutput::McpTested(result))
+            }
             SessionCall::Launch(launch) => self.launch(launch).await,
             SessionCall::Send {
                 session_id,
@@ -832,7 +883,11 @@ impl SessionService {
                 text,
                 mode,
                 steer,
+                mcp,
             } => {
+                if let Some(config) = mcp {
+                    self.refresh_mcp(&session_id, config).await;
+                }
                 let waiter = (mode == SendMode::Now).then(|| {
                     let (tx, rx) = oneshot::channel();
                     self.st().send_now_waiters.insert(run_id.to_string(), tx);
@@ -1430,6 +1485,10 @@ impl SessionService {
             },
         };
         self.store().commit(&row, &[], false)?;
+        if let (Some(role), Some(config)) = (launch.mcp_role, launch.mcp.clone()) {
+            self.keep_mcp(&id, super::mcp_servers::Kept { role, config })
+                .await;
+        }
         let prompt = match launch.role {
             SessionRole::Worker => {
                 let home = self.inner.config.home.clone();
@@ -1720,6 +1779,35 @@ impl SessionService {
         Ok((handle.commands, note))
     }
 
+    /// Keeps a session's MCP servers in its directory for its next start.
+    async fn keep_mcp(&self, id: &str, kept: super::mcp_servers::Kept) {
+        let dir = self.inner.config.home.join("sessions").join(id);
+        if let Err(e) = blocking(move || super::mcp_servers::keep(&dir, &kept)).await {
+            tracing::warn!(session = id, "the session's MCP servers were not kept: {e}");
+        }
+    }
+
+    /// The hub's MCP servers for a session changed: kept for its next start (a running claude keeps the servers it
+    /// started with). A session from before MCP servers takes its role from what it is; a plain thread gets none.
+    async fn refresh_mcp(&self, id: &str, config: fleetd_contracts::mcp_servers::McpSessionConfig) {
+        use fleetd_contracts::mcp_servers::McpAgentRole;
+        let Ok(Some(row)) = self.store().session(id) else {
+            return;
+        };
+        let dir = self.inner.config.home.join("sessions").join(id);
+        let role = match super::mcp_servers::kept(&dir) {
+            Some(kept) => kept.role,
+            None => match row.local.role {
+                SessionRole::Plain => return,
+                SessionRole::Lead => McpAgentRole::Lead,
+                SessionRole::Worker if row.local.branch.is_some() => McpAgentRole::Writer,
+                SessionRole::Worker => McpAgentRole::Reviewer,
+            },
+        };
+        self.keep_mcp(id, super::mcp_servers::Kept { role, config })
+            .await;
+    }
+
     /// Where a writer's worktree that is gone comes back from; `None` while it is there, or for a session in the root.
     async fn lost_worktree(
         &self,
@@ -1755,7 +1843,16 @@ impl SessionService {
         super::config::mkdir_private(&dir)?;
         let mcp = dir.join("mcp.json");
         let sock = super::lead::lead_socket_path(&config.home);
-        std::fs::write(&mcp, mcp_config(row.local.role, &sock, id))?;
+        // The configured servers of the session's role, their secrets resolved here, then fleetd's own. The file
+        // holds secrets, so it is written as the node's secret files are (0600).
+        let kept = super::mcp_servers::kept(&dir);
+        let session_mcp = super::mcp_servers::session_config(
+            &config.home,
+            kept.as_ref(),
+            fleetd_server(row.local.role, &sock, id),
+            id,
+        );
+        super::secrets::write_atomic(&mcp, session_mcp.json.as_bytes())?;
         let transcripts = config.home.join("transcripts");
         super::config::mkdir_private(&transcripts)?;
         let transcript = transcripts.join(format!("{id}.jsonl"));
@@ -1765,6 +1862,8 @@ impl SessionService {
         // claude.env) keeps the node's value, and fleetd's values below still win.
         let (mut project_env, secrets) =
             super::project_env::for_spawn(&config.home, row.summary.project_id.as_str());
+        let mut secrets = secrets;
+        secrets.extend(session_mcp.secrets.iter().cloned());
         let secrets = super::mask::Secrets(secrets);
         project_env.retain(|(p, _)| !env.iter().any(|(k, _)| k == p));
         env.extend(project_env);
@@ -1827,6 +1926,7 @@ impl SessionService {
                 .chain(row.local.disallowed_tools.iter().cloned())
                 .collect(),
             mcp_config: Some(mcp),
+            strict_mcp: session_mcp.strict,
             settings: Some(settings),
             env,
             transcript: Some(transcript),
@@ -2097,11 +2197,16 @@ impl SessionService {
     /// For masking what the session reports: the secrets its process was `spawned` with (a rotated or removed one is
     /// still in its environment) and its project's secrets now.
     fn masker(&self, id: &str, spawned: &super::mask::Secrets) -> super::mask::Masker {
+        let home = &self.inner.config.home;
         let now = match self.store().session(id) {
-            Ok(Some(row)) => super::mask::Secrets(super::project_env::secrets(
-                &self.inner.config.home,
-                row.summary.project_id.as_str(),
-            )),
+            Ok(Some(row)) => {
+                let mut now = super::project_env::secrets(home, row.summary.project_id.as_str());
+                now.extend(super::mcp_servers::secrets(
+                    home,
+                    &home.join("sessions").join(id),
+                ));
+                super::mask::Secrets(now)
+            }
             _ => super::mask::Secrets::default(),
         };
         let all: Vec<(String, String)> = spawned.0.iter().chain(&now.0).cloned().collect();
@@ -2840,7 +2945,11 @@ impl SessionService {
             .ok_or_else(|| not_found(format!("no project {project_id} on this machine")))?;
         let home = self.inner.config.home.clone();
         let id = project_id.to_string();
-        blocking(move || super::project_env::forget(&home, &id)).await;
+        blocking(move || {
+            super::project_env::forget(&home, &id);
+            super::mcp_servers::forget(&home, &id);
+        })
+        .await;
         self.st().machine(frame);
         Ok(SessionOutput::Done)
     }

@@ -313,6 +313,7 @@ pub fn build_on_with(
     };
     let policies = crate::hub::policy::Policies::new(Arc::new(source), clock.clone());
     executors.set_tool_policy(policies.clone());
+    executors.set_mcp_servers(db.clone());
     let tasks = crate::hub::tasks::Tasks::new(crate::hub::tasks::TaskDeps {
         db: db.clone(),
         store: store.clone(),

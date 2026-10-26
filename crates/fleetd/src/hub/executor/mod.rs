@@ -15,6 +15,12 @@ pub mod tools;
 
 pub use tools::register;
 
+/// What a session's MCP servers are, for telling a change.
+fn mcp_digest(config: &fleetd_contracts::mcp_servers::McpSessionConfig) -> [u8; 32] {
+    use sha2::Digest;
+    sha2::Sha256::digest(serde_json::to_vec(config).unwrap_or_default()).into()
+}
+
 #[cfg(test)]
 mod fake_node_tests;
 #[cfg(test)]
@@ -64,6 +70,8 @@ pub const WATCH_IDLE_MS: u64 = 60_000;
 const READ_TIMEOUT: Duration = Duration::from_secs(15);
 /// A launch may create a worktree and spawn claude before the node answers.
 const LAUNCH_TIMEOUT: Duration = Duration::from_secs(60);
+/// A connection test: the node gives a server 30 s to start and list its tools.
+const MCP_TEST_TIMEOUT: Duration = Duration::from_secs(45);
 /// The node first stops the project's claude processes and waits up to 12 s for them to exit.
 const REMOVE_TIMEOUT: Duration = Duration::from_secs(30);
 /// The node's stop waits up to 25 s for claude to exit (its kill ladder, then a SIGKILL).
@@ -151,6 +159,8 @@ pub struct LaunchOptions {
     pub workspace: Option<SessionWorkspace>,
     /// Leads and tasks get fleetd's agent MCP tools for their role; a thread a person starts gets none.
     pub role: fleetd_contracts::sessions::SessionRole,
+    /// The role whose configured MCP servers it gets; none for a plain thread.
+    pub mcp_role: Option<fleetd_contracts::mcp_servers::McpAgentRole>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -336,6 +346,11 @@ pub struct Executors {
     /// Per machine: the runner as the node last reported it, by a `runner_info` answer or a pushed event.
     runners: Mutex<HashMap<MachineId, watch::Sender<Option<RunnerInfo>>>>,
     tool_policy: Mutex<Option<Arc<dyn ToolPolicy>>>,
+    /// Where a launch's MCP servers come from (`hub::mcp_servers`); none until `hub/serve` sets it.
+    mcp_servers: std::sync::OnceLock<Arc<crate::hub::store::HubDb>>,
+    /// Per thread (`machine/thread`): its project, and a digest of the MCP servers it last got, so a send carries them
+    /// only when they changed. Empty after a hub restart: each thread's next send carries them once.
+    mcp_sent: Mutex<HashMap<String, (ProjectId, [u8; 32])>>,
     /// Running clones by add id: where their `clone_progress` frames go.
     clones: repos::CloneWatchers,
     /// Where a node's steer receipts go (the steer area).
@@ -481,6 +496,8 @@ impl Executors {
             runners: Mutex::default(),
             ready: Mutex::default(),
             tool_policy: Mutex::default(),
+            mcp_servers: std::sync::OnceLock::new(),
+            mcp_sent: Mutex::default(),
             clones: Mutex::default(),
             hooks: tools::ToolHooks::default(),
             time: std::sync::OnceLock::new(),
@@ -498,6 +515,66 @@ impl Executors {
     /// `hub/serve` sets this once the policy reader exists; until then launches carry no tool rules.
     pub fn set_tool_policy(&self, policy: Arc<dyn ToolPolicy>) {
         *self.tool_policy.lock().unwrap() = Some(policy);
+    }
+
+    /// `hub/serve` sets this once: every agent's launch from then on carries its project's MCP servers and the global
+    /// ones, and every send a thread's changed ones.
+    pub fn set_mcp_servers(&self, db: Arc<crate::hub::store::HubDb>) {
+        let _ = self.mcp_servers.set(db);
+    }
+
+    fn mcp_config(
+        &self,
+        machine_id: &MachineId,
+        project_id: &ProjectId,
+    ) -> Option<fleetd_contracts::mcp_servers::McpSessionConfig> {
+        let db = self.mcp_servers.get()?;
+        let r = ProjectRef {
+            machine_id: machine_id.clone(),
+            project_id: project_id.clone(),
+        };
+        match db.mcp_servers().session_config(&r) {
+            Ok(config) => Some(config),
+            Err(e) => {
+                tracing::warn!(%machine_id, %project_id, "MCP servers not read: {e}");
+                None
+            }
+        }
+    }
+
+    /// The thread's MCP servers when they differ from what it last got, and what to record once the send went. A
+    /// plain thread's node ignores them.
+    #[allow(clippy::type_complexity)]
+    fn changed_mcp(
+        &self,
+        r: &ThreadRef,
+    ) -> (
+        Option<fleetd_contracts::mcp_servers::McpSessionConfig>,
+        Option<(ProjectId, [u8; 32])>,
+    ) {
+        if self.mcp_servers.get().is_none() {
+            return (None, None);
+        }
+        let key = format!("{}/{}", r.machine_id, r.thread_id);
+        let last = self.mcp_sent.lock().unwrap().get(&key).cloned();
+        let project = match &last {
+            Some((project, _)) => Some(project.clone()),
+            None => self
+                .summary_of(r)
+                .ok()
+                .and_then(|s| ProjectId::new(s.project_id).ok()),
+        };
+        let Some(project) = project else {
+            return (None, None);
+        };
+        let Some(config) = self.mcp_config(&r.machine_id, &project) else {
+            return (None, None);
+        };
+        let digest = mcp_digest(&config);
+        if last.is_some_and(|(_, d)| d == digest) {
+            return (None, None);
+        }
+        (Some(config), Some((project, digest)))
     }
 
     fn now_ms(&self) -> u64 {
@@ -1352,7 +1429,15 @@ impl Executors {
             allowed_tools: rules.allow,
             disallowed_tools: rules.deny,
             role: options.role,
+            mcp_role: options.mcp_role,
+            mcp: options
+                .mcp_role
+                .and_then(|_| self.mcp_config(machine_id, &input.project_id)),
         };
+        let sent = launch
+            .mcp
+            .as_ref()
+            .map(|config| (input.project_id.clone(), mcp_digest(config)));
         let base = match self
             .call(machine_id, op, SessionCall::Launch(launch), LAUNCH_TIMEOUT)
             .await?
@@ -1360,6 +1445,12 @@ impl Executors {
             SessionOutput::Launched { base, .. } => base,
             _ => None,
         };
+        if let Some(sent) = sent {
+            self.mcp_sent
+                .lock()
+                .unwrap()
+                .insert(format!("{machine_id}/{session_id}"), sent);
+        }
         Ok((session_id, base))
     }
 
@@ -1403,6 +1494,7 @@ impl Executors {
     ) -> Result<SendOutcome, ExecutorError> {
         let op = NodeOperation::Send;
         let run_id = Self::send_run_id(r, client_request_id);
+        let (mcp, mcp_sent) = self.changed_mcp(r);
         let call = SessionCall::Send {
             session_id: r.thread_id.clone(),
             run_id: NonEmpty::unchecked(run_id.clone()),
@@ -1412,19 +1504,25 @@ impl Executors {
                 id,
                 riders: opts.riders.clone(),
             }),
+            mcp,
         };
-        Ok(
-            match self.call(&r.machine_id, op, call, READ_TIMEOUT).await? {
-                SessionOutput::Sent(sent) => SendOutcome {
-                    run_id: Some(sent.run_id.to_string()),
-                    queued: sent.queued,
-                },
-                _ => SendOutcome {
-                    run_id: Some(run_id),
-                    queued: false,
-                },
+        let out = self.call(&r.machine_id, op, call, READ_TIMEOUT).await?;
+        if let Some(sent) = mcp_sent {
+            self.mcp_sent
+                .lock()
+                .unwrap()
+                .insert(format!("{}/{}", r.machine_id, r.thread_id), sent);
+        }
+        Ok(match out {
+            SessionOutput::Sent(sent) => SendOutcome {
+                run_id: Some(sent.run_id.to_string()),
+                queued: sent.queued,
             },
-        )
+            _ => SendOutcome {
+                run_id: Some(run_id),
+                queued: false,
+            },
+        })
     }
 
     pub async fn interrupt(
@@ -1951,6 +2049,48 @@ impl Executors {
         match self.call(machine_id, op, call, READ_TIMEOUT).await? {
             SessionOutput::ProjectWorktrees(w) => Ok(w),
             _ => Err(failed(machine_id, op, "the node sent no worktrees")),
+        }
+    }
+
+    /// Replaces the secrets the node keeps for one MCP server; the fingerprint of each it saved. Only to a node listing
+    /// `CAP_MCP_SERVERS`.
+    pub async fn mcp_secrets(
+        &self,
+        machine_id: &MachineId,
+        scope: fleetd_contracts::mcp_servers::McpSecretScope,
+        server: fleetd_contracts::mcp_servers::McpServerName,
+        set: Vec<fleetd_contracts::mcp_servers::McpSecretSet>,
+        keep: Vec<fleetd_contracts::mcp_servers::McpSecretKey>,
+    ) -> Result<Vec<fleetd_contracts::mcp_servers::McpSecretSaved>, ExecutorError> {
+        let op = NodeOperation::Project;
+        let call = SessionCall::McpSecrets {
+            scope,
+            server,
+            set,
+            keep,
+        };
+        match self.call(machine_id, op, call, READ_TIMEOUT).await? {
+            SessionOutput::McpSecrets { secrets } => Ok(secrets),
+            _ => Err(failed(
+                machine_id,
+                op,
+                "the node sent no answer to mcp_secrets",
+            )),
+        }
+    }
+
+    /// Has the node start or reach an MCP server and list its tools. Only to a node listing `CAP_MCP_SERVERS`.
+    pub async fn mcp_test(
+        &self,
+        machine_id: &MachineId,
+        project_id: Option<ProjectId>,
+        server: fleetd_contracts::mcp_servers::McpSessionServer,
+    ) -> Result<fleetd_contracts::mcp_servers::McpTestResult, ExecutorError> {
+        let op = NodeOperation::Read;
+        let call = SessionCall::McpTest { project_id, server };
+        match self.call(machine_id, op, call, MCP_TEST_TIMEOUT).await? {
+            SessionOutput::McpTested(result) => Ok(result),
+            _ => Err(failed(machine_id, op, "the node sent no test result")),
         }
     }
 

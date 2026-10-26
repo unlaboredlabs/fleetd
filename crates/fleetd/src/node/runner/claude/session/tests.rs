@@ -93,6 +93,7 @@ impl Fake {
             allowed_tools: Vec::new(),
             disallowed_tools: Vec::new(),
             mcp_config: None,
+            strict_mcp: false,
             settings: None,
             env: vec![
                 ("PATH".into(), std::env::var("PATH").unwrap()),

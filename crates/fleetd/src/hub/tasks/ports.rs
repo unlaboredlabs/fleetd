@@ -50,6 +50,8 @@ pub struct LaunchRequest {
     pub profile: TaskProfile,
     pub title: String,
     pub client_request_id: String,
+    /// Which MCP servers its agent gets: a writer's, or a reviewer's for a read or review task.
+    pub kind: fleetd_contracts::tasks::TaskKind,
     /// Write tasks: `{ type: "worktree", baseRef, branch }`; read and review tasks: `{ type: "detached", baseRef, pr }`.
     pub worktree: Option<Worktree>,
 }

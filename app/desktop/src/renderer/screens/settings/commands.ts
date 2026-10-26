@@ -46,6 +46,14 @@ const pages: Command[] = [
     run: () => go(tabHref("projects")),
   },
   {
+    id: "go:settings.mcp",
+    title: "MCP servers",
+    detail: "The MCP servers agents get, global and per project, and Test connection",
+    group: "settings",
+    keywords: ["mcp", "tools", "servers", "connections", "integrations"],
+    run: () => go(tabHref("mcp")),
+  },
+  {
     id: "go:settings.instructions",
     title: "Instructions",
     detail: "Your own, added to every agent's first message",

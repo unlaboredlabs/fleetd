@@ -5006,6 +5006,408 @@
         }
       ]
     },
+    "McpArg": {
+      "type": "string"
+    },
+    "McpRoles": {
+      "description": "Which of fleetd's agents get a server. A plain thread a person starts gets none.",
+      "properties": {
+        "lead": {
+          "description": "The project's lead.",
+          "type": "boolean"
+        },
+        "reviewers": {
+          "description": "Review and read tasks' agents: the ones that only read.",
+          "type": "boolean"
+        },
+        "writers": {
+          "description": "Write tasks' agents.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "lead",
+        "writers",
+        "reviewers"
+      ],
+      "type": "object"
+    },
+    "McpScope": {
+      "description": "Where a server is configured.",
+      "oneOf": [
+        {
+          "description": "Every project on every machine.",
+          "properties": {
+            "kind": {
+              "const": "global",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "One project; replaces a global server of the same name there.",
+          "properties": {
+            "kind": {
+              "const": "project",
+              "type": "string"
+            },
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "projectId": {
+              "$ref": "#/$defs/ProjectId"
+            }
+          },
+          "required": [
+            "kind",
+            "machineId",
+            "projectId"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "McpSeal": {
+      "description": "One machine's box of a secret value.",
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "sealed": {
+          "$ref": "#/$defs/SealedSecret",
+          "description": "`crypto_box_seal` of the value to that machine's `boxPubKey`: up to 64 KiB, no NUL."
+        }
+      },
+      "required": [
+        "machineId",
+        "sealed"
+      ],
+      "type": "object"
+    },
+    "McpSealedOn": {
+      "description": "The machine a secret value was sealed to, with the fingerprint its node computed.",
+      "properties": {
+        "fingerprint": {
+          "$ref": "#/$defs/SecretFingerprint"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        }
+      },
+      "required": [
+        "machineId",
+        "fingerprint"
+      ],
+      "type": "object"
+    },
+    "McpServer": {
+      "description": "One configured server as the hub keeps it. A secret has no value here.",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "env": {
+          "default": [],
+          "description": "A stdio server's env.",
+          "items": {
+            "$ref": "#/$defs/McpValue"
+          },
+          "type": "array"
+        },
+        "headers": {
+          "default": [],
+          "description": "An HTTP or SSE server's headers.",
+          "items": {
+            "$ref": "#/$defs/McpValue"
+          },
+          "type": "array"
+        },
+        "name": {
+          "$ref": "#/$defs/McpServerName"
+        },
+        "roles": {
+          "$ref": "#/$defs/McpRoles"
+        },
+        "scope": {
+          "$ref": "#/$defs/McpScope"
+        },
+        "transport": {
+          "$ref": "#/$defs/McpTransport"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "scope",
+        "name",
+        "enabled",
+        "roles",
+        "transport",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "McpServerName": {
+      "pattern": "^[A-Za-z0-9_-]{1,64}$",
+      "type": "string"
+    },
+    "McpServerRemoveInput": {
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/McpServerName"
+        },
+        "scope": {
+          "$ref": "#/$defs/McpScope"
+        }
+      },
+      "required": [
+        "scope",
+        "name"
+      ],
+      "type": "object"
+    },
+    "McpServerRemoveOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "ok": {
+          "enum": [
+            true
+          ],
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "type": "object"
+    },
+    "McpServerSetInput": {
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "env": {
+          "default": [],
+          "description": "A stdio server's env, the whole list: a value saved before and not here is removed.",
+          "items": {
+            "$ref": "#/$defs/McpValueSet"
+          },
+          "maxItems": 50,
+          "type": "array"
+        },
+        "headers": {
+          "default": [],
+          "description": "An HTTP or SSE server's headers, the whole list.",
+          "items": {
+            "$ref": "#/$defs/McpValueSet"
+          },
+          "maxItems": 50,
+          "type": "array"
+        },
+        "name": {
+          "$ref": "#/$defs/McpServerName"
+        },
+        "roles": {
+          "$ref": "#/$defs/McpRoles"
+        },
+        "scope": {
+          "$ref": "#/$defs/McpScope"
+        },
+        "transport": {
+          "$ref": "#/$defs/McpTransport"
+        }
+      },
+      "required": [
+        "scope",
+        "name",
+        "enabled",
+        "roles",
+        "transport"
+      ],
+      "type": "object"
+    },
+    "McpServerSetOutput": {
+      "properties": {
+        "missingOn": {
+          "description": "Machines whose node doesn't hold all of its secrets (offline when it was saved): their agents go without it\nuntil it is saved again while they are online.",
+          "items": {
+            "$ref": "#/$defs/MachineId"
+          },
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "server": {
+          "$ref": "#/$defs/McpServer"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "server"
+      ],
+      "type": "object"
+    },
+    "McpServerTestInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId",
+          "description": "Where to test a global server; default: the first machine online. A project server is tested on its machine."
+        },
+        "name": {
+          "$ref": "#/$defs/McpServerName"
+        },
+        "scope": {
+          "$ref": "#/$defs/McpScope"
+        }
+      },
+      "required": [
+        "scope",
+        "name"
+      ],
+      "type": "object"
+    },
+    "McpServerTestOutput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "next": {
+          "type": "string"
+        },
+        "result": {
+          "$ref": "#/$defs/McpTestResult"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "machineId",
+        "result"
+      ],
+      "type": "object"
+    },
+    "McpServersGetInput": {
+      "properties": {
+        "project": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "Also this project's own servers."
+        }
+      },
+      "type": "object"
+    },
+    "McpServersGetOutput": {
+      "properties": {
+        "global": {
+          "description": "Every project's, by name.",
+          "items": {
+            "$ref": "#/$defs/McpServer"
+          },
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "project": {
+          "default": [],
+          "description": "The asked project's own, by name; each replaces a global one of the same name there.",
+          "items": {
+            "$ref": "#/$defs/McpServer"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "userServers": {
+          "description": "Agents also get the person's own MCP servers from their claude setup (on by default).",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "global",
+        "userServers"
+      ],
+      "type": "object"
+    },
+    "McpSettingsSetInput": {
+      "properties": {
+        "userServers": {
+          "description": "Agents also get the person's own MCP servers from their claude setup.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "userServers"
+      ],
+      "type": "object"
+    },
+    "McpSettingsSetOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "userServers": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "userServers"
+      ],
+      "type": "object"
+    },
+    "McpTestResult": {
+      "description": "What a connection test found: the tools a server lists, or why it couldn't be reached.",
+      "properties": {
+        "error": {
+          "description": "Why the test failed: what went wrong, the server's stderr tail for a command.",
+          "type": "string"
+        },
+        "server": {
+          "description": "The name and version the server gave, e.g. `github-mcp 1.2.0`.",
+          "type": "string"
+        },
+        "tools": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/McpToolInfo"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "McpToolInfo": {
+      "description": "One tool a server lists.",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
     "McpTools": {
       "properties": {
         "actions_list.input": {
@@ -5145,6 +5547,36 @@
         },
         "lead_start.output": {
           "$ref": "#/$defs/LeadStartOutput"
+        },
+        "mcp_server_remove.input": {
+          "$ref": "#/$defs/McpServerRemoveInput"
+        },
+        "mcp_server_remove.output": {
+          "$ref": "#/$defs/McpServerRemoveOutput"
+        },
+        "mcp_server_set.input": {
+          "$ref": "#/$defs/McpServerSetInput"
+        },
+        "mcp_server_set.output": {
+          "$ref": "#/$defs/McpServerSetOutput"
+        },
+        "mcp_server_test.input": {
+          "$ref": "#/$defs/McpServerTestInput"
+        },
+        "mcp_server_test.output": {
+          "$ref": "#/$defs/McpServerTestOutput"
+        },
+        "mcp_servers_get.input": {
+          "$ref": "#/$defs/McpServersGetInput"
+        },
+        "mcp_servers_get.output": {
+          "$ref": "#/$defs/McpServersGetOutput"
+        },
+        "mcp_settings_set.input": {
+          "$ref": "#/$defs/McpSettingsSetInput"
+        },
+        "mcp_settings_set.output": {
+          "$ref": "#/$defs/McpSettingsSetOutput"
         },
         "memory_caps_set.input": {
           "$ref": "#/$defs/MemoryCapsSetInput"
@@ -5476,6 +5908,16 @@
         "hub_info.output",
         "lead_start.input",
         "lead_start.output",
+        "mcp_server_remove.input",
+        "mcp_server_remove.output",
+        "mcp_server_set.input",
+        "mcp_server_set.output",
+        "mcp_server_test.input",
+        "mcp_server_test.output",
+        "mcp_servers_get.input",
+        "mcp_servers_get.output",
+        "mcp_settings_set.input",
+        "mcp_settings_set.output",
         "memory_caps_set.input",
         "memory_caps_set.output",
         "memory_get.input",
@@ -5572,6 +6014,169 @@
         "workstream_list.output"
       ],
       "type": "object"
+    },
+    "McpTransport": {
+      "description": "How claude reaches a server.",
+      "oneOf": [
+        {
+          "description": "A command the agent's claude starts on the machine, in the agent's working directory, speaking MCP over its\nstdin and stdout. Its env adds to the agent's own.",
+          "properties": {
+            "args": {
+              "default": [],
+              "items": {
+                "$ref": "#/$defs/McpArg"
+              },
+              "type": "array"
+            },
+            "command": {
+              "$ref": "#/$defs/McpArg"
+            },
+            "type": {
+              "const": "stdio",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "command"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "MCP's streamable HTTP, with the server's headers on every request.",
+          "properties": {
+            "type": {
+              "const": "http",
+              "type": "string"
+            },
+            "url": {
+              "$ref": "#/$defs/McpUrl"
+            }
+          },
+          "required": [
+            "type",
+            "url"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "MCP's older HTTP with server-sent events, with the server's headers on every request.",
+          "properties": {
+            "type": {
+              "const": "sse",
+              "type": "string"
+            },
+            "url": {
+              "$ref": "#/$defs/McpUrl"
+            }
+          },
+          "required": [
+            "type",
+            "url"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "McpUrl": {
+      "type": "string"
+    },
+    "McpValue": {
+      "description": "One env variable or header as the hub keeps it: a plain one's value, or the machines a secret's node holds it on.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/EnvVarKind"
+        },
+        "name": {
+          "$ref": "#/$defs/McpValueName"
+        },
+        "sealedOn": {
+          "description": "A secret's: each machine whose node holds it. A project server's, its machine.",
+          "items": {
+            "$ref": "#/$defs/McpSealedOn"
+          },
+          "type": "array"
+        },
+        "value": {
+          "$ref": "#/$defs/EnvValue",
+          "description": "A plain value."
+        }
+      },
+      "required": [
+        "name",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "McpValueName": {
+      "pattern": "^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,128}$",
+      "type": "string"
+    },
+    "McpValueSet": {
+      "description": "One env variable or header of a server being saved.",
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "const": "plain",
+              "type": "string"
+            },
+            "name": {
+              "$ref": "#/$defs/McpValueName"
+            },
+            "value": {
+              "$ref": "#/$defs/EnvValue"
+            }
+          },
+          "required": [
+            "kind",
+            "name",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The value sealed to each machine that runs the server: a project server's machine, or for a global one every\nmachine the app knows a box key of.",
+          "properties": {
+            "kind": {
+              "const": "secret",
+              "type": "string"
+            },
+            "name": {
+              "$ref": "#/$defs/McpValueName"
+            },
+            "sealed": {
+              "items": {
+                "$ref": "#/$defs/McpSeal"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "kind",
+            "name",
+            "sealed"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The secret already saved under this name, as it is: what editing the rest of a server sends.",
+          "properties": {
+            "kind": {
+              "const": "keep",
+              "type": "string"
+            },
+            "name": {
+              "$ref": "#/$defs/McpValueName"
+            }
+          },
+          "required": [
+            "kind",
+            "name"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "MemoryCaps": {
       "description": "What memory writes are held to, in characters. A write past a cap is refused; a file already past a lowered cap\nstays as it is until it is next written.",

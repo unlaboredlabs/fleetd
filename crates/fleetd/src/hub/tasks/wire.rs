@@ -8,6 +8,7 @@ use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadId, ThreadRef, Timestam
 use fleetd_contracts::lead_calls::{AskLeadResult, LeadCall, LeadCallResult};
 use fleetd_contracts::ledger::{Brief, Workstream, WorkstreamId};
 use fleetd_contracts::mcp::{ErrorCode, McpToolError};
+use fleetd_contracts::mcp_servers::McpAgentRole;
 use fleetd_contracts::model::RuntimeMode;
 use fleetd_contracts::prim::NonEmpty;
 use fleetd_contracts::projects::github_repo;
@@ -111,9 +112,15 @@ impl TaskPorts for HubTaskPorts {
                     })
                 }
             };
+            let mcp_role = match request.kind {
+                fleetd_contracts::tasks::TaskKind::Write => McpAgentRole::Writer,
+                fleetd_contracts::tasks::TaskKind::Read
+                | fleetd_contracts::tasks::TaskKind::Review => McpAgentRole::Reviewer,
+            };
             let options = LaunchOptions {
                 workspace,
                 role: fleetd_contracts::sessions::SessionRole::Worker,
+                mcp_role: Some(mcp_role),
             };
             self.executors
                 .launch(machine_id, &input, options)
