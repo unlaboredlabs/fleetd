@@ -1,7 +1,8 @@
-// fleetd.sh's figure callouts stay readable at every width. Run by CI's `site` job from the repo root:
+// fleetd.sh's landing page fits every width. Run by CI's `site` job from the repo root:
 //   node .github/site-layout-check.mjs
 // Renders site/home.html in headless Chrome ($CHROME, else google-chrome or chromium on PATH) at each width below and
-// fails, one line per problem, when two `.note` boxes of a figure intersect or a note leaves the viewport horizontally.
+// fails, one line per problem, when the page scrolls sideways (something is wider than the viewport), or when a
+// figure has callout notes and two `.note` boxes intersect or a note leaves the viewport horizontally.
 // It talks to Chrome over the DevTools protocol on node's own WebSocket, so it needs no npm install. The page names its
 // fonts and images from the site root (/fonts/...), which a file:// page would look for at the filesystem root, so
 // those requests are answered from site/: the notes wrap as they do on fleetd.sh.
@@ -10,7 +11,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const WIDTHS = [390, 768, 1101, 1180, 1280, 1366, 1440, 1600, 1920];
+const WIDTHS = [320, 390, 768, 1001, 1180, 1280, 1366, 1440, 1600, 1920];
 const HEIGHT = 900;
 const SITE = path.resolve("site");
 const PAGE = `file://${SITE}/home.html`;
@@ -118,7 +119,7 @@ const MEASURE = `(async () => {
       return { n: n.querySelector(".n")?.textContent.trim(), left: r.left, right: r.right, top: r.top, bottom: r.bottom };
     }),
   }));
-  return { viewport: document.documentElement.clientWidth, fonts, figures };
+  return { viewport: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth, fonts, figures };
 })()`;
 
 const problems = [];
@@ -131,8 +132,9 @@ try {
     await loaded;
     const { result, exceptionDetails } = await send("Runtime.evaluate", { expression: MEASURE, awaitPromise: true, returnByValue: true });
     if (exceptionDetails) throw new Error(`measuring at ${width}px: ${exceptionDetails.exception?.description ?? exceptionDetails.text}`);
-    const { viewport, fonts, figures } = result.value;
-    if (!fonts.some((f) => f.startsWith("Plex"))) throw new Error(`at ${width}px the page's Plex font didn't load, so its notes wouldn't wrap as on fleetd.sh`);
+    const { viewport, scroll, fonts, figures } = result.value;
+    if (!fonts.some((f) => f.startsWith("Plex"))) throw new Error(`at ${width}px the page's Plex font didn't load, so its text wouldn't wrap as on fleetd.sh`);
+    if (scroll > viewport) problems.push(`${width}px: the page is ${scroll}px wide, wider than the ${viewport}px viewport`);
     for (const { id, name, notes } of figures) {
       const fig = `${name ? `${name} ` : ""}(#${id})`;
       for (const [i, a] of notes.entries()) {
@@ -152,7 +154,7 @@ try {
 
 if (problems.length > 0) {
   for (const p of problems) console.error(p);
-  console.error(`site/home.html: ${problems.length} callout layout problem${problems.length === 1 ? "" : "s"}`);
+  console.error(`site/home.html: ${problems.length} layout problem${problems.length === 1 ? "" : "s"}`);
   process.exit(1);
 }
-console.log(`site/home.html: no callout notes overlap or leave the viewport at ${WIDTHS.join(", ")}px`);
+console.log(`site/home.html: nothing overflows and no callout notes overlap at ${WIDTHS.join(", ")}px`);

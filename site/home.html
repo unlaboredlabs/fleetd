@@ -4,8 +4,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>fleetd: one line in, a fleet of Claude Code agents out</title>
-<meta name="description" content="You send one line. A lead runs Claude Code agents across your machines and asks you only about product, money and calls that can't be undone.">
+<title>fleetd: Claude Code on your machines, run by a lead you chat with</title>
+<meta name="description" content="fleetd runs Claude Code on your machines: you type what you want, and it plans the work, runs the agents, opens pull requests it has checked, and asks you only about real decisions.">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="alternate" type="text/plain" href="/fleetd.txt" title="fleetd.sh as plain text">
 <link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
@@ -29,9 +29,9 @@
   --sans:"Plex",ui-sans-serif,-apple-system,"Segoe UI",sans-serif;
   --mono:"Lilex",ui-monospace,"SF Mono",Menlo,monospace;
   --pad:clamp(20px,4.4vw,64px);
-  --max:1320px;
-  --notes:300px;
-  --g:52px;
+  --max:1240px;
+  --gap:clamp(24px,3.2vw,48px);
+  --sec:clamp(48px,6vw,88px);
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
@@ -39,8 +39,9 @@ body{margin:0;background:var(--paper);color:var(--ink);font:400 17px/1.55 var(--
 a{color:inherit;text-decoration-thickness:1px;text-underline-offset:.2em;text-decoration-color:var(--rule)}
 a:hover{text-decoration-color:currentColor}
 :focus-visible{outline:2px solid var(--mark);outline-offset:3px;border-radius:2px}
-code,.m{font-family:var(--mono);font-size:.88em;font-variant-ligatures:none;letter-spacing:0}
+code{font-family:var(--mono);font-size:.88em;font-variant-ligatures:none;letter-spacing:0}
 p{margin:0}
+h1,h2,h3{margin:0;font-weight:500}
 .w{max-width:var(--max);margin:0 auto;padding:0 var(--pad)}
 
 /* header */
@@ -50,75 +51,39 @@ p{margin:0}
 .nav a{text-decoration:none}
 .nav a:hover{color:var(--ink);text-decoration:underline;text-decoration-color:var(--rule)}
 
-/* opening */
-.open{display:grid;grid-template-columns:minmax(0,7fr) minmax(0,5fr);gap:40px 64px;align-items:end;padding-top:clamp(40px,8vw,112px);padding-bottom:clamp(48px,7vw,96px)}
-.pitch{font-weight:500;font-size:clamp(27px,3.1vw,40px);line-height:1.18;letter-spacing:-.017em;max-width:19em;margin:0;text-wrap:balance}
-.done{margin-top:22px;max-width:31em;color:var(--grey)}
-.install{padding-bottom:6px}
+/* hero */
+.hero{display:grid;grid-template-columns:minmax(0,7fr) minmax(0,5fr);gap:32px var(--gap);align-items:end;padding-top:clamp(32px,6vw,88px);padding-bottom:clamp(32px,4vw,56px)}
+.hero h1{font-size:clamp(30px,3.6vw,46px);line-height:1.12;letter-spacing:-.02em;text-wrap:balance}
+.sub{margin-top:18px;max-width:32em;color:var(--grey);font-size:clamp(17px,1.5vw,19px)}
 .cmd{display:flex;align-items:center;gap:14px;border-top:1px solid var(--ink);border-bottom:1px solid var(--rule);padding:13px 0}
-.cmd code{flex:1;font-size:16px;white-space:nowrap;overflow-x:auto;scrollbar-width:none}
+.cmd code{flex:1;min-width:0;font-size:16px;white-space:nowrap;overflow-x:auto;scrollbar-width:none}
 .cmd code::before{content:"$ ";color:var(--faint)}
 .copy{font:500 14px/1 var(--sans);color:var(--ink);background:none;border:1px solid var(--rule);border-radius:4px;padding:8px 11px;cursor:pointer;min-width:66px}
 .copy:hover{border-color:var(--ink)}
 .copy:active{background:var(--tone)}
 .facts{margin-top:12px;font-size:14px;color:var(--grey)}
 
-/* figures: the capture is a replaceable slot; callouts are aimed in percent of the image */
-.fig{display:grid;grid-template-columns:minmax(0,1fr) var(--notes);column-gap:var(--g);margin:0 auto;padding-bottom:clamp(56px,6.4vw,96px)}
-.fig.l{grid-template-columns:var(--notes) minmax(0,1fr)}
-.fig.l .frame{grid-column:2}
-.fig.l .cap{grid-column:2}
-.cap{grid-row:1;margin-bottom:18px;max-width:46em}
-.cap b{font-weight:500}
-.cap p{color:var(--grey);font-size:15px;margin-top:4px}
-.frame{grid-row:2;position:relative;container-type:inline-size;--ar:.642857}
+/* screenshots: 1400x900 at 2x */
+figure{margin:0}
 .shot{display:block;border-radius:7px;overflow:hidden;box-shadow:0 0 0 1px rgba(0,0,0,.14),0 18px 40px -22px rgba(0,0,0,.45)}
 .shot img{display:block;width:100%;height:auto;aspect-ratio:14/9}
-/* A note hangs from its leader unless the note above it reaches lower: notes are floats that clear each other, and
-   each li sits at its --y (its margins undo the one before), so a note's top is the lower of the two. A note pushed
-   down gets an elbow in the gutter (.note::before, whose upright the li's clip-path stops at the leader); each later
-   note's elbow is further from the notes (--k), so leaders never cross. "up" notes hang where they are aimed. */
-.notes{list-style:none;margin:0;padding:0;position:absolute;top:0;left:0;right:0;display:flow-root}
-.notes li{position:relative;padding-top:1px;margin:calc(var(--y)*var(--ar)*1cqw) 0 calc(-1*var(--y)*var(--ar)*1cqw - 1px);--k:5;
-  --e:calc(100% + var(--g) - 10px - var(--k)*7px);
-  clip-path:polygon(-20px -20px,calc(var(--e) - .5px) -20px,calc(var(--e) - .5px) -.5px,calc(var(--e) + 1.5px) -.5px,calc(var(--e) + 1.5px) -20px,calc(100% + var(--g) + var(--notes) + 20px) -20px,calc(100% + var(--g) + var(--notes) + 20px) 9999px,-20px 9999px)}
-.notes li:nth-child(1){--k:1}
-.notes li:nth-child(2){--k:2}
-.notes li:nth-child(3){--k:3}
-.notes li:nth-child(4){--k:4}
-.notes li.up{position:absolute;left:0;right:0;top:calc(var(--y)*var(--ar)*1cqw);margin:0;padding:0;clip-path:none;--k:0}
-.pin{position:absolute;left:calc(var(--x)*1cqw);top:0;width:7px;height:7px;margin:-3.5px 0 0 -3.5px;border-radius:50%;background:var(--mark);box-shadow:0 0 0 2px var(--paper)}
-.pin i{display:none}
-.notes li::before{content:"";position:absolute;top:-.5px;height:0;border-top:1px solid var(--mark);left:calc(var(--x)*1cqw);right:calc(-1*var(--g) + 10px + var(--k)*7px)}
-.note{float:left;clear:left;position:relative;margin:-12px 0 22px calc(100% + var(--g));width:var(--notes);display:flex;gap:10px;font-size:14px;line-height:22px}
-.note::before{content:"";box-sizing:border-box;position:absolute;right:calc(100% + 10px);bottom:calc(100% - 11.5px);width:calc(var(--k)*7px);height:9999px;border:solid var(--mark);border-width:0 0 1px 1px}
-.up .note{float:none;position:absolute;margin:0;left:calc(100% + var(--g));bottom:-11px}
-.up .note::before{content:none}
-.n{color:var(--mark);font-weight:500;font-variant-numeric:tabular-nums;flex:none}
-.fig.l .notes li{--e:calc(10px - var(--g) + var(--k)*7px);clip-path:polygon(calc(100% + 20px) -20px,calc(var(--e) + .5px) -20px,calc(var(--e) + .5px) -.5px,calc(var(--e) - 1.5px) -.5px,calc(var(--e) - 1.5px) -20px,calc(-20px - var(--g) - var(--notes)) -20px,calc(-20px - var(--g) - var(--notes)) 9999px,calc(100% + 20px) 9999px)}
-.fig.l .notes li.up{clip-path:none}
-.fig.l .notes li::before{left:calc(-1*var(--g) + 10px + var(--k)*7px);right:auto;width:calc(var(--x)*1cqw + var(--g) - 10px - var(--k)*7px)}
-.fig.l .note{float:right;clear:right;margin:-12px calc(100% + var(--g)) 22px 0;flex-direction:row-reverse}
-.fig.l .note::before{right:auto;left:calc(100% + 10px);border-width:0 1px 1px 0}
-.fig.l .up .note{left:auto;right:calc(100% + var(--g));margin:0}
-.fig.l .note>span:last-child{flex:1}
-.note code{font-size:12.5px;white-space:nowrap}
-.note code.q{display:block;white-space:normal;margin-top:2px}
-.note q{quotes:"\201C" "\201D"}
-
-.sec h2{font-size:17px;font-weight:500;margin:0;letter-spacing:0}
-.lines{margin:0;font:400 14px/1.6 var(--mono);font-variant-ligatures:none;white-space:pre-wrap;overflow-wrap:anywhere}
-.lines .c{color:var(--ink);font-weight:500}
-.lines .o{color:var(--grey)}
-.quote{color:var(--grey);font-size:15px;margin-top:10px}
+figcaption{margin-top:14px;font-size:15px;color:var(--grey);max-width:46em}
+figcaption b{color:var(--ink);font-weight:500}
+.lead-shot{padding-bottom:var(--sec)}
 
 /* sections */
-.sec{display:grid;grid-template-columns:var(--notes) minmax(0,1fr);gap:20px var(--g);padding-top:clamp(40px,4.4vw,64px);padding-bottom:clamp(48px,5.6vw,80px);background:linear-gradient(var(--rule),var(--rule)) no-repeat center top/calc(100% - 2*var(--pad)) 1px}
-.sec .lede{color:var(--grey);font-size:15px;margin-top:8px;max-width:26em}
-.list{list-style:none;margin:0;padding:0;counter-reset:l}
-.list li{display:grid;grid-template-columns:2.2em minmax(0,1fr);padding:11px 0;border-bottom:1px solid var(--rule);counter-increment:l}
-.list li:first-child{border-top:1px solid var(--ink)}
-.list li::before{content:counter(l,decimal-leading-zero);color:var(--faint);font-variant-numeric:tabular-nums;font-size:14px;padding-top:2px}
+.sec{padding-top:var(--sec);padding-bottom:var(--sec);background:linear-gradient(var(--rule),var(--rule)) no-repeat center top/calc(100% - 2*var(--pad)) 1px}
+.head{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:8px var(--gap);align-items:baseline;margin-bottom:clamp(24px,3vw,40px)}
+.head h2{font-size:clamp(22px,2.2vw,28px);line-height:1.2;letter-spacing:-.012em}
+.head p{color:var(--grey);font-size:16px;max-width:40em}
+
+.feats{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 var(--gap)}
+.feats li{border-top:1px solid var(--ink);padding:14px 0 32px}
+.feats h3{font-size:17px;line-height:1.35}
+.feats p{margin-top:6px;color:var(--grey);font-size:15px}
+.feats a{display:inline-block;margin-top:8px;font-size:14px;color:var(--ink)}
+
+.pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--gap)}
 
 .train{margin:0;padding:0;list-style:none;font:400 13.5px/1.55 var(--mono);font-variant-ligatures:none;border-top:1px solid var(--ink)}
 .train li{display:grid;grid-template-columns:5.6em 11.6em minmax(0,1fr);gap:0 1em;padding:6px 0;border-bottom:1px solid var(--rule)}
@@ -128,42 +93,54 @@ p{margin:0}
 .train .ok .e{color:#2d6a3e}
 .train .x{color:var(--faint)}
 
-.setup{display:grid;gap:34px}
-.setup figure{margin:0}
-.setup figcaption{font-size:15px;color:var(--grey);margin-bottom:10px;max-width:40em}
-.setup .lines{border-top:1px solid var(--ink);padding-top:12px;font-size:13.5px}
+.steps{list-style:none;margin:0;padding:0;counter-reset:s;display:grid;gap:28px}
+.steps>li{display:grid;grid-template-columns:2.2em minmax(0,1fr);border-top:1px solid var(--ink);padding-top:14px;counter-increment:s}
+.steps>li::before{content:counter(s);color:var(--faint);font-variant-numeric:tabular-nums}
+.steps h3{font-size:17px;line-height:1.35}
+.steps p{color:var(--grey);font-size:15px;margin-top:4px;max-width:46em}
+details{margin-top:10px}
+summary{cursor:pointer;font-size:14px;color:var(--grey);width:max-content;max-width:100%}
+summary:hover{color:var(--ink)}
+.lines{margin:10px 0 0;padding:12px 0 0;border-top:1px solid var(--rule);font:400 13.5px/1.6 var(--mono);font-variant-ligatures:none;white-space:pre-wrap;overflow-wrap:anywhere}
+.lines .c{color:var(--ink);font-weight:500}
+.lines .o{color:var(--grey)}
+
+.docs{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 var(--gap)}
+.docs li{border-top:1px solid var(--rule);padding:12px 0}
+.docs a{font-weight:500;text-decoration:none}
+.docs a:hover{text-decoration:underline}
+.docs span{display:block;color:var(--grey);font-size:15px}
 
 .end{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px 24px;padding-top:22px;padding-bottom:40px;background:linear-gradient(var(--rule),var(--rule)) no-repeat center top/calc(100% - 2*var(--pad)) 1px;font-size:14px;color:var(--grey)}
 .end nav{display:flex;gap:22px}
 .end a{text-decoration:none}
 .end a:hover{color:var(--ink);text-decoration:underline}
 
-@media (max-width:1100px){
-  .open{grid-template-columns:1fr;align-items:start}
+@media (max-width:1000px){
+  .hero,.head{grid-template-columns:minmax(0,1fr)}
   .install{max-width:36em}
-  .fig,.fig.l{display:block}
-  .cap{margin-bottom:14px}
-  .notes{display:grid;grid-template-columns:1fr 1fr;gap:12px 32px;margin-top:20px;padding-top:14px;border-top:1px solid var(--rule);position:static}
-  .notes li,.notes li.up,.fig.l .notes li{position:static;height:auto;margin:0;padding:0;clip-path:none}
-  .notes li::before,.note::before{display:none}
-  .note,.fig.l .note,.up .note{position:static;float:none;margin:0;width:auto;flex-direction:row;text-align:left}
-  .pin{top:calc(var(--y)*var(--ar)*1cqw)}
-  .pin i{display:block;position:absolute;left:9px;bottom:4px;font:500 11px/1 var(--sans);font-style:normal;color:var(--mark);background:var(--paper);padding:3px 4px 2px;border-radius:3px;font-variant-numeric:tabular-nums}
-  .sec{grid-template-columns:1fr}
-  .flip .pin i{left:auto;right:9px}
+  .feats,.docs{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media (max-width:640px){
   body{font-size:16px}
   .nav{gap:16px;font-size:14px}
-  .notes{grid-template-columns:1fr}
   .shot{border-radius:4px}
+  .feats,.docs,.pair{grid-template-columns:minmax(0,1fr)}
+  .feats li{padding-bottom:24px}
   .train li{grid-template-columns:5.2em minmax(0,1fr);font-size:12.5px}
   .train .s{grid-column:1/-1}
-  .lines,.setup .lines{font-size:12.5px}
+  .lines{font-size:12.5px}
   .cmd code{font-size:14px}
+  .steps>li{grid-template-columns:1.6em minmax(0,1fr)}
+}
+@media (max-width:420px){
+  .cmd{gap:10px}
+  .cmd code{font-size:12.5px}
+  .cmd code::before{content:none}
+  .copy{min-width:0}
 }
 @media (prefers-reduced-motion:no-preference){
-  .copy,.nav a,a{transition:color .15s,border-color .15s,text-decoration-color .15s}
+  .copy,.nav a,a,summary{transition:color .15s,border-color .15s,text-decoration-color .15s}
 }
 </style>
 </head>
@@ -179,75 +156,63 @@ p{margin:0}
 </header>
 
 <main>
-<section class="w open">
+<section class="w hero">
   <div>
-    <h1 class="pitch">fleetd runs Claude Code on your machines: you type what you want, and it plans the work, runs the agents, opens pull requests it has checked, and asks you only about real decisions.</h1>
-    <p class="done">An agent saying “done” doesn’t merge anything. Every change goes through fleetd’s merge train: reviewed, rebased onto main, merged only on green CI.</p>
+    <h1>fleetd runs Claude Code on your machines.</h1>
+    <p class="sub">You type what you want, and it plans the work, runs the agents, opens pull requests it has checked, and asks you only about real decisions.</p>
   </div>
   <div class="install">
     <div class="cmd"><code id="cmd">curl -fsSL https://fleetd.sh | sh</code><button class="copy" type="button" data-copy="cmd">Copy</button></div>
-    <p class="facts">Installs and sets up fleetd: about a minute later the hub runs, the app is paired, and you send the lead your first message. You need macOS or Linux x64, the <code>claude</code> CLI logged in (your own claude setup, proxy included), <code>git</code> and <code>gh</code>. MIT.</p>
+    <p class="facts">Installs the fleetd CLI and desktop app, then runs <code>fleetd init</code> to set up the hub and pair the app. You need macOS or Linux x64, the <code>claude</code> CLI logged in (fleetd uses your own claude setup, including any proxy), <code>git</code>, and <code>gh</code> for pull requests. MIT.</p>
   </div>
 </section>
 
-<figure class="w fig" style="--ar:.642857" aria-labelledby="f0">
-  <figcaption class="cap" id="f0"><b>Talk to the lead.</b>
-    <p>Each project has one chat with its lead. Say what you want; the lead splits it up and runs the agents. Under its reply, one line counts the agents at work and names their PRs; open it to see what each is doing now. The sidebar says why a project wants you: a reply, an approval, a secret.</p></figcaption>
-  <div class="frame">
-    <a class="shot" href="/chat-hero.png"><img src="/chat-hero.png" width="2800" height="1800" alt="The fleetd app on storefront’s chat: you asked to round the cart totals once, in one place; the lead answered that writers are splitting the change into three PRs; under its reply, one line: 3 agents working, on #221 and #222. In the sidebar, billing is waiting on you."></a>
-  </div>
+<!-- To re-shoot the screenshots: `pnpm site:shots` in app/desktop (site/README.md), then keep each alt text and caption
+     true to its picture. -->
+<figure class="w lead-shot">
+  <a class="shot" href="/chat-hero.png"><img src="/chat-hero.png" width="2800" height="1800" alt="The fleetd app on storefront’s chat: you asked to round the cart totals once, in one place; the lead answered that the writers start from PR #10’s branch and split the change into three PRs. Under its reply, one line: 3 agents working. The panel’s Agents tab lists them: reviewers on #221 and #222 and a writer editing src/cart/total.ts. In the sidebar, billing waits on a reply and checkout is blocked."></a>
+  <figcaption><b>One chat per project.</b> Tell the lead what you want; it splits the work and runs the agents. The panel beside the chat shows what each agent is doing now.</figcaption>
 </figure>
 
-<!-- Figures. To re-shoot: `pnpm site:shots` in app/desktop (site/README.md), then re-aim each callout: --x is percent
-     of image width, --y percent of image height, at the point it marks. "up" hangs the note above its leader instead
-     of below; "flip" puts the narrow-screen number on the pin's left. -->
-<figure class="w fig" style="--ar:.642857" aria-labelledby="f1">
-  <figcaption class="cap" id="f1"><b>Fig. 1 · Approve what can’t be undone.</b>
-    <p>The lead runs almost everything itself. A command that can’t be undone, costs money or needs a credential waits in the chat, exactly as it will run, until you approve it.</p></figcaption>
-  <div class="frame">
-    <a class="shot" href="/chat-approve.png"><img src="/chat-approve.png" width="2800" height="1800" alt="storefront’s chat in the fleetd app: the lead says the migration writes to the production database and asks you to approve it exactly as below; a card shows the command pnpm --filter storefront db:migrate --env production on devbox, marked Can’t be undone, with Approve and Deny. Below the card, one line: 5 agents working; above, an agent’s denied request to use Bash."></a>
-    <ol class="notes">
-      <li class="up" style="--x:34.9;--y:57.6"><span class="pin"><i>10</i></span><p class="note"><span class="n">10</span><span>The lead says what it wants to run and why, in a line.</span></p></li>
-      <li class="flip" style="--x:78.6;--y:64.2"><span class="pin"><i>12</i></span><p class="note"><span class="n">12</span><span>Why it waits for you: this one can’t be undone. Commands that cost money or need a credential wait too.</span></p></li>
-      <li class="" style="--x:40;--y:71"><span class="pin"><i>14</i></span><p class="note"><span class="n">14</span><span>The exact command, the machine and folder it runs in, and the secret it gets. Approve runs it as shown; Deny tells the lead, which carries on without it.</span></p></li>
-    </ol>
+<section class="w sec" aria-labelledby="what">
+  <div class="head">
+    <h2 id="what">What fleetd does</h2>
+    <p>A hub keeps your projects, a node on each of your machines runs the agents, and the desktop app is where you talk to them.</p>
   </div>
-</figure>
+  <ul class="feats">
+    <li><h3>Chat with the lead</h3><p>Each project has one lead. It decides everything that isn’t a product, money, credential or irreversible call, asks you the rest in the chat, and logs each answer as a decision.</p><a href="/docs/chat">Chat with the lead</a></li>
+    <li><h3>Agents and the merge train</h3><p>Writers open pull requests and reviewers check them. Only fleetd merges: each PR is reviewed, rebased onto its base branch and merged on green CI.</p><a href="/docs/merge-train">Merge train</a></li>
+    <li><h3>The panel</h3><p>Beside each chat, a tab each for the project’s Agents, PRs, Checklist, Train, Activity and Decisions. Watch an agent work, read a PR’s changes, see what merges next.</p><a href="/docs/desktop-app#panel">The desktop app</a></li>
+    <li><h3>Project settings and env vars</h3><p>Environment variables every agent of a project gets, plain or secret. A secret lives only on the project’s machine and is masked in agents’ output.</p><a href="/docs/projects#env">Projects</a></li>
+    <li><h3>Automations</h3><p>A stored prompt that runs on a schedule, from a webhook, or with Run now. Each run becomes work the lead starts on its own.</p><a href="/docs/automations">Automations</a></li>
+    <li><h3>Skills</h3><p>SKILL.md workflows from the repo, the project or the whole hub, for every agent. skills.sh and Claude Code skills work as they are.</p><a href="/docs/skills">Skills</a></li>
+    <li><h3>MCP servers</h3><p>More tools for agents: a command on their machine or a service over HTTP, for every project or one, with a choice of which roles get each.</p><a href="/docs/mcp-servers">MCP servers</a></li>
+    <li><h3>Memory</h3><p>When you correct the lead or state a rule, it remembers, for you everywhere or for one project. Read, edit or delete it in Settings → Memory.</p><a href="/docs/what-agents-are-told#memory">Memory</a></li>
+    <li><h3>Usage limits</h3><p>An agent that hits a Claude usage limit pauses and carries on by itself at the reset. A machine near the end of a usage window takes no new agents until it has room.</p><a href="/docs/machines#guard">Machines</a></li>
+  </ul>
+</section>
 
-<figure class="w fig" style="--ar:.642857" aria-labelledby="f2">
-  <figcaption class="cap" id="f2"><b>Fig. 2 · Secrets stay out of the chat.</b>
-    <p>When the lead needs a key, you type it into a masked field. It is sealed to the machine that uses it; the chat and the hub never see it.</p></figcaption>
-  <div class="frame">
-    <a class="shot" href="/chat-secret.png"><img src="/chat-secret.png" width="2800" height="1800" loading="lazy" alt="storefront’s chat in the fleetd app: the lead needs the Stripe test key, which goes to devbox only; a card says it will be saved as STRIPE_TEST_KEY in the project’s .env.test on devbox, with a masked field and Save secret. Below it, one line: 5 agents working; above, the same key saved earlier, shown only as saved."></a>
-    <ol class="notes">
-      <li class="" style="--x:37.7;--y:34"><span class="pin"><i>20</i></span><p class="note"><span class="n">20</span><span>A secret saved earlier shows only that it was saved, never its value.</span></p></li>
-      <li class="" style="--x:50.8;--y:50"><span class="pin"><i>22</i></span><p class="note"><span class="n">22</span><span>The lead asks for the key in the chat, and says where it goes.</span></p></li>
-      <li class="flip" style="--x:55;--y:63.8"><span class="pin"><i>24</i></span><p class="note"><span class="n">24</span><span>Paste it here. It never enters the transcript.</span></p></li>
-      <li class="" style="--x:56.9;--y:67.2"><span class="pin"><i>26</i></span><p class="note"><span class="n">26</span><span>Sealed on your computer to that machine’s key; the hub only passes it on.</span></p></li>
-    </ol>
+<section class="w sec" aria-labelledby="ask">
+  <div class="head">
+    <h2 id="ask">What waits for you</h2>
+    <p>Plain chat can’t carry two things safely, so they show as items in the chat that only your app can act on.</p>
   </div>
-</figure>
-<section class="w sec" aria-labelledby="own">
-  <div>
-    <h2 id="own">What the lead does without asking you.</h2>
-    <p class="lede">How each project’s lead works, in its chat.</p>
-  </div>
-  <div>
-    <ol class="list">
-      <li><span>The lead decides everything that isn’t a product, money, credential or irreversible call.</span></li>
-      <li><span>It asks the rest in the chat: numbered, each with its recommendation. <code>1 go, 2 rec</code> or <code>do it</code> is a whole reply.</span></li>
-      <li><span>It hands the work to Claude Code agents on your machines, never more at once than the project’s Max agents.</span></li>
-      <li><span>It logs each answer as a decision, so it never asks the same thing twice.</span></li>
-      <li><span>It keeps your answer when you overrule its recommendation.</span></li>
-      <li><span>No time estimates. It says what is done and what is next.</span></li>
-    </ol>
+  <div class="pair">
+    <figure>
+      <a class="shot" href="/chat-approve.png"><img src="/chat-approve.png" width="2800" height="1800" loading="lazy" alt="storefront’s chat in the fleetd app: the lead says the command writes to the production database and asks you to approve it exactly as below. A Command card marked Can’t be undone shows pnpm --filter storefront db:migrate --env production on devbox, the secret DATABASE_URL gets, and Approve and Deny. Above it, last week’s migration, approved and run, and a denied request to use Bash."></a>
+      <figcaption><b>Approve what can’t be undone.</b> A command that can’t be undone, costs money or needs a credential waits, exactly as it will run, until you approve it.</figcaption>
+    </figure>
+    <figure>
+      <a class="shot" href="/chat-secret.png"><img src="/chat-secret.png" width="2800" height="1800" loading="lazy" alt="storefront’s chat in the fleetd app: the lead needs the Stripe test key, which goes to devbox only. A Secret card says it is saved as STRIPE_TEST_KEY in the project’s .env.test on devbox, with a masked field and Save secret. Above it, a secret saved earlier, shown only as saved."></a>
+      <figcaption><b>Secrets stay out of the chat.</b> You type a key into a masked field. It is sealed to the machine that uses it; the chat and the hub never see it.</figcaption>
+    </figure>
   </div>
 </section>
 
 <section class="w sec" aria-labelledby="train">
-  <div>
-    <h2 id="train">“Done” is checked by fleetd.</h2>
-    <p class="lede">Merge-train events from a lab run against the public <a href="https://github.com/unlaboredlabs/fleetd-lab">fleetd-lab</a> repo, 18 Oct 2026, UTC. The hub’s own summaries, with the commit status the train posts before each merge.</p>
+  <div class="head">
+    <h2 id="train">“Done” is checked by fleetd</h2>
+    <p>Merge-train events from a lab run against the public <a href="https://github.com/unlaboredlabs/fleetd-lab">fleetd-lab</a> repo, 18 Oct 2026, UTC: the hub’s own summaries. Red CI goes back to the agent that wrote the PR.</p>
   </div>
   <ol class="train">
     <!-- capture:train -->
@@ -262,14 +227,17 @@ p{margin:0}
   </ol>
 </section>
 
-<section class="w sec" aria-labelledby="setup">
-  <div>
-    <h2 id="setup">Setup is a hub and your machines.</h2>
-    <p class="lede">After the install, <code>fleetd init</code> walks you through the hub, its claude and gh logins and the desktop app’s pairing. <code>fleetd machine add</code> turns a machine you can reach over SSH into one that runs agents. Both outputs are real; the tailnet name and address are placeholders.</p>
+<section class="w sec" aria-labelledby="start">
+  <div class="head">
+    <h2 id="start">Get started</h2>
+    <p>A hub on one machine, and any machines you reach over SSH to run agents. The outputs below are real; the tailnet name and address are placeholders.</p>
   </div>
-  <div class="setup">
-    <figure>
-      <figcaption>The hub, on the machine you installed on. <code>--yes</code> takes every default; <code>--no-service</code> keeps this capture from starting a service, so here the hub, your workers, a first project and <code>fleetd doctor</code> wait for you.</figcaption>
+  <ol class="steps">
+    <li><div>
+      <h3>Run the install line</h3>
+      <p>It installs fleetd and starts <code>fleetd init</code>, which walks you through the hub, its claude and gh logins and the desktop app’s pairing. Run it again any time; it keeps what’s done.</p>
+      <details>
+        <summary><code>fleetd init</code> output</summary>
 <!-- capture:init -->
 <pre class="lines"><span class="c">$ fleetd init --yes --no-service --git-identity "Demo &lt;demo@users.noreply.github.com&gt;"</span>
 <span class="o">
@@ -301,9 +269,13 @@ App &amp; check  6/6
 Then run fleetd init again; it keeps what's done.
 [exit 0]</span></pre>
 <!-- /capture:init -->
-    </figure>
-    <figure>
-      <figcaption>A worker. <code>--dry-run</code> prints the plan and runs nothing; the shell command under each step is left out here.</figcaption>
+      </details>
+    </div></li>
+    <li><div>
+      <h3><code>fleetd machine add</code></h3>
+      <p>Turns a machine you can reach over SSH into one that runs agents. <code>--dry-run</code> prints the plan and runs nothing.</p>
+      <details>
+        <summary><code>fleetd machine add --dry-run</code> output</summary>
 <!-- capture:machine-add -->
 <pre class="lines"><span class="c">$ fleetd machine add builder-1 --dry-run</span>
 <span class="o">dry run: nothing runs. Planned for a fresh Linux machine at builder-1 (home /home/demo); a real run first reads the machine's state and leaves out what is already done:
@@ -316,8 +288,28 @@ Then run fleetd init again; it keeps what's done.
 [hub] wait until builder-1 is online
 [exit 0]</span></pre>
 <!-- /capture:machine-add -->
-    </figure>
+      </details>
+    </div></li>
+    <li><div>
+      <h3>Add a project and say hi to its lead</h3>
+      <p>In the app, click Add next to Projects and paste a GitHub URL. Then tell the lead what you want.</p>
+    </div></li>
+  </ol>
+</section>
+
+<section class="w sec" aria-labelledby="docs">
+  <div class="head">
+    <h2 id="docs">Docs</h2>
+    <p>Everything else, at <a href="/docs">fleetd.sh/docs</a>.</p>
   </div>
+  <ul class="docs">
+    <li><a href="/docs/install">Install</a><span>The CLI and the desktop app on a machine.</span></li>
+    <li><a href="/docs/quick-start">Quick start</a><span>Set up the hub, open a project, chat with its lead.</span></li>
+    <li><a href="/docs/concepts">Concepts</a><span>The hub, nodes, leads and their chats.</span></li>
+    <li><a href="/docs/machines">Machines</a><span>Add a machine that runs agents.</span></li>
+    <li><a href="/docs/reference/cli">CLI reference</a><span>Every command and option.</span></li>
+    <li><a href="/docs/troubleshooting">Troubleshooting</a><span>What <code>fleetd doctor</code> reports, and the fix.</span></li>
+  </ul>
 </section>
 </main>
 
