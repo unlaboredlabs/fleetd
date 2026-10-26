@@ -15,6 +15,8 @@ describe("routes", () => {
       panelRoute(storefront, { tab: "prs", pr: { repo: "acme/storefront", number: 11 } }),
       panelRoute(storefront, { tab: "agents", agent: null }),
       panelRoute(storefront, { tab: "agents", agent: "lead:devbox/storefront" }),
+      panelRoute(storefront, { tab: "sessions", session: null }),
+      panelRoute(storefront, { tab: "sessions", session: "bs-checkout" }),
       panelRoute(storefront, { tab: "checklist" }),
       { id: "project", project: storefront, message: "m-42", panel: { tab: "agents", agent: "T1" } },
       { id: "status" },
@@ -85,5 +87,6 @@ describe("routes", () => {
     }
     expect(hasItem({ tab: "prs", pr: { repo: null, number: 3 } })).toBe(true);
     expect(hasItem({ tab: "agents", agent: "T1" })).toBe(true);
+    expect(hasItem({ tab: "sessions", session: "bs-checkout" })).toBe(true);
   });
 });
