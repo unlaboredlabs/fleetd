@@ -7,6 +7,7 @@
 //! as they would for one PR. The next pass's sweep deletes the scratch branch, which closes a batch PR left open.
 use super::contract::{Change, ChangeState};
 use super::github::{BATCH_MARKER, BranchMerge, MergeOutcome, NEXT_LABEL, Pull, batch_heads};
+use super::records::DRAFT;
 use super::service::{Checks, CiOutcome, Train, checks, error_text, lock, short};
 
 const BATCH_MAX: usize = 8;
@@ -229,14 +230,17 @@ impl Train {
                 settled = true;
                 continue;
             }
-            let hold = if pull.held() {
+            let hold = if pull.draft {
+                Some(DRAFT)
+            } else if pull.held() {
                 Some(HELD)
             } else {
                 // A read that failed is not "no CI": the head's checks decide, as for any repo.
                 matches!(self.has_ci(repo, &pull.base.ref_).await, Ok(false)).then_some(NO_CI)
             };
             let shown = change.last_error.as_deref();
-            if hold != shown && (hold.is_some() || shown == Some(HELD) || shown == Some(NO_CI)) {
+            let ours = [Some(DRAFT), Some(HELD), Some(NO_CI)];
+            if hold != shown && (hold.is_some() || ours.contains(&shown)) {
                 self.update(&change.change_id, Some(&[ChangeState::Ready]), |mut c| {
                     c.last_error = hold.map(error_text);
                     c

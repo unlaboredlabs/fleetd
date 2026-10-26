@@ -117,6 +117,9 @@ pub struct Pull {
     pub base: PullBase,
     #[serde(default)]
     pub labels: Vec<Label>,
+    /// A draft waits on the train until it is marked ready.
+    #[serde(default)]
+    pub draft: bool,
     /// Who merged it: only a PR's detail says.
     #[serde(default)]
     pub merged_by: Option<PullMerger>,
