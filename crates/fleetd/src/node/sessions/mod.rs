@@ -8,7 +8,6 @@
 //! demand. Permission prompts are answered from policy or held as a pending approval for the hub.
 pub mod files;
 mod health;
-mod memory;
 mod proc;
 mod share;
 mod spans;
@@ -77,8 +76,6 @@ const KILL_WAIT: Duration = Duration::from_secs(5);
 const REMOVE_WAIT: Duration = Duration::from_secs(12);
 /// Node shutdown: how long interrupted runs get to end before every process is closed.
 const SHUTDOWN_DRAIN: Duration = Duration::from_secs(10);
-/// Each project's agents' peak memory, in the node home.
-const PEAKS_FILE: &str = "memory.json";
 /// After the machine wakes, how long a running claude gets to say anything before its stream counts as lost.
 const WAKE_GRACE: Duration = Duration::from_secs(60);
 
@@ -539,8 +536,6 @@ struct Inner {
     running: watch::Sender<usize>,
     /// Wakes the span flusher.
     span_wake: Arc<tokio::sync::Notify>,
-    /// Each project's agents' peak memory, for the heartbeat.
-    peaks: Mutex<memory::Peaks>,
 }
 
 /// A project's file list and when it was read.
@@ -658,7 +653,6 @@ impl SessionService {
         runner: Arc<dyn Runner>,
         config: SessionConfig,
     ) -> Result<Self, StoreError> {
-        let peaks = memory::Peaks::load(&config.home.join(PEAKS_FILE));
         let service = Self {
             inner: Arc::new(Inner {
                 store,
@@ -675,7 +669,6 @@ impl SessionService {
                 files: Mutex::default(),
                 running: watch::Sender::new(0),
                 span_wake: Arc::new(tokio::sync::Notify::new()),
-                peaks: Mutex::new(peaks),
             }),
         };
         let rows = service.inner.store.sessions()?;
@@ -724,7 +717,6 @@ impl SessionService {
             tracing::info!(removed, "removed clones a previous node left half done");
         }
         service.spawn_reaper();
-        service.spawn_mem_sampler();
         service.spawn_prober();
         service.spawn_span_flusher(service.inner.span_wake.clone());
         Ok(service)
@@ -3170,68 +3162,6 @@ impl SessionService {
             Ok(frame) => st.machine(frame),
             Err(e) => tracing::warn!(error = %e, "cannot log the runner's state"),
         }
-    }
-
-    /// Every [`memory::SAMPLE_EVERY`], each task agent's process tree's resident memory raises its session's peak.
-    fn spawn_mem_sampler(&self) {
-        let weak = Arc::downgrade(&self.inner);
-        tokio::spawn(async move {
-            loop {
-                tokio::time::sleep(memory::SAMPLE_EVERY).await;
-                let Some(inner) = weak.upgrade() else { return };
-                SessionService { inner }.sample_memory().await;
-            }
-        });
-    }
-
-    async fn sample_memory(&self) {
-        let live: Vec<(String, i32)> = self
-            .st()
-            .live
-            .iter()
-            .map(|(id, l)| (id.clone(), l.pid as i32))
-            .collect();
-        // Task agents only: a lead or a person's thread is no agent the cap counts.
-        let (agents, roots): (Vec<(String, String)>, Vec<memory::Root>) = live
-            .into_iter()
-            .filter_map(|(id, pid)| {
-                let row = self.store().session(&id).ok().flatten()?;
-                // The start time recorded with this pid, so a pid the kernel has since reused is never measured.
-                let start = row
-                    .local
-                    .pid_start
-                    .filter(|_| row.local.pid == Some(pid as u32));
-                (row.local.role == SessionRole::Worker).then(|| {
-                    (
-                        (row.summary.project_id.to_string(), id),
-                        memory::Root { pid, start },
-                    )
-                })
-            })
-            .unzip();
-        if agents.is_empty() {
-            return;
-        }
-        let bytes = blocking(move || memory::sample(&roots)).await;
-        let mut peaks = self.inner.peaks.lock().unwrap_or_else(|p| p.into_inner());
-        let mut changed = false;
-        for ((project, id), bytes) in agents.iter().zip(bytes) {
-            if bytes > 0 {
-                changed |= peaks.record(project, id, bytes);
-            }
-        }
-        if changed && let Err(e) = peaks.save(&self.inner.config.home.join(PEAKS_FILE)) {
-            tracing::warn!("cannot save the agents' memory peaks: {e}");
-        }
-    }
-
-    /// Each project's agents' peak memory here, for the heartbeat.
-    pub fn project_memory(&self) -> Vec<fleetd_contracts::node_link::ProjectMemory> {
-        self.inner
-            .peaks
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .report()
     }
 
     fn spawn_reaper(&self) {
