@@ -9,10 +9,10 @@
   },
   "dark": {
     "ask": 0.9,
-    "plan": 5.4,
-    "build": 8.2,
-    "review": 12,
-    "merge": 16.8,
+    "plan": 5.3,
+    "build": 8.1,
+    "review": 11.9,
+    "merge": 16.7,
     "end": 23.9
   }
 }

@@ -118,18 +118,14 @@ computer; fleetd never shows it again. Image: chat-secret.png
 
 
 87
-Pull requests landed by fleetd's merge train in fleetd's own repository in one
-week, 20 to 26 October 2026. fleetd is built with fleetd: the lead plans,
-agents write and review, the train merges, and the people behind it answer the
-lead's questions.
+Pull requests fleetd's agents wrote and its merge train merged into fleetd's own
+repository, from 20 October 2026 00:00 to 26 October 18:11, UTC. fleetd is
+built with fleetd: the lead plans, agents write and review, the train merges,
+and the people behind it answer the lead's questions.
 
-How it was counted: `fleetd metrics --days 7` on the hub that builds fleetd,
-from GitHub's record of the merges. Each pull request the train put on main
-counts once, whether it merged alone or as one of a batch; a merge someone made
-by hand doesn't count. GitHub's own list shows each batch as one merged pull
-request that names its members, and the members as closed, so its count for the
-week differs. The pull requests merged that week:
-https://github.com/unlaboredlabs/fleetd/pulls?q=is%3Apr+is%3Amerged+merged%3A2026-10-20..2026-10-26
+Counted by `fleetd metrics --days 7` on the hub that builds fleetd. Merges people
+made themselves that week aren't in it. The 87, each with its pull request on
+GitHub: https://fleetd.sh/train-week.txt
 
 
 ALSO IN THE BOX
