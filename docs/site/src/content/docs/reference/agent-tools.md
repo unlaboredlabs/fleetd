@@ -63,6 +63,7 @@ Every lead gets these.
 | [`automation_delete`](#automation_delete) | Delete an automation and its run history; orders its runs opened stay. | No |
 | [`automation_run`](#automation_run) | Run an automation now: it opens its order, which reaches you in a later wake. | No |
 | [`automation_runs`](#automation_runs) | An automation's runs, newest first, with the order each opened; with runId, that run and its whole webhook body. | No |
+| [`checklist`](#checklist) | Keep the project's checklist: the to-dos the human sees beside the chat, each todo, doing or done, in plain words. | No |
 | [`change_enqueue`](#change_enqueue) | Put a PR no task's result put there on its repo's merge train; only the train merges. | No |
 
 ### spawn_agent
@@ -535,6 +536,49 @@ An automation's runs, newest first, with the order each opened; with runId, that
   "arguments": {
     "automationId": "au_k3Jd8sQp2xYz",
     "runId": "ar_Qm7tZr1vBn4w"
+  }
+}
+```
+
+### checklist
+
+Keep the project's checklist: the to-dos the human sees beside the chat, each todo, doing or done, in plain words. Add items without an id, change one by its id (text, state, link to its PR, agent or workstream), or remove it; replace sets the whole list. Returns the list.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `items` | object[] | no | At most 50 items. |
+| `items[].id` | integer | no | At least 1. |
+| `items[].link` | object | no | Replaces the item's link; `{}` clears it. |
+| `items[].link.pr` | string | no | Like `https://github.com/<owner>/<name>/pull/<n>`. |
+| `items[].link.taskId` | string | no | `T<n>`, e.g. `T1`. |
+| `items[].link.workstreamId` | string | no | `W<n>`, e.g. `W1`. |
+| `items[].remove` | boolean | no |  |
+| `items[].state` | string | no | One of `todo`, `doing`, `done`. |
+| `items[].text` | string | no | One line. At most 200 characters. |
+| `replace` | boolean | no |  |
+
+**Who may call:** a lead, checked by the hub. **Needs a human:** no.
+
+```json
+{
+  "name": "checklist",
+  "arguments": {
+    "items": [
+      {
+        "id": 2,
+        "state": "done"
+      },
+      {
+        "id": 3,
+        "link": {
+          "pr": "https://github.com/acme/shop/pull/42"
+        },
+        "state": "doing"
+      },
+      {
+        "text": "Ship the rate limit to production"
+      }
+    ]
   }
 }
 ```

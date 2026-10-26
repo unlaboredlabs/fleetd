@@ -91,7 +91,7 @@ export const installMenu = (opener: Opener, help: { readonly revealLogs: () => v
         item(opener, "palette.toggle", "Command Palette"),
         item(opener, "shortcuts.show", "Keyboard Shortcuts"),
         item(opener, "sidebar.toggle", "Toggle Sidebar"),
-        item(opener, "panel.toggle", "Toggle Agents and PRs"),
+        item(opener, "panel.toggle", "Toggle Panel"),
         separator,
         { role: "togglefullscreen" },
         // Reload and devtools only in dev and test builds: a reload drops the live view's state for nothing, and

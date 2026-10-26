@@ -23,7 +23,7 @@ export const SHORTCUTS = {
   "shortcuts.show": { keys: "Mod+/", title: "Keyboard Shortcuts", section: "General" },
   "composer.focus": { keys: "Mod+L", title: "Focus Composer", section: "General" },
   "sidebar.toggle": { keys: "Mod+B", title: "Toggle Sidebar", section: "General" },
-  "panel.toggle": { keys: "Mod+Alt+B", title: "Toggle Agents and PRs", section: "General" },
+  "panel.toggle": { keys: "Mod+Alt+B", title: "Toggle Panel", section: "General" },
   ...jump,
   "project.previous": { keys: "Mod+[", title: "Previous Project", section: "Projects" },
   "project.next": { keys: "Mod+]", title: "Next Project", section: "Projects" },

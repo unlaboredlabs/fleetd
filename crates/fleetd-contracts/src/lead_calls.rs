@@ -14,6 +14,7 @@ use crate::automations::{
 };
 use crate::chat::ChatRequestId;
 use crate::checked;
+use crate::checklist::{ChecklistCall, ChecklistResult};
 use crate::effort::TaskProfile;
 use crate::ids::ThreadId;
 use crate::ledger::{
@@ -264,6 +265,7 @@ pub enum LeadCall {
     AutomationDelete(AutomationDeleteCall),
     AutomationRun(AutomationRunCall),
     AutomationRuns(AutomationRunsCall),
+    Checklist(ChecklistCall),
 }
 
 #[skip_serializing_none]
@@ -378,6 +380,7 @@ pub enum LeadCallResult {
     AutomationDelete(AutomationDeleteResult),
     AutomationRun(AutomationRunResult),
     AutomationRuns(AutomationRunsResult),
+    Checklist(ChecklistResult),
 }
 
 /// CLI -> node on the local socket, and node -> hub on the link.

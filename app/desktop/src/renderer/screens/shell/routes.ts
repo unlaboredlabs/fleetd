@@ -1,6 +1,10 @@
 // The app's hash routes (binding for every screen; the QA harness navigates by setting location.hash). A project's
 // lead chat is the main surface, with its agents and PRs in the panel beside it (`/agents`, `/prs` after the
-// project); Status, Factory, Time and Settings are secondary. notes/electron-routes.md has the table.
+// project, and every other tab of panel/tabs.ts likewise); Status, Factory, Time and Settings are secondary.
+// notes/electron-routes.md has the table.
+import { isPanelTab, type PanelTab } from "../panel/tabs";
+
+export type { PanelTab } from "../panel/tabs";
 
 /** A project is (machine, project): the same repo can be checked out on two machines. */
 export interface ProjectKey {
@@ -14,10 +18,26 @@ export interface PrKey {
   readonly number: number;
 }
 
-export type PanelTab = "agents" | "prs";
-
 /** What the panel beside a project's chat shows: a tab's list, or one agent's work or one PR from it. */
-export type PanelView = { readonly tab: "agents"; readonly agent: string | null } | { readonly tab: "prs"; readonly pr: PrKey | null };
+export type PanelView =
+  | { readonly tab: "agents"; readonly agent: string | null }
+  | { readonly tab: "prs"; readonly pr: PrKey | null }
+  | { readonly tab: Exclude<PanelTab, "agents" | "prs"> };
+
+/** A tab's own view: its list, no item. */
+export const listView = (tab: PanelTab): PanelView => {
+  switch (tab) {
+    case "agents":
+      return { tab, agent: null };
+    case "prs":
+      return { tab, pr: null };
+    default:
+      return { tab };
+  }
+};
+
+/** Whether the view is one item of its tab (an agent, a PR), with its list a Back away. */
+export const hasItem = (view: PanelView): boolean => (view.tab === "agents" ? view.agent !== null : view.tab === "prs" ? view.pr !== null : false);
 
 export const SETTINGS_TABS = ["general", "notifications", "agents", "projects", "mcp", "prompts", "instructions", "memory", "automations"] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
@@ -70,12 +90,12 @@ const prKey = (rest: ReadonlyArray<string>): PrKey | null => {
   return rest.length === 3 && number !== null ? { repo: `${a ?? ""}/${b ?? ""}`, number } : null;
 };
 
-/** `prs[/<pr>]` or `agents[/<lane>]` after the project; anything else, no view. */
+/** `prs[/<pr>]`, `agents[/<lane>]` or another tab's name after the project; anything else, no view. */
 const panelView = (rest: ReadonlyArray<string>): PanelView | null => {
   const [tab, ...item] = rest;
   if (tab === "prs") return { tab, pr: prKey(item) };
   if (tab === "agents") return { tab, agent: item.length === 1 ? (item[0] ?? null) : null };
-  return null;
+  return isPanelTab(tab) ? listView(tab) : null;
 };
 
 /** "<machine>/<project>": the project's id is everything after the first slash. */
@@ -139,6 +159,7 @@ export const parseHash = (hash: string): Screen => {
 
 const panelPath = (view: PanelView): Array<string> => {
   if (view.tab === "agents") return view.agent === null ? ["agents"] : ["agents", view.agent];
+  if (view.tab !== "prs") return [view.tab];
   const pr = view.pr;
   return pr === null ? ["prs"] : ["prs", ...(pr.repo === null ? [] : pr.repo.split("/", 2)), String(pr.number)];
 };

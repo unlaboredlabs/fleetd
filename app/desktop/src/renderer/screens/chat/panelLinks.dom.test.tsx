@@ -120,7 +120,7 @@ const mount = async (text: string) => {
   await settle();
 };
 
-const panel = () => host.querySelector("aside[aria-label='Agents and pull requests']");
+const panel = () => host.querySelector("aside[aria-label='Project panel']");
 const links = (where: string) => [...host.querySelectorAll<HTMLAnchorElement>(`[data-testid='${where}'] a`)];
 /** Follows a link as the window's hash router does. */
 const follow = async (a: HTMLAnchorElement | undefined) => {
@@ -133,7 +133,7 @@ const follow = async (a: HTMLAnchorElement | undefined) => {
 
 it("opens an agent, the panel's agents and its PRs from the strip's lanes, even when the panel was closed", async () => {
   await mount("");
-  act(() => host.querySelector<HTMLButtonElement>("button[aria-label='Hide agents and PRs']")?.click());
+  act(() => host.querySelector<HTMLButtonElement>("button[aria-label='Hide the panel']")?.click());
   expect(panel()).toBeNull();
 
   // A click on the strip opens its lanes: a row per agent, and the PRs they are on.

@@ -242,6 +242,9 @@ pub enum HubEventType {
     /// `data.runId`, `data.trigger`, `data.state`, `data.workstreamId`. Never the webhook body.
     #[serde(rename = "automation.run")]
     AutomationRun,
+    /// A project's checklist changed (the lead's `checklist`); `data` is `checklist::ChecklistChangedData`.
+    #[serde(rename = "checklist.changed")]
+    ChecklistChanged,
 }
 
 impl HubEventType {
@@ -323,6 +326,7 @@ impl HubEventType {
             Self::MemoryChanged => "memory.changed",
             Self::AutomationChanged => "automation.changed",
             Self::AutomationRun => "automation.run",
+            Self::ChecklistChanged => "checklist.changed",
         }
     }
 }

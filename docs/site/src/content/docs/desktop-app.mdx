@@ -50,13 +50,24 @@ To change hubs, open Settings (⌘,) → General → Hub.
 | Part | Shows |
 |---|---|
 | Sidebar | Your projects, each saying why it wants you: "reply", "approve", "secret" or "blocked". Otherwise it says how many agents are working. A project in bold has a new message from its lead. Below them: Status, Time, Machines and Settings. |
-| The top row | The page's title and its controls, then Commands. In a chat: the project's name, its state word and its [Max agents](/docs/projects#max-agents) control, and the agents and PRs toggle. |
+| The top row | The page's title and its controls, then Commands. In a chat: the project's name, its state word and its [Max agents](/docs/projects#max-agents) control, and the panel's toggle. |
 | The chat | The selected project's conversation with its lead. |
-| Agents and PRs | Beside a chat, on the right: the project's [agents](#agents) and its [pull requests](/docs/chat#prs). Open it with the toggle at the top right or ⌥⌘B. |
+| The panel | Beside a chat, on the right: a tab each for the project's [agents](#agents), its [pull requests](/docs/chat#prs) and its [checklist](#checklist). Open it with the toggle at the top right or ⌥⌘B. |
 
-In a window narrower than about 1000 px the sidebar and the agents and PRs panel hide themselves; ⌘B and ⌥⌘B show them
-again. The app remembers whether you left the panel open. On macOS the Dock icon shows how
-many projects need you.
+In a window narrower than about 1000 px the sidebar and the panel hide themselves; ⌘B and ⌥⌘B show them again. The
+app remembers whether you left the panel open, the tab you had and its width. On macOS the Dock icon shows how many
+projects need you.
+
+### The panel {#panel}
+
+Drag the panel's left edge to make it wider or narrower; double-click the edge to put it back. From the keyboard, Tab
+to the edge, then ← widens it and → narrows it (with Shift, in bigger steps), Home and End go to its narrowest and
+widest, and Enter resets it. Reading a pull request's changes widens the panel so the diff has room; that wide width
+is set the same way and kept apart from the other. The panel never grows so wide that the chat loses its room.
+
+When the tabs don't fit, they show as icons with their counts (point at one for its name), and if even those don't
+fit, the rest go under **More** (···). The tab you're on always stays in view. Each tab is a link too:
+`#/project/<machine>/<project>/checklist` opens the checklist, as the palette's **Checklist** does.
 
 Click a project to open its chat. ⌥⌘A jumps to the next project that wants you. To add a project, click "Add" next to Projects, then paste a GitHub URL or
 `owner/repo`. You can also drop a folder or a GitHub link anywhere on the window, a chat included. Other files dropped
@@ -102,6 +113,15 @@ first message and prompts it started with; **All agents** or Esc goes back to th
 **All projects**, above the list, lists every project's agents instead, each project under its name, those with an
 agent waiting on you first. Click an agent of another project to open its work beside that project's chat.
 **This project** goes back. The panel remembers which you chose.
+
+## Checklist {#checklist}
+
+The Checklist tab shows the project's to-dos as its lead keeps them: how many are done, then what's being done now,
+what's still to do and, folded away, what's done. An item's pull request or agent opens in the panel. The lead
+updates the list as the work moves, and the tab follows along as it does. The tab's count is the items still open.
+
+You can't edit the list yourself: to change it, tell the lead in the chat. A project's lead starts a checklist when
+it plans work; until then the tab says there is none yet.
 
 ## Status {#status}
 
@@ -154,7 +174,7 @@ The command palette (⌘K) opens on the project you're in. Type a setting's own 
 | ⌘/ | Keyboard shortcuts |
 | ⌘L | Focus the message box |
 | ⌘B | Toggle the sidebar |
-| ⌥⌘B | Toggle the agents and PRs panel |
+| ⌥⌘B | Toggle the panel |
 | ⌘1 to ⌘9 | Open that project in the sidebar |
 | ⌘[ / ⌘] | Previous / next project |
 | ⌥⌘A | Next project that wants you |

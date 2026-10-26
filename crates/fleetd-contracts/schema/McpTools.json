@@ -2530,6 +2530,47 @@
       ],
       "type": "object"
     },
+    "ChecklistGetInput": {
+      "properties": {
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "projectRef"
+      ],
+      "type": "object"
+    },
+    "ChecklistGetOutput": {
+      "properties": {
+        "items": {
+          "description": "In the lead's order.",
+          "items": {
+            "$ref": "#/$defs/TodoItem"
+          },
+          "maxItems": 50,
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "The last change; absent while the lead has never set one."
+        }
+      },
+      "required": [
+        "projectRef",
+        "items"
+      ],
+      "type": "object"
+    },
     "ChecklistItem": {
       "properties": {
         "done": {
@@ -4737,6 +4778,11 @@
           "const": "automation.run",
           "description": "An automation ran (its order opened) or a trigger was skipped: `data.projectRef`, `data.automationId`,\n`data.runId`, `data.trigger`, `data.state`, `data.workstreamId`. Never the webhook body.",
           "type": "string"
+        },
+        {
+          "const": "checklist.changed",
+          "description": "A project's checklist changed (the lead's `checklist`); `data` is `checklist::ChecklistChangedData`.",
+          "type": "string"
         }
       ],
       "x-open": true
@@ -6051,6 +6097,12 @@
         "chat_stop.output": {
           "$ref": "#/$defs/ChatStopOutput"
         },
+        "checklist_get.input": {
+          "$ref": "#/$defs/ChecklistGetInput"
+        },
+        "checklist_get.output": {
+          "$ref": "#/$defs/ChecklistGetOutput"
+        },
         "decisions_list.input": {
           "$ref": "#/$defs/DecisionsListInput"
         },
@@ -6471,6 +6523,8 @@
         "chat_send.output",
         "chat_stop.input",
         "chat_stop.output",
+        "checklist_get.input",
+        "checklist_get.output",
         "decisions_list.input",
         "decisions_list.output",
         "decisions_overturn.input",
@@ -13380,6 +13434,61 @@
     },
     "Timestamp": {
       "format": "date-time",
+      "type": "string"
+    },
+    "TodoItem": {
+      "properties": {
+        "id": {
+          "description": "Unique in its project, never reused.",
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "link": {
+          "$ref": "#/$defs/TodoLink"
+        },
+        "state": {
+          "$ref": "#/$defs/TodoState"
+        },
+        "text": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "id",
+        "text",
+        "state",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "TodoLink": {
+      "description": "What an item is about, any of: its PR, the agent on it (its task), its workstream.",
+      "properties": {
+        "pr": {
+          "$ref": "#/$defs/GitHubPrUrl"
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        },
+        "workstreamId": {
+          "$ref": "#/$defs/WorkstreamId"
+        }
+      },
+      "type": "object"
+    },
+    "TodoState": {
+      "enum": [
+        "todo",
+        "doing",
+        "done"
+      ],
       "type": "string"
     },
     "Tokens": {

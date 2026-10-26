@@ -10,6 +10,7 @@ pub mod auth;
 pub mod automations;
 pub mod blocks;
 pub mod chat;
+pub mod checklist;
 pub mod doctor;
 pub mod effort;
 pub mod events;

@@ -68,6 +68,8 @@ mod tests {
         );
         let off = render_lead_start(set, &r, "storefront", false, "D", "");
         assert!(!off.contains("## Task profiles") && off.contains("spawn_agent"));
+        // The lead keeps the human's checklist as it runs the work.
+        assert!(off.contains("Keep the checklist current with `checklist`"));
         let voice = off.find("## Your voice").unwrap();
         assert!(
             off.find("spawn_agent").unwrap() < voice

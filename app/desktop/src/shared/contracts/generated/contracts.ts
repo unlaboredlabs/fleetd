@@ -944,6 +944,28 @@ export type ChecklistBlock = {
   title?: string;
 };
 
+/** `checklist.changed`. The items are not in the event; checklist_get reads them. */
+export type ChecklistChangedData = {
+  by: string;
+  done: number;
+  projectRef: ProjectRef;
+  total: number;
+};
+
+export type ChecklistGetInput = {
+  projectRef: ProjectRef;
+};
+
+export type ChecklistGetOutput = {
+  /** In the lead's order. */
+  items: TodoItem[];
+  next?: string;
+  projectRef: ProjectRef;
+  truncated?: boolean;
+  /** The last change; absent while the lead has never set one. */
+  updatedAt?: Timestamp;
+};
+
 export type ChecklistItem = {
   done: boolean;
   text: string;
@@ -1640,7 +1662,8 @@ export type KnownHubEventType =
   | "work.landed"
   | "memory.changed"
   | "automation.changed"
-  | "automation.run";
+  | "automation.run"
+  | "checklist.changed";
 /** KnownHubEventType, or a value from a newer hub. */
 export type HubEventType = KnownHubEventType | (string & {});
 
@@ -4500,6 +4523,24 @@ export type TimeZone = string;
 
 export type Timestamp = string;
 
+export type TodoItem = {
+  /** Unique in its project, never reused. */
+  id: number;
+  link?: TodoLink;
+  state: TodoState;
+  text: string;
+  updatedAt: Timestamp;
+};
+
+/** What an item is about, any of: its PR, the agent on it (its task), its workstream. */
+export type TodoLink = {
+  pr?: GitHubPrUrl;
+  taskId?: TaskId;
+  workstreamId?: WorkstreamId;
+};
+
+export type TodoState = "todo" | "doing" | "done";
+
 /** Summed over the lane's runs. `live`: the running run's usage is streaming in (else it updates at each run's end). */
 export type Tokens = {
   cacheRead: number;
@@ -5024,6 +5065,7 @@ export interface ToolMap {
   chat_history: { input: ChatHistoryInput; output: ChatHistoryOutput };
   chat_send: { input: ChatSendInput; output: ChatSendOutput };
   chat_stop: { input: ChatStopInput; output: ChatStopOutput };
+  checklist_get: { input: ChecklistGetInput; output: ChecklistGetOutput };
   decisions_list: { input: DecisionsListInput; output: DecisionsListOutput };
   decisions_overturn: { input: DecisionsOverturnInput; output: DecisionsOverturnOutput };
   decisions_record: { input: DecisionsRecordInput; output: DecisionsRecordOutput };
@@ -5101,6 +5143,7 @@ export interface HubEventDataMap {
   "change.state": ChangeStateData;
   "chat.message": ChatMessageEventData;
   "chat.waiting": ProjectChatState;
+  "checklist.changed": ChecklistChangedData;
   "ci.main": CiMainData;
   "machine.guard": MachineGuardData;
   "machine.recovery_paused": RecoveryPausedData;
