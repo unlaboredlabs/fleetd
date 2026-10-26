@@ -81,11 +81,12 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
     [view, data.leadWorking, workedSince, seenSeq],
   );
   const items = view?.items;
+  const older = view?.hasOlder === true;
   const waiting = useMemo(
     // "asked at 09:02" (or "yesterday at …") is read when the chat changes; nothing ticks while it waits.
     // eslint-disable-next-line react-hooks/purity
-    () => (needsYou === true && items !== undefined ? waitingOn(items, Date.now()) : undefined),
-    [needsYou, items],
+    () => (needsYou === true && items !== undefined ? waitingOn(items, older, Date.now()) : undefined),
+    [needsYou, items, older],
   );
   const recall = useMemo(() => items?.findLast((i) => i.author === "human" && i.text.trim() !== "")?.text, [items]);
   // Once you send, the chat follows the newest message instead.
