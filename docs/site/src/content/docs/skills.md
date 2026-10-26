@@ -66,6 +66,9 @@ it), and the session's skill list has it from its next start. A deleted skill go
 
 Open Settings → Skills. Pick **Global** or a project.
 
+Changing a project's skills takes operate on its machine. Global skills reach every machine's agents, so changing
+them takes admin on every machine.
+
 - **List**: every skill the agents of that scope get, marked with where it comes from. A skill that another source
   outranks says which one.
 - **View and edit**: open one to read its `SKILL.md`. Project and global skills are editable here. Repo skills change
@@ -79,13 +82,15 @@ Open Settings → Skills. Pick **Global** or a project.
   - Any other git URL.
 
   The hub runs `git` to fetch the source. It finds skills as `npx skills add` does: a `SKILL.md` at the folder you
-  gave, else the folders in `skills/`, `.agents/skills/`, `.claude/skills/` and the top level.
+  gave, else the folders in `skills/`, `.agents/skills/`, `.claude/skills/` and the top level. Nothing is read
+  through a symlink: a linked folder is no skill, and a skill that holds a link is refused, since a link could point
+  at any file on the hub.
 - **Update**: an installed skill is pinned to the commit it was fetched at, and nothing updates on its own. Update
   fetches the same source and branch again and moves the pin. An edit you made to an installed skill is replaced.
 
 A lead can install skills too, with its `skill_install` tool, when you ask it to ("install
-vercel-labs/agent-skills@web-design-guidelines for this project"). It installs from GitHub or other remote sources
-only.
+vercel-labs/agent-skills@web-design-guidelines for this project"). It installs into its own project only, from GitHub
+or other remote sources.
 
 ## Name a skill in the chat {#chat}
 

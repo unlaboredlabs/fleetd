@@ -19,7 +19,9 @@ use fleetd_contracts::skills::{
 use serde_json::json;
 
 use super::{Kept, SkillError, install, mark_shadowed};
-use crate::hub::api::{Caller, Hub, Registry, ToolError, require, unknown_project};
+use crate::hub::api::{
+    Caller, Hub, Registry, ToolError, allows_everywhere, require, unknown_project,
+};
 use crate::hub::executor::tools::from_executor;
 use crate::hub::orders::notes::require_human;
 use crate::hub::store::{NewEvent, StoreError, iso_ms, now_ms};
@@ -41,7 +43,8 @@ fn known_project(hub: &Hub, caller: &Caller, r: &ProjectRef, role: Role) -> Resu
     Ok(())
 }
 
-/// The project a write in `scope` is for, checked; None for global.
+/// The project a write in `scope` is for, checked; None for global. A project's skills take operate on its machine;
+/// global ones reach every machine's agents, so they take admin on every machine.
 fn scope_project<'a>(
     hub: &Hub,
     caller: &Caller,
@@ -57,7 +60,12 @@ fn scope_project<'a>(
             ErrorCode::Invalid,
             "scope project needs projectRef.",
         )),
-        (SkillScope::Global, _) => Ok(None),
+        (SkillScope::Global, _) if allows_everywhere(caller, Role::Admin) => Ok(None),
+        (SkillScope::Global, _) => Err(ToolError::new(
+            ErrorCode::Forbidden,
+            "Global skills reach every machine's agents, so they take admin on every machine, and this key lacks it.",
+        )
+        .with_fix("Use a key with admin on every machine, or keep the skill in one project.")),
     }
 }
 

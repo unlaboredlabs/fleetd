@@ -233,8 +233,9 @@ static TOOLS: &[Tool] = &[
         "skill_install",
         "skill_install",
         "Install skills (SKILL.md workflows) from a skills.sh source (owner/repo, owner/repo@skill, a GitHub URL) \
-         for this project or, with scope global, every project; pinned to the commit fetched, and the human updates \
-         it from Settings > Skills. Agents started later list it as fleetd:<name> and run it with the Skill tool.",
+         for this project (scope project; global skills take an admin, so the human installs those); pinned to the \
+         commit fetched, and the human updates it from Settings > Skills. Agents list it as fleetd:<name> and run it \
+         with the Skill tool.",
         inline_schema::<SkillInstallCall>,
     ),
     lead(

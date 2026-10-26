@@ -54,7 +54,15 @@ async fn answer(
             format!("{} is not a skills call.", op_of(&call)),
         ));
     };
-    let r = (call.scope == SkillScope::Project).then_some(&caller.project_ref);
+    // Global skills take admin on every machine (`tools::scope_project`), which a lead never holds.
+    if call.scope == SkillScope::Global {
+        return Err(McpToolError::new(
+            ErrorCode::Forbidden,
+            "A lead installs skills for its own project only: global ones take an admin.",
+        )
+        .with_fix("Install it with scope project, or ask the human to install it globally from Settings > Skills."));
+    }
+    let r = Some(&caller.project_ref);
     let (kept, commit) = install_from(
         hub,
         call.scope,

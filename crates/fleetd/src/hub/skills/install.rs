@@ -9,6 +9,10 @@
 //! In the fetched tree, a folder with a `SKILL.md` at the source's path is one skill; else the skills are the
 //! `<dir>/<name>/SKILL.md` of `skills/`, `.agents/skills/`, `.claude/skills/` and the top level, and failing those any
 //! `SKILL.md` up to four folders down.
+//!
+//! Nothing is read through a symlink: a repo is someone else's, and a link in it could point anywhere on the hub's
+//! disk. A linked folder is no skill, a source path through a link is refused, and a skill that holds a link is
+//! refused whole.
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -225,8 +229,30 @@ pub async fn fetch(source: &Source) -> Result<Fetched, SkillError> {
     Ok(Fetched { commit, tree })
 }
 
+/// A folder itself, not a link to one.
+fn real_dir(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|m| m.is_dir())
+}
+
+/// A real folder with a real `SKILL.md`.
 fn is_skill(dir: &Path) -> bool {
-    dir.join(SKILL_FILE).is_file()
+    real_dir(dir) && std::fs::symlink_metadata(dir.join(SKILL_FILE)).is_ok_and(|m| m.is_file())
+}
+
+/// The first link in `dir`, folder-relative, looking at every entry (dot-files too) down the tree.
+fn first_link(dir: &Path) -> Option<String> {
+    let mut stack = vec![(dir.to_path_buf(), String::new())];
+    while let Some((at, prefix)) = stack.pop() {
+        for e in std::fs::read_dir(&at).into_iter().flatten().flatten() {
+            let rel = format!("{prefix}{}", e.file_name().to_string_lossy());
+            match e.file_type() {
+                Ok(t) if t.is_symlink() => return Some(rel),
+                Ok(t) if t.is_dir() => stack.push((e.path(), format!("{rel}/"))),
+                _ => {}
+            }
+        }
+    }
+    None
 }
 
 /// The skill folders of `base` (see the module's discovery order), repo-relative to `root`.
@@ -241,8 +267,9 @@ fn skill_dirs(root: &Path, base: &Path) -> Vec<PathBuf> {
         };
         let mut dirs: Vec<PathBuf> = entries
             .flatten()
+            .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
             .map(|e| e.path())
-            .filter(|p| p.is_dir() && is_skill(p))
+            .filter(|p| is_skill(p))
             .collect();
         dirs.sort();
         out.extend(dirs);
@@ -255,7 +282,8 @@ fn skill_dirs(root: &Path, base: &Path) -> Vec<PathBuf> {
             }
             for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
                 let name = e.file_name();
-                if name == ".git" || name == "node_modules" || !e.path().is_dir() {
+                let folder = e.file_type().is_ok_and(|t| t.is_dir());
+                if name == ".git" || name == "node_modules" || !folder {
                     continue;
                 }
                 if is_skill(&e.path()) {
@@ -282,7 +310,22 @@ pub fn find(
     } else {
         root.join(&source.path)
     };
-    if !base.is_dir() {
+    // Each folder from the repo's top down to the source's path is a real one, and it stays in the repo.
+    let mut at = root.to_path_buf();
+    for part in Path::new(&source.path).components() {
+        at.push(part);
+        if !real_dir(&at) {
+            return Err(refused(format!(
+                "The source has no folder {} (a link is not one).",
+                source.path
+            )));
+        }
+    }
+    let inside = |p: &Path| match (p.canonicalize(), root.canonicalize()) {
+        (Ok(p), Ok(r)) => p.starts_with(r),
+        _ => false,
+    };
+    if !real_dir(&base) || !inside(&base) {
         return Err(refused(format!(
             "The source has no folder {}.",
             source.path
@@ -309,6 +352,18 @@ pub fn find(
         };
         if out.iter().any(|f| f.name == name) || want.is_some_and(|w| *w != name) {
             continue;
+        }
+        if !inside(&dir) {
+            continue;
+        }
+        if let Some(link) = first_link(&dir) {
+            return Err(SkillError::new(
+                ErrorCode::Invalid,
+                format!(
+                    "{name} holds a link, {link}: fleetd installs no links, which could reach outside the skill."
+                ),
+                Some("Ask the source's owner to commit the file itself, or install another skill."),
+            ));
         }
         let rel = dir
             .strip_prefix(root)

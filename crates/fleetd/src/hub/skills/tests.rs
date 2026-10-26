@@ -64,6 +64,19 @@ fn person() -> Caller {
     }
 }
 
+/// A person's key with admin on every machine, which global skills take.
+fn admin() -> Caller {
+    let c = serde_json::from_value::<Caller>(json!({
+        "keyId": "k2", "name": "desk", "prefix": "fld_abcdeg", "createdAt": AT,
+        "grants": [{ "role": "admin", "machines": "*" }],
+    }))
+    .unwrap();
+    Caller {
+        kind: Some(KeyKind::Human),
+        ..c
+    }
+}
+
 fn md(name: &str, says: &str) -> String {
     format!("---\nname: {name}\ndescription: {says}\n---\n\n# {name}\n")
 }
@@ -100,7 +113,7 @@ async fn a_person_creates_lists_edits_and_deletes_project_and_global_skills() {
     };
     call(
         &hub,
-        &person(),
+        &admin(),
         "skill_set",
         set("global", "standup", "Write the standup.", true),
     )
@@ -108,7 +121,7 @@ async fn a_person_creates_lists_edits_and_deletes_project_and_global_skills() {
     .unwrap();
     call(
         &hub,
-        &person(),
+        &admin(),
         "skill_set",
         set("global", "release", "Release, the hub way.", true),
     )
@@ -226,7 +239,7 @@ async fn a_bad_skill_md_a_secret_and_an_agent_key_are_refused() {
         "---\nname: other\ndescription: d\n---\n",
         "---\nname: deploy\n---\n",
     ] {
-        let e = call(&hub, &person(), "skill_set", input(text))
+        let e = call(&hub, &admin(), "skill_set", input(text))
             .await
             .unwrap_err();
         assert_eq!(code(e), ErrorCode::Invalid, "{text}");
@@ -238,7 +251,7 @@ async fn a_bad_skill_md_a_secret_and_an_agent_key_are_refused() {
     );
     assert_eq!(
         code(
-            call(&hub, &person(), "skill_set", input(&secret))
+            call(&hub, &admin(), "skill_set", input(&secret))
                 .await
                 .unwrap_err()
         ),
@@ -246,7 +259,7 @@ async fn a_bad_skill_md_a_secret_and_an_agent_key_are_refused() {
     );
     let agent = Caller {
         kind: Some(KeyKind::Agent),
-        ..person()
+        ..admin()
     };
     let e = call(&hub, &agent, "skill_set", input(&md("deploy", "d")))
         .await
@@ -418,7 +431,7 @@ async fn an_install_is_pinned_and_moves_only_on_update() {
     // One skill of a source, into the global scope.
     let one = call(
         &hub,
-        &person(),
+        &admin(),
         "skill_install",
         json!({ "scope": "global", "source": url, "skill": "web-review" }),
     )
@@ -427,7 +440,7 @@ async fn an_install_is_pinned_and_moves_only_on_update() {
     assert_eq!(one["installed"].as_array().unwrap().len(), 1);
     let none = call(
         &hub,
-        &person(),
+        &admin(),
         "skill_install",
         json!({ "scope": "global", "source": url, "skill": "nope" }),
     )
@@ -437,7 +450,7 @@ async fn an_install_is_pinned_and_moves_only_on_update() {
     // A skill written here has nothing to update from.
     call(
         &hub,
-        &person(),
+        &admin(),
         "skill_set",
         json!({ "scope": "global", "name": "mine", "text": md("mine", "Mine.") }),
     )
@@ -445,7 +458,7 @@ async fn an_install_is_pinned_and_moves_only_on_update() {
     .unwrap();
     let e = call(
         &hub,
-        &person(),
+        &admin(),
         "skill_update",
         json!({ "scope": "global", "name": "mine" }),
     )
@@ -494,8 +507,16 @@ async fn a_lead_installs_from_a_remote_source_only_and_a_task_not_at_all() {
         agent: CallerAgent::Lead,
     };
     let handler = hub.lead_calls.handler("skill_install").unwrap();
-    let e = handler.handle(caller, call).await.unwrap_err();
+    let e = handler.handle(caller.clone(), call).await.unwrap_err();
     assert_eq!(e.code, ErrorCode::Forbidden);
+    // Global skills take an admin, which a lead never is.
+    let global = LeadCall::SkillInstall(
+        serde_json::from_value(json!({ "source": "acme/agent-skills", "scope": "global" }))
+            .unwrap(),
+    );
+    let e = handler.handle(caller, global).await.unwrap_err();
+    assert_eq!(e.code, ErrorCode::Forbidden);
+    assert!(e.message.contains("own project"), "{}", e.message);
     assert!(
         hub.db
             .skills()
@@ -609,5 +630,130 @@ async fn the_leads_copy_of_a_message_names_the_skills_the_person_picked() {
     assert!(
         lines.contains("- fleetd:triage (from the repo's"),
         "{lines}"
+    );
+}
+
+#[tokio::test]
+async fn global_skills_take_admin_on_every_machine_and_a_projects_operate() {
+    let (hub, _home) = hub();
+    let r = project();
+    let set = |scope: &str| {
+        let mut input =
+            json!({ "scope": scope, "name": "deploy", "text": md("deploy", "Deploy.") });
+        if scope == "project" {
+            input["projectRef"] = json!(r);
+        }
+        input
+    };
+    let one_machine = Caller {
+        grants: serde_json::from_value(json!([{ "role": "admin", "machines": ["devbox"] }]))
+            .unwrap(),
+        ..admin()
+    };
+    for who in [person(), one_machine.clone()] {
+        let e = call(&hub, &who, "skill_set", set("global"))
+            .await
+            .unwrap_err();
+        assert_eq!(code(e), ErrorCode::Forbidden);
+        for tool in ["skill_install", "skill_delete", "skill_update"] {
+            let input = json!({ "scope": "global", "name": "deploy", "source": "acme/skills" });
+            assert_eq!(
+                code(call(&hub, &who, tool, input).await.unwrap_err()),
+                ErrorCode::Forbidden,
+                "{tool}"
+            );
+        }
+    }
+    assert!(hub.db.skills().list(SkillScope::Global, None).is_empty());
+    call(&hub, &admin(), "skill_set", set("global"))
+        .await
+        .unwrap();
+    // A project's skills: operate on its machine is enough.
+    call(&hub, &person(), "skill_set", set("project"))
+        .await
+        .unwrap();
+    call(&hub, &one_machine, "skill_set", set("project"))
+        .await
+        .unwrap();
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn an_install_reads_nothing_through_a_link() {
+    let tmp = tempfile::tempdir().unwrap();
+    let outside = tmp.path().join("outside");
+    std::fs::create_dir(&outside).unwrap();
+    std::fs::write(outside.join("hub-secret.txt"), "the hub's own file\n").unwrap();
+    put(&outside, "evil/SKILL.md", &md("evil", "Not in the repo."));
+    let repo = tmp.path().join("repo");
+    std::fs::create_dir(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", "main"]);
+    put(&repo, "skills/pdf/SKILL.md", &md("pdf", "Fill PDF forms."));
+    // A link to a file outside the repo, inside a skill.
+    std::os::unix::fs::symlink(
+        outside.join("hub-secret.txt"),
+        repo.join("skills/pdf/notes.txt"),
+    )
+    .unwrap();
+    // A linked skill folder, a skill whose SKILL.md is a link, and a source folder that is a link.
+    std::os::unix::fs::symlink(outside.join("evil"), repo.join("skills/evil")).unwrap();
+    std::fs::create_dir_all(repo.join("skills/linked-md")).unwrap();
+    std::os::unix::fs::symlink(
+        outside.join("evil/SKILL.md"),
+        repo.join("skills/linked-md/SKILL.md"),
+    )
+    .unwrap();
+    std::os::unix::fs::symlink(outside.clone(), repo.join("elsewhere")).unwrap();
+    put(&repo, "skills/plain/SKILL.md", &md("plain", "No links."));
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-q", "-m", "links"]);
+
+    let source = install::parse(&format!("file://{}", repo.display())).unwrap();
+    let fetched = install::fetch(&source).await.unwrap();
+    let tree = fetched.tree.path();
+    // The skill holding a link is refused whole, naming the link.
+    let e = install::find(tree, &source, Some(&SkillName::unchecked("pdf"))).unwrap_err();
+    assert!(e.message.contains("notes.txt"), "{}", e.message);
+    // A linked folder or SKILL.md is no skill.
+    for name in ["evil", "linked-md"] {
+        let e = install::find(tree, &source, Some(&SkillName::unchecked(name))).unwrap_err();
+        assert!(
+            e.message.contains("no skill called"),
+            "{name}: {}",
+            e.message
+        );
+    }
+    // A source path through a link is refused.
+    let through = install::Source {
+        path: "elsewhere/evil".into(),
+        ..source.clone()
+    };
+    assert!(install::find(tree, &through, None).is_err());
+    // What has no link installs, and nothing from outside came along.
+    let found = install::find(tree, &source, Some(&SkillName::unchecked("plain"))).unwrap();
+    assert_eq!(found.len(), 1);
+    for f in &found {
+        for (_, data) in &f.files {
+            assert!(!String::from_utf8_lossy(data).contains("the hub's own file"));
+        }
+    }
+
+    // Through the tool, a person's install of the repo is refused and keeps nothing.
+    let (hub, _home) = hub();
+    let r = project();
+    let e = call(
+        &hub,
+        &person(),
+        "skill_install",
+        json!({ "scope": "project", "projectRef": r, "source": format!("file://{}", repo.display()) }),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(code(e), ErrorCode::Invalid);
+    assert!(
+        hub.db
+            .skills()
+            .list(SkillScope::Project, Some(&r))
+            .is_empty()
     );
 }
