@@ -60,26 +60,32 @@ export interface ContextMenuProps {
 export function ContextMenu({ children, menu, disabled }: ContextMenuProps) {
   const trigger = useRef<HTMLElement>(null);
   const [selected, setSelected] = useState("");
+  const [open, setOpen] = useState(false);
   return (
     <C.Root
-      onOpenChange={(open) => {
-        if (open) setSelected(selectionIn(trigger.current));
+      onOpenChange={(next) => {
+        if (next) setSelected(selectionIn(trigger.current));
+        setOpen(next);
       }}
     >
       <C.Trigger ref={trigger} asChild disabled={disabled ?? false} onKeyDown={onKeyDown} onContextMenuCapture={onContextMenuCapture}>
         {children}
       </C.Trigger>
-      <C.Portal>
-        <C.Content className={s.surface} collisionPadding={8}>
-          {selected !== "" ? (
-            <>
-              <ContextMenuCopy text={selected}>Copy selection</ContextMenuCopy>
-              <ContextMenuSeparator />
-            </>
-          ) : null}
-          <Items menu={menu} />
-        </C.Content>
-      </C.Portal>
+      {/* Gone the moment it closes, as a tooltip is: left to Radix, a closed menu stays until its entrance reports an
+          end, which never comes when its start went unseen. */}
+      {open ? (
+        <C.Portal>
+          <C.Content className={s.surface} collisionPadding={8}>
+            {selected !== "" ? (
+              <>
+                <ContextMenuCopy text={selected}>Copy selection</ContextMenuCopy>
+                <ContextMenuSeparator />
+              </>
+            ) : null}
+            <Items menu={menu} />
+          </C.Content>
+        </C.Portal>
+      ) : null}
     </C.Root>
   );
 }

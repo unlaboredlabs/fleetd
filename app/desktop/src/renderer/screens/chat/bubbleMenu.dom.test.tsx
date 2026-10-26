@@ -6,11 +6,18 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ChatItem } from "../../src/data/chat";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
+import o from "../../ui/primitives/Overlay.module.css";
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
 import { BubbleActionsContext, type BubbleActions, type ReplyTarget } from "./actions";
 import { MessageView } from "./Bubble";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+// A fade on a closed surface, which happy-dom never ends: as in the app when the surface's entrance went unseen, a
+// closed picker or menu left to Radix would wait for it and stay on screen.
+const fade = document.createElement("style");
+fade.textContent = `.${o.surface}[data-state="closed"] { animation-name: fade; animation-duration: 120ms; }`;
+document.head.appendChild(fade);
 
 const copy = vi.fn((_text: string) => Promise.resolve());
 const PROJECT = { machineId: "devbox", projectId: "storefront" };
@@ -113,4 +120,23 @@ it("your own bubble copies, and neither replies nor reacts", async () => {
   await mount("human");
   rightClick(bubble());
   expect(items()).toEqual(["Copy text", "Copy as Markdown"]);
+});
+
+it("the tapback picker and the menu leave the page once a pick closes them", async () => {
+  await mount("lead");
+  const picker = host.querySelector<HTMLButtonElement>("button[aria-label='Tapback']");
+  act(() => {
+    picker?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }));
+    picker?.click();
+  });
+  const love = document.querySelector<HTMLButtonElement>("[role='dialog'][aria-label='Tapbacks'] button[aria-label='Love']");
+  expect(love).not.toBeNull();
+  act(() => love?.click());
+  await act(() => new Promise((done) => setTimeout(done, 0)));
+  expect(host.querySelector("[aria-label='You reacted: Love']")).not.toBeNull();
+  expect(document.querySelector("[aria-label='Tapbacks']")).toBeNull();
+
+  rightClick(bubble());
+  await choose("Copy text");
+  expect(document.querySelector("[role='menu']")).toBeNull();
 });

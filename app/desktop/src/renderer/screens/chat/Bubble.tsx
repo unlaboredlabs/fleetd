@@ -122,27 +122,30 @@ function TapbackPicker({ current, onPick }: { current: Tapback | undefined; onPi
         </PopoverTrigger>
       </Tooltip>
       {/* Above the bubble, or below it when there's no room above. Once the bubble scrolls out of the chat the
-          picker hides with it rather than following it past the window's edge. */}
-      <PopoverContent side="top" hideWhenDetached aria-label="Tapbacks">
-        <div className={s.picker}>
-          {TAPBACKS.map((t) => (
-            <button
-              key={t}
-              type="button"
-              className={s.pick}
-              aria-label={TAPBACK_WORD[t]}
-              aria-pressed={current === t}
-              title={TAPBACK_WORD[t]}
-              onClick={() => {
-                setOpen(false);
-                onPick(t);
-              }}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-      </PopoverContent>
+          picker hides with it rather than following it past the window's edge. Gone the moment it closes, as a
+          tooltip is: left to Radix, a closed picker stays until its entrance reports an end that may never come. */}
+      {open ? (
+        <PopoverContent side="top" hideWhenDetached aria-label="Tapbacks">
+          <div className={s.picker}>
+            {TAPBACKS.map((t) => (
+              <button
+                key={t}
+                type="button"
+                className={s.pick}
+                aria-label={TAPBACK_WORD[t]}
+                aria-pressed={current === t}
+                title={TAPBACK_WORD[t]}
+                onClick={() => {
+                  setOpen(false);
+                  onPick(t);
+                }}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        </PopoverContent>
+      ) : null}
     </Popover>
   );
 }
