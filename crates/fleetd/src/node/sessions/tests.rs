@@ -2299,10 +2299,22 @@ async fn a_printed_secret_never_leaves_the_node() {
         base64::engine::general_purpose::STANDARD.encode(secret),
         "sk_live_51%2FHx%2BQe9%3D".to_owned(),
     ];
+    let chain = crate::node::project_env::tests::PEM;
     let printed = format!(
-        "HOME=/home/w\nSTRIPE_KEY={}\nSTRIPE_KEY_B64={}\nCALLBACK=https://pay.test/cb?key={}\n",
+        "HOME=/home/w\nSTRIPE_KEY={}\nSTRIPE_KEY_B64={}\nCALLBACK=https://pay.test/cb?key={}\nTLS_CHAIN={chain}\n",
         forms[0], forms[1], forms[2]
     );
+    // Every line of the chain but its armor is secret, and so is the chain whole.
+    let forms: Vec<String> = forms
+        .into_iter()
+        .chain(std::iter::once(chain.to_owned()))
+        .chain(
+            chain
+                .lines()
+                .filter(|l| !l.starts_with("-----"))
+                .map(str::to_owned),
+        )
+        .collect();
     let lines = printenv_turn(&printed);
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().join("node");
@@ -2315,10 +2327,16 @@ async fn a_printed_secret_never_leaves_the_node() {
     node.project(dir.path()).await;
     node.ok(SessionCall::ProjectEnv {
         project_id: ProjectId::unchecked("p1"),
-        set: vec![EnvVarSet::Secret {
-            name: EnvVarName::new("STRIPE_KEY").unwrap(),
-            sealed: crate::node::project_env::seal(&home, secret),
-        }],
+        set: vec![
+            EnvVarSet::Secret {
+                name: EnvVarName::new("STRIPE_KEY").unwrap(),
+                sealed: crate::node::project_env::seal(&home, secret),
+            },
+            EnvVarSet::Secret {
+                name: EnvVarName::new("TLS_CHAIN").unwrap(),
+                sealed: crate::node::project_env::seal(&home, chain),
+            },
+        ],
         remove: vec![],
     })
     .await;
@@ -2468,18 +2486,25 @@ async fn a_printed_secret_never_leaves_the_node() {
     let frames = frames.join("\n");
     // The output got through, named.
     assert!(frames.contains("***STRIPE_KEY***"), "{frames}");
+    assert!(frames.contains("***TLS_CHAIN***"), "{frames}");
     assert!(answers.contains("***STRIPE_KEY***"), "{answers}");
     for form in &forms {
         assert!(!frames.contains(form.as_str()), "a frame carried {form}");
         assert!(!answers.contains(form.as_str()), "the hub answered {form}");
         assert!(!rows.contains(form.as_str()), "a hub row holds {form}");
     }
-    // The agent itself still got the real value.
+    // The agent itself still got the real values, newlines and all.
     assert!(
         node.runner.spawned()[0]
             .env
             .iter()
             .any(|(k, v)| k == "STRIPE_KEY" && v == secret)
+    );
+    assert!(
+        node.runner.spawned()[0]
+            .env
+            .iter()
+            .any(|(k, v)| k == "TLS_CHAIN" && v == chain)
     );
 }
 

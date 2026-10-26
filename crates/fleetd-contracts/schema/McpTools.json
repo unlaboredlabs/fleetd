@@ -3367,7 +3367,7 @@
           "type": "object"
         },
         {
-          "description": "`sealed`: `crypto_box_seal` of the value to the project machine's `boxPubKey`, one line (no CR, LF or NUL).",
+          "description": "`sealed`: `crypto_box_seal` of the value to the project machine's `boxPubKey`: up to 64 KiB, any number of\nlines, no NUL.",
           "properties": {
             "kind": {
               "const": "secret",
@@ -7796,6 +7796,12 @@
     "ProjectEnvVar": {
       "description": "One of a project's variables as the hub keeps it. A secret has no value here, only its fingerprint.",
       "properties": {
+        "bytes": {
+          "description": "The value's size in bytes, a secret's too, for the project's total ([`ENV_TOTAL_MAX_BYTES`]).",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
         "fingerprint": {
           "$ref": "#/$defs/SecretFingerprint",
           "description": "A secret's: the first 8 hex characters of sha256 over its value, as the node computed it."
@@ -7817,6 +7823,7 @@
       "required": [
         "name",
         "kind",
+        "bytes",
         "updatedAt"
       ],
       "type": "object"

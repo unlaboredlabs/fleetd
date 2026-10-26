@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ProjectSettings } from "../../../shared/contracts";
 import { deleteConfirmed } from "../projects/RemoveProjectDialog";
-import { countAfter, nameProblem, parseDotEnv, shownValue, unsavedWorktrees, valueProblem, withKind } from "./projectModel";
+import { countAfter, nameProblem, parseDotEnv, shownValue, totalProblem, unsavedWorktrees, valueProblem, withKind } from "./projectModel";
 import { parseRoute } from "./route";
 import { searchSettings } from "./search";
 
@@ -36,22 +36,52 @@ describe("Settings → Projects", () => {
     expect(byName["FLEETD_THREAD_ID"]?.problem).toContain("a project can't set it");
   });
 
-  it("checks a secret is one line, and lets a plain value hold more", () => {
+  it("takes values of any number of lines up to 64 KiB, plain or secret", () => {
     const greeting = parseDotEnv(`GREETING="hello\\nworld"`)[0];
     if (greeting === undefined) throw new Error("not parsed");
     expect(greeting.problem).toBeNull();
-    expect(withKind(greeting, "secret").problem).toBe("A secret is one line.");
+    expect(withKind(greeting, "secret").problem).toBeNull();
     expect(valueProblem("", "plain")).toBeNull();
     expect(valueProblem("", "secret")).toBeTruthy();
-    expect(valueProblem("é".repeat(4097), "plain")).toBeTruthy();
+    expect(valueProblem("x".repeat(64 * 1024), "secret")).toBeNull();
+    // 2 bytes a character: one past 64 KiB.
+    expect(valueProblem("é".repeat(32 * 1024) + "x", "plain")).toBe("A value is at most 64 KiB.");
+    expect(valueProblem("a\0b", "plain")).toBeTruthy();
     expect(nameProblem("PATH")).toBeTruthy();
     expect(nameProblem("_ok_1")).toBeNull();
   });
 
   it("shows a secret by fingerprint, never a value", () => {
-    expect(shownValue({ name: "K", kind: "secret", fingerprint: "ab12cd34", updatedAt: AT })).toBe("secret · ab12cd34");
-    expect(shownValue({ name: "U", kind: "plain", value: "x", updatedAt: AT })).toBe("x");
-    expect(countAfter([{ name: "K", kind: "plain", value: "", updatedAt: AT }], ["K", "L"])).toBe(2);
+    expect(shownValue({ name: "K", kind: "secret", fingerprint: "ab12cd34", bytes: 9, updatedAt: AT })).toBe("secret · ab12cd34");
+    expect(shownValue({ name: "U", kind: "plain", value: "x", bytes: 1, updatedAt: AT })).toBe("x");
+    expect(countAfter([{ name: "K", kind: "plain", value: "", bytes: 0, updatedAt: AT }], ["K", "L"])).toBe(2);
+  });
+
+  it("reads a quoted value over several lines: a certificate chain, a service account's JSON", () => {
+    const chain = "-----BEGIN CERTIFICATE-----\nMIIBszCCAVmgAwIBAgIU\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nMIIBrDCCAVKgAwIBAgIU\n-----END CERTIFICATE-----";
+    const json = '{\n  "type": "service_account",\n  "private_key": "-----BEGIN PRIVATE KEY-----\\nMIIE\\n-----END PRIVATE KEY-----\\n"\n}';
+    const vars = parseDotEnv([`TLS_CHAIN="${chain}" # the staging chain`, "AFTER=1", `SA_JSON='${json}'`, "LAST=2", 'OPEN="never closed', "tail"].join("\n"));
+    const byName = Object.fromEntries(vars.map((v) => [v.name, v]));
+    expect(vars.map((v) => v.name)).toEqual(["TLS_CHAIN", "AFTER", "SA_JSON", "LAST", "OPEN"]);
+    expect(byName["TLS_CHAIN"]?.value).toBe(chain);
+    expect(byName["AFTER"]?.value).toBe("1");
+    // '…' keeps a JSON's own \n escapes as they are.
+    expect(byName["SA_JSON"]?.value).toBe(json);
+    expect(byName["LAST"]?.value).toBe("2");
+    expect(byName["OPEN"]?.value).toBe("never closed\ntail");
+    expect(vars.every((v) => v.problem === null)).toBe(true);
+  });
+
+  it("holds a project's values to 512 KiB together, naming the total", () => {
+    const env = [
+      { name: "A", kind: "secret" as const, fingerprint: "ab12cd34", bytes: 300 * 1024, updatedAt: AT },
+      { name: "B", kind: "plain" as const, value: "b", bytes: 1, updatedAt: AT },
+    ];
+    const big = "x".repeat(212 * 1024);
+    expect(totalProblem(env, [{ name: "C", value: big }])).toBe("A project's variables take at most 512 KiB together; these would take 513 KiB.");
+    // Replacing or removing one frees its share.
+    expect(totalProblem(env, [{ name: "A", value: big }])).toBeNull();
+    expect(totalProblem(env, [{ name: "C", value: big }], ["B"])).toBeNull();
   });
 
   it("names the worktrees a delete loses work in, and confirms only on the exact name", () => {

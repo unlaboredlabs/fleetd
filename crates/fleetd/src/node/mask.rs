@@ -2,7 +2,10 @@
 //! a stack trace, a config dump) would otherwise carry it into the node's store and on to the hub and the app. Every
 //! exact occurrence of a secret's value, its standard and URL-safe base64, and its percent-encoding becomes
 //! `***NAME***` in tool output and input, assistant text, live text and failure messages before the node keeps or
-//! sends any of it. Values under [`MIN_LEN`] bytes are left alone: masking them would garble ordinary output.
+//! sends any of it. A value of several lines (a certificate chain, a key, a service account's JSON) is masked whole
+//! and line by line, each line of [`MIN_LINE`] characters or more on its own, so a command that prints only part of it
+//! still leaks none of it; PEM armor lines (`-----BEGIN CERTIFICATE-----`) are public and stay. Values under
+//! [`MIN_LEN`] bytes are left alone: masking them would garble ordinary output.
 use std::borrow::Cow;
 
 use base64::Engine;
@@ -16,6 +19,14 @@ use super::runner::{RunOutcome, RunnerEvent};
 
 /// The shortest value masked.
 pub const MIN_LEN: usize = 4;
+
+/// The shortest line of a value of several lines that is masked on its own.
+pub const MIN_LINE: usize = 8;
+
+/// `-----BEGIN …-----` / `-----END …-----`: the same in every PEM file, so no secret.
+fn pem_armor(line: &str) -> bool {
+    (line.starts_with("-----BEGIN ") || line.starts_with("-----END ")) && line.ends_with("-----")
+}
 
 /// A process's secrets, `(name, value)`, wiped when it goes.
 #[derive(Default)]
@@ -68,7 +79,17 @@ impl Masker {
                 URL_SAFE.encode(value),
                 URL_SAFE_NO_PAD.encode(value),
                 percent(value),
-            ] {
+            ]
+            .into_iter()
+            .chain(
+                value
+                    .lines()
+                    .map(str::trim)
+                    .filter(|line| {
+                        line.len() >= MIN_LINE && !pem_armor(line) && line.len() < value.len()
+                    })
+                    .map(str::to_owned),
+            ) {
                 if !patterns.iter().any(|(p, _)| *p == form) {
                     patterns.push((form, shown.clone()));
                 }
@@ -241,6 +262,28 @@ mod tests {
         // Too short to mask without garbling output.
         assert!(masked.contains("PIN=123"));
         assert!(matches!(m.text("nothing here"), Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn a_certificate_chain_is_masked_whole_and_line_by_line() {
+        let chain = crate::node::project_env::tests::PEM;
+        let m = Masker::new(&[("TLS_CHAIN".into(), chain.into())]);
+        let whole = m.text(&format!("TLS_CHAIN={chain}")).into_owned();
+        assert_eq!(whole, "TLS_CHAIN=***TLS_CHAIN***");
+        // `head -3` of the file, then a stack trace quoting the second cert's middle line, indented.
+        let head: String = chain.lines().take(3).map(|l| format!("{l}\n")).collect();
+        let line = chain.lines().nth(6).unwrap();
+        let partial = m
+            .text(&format!("{head}error: bad cert near\n    {line}\n"))
+            .into_owned();
+        for secret in chain.lines().filter(|l| !l.starts_with("-----")) {
+            assert!(!partial.contains(secret), "{partial}");
+        }
+        // The armor is the same in every PEM file: it stays readable.
+        assert!(
+            partial.starts_with("-----BEGIN CERTIFICATE-----\n***TLS_CHAIN***"),
+            "{partial}"
+        );
     }
 
     #[test]

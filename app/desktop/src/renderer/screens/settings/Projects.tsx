@@ -18,6 +18,7 @@ import {
   nameProblem,
   parseDotEnv,
   shownValue,
+  totalProblem,
   unsavedWorktrees,
   valueProblem,
   withKind,
@@ -311,6 +312,7 @@ function EnvSetting({ env, projectRef }: { env: ReadonlyArray<ProjectEnvVar>; pr
       <EchoLine echo={echo} />
       {editing?.kind === "new" || editing?.kind === "edit" ? (
         <EnvEditor
+          env={env}
           editing={editing.kind === "edit" ? editing.v : null}
           taken={env.map((v) => v.name)}
           onClose={() => setEditing(null)}
@@ -363,6 +365,7 @@ function useAttempt() {
 }
 
 function EnvEditor(props: {
+  env: ReadonlyArray<ProjectEnvVar>;
   editing: ProjectEnvVar | null;
   taken: readonly string[];
   onClose: () => void;
@@ -376,7 +379,7 @@ function EnvEditor(props: {
   const { busy, error, attempt } = useAttempt();
   const n = name.trim();
   const nameIssue = was ? null : n !== "" && props.taken.includes(n) ? `${n} is already set: edit it instead.` : n === "" ? null : nameProblem(n);
-  const valueIssue = valueProblem(value, kind);
+  const valueIssue = valueProblem(value, kind) ?? (n === "" ? null : totalProblem(props.env, [{ name: n, value }]));
   const ready = n !== "" && nameIssue === null && valueIssue === null && !busy;
   return (
     <Dialog
@@ -408,11 +411,19 @@ function EnvEditor(props: {
           error={value === "" ? null : valueIssue}
           description={was?.kind === "secret" ? `Saved, fingerprint ${was.fingerprint ?? "unknown"}. Type a new value to replace it.` : undefined}
         >
-          {kind === "secret" ? (
-            <Input type="password" mono value={value} autoComplete="off" spellCheck={false} disabled={busy} onChange={(e) => setValue(e.target.value)} />
-          ) : (
-            <Input mono value={value} autoComplete="off" spellCheck={false} disabled={busy} onChange={(e) => setValue(e.target.value)} />
-          )}
+          {/* Any number of lines, so a certificate chain or a key file pastes as it is; a secret's characters show as dots. */}
+          <Textarea
+            mono
+            className={kind === "secret" ? s.secretValue : undefined}
+            data-secret={kind === "secret" ? "" : undefined}
+            value={value}
+            minRows={1}
+            maxRows={12}
+            autoComplete="off"
+            spellCheck={false}
+            disabled={busy}
+            onChange={(e) => setValue(e.target.value)}
+          />
         </Field>
         <Problem text={error} />
       </div>
@@ -430,6 +441,7 @@ function PasteEnv(props: { env: ReadonlyArray<ProjectEnvVar>; onClose: () => voi
   });
   const good = vars.filter((v) => v.problem === null);
   const over = countAfter(props.env, good.map((v) => v.name)) > ENV_MAX;
+  const total = totalProblem(props.env, good);
   const replaced = good.filter((v) => props.env.some((e) => e.name === v.name)).length;
   return (
     <Dialog
@@ -445,7 +457,7 @@ function PasteEnv(props: { env: ReadonlyArray<ProjectEnvVar>; onClose: () => voi
           </Button>
           <Button
             variant="primary"
-            disabled={busy || good.length === 0 || over}
+            disabled={busy || good.length === 0 || over || total !== null}
             onClick={() => attempt(() => props.onSave(good.map((v) => ({ kind: v.kind, name: v.name, value: v.value }))))}
           >
             {busy ? "Saving…" : `Add ${good.length} ${good.length === 1 ? "variable" : "variables"}`}
@@ -485,6 +497,11 @@ function PasteEnv(props: { env: ReadonlyArray<ProjectEnvVar>; onClose: () => voi
         {over ? (
           <Text size="sm" tone="danger">
             A project takes at most {ENV_MAX} variables.
+          </Text>
+        ) : null}
+        {total !== null ? (
+          <Text size="sm" tone="danger">
+            {total}
           </Text>
         ) : null}
         <Problem text={error} />

@@ -69,7 +69,7 @@ describe("sealing a secret ask's value", () => {
     expect(JSON.stringify(sent[1])).not.toContain("hunter2");
   });
 
-  it("sends a project's plain values as typed and its secrets only sealed, and refuses a two-line secret", async () => {
+  it("sends a project's plain values as typed and its secrets only sealed, and takes a secret of several lines but not a NUL", async () => {
     await sodium.ready;
     const [pk, sk] = [bytes(rust.publicKey), bytes(rust.secretKey)];
     const sent: unknown[] = [];
@@ -96,10 +96,16 @@ describe("sealing a secret ask's value", () => {
     expect(sodium.to_string(sodium.crypto_box_seal_open(bytes(input.set[1]?.sealed ?? ""), pk, sk))).toBe("sk_test_hunter2");
 
     sent.length = 0;
-    const twoLines = await submitProjectEnv({ ...request, set: [{ kind: "secret", name: "K", value: "a\nb" }] }, call);
-    expect(twoLines.ok).toBe(false);
+    const nul = await submitProjectEnv({ ...request, set: [{ kind: "secret", name: "K", value: "a\0b" }] }, call);
+    expect(nul.ok).toBe(false);
     const noKey = await submitProjectEnv({ ...request, boxPubKey: undefined, set: [{ kind: "secret", name: "K", value: "v" }] }, call);
     expect(noKey.ok).toBe(false);
     expect(sent).toEqual([]);
+
+    // A certificate chain: sealed with every newline in it.
+    const chain = "-----BEGIN CERTIFICATE-----\nMIIBszCCAVmgAwIBAgIU\n-----END CERTIFICATE-----\n";
+    expect((await submitProjectEnv({ ...request, set: [{ kind: "secret", name: "TLS_CHAIN", value: chain }] }, call)).ok).toBe(true);
+    const sealed = (sent[1] as { set: Array<{ sealed?: string }> }).set[0]?.sealed ?? "";
+    expect(sodium.to_string(sodium.crypto_box_seal_open(bytes(sealed), pk, sk))).toBe(chain);
   });
 });

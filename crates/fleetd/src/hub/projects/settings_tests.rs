@@ -222,8 +222,9 @@ async fn env_vars_go_to_the_node_and_the_hub_keeps_no_secret_value() {
     assert_eq!(
         out["env"],
         json!([
-            { "name": "API_URL", "kind": "plain", "value": "https://staging.example", "updatedAt": out["env"][0]["updatedAt"] },
-            { "name": "STRIPE_KEY", "kind": "secret", "fingerprint": "5ec2e7a1", "updatedAt": out["env"][1]["updatedAt"] },
+            { "name": "API_URL", "kind": "plain", "value": "https://staging.example", "bytes": 23, "updatedAt": out["env"][0]["updatedAt"] },
+            // A secret's size is its sealed box's, less the seal: the hub never sees the value.
+            { "name": "STRIPE_KEY", "kind": "secret", "fingerprint": "5ec2e7a1", "bytes": SECRET.len(), "updatedAt": out["env"][1]["updatedAt"] },
         ])
     );
     let settings = call(
@@ -396,5 +397,60 @@ async fn the_name_and_keep_worktrees_save_and_a_delete_removes_the_worktrees_and
             .env(&project())
             .unwrap()
             .is_empty()
+    );
+}
+
+/// A project's values together stay under 512 KiB, secrets counted by their sealed size: the hub refuses a change past
+/// it, naming the total, and the node is never asked.
+#[tokio::test]
+async fn a_change_past_the_projects_total_is_refused_before_the_node_sees_it() {
+    use fleetd_contracts::project_settings::ENV_VALUE_MAX_BYTES;
+    let (hub, _home) = hub();
+    let mut calls = node(&hub, true).await;
+    let big = "x".repeat(ENV_VALUE_MAX_BYTES);
+    let set = |names: std::ops::Range<usize>| -> Vec<Value> {
+        names
+            .map(|i| json!({ "kind": "plain", "name": format!("BIG_{i}"), "value": big }))
+            .collect()
+    };
+    // 7 plain values of 64 KiB and a 64 KiB secret: exactly 512 KiB.
+    let mut first = set(0..7);
+    first.push(json!({ "kind": "secret", "name": "KEY", "sealed": sealed(&"k".repeat(ENV_VALUE_MAX_BYTES)) }));
+    call(
+        &hub,
+        &person(),
+        "project_env_set",
+        json!({ "machineId": "lab", "projectId": "p1", "set": first }),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(
+        calls.recv().await,
+        Some(SessionCall::ProjectEnv { .. })
+    ));
+
+    let Err(CallError::Tool(over)) = call(&hub, &person(), "project_env_set",
+        json!({ "machineId": "lab", "projectId": "p1", "set": [{ "kind": "plain", "name": "ONE_MORE", "value": "x" }] }))
+    .await
+    else {
+        panic!("a value past the total was taken")
+    };
+    assert_eq!(
+        over.message,
+        "A project's variables take at most 512 KiB together; these would take 513 KiB."
+    );
+    // Replacing one keeps the total: taken.
+    call(&hub, &person(), "project_env_set",
+        json!({ "machineId": "lab", "projectId": "p1", "set": [{ "kind": "plain", "name": "BIG_0", "value": "small" }] }))
+    .await
+    .unwrap();
+    let next = calls.recv().await;
+    let Some(SessionCall::ProjectEnv { set, .. }) = next else {
+        panic!("{next:?}")
+    };
+    assert_eq!(
+        set[0].name().as_str(),
+        "BIG_0",
+        "the refused change never reached the node"
     );
 }

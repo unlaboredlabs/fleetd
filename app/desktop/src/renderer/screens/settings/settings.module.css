@@ -389,3 +389,8 @@
   margin: 0;
   padding-left: var(--space-4);
 }
+
+/* A secret's value, typed or pasted over any number of lines, shows as dots (Chromium's text-security). */
+.secretValue {
+  -webkit-text-security: disc;
+}

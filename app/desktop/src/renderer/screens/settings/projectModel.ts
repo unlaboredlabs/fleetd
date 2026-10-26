@@ -1,6 +1,6 @@
 // Settings → Projects, the parts with no React: reading a pasted .env, checking a variable before it goes, and what
 // a delete would lose. The hub checks the same rules (project_settings.rs); these only say so before a call.
-import type { ProjectEnvVar, ProjectSettings, ProjectWorktree } from "../../../shared/contracts";
+import { ENV_TOTAL_MAX_BYTES, ENV_VALUE_MAX_BYTES, type ProjectEnvVar, type ProjectSettings, type ProjectWorktree } from "../../../shared/contracts";
 
 export type EnvKind = "plain" | "secret";
 
@@ -11,8 +11,7 @@ const NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/u;
 export const reservedName = (name: string): boolean =>
   ["HOME", "PATH", "USER", "TMPDIR", "TMP", "TEMP"].includes(name) || ["FLEETD_", "ANTHROPIC_", "CLAUDE"].some((p) => name.startsWith(p));
 
-/** project_settings.rs ENV_VALUE_MAX_BYTES, plain and secret alike. */
-const MAX_BYTES = 8192;
+export const byteLength = (value: string): number => new TextEncoder().encode(value).length;
 
 /** project_settings.rs PROJECT_ENV_MAX. */
 export const ENV_MAX = 100;
@@ -25,13 +24,21 @@ export function nameProblem(name: string): string | null {
   return null;
 }
 
-/** Why `value` can't be this kind of variable's value, or null. */
+/** Why `value` can't be this kind of variable's value, or null. Any number of lines, plain or secret. */
 export function valueProblem(value: string, kind: EnvKind): string | null {
   if (kind === "secret" && value === "") return "Type or paste the value.";
-  if (new TextEncoder().encode(value).length > MAX_BYTES) return `A value is at most ${MAX_BYTES} bytes.`;
+  if (byteLength(value) > ENV_VALUE_MAX_BYTES) return "A value is at most 64 KiB.";
   if (value.includes("\0")) return "A value can't hold a NUL character.";
-  if (kind === "secret" && /[\r\n]/u.test(value)) return "A secret is one line.";
   return null;
+}
+
+/** project_settings.rs env_total_over: the project's values together after a change, past 512 KiB. */
+export function totalProblem(env: readonly ProjectEnvVar[], set: ReadonlyArray<{ name: string; value: string }>, remove: readonly string[] = []): string | null {
+  const sizes = new Map(env.map((v) => [v.name, v.bytes]));
+  for (const name of remove) sizes.delete(name);
+  for (const v of set) sizes.set(v.name, byteLength(v.value));
+  const total = [...sizes.values()].reduce((a, b) => a + b, 0);
+  return total > ENV_TOTAL_MAX_BYTES ? `A project's variables take at most 512 KiB together; these would take ${Math.ceil(total / 1024)} KiB.` : null;
 }
 
 /** Names that usually hold a credential: a pasted one starts as a secret. */
@@ -51,26 +58,58 @@ export interface PastedVar {
 const unescape = (v: string) => v.replace(/\\([nrt"\\])/gu, (_, c: string) => ({ n: "\n", r: "\r", t: "\t", '"': '"', "\\": "\\" })[c] ?? c);
 
 /**
- * A pasted .env: `NAME=value` lines, `export ` allowed, blank lines and `#` comments skipped. A value may be quoted
- * ('…' as is, "…" with \n-style escapes); an unquoted one ends at ` #`. A later line for the same name wins.
+ * A pasted .env: `NAME=value` lines, `export ` allowed, blank lines and `#` comments skipped. A value may be quoted,
+ * over as many lines as it needs (a certificate, a key, JSON): '…' as is, "…" with \n-style escapes. An unquoted one
+ * ends at the line's end or at ` #`. A quote never closed takes the rest. A later line for the same name wins.
  */
 export function parseDotEnv(text: string): PastedVar[] {
   const out = new Map<string, PastedVar>();
-  for (const raw of text.split(/\r?\n/u)) {
-    const line = raw.trim();
-    if (line === "" || line.startsWith("#")) continue;
-    const body = line.startsWith("export ") ? line.slice(7).trimStart() : line;
-    const at = body.indexOf("=");
-    if (at < 0) continue;
-    const name = body.slice(0, at).trim();
-    let value = body.slice(at + 1).trim();
-    const quote = value[0];
-    if ((quote === '"' || quote === "'") && value.length > 1 && value.endsWith(quote)) {
-      value = value.slice(1, -1);
-      if (quote === '"') value = unescape(value);
+  const src = text.replace(/\r\n?/gu, "\n");
+  const lineEnd = (from: number) => {
+    const n = src.indexOf("\n", from);
+    return n < 0 ? src.length : n;
+  };
+  const blank = (c: string | undefined) => c === " " || c === "\t";
+  let at = 0;
+  while (at < src.length) {
+    const end = lineEnd(at);
+    const line = src.slice(at, end).trim();
+    if (line === "" || line.startsWith("#")) {
+      at = end + 1;
+      continue;
+    }
+    let p = at;
+    while (blank(src[p])) p++;
+    if (src.startsWith("export ", p)) {
+      p += 7;
+      while (blank(src[p])) p++;
+    }
+    const eq = src.indexOf("=", p);
+    if (eq < 0 || eq > end) {
+      at = end + 1;
+      continue;
+    }
+    const name = src.slice(p, eq).trim();
+    let v = eq + 1;
+    while (v < end && blank(src[v])) v++;
+    const quote = src[v];
+    let value: string;
+    if (quote === '"' || quote === "'") {
+      // To the closing quote, on this line or a later one; inside "…" a backslash escapes the next character.
+      let k = v + 1;
+      while (k < src.length && src[k] !== quote) {
+        if (quote === '"' && src[k] === "\\") k++;
+        k++;
+      }
+      const raw = src.slice(v + 1, Math.min(k, src.length));
+      value = quote === '"' ? unescape(raw) : raw;
+      // Whatever follows the closing quote on its line (a comment) is skipped.
+      at = lineEnd(Math.min(k, src.length)) + 1;
     } else {
+      value = src.slice(v, end).trimEnd();
       const comment = value.search(/\s#/u);
       if (comment >= 0) value = value.slice(0, comment).trimEnd();
+      at = end + 1;
     }
     const kind = guessKind(name);
     out.delete(name);

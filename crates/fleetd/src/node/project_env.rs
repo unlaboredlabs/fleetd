@@ -9,7 +9,8 @@ use std::path::{Path, PathBuf};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use fleetd_contracts::project_settings::{
-    ENV_VALUE_MAX_BYTES, EnvSecretSaved, EnvVarName, EnvVarSet, PROJECT_ENV_MAX, env_name_reserved,
+    ENV_TOTAL_MAX_BYTES, ENV_VALUE_MAX_BYTES, EnvSecretSaved, EnvVarName, EnvVarSet,
+    PROJECT_ENV_MAX, env_name_reserved, env_total_over,
 };
 use fleetd_contracts::secrets::SecretFingerprint;
 use serde::{Deserialize, Serialize};
@@ -103,12 +104,11 @@ pub fn apply(
                     return Err(format!("{name}'s value is empty"));
                 }
                 if plain.len() > ENV_VALUE_MAX_BYTES {
-                    return Err(format!(
-                        "{name}'s value is over {ENV_VALUE_MAX_BYTES} bytes"
-                    ));
+                    return Err(format!("{name}'s value is over 64 KiB"));
                 }
-                if plain.iter().any(|&b| b == b'\n' || b == b'\r' || b == 0) {
-                    return Err(format!("{name} takes a one-line value"));
+                // Any number of lines; only a NUL can't be in a process environment.
+                if plain.contains(&0) {
+                    return Err(format!("{name}'s value holds a NUL character"));
                 }
                 let Ok(value) = std::str::from_utf8(&plain) else {
                     return Err(format!("{name}'s value is not UTF-8 text"));
@@ -130,6 +130,10 @@ pub fn apply(
             "a project takes at most {PROJECT_ENV_MAX} variables; this would make {}",
             env.vars.len()
         ));
+    }
+    let total: usize = env.vars.values().map(|e| e.value.len()).sum();
+    if total > ENV_TOTAL_MAX_BYTES {
+        return Err(env_total_over(total));
     }
     let dir = home.join(DIR);
     super::config::mkdir_private(&dir).map_err(|e| format!("cannot make {DIR}: {}", io_why(&e)))?;
@@ -211,7 +215,7 @@ pub(crate) fn seal(home: &Path, value: &str) -> fleetd_contracts::secrets::Seale
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     use super::*;
@@ -281,11 +285,11 @@ mod tests {
             name: name("B"),
             sealed: seal(other.path(), "hunter2"),
         };
-        let two_lines = EnvVarSet::Secret {
+        let nul = EnvVarSet::Secret {
             name: name("C"),
-            sealed: seal(home.path(), "line1\nhunter2"),
+            sealed: seal(home.path(), "hunter2\0x"),
         };
-        for bad in [wrong_key, two_lines] {
+        for bad in [wrong_key, nul] {
             let error = apply(home.path(), "p", &[bad], &[name("A")], Some(&key)).unwrap_err();
             assert!(!error.contains("hunter2"), "{error}");
             assert_eq!(
@@ -300,5 +304,49 @@ mod tests {
         assert!(apply(home.path(), "p", &[reserved], &[], Some(&key)).is_err());
         forget(home.path(), "p");
         assert!(super::vars(home.path(), "p").is_empty());
+    }
+
+    /// A certificate chain as a secret, every newline kept, through the file and back to the spawn.
+    pub(crate) const PEM: &str = "-----BEGIN CERTIFICATE-----\nMIIBszCCAVmgAwIBAgIUQ2hhaW5MZWFmQ2VydGlmaWNhdGUwCgYIKoZIzj0EAwIw\nEjEQMA4GA1UEAwwHUm9vdCBDQTAeFw0yNjEwMDEwMDAwMDBaFw0yNzEwMDEwMDAw\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nMIIBrDCCAVKgAwIBAgIUSW50ZXJtZWRpYXRlQ0FDZXJ0aWZpY2F0ZTAKBggqhkjO\nPQQDAjASMRAwDgYDVQQDDAdSb290IENBMB4XDTI2MTAwMTAwMDAwMFoXDTI3MTAw\n-----END CERTIFICATE-----\n";
+
+    #[test]
+    fn a_multi_line_secret_round_trips_and_the_project_total_holds() {
+        let home = tempfile::tempdir().unwrap();
+        let key = load_or_create_box_key(home.path()).unwrap();
+        let chain = EnvVarSet::Secret {
+            name: name("TLS_CHAIN"),
+            sealed: seal(home.path(), PEM),
+        };
+        let saved = apply(home.path(), "p", &[chain], &[], Some(&key)).unwrap();
+        assert_eq!(
+            saved[0].fingerprint.as_str(),
+            fingerprint_of(PEM.as_bytes())
+        );
+        assert_eq!(
+            vars(home.path(), "p"),
+            [("TLS_CHAIN".to_owned(), PEM.to_owned())]
+        );
+
+        // 8 values of 64 KiB is 512 KiB, the whole allowance with the chain already there: refused, naming it.
+        let big = "x".repeat(ENV_VALUE_MAX_BYTES);
+        let many: Vec<EnvVarSet> = (0..8)
+            .map(|i| EnvVarSet::Plain {
+                name: name(&format!("BIG_{i}")),
+                value: EnvValue::new(big.clone()).unwrap(),
+            })
+            .collect();
+        let error = apply(home.path(), "p", &many, &[], Some(&key)).unwrap_err();
+        assert!(error.contains("512 KiB together"), "{error}");
+        assert!(
+            error.contains(&format!(
+                "{} KiB",
+                (8 * ENV_VALUE_MAX_BYTES + PEM.len()).div_ceil(1024)
+            )),
+            "{error}"
+        );
+        assert_eq!(vars(home.path(), "p").len(), 1);
+        // Without the chain they fit exactly.
+        apply(home.path(), "p", &many, &[name("TLS_CHAIN")], Some(&key)).unwrap();
+        assert_eq!(vars(home.path(), "p").len(), 8);
     }
 }

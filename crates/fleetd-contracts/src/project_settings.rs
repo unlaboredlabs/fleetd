@@ -17,9 +17,22 @@ use crate::secrets::{SealedSecret, SecretFingerprint};
 /// Variables one project may have.
 pub const PROJECT_ENV_MAX: usize = 100;
 
-/// Largest value of one variable, plain or secret: its own limit, not a secret ask's (`SECRET_MAX_BYTES`), since
-/// every one goes into every session's environment.
-pub const ENV_VALUE_MAX_BYTES: usize = 8192;
+/// Largest value of one variable, plain or secret, any number of lines: 64 KiB, room for a certificate chain or a
+/// service account's JSON. A secret's sealed box must hold it.
+pub const ENV_VALUE_MAX_BYTES: usize = 64 * 1024;
+const _: () = assert!(crate::secrets::SECRET_MAX_BYTES >= ENV_VALUE_MAX_BYTES);
+
+/// All of one project's values together: every one goes into every session's environment, and the kernel refuses to
+/// start a process whose environment and arguments pass its limit (`ARG_MAX`, often 2 MiB).
+pub const ENV_TOTAL_MAX_BYTES: usize = 512 * 1024;
+
+/// The refusal when a change would take a project's values past [`ENV_TOTAL_MAX_BYTES`], naming the total.
+pub fn env_total_over(total: usize) -> String {
+    format!(
+        "A project's variables take at most 512 KiB together; these would take {} KiB.",
+        total.div_ceil(1024)
+    )
+}
 
 brand!(
     /// An environment variable's name: a letter or `_`, then letters, digits and `_`, at most 128 characters.
@@ -39,11 +52,11 @@ pub fn env_name_reserved(name: &str) -> bool {
 }
 
 brand!(
-    /// A plain variable's value: up to 8192 bytes, no NUL (a process environment can't hold one).
+    /// A plain variable's value: up to 64 KiB, any number of lines, no NUL (a process environment can't hold one).
     EnvValue,
     name = "EnvValue",
     check = |s| s.len() <= ENV_VALUE_MAX_BYTES && !s.contains('\0'),
-    expected = "a value of at most 8192 bytes with no NUL"
+    expected = "a value of at most 64 KiB (65536 bytes) with no NUL"
 );
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -66,6 +79,8 @@ pub struct ProjectEnvVar {
     pub value: Option<EnvValue>,
     /// A secret's: the first 8 hex characters of sha256 over its value, as the node computed it.
     pub fingerprint: Option<SecretFingerprint>,
+    /// The value's size in bytes, a secret's too, for the project's total ([`ENV_TOTAL_MAX_BYTES`]).
+    pub bytes: crate::prim::Count,
     pub updated_at: Timestamp,
 }
 
@@ -77,7 +92,8 @@ pub enum EnvVarSet {
         name: EnvVarName,
         value: EnvValue,
     },
-    /// `sealed`: `crypto_box_seal` of the value to the project machine's `boxPubKey`, one line (no CR, LF or NUL).
+    /// `sealed`: `crypto_box_seal` of the value to the project machine's `boxPubKey`: up to 64 KiB, any number of
+    /// lines, no NUL.
     Secret {
         name: EnvVarName,
         sealed: SealedSecret,
@@ -147,6 +163,13 @@ mod tests {
         assert!(!env_name_reserved("DATABASE_URL"));
         assert!(EnvValue::new("a\0b").is_err());
         assert!(EnvValue::new("x".repeat(ENV_VALUE_MAX_BYTES + 1)).is_err());
+        assert!(
+            EnvValue::new("-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n").is_ok()
+        );
+        assert_eq!(
+            env_total_over(600 * 1024),
+            "A project's variables take at most 512 KiB together; these would take 600 KiB."
+        );
         assert!(EnvValue::new("").is_ok());
     }
 

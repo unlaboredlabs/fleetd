@@ -767,7 +767,7 @@ pub(crate) const MIGRATIONS: &[&str] = &[
   ALTER TABLE project_settings ADD COLUMN keep_worktrees INTEGER NOT NULL DEFAULT 0;
   CREATE TABLE project_env (
     machine_id TEXT NOT NULL, project_id TEXT NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL, value TEXT,
-    fingerprint TEXT, updated_at TEXT NOT NULL, PRIMARY KEY (machine_id, project_id, name),
+    fingerprint TEXT, bytes INTEGER NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (machine_id, project_id, name),
     CHECK ((kind = 'plain' AND fingerprint IS NULL) OR (kind = 'secret' AND value IS NULL AND fingerprint IS NOT NULL))
   );
   "#,

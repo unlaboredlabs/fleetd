@@ -78,8 +78,9 @@ and how many are there now. That part needs the machine online.
 ### Environment variables {#env}
 
 Add one at a time with **Add variable**, or paste a `.env` file with **Paste .env**. A pasted file may use `export`,
-quotes and `#` comments; a name that looks like a credential (`STRIPE_KEY`, `GH_TOKEN`, `DB_PASSWORD`) starts as a
-secret, and each one can be switched.
+quotes and `#` comments, and a quoted value may run over several lines, as a certificate chain or a service account's
+JSON does. A name that looks like a credential (`STRIPE_KEY`, `GH_TOKEN`, `DB_PASSWORD`) starts as a secret, and each
+one can be switched.
 
 | Kind | Where its value lives | Shown |
 |---|---|---|
@@ -94,14 +95,21 @@ shown.
 
 If an agent prints a secret (`printenv`, a stack trace, a config dump), the node replaces it with `***NAME***` before
 the output leaves the machine: the value itself, its base64 and its URL encoding, in command output, the agent's
-replies and live text alike. The hub and the app see only the name. A value under 4 characters isn't masked, so keep
-secrets longer than that.
+replies and live text alike. A secret of several lines is also masked line by line, each line of 8 characters or more,
+so printing part of a key leaks none of it; PEM armor lines such as `-----BEGIN CERTIFICATE-----` are the same in every
+file and stay readable. The hub and the app see only the name. A value under 4 characters isn't masked, so keep secrets
+longer than that.
 
 Names are letters, digits and `_`. fleetd sets `HOME`, `PATH`, `USER`, `TMPDIR` (and `TMP`, `TEMP`) and every
 `FLEETD_` variable itself, and a project can't change how claude itself runs: `ANTHROPIC_*` and `CLAUDE*` names are
 refused. A variable the node already gives every session, from its own environment or
-[`claude.env`](/docs/config-and-files), keeps the node's value. A project takes up to 100 variables, each up to 8192
-bytes; a secret is one line.
+[`claude.env`](/docs/config-and-files), keeps the node's value.
+
+| Limit | Is |
+|---|---|
+| Variables in a project | 100 |
+| One value, plain or secret | 64 KiB, any number of lines, no NUL character |
+| All of a project's values together | 512 KiB: every one goes into every agent's environment, and the system refuses to start a process whose environment is too large |
 
 :::caution
 Setting a variable needs the project's machine online. Nothing is queued.

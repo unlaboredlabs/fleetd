@@ -19,6 +19,8 @@ vi.hoisted(() => {
 const AT = "2026-10-19T10:00:00.000Z";
 const KEY = "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=";
 const SECRET = "sk_live_never_shown";
+/** A secret of several lines, as a certificate chain or a key file is. */
+const CHAIN = `-----BEGIN PRIVATE KEY-----\n${SECRET}\nMIIEvgIBADANBgkqhkiG9w0BAQEF\n-----END PRIVATE KEY-----\n`;
 
 const settings: Settings = {
   machineId: "devbox",
@@ -27,8 +29,8 @@ const settings: Settings = {
   workspaceRoot: "/home/w/src/storefront",
   keepWorktrees: false,
   env: [
-    { name: "API_URL", kind: "plain", value: "https://staging.example", updatedAt: AT },
-    { name: "STRIPE_KEY", kind: "secret", fingerprint: "5ec2e7a1", updatedAt: AT },
+    { name: "API_URL", kind: "plain", value: "https://staging.example", bytes: 23, updatedAt: AT },
+    { name: "STRIPE_KEY", kind: "secret", fingerprint: "5ec2e7a1", bytes: 20, updatedAt: AT },
   ],
   worktrees: {
     dir: "/home/w/.fleetd/node/worktrees/p1",
@@ -140,9 +142,10 @@ const click = async (el: HTMLElement) => {
   });
 };
 
-const type = async (field: HTMLInputElement, value: string) => {
+const type = async (field: HTMLInputElement | HTMLTextAreaElement, value: string) => {
   await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(field, value);
+    const proto = field instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(proto, "value")?.set?.call(field, value);
     field.dispatchEvent(new Event("input", { bubbles: true }));
     await Promise.resolve();
   });
@@ -167,18 +170,19 @@ describe("Settings → Projects", () => {
   it("sends a new secret only through main's sealing, never as a hub call", async () => {
     await render();
     await click(button("Add variable"));
-    const [name, value] = [...dialog().querySelectorAll("input")];
-    if (name === undefined || value === undefined) throw new Error("no fields");
+    const name = dialog().querySelector("input");
+    if (name === null) throw new Error("no name field");
     await type(name, "DB_PASSWORD");
     const secret = [...dialog().querySelectorAll('[role="radio"]')].find((r) => r.textContent === "" && r.getAttribute("value") === "secret");
     await click(secret as HTMLElement);
-    const field = dialog().querySelector<HTMLInputElement>('input[type="password"]');
-    if (field === null) throw new Error("the secret's value isn't a password field");
-    await type(field, SECRET);
+    // A field of several lines, so a certificate chain pastes as it is, whose characters show as dots.
+    const field = dialog().querySelector<HTMLTextAreaElement>("textarea[data-secret]");
+    if (field === null) throw new Error("the secret's value isn't a masked field");
+    await type(field, CHAIN);
     await click(button("Save"));
     await settle();
     expect(envRequests).toEqual([
-      { machineId: "devbox", projectId: "p1", boxPubKey: KEY, set: [{ kind: "secret", name: "DB_PASSWORD", value: SECRET }], remove: [] },
+      { machineId: "devbox", projectId: "p1", boxPubKey: KEY, set: [{ kind: "secret", name: "DB_PASSWORD", value: CHAIN }], remove: [] },
     ]);
     expect(JSON.stringify(calls)).not.toContain(SECRET);
   });

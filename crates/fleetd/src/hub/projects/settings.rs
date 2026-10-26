@@ -14,10 +14,14 @@ use fleetd_contracts::mcp::{
     ProjectSettingsGetOutput, ProjectSettingsSetInput, ProjectSettingsSetOutput,
 };
 use fleetd_contracts::node_link::CAP_PROJECT_SETTINGS;
+use fleetd_contracts::prim::Count;
+use fleetd_contracts::project_settings::{
+    ENV_TOTAL_MAX_BYTES, ENV_VALUE_MAX_BYTES, env_total_over,
+};
 use fleetd_contracts::project_settings::{
     EnvValue, EnvVarKind, EnvVarName, EnvVarSet, PROJECT_ENV_MAX, ProjectEnvVar,
 };
-use fleetd_contracts::secrets::SecretFingerprint;
+use fleetd_contracts::secrets::{Base64Alphabet, SEAL_OVERHEAD, SecretFingerprint, base64_bytes};
 use rusqlite::{OptionalExtension, params};
 
 use crate::hub::api::{
@@ -37,6 +41,18 @@ pub struct EnvRow {
     pub name: EnvVarName,
     pub value: Option<EnvValue>,
     pub fingerprint: Option<SecretFingerprint>,
+    /// The value's size, a secret's too.
+    pub bytes: usize,
+}
+
+/// A change's value size: a plain value's own, a secret's from its sealed box less the seal's overhead.
+fn set_bytes(v: &EnvVarSet) -> usize {
+    match v {
+        EnvVarSet::Plain { value, .. } => value.len(),
+        EnvVarSet::Secret { sealed, .. } => base64_bytes(sealed.as_str(), Base64Alphabet::Base64)
+            .unwrap_or_default()
+            .saturating_sub(SEAL_OVERHEAD),
+    }
 }
 
 pub struct ProjectSettingsStore<'a> {
@@ -79,7 +95,7 @@ impl ProjectSettingsStore<'_> {
     pub fn env(&self, r: &ProjectRef) -> Result<Vec<ProjectEnvVar>, StoreError> {
         self.db.with(|c| {
             let mut stmt = c.prepare_cached(
-                "SELECT name, kind, value, fingerprint, updated_at FROM project_env
+                "SELECT name, kind, value, fingerprint, bytes, updated_at FROM project_env
                  WHERE machine_id = ? AND project_id = ? ORDER BY name",
             )?;
             let rows = stmt
@@ -98,7 +114,8 @@ impl ProjectSettingsStore<'_> {
                             fingerprint: row
                                 .get::<_, Option<String>>(3)?
                                 .map(SecretFingerprint::unchecked),
-                            updated_at: Timestamp(row.get(4)?),
+                            bytes: Count::unchecked(row.get(4)?),
+                            updated_at: Timestamp(row.get(5)?),
                         })
                     },
                 )?
@@ -133,10 +150,11 @@ impl ProjectSettingsStore<'_> {
                     "plain"
                 };
                 c.prepare_cached(
-                    "INSERT INTO project_env (machine_id, project_id, name, kind, value, fingerprint, updated_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?)
+                    "INSERT INTO project_env (machine_id, project_id, name, kind, value, fingerprint, bytes, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                      ON CONFLICT (machine_id, project_id, name) DO UPDATE SET kind = excluded.kind,
-                       value = excluded.value, fingerprint = excluded.fingerprint, updated_at = excluded.updated_at",
+                       value = excluded.value, fingerprint = excluded.fingerprint, bytes = excluded.bytes,
+                       updated_at = excluded.updated_at",
                 )?
                 .execute(params![
                     r.machine_id.as_str(),
@@ -145,6 +163,7 @@ impl ProjectSettingsStore<'_> {
                     kind,
                     row.value.as_ref().map(|v| v.as_str()),
                     row.fingerprint.as_ref().map(|f| f.as_str()),
+                    row.bytes as i64,
                     at.as_str(),
                 ])?;
             }
@@ -286,15 +305,22 @@ async fn env_set(
         return Err(unknown_project(&r));
     }
     let store = hub.db.project_settings();
-    let mut names: std::collections::BTreeSet<String> = store
+    // Each variable after the change, by name, with its value's size.
+    let mut sizes: std::collections::BTreeMap<String, usize> = store
         .env(&r)?
         .into_iter()
-        .map(|v| v.name.into_inner())
+        .map(|v| (v.name.into_inner(), v.bytes.get() as usize))
         .collect();
     for name in input.remove.iter() {
-        names.remove(name.as_str());
+        sizes.remove(name.as_str());
     }
-    names.extend(input.set.iter().map(|v| v.name().to_string()));
+    sizes.extend(
+        input
+            .set
+            .iter()
+            .map(|v| (v.name().to_string(), set_bytes(v))),
+    );
+    let names = &sizes;
     if names.len() > PROJECT_ENV_MAX {
         return Err(ToolError::new(
             ErrorCode::Invalid,
@@ -304,6 +330,22 @@ async fn env_set(
             ),
         )
         .with_fix("Remove some first."));
+    }
+    if let Some(name) = input
+        .set
+        .iter()
+        .find(|v| set_bytes(v) > ENV_VALUE_MAX_BYTES)
+    {
+        return Err(ToolError::new(
+            ErrorCode::Invalid,
+            format!("{}'s value is over 64 KiB.", name.name()),
+        )
+        .with_fix("Shorten it, or put a file on the machine and set its path instead."));
+    }
+    let total: usize = sizes.values().sum();
+    if total > ENV_TOTAL_MAX_BYTES {
+        return Err(ToolError::new(ErrorCode::Invalid, env_total_over(total))
+            .with_fix("Remove or shorten some, or put large values in files on the machine."));
     }
     node_ready(&hub, m)?;
     let set = input.set.into_inner();
@@ -318,10 +360,12 @@ async fn env_set(
         rows.push(match v {
             EnvVarSet::Plain { name, value } => EnvRow {
                 name,
+                bytes: value.len(),
                 value: Some(value),
                 fingerprint: None,
             },
-            EnvVarSet::Secret { name, .. } => {
+            ref secret @ EnvVarSet::Secret { ref name, .. } => {
+                let (bytes, name) = (set_bytes(secret), name.clone());
                 let Some(saved) = saved.iter().find(|s| s.name == name) else {
                     return Err(ToolError::new(
                         ErrorCode::Failed,
@@ -333,6 +377,7 @@ async fn env_set(
                     name,
                     value: None,
                     fingerprint: Some(saved.fingerprint.clone()),
+                    bytes,
                 }
             }
         });

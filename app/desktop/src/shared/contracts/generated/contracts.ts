@@ -28,6 +28,12 @@ export const BLOCK_VERSION = 1;
 /** Largest secret a secret ask takes. */
 export const SECRET_MAX_BYTES = 65536;
 
+/** Largest value of one project variable, plain or secret. */
+export const ENV_VALUE_MAX_BYTES = 65536;
+
+/** All of one project's variable values together. */
+export const ENV_TOTAL_MAX_BYTES = 524288;
+
 /** Largest attachment attachment_put takes. */
 export const ATTACHMENT_MAX_BYTES = 26214400;
 
@@ -2583,6 +2589,8 @@ export type ProjectEnvSetOutput = {
 
 /** One of a project's variables as the hub keeps it. A secret has no value here, only its fingerprint. */
 export type ProjectEnvVar = {
+  /** The value's size in bytes, a secret's too, for the project's total ([`ENV_TOTAL_MAX_BYTES`]). */
+  bytes: number;
   /** A secret's: the first 8 hex characters of sha256 over its value, as the node computed it. */
   fingerprint?: SecretFingerprint;
   kind: EnvVarKind;

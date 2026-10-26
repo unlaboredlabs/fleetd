@@ -89,6 +89,16 @@ fn constants() -> Vec<(&'static str, &'static str, Value)> {
             crate::secrets::SECRET_MAX_BYTES.into(),
         ),
         (
+            "ENV_VALUE_MAX_BYTES",
+            "Largest value of one project variable, plain or secret.",
+            crate::project_settings::ENV_VALUE_MAX_BYTES.into(),
+        ),
+        (
+            "ENV_TOTAL_MAX_BYTES",
+            "All of one project's variable values together.",
+            crate::project_settings::ENV_TOTAL_MAX_BYTES.into(),
+        ),
+        (
             "ATTACHMENT_MAX_BYTES",
             "Largest attachment attachment_put takes.",
             crate::mcp::ATTACHMENT_MAX_BYTES.into(),

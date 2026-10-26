@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { LinkHandlerClaim, NotifyRequest } from "./app";
 import { HUB_CACHE_MAX_BYTES } from "./cache";
-import { SECRET_MAX_BYTES } from "./contracts";
+import { ENV_VALUE_MAX_BYTES, SECRET_MAX_BYTES } from "./contracts";
 import { MENU_COMMANDS } from "./menu";
 import { IPC, type InvokeChannel } from "./channels";
 
@@ -119,9 +119,10 @@ export const ProjectEnvRequest = z.strictObject({
   set: z
     .array(
       z.discriminatedUnion("kind", [
-        z.strictObject({ kind: z.literal("plain"), name: EnvName, value: z.string().max(8192) }),
-        // One line; main checks the byte length (project_settings.rs ENV_VALUE_MAX_BYTES).
-        z.strictObject({ kind: z.literal("secret"), name: EnvName, value: z.string().min(1).max(8192) }),
+        // Any number of lines. ENV_VALUE_MAX_BYTES UTF-8 bytes at most: this only bounds the string; the hub and the
+        // node check the bytes, and the project's total.
+        z.strictObject({ kind: z.literal("plain"), name: EnvName, value: z.string().max(ENV_VALUE_MAX_BYTES) }),
+        z.strictObject({ kind: z.literal("secret"), name: EnvName, value: z.string().min(1).max(ENV_VALUE_MAX_BYTES) }),
       ]),
     )
     .max(100),
