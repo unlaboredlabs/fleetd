@@ -825,4 +825,9 @@ pub(crate) const MIGRATIONS: &[&str] = &[
   CREATE INDEX browser_sessions_by_project ON browser_sessions (machine_id, project_id, started_ms DESC);
   CREATE TABLE browser_settings (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
   "#,
+    // How the merge train treats a project's repo's checks (`TrainSettings` as JSON; the defaults without a row or with
+    // NULL).
+    r#"
+  ALTER TABLE project_settings ADD COLUMN train TEXT;
+  "#,
 ];

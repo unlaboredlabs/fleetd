@@ -457,3 +457,67 @@ async fn a_change_past_the_projects_total_is_refused_before_the_node_sees_it() {
         "the refused change never reached the node"
     );
 }
+
+/// The merge train's settings: none by default (the fast set is the base's required checks alone), saved and read
+/// back as set, kept beside the other settings, and cleared by setting none.
+#[tokio::test]
+async fn the_train_settings_save_and_read_back_and_none_clears_them() {
+    let (hub, _home) = hub();
+    let _calls = node(&hub, true).await;
+    let get = json!({ "machineId": "lab", "projectId": "p1" });
+    let s = call(&hub, &person(), "project_settings_get", get.clone())
+        .await
+        .unwrap();
+    assert_eq!(
+        s["settings"]["train"],
+        json!({ "fastChecks": [], "afterMerge": [] })
+    );
+
+    let train = json!({ "fastChecks": ["integration"], "afterMerge": ["e2e (macos-latest)"] });
+    let set = call(
+        &hub,
+        &person(),
+        "project_settings_set",
+        json!({ "machineId": "lab", "projectId": "p1", "train": train }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(set["settings"]["train"], train);
+    assert_eq!(
+        set["next"],
+        "The merge train uses these settings from its next pass."
+    );
+    let saved = hub.db.project_settings().train(&project()).unwrap();
+    assert_eq!(saved.fast_set(&["build".into()]), ["build", "integration"]);
+    assert!(saved.after_merge_only("e2e (macos-latest)"));
+    assert!(
+        !hub.db
+            .project_settings()
+            .keep_worktrees(&project())
+            .unwrap()
+    );
+
+    let dupes = call(
+        &hub,
+        &person(),
+        "project_settings_set",
+        json!({ "machineId": "lab", "projectId": "p1", "train": { "fastChecks": ["a", "a"] } }),
+    )
+    .await;
+    assert!(dupes.is_err(), "a check named twice is refused");
+    call(
+        &hub,
+        &person(),
+        "project_settings_set",
+        json!({ "machineId": "lab", "projectId": "p1", "train": {} }),
+    )
+    .await
+    .unwrap();
+    let s = call(&hub, &person(), "project_settings_get", get)
+        .await
+        .unwrap();
+    assert_eq!(
+        s["settings"]["train"],
+        json!({ "fastChecks": [], "afterMerge": [] })
+    );
+}

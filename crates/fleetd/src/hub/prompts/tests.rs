@@ -462,3 +462,69 @@ fn the_lead_speaks_only_when_it_matters_in_plain_words() {
         );
     }
 }
+
+/// The lead keeps the factory busy: free slots and approved work mean parts whose files don't overlap, run at once.
+/// Only parts that share code wait on each other, and reviews and the train still gate every one.
+#[test]
+fn the_lead_runs_independent_work_in_parallel() {
+    let lead = super::registry::entry("lead.start");
+    let rule = lead
+        .safety_rules()
+        .into_iter()
+        .find(|r| r.id == "parallel-by-default")
+        .expect("lead.start has no parallel-by-default rule");
+    assert!(
+        super::render::rule_present(&rule.needle, lead.default),
+        "lead.start doesn't say its parallel-by-default rule"
+    );
+    let line = lead
+        .default
+        .lines()
+        .find(|l| l.contains("Parallel by default"))
+        .unwrap();
+    for says in [
+        "free slots",
+        "files don't overlap",
+        "in one message",
+        "Sequence only parts that share code",
+        "Reviews and the merge train stay the gate",
+    ] {
+        assert!(line.contains(says), "the rule says {says}? {line}");
+    }
+}
+
+/// A wake with only progress news ends with no text at all: no status-only or "nothing needs you" message, and
+/// minor progress waits for the next real one.
+#[test]
+fn the_lead_never_posts_a_status_only_message() {
+    let lead = super::registry::entry("lead.start");
+    let rule = lead
+        .safety_rules()
+        .into_iter()
+        .find(|r| r.id == "no-status-only")
+        .expect("lead.start has no no-status-only rule");
+    assert!(
+        super::render::rule_present(&rule.needle, lead.default),
+        "lead.start doesn't say its no-status-only rule"
+    );
+    let line = lead
+        .default
+        .lines()
+        .find(|l| l.contains("Never post a status-only message"))
+        .unwrap();
+    for says in [
+        "\"nothing needs you\"",
+        "reply with exactly `(quiet)` and nothing else",
+        "never an answer to the person's own message",
+        "Fold minor progress into your next real message",
+    ] {
+        assert!(line.contains(says), "the rule says {says}? {line}");
+    }
+    let examples = lead.default.split("## Examples").nth(1).unwrap();
+    for said in examples.lines().filter(|l| l.starts_with("You:")) {
+        assert!(
+            !said.to_lowercase().contains("nothing needs you"),
+            "the lead's example posts filler: {said}"
+        );
+    }
+}

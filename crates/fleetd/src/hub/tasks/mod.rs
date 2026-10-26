@@ -2835,6 +2835,8 @@ impl Tasks {
                 crate::hub::slots::MaxSource::Machine => "machine cap set".to_owned(),
                 crate::hub::slots::MaxSource::Auto(why) => format!("auto: {why}"),
             },
+            idle_since_ms: agents.moved_ms,
+            idle_minutes: (now_ms(self.d.clock.as_ref()) - agents.moved_ms).max(0) / 60_000,
         }
     }
 

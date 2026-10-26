@@ -1,6 +1,6 @@
 //! A project's own settings, as Settings › Projects in the desktop app shows them: its name, whether finished
-//! worktrees are kept, its agents' environment variables, the setup commands run in each new worktree, and the
-//! worktrees its node holds.
+//! worktrees are kept, its agents' environment variables, the setup commands run in each new worktree, how the merge
+//! train treats its repo's checks, and the worktrees its node holds.
 //!
 //! A project's variables live on its machine's node, which adds them to every claude it starts for the project. The
 //! hub keeps each variable's name and kind, a plain variable's value, and a secret's fingerprint: a secret's value is
@@ -181,6 +181,49 @@ impl Default for WorktreeSetup {
 impl WorktreeSetup {
     pub fn is_empty(&self) -> bool {
         self.commands.is_empty()
+    }
+}
+
+/// Checks one train setting may name.
+pub const TRAIN_CHECKS_MAX: usize = 50;
+
+/// A check as GitHub names it on a commit: a check run's name, such as `test (ubuntu-latest)`, or a status's context.
+pub type CheckName = crate::prim::Text<1, 200>;
+
+/// How the merge train treats the checks of the project's repo. It waits only for its fast set: the checks the base
+/// branch requires, read from its ruleset or branch protection, plus `fastChecks`, each until it reports, however late
+/// it starts. It never waits for any other check; one of those that has already failed when the fast set is green
+/// still stops the merge, unless it is in `afterMerge`. A check the base requires is always in the fast set: GitHub
+/// won't merge without it. With no required check and none added, it waits for every check.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TrainSettings {
+    /// Checks the train waits for besides the required ones.
+    #[serde(default)]
+    pub fast_checks: crate::prim::UniqueList<CheckName, 0, TRAIN_CHECKS_MAX>,
+    /// Checks that never stop a merge, even once failed: they only run after it.
+    #[serde(default)]
+    pub after_merge: crate::prim::UniqueList<CheckName, 0, TRAIN_CHECKS_MAX>,
+}
+
+impl TrainSettings {
+    /// The checks the train waits for on a head into a base that requires `required`.
+    pub fn fast_set(&self, required: &[String]) -> Vec<String> {
+        let mut out: Vec<String> = required.to_vec();
+        for c in self.fast_checks.iter() {
+            let name = c.as_str();
+            if !out.iter().any(|n| n == name)
+                && !self.after_merge.iter().any(|a| a.as_str() == name)
+            {
+                out.push(name.to_string());
+            }
+        }
+        out
+    }
+
+    /// Whether a failure of `name`, a check outside the fast set, is left for after the merge.
+    pub fn after_merge_only(&self, name: &str) -> bool {
+        self.after_merge.iter().any(|a| a.as_str() == name)
     }
 }
 

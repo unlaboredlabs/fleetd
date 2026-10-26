@@ -191,6 +191,9 @@ pub struct Board {
     /// New agents granted in the last [`SETTLE_MS`]: holder, machine, when. In memory only: after a restart the
     /// next heartbeats' free space already counts them.
     starts: Vec<(String, MachineId, i64)>,
+    /// When each project's held slots last changed. In memory only: after a restart they count from the first tick.
+    moved: Vec<(ProjectRef, i64)>,
+    first_tick_ms: Option<i64>,
     now_ms: i64,
     next_order: i64,
     ops: Vec<Op>,
@@ -210,6 +213,8 @@ impl Board {
             machines,
             claims,
             starts: Vec::new(),
+            moved: Vec::new(),
+            first_tick_ms: None,
             now_ms: 0,
             next_order,
             ops: Vec::new(),
@@ -220,9 +225,52 @@ impl Board {
     /// one did, so a machine short of room may take more.
     pub fn tick(&mut self, now_ms: i64) -> bool {
         self.now_ms = now_ms;
+        self.first_tick_ms.get_or_insert(now_ms);
         let before = self.starts.len();
         self.starts.retain(|(_, _, at)| now_ms - at < SETTLE_MS);
         self.starts.len() < before
+    }
+
+    /// Each project's held slots, to tell which projects a change moved ([`Board::note_moves`]).
+    pub fn held_counts(&self) -> Vec<(ProjectRef, i64)> {
+        let mut counts: Vec<(ProjectRef, i64)> = Vec::new();
+        for c in self.claims.iter().filter(|c| c.state == ClaimState::Held) {
+            match counts.iter_mut().find(|(r, _)| same(r, &c.project_ref)) {
+                Some((_, n)) => *n += 1,
+                None => counts.push((c.project_ref.clone(), 1)),
+            }
+        }
+        counts
+    }
+
+    /// Every project whose held slots differ from `before` had a slot taken or freed now, for whatever reason: a
+    /// start, an end, a pause, a wait or a recovery.
+    pub fn note_moves(&mut self, before: &[(ProjectRef, i64)]) {
+        let after = self.held_counts();
+        let count = |list: &[(ProjectRef, i64)], r: &ProjectRef| {
+            list.iter().find(|(x, _)| same(x, r)).map_or(0, |(_, n)| *n)
+        };
+        let moved: Vec<ProjectRef> = before
+            .iter()
+            .chain(after.iter())
+            .map(|(r, _)| r)
+            .filter(|r| count(before, r) != count(&after, r))
+            .cloned()
+            .collect();
+        for r in moved {
+            match self.moved.iter_mut().find(|(x, _)| same(x, &r)) {
+                Some((_, at)) => *at = self.now_ms,
+                None => self.moved.push((r, self.now_ms)),
+            }
+        }
+    }
+
+    /// When the project last had a slot taken or freed; the hub's start when it hasn't since.
+    pub fn moved_at(&self, r: &ProjectRef) -> i64 {
+        self.moved
+            .iter()
+            .find(|(x, _)| same(x, r))
+            .map_or(self.first_tick_ms.unwrap_or(self.now_ms), |(_, at)| *at)
     }
 
     /// The writes made since the last call.

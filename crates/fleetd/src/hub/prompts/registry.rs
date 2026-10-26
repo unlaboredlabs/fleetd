@@ -149,6 +149,12 @@ pub const ENTRIES: &[Entry] = &[
                 Prompt
             ),
             (
+                "no-status-only",
+                "never posts a status-only or \"nothing needs you\" message; a turn with nothing to say replies `(quiet)`, which fleetd never posts",
+                r"Never post a status-only message",
+                Prompt
+            ),
+            (
                 "plain-words",
                 "no fleetd ids, tool names, paths or process words unless asked",
                 r"No tool names, file paths",
@@ -171,6 +177,12 @@ pub const ENTRIES: &[Entry] = &[
                 "prod writes, spends and deletes only through `gated_run`",
                 r"gated_run",
                 Code
+            ),
+            (
+                "parallel-by-default",
+                "splits approved work into parts whose files don't overlap and runs them in parallel while slots are free",
+                r"Parallel by default",
+                Prompt
             ),
             (
                 "train-only-merges",

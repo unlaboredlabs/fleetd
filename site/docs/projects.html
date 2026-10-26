@@ -168,6 +168,10 @@ To also remove the worktrees its agents worked in, delete it from the app instea
 <td>What runs in each new worktree before its agent starts. See <a href="#setup">Setup commands</a>.</td>
 </tr>
 <tr>
+<td>Merge train</td>
+<td>The checks the train also waits for before a merge, and those left for after it. See <a href="/docs/merge-train#fast-set">Which checks it waits for</a>.</td>
+</tr>
+<tr>
 <td>Delete project</td>
 <td>See <a href="#delete">Delete a project</a>.</td>
 </tr>
@@ -366,8 +370,10 @@ whole fleet. The hub enforces all of them; the lead plans to them.</p>
 </table>
 <p>New agents on a machine also wait for disk: 5 GB each (<code dir="auto">diskPerAgentGb</code>) above the free-space floor, with agents started
 in the last 10 minutes still counted, since their worktrees haven’t grown yet. The lead’s state line names what sets
-its cap, e.g. “agents: 4 running of 6 (auto: memory 18 GB, about 2 GB an agent), 2 queued”, or “fleet cap set”,
-“machine cap set” and “max agents set”.</p>
+its cap, e.g. “agents: 4 running of 6 (auto: memory 18 GB, about 2 GB an agent), 2 queued, 0 free”, or “fleet cap
+set”, “machine cap set” and “max agents set”. When slots have sat free for 10 minutes, with no agent starting or ending,
+while approved work is open, the state says so in one line, and the lead splits that work into parts whose files don’t
+overlap and runs them at once.</p>
 <p>The memory figure only sizes a machine’s auto cap. No agent waits for the memory it might take: a Max agents you set
 starts that many, as far as the machine’s cap and disk allow, and a machine you set runs that many whatever it is
 estimated to fit. What does hold new agents back is memory really in use, the

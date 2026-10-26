@@ -180,6 +180,15 @@ fleetd project set <machine>/<project> --medium on|off [--home <dir>] [--hub <ur
 
 whether the lead may run mechanical tasks on the medium profile (on by default); off runs every task on high
 
+### fleetd project set {#project-set-fast-check}
+
+```text
+fleetd project set <machine>/<project> [--fast-check <check>]... [--after-merge <check>]...
+    [--home <dir>] [--hub <url>]
+```
+
+how the merge train treats the repo's checks. It waits only for its fast set: the checks the base branch requires, plus each `--fast-check`, each until it reports. Each `--after-merge` never stops a merge, even once failed. Each option replaces its list; none empties it
+
 
 ## Running by hand {#running-by-hand}
 
