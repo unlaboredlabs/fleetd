@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { framePoint, keyInput, modifiersOf } from "./live";
+import { framePoint, isPaste, keyInput, modifiersOf } from "./live";
 
 const keys = { altKey: false, ctrlKey: false, metaKey: false, shiftKey: false };
 
@@ -11,6 +11,19 @@ describe("a person's input to a page they took over", () => {
   it("carries the modifiers as CDP counts them", () => {
     expect(modifiersOf({ ...keys, altKey: true, shiftKey: true })).toBe(9);
     expect(modifiersOf({ ...keys, ctrlKey: true, metaKey: true })).toBe(6);
+  });
+
+  it("takes ⌘V (Ctrl+V elsewhere) as a paste of this computer's clipboard, not as a key for the page", () => {
+    const v = { key: "v", code: "KeyV" };
+    expect(isPaste({ ...keys, ...v, metaKey: true }, "darwin")).toBe(true);
+    expect(isPaste({ ...keys, ...v, ctrlKey: true }, "linux")).toBe(true);
+    // An upper-case V, and a layout that types another letter on the V key.
+    expect(isPaste({ ...keys, key: "V", code: "KeyV", ctrlKey: true }, "linux")).toBe(true);
+    expect(isPaste({ ...keys, key: "м", code: "KeyV", metaKey: true }, "darwin")).toBe(true);
+    // Not the other platform's modifier, not with Alt, not a plain v.
+    expect(isPaste({ ...keys, ...v, ctrlKey: true }, "darwin")).toBe(false);
+    expect(isPaste({ ...keys, ...v, metaKey: true, altKey: true }, "darwin")).toBe(false);
+    expect(isPaste({ ...keys, ...v }, "linux")).toBe(false);
   });
 
   it("types a printable key's character, and nothing for a shortcut or a release", () => {
