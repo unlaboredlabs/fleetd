@@ -31,6 +31,8 @@ pub(crate) struct Node {
     runner_usable: AtomicBool,
     pub(crate) launches: Mutex<Vec<LaunchInput>>,
     pub(crate) sends: Mutex<Vec<String>>,
+    /// Sends fail (the write queue refused them) while set; they are still recorded.
+    send_fails: AtomicBool,
 }
 
 struct Ports(Arc<Node>);
@@ -49,7 +51,13 @@ impl LeadPorts for Ports {
     }
     fn send(&self, _: ThreadRef, message: String, _: String) -> BoxFuture<Result<bool, LeadError>> {
         self.0.sends.lock().unwrap().push(message);
-        Box::pin(async { Ok(false) })
+        let fails = self.0.send_fails.load(Ordering::SeqCst);
+        Box::pin(async move {
+            if fails {
+                return Err(LeadError::new(ErrorCode::Failed, "not delivered", "retry"));
+            }
+            Ok(false)
+        })
     }
     fn open_requests(
         &self,
@@ -628,4 +636,85 @@ async fn a_lead_its_node_cut_off_mid_turn_carries_on_by_itself() {
         "in its own thread, not a new lead"
     );
     follower.abort();
+}
+
+/// Agents with 3 slots free for 30 minutes of the idle stretch it holds.
+struct IdleTasks(std::sync::atomic::AtomicI64);
+
+impl crate::hub::leads::hooks::TasksHook for IdleTasks {
+    fn digest_lines(&self, _: &ProjectRef, _: Option<&Timestamp>, _: usize) -> Vec<String> {
+        Vec::new()
+    }
+    fn agents(&self, _: &ProjectRef) -> crate::hub::leads::events::AgentsLine {
+        crate::hub::leads::events::AgentsLine {
+            running: 1,
+            cap: 4,
+            queued: 0,
+            source: "max agents set".into(),
+            idle_since_ms: self.0.load(Ordering::SeqCst),
+            idle_minutes: 30,
+        }
+    }
+    fn live(&self, _: Option<&ProjectRef>) -> Vec<(fleetd_contracts::tasks::TaskId, ProjectRef)> {
+        Vec::new()
+    }
+    fn cancel(
+        &self,
+        _: &ProjectRef,
+        _: &fleetd_contracts::tasks::TaskId,
+        _: &str,
+    ) -> BoxFuture<()> {
+        Box::pin(async {})
+    }
+}
+
+/// The idle line counts as shown only once it reached the lead: a launch or a wake that failed leaves it for the
+/// next message, and one that went out uses it up for the stretch.
+#[tokio::test(flavor = "current_thread")]
+async fn the_idle_line_is_used_up_only_by_a_message_that_went_out() {
+    let hub = hub(false);
+    let tasks = Arc::new(IdleTasks(1.into()));
+    let _ = hub.area.ctx.hooks.tasks.set(tasks.clone());
+    let (w1, _) = hub.order("add dark mode").await;
+    let mut order = hub.area.records.workstream_get(&w1).unwrap().unwrap();
+    order.brief = Some(
+        serde_json::from_value(serde_json::json!({
+            "goal": "dark mode", "why": "asked", "pointers": [], "constraints": [],
+            "doneWhen": ["the app follows the system theme"],
+        }))
+        .unwrap(),
+    );
+    hub.area.records.workstream_put(&order).unwrap();
+    let idle = |text: &str| text.contains("\nIdle: 3 slots have sat free for 30 min");
+
+    // The launch was refused: its first message never went, so the next launch carries the line.
+    assert!(hub.launched_prompts().is_empty());
+    hub.node.runner_usable.store(true, Ordering::SeqCst);
+    hub.area.leads.auto_start(&hub.project, None).await;
+    assert!(
+        idle(&hub.launched_prompts()[0]),
+        "{}",
+        hub.launched_prompts()[0]
+    );
+
+    // Shown at the start: a wake in the same stretch leaves it out.
+    hub.order("add a /ready endpoint").await;
+    hub.after_debounce().await;
+    let sends = hub.node.sends.lock().unwrap().clone();
+    assert_eq!(sends.len(), 1);
+    assert!(!idle(&sends[0]), "{}", sends[0]);
+
+    // A failed wake doesn't use up a new stretch's line; the next one that goes out carries it, once.
+    tasks.0.store(2, Ordering::SeqCst);
+    hub.node.send_fails.store(true, Ordering::SeqCst);
+    hub.order("add a /live endpoint").await;
+    hub.after_debounce().await;
+    hub.node.send_fails.store(false, Ordering::SeqCst);
+    for text in ["add a /metrics endpoint", "add a /version endpoint"] {
+        hub.order(text).await;
+        hub.after_debounce().await;
+    }
+    let sends = hub.node.sends.lock().unwrap().clone();
+    let carried: Vec<bool> = sends.iter().map(|s| idle(s)).collect();
+    assert_eq!(carried, [false, true, true, false], "{sends:#?}");
 }
