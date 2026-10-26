@@ -933,6 +933,10 @@ impl NodeLinkServer {
                 | NodeToHub::CloneProgress(_)) => {
                     self.deps.executors.handle_frame(&machine_id, frame)
                 }
+                // Previews (W58): the hub asks no node for one until its preview tools land.
+                NodeToHub::PreviewRunResult(_) | NodeToHub::PreviewReport(_) => {
+                    tracing::debug!(machine = %machine_id, "node link: preview frame before this hub runs previews");
+                }
                 NodeToHub::Slept(span) => self.slept(&machine_id, span),
                 NodeToHub::Spans(frame) => {
                     let tx = tx.clone();
