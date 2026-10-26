@@ -28,6 +28,9 @@ const ASKS = "take over its browser; the sign-in sends a code to a phone";
 const preview = (base: Fixture): Fixture => {
   const f = Fixture.from(base, "sessions-preview", "Browser sessions: storefront's agents, one in a browser, one asking you to take over its browser.");
   const iso = (agoMs: number) => new Date(Date.parse(f.now) - agoMs).toISOString();
+  // The hub says it serves browser sessions: the Agents section shows them (no other fixture's hub says so).
+  if (f.state.phase !== "live") throw new Error("many-agents' hub isn't live");
+  f.state = { ...f.state, features: ["presence", "browser_sessions"] };
   for (const tool of ["orders_board", "order_get"]) f.update(tool, (out) => patchLane(out, "T4", { status: "waiting", statusReason: ASKS }));
   // Its own work: the browser tools it called, the login filled from 1Password by reference, and why it asked.
   const thread = findLane(f.output("orders_board", {}) ?? f.answers("orders_board")[0]?.output ?? null, "T4")?.["threadRef"];

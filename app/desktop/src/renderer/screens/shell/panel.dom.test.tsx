@@ -155,7 +155,7 @@ function Harness() {
 let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
 
 /** The panel's frame on a hub that answers at once: a launch of the app. Without `online`, the hub is out of reach. */
-const mount = async ({ online = true }: { online?: boolean } = {}) => {
+const mount = async ({ online = true, features }: { online?: boolean; features?: readonly string[] } = {}) => {
   const hub: HubApi = {
     call: (tool, input) => {
       if (tool === "changes_list") {
@@ -178,13 +178,13 @@ const mount = async ({ online = true }: { online?: boolean } = {}) => {
       </DataProvider>,
     );
   });
-  if (online) connect();
+  if (online) connect(features);
   await settle();
 };
 
-const connect = () =>
+const connect = (features?: readonly string[]) =>
   act(() => {
-    send(live());
+    send(live(features));
     send(snapshot(1));
   });
 
@@ -377,7 +377,8 @@ const pointer = (el: Element | null, type: string, clientX: number) =>
   });
 
 it("shows four sections as tabs, each view a route of its own under its section, two-view sections with tabs inside", async () => {
-  await mount();
+  // A hub that serves every view, browser sessions too.
+  await mount({ features: ["browser_sessions"] });
   const outer = () => [...(panel()?.querySelectorAll<HTMLElement>("[role='tab'][data-section]") ?? [])];
   expect(outer().map((tab) => tab.dataset["section"])).toEqual(SECTIONS.map((g) => g.id));
   expect(outer().map((tab) => tab.textContent.replace(/[0-9]+$/u, ""))).toEqual(["Agents", "Shipping", "Plan", "History"]);
@@ -398,6 +399,16 @@ it("shows four sections as tabs, each view a route of its own under its section,
       expect(inner).toBeNull();
     }
   }
+});
+
+it("shows Agents alone from a hub that doesn't serve browser sessions, and opens Agents for a link to them", async () => {
+  await mount();
+  await go(`${CHAT}/agents`);
+  expect(panel()?.querySelector("[role='tab'][data-tab='sessions']")).toBeNull();
+  expect(panel()?.textContent).toContain("The AI workers on this project, and what each is doing right now.");
+  await go(`${CHAT}/sessions`);
+  expect(panel()?.querySelector("[data-screen='agents']")).not.toBeNull();
+  expect(panel()?.querySelector("[data-screen^='sessions']")).toBeNull();
 });
 
 it("opens a section on the view you last had in it", async () => {

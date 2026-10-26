@@ -217,7 +217,13 @@ export class HubClient implements HubSource {
         if (this.#readyTimer !== null) clearTimeout(this.#readyTimer);
         this.#readyTimer = null;
         this.#startHeartbeat();
-        this.#setState({ phase: "live", hub: this.#options.hub, protocol: frame.protocol, ...(frame.version === undefined ? {} : { version: frame.version }) });
+        this.#setState({
+          phase: "live",
+          hub: this.#options.hub,
+          protocol: frame.protocol,
+          ...(frame.version === undefined ? {} : { version: frame.version }),
+          ...(frame.features === undefined ? {} : { features: frame.features }),
+        });
         this.#send({ t: "snapshot" });
         this.#sendLive();
         if (this.#chat !== null) this.#sendChat();

@@ -1,16 +1,21 @@
 // The design preview's browser sessions (W46), until the hub serves them (T514 defines the contract): storefront's
 // agents' sessions, live and recent, shaped like the broker's likely contract (model.ts), each step with a snapshot of
-// the page it acted on. A live session plays a
-// script, a step every couple of seconds, as the hub's stream would bring them; Take over, a person's clicks in the
-// page, and Hand back change it here as the hub would. Only in the QA build and in development: a real build lists no
-// sessions until the hub has them. QA starts a new session with the `fleetd:preview-session` window event.
-import { useSyncExternalStore } from "react";
+// the page it acted on. A live session plays a script, a step every couple of seconds, as the hub's stream would bring
+// them; Take over, a person's clicks in the page, and Hand back change it here as the hub would. Shown only where the
+// hub says it serves browser sessions (its ready frame's `browser_sessions` feature, which only the sessions-preview
+// fixture claims today), and only in the QA build and in development: a real build reads none of it. QA starts a new
+// session with the `fleetd:preview-session` window event.
+import { useMemo, useSyncExternalStore } from "react";
+import { useData } from "../../src/data/react";
 import type { ProjectKey } from "../shell/routes";
 import type { BrowserSession, SessionAction, SessionState } from "./model";
 import * as page from "./pages";
 import { snap, structure as dom } from "./pages";
 
 export const PREVIEW = import.meta.env.VITE_FLEETD_QA === "1" || import.meta.env.DEV;
+
+/** The hub feature that says it serves browser sessions (panel/tabs.ts gates the view on it too). */
+export const FEATURE = "browser_sessions";
 
 /** storefront, the fixtures' project (fixtures/agents/route.ts). */
 const STOREFRONT = { machineId: "devbox", projectId: "dcffccea-c5a7-40a6-940d-7f70239ffa22" } as const;
@@ -259,13 +264,16 @@ const subscribe = (l: () => void) => {
 };
 
 const NONE: readonly BrowserSession[] = [];
-const read = () => (PREVIEW ? (sessions ?? NONE) : NONE);
+const read = () => sessions ?? NONE;
+const none = () => NONE;
 const noop = () => () => undefined;
 
-/** The project's browser sessions; none outside the preview. */
+/** The project's browser sessions: none from a hub that doesn't serve them, and none outside the preview. */
 export function useBrowserSessions(project: ProjectKey): readonly BrowserSession[] {
-  const all = useSyncExternalStore(PREVIEW ? subscribe : noop, read);
-  return all.filter((s) => s.projectRef.machineId === project.machineId && s.projectRef.projectId === project.projectId);
+  const on = useData((st) => PREVIEW && st.features.includes(FEATURE));
+  const all = useSyncExternalStore(on ? subscribe : noop, on ? read : none);
+  const { machineId, projectId } = project;
+  return useMemo(() => all.filter((s) => s.projectRef.machineId === machineId && s.projectRef.projectId === projectId), [all, machineId, projectId]);
 }
 
 /** You take the page: the agent waits, and sees the page as you leave it. */

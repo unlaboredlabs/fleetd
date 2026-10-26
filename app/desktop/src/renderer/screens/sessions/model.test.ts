@@ -137,7 +137,8 @@ describe("a step's page snapshot", () => {
     const page = snap(structure.shopSignIn(true), ["textbox", "Email"], ["textbox", "Password"]);
     expect(page.targets.map((i) => page.nodes[i]?.name)).toEqual(["Email", "Password"]);
     const click = snap(structure.shopSignIn(true), ["button", "Sign in"]);
-    expect(click.targets.map((i) => page.nodes[i]?.role)).toEqual(["button"]);
+    expect(click.targets.map((i) => click.nodes[i]?.name)).toEqual(["Sign in"]);
+    expect(click.nodes[click.targets[0] ?? -1]?.role).toBe("button");
     expect(snap(structure.shopHome()).targets).toEqual([]);
   });
 });
