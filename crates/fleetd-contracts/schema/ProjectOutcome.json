@@ -130,8 +130,14 @@
           "const": "automation",
           "description": "A run of one of the project's automations; `by` is \"automation:<automationId>\".",
           "type": "string"
+        },
+        {
+          "const": "train",
+          "description": "The merge train's watch after a merge: a check it doesn't wait for failed on the base; `by` is \"hub:train\".",
+          "type": "string"
         }
-      ]
+      ],
+      "x-open": true
     },
     "Lead": {
       "properties": {

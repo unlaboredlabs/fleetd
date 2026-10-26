@@ -5593,8 +5593,14 @@
           "const": "automation",
           "description": "A run of one of the project's automations; `by` is \"automation:<automationId>\".",
           "type": "string"
+        },
+        {
+          "const": "train",
+          "description": "The merge train's watch after a merge: a check it doesn't wait for failed on the base; `by` is \"hub:train\".",
+          "type": "string"
         }
-      ]
+      ],
+      "x-open": true
     },
     "IntakeRef": {
       "description": "Something an order or note points at: a file of the project, another order, or a PR. The hub renders these into\nthe lead's wake as a \"References:\" block.",
@@ -14805,7 +14811,7 @@
       "type": "object"
     },
     "TrainSettings": {
-      "description": "How the merge train treats the checks of the project's repo. It waits only for its fast set: the checks the base\nbranch requires, read from its ruleset or branch protection, plus `fastChecks`, each until it reports, however late\nit starts. It never waits for any other check; one of those that has already failed when the fast set is green\nstill stops the merge, unless it is in `afterMerge`. A check the base requires is always in the fast set: GitHub\nwon't merge without it. With no required check and none added, it waits for every check.",
+      "description": "How the merge train treats the checks of the project's repo. It waits only for its fast set: the checks the base\nbranch requires, read from its ruleset or branch protection, plus `fastChecks`, each until it reports, however late\nit starts. It never waits for any other check; one of those that has already failed when the fast set is green\nstill stops the merge, unless it is in `afterMerge`. A check the base requires is always in the fast set: GitHub\nwon't merge without it. With no required check and none added, it waits for every check. After a merge it watches\nevery check outside the fast set on the merged commit; one that fails there opens a fix order for the project,\nonce per failure.",
       "properties": {
         "afterMerge": {
           "default": [],

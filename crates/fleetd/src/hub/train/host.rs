@@ -111,6 +111,16 @@ pub trait TrainHost: Send + Sync + 'static {
     ) -> Option<fleetd_contracts::project_settings::TrainSettings> {
         Some(Default::default())
     }
+    /// Opens an order for the project's lead (the ledger's intake, channel `train`) with `text`; the same `request_id`
+    /// finds the order the first call opened. The order's id, or why it couldn't be opened.
+    fn open_order<'a>(
+        &'a self,
+        _project_ref: &'a ProjectRef,
+        _text: String,
+        _request_id: String,
+    ) -> BoxFut<'a, Result<WorkstreamId, String>> {
+        Box::pin(async { Err("this hub opens no orders".to_string()) })
+    }
     /// Whether the work ledger's landing scanner watches `repo`'s `base`: it then tells the leads about each merge
     /// there that didn't go through the train, so the train doesn't.
     fn landings_watched(&self, _repo: &str, _base: &str) -> bool {

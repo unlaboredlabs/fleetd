@@ -7,6 +7,7 @@ use super::contract::{
     Change, ChangeId, ChangeState, GitHubRepo, MachineId, ProjectId, ProjectRef, TrainState,
     parse_state, state_str,
 };
+use fleetd_contracts::ledger::WorkstreamId;
 use fleetd_contracts::prim::UniqueList;
 
 use crate::hub::store::HubDb;
@@ -48,6 +49,19 @@ pub const TERMINAL_STATES: &[ChangeState] = &[
     ChangeState::Refused,
     ChangeState::Abandoned,
 ];
+
+/// A commit the train merged onto `base`, whose checks outside the fast set it watches there (`watch`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Watch {
+    pub repo: String,
+    pub sha: String,
+    pub base: String,
+    /// The project whose lead gets a fix order.
+    pub project_ref: ProjectRef,
+    /// The PR that landed it, or the batch's.
+    pub pr_url: String,
+    pub since_ms: i64,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TrainRow {
@@ -334,6 +348,96 @@ impl ChangeRecords {
                 params![merged_ms, repo.to_lowercase()],
             )
             .expect("move the watch")
+        });
+    }
+
+    /// Starts watching the commit a merge put on `base`; a second merge of the same commit changes nothing.
+    pub fn watch_merge(&self, w: &Watch) {
+        sql(&self.db, |conn| {
+            conn.execute(
+                "INSERT OR IGNORE INTO train_watches (repo, sha, base, machine_id, project_id, pr_url, since_ms)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    w.repo.to_lowercase(),
+                    w.sha.to_lowercase(),
+                    w.base,
+                    w.project_ref.machine_id.as_str(),
+                    w.project_ref.project_id.as_str(),
+                    w.pr_url,
+                    w.since_ms
+                ],
+            )
+            .expect("watch a merge")
+        });
+    }
+
+    /// The repo's merged commits still watched, oldest first.
+    pub fn watches(&self, repo: &str) -> Vec<Watch> {
+        sql(&self.db, |conn| {
+            let mut stmt = conn
+                .prepare_cached(
+                    "SELECT repo, sha, base, machine_id, project_id, pr_url, since_ms FROM train_watches
+                     WHERE repo = ?1 ORDER BY since_ms",
+                )
+                .expect("prepare");
+            stmt.query_map([repo.to_lowercase()], |r| {
+                Ok(Watch {
+                    repo: r.get(0)?,
+                    sha: r.get(1)?,
+                    base: r.get(2)?,
+                    project_ref: ProjectRef {
+                        machine_id: MachineId::unchecked(r.get::<_, String>(3)?),
+                        project_id: ProjectId::unchecked(r.get::<_, String>(4)?),
+                    },
+                    pr_url: r.get(5)?,
+                    since_ms: r.get(6)?,
+                })
+            })
+            .expect("query")
+            .map(|r| r.expect("row"))
+            .collect()
+        })
+    }
+
+    pub fn end_watch(&self, repo: &str, sha: &str) {
+        sql(&self.db, |conn| {
+            conn.execute(
+                "DELETE FROM train_watches WHERE repo = ?1 AND sha = ?2",
+                params![repo.to_lowercase(), sha],
+            )
+            .expect("end a watch")
+        });
+    }
+
+    /// The newest fix order opened for `check` failing on the repo's base, and the commit it failed on.
+    pub fn fix_order(&self, repo: &str, check: &str) -> Option<(String, WorkstreamId)> {
+        sql(&self.db, |conn| {
+            conn.query_row(
+                "SELECT sha, workstream_id FROM train_fix_orders WHERE repo = ?1 AND check_name = ?2
+                 ORDER BY at_ms DESC, rowid DESC LIMIT 1",
+                params![repo.to_lowercase(), check],
+                |r| Ok((r.get(0)?, WorkstreamId::unchecked(r.get::<_, String>(1)?))),
+            )
+            .optional()
+            .expect("fix order")
+        })
+    }
+
+    /// Records that `check` failing at `sha` is `order`'s to fix.
+    pub fn put_fix_order(
+        &self,
+        repo: &str,
+        check: &str,
+        sha: &str,
+        order: &WorkstreamId,
+        at_ms: i64,
+    ) {
+        sql(&self.db, |conn| {
+            conn.execute(
+                "INSERT OR IGNORE INTO train_fix_orders (repo, check_name, sha, workstream_id, at_ms) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![repo.to_lowercase(), check, sha, order.as_str(), at_ms],
+            )
+            .expect("put a fix order")
         });
     }
 
