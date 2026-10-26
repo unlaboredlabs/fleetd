@@ -288,6 +288,9 @@ pub struct Tasks {
     /// one (T19: a node back from a stop reported the run it cut off after the task had been continued), so it doesn't
     /// end the task. Not kept across a hub restart, whose follower starts after every event appended before it.
     continuing: Mutex<HashMap<TaskId, (String, i64)>>,
+    /// Tasks a run's end ended whose claude the node is still stopping: a message that continues one waits queued for
+    /// the stop, so the stop never kills the run it starts. Not kept across a hub restart, whose queue runs at once.
+    stopping: Mutex<HashSet<TaskId>>,
     /// Projects whose repo and base a spawn is reading from their root, in the background once it stopped waiting.
     binding: Arc<Mutex<HashSet<ProjectRef>>>,
     /// Running tasks whose lead was told their machine is away, with the machine and the start of that offline spell:
@@ -329,6 +332,7 @@ impl Tasks {
             looking_up: Mutex::new(HashSet::new()),
             asking: Mutex::new(HashSet::new()),
             continuing: Mutex::new(HashMap::new()),
+            stopping: Mutex::new(HashSet::new()),
             binding: Arc::new(Mutex::new(HashSet::new())),
             unreachable: Mutex::new(HashMap::new()),
             resumed: Mutex::new(HashMap::new()),
@@ -733,6 +737,14 @@ impl Tasks {
         let compact = mode == Some(RecoveryMode::Compact);
         let continuing =
             task.thread_ref.is_some() && !fresh && (stored.pending_message.is_some() || recovering);
+        // The claude its last run's end ended is still being stopped: it goes on in its thread once that is done.
+        if continuing && self.stopping.lock().unwrap().contains(&task.task_id) {
+            return self.queue(
+                stored,
+                "stopping",
+                "its last run's claude is still stopping",
+            );
+        }
         // The disk and load guard holds new agents only; machine.guard runs the queue again. One with a thread
         // continues in the worktree it has, a fresh restart too.
         if !continuing
@@ -1283,16 +1295,8 @@ impl Tasks {
             .filter(|_| death.kind == recovery::Kind::Stalled)
             .and_then(|d| d["error"]["message"].as_str())
             .map(|m| format!("[stalled] {m}"));
-        // A task its run's end ends is over on the node too: T588's claude ran on, unseen, for 20 minutes after its
-        // task read as failed. Under the lock, so a message that continues it goes after the stop, never before.
-        if !matches!(action, recovery::Action::Resume(_))
-            && let Err(error) = self.d.ports.stop(thread).await
-        {
-            tracing::warn!(
-                task_id = task.task_id.as_str(),
-                ?error,
-                "ended task: its process not stopped"
-            );
+        if !matches!(action, recovery::Action::Resume(_)) {
+            self.stop_ended(task, thread);
         }
         match action {
             // A run stopped for a steer is never a failure: one whose work is over ends done.
@@ -1326,7 +1330,8 @@ impl Tasks {
                 .await
             }
             recovery::Action::Resume(recovery) => {
-                self.recover(stored, recovery)?;
+                let stored = self.with_unrun_steers(stored, event, death.kind);
+                self.recover(&stored, recovery)?;
                 self.hold_if_paused(&task.task_id, &thread.machine_id)
             }
         }?;
@@ -1334,6 +1339,53 @@ impl Tasks {
             self.recovery_paused(&thread.machine_id, &opened)?;
         }
         Ok(())
+    }
+
+    /// A task its run's end ends is over on the node too: T588's claude ran on, unseen, for 20 minutes after its task
+    /// read as failed. The stop runs off the lock, as a slow node takes up to its stop timeout; until it is done the task
+    /// is `stopping`, and a message that continues it waits queued for it (`try_start`).
+    fn stop_ended(self: &Arc<Self>, task: &Task, thread: &ThreadRef) {
+        self.stopping.lock().unwrap().insert(task.task_id.clone());
+        let (tasks, task_id, thread) = (self.clone(), task.task_id.clone(), thread.clone());
+        tokio::spawn(async move {
+            if let Err(error) = tasks.d.ports.stop(&thread).await {
+                tracing::warn!(
+                    task_id = task_id.as_str(),
+                    ?error,
+                    "ended task: its process not stopped"
+                );
+            }
+            tasks.stopping.lock().unwrap().remove(&task_id);
+            tasks.retry_later();
+        });
+    }
+
+    /// A run cut for a steer whose own run never began: that steer's message goes with the resumed run, after anything
+    /// already waiting for it, and its receipts follow it there. Any other death leaves the task as it is.
+    fn with_unrun_steers(
+        &self,
+        stored: &StoredTask,
+        event: &HubEvent,
+        kind: recovery::Kind,
+    ) -> StoredTask {
+        let by = event
+            .data
+            .as_ref()
+            .and_then(|d| d["supersededBy"].as_str())
+            .filter(|_| kind == recovery::Kind::Cut);
+        let unrun = by.map_or_else(Vec::new, |by| {
+            crate::hub::steer::hold_unrun(&self.d.db, stored.task.task_id.as_str(), by)
+        });
+        let pending = stored
+            .pending_message
+            .iter()
+            .cloned()
+            .chain(unrun)
+            .collect::<Vec<_>>();
+        StoredTask {
+            task: stored.task.clone(),
+            pending_message: (!pending.is_empty()).then(|| pending.join("\n\n")),
+        }
     }
 
     /// Queues a dead task to go on at `recovery.next_at`, as `recovery.mode` says; what it is told is rendered when it

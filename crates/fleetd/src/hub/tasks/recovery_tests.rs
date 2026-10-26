@@ -8,6 +8,7 @@ use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
 use fleetd_contracts::ledger::IntakeChannel;
 use fleetd_contracts::node_link::HubToNode;
 use fleetd_contracts::sessions::SessionCall;
+use fleetd_contracts::steer::{SteerMode, SteerStage, SteerTarget};
 use fleetd_contracts::tasks::{TaskId, TaskState};
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
@@ -17,6 +18,7 @@ use super::cap_tests::{AT, Node, hub_on, running};
 use super::race_tests::{catch_up, frame, lab_a, logged, reply, sent, serve, task, task_lines};
 use crate::hub::api::Hub;
 use crate::hub::leads::records::NewWorkstream;
+use crate::hub::steer::{self, SteerRequest};
 use crate::hub::store::NewEvent;
 use crate::hub::store::test_clock::ManualClock;
 
@@ -503,6 +505,127 @@ async fn a_task_its_runs_end_ends_has_its_process_stopped() {
         .unwrap();
     let (_, text) = sent(&mut calls).await;
     assert!(text.contains("Go on with slice 2."), "{text}");
+    assert_eq!(task(&hub).state, TaskState::Running);
+}
+
+/// A run cut for a steer whose own run never began: the resumed run carries that steer's message, so it isn't lost,
+/// and the steer's receipts follow it there.
+#[tokio::test]
+async fn a_steer_whose_run_never_began_goes_with_the_resumed_run() {
+    let (hub, _clock, mut calls, _home) = running_t1().await;
+    let lead = project();
+    let request = SteerRequest {
+        target: SteerTarget::Task {
+            task_id: TaskId::unchecked("T1"),
+        },
+        text: "Use the v2 endpoint.",
+        mode: SteerMode::Queue,
+        refs: vec![],
+        attached: vec![],
+        client_request_id: "c1",
+    };
+    // Announced online, so the steer goes straight to the thread rather than waiting in the offline queue.
+    hub.executors.set_runner_ready(&lab_a(), true);
+    let steer = steer::send(&hub, steer::By::Lead(&lead), request)
+        .await
+        .unwrap();
+    let (steer_run, message) = sent(&mut calls).await;
+    assert_eq!(steer_run, steer.run_id.as_str());
+    // The node cut r1 for it, then ended the steer's run before it began.
+    let superseded = json!({ "end": "superseded", "supersededBy": steer_run });
+    session(&hub, 3, "r1", "interrupted", superseded);
+    logged(&hub, "thread.interrupted", "r1").await;
+    catch_up(&hub.tasks).await;
+    let (next, text) = sent_unstopped(&mut calls).await;
+    assert!(text.starts_with("fleetd: your run was cut off"), "{text}");
+    assert!(text.ends_with(&message), "{text}");
+    let (now, _) = steer::store::get(&hub.db, &steer.id).unwrap().unwrap();
+    assert_eq!(
+        (now.stage, now.run_id.as_str()),
+        (SteerStage::Queued, next.as_str())
+    );
+}
+
+/// Answers every call at once except a stop, which waits for `release`: a node slow to stop a claude.
+fn serve_slow_stops(hub: &Arc<Hub>, mut node: Node) -> (Calls, Arc<tokio::sync::Notify>) {
+    let (tx, calls) = mpsc::unbounded_channel();
+    let release = Arc::new(tokio::sync::Notify::new());
+    let (hub, held) = (hub.clone(), release.clone());
+    tokio::spawn(async move {
+        while let Some(frame) = node.rx.recv().await {
+            let HubToNode::SessionCall(f) = frame else {
+                continue;
+            };
+            let _ = tx.send(f.call.clone());
+            let done = json!({ "ok": { "kind": "done" } });
+            match &f.call {
+                SessionCall::Stop { .. } => {
+                    let (hub, held) = (hub.clone(), held.clone());
+                    tokio::spawn(async move {
+                        held.notified().await;
+                        reply(&hub, f.id.as_str(), done);
+                    });
+                }
+                SessionCall::Follow { .. } => reply(
+                    &hub,
+                    f.id.as_str(),
+                    json!({ "err": { "code": "not_found", "message": "not in this test" } }),
+                ),
+                _ => reply(&hub, f.id.as_str(), done),
+            }
+        }
+    });
+    (calls, release)
+}
+
+/// The stop of an ended task's claude holds no lock while a slow node carries it out: the hub goes on, and a message
+/// that continues the task waits queued for the stop, then goes, so the stop never kills the run it starts.
+#[tokio::test]
+async fn an_ended_tasks_stop_holds_no_lock_and_its_continuation_waits_for_it() {
+    let clock = ManualClock::at(1_792_000_000_000);
+    let (hub, _home) = hub_on(clock.clone());
+    hub.leads
+        .records
+        .workstream_create(NewWorkstream {
+            project_ref: project(),
+            title: "Ship the API".into(),
+            text: "Ship the API".into(),
+            channel: IntakeChannel::App,
+            by: "human".into(),
+            at: AT.into(),
+            client_request_id: None,
+        })
+        .unwrap();
+    let (mut calls, release) = serve_slow_stops(&hub, Node::link(&hub).await);
+    running(&hub, 1);
+    session(&hub, 3, "r1", "interrupted", json!({ "end": "requested" }));
+    logged(&hub, "thread.interrupted", "r1").await;
+    tokio::time::timeout(Duration::from_secs(5), catch_up(&hub.tasks))
+        .await
+        .expect("the stop holds the tasks lock");
+    assert_eq!(task(&hub).state, TaskState::Failed);
+    while !matches!(calls.recv().await.unwrap(), SessionCall::Stop { .. }) {}
+
+    let caller = TaskCaller {
+        project_ref: project(),
+        by: "lead".into(),
+    };
+    let queued = tokio::time::timeout(
+        Duration::from_secs(5),
+        hub.tasks
+            .message(&caller, &TaskId::unchecked("T1"), "Go on with slice 2."),
+    )
+    .await
+    .expect("the stop holds the tasks lock")
+    .unwrap();
+    assert_eq!(queued.state, TaskState::Queued);
+    assert_eq!(reason(&hub), "its last run's claude is still stopping");
+    nothing_sent(&mut calls).await;
+
+    release.notify_one();
+    let (_, text) = sent(&mut calls).await;
+    assert!(text.contains("Go on with slice 2."), "{text}");
+    catch_up(&hub.tasks).await;
     assert_eq!(task(&hub).state, TaskState::Running);
 }
 

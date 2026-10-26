@@ -148,6 +148,8 @@ pub struct TrackedThread {
     pub pending: Option<PendingPermission>,
     /// What the node rebuilt the worktree from the last time it was gone, and when (older nodes don't say).
     pub recreated_from: Option<(WorktreeSource, Option<String>)>,
+    /// The steer's run that cut the latest run, if one did.
+    pub superseded_by: Option<String>,
 }
 
 impl TrackedThread {
@@ -507,6 +509,11 @@ impl Applier<'_, '_> {
                     session.recreated_at.as_ref().map(|t| t.as_str().to_owned()),
                 )
             }),
+            superseded_by: session
+                .latest_run
+                .as_ref()
+                .and_then(|r| r.superseded_by.as_ref())
+                .map(|r| r.to_string()),
         };
         self.state.threads.insert(id.clone(), next.clone());
         if let Some(k) = &known
@@ -737,6 +744,14 @@ pub fn transition_event(t: &Transition, thread: &TrackedThread, machine_id: &str
         .filter(|_| !matches!(t.kind, EventType::Started | EventType::Waiting))
     {
         data.insert("endCause".into(), json!(end));
+        // Which steer's run took over: the tasks area sends that steer again if it never ran.
+        if let Some(by) = thread
+            .superseded_by
+            .as_ref()
+            .filter(|_| end == RunEnd::Superseded)
+        {
+            data.insert("supersededBy".into(), json!(by));
+        }
     }
     // What the approvals area opens an approval request from.
     if let (EventType::Waiting, Some(p)) = (t.kind, &thread.pending) {
