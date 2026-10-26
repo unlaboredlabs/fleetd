@@ -320,7 +320,7 @@ impl Leads {
             return Ok(None);
         }
         Ok(Some(format!(
-            "Orders waiting for you, in full:\n{}",
+            "Orders waiting for you:\n{}",
             trigger_lines(&triggers).join("\n")
         )))
     }

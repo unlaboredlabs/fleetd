@@ -25,7 +25,7 @@ use fleetd_contracts::automations::{
     RUNS_KEPT,
 };
 use fleetd_contracts::events::HubEventType;
-use fleetd_contracts::ids::ProjectRef;
+use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef};
 use fleetd_contracts::ledger::{IntakeChannel, WorkstreamState};
 use fleetd_contracts::mcp::ErrorCode;
 use fleetd_contracts::prim::{Count, Line};
@@ -40,7 +40,7 @@ use crate::clock::Clock;
 use crate::hub::leads::lead::AutoStart;
 use crate::hub::leads::workstreams::IntakeInput;
 use crate::hub::leads::{Area, LeadError};
-use crate::hub::store::{EventLog, HubDb, NewEvent, StoreError, iso_ms, now_ms};
+use crate::hub::store::{EventLog, HubDb, NewEvent, StoreError, WaitInput, iso_ms, now_ms};
 use crate::hub::wakes::LATE_AFTER;
 use crate::hub::wakes::schedule::{next_cron, parse_cron, zoned_parts};
 
@@ -295,10 +295,17 @@ impl Automations {
         })
     }
 
-    /// Starts the scheduler; `stop` (or aborting the handle) ends it.
+    /// Deletes the automations of projects removed while the hub was down, recovers runs a stop left without their
+    /// order, then runs the scheduler and follows project removals; `stop` (or aborting the handle) ends it.
     pub fn start(self: &Arc<Self>) -> JoinHandle<()> {
         let me = Arc::clone(self);
-        let handle = tokio::spawn(async move { me.scheduler().await });
+        let handle = tokio::spawn(async move {
+            if let Err(error) = me.prune_removed() {
+                tracing::warn!(error = %error.message, "automations of removed projects not deleted");
+            }
+            me.recover_all().await;
+            tokio::join!(Arc::clone(&me).scheduler(), Arc::clone(&me).removals());
+        });
         if let Some(old) = self
             .task
             .lock()
@@ -462,7 +469,7 @@ impl Automations {
             Ok(rows)
         })?;
         for data in rows {
-            let run = self.settle(decode_run(&data)?)?;
+            let run = self.settle(self.recover(decode_run(&data)?)?)?;
             if run.state == AutomationRunState::Running {
                 return Ok(Some(run));
             }
@@ -739,7 +746,10 @@ impl Automations {
         if !ok {
             return Ok(None);
         }
-        self.get(id)
+        match self.get(id)? {
+            Some(a) if self.prune_if_removed(&a)? => Ok(None),
+            found => Ok(found),
+        }
     }
 
     // ---- runs ------------------------------------------------------------------------------------
@@ -757,6 +767,9 @@ impl Automations {
     pub fn open(&self, id: &str, start: Start) -> Result<(Automation, AutomationRun), LeadError> {
         let guard = self.starting.lock().expect("lock");
         let a = self.get(id)?.ok_or_else(|| not_found(id))?;
+        if self.prune_if_removed(&a)? {
+            return Err(not_found(id));
+        }
         let now = self.now();
         let trigger = start.trigger();
         let busy = self.active(id)?;
@@ -832,9 +845,25 @@ impl Automations {
             self.run_event(&a, &run, format!("skipped: {reason}"));
             return Ok((a, run));
         }
+        self.open_order(&a, &mut run, payload.as_deref())?;
+        drop(guard);
+        if run.workstream_id.is_none() {
+            self.run_event(&a, &run, "failed: its order could not be opened".into());
+        }
+        Ok((a, run))
+    }
+
+    /// Opens the run's order, or marks the run failed when it can't. Idempotent per run: the order's request id is the
+    /// run's, so a run opened again after a crash finds the order the first try made.
+    fn open_order(
+        &self,
+        a: &Automation,
+        run: &mut AutomationRun,
+        payload: Option<&str>,
+    ) -> Result<(), LeadError> {
         let opened = self.leads.workstreams.intake(IntakeInput {
             project_ref: a.project_ref.clone(),
-            text: order_text(&a, &run, payload.as_deref()),
+            text: order_text(a, run, payload),
             client_request_id: run.run_id.to_string(),
             channel: IntakeChannel::Automation,
             by: format!("automation:{}", a.automation_id),
@@ -847,12 +876,167 @@ impl Automations {
                 run.ended_at = Some(iso_ms(self.now()).into());
             }
         }
-        self.put_run(&run)?;
-        drop(guard);
-        if run.workstream_id.is_none() {
-            self.run_event(&a, &run, "failed: its order could not be opened".into());
+        self.put_run(run)?;
+        Ok(())
+    }
+
+    /// A run recorded as running without its order: the hub stopped between the two. Its order is opened now (or
+    /// found, if it was made), or the run fails when its automation is gone. Runs are recorded and opened under one
+    /// lock, so outside it such a run is always one a stop left.
+    fn recover(&self, mut run: AutomationRun) -> Result<AutomationRun, LeadError> {
+        if run.state != AutomationRunState::Running || run.workstream_id.is_some() {
+            return Ok(run);
         }
-        Ok((a, run))
+        let payload: Option<String> = self.db.with(|c| {
+            Ok(c.query_row(
+                "SELECT payload FROM automation_runs WHERE run_id = ?",
+                [run.run_id.as_str()],
+                |r| r.get(0),
+            )
+            .optional()?
+            .flatten())
+        })?;
+        match self.row(run.automation_id.as_str())? {
+            Some(a) => {
+                self.open_order(&a, &mut run, payload.as_deref())?;
+                let what = match &run.workstream_id {
+                    Some(w) => format!("opened {w} after a hub restart"),
+                    None => "failed: its order could not be opened after a hub restart".to_owned(),
+                };
+                self.run_event(&a, &run, what);
+            }
+            None => {
+                run.state = AutomationRunState::Failed;
+                run.why =
+                    why("the hub stopped before its order opened, and the automation is gone");
+                run.ended_at = Some(iso_ms(self.now()).into());
+                self.put_run(&run)?;
+            }
+        }
+        Ok(run)
+    }
+
+    /// At hub start: every run a stop left without its order, recovered, and the leads of the orders opened told.
+    async fn recover_all(&self) {
+        let rows: Result<Vec<String>, StoreError> = self.db.with(|c| {
+            let mut stmt = c.prepare(
+                "SELECT data FROM automation_runs WHERE state = 'running' AND workstream_id IS NULL ORDER BY at_ms",
+            )?;
+            let rows = stmt
+                .query_map([], |r| r.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            Ok(rows)
+        });
+        let mut opened = Vec::new();
+        for data in rows.unwrap_or_default() {
+            let recovered = {
+                let _guard = self.starting.lock().expect("lock");
+                decode_run(&data)
+                    .map_err(LeadError::from)
+                    .and_then(|run| self.recover(run))
+            };
+            match recovered {
+                Ok(run) if run.workstream_id.is_some() => opened.push(run),
+                Ok(_) => {}
+                Err(error) => {
+                    tracing::warn!(error = %error.message, "automation run not recovered")
+                }
+            }
+        }
+        for run in opened {
+            if let Ok(Some(a)) = self.row(run.automation_id.as_str()) {
+                self.wake_lead(&a, &run).await;
+            }
+        }
+    }
+
+    // ---- removed projects ------------------------------------------------------------------------
+
+    /// Deletes the automations of `r` with their runs: the project is gone, so they start nothing and their webhook
+    /// URLs stop working. Orders their runs opened are the project's, and stop with it.
+    fn delete_project(&self, r: &ProjectRef) -> Result<Vec<Automation>, LeadError> {
+        let gone = self.list(r)?;
+        self.db.transaction(|c| {
+            c.execute(
+                "DELETE FROM automation_runs WHERE automation_id IN
+                   (SELECT automation_id FROM automations WHERE machine_id = ? AND project_id = ?)",
+                params![r.machine_id.as_str(), r.project_id.as_str()],
+            )?;
+            c.execute(
+                "DELETE FROM automations WHERE machine_id = ? AND project_id = ?",
+                params![r.machine_id.as_str(), r.project_id.as_str()],
+            )?;
+            Ok(())
+        })?;
+        for a in &gone {
+            self.changed_event(a, "deleted with its project", "hub");
+        }
+        if !gone.is_empty() {
+            self.signal();
+        }
+        Ok(gone)
+    }
+
+    /// True (and its project's automations deleted) when the hub no longer has `a`'s project.
+    fn prune_if_removed(&self, a: &Automation) -> Result<bool, LeadError> {
+        if self.leads.ctx.store.project_get(&a.project_ref)?.is_some() {
+            return Ok(false);
+        }
+        self.delete_project(&a.project_ref)?;
+        Ok(true)
+    }
+
+    /// Every project with automations that the hub's cache no longer has: their automations deleted. Keyed on the
+    /// cache, not the event, so the catch-up at start and a stop between the event and this lose nothing.
+    pub fn prune_removed(&self) -> Result<usize, LeadError> {
+        let projects: Vec<(String, String)> = self.db.with(|c| {
+            let mut stmt = c.prepare("SELECT DISTINCT machine_id, project_id FROM automations")?;
+            let rows = stmt
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .collect::<rusqlite::Result<_>>()?;
+            Ok(rows)
+        })?;
+        let mut n = 0;
+        for (machine_id, project_id) in projects {
+            let r = ProjectRef {
+                machine_id: MachineId::unchecked(machine_id),
+                project_id: ProjectId::unchecked(project_id),
+            };
+            if self.leads.ctx.store.project_get(&r)?.is_none() {
+                n += self.delete_project(&r)?.len();
+            }
+        }
+        Ok(n)
+    }
+
+    /// Follows project.removed.
+    async fn removals(self: Arc<Self>) {
+        let events = Arc::clone(&self.events);
+        let mut cursor = events.head();
+        loop {
+            let page = match events
+                .wait(WaitInput {
+                    cursor: Some(cursor),
+                    types: Some(vec![HubEventType::ProjectRemoved]),
+                    machine_id: None,
+                    timeout_sec: 3600,
+                })
+                .await
+            {
+                Ok(page) => page,
+                Err(error) => {
+                    tracing::warn!(%error, "automations: event log read failed");
+                    self.clock.sleep(Duration::from_secs(1)).await;
+                    continue;
+                }
+            };
+            cursor = page.cursor;
+            if !page.events.is_empty()
+                && let Err(error) = self.prune_removed()
+            {
+                tracing::warn!(error = %error.message, "automations of a removed project not deleted");
+            }
+        }
     }
 
     /// Starts the project's lead if it has none; its first message carries the waiting orders in full. A running

@@ -1,5 +1,5 @@
 //! `POST /hooks/<automationId>/<secret>`: a webhook run, with the request body as its context. An unknown automation
-//! and a wrong secret get the same 401, and neither is logged or recorded: the URL holds the secret, so nothing here
+//! (deleted, or its project removed) and a wrong secret get the same 404, and neither is logged or recorded: the URL holds the secret, so nothing here
 //! writes the path, the secret or the body anywhere but the run it starts.
 use std::sync::Arc;
 
@@ -28,7 +28,7 @@ pub async fn handle(hub: Arc<Hub>, automation_id: &str, secret: &str, body: Body
         }
     };
     let Some(automation) = target else {
-        return refused(StatusCode::UNAUTHORIZED, "This webhook URL is not valid.");
+        return refused(StatusCode::NOT_FOUND, "This webhook URL is not valid.");
     };
     let Ok(bytes) = axum::body::to_bytes(body, WEBHOOK_BODY_MAX).await else {
         return refused(

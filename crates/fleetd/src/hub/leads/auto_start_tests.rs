@@ -296,7 +296,8 @@ async fn an_order_that_waited_for_its_lead_reaches_it_in_full_when_it_starts() {
     let prompts = hub.launched_prompts();
     assert_eq!(prompts.len(), 1);
     for part in [
-        "Orders waiting for you, in full:",
+        "Orders waiting for you:",
+        "in full:",
         w1.as_str(),
         "Find the cause from the alert's body.",
         "disk 91% on db-2",
@@ -319,6 +320,31 @@ async fn an_order_that_waited_for_its_lead_reaches_it_in_full_when_it_starts() {
             .all(|m| !m.contains("disk 91%"))
     );
     waiting_loop.abort();
+}
+
+/// A wake says a long or many-line order whole, and a short one in its one line as before.
+#[test]
+fn a_wake_says_an_order_longer_than_a_line_in_full() {
+    use crate::hub::leads::wakes::trigger_lines;
+    let w = WorkstreamId::unchecked("W9");
+    let long = format!("Error alert triage\n{}\nTHE END", "x".repeat(400));
+    let lines = trigger_lines(&[
+        Trigger::Intent {
+            workstream_id: w.clone(),
+            text: long,
+        },
+        Trigger::Intent {
+            workstream_id: w,
+            text: "add a /health endpoint".into(),
+        },
+    ]);
+    assert!(
+        lines[0].starts_with("- new order W9, in full:\n  Error alert triage\n  xxx"),
+        "{}",
+        lines[0]
+    );
+    assert!(lines[0].ends_with("\n  THE END"));
+    assert_eq!(lines[1], "- new order W9: \"add a /health endpoint\"");
 }
 
 /// An order whose text is its title is in the digest already: no second copy.

@@ -18,6 +18,7 @@ use serde_json::json;
 
 use super::*;
 use crate::hub::leads::auto_start_tests::{self, hub as lead_hub};
+use crate::hub::leads::workstreams::IntakeInput;
 use crate::hub::link::LeadCaller;
 use crate::hub::link::lead_calls::CallerAgent;
 use crate::hub::store::test_clock::ManualClock;
@@ -480,11 +481,11 @@ async fn a_webhook_post_with_its_secret_runs_with_the_body_and_a_wrong_secret_is
         "{\"leak\":\"body-7781\"}".into(),
     )
     .await;
-    assert_eq!(res.status(), 401);
+    assert_eq!(res.status(), 404);
     let unknown = post(format!("{base}/hooks/au_nosuchthing/{secret}"), "{}".into()).await;
     assert_eq!(
         unknown.status(),
-        401,
+        404,
         "an unknown automation looks the same"
     );
     assert!(
@@ -543,7 +544,7 @@ async fn a_webhook_post_with_its_secret_runs_with_the_body_and_a_wrong_secret_is
         .rotate(a.automation_id.as_str(), "human")
         .unwrap();
     let old = post(webhook_url(&base, &a.automation_id, &secret), "{}".into()).await;
-    assert_eq!(old.status(), 401);
+    assert_eq!(old.status(), 404);
     let new = post(webhook_url(&base, &a.automation_id, &rotated), "{}".into()).await;
     assert_eq!(
         new.status(),
@@ -757,4 +758,242 @@ fn a_webhook_url_starts_with_the_url_init_kept_else_the_listen_address() {
         webhook_url(&fallback.url(), &id, "s"),
         "http://127.0.0.1:4790/hooks/au_k3Jd8sQp2xYz/s"
     );
+}
+
+// ---- a removed project, a stop mid-run -----------------------------------------------------------
+
+fn removed(h: &auto_start_tests::Hub) {
+    h.area.ctx.store.project_remove(&h.project).unwrap();
+    h.events
+        .append(NewEvent {
+            at: iso_ms(1_792_231_200_000).into(),
+            r#type: HubEventType::ProjectRemoved,
+            machine_id: Some(h.project.machine_id.clone()),
+            project_id: Some(h.project.project_id.clone()),
+            thread_id: None,
+            summary: "repo-a was removed".into(),
+            data: None,
+            attention: None,
+        })
+        .unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_removed_projects_automations_go_their_schedule_stops_and_their_webhook_url_is_refused() {
+    let h = lead_hub(true);
+    let autos = over(&h);
+    let (scheduled, _) = autos
+        .create(new(&h.project, Some(schedule("30 * * * *", "UTC")), false))
+        .unwrap();
+    let (hooked, secret) = autos.create(new(&h.project, None, true)).unwrap();
+    let secret = secret.unwrap();
+    autos.start();
+    settle().await;
+
+    // Removed from the cache: the URL works no more at once, before the event is followed.
+    h.area.ctx.store.project_remove(&h.project).unwrap();
+    assert!(
+        autos
+            .webhook_target(hooked.automation_id.as_str(), &secret)
+            .unwrap()
+            .is_none()
+    );
+    removed(&h);
+    settle().await;
+    assert!(autos.list(&h.project).unwrap().is_empty());
+    assert!(
+        autos
+            .get(scheduled.automation_id.as_str())
+            .unwrap()
+            .is_none()
+    );
+
+    // Its schedule's time passes: nothing runs, no order opens.
+    h.clock.advance(Duration::from_secs(60 * MIN));
+    settle().await;
+    let orders = h
+        .area
+        .workstreams
+        .list(&crate::hub::leads::records::WorkstreamFilter {
+            project_ref: None,
+            state: None,
+            limit: 100,
+        })
+        .unwrap();
+    assert!(orders.is_empty());
+    assert!(h.launched_prompts().is_empty());
+    let deleted = events_of(&h, HubEventType::AutomationChanged)
+        .iter()
+        .filter(|e| e.data.as_ref().unwrap()["change"] == "deleted with its project")
+        .count();
+    assert_eq!(deleted, 2);
+    autos.stop();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn removed_while_the_hub_was_down_its_automations_go_at_start() {
+    let h = lead_hub(true);
+    let before = over(&h);
+    let (a, _) = before
+        .create(new(&h.project, Some(schedule("30 * * * *", "UTC")), false))
+        .unwrap();
+    h.area.ctx.store.project_remove(&h.project).unwrap();
+    let autos = over(&h);
+    autos.start();
+    settle().await;
+    assert!(autos.get(a.automation_id.as_str()).unwrap().is_none());
+    autos.stop();
+}
+
+/// The run a hub stop left between recording it and opening its order, as the database then holds it.
+fn left_starting(autos: &Automations, a: &Automation, payload: Option<&str>) -> AutomationRun {
+    let run = AutomationRun {
+        run_id: AutomationRunId::unchecked(random_id("ar_")),
+        automation_id: a.automation_id.clone(),
+        trigger: if payload.is_some() {
+            AutomationTrigger::Webhook
+        } else {
+            AutomationTrigger::Manual
+        },
+        at: iso_ms(1_792_231_200_000).into(),
+        state: AutomationRunState::Running,
+        workstream_id: None,
+        scheduled_at: None,
+        late_min: None,
+        payload_bytes: payload.map(|p| Count::unchecked(p.len() as i64)),
+        why: None,
+        by: None,
+        ended_at: None,
+    };
+    autos
+        .db
+        .with(|c| {
+            c.execute(
+                "INSERT INTO automation_runs (run_id, automation_id, at_ms, state, workstream_id, payload, data)
+                 VALUES (?, ?, ?, 'running', NULL, ?, ?)",
+                params![
+                    run.run_id.as_str(),
+                    a.automation_id.as_str(),
+                    1_792_231_200_000_i64,
+                    payload,
+                    serde_json::to_string(&run)?
+                ],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    run
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_run_a_stop_left_without_its_order_opens_it_at_start_and_never_blocks_the_automation() {
+    let h = lead_hub(true);
+    let before = over(&h);
+    let (a, _) = before.create(new(&h.project, None, true)).unwrap();
+    let stuck = left_starting(&before, &a, Some("{\"alert\":\"disk 91% on db-2\"}"));
+
+    // The next hub opens its order, with the body, and the lead gets it.
+    let autos = over(&h);
+    autos.start();
+    settle().await;
+    let runs = autos.runs(a.automation_id.as_str(), 10).unwrap();
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].run_id, stuck.run_id);
+    assert_eq!(runs[0].state, AutomationRunState::Running);
+    let w = runs[0].workstream_id.clone().unwrap();
+    let order = h.area.workstreams.get(&w).unwrap().unwrap();
+    assert!(order.source.text.as_str().contains("disk 91% on db-2"));
+    assert!(
+        h.launched_prompts()[0].contains("disk 91% on db-2"),
+        "{:?}",
+        h.launched_prompts()
+    );
+
+    // Its order closes: the automation runs again.
+    h.area
+        .workstreams
+        .close(&h.project, &w, "fixed", "lead:lab-a/p-a")
+        .unwrap();
+    let next = autos
+        .run(
+            a.automation_id.as_str(),
+            Start::Manual { by: "human".into() },
+        )
+        .await
+        .unwrap();
+    assert_eq!(next.state, AutomationRunState::Running);
+    autos.stop();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_run_whose_order_opened_just_before_a_stop_finds_that_order_and_makes_no_second() {
+    let h = lead_hub(true);
+    let autos = over(&h);
+    let (a, _) = autos.create(new(&h.project, None, false)).unwrap();
+    let stuck = left_starting(&autos, &a, None);
+    // The order was made under the run's id; the stop came before the run recorded it.
+    let made = h
+        .area
+        .workstreams
+        .intake(IntakeInput {
+            project_ref: h.project.clone(),
+            text: order_text(&a, &stuck, None),
+            client_request_id: stuck.run_id.to_string(),
+            channel: IntakeChannel::Automation,
+            by: format!("automation:{}", a.automation_id),
+        })
+        .unwrap()
+        .workstream_id;
+
+    // Without a restart, the next trigger finds the stuck run, gives it its order, and skips for it: not "still
+    // starting" forever, and no second order.
+    let now = autos
+        .run(
+            a.automation_id.as_str(),
+            Start::Manual { by: "human".into() },
+        )
+        .await
+        .unwrap();
+    assert_eq!(now.state, AutomationRunState::Skipped);
+    assert!(now.why.unwrap().as_str().contains(made.as_str()));
+    let recovered = autos.runs(a.automation_id.as_str(), 10).unwrap();
+    assert_eq!(recovered[1].workstream_id.as_ref(), Some(&made));
+    let orders = h
+        .area
+        .workstreams
+        .list(&crate::hub::leads::records::WorkstreamFilter {
+            project_ref: None,
+            state: None,
+            limit: 100,
+        })
+        .unwrap();
+    assert_eq!(orders.len(), 1);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_stuck_run_of_a_deleted_automation_fails_at_start() {
+    let h = lead_hub(true);
+    let before = over(&h);
+    let (a, _) = before.create(new(&h.project, None, false)).unwrap();
+    let stuck = left_starting(&before, &a, None);
+    before
+        .db
+        .with(|c| {
+            c.execute(
+                "DELETE FROM automations WHERE automation_id = ?",
+                [a.automation_id.as_str()],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let autos = over(&h);
+    autos.start();
+    settle().await;
+    let (run, _) = autos
+        .run_with_payload(a.automation_id.as_str(), stuck.run_id.as_str())
+        .unwrap()
+        .unwrap();
+    assert_eq!(run.state, AutomationRunState::Failed);
+    assert!(run.why.unwrap().as_str().contains("automation is gone"));
+    autos.stop();
 }

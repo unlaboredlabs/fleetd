@@ -44,6 +44,12 @@ means it came during another run or while the automation was paused. **Failed** 
 
 The schedule runs on the hub's clock. If the hub was down when a run was due, that run happens once when the hub
 comes back, marked late. A hub that was down for three hours of an hourly schedule runs it once, not three times.
+A run the hub stopped in the middle of, before its order opened, gets its order when the hub starts again.
+
+## When a project goes
+
+Removing a project deletes its automations and their run history: their schedules stop and their webhook URLs
+answer `404`. Orders their runs opened stop with the project.
 
 ## Webhooks
 
@@ -66,7 +72,7 @@ curl -X POST --data '{"alert":"disk 91% on db-2"}' "$FLEETD_WEBHOOK_URL"
 |---|---|
 | `202` | A run started; the JSON has its `runId` and the `workstreamId` of its order. |
 | `200` | Recorded, but skipped: `state` is `skipped` and `why` says why (a run is still open, or it's paused). |
-| `401` | The URL isn't valid: a wrong secret, a rotated URL, or an automation that doesn't exist. |
+| `404` | The URL isn't valid: a wrong secret, a rotated URL, a deleted automation, or one whose project was removed. |
 | `413` | The body is over 16 KiB. |
 
 The body goes into the order as far as it fits, and the lead can read the whole body of a run. A wrong secret is
