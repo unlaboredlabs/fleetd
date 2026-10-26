@@ -6,6 +6,7 @@ pub mod actions;
 pub mod browser;
 pub mod cmd;
 pub mod config;
+pub mod desktop;
 pub mod device;
 pub mod hosts;
 pub mod identity;
@@ -135,6 +136,7 @@ pub async fn join(args: JoinArgs) -> Result<(), NodeError> {
         preview: None,
         device: None,
         ios: None,
+        desktop: None,
     };
     write_config(&home, &config).map_err(|_| {
         NodeError::Setup(format!(
@@ -276,18 +278,35 @@ async fn run_node(
         ),
         false => None,
     };
-    let sessions_router = (broker.is_some() || devices.is_some() || ios.is_some()).then(|| {
+    let desktop_config = config.desktop.clone().unwrap_or_default();
+    let desktops = match desktop_config.enabled() {
+        true => Some(
+            desktop::Desktops::start(
+                home,
+                desktop_config,
+                // A hosted desktop's sealed secrets go once it reports itself ended, as a browser's do.
+                hosted.watch(Arc::new(browser::upload::RelayHub(relay.clone()))),
+                secrets_for.clone(),
+            )
+            .await,
+        ),
+        false => None,
+    };
+    let any = broker.is_some() || devices.is_some() || ios.is_some() || desktops.is_some();
+    let sessions_router = any.then(|| {
         Arc::new(device::Router {
             browser: broker.clone(),
             devices: devices.clone(),
             ios: ios.clone(),
             live: Default::default(),
+            desktops: desktops.clone(),
         })
     });
     let router = Arc::new(session_route::Router {
         broker: broker.clone(),
         devices,
         ios,
+        desktops,
         relay: relay.clone(),
         hub: config.hub.clone(),
         secrets_for,
@@ -357,7 +376,6 @@ async fn run_node(
             box_key,
             home: home.to_path_buf(),
         }),
-        browser: broker.clone(),
         previews: previews.clone(),
         sessions: sessions_router.clone(),
         hosted,

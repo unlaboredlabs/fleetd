@@ -40,6 +40,7 @@ use self::scrcpy::{Frame, Input};
 use self::session::{Opened, Session};
 use super::browser::upload::{self, HubCalls};
 use super::browser::{Broker, BrowserHandler, SecretsFor, SessionHooks};
+use super::desktop::Desktops;
 use super::util::AbortOnDrop;
 
 /// node.json's `device`: how this machine runs android sessions. Every field is optional.
@@ -472,6 +473,7 @@ impl Devices {
             cdp: None,
             serial: Some(Text::unchecked(serial)),
             udid: None,
+            desktop: None,
             start_ms: started.elapsed().as_millis() as u64,
         }))
     }
@@ -721,14 +723,15 @@ async fn housekeeping(devices: std::sync::Weak<Devices>) {
     }
 }
 
-/// The node's session tools, for every kind: each call goes to the browser broker, the android sessions or the iOS
-/// sessions, and an agent session holds one session of any kind at a time.
+/// The node's session tools, for every kind: each call goes to the browser broker, the android sessions, the iOS
+/// sessions or the desktop sessions, and an agent session holds one session of any kind at a time.
 pub struct Router {
     pub browser: Option<Arc<Broker>>,
     pub devices: Option<Arc<Devices>>,
     pub ios: Option<Arc<ios::Simulators>>,
     /// Android and iOS sessions' live view (live.rs).
     pub live: live::DeviceLive,
+    pub desktops: Option<Arc<Desktops>>,
 }
 
 impl Router {
@@ -761,12 +764,17 @@ impl Router {
                     .map(|s| (SessionKind::Android, s.id.to_string()))
             })
             .or_else(|| ios.map(|s| (SessionKind::Ios, s.id.to_string())))
+            .or_else(|| {
+                let desktop = self.desktops.as_ref().and_then(|d| d.live(thread))?;
+                Some((SessionKind::LinuxDesktop, desktop.id.to_string()))
+            })
     }
 
     pub async fn handle(&self, thread: String, frame: BrowserCallFrame) -> BrowserResultFrame {
         let open = self.open(&thread);
         let kind = match &frame.call {
             BrowserCall::SessionStart(call) => call.kind.unwrap_or_default(),
+            BrowserCall::Desktop(_) => SessionKind::LinuxDesktop,
             _ => open
                 .as_ref()
                 .map_or(SessionKind::Browser, |(kind, _)| *kind),
@@ -783,6 +791,7 @@ impl Router {
                         SessionKind::Browser => "a browser",
                         SessionKind::Android => "an Android",
                         SessionKind::Ios => "an iOS",
+                        SessionKind::LinuxDesktop => "a desktop",
                     }
                 ),
             );
@@ -802,6 +811,7 @@ impl Router {
             },
             SessionKind::Android => self.android(thread, frame).await,
             SessionKind::Ios => self.ios(thread, frame).await,
+            SessionKind::LinuxDesktop => self.desktop(thread, frame).await,
         }
     }
 
@@ -823,12 +833,47 @@ impl Router {
                     .await
             }
             BrowserCall::SessionEnd(_) => devices.session_end(&thread).await,
-            BrowserCall::FillCredential(_) | BrowserCall::RequestTakeover(_) => Err(refuse(
+            BrowserCall::FillCredential(_)
+            | BrowserCall::RequestTakeover(_)
+            | BrowserCall::Desktop(_) => Err(refuse(
                 ErrorCode::Invalid,
                 format!(
                     "{} is not available in Android sessions yet.",
                     frame.call.op()
                 ),
+                "do without it and say so in your result",
+            )),
+        };
+        result_frame(&frame, outcome)
+    }
+
+    async fn desktop(&self, thread: String, frame: BrowserCallFrame) -> BrowserResultFrame {
+        let Some(desktops) = &self.desktops else {
+            return result_frame(
+                &frame,
+                Err(refuse(
+                    ErrorCode::Failed,
+                    "This machine hosts no desktop sessions (node.json turns them off).",
+                    "say so in your result",
+                )),
+            );
+        };
+        let outcome = match &frame.call {
+            BrowserCall::SessionStart(call) => {
+                desktops
+                    .session_start(thread, frame.cwd.to_string(), call.purpose.to_string())
+                    .await
+            }
+            BrowserCall::SessionEnd(_) => desktops.session_end(&thread).await,
+            BrowserCall::Desktop(call) => desktops.act(&thread, call.clone()).await,
+            BrowserCall::RequestTakeover(call) => {
+                desktops
+                    .request_takeover(&thread, call.reason.clone())
+                    .await
+            }
+            BrowserCall::FillCredential(_) => Err(refuse(
+                ErrorCode::Invalid,
+                "fill_credential is for browser sessions.",
                 "do without it and say so in your result",
             )),
         };
@@ -853,7 +898,9 @@ impl Router {
                     .await
             }
             BrowserCall::SessionEnd(_) => simulators.session_end(&thread).await,
-            BrowserCall::FillCredential(_) | BrowserCall::RequestTakeover(_) => Err(refuse(
+            BrowserCall::FillCredential(_)
+            | BrowserCall::RequestTakeover(_)
+            | BrowserCall::Desktop(_) => Err(refuse(
                 ErrorCode::Invalid,
                 format!("{} is not available in iOS sessions yet.", frame.call.op()),
                 "do without it and say so in your result",
@@ -872,6 +919,9 @@ impl Router {
         if let Some(ios) = &self.ios {
             ios.shutdown().await;
         }
+        if let Some(desktops) = &self.desktops {
+            desktops.shutdown().await;
+        }
     }
 }
 
@@ -881,6 +931,7 @@ fn noun(kind: SessionKind) -> &'static str {
         SessionKind::Browser => "Browser",
         SessionKind::Android => "Android",
         SessionKind::Ios => "iOS",
+        SessionKind::LinuxDesktop => "Desktop",
     }
 }
 
@@ -972,6 +1023,9 @@ impl SessionHooks for Router {
         }
         if let Some(ios) = &self.ios {
             ios.ended(thread);
+        }
+        if let Some(desktops) = &self.desktops {
+            desktops.ended(thread);
         }
     }
 }

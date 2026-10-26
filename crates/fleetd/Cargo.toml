@@ -29,7 +29,7 @@ crypto_box = { workspace = true }
 crypto_secretbox = { workspace = true }
 ed25519-dalek = { workspace = true }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
-nix = { version = "0.30", features = ["fs", "process", "signal", "time"] }
+nix = { version = "0.30", features = ["fs", "process", "signal", "time", "user"] }
 rand = { workspace = true }
 reqwest = { workspace = true }
 sha2 = { workspace = true }
@@ -65,6 +65,10 @@ console = "0.16"
 diffy = "0.5.2"
 # prompts edit: a private scratch file (0600, random name, created exclusively)
 tempfile = "3"
+# desktop sessions: the node reads the screen (GetImage, DAMAGE) and types and clicks (XTEST) over its own X11
+# connection, and encodes the frames as JPEG
+x11rb = { version = "=0.14.0", default-features = false, features = ["xtest", "damage"] }
+jpeg-encoder = "=0.7.1"
 
 # node power: macOS sleep assertions through IOKit, loaded at run time (the darwin build links no framework)
 [target.'cfg(target_os = "macos")'.dependencies]

@@ -88,6 +88,7 @@ pub(crate) mod tests {
             }),
             android: None,
             ios: None,
+            desktop: None,
         }
     }
 

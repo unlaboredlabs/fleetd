@@ -47,6 +47,10 @@ pub struct NodeConfig {
     /// iOS sessions for agents (node/device/ios): on a Mac where its golden simulator is made, or `enabled` opts in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ios: Option<super::device::ios::IosConfig>,
+    /// Linux desktop sessions for agents (node/desktop): on where the machine has docker, podman or Xvfb unless
+    /// `enabled` is false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub desktop: Option<super::desktop::DesktopConfig>,
 }
 
 fn config_file(home: &Path) -> PathBuf {

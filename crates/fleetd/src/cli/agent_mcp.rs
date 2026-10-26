@@ -13,7 +13,8 @@ use fleetd_contracts::automations::{
     AutomationRunCall, AutomationRunsCall, AutomationUpdateCall,
 };
 use fleetd_contracts::browser::{
-    BrowserCall, FillCredentialCall, RequestTakeoverCall, SessionEndCall, SessionStartCall,
+    BrowserCall, DesktopCall, FillCredentialCall, RequestTakeoverCall, SessionEndCall,
+    SessionStartCall,
 };
 use fleetd_contracts::checklist::ChecklistCall;
 use fleetd_contracts::lead_calls::{
@@ -365,8 +366,21 @@ static TOOLS: &[Tool] = &[
          Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no \
          browser of your own. purpose: one line on what for. kind android instead opens a fresh Android emulator \
          (Android 15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or \
-         --platform. kind ios opens a fresh iOS simulator on a Mac the same way: pass no --udid or --platform.",
+         --platform. kind ios opens a fresh iOS simulator on a Mac the same way: pass no --udid or --platform. \
+         kind linux_desktop opens a fresh Linux desktop (1280x800, a window manager, xterm), driven with the desktop \
+         tool.",
         inline_schema::<SessionStartCall>,
+    ),
+    browser(
+        "desktop",
+        "Act on your Linux desktop session (session_start kind linux_desktop), with computer-use actions plus \
+         launch. screenshot returns the screen as an image; left_click, right_click, middle_click, double_click, triple_click and mouse_move at coordinate \
+         [x, y] in the screenshot's pixels; left_click_drag from start_coordinate to coordinate; type text; key \
+         with xdotool key names in text (Return, ctrl+s, alt+F4); scroll with scroll_direction and scroll_amount \
+         at coordinate; wait duration seconds; cursor_position; launch: text is a shell command started on the \
+         desktop (in your working directory where the desktop can see it). Take a screenshot after acting to see \
+         what happened.",
+        inline_schema::<DesktopCall>,
     ),
     browser(
         "session_end",
@@ -457,6 +471,42 @@ pub fn browser_result(answer: &Value) -> Value {
              session_end when done.",
             result["sessionId"].as_str().unwrap_or_default(),
             result["startMs"]
+        ),
+        Some("session_start") if result["desktop"].is_string() => format!(
+            "Desktop session {} is open ({} ms): a fresh Linux desktop ({}), thrown away at session_end, recorded. \
+             Drive it with the desktop tool: start with a screenshot, launch apps with action launch. End it with \
+             session_end when done.",
+            result["sessionId"].as_str().unwrap_or_default(),
+            result["startMs"],
+            match result["desktop"].as_str() {
+                Some("container") => "in a container of its own; your worktree is there read-only",
+                _ => "on a display of its own, with a fresh home directory",
+            }
+        ),
+        Some("desktop") => {
+            let message = result["message"].as_str().unwrap_or_default();
+            let mut content = Vec::new();
+            if let Some(jpeg) = result["jpegB64"].as_str() {
+                content.push(json!({ "type": "image", "data": jpeg, "mimeType": "image/jpeg" }));
+            }
+            content.push(json!({ "type": "text", "text": message }));
+            return json!({ "content": content, "isError": false });
+        }
+        Some("session_end") if result["kind"] == "linux_desktop" => format!(
+            "Desktop session {} ended; the desktop and everything on it are gone. Its recording ({}) goes to the \
+             hub.{}",
+            result["sessionId"].as_str().unwrap_or_default(),
+            result["files"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|f| f["file"].as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
+            result["note"]
+                .as_str()
+                .map(|note| format!(" Note: {note}."))
+                .unwrap_or_default()
         ),
         Some("session_end") if result["kind"] == "android" || result["kind"] == "ios" => format!(
             "{} session {} ended; the {} and everything done in it are gone. Its recording ({}) goes to the hub.{}",
@@ -845,6 +895,7 @@ mod tests {
                 "preview_suggest",
                 "preview_config_propose",
                 "session_start",
+                "desktop",
                 "session_end",
                 "request_takeover",
                 "fill_credential"
@@ -1047,5 +1098,31 @@ mod tests {
             real_src.display().to_string()
         );
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_desktop_screenshot_comes_back_as_an_image() {
+        let shot = browser_result(&json!({ "result": {
+            "op": "desktop", "message": "The screen, 1280x800.", "jpegB64": "/9j/AA==",
+            "width": 1280, "height": 800,
+        } }));
+        assert_eq!(shot["isError"], false);
+        assert_eq!(shot["content"][0]["type"], "image");
+        assert_eq!(shot["content"][0]["mimeType"], "image/jpeg");
+        assert_eq!(shot["content"][0]["data"], "/9j/AA==");
+        assert_eq!(shot["content"][1]["text"], "The screen, 1280x800.");
+        let clicked = browser_result(
+            &json!({ "result": { "op": "desktop", "message": "left_click at (1, 2)." } }),
+        );
+        assert_eq!(clicked["content"].as_array().unwrap().len(), 1);
+        let started = browser_result(&json!({ "result": {
+            "op": "session_start", "sessionId": "B0", "desktop": "xvfb", "startMs": 2,
+        } }));
+        let text = started["content"][0]["text"].as_str().unwrap();
+        assert!(
+            text.starts_with("Desktop session B0 is open (2 ms)"),
+            "{text}"
+        );
+        assert!(text.contains("desktop tool"), "{text}");
     }
 }

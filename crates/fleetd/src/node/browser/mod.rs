@@ -459,6 +459,11 @@ impl Broker {
             BrowserCall::FillCredential(call) => {
                 credentials::fill_credential(self, &thread, call).await
             }
+            BrowserCall::Desktop(_) => Err(refuse(
+                ErrorCode::Invalid,
+                "The desktop tool drives desktop sessions, not browsers.",
+                "drive the browser with agent-browser",
+            )),
         }
     }
 
@@ -569,6 +574,7 @@ impl Broker {
             cdp: Some(Text::unchecked(cdp)),
             serial: None,
             udid: None,
+            desktop: None,
             start_ms: started.elapsed().as_millis() as u64,
         }))
     }
