@@ -169,6 +169,11 @@ have it.</p>
 label would replace the PR’s real check results with skipped ones. Instead, use a small workflow on <code dir="auto">labeled</code> that
 reacts to <code dir="auto">fleetd:next</code> only and runs the CI workflow on the PR’s branch (<code dir="auto">gh workflow run ci.yml --ref &lt;branch&gt;</code>), as
 fleetd’s own <code dir="auto">.github/workflows/macos-label.yml</code> does.</p>
+<p>Give the runs that workflow starts a concurrency group of their own, not the PR’s. GitHub’s ruleset reads a required
+check from the PR’s own run on the head, not from the newest run of it. A started run that cancels the PR’s own run on
+the same head leaves that check reading cancelled, and GitHub refuses the merge even though the started run passed.
+The train guards against it: before it merges, it re-runs any workflow run on the head whose required check reads
+cancelled, and waits for it again. A run still cancelled after 2 re-runs is red.</p>
 <p>The train reads the repo’s workflows to see which checks the label runs. It looks for jobs whose <code dir="auto">if:</code> names
 <code dir="auto">fleetd:next</code>, in a workflow that reacts to the label being added, or in one that such a workflow starts with
 <code dir="auto">gh workflow run</code>. For a PR it merges alone, such a check skipped before the label went on never counts as passing.

@@ -166,6 +166,8 @@ struct FakeGh {
     on_checks: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
     /// When set, the `check_runs` of every check-run read, whatever the head and `ci`.
     runs: Mutex<Option<Box<dyn Fn() -> Value + Send + Sync>>>,
+    /// The workflow runs whose failed jobs were re-run, in order.
+    reruns: Arc<Mutex<Vec<u64>>>,
 }
 
 fn ok(body: Value) -> GhOut {
@@ -690,6 +692,11 @@ impl FakeGh {
                     None => http_error(404, "Not Found"),
                 }
             }
+            (["actions", "runs", run, "rerun-failed-jobs"], "POST") => {
+                self.reruns.lock().unwrap().push(run.parse().unwrap());
+                self.log.lock().unwrap().push(format!("rerun {run}"));
+                ok(json!({}))
+            }
             (["statuses", sha], "POST") => {
                 let get = |k: &str| fields.get(k).copied().unwrap_or_default().to_string();
                 self.statuses
@@ -1204,6 +1211,7 @@ impl Kit {
             batch_polls: Mutex::default(),
             on_checks: Mutex::default(),
             runs: Mutex::default(),
+            reruns: Arc::default(),
         });
         let host = Arc::new(FakeHost {
             tasks: Mutex::default(),
@@ -2913,6 +2921,105 @@ fn a_cancelled_check_is_red_only_once_nothing_else_runs() {
         ]),
         Checks::Red(_)
     ));
+}
+
+/// A check run of workflow run `run`, done with `conclusion`.
+fn job(id: u64, run: u64, name: &str, conclusion: &str) -> Value {
+    json!({ "id": id, "name": name, "status": "completed", "conclusion": conclusion,
+        "html_url": format!("https://github.com/{REPO}/actions/runs/{run}/job/{id}") })
+}
+
+/// #510: the PR's own run (1) of the required `build` was cancelled by a run dispatched on its branch (2), which
+/// passed. GitHub's ruleset reads the cancelled one and refuses the merge, so the train re-runs run 1 first and
+/// merges once that is green.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_required_check_cancelled_in_the_prs_own_run_is_re_run_before_the_merge() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Required, clock);
+    let reruns = kit.gh.reruns.clone();
+    answer_checks(&kit, move || {
+        let mut runs = vec![
+            job(10, 1, "build", "cancelled"),
+            job(20, 2, "build", "success"),
+        ];
+        if !reruns.lock().unwrap().is_empty() {
+            runs.push(job(30, 1, "build", "success"));
+        }
+        runs
+    });
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::Merged);
+    let log = kit.gh.log.lock().unwrap().clone();
+    let at = |line: &str| log.iter().position(|l| l == line);
+    assert!(
+        at("rerun 1").is_some() && at("rerun 1") < at("merge #7"),
+        "{log:?}"
+    );
+    assert_eq!(
+        *kit.gh.reruns.lock().unwrap(),
+        [1],
+        "only the cancelled run"
+    );
+}
+
+/// A required check that reads cancelled however often it is re-run is red: the train never asks GitHub to merge.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_train_never_merges_while_a_required_check_reads_cancelled() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Required, clock);
+    let reruns = kit.gh.reruns.clone();
+    // Each re-run is cancelled again, a newer job each time.
+    answer_checks(&kit, move || {
+        let n = reruns.lock().unwrap().len() as u64;
+        vec![
+            job(10 + n, 1, "build", "cancelled"),
+            job(20, 2, "build", "success"),
+        ]
+    });
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+
+    assert!(kit.train.step(REPO).await);
+    let failed = kit.get(&change_id);
+    assert_eq!(failed.state, ChangeState::CiFailed);
+    assert!(
+        failed.last_error.as_deref().unwrap().contains("build"),
+        "{:?}",
+        failed.last_error
+    );
+    assert!(kit.gh.merges.lock().unwrap().is_empty());
+    assert!(
+        !kit.gh
+            .log
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|l| l.starts_with("merge"))
+    );
+    assert_eq!(*kit.gh.reruns.lock().unwrap(), [1, 1]);
+}
+
+/// A cancelled check the base doesn't require, passed in another run, is no reason to wait.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_cancelled_check_the_base_does_not_require_is_not_re_run() {
+    let clock = Arc::new(Sleeps::default());
+    let kit = Kit::on_clock(FakeCi::Required, clock);
+    answer_checks(&kit, || {
+        vec![
+            job(10, 1, "lint", "cancelled"),
+            job(11, 1, "build", "success"),
+            job(20, 2, "lint", "success"),
+        ]
+    });
+    let pr = kit.open_pr(7, "docs", &[add("docs.md", "docs\n")]);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(kit.get(&change_id).state, ChangeState::Merged);
+    assert!(kit.gh.reruns.lock().unwrap().is_empty());
 }
 
 /// Three PRs, each adding its own file, reviewed and ready: 7 (a), 8 (b), 9 (c).

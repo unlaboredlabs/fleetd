@@ -3,9 +3,13 @@ name: macOS label
 # Adding `fleetd:next` (the merge train's: it merges the PR next) or `macos` (by hand) to a PR runs CI and Desktop QA on
 # its branch with the macOS jobs, which ci.yml runs only on labelled PRs. The label is caught here rather than in
 # ci.yml: a `labeled` run there for any other label would add skipped check runs that replace the PR's real results (the
-# merge train and GitHub keep only the newest run of each check). The dispatched runs join the PR's concurrency group,
-# so they replace its running CI and its next push replaces them. Nothing is dispatched for the train's batch PR, whose
-# CI runs the macOS jobs anyway, nor for a PR that already had the other label.
+# merge train and GitHub keep only the newest run of each check). Nothing is dispatched for the train's batch PR, whose
+# CI runs the macOS jobs anyway, nor for a PR that already had the other label, nor once the branch has moved since the
+# label went on: that push's own runs see the label and run the macOS jobs.
+#
+# The dispatched runs have a concurrency group of their own (ci.yml): one that joined the PR's would cancel the PR's own
+# runs on the same head, which GitHub's ruleset reads the required checks from, and block the merge (#510). So nothing
+# else cancels them, and the PR's next push does it (label-runs-stale.yml).
 
 on:
   pull_request:
@@ -28,6 +32,11 @@ jobs:
           GH_REPO: ${{ github.repository }}
           BRANCH: ${{ github.head_ref }}
           PR: ${{ github.event.pull_request.number }}
+          LABELLED: ${{ github.event.pull_request.head.sha }}
         run: |
+          if [ "$(gh api "repos/$GH_REPO/git/ref/heads/$BRANCH" -q .object.sha)" != "$LABELLED" ]; then
+            echo "$BRANCH moved since the label went on: its own runs have the macOS jobs"
+            exit 0
+          fi
           gh workflow run ci.yml --ref "$BRANCH" -f pr="$PR"
           gh workflow run desktop-qa.yml --ref "$BRANCH" -f pr="$PR"

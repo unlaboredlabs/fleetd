@@ -176,6 +176,31 @@ pub(super) fn checks(runs: &[CheckRun]) -> Checks {
     }
 }
 
+/// How many times the train re-runs one workflow run whose required checks read cancelled before it counts them red.
+const CANCELLED_RERUNS: u32 = 2;
+
+/// The checks on a head GitHub's ruleset may read as cancelled: in some workflow run, the newest run of a check
+/// `required` names. GitHub doesn't read a required check from its newest run on the head: on #510 it read a PR's own
+/// runs, cancelled by runs dispatched on its branch, and refused the merge though the dispatched ones passed. All of
+/// `runs` as GitHub lists them; `required` None when the base's rules can't be read, and then every check counts.
+pub(super) fn cancelled_required(runs: &[CheckRun], required: Option<&[String]>) -> Vec<CheckRun> {
+    let mut newest: HashMap<(Option<u64>, &str), &CheckRun> = HashMap::new();
+    for r in runs {
+        let seen = newest.entry((r.workflow_run(), &r.name)).or_insert(r);
+        if r.id > seen.id {
+            *seen = r;
+        }
+    }
+    let mut out: Vec<CheckRun> = newest
+        .into_values()
+        .filter(|r| r.conclusion.as_deref() == Some("cancelled"))
+        .filter(|r| required.is_none_or(|names| names.contains(&r.name)))
+        .cloned()
+        .collect();
+    out.sort_by(|a, b| a.id.total_cmp(&b.id));
+    out
+}
+
 pub(crate) fn short(sha: &str) -> &str {
     &sha[..sha.len().min(12)]
 }
@@ -848,40 +873,51 @@ impl Train {
     /// as green there. The train waits for the run that replaces it, puts on a label GitHub refused again every
     /// `LABEL_HOLD_MS`, and tells the lead once when none came in that time. While the repo's workflows can't be read
     /// (`Gate::Unknown`), any skip holds for `LABEL_HOLD_MS` only. While some checks have been queued for
-    /// `RUNNER_WAIT_MS`, `noted` (the Changes in this CI run) say they wait for runners.
+    /// `RUNNER_WAIT_MS`, `noted` (the Changes in this CI run) say they wait for runners. Never green while a check
+    /// `base` requires reads cancelled in some workflow run (`cancelled_required`): the train re-runs that run's jobs
+    /// and waits again, and a run still cancelled after `CANCELLED_RERUNS` re-runs is red.
     pub(super) async fn wait_ci(
         &self,
         change: &Change,
         repo: &str,
         sha: &str,
+        base: &str,
         lone: Option<super::next::Lone>,
         noted: &[ChangeId],
     ) -> CiOutcome {
         let mut earlier = HashMap::new();
         let outcome = self
-            .poll_ci(change, repo, sha, lone, noted, &mut earlier)
+            .poll_ci(change, repo, sha, base, lone, noted, &mut earlier)
             .await;
         self.runner_note(noted, None, &mut earlier);
         outcome
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn poll_ci(
         &self,
         change: &Change,
         repo: &str,
         sha: &str,
+        base: &str,
         mut lone: Option<super::next::Lone>,
         noted: &[ChangeId],
         earlier: &mut HashMap<ChangeId, Option<String>>,
     ) -> CiOutcome {
         use super::next::{Gate, LABEL_HOLD_MS, Labelled, RUNNER_WAIT_MS, WAITING_FOR_RUNNERS};
-        let start = self.now_ms();
+        let mut start = self.now_ms();
         let mut last: Vec<CheckRun> = Vec::new();
         let mut queued_since: Option<i64> = None;
+        // Per workflow run the train re-ran: how many times, and the newest cancelled check it saw then.
+        let mut reruns: HashMap<u64, (u32, f64)> = HashMap::new();
         let (mut tried_label, mut told) = (start, false);
         loop {
-            let runs = match self.github.check_runs(repo, sha).await {
-                Ok(runs) => Some(runs),
+            let mut all = Vec::new();
+            let runs = match self.github.all_check_runs(repo, sha).await {
+                Ok(runs) => {
+                    all = runs.clone();
+                    Some(super::github::latest(runs))
+                }
                 Err(e) => {
                     tracing::warn!(repo, sha, error = %e.message, "train: check runs not read");
                     None
@@ -944,8 +980,28 @@ impl Train {
                     }
                 }
                 Checks::Green => {
-                    self.check_spans(change, sha, &runs);
-                    return CiOutcome::Green;
+                    let required = self
+                        .ci_config(repo, base)
+                        .await
+                        .ok()
+                        .map(|c| c.required_checks);
+                    let cancelled = cancelled_required(&all, required.as_deref());
+                    if cancelled.is_empty() {
+                        self.check_spans(change, sha, &runs);
+                        return CiOutcome::Green;
+                    }
+                    match self
+                        .rerun_cancelled(change, repo, &cancelled, &mut reruns)
+                        .await
+                    {
+                        None => {
+                            self.check_spans(change, sha, &runs);
+                            return CiOutcome::Red(cancelled);
+                        }
+                        // The re-run's time is its own.
+                        Some(true) => start = self.now_ms(),
+                        Some(false) => {}
+                    }
                 }
                 Checks::None | Checks::Pending => {}
             }
@@ -960,6 +1016,45 @@ impl Train {
             }
             self.clock.sleep(self.busy_wait(start, CI_FIRST_WAIT)).await;
         }
+    }
+
+    /// Re-runs the jobs of each workflow run in which a required check reads cancelled, unless the train already
+    /// re-ran it and GitHub doesn't show the re-run yet: whether it re-ran any. None when one can't be re-run: it isn't
+    /// a workflow run's, it was re-run `CANCELLED_RERUNS` times and is cancelled again, or GitHub refused.
+    async fn rerun_cancelled(
+        &self,
+        change: &Change,
+        repo: &str,
+        cancelled: &[CheckRun],
+        reruns: &mut HashMap<u64, (u32, f64)>,
+    ) -> Option<bool> {
+        let mut runs: Vec<(u64, f64)> = Vec::new();
+        for r in cancelled {
+            let run = r.workflow_run()?;
+            match runs.iter_mut().find(|(n, _)| *n == run) {
+                Some((_, id)) => *id = id.max(r.id),
+                None => runs.push((run, r.id)),
+            }
+        }
+        let mut re_ran = false;
+        for (run, newest) in runs {
+            let times = match reruns.get(&run) {
+                Some(&(_, seen)) if newest <= seen => continue,
+                Some(&(times, _)) => times,
+                None => 0,
+            };
+            if times >= CANCELLED_RERUNS {
+                return None;
+            }
+            if let Err(e) = self.github.rerun_failed_jobs(repo, run).await {
+                tracing::warn!(change_id = %change.change_id, run, error = %e.message, "train: cancelled run not re-run");
+                return None;
+            }
+            tracing::info!(change_id = %change.change_id, run, "train: re-ran a run whose required checks read cancelled");
+            reruns.insert(run, (times + 1, newest));
+            re_ran = true;
+        }
+        Some(re_ran)
     }
 
     /// Whether CI on a head has had its time, `runs` its last checks read and `start` when the train began waiting
@@ -1002,6 +1097,12 @@ impl Train {
     }
 
     pub(super) async fn has_ci(&self, repo: &str, base: &str) -> Result<bool, GhError> {
+        let ci = self.ci_config(repo, base).await?;
+        Ok(!ci.workflows.is_empty() || ci.required_checks.iter().any(|c| c != TRAIN_CONTEXT))
+    }
+
+    /// `base`'s CI config, read at most every `CI_CONFIG_TTL_MS`.
+    async fn ci_config(&self, repo: &str, base: &str) -> Result<CiInfo, GhError> {
         let key = (repo.to_string(), base.to_string());
         let now = self.now_ms();
         let cached = lock(&self.ci_configs)
@@ -1016,7 +1117,7 @@ impl Train {
                 ci
             }
         };
-        Ok(!ci.workflows.is_empty() || ci.required_checks.iter().any(|c| c != TRAIN_CONTEXT))
+        Ok(ci)
     }
 
     /// One `ci.check` span per check run of the deciding poll, from GitHub's own stamps; a check still running when
@@ -1255,7 +1356,10 @@ impl Train {
             gate => Some(super::next::Lone { label, gate }),
         };
         let noted = std::slice::from_ref(&in_ci.change_id);
-        match self.wait_ci(&in_ci, repo, &head_sha, lone, noted).await {
+        match self
+            .wait_ci(&in_ci, repo, &head_sha, base, lone, noted)
+            .await
+        {
             CiOutcome::Green => {}
             CiOutcome::Red(failing) => {
                 self.ci_failed(&in_ci, &failing, None).await;
