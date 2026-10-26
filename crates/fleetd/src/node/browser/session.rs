@@ -90,8 +90,8 @@ pub type ControlHook = Arc<dyn Fn(BrowserControl) + Send + Sync>;
 /// The live view's state.
 #[derive(Default)]
 struct Live {
-    /// The hub's link, while the hub watches the session: `browser_frame`s go out on it.
-    watcher: Option<tokio::sync::mpsc::UnboundedSender<String>>,
+    /// The hub's link's frame slot, while the hub watches the session: its newest `browser_frame` waits there.
+    watcher: Option<Arc<super::FrameSlot>>,
     seq: u64,
     last: Option<BrowserFrame>,
     /// The page's size in CSS pixels, as the last frame's metadata gave it: a person's input is scaled to it.
@@ -226,13 +226,13 @@ impl Session {
     }
 
     /// Sends this session's frames to the hub from now on (`Some`), the newest at once, or no more.
-    pub fn set_watcher(&self, watcher: Option<tokio::sync::mpsc::UnboundedSender<String>>) {
+    pub fn set_watcher(&self, watcher: Option<Arc<super::FrameSlot>>) {
         let mut live = lock(&self.live);
         live.watcher = watcher;
         if let (Some(watcher), Some(last)) = (&live.watcher, &live.last) {
             let mut last = last.clone();
             last.control = self.control();
-            let _ = watcher.send(to_json(&NodeToHub::BrowserFrame(last)));
+            watcher.replace(self.id.as_str(), to_json(&NodeToHub::BrowserFrame(last)));
         }
     }
 
@@ -259,12 +259,19 @@ impl Session {
             url: None,
             control: self.control(),
         };
-        if let Some(watcher) = &live.watcher
-            && watcher
-                .send(to_json(&NodeToHub::BrowserFrame(frame.clone())))
-                .is_err()
+        // Only this session still holds the slot: its link went, and the hub watches again on the next one.
+        if live
+            .watcher
+            .as_ref()
+            .is_some_and(|w| Arc::strong_count(w) == 1)
         {
             live.watcher = None;
+        }
+        if let Some(watcher) = &live.watcher {
+            watcher.replace(
+                self.id.as_str(),
+                to_json(&NodeToHub::BrowserFrame(frame.clone())),
+            );
         }
         live.last = Some(frame);
     }

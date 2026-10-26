@@ -749,15 +749,32 @@ async fn only_the_node_reports_a_browser_session_and_a_browser_call_is_its_calle
     assert_eq!(refused["error"]["code"], "forbidden", "{refused}");
 }
 
-/// The next `browser_frame` the node sends the hub, as the link carries it.
-async fn next_frame(link: &mut tokio::sync::mpsc::UnboundedReceiver<String>) -> Value {
-    let line = tokio::time::timeout(Duration::from_secs(10), link.recv())
-        .await
-        .expect("a frame in 10 s")
-        .expect("the link is open");
+/// The newest `browser_frame` waiting for the hub's link.
+async fn next_frame(frames: &Arc<super::FrameSlot>) -> Value {
+    let line = loop {
+        tokio::time::timeout(Duration::from_secs(10), frames.notify.notified())
+            .await
+            .expect("a frame in 10 s");
+        if let Some(line) = frames.take().pop() {
+            break line;
+        }
+    };
     let frame: Value = serde_json::from_str(&line).unwrap();
     assert_eq!(frame["t"], "browser_frame");
     frame
+}
+
+#[test]
+fn a_slow_link_gets_each_watched_sessions_newest_screen_and_no_backlog() {
+    let slot = super::FrameSlot::default();
+    for n in 0..1_000 {
+        slot.replace("B1", format!("b1-{n}"));
+    }
+    slot.replace("B2", "b2-0".into());
+    let mut waiting = slot.take();
+    waiting.sort();
+    assert_eq!(waiting, ["b1-999", "b2-0"], "one per session, the newest");
+    assert!(slot.take().is_empty());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -804,9 +821,9 @@ async fn a_person_watches_takes_over_and_types_and_the_agent_sees_it_after_the_h
     );
 
     // Watching: the newest frame at once, then each new one.
-    let (link, mut frames) = tokio::sync::mpsc::unbounded_channel();
-    rig.broker.watch(&id, Some(link));
-    let frame = next_frame(&mut frames).await;
+    let frames = Arc::new(super::FrameSlot::default());
+    rig.broker.watch(&id, Some(frames.clone()));
+    let frame = next_frame(&frames).await;
     assert_eq!(frame["sessionId"], id.as_str());
     assert_eq!(frame["control"], "agent");
     let (width, height) = (
@@ -865,7 +882,7 @@ async fn a_person_watches_takes_over_and_types_and_the_agent_sees_it_after_the_h
     rig.broker.input(&id, typed);
     // The frames say who drives now.
     let deadline = Instant::now() + Duration::from_secs(10);
-    while next_frame(&mut frames).await["control"] != "human" {
+    while next_frame(&frames).await["control"] != "human" {
         assert!(Instant::now() < deadline, "no frame said human");
     }
 
@@ -1075,19 +1092,23 @@ fn bridge(rig: &Rig) {
     let mut to_node = hub
         .link
         .test_link(&devbox, &[fleetd_contracts::node_link::CAP_BROWSER]);
-    let (link, mut from_node) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let frames = Arc::new(super::FrameSlot::default());
     let broker = rig.broker.clone();
+    let slot = frames.clone();
     tokio::spawn(async move {
         while let Some(frame) = to_node.recv().await {
-            broker.from_hub(frame, &link);
+            broker.from_hub(frame, &slot);
         }
     });
     tokio::spawn(async move {
-        while let Some(line) = from_node.recv().await {
-            if let Ok(fleetd_contracts::node_link::NodeToHub::BrowserFrame(frame)) =
-                serde_json::from_str(&line)
-            {
-                hub.link.browser_frame(&devbox, frame);
+        loop {
+            frames.notify.notified().await;
+            for line in frames.take() {
+                if let Ok(fleetd_contracts::node_link::NodeToHub::BrowserFrame(frame)) =
+                    serde_json::from_str(&line)
+                {
+                    hub.link.browser_frame(&devbox, frame);
+                }
             }
         }
     });

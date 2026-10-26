@@ -290,16 +290,32 @@ async fn run_link_once(
     };
     let (mut sink, mut stream) = ws.split();
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
+    // Browser sessions' screens wait in a slot of their own, newest only: they go when nothing else waits.
+    let frames = Arc::new(crate::node::browser::FrameSlot::default());
     // Everything this link starts ends with it: a lost link kills its commands, and the hub fails its waits.
     let mut tasks = tokio::task::JoinSet::new();
-    tasks.spawn(async move {
-        while let Some(frame) = rx.recv().await {
-            if sink.send(Message::Text(frame.into())).await.is_err() {
-                break;
+    {
+        let frames = frames.clone();
+        tasks.spawn(async move {
+            loop {
+                let out = tokio::select! {
+                    biased;
+                    next = rx.recv() => match next {
+                        Some(frame) => vec![frame],
+                        None => break,
+                    },
+                    () = frames.notify.notified() => frames.take(),
+                };
+                for frame in out {
+                    if sink.send(Message::Text(frame.into())).await.is_err() {
+                        let _ = sink.close().await;
+                        return;
+                    }
+                }
             }
-        }
-        let _ = sink.close().await;
-    });
+            let _ = sink.close().await;
+        });
+    }
     let send = {
         let tx = tx.clone();
         move |frame: NodeToHub| {
@@ -411,7 +427,7 @@ async fn run_link_once(
             | HubToNode::BrowserInput(_)
             | HubToNode::BrowserControl(_)) => {
                 if let Some(broker) = &shared.browser {
-                    broker.from_hub(frame, &tx);
+                    broker.from_hub(frame, &frames);
                 }
             }
             HubToNode::LeadResult(result) => shared.lead_calls.resolve(result),

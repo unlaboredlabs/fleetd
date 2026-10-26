@@ -142,6 +142,30 @@ fn new_id() -> BrowserSessionId {
     BrowserSessionId::unchecked(format!("B{hex}"))
 }
 
+/// The screen frames waiting for the hub's link: the newest of each watched session, which replaces any not sent
+/// yet. The link's writer sends every other frame first and these only when it is free, so a slow link skips screens
+/// rather than queueing them, and never holds up a call's answer or a recording's piece.
+#[derive(Default)]
+pub struct FrameSlot {
+    frames: Mutex<std::collections::BTreeMap<String, String>>,
+    pub notify: tokio::sync::Notify,
+}
+
+impl FrameSlot {
+    /// A session's newest frame, in place of one not sent yet.
+    pub fn replace(&self, session: &str, frame: String) {
+        lock(&self.frames).insert(session.to_owned(), frame);
+        self.notify.notify_one();
+    }
+
+    /// Everything waiting, to send now.
+    pub fn take(&self) -> Vec<String> {
+        std::mem::take(&mut *lock(&self.frames))
+            .into_values()
+            .collect()
+    }
+}
+
 /// An agent session's start in progress, until it returns.
 struct Starting<'a>(&'a Broker, String);
 
@@ -549,12 +573,12 @@ impl Broker {
         lock(&self.sessions).values().find(|s| s.id == *id).cloned()
     }
 
-    /// A frame from the hub for a session: a watch (frames go out on `link` from then on), a person's input, a change
-    /// of control. Never blocks the link's loop.
-    pub fn from_hub(&self, frame: HubToNode, link: &tokio::sync::mpsc::UnboundedSender<String>) {
+    /// A frame from the hub for a session: a watch (frames go to the link's `frames` slot from then on), a person's
+    /// input, a change of control. Never blocks the link's loop.
+    pub fn from_hub(&self, frame: HubToNode, frames: &Arc<FrameSlot>) {
         match frame {
             HubToNode::BrowserWatch(watch) => {
-                self.watch(&watch.session_id, watch.on.then(|| link.clone()))
+                self.watch(&watch.session_id, watch.on.then(|| frames.clone()))
             }
             HubToNode::BrowserInput(input) => self.input(&input.session_id, input.input),
             HubToNode::BrowserControl(control) => {
@@ -565,13 +589,9 @@ impl Broker {
     }
 
     /// The hub watches a session (its link, to send frames on) or no more.
-    pub fn watch(
-        &self,
-        id: &BrowserSessionId,
-        link: Option<tokio::sync::mpsc::UnboundedSender<String>>,
-    ) {
+    pub fn watch(&self, id: &BrowserSessionId, frames: Option<Arc<FrameSlot>>) {
         if let Some(session) = self.by_id(id) {
-            session.set_watcher(link);
+            session.set_watcher(frames);
         }
     }
 
