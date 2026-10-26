@@ -3019,6 +3019,7 @@ async fn a_sessions_mcp_servers_change_at_its_next_start() {
         mode,
         steer,
         mcp: Some(mcp_session_config(false, "https://docs2.example.com/mcp")),
+        skills: None,
     })
     .await;
     hub.settled("r2").await;
