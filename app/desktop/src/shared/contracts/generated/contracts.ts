@@ -1890,7 +1890,8 @@ export type KnownHubEventType =
   | "automation.run"
   | "checklist.changed"
   | "skills.changed"
-  | "browser.session";
+  | "browser.session"
+  | "preview.state";
 /** KnownHubEventType, or a value from a newer hub. */
 export type HubEventType = KnownHubEventType | (string & {});
 
@@ -2019,7 +2020,9 @@ export type KnownInsightRule = "full_suite_repeat" | "repeat_no_change" | "slow_
 /** KnownInsightRule, or a value from a newer hub. */
 export type InsightRule = KnownInsightRule | (string & {});
 
-export type IntakeChannel = "app" | "mcp" | "lead" | "automation";
+export type KnownIntakeChannel = "app" | "mcp" | "lead" | "automation" | "train";
+/** KnownIntakeChannel, or a value from a newer hub. */
+export type IntakeChannel = KnownIntakeChannel | (string & {});
 
 /**
  * Something an order or note points at: a file of the project, another order, or a PR. The hub renders these into
@@ -3161,6 +3164,179 @@ export type KnownPrState = "open" | "draft" | "merged" | "closed";
 /** KnownPrState, or a value from a newer hub. */
 export type PrState = KnownPrState | (string & {});
 
+/** One preview as the hub keeps it. */
+export type Preview = {
+  askedBy: PreviewAsker;
+  endReason?: PreviewEndReason;
+  endedAt?: Timestamp;
+  /** The commit it runs: the PR's head, or the order's merge, once checked out. */
+  head?: string;
+  /** When it ends if no one uses it, while it runs. */
+  idleUntil?: Timestamp;
+  /** Where it runs. */
+  machineId: MachineId;
+  /** One plain line when something needs saying: why it failed, that a newer commit is on the PR. */
+  note?: string;
+  of: PreviewOf;
+  previewId: PreviewId;
+  projectRef: ProjectRef;
+  readyAt?: Timestamp;
+  /** The browser session the app shows it in, held by the person from the start. */
+  sessionId?: BrowserSessionId;
+  startedAt: Timestamp;
+  state: PreviewState;
+  steps?: PreviewStep[];
+  target: PreviewTarget;
+  /** Where the person's own devices open it on the tailnet, once ready: `http://devbox:8414`. */
+  url?: string;
+};
+
+/** Who asked for a preview, in the words the app shows ("you", "the lead, because you asked at 09:02"). */
+export type PreviewAsker = {
+  /** The person's chat message a lead started it for. */
+  messageId?: ChatMessageId;
+  words: string;
+};
+
+/**
+ * A project's preview setting (Settings › Projects › Try it, or `project_settings_set {preview}`). Nothing runs
+ * because of it: it says how to run a preview someone asks for.
+ */
+export type PreviewConfig = {
+  /** A preview no one used for this many minutes ends. */
+  idleMinutes?: number;
+  web?: WebPreview;
+};
+
+export type PreviewEndInput = {
+  previewId: PreviewId;
+};
+
+export type PreviewEndOutput = {
+  next?: string;
+  preview: Preview;
+  truncated?: boolean;
+};
+
+/** Why a preview ended. */
+export type KnownPreviewEndReason = "ended" | "idle" | "cap" | "done" | "lost";
+/** KnownPreviewEndReason, or a value from a newer hub. */
+export type PreviewEndReason = KnownPreviewEndReason | (string & {});
+
+/** `preview.state`: a preview started, moved a step, became ready, ended or failed. previews_list reads the rest. */
+export type PreviewEventData = {
+  of: PreviewOf;
+  previewId: PreviewId;
+  projectRef: ProjectRef;
+  state: PreviewState;
+};
+
+export type PreviewFeedbackInput = {
+  /** Add the last this-many seconds of the preview's session recording; absent or 0: none. */
+  clipSeconds?: number;
+  /** The screenshot with its pins drawn, and any other file, from attachment_put. */
+  files?: AttachmentId[];
+  pins: PreviewPin[];
+  previewId: PreviewId;
+};
+
+export type PreviewFeedbackOutput = {
+  /** Where it went, in words: "#14's writer, at its next step", "the lead, who decides how it's fixed". */
+  deliveredTo: string;
+  next?: string;
+  truncated?: boolean;
+};
+
+export type PreviewId = string;
+
+/** What a preview is of: one PR, or an order's PRs merged together onto their base on a scratch branch (D162). */
+export type PreviewOf = {
+  kind: "pr";
+  number: number;
+  repo: GitHubRepo;
+} | {
+  kind: "order";
+  workstreamId: WorkstreamId;
+};
+
+/**
+ * A point the person marked on a preview's screen, and what they said about it. `x` and `y` are where across and
+ * down, in ten-thousandths of the screen.
+ */
+export type PreviewPin = {
+  /** The page's address or screen when it was marked. */
+  at?: string;
+  /** The person's words; none: see the screenshot. */
+  note?: string;
+  /** What is under the pin, as the page names it: `the button "Pay"`. */
+  what?: string;
+  x: number;
+  y: number;
+};
+
+export type PreviewStartInput = {
+  of: PreviewOf;
+  projectRef: ProjectRef;
+  target?: PreviewTarget;
+};
+
+export type PreviewStartOutput = {
+  next?: string;
+  preview: Preview;
+  truncated?: boolean;
+};
+
+export type KnownPreviewState = "starting" | "ready" | "ended" | "failed";
+/** KnownPreviewState, or a value from a newer hub. */
+export type PreviewState = KnownPreviewState | (string & {});
+
+/**
+ * One step of a preview's start, in the words the app shows: "Build: pnpm build", "reused: pnpm-lock.yaml hasn't
+ * changed".
+ */
+export type PreviewStep = {
+  detail?: string;
+  /** A failed step's output, its end, masked. */
+  outputTail?: string;
+  state: PreviewStepState;
+  /** How long it took, once over. */
+  tookMs?: number;
+  words: string;
+};
+
+export type PreviewStepState = "queued" | "running" | "done" | "failed" | "reused";
+
+/** An agent's suggestion to try a PR: one line with a Try it button, once per PR. Nothing runs from it. */
+export type PreviewSuggestion = {
+  at: Timestamp;
+  /** Who suggests it: "#14's writer". */
+  by: string;
+  of: PreviewOf;
+  projectRef: ProjectRef;
+  /** Why a person should try it, in a line. */
+  why: string;
+};
+
+/** What a preview runs: phase 1 is the web; Android, iOS and the desktop follow (docs/design/try-it.md, Phases). */
+export type KnownPreviewTarget = "web";
+/** KnownPreviewTarget, or a value from a newer hub. */
+export type PreviewTarget = KnownPreviewTarget | (string & {});
+
+export type PreviewsListInput = {
+  /** Only those of this PR or order. */
+  of?: PreviewOf;
+  projectRef: ProjectRef;
+};
+
+export type PreviewsListOutput = {
+  next?: string;
+  /** Running ones first, then the newest that ended. */
+  previews: Preview[];
+  /** Agents' suggestions to try a PR, for those with no preview yet. */
+  suggestions: PreviewSuggestion[];
+  truncated?: boolean;
+};
+
 /**
  * One task profile's part of a scope's agent time and usage, from the spans kept (`coverage.detailSince` on): the
  * tasks that ran on it, and the lead's spans under high.
@@ -3444,6 +3620,8 @@ export type ProjectSettings = {
    */
   keepWorktrees: boolean;
   machineId: MachineId;
+  /** How to run a preview someone asks for (Try it); absent when none is set, and from older hubs. */
+  preview?: PreviewConfig;
   projectId: ProjectId;
   /** What runs in each new worktree before its agent starts; no commands when none are set. */
   setup: WorktreeSetup;
@@ -3471,6 +3649,8 @@ export type ProjectSettingsGetOutput = {
 export type ProjectSettingsSetInput = {
   keepWorktrees?: boolean;
   machineId: MachineId;
+  /** Replaces how a preview runs; one with no target turns Try it off for the project. */
+  preview?: PreviewConfig;
   projectId: ProjectId;
   /** Replaces the project's setup commands and their settings; no commands turns setup off. */
   setup?: WorktreeSetup;
@@ -3706,6 +3886,8 @@ export type QuietWindow = {
   from: Timestamp;
   to: Timestamp;
 };
+
+export type ReadyPath = string;
 
 /** A commit that reached the base outside the train, as `work_list` shows it: what the hub's `Landings` reads back. */
 export type RecentLanding = {
@@ -5069,7 +5251,9 @@ export type TrainLive = {
  * branch requires, read from its ruleset or branch protection, plus `fastChecks`, each until it reports, however late
  * it starts. It never waits for any other check; one of those that has already failed when the fast set is green
  * still stops the merge, unless it is in `afterMerge`. A check the base requires is always in the fast set: GitHub
- * won't merge without it. With no required check and none added, it waits for every check.
+ * won't merge without it. With no required check and none added, it waits for every check. After a merge it watches
+ * every check outside the fast set on the merged commit; one that fails there opens a fix order for the project,
+ * once per failure.
  */
 export type TrainSettings = {
   /** Checks that never stop a merge, even once failed: they only run after it. */
@@ -5321,6 +5505,26 @@ export type WakeState = "active" | "done" | "cancelled";
 export type WakeTarget = {
   machineId: MachineId;
   threadId: ThreadId;
+};
+
+/**
+ * How a project's web app is built and run for a preview, each command with `sh -c` in the preview's worktree and
+ * the project's variables, as setup commands run (#501).
+ */
+export type WebPreview = {
+  /** Builds the app; none for an app the start command builds itself. */
+  build?: string;
+  /** Files whose contents decide what setup makes, such as lockfiles. */
+  inputs?: SetupInput[];
+  /** Asked until it answers, for at most 2 minutes after the start. */
+  ready?: ReadyPath;
+  /**
+   * Run first, in order: install dependencies, generate code. Skipped when `inputs` haven't changed since a
+   * preview of this project last ran them on this machine.
+   */
+  setup?: string[];
+  /** Serves the app on `127.0.0.1:$PORT`; it runs until the preview ends. */
+  start: string;
 };
 
 /** A command, file edit or tool call. Secrets in its summary and output are replaced by `[secret]`. */
@@ -5667,6 +5871,10 @@ export interface ToolMap {
   pr_files: { input: PrFilesInput; output: PrFilesOutput };
   pr_get: { input: PrGetInput; output: PrGetOutput };
   pr_list: { input: PrListInput; output: PrListOutput };
+  preview_end: { input: PreviewEndInput; output: PreviewEndOutput };
+  preview_feedback: { input: PreviewFeedbackInput; output: PreviewFeedbackOutput };
+  preview_start: { input: PreviewStartInput; output: PreviewStartOutput };
+  previews_list: { input: PreviewsListInput; output: PreviewsListOutput };
   project_add: { input: ProjectAddInput; output: ProjectAddOutput };
   project_discover: { input: ProjectDiscoverInput; output: ProjectDiscoverOutput };
   project_env_set: { input: ProjectEnvSetInput; output: ProjectEnvSetOutput };
@@ -5730,6 +5938,7 @@ export interface HubEventDataMap {
   "machine.slept": MachineSleptData;
   "pr.merged": TrainEventData;
   "pr.merged_outside": TrainEventData;
+  "preview.state": PreviewEventData;
   "project.add_failed": ProjectAddFailedData;
   "project.added": ProjectAddedData;
   "project.clone_progress": CloneProgressData;

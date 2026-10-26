@@ -194,7 +194,9 @@ pub type CheckName = crate::prim::Text<1, 200>;
 /// branch requires, read from its ruleset or branch protection, plus `fastChecks`, each until it reports, however late
 /// it starts. It never waits for any other check; one of those that has already failed when the fast set is green
 /// still stops the merge, unless it is in `afterMerge`. A check the base requires is always in the fast set: GitHub
-/// won't merge without it. With no required check and none added, it waits for every check.
+/// won't merge without it. With no required check and none added, it waits for every check. After a merge it watches
+/// every check outside the fast set on the merged commit; one that fails there opens a fix order for the project,
+/// once per failure.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TrainSettings {

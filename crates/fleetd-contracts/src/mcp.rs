@@ -934,6 +934,8 @@ pub struct ProjectSettings {
     /// How the merge train treats the checks of the project's repo; none set by default.
     #[serde(default)]
     pub train: crate::project_settings::TrainSettings,
+    /// How to run a preview someone asks for (Try it); absent when none is set, and from older hubs.
+    pub preview: Option<crate::preview::PreviewConfig>,
     /// From the node, now: absent while it is offline or too old to say.
     pub worktrees: Option<crate::project_settings::ProjectWorktrees>,
     /// Why `worktrees` is absent.
@@ -955,6 +957,8 @@ input!(
         /// Replaces how the merge train treats the repo's checks: the checks it also waits for, and those left for
         /// after the merge.
         train: Option<crate::project_settings::TrainSettings>,
+        /// Replaces how a preview runs; one with no target turns Try it off for the project.
+        preview: Option<crate::preview::PreviewConfig>,
     }
 );
 checked!(ProjectSettingsSetInput, |input| {
@@ -962,8 +966,9 @@ checked!(ProjectSettingsSetInput, |input| {
         && input.keep_worktrees.is_none()
         && input.setup.is_none()
         && input.train.is_none()
+        && input.preview.is_none()
     {
-        return Err("expected title, keepWorktrees, setup, train or more".into());
+        return Err("expected title, keepWorktrees, setup, train, preview or more".into());
     }
     Ok(())
 });
@@ -1383,6 +1388,48 @@ checked!(MachineRolesSetInput, |input| {
 });
 output!(MachineRolesSetOutput {
     machine: crate::machine_roles::MachineRolesEntry,
+});
+
+// preview_start, preview_end, previews_list, preview_feedback: Try it (preview.rs, docs/design/try-it.md). Nothing
+// runs unless a person asks: preview_start takes a person's key (admin or operate; a read key only opens a running
+// one), and a lead starts one only with its own lead call, in a turn answering the person.
+input!(PreviewStartInput {
+    project_ref: ProjectRef,
+    of: crate::preview::PreviewOf,
+    target: Option<crate::preview::PreviewTarget>,
+});
+output!(PreviewStartOutput {
+    preview: crate::preview::Preview,
+});
+input!(PreviewEndInput {
+    preview_id: crate::preview::PreviewId,
+});
+output!(PreviewEndOutput {
+    preview: crate::preview::Preview,
+});
+input!(PreviewsListInput {
+    project_ref: ProjectRef,
+    /// Only those of this PR or order.
+    of: Option<crate::preview::PreviewOf>,
+});
+output!(PreviewsListOutput {
+    /// Running ones first, then the newest that ended.
+    previews: List<crate::preview::Preview, 0, 200>,
+    /// Agents' suggestions to try a PR, for those with no preview yet.
+    suggestions: List<crate::preview::PreviewSuggestion, 0, 200>,
+});
+input!(PreviewFeedbackInput {
+    preview_id: crate::preview::PreviewId,
+    pins: List<crate::preview::PreviewPin, 1, 20>,
+    /// The screenshot with its pins drawn, and any other file, from attachment_put.
+    #[serde(default)]
+    files: List<AttachmentId, 0, 4>,
+    /// Add the last this-many seconds of the preview's session recording; absent or 0: none.
+    clip_seconds: Option<Int<0, 60>>,
+});
+output!(PreviewFeedbackOutput {
+    /// Where it went, in words: "#14's writer, at its next step", "the lead, who decides how it's fixed".
+    delivered_to: Line<1, 300>,
 });
 
 // skills_list: Settings > Skills and the composer's `$`. The hub's global skills; with projectRef also the project's
@@ -2115,6 +2162,11 @@ tools! {
     browser_retention_set => BrowserRetentionSet, Admin, BrowserRetentionSetInput, BrowserRetentionSetOutput;
     machine_roles => MachineRoles, Read, MachineRolesInput, MachineRolesOutput;
     machine_roles_set => MachineRolesSet, Admin, MachineRolesSetInput, MachineRolesSetOutput;
+    // Human keys only (the handlers check), except previews_list.
+    preview_start => PreviewStart, Operate, PreviewStartInput, PreviewStartOutput;
+    preview_end => PreviewEnd, Operate, PreviewEndInput, PreviewEndOutput;
+    previews_list => PreviewsList, Read, PreviewsListInput, PreviewsListOutput;
+    preview_feedback => PreviewFeedback, Operate, PreviewFeedbackInput, PreviewFeedbackOutput;
     skills_list => SkillsList, Read, SkillsListInput, SkillsListOutput;
     skill_get => SkillGet, Read, SkillGetInput, SkillGetOutput;
     // Human keys only (the handlers check): a lead installs with its own skill_install.

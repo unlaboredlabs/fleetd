@@ -446,6 +446,10 @@ pub struct Train {
     merge_refusals: Mutex<HashMap<ChangeId, u32>>,
     /// Each verdict the gate records: a train waiting on a re-review reads it at once.
     verdicts: Notify,
+    /// The patches whose re-review was still at work `review_wait` after CI passed: each waits in review, out of the
+    /// line, until that review is done, so CI isn't run again for it. Kept in memory: after a restart such a Change may
+    /// go through the train once more.
+    overdue: Mutex<HashSet<(ChangeId, String)>>,
     /// The train's last push per change: the head it pushed and when, for `ci.queue` spans.
     pub(super) pushed: Mutex<HashMap<ChangeId, (String, i64)>>,
     /// Each repo and base branch's CI config and when it was read.
@@ -495,6 +499,7 @@ impl Train {
             ready_heads: Mutex::default(),
             merge_refusals: Mutex::default(),
             verdicts: Notify::new(),
+            overdue: Mutex::default(),
             pushed: Mutex::default(),
             ci_configs: Mutex::default(),
             next_labels: Default::default(),
@@ -1496,13 +1501,24 @@ impl Train {
         });
     }
 
-    /// Why a Change whose CI passed at `sha` left the train before its re-review finished.
-    pub(super) fn review_overdue(&self, sha: &str) -> String {
+    /// The Change's CI passed, but its re-review didn't finish within `review_wait`: it leaves the train for review
+    /// and stays out of the line until that review is done (`overdue_review`). Why, in plain words.
+    pub(super) fn review_overdue(&self, change: &Change) -> String {
+        if let Some(patch) = &change.patch_id {
+            lock(&self.overdue).insert((change.change_id.clone(), patch.to_string()));
+        }
         format!(
-            "CI passed on {}, but its re-review didn't finish within {} min; it merges once the review is clean",
-            short(sha),
+            "CI passed on {}, but its re-review didn't finish within {} min; it waits in review, out of the line, and merges once the review is clean",
+            short(&change.head_sha),
             self.options.review_wait.as_secs() / 60
         )
+    }
+
+    /// Whether the Change's re-review of its current patch already outlasted `review_wait` once in the train.
+    pub(super) fn overdue_review(&self, change: &Change) -> bool {
+        change.patch_id.as_ref().is_some_and(|patch| {
+            lock(&self.overdue).contains(&(change.change_id.clone(), patch.to_string()))
+        })
     }
 
     /// Waits for the re-reviews of `changes` (each in CI, its patch not yet approved), at most `review_wait`: each one's
@@ -1769,7 +1785,7 @@ impl Train {
                     return Ok(());
                 }
                 ReviewWait::Waiting => {
-                    let why = self.review_overdue(&head_sha);
+                    let why = self.review_overdue(&current);
                     self.to_review(&current, Some(&why));
                     return Ok(());
                 }
@@ -1806,6 +1822,7 @@ impl Train {
                 .await?
             {
                 MergeOutcome::Merged { sha } => {
+                    self.watch_merge(repo, base, &sha, merging.pr_url.as_str());
                     self.finish_merged(&merging, Some(&sha), None).await;
                     return Ok(());
                 }
@@ -2270,6 +2287,7 @@ impl Train {
         self.refresh(&repo).await;
         self.ready_pass(&repo, &train.project_ref).await;
         self.main_ci_pass(&repo, &train.project_ref).await;
+        self.watch_pass(&repo).await;
         self.check_merged_outside(&repo, train.watch_since_ms, &train.project_ref)
             .await;
         self.reconcile_batches(&repo).await;
