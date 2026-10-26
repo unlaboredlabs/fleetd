@@ -3380,7 +3380,7 @@
       "type": "object"
     },
     "CommandApprovalItem": {
-      "description": "A risky command (prod write, spend, delete, credential use) or a session's permission prompt waits for the\nhuman: the exact command, then Approve or Deny. Answered with `approval_answer`, naming `requestId`. Exactly one of\n`gated` and `permission`.",
+      "description": "A risky command (prod write, spend, delete, credential use), a session's permission prompt or an agent's proposed\npreview setting waits for the human: exactly what it would do, then Approve or Deny. Answered with\n`approval_answer`, naming `requestId`. Exactly one of `gated`, `permission` and `previewConfig`.",
       "properties": {
         "answeredAt": {
           "$ref": "#/$defs/Timestamp"
@@ -3426,7 +3426,7 @@
         },
         "previewConfig": {
           "$ref": "#/$defs/PreviewConfigProposeCall",
-          "description": "An agent's proposed preview setting (preview_config_propose): approved, it becomes the project's `preview`.\nOlder apps show it as an approval with neither command nor permission."
+          "description": "An agent's proposed preview setting (preview_config_propose): approved, it becomes the project's `preview`.\nOlder apps show it as an approval with neither command nor permission.\nBoxed: the setting is large beside the item's other fields, and every chat item would carry its size."
         },
         "requestId": {
           "$ref": "#/$defs/ChatRequestId"

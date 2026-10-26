@@ -1324,9 +1324,9 @@ export type CloneTarget = {
 };
 
 /**
- * A risky command (prod write, spend, delete, credential use) or a session's permission prompt waits for the
- * human: the exact command, then Approve or Deny. Answered with `approval_answer`, naming `requestId`. Exactly one of
- * `gated` and `permission`.
+ * A risky command (prod write, spend, delete, credential use), a session's permission prompt or an agent's proposed
+ * preview setting waits for the human: exactly what it would do, then Approve or Deny. Answered with
+ * `approval_answer`, naming `requestId`. Exactly one of `gated`, `permission` and `previewConfig`.
  */
 export type CommandApprovalItem = {
   answeredAt?: Timestamp;
@@ -1348,6 +1348,7 @@ export type CommandApprovalItem = {
   /**
    * An agent's proposed preview setting (preview_config_propose): approved, it becomes the project's `preview`.
    * Older apps show it as an approval with neither command nor permission.
+   * Boxed: the setting is large beside the item's other fields, and every chat item would carry its size.
    */
   previewConfig?: PreviewConfigProposeCall;
   requestId: ChatRequestId;

@@ -160,9 +160,9 @@ pub enum CommandApprovalState {
     Failed,
 }
 
-/// A risky command (prod write, spend, delete, credential use) or a session's permission prompt waits for the
-/// human: the exact command, then Approve or Deny. Answered with `approval_answer`, naming `requestId`. Exactly one of
-/// `gated` and `permission`.
+/// A risky command (prod write, spend, delete, credential use), a session's permission prompt or an agent's proposed
+/// preview setting waits for the human: exactly what it would do, then Approve or Deny. Answered with
+/// `approval_answer`, naming `requestId`. Exactly one of `gated`, `permission` and `previewConfig`.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -176,7 +176,8 @@ pub struct CommandApprovalItem {
     pub permission: Option<ToolPermission>,
     /// An agent's proposed preview setting (preview_config_propose): approved, it becomes the project's `preview`.
     /// Older apps show it as an approval with neither command nor permission.
-    pub preview_config: Option<crate::preview::PreviewConfigProposeCall>,
+    /// Boxed: the setting is large beside the item's other fields, and every chat item would carry its size.
+    pub preview_config: Option<Box<crate::preview::PreviewConfigProposeCall>>,
     pub state: CommandApprovalState,
     pub exit_code: Option<i64>,
     /// The end of the output, once it ran.
