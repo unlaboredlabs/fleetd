@@ -8,6 +8,8 @@ import { useData, useToolQueries, useToolQuery } from "../../src/data/react";
 import { Button, cx, Dot, EmptyState, StateGlyph, Text, Truncate, useArrivals, useArrived, useBeatRef, useLeavers, type GlyphState } from "../../ui";
 import { when } from "../prs/words";
 import { panelRoute, toHash, type ProjectKey } from "../shell/routes";
+import { SignOffRow, useSignOffWaiting } from "../tryit/SignOff";
+import { askTab, PREVIEW_PR, start } from "../tryit/preview";
 import { changesOf, checkLines, lineReads, onTrain, trainReads, STAGE_WORD, stageLine, trainViews, WAITING_WORD, type Moving, type QueueRow, type Recent, type TrainPr, type TrainView } from "./model";
 import s from "./train.module.css";
 
@@ -126,6 +128,8 @@ function Train({ view, project, nowMs, named }: { view: TrainView; project: Proj
   // A merge that lands while this train is open wipes its check in; those it opened with are still.
   const merges = `train:${project.machineId}/${project.projectId}:${view.repo}`;
   const queue = useLeavers(view.queue, queueKey, merges);
+  // The design preview's sign-off (screens/tryit): a PR the person asked to try waits on them here.
+  const signOff = useSignOffWaiting(project) && view.repo === PREVIEW_PR.repo;
   useArrivals(merges, view.recent.map((r) => (r.kind === "merged" ? r.prs.map((p) => p.changeId).join() : r.pr.changeId)));
   return (
     <div className={s.train}>
@@ -143,6 +147,17 @@ function Train({ view, project, nowMs, named }: { view: TrainView; project: Proj
           <Head moving={view.moving} project={project} nowMs={nowMs} />
         )}
       </Section>
+      {signOff ? (
+        <Section label="Waiting on you" count={1}>
+          <SignOffRow
+            onTry={() => {
+              start("web");
+              askTab();
+              window.location.hash = toHash(panelRoute(project, { tab: "prs", pr: { repo: PREVIEW_PR.repo, number: PREVIEW_PR.number } }));
+            }}
+          />
+        </Section>
+      ) : null}
       <Section label="In line" count={view.queue.length}>
         {view.queue.length === 0 ? (
           <Text size="sm" tone="quiet" className={s.quietLine}>

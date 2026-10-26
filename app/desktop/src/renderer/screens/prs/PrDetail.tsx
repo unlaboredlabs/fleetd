@@ -1,8 +1,8 @@
 // One PR: its title and where it stands, then Overview (a summary of where it is and what it waits on, the
 // description, checks, reviews and their findings, its way to main so far) or Changes (the files and their diff).
 // Open on GitHub stays one click away.
-import { ExternalLink } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { ExternalLink, Play } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useData, useToolQuery } from "../../src/data/react";
 import { selectLiveAgents } from "../../src/data/selectors";
 import type { PrCheck, PrGetOutput, PrReviewEntry, PrRow } from "../../../shared/contracts";
@@ -10,6 +10,9 @@ import { codeRuns, machineCode } from "../chat/format";
 import { Button, InlineCode, Markdown, StatusChip, Tab, TabList, TabPanel, Tabs, Text, Truncate, cx, toast } from "../../ui";
 import { AgentRowLink } from "../agents/AgentsPane";
 import { CheckIcon, ChecksMark } from "./Bits";
+import { SignOffLine, Suggestion, useSignOffState } from "../tryit/SignOff";
+import { isPreviewPr, start, takeTab, useTryIt } from "../tryit/preview";
+import { TryItView } from "../tryit/TryIt";
 import { DiffPane } from "./DiffPane";
 import {
   authorWords,
@@ -32,7 +35,8 @@ import {
 } from "./words";
 import s from "./prs.module.css";
 
-export type PrTab = "overview" | "changes";
+/** "try": a PR's Try it, in the design preview only (screens/tryit). */
+export type PrTab = "overview" | "changes" | "try";
 
 export const openExternal = (url: string): void => {
   void window.fleetd.openExternal(url).then((o) => {
@@ -60,6 +64,19 @@ export function PrDetail({ repo, number, row, nowMs, tab, onTab, githubSaid }: P
   const fresh = useData((st) => st.fresh);
   const data = query.data;
   const pr = data?.pr ?? row;
+  // Try it, in the design preview: the person asks, and only then does anything build.
+  const preview = isPreviewPr(repo, number);
+  const tried = useTryIt();
+  const hasRun = Object.keys(tried.runs).length > 0;
+  useEffect(() => {
+    if (preview && takeTab()) onTab("try");
+  });
+  const tryIt = () => {
+    if (tried.runs[tried.target] === undefined || tried.runs[tried.target]?.phase === "ended") start(tried.target);
+    onTab("try");
+  };
+  const shown = tab === "try" && !preview ? "overview" : tab;
+  const signOffState = useSignOffState(preview);
 
   if (pr === undefined) {
     // Nothing held and no hub to ask: "Loading" would never finish.
@@ -81,15 +98,15 @@ export function PrDetail({ repo, number, row, nowMs, tab, onTab, githubSaid }: P
 
   // The hub's clock from the list's answer; a PR opened before the list answered reads against its own update.
   const now = nowMs ?? Date.parse(pr.updatedAt);
-  const state = stateLine(pr);
+  const state = signOffState ?? stateLine(pr);
   const additions = data?.additions;
   const deletions = data?.deletions;
   const files = data?.changedFiles;
   return (
     <Tabs
       className={s.pr}
-      value={tab}
-      onValueChange={(v) => onTab(v === "changes" ? "changes" : "overview")}
+      value={shown}
+      onValueChange={(v) => onTab(v === "changes" || v === "try" ? v : "overview")}
       data-screen={data !== undefined ? "prs.detail" : query.isError ? "prs.detail.error" : "prs.detail.loading"}
     >
       <div className={s.prHead}>
@@ -99,6 +116,11 @@ export function PrDetail({ repo, number, row, nowMs, tab, onTab, githubSaid }: P
               {pr.title === "" ? `#${pr.number}` : pr.title}
             </Truncate>
           </span>
+          {preview ? (
+            <Button variant="secondary" size="sm" icon={<Play aria-hidden />} onClick={tryIt}>
+              Try it
+            </Button>
+          ) : null}
           <Button variant="secondary" size="sm" icon={<ExternalLink aria-hidden />} onClick={() => openExternal(pr.url)}>
             Open on GitHub
           </Button>
@@ -126,6 +148,7 @@ export function PrDetail({ repo, number, row, nowMs, tab, onTab, githubSaid }: P
           <Tab value="changes" count={files === undefined ? undefined : stat(files)}>
             Changes
           </Tab>
+          {preview && (hasRun || shown === "try") ? <Tab value="try">Try it</Tab> : null}
         </TabList>
       </div>
       <TabPanel value="overview" className={s.overview}>
@@ -145,19 +168,35 @@ export function PrDetail({ repo, number, row, nowMs, tab, onTab, githubSaid }: P
             </div>
           )
         ) : (
-          <Overview data={data} now={now} githubSaid={githubSaid} />
+          <Overview data={data} now={now} githubSaid={githubSaid} onTry={preview ? tryIt : undefined} state={state} />
         )}
       </TabPanel>
       <TabPanel value="changes" className={s.changesPanel}>
-        {tab === "changes" ? <DiffPane repo={repo} number={number} additions={additions} deletions={deletions} githubDown={data?.githubError !== undefined} /> : null}
+        {shown === "changes" ? <DiffPane repo={repo} number={number} additions={additions} deletions={deletions} githubDown={data?.githubError !== undefined} /> : null}
       </TabPanel>
+      {preview ? (
+        <TabPanel value="try" className={s.changesPanel}>
+          {shown === "try" ? <TryItView /> : null}
+        </TabPanel>
+      ) : null}
     </Tabs>
   );
 }
 
-function Overview({ data, now, githubSaid }: { data: PrGetOutput; now: number; githubSaid: boolean }) {
+function Overview({
+  data,
+  now,
+  githubSaid,
+  onTry,
+  state,
+}: {
+  data: PrGetOutput;
+  now: number;
+  githubSaid: boolean;
+  onTry?: (() => void) | undefined;
+  state: ReturnType<typeof stateLine>;
+}) {
   const pr = data.pr;
-  const state = stateLine(pr);
   const checks = pr.checks === undefined ? undefined : checksWord(pr.checks);
   const reviews = reviewsWord(pr.review);
   const author = authorWords(pr.author);
@@ -173,6 +212,7 @@ function Overview({ data, now, githubSaid }: { data: PrGetOutput; now: number; g
           </Text>
         </div>
       ) : null}
+      {onTry !== undefined ? <Suggestion onTry={onTry} /> : null}
       <div className={cx(s.summary, TONE_CLASS[state.tone])} aria-label="Summary" role="group">
         <div className={s.summaryState}>
           <Text size="md" strong={state.tone === "failed" || state.tone === "needs-you"}>
@@ -219,6 +259,8 @@ function Overview({ data, now, githubSaid }: { data: PrGetOutput; now: number; g
           </Fact>
         </dl>
       </div>
+
+      {onTry !== undefined ? <SignOffLine onTry={onTry} /> : null}
 
       {isOpen(pr) ? <AtWork repo={pr.repo} number={pr.number} /> : null}
 

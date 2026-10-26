@@ -10,6 +10,7 @@ import { AgentsPane, isLine, scopedAgents, useAgentScope, type AgentScope } from
 import type { PrTab } from "../prs/PrDetail";
 import { PrsPane, usePrList } from "../prs/PrsPane";
 import { openCount } from "../prs/words";
+import { isPreviewPr, PREVIEW_PR } from "../tryit/preview";
 import type { CountProps, PaneProps } from "./tabs";
 
 const ALL = {} as const;
@@ -44,7 +45,8 @@ let lastPrTab: PrTab = "overview";
 export function PrsTab({ project, view, onWide }: PaneProps) {
   const [tab, setTab] = useState<PrTab>(lastPrTab);
   const pr = view.tab === "prs" ? view.pr : null;
-  const wide = pr !== null && tab === "changes";
+  // Changes, and a PR's Try it in the design preview (screens/tryit), take the wide panel.
+  const wide = pr !== null && (tab === "changes" || (tab === "try" && isPreviewPr(pr.repo ?? PREVIEW_PR.repo, pr.number)));
   // Before paint, so the diff never shows at the narrow width first.
   useLayoutEffect(() => {
     onWide(wide);

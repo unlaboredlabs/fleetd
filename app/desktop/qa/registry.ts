@@ -150,6 +150,9 @@ export const fixtures = [
   // ...and the work elsewhere on storefront's repo, seen from storefront and from checkout (fixtures/agents).
   "agents-elsewhere",
   "agents-states",
+  // W58's design preview: storefront's #14 tried on the web and on an Android emulator, marked up, and waiting on your
+  // sign-off (fixtures/tryit).
+  "tryit-preview",
   "stream-reply",
   // UX [7]: no hub, and the last launch's disk cache on screen with a message queued; back online with that chat not
   // read again yet, and with that read failed (fixtures/offline).
@@ -248,6 +251,18 @@ const openUpdates = async (page: Page) => {
   await page.keyboard.press("ControlOrMeta+K");
   await page.getByRole("combobox", { name: "Search" }).fill("Check for updates");
   await page.keyboard.press("Enter");
+};
+
+/** Puts the try-it preview (src/renderer/screens/tryit/preview.ts) in one of its states. */
+const tryPreset = async (page: Page, preset: string): Promise<void> => {
+  await page.evaluate((p) => {
+    window.dispatchEvent(new CustomEvent("fleetd:tryit", { detail: p }));
+  }, preset);
+};
+/** ...and opens #14's Try it tab on it. */
+const tryIt = (preset: string) => async (page: Page) => {
+  await tryPreset(page, preset);
+  await page.getByRole("tab", { name: "Try it" }).click();
 };
 
 // storefront's PRs in the panel beside its chat (fixtures/prs): the list, and #11 (in review, its reviewers at work),
@@ -1084,6 +1099,17 @@ export const screens: readonly Screen[] = [
   },
   { id: "prs.detail", route: `${PRS}/11`, fixtures: ["typical"], variant: "by-number", sizes: ["small"] },
   { id: "prs.detail", route: PR(11), fixtures: ["prs-error"], expect: "error" },
+  // W58 (design preview): #14's Try it. Not running, the writer's suggestion in its overview; the web run starting and
+  // ready; the Android emulator; marking up; the feedback sent; and #14 waiting on your sign-off, in its overview, the
+  // merge line and the chat's waiting line.
+  { id: "prs.detail", route: PR(14), fixtures: ["tryit-preview"], variant: "try-suggested" },
+  ...(["web", "android", "marked", "sent"] as const).map(
+    (preset): Screen => ({ id: "tryit", route: PR(14), fixtures: ["tryit-preview"], variant: preset, open: tryIt(preset) }),
+  ),
+  { id: "prs.detail", route: PR(14), fixtures: ["tryit-preview"], variant: "signoff", open: (page) => tryPreset(page, "signoff") },
+  { id: "train", route: `${CHAT}/train`, fixtures: ["tryit-preview"], variant: "signoff", open: (page) => tryPreset(page, "signoff") },
+  { id: "chat", route: CHAT, fixtures: ["tryit-preview"], variant: "signoff", open: (page) => tryPreset(page, "signoff") },
+
   // Its changes: the files beside a diff drawn a screen at a time, one column or side by side, and a PR too big to
   // load at once.
   { id: "prs.detail", route: PR(11), fixtures: ["typical", "long-text", "prs-no-github"], variant: "changes", open: openChanges },

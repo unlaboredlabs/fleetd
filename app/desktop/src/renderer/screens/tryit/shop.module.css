@@ -1,0 +1,318 @@
+/* storefront's own app, as the person sees it in the preview: its own colours and type in either theme, sized in
+   container units (the frame's screen is the container), so it lays out as at 800 px wide (or a 412 dp phone). */
+
+.page,
+.app {
+  --shop-bg: #fbfaf7;
+  --shop-ink: #1d2320;
+  --shop-quiet: #6b716d;
+  --shop-line: #e4e1da;
+  --shop-brand: #1f5f45;
+  --shop-on-brand: #fbfaf7;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--shop-bg);
+  color: var(--shop-ink);
+  font-family: var(--font-sans);
+  user-select: none;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  gap: 3.84cqw;
+  height: 8.96cqw;
+  padding: 0 6.4cqw;
+  border-bottom: 1px solid var(--shop-line);
+  font-size: 1.76cqw;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.96cqw;
+  font-family: ui-serif, Georgia, serif;
+  font-size: 2.72cqw;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.brandIcon {
+  width: 2.56cqw;
+  height: 2.56cqw;
+}
+.crumbs {
+  flex: 1;
+  color: var(--shop-quiet);
+}
+.lang {
+  display: flex;
+  gap: 0.48cqw;
+}
+.langOption {
+  padding: 0.48cqw 1.12cqw;
+  border: 1px solid transparent;
+  border-radius: 0.64cqw;
+  background: none;
+  color: var(--shop-quiet);
+  font: inherit;
+  font-size: 1.52cqw;
+  cursor: pointer;
+}
+.langOption[aria-pressed="true"] {
+  border-color: var(--shop-line);
+  color: var(--shop-ink);
+  font-weight: 600;
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 33.6cqw;
+  gap: 6.4cqw;
+  padding: 5.12cqw 6.4cqw;
+}
+.h1 {
+  margin: 0 0 3.2cqw;
+  font-family: ui-serif, Georgia, serif;
+  font-size: 4.16cqw;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.item {
+  display: flex;
+  align-items: center;
+  gap: 2.56cqw;
+  padding: 2.56cqw 0;
+  border-top: 1px solid var(--shop-line);
+}
+.thumb {
+  width: 10.24cqw;
+  height: 12.16cqw;
+  border-radius: 0.8cqw;
+  background: #c9d6c6;
+}
+.thumb[data-n="1"] {
+  background: #e3d4bd;
+}
+.itemWords {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.64cqw;
+  min-width: 0;
+}
+.itemName {
+  font-size: 2cqw;
+  font-weight: 500;
+}
+.itemMeta {
+  color: var(--shop-quiet);
+  font-size: 1.6cqw;
+}
+.price {
+  font-size: 1.92cqw;
+  font-variant-numeric: tabular-nums;
+}
+.cardField {
+  display: flex;
+  align-items: center;
+  gap: 1.6cqw;
+  padding: 2.24cqw 2.56cqw;
+  border: 1px solid var(--shop-line);
+  border-radius: 0.96cqw;
+  font-size: 1.92cqw;
+}
+.cardIcon {
+  width: 2.4cqw;
+  height: 2.4cqw;
+  color: var(--shop-quiet);
+}
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: 1.44cqw;
+  align-self: start;
+  padding: 2.88cqw;
+  border-radius: 1.28cqw;
+  background: #f1efe9;
+  font-size: 1.76cqw;
+}
+.sumRow,
+.sumTotal {
+  display: flex;
+  justify-content: space-between;
+  font-variant-numeric: tabular-nums;
+}
+.sumRow {
+  color: var(--shop-quiet);
+}
+.sumTotal {
+  padding-top: 1.44cqw;
+  border-top: 1px solid var(--shop-line);
+  font-size: 2.16cqw;
+  font-weight: 600;
+}
+.vat {
+  color: var(--shop-quiet);
+  font-size: 1.44cqw;
+}
+/* The button #14 is about: in Dutch its words don't fit and it wraps, which is what the person points at. */
+.pay {
+  margin-top: 1.28cqw;
+  padding: 1.6cqw 1.92cqw;
+  border: 0;
+  border-radius: 0.8cqw;
+  background: var(--shop-brand);
+  color: var(--shop-on-brand);
+  font: inherit;
+  font-size: 1.84cqw;
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: center;
+  cursor: pointer;
+}
+.back {
+  padding: 0.96cqw;
+  border: 0;
+  background: none;
+  color: var(--shop-quiet);
+  font: inherit;
+  font-size: 1.6cqw;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.thanks,
+.appThanks {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 70%;
+  font-family: ui-serif, Georgia, serif;
+  font-size: 4.16cqw;
+}
+
+/* The phone app: the container is the emulator's screen, 412 dp wide, so 1cqw is about 4 dp. Its type is a step
+   larger than the phone's default, to read at the frame's size. */
+.app {
+  display: flex;
+  flex-direction: column;
+  font-size: 4.68cqw;
+}
+.status {
+  display: flex;
+  justify-content: space-between;
+  padding: 2.4cqw 5cqw 1.2cqw;
+  font-size: 4.16cqw;
+  font-weight: 500;
+}
+.statusIcons {
+  letter-spacing: 0.4em;
+}
+.appBar {
+  display: flex;
+  align-items: center;
+  gap: 2cqw;
+  height: 14cqw;
+  padding: 0 4cqw;
+}
+.appBack {
+  display: flex;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+.appBack svg {
+  width: 6cqw;
+  height: 6cqw;
+}
+.appTitle {
+  flex: 1;
+  font-family: ui-serif, Georgia, serif;
+  font-size: 7.8cqw;
+  font-weight: 500;
+}
+.app .langOption {
+  padding: 0.8cqw 1.8cqw;
+  border-radius: 1.2cqw;
+  font-size: 3.9cqw;
+}
+.appList {
+  flex: 1;
+  padding: 0 4cqw;
+}
+.appItem {
+  display: flex;
+  align-items: center;
+  gap: 3.6cqw;
+  padding: 3.6cqw 0;
+  border-top: 1px solid var(--shop-line);
+}
+.appThumb {
+  width: 16cqw;
+  height: 19cqw;
+  border-radius: 2cqw;
+  background: #c9d6c6;
+}
+.appThumb[data-n="1"] {
+  background: #e3d4bd;
+}
+.appItemName {
+  font-size: 4.94cqw;
+  font-weight: 500;
+}
+.appMeta {
+  color: var(--shop-quiet);
+  font-size: 4.16cqw;
+}
+.appPrice {
+  font-size: 4.68cqw;
+  font-variant-numeric: tabular-nums;
+}
+.appCard {
+  display: flex;
+  align-items: center;
+  gap: 3cqw;
+  margin-top: 3cqw;
+  padding: 4cqw;
+  border: 1px solid var(--shop-line);
+  border-radius: 3cqw;
+}
+.appCard .cardIcon {
+  width: 5cqw;
+  height: 5cqw;
+}
+.appFoot {
+  display: flex;
+  flex-direction: column;
+  gap: 3cqw;
+  padding: 4cqw;
+  border-top: 1px solid var(--shop-line);
+}
+.appTotal {
+  display: flex;
+  justify-content: space-between;
+  font-size: 5.46cqw;
+  font-weight: 600;
+}
+.appPay {
+  padding: 3.6cqw;
+  border: 0;
+  border-radius: 7cqw;
+  background: var(--shop-brand);
+  color: var(--shop-on-brand);
+  font: inherit;
+  font-size: 4.94cqw;
+  font-weight: 600;
+  cursor: pointer;
+}
+.gesture {
+  align-self: center;
+  width: 28cqw;
+  height: 1.2cqw;
+  margin: 2cqw 0 3cqw;
+  border-radius: 1cqw;
+  background: var(--shop-ink);
+  opacity: 0.35;
+}
