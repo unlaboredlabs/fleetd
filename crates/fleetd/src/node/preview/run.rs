@@ -230,6 +230,10 @@ pub async fn run(
     };
     r.starting();
     let ended = |reason: PreviewEndReason| r.send(PreviewState::Ended, Some(reason), None);
+    // Stopped before it began (a stop right behind its run): nothing runs at all.
+    if let Some(reason) = *stopped.borrow() {
+        return ended(reason);
+    }
 
     // Check out.
     r.begin(plan.checkout);

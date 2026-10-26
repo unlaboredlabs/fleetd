@@ -164,30 +164,50 @@ impl Previews {
     }
 
     /// `preview_run`: takes the run, or refuses it, and the run reports as it goes. The same preview again is taken
-    /// without a second run. Every git call here (the names' checks, the slot's pick) runs off the async threads.
-    pub async fn run(self: &Arc<Self>, frame: PreviewRunFrame) -> PreviewRunResult {
-        let id = frame.id.clone();
-        let refuse = |why: String| PreviewRunResult {
-            id: id.clone(),
-            error: Some(McpToolError::new(ErrorCode::Invalid, why)),
-        };
+    /// without a second run.
+    ///
+    /// The preview is known from the moment this is called, before the future it returns runs: the link calls it on
+    /// its own loop and spawns the rest, so a `preview_stop` right behind the run always finds it and ends it, however
+    /// far it got (even before it starts). The rest runs its git (the names' checks, the slot's pick) off the async
+    /// threads.
+    pub fn run(
+        self: &Arc<Self>,
+        frame: PreviewRunFrame,
+    ) -> impl std::future::Future<Output = PreviewRunResult> + Send + 'static {
         let preview_id = frame.preview_id.as_str().to_owned();
-        let project = frame.project_id.as_str().to_owned();
         let (stop, stopped) = watch::channel(None);
-        {
+        let fresh = {
             let mut runs = self.runs.lock().unwrap();
-            if runs.contains_key(&preview_id) {
+            let fresh = !runs.contains_key(&preview_id);
+            if fresh {
+                runs.insert(
+                    preview_id.clone(),
+                    Live {
+                        project: frame.project_id.as_str().to_owned(),
+                        stop,
+                        task: None,
+                    },
+                );
+            }
+            fresh
+        };
+        let me = self.clone();
+        async move {
+            let id = frame.id.clone();
+            if !fresh {
                 return PreviewRunResult { id, error: None };
             }
-            runs.insert(
-                preview_id.clone(),
-                Live {
-                    project: project.clone(),
-                    stop,
-                    task: None,
-                },
-            );
+            me.start(frame, stopped).await
         }
+    }
+
+    async fn start(
+        self: Arc<Self>,
+        frame: PreviewRunFrame,
+        stopped: watch::Receiver<Option<PreviewEndReason>>,
+    ) -> PreviewRunResult {
+        let id = frame.id.clone();
+        let preview_id = frame.preview_id.as_str().to_owned();
         let taken = {
             let me = self.clone();
             let frame = frame.clone();
@@ -199,12 +219,16 @@ impl Previews {
             Ok(taken) => taken,
             Err(why) => {
                 self.runs.lock().unwrap().remove(&preview_id);
-                return refuse(why);
+                return PreviewRunResult {
+                    id,
+                    error: Some(McpToolError::new(ErrorCode::Invalid, why)),
+                };
             }
         };
         let me = self.clone();
         let done = preview_id.clone();
         let task = tokio::spawn(async move {
+            // A stop that came meanwhile ends it at its first step, before anything runs.
             run::run(
                 &me,
                 run::Run {

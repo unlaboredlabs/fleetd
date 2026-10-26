@@ -240,6 +240,13 @@ async fn get(url: &str) -> Option<String> {
     client.get(url).send().await.ok()?.text().await.ok()
 }
 
+/// Whether `url` serves this test's page: once a preview's port closes, another test's preview may take it.
+async fn answers(url: &str, words: &str) -> bool {
+    get(&format!("{url}/page.html"))
+        .await
+        .is_some_and(|p| p.contains(words))
+}
+
 fn states(r: &PreviewReport) -> Vec<PreviewStepState> {
     r.steps.iter().map(|s| s.state).collect()
 }
@@ -276,7 +283,7 @@ async fn a_preview_is_set_up_built_started_opened_and_thrown_away() {
         (PreviewState::Ended, Some(PreviewEndReason::Ended))
     );
     assert!(ended.url.is_none());
-    assert!(get(&url).await.is_none(), "the port is closed");
+    assert!(!answers(&url, "new checkout").await, "the port is closed");
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert_eq!(h.previews.running(), 0);
 }
@@ -616,7 +623,7 @@ async fn a_stop_during_checkout_waits_for_git_before_the_worktree_is_free() {
 #[tokio::test]
 async fn a_removed_project_ends_its_previews_and_its_preview_worktrees_go() {
     let project = Project::new();
-    let sha = project.branch("feat", "page.html", "<p>a</p>\n");
+    let sha = project.branch("feat", "page.html", "<p>removed project</p>\n");
     let mut h = harness(&project);
     h.previews
         .run(frame(1, &[("feat", &sha)], None, project.web("true"), 30))
@@ -625,7 +632,10 @@ async fn a_removed_project_ends_its_previews_and_its_preview_worktrees_go() {
     h.previews.forget_project("p1", &project.root()).await;
     let ended = h.until(1, |r| r.state.is_over()).await;
     assert_eq!(ended.end_reason, Some(PreviewEndReason::Done));
-    assert!(get(&url).await.is_none(), "its app still answers");
+    assert!(
+        !answers(&url, "removed project").await,
+        "its app still answers"
+    );
     assert!(!slots::project_dir(h.home.path(), "p1").exists());
     let worktrees = git(&project.root(), &["worktree", "list", "--porcelain"]);
     assert!(!worktrees.contains("previews"), "{worktrees}");
@@ -634,7 +644,7 @@ async fn a_removed_project_ends_its_previews_and_its_preview_worktrees_go() {
 #[tokio::test]
 async fn a_node_shutting_down_waits_for_its_previews_apps_to_end() {
     let project = Project::new();
-    let sha = project.branch("feat", "page.html", "<p>a</p>\n");
+    let sha = project.branch("feat", "page.html", "<p>shutting down</p>\n");
     let mut h = harness(&project);
     h.previews
         .run(frame(1, &[("feat", &sha)], None, project.web("true"), 30))
@@ -646,6 +656,37 @@ async fn a_node_shutting_down_waits_for_its_previews_apps_to_end() {
         "the hub's owner reached detect"
     );
     h.previews.stop_all().await;
-    assert!(get(&url).await.is_none(), "its app outlived stop_all");
+    // Its port may be another test's preview by now: only its own page counts.
+    assert!(
+        !answers(&url, "shutting down").await,
+        "its app outlived stop_all"
+    );
     assert_eq!(h.previews.running(), 0);
+}
+
+#[tokio::test]
+async fn a_stop_right_behind_its_run_ends_it_before_anything_runs() {
+    let project = Project::new();
+    let sha = project.branch("feat", "page.html", "<p>a</p>\n");
+    let mut h = harness(&project);
+    // As the link does: the run is known when it arrives, and the rest is awaited after the stop was handled.
+    let taking = h
+        .previews
+        .run(frame(1, &[("feat", &sha)], None, project.web("true"), 30));
+    h.stop(1, PreviewEndReason::Ended);
+    let taken = taking.await;
+    assert!(taken.error.is_none(), "{:?}", taken.error);
+    let ended = h.until(1, |r| r.state.is_over()).await;
+    assert_eq!(
+        (ended.state, ended.end_reason),
+        (PreviewState::Ended, Some(PreviewEndReason::Ended))
+    );
+    assert_eq!(
+        states(&ended)[0],
+        PreviewStepState::Queued,
+        "it checked out"
+    );
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(h.previews.running(), 0, "an orphan preview runs");
+    assert_eq!((project.ran("setup"), project.ran("builds")), (0, 0));
 }
