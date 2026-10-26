@@ -13,6 +13,16 @@ use crate::update::{BoxFuture, Channel, Feed, HttpFeed};
 
 pub struct HubPorts(pub Weak<Hub>);
 
+/// Where the watcher asks `/healthz`: the listen address on loopback when it is every interface, an IPv6 address in
+/// brackets (doctor's own URL).
+pub fn health_url(host: &str, port: u16) -> String {
+    let host = host
+        .strip_prefix('[')
+        .and_then(|h| h.strip_suffix(']'))
+        .unwrap_or(host);
+    crate::hub::doctor::service::self_url(host, port)
+}
+
 impl HubPorts {
     fn hub(&self) -> Option<Arc<Hub>> {
         self.0.upgrade()
@@ -49,17 +59,10 @@ impl UpdatePorts for HubPorts {
     }
 
     fn health_url(&self) -> String {
-        let Some(hub) = self.hub() else {
-            return "http://127.0.0.1:4790".into();
-        };
-        let listen = &hub.config.listen;
-        // A hub on every interface answers on loopback too.
-        let host = match listen.host.as_str() {
-            "0.0.0.0" | "" => "127.0.0.1",
-            "::" | "[::]" => "[::1]",
-            other => other,
-        };
-        format!("http://{host}:{}", listen.port)
+        match self.hub() {
+            Some(hub) => health_url(&hub.config.listen.host, hub.config.listen.port),
+            None => health_url("", 4790),
+        }
     }
 
     fn start_watcher(&self, plan: &Plan, plan_path: &Path) -> Result<(), String> {
@@ -96,5 +99,20 @@ impl UpdatePorts for HubPorts {
                 .await
                 .map_err(|e| e.message)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::health_url;
+
+    #[test]
+    fn the_health_check_reaches_the_hub_on_any_listen_address() {
+        assert_eq!(health_url("0.0.0.0", 4790), "http://127.0.0.1:4790");
+        assert_eq!(health_url("100.104.0.7", 4790), "http://100.104.0.7:4790");
+        assert_eq!(health_url("fd00::1", 4790), "http://[fd00::1]:4790");
+        assert_eq!(health_url("[fd00::1]", 4790), "http://[fd00::1]:4790");
+        assert_eq!(health_url("::", 4790), "http://[::1]:4790");
+        assert_eq!(health_url("[::]", 4790), "http://[::1]:4790");
     }
 }

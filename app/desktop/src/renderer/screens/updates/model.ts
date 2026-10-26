@@ -286,13 +286,16 @@ export const updatesView = ({ app, hub, machines = [], run = null, flow = { phas
   } else if (flow.phase === "app") progress = { tone: "quiet", text: "Updating this app; it restarts once the download is in" };
   else if (live !== null) {
     const failed = failures(live);
+    const skipped = live.parts.filter((p) => p.state === "skipped").map((p) => p.name);
     progress =
       failed.length > 0
         ? {
             tone: "danger",
             text: `Update failed: ${failed.join(", ")}. ${hubUpdated(live) ? "The rest updated; this app updates with its own button." : "Nothing else was changed."}`,
           }
-        : { tone: "quiet", text: "Everything is updated." };
+        : skipped.length > 0
+          ? { tone: "warning", text: `Updated, except ${skipped.join(", ")}: each says why, and how to update it.` }
+          : { tone: "quiet", text: "Everything is updated." };
   }
 
   const ofApp = app === null ? null : appLine(app.app);

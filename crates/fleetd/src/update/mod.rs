@@ -71,7 +71,8 @@ impl Channel {
     }
 }
 
-/// Why an update didn't happen, at which stage, in one plain sentence.
+/// Why an update didn't happen, at which stage, in one plain sentence. File names, URLs and checksums in it are in
+/// backticks, so the app shows them as code.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Failure {
     pub stage: UpdateStage,
@@ -128,14 +129,14 @@ impl Feed for HttpFeed {
                 .get(&url)
                 .send()
                 .await
-                .map_err(|e| format!("GET {url}: {e}"))?;
+                .map_err(|e| format!("GET `{url}`: {e}"))?;
             if !response.status().is_success() {
-                return Err(format!("GET {url}: {}", response.status()));
+                return Err(format!("GET `{url}`: {}", response.status()));
             }
             Ok(response
                 .bytes()
                 .await
-                .map_err(|e| format!("GET {url}: {e}"))?
+                .map_err(|e| format!("GET `{url}`: {e}"))?
                 .to_vec())
         })
     }
@@ -189,13 +190,13 @@ pub async fn checked(
     let expected = sums.get(name).ok_or_else(|| {
         Failure::new(
             UpdateStage::Download,
-            format!("{name} is not in the release"),
+            format!("`{name}` is not in the release"),
         )
     })?;
     let bytes = feed.get(name).await.map_err(|e| {
         Failure::new(
             UpdateStage::Download,
-            format!("couldn't download {name}: {e}"),
+            format!("couldn't download `{name}`: {e}"),
         )
     })?;
     let actual = sha256_hex(&bytes);
@@ -203,7 +204,7 @@ pub async fn checked(
         return Err(Failure::new(
             UpdateStage::Checksum,
             format!(
-                "{name}: checksum mismatch (expected {expected}, got {actual}); nothing was changed"
+                "`{name}`: checksum mismatch (expected `{expected}`, got `{actual}`); nothing was changed"
             ),
         ));
     }

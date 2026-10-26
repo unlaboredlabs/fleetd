@@ -121,7 +121,7 @@ export default defineGroup({
       everything(
         "run-hub-failed",
         "The hub's download didn't match SHA256SUMS: nothing changed, and its machines weren't asked.",
-        (f) => runOf(f, { state: "failed", stage: "checksum", message: "fleetd-linux-x64: checksum mismatch (expected 9f2c…, got 41ab…); nothing was changed" }, [], skipped, true),
+        (f) => runOf(f, { state: "failed", stage: "checksum", message: "`fleetd-linux-x64`: checksum mismatch (expected `9f2c…`, got `41ab…`); nothing was changed" }, [], skipped, true),
       ),
       everything(
         "run-hub-rolled-back",
@@ -137,7 +137,7 @@ export default defineGroup({
             done,
             [
               { state: "rolled_back", stage: "health", message: "Nightly · Oct 23, 10:30 UTC · 9e07d31 didn't come up healthy, so Nightly · Oct 20, 10:30 UTC · 1c0ffee was put back and runs again" },
-              { state: "failed", stage: "download", message: "couldn't download fleetd-darwin-arm64: GET https://github.com/…: 503 Service Unavailable" },
+              { state: "failed", stage: "download", message: "couldn't download `fleetd-darwin-arm64`: GET `https://github.com/…/fleetd-darwin-arm64`: 503 Service Unavailable" },
               { state: "skipped", message: "offline: press Update again once it's online, or run `fleetd update` on it" },
             ],
             done,

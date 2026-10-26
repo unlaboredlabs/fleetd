@@ -32,6 +32,13 @@ export interface FlowDeps {
 
 /** How often the run is read while it goes on. */
 export const FOLLOW_EVERY_MS = 2_000;
+/** How long the end of a run waits for this app's own check, so an update it is about to find isn't missed. */
+export const APP_CHECK_WAIT_MS = 60_000;
+const APP_CHECK_EVERY_MS = 1_000;
+
+/** What a hub from before hub_update gets: `fleetd update` there once, the first time for everyone. */
+export const BEFORE_UPDATE =
+  "The hub runs a fleetd from before the Update button. Run `fleetd update` on the hub's machine once; after that, Update does the rest.";
 
 let flow: Flow = { phase: "idle" };
 let run: UpdateRun | null = null;
@@ -81,7 +88,9 @@ export const startUpdate = async (deps: FlowDeps): Promise<void> => {
   if (kind === "idle" || kind === "current" || kind === "failed") deps.app.check();
   const out = await deps.call("hub_update", {});
   if (!out.ok) {
-    set({ flow: { phase: "refused", message: out.error.fix === undefined ? out.error.message : `${out.error.message} ${out.error.fix}` } });
+    const before = out.error.code === "not_found" && out.error.message.startsWith("No tool");
+    const said = out.error.fix === undefined ? out.error.message : `${out.error.message} ${out.error.fix}`;
+    set({ flow: { phase: "refused", message: before ? BEFORE_UPDATE : said } });
     return;
   }
   set({ run: out.output.run ?? null });
@@ -106,6 +115,12 @@ const follow = async (deps: FlowDeps): Promise<void> => {
   if (run === null || !hubUpdated(run) || run.parts.some((p) => p.state === "failed" || p.state === "rolled_back")) {
     set({ flow: { phase: "finished" } });
     return;
+  }
+  // This app's own check may still be on its way when the run ends at once (everything else already current).
+  for (let waited = 0; waited < APP_CHECK_WAIT_MS; waited += APP_CHECK_EVERY_MS) {
+    const kind = deps.app.state()?.app.kind;
+    if (kind !== "checking" && kind !== "idle") break;
+    await deps.sleep(APP_CHECK_EVERY_MS);
   }
   const app = deps.app.state()?.app.kind;
   if (app === "available" || app === "ready") {

@@ -164,6 +164,8 @@ fn fast() -> Timing {
         poll: Duration::from_millis(5),
         verdict: Duration::from_millis(300),
         node_back: Duration::from_millis(300),
+        // Longer than any test: the old process's own deadline never cuts in, but where a test says.
+        restart: Duration::from_secs(60),
     }
 }
 
@@ -293,12 +295,32 @@ async fn after_the_hub_each_node_updates_and_says_how_it_went() {
         .node("nas", OLD, false, true, None)
         .node("old-box", "0.4.0", true, false, None)
         .node("pi", NEW, true, true, None)
-        .node("quiet", OLD, true, true, None);
+        .node("quiet", OLD, true, true, None)
+        .node("gone", OLD, true, true, Some(Answer::BackOn(NEW)));
     let fake = Arc::new(fake);
     let updates = area(home.path(), &fake);
     updates.start(None).unwrap();
     until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
 
+    // The hub's restart drops every link; the nodes that were online come back a moment after the new hub is up,
+    // but for one that stays away. One offline when the run started was skipped then.
+    let mut online: Vec<MachineId> = Vec::new();
+    for n in fake.nodes.lock().unwrap().iter_mut() {
+        if n.live_since.take().is_some() && n.name != "gone" {
+            online.push(n.machine_id.clone());
+        }
+    }
+    {
+        let fake = fake.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(60)).await;
+            for n in fake.nodes.lock().unwrap().iter_mut() {
+                if online.contains(&n.machine_id) {
+                    n.live_since = Some(2);
+                }
+            }
+        });
+    }
     // The new hub comes up; its watcher says so.
     *fake.running.lock().unwrap() = NEW.into();
     let verdict = fake.plans.lock().unwrap()[0].verdict.clone();
@@ -319,6 +341,7 @@ async fn after_the_hub_each_node_updates_and_says_how_it_went() {
         ("old-box", UpdateState::Skipped, None),
         ("pi", UpdateState::Current, None),
         ("quiet", UpdateState::Failed, Some(UpdateStage::Download)),
+        ("gone", UpdateState::Skipped, None),
     ];
     for (name, st, stage) in expect {
         assert_eq!(state(&run, Some(name)), (st, stage), "{name}");
@@ -337,6 +360,7 @@ async fn after_the_hub_each_node_updates_and_says_how_it_went() {
         said("old-box")
     );
     assert!(said("nas").starts_with("offline"), "{}", said("nas"));
+    assert!(said("gone").starts_with("offline"), "{}", said("gone"));
     let mut asked = fake.asked.lock().unwrap().clone();
     asked.sort();
     assert_eq!(
@@ -344,6 +368,45 @@ async fn after_the_hub_each_node_updates_and_says_how_it_went() {
         ["builder", "laptop", "mac", "quiet"],
         "only online nodes that can, and need to"
     );
+}
+
+/// The watcher never restarted the hub (it died, or the service manager refused): the hub still running ends the
+/// run past its deadline, with the previous binary back, instead of staying "restarting" for ever.
+#[tokio::test]
+async fn a_restart_that_never_happens_ends_the_run_and_says_so() {
+    let home = tempfile::tempdir().unwrap();
+    let fake = Arc::new(Fake::new(home.path(), b"new").node(
+        "builder",
+        OLD,
+        true,
+        true,
+        Some(Answer::BackOn(NEW)),
+    ));
+    let updates = Updates::new(
+        home.path(),
+        Arc::new(SystemClock),
+        Timing {
+            restart: Duration::from_millis(100),
+            ..fast()
+        },
+    );
+    updates.set_ports(fake.clone());
+    updates.start(None).unwrap();
+    let run = until(&updates, |r| r.finished_at.is_some()).await;
+    assert_eq!(
+        state(&run, None),
+        (UpdateState::Failed, Some(UpdateStage::Restart))
+    );
+    let said = by_machine(&run)[&None]
+        .message
+        .as_ref()
+        .unwrap()
+        .to_string();
+    assert!(said.starts_with("the hub didn't restart onto"), "{said}");
+    assert!(said.ends_with("its previous binary was put back"), "{said}");
+    assert_eq!(fs::read(&fake.exe).unwrap(), b"old");
+    assert_eq!(state(&run, Some("builder")).0, UpdateState::Skipped);
+    assert!(fake.asked.lock().unwrap().is_empty());
 }
 
 #[tokio::test]

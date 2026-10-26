@@ -24,7 +24,10 @@ the hub's machines aren't asked if the hub itself didn't update. A machine that 
 to update from the hub, is skipped and says how to update it. When a part fails, the app doesn't restart, so the
 result stays on screen.
 
-Updating needs a key with Admin on every machine, as `fleetd pair` gives the app.
+Updating needs a key with Admin on every machine, as `fleetd pair` gives the app. The first time, a hub from before
+the Update button can't do this yet: the app says so, and `fleetd update` on the hub's machine once (see below) brings it
+in. Machines that were online when you pressed Update get a while to reconnect after the hub restarts; one that was
+offline, or doesn't come back, is skipped and named in the result.
 
 An update never waits for work to finish. Restarts happen right away, and what they cut off carries on by itself:
 

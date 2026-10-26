@@ -6,7 +6,7 @@ import { Button, copyText, Dialog, InlineCode, Text } from "../../ui";
 import { useDataLayer } from "../../src/data/react";
 import { useCommands } from "../palette";
 import { useUpdatesView } from "./hooks";
-import type { Notes as NotesOf } from "../../../shared/updates";
+import { splitLabels, type Notes as NotesOf } from "../../../shared/updates";
 import { loadRun, startUpdate, type FlowDeps } from "./flow";
 import type { AppAction, AppPart, HubPart, PartRow, UpdatesView } from "./model";
 import { appUpdate, setUpdatesOpen, useAppUpdate, useUpdatesOpen } from "./state";
@@ -29,7 +29,24 @@ const settled = (): boolean => {
 /** Inline `code` in a plain line, as the release notes and the hub's lines may carry. */
 function Line({ text }: { text: string }) {
   const parts = text.split("`");
-  return <>{parts.map((part, i) => (i % 2 === 1 && i < parts.length - 1 ? <InlineCode key={i}>{part}</InlineCode> : part))}</>;
+  return <>{parts.map((part, i) => (i % 2 === 1 && i < parts.length - 1 ? <InlineCode key={i}>{part}</InlineCode> : <Labels key={i} text={part} />))}</>;
+}
+
+/** A nightly's label names its build commit: marked as version text, so only it is exempt from the hash rule. */
+function Labels({ text }: { text: string }) {
+  return (
+    <>
+      {splitLabels(text).map((part, i) =>
+        i % 2 === 1 ? (
+          <span key={i} data-version>
+            {part}
+          </span>
+        ) : (
+          part
+        ),
+      )}
+    </>
+  );
 }
 
 function Command({ command, note }: { command: string; note?: string | undefined }) {
@@ -58,7 +75,7 @@ function Raw({ version }: { version: string | undefined }) {
   const [copied, setCopied] = useState(false);
   if (version === undefined) return null;
   return (
-    <div className={s.raw}>
+    <div className={s.raw} data-version>
       <Text mono size="xs" tone="quiet">
         {version}
       </Text>
@@ -100,7 +117,9 @@ function Head({ title, detail, children }: { title: string; detail: string | und
   return (
     <div className={s.head}>
       <div className={s.words}>
-        <Text strong>{title}</Text>
+        <Text strong>
+          <Line text={title} />
+        </Text>
         {detail === undefined ? null : (
           <Text size="sm" tone="quiet" tabular>
             <Line text={detail} />
@@ -178,7 +197,7 @@ function UpdateAll({ view, deps }: { view: UpdatesView; deps: FlowDeps }) {
       {view.progress === null ? null : (
         <div role={view.progress.tone === "danger" ? "alert" : "status"}>
           <Text size="sm" tone={view.progress.tone === "quiet" ? "default" : view.progress.tone} strong>
-            {view.progress.text}
+            <Line text={view.progress.text} />
           </Text>
         </div>
       )}

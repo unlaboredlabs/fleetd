@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Call, UpdatePart, UpdateRun } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
 import type { AppUpdate, UpdatesState } from "../../../shared/updates";
-import { currentFlow, loadRun, resetFlow, startUpdate, type FlowDeps } from "./flow";
+import { BEFORE_UPDATE, currentFlow, loadRun, resetFlow, startUpdate, type FlowDeps } from "./flow";
 
 const NEXT = "0.0.0-nightly.202610261056+1b563d7";
 
@@ -18,7 +18,7 @@ const runOf = (hub: UpdatePart["state"], finished: boolean): UpdateRun => ({
 type Answer = { ok: true; run?: UpdateRun } | { ok: false; error: HubError };
 
 /** A hub that answers hub_update, then each hub_update_status in turn; and this app's updater. */
-const deps = (start: Answer, statuses: Answer[], app: AppUpdate) => {
+const deps = (start: Answer, statuses: Answer[], app: AppUpdate | AppUpdate[]) => {
   const calls: string[] = [];
   const answer = (a: Answer) => (a.ok ? { ok: true as const, output: a.run === undefined ? {} : { run: a.run } } : a);
   const call = ((tool: string) => {
@@ -26,12 +26,17 @@ const deps = (start: Answer, statuses: Answer[], app: AppUpdate) => {
     const next = tool === "hub_update" ? start : (statuses.shift() ?? statuses[0] ?? start);
     return Promise.resolve(answer(next));
   }) as unknown as Call;
-  const state: UpdatesState = { current: "0.0.0-nightly.202610251000+aaaaaaa", app, release: null };
+  // `app`, or each in turn per sleep: this app's own check moving on while the run goes.
+  const apps: AppUpdate[] = Array.isArray(app) ? [...app] : [app];
+  const state = (): UpdatesState => ({ current: "0.0.0-nightly.202610251000+aaaaaaa", app: apps[0] ?? { kind: "idle" }, release: null });
   const d = {
     call,
     retry: vi.fn(),
-    sleep: () => Promise.resolve(),
-    app: { state: () => state, check: vi.fn(), install: vi.fn() },
+    sleep: () => {
+      if (apps.length > 1) apps.shift();
+      return Promise.resolve();
+    },
+    app: { state, check: vi.fn(), install: vi.fn() },
   } satisfies FlowDeps;
   return { d, calls };
 };
@@ -79,6 +84,24 @@ describe("the Update button's run", () => {
     expect(d.app.check).toHaveBeenCalledOnce();
     expect(d.app.install).not.toHaveBeenCalled();
     expect(currentFlow()).toEqual({ phase: "finished" });
+  });
+
+  it("doesn't miss this app's update when the run ends before this app's check does", async () => {
+    const { d } = deps({ ok: true, run: runOf("current", true) }, [], [
+      { kind: "checking" },
+      { kind: "checking" },
+      { kind: "available", version: NEXT, percent: null, restart: false },
+    ]);
+    await startUpdate(d);
+    expect(d.app.install).toHaveBeenCalledOnce();
+    expect(currentFlow()).toEqual({ phase: "app" });
+  });
+
+  it("tells a hub from before the Update button to run fleetd update there once", async () => {
+    const { d } = deps({ ok: false, error: { code: "not_found", message: "No tool hub_update.", fix: "Use a tool name from the hub's MCP tool list." } }, [], { kind: "current" });
+    await startUpdate(d);
+    expect(currentFlow()).toEqual({ phase: "refused", message: BEFORE_UPDATE });
+    expect(BEFORE_UPDATE).toContain("Run `fleetd update` on the hub's machine once");
   });
 
   it("says why the hub refused", async () => {

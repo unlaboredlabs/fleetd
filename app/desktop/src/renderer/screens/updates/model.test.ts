@@ -188,6 +188,23 @@ describe("an update of everything", () => {
     expect(v.progress?.text).toBe("Update failed: mac. The rest updated; this app updates with its own button.");
   });
 
+  it("says everything is updated only when nothing was skipped, and names what was", () => {
+    const all = runOf(
+      [p({ part: "hub", name: "the hub", state: "done" }), p({ machineId: "builder", name: "builder", state: "done" }), p({ machineId: "mac", name: "mac", state: "current" })],
+      true,
+    );
+    expect(during(all, { phase: "finished" }).progress).toEqual({ tone: "quiet", text: "Everything is updated." });
+    const left = runOf(
+      [
+        p({ part: "hub", name: "the hub", state: "done" }),
+        p({ machineId: "builder", name: "builder", state: "skipped", message: "offline: press Update again once it's online" }),
+        p({ machineId: "mac", name: "mac", state: "skipped", message: "its fleetd (0.4.0) is too old to update from the hub" }),
+      ],
+      true,
+    );
+    expect(during(left, { phase: "finished" }).progress).toEqual({ tone: "warning", text: "Updated, except builder, mac: each says why, and how to update it." });
+  });
+
   it("says this app updates last, and when its download failed", () => {
     const done = runOf([p({ part: "hub", name: "the hub", state: "done" })], true);
     expect(during(done, { phase: "app" }).progress?.text).toBe("Updating this app; it restarts once the download is in");

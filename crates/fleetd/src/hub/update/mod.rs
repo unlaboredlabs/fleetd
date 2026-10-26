@@ -76,8 +76,10 @@ pub struct Timing {
     pub poll: Duration,
     /// For the watcher's verdict once the hub is back.
     pub verdict: Duration,
-    /// For a node to reconnect after its update.
+    /// For a node to reconnect after its update, or after the hub's own restart.
     pub node_back: Duration,
+    /// For the restart this process handed to the watcher: past it, the restart never happened.
+    pub restart: Duration,
 }
 
 impl Default for Timing {
@@ -86,6 +88,8 @@ impl Default for Timing {
             poll: Duration::from_secs(2),
             verdict: Duration::from_secs(HEALTH_WAIT_SECS * 2),
             node_back: Duration::from_secs(HEALTH_WAIT_SECS * 3),
+            // The watcher's settle, the new build's 90 s, and the previous build's 90 s once put back.
+            restart: Duration::from_secs(HEALTH_WAIT_SECS * 3),
         }
     }
 }
@@ -167,13 +171,19 @@ impl Updates {
                 .iter()
                 .take(fleetd_contracts::mcp::UPDATE_PARTS_MAX - 1)
                 .map(|n| {
-                    part(
+                    let mut p = part(
                         UpdatePartKind::Node,
                         Some(n.machine_id.clone()),
                         &n.name,
                         &n.version,
                         UpdateState::Waiting,
-                    )
+                    );
+                    // Offline now: not waited for. One online now is, through the hub's restart (`update_node`).
+                    if n.live_since.is_none() {
+                        p.state = UpdateState::Skipped;
+                        p.message = Some(text(OFFLINE));
+                    }
+                    p
                 }),
         );
         let at = now_ms(self.clock.as_ref());
@@ -303,10 +313,62 @@ impl Updates {
                             "couldn't start the restart ({e}), so the previous binary was put back"
                         ),
                     ));
+                    return;
                 }
-                // The watcher restarts this process; the hub that comes up goes on in `resume`.
+                // The watcher restarts this process, and the hub that comes up goes on in `resume`. Still here
+                // past the deadline, the restart never happened: the run ends, and says so.
+                self.restart_missed(&plan).await;
             }
         }
+    }
+
+    /// The hub that handed its restart to the watcher, still running long after: the watcher's verdict if it wrote
+    /// one (its restart of the service failed), else the previous binary back and a failed restart.
+    async fn restart_missed(&self, plan: &Plan) {
+        let deadline = now_ms(self.clock.as_ref()) + ms(self.timing.restart);
+        let verdict = loop {
+            if let Some(verdict) = finish::read_verdict(&plan.verdict) {
+                break Some(verdict);
+            }
+            if now_ms(self.clock.as_ref()) >= deadline {
+                break None;
+            }
+            self.clock.sleep(self.timing.poll).await;
+        };
+        let (state, stage, message) = match verdict {
+            Some(Verdict {
+                state,
+                stage,
+                message,
+            }) => (state, stage, message),
+            None => {
+                let back = crate::update::restore(&plan.exe, &plan.prev).is_ok();
+                (
+                    UpdateState::Failed,
+                    Some(UpdateStage::Restart),
+                    format!(
+                        "the hub didn't restart onto {} within {} min, so it kept running {}{}",
+                        crate::version_label(&plan.to),
+                        self.timing.restart.as_secs().div_ceil(60),
+                        crate::version_label(&plan.from),
+                        if back {
+                            " and its previous binary was put back"
+                        } else {
+                            "; its previous binary couldn't be put back: run `fleetd update` on its machine"
+                        }
+                    ),
+                )
+            }
+        };
+        if state == UpdateState::Done {
+            // Only the new build writes this as it comes up; this process is the old one, about to go.
+            return;
+        }
+        self.set_part(None, state, stage, message);
+        self.settle_nodes(
+            UpdateState::Skipped,
+            "not asked: the hub kept its build, and nodes follow the hub",
+        );
     }
 
     /// Puts the channel's newest build in place for the watcher, or None when the hub already runs it.
@@ -526,12 +588,33 @@ impl Updates {
                 format!("already runs {label}"),
             );
         }
-        if node.live_since.is_none() {
+        // It was online when the run started (an offline one was skipped then), and the hub's own restart dropped
+        // every link: it gets a while to reconnect before it counts as offline.
+        let mut node = node;
+        let deadline = now_ms(self.clock.as_ref()) + ms(self.timing.node_back);
+        while node.live_since.is_none() {
+            if now_ms(self.clock.as_ref()) >= deadline {
+                return self.set_part(Some(machine_id), UpdateState::Skipped, None, OFFLINE);
+            }
+            self.clock.sleep(self.timing.poll).await;
+            match facts(ports) {
+                Some(n) => node = n,
+                None => {
+                    return self.set_part(
+                        Some(machine_id),
+                        UpdateState::Skipped,
+                        None,
+                        "not asked: the hub no longer knows it",
+                    );
+                }
+            }
+        }
+        if node.version == to {
             return self.set_part(
                 Some(machine_id),
-                UpdateState::Skipped,
+                UpdateState::Current,
                 None,
-                "offline: press Update again once it's online, or run `fleetd update` on it",
+                format!("already runs {label}"),
             );
         }
         if !node.can_update {
@@ -618,6 +701,8 @@ impl Updates {
         }
     }
 }
+
+const OFFLINE: &str = "offline: press Update again once it's online, or run `fleetd update` on it";
 
 fn ms(d: Duration) -> i64 {
     i64::try_from(d.as_millis()).unwrap_or(i64::MAX)

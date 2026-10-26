@@ -138,6 +138,14 @@ export const versionLabel = (version: string): string => {
   return ["Nightly", `${month} ${String(Number(d))}, ${h ?? ""}:${mi ?? ""} UTC`, ...(sha === null ? [] : [sha.slice(0, 7)])].join(" · ");
 };
 
+const LABEL_IN_TEXT = /(Nightly · [A-Z][a-z]{2} \d{1,2}, \d{2}:\d{2} UTC(?: · [0-9a-f]{7})?)/u;
+
+/**
+ * A line with nightly labels in it, cut around them: the odd parts are labels, so the page can mark them as version
+ * text (`data-version`) while the words around them are held to the text rules.
+ */
+export const splitLabels = (text: string): string[] => text.split(LABEL_IN_TEXT);
+
 /**
  * The About panel's version fields: the label, then the raw version to copy. Without them macOS shows Info.plist's,
  * which carry only the numeric 0.0.0 Apple accepts there (build-release.yml), so a nightly read "0.0.0 (0.0.0)".
