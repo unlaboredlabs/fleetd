@@ -19,6 +19,8 @@ pub fn max_open_tasks(max_agents: i64) -> usize {
 /// The calls a task's agent makes: its review verdict (`report`) and a question for its lead. Only a lead closes
 /// work.
 pub const WORKER_OPS: &[&str] = &["review_verdict", "ask_lead"];
+/// The calls a task's node makes for it: its browser sessions (node/browser).
+pub const NODE_OPS: &[&str] = &["browser_session", "browser_recording_part"];
 /// The calls that start an agent.
 pub const SPAWN_OPS: &[&str] = &["task_spawn"];
 
@@ -60,7 +62,7 @@ pub fn check(agent: &CallerAgent, op: &str) -> Result<(), McpToolError> {
                      whether to split it.",
                 ));
             }
-            if !WORKER_OPS.contains(&op) {
+            if !WORKER_OPS.contains(&op) && !NODE_OPS.contains(&op) {
                 return Err(McpToolError::new(
                     ErrorCode::Forbidden,
                     format!("{op} is a lead's call, and {task} is a task."),

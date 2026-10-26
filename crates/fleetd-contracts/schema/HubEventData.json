@@ -251,6 +251,59 @@
         }
       ]
     },
+    "BrowserControl": {
+      "description": "Who drives a live session's browser. A person takes it over (human) and hands it back (handing_back, until the\nagent's next tool call sees the page as the person left it, then agent). While it isn't the agent's, the agent's\nbrowser tools answer that a person has control.",
+      "enum": [
+        "agent",
+        "human",
+        "handing_back"
+      ],
+      "type": "string",
+      "x-open": true
+    },
+    "BrowserSessionEventData": {
+      "description": "`browser.session`: a session started, changed hands, ended or its recording landed. The rest comes from\n`browser_sessions`.",
+      "properties": {
+        "control": {
+          "$ref": "#/$defs/BrowserControl"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/BrowserSessionId"
+        },
+        "state": {
+          "$ref": "#/$defs/BrowserSessionState"
+        },
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        }
+      },
+      "required": [
+        "projectRef",
+        "sessionId",
+        "state",
+        "control"
+      ],
+      "type": "object"
+    },
+    "BrowserSessionId": {
+      "pattern": "^B[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "BrowserSessionState": {
+      "description": "Where a session is. live → uploading → recorded; lost when the node could not record or upload it; expired once\nretention deleted its recording (its row stays).",
+      "enum": [
+        "live",
+        "uploading",
+        "recorded",
+        "lost",
+        "expired"
+      ],
+      "type": "string",
+      "x-open": true
+    },
     "ChangeId": {
       "pattern": "^X[1-9][0-9]*$",
       "type": "string"
@@ -1397,6 +1450,9 @@
         "app.presence": {
           "$ref": "#/$defs/AppPresenceData"
         },
+        "browser.session": {
+          "$ref": "#/$defs/BrowserSessionEventData"
+        },
         "change.ci_failed": {
           "$ref": "#/$defs/TrainEventData"
         },
@@ -1557,6 +1613,7 @@
       "required": [
         "agents.cap",
         "app.presence",
+        "browser.session",
         "change.ci_failed",
         "change.needs_rebase",
         "change.queued",

@@ -322,13 +322,17 @@ fn limits(lead: &[&Tool], task: &[&Tool]) -> Result<String, String> {
 }
 
 /// The roles that are offered a tool making call `op` and that the hub lets make it.
-fn who_may_call(op: &str) -> String {
+fn who_may_call(tool: &Tool) -> String {
+    let op = tool.op;
     let mut who = Vec::new();
     for (role, caller, name) in [
         (Role::Lead, CallerAgent::Lead, "a lead"),
         (Role::Worker, task_caller(), "a task's agent"),
     ] {
-        if agent_mcp::tools_for(role).any(|t| t.op == op) && policy::check(&caller, op).is_ok() {
+        // A browser call never reaches the hub's policy: the session's own node answers it.
+        if agent_mcp::tools_for(role).any(|t| t.op == op)
+            && (tool.browser || policy::check(&caller, op).is_ok())
+        {
             who.push(name);
         }
     }
@@ -390,9 +394,13 @@ fn tool_section(
             }
             md.push('\n');
         }
+        let checked = match tool.browser {
+            true => "answered by its node, which runs the browser",
+            false => "checked by the hub",
+        };
         md.push_str(&format!(
-            "**Who may call:** {}, checked by the hub. **Needs a human:** {}\n\n",
-            who_may_call(tool.op),
+            "**Who may call:** {}, {checked}. **Needs a human:** {}\n\n",
+            who_may_call(tool),
             tool.human.unwrap_or("no.")
         ));
         let arguments = example(role, tool.name)
@@ -688,6 +696,10 @@ fn example(role: Role, tool: &str) -> Option<Value> {
         (Role::Worker, "ask_lead") => json!({
             "question": "Should the limit apply to admin keys too?",
         }),
+        (_, "session_start") => json!({
+            "purpose": "Check that signup works on the staging site",
+        }),
+        (_, "session_end") => json!({}),
         _ => return None,
     })
 }

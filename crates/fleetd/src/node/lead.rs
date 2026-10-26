@@ -13,6 +13,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{mpsc, oneshot, watch};
 
+use super::browser::BrowserHandler;
 use super::config::mkdir_private;
 use super::mask::Masker;
 use super::runner::process::PeerSession;
@@ -21,6 +22,7 @@ use super::wire::{
     ErrorCode, LeadCallFrame, LeadResultFrame, LeadSocketFrame, McpToolError, NodeToHub, Text,
     to_json,
 };
+use fleetd_contracts::browser::{BrowserCallFrame, BrowserResultFrame};
 use fleetd_contracts::ids::ThreadId;
 
 pub fn lead_socket_path(home: &Path) -> PathBuf {
@@ -174,6 +176,11 @@ impl LeadRelay {
 
 /// One CLI frame is a few KB at most; anything near this is not a CLI.
 const MAX_FRAME_BYTES: usize = 256 * 1024;
+/// A browser-mcp frame carries a driver result's text (a page snapshot) to be scrubbed.
+const MAX_BROWSER_FRAME_BYTES: usize = 8 << 20;
+
+/// Lead calls only the node makes, for a session's browser (node/browser): a process in a session can't send them.
+const NODE_OPS: &[&str] = &["browser_session", "browser_recording_part"];
 
 fn bad_frame(message: &str) -> LeadResultFrame {
     error_frame(
@@ -182,10 +189,23 @@ fn bad_frame(message: &str) -> LeadResultFrame {
     )
 }
 
-fn decode_call(line: &str) -> Result<LeadCallFrame, String> {
+enum Incoming {
+    Lead(LeadCallFrame),
+    Browser(BrowserCallFrame),
+}
+
+fn decode_call(line: &str) -> Result<Incoming, String> {
     match serde_json::from_str::<LeadSocketFrame>(line).map_err(|e| e.to_string())? {
-        LeadSocketFrame::LeadCall(frame) => Ok(frame),
-        LeadSocketFrame::LeadResult(_) => Err("expected t: \"lead_call\"".into()),
+        LeadSocketFrame::LeadCall(frame) if line.len() > MAX_FRAME_BYTES => Err(format!(
+            "frame is larger than {MAX_FRAME_BYTES} bytes ({} for lead_call {})",
+            line.len(),
+            frame.id
+        )),
+        LeadSocketFrame::LeadCall(frame) => Ok(Incoming::Lead(frame)),
+        LeadSocketFrame::BrowserCall(frame) => Ok(Incoming::Browser(frame)),
+        LeadSocketFrame::LeadResult(_) | LeadSocketFrame::BrowserResult(_) => {
+            Err("expected t: \"lead_call\" or \"browser_call\"".into())
+        }
     }
 }
 
@@ -272,6 +292,7 @@ async fn serve_connection(
     relay: LeadRelay,
     identify: Identify,
     mask_for: MaskFor,
+    browser: Option<BrowserHandler>,
 ) {
     let pid = conn.peer_cred().ok().and_then(|c| c.pid());
     let mut buffer: Vec<u8> = Vec::new();
@@ -290,10 +311,12 @@ async fn serve_connection(
                 if let Some(newline) = buffer.iter().position(|&b| b == b'\n') {
                     break String::from_utf8_lossy(&buffer[..newline]).into_owned();
                 }
-                if buffer.len() > MAX_FRAME_BYTES {
+                if buffer.len() > MAX_BROWSER_FRAME_BYTES {
                     reply(
                         &mut conn,
-                        &bad_frame(&format!("frame is larger than {MAX_FRAME_BYTES} bytes")),
+                        &bad_frame(&format!(
+                            "frame is larger than {MAX_BROWSER_FRAME_BYTES} bytes"
+                        )),
                     )
                     .await;
                     return;
@@ -301,8 +324,42 @@ async fn serve_connection(
             }
         }
     };
-    let answer = match decode_call(&line) {
-        Ok(frame) => {
+    let frame = match decode_call(&line) {
+        Ok(Incoming::Lead(frame)) => frame,
+        Ok(Incoming::Browser(frame)) => {
+            let answer = browser_call(frame, pid, identify, browser).await;
+            let line = format!(
+                "{}\n",
+                serde_json::to_string(&LeadSocketFrame::BrowserResult(answer)).unwrap_or_default()
+            );
+            let _ = conn.write_all(line.as_bytes()).await;
+            let _ = conn.shutdown().await;
+            return;
+        }
+        Err(why) => {
+            reply(
+                &mut conn,
+                &bad_frame(&format!("not a lead_call frame: {why}")),
+            )
+            .await;
+            return;
+        }
+    };
+    let op = fleetd_contracts::lead_calls::op_name(&frame.call);
+    if NODE_OPS.contains(&op.as_str()) {
+        let refused = error_frame(
+            frame.id.as_str(),
+            McpToolError::new(
+                ErrorCode::Forbidden,
+                format!("{op} is the node's own call for a browser session"),
+            )
+            .with_fix("use session_start and session_end; the node reports the session itself"),
+        );
+        reply(&mut conn, &refused).await;
+        return;
+    }
+    let answer = {
+        {
             let peer = match pid {
                 Some(pid) => tokio::task::spawn_blocking(move || identify(pid))
                     .await
@@ -338,9 +395,50 @@ async fn serve_connection(
                 Err(refused) => *refused,
             }
         }
-        Err(why) => bad_frame(&format!("not a lead_call frame: {why}")),
     };
     reply(&mut conn, &answer).await;
+}
+
+/// A browser-mcp call, answered by the node's broker for the session its process runs in.
+async fn browser_call(
+    frame: BrowserCallFrame,
+    pid: Option<i32>,
+    identify: Identify,
+    browser: Option<BrowserHandler>,
+) -> BrowserResultFrame {
+    let refuse = |error: McpToolError| -> BrowserResultFrame {
+        serde_json::from_value(serde_json::json!({ "id": frame.id, "error": error }))
+            .expect("an error frame")
+    };
+    let Some(browser) = browser else {
+        return refuse(
+            McpToolError::new(ErrorCode::Invalid, "this machine runs no browser sessions")
+                .with_fix("do without a browser and say so in your result"),
+        );
+    };
+    let peer = match pid {
+        Some(pid) => tokio::task::spawn_blocking(move || identify(pid))
+            .await
+            .ok(),
+        None => None,
+    };
+    match peer {
+        Some(PeerSession::Session(session))
+            if frame
+                .thread_id
+                .as_ref()
+                .is_none_or(|t| t.as_str() == session) =>
+        {
+            browser(session, frame).await
+        }
+        _ => refuse(
+            McpToolError::new(
+                ErrorCode::Forbidden,
+                "a browser session belongs to an agent's session, and this call comes from none",
+            )
+            .with_fix("use the browser tools of a fleetd agent"),
+        ),
+    }
 }
 
 async fn reply(conn: &mut UnixStream, frame: &LeadResultFrame) {
@@ -391,6 +489,7 @@ pub async fn serve_lead_socket(
     relay: LeadRelay,
     identify: Identify,
     mask_for: MaskFor,
+    browser: Option<BrowserHandler>,
 ) -> Result<LeadSocket, String> {
     let parent = path.parent().unwrap_or(Path::new("/"));
     mkdir_private(parent).map_err(|_| format!("cannot create {}", parent.display()))?;
@@ -409,6 +508,7 @@ pub async fn serve_lead_socket(
                     relay.clone(),
                     identify.clone(),
                     mask_for.clone(),
+                    browser.clone(),
                 ));
             }
         })),

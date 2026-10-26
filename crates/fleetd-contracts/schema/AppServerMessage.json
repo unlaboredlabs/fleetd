@@ -848,6 +848,11 @@
           "const": "skills.changed",
           "description": "A hub-kept skill was created, edited, installed, updated or deleted: `data.scope`, `data.projectRef` (project\nscope), `data.names`, `data.by`. skills_list reads them.",
           "type": "string"
+        },
+        {
+          "const": "browser.session",
+          "description": "A browser session started, changed hands, ended, or its recording landed or was lost; `data` is\n`browser::BrowserSessionEventData`. browser_sessions reads the rest.",
+          "type": "string"
         }
       ],
       "x-open": true
