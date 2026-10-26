@@ -513,3 +513,52 @@ async fn live_frames_go_only_to_watchers_of_their_session_and_the_node_hears_the
     assert_eq!(live.watchers(&s1), 0);
     assert_eq!(live.watchers(&s2), 0);
 }
+
+#[tokio::test]
+async fn partial_uploads_count_toward_the_cap_and_go_once_stale_past_the_retention() {
+    let (hub, clock, home) = hub();
+    let r = project("storefront");
+    // An upload a node started and never finished.
+    node_call(&hub, &r, report(S1, "uploading", json!([])), "browser_session").await.unwrap();
+    part(&hub, &r, S1, "video", 0, b"0123456789").await.unwrap();
+    assert_eq!(super::prune(&hub).unwrap(), 0, "an upload still going is never cut short");
+
+    // Past its retention it goes, files and all, though it never became a recording.
+    let admin = caller(json!([{ "role": "admin", "machines": "*" }]));
+    let tight = json!({ "retentionDays": 2, "maxGbPerProject": 20 });
+    tool(&hub, &admin, "browser_retention_set", tight).await.unwrap();
+    clock.advance(Duration::from_secs(3 * 86_400));
+    assert_eq!(super::prune(&hub).unwrap(), 1);
+    let s = super::get(&hub.db, &fleetd_contracts::browser::BrowserSessionId::unchecked(S1)).unwrap().unwrap();
+    assert_eq!(s.state.as_str(), "expired");
+    assert!(!home.path().join("browser").join(S1).exists());
+}
+
+#[tokio::test]
+async fn a_fresh_partial_upload_counts_toward_its_projects_size() {
+    let (hub, clock, _home) = hub();
+    let r = project("storefront");
+    // A recording of 0.6 GB as its row says, then, a day later, an upload in progress whose disk use is checked.
+    let s: fleetd_contracts::browser::BrowserSession = serde_json::from_value(json!({
+        "sessionId": S1, "projectRef": r, "threadId": "th-1", "purpose": "p", "state": "recorded",
+        "control": "agent", "startedAt": AT, "files": [{ "file": "video", "bytes": 644_245_094 }],
+    }))
+    .unwrap();
+    hub.db.transaction(|c| super::put_on(c, &s, NOW_MS as i64)).unwrap();
+    hub.db
+        .transaction(|c| {
+            super::set_retention(c, &serde_json::from_value(json!({ "retentionDays": 30, "maxGbPerProject": 1 })).unwrap())
+        })
+        .unwrap();
+    clock.advance(Duration::from_secs(86_400 + 60));
+    node_call(&hub, &r, report(S2, "uploading", json!([])), "browser_session").await.unwrap();
+    // Its file stands in for half a GB on disk: sparse, so the test writes nothing much.
+    let dir = super::dir(&hub, &fleetd_contracts::browser::BrowserSessionId::unchecked(S2));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::File::create(dir.join("video.webm")).unwrap().set_len(536_870_912).unwrap();
+    assert_eq!(super::prune(&hub).unwrap(), 1, "together over 1 GB: the older recording goes");
+    let old = super::get(&hub.db, &fleetd_contracts::browser::BrowserSessionId::unchecked(S1)).unwrap().unwrap();
+    let new = super::get(&hub.db, &fleetd_contracts::browser::BrowserSessionId::unchecked(S2)).unwrap().unwrap();
+    assert_eq!(old.state.as_str(), "expired");
+    assert_eq!(new.state.as_str(), "uploading", "the upload in progress stays");
+}

@@ -142,7 +142,12 @@ async fn site() -> (String, AbortOnDrop) {
                     let body =
                         String::from_utf8_lossy(&request[head_end + 4..head_end + 4 + length])
                             .into_owned();
-                    let page = if text.starts_with("POST /login") {
+                    let page = if text.starts_with("GET /secret") {
+                        // A project secret as a page shows it: HTML-escaped, and inside longer base64.
+                        let html = PROJECT_SECRET.replace('&', "&amp;").replace('<', "&lt;");
+                        let b64 = B64.encode(format!("key={PROJECT_SECRET};"));
+                        format!("<html><body><p title=\"{html}\">{html}</p><p>{b64}</p></body></html>")
+                    } else if text.starts_with("POST /login") {
                         let user = body
                             .split('&')
                             .find_map(|kv| kv.strip_prefix("user="))
@@ -178,7 +183,14 @@ struct Rig {
 }
 
 /// A broker with a warm Chrome, or None (said why) where this machine has none.
+/// A secret of the agent session's project, as the node reads it for the session.
+const PROJECT_SECRET: &str = "pa<ss&word-77";
+
 async fn rig() -> Option<Rig> {
+    rig_with(Vec::new()).await
+}
+
+async fn rig_with(secrets: Vec<(String, String)>) -> Option<Rig> {
     let Some(chrome) = chrome() else {
         eprintln!("skipped: no Chrome on this machine (set FLEETD_TEST_CHROME)");
         return None;
@@ -194,7 +206,7 @@ async fn rig() -> Option<Rig> {
         node_home.path(),
         config,
         hub.clone(),
-        Arc::new(|_| Ok(crate::node::mask::Secrets::default())),
+        Arc::new(move |_| Ok(crate::node::mask::Secrets(secrets.clone()))),
     )
     .await;
     broker.ready(chrome);
@@ -846,4 +858,67 @@ async fn a_person_watches_takes_over_and_types_and_the_agent_sees_it_after_the_h
     );
     assert!(actions.contains("human:desk"), "who took over");
     assert!(!actions.contains("typed-by-human"), "a person's keys aren't logged one by one");
+}
+
+async fn recorded(hub: &TestHub) -> String {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        let listed = sessions(hub).await;
+        if listed["sessions"][0]["state"] == "recorded" {
+            return listed["sessions"][0]["sessionId"].as_str().unwrap().to_owned();
+        }
+        assert!(Instant::now() < deadline, "not recorded: {listed}");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_project_secret_is_scrubbed_from_the_dom_trace_in_every_form_the_page_shows_it() {
+    let Some(rig) = rig_with(vec![("SHOP_KEY".into(), PROJECT_SECRET.into())]).await else { return };
+    let (site, _site) = site().await;
+    let started = call(&rig.broker, json!({ "op": "session_start", "purpose": "Read" })).await;
+    let mut driver = Driver::connect(started["result"]["cdp"].as_str().unwrap()).await.unwrap();
+    let page = driver.page().await;
+    driver.ok(Some(&page), "Page.navigate", json!({ "url": format!("{site}/secret") })).await;
+    driver.wait_for(&page, "document.readyState === 'complete' && !!document.querySelector('p')").await;
+    rig.broker.item(THREAD, &command_item(&format!("agent-browser open {site}/secret"), "✓"));
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    call(&rig.broker, json!({ "op": "session_end" })).await;
+    let id = recorded(&rig.hub).await;
+    let dom = String::from_utf8(read_file(&rig.hub, &id, "dom").await).unwrap();
+    assert!(dom.contains("***SHOP_KEY***"), "{dom}");
+    let b64 = B64.encode(format!("key={PROJECT_SECRET};"));
+    for form in ["pa&lt;ss&amp;word-77", "pa<ss&word-77", &b64[4..16]] {
+        assert!(!dom.contains(form), "{form} in {dom}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn two_starts_at_once_open_one_session_and_leave_one_recording() {
+    let Some(rig) = rig().await else { return };
+    let (a, b) = tokio::join!(
+        call(&rig.broker, json!({ "op": "session_start", "purpose": "One" })),
+        call(&rig.broker, json!({ "op": "session_start", "purpose": "Two" })),
+    );
+    let opened = [&a, &b].iter().filter(|r| r["result"]["sessionId"].is_string()).count();
+    assert_eq!(opened, 1, "{a} {b}");
+    let refused = if a.get("error").is_some() { &a } else { &b };
+    let why = refused["error"]["message"].as_str().unwrap();
+    assert!(why.contains("starting") || why.contains("is open"), "{why}");
+    let folders = std::fs::read_dir(rig.node_home.path().join("browser/recordings")).unwrap().count();
+    assert_eq!(folders, 1, "the refused start made no recording");
+    call(&rig.broker, json!({ "op": "session_end" })).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_browser_session_ends_with_its_agents_session() {
+    let Some(rig) = rig().await else { return };
+    call(&rig.broker, json!({ "op": "session_start", "purpose": "Look" })).await;
+    SessionHooks::ended(rig.broker.as_ref(), "th-someone-else");
+    assert!(rig.broker.live(THREAD).is_some(), "another agent's exit changes nothing");
+    SessionHooks::ended(rig.broker.as_ref(), THREAD);
+    assert!(rig.broker.live(THREAD).is_none());
+    let id = recorded(&rig.hub).await;
+    let actions = String::from_utf8(read_file(&rig.hub, &id, "actions").await).unwrap();
+    assert!(actions.contains("agent_session_ended"), "{actions}");
 }
