@@ -83,8 +83,6 @@ const openFleetd = async (deps: TerminalDeps, run: FleetdCommand): Promise<Setup
 };
 
 export const openSetup = (deps: TerminalDeps): Promise<SetupOutcome> => openFleetd(deps, "init");
-/** `fleetd update` with no arguments: it installs, and restarts the hub here only when the hub says nothing runs. */
-export const openUpdate = (deps: TerminalDeps): Promise<SetupOutcome> => openFleetd(deps, "update");
 
 const executable = (file: string): boolean => {
   try {

@@ -1,13 +1,14 @@
 // Mounted once by the shell: the updates sheet, and the commands that reach it (the palette, the app menu's
-// "Check for Updates…"). The sheet shows this app's update and the hub's, each with its one action.
-import { useState, type ReactNode } from "react";
+// "Check for Updates…"). The sheet's one Update button updates the hub, then every machine's node, then this app,
+// and shows each part's progress and result; this app's own update keeps its own action too.
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button, copyText, Dialog, InlineCode, Text } from "../../ui";
 import { useDataLayer } from "../../src/data/react";
 import { useCommands } from "../palette";
 import { useUpdatesView } from "./hooks";
-import type { SetupOutcome } from "../../../shared/pairing";
 import type { Notes as NotesOf } from "../../../shared/updates";
-import type { AppAction, AppPart, HubPart } from "./model";
+import { loadRun, startUpdate, type FlowDeps } from "./flow";
+import type { AppAction, AppPart, HubPart, PartRow, UpdatesView } from "./model";
 import { appUpdate, setUpdatesOpen, useAppUpdate, useUpdatesOpen } from "./state";
 import s from "./updates.module.css";
 import { Boundary } from "../../src/Boundary";
@@ -111,13 +112,14 @@ function Head({ title, detail, children }: { title: string; detail: string | und
   );
 }
 
-function AppSection({ part }: { part: AppPart }) {
+/** `quiet`: the one Update button is there, or its run goes on, so this app's own action steps back. */
+function AppSection({ part, quiet }: { part: AppPart; quiet: boolean }) {
   const { action } = part;
   return (
     <section className={s.part} aria-label="This app" data-updates-part="app">
       <Head title={part.title} detail={part.detail}>
         {action === undefined ? undefined : (
-          <Button variant={action.primary ? "primary" : "secondary"} disabled={part.busy === true} onClick={() => runApp(action.run)}>
+          <Button variant={action.primary && !quiet ? "primary" : "secondary"} disabled={part.busy === true} onClick={() => runApp(action.run)}>
             {action.label}
           </Button>
         )}
@@ -129,93 +131,57 @@ function AppSection({ part }: { part: AppPart }) {
   );
 }
 
-/** What runs on the hub now (hub_info), asked when the person chooses Update the hub. */
-type Running = { readonly kind: "asking" } | { readonly kind: "known"; readonly items: readonly string[] } | { readonly kind: "unknown"; readonly reason: string };
-
-function RunningNow({ running }: { running: Running }) {
-  if (running.kind === "asking") {
-    return (
-      <Text size="sm" tone="quiet">
-        Asking the hub what's running…
-      </Text>
-    );
-  }
-  if (running.kind === "unknown") {
-    return (
-      <Text size="sm" tone="warning">
-        {`The hub couldn't say what's running: ${running.reason}`}
-      </Text>
-    );
-  }
-  if (running.items.length === 0) return <Text size="sm">Nothing is running on the hub, so it restarts as soon as the update is in.</Text>;
+/** The hub or a machine: its name, where it stands or how its update goes, and its raw version. */
+function Row({ row }: { row: PartRow }) {
   return (
-    <div className={s.confirm}>
+    <li className={s.row} data-updates-row={row.key}>
       <Text size="sm" strong>
-        Running on the hub now, so it waits for these:
+        {row.name}
       </Text>
-      <ul className={s.notes}>
-        {running.items.map((line, i) => (
-          <li key={i}>
-            <Text size="sm">
-              <Line text={line} />
-            </Text>
-          </li>
-        ))}
-      </ul>
-    </div>
+      <Text size="sm" tone={row.tone === "quiet" ? "quiet" : row.tone}>
+        <Line text={row.status} />
+      </Text>
+      <Raw version={row.raw} />
+    </li>
   );
 }
 
-function HubSection({ part }: { part: HubPart }) {
-  const { call } = useDataLayer();
-  const [running, setRunning] = useState<Running | null>(null);
-  const [opened, setOpened] = useState<SetupOutcome | null>(null);
-  const { update } = part;
-
-  const reveal = async () => {
-    setRunning({ kind: "asking" });
-    const outcome = await call("hub_info", {});
-    setRunning(outcome.ok ? { kind: "known", items: outcome.output.busy.map((item) => item.text) } : { kind: "unknown", reason: outcome.error.message });
-  };
-
+function HubSection({ part, nodes }: { part: HubPart; nodes: UpdatesView["nodes"] }) {
   return (
-    <section className={s.part} aria-label="The hub" data-updates-part="hub">
-      <Head title={part.title} detail={part.detail}>
-        {update === undefined || running !== null ? undefined : (
-          <Button variant="primary" onClick={() => void reveal()}>
-            Update the hub
-          </Button>
-        )}
-      </Head>
-      {update === undefined || running === null ? null : (
-        <>
-          <RunningNow running={running} />
-          <Command command={update.command} note={update.note} />
-          {update.terminal ? (
-            <div className={s.actions}>
-              <Button variant="secondary" onClick={() => void window.fleetd.updates.hubTerminal().then(setOpened)}>
-                Run in Terminal
-              </Button>
-            </div>
-          ) : null}
-          {opened === null ? null : opened.ok ? (
-            <Text size="sm" tone="quiet">
-              <Line
-                text={`fleetd update is running in ${opened.terminal}. Its result shows there. If something is running on the hub, the hub keeps its old version until you run \`fleetd update --restart-now\` or it next restarts.`}
-              />
-            </Text>
-          ) : (
-            <div role="alert">
-              <Text size="sm" tone="danger">
-                {opened.message}
-              </Text>
-              <Command command={opened.command} />
-            </div>
-          )}
-        </>
-      )}
-      <Raw version={part.raw} />
+    <section className={s.part} aria-label="The hub and its machines" data-updates-part="hub">
+      <ul className={s.rows}>
+        <Row row={part} />
+        {nodes.map((node) => (
+          <Row key={node.key} row={node} />
+        ))}
+      </ul>
       <Notes notes={part.notes} />
+      <Text size="xs" tone="faint">
+        <Line text="A machine without the app updates with `fleetd update`." />
+      </Text>
+    </section>
+  );
+}
+
+/** The one Update button, or the run's progress and how it ended. */
+function UpdateAll({ view, deps }: { view: UpdatesView; deps: FlowDeps }) {
+  if (view.update === null && view.progress === null) return null;
+  return (
+    <section className={s.part} aria-label="Update" data-updates-part="all">
+      {view.update === null ? null : (
+        <Head title="Update fleetd" detail={view.update.note}>
+          <Button variant="primary" onClick={() => void startUpdate(deps)}>
+            {view.update.label}
+          </Button>
+        </Head>
+      )}
+      {view.progress === null ? null : (
+        <div role={view.progress.tone === "danger" ? "alert" : "status"}>
+          <Text size="sm" tone={view.progress.tone === "quiet" ? "default" : view.progress.tone} strong>
+            {view.progress.text}
+          </Text>
+        </div>
+      )}
     </section>
   );
 }
@@ -224,13 +190,31 @@ export function UpdatesHost() {
   const open = useUpdatesOpen();
   const view = useUpdatesView();
   const ready = useAppUpdate()?.app.kind === "ready";
+  const layer = useDataLayer();
+  const deps = useMemo(
+    (): FlowDeps => ({
+      call: layer.call,
+      retry: () => layer.retryNow(),
+      sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
+      app: {
+        state: appUpdate,
+        check: () => void window.fleetd.updates.check(),
+        install: () => void window.fleetd.updates.install(),
+      },
+    }),
+    [layer],
+  );
+  // The hub's last run: one going on (the app restarted mid-update, or another window started it) is followed.
+  useEffect(() => {
+    if (open) void loadRun(deps);
+  }, [open, deps]);
 
   useCommands(
     [
       {
         id: "app.checkForUpdates",
         title: "Check for updates",
-        detail: "This app and the hub",
+        detail: "The hub, its machines and this app",
         group: "actions",
         keywords: ["update", "upgrade", "version", "what's new"],
         run: () => {
@@ -248,8 +232,9 @@ export function UpdatesHost() {
     <Boundary part="the updates sheet" overlay={{ onError: () => setUpdatesOpen(false) }}>
       <Dialog open onOpenChange={setUpdatesOpen} title="Updates">
         <div className={s.parts} data-screen="updates">
-          {view.app === null ? null : <AppSection part={view.app} />}
-          {view.hub === null ? null : <HubSection part={view.hub} />}
+          <UpdateAll view={view} deps={deps} />
+          {view.hub === null ? null : <HubSection part={view.hub} nodes={view.nodes} />}
+          {view.app === null ? null : <AppSection part={view.app} quiet={view.update !== null || view.going} />}
         </div>
       </Dialog>
     </Boundary>

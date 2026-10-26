@@ -40,6 +40,7 @@ pub mod sweep;
 pub mod tasks;
 pub mod time;
 pub mod train;
+pub mod update;
 pub mod usage;
 pub mod wakes;
 pub mod watchdog;

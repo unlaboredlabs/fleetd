@@ -122,7 +122,7 @@ pub fn shown_argv(argv: &[String]) -> String {
 pub fn restart_reopen_reason(evidence: Option<&str>, machine_id: &str) -> String {
     if evidence.is_some_and(|e| e.starts_with(RUNNING)) {
         format!(
-            "result unknown: the hub restarted while it ran on {machine_id}; check on {machine_id} whether it ran before approving it again"
+            "interrupted, result unknown: the hub restarted while it ran on {machine_id}; check on {machine_id} whether it ran before approving it again"
         )
     } else {
         NOT_RUN_AFTER_RESTART.to_string()
@@ -967,7 +967,7 @@ impl Approvals {
             Some(c) => Some(c.to_string()),
             None => self.deps.hub.workspace_root(&project).await,
         };
-        // Marks it in flight, so a hub restart before the result arrives is reported as "result unknown", not "not run".
+        // Marks it in flight, so a hub restart before the result arrives is reported as interrupted, not "not run".
         let _ = self
             .note(&id, &format!("{RUNNING} {machine}, approved by {by}"))
             .await;
@@ -1000,7 +1000,7 @@ impl Approvals {
                 self.reopen(
                     &id,
                     &format!(
-                        "result unknown: {}; check on {machine} whether it ran before approving it again",
+                        "interrupted, result unknown: {}; check on {machine} whether it ran before approving it again",
                         e.message
                     ),
                 )

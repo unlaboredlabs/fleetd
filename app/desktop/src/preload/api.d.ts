@@ -96,8 +96,6 @@ export interface FleetdApi {
     install(): Promise<void>;
     /** Takes back an `install()` whose download still runs. */
     keep(): Promise<void>;
-    /** Opens `fleetd update` in the system terminal, for a hub on this computer; or why not, with the command. */
-    hubTerminal(): Promise<SetupOutcome>;
   };
   readonly app: {
     /** Command ids clicked in the app menu (an accelerator runs in the renderer's keymap instead). Returns the unsubscribe. */

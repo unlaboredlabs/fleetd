@@ -95,7 +95,6 @@ const api: FleetdApi = {
     check: () => ipcRenderer.invoke(IPC.updatesCheck) as Promise<void>,
     install: () => ipcRenderer.invoke(IPC.updatesInstall) as Promise<void>,
     keep: () => ipcRenderer.invoke(IPC.updatesKeep) as Promise<void>,
-    hubTerminal: () => ipcRenderer.invoke(IPC.updatesHubTerminal) as Promise<SetupOutcome>,
   },
   app: {
     onMenuCommand: (listener) => {

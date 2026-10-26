@@ -18,6 +18,8 @@ pub const DEFAULT_TIMEOUT_SEC: u32 = 120;
 pub const MAX_TIMEOUT_SEC: u32 = fleetd_contracts::ledger::GATED_MAX_TIMEOUT_SEC as u32;
 /// How long past the command's own timeout the hub waits for the node's answer.
 const REPLY_GRACE_SEC: u64 = 30;
+/// A node update downloads the new binary before it answers.
+const UPDATE_WAIT_SEC: u64 = 600;
 /// How long the hub waits for a node to write a secret.
 const SECRET_REPLY_SEC: u64 = 30;
 
@@ -301,8 +303,29 @@ impl NodeCommands {
     ) -> Result<NodeActionResult, NodeCommandError> {
         let wait = match action {
             NodeActionKind::Probe => 30,
+            NodeActionKind::Update => UPDATE_WAIT_SEC,
         };
         let request = json!({ "t": "node_action", "action": action });
+        self.node_action(machine_id, request, wait).await
+    }
+
+    /// A node's update to `update`: it answers once the new build is in place, before its restart.
+    pub async fn update_node(
+        &self,
+        machine_id: &MachineId,
+        update: &fleetd_contracts::node_link::NodeUpdate,
+    ) -> Result<NodeActionResult, NodeCommandError> {
+        let request =
+            json!({ "t": "node_action", "action": NodeActionKind::Update, "update": update });
+        self.node_action(machine_id, request, UPDATE_WAIT_SEC).await
+    }
+
+    async fn node_action(
+        &self,
+        machine_id: &MachineId,
+        request: serde_json::Value,
+        wait: u64,
+    ) -> Result<NodeActionResult, NodeCommandError> {
         match self
             .request(
                 machine_id,

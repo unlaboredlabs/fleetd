@@ -325,6 +325,7 @@ async fn run_link_once(
             fleetd_contracts::node_link::CAP_SKILLS.to_owned(),
             fleetd_contracts::node_link::CAP_ORDER_ENV.to_owned(),
             fleetd_contracts::node_link::CAP_WORKTREE_SETUP.to_owned(),
+            fleetd_contracts::node_link::CAP_SELF_UPDATE.to_owned(),
         ],
     }));
     let hub_id = match next_frame(&mut stream, HANDSHAKE_TIMEOUT, "welcome").await {
@@ -341,6 +342,8 @@ async fn run_link_once(
         Err(end) => return end,
     };
     on_welcome();
+    // For the watcher of an update's restart: this build came up and its hub took it.
+    crate::update::finish::mark_up(&shared.node_sessions.home(), &shared.settings.node_version);
     tracing::info!(%hub_id, machine_id = %shared.settings.machine_id, "linked to hub");
     let mut woke = shared.wakes.watch();
     woke.borrow_and_update();
@@ -410,8 +413,9 @@ async fn run_link_once(
             }
             HubToNode::NodeAction(action) => {
                 let tx = tx.clone();
+                let home = shared.node_sessions.home();
                 tasks.spawn(async move {
-                    let result = run_node_action(action).await;
+                    let result = run_node_action(action, &home).await;
                     let _ = tx.send(to_json(&NodeToHub::NodeActionResult(result)));
                 });
             }

@@ -561,3 +561,71 @@ async fn a_wake_to_a_lead_idle_past_its_cache_starts_a_fresh_session_with_the_ch
     hub.after_debounce().await;
     assert_eq!((sends(), hub.launched_prompts().len()), (start + 2, 2));
 }
+
+impl Hub {
+    /// A thread end the node reported for `thread` on the project's machine.
+    fn thread_ended(&self, kind: HubEventType, thread: &str, data: serde_json::Value) {
+        self.events
+            .append(NewEvent {
+                at: iso_ms(T0_MS as i64).into(),
+                r#type: kind,
+                machine_id: Some(self.project.machine_id.clone()),
+                project_id: Some(self.project.project_id.clone()),
+                thread_id: Some(ThreadId::unchecked(thread)),
+                summary: format!("{thread} ended"),
+                data: Some(data),
+                attention: None,
+            })
+            .unwrap();
+    }
+}
+
+/// An update restarts the node mid-turn: the lead carries on by itself in its thread, with no one asking, and only for
+/// its node going away. A lead's own failure, or a task's thread, is not this.
+#[tokio::test(flavor = "current_thread")]
+async fn a_lead_its_node_cut_off_mid_turn_carries_on_by_itself() {
+    let hub = hub(true);
+    hub.order("fix the five bugs").await;
+    hub.after_debounce().await;
+    let follower = tokio::spawn(Arc::clone(&hub.area).run_cut_off());
+    settle().await;
+    let start = hub.node.sends.lock().unwrap().len();
+
+    hub.thread_ended(
+        HubEventType::ThreadFailed,
+        "lead-1",
+        serde_json::json!({ "threadId": "lead-1", "endCause": "failed", "error": { "class": "auth", "message": "401" } }),
+    );
+    hub.thread_ended(
+        HubEventType::ThreadInterrupted,
+        "task-9",
+        serde_json::json!({ "threadId": "task-9", "endCause": "node_stopping" }),
+    );
+    hub.after_debounce().await;
+    assert_eq!(
+        hub.node.sends.lock().unwrap().len(),
+        start,
+        "neither wakes the lead"
+    );
+
+    hub.thread_ended(
+        HubEventType::ThreadInterrupted,
+        "lead-1",
+        serde_json::json!({ "threadId": "lead-1", "endCause": "node_stopping" }),
+    );
+    hub.after_debounce().await;
+    let sends = hub.node.sends.lock().unwrap().clone();
+    assert_eq!(sends.len(), start + 1);
+    assert!(
+        sends[start]
+            .contains("Your last turn was cut off: the node on lab-a stopped, and it is back."),
+        "{}",
+        sends[start]
+    );
+    assert_eq!(
+        hub.launched_prompts().len(),
+        1,
+        "in its own thread, not a new lead"
+    );
+    follower.abort();
+}

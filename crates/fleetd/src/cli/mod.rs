@@ -87,10 +87,10 @@ running by hand:
     )
 }
 
-const UPDATE_USAGE: &str = "  update [--check] [--channel <c>] [--restart-now]
-             replace this fleetd with the latest release, then restart its hub and node when
-             nothing runs on them; while something does, they keep the running version until
-             their next restart. --restart-now restarts them anyway
+const UPDATE_USAGE: &str = "  update [--check] [--channel <c>]
+             replace this fleetd with the latest release, then restart its hub and node at once:
+             what they were running carries on by itself. The app's Update button does this for
+             the hub and every node; this is for a machine without the app
 ";
 
 /// `fleetd <command> … --help` (or `-h`): that command's usage, for stdout and exit 0. After `--` they are arguments.
@@ -221,7 +221,7 @@ async fn run_long_running(argv: &[String]) -> u8 {
     }
 }
 
-/// `fleetd update [--check] [--channel <c>] [--restart-now]`.
+/// `fleetd update [--check] [--channel <c>]`; `--restart-now`, from before restarts stopped waiting, is still taken.
 async fn update_command(argv: &[String]) -> u8 {
     let spec = args::Spec {
         options: &[
@@ -267,6 +267,12 @@ pub fn main() -> ExitCode {
     }
     if argv.first().map(String::as_str) == Some("agent-mcp") {
         return ExitCode::from(agent_mcp::run(&argv[1..]));
+    }
+    // The watcher an update starts from the previous binary (crate::update::finish); not for people, so not in help.
+    if argv.first().map(String::as_str) == Some("update-finish")
+        && let Some(plan) = argv.get(1)
+    {
+        return crate::update::finish::run(std::path::Path::new(plan));
     }
     if is_long_running(&argv) {
         let runtime = tokio::runtime::Builder::new_multi_thread()

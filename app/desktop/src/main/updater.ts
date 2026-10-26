@@ -3,9 +3,8 @@ import { app, shell } from "electron";
 import type { AppImageUpdater, DebUpdater, MacUpdater } from "electron-updater";
 import { z } from "zod";
 import { DEB, type AppUpdate, type Release, type UpdatesState } from "../shared/updates";
-import { compareVersions, type SetupOutcome } from "../shared/pairing";
+import { compareVersions } from "../shared/pairing";
 import { RELEASE_BUILD } from "./build";
-import { openUpdate, realTerminalDeps } from "./pairing/terminal";
 import { feedUrl } from "./update-feed";
 import { failureReason } from "./update-messages";
 import { fetchRelease } from "./update-release";
@@ -35,8 +34,6 @@ export interface Updates {
   readonly install: () => void;
   /** Takes back "Update and restart" while the download runs. */
   readonly keep: () => void;
-  /** `fleetd update` in the system terminal (main checks first that the hub is on this computer). */
-  readonly hubTerminal: () => Promise<SetupOutcome>;
   readonly onChange: (listener: (state: UpdatesState) => void) => void;
 }
 
@@ -76,10 +73,6 @@ const FixtureSection = z.object({
       current: z.string().optional(),
       app: z.custom<AppUpdate>((v) => typeof v === "object" && v !== null && typeof (v as { kind?: unknown }).kind === "string"),
       release: z.custom<Release>((v) => typeof v === "object" && v !== null && Array.isArray((v as { changes?: unknown }).changes)).nullish(),
-      /** What Run in Terminal answers: opened, or why not. Absent: opened. */
-      hubTerminal: z
-        .union([z.object({ ok: z.literal(true), terminal: z.string() }), z.object({ ok: z.literal(false), message: z.string(), command: z.string() })])
-        .optional(),
     })
     .optional(),
 });
@@ -103,11 +96,6 @@ const fixtureUpdates = (file: string): Updates => {
     check: () => undefined,
     install: () => h.send({ type: "install" }),
     keep: () => h.send({ type: "keep" }),
-    // A fixture never opens a real terminal.
-    hubTerminal: () => {
-      console.info("fixture update: fleetd update in a terminal");
-      return Promise.resolve(section?.hubTerminal ?? { ok: true, terminal: "Terminal" });
-    },
     onChange: (listener) => h.onChange((s) => listener(version === undefined ? s : { ...s, current: version })),
   };
 };
@@ -121,7 +109,6 @@ const unsupported = (): Updates => {
     check: () => undefined,
     install: () => undefined,
     keep: () => undefined,
-    hubTerminal: () => openUpdate(realTerminalDeps()),
     onChange: h.onChange,
   };
 };
@@ -221,7 +208,6 @@ export const updates = (fixtureFile: string | null): Updates => {
     check: () => run(true),
     install: () => h.send({ type: "install" }),
     keep: () => h.send({ type: "keep" }),
-    hubTerminal: () => openUpdate(realTerminalDeps()),
     onChange: h.onChange,
   };
 };

@@ -14,8 +14,6 @@ import type { Notifier } from "./notify";
 import type { Opener } from "./opener";
 import { hostName, pickFolder, readDrop } from "./projects";
 import { isOwnPage } from "./security";
-import type { SetupOutcome } from "../shared/pairing";
-import { localHub } from "../shared/updates";
 import type { Updates } from "./updater";
 
 /** Only our own top-level page may call main: not a subframe, not a local file, not a page navigated elsewhere. */
@@ -92,14 +90,6 @@ export const registerIpc = (
   handle(IPC.updatesCheck, () => frame.updates.check());
   handle(IPC.updatesInstall, () => frame.updates.install());
   handle(IPC.updatesKeep, () => frame.updates.keep());
-  handle(IPC.updatesHubTerminal, (): Promise<SetupOutcome> => {
-    const state = hub.state();
-    // Main checks the hub is here: on a hub elsewhere, this computer's fleetd update wouldn't update it.
-    if (state.phase === "unpaired" || !localHub(state.hub)) {
-      return Promise.resolve({ ok: false, message: "The hub isn't on this computer. Run this on the hub's machine:", command: "fleetd update" });
-    }
-    return frame.updates.hubTerminal();
-  });
   frame.updates.onChange((state) => {
     for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send(IPC.updatesChanged, state);
   });

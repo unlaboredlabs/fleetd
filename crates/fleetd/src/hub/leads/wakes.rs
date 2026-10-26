@@ -46,6 +46,8 @@ pub enum LineKind {
     RecoveryPaused,
     /// A finished task's PR, found after its result line went out (D67): rides along with the next wake too.
     Quiet,
+    /// The lead's own turn was cut off by its node stopping or restarting (`cut_off`): it carries on.
+    CutOff,
 }
 
 #[derive(Debug, Clone)]
@@ -98,6 +100,7 @@ impl Trigger {
                 LineKind::Recovery => "recovery",
                 LineKind::RecoveryPaused => "recovery_paused",
                 LineKind::Quiet => "quiet",
+                LineKind::CutOff => "cut_off",
             },
         }
     }

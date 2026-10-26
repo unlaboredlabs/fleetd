@@ -1513,6 +1513,123 @@ pub struct HubBusyItem {
     pub since: Option<Timestamp>,
 }
 
+// hub_update: updates the hub to the newest build of its channel, then every connected node, without waiting for work
+// to finish: what a restart cuts off carries on by itself. Admin on every machine, a human key only. Answers at once
+// with the run; hub_update_status follows it. A run already going is returned, not started again.
+input!(HubUpdateInput {
+    /// Absent: the channel the hub's build came from.
+    channel: Option<HubChannel>,
+});
+output!(HubUpdateOutput {
+    /// The update going now or the last one; absent when the hub never updated itself.
+    run: Option<UpdateRun>,
+});
+// hub_update_status: the update going now, or the last one.
+input!(HubUpdateStatusInput {});
+
+/// Updates past this many machines are not followed part by part.
+pub const UPDATE_PARTS_MAX: usize = 201;
+
+/// One hub update, from its start to the last node's result.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateRun {
+    pub id: Text<1, 64>,
+    pub channel: HubChannel,
+    /// The build it updates to: the channel's newest fleetd. Absent until the hub read the channel.
+    pub to: Option<Text<1, 200>>,
+    pub started_at: Timestamp,
+    /// Set once every part has its result.
+    pub finished_at: Option<Timestamp>,
+    /// The hub first, then one per machine, by name.
+    pub parts: List<UpdatePart, 1, UPDATE_PARTS_MAX>,
+}
+
+/// The hub or one machine's node in an update.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdatePart {
+    pub part: UpdatePartKind,
+    /// A node's machine.
+    pub machine_id: Option<MachineId>,
+    /// For a person: "the hub", or the machine's name.
+    pub name: Text<1, 200>,
+    /// The version it ran when the update started.
+    pub from: Text<0, 200>,
+    pub state: UpdateState,
+    /// Where it failed or was put back.
+    pub stage: Option<UpdateStage>,
+    /// One plain sentence: what happened, or why not, with what to do.
+    pub message: Option<Text<0, 500>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
+pub enum UpdatePartKind {
+    Hub,
+    Node,
+    /// A part this build doesn't know (a newer hub). Never sent.
+    #[serde(other)]
+    #[schemars(skip)]
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
+pub enum UpdateState {
+    /// Its turn hasn't come: a node waits for the hub.
+    Waiting,
+    /// Reading the channel and downloading the new binary.
+    Downloading,
+    /// The new binary is in place and the service restarts; a health check follows.
+    Restarting,
+    /// Runs the new build.
+    Done,
+    /// Already ran the channel's newest build.
+    Current,
+    /// Not updated, and nothing changed: the download, the checksum or the install failed.
+    Failed,
+    /// The new build didn't come up healthy, so the previous one was put back.
+    RolledBack,
+    /// Not tried: offline, or its fleetd is too old to update from the hub (`message` says how).
+    Skipped,
+    /// A state this build doesn't know (a newer hub). Never sent.
+    #[serde(other)]
+    #[schemars(skip)]
+    Unknown,
+}
+
+impl UpdateState {
+    /// The part has its result.
+    pub fn settled(self) -> bool {
+        !matches!(self, Self::Waiting | Self::Downloading | Self::Restarting)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(extend("x-open" = true))]
+pub enum UpdateStage {
+    /// Reading the channel or downloading the binary.
+    Download,
+    /// The download didn't match the release's SHA256SUMS.
+    Checksum,
+    /// Putting the new binary in place.
+    Install,
+    /// Restarting the service.
+    Restart,
+    /// The restarted service didn't come up healthy on the new build.
+    Health,
+    /// A stage this build doesn't know (a newer hub). Never sent.
+    #[serde(other)]
+    #[schemars(skip)]
+    Unknown,
+}
+
 // agents_list: every agent of the projects the key may read: running, queued or waiting tasks, and each project's
 // lead. Agents that ended since `endedSince` are added. Working first, then most recently started.
 input!(AgentsListInput {
@@ -1897,6 +2014,9 @@ tools! {
     // Human keys only (the handlers check).
     project_stop => ProjectStop, Operate, ProjectStopInput, ProjectStopOutput;
     hub_info => HubInfo, Read, HubInfoInput, HubInfoOutput;
+    // Human keys with Admin on every machine only (the handler checks).
+    hub_update => HubUpdate, Admin, HubUpdateInput, HubUpdateOutput;
+    hub_update_status => HubUpdateStatus, Read, HubUpdateStatusInput, HubUpdateOutput;
     agents_list => AgentsList, Read, AgentsListInput, AgentsListOutput;
     agent_work => AgentWork, Read, AgentWorkInput, AgentWorkOutput;
     pr_list => PrList, Read, PrListInput, PrListOutput;

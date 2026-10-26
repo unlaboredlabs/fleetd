@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { AppUpdate, Release } from "../../../shared/updates";
-import { hubHost, updatesView, type HubInput } from "./model";
+import type { UpdatePart, UpdateRun } from "../../../shared/contracts";
+import type { Flow } from "./flow";
+import { updatesView, type HubInput, type MachineInput } from "./model";
 
 const MINE = "0.0.0-nightly.202610221030+abc1234";
 const NEXT = "0.0.0-nightly.202610231030+def5678";
@@ -59,73 +61,158 @@ describe("this app's update", () => {
   });
 });
 
-describe("the hub", () => {
+const machine = (name: string, nodeVersion: string, online = true): MachineInput => ({ machineId: name, name, nodeVersion, online });
+
+describe("the hub and its machines", () => {
   const current: AppUpdate = { kind: "current" };
 
-  it("is up to date when it runs this app's build and the channel's newest", () => {
-    const v = view(current);
-    expect(v.hub).toMatchObject({ title: "The hub is up to date" });
-    expect(v.hub?.update).toBeUndefined();
+  it("are up to date when they run this app's build and the channel's newest: no button, no line", () => {
+    const v = updatesView({ app: { current: MINE, app: current, release }, hub: hubOf(), machines: [machine("builder", MINE)] });
+    expect(v.hub).toMatchObject({ name: "The hub", status: "Up to date: Nightly · Oct 22, 10:30 UTC · abc1234", tone: "quiet", raw: MINE });
+    expect(v.nodes).toEqual([{ key: "builder", name: "builder", status: "Up to date: Nightly · Oct 22, 10:30 UTC · abc1234", tone: "quiet", raw: MINE }]);
+    expect(v.update).toBeNull();
     expect(v.line).toBeNull();
   });
 
-  it("is unknown, with no warning, when it reports 0.0.0 or nothing", () => {
+  it("offer the one Update button when the hub, a machine or this app has a newer build", () => {
+    const hubBehind = view(current, { version: OLDER });
+    expect(hubBehind.hub).toMatchObject({ status: "Nightly · Oct 22, 10:30 UTC · abc1234 is available", tone: "accent" });
+    expect(hubBehind.hub?.notes.lines).toEqual(["Status loads faster", "The hub says its version"]);
+    expect(hubBehind.update?.label).toBe("Update");
+    expect(hubBehind.line).toEqual({ tone: "accent", text: "Update available" });
+
+    const newer = updatesView({ app: { current: MINE, app: current, release: { ...release, cli: NEXT } }, hub: hubOf(), machines: [machine("builder", MINE), machine("mac", MINE, false)] });
+    expect(newer.hub?.status).toBe("Nightly · Oct 23, 10:30 UTC · def5678 is available");
+    expect(newer.nodes.map((n) => n.status)).toEqual(["Nightly · Oct 23, 10:30 UTC · def5678 is available", "Offline"]);
+    expect(newer.update?.note).toBe(
+      "Updates the hub, then its 2 machines, then this app, which restarts. Nothing waits for work to finish: what's running carries on by itself.",
+    );
+
+    const appOnly = view({ kind: "available", version: NEXT, percent: null, restart: false });
+    expect(appOnly.update?.label).toBe("Update");
+  });
+
+  it("say their version is unknown, with no warning, when it is 0.0.0 or missing", () => {
     for (const version of ["0.0.0", undefined, "devel"]) {
       const v = view(current, { version });
-      expect(v.hub).toMatchObject({ title: "The hub's version is unknown" });
-      expect(v.hub?.update).toBeUndefined();
+      expect(v.hub?.status).toBe("Its version is unknown");
+      expect(v.update).toBeNull();
       expect(v.line).toBeNull();
     }
   });
 
-  it("warns when it is older than this app, with the command and when it restarts the hub", () => {
-    const v = view(current, { version: OLDER });
-    expect(v.line).toEqual({ tone: "warning", text: "Update the hub" });
-    expect(v.hub).toMatchObject({ title: "The hub runs an older fleetd than this app", update: { command: "fleetd update", terminal: false } });
-    expect(v.hub?.update?.note).toMatch(/^Run this on devbox\. .*restarts the hub only if nothing is running there/u);
-    expect(v.hub?.notes.lines).toEqual(["Status loads faster", "The hub says its version"]);
-  });
-
-  it("can open the command in a terminal only for a hub on this computer, and only the bare fleetd update", () => {
-    const local = view(current, { version: OLDER, url: "http://127.0.0.1:4790" });
-    expect(local.hub?.update).toMatchObject({ terminal: true });
-    expect(local.hub?.update?.note).toMatch(/^Run this in a terminal on this computer\./u);
-    // Another channel needs --channel, which the terminal can't run: Copy only.
-    const otherChannel = view(current, { version: "0.5.0", url: "http://127.0.0.1:4790" }, "0.6.0-nightly.202610221030+abc1234");
-    expect(otherChannel.hub?.update).toMatchObject({ command: "fleetd update --channel nightly", terminal: false });
-  });
-
-  it("names a newer hub on the channel in the sheet only, not the sidebar", () => {
-    const v = updatesView({ app: { current: MINE, app: current, release: { ...release, cli: NEXT } }, hub: hubOf() });
-    expect(v.hub?.title).toMatch(/is available for the hub$/u);
-    expect(v.hub?.update?.command).toBe("fleetd update");
-    expect(v.line).toBeNull();
-  });
-
-  it("gives the command on this app's channel when the hub follows another", () => {
-    expect(view(current, { version: "0.5.0" }, "0.6.0-nightly.202610221030+abc1234").hub?.update?.command).toBe("fleetd update --channel nightly");
-  });
-
-  it("leaves the sidebar to this app's restart when both want it", () => {
-    expect(view({ kind: "ready", version: NEXT }, { version: OLDER }).line).toEqual({ tone: "accent", text: "Restart to update" });
-  });
-
-  it("never flags anything from a development build", () => {
+  it("never flag anything from a development build", () => {
     const v = updatesView({ app: { current: "0.0.0", app: { kind: "unsupported" }, release: null }, hub: hubOf({ version: OLDER }) });
-    expect(v.hub?.update).toBeUndefined();
+    expect(v.update).toBeNull();
     expect(v.line).toBeNull();
   });
 
-  it("has no part while not connected", () => {
-    expect(view(current, { url: null, version: OLDER }).hub).toBeNull();
-    expect(view(current, { url: null, version: OLDER }).line).toBeNull();
+  it("have no part and no button while not connected", () => {
+    const v = view(current, { url: null, version: OLDER });
+    expect(v.hub).toBeNull();
+    expect(v.nodes).toEqual([]);
+    expect(v.update).toBeNull();
+  });
+
+  it("leave the sidebar to this app's restart when both want it", () => {
+    expect(view({ kind: "ready", version: NEXT }, { version: OLDER }).line).toEqual({ tone: "accent", text: "Restart to update" });
   });
 });
 
-describe("hubHost", () => {
-  it("names the hub's machine as people do, and none for this computer", () => {
-    expect(hubHost("http://127.0.0.1:4790")).toBeNull();
-    expect(hubHost("http://localhost:4790")).toBeNull();
-    expect(hubHost("https://devbox.example.ts.net")).toBe("devbox");
+describe("an update of everything", () => {
+  const p = (over: Partial<UpdatePart>): UpdatePart => ({ part: "node", name: "builder", from: OLDER, state: "waiting", ...over });
+  const runOf = (parts: UpdatePart[], finished = false): UpdateRun => ({
+    id: "U1",
+    channel: "nightly",
+    to: NEXT,
+    startedAt: "2026-10-26T10:00:00.000Z",
+    ...(finished ? { finishedAt: "2026-10-26T10:03:00.000Z" } : {}),
+    parts,
+  });
+  const machines = [machine("builder", OLDER), machine("mac", OLDER)];
+  const during = (run: UpdateRun, flow: Flow) =>
+    updatesView({ app: { current: MINE, app: { kind: "available", version: NEXT, percent: null, restart: false }, release }, hub: hubOf({ version: OLDER }), machines, run, flow });
+
+  it("shows each part's progress while it goes, and no button", () => {
+    const run = runOf([
+      p({ part: "hub", name: "the hub", state: "restarting" }),
+      p({ machineId: "builder", name: "builder" }),
+      p({ machineId: "mac", name: "mac" }),
+    ]);
+    const v = during(run, { phase: "following", reconnecting: true });
+    expect(v.update).toBeNull();
+    expect(v.hub?.status).toBe("Restarting on Nightly · Oct 23, 10:30 UTC · def5678; the app reconnects by itself");
+    expect(v.nodes.map((n) => n.status)).toEqual(["Waiting for the hub", "Waiting for the hub"]);
+    expect(v.progress).toEqual({ tone: "quiet", text: "Updating the hub…" });
+    expect(v.line).toEqual({ tone: "quiet", text: "Updating…" });
+
+    const nodes = runOf([
+      p({ part: "hub", name: "the hub", state: "done", message: "runs it" }),
+      p({ machineId: "builder", name: "builder", state: "done" }),
+      p({ machineId: "mac", name: "mac", state: "downloading" }),
+    ]);
+    const n = during(nodes, { phase: "following", reconnecting: false });
+    expect(n.hub?.status).toBe("Updated to Nightly · Oct 23, 10:30 UTC · def5678");
+    expect(n.progress?.text).toBe("Updating the machines: 1 of 2 done");
+  });
+
+  it("says which part failed and how, and that nothing else changed when the hub did", () => {
+    const run = runOf(
+      [
+        p({ part: "hub", name: "the hub", state: "failed", stage: "checksum", message: "fleetd-linux-x64: checksum mismatch; nothing was changed" }),
+        p({ machineId: "builder", name: "builder", state: "skipped", message: "not asked: the hub didn't update, and nodes follow the hub" }),
+        p({ machineId: "mac", name: "mac", state: "skipped", message: "not asked: the hub didn't update, and nodes follow the hub" }),
+      ],
+      true,
+    );
+    const v = during(run, { phase: "finished" });
+    expect(v.hub).toMatchObject({ status: "Failed while checking the download: fleetd-linux-x64: checksum mismatch; nothing was changed", tone: "danger" });
+    expect(v.nodes[0]).toMatchObject({ tone: "warning" });
+    expect(v.progress).toEqual({ tone: "danger", text: "Update failed: the hub. Nothing else was changed." });
+    expect(v.line).toEqual({ tone: "danger", text: "Update failed" });
+    // Nothing changed, so the button is there to try again.
+    expect(v.update?.label).toBe("Update");
+  });
+
+  it("says a part was put back when its new build didn't come up", () => {
+    const run = runOf(
+      [
+        p({ part: "hub", name: "the hub", state: "done" }),
+        p({ machineId: "builder", name: "builder", state: "done" }),
+        p({ machineId: "mac", name: "mac", state: "rolled_back", stage: "health", message: "it didn't come up healthy, so the old build was put back and runs again" }),
+      ],
+      true,
+    );
+    const v = during(run, { phase: "finished" });
+    expect(v.nodes[1]).toMatchObject({ status: "Put back: it didn't come up healthy, so the old build was put back and runs again", tone: "danger" });
+    expect(v.progress?.text).toBe("Update failed: mac. The rest updated; this app updates with its own button.");
+  });
+
+  it("says this app updates last, and when its download failed", () => {
+    const done = runOf([p({ part: "hub", name: "the hub", state: "done" })], true);
+    expect(during(done, { phase: "app" }).progress?.text).toBe("Updating this app; it restarts once the download is in");
+    const failed = updatesView({
+      app: { current: MINE, app: { kind: "failed", during: "download", reason: "The download was damaged." }, release },
+      hub: hubOf(),
+      run: done,
+      flow: { phase: "app" },
+    });
+    expect(failed.progress).toEqual({ tone: "danger", text: "Update failed: this app. The download was damaged. The hub and its machines updated." });
+  });
+
+  it("says why the hub wouldn't start it", () => {
+    const v = during(runOf([p({ part: "hub", name: "the hub", state: "done" })], true), { phase: "refused", message: "This key lacks the admin role." });
+    expect(v.progress).toEqual({ tone: "danger", text: "Couldn't start the update: This key lacks the admin role." });
+  });
+
+  it("shows a finished run for a while, across this app's restart, then where things stand", () => {
+    const old = runOf([p({ part: "hub", name: "the hub", state: "failed", stage: "download", message: "offline" })], true);
+    const finished = Date.parse("2026-10-26T10:03:00.000Z");
+    const at = (now: number) =>
+      updatesView({ app: { current: MINE, app: { kind: "current" }, release }, hub: hubOf({ version: OLDER }), machines, run: old, flow: { phase: "idle" }, now });
+    expect(at(finished + 60_000).progress?.tone).toBe("danger");
+    const later = at(finished + 60 * 60_000);
+    expect(later.progress).toBeNull();
+    expect(later.hub?.tone).toBe("accent");
   });
 });

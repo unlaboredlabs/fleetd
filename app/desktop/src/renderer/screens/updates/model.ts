@@ -1,7 +1,10 @@
-// What the updates surfaces say: the sidebar's one line and the sheet's two parts, this app and the hub. Pure, so
-// every state is unit-tested; the components only lay it out.
+// What the updates surfaces say: the sidebar's one line, and the sheet's Update button with each part it updates
+// (the hub, each machine's node, this app) and how each went. Pure, so every state is unit-tested; the components
+// only lay it out.
+import type { UpdatePart, UpdateRun } from "../../../shared/contracts";
 import { compareVersions } from "../../../shared/pairing";
-import { DEB_INSTALL, knownVersion, localHub, notesSince, versionLabel, type AppUpdate, type Notes, type UpdatesState } from "../../../shared/updates";
+import { DEB_INSTALL, knownVersion, notesSince, versionLabel, type AppUpdate, type Notes, type UpdatesState } from "../../../shared/updates";
+import { hubUpdated, type Flow } from "./flow";
 
 export type Tone = "accent" | "warning" | "danger" | "quiet";
 
@@ -27,18 +30,19 @@ export interface AppPart {
   readonly raw: string;
 }
 
-export interface HubPart {
-  readonly title: string;
-  readonly detail?: string;
-  readonly notes: Notes;
-  /** The hub's raw version, to copy, once it says one. */
+/** The hub or one machine's node: where it stands, or how its update goes. */
+export interface PartRow {
+  readonly key: string;
+  readonly name: string;
+  /** One line: "Up to date", "Nightly · … is available", "Restarting on …", "Failed while checking the download: …". */
+  readonly status: string;
+  readonly tone: Tone;
+  /** Its raw version, to copy. */
   readonly raw?: string;
-  /**
-   * Update the hub: the command to run, with Copy, and a note saying where and when it restarts the hub. `terminal`:
-   * the hub is on this computer and the command is the bare `fleetd update` main opens (updates:hubTerminal takes no
-   * arguments), so Run in Terminal runs exactly what's shown. The app never restarts the hub itself.
-   */
-  readonly update?: { readonly command: string; readonly note: string; readonly terminal: boolean };
+}
+
+export interface HubPart extends PartRow {
+  readonly notes: Notes;
 }
 
 export interface UpdatesView {
@@ -46,15 +50,14 @@ export interface UpdatesView {
   readonly line: Line | null;
   readonly app: AppPart | null;
   readonly hub: HubPart | null;
+  readonly nodes: readonly PartRow[];
+  /** The one Update button and what it does; null while one runs, or with nothing to update. */
+  readonly update: { readonly label: string; readonly note: string } | null;
+  /** While a run goes on, or how the last one in this window ended. */
+  readonly progress: Line | null;
+  /** A run goes on: this app's update waits for it, so its own action steps back. */
+  readonly going: boolean;
 }
-
-/** The hub's machine as people call it, for "Run this on devbox"; null for a hub on this computer. */
-export const hubHost = (hubUrl: string): string | null => {
-  if (!URL.canParse(hubUrl) || localHub(hubUrl)) return null;
-  const host = new URL(hubUrl).hostname;
-  if (/^\d+(\.\d+){3}$/u.test(host) || host.startsWith("[")) return host;
-  return host.split(".", 1)[0] ?? host;
-};
 
 const channelOf = (version: string): "nightly" | "stable" => (version.includes("-nightly.") ? "nightly" : "stable");
 
@@ -136,62 +139,170 @@ export interface HubInput {
   readonly version: string | undefined;
 }
 
-/** What updates:hubTerminal runs, always and only. */
-const HUB_TERMINAL_COMMAND = "fleetd update";
+export interface MachineInput {
+  readonly machineId: string;
+  readonly name: string;
+  readonly nodeVersion: string;
+  readonly online: boolean;
+}
 
-/** The command that updates the hub, on this app's channel. */
-const updateCommand = (hubVersion: string, appVersion: string): string => {
-  const channel = channelOf(appVersion);
-  return !knownVersion(appVersion) || channelOf(hubVersion) === channel ? "fleetd update" : `fleetd update --channel ${channel}`;
-};
-
-const hubPart = (hub: HubInput, state: UpdatesState | null): HubPart | null => {
-  if (hub.url === null) return null;
-  const { version } = hub;
-  if (!knownVersion(version)) {
-    // A local build's 0.0.0, or a hub from before it said its version: whether it's behind is a guess, so no warning.
-    return { title: "The hub's version is unknown", detail: "It doesn't say which fleetd it runs, so the app can't tell whether it's up to date.", notes: NO_NOTES };
-  }
-  const appVersion = state?.current ?? "0.0.0";
-  const has = versionLabel(version);
-  const behind = knownVersion(appVersion) && compareVersions(version, appVersion) === -1;
+/** The build the hub and nodes should run: the channel's newest when known, else this app's. */
+const target = (hub: HubInput, state: UpdatesState | null): string | null => {
   const cli = state?.release?.cli ?? null;
-  const available = knownVersion(cli) && channelOf(cli) === channelOf(version) && compareVersions(version, cli) === -1;
-  if (!behind && !available) return { title: "The hub is up to date", detail: `It runs ${has}.`, notes: NO_NOTES, raw: version };
-  const host = hubHost(hub.url);
-  const command = updateCommand(version, appVersion);
-  return {
-    title: behind ? "The hub runs an older fleetd than this app" : `fleetd ${versionLabel(cli ?? version)} is available for the hub`,
-    detail: `It runs ${has}.`,
-    notes: notesSince(state?.release?.changes ?? [], version, "hub"),
-    raw: version,
-    update: {
-      command,
-      // fleetd update (#287) restarts the hub only when hub_info says nothing runs; else it lists what does.
-      note: `Run this ${host === null ? "in a terminal on this computer" : `on ${host}`}. It installs the update, then restarts the hub only if nothing is running there; if something is, it says what and leaves the hub running.`,
-      terminal: host === null && command === HUB_TERMINAL_COMMAND,
-    },
-  };
+  if (knownVersion(cli) && knownVersion(hub.version) && channelOf(cli) === channelOf(hub.version)) return cli;
+  const app = state?.current ?? null;
+  return knownVersion(app) ? app : null;
 };
 
-const hubLine = (hub: HubInput, appVersion: string): Line | null => {
-  // Only falling behind this app is worth the sidebar; a newer hub on the channel (many a day) waits in the sheet.
-  const behind = hub.url !== null && knownVersion(hub.version) && knownVersion(appVersion) && compareVersions(hub.version, appVersion) === -1;
-  return behind ? { tone: "warning", text: "Update the hub" } : null;
+const behind = (version: string | undefined, of: string | null): boolean =>
+  knownVersion(version) && of !== null && compareVersions(version, of) === -1;
+
+const STAGE: Readonly<Record<string, string>> = {
+  download: "downloading",
+  checksum: "checking the download",
+  install: "installing",
+  restart: "restarting",
+  health: "starting up",
 };
+
+/** A part of the hub's run, in one line. */
+const runRow = (p: UpdatePart, to: string, reconnecting: boolean): Omit<PartRow, "key" | "name" | "raw"> => {
+  const said = p.message ?? "";
+  const sentence = said.charAt(0).toUpperCase() + said.slice(1);
+  switch (p.state) {
+    case "waiting":
+      return { status: "Waiting for the hub", tone: "quiet" };
+    case "downloading":
+      return { status: `Downloading ${to}…`, tone: "quiet" };
+    case "restarting":
+      return p.part === "hub" && reconnecting
+        ? { status: `Restarting on ${to}; the app reconnects by itself`, tone: "quiet" }
+        : { status: `Restarting on ${to}…`, tone: "quiet" };
+    case "done":
+      return { status: `Updated to ${to}`, tone: "quiet" };
+    case "current":
+      return { status: "Up to date", tone: "quiet" };
+    case "failed":
+      return { status: `Failed while ${STAGE[p.stage ?? ""] ?? "updating"}: ${said}`, tone: "danger" };
+    case "rolled_back":
+      return { status: `Put back: ${said}`, tone: "danger" };
+    case "skipped":
+      return { status: sentence, tone: "warning" };
+    default:
+      return { status: sentence, tone: "quiet" };
+  }
+};
+
+/** Where a part stands without a run: up to date, or a newer build for it. */
+const standing = (version: string | undefined, of: string | null): Omit<PartRow, "key" | "name" | "raw"> => {
+  if (!knownVersion(version)) return { status: "Its version is unknown", tone: "quiet" };
+  if (behind(version, of) && of !== null) return { status: `${versionLabel(of)} is available`, tone: "accent" };
+  return { status: `Up to date: ${versionLabel(version)}`, tone: "quiet" };
+};
+
+/** How long a finished run still shows: across this app's own restart at its end, and a while after. */
+export const RESULT_SHOWN_MS = 15 * 60_000;
+
+/** The run to show: one going on, one started in this window, or one that finished lately. */
+const shown = (run: UpdateRun | null, flow: Flow, now: number): UpdateRun | null => {
+  if (run === null) return null;
+  if (run.finishedAt === undefined || flow.phase !== "idle") return run;
+  return now - Date.parse(run.finishedAt) < RESULT_SHOWN_MS ? run : null;
+};
+
+/** The parts whose update didn't go through, by name, for "Update failed: the hub". */
+const failures = (run: UpdateRun): string[] =>
+  run.parts.filter((p) => p.state === "failed" || p.state === "rolled_back").map((p) => (p.part === "hub" ? "the hub" : p.name));
 
 export interface UpdatesInput {
   readonly app: UpdatesState | null;
   readonly hub: HubInput;
+  readonly machines?: readonly MachineInput[];
+  readonly run?: UpdateRun | null;
+  readonly flow?: Flow;
+  /** Epoch ms, for how lately a run finished. */
+  readonly now?: number;
 }
 
 /**
- * Both parts and the one line. The line names the most pressing: this app's restart or download, then the hub
- * falling behind, then this app's update found.
+ * The line names the most pressing: this app's restart or download, then a run going on or failed, then anything
+ * with a newer build.
  */
-export const updatesView = ({ app, hub }: UpdatesInput): UpdatesView => {
+export const updatesView = ({ app, hub, machines = [], run = null, flow = { phase: "idle" }, now = Date.now() }: UpdatesInput): UpdatesView => {
+  const live = shown(run, flow, now);
+  const to = live?.to === undefined ? null : live.to;
+  const toLabel = to === null ? "the new build" : versionLabel(to);
+  const reconnecting = flow.phase === "following" && flow.reconnecting;
+  const of = hub.url === null ? null : target(hub, app);
+  const parts = new Map((live?.parts ?? []).map((p) => [p.part === "hub" ? "hub" : `node:${p.machineId ?? p.name}`, p]));
+
+  let hubPart: HubPart | null = null;
+  if (hub.url !== null) {
+    const p = parts.get("hub");
+    const row = p !== undefined ? runRow(p, toLabel, reconnecting) : standing(hub.version, of);
+    hubPart = {
+      key: "hub",
+      name: "The hub",
+      ...row,
+      ...(knownVersion(hub.version) ? { raw: hub.version } : {}),
+      notes: of !== null && behind(hub.version, of) && knownVersion(hub.version) ? notesSince(app?.release?.changes ?? [], hub.version, "hub") : NO_NOTES,
+    };
+  }
+  const nodes: PartRow[] =
+    hub.url === null
+      ? []
+      : [...machines]
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map((m) => {
+            const p = parts.get(`node:${m.machineId}`);
+            const row = p !== undefined ? runRow(p, toLabel, reconnecting) : !m.online ? { status: "Offline", tone: "quiet" as const } : standing(m.nodeVersion, of);
+            return { key: m.machineId, name: m.name, ...row, ...(knownVersion(m.nodeVersion) ? { raw: m.nodeVersion } : {}) };
+          });
+
+  const appFound = app !== null && found(app.app);
+  const outdated = appFound || (hubPart?.tone === "accent") || nodes.some((n) => n.tone === "accent");
+  const going = flow.phase === "starting" || flow.phase === "following" || (flow.phase === "app" && app?.app.kind !== "failed");
+  const machinesWord = nodes.length === 1 ? "its machine" : `its ${String(nodes.length)} machines`;
+  const update =
+    going || hub.url === null || !outdated
+      ? null
+      : {
+          label: "Update",
+          note: `Updates the hub, then ${machinesWord}, then this app, which restarts. Nothing waits for work to finish: what's running carries on by itself.`,
+        };
+
+  let progress: Line | null = null;
+  if (flow.phase === "refused") progress = { tone: "danger", text: `Couldn't start the update: ${flow.message}` };
+  else if (flow.phase === "starting") progress = { tone: "quiet", text: "Starting the update…" };
+  else if (live !== null && live.finishedAt === undefined) {
+    const hubP = live.parts.find((p) => p.part === "hub");
+    const nodeParts = live.parts.filter((p) => p.part === "node");
+    progress =
+      hubP !== undefined && !["done", "current", "failed", "rolled_back", "skipped"].includes(hubP.state)
+        ? { tone: "quiet", text: "Updating the hub…" }
+        : { tone: "quiet", text: `Updating the machines: ${String(nodeParts.filter((p) => !["waiting", "downloading", "restarting"].includes(p.state)).length)} of ${String(nodeParts.length)} done` };
+  } else if (flow.phase === "app" && app?.app.kind === "failed") {
+    progress = { tone: "danger", text: `Update failed: this app. ${app.app.reason} The hub and its machines updated.` };
+  } else if (flow.phase === "app") progress = { tone: "quiet", text: "Updating this app; it restarts once the download is in" };
+  else if (live !== null) {
+    const failed = failures(live);
+    progress =
+      failed.length > 0
+        ? {
+            tone: "danger",
+            text: `Update failed: ${failed.join(", ")}. ${hubUpdated(live) ? "The rest updated; this app updates with its own button." : "Nothing else was changed."}`,
+          }
+        : { tone: "quiet", text: "Everything is updated." };
+  }
+
   const ofApp = app === null ? null : appLine(app.app);
-  const ofHub = hubLine(hub, app?.current ?? "0.0.0");
   const pressing = app?.app.kind === "ready" || (app?.app.kind === "available" && app.app.restart);
-  return { line: pressing ? ofApp : (ofHub ?? ofApp), app: app === null ? null : appPart(app), hub: hubPart(hub, app) };
+  const line: Line | null = pressing
+    ? ofApp
+    : progress !== null && (going || progress.tone === "danger")
+      ? { tone: progress.tone, text: going ? "Updating…" : "Update failed" }
+      : outdated && hub.url !== null
+        ? { tone: "accent", text: "Update available" }
+        : ofApp;
+  return { line, app: app === null ? null : appPart(app), hub: hubPart, nodes, update, progress, going };
 };
