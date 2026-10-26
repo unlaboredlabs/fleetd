@@ -173,6 +173,12 @@ pub const ENTRIES: &[Entry] = &[
                 Code
             ),
             (
+                "parallel-by-default",
+                "splits approved work into parts whose files don't overlap and runs them in parallel while slots are free",
+                r"Parallel by default",
+                Prompt
+            ),
+            (
                 "train-only-merges",
                 "only the merge train merges",
                 r"never merge",

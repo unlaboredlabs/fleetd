@@ -274,6 +274,18 @@ impl TaskRecords {
         .collect()
     }
 
+    /// When one of the project's tasks last started or ended: the last time its count of free slots changed.
+    pub fn last_start_or_end(db: &Connection, r: &ProjectRef) -> rusqlite::Result<Option<String>> {
+        db.prepare_cached(
+            "SELECT MAX(MAX(COALESCE(ended_at, ''), COALESCE(json_extract(data, '$.startedAt'), ''))) FROM tasks
+             WHERE machine_id = ?1 AND project_id = ?2",
+        )?
+        .query_row(params![r.machine_id.as_str(), r.project_id.as_str()], |row| {
+            row.get::<_, Option<String>>(0)
+        })
+        .map(|at| at.filter(|at| !at.is_empty()))
+    }
+
     /// The project's queued, running and idle tasks. Newest first.
     pub fn live(db: &Connection, r: &ProjectRef, limit: usize) -> rusqlite::Result<Vec<Task>> {
         db.prepare_cached(

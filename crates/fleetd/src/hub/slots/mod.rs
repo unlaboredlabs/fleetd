@@ -54,7 +54,7 @@ pub struct CapInput {
     pub max_agents: Option<(ProjectRef, Option<i64>)>,
 }
 
-/// A project's agents as its lead is told them: "agents: 7 running of 12 (auto: memory 32 GB), 2 queued".
+/// A project's agents as its lead is told them: "agents: 7 running of 12 (auto: memory 32 GB), 2 queued, 0 free".
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Agents {
     pub running: i64,

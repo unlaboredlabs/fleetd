@@ -234,18 +234,20 @@ async fn every_digest_says_how_many_agents_run_of_the_max_and_wait() {
     }
     let a = hub.tasks.agents(&project());
     assert_eq!((a.running, a.cap, a.queued), (2, 2, 1));
+    assert!(a.idle_minutes.is_some(), "its agents started");
     assert_eq!(
         a.to_string(),
-        "agents: 2 running of 2 (max agents set), 1 queued"
+        "agents: 2 running of 2 (max agents set), 1 queued, 0 free"
     );
     // A project nobody set a max for runs what its machine fits, and the line names the term that binds.
     let other = ProjectRef {
         project_id: ProjectId::unchecked("p2"),
         ..project()
     };
+    assert_eq!(hub.tasks.agents(&other).idle_minutes, None, "it never ran one");
     assert_eq!(
         hub.tasks.agents(&other).to_string(),
-        "agents: 0 running of 28 (auto: 28 of 32 CPUs), 0 queued"
+        "agents: 0 running of 28 (auto: 28 of 32 CPUs), 0 queued, 28 free"
     );
     let mut queued = hub
         .tasks
@@ -659,7 +661,7 @@ async fn a_project_without_its_own_max_follows_the_fleet_cap() {
     assert_eq!(hub.slots.agents(&r).max_agents, 10, "within the fleet cap");
     assert_eq!(
         hub.tasks.agents(&r).to_string(),
-        "agents: 0 running of 10 (fleet cap set), 0 queued"
+        "agents: 0 running of 10 (fleet cap set), 0 queued, 10 free"
     );
     hub.tasks.set_caps(fleet(20)).await.unwrap();
     assert_eq!(hub.slots.agents(&r).max_agents, 20, "raised");
@@ -698,7 +700,7 @@ async fn a_projects_own_max_holds_until_it_goes_back_to_the_default() {
     assert_eq!(row(&raised.slots), (6, true), "its own max stays");
     assert_eq!(
         hub.tasks.agents(&r).to_string(),
-        "agents: 0 running of 6 (max agents set), 0 queued"
+        "agents: 0 running of 6 (max agents set), 0 queued, 6 free"
     );
 
     let back = hub

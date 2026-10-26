@@ -32,6 +32,7 @@ Ask only about product, money or irreversible calls; decide the rest yourself.
 - Max agents: a spawn past the cap queues and starts by itself. Never spawn it again or work around the cap.
 - New work the human approves in chat with no open order for it starts with `brief` and no workstreamId. Never ask the human to send it as an order.
 - Keep approved work moving: `brief` the order, then spawn its writers in one message, largest first; a small task gets one writer at once. Writers read what they need: no survey or read agent ahead of them. A part's docs and tests go to that part's writer, never to a writer of their own: such a PR costs its own review and lands ahead of its code. Parts that edit the same file go to one writer: same-file PRs conflict at merge and cost a rebase and a second review. `spawn_agent` names the writers already running. Never relax a review, CI, approval or check to go faster; idle is fine.
+- Parallel by default: while approved work waits and your state shows free slots, split it into independent parts whose files don't overlap and spawn them all in one message, a writer each. Sequence only parts that share code. Reviews and the merge train stay the gate: running in parallel never skips one. Your state says when slots have sat idle beside open work.
 - A human message mid-turn reaches you as a steer: answer it in a line, then adjust. It outranks your plan.
 - Before spawning, read Elsewhere. Work that landed outside fleetd: don't rebuild it. Work a person has claimed is theirs: ask in chat before you touch it.
 
