@@ -78,6 +78,60 @@ pub fn review_prompt(set: &PromptSet, change: &Change, reviewed: Option<&str>) -
     }
 }
 
+/// The start of a Change's `lastError` while its reviewer's fleetd tools failed, followed by what it said and when the
+/// next one starts.
+pub const TOOLS_FAILED: &str = "review tools failed";
+
+/// Whether a reviewer that ended without a verdict did so because it couldn't use fleetd's tools (its MCP server didn't
+/// start, a tool wasn't there, recording the verdict failed), going by its final text: then the next reviewer would
+/// fail the same way until they work again, so it is no reviewer's fault and no retry of its own.
+pub fn tools_failed(tail: &str) -> bool {
+    let t = tail.to_lowercase();
+    let has = |words: &[&str]| words.iter().any(|w| t.contains(w));
+    let tools = [
+        "mcp",
+        "fleetd tool",
+        "fleetd's tool",
+        "tools server",
+        "tool server",
+        "report tool",
+        "verdict tool",
+        "`report`",
+        "mcp__fleetd",
+    ];
+    let failing = [
+        "fail",
+        "error",
+        "unavailable",
+        "not available",
+        "isn't available",
+        "aren't available",
+        "not found",
+        "no such",
+        "missing",
+        "not connected",
+        "could not connect",
+        "couldn't connect",
+        "can't connect",
+        "cannot connect",
+        "could not reach",
+        "couldn't reach",
+        "can't reach",
+        "cannot reach",
+    ];
+    let unrecorded = [
+        "could not record",
+        "couldn't record",
+        "can't record",
+        "cannot record",
+        "unable to record",
+        "failed to record",
+        "no way to record",
+        "not able to record",
+    ];
+    t.contains("enoent") || (has(&tools) && has(&failing)) || has(&unrecorded)
+}
+
 pub struct FindingsVerdict<'a> {
     pub task_id: &'a str,
     pub pr_head_sha: &'a str,
@@ -162,6 +216,28 @@ mod tests {
         let new_head = [review("T2", P, 2)];
         assert!(!gate(Q, &new_head).ready && !gate(Q, &new_head).waiting_for_head);
         assert!(gate(Q, &[review("T2", P, 2), review("T5", Q, 0)]).ready);
+    }
+
+    /// The 10-25 outage's words, and others like them, read as broken tools; a reviewer that simply stopped, or one
+    /// whose findings mention a failing tool of the code under review while it recorded nothing, mostly don't.
+    #[test]
+    fn a_reviewer_whose_tools_failed_is_told_apart_by_its_final_text() {
+        for broken in [
+            "Error: spawn stdio ENOENT",
+            "The fleetd MCP server failed to start, so I can't record the verdict.",
+            "I couldn't record my verdict: the report tool isn't available in this session.",
+            "mcp__fleetd__report is not available; the review found nothing blocking.",
+            "The fleetd tools server is not connected.",
+        ] {
+            assert!(tools_failed(broken), "{broken}");
+        }
+        for not in [
+            "",
+            "Reviewed the diff; looks fine.",
+            "I ran out of turns before finishing the review.",
+        ] {
+            assert!(!tools_failed(not), "{not}");
+        }
     }
 
     /// A review task is titled by what it checks, never by the train's ids.

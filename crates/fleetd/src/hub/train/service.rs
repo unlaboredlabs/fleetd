@@ -60,17 +60,27 @@ pub enum Verdict {
     /// With the clean reviews bound to the patch that make it ready.
     Ready(Vec<ChangeReview>),
     Pending,
+    /// Blocking findings on this patch: only a new head moves it.
+    Blocked,
 }
 
 /// The port between the train and reviews. The train calls `review` whenever a Change enters `reviewing`: on
 /// enqueue, when its author pushed a new patch, and when a rebase changed its patch id. The gate answers Ready when
-/// a clean review is already bound to this patch id, or Pending and later calls `Train::mark_ready`.
+/// a clean review is already bound to this patch id, or Pending and later calls `Train::mark_ready`. A re-review (of a
+/// Change approved at an earlier patch) runs alongside CI: the train then asks `again` until it is Ready or Blocked,
+/// and the gate calls `Train::review_recorded` on each verdict.
 pub trait ReviewGate: Send + Sync + 'static {
     fn review(&self, change: Change) -> BoxFut<'_, Verdict>;
     /// Each pass over a Change still in `reviewing` at the same head, so a review that could not start, or whose
-    /// reviewer ended without a verdict and could not be replaced, starts again.
+    /// reviewer ended without a verdict and could not be replaced, starts again; and the train's reads of a re-review
+    /// it waits on in CI.
     fn again(&self, _change: Change) -> BoxFut<'_, Verdict> {
         Box::pin(async { Verdict::Pending })
+    }
+    /// Whether a reviewer is at work on the Change's current patch and nothing blocks it: a Change approved at an
+    /// earlier patch may then go through the train while it reviews.
+    fn rereview(&self, _change: &Change) -> bool {
+        false
     }
 }
 
@@ -88,6 +98,9 @@ pub struct TrainOptions {
     pub ready_every: Duration,
     /// Merges GitHub refuses (405/409) before the train gives up on a Change.
     pub merge_attempts: u32,
+    /// How long the train holds a Change whose CI passed for its re-review to finish (`REVIEW_WAIT`); after that it
+    /// waits in review, out of the train's way.
+    pub review_wait: Duration,
     /// Run each repo's loop in the background; tests drive `step` themselves.
     pub auto_run: bool,
     /// The status view's freshness registry: every GitHub answer and every pass keeps a repo's sources live.
@@ -103,11 +116,15 @@ impl Default for TrainOptions {
             bypass_every: Duration::from_secs(60),
             ready_every: Duration::from_secs(60),
             merge_attempts: 3,
+            review_wait: REVIEW_WAIT,
             auto_run: true,
             fresh: Arc::default(),
         }
     }
 }
+
+/// How long a Change whose CI passed is held for its re-review: a review takes about as long as CI, and started with it.
+pub const REVIEW_WAIT: Duration = Duration::from_secs(15 * 60);
 
 /// How long a head's CI may run once a runner took its first check (D128).
 pub const CI_RUNNING_TIMEOUT: Duration = Duration::from_secs(45 * 60);
@@ -345,6 +362,16 @@ pub(super) fn error_text(text: &str) -> Text<0, 2000> {
     })
 }
 
+/// How the wait for a re-review alongside CI ended.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) enum ReviewWait {
+    /// With the clean reviews of its patch.
+    Clean(Vec<ChangeReview>),
+    Blocked,
+    /// Still at work after `review_wait`.
+    Waiting,
+}
+
 pub(super) enum CiOutcome {
     Green,
     Red(Vec<CheckRun>),
@@ -417,6 +444,8 @@ pub struct Train {
     /// The heads of writers' PRs already sent to review as a ready slice.
     ready_heads: Mutex<HashSet<(String, i64, String)>>,
     merge_refusals: Mutex<HashMap<ChangeId, u32>>,
+    /// Each verdict the gate records: a train waiting on a re-review reads it at once.
+    verdicts: Notify,
     /// The train's last push per change: the head it pushed and when, for `ci.queue` spans.
     pub(super) pushed: Mutex<HashMap<ChangeId, (String, i64)>>,
     /// Each repo and base branch's CI config and when it was read.
@@ -465,6 +494,7 @@ impl Train {
             last_ready_check: Mutex::default(),
             ready_heads: Mutex::default(),
             merge_refusals: Mutex::default(),
+            verdicts: Notify::new(),
             pushed: Mutex::default(),
             ci_configs: Mutex::default(),
             next_labels: Default::default(),
@@ -517,7 +547,7 @@ impl Train {
         }
     }
 
-    pub(super) fn now_ms(&self) -> i64 {
+    pub(crate) fn now_ms(&self) -> i64 {
         system_ms(self.clock.now())
     }
 
@@ -1422,6 +1452,108 @@ impl Train {
         }
     }
 
+    /// The gate's `rereview`.
+    pub(super) fn gate_rereview(&self, change: &Change) -> bool {
+        self.gate.rereview(change)
+    }
+
+    /// The gate recorded a verdict: a train waiting on a re-review reads it now.
+    pub fn review_recorded(&self) {
+        self.verdicts.notify_waiters();
+    }
+
+    /// The clean `reviews` the gate bound to the Change's patch, added to it.
+    pub(super) fn add_reviews(
+        &self,
+        change: &Change,
+        reviews: Vec<ChangeReview>,
+    ) -> Option<Change> {
+        self.update(&change.change_id, None, |mut c| {
+            for r in reviews {
+                if !c.reviews.contains(&r) {
+                    c.reviews.push(r);
+                }
+            }
+            c
+        })
+    }
+
+    /// Out of the train and back to review, its place in line kept: blocking findings hold it until a new head (the
+    /// gate already noted them and sent them to its author), or `why` when its re-review is still at work.
+    pub(super) fn to_review(&self, change: &Change, why: Option<&str>) {
+        let from = [
+            ChangeState::Ready,
+            ChangeState::Rebasing,
+            ChangeState::Ci,
+            ChangeState::Merging,
+        ];
+        self.update(&change.change_id, Some(&from), |mut c| {
+            c.state = ChangeState::Reviewing;
+            if let Some(why) = why {
+                c.last_error = Some(error_text(why));
+            }
+            c
+        });
+    }
+
+    /// Why a Change whose CI passed at `sha` left the train before its re-review finished.
+    pub(super) fn review_overdue(&self, sha: &str) -> String {
+        format!(
+            "CI passed on {}, but its re-review didn't finish within {} min; it merges once the review is clean",
+            short(sha),
+            self.options.review_wait.as_secs() / 60
+        )
+    }
+
+    /// Waits for the re-reviews of `changes` (each in CI, its patch not yet approved), at most `review_wait`: each one's
+    /// outcome, in order. Stops at the first blocked one, the rest then still `Waiting`.
+    pub(super) async fn await_reviews(&self, changes: &[Change]) -> Vec<ReviewWait> {
+        let since = self.now_ms();
+        let mut out: Vec<Option<ReviewWait>> = vec![None; changes.len()];
+        loop {
+            // Registered before the reads, so a verdict recorded during them is not missed.
+            let recorded = self.verdicts.notified();
+            tokio::pin!(recorded);
+            recorded.as_mut().enable();
+            for (i, change) in changes.iter().enumerate() {
+                if out[i].is_some() {
+                    continue;
+                }
+                match self.gate.again(change.clone()).await {
+                    Verdict::Ready(reviews) => out[i] = Some(ReviewWait::Clean(reviews)),
+                    Verdict::Blocked => {
+                        out[i] = Some(ReviewWait::Blocked);
+                        return out
+                            .into_iter()
+                            .map(|o| o.unwrap_or(ReviewWait::Waiting))
+                            .collect();
+                    }
+                    Verdict::Pending => {}
+                }
+            }
+            let waited = self.now_ms() - since;
+            let left = self.options.review_wait.as_millis() as i64 - waited;
+            if out.iter().all(Option::is_some) || left <= 0 {
+                return out
+                    .into_iter()
+                    .map(|o| o.unwrap_or(ReviewWait::Waiting))
+                    .collect();
+            }
+            // A pass waiting on a review is the train running.
+            self.options
+                .fresh
+                .touch(&fresh::train(&changes[0].repo), self.now_ms());
+            let nap = self
+                .options
+                .poll_interval
+                .min(Duration::from_millis(left as u64));
+            tokio::select! {
+                () = self.clock.sleep(nap) => {}
+                () = &mut recorded => {}
+            }
+        }
+    }
+
     /// A pass that could not finish: the Change goes back to ready in its place in line with the reason, and the loop
     /// retries later.
     pub(super) fn put_back(&self, change: &Change, why: &str) {
@@ -1516,12 +1648,12 @@ impl Train {
         if pull.head.sha.to_lowercase() != change.head_sha.as_str() {
             return self.ready_moved(change, &pull).await;
         }
-        let Some(rebasing) =
-            self.update(&change.change_id, Some(&[ChangeState::Ready]), |mut c| {
-                c.state = ChangeState::Rebasing;
-                c
-            })
-        else {
+        // A Change in review goes only as a re-review (`next`), which runs alongside its CI.
+        let from = [ChangeState::Ready, ChangeState::Reviewing];
+        let Some(rebasing) = self.update(&change.change_id, Some(&from), |mut c| {
+            c.state = ChangeState::Rebasing;
+            c
+        }) else {
             return Ok(());
         };
         // Before the rebase: the push it makes then starts a CI run that already sees the label.
@@ -1556,37 +1688,37 @@ impl Train {
             );
             (head_sha, Some(patch_id))
         };
-        if patch_id != rebasing.patch_id {
-            // Reviews are bound to the patch id; a rebase that changed it needs them again.
-            let reviewing = self.update(
-                &change.change_id,
-                Some(&[ChangeState::Rebasing]),
-                |mut c| {
-                    c.head_sha = head_sha.clone();
-                    c.patch_id = patch_id.clone();
-                    c.state = ChangeState::Reviewing;
-                    c.last_error = Some(last_error(format!(
-                        "the rebase onto {base} changed the patch id; it needs review again"
-                    )));
-                    c
-                },
-            );
-            if let Some(reviewing) = reviewing {
-                self.to_gate(reviewing).await;
-            }
-            return Ok(());
-        }
-
+        // Reviews are bound to the patch id: a rebase that changed it is reviewed again, alongside its CI. The merge
+        // waits for both.
+        let moved = patch_id != rebasing.patch_id;
         let Some(in_ci) = self.update(
             &change.change_id,
             Some(&[ChangeState::Rebasing]),
             |mut c| {
                 c.head_sha = head_sha.clone();
                 c.state = ChangeState::Ci;
+                if moved {
+                    c.patch_id = patch_id.clone();
+                    c.last_error = Some(last_error(format!(
+                        "the rebase onto {base} changed the patch id; its re-review runs alongside CI"
+                    )));
+                }
                 c
             },
         ) else {
             return Ok(());
+        };
+        let in_ci = if moved || !super::batch::reviewed(&in_ci) {
+            match self.gate.review(in_ci.clone()).await {
+                Verdict::Ready(reviews) => self.add_reviews(&in_ci, reviews).unwrap_or(in_ci),
+                Verdict::Blocked => {
+                    self.to_review(&in_ci, None);
+                    return Ok(());
+                }
+                Verdict::Pending => in_ci,
+            }
+        } else {
+            in_ci
         };
         self.ci_and_merge(&in_ci, &rebased, base, label).await
     }
@@ -1621,6 +1753,28 @@ impl Train {
                 return Ok(());
             }
         };
+        // CI passed: the merge also waits for a re-review still at work.
+        let current = self.records.get(&change.change_id);
+        if let Some(current) = current.filter(|c| !super::batch::reviewed(c)) {
+            match self
+                .await_reviews(std::slice::from_ref(&current))
+                .await
+                .remove(0)
+            {
+                ReviewWait::Clean(reviews) => {
+                    self.add_reviews(&current, reviews);
+                }
+                ReviewWait::Blocked => {
+                    self.to_review(&current, None);
+                    return Ok(());
+                }
+                ReviewWait::Waiting => {
+                    let why = self.review_overdue(&head_sha);
+                    self.to_review(&current, Some(&why));
+                    return Ok(());
+                }
+            }
+        }
 
         let Some(merging) = self.update(&change.change_id, Some(&[ChangeState::Ci]), |mut c| {
             c.state = ChangeState::Merging;

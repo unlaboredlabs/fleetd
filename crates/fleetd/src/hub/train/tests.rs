@@ -1266,6 +1266,8 @@ impl Kit {
             auto_run: false,
             bypass_every: Duration::ZERO,
             ready_every: Duration::ZERO,
+            // A re-review the tests leave unanswered holds the train this long, not 15 minutes.
+            review_wait: Duration::from_millis(300),
             ..TrainOptions::default()
         };
         tweak(&mut options);
@@ -2976,14 +2978,16 @@ async fn a_member_pushed_to_while_the_batch_is_in_ci_leaves_it_untested_code_nev
         assert_eq!(state_of(&kit, change), ChangeState::Ready);
     }
 
-    // The next one goes without b, whose new head (same patch) goes after it.
+    // The next one is built again from b's new head (same patch), and that is what lands.
+    let pushed = kit.head_of("b");
     assert!(kit.train.step(REPO).await);
-    assert_eq!(members_of_batch(&kit), [7, 9]);
-    assert_eq!(state_of(&kit, &a), ChangeState::Merged);
-    assert_eq!(state_of(&kit, &c), ChangeState::Merged);
-    assert_eq!(state_of(&kit, &b), ChangeState::Ready);
-    assert!(kit.train.step(REPO).await);
-    assert_eq!(state_of(&kit, &b), ChangeState::Merged);
+    assert_eq!(members_of_batch(&kit), [7, 8, 9]);
+    for change in [&a, &b, &c] {
+        assert_eq!(state_of(&kit, change), ChangeState::Merged);
+    }
+    let batch = kit.gh.merges.lock().unwrap()[0].0;
+    let heads = batch_heads(&kit.gh.pulls.lock().unwrap()[&batch].body);
+    assert_eq!(heads[1], (8, Some(pushed)));
 }
 
 #[test]
@@ -3778,8 +3782,7 @@ impl Kit {
     }
 }
 
-/// A reviewer that ends without a recorded verdict is no approval, even when its final text approves (its fleetd tools
-/// server down, W23): the train and the lead see "verdict not recorded" with that text, and one new reviewer starts for
+/// A reviewer that ends without a recorded verdict is no approval, even when its final text approves (W23): the train and the lead see "verdict not recorded" with that text, and one new reviewer starts for
 /// the same head. When that one ends without a verdict too, no more start and the lead is told once, with the PR and
 /// that reviewer's last lines.
 #[tokio::test(flavor = "multi_thread")]
@@ -3801,7 +3804,7 @@ async fn a_reviewer_that_ends_without_a_recorded_verdict_is_no_approval_and_is_r
     kit.end_task(
         "T50",
         "task.completed",
-        "Approved: no blocking findings.\n`report` was unavailable, so the verdict wasn't recorded.",
+        "Approved: no blocking findings.\nDone reviewing.",
     );
     eventually("a second reviewer", || kit.spawned() == 2).await;
     eventually("the lead told", || {
@@ -3815,7 +3818,7 @@ async fn a_reviewer_that_ends_without_a_recorded_verdict_is_no_approval_and_is_r
             "- PR #7 verdict not recorded: the reviewer T50 ended without one, so it counts as no approval; T51 reviews it once more"
         ) && told[0].contains(&pr)
             && told[0].ends_with(
-                "  > Approved: no blocking findings.\n  > `report` was unavailable, so the verdict wasn't recorded."
+                "  > Approved: no blocking findings.\n  > Done reviewing."
             ),
         "{told:?}"
     );
@@ -4008,10 +4011,12 @@ async fn a_rebase_that_only_drops_commits_already_on_the_base_keeps_the_approval
         "the parent's commit is gone"
     );
 
-    kit.train.step(REPO).await;
+    // Seen and carried over on the pass that takes it.
+    assert!(kit.train.step(REPO).await);
     let kept = kit.get(&change.change_id);
-    assert_eq!(kept.state, ChangeState::Ready, "{:?}", kept.last_error);
+    assert_eq!(kept.state, ChangeState::Merged, "{:?}", kept.last_error);
     assert_eq!(kept.head_sha.as_str(), rebased);
+    assert_eq!(*kit.gh.merges.lock().unwrap(), [(7, rebased.clone())]);
     assert_ne!(
         kept.patch_id, change.patch_id,
         "the PR-level patch id did change"
@@ -4022,8 +4027,6 @@ async fn a_rebase_that_only_drops_commits_already_on_the_base_keeps_the_approval
         ("T50", rebased.as_str())
     );
     assert_ne!(rebased, approved);
-    assert!(kit.train.step(REPO).await);
-    assert_eq!(kit.get(&change.change_id).state, ChangeState::Merged);
     assert_eq!(kit.spawned(), 1, "no second review");
 }
 
@@ -5229,4 +5232,294 @@ async fn a_pr_with_no_checks_or_an_unreported_fast_check_stays_out_of_a_batch() 
         why(&late).as_deref(),
         Some("not in this batch: its own head hasn't reported `integration` yet")
     );
+}
+
+/// A clock the test moves on by hand; its sleeps return at once.
+#[derive(Default)]
+struct Hands(Mutex<Duration>);
+
+impl Hands {
+    fn advance(&self, by: Duration) {
+        *self.0.lock().unwrap() += by;
+    }
+}
+
+impl Clock for Hands {
+    fn now(&self) -> std::time::SystemTime {
+        std::time::UNIX_EPOCH + Duration::from_secs(1_800_000_000) + *self.0.lock().unwrap()
+    }
+    fn sleep(
+        &self,
+        _: Duration,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
+        Box::pin(async { tokio::time::sleep(Duration::from_millis(5)).await })
+    }
+}
+
+impl Kit {
+    /// With the hub's own review gate, a re-review held for up to `wait`.
+    fn with_reviews_waiting(wait: Duration) -> Kit {
+        Kit::build(
+            FakeCi::Actions,
+            |o| o.review_wait = wait,
+            true,
+            Arc::new(SystemClock),
+        )
+    }
+
+    /// The verdict of review task `task` at `head`, as `fleetd review verdict` records it.
+    fn verdict(&self, task: &str, head: &str, blocking: i64) {
+        self.host.push_event(
+            "review.verdict",
+            json!({ "taskId": task, "prHeadSha": head, "blocking": blocking, "nonBlocking": 0 }),
+        );
+    }
+
+    /// The PR `n` on `branch` with `files`, enqueued and approved by its first reviewer, `task`.
+    async fn approved(
+        &self,
+        n: i64,
+        branch: &str,
+        files: &[(&str, Option<&str>)],
+        task: &str,
+    ) -> Change {
+        let change = self.enqueue(self.open_pr(n, branch, files)).await;
+        let cursor = self.host.events_head();
+        self.verdict(task, &self.head_of(branch), 0);
+        self.host.next_event(cursor, "change.ready").await;
+        self.get(&change.change_id)
+    }
+}
+
+/// W54: a rebase that changes an approved PR's patch is reviewed again while its CI runs, not before: the train keeps
+/// the PR, its re-review and CI start together, and it merges only once both are done, whichever finishes last.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_re_review_after_a_rebase_runs_while_ci_runs_and_the_merge_waits_for_both() {
+    let kit = Kit::with_reviews_waiting(Duration::from_secs(20));
+    let green = ci_until(&kit);
+    let change = kit
+        .approved(
+            7,
+            "m",
+            &[("a.txt", Some(&a_with(&[(6, "pr line 6")])))],
+            "T50",
+        )
+        .await;
+    // main edits a line in the PR hunk's context: the rebase is clean, but the patch differs.
+    kit.commit(
+        "main",
+        &[("a.txt", Some(&a_with(&[(4, "main line 4")])))],
+        None,
+    );
+
+    let train = kit.train.clone();
+    let pass = tokio::spawn(async move { train.step(REPO).await });
+    eventually("the re-review started with the PR in CI", || {
+        kit.spawned() == 2 && state_of(&kit, &change) == ChangeState::Ci
+    })
+    .await;
+    let rebased = kit.head_of("m");
+    let in_ci = kit.get(&change.change_id);
+    assert_ne!(in_ci.patch_id, change.patch_id);
+    assert_eq!(in_ci.head_sha.as_str(), rebased);
+    assert!(
+        kit.host.review_spawns.lock().unwrap()[1]
+            .prompt
+            .contains(&rebased)
+    );
+
+    // The review is done first: still no merge while CI runs.
+    kit.verdict("T51", &rebased, 0);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(merged_prs(&kit).is_empty(), "CI is still running");
+    assert_eq!(state_of(&kit, &change), ChangeState::Ci);
+
+    green.store(true, std::sync::atomic::Ordering::SeqCst);
+    assert!(pass.await.unwrap());
+    assert_eq!(state_of(&kit, &change), ChangeState::Merged);
+    assert_eq!(*kit.gh.merges.lock().unwrap(), [(7, rebased.clone())]);
+    assert!(
+        !kit.host
+            .events_of("change.state")
+            .iter()
+            .any(|e| e["from"] == json!("rebasing") && e["to"] == json!("reviewing")),
+        "never sent out of the train to review first"
+    );
+
+    // CI first, then the review: the merge waits for the review.
+    let kit = Kit::with_reviews_waiting(Duration::from_secs(20));
+    let change = kit
+        .approved(
+            7,
+            "m",
+            &[("a.txt", Some(&a_with(&[(6, "pr line 6")])))],
+            "T50",
+        )
+        .await;
+    kit.commit(
+        "main",
+        &[("a.txt", Some(&a_with(&[(4, "main line 4")])))],
+        None,
+    );
+    let train = kit.train.clone();
+    let pass = tokio::spawn(async move { train.step(REPO).await });
+    eventually("the re-review started", || kit.spawned() == 2).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(
+        merged_prs(&kit).is_empty(),
+        "CI is green, but the review is still at work"
+    );
+    kit.verdict("T51", &kit.head_of("m"), 0);
+    assert!(pass.await.unwrap());
+    assert_eq!(state_of(&kit, &change), ChangeState::Merged);
+}
+
+/// W54: a PR approved before, pushed to since, goes in a batch while its re-review runs; when that review finds a
+/// blocker, the PR leaves the batch for its author, and the others merge in a batch without it, never with its code.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_blocking_re_review_drops_its_pr_from_the_batch() {
+    let kit = Kit::with_reviews_waiting(Duration::from_secs(20));
+    let a = kit.approved(7, "a", &[add("a1.txt", "a\n")], "T50").await;
+    let b = kit.approved(8, "b", &[add("b1.txt", "b\n")], "T51").await;
+    let c = kit.approved(9, "c", &[add("c1.txt", "c\n")], "T52").await;
+    // b's author pushes again: a new patch, reviewed again (T53), while b may still go through the train.
+    let pushed = kit.commit("b", &[add("b2.txt", "more\n")], None);
+
+    let train = kit.train.clone();
+    let pass = tokio::spawn(async move { train.step(REPO).await });
+    eventually("b in the batch's CI with its re-review at work", || {
+        kit.spawned() == 4 && state_of(&kit, &b) == ChangeState::Ci
+    })
+    .await;
+    assert_eq!(kit.get(&b.change_id).head_sha.as_str(), pushed);
+    kit.verdict("T53", &pushed, 1);
+    assert!(pass.await.unwrap());
+    let dropped = kit.get(&b.change_id);
+    assert_eq!(
+        dropped.state,
+        ChangeState::Reviewing,
+        "{:?}",
+        dropped.last_error
+    );
+    assert!(
+        merged_prs(&kit).is_empty(),
+        "the batch with b's code never merges"
+    );
+    for c in [&a, &c] {
+        let back = kit.get(&c.change_id);
+        assert_eq!(back.state, ChangeState::Ready);
+        assert!(
+            back.last_error.as_deref().unwrap().contains(
+                "#8's re-review found blocking findings; the batch forms again without it"
+            ),
+            "{:?}",
+            back.last_error
+        );
+    }
+
+    assert!(kit.train.step(REPO).await);
+    assert_eq!(members_of_batch(&kit), [7, 9]);
+    assert_eq!(state_of(&kit, &a), ChangeState::Merged);
+    assert_eq!(state_of(&kit, &c), ChangeState::Merged);
+    assert_eq!(state_of(&kit, &b), ChangeState::Reviewing);
+    assert!(kit.main_file("b1.txt").is_none());
+}
+
+/// W54: a reviewer whose fleetd tools failed (the 10-25 `stdio` outage) is caught as soon as it ends, said in plain
+/// words in the train's line, and a new reviewer starts by itself a minute later, then after longer waits, never
+/// counted as a reviewer that gave up; any verdict recorded elsewhere starts one at once.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_review_whose_tools_fail_is_re_run_automatically_within_minutes() {
+    let clock = Arc::new(Hands::default());
+    let kit = Kit::build(FakeCi::Actions, |_| {}, true, clock.clone());
+    let change = kit
+        .enqueue(kit.open_pr(7, "a", &[add("a1.txt", "a\n")]))
+        .await;
+    assert_eq!(kit.spawned(), 1);
+
+    kit.end_task("T50", "task.failed", "Error: spawn stdio ENOENT");
+    eventually("the Change says its review tools failed", || {
+        kit.get(&change.change_id).last_error.is_some_and(|e| {
+            e.starts_with("review tools failed: the reviewer T50 couldn't use fleetd's tools")
+        })
+    })
+    .await;
+    eventually("the lead told", || {
+        kit.host
+            .wakes
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|w| w.contains("couldn't use fleetd's tools"))
+    })
+    .await;
+    let line = super::digest::lead_train_lines(
+        &super::digest::train_facts(&kit.train.records, |_| true),
+        None,
+    )
+    .join("\n");
+    assert!(
+        line.contains(&format!(
+            "{} reviewing (review tools failed:",
+            change.change_id
+        )),
+        "{line}"
+    );
+    kit.train.step(REPO).await;
+    assert_eq!(kit.spawned(), 1, "not before its wait");
+
+    clock.advance(Duration::from_secs(61));
+    kit.train.step(REPO).await;
+    assert_eq!(kit.spawned(), 2, "a new reviewer a minute later");
+
+    // Again: the wait doubles, and it is never counted against the one retry a reviewer that gave up gets.
+    kit.end_task(
+        "T51",
+        "task.completed",
+        "The fleetd MCP server failed to start, so I can't record the verdict.",
+    );
+    eventually("seen", || {
+        kit.get(&change.change_id)
+            .last_error
+            .is_some_and(|e| e.contains("T51 couldn't"))
+    })
+    .await;
+    clock.advance(Duration::from_secs(61));
+    kit.train.step(REPO).await;
+    assert_eq!(kit.spawned(), 2, "two minutes now");
+    clock.advance(Duration::from_secs(60));
+    kit.train.step(REPO).await;
+    assert_eq!(kit.spawned(), 3);
+    assert_eq!(
+        kit.host
+            .wakes
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|w| w.contains("couldn't use fleetd's tools"))
+            .count(),
+        1,
+        "the lead hears once"
+    );
+
+    // A verdict recorded on another PR shows the tools work again: the next starts at once.
+    kit.end_task("T52", "task.failed", "Error: spawn stdio ENOENT");
+    eventually("seen", || {
+        kit.get(&change.change_id)
+            .last_error
+            .is_some_and(|e| e.contains("T52 couldn't"))
+    })
+    .await;
+    let other = kit
+        .enqueue(kit.open_pr(8, "b", &[add("b1.txt", "b\n")]))
+        .await;
+    clock.advance(Duration::from_secs(1));
+    let cursor = kit.host.events_head();
+    kit.verdict("T53", &kit.head_of("b"), 0);
+    kit.host.next_event(cursor, "change.ready").await;
+    assert_eq!(state_of(&kit, &other), ChangeState::Ready);
+    kit.train.step(REPO).await;
+    assert_eq!(kit.spawned(), 5, "started at once, no wait");
+    let spawns = kit.host.review_spawns.lock().unwrap();
+    assert!(spawns[4].pr.ends_with("/pull/7"));
 }

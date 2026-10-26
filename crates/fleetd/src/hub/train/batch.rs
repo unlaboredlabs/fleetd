@@ -1,18 +1,20 @@
 //! Batches: two or more ready Changes into one base, each reviewed for its current patch and green on its own head by
 //! its fast set (the base's required checks and the repo's own; cancelled and superseded runs and every other check
 //! left to the batch's CI), up to `BATCH_MAX` of them in queue order, merged together after one CI run. Each pass
-//! records why each ready PR was left out, on the Change and in the log. The train builds the batch on GitHub: its
+//! records why each ready PR was left out, on the Change and in the log. A PR approved at an earlier patch whose
+//! re-review is at work joins as a ready one does: the merge waits for that review too, and blocking findings drop it
+//! from the batch, which forms again without it. The train builds the batch on GitHub: its
 //! scratch branch at the base, each member's head merged into it in order, and one PR for it. A member that conflicts
 //! is left out and goes back to its writer. Green, the train posts `fleetd/train` on that head and squash-merges the
 //! batch PR pinned to it; each member is then closed with a link. Red, timed out or refused, every member goes alone.
-//! No gate is skipped: every member is ready, the batch's CI must pass, and GitHub's rules on the base decide the merge
+//! No gate is skipped: every member is reviewed clean at its patch before the merge, the batch's CI must pass, and GitHub's rules on the base decide the merge
 //! as they would for one PR. The next pass's sweep deletes the scratch branch, which closes a batch PR left open.
 use super::contract::{Change, ChangeState};
 use super::github::{
     BATCH_MARKER, BranchMerge, CheckRun, CommitStatus, MergeOutcome, NEXT_LABEL, Pull, batch_heads,
 };
 use super::records::DRAFT;
-use super::service::{CiOutcome, Fast, Train, error_text, is_red, lock, short};
+use super::service::{CiOutcome, Fast, ReviewWait, Train, error_text, is_red, lock, short};
 
 const BATCH_MAX: usize = 8;
 
@@ -94,7 +96,7 @@ pub(super) fn own_checks(
 }
 
 /// A clean review is bound to the Change's current patch: nothing else lets the train take it.
-fn reviewed(change: &Change) -> bool {
+pub(super) fn reviewed(change: &Change) -> bool {
     change.patch_id.as_ref().is_some_and(|patch| {
         change
             .reviews
@@ -225,7 +227,12 @@ impl Train {
     /// alone and off every PR the train is not merging now. Never on the PRs behind it: the run the label starts would
     /// cancel their own CI, keep them out of the next batch, and take the runners the batch needs.
     pub(super) async fn next(&self, repo: &str) -> bool {
-        let ready = self.records.in_train(repo, &[ChangeState::Ready]);
+        let ready = self
+            .records
+            .in_train(repo, &[ChangeState::Reviewing, ChangeState::Ready])
+            .into_iter()
+            .filter(|c| c.state == ChangeState::Ready || self.rereviewing(c))
+            .collect();
         let (candidates, settled) = self.candidates(repo, ready).await;
         let Some(head) = candidates.first() else {
             self.relabel(repo, &[], &[]).await;
@@ -332,14 +339,30 @@ impl Train {
                 settled = true;
                 continue;
             }
+            // A re-review whose head moved is refresh's to send to the gate.
+            if change.state == ChangeState::Reviewing
+                && pull.head.sha.to_lowercase() != change.head_sha.as_str()
+            {
+                continue;
+            }
+            let mut change = change;
             if pull.head.sha.to_lowercase() != change.head_sha.as_str() {
                 if let Err(e) = self.ready_moved(&change, &pull).await {
                     self.ready_error(&change, &e.message);
                 }
                 settled = true;
-                continue;
+                // A new patch of an approved PR is reviewed again while it goes through the train, from this pass on.
+                match self
+                    .records
+                    .get(&change.change_id)
+                    .filter(|c| c.head_sha.as_str() == pull.head.sha.to_lowercase())
+                    .filter(|c| c.state == ChangeState::Ready || self.rereviewing(c))
+                {
+                    Some(moved) => change = moved,
+                    None => continue,
+                }
             }
-            if !reviewed(&change) {
+            if !reviewed(&change) && change.state == ChangeState::Ready {
                 if let Some(reviewing) =
                     self.update(&change.change_id, Some(&[ChangeState::Ready]), |mut c| {
                         c.state = ChangeState::Reviewing;
@@ -450,12 +473,30 @@ impl Train {
         }
     }
 
-    /// Back to ready in place (their queue order never changed), with `why` as their last error.
+    /// A Change in review, approved at an earlier patch, whose re-review is at work: it may go through the train
+    /// meanwhile, the merge waiting for both.
+    pub(super) fn rereviewing(&self, change: &Change) -> bool {
+        change.state == ChangeState::Reviewing
+            && change.patch_id.as_ref().is_some_and(|patch| {
+                change
+                    .reviews
+                    .iter()
+                    .any(|r| r.blocking.get() == 0 && &r.patch_id != patch)
+            })
+            && self.gate_rereview(change)
+    }
+
+    /// Back in place (their queue order never changed), with `why` as their last error: to ready, or to review for one
+    /// whose re-review is not done.
     fn release(&self, members: &[Candidate], why: &str) {
         let from = [ChangeState::Rebasing, ChangeState::Ci, ChangeState::Merging];
         for m in members {
             self.update(&m.change.change_id, Some(&from), |mut c| {
-                c.state = ChangeState::Ready;
+                c.state = if reviewed(&c) {
+                    ChangeState::Ready
+                } else {
+                    ChangeState::Reviewing
+                };
                 c.last_error = Some(error_text(why));
                 c
             });
@@ -487,13 +528,13 @@ impl Train {
             let ready = self
                 .records
                 .get(&m.change.change_id)
-                .filter(|c| c.state == ChangeState::Ready);
+                .filter(|c| c.state == ChangeState::Ready || self.rereviewing(c));
             if let Some(ready) = ready {
                 self.take(&ready).await;
                 if self
                     .records
                     .get(&m.change.change_id)
-                    .is_some_and(|c| c.state == ChangeState::Ready)
+                    .is_some_and(|c| c.state == ChangeState::Ready || self.rereviewing(&c))
                 {
                     return;
                 }
@@ -538,7 +579,26 @@ impl Train {
     }
 
     async fn take_batch(&self, repo: &str, base: &str, members: Vec<Candidate>) {
-        let building = self.advance(&members, ChangeState::Ready, ChangeState::Rebasing);
+        let building: Vec<Candidate> = [ChangeState::Ready, ChangeState::Reviewing]
+            .into_iter()
+            .flat_map(|from| {
+                let at: Vec<Candidate> = members
+                    .iter()
+                    .filter(|m| m.change.state == from)
+                    .cloned()
+                    .collect();
+                self.advance(&at, from, ChangeState::Rebasing)
+            })
+            .collect();
+        let building: Vec<Candidate> = members
+            .iter()
+            .filter_map(|m| {
+                building
+                    .iter()
+                    .find(|b| b.change.change_id == m.change.change_id)
+                    .cloned()
+            })
+            .collect();
         if building.len() != members.len() {
             return self.release(&building, MEMBER_LEFT);
         }
@@ -608,6 +668,51 @@ impl Train {
             tracing::info!(repo, pr, sha, "train: batch red, each member goes alone");
             let why = format!("batch #{pr}'s CI {red}; each of its PRs goes alone");
             return self.alone(&in_ci, &why).await;
+        }
+        // CI passed: the merge also waits for the re-reviews still at work. One with blocking findings, or still at work
+        // after `review_wait`, leaves the batch for review, and the others go back in place for a batch without it.
+        let pending: Vec<Change> = in_ci
+            .iter()
+            .filter_map(|m| self.records.get(&m.change.change_id))
+            .filter(|c| !reviewed(c))
+            .collect();
+        if !pending.is_empty() {
+            let waits = self.await_reviews(&pending).await;
+            let mut dropped = Vec::new();
+            for (change, wait) in pending.iter().zip(waits) {
+                match wait {
+                    ReviewWait::Clean(reviews) => {
+                        self.add_reviews(change, reviews);
+                    }
+                    ReviewWait::Blocked => {
+                        self.to_review(change, None);
+                        dropped.push(format!(
+                            "#{}'s re-review found blocking findings",
+                            change.pr_number
+                        ));
+                    }
+                    ReviewWait::Waiting => {
+                        self.to_review(change, Some(&self.review_overdue(&change.head_sha)));
+                        dropped.push(format!(
+                            "#{}'s re-review is still at work",
+                            change.pr_number
+                        ));
+                    }
+                }
+            }
+            if !dropped.is_empty() {
+                tracing::info!(
+                    repo,
+                    pr,
+                    ?dropped,
+                    "train: a re-review dropped PRs from the batch"
+                );
+                let why = format!(
+                    "batch #{pr} passed CI, but {}; the batch forms again without it",
+                    dropped.join(" and ")
+                );
+                return self.release(&in_ci, &why);
+            }
         }
 
         // A member pushed to, held or closed while CI ran is not what was tested: the batch goes, and the next pass

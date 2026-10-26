@@ -4,6 +4,7 @@ use super::batch::LEFT_OUT;
 use super::contract::{Change, ChangeState, ProjectRef, TrainState, state_str};
 use super::next::WAITING_FOR_RUNNERS;
 use super::records::{ChangeRecords, DRAFT, ListFilter, is_draft};
+use crate::hub::reviews::rules::TOOLS_FAILED;
 use crate::hub::store::parse_ms;
 
 pub struct TrainFacts {
@@ -58,6 +59,16 @@ fn state_of(changes: &[Change], train: &TrainState) -> String {
                         c.last_error.as_deref().filter(|e| e.starts_with(LEFT_OUT)) =>
             {
                 format!("{id} ready ({})", one_line(why, 100))
+            }
+            // A review whose reviewer's tools failed says so: `X4 reviewing (review tools failed: …)`.
+            Some(c)
+                if c.state == ChangeState::Reviewing
+                    && let Some(why) = c
+                        .last_error
+                        .as_deref()
+                        .filter(|e| e.starts_with(TOOLS_FAILED)) =>
+            {
+                format!("{id} reviewing ({})", one_line(why, 100))
             }
             Some(c) => format!("{id} {}", state_str(c.state)),
             None => id.to_string(),

@@ -136,6 +136,16 @@ straight to the branch.</p>
 <p>Every PR gets one fresh reviewer, which reports blocking findings only. Its verdict is bound to the PR’s current
 patch: a rebase that keeps the patch keeps the review, and a new commit gets a new reviewer, who starts from what
 changed. Blocking findings go to the agent that wrote the PR, and the PR waits for its next commit.</p>
+<p>A PR already approved at an earlier patch isn’t sent back to wait for its new review. When a rebase or a push changes
+its patch, the new review runs while its CI runs, alone or in a batch, and the merge waits for both. If the review
+finds a blocker, the PR leaves the train for its author, and a batch it was in forms again without it, so its code
+never lands. If CI is green and the review is still at work after 15 minutes, the PR waits in review out of the
+train’s way, and merges once the review is clean. Re-reviews are never skipped.</p>
+<p>A reviewer that couldn’t use fleetd’s tools, so it couldn’t record its verdict, is caught as soon as it ends. Its
+queue entry and the train’s line say “review tools failed”, and the lead hears once. A new reviewer starts by itself
+a minute later, then after longer waits up to 15 minutes. It starts at once when any other review records a verdict,
+since that shows the tools work again. These don’t count toward the one retry a reviewer that ended without a verdict
+for other reasons gets.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="batches">Batches</h2><a class="sl-anchor-link" href="#batches"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Batches”</span></a></div>
 <p>When several PRs are ready at once, the train merges them together in one CI run. It takes up to 8 ready PRs in
 line that go into the same base branch and whose fast set passed on their own commit, every check of it reported. A
