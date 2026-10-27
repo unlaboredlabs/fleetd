@@ -16,6 +16,9 @@ export interface ToastInput {
   duration?: number;
   /** A toast with the same key replaces the one on screen instead of stacking. */
   key?: string;
+  /** Its time stops (the pointer or focus on it, the window in the background) and goes on, for a caller timing alongside. */
+  onPause?: () => void;
+  onResume?: () => void;
 }
 
 interface ToastItem extends ToastInput {
@@ -69,6 +72,8 @@ export function Toaster({ children }: { children: ReactNode }) {
           className={s.toast}
           open={t.open}
           duration={t.duration === 0 ? Infinity : (t.duration ?? (t.action ? 8000 : 5000))}
+          {...(t.onPause === undefined ? {} : { onPause: t.onPause })}
+          {...(t.onResume === undefined ? {} : { onResume: t.onResume })}
           onOpenChange={(open) => {
             if (!open) dismiss(t.id);
           }}
