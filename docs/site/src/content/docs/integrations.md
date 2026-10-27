@@ -51,8 +51,7 @@ more · you approved at 09:12". The tool may still refuse or fail; what it did i
 ## Notion {#notion}
 
 Notion comes through its official MCP server, [`@notionhq/notion-mcp-server`](https://github.com/makenotion/notion-mcp-server),
-with an integration you make in your own workspace. It runs on the Navi's machine with `npx`, so that machine needs
-Node.js.
+with an integration you make in your own workspace. It runs on the Navi's machine, which needs Node.js.
 
 1. Open `notion.so/profile/integrations` in Notion and create a **new integration**:
    **Internal**, in the workspace the Navi should use. Name it Navi.
