@@ -134,6 +134,12 @@ it("lists user.md as one card per entry, with the lead's source and time only wh
   expect(document.querySelector('[role="meter"]')?.getAttribute("aria-valuetext")).toBe(`${String(FILE.length)} of 4,000 characters`);
 });
 
+it("has no hub-wide caps: those are Administration's", async () => {
+  await mount(FILE);
+  expect(document.body.textContent).not.toContain("Memory caps");
+  expect([...document.querySelectorAll("button")].some((b) => b.textContent === "Save caps")).toBe(false);
+});
+
 it("edits one entry in place", async () => {
   const hub = await mount(FILE);
   await click("Edit “No npm.”");

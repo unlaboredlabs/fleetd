@@ -85,13 +85,10 @@ it("shows what runs, flags a refused model and saves a project's override", asyn
   expect(host.textContent).toContain("Saved. New agents of the project's profiles run on this.");
 });
 
-it("shows the fleet's refusal as an alert and keeps a key without admin from changing it", async () => {
-  await mount(<ProfilesSetting blocked="This key can't change it: that needs an admin key." />);
+it("shows the fleet's refusal as an alert", async () => {
+  await mount(<ProfilesSetting />);
   await settle();
   const alert = host.querySelector('[role="alert"]');
   expect(alert?.textContent).toContain("claude-nope isn't used: claude on devbox refused claude-nope");
   expect(field("High model")?.value).toBe("claude-nope");
-  expect(field("High model")?.disabled).toBe(true);
-  expect(button("Save high")?.disabled).toBe(true);
-  expect(host.textContent).toContain("that needs an admin key");
 });

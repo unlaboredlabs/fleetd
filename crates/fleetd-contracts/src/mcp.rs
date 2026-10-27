@@ -275,8 +275,8 @@ output!(ProjectSetOutput {
     medium_allowed: bool
 });
 
-// profiles_get, profiles_set: the model and effort behind each task profile, fleet-wide (Settings › Agents) and as a
-// project's override (its settings). Unset everywhere, a profile runs on the runner's own.
+// profiles_get, profiles_set: the model and effort behind each task profile, fleet-wide (Administration › Hub settings)
+// and as a project's override (its settings). Unset everywhere, a profile runs on the runner's own.
 input!(ProfilesGetInput {
     /// A project: its override too, and what its agents run on. Absent: the fleet's.
     project_ref: Option<ProjectRef>,
