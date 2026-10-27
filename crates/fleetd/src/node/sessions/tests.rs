@@ -3693,6 +3693,39 @@ async fn a_refusal_of_another_model_than_the_session_s_never_falls_back() {
 }
 
 #[tokio::test]
+async fn a_new_projects_folder_is_made_where_the_hub_says_and_a_relative_one_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    let folder = dir.path().join("fleetd/projects/notes");
+    let path = folder.to_string_lossy().into_owned();
+    let made = hub
+        .ok(SessionCall::FolderMake {
+            path: NonEmpty::unchecked(path.clone()),
+            git_init: false,
+            dry_run: false,
+        })
+        .await;
+    assert_eq!(made, SessionOutput::Folder { path: path.clone() });
+    assert!(folder.is_dir() && !folder.join(".git").exists());
+    std::fs::write(folder.join("a.md"), "").unwrap();
+    for bad in [path.as_str(), "notes", "/tmp/../etc/x"] {
+        let refused = hub
+            .call(SessionCall::FolderMake {
+                path: NonEmpty::unchecked(bad),
+                git_init: false,
+                dry_run: true,
+            })
+            .await;
+        assert!(matches!(refused, SessionResult::Err(_)), "{bad}");
+    }
+}
+
+#[tokio::test]
 async fn a_navi_gets_its_folder_under_the_node_home_and_its_lead_the_assistant_rules() {
     let dir = tempfile::tempdir().unwrap();
     let mut hub = hub(

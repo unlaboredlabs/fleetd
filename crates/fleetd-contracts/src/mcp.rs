@@ -956,12 +956,19 @@ output!(ProjectDiscoverOutput {
 // (`url`). A path is added at once; a clone answers with `addId` and streams `project.clone_progress`, then
 // `project.added` or `project.add_failed`. The same directory again returns its project. `dryRun` adds nothing: it
 // answers the facts (default branch, CI and merge rules, what the lead will need) and, for a url, where it would clone.
+// `create` starts a new, empty project: the node makes its folder (`path`, else `<projectsRoot>/<name>`), and it is
+// added as a plain folder.
 input!(
     #[serde(remote = "Self")]
     ProjectAddInput {
     /// Absent: the best worker (see `project_discover.best`).
     machine_id: Option<MachineId>,
     path: Option<WorkspacePath>,
+    /// Make a new folder for the project first: at `path`, else `<projectsRoot>/<name from title>`. An empty folder
+    /// already there is taken; one holding anything is refused.
+    create: Option<bool>,
+    /// With `create`: `git init` the new folder. Absent: a plain folder with no git.
+    git_init: Option<bool>,
     /// A GitHub URL, `git@github.com:o/r.git`, or `owner/repo`.
     url: Option<Text<1, 300>>,
     /// With `url`: clone here instead of `<cloneRoot>/<name>`.
@@ -973,6 +980,20 @@ input!(
     dry_run: Option<bool>,
 });
 checked!(ProjectAddInput, |input| {
+    if input.create == Some(true) {
+        if input.url.is_some() || input.dest.is_some() || input.use_existing.is_some() {
+            return Err(
+                "create makes an empty folder: url, dest and useExisting don't go with it".into(),
+            );
+        }
+        if input.path.is_none() && input.title.is_none() {
+            return Err("give title (the new project's name), path (its folder), or both".into());
+        }
+        return Ok(());
+    }
+    if input.git_init.is_some() {
+        return Err("gitInit goes with create only".into());
+    }
     match (&input.path, &input.url) {
         (Some(_), Some(_)) => return Err("give path or url, not both".into()),
         (None, None) => {

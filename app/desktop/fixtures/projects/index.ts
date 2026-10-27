@@ -3,6 +3,7 @@
 // problem wording; the group adds a fixture per sheet state and one for the machine states.
 
 import { Fixture, HUB, PROTOCOL } from "../kit/fixture.ts";
+import { writeChat } from "../kit/chat.ts";
 import { defineGroup } from "../kit/group.ts";
 import { at } from "../kit/ids.ts";
 import { asText, isObject, type JsonObject, type JsonValue } from "../kit/json.ts";
@@ -23,6 +24,17 @@ const inspect = (repo: string | null, ci: boolean): JsonObject => ({
   leadNeeds: ci ? "CI runs on pull requests; the merge train waits for ci" : "no CI found: the merge train holds its PRs until the repo has CI",
   notes: [],
 });
+
+/** Where a new project's folder goes on every machine (node/repos.rs projects_root). */
+const PROJECTS_ROOT = "/home/dev/fleetd/projects";
+
+/** A plain folder's inspect, as the hub words it (hub/projects/inspect.rs folder). */
+const folderInspect: JsonObject = {
+  ci: { workflows: [], requiredChecks: [] },
+  merge: { protected: false, rulesets: [] },
+  leadNeeds: "a plain folder with no git: its lead chats, remembers and uses screens here; agents that change code need a git repo",
+  notes: [],
+};
 
 /** What project_discover finds: the snapshot's projects as added checkouts, a few more to add, and gh's list. */
 const discover = (f: Fixture, extra: { longName?: string; offline?: string } = {}): JsonObject => {
@@ -54,7 +66,7 @@ const discover = (f: Fixture, extra: { longName?: string; offline?: string } = {
         problem: { code: "machine_offline", message: `${id} is offline`, fix: `Start the node on ${id} (fleetd node run) or check its network, then retry` },
       };
     }
-    return { machineId: id, online: true, cloneRoot: root, repos: [...added, ...more] };
+    return { machineId: id, online: true, cloneRoot: root, projectsRoot: PROJECTS_ROOT, repos: [...added, ...more] };
   });
   const checkout = (repo: string): Array<JsonObject> =>
     out.flatMap((m) =>
@@ -116,6 +128,19 @@ const addAnswers = (f: Fixture) => {
     projectId: "ledger-ui",
     created: true,
     inspect: inspect("acme/ledger-ui", true),
+  });
+  // A new project: made under the projects root, or refused because that folder holds files.
+  f.answer("project_add", { create: true, path: `${PROJECTS_ROOT}/field-notes` }, {
+    machineId: "devbox",
+    path: `${PROJECTS_ROOT}/field-notes`,
+    projectId: "field-notes",
+    created: true,
+    inspect: folderInspect,
+  });
+  f.fail("project_add", { create: true, path: `${PROJECTS_ROOT}/old-notes` }, {
+    code: "invalid",
+    message: `${PROJECTS_ROOT}/old-notes on devbox already holds files`,
+    fix: "Pick another folder for the new project, or add that one as it is by typing its path",
   });
   f.answer("project_remove", undefined, { ok: true });
 };
@@ -251,6 +276,30 @@ export default defineGroup({
       f.later(6_000, "state", { phase: "connecting", hub: HUB, attempt: 1 });
       f.later(6_300, "state", { phase: "live", hub: HUB, protocol: PROTOCOL });
       if (f.snapshot !== undefined) f.later(6_600, "snapshot", f.snapshot);
+      f.settleAt(0);
+      return f;
+    })(),
+    (() => {
+      // A new project made from the sheet: the hub's next snapshot lists it, a plain folder with no repo, and Settings
+      // says so. Timed past the QA step's Enter, as projects-cloning's progress is.
+      const f = Fixture.from(base("typical"), "projects-new", "Add project: a new, empty project made in a folder the hub makes, then opened");
+      const made: JsonObject = { machineId: "devbox", projectId: "field-notes", title: "Field notes", workspaceRoot: `${PROJECTS_ROOT}/field-notes`, threads: { running: 0, waiting: 0, idle: 0, failed: 0 }, lastActivityAt: f.now, repos: [] };
+      if (f.snapshot !== undefined) f.later(6_000, "snapshot", { ...f.snapshot, projects: [...projectsOf(f), made] });
+      f.answer("project_settings_get", { machineId: "devbox", projectId: "field-notes" }, {
+        settings: {
+          machineId: "devbox",
+          projectId: "field-notes",
+          title: "Field notes",
+          workspaceRoot: `${PROJECTS_ROOT}/field-notes`,
+          keepWorktrees: false,
+          env: [],
+          setup: { commands: [], timeoutSec: 600, runAnyway: false, inputs: [] },
+          worktrees: { dir: "/home/dev/.fleetd/node/worktrees/field-notes", worktrees: [] },
+        },
+      });
+      f.answer("mcp_servers_get", undefined, { global: [], project: [], userServers: true });
+      // Its chat: no messages yet.
+      writeChat(f, { machineId: "devbox", projectId: "field-notes" }, []);
       f.settleAt(0);
       return f;
     })(),

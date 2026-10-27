@@ -1122,8 +1122,41 @@ impl SessionService {
             }
             SessionCall::RepoScan => {
                 let home = crate::node::util::home_dir();
+                let projects_root = super::repos::projects_root(&home)
+                    .to_string_lossy()
+                    .into_owned();
                 let (clone_root, repos) = blocking(move || super::repos::scan(&home)).await;
-                Ok(SessionOutput::Repos { clone_root, repos })
+                Ok(SessionOutput::Repos {
+                    clone_root,
+                    repos,
+                    projects_root: Some(projects_root),
+                })
+            }
+            SessionCall::FolderMake {
+                path,
+                git_init,
+                dry_run,
+            } => {
+                let dir = expand_home(path.as_str());
+                if !dir.is_absolute()
+                    || dir.components().any(|c| {
+                        matches!(
+                            c,
+                            std::path::Component::ParentDir | std::path::Component::CurDir
+                        )
+                    })
+                {
+                    return Err(invalid(format!(
+                        "{path} is not a full path: start it with / or ~/"
+                    )));
+                }
+                let made = dir.clone();
+                blocking(move || super::repos::folder_make(&made, git_init, dry_run))
+                    .await
+                    .map_err(invalid)?;
+                Ok(SessionOutput::Folder {
+                    path: dir.to_string_lossy().into_owned(),
+                })
             }
             SessionCall::RepoInspect { path } => {
                 let path = PathBuf::from(path.as_str());

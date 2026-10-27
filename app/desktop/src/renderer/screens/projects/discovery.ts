@@ -1,7 +1,7 @@
 // The hub's answers turned into what the Add project screen lists and says. Pure, so its behaviour is pinned by tests.
 
 import type { CloneProgressData, CloneTarget, ProjectDiscoverOutput, ProjectInspect, ProjectProblem } from "./contracts";
-import { addSource, baseName, tilde } from "./source";
+import { addSource, baseName, folderName, otherHost, tilde } from "./source";
 
 export interface ProjectKey {
   readonly machineId: string;
@@ -14,6 +14,8 @@ export interface Worker {
   readonly online: boolean;
   /** Where a clone lands on it (absolute); absent when the hub doesn't say. */
   readonly cloneRoot?: string;
+  /** Where a new project's folder goes on it (absolute); absent when its node can't make one. */
+  readonly projectsRoot?: string;
 }
 
 export type FoundKind = { readonly kind: "checkout"; readonly machineId: string; readonly path: string } | { readonly kind: "github" };
@@ -62,7 +64,13 @@ export const discovery = (out: ProjectDiscoverOutput, name: (machineId: string) 
         ...(r.projectId ? { project: { machineId: m.machineId, projectId: r.projectId } } : {}),
       });
     }
-    workers.push({ machineId: m.machineId, name: name(m.machineId), online: m.online, ...(m.cloneRoot ? { cloneRoot: m.cloneRoot } : {}) });
+    workers.push({
+      machineId: m.machineId,
+      name: name(m.machineId),
+      online: m.online,
+      ...(m.cloneRoot ? { cloneRoot: m.cloneRoot } : {}),
+      ...(m.projectsRoot ? { projectsRoot: m.projectsRoot } : {}),
+    });
   }
   const gh = out.github;
   if (gh.problem) problems.push(problem(gh.problem));
@@ -88,10 +96,16 @@ export const target = (d: Discovery | null, picked: string | null): Worker | nul
 export const clonePath = (w: Worker | undefined, repo: string): string | null =>
   w?.cloneRoot ? `${w.cloneRoot.replace(/\/+$/u, "")}/${baseName(repo)}` : null;
 
+/** A new project's folder on `w`: `<projectsRoot>/<name as a folder>`, as the hub makes it by default. */
+export const newPath = (w: Worker | undefined, name: string): string | null =>
+  w?.projectsRoot ? `${w.projectsRoot.replace(/\/+$/u, "")}/${folderName(name)}` : null;
+
 export type Row =
   | { readonly kind: "clone"; readonly repo: string }
   | { readonly kind: "folder"; readonly path: string }
-  | { readonly kind: "found"; readonly index: number };
+  | { readonly kind: "found"; readonly index: number }
+  /** A new, empty project named `name` ("" until one is typed). */
+  | { readonly kind: "new"; readonly name: string };
 
 /** How well `query` matches `text`: a substring early in it beats one late, beats the letters in order. */
 export const score = (query: string, text: string): number | null => {
@@ -119,6 +133,8 @@ export const rows = (text: string, found: ReadonlyArray<Found>): { rows: Readonl
   } else if (src?.kind === "path") {
     out.push({ kind: "folder", path: src.path });
   } else if (t === "") {
+    // With nothing found, the empty state says to type a name instead.
+    if (found.length > 0) out.push({ kind: "new", name: "" });
     found.forEach((_, index) => out.push({ kind: "found", index }));
   } else {
     const scored: Array<[number, number]> = [];
@@ -130,24 +146,31 @@ export const rows = (text: string, found: ReadonlyArray<Found>): { rows: Readonl
     });
     scored.sort((a, b) => b[0] - a[0] || a[1] - b[1]);
     for (const [, index] of scored) out.push({ kind: "found", index });
+    // A name to start a new project with, after what it matches (a URL fleetd can't clone is never one).
+    if (otherHost(t) === null) out.push({ kind: "new", name: t });
   }
   const isProject = (r: Row) => r.kind === "found" && found[r.index]?.project !== undefined;
   // A pasted repo that is already a project starts on that project (Enter opens it, not a second clone); otherwise
   // start on something that adds.
   const pasted =
     out[0]?.kind === "clone" ? out.findIndex((r) => r.kind === "found" && found[r.index]?.project !== undefined && found[r.index]?.source.kind === "github") : -1;
-  const adds = out.findIndex((r) => !isProject(r));
+  // An unnamed new project starts nothing, so the list starts on what it found.
+  const adds = out.findIndex((r) => !isProject(r) && !(r.kind === "new" && r.name === ""));
   return { rows: out, selected: pasted >= 0 ? pasted : Math.max(adds, 0) };
 };
 
 export type Request =
   | { readonly kind: "clone"; readonly repo: string; readonly machineId: string; readonly useExisting: boolean }
-  | { readonly kind: "folder"; readonly machineId: string; readonly path: string };
+  | { readonly kind: "folder"; readonly machineId: string; readonly path: string }
+  /** The hub makes the folder at `path` and adds it: a plain folder, or a git repo with no remote when `gitInit`. */
+  | { readonly kind: "new"; readonly machineId: string; readonly name: string; readonly path: string; readonly gitInit: boolean };
 
 /** What Enter or the primary button does for the selected row. */
 export type Plan =
   | { readonly kind: "clone"; readonly repo: string }
   | { readonly kind: "folder"; readonly machineId: string; readonly path: string; readonly fixed: boolean }
+  /** `machineId` absent: no machine is online. */
+  | { readonly kind: "new"; readonly name: string; readonly machineId?: string }
   | { readonly kind: "open"; readonly project: ProjectKey }
   | { readonly kind: "nothing" };
 
@@ -160,6 +183,10 @@ export const plan = (row: Row | undefined, d: Discovery | null, to: Worker | nul
     case "folder": {
       const machineId = picked ?? to?.machineId;
       return machineId === undefined ? { kind: "nothing" } : { kind: "folder", machineId, path: row.path, fixed: false };
+    }
+    case "new": {
+      const machineId = picked ?? to?.machineId;
+      return machineId === undefined ? { kind: "new", name: row.name } : { kind: "new", name: row.name, machineId };
     }
     case "found": {
       const f = d?.found[row.index];
@@ -204,11 +231,15 @@ export const ready = (project: ProjectKey, title: string, machine: string, path:
   if (m.requiredReviews !== undefined && m.requiredReviews > 0) merge.push(`${plural(m.requiredReviews, "review")} required`);
   if (m.strict === true) merge.push("up to date before merging");
   merge.push(m.squashAllowed === undefined ? "merge settings unreadable" : m.squashAllowed ? "squash allowed" : "squash not allowed");
-  const facts: Array<readonly [string, string]> = [
-    ["Default branch", inspect.defaultBranch ?? "unknown"],
-    ["CI", ci],
-    ["Merge rules", merge.join(", ")],
-  ];
+  // A plain folder has no repo: no branch, CI or merge rules to show, and its lead line is no warning.
+  const plain = inspect.repo === undefined && inspect.defaultBranch === undefined;
+  const facts: Array<readonly [string, string]> = plain
+    ? []
+    : [
+        ["Default branch", inspect.defaultBranch ?? "unknown"],
+        ["CI", ci],
+        ["Merge rules", merge.join(", ")],
+      ];
   if (inspect.repo) facts.unshift(["Repo", inspect.repo]);
   const line = inspect.leadNeeds.trim();
   const capital = line.charAt(0).toUpperCase() + line.slice(1);
@@ -219,7 +250,7 @@ export const ready = (project: ProjectKey, title: string, machine: string, path:
     path,
     facts,
     leadLine: capital.endsWith(".") ? capital : `${capital}.`,
-    leadOk: workflows.length > 0 || requiredChecks.length > 0,
+    leadOk: plain || workflows.length > 0 || requiredChecks.length > 0,
     notes: inspect.notes,
   };
 };
