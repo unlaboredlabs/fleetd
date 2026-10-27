@@ -143,12 +143,18 @@ fn exec_of(
         .unwrap_or_default();
     let deadline = Instant::now() + timeout;
     loop {
+        // Whether it exited, then its name: a zombie's name is final, but a name read first may predate an exec right
+        // before the exit, and try_wait would reap it, name and all. A claude that exits at once still counts.
+        let exited = exited(pid);
         let comm = std::fs::read_to_string(format!("/proc/{pid}/comm")).unwrap_or_default();
         if handed_over(&comm, &name, spawner) {
             return Ok(());
         }
-        if let Ok(Some(status)) = child.try_wait() {
-            return Err(format!("systemd-run {status}"));
+        if exited {
+            return Err(match child.try_wait() {
+                Ok(Some(status)) => format!("systemd-run {status}"),
+                _ => "systemd-run exited".into(),
+            });
         }
         if Instant::now() >= deadline {
             return Err(format!(
@@ -158,6 +164,18 @@ fn exec_of(
         }
         std::thread::sleep(Duration::from_millis(2));
     }
+}
+
+/// Whether process `pid` has exited, from `/proc/{pid}/stat`, without reaping it. One that's gone counts.
+fn exited(pid: u32) -> bool {
+    let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) else {
+        return true;
+    };
+    // `pid (comm) state …`, and comm may hold a `)`.
+    let state = stat
+        .rfind(')')
+        .and_then(|i| stat[i + 1..].split_whitespace().next());
+    matches!(state, Some("Z" | "X"))
 }
 
 /// Whether a child's `comm` shows that `systemd-run` (named `name`) has exec'd the session's command. Neither its own
@@ -441,6 +459,20 @@ mod tests {
         };
         let program = script("systemd-run", body);
         let claude = script("claude", "echo \"scoped=${IN_SCOPE:-no} $*\"");
+        // The stand-in execs claude itself, so it can't retry through ETXTBSY as `run` does: claude runs once first.
+        // Only a fork made while claude's write fd was open can hold it, so once an exec gets through none is left.
+        let ran = (0..1000).find_map(|_| match Command::new(&claude).output() {
+            Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy => {
+                std::thread::yield_now();
+                None
+            }
+            other => Some(other.unwrap()),
+        });
+        assert!(
+            ran.expect("the stand-in claude stayed busy")
+                .status
+                .success()
+        );
         let scope = Scope {
             program,
             node_unit: None,
