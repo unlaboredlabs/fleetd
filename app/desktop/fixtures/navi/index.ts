@@ -2,7 +2,8 @@
 // #/navi's first run). navi-two: two Navis, Ada and Home, pinned above the projects, and Taxes archived; Ada asks to
 // send an email (the approval card, with its preview) and has asked storefront and billing for work (Asked work,
 // navi_asks). navi-old-hub: the same on a hub that doesn't serve
-// Asked work to the app yet.
+// Asked work to the app yet. navi-links: Ada's Linked hubs and Sam's links to this hub (hubLinks/); navi-links-none:
+// neither yet.
 import { writeChat, type Ref } from "../kit/chat.ts";
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
@@ -142,12 +143,92 @@ const oldHub = (base: Fixture): Fixture => {
   return f;
 };
 
+/** Ada's settings page, as Settings › Projects reads it for a Navi. */
+const adaSettings = (f: Fixture): void => {
+  f.answer("project_settings_get", { ...ADA }, {
+    settings: { ...ADA, title: "Ada", workspaceRoot: "/home/dev/.fleetd/navi/ada", keepWorktrees: false, env: [], setup: { commands: [], timeoutSec: 600, runAnyway: false, inputs: [] } },
+  });
+  f.answer("mcp_servers_get", undefined, { global: [], project: [], userServers: true });
+};
+
+const BOX = "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=";
+const SAM = { personId: "p_aaaaaaaa", name: "Sam" };
+
+/**
+ * Hub links (hubLinks/): Ada reaches three other hubs, acme working (as Sam, only Shop and Website), personal out of
+ * reach and an old job's revoked there; and Sam has made two link keys on this hub, one limited to storefront, and
+ * revoked a third. A new key Sam makes is answered too.
+ */
+const links = (from: Fixture): Fixture => {
+  const f = Fixture.from(from, "navi-links", "Hub links: Ada's Linked hubs (working, can't reach, revoked there), and Sam's links to this hub.");
+  adaSettings(f);
+  const storefront = refOf(f, "storefront");
+  f.answer("hub_info", undefined, { version: "0.9.0", protocol: 1, busy: [], admin: false, me: { ...SAM, role: "member", createdAt: at(f.now, -30 * 86_400_000) } });
+  const kept = (label: string, url: string, extra: JsonObject): JsonObject => ({
+    linkId: `hl_${label.replace(/[^a-z]/gu, "").slice(0, 4).padEnd(8, "a")}`,
+    navi: { ...ADA },
+    label,
+    url,
+    createdAt: at(f.now, -5 * 86_400_000),
+    checkedAt: at(f.now, -60_000),
+    ...extra,
+  });
+  f.answer("hub_links_get", { navi: { ...ADA } }, {
+    boxPubKey: BOX,
+    issued: [],
+    links: [
+      kept("acme", "https://hub.acme.example", {
+        state: "ok",
+        who: "Sam",
+        projects: [
+          { projectRef: { machineId: "build-1", projectId: "shop" }, title: "Shop" },
+          { projectRef: { machineId: "build-1", projectId: "website" }, title: "Website" },
+        ],
+      }),
+      kept("personal", "https://hub.home.example", {
+        state: "unreachable",
+        who: "Sam",
+        error: "Can't reach personal at https://hub.home.example: connection refused.",
+      }),
+      kept("old job", "https://fleet.oldjob.example", { state: "revoked", who: "Sam Rivera", error: "The person who made link hl_ccfmqd4e was removed from this hub, and the link with them." }),
+    ],
+  });
+  const issued = (linkId: string, label: string, extra: JsonObject): JsonObject => ({
+    linkId,
+    label,
+    prefix: `flk_${linkId.slice(3, 9)}`,
+    keyId: "k-laptop",
+    device: "laptop",
+    person: { ...SAM },
+    createdAt: at(f.now, -9 * 86_400_000),
+    ...extra,
+  });
+  f.answer("hub_links_get", undefined, {
+    boxPubKey: BOX,
+    links: [],
+    issued: [
+      issued("hl_homeaaaa", "home", { lastUsedAt: at(f.now, -25_000) }),
+      issued("hl_workaaaa", "work", { projects: [storefront], createdAt: at(f.now, -2 * 86_400_000) }),
+      issued("hl_tripaaaa", "travel laptop", { revokedAt: at(f.now, -86_400_000) }),
+    ],
+  });
+  f.answer("hub_link_mint", undefined, { key: `flk_${"q7m2xk4v".repeat(6)}abcd`, link: issued("hl_newaaaaa", "home", { createdAt: f.now }) });
+  return f;
+};
+
+const linksNone = (from: Fixture): Fixture => {
+  const f = Fixture.from(from, "navi-links-none", "Hub links: no linked hubs for Ada and no links to this hub yet.");
+  for (const input of [{ navi: { ...ADA } }, undefined]) f.answer("hub_links_get", input, { boxPubKey: BOX, links: [], issued: [] });
+  return f;
+};
+
 const none = (base: Fixture): Fixture => Fixture.from(base, "navi-none", "Navi: projects and no Navi yet, so the sidebar offers to meet it and #/navi is its first run.");
 
 export default defineGroup({
   fixtures: (base) => {
     const made = two(base("chat-waiting"));
-    return [none(base("chat-waiting")), made, oldHub(made)];
+    const linked = links(made);
+    return [none(base("chat-waiting")), made, oldHub(made), linked, linksNone(linked)];
   },
 });
 

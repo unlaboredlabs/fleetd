@@ -4,7 +4,7 @@ import rust from "./secret.rust-seal.json";
 import { SECRET_MAX_BYTES } from "../shared/contracts";
 import { IPC } from "../shared/channels";
 import { parseRequest } from "../shared/ipc";
-import { seal, submitMcpServer, submitProjectEnv, submitSecret } from "./secret";
+import { seal, submitHubLink, submitMcpServer, submitProjectEnv, submitSecret } from "./secret";
 
 const bytes = (b64: string) => new Uint8Array(Buffer.from(b64, "base64"));
 
@@ -177,5 +177,33 @@ describe("sealing a secret ask's value", () => {
     const input = sent[1] as { integration?: unknown };
     expect(input.integration).toEqual({ kind: "notion" });
     expect(JSON.stringify(sent)).not.toContain("ntn_hunter2hunter2");
+  });
+});
+
+describe("a pasted hub link key", () => {
+  it("goes to hub_link_add sealed to the hub's own key, and only a link key goes at all", async () => {
+    await sodium.ready;
+    const [pk, sk] = [bytes(rust.publicKey), bytes(rust.secretKey)];
+    const sent: unknown[] = [];
+    const call = (tool: string, input: unknown) => {
+      sent.push(tool, input);
+      return Promise.resolve({ ok: true as const, output: {} });
+    };
+    const key = `flk_${"a".repeat(52)}`;
+    const request = { navi: { machineId: "devbox", projectId: "ada" }, label: "acme", url: "https://acme.example", boxPubKey: rust.publicKey, key };
+    expect(parseRequest(IPC.hubLinkSubmit, [request]).ok).toBe(true);
+    expect(parseRequest(IPC.hubLinkSubmit, [{ ...request, label: "x".repeat(41) }]).ok).toBe(false);
+    expect((await submitHubLink(request, call)).ok).toBe(true);
+    expect(sent[0]).toBe("hub_link_add");
+    const input = sent[1] as { sealed: string; label: string; url: string };
+    expect(JSON.stringify(input)).not.toContain(key);
+    expect(input).toMatchObject({ navi: request.navi, label: "acme", url: "https://acme.example" });
+    expect(sodium.to_string(sodium.crypto_box_seal_open(bytes(input.sealed), pk, sk))).toBe(key);
+
+    sent.length = 0;
+    const wrong = await submitHubLink({ ...request, key: "fld_not_a_link_key" }, call);
+    expect(wrong.ok).toBe(false);
+    if (!wrong.ok) expect(wrong.error.fix).toContain("flk_");
+    expect(sent).toEqual([]);
   });
 });

@@ -21,7 +21,7 @@ import { STEER_WORDS } from "../fixtures/agents/steers.ts";
 import { SESSION } from "../fixtures/sessions/ids.ts";
 import { CHAT_SENDS } from "../fixtures/composer/sends.ts";
 import { OFFLINE_SENDS } from "../fixtures/offline/sends.ts";
-import { ADA_ROUTE, TAXES_ROUTE } from "../fixtures/navi/ids.ts";
+import { ADA, ADA_ROUTE, TAXES_ROUTE } from "../fixtures/navi/ids.ts";
 
 /**
  * What the system answers when the app posts a notification: shown, or not supported. Nothing reaches the screen of
@@ -239,6 +239,9 @@ export const fixtures = [
   "navi-none",
   "navi-two",
   "navi-old-hub",
+  // Hub links (fixtures/navi): Ada's Linked hubs and Sam's links to this hub; and neither yet.
+  "navi-links",
+  "navi-links-none",
   // fleetd.sh's showcase: one request played from send to merge, recorded by showcase.spec.ts (fixtures/showcase).
   "showcase-order",
 ] as const;
@@ -2010,6 +2013,46 @@ export const screens: readonly Screen[] = [
       await page.getByRole("slider").first().focus();
       for (let i = 0; i < 8; i++) await page.keyboard.press("ArrowLeft");
       await page.getByRole("button", { name: "Undo" }).waitFor();
+    },
+  },
+  // Hub links (hubLinks/): a Navi's Linked hubs, working, can't reach and revoked there, and none yet; a person's
+  // Links to this hub, and a key just made, shown once. Administration's list of everyone's is on admin.people.
+  {
+    id: "settings.projects",
+    route: `#/settings/projects?for=${ADA.machineId}/${ADA.projectId}`,
+    fixtures: ["navi-links", "navi-links-none"],
+    variant: "linked-hubs",
+    open: (page) => page.getByRole("region", { name: "Linked hubs" }).scrollIntoViewIfNeeded(),
+  },
+  {
+    id: "settings.projects",
+    route: `#/settings/projects?for=${ADA.machineId}/${ADA.projectId}`,
+    fixtures: ["navi-links-none"],
+    variant: "link-a-hub",
+    open: async (page) => {
+      const region = page.getByRole("region", { name: "Linked hubs" });
+      await region.getByRole("button", { name: "Link a hub" }).click();
+      await region.getByRole("form", { name: "Link a hub" }).scrollIntoViewIfNeeded();
+    },
+  },
+  {
+    id: "settings.hubs",
+    route: "#/settings/hubs",
+    fixtures: ["navi-links", "navi-links-none"],
+    variant: "hub-links",
+    open: (page) => page.getByRole("region", { name: "Links to this hub" }).scrollIntoViewIfNeeded(),
+  },
+  {
+    id: "settings.hubs",
+    route: "#/settings/hubs",
+    fixtures: ["navi-links"],
+    variant: "hub-link-made",
+    open: async (page) => {
+      const region = page.getByRole("region", { name: "Links to this hub" });
+      await region.getByRole("button", { name: "Make a link key" }).click();
+      await region.getByLabel("What do you call the other hub?").fill("home");
+      await region.getByRole("button", { name: "Make link key" }).click();
+      await region.getByRole("region", { name: "Link key for home" }).scrollIntoViewIfNeeded();
     },
   },
   // Settings search: an option found by its name, and by nothing.

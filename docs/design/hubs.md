@@ -81,19 +81,21 @@ reachable, revokes it there too. Either way, the Navi's next call is refused wit
 \<label\>", with the reason (refused, no route, TLS) and the fix. The Navi's calls fail with the same sentence, never
 silently.
 
-**Where it's managed in the app.** Not built yet: the app has no screen for links. Until it does, the hub tools are
-the only way to make, list and remove them (`hub_link_mint`, `hub_link_add`, `hub_links_get`, `hub_link_revoke`,
-`hub_link_remove`). The screen, when it comes, reads both lists from
-`hub_links_get` on each hub. Links stored on a hub show in the Navi's own settings ("Linked hubs"). Keys minted on a
-hub show in the person's own settings for their own keys, and on Administration for an admin. They never appear as
-admin controls in Settings (D186):
+**Where it's managed in the app.** Both lists come from `hub_links_get` on each hub (`renderer/screens/hubLinks/`).
+Links kept on a hub show in the Navi's own settings; keys minted on a hub show in the person's own settings for
+theirs and on Administration for an admin, never as admin controls in Settings (D186):
 
-- **Reaches** (links stored on this hub): the other hub's label and address, the projects it is limited to (or all),
-  its state (working, can't reach, revoked), when it was last used, and Revoke.
-- **Reached from** (keys minted here for other hubs): the label it was minted under, its projects, when it was last
-  used, and Revoke.
-- **New link**, on the hub to be reached: pick projects (optional), then copy the one-time link text and paste it on
-  the other hub.
+- **Linked hubs** (Settings › Projects, for a Navi): each link's label and address, the person it acts as and the
+  projects it is limited to (from the other hub's `hello`), its state (working, can't reach with the address and
+  reason, revoked there), and Remove. **Link a hub** takes the pasted key, the address and a label; main seals the
+  key to `boxPubKey` (`main/secret.ts`, IPC `hub-link:submit`) and calls `hub_link_add`, so the page never sends it
+  to the hub in the clear.
+- **Links to this hub** (Settings › Hubs, under each paired hub): **Make a link key** with a label and optional projects; the key shows
+  once, and Copy takes it with this hub's address on two lines, which Linked hubs reads back. Below, the person's own
+  links with Revoke, even for an admin.
+- **Hub links** (Administration › People): every link minted on the hub, with its person, and Revoke.
+
+A hub too old to have the tools gets "needs updating"; none yet gets one line and a button.
 
 **What the app shows elsewhere.** Nothing of its own yet, and nothing it needs to: the hubs write it. In a Navi's chat,
 its wake lines name the project with the other hub's label ("N4 to Storefront on acme: …"). In the target project's
@@ -115,7 +117,7 @@ device can't mint one (`forbidden`), and a link never holds more than the device
 person is removed from the hub; revoking the device doesn't stop it. A link minted before people acts at its device's
 grants and dies with it. On A, the Navi's owner or an admin calls `hub_link_add {navi, label, url, sealed}`: the app
 seals the key with `crypto_box_seal` to A's own box key (`boxPubKey` from `hub_links_get`, kept in A's home), A opens
-it only to call B, checks it with `GET /link/v1/hello` and keeps it sealed per Navi. No tool returns it again and it
+it only to call B, checks it with `GET /link/v1/hello` and keeps it sealed per Navi, with the hello's person and project limits (read again each time the link's follower starts). No tool returns it again and it
 never enters a chat or transcript. `hub_links_get {navi?}` reads both sides: the Navi's links on A with their state,
 and the links minted on B (the caller's own, or every one for an admin).
 
@@ -123,7 +125,7 @@ and the links minted on B (the caller's own, or every one for an admin).
 
 | Call | What it does |
 | --- | --- |
-| `GET hello` | the link's label, the projects it reaches, the feed's start cursor |
+| `GET hello` | the link's label, its person (`who`), the projects it reaches and whether it is limited to them, the feed's start cursor |
 | `POST ask {project, text}` | `project_message` into a project's chat; needs operate on the project's machine |
 | `GET status?project=` | `factory_status` over the projects it reaches, with the link's own asks and their orders |
 | `GET feed?after=&wait=` | news about the link's own asks: an order opened, done, stopped, a PR merged or failed |

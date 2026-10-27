@@ -217,6 +217,7 @@ async fn add(
         )
         .with_fix("Pick another label, or remove that link first."));
     };
+    super::set_hello(&hub.db, &link_id, &hello)?;
     tokio::spawn(client::follow(hub.clone(), link_id.clone()));
     let link = kept_get(&hub.db, &link_id)?
         .map(|k| k.info())

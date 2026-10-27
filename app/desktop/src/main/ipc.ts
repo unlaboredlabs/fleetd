@@ -9,7 +9,7 @@ import type { Hubs } from "./hub/hubs";
 import { claimLinkHandler, linkHandlerStatus } from "./linkHandlerMain";
 import type { PairingService } from "./pairing/service";
 import type { PresenceSetting } from "./presence";
-import { submitMcpServer, submitProjectEnv, submitSecret } from "./secret";
+import { submitHubLink, submitMcpServer, submitProjectEnv, submitSecret } from "./secret";
 import { applyMenuState } from "./menuState";
 import type { Notifier } from "./notify";
 import type { Opener } from "./opener";
@@ -70,6 +70,7 @@ export const registerIpc = (
   handle(IPC.secretSubmit, (_event, id, request) => submitSecret(request, call(id)));
   handle(IPC.projectEnvSubmit, (_event, id, request) => submitProjectEnv(request, call(id)));
   handle(IPC.mcpServerSubmit, (_event, id, request) => submitMcpServer(request, call(id)));
+  handle(IPC.hubLinkSubmit, (_event, id, request) => submitHubLink(request, call(id)));
   handle(IPC.systemHostName, () => hostName());
   // This computer joins the hub the page's Add machine is on, and each hub keeps its own join's state. One join at a
   // time, as there is one fleetd dir here: asked again for the same hub while it runs, the page gets that one and
