@@ -88,6 +88,7 @@ impl UpdatePorts for HubPorts {
                     .executors
                     .cached_runner(&m.machine_id)
                     .and_then(|r| r.version),
+                busy: busy(&hub, &m.machine_id),
                 machine_id: m.machine_id,
                 name: m.name,
                 version: m.node_version,
@@ -150,6 +151,38 @@ impl UpdatePorts for HubPorts {
             Ok((result, Box::new(refusal) as Box<dyn Refusal>))
         })
     }
+}
+
+/// What runs on the machine that its node's restart would end: live sessions (a browser, a device, a desktop) and
+/// previews. Agents' runs carry on by themselves, so they aren't in it.
+fn busy(hub: &Hub, machine_id: &MachineId) -> Option<String> {
+    let now = crate::hub::store::now_ms(hub.clock.as_ref());
+    let sessions = hub
+        .db
+        .with(|c| crate::hub::machine_roles::live_on(c, machine_id, now))
+        .unwrap_or(0);
+    let previews = crate::hub::preview::running(hub)
+        .unwrap_or_default()
+        .iter()
+        .filter(|p| &p.machine_id == machine_id)
+        .count();
+    let count = |n: usize, one: &str, many: &str| match n {
+        0 => None,
+        1 => Some(format!("1 {one}")),
+        n => Some(format!("{n} {many}")),
+    };
+    let words: Vec<String> = [
+        count(
+            usize::try_from(sessions).unwrap_or(0),
+            "live session",
+            "live sessions",
+        ),
+        count(previews, "preview", "previews"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    (!words.is_empty()).then(|| words.join(" and "))
 }
 
 impl Refusal for crate::hub::link::commands::Refusal {

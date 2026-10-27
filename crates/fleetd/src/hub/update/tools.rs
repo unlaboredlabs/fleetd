@@ -28,6 +28,12 @@ fn next(run: Option<&UpdateRun>) -> String {
     }
 }
 
+fn ready(hub: &Hub) -> Option<fleetd_contracts::prim::Text<1, 200>> {
+    hub.updates
+        .ready()
+        .map(|v| crate::node::wire::head_text(&v))
+}
+
 async fn hub_update(
     hub: Arc<Hub>,
     caller: Caller,
@@ -41,18 +47,33 @@ async fn hub_update(
         )
         .with_fix(admin_everywhere_fix(&caller)));
     }
-    let run = hub
-        .updates
-        .start(input.channel)
-        .map_err(|Refused::NotWired| {
-            ToolError::new(
-                ErrorCode::Failed,
-                "The hub's update isn't ready yet; try again in a moment.",
-            )
-        })?;
+    let started = match &input.machine {
+        Some(machine) => hub.updates.retry(machine),
+        None => hub.updates.start(input.channel),
+    };
+    let run = started.map_err(|refused| match refused {
+        Refused::NotWired => ToolError::new(
+            ErrorCode::Failed,
+            "The hub's update isn't ready yet; try again in a moment.",
+        ),
+        Refused::NothingToRetry => ToolError::new(
+            ErrorCode::Failed,
+            "There is nothing to retry: the last update didn't update the hub, or didn't have that machine.",
+        )
+        .with_fix("Press Update to update everything."),
+        Refused::HubMovedOn(running) => ToolError::new(
+            ErrorCode::Failed,
+            format!(
+                "The hub runs {} now, not the build that update went to, so retrying it would put this machine behind the hub.",
+                crate::version_label(&running)
+            ),
+        )
+        .with_fix("Press Update to bring every machine to the hub's build."),
+    })?;
     Ok(HubUpdateOutput {
         next: Some(next(Some(&run))),
         run: Some(run),
+        ready: ready(&hub),
         truncated: None,
     })
 }
@@ -66,6 +87,7 @@ async fn hub_update_status(
     Ok(HubUpdateOutput {
         next: Some(next(run.as_ref())),
         run,
+        ready: ready(&hub),
         truncated: None,
     })
 }

@@ -49,8 +49,11 @@ interface PartSay {
   readonly message?: string;
 }
 
-/** The hub's run: the hub, then each of the fixture's machines, the first ones as `nodes` says, the rest `rest`. */
-const runOf = (f: Fixture, hub: PartSay, nodes: readonly PartSay[], rest: PartSay, finished: boolean): JsonObject => ({
+/**
+ * The hub's run: the hub, then each of the fixture's machines, the first ones as `nodes` says, the rest `rest`, each
+ * followed by its Claude Code as `claude` says, when it says.
+ */
+const runOf = (f: Fixture, hub: PartSay, nodes: readonly PartSay[], rest: PartSay, finished: boolean, claude: readonly PartSay[] = []): JsonObject => ({
   id: "U1792000000000",
   channel: "nightly",
   to: NEXT,
@@ -58,7 +61,11 @@ const runOf = (f: Fixture, hub: PartSay, nodes: readonly PartSay[], rest: PartSa
   ...(finished ? { finishedAt: "2026-10-19T10:03:00.000Z" } : {}),
   parts: [
     { part: "hub", name: "the hub", from: OLDER, ...hub },
-    ...machinesOf(f).map((m, i) => ({ part: "node", machineId: m.machineId, name: m.name, from: OLDER, ...(nodes[i] ?? rest) })),
+    ...machinesOf(f).flatMap((m, i) => {
+      const node = { part: "node", machineId: m.machineId, name: m.name, from: OLDER, ...(nodes[i] ?? rest) };
+      const says = claude[i];
+      return says === undefined ? [node] : [node, { part: "claude", machineId: m.machineId, name: m.name, from: "2.1.310", to: "2.1.302", ...says }];
+    }),
   ],
 });
 
@@ -83,7 +90,7 @@ export default defineGroup({
      * Everything behind: the hub and its nodes on OLDER, this app with NEXT found. Update answers with `run`; the
      * sheet finds it going on when it opens with `going`, else no run before.
      */
-    const everything = (what: string, note: string, run: (f: Fixture) => JsonObject | null, going = false): Fixture => {
+    const everything = (what: string, note: string, run: (f: Fixture) => JsonObject | null, going = false, ready?: string): Fixture => {
       const release = { ...RELEASE, cli: NEXT };
       const f = withHub(what, note, OLDER, { release });
       f.appUpdate = state({ kind: "available", version: NEXT, percent: 64, restart: false }, release);
@@ -91,7 +98,7 @@ export default defineGroup({
       if (started === null) f.fail("hub_update", {}, { code: "forbidden", message: "This key lacks the admin role.", fix: "Run `fleetd pair` on the hub machine, then pair this app again with the new code: it grants admin." });
       else f.answer("hub_update", {}, { run: started });
       // Pressed, a finished run needs no read; one going on is read again and again, and stays as it is.
-      f.answer("hub_update_status", {}, going && started !== null ? { run: started } : {});
+      f.answer("hub_update_status", {}, { ...(going && started !== null ? { run: started } : {}), ...(ready === undefined ? {} : { ready }) });
       return f;
     };
     const waiting: PartSay = { state: "waiting" };
@@ -110,13 +117,20 @@ export default defineGroup({
       everything(
         "run-nodes",
         "The hub is updated; one machine is done, one restarts, the rest download.",
-        (f) => runOf(f, done, [done, { state: "restarting" }], { state: "downloading" }, false),
+        (f) => runOf(f, done, [done, { state: "restarting" }], { state: "downloading" }, false, [{ state: "done" }, waiting]),
         true,
+      ),
+      everything(
+        "hub-ready",
+        "The hub downloaded and checked the channel's newest build ahead: \"fleetd … is ready\", once, and Update swaps it in.",
+        (f) => runOf(f, done, [done, done], done, true, [{ state: "done" }, { state: "done" }]),
+        false,
+        NEXT,
       ),
       everything(
         "run-done",
         "Everything updated but this app, which downloads and restarts last.",
-        (f) => runOf(f, done, [done, { state: "current" }], done, true),
+        (f) => runOf(f, done, [done, { state: "current" }], done, true, [{ state: "done" }, { state: "current" }]),
       ),
       everything(
         "run-hub-failed",
@@ -144,6 +158,15 @@ export default defineGroup({
             true,
           ),
       ),
+      (() => {
+        const f = everything(
+          "run-updated",
+          "Update pressed, this app already current: every part came through, the sheet closes itself and the sidebar says \"Updated to …\".",
+          (g) => runOf(g, done, [done, done], done, true, [{ state: "done" }, { state: "done" }]),
+        );
+        f.appUpdate = state({ kind: "current" }, { ...RELEASE, cli: NEXT });
+        return f;
+      })(),
       everything("refused", "Update pressed with a key that isn't Admin everywhere: the hub's words and fix.", () => null),
       make("idle", "Not checked yet (just started).", { kind: "idle" }, null),
       make("checking", "A check someone asked for, under way.", { kind: "checking" }, null),

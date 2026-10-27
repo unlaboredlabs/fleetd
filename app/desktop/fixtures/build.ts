@@ -53,6 +53,8 @@ for (const f of all) {
   syncAgentsList(f);
   // The sidebar words why a lead waits on you from the hub's open requests: a hub always answers requests_list.
   if (f.snapshot !== undefined && f.answers("requests_list").length === 0) f.answer("requests_list", { limit: 100 }, { requests: [] });
+  // The app asks the hub on connect whether an update is ready: none, and no run, unless a fixture says otherwise.
+  if (f.snapshot !== undefined && f.answers("hub_update_status").length === 0) f.answer("hub_update_status", {}, {});
   // The Agents tab reads the work elsewhere on the project's repo: nothing, unless a fixture says otherwise.
   if (f.snapshot !== undefined) f.answer("work_list", undefined, { scope: { repoKey: "github.com/acme/shop", base: "main" }, items: [], recentLandings: [] });
   // prompt_get lists without an id. Main matches inputs as subsets, so a project's list would answer a request for one
