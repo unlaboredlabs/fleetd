@@ -15,6 +15,12 @@ How fleetd merges pull requests. Only fleetd merges: each writer's PR goes on it
 
 A conflict or red CI goes back to the agent that wrote the PR; for red CI, with the failing checks.
 
+GitHub runs no CI on a PR that conflicts with its base. So on every pass the train reads each waiting PR's mergeable
+state, and once GitHub says it conflicts, the PR goes back to its agent as `needs_rebase` ("conflicts with main, so
+GitHub runs no CI on it") without waiting for its turn. A waiting PR whose commit has none of its base's required
+checks (any check, when the base requires none) 15 minutes after the train first saw it is flagged to its agent and the
+lead, once per commit, and keeps its place.
+
 fleetd merges only on green CI. A ready PR on a repo with no CI (no GitHub Actions workflow, and no required check but
 `fleetd/train`) waits, and its queue entry and `fleetd doctor` say to add one. It goes on by itself once a workflow
 exists.
@@ -65,7 +71,8 @@ The train gives a commit's CI 45 minutes of running time, counted from when its 
 spend queued for runners doesn't count. While every check is still queued, there is a ceiling of 2 hours. If the CI
 provider gives no start times, the 45 minutes count from when the train starts waiting.
 
-A red check fails the PR at once, however long the other checks have left. CI that runs out of time is different: the
+A red check fails the PR at once, however long the other checks have left. A cancelled check is never a failure: if
+a push to the PR cancelled its run, the train takes the new commit instead; otherwise it re-runs the run, or waits. CI that runs out of time is different: the
 PR shows `ci_failed` with "CI timed out", the lead is told, and the agent that wrote it isn't asked to push. The train
 keeps reading that commit's checks. If they finish green, the PR goes back in the queue ("CI finished after the
 timeout; back in the queue") and merges on that run, after the usual rebase if its base moved. If one goes red, the

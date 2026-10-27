@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use tokio::sync::Notify;
 
 use super::contract::*;
-use super::github::{GhOut, GhRunner, NEXT_LABEL, TRAIN_CONTEXT, batch_heads};
+use super::github::{BATCH_MARKER, GhOut, GhRunner, NEXT_LABEL, TRAIN_CONTEXT, batch_heads};
 use super::host::*;
 use super::records::{Db, ListFilter};
 use super::service::{ReviewGate, Train, TrainOptions, Verdict};
@@ -76,6 +76,8 @@ struct FakePull {
     labels: Vec<String>,
     draft: bool,
     comments: Vec<String>,
+    /// What GitHub says of merging it into its base: None while it still works it out, as it does at first.
+    mergeable: Option<bool>,
 }
 
 impl FakePull {
@@ -93,6 +95,7 @@ impl FakePull {
             labels: Vec::new(),
             draft: false,
             comments: Vec::new(),
+            mergeable: None,
         }
     }
 }
@@ -209,6 +212,8 @@ impl FakeGh {
             "base": { "ref": p.base }, "labels": labels, "draft": p.draft,
             "user": { "login": "ada-lovelace", "type": "User" }, "created_at": "2026-10-16T09:00:00Z",
             "merged_by": p.merged.then(|| json!({ "login": "ada-lovelace", "type": "User" })),
+            "mergeable": p.mergeable,
+            "mergeable_state": match p.mergeable { Some(true) => "clean", Some(false) => "dirty", None => "unknown" },
         })
     }
 
@@ -1765,6 +1770,179 @@ async fn sends_a_conflicting_pr_back_to_its_author_moves_on_and_merges_it_after_
     assert_eq!(merged, [json!(other.change_id), json!(first)]);
 }
 
+fn set_mergeable(kit: &Kit, number: i64, mergeable: Option<bool>) {
+    kit.gh
+        .pulls
+        .lock()
+        .unwrap()
+        .get_mut(&number)
+        .unwrap()
+        .mergeable = mergeable;
+}
+
+/// GitHub runs no CI on a PR that conflicts with its base: one waiting in line, in review or ready, goes back to its
+/// author on the next pass, never rebased, and only once (every other test has GitHub still working it out). One parked
+/// in review has its next head reviewed, even at the same patch (D191).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pr_github_finds_conflicting_goes_back_to_its_author_within_one_pass() {
+    let kit = Kit::new();
+    let reviewing = kit
+        .enqueue_held(kit.open_pr(7, "in-review", &[add("r.txt", "r\n")]))
+        .await;
+    let ready = kit
+        .enqueue(kit.open_pr(8, "ready", &[add("s.txt", "s\n")]))
+        .await;
+    assert_eq!(reviewing.state, ChangeState::Reviewing);
+    assert_eq!(ready.state, ChangeState::Ready);
+    let heads = (kit.head_of("in-review"), kit.head_of("ready"));
+    set_mergeable(&kit, 7, Some(false));
+    set_mergeable(&kit, 8, Some(false));
+
+    kit.train.step(REPO).await;
+    let why = "conflicts with main, so GitHub runs no CI on it";
+    for change in [&reviewing, &ready] {
+        let parked = kit.get(&change.change_id);
+        assert_eq!(
+            (parked.state, parked.last_error.as_deref()),
+            (ChangeState::NeedsRebase, Some(why))
+        );
+    }
+    assert_eq!(kit.get(&reviewing.change_id).patch_id, None);
+    assert_eq!(kit.get(&ready.change_id).patch_id, ready.patch_id);
+    assert_eq!(
+        (kit.head_of("in-review"), kit.head_of("ready")),
+        heads,
+        "never rebased"
+    );
+    assert!(kit.gh.merges.lock().unwrap().is_empty());
+    assert_eq!(kit.host.events_of("change.needs_rebase").len(), 2);
+    let told = kit.host.wakes.lock().unwrap().clone();
+    assert_eq!(told.iter().filter(|w| w.contains(why)).count(), 2);
+
+    kit.train.step(REPO).await;
+    assert_eq!(kit.host.events_of("change.needs_rebase").len(), 2, "once");
+
+    // The author pushes again; its patch is the same, but it was never reviewed.
+    kit.gh.push_empty("in-review");
+    set_mergeable(&kit, 7, None);
+    let reviewed = kit.gate.reviewed.lock().unwrap().len();
+    kit.train.step(REPO).await;
+    assert_eq!(state_of(&kit, &reviewing), ChangeState::Reviewing);
+    assert_eq!(kit.gate.reviewed.lock().unwrap().len(), reviewed + 1);
+}
+
+/// After a restart, a ready PR whose batch already landed is finished as merged, never sent back as conflicting,
+/// though GitHub now reads it as conflicting with the base that has its changes.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_member_of_a_landed_batch_is_merged_never_sent_back_as_conflicting() {
+    let kit = Kit::new();
+    let member = kit
+        .enqueue(kit.open_pr(7, "landed", &[add("l.txt", "l\n")]))
+        .await;
+    assert_eq!(member.state, ChangeState::Ready);
+    let head = kit.head_of("landed");
+    let mut batch = FakePull::open(
+        "fleetd/train/batch",
+        "main",
+        &format!("{BATCH_MARKER} #7@{head}"),
+    );
+    batch.state = "closed".into();
+    batch.merged = true;
+    batch.merged_at = Some("2026-10-27T12:00:00Z".into());
+    batch.merge_sha = Some(kit.head_of("main"));
+    kit.gh.pulls.lock().unwrap().insert(100, batch);
+    set_mergeable(&kit, 7, Some(false));
+
+    kit.train.step(REPO).await;
+    assert_eq!(state_of(&kit, &member), ChangeState::Merged);
+    assert!(kit.host.events_of("change.needs_rebase").is_empty());
+}
+
+/// A PR waiting in line whose head has none of its base's required checks `CHECKS_START_WAIT` after the train saw it:
+/// its author and the lead hear once why, and it keeps its place. Another check doesn't count; a required one only
+/// queued does (D191).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pr_whose_required_checks_never_start_is_flagged_to_its_author_and_the_lead_once() {
+    let clock = Arc::new(Sleeps::default());
+    // main requires `build`.
+    let kit = Kit::on_clock(FakeCi::Required, clock.clone());
+    let task_id = TaskId::unchecked("T1");
+    kit.host.tasks.lock().unwrap().insert(
+        task_id.to_string(),
+        TaskView {
+            task_id: task_id.clone(),
+            project_ref: project(),
+            workstream_id: ws(),
+            kind: "write".into(),
+            state: "running".into(),
+            pr_url: None,
+            result_tail: None,
+        },
+    );
+    let pr = kit.open_pr(7, "silent", &[add("q.txt", "q\n")]);
+    kit.gate.held.lock().unwrap().extend([7, 8]);
+    let silent = kit
+        .train
+        .enqueue(
+            &project(),
+            ChangeEnqueueCall {
+                task_id: Some(task_id),
+                pr_url: GitHubPrUrl::unchecked(pr),
+                workstream_id: Some(ws()),
+            },
+        )
+        .await
+        .unwrap();
+    let running = kit
+        .enqueue(kit.open_pr(8, "running", &[add("p.txt", "p\n")]))
+        .await;
+    {
+        let mut runs = kit.gh.head_runs.lock().unwrap();
+        let lint = check("lint", "completed", Some("success"), None);
+        runs.insert(kit.head_of("silent"), json!([lint]));
+        runs.insert(
+            kit.head_of("running"),
+            json!([check("build", "queued", None, None)]),
+        );
+    }
+    let flagged = |kit: &Kit| {
+        let sends = kit.host.sends.lock().unwrap().clone();
+        let wakes = kit.host.wakes.lock().unwrap().clone();
+        let says = |t: &String| t.contains("no check started on its head");
+        (
+            sends
+                .into_iter()
+                .filter(|(_, t)| says(t))
+                .collect::<Vec<_>>(),
+            wakes.into_iter().filter(says).collect::<Vec<_>>(),
+        )
+    };
+
+    kit.train.step(REPO).await;
+    assert_eq!(flagged(&kit), (vec![], vec![]), "not before the wait");
+
+    clock.sleep(super::service::CHECKS_START_WAIT).await;
+    kit.train.step(REPO).await;
+    let (sends, wakes) = flagged(&kit);
+    assert_eq!(sends.len(), 1);
+    assert_eq!(sends[0].0, "T1");
+    assert!(sends[0].1.contains("in 15 min"));
+    assert_eq!(wakes.len(), 1);
+    assert!(wakes[0].contains(silent.change_id.as_str()));
+    assert!(wakes[0].contains("keeps its place in the train"));
+    for change in [&silent, &running] {
+        assert_eq!(state_of(&kit, change), ChangeState::Reviewing);
+    }
+    assert_eq!(
+        kit.get(&silent.change_id).position.map(|p| p.get()),
+        Some(0)
+    );
+
+    clock.sleep(super::service::CHECKS_START_WAIT).await;
+    kit.train.step(REPO).await;
+    assert_eq!(flagged(&kit).0.len(), 1, "once per head");
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn parks_a_pr_whose_ci_is_red_wakes_its_author_with_the_failing_check_and_log_and_never_merges_it()
  {
@@ -3134,7 +3312,8 @@ async fn a_required_check_cancelled_in_the_prs_own_run_is_re_run_before_the_merg
     );
 }
 
-/// A required check that reads cancelled however often it is re-run is red: the train never asks GitHub to merge.
+/// A required check that reads cancelled however often it is re-run is no failure, but the train never asks GitHub to
+/// merge: it waits until CI times out, which the lead hears of, not the author (D191).
 #[tokio::test(flavor = "multi_thread")]
 async fn the_train_never_merges_while_a_required_check_reads_cancelled() {
     let clock = Arc::new(Sleeps::default());
@@ -3155,7 +3334,11 @@ async fn the_train_never_merges_while_a_required_check_reads_cancelled() {
     let failed = kit.get(&change_id);
     assert_eq!(failed.state, ChangeState::CiFailed);
     assert!(
-        failed.last_error.as_deref().unwrap().contains("build"),
+        failed
+            .last_error
+            .as_deref()
+            .unwrap()
+            .starts_with(super::service::CI_TIMED_OUT),
         "{:?}",
         failed.last_error
     );
@@ -3169,6 +3352,53 @@ async fn the_train_never_merges_while_a_required_check_reads_cancelled() {
             .any(|l| l.starts_with("merge"))
     );
     assert_eq!(*kit.gh.reruns.lock().unwrap(), [1, 1]);
+}
+
+/// The author pushes while the train rebases their PR, which cancels CI on the train's head: the PR is never
+/// ci_failed, and the train takes the new head instead (D191; X248 on #655).
+#[tokio::test(flavor = "multi_thread")]
+async fn an_authors_push_that_cancels_ci_on_the_rebased_head_is_no_failure() {
+    let kit = Kit::new();
+    let pr = kit.open_pr(7, "e", &[add("e.txt", "e\n")]);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+    kit.commit("main", &[add("m.txt", "m\n")], None);
+    let original = kit.head_of("e");
+    let gh = Arc::downgrade(&kit.gh);
+    let pushed = Mutex::new(false);
+    *kit.gh.on_checks.lock().unwrap() = Some(Box::new(move || {
+        let Some(gh) = gh.upgrade() else { return };
+        let rebased = gh.head_of("e").unwrap();
+        if rebased == original || std::mem::replace(&mut *pushed.lock().unwrap(), true) {
+            return;
+        }
+        let cancelled = job(1, 1, "ci", "cancelled");
+        gh.head_runs
+            .lock()
+            .unwrap()
+            .insert(rebased, json!([cancelled]));
+        gh.push_empty("e");
+    }));
+
+    kit.train.step(REPO).await;
+    let back = kit.get(&change_id);
+    assert_eq!(
+        (back.state, back.last_error.as_deref()),
+        (ChangeState::Ready, Some(super::service::CI_SUPERSEDED))
+    );
+    for _ in 0..3 {
+        kit.train.step(REPO).await;
+    }
+    assert_eq!(kit.get(&change_id).state, ChangeState::Merged);
+    assert!(kit.host.events_of("change.ci_failed").is_empty());
+    assert!(
+        !kit.host
+            .sends
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|(_, m)| m.contains("did not merge it"))
+    );
+    assert_eq!(kit.gh.reruns.lock().unwrap().len(), 0, "nothing re-run");
 }
 
 /// A cancelled check the base doesn't require, passed in another run, is no reason to wait.
