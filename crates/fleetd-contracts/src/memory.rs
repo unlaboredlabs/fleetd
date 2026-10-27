@@ -110,6 +110,28 @@ pub struct RememberResult {
     pub next: Option<String>,
 }
 
+/// Why an entry goes, in a few words: the chat shows it beside the entry.
+pub type ForgetReason = Line<1, 300>;
+
+/// `forget`: the one entry that contains `entry` goes from its file.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(remote = "Self", rename_all = "camelCase")]
+pub struct ForgetCall {
+    pub scope: MemoryScope,
+    /// Project scope only: the topic file; absent, `MEMORY.md`.
+    pub topic: Option<MemoryTopic>,
+    /// Words of the entry to remove, quoted exactly; they must match one entry of the file.
+    pub entry: MemoryEntry,
+    pub reason: Option<ForgetReason>,
+}
+checked!(ForgetCall, |call| {
+    if call.scope == MemoryScope::User && call.topic.is_some() {
+        return Err("user.md has no topics; leave topic out with scope user".into());
+    }
+    Ok(())
+});
+
 /// `memory_read`: one of this project's topic files.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct MemoryReadCall {
@@ -124,17 +146,60 @@ pub struct MemoryReadResult {
     pub next: Option<String>,
 }
 
-/// What a `remember` call wrote, as a line in the project's chat. Undone with `memory_undo`.
+/// What a `remember` or `forget` call wrote, as a line in the project's chat. Undone with `memory_undo`.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RememberedItem {
     pub scope: MemoryScope,
     pub topic: Option<MemoryTopic>,
+    /// The entry written; with `forgotten`, the whole entry removed.
     pub text: MemoryEntry,
     /// The whole entry it replaced, which Undo puts back.
     pub replaced: Option<MemoryEntry>,
+    /// `forget` removed `text`; Undo puts it back.
+    pub forgotten: Option<bool>,
+    /// Why it was forgotten.
+    pub reason: Option<ForgetReason>,
     pub undone: Option<bool>,
+}
+
+impl RememberedItem {
+    /// `+` an entry added, `~` one put in place of another, `−` one removed.
+    pub fn sign(&self) -> char {
+        match (self.forgotten == Some(true), &self.replaced) {
+            (true, _) => '−',
+            (false, Some(_)) => '~',
+            (false, None) => '+',
+        }
+    }
+}
+
+/// The most changes a "Memory refreshed" line lists; Undo all also takes back those past them.
+pub const REFRESHED_LISTED: usize = 200;
+
+/// What a nightly memory refresh changed, as one line in the project's chat: each change with its own Undo, and Undo
+/// all. Posted only when something changed.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryRefreshed {
+    /// In the order the refresh made them; the first [`REFRESHED_LISTED`] when it made more.
+    pub items: List<RememberedItem, 1, REFRESHED_LISTED>,
+    /// Every change it made, when that is more than `items` lists. Undo all takes them all back.
+    pub total: Option<Count>,
+}
+
+/// "Memory refreshed: +2 ~1 −3", a refresh line's text, over all its changes: only the kinds there are.
+pub fn refreshed_summary(items: &[RememberedItem]) -> String {
+    let count = |sign: char| items.iter().filter(|i| i.sign() == sign).count();
+    let parts: Vec<String> = ['+', '~', '−']
+        .into_iter()
+        .map(|sign| (sign, count(sign)))
+        .filter(|(_, n)| *n > 0)
+        .map(|(sign, n)| format!("{sign}{n}"))
+        .collect();
+    format!("Memory refreshed: {}", parts.join(" "))
 }
 
 /// An entry `remember` wrote that is still in its file: when, and the chat line that said so.

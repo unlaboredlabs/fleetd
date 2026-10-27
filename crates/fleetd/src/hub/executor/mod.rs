@@ -171,6 +171,11 @@ pub struct LaunchOptions {
     pub order_id: Option<fleetd_contracts::ledger::WorkstreamId>,
     /// The project's setup commands, for a new worktree on a node that runs them.
     pub setup: Option<fleetd_contracts::project_settings::WorktreeSetup>,
+    /// Runtime tools it never gets, on top of the project's denials and fleetd's own (claude's `--disallowedTools`
+    /// syntax); the node applies them at every start of its process.
+    pub deny_tools: Vec<String>,
+    /// These MCP servers instead of `mcp_role`'s, kept for the thread's life: a send never brings it the project's.
+    pub mcp: Option<fleetd_contracts::mcp_servers::McpSessionConfig>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -361,6 +366,9 @@ pub struct Executors {
     /// Per thread (`machine/thread`): its project, and a digest of the MCP servers it last got, so a send carries them
     /// only when they changed. Empty after a hub restart: each thread's next send carries them once.
     mcp_sent: Mutex<HashMap<String, (ProjectId, [u8; 32])>>,
+    /// Threads (`machine/thread`) launched with their own fixed MCP servers (`LaunchOptions::mcp`): a send carries
+    /// none. Empty after a hub restart.
+    mcp_fixed: Mutex<std::collections::HashSet<String>>,
     /// Where the skills a launch carries come from (`hub::skills`); none until `hub/serve` sets it.
     skills: std::sync::OnceLock<Arc<crate::hub::store::HubDb>>,
     /// Per thread (`machine/thread`): its project, and a digest of the hub skills it last got, so a send carries them
@@ -513,6 +521,7 @@ impl Executors {
             tool_policy: Mutex::default(),
             mcp_servers: std::sync::OnceLock::new(),
             mcp_sent: Mutex::default(),
+            mcp_fixed: Mutex::default(),
             skills: std::sync::OnceLock::new(),
             skills_sent: Mutex::default(),
             clones: Mutex::default(),
@@ -573,6 +582,9 @@ impl Executors {
             return (None, None);
         }
         let key = format!("{}/{}", r.machine_id, r.thread_id);
+        if self.mcp_fixed.lock().unwrap().contains(&key) {
+            return (None, None);
+        }
         let last = self.mcp_sent.lock().unwrap().get(&key).cloned();
         let project = match &last {
             Some((project, _)) => Some(project.clone()),
@@ -1506,6 +1518,7 @@ impl Executors {
                 tracing::warn!(error = %e, "the profile settings were not read; the profile's own runs");
                 Default::default()
             });
+        let fixed_mcp = options.mcp.is_some();
         let skills = self.skill_bundles(machine_id, &input.project_id);
         let seed = format!("{machine_id}\n{}", input.client_request_id);
         let session_id = ThreadId::unchecked(uuid_from(&format!("session\n{seed}")));
@@ -1525,12 +1538,18 @@ impl Executors {
             prompt: non_empty(machine_id, op, "prompt", &input.prompt)?,
             run_id: NonEmpty::unchecked(uuid_from(&format!("run\n{seed}"))),
             allowed_tools: rules.allow,
-            disallowed_tools: rules.deny,
+            disallowed_tools: rules
+                .deny
+                .into_iter()
+                .chain(options.deny_tools.iter().cloned())
+                .collect(),
             role: options.role,
             mcp_role: options.mcp_role,
-            mcp: options
-                .mcp_role
-                .and_then(|_| self.mcp_config(machine_id, &input.project_id)),
+            mcp: options.mcp.or_else(|| {
+                options
+                    .mcp_role
+                    .and_then(|_| self.mcp_config(machine_id, &input.project_id))
+            }),
             skills,
             order_id: options.order_id,
             setup: options.setup.map(Box::new),
@@ -1552,6 +1571,12 @@ impl Executors {
                 .lock()
                 .unwrap()
                 .insert(format!("{machine_id}/{session_id}"), sent);
+        }
+        if fixed_mcp {
+            self.mcp_fixed
+                .lock()
+                .unwrap()
+                .insert(format!("{machine_id}/{session_id}"));
         }
         self.skills_sent
             .lock()

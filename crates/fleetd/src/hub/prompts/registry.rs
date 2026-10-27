@@ -249,6 +249,29 @@ pub const ENTRIES: &[Entry] = &[
         ]
     ),
     entry!(
+        "lead.memory",
+        Start,
+        Lead,
+        Lead,
+        "Nightly memory refresh",
+        "once a night, to a refresh session of its own, followed by the memory, the decisions and the chat since the last refresh",
+        "project!=the project's title",
+        &[
+            (
+                "memory-tools-only",
+                "only reads and writes memory: `memory_read`, `remember` and `forget`",
+                r"Only `memory_read`, `remember` and `forget`",
+                Code
+            ),
+            (
+                "user-md-add-only",
+                "adds to user.md, never replaces or removes an entry there",
+                r"add to it only",
+                Code
+            ),
+        ]
+    ),
+    entry!(
         "lead.wake",
         Msg,
         Lead,

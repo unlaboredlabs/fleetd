@@ -1,5 +1,6 @@
-//! The lead's `remember` and `memory_read`, scoped to the caller's project by its session. A task can make neither
-//! (`tasks::policy`): writers get the memory in their first message and nothing else.
+//! The lead's `remember`, `forget` and `memory_read`, scoped to the caller's project by its session. A task can make
+//! none of them (`tasks::policy`): writers get the memory in their first message and nothing else. A nightly refresh's
+//! changes are kept for its one line at the end (`refresh`), not posted one by one.
 use std::sync::{Arc, Weak};
 
 use fleetd_contracts::chat::ChatAuthor;
@@ -16,11 +17,12 @@ use serde_json::json;
 use super::{MemoryError, Target};
 use crate::hub::api::Hub;
 use crate::hub::chat::NewMessage;
+use crate::hub::link::lead_calls::CallerAgent;
 use crate::hub::link::lead_calls::{LeadCallFuture, op_of};
 use crate::hub::link::{LeadCaller, LeadCalls};
 use crate::hub::store::{NewEvent, StoreError, iso_ms, now_ms};
 
-pub const OPS: [&str; 2] = ["remember", "memory_read"];
+pub const OPS: [&str; 3] = ["remember", "forget", "memory_read"];
 
 impl From<MemoryError> for McpToolError {
     fn from(e: MemoryError) -> Self {
@@ -62,7 +64,7 @@ fn answer(hub: &Hub, caller: &LeadCaller, call: LeadCall) -> Result<LeadCallResu
             let next = match item {
                 None => "Already remembered, word for word.".to_owned(),
                 Some(item) => {
-                    remembered(hub, r, &caller.by, item)?;
+                    remembered(hub, r, caller, item)?;
                     format!(
                         "Remembered in {}. Sessions get it from their next start; you already know it.",
                         t.name()
@@ -74,6 +76,21 @@ fn answer(hub: &Hub, caller: &LeadCaller, call: LeadCall) -> Result<LeadCallResu
                 chars: Count::unchecked(len as i64),
                 cap: Count::unchecked(cap as i64),
                 next: Some(next),
+            }))
+        }
+        LeadCall::Forget(call) => {
+            let memory = hub.db.memory();
+            let (t, item, len) = memory.forget(r, &call)?;
+            let (file, cap) = (Line::unchecked(t.name()), memory.cap(&t));
+            remembered(hub, r, caller, item)?;
+            Ok(LeadCallResult::Forget(RememberResult {
+                file,
+                chars: Count::unchecked(len as i64),
+                cap: Count::unchecked(cap as i64),
+                next: Some(format!(
+                    "Forgot it from {}. Sessions go without it from their next start.",
+                    t.name()
+                )),
             }))
         }
         LeadCall::MemoryRead(call) => {
@@ -100,16 +117,29 @@ fn answer(hub: &Hub, caller: &LeadCaller, call: LeadCall) -> Result<LeadCallResu
     }
 }
 
-/// The chat line that says what was remembered and offers Undo, and the event that refreshes Settings > Memory.
-fn remembered(hub: &Hub, r: &ProjectRef, by: &str, item: RememberedItem) -> Result<(), StoreError> {
+/// The chat line that says what was remembered or forgotten and offers Undo, and the event that refreshes Settings >
+/// Memory. A nightly refresh's change waits for its one line instead.
+fn remembered(
+    hub: &Hub,
+    r: &ProjectRef,
+    caller: &LeadCaller,
+    item: RememberedItem,
+) -> Result<(), StoreError> {
+    let project = (item.scope == MemoryScope::Project).then_some(r);
+    changed(hub, project, item.topic.as_ref(), &caller.by)?;
+    if caller.agent == CallerAgent::MemoryRefresh {
+        return super::refresh::record(&hub.db, r, item);
+    }
     let where_ = match (item.scope, &item.topic) {
         (MemoryScope::User, _) => " for every project".to_owned(),
         (MemoryScope::Project, Some(topic)) => format!(" ({topic})"),
         (MemoryScope::Project, None) => String::new(),
     };
-    let text = format!("Remembered{where_}: {}", item.text.as_str());
-    let project = (item.scope == MemoryScope::Project).then_some(r);
-    changed(hub, project, item.topic.as_ref(), by)?;
+    let text = match (item.forgotten == Some(true), &item.reason) {
+        (true, Some(why)) => format!("Forgot{where_}: {} ({})", item.text.as_str(), why.as_str()),
+        (true, None) => format!("Forgot{where_}: {}", item.text.as_str()),
+        (false, _) => format!("Remembered{where_}: {}", item.text.as_str()),
+    };
     hub.chat.add(
         r,
         NewMessage {
@@ -122,7 +152,6 @@ fn remembered(hub: &Hub, r: &ProjectRef, by: &str, item: RememberedItem) -> Resu
     Ok(())
 }
 
-/// `memory.changed`, which tells the app to read the memory again.
 /// `memory.changed`, which tells the app to read the memory again. `project` is None for `user.md`.
 pub fn changed(
     hub: &Hub,

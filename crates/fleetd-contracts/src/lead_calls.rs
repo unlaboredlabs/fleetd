@@ -27,7 +27,7 @@ use crate::ledger::{
     WorkstreamId, WorkstreamState,
 };
 use crate::mcp::McpToolError;
-use crate::memory::{MemoryReadCall, MemoryReadResult, RememberCall, RememberResult};
+use crate::memory::{ForgetCall, MemoryReadCall, MemoryReadResult, RememberCall, RememberResult};
 use crate::navi::{
     AskHandle, FactoryStatusCall, FactoryStatusResult, ProjectMessageCall, ProjectMessageResult,
 };
@@ -298,6 +298,7 @@ pub enum LeadCall {
     BriefRead(BriefReadCall),
     ReviewRead(ReviewReadCall),
     Remember(RememberCall),
+    Forget(ForgetCall),
     MemoryRead(MemoryReadCall),
     AutomationCreate(AutomationCreateCall),
     AutomationList(AutomationListCall),
@@ -492,6 +493,7 @@ pub enum LeadCallResult {
     BriefRead(BriefReadResult),
     ReviewRead(ReviewReadResult),
     Remember(RememberResult),
+    Forget(RememberResult),
     MemoryRead(MemoryReadResult),
     AutomationCreate(AutomationResult),
     AutomationList(AutomationListResult),

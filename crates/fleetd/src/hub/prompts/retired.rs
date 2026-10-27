@@ -350,9 +350,9 @@ mod tests {
         }
         assert_eq!(
             ENTRIES.len() + RETIRED.len(),
-            76,
+            77,
             "the 69 prompts of an earlier release, lead.profiles, and eight fixed texts made prompts, less the four \
-             playbooks, and task.recover, lead.voice and task.handoff"
+             playbooks, and task.recover, lead.voice, task.handoff and lead.memory"
         );
     }
 }

@@ -139,6 +139,7 @@ impl TaskPorts for HubTaskPorts {
                 mcp_role: Some(mcp_role),
                 order_id: request.order_id,
                 setup,
+                ..Default::default()
             };
             self.executors
                 .launch(machine_id, &input, options)
@@ -541,6 +542,12 @@ impl AgentDirectory for Directory {
                     format!("the hub holds no preview {id} on {}", thread.machine_id),
                 )),
             };
+        }
+        // A nightly memory refresh, whose calls the policy holds to memory.
+        if let Some(project_ref) = crate::hub::memory::refresh::project_of_thread(&hub.db, thread)
+            .map_err(|e| failed(e.to_string()))?
+        {
+            return Ok((CallerAgent::MemoryRefresh, project_ref));
         }
         let leads = hub
             .leads

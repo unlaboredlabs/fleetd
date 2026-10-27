@@ -15,6 +15,9 @@ lead starts the work without asking you first. Reviews, the [merge train](/docs/
 [approvals](/docs/approvals-and-secrets) still apply, as they do for any order. If the project has no lead yet, the
 run starts one.
 
+The nightly [memory refresh](/docs/what-agents-are-told#memory-refresh) is built in, not an automation: it opens
+no order, and each project turns it off in its settings.
+
 ## Manage them in the app
 
 Open **Settings → Automations** and pick a project. There you can:

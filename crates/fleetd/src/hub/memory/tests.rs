@@ -679,3 +679,130 @@ async fn memory_caps_are_a_hub_setting_and_remember_is_held_to_them() {
     }
     assert!(memory_md(&hub, &r).chars().count() > 26_000);
 }
+
+async fn forget(hub: &Hub, r: &ProjectRef, call: Value) -> Result<LeadCallResult, String> {
+    let mut call = call;
+    call["op"] = "forget".into();
+    let call: LeadCall = serde_json::from_value(call).map_err(|e| e.to_string())?;
+    let caller = LeadCaller {
+        project_ref: r.clone(),
+        by: crate::hub::link::lead_calls::lead_by(r),
+        agent: CallerAgent::Lead,
+    };
+    let handler = hub.lead_calls.handler("forget").unwrap();
+    handler
+        .handle(caller, call)
+        .await
+        .map_err(|e| format!("{}: {}", e.message, e.fix.unwrap_or_default()))
+}
+
+#[tokio::test]
+async fn forget_removes_one_quoted_entry_with_a_line_and_undo_puts_it_back() {
+    let (hub, _home) = hub();
+    let r = project("fleetd");
+    let tools = crate::hub::api::registry();
+    for text in [
+        "Deploys freeze on Fridays.",
+        "Deploys go through the train.",
+    ] {
+        remember(&hub, &r, json!({ "scope": "project", "text": text }))
+            .await
+            .unwrap();
+    }
+    remember(
+        &hub,
+        &r,
+        json!({ "scope": "project", "topic": "deploys", "text": "Staging needs the VPN." }),
+    )
+    .await
+    .unwrap();
+    // Words of two entries, or of none, are refused: nothing is guessed.
+    let two = forget(&hub, &r, json!({ "scope": "project", "entry": "Deploys" }))
+        .await
+        .unwrap_err();
+    assert!(two.contains("2 entries of MEMORY.md contain"), "{two}");
+    let none = forget(&hub, &r, json!({ "scope": "project", "entry": "yarn" }))
+        .await
+        .unwrap_err();
+    assert!(none.contains("No entry of MEMORY.md"), "{none}");
+
+    let LeadCallResult::Forget(done) = forget(
+        &hub,
+        &r,
+        json!({ "scope": "project", "entry": "freeze on Fri", "reason": "The freeze ended." }),
+    )
+    .await
+    .unwrap() else {
+        panic!("not a forget result")
+    };
+    assert_eq!(done.file.as_str(), "MEMORY.md");
+    assert_eq!(
+        memory_md(&hub, &r),
+        "- Deploys go through the train.\n- [deploys](deploys.md)\n"
+    );
+    let line = remembered_lines(&hub, &r).pop().unwrap();
+    assert_eq!(
+        line.text.as_str(),
+        "Forgot: Deploys freeze on Fridays. (The freeze ended.)"
+    );
+    let item = line.remembered.as_ref().unwrap();
+    assert_eq!(
+        (item.forgotten, item.text.as_str()),
+        (Some(true), "Deploys freeze on Fridays.")
+    );
+    // Settings > Memory's notes leave a forgotten entry out.
+    let got = tools
+        .call(&hub, &person(), "memory_get", json!({ "projectRef": r }))
+        .await
+        .unwrap();
+    let notes = got["files"][0]["notes"].as_array().unwrap();
+    assert!(
+        notes
+            .iter()
+            .all(|n| n["text"] != "Deploys freeze on Fridays."),
+        "{notes:?}"
+    );
+
+    // The last entry of a topic takes the topic and its index line with it.
+    forget(
+        &hub,
+        &r,
+        json!({ "scope": "project", "topic": "deploys", "entry": "VPN" }),
+    )
+    .await
+    .unwrap();
+    assert!(hub.db.memory().topics(&r).is_empty());
+    assert_eq!(memory_md(&hub, &r), "- Deploys go through the train.\n");
+
+    // Undo puts each back, the topic with its index line.
+    let lines = remembered_lines(&hub, &r);
+    let forgot = &lines[lines.len() - 2..];
+    for line in forgot {
+        tools
+            .call(
+                &hub,
+                &person(),
+                "memory_undo",
+                json!({ "projectRef": r, "messageId": line.message_id }),
+            )
+            .await
+            .unwrap();
+    }
+    assert_eq!(
+        memory_md(&hub, &r),
+        "- Deploys go through the train.\n- Deploys freeze on Fridays.\n- [deploys](deploys.md)\n"
+    );
+    assert_eq!(
+        hub.db.memory().read(&Target {
+            project: Some(&r),
+            topic: Some(&fleetd_contracts::memory::MemoryTopic::unchecked("deploys")),
+        }),
+        "- Staging needs the VPN.\n"
+    );
+    let lines = remembered_lines(&hub, &r);
+    assert!(
+        lines[lines.len() - 2..]
+            .iter()
+            .all(|m| m.remembered.as_ref().unwrap().undone == Some(true))
+    );
+}
