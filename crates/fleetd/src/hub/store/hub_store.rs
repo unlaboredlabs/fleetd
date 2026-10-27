@@ -50,6 +50,19 @@ fn escape_like(s: &str) -> String {
     out
 }
 
+/// The project with its repos from the hub's `repos`, whatever its stored row says.
+fn with_repos(
+    conn: &rusqlite::Connection,
+    mut project: ProjectSummary,
+) -> Result<ProjectSummary, StoreError> {
+    let r = ProjectRef {
+        machine_id: project.machine_id.clone(),
+        project_id: project.project_id.clone(),
+    };
+    project.repos = crate::hub::repos::store::of(conn, &r)?;
+    Ok(project)
+}
+
 const MACHINE_UPSERT: &str = "INSERT INTO machines (machine_id, data) VALUES (?, ?) ON CONFLICT (machine_id) DO UPDATE SET data = excluded.data";
 const MACHINE_GET: &str = "SELECT data FROM machines WHERE machine_id = ?";
 
@@ -138,7 +151,12 @@ impl HubStore {
          search = excluded.search, last_activity_at = excluded.last_activity_at, data = excluded.data",
             )?;
             for project in projects {
-                let row = ProjectSummary { machine_id: machine_id.clone(), ..project.clone() };
+                // Its repos are the hub's, served from `repos` (`with_repos`); a node never knows them.
+                let row = ProjectSummary {
+                    machine_id: machine_id.clone(),
+                    repos: Vec::new(),
+                    ..project.clone()
+                };
                 stmt.execute(params![
                     machine_id.as_str(),
                     row.project_id.as_str(),
@@ -146,6 +164,8 @@ impl HubStore {
                     row.last_activity_at.as_str(),
                     serde_json::to_string(&row)?,
                 ])?;
+                let r = ProjectRef { machine_id: machine_id.clone(), project_id: row.project_id };
+                crate::hub::repos::store::ensure_own(conn, &r, None)?;
             }
             Ok(())
         })
@@ -167,7 +187,10 @@ impl HubStore {
        WHERE ($machine IS NULL OR machine_id = $machine) AND ($query IS NULL OR search LIKE $query ESCAPE '\')
        ORDER BY last_activity_at DESC",
                 named_params! { "$machine": machine_id.map(MachineId::as_str), "$query": query },
-            )
+            )?
+            .into_iter()
+            .map(|p| with_repos(conn, p))
+            .collect()
         })
     }
 
@@ -182,11 +205,11 @@ impl HubStore {
                     |row| row.get(0),
                 )
                 .optional()?;
-            data.map(decode).transpose()
+            data.map(|data| with_repos(conn, decode(data)?)).transpose()
         })
     }
 
-    /// Drops the project, its cached threads and its settings, once its node no longer has it.
+    /// Drops the project, its cached threads, its settings and its repos, once its node no longer has it.
     pub fn project_remove(&self, r: &ProjectRef) -> Result<(), StoreError> {
         self.db.transaction(|conn| {
             for table in [
@@ -202,6 +225,7 @@ impl HubStore {
                 ))?
                 .execute(params![r.machine_id.as_str(), r.project_id.as_str()])?;
             }
+            crate::hub::repos::store::remove_project(conn, r)?;
             Ok(())
         })
     }

@@ -141,6 +141,8 @@ pub struct Hub {
     pub chat: Arc<crate::hub::chat::Chat>,
     pub prs: Arc<crate::hub::prs::Prs>,
     pub work: Arc<crate::hub::work::Work>,
+    /// Each project's repos (hub/repos).
+    pub repos: Arc<crate::hub::repos::Repos>,
     pub metrics: Arc<crate::hub::metrics::Metrics>,
     pub updates: Arc<crate::hub::update::Updates>,
     /// Session relays waiting for their runner's side (machine_roles/relay.rs).

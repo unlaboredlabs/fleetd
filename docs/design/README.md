@@ -13,3 +13,5 @@ wins.
   and the share of merged work that went through fleetd.
 - [try-it.md](try-it.md): try it yourself: the person runs what a PR built (web, Android, iOS, desktop) when they ask,
   sends marked-up feedback to its agents, and can make their sign-off part of what lets a PR merge.
+- [multi-repo.md](multi-repo.md): a project is a lead and its own directory holding zero or more repos; how repos are
+  stored, and the stages that let one lead work across several repos.
