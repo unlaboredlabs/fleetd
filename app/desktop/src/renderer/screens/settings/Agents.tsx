@@ -6,7 +6,7 @@ import { Slider } from "radix-ui";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ProjectRef, SlotState } from "../../../shared/contracts";
 import { useData, useToolQuery } from "../../src/data/react";
-import { Button, PROFILE_LINE, Separator, Switch, Text, textClass } from "../../ui";
+import { Button, Separator, Switch, Text, textClass } from "../../ui";
 import {
   appliedLine,
   changeLine,
@@ -27,6 +27,7 @@ import {
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { useFocusProjectSlider } from "./focusProject";
 import { PageHead, scopeName, useProjects } from "./parts";
+import { ProfilesSetting } from "./ProfilesSetting";
 import { promptHref } from "./route";
 import { useReveal } from "./search";
 import s from "./settings.module.css";
@@ -418,25 +419,20 @@ export function AgentsSettings() {
   );
 }
 
-/** The two task profiles every agent runs on, as fixed as the prompts: shown, never typed in. */
+/** The two task profiles every agent runs on, and the model and effort behind each for the whole fleet. */
 function TaskProfiles() {
   const ref = useReveal<HTMLElement>("agents.profiles");
+  const admin = useAdmin();
   return (
     <section ref={ref} className={s.agentsPanel} aria-labelledby="agents-profiles" tabIndex={-1}>
       <Text strong id="agents-profiles">
         Task profiles
       </Text>
       <Text size="xs" tone="quiet">
-        The lead picks one for each task. The lead itself and every review run high.
+        The lead picks one for each task. The lead itself and every review run high. Set the model and effort behind
+        each for every project here; a project can override it in its settings. Changing it needs an admin key.
       </Text>
-      <ul className={s.profiles}>
-        <li>
-          <Text size="sm">{PROFILE_LINE.high}</Text>
-        </li>
-        <li>
-          <Text size="sm">{PROFILE_LINE.medium}</Text>
-        </li>
-      </ul>
+      <ProfilesSetting {...(admin ? {} : { blocked: NOT_ADMIN })} />
       <span>
         <Button variant="quiet" size="sm" onClick={() => (window.location.hash = promptHref("lead.profiles"))}>
           Edit the Task profiles prompt

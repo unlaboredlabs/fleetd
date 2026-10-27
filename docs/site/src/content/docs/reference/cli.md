@@ -188,6 +188,24 @@ fleetd project set <machine>/<project> --medium on|off [--home <dir>] [--hub <ur
 
 whether the lead may run mechanical tasks on the medium profile (on by default); off runs every task on high
 
+### fleetd project set {#project-set-high-model}
+
+```text
+fleetd project set [<machine>/<project>] [--high-model <model>|default]
+    [--high-effort low|medium|high|max|default] [--medium-model <model>|default]
+    [--medium-effort low|medium|high|max|default] [--home <dir>] [--hub <url>]
+```
+
+the model and effort behind a task profile, fleet-wide (admin key) or as the project's override. default unsets it: a project's follows the fleet's, the fleet's the profile's own (claude-opus-5-5 at high or medium). The lead, every review and helper calls run high. New agents follow it; if claude refuses the model they run on the profile's own and `project profiles` says so
+
+### fleetd project profiles {#project-profiles}
+
+```text
+fleetd project profiles [<machine>/<project>] [--home <dir>] [--hub <url>]
+```
+
+what each profile's agents run on, and the settings behind it
+
 ### fleetd project set {#project-set-fast-check}
 
 ```text

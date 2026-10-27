@@ -1076,6 +1076,7 @@ impl Executors {
         baseline: bool,
     ) {
         self.follow_active(machine_id, event);
+        self.flag_refused(machine_id, event);
         if let MachineEvent::Steer(receipt) = event {
             let sink = self.steer_sink.lock().unwrap().clone();
             if let Some(sink) = sink {
@@ -1463,7 +1464,8 @@ impl Executors {
         if let Some(refused) = self.runner_refusal(machine_id, op) {
             return Err(refused);
         }
-        // The machine's runner takes it; the node picks the model and effort for the profile.
+        // The machine's runner takes it, on the model and effort the profile's settings chose and the profile's own
+        // for what they leave unset. Settings that can't be read leave it all to the profile's own.
         let runner = self
             .cached_runner(machine_id)
             .map(|info| info.runner)
@@ -1491,6 +1493,19 @@ impl Executors {
                     })?
             }
         };
+        let project = ProjectRef {
+            machine_id: machine_id.clone(),
+            project_id: input.project_id.clone(),
+        };
+        let chosen = self
+            .store
+            .db()
+            .profile_settings()
+            .chosen(&project, input.profile)
+            .unwrap_or_else(|e| {
+                tracing::warn!(error = %e, "the profile settings were not read; the profile's own runs");
+                Default::default()
+            });
         let skills = self.skill_bundles(machine_id, &input.project_id);
         let seed = format!("{machine_id}\n{}", input.client_request_id);
         let session_id = ThreadId::unchecked(uuid_from(&format!("session\n{seed}")));
@@ -1500,8 +1515,11 @@ impl Executors {
             title: Some(title),
             runner,
             profile: Some(input.profile),
-            model: None,
-            effort: None,
+            model: chosen.model.map(|m| NonEmpty::unchecked(m.into_inner())),
+            effort: chosen.effort,
+            helper_model: chosen
+                .helper_model
+                .map(|m| NonEmpty::unchecked(m.into_inner())),
             runtime_mode: input.runtime_mode,
             workspace: options.workspace.unwrap_or(SessionWorkspace::Root),
             prompt: non_empty(machine_id, op, "prompt", &input.prompt)?,
@@ -1980,6 +1998,37 @@ impl Executors {
                 }
                 (false, Some(_)) => self.release(&r),
                 (false, None) => {}
+            }
+        }
+    }
+
+    /// A session whose model claude refused runs on its profile's own: the settings that chose that model are marked
+    /// refused, so new agents run as if they were unset and Settings says why.
+    fn flag_refused(&self, machine_id: &MachineId, event: &MachineEvent) {
+        let sessions: Vec<&SessionSummary> = match event {
+            MachineEvent::Snapshot { sessions, .. } => sessions.iter().collect(),
+            MachineEvent::SessionUpdated(s) => vec![s],
+            _ => return,
+        };
+        for s in sessions {
+            let Some(model) = &s.model_refused else {
+                continue;
+            };
+            let why = format!(
+                "claude on {machine_id} refused {model} at {}: agents run on {} instead until you set this again.",
+                s.created_at, s.model
+            );
+            match self
+                .store
+                .db()
+                .profile_settings()
+                .refuse(model, s.created_at.as_str(), &why)
+            {
+                Ok(true) => {
+                    tracing::warn!(%machine_id, %model, "claude refused a profile's model; flagged")
+                }
+                Ok(false) => {}
+                Err(e) => tracing::warn!(error = %e, "a refused model was not flagged"),
             }
         }
     }

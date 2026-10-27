@@ -1740,7 +1740,8 @@ export const screens: readonly Screen[] = [
       await page.getByRole("region", { name: "devbox" }).getByText("Set by you. Auto would be 22: memory 60 GB, about 2 GB an agent.").waitFor();
     },
   },
-  // The two task profiles, and each project's medium switch: storefront's off in settings-medium-off.
+  // The two task profiles with the fleet's model and effort behind each, and each project's medium switch:
+  // storefront's off in settings-medium-off.
   {
     id: "settings.agents",
     route: "#/settings/agents",
@@ -1749,7 +1750,7 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       const profiles = page.getByRole("region", { name: "Task profiles" });
       await profiles.scrollIntoViewIfNeeded();
-      await profiles.getByText("Medium: Opus 5.5, medium effort, for mechanical work").waitFor();
+      await profiles.getByText("New agents run on claude-sonnet-5-5 at medium effort.").waitFor();
       await page.getByRole("region", { name: "storefront" }).getByRole("switch", { name: /Medium allowed/u }).waitFor();
     },
   },

@@ -67,12 +67,15 @@ pub struct SessionLaunch {
     pub title: Option<String>,
     #[serde(default)]
     pub runner: RunnerKind,
-    /// The node's runner picks the model and effort it runs on. Absent from a hub before profiles, which sends
-    /// `model` and `effort` instead.
+    /// What it runs on. Absent from a hub before profiles, which sends `model` and `effort` alone: the runner reads
+    /// its profile off them and runs that profile's own.
     pub profile: Option<TaskProfile>,
-    /// A hub before profiles only: the runner reads its profile off these.
+    /// With a profile: the model and effort its settings chose (ProfileSettings), each absent when none did and the
+    /// runner's own for the profile applies. A node before settings runs the profile's own whatever these say.
     pub model: Option<NonEmpty>,
     pub effort: Option<Effort>,
+    /// The model claude's background helper calls run on: the high profile's setting. Absent: the runner's own.
+    pub helper_model: Option<NonEmpty>,
     pub runtime_mode: RuntimeMode,
     pub workspace: SessionWorkspace,
     /// The first user message.
@@ -151,6 +154,7 @@ pub enum PermissionDecision {
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "op", rename_all = "snake_case")]
+#[allow(clippy::large_enum_variant)]
 pub enum SessionCall {
     /// Register or rename a project rooted at a directory on this machine.
     #[serde(rename_all = "camelCase")]
@@ -911,6 +915,9 @@ pub struct SessionSummary {
     pub status: SessionStatus,
     pub model: String,
     pub effort: Effort,
+    /// claude refused the model the session was launched on, so it runs on its profile's own (`model`) instead.
+    /// The hub flags the setting that chose it.
+    pub model_refused: Option<String>,
     pub runtime_mode: RuntimeMode,
     pub latest_run: Option<RunInfo>,
     /// Set while a run is queued, starting, running or waiting.

@@ -87,7 +87,8 @@ shell. See [Machines](/docs/machines).
 
 Each project has one lead: a long-running Claude session that plans the work and runs the agents. It never writes
 code. You talk to it in one ongoing chat per project, in plain messages; it answers short, state first. Your first
-message starts it. It runs on `claude-opus-5-5` by default. See [Chat with the lead](/docs/chat).
+message starts it. It runs on the high [profile](/docs/projects#models), `claude-opus-5-5` unless you set another. See
+[Chat with the lead](/docs/chat).
 
 The lead keeps its own plan and bookkeeping. Inside fleetd a piece of work is a **workstream**; you never file one.
 Its tools are listed in [Agent tools](/docs/reference/agent-tools).

@@ -9,6 +9,7 @@ use crate::auth::{AgentKeyInfo, Role};
 use crate::chat::{ChatMessageId, ChatRequestId};
 use crate::checklist::{CHECKLIST_MAX, TodoEdit, TodoItem};
 use crate::doctor::{DoctorCheck, DoctorCheckId};
+use crate::effort::{ProfileRuns, ProfileSetting, ProfileSettings};
 use crate::events::{HubEvent, HubEventType};
 use crate::hello::ProtocolVersion;
 use crate::ids::{EventSeq, MachineId, ProjectId, ProjectRef, ThreadId, Timestamp};
@@ -272,6 +273,58 @@ input!(ProjectSetInput {
 });
 output!(ProjectSetOutput {
     medium_allowed: bool
+});
+
+// profiles_get, profiles_set: the model and effort behind each task profile, fleet-wide (Settings › Agents) and as a
+// project's override (its settings). Unset everywhere, a profile runs on the runner's own.
+input!(ProfilesGetInput {
+    /// A project: its override too, and what its agents run on. Absent: the fleet's.
+    project_ref: Option<ProjectRef>,
+});
+input!(
+    #[serde(remote = "Self")]
+    ProfilesSetInput {
+        /// A project's override. Absent: the fleet's, which needs an admin key.
+        project_ref: Option<ProjectRef>,
+        /// Replaces the profile's setting at that scope; `{}` unsets it, and setting a model again clears its refusal.
+        high: Option<ProfileSetting>,
+        medium: Option<ProfileSetting>,
+    }
+);
+checked!(ProfilesSetInput, |input| {
+    if input.high.is_none() && input.medium.is_none() {
+        return Err("expected high, medium or both".into());
+    }
+    if [&input.high, &input.medium]
+        .into_iter()
+        .flatten()
+        .any(|s| s.refused.is_some())
+    {
+        return Err("refused is the hub's to set".into());
+    }
+    Ok(())
+});
+/// The profiles' settings at the fleet and, when asked, a project, and what new agents run on.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfilesView {
+    pub fleet: ProfileSettings,
+    /// The project's override; absent without projectRef.
+    pub project: Option<ProfileSettings>,
+    /// What a new agent of each profile runs on: the project's setting, else the fleet's, else the runner's own.
+    /// The lead, every review and claude's helper calls run high.
+    pub runs: ProfileRuns,
+    /// The runner's own: what a profile set nowhere runs on.
+    pub defaults: ProfileRuns,
+}
+output!(ProfilesGetOutput {
+    #[serde(flatten)]
+    view: ProfilesView,
+});
+output!(ProfilesSetOutput {
+    #[serde(flatten)]
+    view: ProfilesView,
 });
 
 brand!(
@@ -2223,6 +2276,9 @@ tools! {
     wake_cancel => WakeCancel, Operate, WakeCancelInput, WakeCancelOutput;
     lead_start => LeadStart, Operate, LeadStartInput, LeadStartOutput;
     project_set => ProjectSet, Operate, ProjectSetInput, ProjectSetOutput;
+    profiles_get => ProfilesGet, Read, ProfilesGetInput, ProfilesGetOutput;
+    // Operate on the project for its override; the fleet's needs admin on every machine (the handler checks).
+    profiles_set => ProfilesSet, Operate, ProfilesSetInput, ProfilesSetOutput;
     workstream_list => WorkstreamList, Read, WorkstreamListInput, WorkstreamListOutput;
     requests_list => RequestsList, Read, RequestsListInput, RequestsListOutput;
     decisions_search => DecisionsSearch, Read, DecisionsSearchInput, DecisionsSearchOutput;

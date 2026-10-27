@@ -280,12 +280,12 @@ speed. At a cap of 1 it works one piece at a time and says so once.
 
 ## Models and cost {#models}
 
-Every agent runs on `claude-opus-5-5`, with one of two profiles:
+Every agent runs on one of two profiles. Unless you set otherwise, both run on `claude-opus-5-5`:
 
-| Profile | Effort | Runs |
+| Profile | Unless set | Runs |
 |---|---|---|
-| `high` | high | The default. The lead, every review, every helper call, and every task the lead doesn't mark medium. |
-| `medium` | medium | Mechanical tasks the lead picks: dead-code deletions, renames, test removals, doc fixes, moving files, plain wiring, screenshot recaptures. Never design, concurrency, auth or secrets, approvals or the merge train. |
+| `high` | `claude-opus-5-5` at effort high | The default. The lead, every review, claude's helper calls (session titles and the like), and every task the lead doesn't mark medium. |
+| `medium` | `claude-opus-5-5` at effort medium | Mechanical tasks the lead picks: dead-code deletions, renames, test removals, doc fixes, moving files, plain wiring, screenshot recaptures. Never design, concurrency, auth or secrets, approvals or the merge train. |
 
 The lead picks the profile for each task it starts. A medium task whose review finds blockers twice is redone on high.
 Each agent's profile shows on its lane (`T12 medium`), and the time
@@ -293,11 +293,42 @@ view splits agent time and output tokens by profile, so you can see what medium 
 
 | To change | Do |
 |---|---|
+| The model and effort behind a profile, for every project | Settings → Agents → Task profiles (an admin key), or `fleetd project set --high-model claude-sonnet-5-5 --high-effort max`. |
+| The same for one project | Settings → Projects → the project → Task profiles, or `fleetd project set <machine>/<project> --medium-model claude-sonnet-5-5`. |
 | Whether the lead may use medium | Settings → Agents → the project's Medium allowed switch, or `fleetd project set <machine>/<project> --medium off`: every new task runs on high. `--medium on` allows medium again (the default). |
 | When the lead picks medium | Edit the **Task profiles** prompt (`lead.profiles`) like any [prompt](/docs/what-agents-are-told). It takes effect at the lead's next start. |
 
-There is no other model or effort: no setting, flag or policy key picks one. An older policy file's `defaults.model`
-and `defaults.effort` are ignored.
+### The model and effort behind each profile {#profile-settings}
+
+Each profile has a model and an effort (low, medium, high or max) you can set fleet-wide, and a project can override
+either one. Each field is resolved on its own: the project's, else the fleet's, else the profile's own from the table
+above. Nothing set anywhere runs exactly as fleetd always has. A model is any name `claude --model` takes: a full name
+(`claude-sonnet-5-5`), an alias (`sonnet`) or your gateway's own name.
+
+`fleetd project profiles [<machine>/<project>]` shows what each profile runs on and the settings behind it:
+
+```text
+high    claude-opus-5-5 at high
+        fleet: unset · this project: unset · own: claude-opus-5-5 at high
+medium  claude-sonnet-5-5 at medium
+        fleet: claude-sonnet-5-5 · this project: unset · own: claude-opus-5-5 at medium
+```
+
+`--high-model`, `--high-effort`, `--medium-model` and `--medium-effort` on `fleetd project set` change one field
+each, fleet-wide without a project (an admin key) or as the project's override with one; `default` unsets a field.
+From an MCP client, `profiles_get` and `profiles_set` do the same.
+
+A change applies to agents started after it. Agents already running keep the model and effort they started on, and
+each agent's usage, time and lane report the model it really ran on. The lead, every review and claude's helper calls
+follow the high profile. A node older than the hub runs each profile's own whatever is set: update fleetd there.
+
+If claude refuses a model (a name it doesn't know, or one your gateway has no account for), no agent is stranded: the
+agent goes on at once on its profile's own model, in the same run, and its thread says why. The hub then flags the
+setting: Settings and `fleetd project profiles` show which machine refused it and when, and new agents run as if the
+model were unset until you set it again.
+
+The policy file has no say in any of this: an older `.fleetd/policy.yaml`'s `defaults.model` and `defaults.effort`
+are ignored.
 
 ## How the lead schedules work {#scheduling}
 

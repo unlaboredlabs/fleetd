@@ -80,6 +80,12 @@ static NO_ACCOUNT: LazyLock<Regex> =
     LazyLock::new(|| re(r"(?i)no available account|no auth available|auth_unavailable"));
 // CLIProxyAPI: every credential for the model is cooling down; it says when in reset_seconds.
 static COOLDOWN: LazyLock<Regex> = LazyLock::new(|| re(r"(?i)model_cooldown|are cooling down"));
+// claude's stderr tag names the model it didn't know: `[claude-code:unrecognized_model] {"model":"x",…}`.
+static UNRECOGNIZED_MODEL_NAMED: LazyLock<Regex> =
+    LazyLock::new(|| re(r#"\[claude-code:unrecognized_model\]\s*\{"model":"([^"]+)""#));
+// The API's model_not_found, as claude shows it: "There's an issue with the selected model (x)."
+static SELECTED_MODEL: LazyLock<Regex> =
+    LazyLock::new(|| re(r"(?i)issue with the selected model \(([^)\s]+)\)"));
 // "All credentials for model claude-opus-5-5 are cooling down", in its JSON body or as claude shows it.
 static COOLDOWN_MODEL: LazyLock<Regex> = LazyLock::new(|| {
     re(r#"(?i)credentials for model\s+["']?([^\s"'\\,}]+)["']?\s+are cooling down"#)
@@ -279,10 +285,18 @@ pub fn classify(evidence: &FailureEvidence) -> Option<RunFailure> {
     })
 }
 
-/// The model a gateway named in the failure: the one it has no account for, or the one whose credentials cool down.
+/// The model a failure names: the one a gateway has no account for, the one whose credentials cool down, or the
+/// one claude or the API refused (an invalid request that names one is a refused model).
 fn gateway_model_of(class: FailureClass, message: &str) -> Option<String> {
     match class {
         FailureClass::PoolExhausted => gateway_model(message),
+        FailureClass::InvalidRequest => gateway_model(message)
+            .or_else(|| {
+                UNRECOGNIZED_MODEL_NAMED
+                    .captures(message)
+                    .map(|c| c[1].to_owned())
+            })
+            .or_else(|| SELECTED_MODEL.captures(message).map(|c| c[1].to_owned())),
         FailureClass::UsageLimit | FailureClass::RateLimit if COOLDOWN.is_match(message) => {
             COOLDOWN_MODEL.captures(message).map(|c| c[1].to_owned())
         }
@@ -781,6 +795,8 @@ mod tests {
         let e = evidence("invalid-model");
         let f = classify(&e).unwrap();
         assert_eq!((f.class, f.api_status), (InvalidRequest, Some(400)));
+        // It names the model, so the node falls back from a setting claude refused.
+        assert_eq!(f.model.as_deref(), Some("claude-does-not-exist-9"));
         assert!(
             f.message
                 .starts_with("API Error: 400 unknown provider for model claude-does-not-exist-9")
@@ -806,7 +822,11 @@ mod tests {
             now_ms: NOW as u64,
             ..Default::default()
         };
-        assert_eq!(classify(&e).unwrap().class, InvalidRequest);
+        let f = classify(&e).unwrap();
+        assert_eq!(
+            (f.class, f.model.as_deref()),
+            (InvalidRequest, Some("claude-x"))
+        );
     }
 
     /// The unrecognized-model tag on stderr (any model claude doesn't know, e.g. a gateway alias) must not mask

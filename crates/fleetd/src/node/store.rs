@@ -94,6 +94,13 @@ pub struct SessionLocal {
     /// run to its end, so a node that stops mid-setup runs it again at the session's next start.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub setup_pending: bool,
+    /// The profile it was launched on; absent from sessions stored before profile settings, which run on their
+    /// profile's own. Where it falls back to when claude refuses its model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<fleetd_contracts::effort::TaskProfile>,
+    /// The model claude's helper calls run on (the high profile's setting); absent: the runner's own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub helper_model: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

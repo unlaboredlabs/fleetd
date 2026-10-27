@@ -880,6 +880,7 @@ fn switches() -> Result<String, String> {
     let overlay: Value = serde_json::from_str(&fleetd::node::sessions::settings_overlay(
         &cache,
         Default::default(),
+        HELPER_MODEL_ENV.1,
     ))
     .map_err(|e| format!("agent tools: the settings overlay: {e}"))?;
     let mut md = String::from(
@@ -918,7 +919,7 @@ fn switches() -> Result<String, String> {
     let (name, value) = HELPER_MODEL_ENV;
     rows(
         vec![(format!("`{name}`"), HELPER_MODEL_WHY)],
-        &format!("`{value}`"),
+        &format!("The high profile's model: `{value}` unless a setting chose another"),
         all,
     );
     for ((name, value), why) in SESSION_ENV_WHY {

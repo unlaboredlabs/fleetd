@@ -305,7 +305,7 @@
       "type": "string"
     },
     "TaskProfile": {
-      "description": "What an agent runs on. There are exactly two: `high` is the default and what the lead, every reviewer and every\nhelper call run; `medium` is for mechanical tasks the lead picks. The node's runner picks the model and effort of\neach.",
+      "description": "What an agent runs on. There are exactly two: `high` is the default and what the lead, every reviewer and every\nhelper call run; `medium` is for mechanical tasks the lead picks. Each runs on its setting's model and effort\n([`ProfileSettings`]), else on the runner's own for it.",
       "enum": [
         "high",
         "medium"

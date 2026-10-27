@@ -4440,7 +4440,7 @@
       "type": "string"
     },
     "Effort": {
-      "description": "How hard a model thinks, as a node reports a session's. Only the runner picks one, from the session's\n[`TaskProfile`]; nothing takes an effort as input.",
+      "description": "How hard a model thinks: what a profile runs at, as a setting picks it or a node reports a session's.",
       "enum": [
         "low",
         "medium",
@@ -7443,6 +7443,18 @@
         "previews_list.output": {
           "$ref": "#/$defs/PreviewsListOutput"
         },
+        "profiles_get.input": {
+          "$ref": "#/$defs/ProfilesGetInput"
+        },
+        "profiles_get.output": {
+          "$ref": "#/$defs/ProfilesGetOutput"
+        },
+        "profiles_set.input": {
+          "$ref": "#/$defs/ProfilesSetInput"
+        },
+        "profiles_set.output": {
+          "$ref": "#/$defs/ProfilesSetOutput"
+        },
         "project_add.input": {
           "$ref": "#/$defs/ProjectAddInput"
         },
@@ -7829,6 +7841,10 @@
         "preview_start.output",
         "previews_list.input",
         "previews_list.output",
+        "profiles_get.input",
+        "profiles_get.output",
+        "profiles_set.input",
+        "profiles_set.output",
         "project_add.input",
         "project_add.output",
         "project_discover.input",
@@ -8915,6 +8931,10 @@
         "throughFleetd"
       ],
       "type": "object"
+    },
+    "ModelName": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@\\[\\]-]{0,79}$",
+      "type": "string"
     },
     "NotifyPolicy": {
       "description": "When a client may interrupt the human with an event marked `attention`. Quiet windows are absolute times the\nhub computes from `policy.quiet_hours` in `policy.tz`: the one under way (if any) and the next.",
@@ -10851,6 +10871,68 @@
       ],
       "type": "object"
     },
+    "ProfileRun": {
+      "description": "What a new agent of one profile runs on, every scope applied.",
+      "properties": {
+        "effort": {
+          "$ref": "#/$defs/Effort"
+        },
+        "model": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "model",
+        "effort"
+      ],
+      "type": "object"
+    },
+    "ProfileRuns": {
+      "description": "What new agents of each profile run on.",
+      "properties": {
+        "high": {
+          "$ref": "#/$defs/ProfileRun"
+        },
+        "medium": {
+          "$ref": "#/$defs/ProfileRun"
+        }
+      },
+      "required": [
+        "high",
+        "medium"
+      ],
+      "type": "object"
+    },
+    "ProfileSetting": {
+      "description": "One profile's setting at one scope, the fleet or a project. An unset field falls through: a project's to the\nfleet's, the fleet's to the runner's own (`claude-opus-5-5`, effort high for high and medium for medium).",
+      "properties": {
+        "effort": {
+          "$ref": "#/$defs/Effort"
+        },
+        "model": {
+          "$ref": "#/$defs/ModelName"
+        },
+        "refused": {
+          "description": "Set by the hub, never taken as input: claude refused `model`, so agents run as if it were unset until a\nperson sets the profile again. What claude said, and where.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ProfileSettings": {
+      "description": "Both profiles' settings at one scope.",
+      "properties": {
+        "high": {
+          "$ref": "#/$defs/ProfileSetting",
+          "default": {}
+        },
+        "medium": {
+          "$ref": "#/$defs/ProfileSetting",
+          "default": {}
+        }
+      },
+      "type": "object"
+    },
     "ProfileTotal": {
       "description": "One task profile's part of a scope's agent time and usage, from the spans kept (`coverage.detailSince` on): the\ntasks that ran on it, and the lead's spans under high.",
       "properties": {
@@ -10881,6 +10963,95 @@
         "agentMs",
         "modelMs",
         "outputTokens"
+      ],
+      "type": "object"
+    },
+    "ProfilesGetInput": {
+      "properties": {
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "A project: its override too, and what its agents run on. Absent: the fleet's."
+        }
+      },
+      "type": "object"
+    },
+    "ProfilesGetOutput": {
+      "description": "The profiles' settings at the fleet and, when asked, a project, and what new agents run on.",
+      "properties": {
+        "defaults": {
+          "$ref": "#/$defs/ProfileRuns",
+          "description": "The runner's own: what a profile set nowhere runs on."
+        },
+        "fleet": {
+          "$ref": "#/$defs/ProfileSettings"
+        },
+        "next": {
+          "type": "string"
+        },
+        "project": {
+          "$ref": "#/$defs/ProfileSettings",
+          "description": "The project's override; absent without projectRef."
+        },
+        "runs": {
+          "$ref": "#/$defs/ProfileRuns",
+          "description": "What a new agent of each profile runs on: the project's setting, else the fleet's, else the runner's own.\nThe lead, every review and claude's helper calls run high."
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "fleet",
+        "runs",
+        "defaults"
+      ],
+      "type": "object"
+    },
+    "ProfilesSetInput": {
+      "properties": {
+        "high": {
+          "$ref": "#/$defs/ProfileSetting",
+          "description": "Replaces the profile's setting at that scope; `{}` unsets it, and setting a model again clears its refusal."
+        },
+        "medium": {
+          "$ref": "#/$defs/ProfileSetting"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "A project's override. Absent: the fleet's, which needs an admin key."
+        }
+      },
+      "type": "object"
+    },
+    "ProfilesSetOutput": {
+      "description": "The profiles' settings at the fleet and, when asked, a project, and what new agents run on.",
+      "properties": {
+        "defaults": {
+          "$ref": "#/$defs/ProfileRuns",
+          "description": "The runner's own: what a profile set nowhere runs on."
+        },
+        "fleet": {
+          "$ref": "#/$defs/ProfileSettings"
+        },
+        "next": {
+          "type": "string"
+        },
+        "project": {
+          "$ref": "#/$defs/ProfileSettings",
+          "description": "The project's override; absent without projectRef."
+        },
+        "runs": {
+          "$ref": "#/$defs/ProfileRuns",
+          "description": "What a new agent of each profile runs on: the project's setting, else the fleet's, else the runner's own.\nThe lead, every review and claude's helper calls run high."
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "fleet",
+        "runs",
+        "defaults"
       ],
       "type": "object"
     },
@@ -15159,7 +15330,7 @@
       "type": "string"
     },
     "TaskProfile": {
-      "description": "What an agent runs on. There are exactly two: `high` is the default and what the lead, every reviewer and every\nhelper call run; `medium` is for mechanical tasks the lead picks. The node's runner picks the model and effort of\neach.",
+      "description": "What an agent runs on. There are exactly two: `high` is the default and what the lead, every reviewer and every\nhelper call run; `medium` is for mechanical tasks the lead picks. Each runs on its setting's model and effort\n([`ProfileSettings`]), else on the runner's own for it.",
       "enum": [
         "high",
         "medium"

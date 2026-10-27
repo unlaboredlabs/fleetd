@@ -308,6 +308,7 @@ mod tests {
             status: SessionStatus::Idle,
             model: "claude-haiku-5-5".into(),
             effort: Effort::Low,
+            model_refused: None,
             runtime_mode: RuntimeMode::ApprovalRequired,
             latest_run: None,
             active_run_id: None,
@@ -545,6 +546,8 @@ mod tests {
             order_id: None,
             setup: None,
             setup_pending: false,
+            profile: None,
+            helper_model: None,
         };
         assert_eq!(start_mode(&local, &new, "s1"), Ok(false));
         local.started = true;

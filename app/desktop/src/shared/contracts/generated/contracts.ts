@@ -1694,10 +1694,7 @@ export type DoctorScope = "hub" | "machine";
 /** `unknown`: the hub could not look (machine offline, nothing to read). */
 export type DoctorStatus = "ok" | "warn" | "fail" | "unknown";
 
-/**
- * How hard a model thinks, as a node reports a session's. Only the runner picks one, from the session's
- * [`TaskProfile`]; nothing takes an effort as input.
- */
+/** How hard a model thinks: what a profile runs at, as a setting picks it or a node reports a session's. */
 export type Effort = "low" | "medium" | "high" | "max";
 
 /** Who keeps a safety rule when the prompt no longer says it. */
@@ -2938,6 +2935,8 @@ export type MetricsTiles = {
   throughFleetd: ThroughFleetdTile;
 };
 
+export type ModelName = string;
+
 export type MouseAction = "pressed" | "released" | "moved" | "wheel";
 
 /** A mouse button, as CDP names it. */
@@ -3640,6 +3639,38 @@ export type PreviewsListOutput = {
   truncated?: boolean;
 };
 
+/** What a new agent of one profile runs on, every scope applied. */
+export type ProfileRun = {
+  effort: Effort;
+  model: string;
+};
+
+/** What new agents of each profile run on. */
+export type ProfileRuns = {
+  high: ProfileRun;
+  medium: ProfileRun;
+};
+
+/**
+ * One profile's setting at one scope, the fleet or a project. An unset field falls through: a project's to the
+ * fleet's, the fleet's to the runner's own (`claude-opus-5-5`, effort high for high and medium for medium).
+ */
+export type ProfileSetting = {
+  effort?: Effort;
+  model?: ModelName;
+  /**
+   * Set by the hub, never taken as input: claude refused `model`, so agents run as if it were unset until a
+   * person sets the profile again. What claude said, and where.
+   */
+  refused?: string;
+};
+
+/** Both profiles' settings at one scope. */
+export type ProfileSettings = {
+  high?: ProfileSetting;
+  medium?: ProfileSetting;
+};
+
 /**
  * One task profile's part of a scope's agent time and usage, from the spans kept (`coverage.detailSince` on): the
  * tasks that ran on it, and the lead's spans under high.
@@ -3652,6 +3683,51 @@ export type ProfileTotal = {
   /** What the runner reported for its messages. */
   outputTokens: number;
   profile: TaskProfile;
+};
+
+export type ProfilesGetInput = {
+  /** A project: its override too, and what its agents run on. Absent: the fleet's. */
+  projectRef?: ProjectRef;
+};
+
+/** The profiles' settings at the fleet and, when asked, a project, and what new agents run on. */
+export type ProfilesGetOutput = {
+  /** The runner's own: what a profile set nowhere runs on. */
+  defaults: ProfileRuns;
+  fleet: ProfileSettings;
+  next?: string;
+  /** The project's override; absent without projectRef. */
+  project?: ProfileSettings;
+  /**
+   * What a new agent of each profile runs on: the project's setting, else the fleet's, else the runner's own.
+   * The lead, every review and claude's helper calls run high.
+   */
+  runs: ProfileRuns;
+  truncated?: boolean;
+};
+
+export type ProfilesSetInput = {
+  /** Replaces the profile's setting at that scope; `{}` unsets it, and setting a model again clears its refusal. */
+  high?: ProfileSetting;
+  medium?: ProfileSetting;
+  /** A project's override. Absent: the fleet's, which needs an admin key. */
+  projectRef?: ProjectRef;
+};
+
+/** The profiles' settings at the fleet and, when asked, a project, and what new agents run on. */
+export type ProfilesSetOutput = {
+  /** The runner's own: what a profile set nowhere runs on. */
+  defaults: ProfileRuns;
+  fleet: ProfileSettings;
+  next?: string;
+  /** The project's override; absent without projectRef. */
+  project?: ProfileSettings;
+  /**
+   * What a new agent of each profile runs on: the project's setting, else the fleet's, else the runner's own.
+   * The lead, every review and claude's helper calls run high.
+   */
+  runs: ProfileRuns;
+  truncated?: boolean;
 };
 
 /** `HubEvent.data` on `project.add_failed`: a clone that was accepted, then failed. */
@@ -5244,8 +5320,8 @@ export type TaskKind = "write" | "read" | "review";
 
 /**
  * What an agent runs on. There are exactly two: `high` is the default and what the lead, every reviewer and every
- * helper call run; `medium` is for mechanical tasks the lead picks. The node's runner picks the model and effort of
- * each.
+ * helper call run; `medium` is for mechanical tasks the lead picks. Each runs on its setting's model and effort
+ * ([`ProfileSettings`]), else on the runner's own for it.
  */
 export type TaskProfile = "high" | "medium";
 
@@ -6271,6 +6347,8 @@ export interface ToolMap {
   preview_feedback: { input: PreviewFeedbackInput; output: PreviewFeedbackOutput };
   preview_start: { input: PreviewStartInput; output: PreviewStartOutput };
   previews_list: { input: PreviewsListInput; output: PreviewsListOutput };
+  profiles_get: { input: ProfilesGetInput; output: ProfilesGetOutput };
+  profiles_set: { input: ProfilesSetInput; output: ProfilesSetOutput };
   project_add: { input: ProjectAddInput; output: ProjectAddOutput };
   project_discover: { input: ProjectDiscoverInput; output: ProjectDiscoverOutput };
   project_env_set: { input: ProjectEnvSetInput; output: ProjectEnvSetOutput };

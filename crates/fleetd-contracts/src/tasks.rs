@@ -330,7 +330,8 @@ pub struct PolicyFileTools {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PolicyFile {
-    // An older file's `defaults` (model, effort) is ignored: the lead picks a TaskProfile per task.
+    // An older file's `defaults` (model, effort) is ignored: the lead picks a TaskProfile per task, and the model and
+    // effort behind each are hub settings (profiles_set), fleet-wide or per project, so nothing in a repo competes.
     pub tools: Option<PolicyFileTools>,
     /// What the branches fleetd names start with (default `fleetd/`), for several fleets sharing one repo.
     pub branch_prefix: Option<BranchPrefix>,

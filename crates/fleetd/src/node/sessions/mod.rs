@@ -321,13 +321,14 @@ fn agent_exe(exe: std::io::Result<PathBuf>, pid: u32) -> String {
 }
 
 /// fleetd's settings overlay (`--settings`). claude ranks it above the user's own settings, so a user's `env` or
-/// allow rule can't undo what sessions depend on: the pinned claude (no autoupdate), helper calls on the one model,
+/// allow rule can't undo what sessions depend on: the pinned claude (no autoupdate), helper calls on `helper_model`,
 /// the subagent cap, the tools fleetd never gives an agent, auto memory off ([`AUTO_MEMORY_OFF_ENV`]), and `extra_env`
 /// (the session's prompt cache TTL and role defaults such as a task agent's command timeout). `skills` turns off
 /// claude's own skills of the names fleetd's plugin gives the session (`node::skills`).
 pub fn settings_overlay(
     extra_env: &[(String, String)],
     skills: serde_json::Map<String, serde_json::Value>,
+    helper_model: &str,
 ) -> String {
     let mut env = subagents_off_settings_env();
     env.extend(
@@ -336,8 +337,7 @@ pub fn settings_overlay(
             .map(|(k, v)| (k.clone(), v.as_str().into())),
     );
     env.insert("DISABLE_AUTOUPDATER".into(), "1".into());
-    let (key, model) = HELPER_MODEL_ENV;
-    env.insert(key.into(), model.into());
+    env.insert(HELPER_MODEL_ENV.0.into(), helper_model.into());
     let (key, value) = AUTO_MEMORY_OFF_ENV;
     env.insert(key.into(), value.into());
     let mut overlay = serde_json::json!({
@@ -714,10 +714,14 @@ impl SessionService {
             .map(|r| r.summary.session_id.to_string())
             .collect();
         for mut row in rows {
-            // A session stored on another model or effort resumes on its profile's: only the two run.
+            // A session stored before profiles, on another model or effort, resumes on its profile's own. One
+            // launched on a profile keeps what its settings chose.
             let runner = &service.inner.runner;
             let runs_on = runner.profile(runner.profile_of(&row.summary.model, row.summary.effort));
-            if (row.summary.model.as_str(), row.summary.effort) != (runs_on.model, runs_on.effort) {
+            if row.local.profile.is_none()
+                && (row.summary.model.as_str(), row.summary.effort)
+                    != (runs_on.model, runs_on.effort)
+            {
                 row.summary.model = runs_on.model.into();
                 row.summary.effort = runs_on.effort;
                 service.inner.store.commit(&row, &[], false)?;
@@ -1516,14 +1520,26 @@ impl SessionService {
             let first = launch.prompt.lines().next().unwrap_or_default();
             first.chars().take(80).collect()
         });
-        // Only the two profiles run, whatever an older hub asks for.
-        let profile = launch.profile.unwrap_or_else(|| {
-            self.inner.runner.profile_of(
-                launch.model.as_deref().unwrap_or_default(),
-                launch.effort.unwrap_or(Effort::High),
-            )
-        });
-        let runs_on = self.inner.runner.profile(profile);
+        // The profile's settings as the hub resolved them, else the profile's own. A hub before profiles sends only a
+        // model and effort, which name a profile.
+        let (profile, chosen) = match launch.profile {
+            Some(profile) => (profile, Some((&launch.model, launch.effort))),
+            None => (
+                self.inner.runner.profile_of(
+                    launch.model.as_deref().unwrap_or_default(),
+                    launch.effort.unwrap_or(Effort::High),
+                ),
+                None,
+            ),
+        };
+        let own = self.inner.runner.profile(profile);
+        let (model, effort) = match chosen {
+            Some((model, effort)) => (
+                model.as_deref().unwrap_or(own.model).to_owned(),
+                effort.unwrap_or(own.effort),
+            ),
+            None => (own.model.to_owned(), own.effort),
+        };
         // Setup applies to a session in a worktree of its own.
         let setup = launch
             .setup
@@ -1535,8 +1551,9 @@ impl SessionService {
                 project_id: launch.project_id.clone(),
                 title,
                 status: SessionStatus::Idle,
-                model: runs_on.model.into(),
-                effort: runs_on.effort,
+                model,
+                effort,
+                model_refused: None,
                 runtime_mode: launch.runtime_mode,
                 latest_run: None,
                 active_run_id: None,
@@ -1567,6 +1584,8 @@ impl SessionService {
                 order_id: launch.order_id.as_ref().map(|o| o.to_string()),
                 setup_pending: setup.is_some(),
                 setup: setup.clone(),
+                profile: Some(profile),
+                helper_model: launch.helper_model.as_ref().map(|m| m.to_string()),
             },
         };
         self.store().commit(&row, &[], false)?;
@@ -2080,7 +2099,15 @@ impl SessionService {
                 .into_owned(),
         ));
         let settings = dir.join("settings.json");
-        std::fs::write(&settings, settings_overlay(&role_env, skills.overrides()))?;
+        let helper_model = row
+            .local
+            .helper_model
+            .clone()
+            .unwrap_or_else(|| HELPER_MODEL_ENV.1.to_owned());
+        std::fs::write(
+            &settings,
+            settings_overlay(&role_env, skills.overrides(), &helper_model),
+        )?;
         env.extend([
             (
                 "FLEETD_NODE_SOCK".to_owned(),
@@ -2137,6 +2164,7 @@ impl SessionService {
             add_dirs: row.local.add_dirs.clone(),
             model: row.summary.model.clone(),
             effort: row.summary.effort,
+            helper_model,
             runtime_mode: row.summary.runtime_mode,
             allowed_tools: row.local.allowed_tools.clone(),
             disallowed_tools: ALWAYS_DISALLOWED
@@ -2692,6 +2720,9 @@ impl SessionService {
             {
                 return;
             }
+            if self.fall_back(id, run_id, failure, unread) {
+                return;
+            }
             if failure::retryable(failure.class) {
                 let schedule = &self.inner.config.retry_schedule_ms;
                 let attempt = {
@@ -2771,6 +2802,57 @@ impl SessionService {
             }
         }
         self.resend(id, run_id, 0, true);
+        true
+    }
+
+    /// claude refused the model a profile's setting chose: the session goes on on its profile's own model, once,
+    /// in a new process, and says so (`model_refused`) for the hub to flag the setting. A bad setting never strands
+    /// an agent. False when the failure is no refused model, or the session already runs on its profile's own.
+    fn fall_back(&self, id: &str, run_id: &str, failure: &RunFailure, unread: bool) -> bool {
+        let Ok(Some(row)) = self.store().session(id) else {
+            return false;
+        };
+        let refused = match failure.class {
+            // A request claude or the API refused for naming a model.
+            FailureClass::InvalidRequest => failure.model.is_some(),
+            // A gateway with no account for the model chosen; the profile's own may well have one.
+            FailureClass::PoolExhausted => {
+                failure.model.as_deref() == Some(row.summary.model.as_str())
+            }
+            _ => false,
+        };
+        let Some(profile) = row.local.profile.filter(|_| refused) else {
+            return false;
+        };
+        let own = self.inner.runner.profile(profile);
+        if row.summary.model == own.model {
+            return false;
+        }
+        let commands = {
+            let mut st = self.st();
+            if st.retries.contains_key(run_id) {
+                return false;
+            }
+            // Keeps the run active through the old process's exit.
+            st.retries.insert(run_id.to_owned(), 0);
+            st.live.get_mut(id).map(|live| {
+                live.closing = true;
+                live.commands.clone()
+            })
+        };
+        tracing::warn!(session_id = id, model = %row.summary.model, "claude refused the model; the session runs on {} instead", own.model);
+        self.log(self.update(id, |c| {
+            c.row.summary.model_refused = Some(c.row.summary.model.clone());
+            c.row.summary.model = own.model.to_owned();
+        }));
+        if let Some(commands) = commands {
+            tokio::spawn(async move {
+                let _ = commands
+                    .send(SessionCommand::Shutdown { grace: REAP_GRACE })
+                    .await;
+            });
+        }
+        self.schedule_retry(id, run_id, 1, 0, failure, unread);
         true
     }
 

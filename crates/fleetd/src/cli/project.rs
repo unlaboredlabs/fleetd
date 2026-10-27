@@ -1,6 +1,6 @@
-//! `fleetd project add|list|stop|remove|set`: the hub's add-a-project service (project_discover and
-//! project_add) from a terminal, one question at a time like `fleetd init`, or flags only without one. Also
-//! `fleetd machine set`, the machine's max agents, beside the project's.
+//! `fleetd project add|list|stop|remove|set|profiles`: the hub's add-a-project service (project_discover and
+//! project_add) from a terminal, one question at a time like `fleetd init`, or flags only without one, and a project's
+//! or the fleet's settings. Also `fleetd machine set`, the machine's max agents, beside the project's.
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -37,6 +37,17 @@ pub const PROJECT_USAGE: &str =
   project set <machine>/<project> --medium on|off [--home <dir>] [--hub <url>]
              whether the lead may run mechanical tasks on the medium profile (on by
              default); off runs every task on high
+  project set [<machine>/<project>] [--high-model <model>|default]
+         [--high-effort low|medium|high|max|default] [--medium-model <model>|default]
+         [--medium-effort low|medium|high|max|default] [--home <dir>] [--hub <url>]
+             the model and effort behind a task profile, fleet-wide (admin key) or as
+             the project's override. default unsets it: a project's follows the
+             fleet's, the fleet's the profile's own (claude-opus-5-5 at high or
+             medium). The lead, every review and helper calls run high. New agents
+             follow it; if claude refuses the model they run on the profile's own
+             and `project profiles` says so
+  project profiles [<machine>/<project>] [--home <dir>] [--hub <url>]
+             what each profile's agents run on, and the settings behind it
   project set <machine>/<project> [--fast-check <check>]... [--after-merge <check>]...
          [--home <dir>] [--hub <url>]
              how the merge train treats the repo's checks. It waits only for its fast
@@ -60,6 +71,10 @@ const SPEC: Spec = Spec {
         ("fleet-cap", Kind::Str),
         ("key-file", Kind::Str),
         ("medium", Kind::Str),
+        ("high-model", Kind::Str),
+        ("high-effort", Kind::Str),
+        ("medium-model", Kind::Str),
+        ("medium-effort", Kind::Str),
         ("fast-check", Kind::Multi),
         ("after-merge", Kind::Multi),
     ],
@@ -278,6 +293,7 @@ pub async fn project_command(argv: &[String]) -> u8 {
         "remove" => remove(&mut client, &out, &v).await,
         "stop" => stop(&mut client, &out, &v).await,
         "set" => set(&mut client, &out, &v).await,
+        "profiles" => profiles(&mut client, &v).await,
         other => return usage(&format!("unknown project command '{other}'")),
     };
     match result {
@@ -436,7 +452,163 @@ fn count_of(v: &args::Parsed, name: &str) -> Result<Option<u32>, Stop> {
         .transpose()
 }
 
+/// The flags that set a profile: `--high-model`, `--high-effort`, `--medium-model`, `--medium-effort`.
+const PROFILE_FLAGS: [(&str, &str, &str); 4] = [
+    ("high-model", "high", "model"),
+    ("high-effort", "high", "effort"),
+    ("medium-model", "medium", "model"),
+    ("medium-effort", "medium", "effort"),
+];
+
+/// profiles_set's input: the scope's current settings (`current`, as profiles_get reads them) with the flags given
+/// applied, `default` unsetting a field. None when no flag is given.
+pub fn profiles_input(
+    current: &Value,
+    flags: &[(&str, &str)],
+    project_ref: Option<Value>,
+) -> Result<Option<Value>, String> {
+    if flags.is_empty() {
+        return Ok(None);
+    }
+    let mut input = json!({});
+    if let Some(r) = project_ref {
+        input["projectRef"] = r;
+    }
+    for (flag, value) in flags {
+        let Some((_, profile, field)) = PROFILE_FLAGS.iter().find(|(f, _, _)| f == flag) else {
+            continue;
+        };
+        if input.get(profile).is_none() {
+            let mut setting = current.get(profile).cloned().unwrap_or_else(|| json!({}));
+            if let Some(o) = setting.as_object_mut() {
+                o.remove("refused");
+            }
+            input[profile] = setting;
+        }
+        if *value == "default" {
+            if let Some(o) = input[profile].as_object_mut() {
+                o.remove(*field);
+            }
+            continue;
+        }
+        if *field == "effort" && !matches!(*value, "low" | "medium" | "high" | "max") {
+            return Err(format!(
+                "--{flag} takes low, medium, high, max or default, got '{value}'"
+            ));
+        }
+        input[profile][field] = json!(value);
+    }
+    Ok(Some(input))
+}
+
+/// What each profile runs on, and the settings behind it, for a person.
+pub fn profiles_lines(view: &Value, project: bool) -> Vec<String> {
+    let run = |v: &Value| format!("{} at {}", s(v, "/model"), s(v, "/effort"));
+    let setting = |v: &Value| match (v.get("model"), v.get("effort")) {
+        (None, None) => "unset".to_owned(),
+        (Some(m), None) => m.as_str().unwrap_or_default().to_owned(),
+        (None, Some(e)) => format!("effort {}", e.as_str().unwrap_or_default()),
+        (Some(m), Some(e)) => format!(
+            "{} at {}",
+            m.as_str().unwrap_or_default(),
+            e.as_str().unwrap_or_default()
+        ),
+    };
+    let mut lines = Vec::new();
+    for profile in ["high", "medium"] {
+        let at = |scope: &str| {
+            view.pointer(&format!("/{scope}/{profile}"))
+                .cloned()
+                .unwrap_or(json!({}))
+        };
+        lines.push(format!("{profile:<7} {}", run(&view["runs"][profile])));
+        let mut from = vec![format!("fleet: {}", setting(&at("fleet")))];
+        if project {
+            from.push(format!("this project: {}", setting(&at("project"))));
+        }
+        from.push(format!("own: {}", run(&view["defaults"][profile])));
+        lines.push(format!("        {}", from.join(" · ")));
+        for scope in ["fleet", "project"] {
+            if let Some(why) = at(scope).get("refused").and_then(Value::as_str) {
+                lines.push(format!("        ! {why}"));
+            }
+        }
+    }
+    lines
+}
+
+/// `fleetd project profiles [<machine>/<project>]`.
+async fn profiles(client: &mut McpClient, v: &args::Parsed) -> Result<(), Stop> {
+    let project_ref = match v.positionals.first() {
+        Some(_) => {
+            let (machine, project) = find(client, v).await?;
+            Some(json!({ "machineId": machine, "projectId": s(&project, "/projectId") }))
+        }
+        None => None,
+    };
+    let project = project_ref.is_some();
+    let mut input = json!({});
+    if let Some(r) = project_ref {
+        input["projectRef"] = r;
+    }
+    let view = call(client, "profiles_get", input).await?;
+    for line in profiles_lines(&view, project) {
+        println!("{line}");
+    }
+    Ok(())
+}
+
+/// `--high-model` and the like: profiles_set at the fleet, or the project given. Whether any was given.
+async fn set_profiles(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<bool, Stop> {
+    let flags: Vec<(&str, &str)> = PROFILE_FLAGS
+        .iter()
+        .filter_map(|(f, _, _)| v.str(f).map(|value| (*f, value)))
+        .collect();
+    if flags.is_empty() {
+        return Ok(false);
+    }
+    let project_ref = match v.positionals.first() {
+        Some(_) => {
+            let (machine, project) = find(client, v).await?;
+            Some(json!({ "machineId": machine, "projectId": s(&project, "/projectId") }))
+        }
+        None => None,
+    };
+    let mut get = json!({});
+    if let Some(r) = &project_ref {
+        get["projectRef"] = r.clone();
+    }
+    let current = call(client, "profiles_get", get).await?;
+    let scope = if project_ref.is_some() {
+        "project"
+    } else {
+        "fleet"
+    };
+    let project = project_ref.is_some();
+    let input = profiles_input(&current[scope], &flags, project_ref)
+        .map_err(|m| Stop(2, m, None))?
+        .unwrap_or_default();
+    let body = call(client, "profiles_set", input).await?;
+    out.success(body.get("next").and_then(Value::as_str).unwrap_or("Set."));
+    for line in profiles_lines(&body, project) {
+        println!("{line}");
+    }
+    Ok(true)
+}
+
 async fn set(client: &mut McpClient, out: &Out, v: &args::Parsed) -> Result<(), Stop> {
+    if set_profiles(client, out, v).await? {
+        let others = [
+            "medium",
+            "max-agents",
+            "fleet-cap",
+            "fast-check",
+            "after-merge",
+        ];
+        if !others.iter().any(|o| v.has(o)) {
+            return Ok(());
+        }
+    }
     let medium = match v.str("medium") {
         None => None,
         Some("on") => Some(true),
@@ -1006,6 +1178,56 @@ fn finish(out: &Out) -> Result<(), Stop> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn profile_flags_change_only_their_field() {
+        let current = json!({
+            "high": { "model": "claude-sonnet-5-5", "effort": "max", "refused": "claude on devbox refused it" },
+            "medium": {},
+        });
+        assert_eq!(profiles_input(&current, &[], None), Ok(None));
+        // The effort stays, the refusal is the hub's.
+        assert_eq!(
+            profiles_input(&current, &[("high-model", "claude-fable-5-1")], None),
+            Ok(Some(
+                json!({ "high": { "model": "claude-fable-5-1", "effort": "max" } })
+            ))
+        );
+        let r = json!({ "machineId": "devbox", "projectId": "p1" });
+        assert_eq!(
+            profiles_input(
+                &current,
+                &[("high-effort", "default"), ("medium-effort", "low")],
+                Some(r.clone())
+            ),
+            Ok(Some(json!({
+                "projectRef": r,
+                "high": { "model": "claude-sonnet-5-5" },
+                "medium": { "effort": "low" },
+            })))
+        );
+        assert!(profiles_input(&current, &[("medium-effort", "xhigh")], None).is_err());
+    }
+
+    #[test]
+    fn profiles_read_as_what_runs_and_why() {
+        let view = json!({
+            "fleet": { "high": { "model": "claude-nope", "effort": "max", "refused": "claude on devbox refused claude-nope" }, "medium": {} },
+            "project": { "high": {}, "medium": { "effort": "low" } },
+            "runs": { "high": { "model": "claude-opus-5-5", "effort": "max" }, "medium": { "model": "claude-opus-5-5", "effort": "low" } },
+            "defaults": { "high": { "model": "claude-opus-5-5", "effort": "high" }, "medium": { "model": "claude-opus-5-5", "effort": "medium" } },
+        });
+        assert_eq!(
+            profiles_lines(&view, true),
+            [
+                "high    claude-opus-5-5 at max",
+                "        fleet: claude-nope at max · this project: unset · own: claude-opus-5-5 at high",
+                "        ! claude on devbox refused claude-nope",
+                "medium  claude-opus-5-5 at low",
+                "        fleet: unset · this project: effort low · own: claude-opus-5-5 at medium",
+            ]
+        );
+    }
 
     #[test]
     fn machine_roles_read_from_the_command_line() {
