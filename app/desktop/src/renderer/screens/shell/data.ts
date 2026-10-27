@@ -1,5 +1,5 @@
 // The sidebar's projects, from the data layer: the project list (needs-you and agents at work), the open requests
-// (what a lead waits on you for), Status's rows (what is blocked) and what you last saw in each chat. Offline, the
+// (what a lead waits on you for), Status's rows (what is blocked, what is red on main) and what you last saw in each chat. Offline, the
 // projects held from before, with their marks as last known (the open requests the store keeps).
 import { useEffect, useMemo } from "react";
 import { useData, useToolQuery } from "../../src/data/react";
@@ -23,6 +23,10 @@ export const useSidebarProjects = (open: ProjectKey | null): ReadonlyArray<Sideb
     () => (status === undefined ? undefined : new Map(status.filter((r) => r.state === "blocked").map((r) => [projectId(r.projectRef), r.blockedReason]))),
     [status],
   );
+  const warnings = useMemo(
+    () => (status === undefined ? undefined : new Map(status.flatMap((r) => (r.warning === undefined ? [] : [[projectId(r.projectRef), r.warning] as const])))),
+    [status],
+  );
   const openKey = open === null ? null : projectId(open);
   // The open chat is seen as it grows; a project seen for the first time starts read, not as a backlog of unread.
   useEffect(() => {
@@ -34,7 +38,7 @@ export const useSidebarProjects = (open: ProjectKey | null): ReadonlyArray<Sideb
     }
     markSeen(marks);
   }, [rows, openKey, seen]);
-  return useMemo(() => toSidebar(rows, { requests, blocked, seen, open }), [rows, requests, blocked, seen, open]);
+  return useMemo(() => toSidebar(rows, { requests, blocked, warnings, seen, open }), [rows, requests, blocked, warnings, seen, open]);
 };
 
 /** Machines not online, for the sidebar's Machines entry; undefined until known. */

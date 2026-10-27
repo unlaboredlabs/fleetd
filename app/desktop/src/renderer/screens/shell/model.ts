@@ -22,6 +22,8 @@ export interface SidebarProject extends ProjectRow {
   readonly want: Want | undefined;
   /** The lead's chat has a message newer than the one you last saw there. */
   readonly unread: boolean;
+  /** Status's warning, which stops nothing: a check red on main, and whether a fix is under way. */
+  readonly warning?: string | undefined;
 }
 
 /** The parts of an open request (requests_list) the marks count. */
@@ -37,6 +39,8 @@ export interface MarksIn {
   readonly requests?: ReadonlyArray<RequestIn> | undefined;
   /** Status's blocked projects (status_get rows), by "machineId/projectId", with why. */
   readonly blocked?: ReadonlyMap<string, string | undefined> | undefined;
+  /** Status's warnings (a red main), by "machineId/projectId". */
+  readonly warnings?: ReadonlyMap<string, string> | undefined;
   /** The chat seq last seen per "machineId/projectId" (data/seen.ts). */
   readonly seen?: Readonly<Record<string, number>> | undefined;
   /** The project on screen: never unread. */
@@ -70,7 +74,7 @@ export const toSidebar = (rows: ReadonlyArray<ProjectRow> | undefined, marks: Ma
   return rows?.map((r): SidebarProject => {
     const seen = marks.seen?.[r.key];
     const unread = r.key !== open && r.lastSeq !== undefined && seen !== undefined && r.lastSeq > seen;
-    return { ...r, want: wantOf(r, marks), unread };
+    return { ...r, want: wantOf(r, marks), unread, warning: marks.warnings?.get(r.key) };
   });
 };
 

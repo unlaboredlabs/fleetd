@@ -50,7 +50,7 @@ export interface SidebarProps {
 
 const UNREAD = "New message from the lead";
 
-/** The row's one mark: why it wants you, else a new message, else how many agents work. */
+/** The row's one mark: why it wants you, else a new message, else a red main, else how many agents work. */
 const mark = (p: SidebarProject): { readonly node: ReactNode; readonly tip: string } | null => {
   const want = p.want;
   if (want !== undefined) {
@@ -71,6 +71,8 @@ const mark = (p: SidebarProject): { readonly node: ReactNode; readonly tip: stri
     };
   }
   if (p.unread) return { node: <Dot color="var(--accent)" label={UNREAD} />, tip: UNREAD };
+  // It stops nothing, so the word without the weight that asks for you.
+  if (p.warning !== undefined) return { node: <Text size="xs" tone="warning">CI red</Text>, tip: p.warning };
   if (p.running > 0) {
     return {
       node: (

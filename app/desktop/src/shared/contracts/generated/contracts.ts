@@ -3793,6 +3793,11 @@ export type ProjectStatusRow = {
    * login)"), which `blocked_reason` may not be when the machine is also degraded.
    */
   usagePausedReason?: string;
+  /**
+   * Worth knowing, but it stops nothing: a check red on main, and whether a fix is under way ("`ios sessions` is
+   * red on main, fix in progress"). Any state.
+   */
+  warning?: string;
 };
 
 export type ProjectStopInput = {

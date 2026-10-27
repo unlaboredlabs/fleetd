@@ -164,8 +164,8 @@ fn word(row: &ProjectStatusRow) -> String {
     }
 }
 
-/// One project: its word, its groups' counts, agents and last merge, its last 7 days' merges, each listed item, and
-/// whether it is stale.
+/// One project: its word, its groups' counts, agents and last merge, its last 7 days' merges, its warning (a red
+/// main), each listed item, and whether it is stale.
 fn render_row(row: &ProjectStatusRow, zone: Tz) -> Vec<String> {
     let now = &row.as_of;
     let mut out = vec![format!("{}: {}", row.title, word(row))];
@@ -195,6 +195,9 @@ fn render_row(row: &ProjectStatusRow, zone: Tz) -> Vec<String> {
             .map(|p| format!(" · {}% through fleetd", p.get().round() as i64))
             .unwrap_or_default();
         out.push(format!("  {} merged in 7 days{share}", n.get()));
+    }
+    if let Some(warning) = &row.warning {
+        out.push(format!("  warning: {warning}"));
     }
     out.extend(row.items.iter().map(item_line));
     if let Some(mark) = &row.stale {
@@ -578,6 +581,19 @@ mod tests {
             "Status at 14:02:07\n\nstorefront: working\n  1 waiting on you · 1 in review · 2 working · 9 done · 1 agent · \
              merged Add the login page #208 13:12:00\n  12 merged in 7 days · 64% through fleetd\n  \
              waiting on you: Deploy to staging (approval)\n  in review: Add the cart page (T4, #212)"
+        );
+    }
+
+    #[test]
+    fn a_red_main_is_a_warning_under_a_working_row() {
+        let row = row(json!({ "warning": "`ios sessions` is red on main, fix in progress" }));
+        let text = render(&[row], chrono_tz::UTC);
+        assert!(
+            text.contains(
+                "storefront: working\n  1 waiting on you · 1 in review · 2 working · 9 done · 1 agent · merged Add the \
+                 login page #208 13:12:00\n  warning: `ios sessions` is red on main, fix in progress\n"
+            ),
+            "{text}"
         );
     }
 

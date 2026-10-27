@@ -449,15 +449,15 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("button", { name: "Approve", exact: true })).toBeInViewport();
     },
   },
-  // A blocked project: the line above the box says why, in the hub's words (checkout's main CI is red).
+  // A red main is a warning above the box, in the hub's words, not a block (checkout's `ios sessions`).
   {
     id: "chat",
     route: "#/project/devbox/6e8e753c-fe9a-4b79-aec3-5812d498c197",
     fixtures: ["sidebar-reasons"],
-    variant: "blocked",
+    variant: "red-main",
     open: async (page) => {
       await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
-      await expect(page.locator('[data-attention="blocked"]')).toHaveText("Blocked: main CI is red on acme/checkout");
+      await expect(page.locator('[data-attention="warning"]')).toHaveText("`ios sessions` is red on main, fix in progress");
     },
   },
   // An empty chat's starter fills the box (never sends) and gives it the cursor.

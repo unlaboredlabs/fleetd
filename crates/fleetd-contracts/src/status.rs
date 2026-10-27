@@ -43,8 +43,8 @@ pub enum ProjectRowState {
     Working,
     /// The lead is waiting for your reply.
     WaitingOnYou,
-    /// Something outside the work stops it: its machine is offline, at its usage limit or short of disk or CPU for new
-    /// agents, or main CI is red.
+    /// Something outside the work stops it: its machine is offline, or at its usage limit or short of disk or CPU for
+    /// new agents. A red main is not one: the train keeps merging (`warning`).
     Blocked,
     /// Nothing running and nothing waiting.
     Idle,
@@ -149,6 +149,9 @@ pub struct ProjectStatusRow {
     /// With `usage_paused_on`: the pause in its own words ("paused until Sun 23:40 UTC (usage limit on devbox's
     /// login)"), which `blocked_reason` may not be when the machine is also degraded.
     pub usage_paused_reason: Option<Line<1, 160>>,
+    /// Worth knowing, but it stops nothing: a check red on main, and whether a fix is under way ("`ios sessions` is
+    /// red on main, fix in progress"). Any state.
+    pub warning: Option<Line<1, 160>>,
     pub counts: StatusCounts,
     /// Group by group in `StatusGroup` order, newest first in each, at most `STATUS_ITEMS_PER_GROUP` per group.
     pub items: List<StatusItem, 0, 48>,
