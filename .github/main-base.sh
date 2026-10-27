@@ -19,3 +19,5 @@ gh api "repos/$GH_REPO/actions/workflows/$workflow/runs?branch=main&event=push&p
       exit 0
     fi
   done
+# A failed lookup prints nothing and must not fail the caller's step.
+exit 0
