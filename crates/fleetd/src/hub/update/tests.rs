@@ -1109,6 +1109,7 @@ async fn update_always_starts_and_a_run_left_over_ends() {
     let updates = area(home.path(), &fake);
     let left = updates.status().unwrap();
     assert!(left.finished_at.is_none());
+    assert!(updates.left_over());
     let started = updates.start(None).unwrap();
     assert_ne!(started.id, left.id, "a new run, not the one left over");
     assert_eq!(
@@ -1137,6 +1138,68 @@ async fn update_always_starts_and_a_run_left_over_ends() {
     let run = after.status().unwrap();
     assert!(run.finished_at.is_some());
     assert_eq!(state(&run, Some("builder")).0, UpdateState::Skipped);
+}
+
+/// Start over ends the run going on, once the hub has its result, and starts a new one: the run's own tasks stop, so a
+/// machine it waited on is asked once, by the new run. While the hub restarts, the run is returned as it is.
+#[tokio::test]
+async fn start_over_ends_the_run_going_on_and_starts_a_new_one() {
+    let home = tempfile::tempdir().unwrap();
+    let fake = Arc::new(Fake::new(home.path(), b"new").node(
+        "devbox",
+        OLD,
+        true,
+        true,
+        Some(Answer::BackOn(NEW)),
+    ));
+    fake.nodes.lock().unwrap()[0].busy = Some("1 live session".into());
+    let updates = area(home.path(), &fake);
+    let first = updates.start(None).unwrap();
+    until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
+    assert_eq!(
+        updates.start_over(None).unwrap().id,
+        first.id,
+        "not while the hub restarts"
+    );
+
+    *fake.running.lock().unwrap() = NEW.into();
+    let verdict = fake.plans.lock().unwrap()[0].verdict.clone();
+    fs::write(
+        &verdict,
+        json!({ "state": "done", "message": "runs it" }).to_string(),
+    )
+    .unwrap();
+    let after = area(home.path(), &fake);
+    assert!(
+        after.left_over(),
+        "nothing drives it until the hub takes it on"
+    );
+    tokio::spawn(after.clone().resume());
+    until(&after, |r| {
+        said(r, "devbox").starts_with("waits until it's idle")
+    })
+    .await;
+    assert!(!after.left_over());
+
+    let again = after.start_over(None).unwrap();
+    assert_ne!(again.id, first.id);
+    assert!(again.finished_at.is_none());
+    until(&after, |r| {
+        r.id == again.id && said(r, "devbox").starts_with("waits until it's idle")
+    })
+    .await;
+    fake.nodes.lock().unwrap()[0].busy = None;
+    let run = until(&after, |r| r.finished_at.is_some()).await;
+    assert_eq!(run.id, again.id);
+    assert_eq!(state(&run, Some("devbox")).0, UpdateState::Done);
+    tokio::time::sleep(Duration::from_millis(30)).await;
+    assert_eq!(
+        *fake.asked.lock().unwrap(),
+        ["devbox"],
+        "asked once: the old run's task stopped"
+    );
+    assert_eq!(after.status().unwrap().id, again.id);
+    assert!(!after.left_over());
 }
 
 mod on_a_real_hub {

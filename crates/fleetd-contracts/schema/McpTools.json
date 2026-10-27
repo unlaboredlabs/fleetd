@@ -5950,12 +5950,20 @@
         "machine": {
           "$ref": "#/$defs/MachineId",
           "description": "Retry this machine of the last run, whose hub updated: its node, then its Claude Code."
+        },
+        "startOver": {
+          "description": "Start over: ends the run going on, once the hub has its result (never while the hub restarts), with every part\nleft skipped, and starts a new one.",
+          "type": "boolean"
         }
       },
       "type": "object"
     },
     "HubUpdateOutput": {
       "properties": {
+        "leftOver": {
+          "description": "True when the run isn't finished but nothing in the hub drives it any more: it won't change again, and Update\nstarts a new one. Absent otherwise.",
+          "type": "boolean"
+        },
         "next": {
           "type": "string"
         },

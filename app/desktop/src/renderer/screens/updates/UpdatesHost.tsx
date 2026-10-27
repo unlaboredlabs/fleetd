@@ -7,7 +7,7 @@ import { Dialog, toast } from "../../ui";
 import { useData, useDataLayer } from "../../src/data/react";
 import { useCommands } from "../palette";
 import { useUpdatesView } from "./hooks";
-import { loadRun, READY_EVERY_MS, retryMachine, startUpdate, useFlow, type FlowDeps } from "./flow";
+import { loadRun, READY_EVERY_MS, retryMachine, startOver, startUpdate, useFlow, type FlowDeps } from "./flow";
 import type { AppAction, Notice, Retry } from "./model";
 import { noticeOnce, storedNotice } from "./notice";
 import { appUpdate, setUpdatesOpen, useAppUpdate, useUpdatesOpen } from "./state";
@@ -121,7 +121,13 @@ export function UpdatesHost() {
   return (
     <Boundary part="the updates sheet" overlay={{ onError: () => setUpdatesOpen(false) }}>
       <Dialog open onOpenChange={setUpdatesOpen} title="Updates">
-        <UpdatesSheet view={view} onUpdate={() => void startUpdate(deps)} onRetry={retry} onApp={(a: AppAction) => runApp(a)} />
+        <UpdatesSheet
+          view={view}
+          onUpdate={() => void startUpdate(deps)}
+          onStartOver={() => void startOver(deps)}
+          onRetry={retry}
+          onApp={(a: AppAction) => runApp(a)}
+        />
       </Dialog>
     </Boundary>
   );

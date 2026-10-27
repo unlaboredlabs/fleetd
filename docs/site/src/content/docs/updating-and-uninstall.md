@@ -53,6 +53,11 @@ When a part fails, the others still finish:
 - If the hub moves to another build before every machine is done (with `fleetd update` on its machine, say), the update
   ends there: each machine still to go says the hub moved on, and **Update** brings them to the newest build.
 
+An update that stops moving once the hub is done (a machine waits on a session that won't end, say) gets a quiet **Start
+over** beside it. It shows when nothing has changed for 10 minutes, or at once when nothing in the hub drives the update
+any more. Start over ends that update, with each part still to go skipped, and starts a new one. It never shows while the
+hub itself restarts.
+
 A failed or skipped machine has **Retry** on its line, which updates just that machine (its fleetd, then its Claude
 Code) to the build the hub runs. If the hub has moved to another build since (with `fleetd update` on its machine,
 say), Retry says so instead, and **Update** brings every machine to the hub's build. After a part failed, the app

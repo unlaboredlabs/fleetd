@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Call, UpdatePart, UpdateRun } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
 import type { AppUpdate, UpdatesState } from "../../../shared/updates";
-import { BEFORE_UPDATE, currentFlow, currentReady, loadRun, resetFlow, retryMachine, startUpdate, type FlowDeps } from "./flow";
+import { BEFORE_UPDATE, currentFlow, currentReady, loadRun, resetFlow, retryMachine, startOver, startUpdate, type FlowDeps } from "./flow";
 
 const NEXT = "0.0.0-nightly.202610261056+1b563d7";
 
@@ -192,5 +192,41 @@ describe("the Update button's run", () => {
     const pressed = deps({ ok: true, run: runOf("current", true) }, [], { kind: "ready", version: NEXT });
     await startUpdate(pressed.d);
     expect(pressed.d.app.install).toHaveBeenCalledOnce();
+  });
+
+  it("starts over: the hub ends a run that stopped moving, and this window follows the new one through", async () => {
+    const waiting: UpdatePart = { part: "node", machineId: "devbox", name: "devbox", from: "0.0.0", state: "waiting", message: "waits until it's idle" };
+    const stuck: UpdateRun = { ...runOf("done", false), parts: [...runOf("done", false).parts, waiting] };
+    const fresh: UpdateRun = { ...runOf("current", true), id: "U2" };
+    const calls: [string, unknown][] = [];
+    let started = false;
+    let now = 1_000;
+    const call = ((tool: string, input: unknown) => {
+      calls.push([tool, input]);
+      if (tool === "hub_update") started = true;
+      const output = tool === "hub_update" || started ? { run: fresh } : { run: stuck, leftOver: true };
+      return Promise.resolve({ ok: true as const, output });
+    }) as unknown as Call;
+    const d = {
+      call,
+      retry: vi.fn(),
+      now: () => now,
+      // A real turn of the event loop, so the test acts while the run is followed.
+      sleep: vi.fn(() => {
+        now += 500;
+        return new Promise<void>((done) => setTimeout(done, 0));
+      }),
+      app: { state: (): UpdatesState => ({ current: NEXT, app: { kind: "current" }, release: null }), check: vi.fn(), install: vi.fn() },
+    } satisfies FlowDeps;
+
+    const followed = loadRun(d);
+    // Followed, unchanged since this window first read it, and the hub says nothing drives it.
+    await vi.waitFor(() => expect(currentFlow()).toEqual({ phase: "following", reconnecting: false, since: 1_000, leftOver: true }));
+    await startOver(d);
+    await followed;
+    expect(calls.filter(([tool]) => tool === "hub_update")).toEqual([["hub_update", { startOver: true }]]);
+    // The earlier follow stopped: nothing read after the new run ended.
+    expect(calls.at(-1)?.[0]).toBe("hub_update");
+    expect(currentFlow()).toEqual({ phase: "finished", updated: true });
   });
 });

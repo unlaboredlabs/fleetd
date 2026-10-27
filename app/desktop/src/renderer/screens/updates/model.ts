@@ -91,7 +91,13 @@ export interface UpdatesView {
   readonly progress: Line | null;
   /** A run goes on: this app's update waits for it, so its own action steps back. */
   readonly going: boolean;
+  /** Start over, quiet beside a run that stopped moving once the hub has its result: why it shows. Null otherwise. */
+  readonly startOver: { readonly note: string } | null;
 }
+
+/** How long a followed run goes unchanged before Start over shows beside it. A machine's own restart is back well
+ * within it; a busy machine's wait can last hours. */
+export const STALE_MS = 10 * 60_000;
 
 const channelOf = (version: string): "nightly" | "stable" => (version.includes("-nightly.") ? "nightly" : "stable");
 
@@ -540,5 +546,16 @@ export const updatesView = ({ app, hub, machines = [], run = null, flow = { phas
         : outdated && hub.url !== null
           ? { tone: "accent", text: "Update available" }
           : ofApp;
-  return { line, notice, lines, app: app === null ? null : appPart(app), hub: hubPart, nodes, update, progress, going };
+  // Never while the hub restarts: only the machines' part of a run can start over.
+  const stale = flow.phase === "following" && !flow.reconnecting && (flow.leftOver === true || (flow.since !== undefined && now - flow.since >= STALE_MS));
+  const startOver =
+    stale && runGoing && hubUpdated(live)
+      ? {
+          note:
+            flow.leftOver === true
+              ? "Nothing in the hub drives this update any more. Start over ends it and starts a new one."
+              : `Nothing has changed for ${String(Math.floor((now - (flow.since ?? now)) / 60_000))} minutes. Start over ends this update and starts a new one.`,
+        }
+      : null;
+  return { line, notice, lines, app: app === null ? null : appPart(app), hub: hubPart, nodes, update, progress, going, startOver };
 };
