@@ -54,7 +54,7 @@ Notion comes through its official MCP server, [`@notionhq/notion-mcp-server`](ht
 with an integration you make in your own workspace. It runs on the Navi's machine with `npx`, so that machine needs
 Node.js.
 
-1. Open [notion.so/profile/integrations](https://www.notion.so/profile/integrations) and create a **new integration**:
+1. Open `notion.so/profile/integrations` in Notion and create a **new integration**:
    **Internal**, in the workspace the Navi should use. Name it Navi.
 2. Under **Capabilities**, keep Read content, Update content and Insert content. Add the comment ones if the Navi
    should comment.
