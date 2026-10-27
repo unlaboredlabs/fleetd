@@ -3639,3 +3639,114 @@ async fn a_refusal_of_another_model_than_the_session_s_never_falls_back() {
     assert_eq!((done.model.as_str(), done.model_refused), ("gw-opus", None));
     assert_eq!(hub.runner.spawned().len(), 1);
 }
+
+#[tokio::test]
+async fn a_navi_gets_its_folder_under_the_node_home_and_its_lead_the_assistant_rules() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("init-partial-two-turns"),
+    )
+    .await;
+    // A relative root is a folder under the node's home, made on demand; one that would leave it is refused.
+    let made = hub
+        .ok(SessionCall::ProjectUpsert {
+            project_id: ProjectId::unchecked("p1"),
+            title: NonEmpty::unchecked("Ada"),
+            workspace_root: NonEmpty::unchecked("navi/ada"),
+        })
+        .await;
+    let folder = dir.path().join("node/navi/ada");
+    assert_eq!(
+        made,
+        SessionOutput::Folder {
+            path: folder.to_string_lossy().into_owned()
+        }
+    );
+    assert!(folder.is_dir());
+    assert!(!folder.join(".git").exists());
+    // The same Navi again keeps its folder; another project never takes it over.
+    hub.ok(SessionCall::ProjectUpsert {
+        project_id: ProjectId::unchecked("p1"),
+        title: NonEmpty::unchecked("Ada"),
+        workspace_root: NonEmpty::unchecked("navi/ada"),
+    })
+    .await;
+    std::fs::create_dir_all(dir.path().join("node/navi/left")).unwrap();
+    for (id, root) in [("p3", "navi/ada"), ("p4", "navi/left")] {
+        let SessionResult::Err(e) = hub
+            .call(SessionCall::ProjectUpsert {
+                project_id: ProjectId::unchecked(id),
+                title: NonEmpty::unchecked("x"),
+                workspace_root: NonEmpty::unchecked(root),
+            })
+            .await
+        else {
+            panic!("{root} was taken over")
+        };
+        assert!(
+            e.message
+                .starts_with(fleetd_contracts::sessions::FOLDER_TAKEN),
+            "{}",
+            e.message
+        );
+    }
+    for bad in ["../ada", "navi/../../ada", "navi/.hidden"] {
+        let refused = hub
+            .call(SessionCall::ProjectUpsert {
+                project_id: ProjectId::unchecked("p2"),
+                title: NonEmpty::unchecked("x"),
+                workspace_root: NonEmpty::unchecked(bad),
+            })
+            .await;
+        assert!(matches!(refused, SessionResult::Err(_)), "{bad}");
+    }
+    let SessionCall::Launch(mut navi) =
+        launch("s1", RuntimeMode::ApprovalRequired, SessionWorkspace::Root)
+    else {
+        unreachable!()
+    };
+    navi.role = fleetd_contracts::sessions::SessionRole::Assistant;
+    navi.disallowed_tools = vec![];
+    hub.ok(SessionCall::Launch(navi)).await;
+    hub.settled("r1").await;
+    let spec = hub.runner.spawned()[0].clone();
+    assert_eq!(spec.cwd, folder);
+    assert_eq!(spec.runtime_mode, RuntimeMode::ApprovalRequired);
+    // Nothing reads files or fetches unasked: every such call asks, above any allow rule, and the node or the hub
+    // answers it.
+    assert!(
+        !spec
+            .allowed_tools
+            .iter()
+            .any(|t| t == "Read" || t == "WebFetch")
+    );
+    let overlay: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(spec.settings.as_ref().unwrap()).unwrap())
+            .unwrap();
+    for tool in ["Read", "Write", "WebFetch"] {
+        assert!(
+            overlay["permissions"]["ask"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|t| t == tool),
+            "{tool}: {overlay}"
+        );
+    }
+    // The project's own rules come first, then the role's.
+    assert_eq!(spec.allowed_tools[0], "Bash(npm test:*)");
+    assert!(spec.allowed_tools.iter().any(|t| t == "WebSearch"));
+    for tool in ["Edit", "Write", "WebFetch", "WebSearch"] {
+        assert!(!spec.disallowed_tools.iter().any(|t| t == tool), "{tool}");
+    }
+    // A lead's fleetd tools.
+    let mcp: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(spec.mcp_config.as_ref().unwrap()).unwrap())
+            .unwrap();
+    assert_eq!(
+        mcp["mcpServers"]["fleetd"]["args"],
+        serde_json::json!(["agent-mcp", "--role", "lead"])
+    );
+}

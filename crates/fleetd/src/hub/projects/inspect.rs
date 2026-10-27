@@ -173,6 +173,22 @@ pub fn build(
 }
 
 /// One line for a person: the most important thing the lead and the merge train will need here.
+/// What a plain folder's lead can do, as its inspect says it.
+pub const FOLDER_NEEDS: &str = "a plain folder with no git: its lead chats, remembers and uses screens here; agents \
+                                that change code need a git repo";
+
+/// The inspect of a plain folder: no git, so no repo, branch, CI or merge rules.
+pub fn folder() -> ProjectInspect {
+    ProjectInspect {
+        repo: None,
+        default_branch: None,
+        ci: CiInfo::default(),
+        merge: MergeRules::default(),
+        lead_needs: Text::unchecked(FOLDER_NEEDS),
+        notes: vec![],
+    }
+}
+
 pub fn lead_needs(i: &ProjectInspect, gh_ok: bool, unread: &[String]) -> String {
     let branch = i.default_branch.as_deref().unwrap_or("the default branch");
     let Some(repo) = &i.repo else {

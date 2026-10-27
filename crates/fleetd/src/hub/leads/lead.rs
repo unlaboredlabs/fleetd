@@ -1,4 +1,5 @@
-//! One lead per project: a thread on the project's machine, started with the lead prompt plus the digest.
+//! One lead per project: a thread on the project's machine, started with the lead prompt plus the digest. A Navi's
+//! lead starts from `navi.start` in the assistant role, and not at all while the Navi is archived.
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -8,7 +9,10 @@ use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadRef, Timestamp};
 use fleetd_contracts::ledger::{Lead, LeadState, WorkstreamState};
 use fleetd_contracts::mcp::ErrorCode;
-use fleetd_contracts::model::{ProjectSummary, RuntimeMode, ThreadStatus, ThreadSummary};
+use fleetd_contracts::model::{
+    ProjectKind, ProjectSummary, RuntimeMode, ThreadStatus, ThreadSummary,
+};
+use fleetd_contracts::sessions::SessionRole;
 use tokio::sync::Mutex;
 
 use super::digest::clip;
@@ -90,6 +94,9 @@ impl Leads {
         let _guard = self.lock.lock().await;
         // Its lead record stays with its history, but an archived project's lead is never handed out.
         refuse_archived(&self.ctx.db, r)?;
+        if let Some(archived) = self.archived(r) {
+            return Err(archived);
+        }
         if let Some(existing) = self.records.lead_get(r)? {
             return Ok((self.with_state(existing)?, false));
         }
@@ -105,6 +112,9 @@ impl Leads {
         if let Err(e) = refuse_archived(&self.ctx.db, r) {
             return AutoStart::Held(e);
         }
+        if let Some(archived) = self.archived(r) {
+            return AutoStart::Held(archived);
+        }
         match self.get(r) {
             Ok(Some(lead)) => return AutoStart::Running(lead),
             Ok(None) => {}
@@ -115,6 +125,17 @@ impl Leads {
             Ok((lead, false)) => AutoStart::Running(lead),
             Err(e) => AutoStart::Held(e),
         }
+    }
+
+    /// Why an archived Navi's lead doesn't start or take a message; none for any other project.
+    fn archived(&self, r: &ProjectRef) -> Option<LeadError> {
+        let project = self.ctx.store.project_get(r).ok().flatten()?;
+        project.archived_at.as_ref()?;
+        Some(LeadError::new(
+            ErrorCode::Invalid,
+            format!("{} is archived: its lead doesn't start.", project.title),
+            "Bring it back with navi_archive (archived false) or in the app; a message waits until then.",
+        ))
     }
 
     /// Starts the lead of each project on `machine_id` that has orders waiting as drafts and no lead.
@@ -351,6 +372,10 @@ impl Leads {
         first: Option<&str>,
     ) -> Result<Lead, LeadError> {
         refuse_archived(&self.ctx.db, r)?;
+        // Every start comes here (a first start, a restart, a fresh start of a cold lead): an archived Navi gets none.
+        if let Some(archived) = self.archived(r) {
+            return Err(archived);
+        }
         // M4 usage: no lead turn goes into a login fleetd knows is exhausted.
         if let Some(paused) = self
             .ctx
@@ -371,6 +396,9 @@ impl Leads {
         let set = self.ctx.db.prompts().current(Some(r));
         let medium = self.records.medium_allowed(r)?;
         let (digest, idle) = self.wakes.digest_to_send(r).await?;
+        // A Navi's lead runs from `navi.start` in the assistant role: manual permission mode, so every tool off its
+        // read allow-list asks a person first (approvals/permissions.rs).
+        let navi = project.kind == Some(ProjectKind::Assistant);
         let mut prompt = render_lead_start(
             &set,
             r,
@@ -378,6 +406,7 @@ impl Leads {
             medium,
             &digest,
             &self.ctx.db.memory().injected(r, true),
+            navi.then_some(project.workspace_root.as_str()),
         );
         if let Some(repos) = super::prompt::repos_block(r, &project.repos) {
             prompt = format!("{}\n\n{repos}", prompt.trim_end());
@@ -398,7 +427,11 @@ impl Leads {
             project_id: r.project_id.clone(),
             prompt: prompt.clone(),
             profile: TaskProfile::High,
-            runtime_mode: RuntimeMode::FullAccess,
+            runtime_mode: if navi {
+                RuntimeMode::ApprovalRequired
+            } else {
+                RuntimeMode::FullAccess
+            },
             title: Some(title),
             // The node's launch is idempotent on the id, so the id names this launch: a hub started on a fresh
             // database must get a new thread, not the one an earlier hub launched for the same project.
@@ -407,7 +440,12 @@ impl Leads {
                 r.machine_id, r.project_id
             ),
         };
-        let thread_id = self.ctx.ports().launch(&r.machine_id, input).await?;
+        let role = if navi {
+            SessionRole::Assistant
+        } else {
+            SessionRole::Lead
+        };
+        let thread_id = self.ctx.ports().launch(&r.machine_id, input, role).await?;
         self.wakes.idle_sent(r, idle);
         let at: Timestamp = at.into();
         // Every later message to this thread renders from the texts it starts with.
@@ -436,7 +474,7 @@ impl Leads {
             project_id: Some(r.project_id.clone()),
             thread_id: Some(thread_id),
             summary: format!("Lead of {} started (session {session_generation})", project.title),
-            data: Some(serde_json::json!({ "sessionGeneration": session_generation, "profile": TaskProfile::High, "promptRef": set.get("lead.start").r#ref, "textSha": text_sha })),
+            data: Some(serde_json::json!({ "sessionGeneration": session_generation, "profile": TaskProfile::High, "promptRef": set.get(super::prompt::start_prompt(navi)).r#ref, "textSha": text_sha })),
             attention: None,
         })?;
         self.with_state(lead)

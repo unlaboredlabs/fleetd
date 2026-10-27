@@ -20,7 +20,7 @@ use std::sync::Arc;
 
 use fleetd_contracts::effort::{Effort, TaskProfile};
 use fleetd_contracts::model::RuntimeMode;
-use fleetd_contracts::sessions::{RESUME_REFUSED, RunnerInfo, SessionRole};
+use fleetd_contracts::sessions::{PermissionDecision, RESUME_REFUSED, RunnerInfo, SessionRole};
 
 use super::{
     BoxFut, ProfileModel, Runner, RunnerError, SessionHandle, SessionSpec, process, scope,
@@ -119,14 +119,187 @@ explained! {
     ]
 }
 
-/// The tools denied to a session of `role` beyond [`ALWAYS_DISALLOWED`].
+/// The tools denied to a session of `role` beyond [`ALWAYS_DISALLOWED`]. A Navi's lead keeps Edit, Write and the web:
+/// [`role_answer`] decides its file tools, and the hub's site gate its fetches.
 pub fn role_disallowed(role: SessionRole) -> impl Iterator<Item = &'static str> {
     let (agent, lead): (&[&str], &[&str]) = match role {
         SessionRole::Plain => (&[], &[]),
-        SessionRole::Worker => (AGENT_DISALLOWED, &[]),
+        SessionRole::Worker | SessionRole::Assistant => (AGENT_DISALLOWED, &[]),
         SessionRole::Lead => (AGENT_DISALLOWED, LEAD_DISALLOWED),
     };
     agent.iter().chain(lead).copied()
+}
+
+const WHY_SCREENS: &str = "Works the page that is open. Opening a site asks the first time (the hub's site gate), and a \
+                           final Send or Pay click is the person's, through request_takeover.";
+const WHY_DEVICE: &str = "Screens work as they do for every lead; a final Send or Pay click is the person's, through \
+                          request_takeover.";
+
+explained! {
+    /// Allowed to a Navi's lead without asking. It runs in `manual` permission mode, so any other tool (a command, a
+    /// fetch, opening a site, an MCP server's send) asks first: the node answers its file tools ([`role_answer`]), and
+    /// every other ask reaches the hub, which allows a site the person allowed before and otherwise asks them in the
+    /// Navi's chat.
+    ASSISTANT_ALLOWED, ASSISTANT_ALLOWED_WHY: &str = [
+        "WebSearch" => "A search sends only its query, to the search provider.",
+        "Skill" => "Loads a skill's instructions; runs nothing.",
+        "mcp__fleetd" => "fleetd's own tools, which the hub checks on every call.",
+        "Bash(agent-browser snapshot:*)" => WHY_SCREENS,
+        "Bash(agent-browser screenshot:*)" => WHY_SCREENS,
+        "Bash(agent-browser click:*)" => WHY_SCREENS,
+        "Bash(agent-browser dblclick:*)" => WHY_SCREENS,
+        "Bash(agent-browser fill:*)" => WHY_SCREENS,
+        "Bash(agent-browser type:*)" => WHY_SCREENS,
+        "Bash(agent-browser press:*)" => WHY_SCREENS,
+        "Bash(agent-browser hover:*)" => WHY_SCREENS,
+        "Bash(agent-browser focus:*)" => WHY_SCREENS,
+        "Bash(agent-browser check:*)" => WHY_SCREENS,
+        "Bash(agent-browser uncheck:*)" => WHY_SCREENS,
+        "Bash(agent-browser select:*)" => WHY_SCREENS,
+        "Bash(agent-browser scroll:*)" => WHY_SCREENS,
+        "Bash(agent-browser scrollintoview:*)" => WHY_SCREENS,
+        "Bash(agent-browser get:*)" => WHY_SCREENS,
+        "Bash(agent-browser is:*)" => WHY_SCREENS,
+        "Bash(agent-browser find:*)" => WHY_SCREENS,
+        "Bash(agent-browser wait:*)" => WHY_SCREENS,
+        "Bash(agent-browser back:*)" => WHY_SCREENS,
+        "Bash(agent-browser forward:*)" => WHY_SCREENS,
+        "Bash(agent-browser reload:*)" => WHY_SCREENS,
+        "Bash(agent-browser close:*)" => WHY_SCREENS,
+        "Bash(agent-browser skills:*)" => WHY_SCREENS,
+        "Bash(agent-device *)" => WHY_DEVICE,
+    ]
+}
+
+explained! {
+    /// Asked of a Navi's lead whatever allows them, in its settings overlay: claude ranks an ask rule above every allow
+    /// rule, a person's own settings' included, so each of these always reaches the node's permission prompt and its
+    /// policy ([`role_answer`], then the hub).
+    ASSISTANT_ASK, ASSISTANT_ASK_WHY: &str = [
+        "Read" => "A Navi reads only inside its own folder.",
+        "Glob" => "A Navi reads only inside its own folder.",
+        "Grep" => "A Navi reads only inside its own folder.",
+        "Edit" => "A Navi writes only inside its own folder.",
+        "Write" => "A Navi writes only inside its own folder.",
+        "NotebookEdit" => "A Navi writes only inside its own folder.",
+        "WebFetch" => "A Navi fetches a site unasked only once the person allowed it.",
+    ]
+}
+
+/// Files inside a Navi's folder its lead may read but never change: claude's own settings and MCP servers there, and
+/// fleetd's policy file, would let it give itself allow rules, hooks or tools.
+const ASSISTANT_KEPT: &[&str] = &[".claude", ".mcp.json", ".fleetd"];
+
+/// `path` (relative to `cwd`, or absolute) is inside `root` once symlinks are resolved: through the path itself, or
+/// its nearest parent that exists.
+fn inside(cwd: &Path, root: &Path, path: &str) -> bool {
+    let joined = cwd.join(path);
+    if joined
+        .components()
+        .any(|c| c == std::path::Component::ParentDir)
+    {
+        return false;
+    }
+    let root = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_owned());
+    let mut base = joined.as_path();
+    let mut rest = Vec::new();
+    let resolved = loop {
+        if let Ok(real) = std::fs::canonicalize(base) {
+            break rest
+                .iter()
+                .rev()
+                .fold(real, |p: PathBuf, part| p.join(part));
+        }
+        match (base.parent(), base.file_name()) {
+            (Some(parent), Some(name)) => {
+                rest.push(name.to_owned());
+                base = parent;
+            }
+            _ => return false,
+        }
+    };
+    resolved.starts_with(root)
+}
+
+/// How the node answers a file tool's prompt from a session of `role` in `cwd`, whoever would approve it: a Navi's lead
+/// reads and writes inside its own folder (never its settings there) and its session's `scratch` directory, and
+/// nothing else. None for any other tool or role: the prompt goes on to the hub.
+pub fn role_answer(
+    role: SessionRole,
+    cwd: &Path,
+    scratch: &Path,
+    tool: &str,
+    input: &serde_json::Value,
+) -> Option<PermissionDecision> {
+    if role != SessionRole::Assistant {
+        return None;
+    }
+    let (writes, keys): (bool, &[&str]) = match tool {
+        "Read" => (false, &["file_path"]),
+        "Glob" | "Grep" => (false, &["path"]),
+        "Edit" | "Write" => (true, &["file_path"]),
+        "NotebookEdit" => (true, &["notebook_path"]),
+        _ => return None,
+    };
+    let path = keys
+        .iter()
+        .find_map(|k| input.get(*k).and_then(|v| v.as_str()));
+    // Glob and Grep with no path search the folder itself.
+    let path = match (path, tool) {
+        (None, "Glob" | "Grep") => ".",
+        (None, _) => "",
+        (Some(p), _) => p,
+    };
+    let deny = |why: String| {
+        Some(PermissionDecision::Deny {
+            message: fleetd_contracts::prim::Text::unchecked(why),
+        })
+    };
+    let folder = cwd.display();
+    if !path.is_empty() && !inside(cwd, cwd, path) && inside(cwd, scratch, path) {
+        return Some(PermissionDecision::Allow {
+            updated_input: None,
+        });
+    }
+    if path.is_empty() || !inside(cwd, cwd, path) {
+        let verb = if writes { "writes" } else { "reads" };
+        return deny(format!(
+            "fleetd policy: a Navi {verb} only inside its own folder, {folder}"
+        ));
+    }
+    let kept = Path::new(path)
+        .strip_prefix(cwd)
+        .unwrap_or(Path::new(path))
+        .components()
+        .find(|c| !matches!(c, std::path::Component::CurDir))
+        .is_some_and(|first| ASSISTANT_KEPT.iter().any(|k| first.as_os_str() == *k));
+    if writes && kept {
+        return deny(format!(
+            "fleetd policy: a Navi doesn't change its own settings, policy or MCP servers ({})",
+            ASSISTANT_KEPT.join(", ")
+        ));
+    }
+    Some(PermissionDecision::Allow {
+        updated_input: None,
+    })
+}
+
+/// `--allowedTools` a session of `role` gets beyond its project's rules: [`ASSISTANT_ALLOWED`] for a Navi's lead, none
+/// for other roles.
+pub fn role_allowed(role: SessionRole) -> Vec<String> {
+    if role != SessionRole::Assistant {
+        return Vec::new();
+    }
+    ASSISTANT_ALLOWED.iter().map(|t| (*t).to_owned()).collect()
+}
+
+/// The `permissions.ask` rules of a session of `role`'s settings overlay: [`ASSISTANT_ASK`] for a Navi's lead.
+pub fn role_ask(role: SessionRole) -> &'static [&'static str] {
+    if role == SessionRole::Assistant {
+        ASSISTANT_ASK
+    } else {
+        &[]
+    }
 }
 
 /// The agent tools of claude 2.1.302, all in [`ALWAYS_DISALLOWED`].
@@ -266,6 +439,8 @@ explained! {
     /// [`PROMPT_CACHE_TTL_VARS`] (`SessionConfig::prompt_cache_env`). A 1-hour cache
     /// write costs 2x the input price, a 5-minute one 1.25x; reads cost the same.
     PROMPT_CACHE_TTL, PROMPT_CACHE_TTL_WHY: (SessionRole, CacheTtl) = [
+        (SessionRole::Assistant, CacheTtl::OneHour) =>
+            "A Navi's lead idles between a person's messages, like a lead between wakes.",
         (SessionRole::Lead, CacheTtl::OneHour) =>
             "A lead idles between wakes, often more than 5 minutes while reviews and CI run, and would otherwise \
              rewrite its whole context to the prompt cache on those wakes.",
@@ -552,6 +727,128 @@ mod tests {
             assert!(init.contains(&format!("\"{tool}\"")), "{tool}");
             assert!(!ALWAYS_DISALLOWED.contains(&tool), "{tool}");
         }
+    }
+
+    #[test]
+    fn a_navis_lead_reads_and_writes_only_its_own_folder_and_asks_for_the_rest() {
+        let denied = role_disallowed(SessionRole::Assistant).collect::<Vec<_>>();
+        for tool in ["Edit", "Write", "WebFetch", "WebSearch"] {
+            assert!(!denied.contains(&tool), "{tool}");
+        }
+        assert!(denied.contains(&"ReportFindings"));
+        let allowed = role_allowed(SessionRole::Assistant);
+        for tool in ["WebSearch", "mcp__fleetd", "Bash(agent-browser click:*)"] {
+            assert!(allowed.contains(&tool.to_owned()), "{tool}");
+        }
+        // Nothing that reads files, fetches, opens a site, runs a command, or uses another MCP server goes unasked.
+        assert!(!allowed.iter().any(|t| {
+            [
+                "Read",
+                "WebFetch",
+                "Bash",
+                "Write",
+                "Edit",
+                "Bash(agent-browser *)",
+            ]
+            .contains(&t.as_str())
+                || t.starts_with("Bash(agent-browser open")
+                || t.starts_with("Bash(agent-browser eval")
+                || t.starts_with("Bash(agent-browser tab")
+                || (t.starts_with("mcp__") && t != "mcp__fleetd")
+        }));
+        // An ask rule for each file tool and the fetch, above any allow rule.
+        for tool in ["Read", "Edit", "Write", "WebFetch"] {
+            assert!(role_ask(SessionRole::Assistant).contains(&tool), "{tool}");
+        }
+        // Each bare name is a tool claude 2.1.302 offers.
+        let init = include_str!("../fixtures/claude-2.1.302-interrupt-mid-tool.jsonl");
+        for tool in ASSISTANT_ALLOWED.iter().filter(|t| !t.contains(['(', '_'])) {
+            assert!(init.contains(&format!("\"{tool}\"")), "{tool}");
+        }
+        for role in [SessionRole::Plain, SessionRole::Lead, SessionRole::Worker] {
+            assert!(role_allowed(role).is_empty() && role_ask(role).is_empty());
+        }
+    }
+
+    #[test]
+    fn the_node_answers_a_navis_file_tools_inside_its_folder_and_refuses_the_rest() {
+        let home = tempfile::tempdir().unwrap();
+        let folder = home.path().join("navi/ada");
+        std::fs::create_dir_all(folder.join("notes")).unwrap();
+        std::fs::write(home.path().join("mcp.json"), "{\"secret\": 1}").unwrap();
+        std::os::unix::fs::symlink(home.path().join("mcp.json"), folder.join("notes/link.json"))
+            .unwrap();
+        let scratch = home.path().join("tmp/ab12");
+        std::fs::create_dir_all(&scratch).unwrap();
+        let answer = |tool: &str, input: serde_json::Value| {
+            role_answer(SessionRole::Assistant, &folder, &scratch, tool, &input)
+        };
+        let allowed = |tool: &str, input: serde_json::Value| {
+            matches!(answer(tool, input), Some(PermissionDecision::Allow { .. }))
+        };
+        let refused = |tool: &str, input: serde_json::Value| {
+            matches!(answer(tool, input), Some(PermissionDecision::Deny { .. }))
+        };
+        let file = |p: &str| serde_json::json!({ "file_path": p, "content": "x" });
+        let inner = folder.join("notes/today.md").display().to_string();
+        assert!(allowed("Read", file(&inner)));
+        assert!(allowed("Write", file(&inner)));
+        assert!(allowed("Edit", file("notes/today.md")));
+        assert!(allowed("Glob", serde_json::json!({ "pattern": "**/*.md" })));
+        assert!(
+            allowed("Read", file(".claude/settings.json")),
+            "it may read its settings"
+        );
+        // Outside the folder, through `..` or a symlink: refused, whoever would approve it.
+        let secret = home.path().join("mcp.json").display().to_string();
+        assert!(refused("Read", file(&secret)));
+        assert!(refused("Read", file("/etc/passwd")));
+        assert!(refused(
+            "Grep",
+            serde_json::json!({ "pattern": "key", "path": "/home" })
+        ));
+        assert!(refused("Read", file("notes/../../grace/x.md")));
+        assert!(refused("Read", file("notes/link.json")));
+        assert!(refused("Write", file("/home/me/.bashrc")));
+        assert!(refused(
+            "Write",
+            file(&format!("{}x/a.md", folder.display()))
+        ));
+        // Its own claude settings and MCP servers stay as they are.
+        assert!(refused("Write", file(".claude/settings.json")));
+        assert!(refused(
+            "Edit",
+            file(&folder.join(".mcp.json").display().to_string())
+        ));
+        assert!(refused("Write", file(".fleetd/policy.yaml")));
+        assert!(refused("Write", file("./.claude/settings.local.json")));
+        assert!(allowed("Read", file(".fleetd/policy.yaml")));
+        // Anything else goes on to the hub; other roles get nothing here.
+        assert!(
+            answer(
+                "WebFetch",
+                serde_json::json!({ "url": "https://example.com" })
+            )
+            .is_none()
+        );
+        assert!(answer("Bash", serde_json::json!({ "command": "cat /etc/passwd" })).is_none());
+        assert!(
+            role_answer(
+                SessionRole::Lead,
+                &folder,
+                &scratch,
+                "Read",
+                &file("/etc/passwd")
+            )
+            .is_none()
+        );
+        // Its session's scratch directory too, but not the session's other files beside it.
+        let tmp = scratch.join("download.pdf").display().to_string();
+        assert!(allowed("Write", file(&tmp)) && allowed("Read", file(&tmp)));
+        assert!(refused(
+            "Read",
+            file(&home.path().join("tmp/other/x").display().to_string())
+        ));
     }
 
     #[test]

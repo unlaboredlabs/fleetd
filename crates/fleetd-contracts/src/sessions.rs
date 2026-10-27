@@ -121,6 +121,10 @@ pub enum SessionRole {
     Lead,
     /// A task's agent: reports and asks its lead.
     Worker,
+    /// A Navi's lead: a lead's fleetd tools, plus web reads and edits inside its own folder, in `manual` permission
+    /// mode with a read allow-list, so every other tool asks a person first. Only nodes listing
+    /// [`crate::node_link::CAP_ASSISTANT`] get it.
+    Assistant,
 }
 
 impl SessionRole {
@@ -128,7 +132,7 @@ impl SessionRole {
     pub fn cli_arg(self) -> Option<&'static str> {
         match self {
             SessionRole::Plain => None,
-            SessionRole::Lead => Some("lead"),
+            SessionRole::Lead | SessionRole::Assistant => Some("lead"),
             SessionRole::Worker => Some("worker"),
         }
     }
@@ -156,7 +160,9 @@ pub enum PermissionDecision {
 #[serde(tag = "op", rename_all = "snake_case")]
 #[allow(clippy::large_enum_variant)]
 pub enum SessionCall {
-    /// Register or rename a project rooted at a directory on this machine.
+    /// Register or rename a project rooted at a directory on this machine. A relative `workspaceRoot` (`navi/ada`) is
+    /// under the node's home, made when missing: a Navi's folder. Only nodes listing
+    /// [`crate::node_link::CAP_ASSISTANT`] get a relative one.
     #[serde(rename_all = "camelCase")]
     ProjectUpsert {
         project_id: ProjectId,
@@ -390,6 +396,10 @@ pub struct SessionCallFrame {
 /// so hubs that don't know it still read the error.
 pub const RESUME_REFUSED: &str = "the session can't resume: ";
 
+/// How a node's `project_upsert` with a relative root starts its refusal when that folder is already there and isn't
+/// that project's: a new Navi never takes over a folder, and its files, that another one left.
+pub const FOLDER_TAKEN: &str = "folder taken: ";
+
 /// Why a call failed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -566,6 +576,10 @@ pub struct WorktreeBase {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SessionOutput {
     Done,
+    /// A `project_upsert` with a relative root: the absolute folder it names, made if it was missing.
+    Folder {
+        path: String,
+    },
     Launched {
         summary: SessionSummary,
         /// Where a new worktree's branch started; absent for a session in the project root, from an older node, or
@@ -910,7 +924,13 @@ pub struct PendingPermission {
     pub tool_name: NonEmpty,
     /// One line for a person: the command, the path, or the tool's own description.
     pub summary: Text<0, 2000>,
+    /// The tool's input as the session asked, when its JSON is at most [`PENDING_INPUT_MAX`] bytes; absent from older
+    /// nodes. An approval shows it and, approved, the tool gets exactly it.
+    pub input: Option<serde_json::Value>,
 }
+
+/// The most a [`PendingPermission::input`] carries, in bytes of JSON: 64 KiB.
+pub const PENDING_INPUT_MAX: usize = 64 * 1024;
 
 /// One session's row on the machine stream: what the hub's shell mapper turns into a ThreadSummary.
 #[skip_serializing_none]

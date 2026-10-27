@@ -172,8 +172,9 @@ pub struct CommandApprovalItem {
     pub machine_id: MachineId,
     /// A gated command: exactly what runs once approved.
     pub gated: Option<GatedRunSpec>,
-    /// A session's permission prompt: the tool and what it would do.
-    pub permission: Option<ToolPermission>,
+    /// A session's permission prompt: the tool and what it would do. Boxed, as `previewConfig` is: with its input it
+    /// is large beside the item's other fields.
+    pub permission: Option<Box<ToolPermission>>,
     /// An agent's proposed preview setting (preview_config_propose): approved, it becomes the project's `preview`.
     /// Older apps show it as an approval with neither command nor permission.
     /// Boxed: the setting is large beside the item's other fields, and every chat item would carry its size.

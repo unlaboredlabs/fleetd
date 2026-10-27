@@ -1,6 +1,431 @@
-# Navi
+# Navi: a personal and company assistant inside fleetd
 
-## The factory bridge (W97)
+Status: design, partly built. Written in W94 (T733, read-only research, fleetd at `792a73551`); updated in W97 with the
+person's answers (§6) and the core as built (§7). This records intent when written; the code is the source of truth.
+
+**The person's answers (W97), which override the text below where they differ:**
+
+- Navi **sends email itself after the person approves it in the app**, with no "always allow" at first.
+- **No chat-app bridges in v1** (Telegram, Slack, iMessage): a mobile app comes later.
+- **Unlimited Navis per person**, each a named assistant, as Grok bots and OpenAI dots are. Not one per person.
+- **v1 includes Google (Gmail, Calendar, Drive), Notion and custom MCP integrations.**
+
+## The recommendation in brief
+
+Build **Navi** as **one special project with no repo**, whose lead runs an assistant prompt. A project already
+comes with a lead, a chat, memory and its nightly refresh, automations, screens, 1Password fills, secrets, approvals
+and a checklist. Making Navi a project means it gets all of that unchanged. Four things are genuinely new:
+
+1. A project that is just a directory (multi-repo stage 2, already planned).
+2. An assistant role whose tool rules differ from a lead's.
+3. A small **factory bridge**, so Navi can open orders in other projects, read their status, and be told when work
+   lands.
+4. ~~A chat-app channel for the phone. Telegram comes first.~~ Not in v1 (W97): a mobile app comes later.
+
+Email and calendar arrive as MCP servers, which fleetd already manages. They are gated by permission prompts, relayed
+as approvals. (The research said that relay existed. It didn't: #356 had removed it as unreachable, since every
+session ran with full access. W97 brought it back; see §7.)
+
+---
+
+## 1. The references: what each does and what to take
+
+| | What it is (Oct 2026) | Take | Leave |
+|---|---|---|---|
+| **Grok Bot** (xAI/SpaceXAI, beta Aug 2026) | Named bots that act as "teammates" on one cloud Linux VM per user. A **Primary Bot** takes everyday requests and routes them to specialist bots. Routines run on a schedule or a trigger (Slack message, Git event). "Teach a task" records you doing something and turns it into a skill. Plugins for Gmail, Calendar, Notion, Linear and Stripe come first; the browser is the fallback. Approval is needed for send, publish, purchase, delete, permission or prod changes and legal terms, with allow once / deny / always allow, and require-approval rules beat always-allow. Secrets go in masked fields. Mobile apps can watch the computer and take it over. | The **primary-bot-routes-to-owners** model, which is Navi routing to project leads. The **approval list**, with require-approval rules beating always-allow. **Connectors before the browser.** Take over from the phone. | All bots share one VM, cookies and credentials, so "separate bots are not separate security zones". fleetd's fresh session per screen is better. |
+| **OpenAI dots** (Sep 2026, ChatGPT Pro) | Built out of their coding agent (Codex), repackaged as "an entity and a single conversation". It works in the background and messages you first: a morning review of email, calendar and tasks, meeting briefs, and "proactive research" from what it knows of you. It uses every app connected to ChatGPT. It won't pay or share personal information without asking, but may book a meeting on its own. Early reviews say it asks too often and is sometimes late with alerts. | **A coding factory turned assistant** is exactly fleetd's path. Take **one conversation that feels like one entity**, the **morning review**, and **low-risk actions on its own, money and personal information always asked**. | Coarse permissions (no read-only drive access). Proactive research that builds a profile of your contacts. |
+| **Claude Duet** (Anthropic, Oct 21 2026; iOS, Android, claude.ai) | Proactive, and messages you first. One main thread plus **topic channels** that share one memory. A **Tasks tab** with statuses: Duet can say a task looks done, but only you close it. Morning brief, follow-ups on stalled threads, calendar conflict catches. It scans accounts every few hours, not continuously, because scans cost usage. It asks before sending, paying, signing or deleting, and each approval shows destination, content and every recipient. A check outside the agent confirms each action matches your request. Some actions always need approval, and moving money or trading is blocked even if you approve. Passwords never reach the model, and an outgoing classifier blocks credentials and IDs. It has its own cloud computer, but you **can't watch or take over** its browser. The reviewer's complaint: "it can see the Claude sessions on his computers but can't direct them." | **Approval cards that show every recipient and the exact content.** **A gate outside the model.** A **blocked-even-if-approved** list. **Scan every few hours, not continuously.** **Only the person closes a to-do**, which fleetd's checklist already does. Channels later. | Its biggest gap, directing coding sessions, is fleetd's core. That is the reason to build Navi. |
+| **Hermes Agent** (Nous Research, open source, Feb 2026) | A self-hosted personal agent: "one agent, one memory, every surface". **MEMORY.md + USER.md**, bounded and curated, which the agent manages itself. Full-text search over past chats. Skills it writes and improves from experience. Cron jobs. A single **gateway** process for Telegram, Discord, Slack, WhatsApp, Signal, SMS, email, Teams, Matrix and iMessage (through BlueBubbles). Start on the CLI, get notified on Telegram, carry on in Discord. | **Its memory design is the same as fleetd's** (`user.md` + `MEMORY.md` with caps), which confirms the foundation. Take the **gateway**: one process, many chat apps, the same agent and memory behind it. Take **skills learned from use**, since fleetd already has `skill_install`. | Unattended self-editing of skills, unless a person reviews them. |
+
+**What fleetd should claim.** Every reference has proactive check-ins, email and calendar, and approvals. None of
+them can **hand work to a team of coding agents and follow it to a merged PR**. Navi's distinctive job is to be the
+front door to the factory as well as a personal assistant.
+
+---
+
+## 2. The foundations in fleetd today
+
+Paths are under `crates/fleetd/src/` unless shown otherwise.
+
+### Leads and chat: reusable as is
+- One lead per project: a Claude thread on the project's machine, started with the lead prompt plus the digest
+  (`hub/leads/lead.rs:1`, `start` at `:68`). It comes back fresh after an hour of quiet (`LEAD_FRESH_AFTER`,
+  `hub/leads/lead.rs:426`).
+- The lead's first message is `lead.start`, then voice, digest, custom instructions, then memory: `user.md` and the
+  project's `MEMORY.md` (`hub/leads/prompt.rs:1-2`, joined at `:43`). Prompts are stored and editable
+  (`hub/prompts/`), so an assistant prompt `navi.start` is just another prompt.
+- One chat per project is the main surface (`hub/chat/mod.rs:1-4`). A message joins the lead's turn, or starts a new
+  one when the lead is idle (`hub/chat/flow.rs:1-3`).
+- `chat_send` from a human key writes as the human. From any other key it writes "as an agent, by its name: input for
+  the lead, never the human's answer or approval" (`hub/mcp/descriptions.rs:4`). **This is the safe hand-off from
+  Navi to the factory, and it already exists.** Key kinds: `crates/fleetd-contracts/src/auth.rs:46`.
+- `fleetd chat` reaches a lead from a terminal over the same socket (`cli/chat.rs:1-5`).
+- Wakes are scheduled on the hub clock and wait for an offline machine (`hub/wakes/mod.rs:1-3`). Triggers to a lead
+  are coalesced into one message behind the code-rendered digest (`hub/leads/wakes.rs:1-2`, `hub/leads/digest.rs:1-3`).
+- **The catch:** a lead may not `Edit`, `Write`, `WebFetch` or `WebSearch`. Those are "its agents'" job
+  (`node/runner/claude/mod.rs:98-117`; roles at `crates/fleetd-contracts/src/sessions.rs:113`). An assistant needs to
+  read the web and write notes in its own directory, so **it needs its own role. That is new, and small.**
+
+### Memory and the nightly refresh: reusable as is
+- Plain markdown under `<hub home>/memory`, in no repo. `user.md` is shared by every project. Each project has its
+  own `MEMORY.md` plus topic files, never read for another project. The hub is the only writer, and a write past a cap
+  is refused, never truncated (`hub/memory/mod.rs:1-5`).
+- Caps: user 16k, index 16k, topic 32k, project total 128k characters, settable up to 100k / 400k
+  (`crates/fleetd-contracts/src/memory.rs:19-26`). Every write passes a secret check before the cap check
+  (`hub/memory/mod.rs:313`).
+- **Open PR #621 (W87):** a new `forget` tool and a nightly refresh (`hub/memory/refresh.rs`). It runs around 04:00 in
+  `policy.tz` with a 3-hour window. It skips quiet projects. It is a fresh lead-role session allowed only
+  `memory_read`, `remember` and `forget`. It may only add to `user.md`, and posts one line, "Memory refreshed: +a ~b
+  −c", with Undo per item. It has a per-project off switch. **Navi gets this unchanged**, and its nightly review is a
+  second job on the same schedule (§3.4).
+- **Privacy:** `user.md` goes into *every* lead's prompt. Navi's personal facts (family, health, money) must go in
+  **Navi's own project memory**, not `user.md`, or every coding lead reads them.
+
+### Automations: reusable as is
+- A project's stored prompt with triggers: a 5-field cron in an IANA zone, an incoming webhook, or Run now
+  (`hub/automations/mod.rs:1-8`, `crates/fleetd-contracts/src/automations.rs:1,33-44`). The webhook route is
+  `/hooks/{automation_id}/{secret}` (`hub/http/mod.rs:41`). A run missed while the hub was down runs once, late.
+  This covers Navi's **morning brief**, its **every-few-hours look around**, and **"email me when X happens" via a
+  webhook**.
+- What doesn't fit: a run opens an *order* (channel `automation`). For Navi, a run should usually be a chat turn, not
+  an order. Small change.
+
+### Screens: reusable as is
+- Browser sessions are a fresh Chrome with an empty profile, thrown away at `session_end`. They are recorded (video,
+  DOM after each step, an action log) and scrubbed (`node/browser/session.rs:1-4`, `node/browser/record.rs:1-4`), with
+  retention and prune (`hub/browser/mod.rs:1-6`) and a live view (`hub/browser/live.rs:1-4`).
+- Android (`node/device/mod.rs:1-7`), iOS on a Mac (`node/device/ios/mod.rs:1-6`) and Linux desktop with computer-use
+  actions (`node/desktop/mod.rs:1-6`). Placement is by machine role (`hub/machine_roles/mod.rs:1-6`).
+- **Takeover:** `request_takeover` asks a person to drive, and it waits until a person has control
+  (`hub/browser/tests.rs:492`). This lets Navi draft and leave the final "Send" or "Pay" click to you.
+- **1Password fills:** the node resolves `op://` with the project's `OP_SERVICE_ACCOUNT_TOKEN`, which a person enters
+  through `request_secret` and which is kept out of every agent's environment (`node/browser/onepassword.rs:1-5`).
+  After a fill, the session refuses to read values back (`node/browser/credentials.rs:1-7`, `refusal` at `:339`).
+- Leads already have the screen tools (`cli/agent_mcp.rs:77-83`, `session_start` at `:363`, `fill_credential` at
+  `:399`).
+- **Gap:** the profile is thrown away every time, so Navi has to log in on every visit. A persistent profile per site
+  is new (later step).
+
+### Secrets and approvals: reusable as is
+- Requests `Q<n>` (`hub/approvals/mod.rs:1-11`):
+  - **`request_secret`**: the desktop app seals the value to the target machine's key, and the hub relays only
+    ciphertext and keeps a fingerprint (`app/desktop/src/main/secret.ts:1-3`, `node/secrets.rs:1-4`).
+  - **`gated_run`**: the exact command is stored and runs only after a person approves it.
+  - Preview-setting approvals.
+- Gate classes are `Irreversible`, `Money` and `Credential` (`crates/fleetd-contracts/src/ledger.rs:220`). Money and
+  irreversible requests are **urgent and break through quiet hours**; the rest are loud. Notifications are coalesced
+  into 20-minute windows, with quiet hours 23:00–08:00 by default (`hub/attention/mod.rs:10-27`).
+- **Session permission prompts are already relayed as approvals.** A session can run in `manual` permission mode with
+  an `--allowedTools` list (`node/runner/claude/mod.rs:355-372`). Any tool off that list asks first, and the ask
+  becomes a chat approval showing the tool and what it would do (`crates/fleetd-contracts/src/chat.rs:163-176`,
+  `ToolPermission` at `ledger.rs:332`). **This is the gate outside the model for "send email": it already exists.**
+
+### MCP servers and skills: reusable as is
+- Per-project or global MCP servers. A secret in a server's env or headers is sealed in the app to each machine; the
+  hub keeps fingerprints only (`hub/mcp_servers/mod.rs:1-7`). **Gmail, Google Calendar, Slack and Notion arrive here**
+  as off-the-shelf MCP servers, with no new integration code.
+- Skills per project or global (`hub/skills/mod.rs:1-6`), and a lead can `skill_install`.
+
+### Projects as workspaces with zero or more repos: partly built
+- "A project is a workspace: a lead and its own directory … It holds zero or more repos. A plain directory with no
+  git has none" (`docs/design/multi-repo.md`, "The model"). Stages 1a and 1b have landed (`crates/fleetd-contracts/
+  src/repos.rs:27`, `ProjectSummary.repos` at `model.rs:119`).
+- **Today `project_add` still refuses a non-git directory** (`hub/projects/mod.rs:284-290`). "A project that is just
+  a directory" is **stage 2** of the multi-repo plan. Navi's first version depends on that slice.
+- Workers in a no-repo project need somewhere to run besides a git worktree. That belongs to stage 3, and the first
+  version doesn't need it.
+
+### Factory reads: reusable through the hub's MCP
+- `status_get` and the status rows (`hub/status/mod.rs:1-3`), `orders_board` / `order_get` (`hub/orders/mod.rs:1-2`),
+  the checklist (`hub/checklist/mod.rs:1-3`), PRs (`hub/prs/mod.rs:1-3`), the merge train (`hub/train/mod.rs:1-3`),
+  landings on the base (`hub/work/landings.rs:1-3`), and `events_wait`.
+- All of these exist for **app and human keys** on `/mcp` (`hub/http/mod.rs:36`). **None of them is a lead tool:** a
+  lead sees only its own project (`hub/tasks/policy.rs:49-134`). The bridge is new.
+
+### Desktop app and remote access: the phone is the genuine gap
+- The Electron app (`app/desktop/`) has desktop notifications (`app/desktop/src/main/notify.ts:22`) and pairs over the
+  LAN or Tailscale (`cli/pair.rs:220-235`, `app/desktop/src/main/pairing/appPairFile.ts:58`). Previews have a tailnet
+  proxy for the owner's devices only (`node/preview/proxy.rs:1-4`).
+- **There is no phone client today.** An earlier phone app was removed (`crates/fleetd-contracts/src/ledger.rs:110`,
+  commit `c483057e6`), and there is no Telegram, Slack or iMessage channel.
+
+### What's reusable as is, and what's new
+
+| Reusable as is | Genuinely new |
+|---|---|
+| Lead thread, chat, digest, wakes | Assistant role: the lead's tools plus WebSearch/WebFetch and Write in its own directory, run in `manual` mode with a read-only allow list (**s**) |
+| Memory, caps, remember/forget, nightly refresh (#621) | A project that is just a directory (multi-repo stage 2, **s**), and Navi pinned at the top of the app (**s**) |
+| Automations (cron, webhook, Run now) | Automation runs that are chat turns rather than orders (**s**) |
+| Browser, Android, iOS and desktop screens, recordings, takeover, 1Password | Factory bridge: `project_message`, `factory_status`, and a wake when the order Navi opened changes (**m**) |
+| `request_secret`, `gated_run`, permission prompts relayed as approvals, quiet hours | A blocked-even-if-approved list, and approval cards that show recipients (**s**) |
+| MCP servers with sealed secrets (the route to Gmail and Calendar), skills | Telegram gateway on the node (**m**), and later Slack or iMessage |
+| Checklist as the person's to-do list | A persistent logged-in browser profile per site (**m**) |
+
+---
+
+## 3. The design
+
+### 3.1 Where Navi lives: a no-repo project per Navi, as many as the person likes
+
+**Pick: a project with no repo, marked as an assistant (`kind: assistant`). A person makes any number of named Navis
+(W97); each is its own project, with its own chat, memory, folder and lead.**
+
+- **Why a project and not a new entity:** every per-project system is keyed by `ProjectRef` (multi-repo.md, "The
+  model"): lead, chat, memory, env and secrets, MCP servers, skills, automations, checklist and screens. A new
+  top-level entity would mean re-plumbing all of them. A project gets them free, and the multi-repo work already makes
+  a no-repo project valid.
+- **Who made it:** each Navi records the key that created it (`createdBy`: key id and name). Nothing filters on it
+  yet. When a company shares a hub, a team and auth design (separate work) can give each person their own Navis from
+  it, with their own human key, memory and secrets. That is a step, not a redesign.
+- **What makes it special** is small: an assistant prompt (`navi.start` instead of `lead.start`), the assistant role
+  (§3.5), the factory bridge tools (§3.8) allowed only in this project, and a pinned place in the app's sidebar.
+
+### 3.2 How you reach it
+1. **The app, from the first version.** Navi's chat is pinned above the projects. Desktop notifications and quiet
+   hours work as they do today.
+2. **The terminal:** `fleetd chat <machine>/<navi> "…"` works as it is, and `fleetd navi` makes and lists them.
+3. ~~**Phone, through Telegram first (step 3).**~~ Not in v1 (W97); kept for the record. A **gateway on Navi's node** long-polls the Telegram Bot API, so the
+   hub needs no public URL. The bot token is a sealed node secret, as a 1Password token is. Messages come only from
+   one allow-listed Telegram user ID, and go into Navi's chat as the person's messages.
+   - Navi's replies and urgent notices go back to Telegram, and quiet hours apply.
+   - **Approvals, secrets and takeovers are never answered over Telegram.** Telegram shows "needs you: open the app",
+     because a Telegram account is a weaker identity than a paired device's human key, and secrets must be sealed in
+     the app (`secret.ts:1-3`).
+   - Low-risk confirmations ("yes, draft it") are fine as ordinary chat.
+   - Slack and iMessage use the same gateway later. iMessage needs a Mac and a BlueBubbles-style bridge, so it is the
+     largest.
+4. **A real phone app** (a PWA over the tailnet, or native) is the last step.
+
+### 3.3 Memory
+- **Navi's `MEMORY.md` and topics** hold the person's life and work: people, preferences, routines, accounts by name
+  (never values). The project cap is 128k by default and can go up to 400k.
+- **`user.md`** stays the short, shared "who the person is and how they like to work" file that every lead reads.
+  Navi's prompt says plainly: private facts go in Navi's own memory, never `user.md`.
+- Every write passes the secret check (`hub/memory/mod.rs:313`). Remember and forget lines show in the chat with Undo,
+  as they do for any lead.
+
+### 3.4 The nightly review
+- **The memory refresh** (#621) runs for Navi as for any project: tidy, merge, forget, one undoable summary line.
+- **A morning brief** is a built-in automation that ships switched off and is offered in onboarding: cron `0 7 * * 1-5`
+  in `policy.tz`. It reads today's calendar, the inbox since yesterday, the factory (what merged overnight, what is
+  red, what waits on you in each project), and Navi's checklist. It posts one message and puts new to-dos on the
+  checklist.
+- **A look around every few hours** is optional. Duet does this, and it is cheaper than watching continuously. It
+  stays silent unless something needs the person.
+
+### 3.5 Its tools
+- **Screens:** browser, Android, iOS and Linux desktop sessions with recordings, takeover and 1Password fills, all as
+  they are. The browser is the **fallback**; connectors come first, as Grok Bot does it.
+- **Integrations (v1, W97):** Google (Gmail, Calendar, Drive), Notion and any custom **MCP server**, added to a Navi
+  in Settings › MCP servers. Their OAuth tokens are sealed to the machine. Read tools run unasked; write and send
+  tools ask, the approval showing recipients and content (a separate writer's part).
+- **Web:** WebSearch and WebFetch, allowed in the assistant role.
+- **Files:** Navi's project directory on its machine is its filing cabinet: notes, drafts, downloads, exports. Files
+  attached in the chat arrive through intake (`hub/intake/mod.rs:1`). Write is allowed only inside that directory.
+- **To-dos:** the checklist, as it is. Only the person ticks an item done, which is the same rule Duet has.
+- **Skills:** as they are. A skill Navi writes is installed with `skill_install` and shown in the chat. "Teach by
+  recording" (Grok Bot) is a later idea, not planned.
+
+### 3.6 What it may do unasked, and what needs approval
+Enforcement sits **outside the model**. Navi runs in `manual` permission mode with an allow list of read tools only.
+Every other tool raises a permission prompt, which fleetd already relays as an approval (`chat.rs:163-176`). Commands
+go through `gated_run`, and browser "final clicks" go through `request_takeover`.
+
+| Unasked (allowed) | Needs approval, every time (no "always allow" in the first versions) | Blocked even if approved |
+|---|---|---|
+| Read email, calendar, web, files, factory status | **Sending** any email or message to someone else (the card shows recipients and full text) | Moving money between accounts, trading |
+| Draft replies and events (saved as drafts) | **Spending** money (`Money`, urgent) | Creating accounts in the person's name |
+| Remember and forget in its own memory; update its checklist | **Posting publicly** (social, forums, public repos) | Sharing credentials or ID numbers |
+| Open screens; log in with 1Password | **Deleting** anything: mail, events, files (`Irreversible`, urgent) | |
+| Message a project lead (agent input only, §3.8) | Accepting or declining invites, or changing others' calendars (this counts as sending) | |
+| Create or pause its own automations (shown in the chat) | Signing or accepting terms; changing passwords or 2FA (`Credential`) | |
+| | Opening an order in a project **unless the person asked for it in this conversation** | |
+
+The blocked list is enforced as a hub policy on Navi's tools and gated classes, not as a prompt instruction. Later,
+"always allow" can come to low-risk sends (for example, to yourself).
+
+### 3.7 Where its credentials live
+- **On Navi's machine's node, sealed. The hub keeps fingerprints only:**
+  - project secret variables through `request_secret` (`node/secrets.rs:1-4`);
+  - MCP server tokens (`hub/mcp_servers/mod.rs:6-7`);
+  - the Telegram bot token.
+- **1Password:** Navi's project has its own `OP_SERVICE_ACCOUNT_TOKEN`, a service account that sees **one "Navi"
+  vault** the person fills. It never sees their whole account, and no coding project shares it.
+- Never in memory (the secret check refuses it), and never in the chat. Recordings are scrubbed
+  (`node/browser/record.rs:1-4`).
+
+### 3.8 How Navi talks to the factory
+New lead calls, allowed only in the assistant project (`hub/tasks/policy.rs` gains one rule):
+
+- **`project_message {project, text, kind: order|question}`** writes into that project's chat as the agent **"Navi"**,
+  which is the same thing `chat_send` from a non-human key does today. The lead reads it as input, **never as the
+  person's approval** (`hub/mcp/descriptions.rs:4`). So Navi can't approve a gated command, a secret or a merge in any
+  project. Those still need the person, in that project's chat, and Navi links them.
+- **`factory_status {project?}`** returns, in one read, each project's status row, open orders, checklist items
+  waiting on the person, PRs and train state, and what landed since a time. It is built from `status_get`,
+  `orders_board`, the checklist, `pr_list` and landings (`hub/work/landings.rs:1-3`). It is read-only.
+- **Being told:** Navi gets a wake when anything it opened through `project_message` changes, and when a question it
+  asked gets a reply:
+  - the order's workstream opens or closes;
+  - a PR opens or merges;
+  - the lead asks the person something;
+  - the lead replies to Navi's question.
+
+  It is the same wake machinery (`hub/leads/wakes.rs:1-2`), keyed by the order Navi opened. Navi then tells the person
+  in its own chat or on Telegram: "the cart-saving order you asked for merged: PR #640".
+- **The morning brief** uses `factory_status` for "what merged overnight, what's red, what waits on you".
+
+This makes Navi Grok Bot's "primary bot" with the project leads as the specialists. That is the thing Duet's reviewer
+wanted and couldn't get.
+
+---
+
+## 4. The phased plan
+
+**First version: Navi in the app, wired to the factory (m in total).**
+1. Allow a project that is just a directory (multi-repo stage 2, the directory slice only). **s**
+2. An assistant project kind: the `navi.start` prompt, the assistant role (lead tools plus web and Write in its own
+   directory, `manual` mode with a read allow list), and a pinned place in the app with a first-run "Create Navi".
+   **s**
+3. The factory bridge: `project_message`, `factory_status`, and the wake on change for what Navi opened. **m**
+4. A morning brief automation that runs as a chat turn rather than an order, switched off by default, with factory and
+   checklist only until step 5 adds email. **s**
+
+Already there for this version, unchanged: memory and the nightly refresh (#621 once merged), screens with 1Password,
+approvals, the checklist, automations, and notifications with quiet hours.
+
+**Later steps**
+5. **Email and calendar:** documented MCP servers for Gmail and Google Calendar (and Microsoft 365), approval cards
+   that show recipients and content for send tools, the blocked-even-if-approved list, and email and calendar in the
+   morning brief. **m**
+6. **Telegram gateway** on the node: allow-listed user, chat both ways, urgent notices, "open the app" for approvals.
+   **m**
+7. **Persistent browser profiles** per site for Navi, so it stays logged in, kept on its node and scrubbed in
+   recordings. **m**
+8. **A look around every few hours**, with a person-set frequency, silent unless needed. **s**
+9. **Channels** (Duet): topic threads in Navi's chat (money, hiring, home) sharing one memory. **m**
+10. **Slack**, then **iMessage**, through the same gateway. Slack **m**; iMessage **l** (Mac bridge).
+11. **Company Navi:** one Navi per person on a shared hub, with per-person human keys, private memory and secrets, and
+    an optional shared team memory. **l**
+12. **Phone app:** a PWA over the tailnet, or native, with approvals and takeover from the phone. **l**
+
+---
+
+## 5. Name
+
+**Navi** is decided by the person. It reads as "navigator" and as a helper, and in Italian *navi* means "ships".
+
+**Clash risk:** Navi, the fairy guide in Nintendo's Zelda games, is the famous one. There are also several AI products
+called Navi: Coupa Navi (procurement), Atlas's Navi (maps), a Navi travel guide app, and Navi AI for pilot training.
+India's Navi Group is a fintech. None of these is a general personal assistant, but search results and app stores
+will be crowded, so check trademarks before a public launch.
+
+(For the record, other candidates checked before the decision: Marina clashes with marina.computer, a proactive Mac
+assistant in the same category. Bosun and Steward each clash with open-source approval-first personal agents. Skipper
+names several AI assistants. Shipmate is a large cruise app. Mate is a translator. Cay had no notable clash.)
+
+---
+
+## 6. Product questions for the person, answered (W97)
+
+1. **Should Navi send email itself after you approve each one, or only draft for you to send?** *Answered: send after
+   approval in the app*, with the card showing recipients and full text, and no "always allow" at first.
+2. **Which chat app comes first for the phone?** *Answered: none in v1.* A mobile app comes later.
+3. **One Navi per person now, or a shared company Navi?** *Answered: unlimited Navis*, each a named assistant, like
+   Grok bots or OpenAI dots. Each records who created it, for per-person Navis on a shared hub later.
+4. **Integrations in v1:** *Answered: Google (Gmail, Calendar, Drive), Notion and custom MCP servers.*
+
+---
+
+## 7. The core as built (W97)
+
+The first part of v1: plain-folder projects, the Navi kind, the assistant role and the permission relay. The factory
+bridge (`hub/navi/bridge`) and the integrations (`hub/integrations`) are separate parts; the app's UI comes after.
+
+### Plain-folder projects (multi-repo stage 2, the directory slice)
+- `project_add {path}` takes a directory with no git (`hub/projects/mod.rs`, `checkout`). Its inspect says so
+  (`inspect::folder`, `leadNeeds`: "a plain folder with no git: …"). No own repo is recorded, and no work scope is
+  bound. `fleetd project add <path>` prints only that line for it.
+- A relative `project_upsert` root (`navi/ada`) is a folder under the node's home, made when missing. Each part must
+  be a safe name, so it never leaves the home. The node answers `{kind: "folder", path}` with the absolute path. Only
+  nodes listing `CAP_ASSISTANT` get one.
+- Agents that change code still need a repo: spawning a writer in a plain folder fails at its worktree (stage 3).
+
+### The Navi kind
+- Hub table `assistants` (machine, project, `created_ms`, `created_by_key`, `created_by_name`, `archived_ms`),
+  owned by `hub/navi/store.rs`. It is stored by the hub, never by the node: `projects_upsert_many` drops `kind`,
+  `createdBy` and `archivedAt` from a node's row, and `with_repos` (`hub/store/hub_store.rs`) fills them when the hub
+  serves a summary, as it does `repos`. Any reader goes through `project_get`/`projects_list`, never
+  `projects.data`.
+- `ProjectSummary` gains three optional fields. A project of code has none of them.
+  - `kind: "assistant"` (`ProjectKind`, open for later kinds).
+  - `createdBy: {keyId, name}`: the key that made it.
+  - `archivedAt`.
+- MCP tools (`hub/navi/tools.rs`), each returning the Navi as a `ProjectSummary`:
+
+  | Tool | Input | Does |
+  |---|---|---|
+  | `navi_create` | `{name, machineId?}` | Makes a new folder `navi/<slug>` (`-2`, `-3` when a project or a folder left behind has it; the node refuses an existing one with `FOLDER_TAKEN`) on the best worker, records the creator, emits `project.added` with the folder inspect. Refuses a node without `CAP_ASSISTANT`, with "Run fleetd update". |
+  | `navi_list` | `{machineId?, archived?}` | Oldest first; archived ones only with `archived: true`. Its empty `next` is "No Navis yet: navi_create makes one." |
+  | `navi_rename` | `{machineId, projectId, name}` | Renames it on the node in place: the folder keeps its name. |
+  | `navi_archive` | `{machineId, projectId, archived?}` | Default true: stops its lead and holds it. `false` brings it back. Both emit `project.settings` with `kind`, `title` and `archivedAt`. |
+
+- CLI: `fleetd navi create|list|rename|archive|unarchive`.
+- An archived Navi's lead takes no turns. `Leads::launch` refuses it (no first start, restart or fresh start of a
+  cold lead), `auto_start` and `start_with` refuse it before returning a running lead, and `LeadWakes` drops its wakes.
+  A chat message is held with the reason until it is back.
+
+### The assistant role
+- A Navi's lead starts from the `navi.start` prompt (stored and editable like the others, `hub/prompts`), with its
+  name, ref and folder. Then come `lead.voice`, automations, the digest and memory, but no task profiles. It runs as
+  `SessionRole::Assistant` in `manual` permission mode (`hub/leads/lead.rs`). An older node can't decode the role, so
+  the hub refuses the launch without `CAP_ASSISTANT` (`hub/leads/wiring.rs`).
+- On the node (`node/runner/claude/mod.rs`):
+  - The role keeps a lead's fleetd tools (`agent-mcp --role lead`), and `Edit`, `Write`, `WebFetch` and `WebSearch`.
+  - `role_allowed` adds `ASSISTANT_ALLOWED` to `--allowedTools`: `WebSearch`, `Skill`, `mcp__fleetd`, `agent-device`,
+    and agent-browser's commands that work the open page (`click`, `fill`, `snapshot`, …). Not `open`, `eval` or `tab`.
+  - `role_ask` puts `ASSISTANT_ASK` (`Read`, `Glob`, `Grep`, `Edit`, `Write`, `NotebookEdit`, `WebFetch`) in the
+    settings overlay's `permissions.ask`. An ask rule outranks every allow rule, a person's own settings' included,
+    so each of these reaches the node's prompt.
+  - `role_answer` answers a file tool there: inside the folder or the session's scratch directory (symlinks
+    resolved, no `..`) it is allowed, except an
+    edit to `.claude/`, `.mcp.json` or `.fleetd/`. The hub also drops a policy file's allow rules from an assistant's
+    launch (`hub/executor/mod.rs`), so nothing the Navi writes can widen its own rules. Outside it is refused, whoever would approve it. So the session's `mcp.json`
+    (with its resolved tokens), the node's env files, `~/.ssh` and gh's login are out of the Navi's reach. A `Bash`
+    command that reads them asks the person, showing the command.
+- The site gate (`hub/navi/sites.rs`, table `navi_sites`): a `WebFetch`, or an `agent-browser open|goto|navigate
+  <url>`, is a visit to its host, without `www.`.
+  - A site the person allowed goes through unasked. Any other site asks, the approval naming it in
+    `permission.site`, and approving it allows the site.
+  - A command that does more than open one page asks every time, with no site.
+  - `navi_sites {machineId, projectId}` lists the sites; `navi_site_revoke {…, site}` takes one back, and it asks
+    again.
+  - Not covered: a click that follows a link to another site, and a final Send or Pay click on an allowed site. The
+    prompt hands those to the person with `request_takeover`; the docs say so.
+
+### The permission relay (`hub/approvals/permissions.rs`)
+- The relay answers a Navi lead's prompts only (`ApprovalHub::navi_lead`); any other session's are left as before.
+- A prompt reaches the hub as `thread.waiting` with `data.permission`. The tool's input, up to 64 KiB of JSON, rides
+  on `PendingPermission.input` and is read off the thread (an event's data is capped at 2 KB).
+- For an MCP server's tool, the integrations policy decides first (`hub/integrations/policy.rs`, `verdict`, against
+  the project's servers). A read answers Allow at once. A blocked tool is denied with why, and nothing is filed. An
+  asking tool opens an approval with its preview: recipients, subject and body. Any prompt whose input the node didn't
+  send (over 64 KiB) is refused: no card could show what approving it runs. Any other tool (a
+  command, an edit) opens an approval with its summary and input.
+- An approval is a request with `permission: {threadId, requestId, toolName, summary, input, preview?}`, shown in the
+  chat as a `command_approval` item.
+- At launch, a Navi's lead also gets the policy's `launch_rules` (`hub/executor/mod.rs`): its integrations' reads in
+  `--allowedTools`, and tools the blocked list refuses in `--disallowedTools`.
+- The site gate runs first, for a Navi's fetches and browser visits (above).
+- Only a person answers. Approve sends `Allow {updatedInput: <the input shown>}`. Deny sends "`<who>` said no (`Q<n>`):
+  `<reason>`". Withdrawing or closing a request denies the prompt. A second prompt, or the run ending, closes an older
+  request ("expired: the run ended"). An approve the node didn't take because it was offline goes back to open.
+- Not built: reminders for a prompt left waiting, and a sweep for prompts whose run ended while the hub was down
+  (#356's version had both).
+
+---
+
+## 8. The factory bridge (W97)
 
 Navi works with the other projects on its hub through three things: a message to a project's lead, one read of the
 whole factory, and a wake when what it asked for changes. The code is `crates/fleetd/src/hub/navi/bridge.rs`; the
@@ -47,3 +472,12 @@ takes read on the Navi's machine, and a hub has it when its `ready` frame names 
 
 **Storage.** `navi_asks` holds one row per message (from, to, text, when); `navi_ask_orders` maps each order opened
 for an ask to it. An ask may become several orders.
+
+---
+
+## Sources
+- Grok Bot: [Flavio Copes, deep dive](https://flaviocopes.com/grok-bot/), [VentureBeat](https://venturebeat.com/orchestration/spacexais-grok-bot-turns-agents-into-persistent-digital-coworkers-that-can-operate-your-apps-for-120-per-month), [Grok Automations](https://aitoolhunt.co/blog/grok-automations-scheduled-email-tasks-2026)
+- OpenAI dots: [TechCrunch, Oct 26 2026](https://techcrunch.com/2026/10/26/how-openai-turned-its-coding-tools-into-dots-an-always-on-personal-assistant/), [MindStudio](https://www.mindstudio.ai/blog/chatgpt-dots-how-to-use)
+- Claude Duet: [DataCamp](https://www.datacamp.com/blog/claude-duet), [US News](https://money.usnews.com/investing/news/articles/2026-10-21/anthropic-unveils-claude-duet-ai-agent-app)
+- Hermes Agent: [GitHub](https://github.com/nousresearch/hermes-agent), [site](https://hermes-agent.nousresearch.com/), [Dupple](https://dupple.com/learn/what-is-hermes-agent)
+- Name checks: [Coupa Navi](https://procurementmag.com/technology-and-ai/coupa-unveils-navi-real-time-ai-aid-debuts-at-inspire-vegas), [Atlas Navi](https://atlas.co/blog/introducing-navi-ai-that-builds-maps-from-conversation/), [Navi Group](https://en.wikipedia.org/wiki/Navi_Group), [marina.computer](https://marina.computer/), [Bosun agent](https://github.com/PerishableDave/bosun), [Shipmate](https://apps.apple.com/us/app/shipmate-plan-track-cruises/id380449520)

@@ -46,7 +46,7 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     ),
     (
         "project_add",
-        "Add a project. path: a git checkout on the machine, added at once with its inspect. url: a GitHub repo cloned onto the machine (machineId defaults to the best worker, dest to <cloneRoot>/<name>); answers with addId, then events project.clone_progress and project.added (or project.add_failed with a fix) carry data.addId. When the destination already holds the same repo, pass useExisting. The same directory again returns its project; title renames it. dryRun adds nothing: it answers the inspect (default branch, CI with active workflows and required checks, merge rules with protection, rulesets, squash allowed and required reviews, and leadNeeds: one line on what the lead and merge train will need) and, for a url, clone: where it would go and whether that directory already holds the repo.",
+        "Add a project. path: a directory on the machine, added at once with its inspect: a git checkout, or a plain folder with no git (its lead chats, remembers and uses screens there; agents that change code need a repo). url: a GitHub repo cloned onto the machine (machineId defaults to the best worker, dest to <cloneRoot>/<name>); answers with addId, then events project.clone_progress and project.added (or project.add_failed with a fix) carry data.addId. When the destination already holds the same repo, pass useExisting. The same directory again returns its project; title renames it. dryRun adds nothing: it answers the inspect (default branch, CI with active workflows and required checks, merge rules with protection, rulesets, squash allowed and required reviews, and leadNeeds: one line on what the lead and merge train will need) and, for a url, clone: where it would go and whether that directory already holds the repo.",
     ),
     (
         "project_remove",
@@ -63,6 +63,30 @@ pub const DESCRIPTIONS: &[(&str, &str)] = &[
     (
         "project_repo_remove",
         "Remove a repo from a project by name: the repo's live tasks are cancelled, the project's other tasks go on. Nothing is deleted on disk: the checkout stays on its machine, and once no project holds it, it shows as a project of its own again (project_remove forgets it). A project's own repo can't be removed: project_remove removes the project.",
+    ),
+    (
+        "navi_create",
+        "Make a Navi: a personal assistant with its own chat, memory, nightly memory refresh, automations, screens, checklist and approvals. It is a project of kind assistant in a new plain folder under its machine's fleetd home (navi/<name>); machineId defaults to the best worker. Its lead starts with the first chat message, in the assistant role: it reads and writes only inside its own folder, searches the web unasked, fetches or opens a site unasked once a person allowed that site at its first visit (navi_sites), and asks a person in the chat before anything else (a command, a send). Make as many as you like; the key that made it is recorded as createdBy.",
+    ),
+    (
+        "navi_list",
+        "The Navis, oldest first, each a project summary with kind assistant, createdBy and, once archived, archivedAt. archived: true includes the archived ones.",
+    ),
+    (
+        "navi_rename",
+        "Rename a Navi. Its folder keeps the name it was made with.",
+    ),
+    (
+        "navi_sites",
+        "The sites a Navi fetches and opens in its browser without asking, each with when and by whom it was allowed. A Navi's first fetch or visit to a site asks the person in its chat; approving it allows the site from then on.",
+    ),
+    (
+        "navi_site_revoke",
+        "Take back a site a Navi may fetch and open without asking: its next fetch or visit there asks the person again. Answers the sites it still may.",
+    ),
+    (
+        "navi_archive",
+        "Archive a Navi: its lead stops and doesn't start again, and navi_list leaves it out; its chat, memory and folder stay. archived: false brings it back.",
     ),
     (
         "project_settings_get",
