@@ -5331,7 +5331,7 @@
         },
         {
           "const": "project.settings",
-          "description": "A project's settings changed (`project_set`): `data.mediumAllowed`.",
+          "description": "A project's settings changed (`project_set`): `data.mediumAllowed`; or a repo was removed from it\n(`project_repo_remove`): `data.repoRemoved`, its name.",
           "type": "string"
         },
         {
@@ -7634,6 +7634,24 @@
         "project_remove.output": {
           "$ref": "#/$defs/ProjectRemoveOutput"
         },
+        "project_repo_add.input": {
+          "$ref": "#/$defs/ProjectRepoAddInput"
+        },
+        "project_repo_add.output": {
+          "$ref": "#/$defs/ProjectRepoAddOutput"
+        },
+        "project_repo_list.input": {
+          "$ref": "#/$defs/ProjectRepoListInput"
+        },
+        "project_repo_list.output": {
+          "$ref": "#/$defs/ProjectRepoListOutput"
+        },
+        "project_repo_remove.input": {
+          "$ref": "#/$defs/ProjectRepoRemoveInput"
+        },
+        "project_repo_remove.output": {
+          "$ref": "#/$defs/ProjectRepoRemoveOutput"
+        },
         "project_set.input": {
           "$ref": "#/$defs/ProjectSetInput"
         },
@@ -8004,6 +8022,12 @@
         "project_get.output",
         "project_remove.input",
         "project_remove.output",
+        "project_repo_add.input",
+        "project_repo_add.output",
+        "project_repo_list.input",
+        "project_repo_list.output",
+        "project_repo_remove.input",
+        "project_repo_remove.output",
         "project_set.input",
         "project_set.output",
         "project_settings_get.input",
@@ -11914,6 +11938,10 @@
         "name": {
           "$ref": "#/$defs/RepoName"
         },
+        "path": {
+          "description": "The checkout's directory on its machine; absent before its node reported it.",
+          "type": "string"
+        },
         "repoId": {
           "$ref": "#/$defs/RepoId"
         },
@@ -11926,6 +11954,157 @@
         "repoId",
         "name",
         "checkout"
+      ],
+      "type": "object"
+    },
+    "ProjectRepoAddInput": {
+      "properties": {
+        "dest": {
+          "description": "With `url`: clone here instead of `<cloneRoot>/<name>`.",
+          "pattern": "^/.",
+          "type": "string"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "name": {
+          "$ref": "#/$defs/RepoName",
+          "description": "Absent: from its remote or folder, e.g. `api`, made unique in the project."
+        },
+        "path": {
+          "description": "A git checkout on the project's machine.",
+          "pattern": "^/.",
+          "type": "string"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "url": {
+          "description": "A GitHub URL, `git@github.com:o/r.git`, or `owner/repo`, cloned onto the project's machine.",
+          "maxLength": 300,
+          "minLength": 1,
+          "type": "string"
+        },
+        "useExisting": {
+          "description": "With `url`: when the destination is already a checkout of the same repository, add it instead of failing.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "ProjectRepoAddOutput": {
+      "properties": {
+        "addId": {
+          "description": "A clone was started: its `project.clone_progress`, `project.added` and `project.add_failed` events carry it.",
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        "archived": {
+          "$ref": "#/$defs/ProjectRef",
+          "description": "The project the checkout was until now, archived read-only."
+        },
+        "next": {
+          "type": "string"
+        },
+        "path": {
+          "description": "The checkout's directory (the clone's destination for a url).",
+          "type": "string"
+        },
+        "repo": {
+          "$ref": "#/$defs/ProjectRepo",
+          "description": "The repo, once added; absent while a clone runs."
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "ProjectRepoListInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId"
+      ],
+      "type": "object"
+    },
+    "ProjectRepoListOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "repos": {
+          "description": "Oldest first, its own repo first; none for a plain folder.",
+          "items": {
+            "$ref": "#/$defs/ProjectRepo"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "repos"
+      ],
+      "type": "object"
+    },
+    "ProjectRepoRemoveInput": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "name": {
+          "$ref": "#/$defs/RepoName"
+        },
+        "projectId": {
+          "$ref": "#/$defs/ProjectId"
+        }
+      },
+      "required": [
+        "machineId",
+        "projectId",
+        "name"
+      ],
+      "type": "object"
+    },
+    "ProjectRepoRemoveOutput": {
+      "properties": {
+        "cancelled": {
+          "description": "The repo's live tasks, cancelled.",
+          "items": {
+            "$ref": "#/$defs/TaskId"
+          },
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "removed": {
+          "$ref": "#/$defs/ProjectRepo"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "removed",
+        "cancelled"
       ],
       "type": "object"
     },

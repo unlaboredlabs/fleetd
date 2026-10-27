@@ -34,6 +34,18 @@ pub enum AutoStart {
 }
 
 /// The lead's state, read off its thread as the shell stream last reported it; stopped once the project was removed.
+/// An archived project, now a repo checkout of another (W79), keeps its chat and history but its lead takes no turn:
+/// refused at every start, resume and wake.
+pub fn refuse_archived(db: &HubDb, r: &ProjectRef) -> Result<(), LeadError> {
+    match crate::hub::repos::holder(db, r)? {
+        Some((holder, repo)) => {
+            let (message, fix) = crate::hub::repos::archived_note(&holder, &repo);
+            Err(LeadError::new(ErrorCode::Invalid, message, fix))
+        }
+        None => Ok(()),
+    }
+}
+
 pub fn lead_state(thread: Option<&ThreadSummary>, project_gone: bool) -> LeadState {
     if project_gone {
         return LeadState::Stopped;
@@ -76,6 +88,8 @@ impl Leads {
         first: Option<&str>,
     ) -> Result<(Lead, bool), LeadError> {
         let _guard = self.lock.lock().await;
+        // Its lead record stays with its history, but an archived project's lead is never handed out.
+        refuse_archived(&self.ctx.db, r)?;
         if let Some(existing) = self.records.lead_get(r)? {
             return Ok((self.with_state(existing)?, false));
         }
@@ -101,7 +115,7 @@ impl Leads {
 
     /// Starts the lead of each project on `machine_id` that has orders waiting as drafts and no lead.
     pub async fn start_waiting(&self, machine_id: &MachineId) -> Result<(), LeadError> {
-        for project in self.ctx.store.projects_list(Some(machine_id), None)? {
+        for project in self.ctx.store.projects_shown(Some(machine_id), None)? {
             let r = ProjectRef {
                 machine_id: project.machine_id.clone(),
                 project_id: project.project_id.clone(),
@@ -332,6 +346,7 @@ impl Leads {
         session_generation: i64,
         first: Option<&str>,
     ) -> Result<Lead, LeadError> {
+        refuse_archived(&self.ctx.db, r)?;
         // M4 usage: no lead turn goes into a login fleetd knows is exhausted.
         if let Some(paused) = self
             .ctx
@@ -360,6 +375,9 @@ impl Leads {
             &digest,
             &self.ctx.db.memory().injected(r, true),
         );
+        if let Some(repos) = super::prompt::repos_block(r, &project.repos) {
+            prompt = format!("{}\n\n{repos}", prompt.trim_end());
+        }
         if let Some(waiting) = self.waiting_orders(r)? {
             prompt = format!("{}\n\n{waiting}", prompt.trim_end());
         }

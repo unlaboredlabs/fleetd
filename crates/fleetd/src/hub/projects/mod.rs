@@ -6,6 +6,9 @@ pub mod order_env;
 pub mod profiles;
 #[cfg(test)]
 mod profiles_tests;
+pub mod repos;
+#[cfg(test)]
+mod repos_tests;
 pub mod settings;
 #[cfg(test)]
 mod settings_tests;
@@ -27,6 +30,7 @@ use fleetd_contracts::projects::{
     GitHubRepos, MachineRepos, ProjectAddFailedData, ProjectAddedData, ProjectInspect,
     ProjectProblem, ProjectProblemCode, github_repo, short_remote,
 };
+use fleetd_contracts::repos::RepoName;
 use fleetd_contracts::sessions::{GhRepos, RepoFacts};
 use fleetd_contracts::train::GitHubRepo;
 use futures_util::future::join_all;
@@ -34,16 +38,36 @@ use futures_util::future::join_all;
 use crate::hub::api::{Caller, Hub, ToolError, allows, error, require};
 use crate::hub::executor::ExecutorError;
 use crate::hub::store::NewEvent;
-use crate::hub::train::github::{GhErrorKind, SystemGh, TrainGitHub};
+#[cfg(not(test))]
+use crate::hub::train::github::SystemGh;
+use crate::hub::train::github::{GhErrorKind, TrainGitHub};
 use inspect::{GitHubAnswers, Worker};
 
-/// gh runs here, on the hub machine. An inspection is not a train read, so it feeds no status source.
+/// gh runs here, on the hub machine. An inspection is not a train read, so it feeds no status source. Tests never run
+/// the real gh: there it reads as missing.
 fn github() -> TrainGitHub {
+    #[cfg(not(test))]
+    let gh = Arc::new(SystemGh);
+    #[cfg(test)]
+    let gh = Arc::new(NoGh);
     TrainGitHub::new(
-        Arc::new(SystemGh),
+        gh,
         Arc::new(crate::hub::status::fresh::Fresh::default()),
         Arc::new(crate::clock::SystemClock),
     )
+}
+
+#[cfg(test)]
+struct NoGh;
+
+#[cfg(test)]
+impl crate::hub::train::github::GhRunner for NoGh {
+    fn run(
+        &self,
+        _: Vec<String>,
+    ) -> crate::hub::train::host::BoxFut<'_, Result<crate::hub::train::github::GhOut, String>> {
+        Box::pin(async { Err("ENOENT".into()) })
+    }
 }
 
 fn now(hub: &Hub) -> fleetd_contracts::ids::Timestamp {
@@ -620,23 +644,7 @@ pub async fn add(
                 truncated: None,
             });
         }
-        let p = if target.same_remote {
-            problem(
-                ProjectProblemCode::DestExists,
-                format!("{m} already has a checkout of {repo} at {}", target.path),
-                "Add that checkout instead (useExisting), or clone into another folder (dest)",
-            )
-        } else {
-            problem(
-                ProjectProblemCode::DestExists,
-                format!(
-                    "{} already exists on {m} and is not a checkout of {repo}",
-                    target.path
-                ),
-                "Clone into another folder (dest), or move that one away",
-            )
-        };
-        return Err(problem_error(&p));
+        return Err(dest_taken(&m, &repo, &target));
     }
     let run = hub.executors.clone_start();
     let add_id = AddId::unchecked(run.add_id.as_str());
@@ -646,7 +654,7 @@ pub async fn add(
         m.clone(),
         repo,
         path.clone(),
-        title,
+        CloneInto::Project { title },
         run,
     ));
     Ok(ProjectAddOutput {
@@ -662,6 +670,38 @@ pub async fn add(
         clone: None,
         truncated: None,
     })
+}
+
+/// Why a clone can't go to `target`, which already exists.
+fn dest_taken(m: &MachineId, repo: &GitHubRepo, target: &CloneTarget) -> ToolError {
+    let p = if target.same_remote {
+        problem(
+            ProjectProblemCode::DestExists,
+            format!("{m} already has a checkout of {repo} at {}", target.path),
+            "Add that checkout instead (useExisting), or clone into another folder (dest)",
+        )
+    } else {
+        problem(
+            ProjectProblemCode::DestExists,
+            format!(
+                "{} already exists on {m} and is not a checkout of {repo}",
+                target.path
+            ),
+            "Clone into another folder (dest), or move that one away",
+        )
+    };
+    problem_error(&p)
+}
+
+/// What a finished clone becomes: a project, or a repo of one.
+enum CloneInto {
+    Project {
+        title: Option<String>,
+    },
+    Repo {
+        project: ProjectRef,
+        name: Option<RepoName>,
+    },
 }
 
 /// `project_add` with `dryRun`: what it would add, and for a url where it would clone; nothing is added.
@@ -791,7 +831,7 @@ async fn clone_and_register(
     m: MachineId,
     repo: GitHubRepo,
     path: String,
-    title: Option<String>,
+    into: CloneInto,
     mut run: crate::hub::executor::repos::CloneRun,
 ) {
     let add_id = AddId::unchecked(run.add_id.as_str());
@@ -884,24 +924,44 @@ async fn clone_and_register(
             true,
         ),
     };
-    if let Err(e) = register(
-        &hub,
-        &m,
-        &path,
-        title.as_deref(),
-        &facts,
-        inspect,
-        Some(add_id.clone()),
-    )
-    .await
-    {
+    let added = match &into {
+        CloneInto::Project { title } => register(
+            &hub,
+            &m,
+            &path,
+            title.as_deref(),
+            &facts,
+            inspect,
+            Some(add_id.clone()),
+        )
+        .await
+        .map(drop),
+        CloneInto::Repo { project, name } => repos::attach_checkout(
+            &hub,
+            project,
+            name.as_ref(),
+            &path,
+            &facts,
+            inspect,
+            Some(add_id.clone()),
+        )
+        .await
+        .map(drop),
+    };
+    if let Err(e) = added {
+        let fix = match &into {
+            CloneInto::Project { .. } => format!("Add the checkout at {path} on {m} as a project"),
+            CloneInto::Repo { .. } => {
+                format!("Add the checkout at {path} on {m} with project_repo_add")
+            }
+        };
         failed(problem(
             ProjectProblemCode::Other,
             format!(
                 "{repo} was cloned to {path} on {m}, but adding it failed: {}",
                 e.message
             ),
-            format!("Add the checkout at {path} on {m} as a project"),
+            fix,
         ));
     }
 }

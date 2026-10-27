@@ -30,6 +30,8 @@ pub struct ProjectRepo {
     /// The node's directory holding its files: the project's own `ProjectRef` when the project's directory is this
     /// repo.
     pub checkout: ProjectRef,
+    /// The checkout's directory on its machine; absent before its node reported it.
+    pub path: Option<String>,
     /// Its origin remote, shortened; absent for a repo with no remote, or before fleetd has read it.
     pub repo_key: Option<RepoKey>,
     /// The branch its work lands on; absent until fleetd knows it.

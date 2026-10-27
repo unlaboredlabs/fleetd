@@ -53,7 +53,8 @@ pub enum HubEventType {
     /// no default branch. Once per project until a fetch works again; `data` is `tasks::FetchFailedData`.
     #[serde(rename = "project.fetch_failed")]
     ProjectFetchFailed,
-    /// A project's settings changed (`project_set`): `data.mediumAllowed`.
+    /// A project's settings changed (`project_set`): `data.mediumAllowed`; or a repo was removed from it
+    /// (`project_repo_remove`): `data.repoRemoved`, its name.
     #[serde(rename = "project.settings")]
     ProjectSettings,
     #[serde(rename = "thread.started")]

@@ -40,6 +40,10 @@
         "name": {
           "$ref": "#/$defs/RepoName"
         },
+        "path": {
+          "description": "The checkout's directory on its machine; absent before its node reported it.",
+          "type": "string"
+        },
         "repoId": {
           "$ref": "#/$defs/RepoId"
         },

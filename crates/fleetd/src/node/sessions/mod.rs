@@ -837,6 +837,15 @@ impl SessionService {
                 .map_err(invalid)?;
                 Ok(SessionOutput::ProjectEnv { secrets })
             }
+            SessionCall::ProjectEnvCopy { from, to } => {
+                self.project_root(&from)?;
+                self.project_root(&to)?;
+                let home = self.inner.config.home.clone();
+                blocking(move || super::project_env::copy(&home, from.as_str(), to.as_str()))
+                    .await
+                    .map_err(invalid)?;
+                Ok(SessionOutput::Done)
+            }
             SessionCall::OrderEnvDrop {
                 project_id,
                 order_id,

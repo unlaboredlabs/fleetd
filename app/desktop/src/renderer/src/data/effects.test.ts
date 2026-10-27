@@ -63,6 +63,8 @@ describe("event effects", () => {
 
   it("a machine or project coming or going resyncs; an unknown type does nothing", () => {
     expect(effectsOf(e("project.added")).resync).toBe(true);
+    // A repo removed from a project can bring its checkout back as a project of its own.
+    expect(effectsOf(e("project.settings")).resync).toBe(true);
     // Add project's list marks the repos that are projects, so it is read again too.
     expect(tools(e("project.removed"))).toContain("project_discover");
     // A known machine's status is patched in place; only one the snapshot lacks resyncs.
