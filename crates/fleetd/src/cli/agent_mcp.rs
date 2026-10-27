@@ -368,8 +368,8 @@ static TOOLS: &[Tool] = &[
             "review_read",
             "review_read",
             "Read every finding of the latest reviews of your PRs, blocking and non-blocking, in full, each with \
-             path:line. pr (its URL or number) picks one; without it, a task reads all its own PRs and a lead its \
-             project's PRs in the merge queue. Another project's reviews are refused.",
+             path:line. pr (its URL or number) picks one; without it, a task reads all its own PRs, a reviewer the PR \
+             it reviews, and a lead its project's PRs in the merge queue. Another project's reviews are refused.",
             inline_schema::<ReviewReadCall>,
         )
     },

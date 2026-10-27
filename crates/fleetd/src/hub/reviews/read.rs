@@ -1,5 +1,5 @@
-//! `review_read`: an author reads every finding of its PRs' latest reviews, whole, and a lead its project's. Read-only;
-//! a PR that is not the caller's is refused, whoever's it is, and so is a review task, which judges its PR alone.
+//! `review_read`: an author reads every finding of its PRs' latest reviews, whole, a reviewer those of the one PR it
+//! reviews, and a lead its project's. Read-only; a PR that is not the caller's is refused, whoever's it is.
 use std::collections::HashSet;
 
 use fleetd_contracts::ids::Timestamp;
@@ -61,8 +61,8 @@ pub fn review_read(
     Ok(ReviewReadResult { prs, next })
 }
 
-/// The caller's PRs, newest first: a task's own (its PR and the Changes it wrote), a lead's project's (those in the
-/// merge queue, or every one it knows when `all`).
+/// The caller's PRs, newest first: a task's own (its PR and the Changes it wrote; a review task's, the PR it reviews), a
+/// lead's project's (those in the merge queue, or every one it knows when `all`).
 fn caller_prs(
     hub: &Hub,
     caller: &LeadCaller,
@@ -85,15 +85,10 @@ fn caller_prs(
                     format!("No task {task_id} in this project."),
                 ));
             };
-            // A reviewer judges its PR alone: the earlier reviews of it are not for it to read.
+            // A reviewer reads the earlier reviews of the one PR it reviews, to check its blocking findings were
+            // fixed, and no other PR's.
             if own.kind == TaskKind::Review {
-                return Err(McpToolError::new(
-                    ErrorCode::Forbidden,
-                    format!(
-                        "{task_id} is a review task; review_read is for a PR's author and its lead."
-                    ),
-                )
-                .with_fix("Judge the diff yourself and record your verdict with report."));
+                return Ok(own.pr.into_iter().collect());
             }
             prs.extend(
                 changes
