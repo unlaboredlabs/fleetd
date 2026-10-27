@@ -84,6 +84,21 @@ export const tilde = (path: string): string => {
   return path;
 };
 
+/**
+ * A folder's name from a project's name, as the hub makes it (hub/navi/mod.rs slug_or): lowercase letters, digits and
+ * dashes, at most 40; "project" when nothing is left.
+ */
+export const folderName = (name: string): string => {
+  let out = "";
+  for (const c of name.trim().toLowerCase()) {
+    if (/^[a-z0-9]$/u.test(c)) out += c;
+    else if (out !== "" && !out.endsWith("-")) out += "-";
+    if (out.length >= 40) break;
+  }
+  out = out.replace(/-+$/u, "");
+  return out === "" ? "project" : out;
+};
+
 /** The last segment of a path or "owner/repo". */
 export const baseName = (path: string): string => path.replace(/\/+$/u, "").split("/").pop() ?? path;
 

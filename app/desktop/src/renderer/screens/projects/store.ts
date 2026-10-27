@@ -4,10 +4,10 @@
 import { useEffect, useSyncExternalStore } from "react";
 import type { DataLayer } from "../../src/data/queries";
 import { useDataLayer } from "../../src/data/react";
-import type { DataState } from "../../src/data/store";
+import { projectKey, type DataState } from "../../src/data/store";
 import { toast } from "../../ui";
 import type { Machine } from "./contracts";
-import type { Request } from "./discovery";
+import type { Ready, Request } from "./discovery";
 import { toHash } from "../shell/routes";
 import { hubMessages, initialAdd, step, type AddMsg, type AddState, type Call, type HubView } from "./flow";
 import { machineIdFromHost, omit } from "./source";
@@ -24,8 +24,12 @@ export interface AddUi {
   /** What is typed in the field. */
   readonly text: string;
   readonly note?: Note;
-  /** The machine picked for a clone or a typed path; absent: the hub's suggestion. */
+  /** The machine picked for a clone, a typed path or a new project; absent: the hub's suggestion. */
   readonly machine?: string;
+  /** A new project's folder as the person edited it; absent: `<projectsRoot>/<name>` on the machine. */
+  readonly folder?: string;
+  /** Run git init in a new project's folder. */
+  readonly gitInit?: boolean;
   /** The sheet is on screen. */
   readonly open: boolean;
   /** This computer's host name, once main has said. */
@@ -54,10 +58,41 @@ export const machineName = (id: string): string => hubState()?.machines[id]?.nam
 
 const dispatch = (msg: AddMsg) => {
   const before = ui.add.phase.kind;
+  const request = ui.add.request;
   const [next, calls] = step(ui.add, msg, machineName);
   set({ ...ui, add: next });
-  if (!ui.open && before === "working") announce();
+  if (before === "working" && next.phase.kind === "ready" && request?.kind === "new") {
+    toOpen = { ready: next.phase.ready, gitInit: request.gitInit };
+    openWhenListed();
+  }
+  else if (!ui.open && before === "working") announce();
   for (const c of calls) run(c);
+};
+
+/** A new project the hub made, to open once the hub's snapshot lists it (its project.added asks for one). */
+let toOpen: { ready: Ready; gitInit: boolean } | undefined;
+
+/** Opens the new project once the store has it, so its chat never shows as missing first. */
+const openWhenListed = () => {
+  const next = toOpen;
+  if (next === undefined) return;
+  if (hubState()?.projects[projectKey(next.ready.project)] === undefined) return;
+  toOpen = undefined;
+  opened(next.ready, next.gitInit);
+};
+
+/** A new project opens as soon as the hub lists it; the toast says where a repo goes, for when it needs one. */
+const opened = (r: Ready, gitInit: boolean) => {
+  const { machineId, projectId } = r.project;
+  openProject(machineId, projectId);
+  toast({
+    title: `${r.title} is ready on ${r.machine}`,
+    description: gitInit
+      ? "A git repo with no remote yet. Add more repos any time in Settings → Projects → Repos."
+      : "A plain folder, no repo. Add one any time in Settings → Projects → Repos.",
+    tone: "success",
+    action: { label: "Add a repo", onClick: () => (window.location.hash = toHash({ id: "settings", tab: "projects", for: `${machineId}/${projectId}` })) },
+  });
 };
 
 /** Each step's call goes through the data layer, whose `call` is the one way to the hub. */
@@ -93,6 +128,7 @@ const connect = (next: DataLayer): void => {
     if (prev === undefined) lastSeq = d.cursor;
     const msgs = hubMessages(prev, now, lastSeq);
     prev = now;
+    openWhenListed();
     for (const msg of msgs) {
       if (msg.t === "event") lastSeq = msg.event.seq;
       dispatch(msg);
@@ -145,7 +181,7 @@ export const sheetHidden = (): void => {
   if (!ui.open) return;
   // A finished or untouched sheet starts fresh next time; one still adding keeps going out of sight.
   const fresh = ui.add.phase.kind !== "working";
-  const rest = omit(ui, "note", "machine");
+  const rest = omit(ui, "note", "machine", "folder", "gitInit");
   set(fresh ? { ...rest, open: false, text: "", add: step(ui.add, { t: "reset" }, machineName)[0] } : { ...ui, open: false });
   if (!fresh) toast({ title: `Still adding ${ui.add.phase.kind === "working" ? ui.add.phase.job.what : "the project"}`, description: "Add project… shows its progress." });
 };
@@ -155,18 +191,23 @@ export const closeAddProject = (): void => {
 };
 
 export const setText = (text: string): void => {
-  const rest = omit(ui, "note");
+  // A new project's folder follows its name until the person edits it.
+  const rest = omit(ui, "note", "folder");
   set({ ...rest, text });
 };
 
 export const pickMachine = (machine: string): void => set({ ...ui, machine });
+
+export const setFolder = (folder: string): void => set({ ...ui, folder });
+
+export const setGitInit = (gitInit: boolean): void => set({ ...ui, gitInit });
 
 export const startAdd = (request: Request, path: string): void => dispatch({ t: "start", request, path });
 
 export const back = (): void => dispatch({ t: "back" });
 
 export const addAnother = (): void => {
-  const rest = omit(ui, "note");
+  const rest = omit(ui, "note", "folder", "gitInit");
   set({ ...rest, text: "" });
   dispatch({ t: "reset" });
 };

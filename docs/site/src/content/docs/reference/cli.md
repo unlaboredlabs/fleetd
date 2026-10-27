@@ -194,6 +194,14 @@ fleetd project add [<path|github-url>] [--machine <id>] [--title <t>] [--dest <d
 
 add a project: a checkout or a plain folder on a machine (this one by default), or a GitHub repo cloned onto one (the least busy worker by default), with progress; then its CI, merge rules and what the lead will need. No argument: pick one
 
+### fleetd project add {#project-add-new}
+
+```text
+fleetd project add --new <name> [--machine <id>] [--dest <dir>] [--git-init] [--home <dir>] [--hub <url>]
+```
+
+start a new, empty project: the machine makes its folder (`~/fleetd/projects/<name>` by default, or `--dest`; one that holds files is refused). A plain folder with no repo, unless `--git-init`; add a repo later with project repo add
+
 ### fleetd project list {#project-list}
 
 ```text

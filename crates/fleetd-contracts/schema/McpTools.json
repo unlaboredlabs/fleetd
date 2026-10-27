@@ -7352,6 +7352,10 @@
           "$ref": "#/$defs/ProjectProblem",
           "description": "Why this machine could not be scanned (offline, an older node), with its fix."
         },
+        "projectsRoot": {
+          "description": "Where a new, empty project's folder goes by default (`project_add` with `create`), as `<this>/<name>`. Absolute;\nabsent when the machine's node can't make one.",
+          "type": "string"
+        },
         "repos": {
           "items": {
             "$ref": "#/$defs/FoundRepo"
@@ -12595,12 +12599,20 @@
     },
     "ProjectAddInput": {
       "properties": {
+        "create": {
+          "description": "Make a new folder for the project first: at `path`, else `<projectsRoot>/<name from title>`. An empty folder\nalready there is taken; one holding anything is refused.",
+          "type": "boolean"
+        },
         "dest": {
           "description": "With `url`: clone here instead of `<cloneRoot>/<name>`.",
           "pattern": "^/.",
           "type": "string"
         },
         "dryRun": {
+          "type": "boolean"
+        },
+        "gitInit": {
+          "description": "With `create`: `git init` the new folder. Absent: a plain folder with no git.",
           "type": "boolean"
         },
         "machineId": {

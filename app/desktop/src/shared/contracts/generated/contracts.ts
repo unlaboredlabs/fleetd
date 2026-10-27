@@ -2781,6 +2781,11 @@ export type MachineRepos = {
   online: boolean;
   /** Why this machine could not be scanned (offline, an older node), with its fix. */
   problem?: ProjectProblem;
+  /**
+   * Where a new, empty project's folder goes by default (`project_add` with `create`), as `<this>/<name>`. Absolute;
+   * absent when the machine's node can't make one.
+   */
+  projectsRoot?: string;
   repos: FoundRepo[];
 };
 
@@ -4271,9 +4276,16 @@ export type ProjectAddFailedData = {
 };
 
 export type ProjectAddInput = {
+  /**
+   * Make a new folder for the project first: at `path`, else `<projectsRoot>/<name from title>`. An empty folder
+   * already there is taken; one holding anything is refused.
+   */
+  create?: boolean;
   /** With `url`: clone here instead of `<cloneRoot>/<name>`. */
   dest?: string;
   dryRun?: boolean;
+  /** With `create`: `git init` the new folder. Absent: a plain folder with no git. */
+  gitInit?: boolean;
   /** Absent: the best worker (see `project_discover.best`). */
   machineId?: MachineId;
   path?: string;
