@@ -219,24 +219,60 @@ const WAIT_FLAGS: &[&str] = &["--text", "--url", "--load"];
 /// literal character (no quotes, expansions, globs, separators or redirects).
 const PLAIN_CHARS: &[char] = &['@', '.', '_', ':', '/', '=', '-', '%', '+', ','];
 
-/// `command` split at spaces when every character is literal to a shell: an ASCII letter or digit, a space, or one of
-/// [`PLAIN_CHARS`]. `None` for anything else: a shell could read it as another word (braces, globs, `~`), another
-/// command (`;`, `&`, `|`, a substitution) or another value (a variable, a quote, a backslash), so it asks.
-fn plain_words(command: &str) -> Option<Vec<String>> {
-    command
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == ' ' || PLAIN_CHARS.contains(&c))
-        .then(|| {
-            command
-                .split(' ')
-                .filter(|w| !w.is_empty())
-                .map(str::to_owned)
-                .collect()
-        })
+/// One word of a plain command, and whether it was a single-quoted literal.
+struct Word {
+    text: String,
+    quoted: bool,
+}
+
+/// `command` split into words when a shell would read each as itself: a run of ASCII letters, digits and
+/// [`PLAIN_CHARS`], or one whole single-quoted literal (`'…'`, holding no `'`, newline or NUL), inside which a shell
+/// expands nothing. `None` for anything else: a shell could read it as another word (braces, globs, `~`), another
+/// command (`;`, `&`, `|`, a substitution) or another value (a variable, a double quote, a backslash, a quote joined to
+/// more), so it asks.
+fn plain_words(command: &str) -> Option<Vec<Word>> {
+    let mut words = Vec::new();
+    let mut chars = command.chars().peekable();
+    while let Some(&c) = chars.peek() {
+        if c == ' ' {
+            chars.next();
+            continue;
+        }
+        let mut text = String::new();
+        let quoted = c == '\'';
+        if quoted {
+            chars.next();
+            loop {
+                match chars.next()? {
+                    '\'' => break,
+                    '\n' | '\0' => return None,
+                    q => text.push(q),
+                }
+            }
+            // The quote ends the word: `'it'"'"'s'` joins more to it, and asks.
+            if chars.peek().is_some_and(|&next| next != ' ') {
+                return None;
+            }
+        } else {
+            while let Some(&w) = chars.peek() {
+                if w == ' ' {
+                    break;
+                }
+                if !(w.is_ascii_alphanumeric() || PLAIN_CHARS.contains(&w)) {
+                    return None;
+                }
+                text.push(w);
+                chars.next();
+            }
+        }
+        words.push(Word { text, quoted });
+    }
+    Some(words)
 }
 
 /// Whether `command` is one agent-browser screen command with only safe flags: [`SCREEN_VERBS`] right after the
-/// program, and every flag in [`SCREEN_FLAGS`] (or [`WAIT_FLAGS`] for `wait`).
+/// program, and every flag in [`SCREEN_FLAGS`] (or [`WAIT_FLAGS`] for `wait`). A single-quoted literal is plain text
+/// only where a form's text goes, `fill` and `type` and the name after `find`'s `--name`, and is still read for flags.
 pub fn screen_command(command: &str) -> bool {
     let Some(words) = plain_words(command.trim()) else {
         return false;
@@ -244,16 +280,25 @@ pub fn screen_command(command: &str) -> bool {
     let (Some(program), Some(verb)) = (words.first(), words.get(1)) else {
         return false;
     };
-    if program != "agent-browser" || !SCREEN_VERBS.contains(&verb.as_str()) {
+    if program.quoted
+        || verb.quoted
+        || program.text != "agent-browser"
+        || !SCREEN_VERBS.contains(&verb.text.as_str())
+    {
         return false;
     }
-    words[2..]
-        .iter()
-        .filter(|w| w.starts_with('-'))
-        .all(|flag| {
-            let name = flag.split_once('=').map_or(flag.as_str(), |(n, _)| n);
-            SCREEN_FLAGS.contains(&name) || (verb == "wait" && WAIT_FLAGS.contains(&name))
-        })
+    let verb = verb.text.as_str();
+    words[2..].iter().enumerate().all(|(i, w)| {
+        let after_name = i > 0 && words[2 + i - 1].text == "--name";
+        if w.quoted && !(matches!(verb, "fill" | "type") || (verb == "find" && after_name)) {
+            return false;
+        }
+        if !w.text.starts_with('-') {
+            return true;
+        }
+        let name = w.text.split_once('=').map_or(w.text.as_str(), |(n, _)| n);
+        SCREEN_FLAGS.contains(&name) || (verb == "wait" && WAIT_FLAGS.contains(&name))
+    })
 }
 
 /// Files inside a Navi's folder its lead may read but never change: claude's own settings and MCP servers there, and
@@ -897,6 +942,11 @@ mod tests {
             "agent-browser fill @e2 Ana",
             "agent-browser type @e2 12:30",
             "agent-browser find role button click --name Send --exact",
+            // A single-quoted literal is plain text where a form's text goes: a shell expands nothing in it.
+            "agent-browser fill @e2 'Ana Ruiz'",
+            "agent-browser type @e2 'Tuesday at 12:30, the usual place?'",
+            "agent-browser fill @e2 '$(x)'",
+            "agent-browser find role button click --name 'Send it'",
             "agent-browser screenshot --full --json",
             "agent-browser wait 2000",
             "agent-browser wait --text Sent",
@@ -945,9 +995,16 @@ mod tests {
             "agent-browser screenshot ~/x.png",
             "agent-browser fill @e2 `cat ~/.netrc`",
             "agent-browser fill @e2 $(id)",
-            // Quotes, even harmless ones: anything not plainly literal asks.
-            "agent-browser fill @e2 'Ana Ruiz'",
+            // Any other quoting asks: a double quote, a quote joined to more, a quoted flag, a quote elsewhere.
             "agent-browser type @e2 \"Tuesday\"",
+            "agent-browser fill @e2 'it'\"'\"'s'",
+            "agent-browser fill @e2 'a'b",
+            "agent-browser fill @e2 '--session=other'",
+            "agent-browser fill @e2 '--cdp 9222'",
+            "agent-browser click '@e3'",
+            "agent-browser find role button click 'Send it'",
+            "agent-browser 'click' @e3",
+            "agent-browser fill @e2 'line\none'",
             "agent-browser fill @e2 a\\ b",
         ] {
             assert!(answer(asks).is_none(), "{asks}");
