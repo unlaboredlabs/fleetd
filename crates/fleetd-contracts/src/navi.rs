@@ -6,6 +6,7 @@ use serde_with::skip_serializing_none;
 
 use crate::brand;
 use crate::checklist::TodoItem;
+use crate::hub_links::{HubLabel, LinkedHub};
 use crate::ids::{ProjectRef, Timestamp};
 use crate::ledger::{IntakeText, WorkstreamId, WorkstreamState};
 use crate::prim::{Count, Line};
@@ -24,6 +25,8 @@ pub struct ProjectMessageCall {
     /// The project: its title, as factory_status names it, or its project id.
     pub project: Line<1, 200>,
     pub text: IntakeText,
+    /// A linked hub, by its label: the project is there. Absent: this hub.
+    pub hub: Option<HubLabel>,
 }
 
 #[skip_serializing_none]
@@ -36,6 +39,8 @@ pub struct ProjectMessageResult {
     pub title: String,
     /// Why the message waits instead of reaching the lead now, when it does: it goes in as soon as it can.
     pub lead_waiting: Option<String>,
+    /// The linked hub it went to, when not this one.
+    pub hub: Option<HubLabel>,
     pub next: Option<String>,
 }
 
@@ -45,12 +50,16 @@ pub struct ProjectMessageResult {
 pub struct FactoryStatusCall {
     /// One project, by title or project id; absent, every project but this one.
     pub project: Option<Line<1, 200>>,
+    /// A linked hub, by its label: its projects this Navi reaches through the link. Absent: this hub.
+    pub hub: Option<HubLabel>,
 }
 
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct FactoryStatusResult {
     pub projects: Vec<FactoryProject>,
+    /// This hub's read: the hubs this Navi is linked to, each with whether it answers.
+    pub hubs: Option<Vec<LinkedHub>>,
     pub next: Option<String>,
 }
 
