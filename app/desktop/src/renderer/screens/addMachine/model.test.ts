@@ -15,20 +15,32 @@ const run = (runId: string, state: MachineAddRun["state"]): MachineAddRun => ({
 });
 
 describe("Add machine's model", () => {
-  it("adds the hub's own machine through the hub, and any other computer through main", () => {
+  const ID = "a".repeat(64);
+
+  it("adds any computer with no hub or node through main, whatever its name", () => {
     const none = { kind: "none" } as const;
-    expect(hereOf([hub, builder], "devbox.local", none, new Set())).toEqual({ kind: "hub", machineId: "devbox", joined: true });
-    expect(hereOf([hub, builder], "Ada's MacBook", none, new Set(["ada-s-macbook"]))).toEqual({ kind: "app", machineId: "ada-s-macbook", joined: true });
-    expect(hereOf([hub], "", none, new Set())).toBeUndefined();
+    // Named as the hub's machine, but its fleetd dir holds no hub: never the hub's own path.
+    expect(hereOf([hub, builder], ID, "devbox.local", none, new Set())).toEqual({ kind: "app", machineId: "devbox", joined: false });
+    expect(hereOf([hub, builder], ID, "Ada's MacBook", none, new Set(["ada-s-macbook"]))).toEqual({ kind: "app", machineId: "ada-s-macbook", joined: true });
+    expect(hereOf([hub], ID, "", none, new Set())).toBeUndefined();
   });
 
-  it("knows the hub's machine by what its fleetd dir holds, whatever its name now", () => {
-    // Added with --machine-id devbox, or renamed since: its name says nothing, its fleetd dir holds the hub.
-    expect(hereOf([hub, builder], "studio-2", { kind: "hub" }, new Set())).toEqual({ kind: "hub", machineId: "devbox", joined: true });
+  it("takes the hub's own path only where this computer holds the connected hub", () => {
+    // Added with --machine-id devbox, or renamed since: its name says nothing, its fleetd dir holds this very hub.
+    expect(hereOf([hub, builder], ID, "studio-2", { kind: "hub", hubId: ID }, new Set())).toEqual({ kind: "hub", machineId: "devbox", joined: true });
+    // A hub of its own, or one that has no id yet: this app's hub can't add it.
+    for (const other of [{ kind: "hub", hubId: "b".repeat(64) }, { kind: "hub" }] as const) {
+      const here = hereOf([hub, builder], ID, "studio-2", other, new Set());
+      expect(here).toEqual({ kind: "other-hub" });
+      expect(hereLine(here)).toBe("This computer runs a different hub, so it can't be one of this hub's machines.");
+    }
+  });
+
+  it("never adds a computer whose node is enrolled already", () => {
     const node = { kind: "node", machineId: "studio", hub: "http://devbox:4790" } as const;
-    expect(hereOf([hub], "laptop", node, new Set(["studio"]))).toEqual({ kind: "node", machineId: "studio", hub: "http://devbox:4790", ours: true });
-    expect(hereLine(hereOf([hub], "laptop", node, new Set(["studio"])))).toBe("This computer is already part of the hub as studio.");
-    expect(hereLine(hereOf([hub], "laptop", node, new Set()))).toBe("This computer is already part of another hub (http://devbox:4790) as studio.");
+    expect(hereOf([hub], ID, "laptop", node, new Set(["studio"]))).toEqual({ kind: "node", machineId: "studio", hub: "http://devbox:4790", ours: true });
+    expect(hereLine(hereOf([hub], ID, "laptop", node, new Set(["studio"])))).toBe("This computer is already part of the hub as studio.");
+    expect(hereLine(hereOf([hub], ID, "laptop", node, new Set()))).toBe("This computer is already part of another hub (http://devbox:4790) as studio.");
   });
 
   it("lists hosts that aren't machines yet first, each with where the hub found it", () => {

@@ -147,6 +147,51 @@ impl MachineSetup {
     }
 }
 
+/// This hub's id: 64 hex digits kept in `<hub home>/hub-id`, made once. machine_hosts gives it, and the app compares
+/// it with the `hub-id` in its own computer's fleetd dir: only the hub that lives there adds that computer as its own
+/// machine, whatever the computer is called and whichever hub the app is connected to.
+pub fn hub_home_id(home: &std::path::Path) -> Result<String, String> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let file = home.join("hub-id");
+    let valid = |text: &str| {
+        let id = text.trim();
+        (id.len() == 64 && id.chars().all(|c| c.is_ascii_hexdigit())).then(|| id.to_owned())
+    };
+    if let Some(id) = std::fs::read_to_string(&file)
+        .ok()
+        .as_deref()
+        .and_then(valid)
+    {
+        return Ok(id);
+    }
+    let bytes: [u8; 32] = rand::random();
+    let id: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&file)
+    {
+        Ok(mut f) => f
+            .write_all(format!("{id}\n").as_bytes())
+            .map(|()| id)
+            .map_err(|e| format!("cannot write {}: {e}", file.display())),
+        // Another call made it first: that one is the id.
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => std::fs::read_to_string(&file)
+            .ok()
+            .as_deref()
+            .and_then(valid)
+            .ok_or_else(|| {
+                format!(
+                    "{} is not a hub id; delete it and try again",
+                    file.display()
+                )
+            }),
+        Err(e) => Err(format!("cannot write {}: {e}", file.display())),
+    }
+}
+
 fn new_id() -> MachineAddRunId {
     let bytes: [u8; 16] = rand::random();
     let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();

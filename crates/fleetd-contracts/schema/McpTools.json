@@ -6819,6 +6819,10 @@
           },
           "type": "array"
         },
+        "hubId": {
+          "description": "This hub's id (64 hex digits, in `<hub home>/hub-id`): a computer whose fleetd dir holds the same id runs\nthis hub.",
+          "type": "string"
+        },
         "next": {
           "type": "string"
         },
@@ -6827,7 +6831,8 @@
         }
       },
       "required": [
-        "hosts"
+        "hosts",
+        "hubId"
       ],
       "type": "object"
     },
