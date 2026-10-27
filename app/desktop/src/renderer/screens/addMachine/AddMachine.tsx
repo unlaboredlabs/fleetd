@@ -4,27 +4,50 @@
 //     own fleetd build, checks it, and joins with a one-time code (src/main/joinHere.ts).
 //   - A machine the hub can reach: pick one of machine_hosts, see machine_add_plan's steps, Add, and watch each step;
 //     a failed step shows its output, the fix and Retry (finished steps are skipped).
-//   - Any other machine: a line to paste on it (next).
+//   - Any other machine: name it, and paste the one line machine_join makes (fleetd pair --worker's) in its terminal.
+//     "Waiting for <name>…" turns into "Joined" once its node is online; a code that expires first says so.
+// Repair from the machine list opens the plan of a machine the hub reaches, or a line that enrolls it again.
 // A run goes on in the hub when the page closes; opening it again shows the run still going or the last one that
 // failed. Every step is a machine_add.step event, which reads machine_add_status again.
 //
 // One component with no page around it, so Administration › Machines and the hub's first-run setup (docs/design,
 // its Machines step) show the same flow. Mount it only where the person is an owner or admin.
 import { useEffect, useState, type ReactNode } from "react";
-import type { MachineAddRun, MachineHost, SetupStep } from "../../../shared/contracts";
+import type { MachineAddRun, MachineHost, MachineJoinOutput, SetupStep } from "../../../shared/contracts";
 import type { JoinHere, ThisComputer } from "../../../shared/joinHere";
-import { useData, useToolQuery } from "../../src/data/react";
-import { Button, InlineCode, StateGlyph, Text } from "../../ui";
+import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
+import { Button, copyText, Field, InlineCode, Input, StateGlyph, Text } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
-import { glyphOf, hereLine, hereOf, hostLine, joinSteps, pickable, resumable, runLine, runTitle, sentence, shortOutput, stepTitle, type Here } from "./model";
+import {
+  glyphOf,
+  hereLine,
+  hereOf,
+  hostLine,
+  joinSteps,
+  lineState,
+  lineWords,
+  machineIdProblem,
+  pickable,
+  resumable,
+  runLine,
+  runTitle,
+  sentence,
+  shortOutput,
+  stepTitle,
+  untilLine,
+  type Here,
+} from "./model";
+import { toHash } from "../shell/routes";
 import s from "./addMachine.module.css";
 
-type View =
+export type View =
   | { readonly kind: "choose" }
   | { readonly kind: "hosts" }
   | { readonly kind: "plan"; readonly host: MachineHost }
   | { readonly kind: "run"; readonly runId: string }
-  | { readonly kind: "here" };
+  | { readonly kind: "here" }
+  /** Any other machine; with a machine id, a repair's line for it (`rejoin`). */
+  | { readonly kind: "line"; readonly machineId?: string; readonly rejoin?: boolean };
 
 const noInput = {};
 
@@ -76,7 +99,8 @@ const useJoinHere = (): JoinHere | null => {
 const useOnline = (machineId: string | undefined): boolean =>
   useData((d) => (machineId === undefined ? false : (d.machines[machineId]?.status ?? "offline") !== "offline"));
 
-export function AddMachine() {
+/** `open`: a view to show, from outside (the machine list's Repair); `at` tells one click from the next. */
+export function AddMachine({ open }: { open?: { readonly view: View; readonly at: number } | undefined } = {}) {
   const live = useLive();
   const call = useHubCall();
   const refetch = useRefetch();
@@ -85,12 +109,20 @@ export function AddMachine() {
   const hostName = useHostName();
   const join = useJoinHere();
   const ended = status.data?.runs.find((r) => r.state !== "running")?.runId ?? "";
-  const hubFingerprint = useToolQuery("hub_info", noInput).data?.machineFingerprint;
+  // Nothing about this computer is decided before the hub has said which computer it runs on.
+  const info = useToolQuery("hub_info", noInput);
+  const hubFingerprint = info.data?.machineFingerprint;
   const computer = useThisComputer(`${join?.state ?? ""}|${ended}`);
   const machines = useData((d) => d.machines);
   const [view, setView] = useState<View>();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string>();
+  // A view asked for from outside, once per click.
+  const [opened, setOpened] = useState<number>();
+  if (open !== undefined && open.at !== opened) {
+    setOpened(open.at);
+    setView(open.view);
+  }
 
   // Opening on a run still going (or one that just failed), or on this computer's join.
   const runs = status.data?.runs;
@@ -104,7 +136,7 @@ export function AddMachine() {
         })());
 
   const here =
-    hosts.data && hostName !== undefined && computer !== undefined ? hereOf(hosts.data.hosts, hubFingerprint, hostName, computer, new Set(Object.keys(machines))) : undefined;
+    hosts.data && hostName !== undefined && computer !== undefined && !info.isPending ? hereOf(hosts.data.hosts, hubFingerprint, hostName, computer, new Set(Object.keys(machines))) : undefined;
 
   const add = (target: { host: string } | { local: true }) => {
     setBusy(true);
@@ -139,7 +171,7 @@ export function AddMachine() {
       {!live ? (
         <Text tone="quiet">Connect to the hub to add a machine.</Text>
       ) : shown.kind === "choose" ? (
-        <Choose here={here} busy={busy} onHere={addHere} onHosts={() => setView({ kind: "hosts" })} />
+        <Choose here={here} busy={busy} onHere={addHere} onHosts={() => setView({ kind: "hosts" })} onLine={() => setView({ kind: "line" })} />
       ) : shown.kind === "hosts" ? (
         <Hosts read={hosts} onPick={(host) => setView({ kind: "plan", host })} onBack={() => setView({ kind: "choose" })} />
       ) : shown.kind === "plan" ? (
@@ -152,6 +184,8 @@ export function AddMachine() {
           onRetry={(r) => add(r.host === undefined ? { local: true } : { host: r.host })}
           onDone={done}
         />
+      ) : shown.kind === "line" ? (
+        <Line key={`${shown.machineId ?? ""}-${String(open?.at ?? 0)}`} machineId={shown.machineId} rejoin={shown.rejoin === true} onDone={done} />
       ) : (
         <JoinHereRun join={join} onRetry={() => here && addHere(here)} onDone={done} />
       )}
@@ -173,7 +207,7 @@ function Head(props: { title: string; line?: ReactNode }) {
   );
 }
 
-function Choose(props: { here: Here | undefined; busy: boolean; onHere: (h: Here) => void; onHosts: () => void }) {
+function Choose(props: { here: Here | undefined; busy: boolean; onHere: (h: Here) => void; onHosts: () => void; onLine: () => void }) {
   const { here } = props;
   return (
     <>
@@ -207,11 +241,11 @@ function Choose(props: { here: Here | undefined; busy: boolean; onHere: (h: Here
           <div className={s.rowText}>
             <Text>Any other machine</Text>
             <Text size="xs" tone="quiet">
-              A laptop, or one behind NAT: one line to paste in its terminal. Coming next; until then, fleetd pair --worker on the hub prints it.
+              A laptop, or one behind NAT: one line to paste in its terminal. It must reach the hub.
             </Text>
           </div>
-          <Button className={s.rowAction} disabled>
-            Get the line
+          <Button className={s.rowAction} onClick={props.onLine}>
+            Get the line…
           </Button>
         </li>
       </ul>
@@ -421,6 +455,155 @@ function JoinHereRun(props: { join: JoinHere | null; onRetry: () => void; onDone
             {join.state === "failed" ? "Back" : "Done"}
           </Button>
         )}
+      </div>
+    </>
+  );
+}
+
+/** A minute-grained clock, for a code's expiry: no ticking on screen. */
+const useNow = (): number => {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 15_000);
+    return () => window.clearInterval(id);
+  }, []);
+  return now;
+};
+
+/**
+ * Any other machine: its name, then the one line machine_join makes, with Copy and the code's expiry. Under it, a
+ * calm "Waiting for <name>…" that turns into "Joined" once the machine's node is online. A repair (`rejoin`) has its
+ * name already, and makes its line at once.
+ */
+function Line(props: { machineId: string | undefined; rejoin: boolean; onDone: () => void }) {
+  const call = useHubCall();
+  const layer = useDataLayer();
+  const machines = useData((d) => d.machines);
+  const [name, setName] = useState(props.machineId ?? "");
+  const [tried, setTried] = useState(false);
+  // A repair's line is being made as it opens.
+  const [busy, setBusy] = useState(props.rejoin);
+  const [error, setError] = useState<string>();
+  const [made, setMade] = useState<{ readonly join: MachineJoinOutput; readonly onlineAtStart: boolean }>();
+  /** The link to its node the hub had when the line was made, or the first it reported since. */
+  const [baseline, setBaseline] = useState<string>();
+  const [copied, setCopied] = useState<boolean>();
+  const [wentOffline, setWentOffline] = useState(false);
+  const now = useNow();
+  const problem = machineIdProblem(name);
+  const machineId = made?.join.machineId ?? name.trim();
+  const online = useOnline(made === undefined ? undefined : machineId);
+  // When the hub's link to its node last came up: a rejoin restarts the node, which moves it.
+  const linked = useData((d) => d.live.machines[machineId]?.linkedSince);
+  // Once its line is made, the machine coming online is the point, not a clash.
+  const taken = !props.rejoin && made === undefined && machines[name.trim()] !== undefined;
+
+  const request = (id: string) =>
+    call("machine_join", props.rejoin ? { machineId: id, rejoin: true } : { machineId: id })
+      .then(
+        (join) => {
+          setMade({ join, onlineAtStart: (machines[id]?.status ?? "offline") !== "offline" });
+          setBaseline(layer.store.getState().live.machines[id]?.linkedSince);
+        },
+        (e: unknown) => setError(errorText(e)),
+      )
+      .finally(() => setBusy(false));
+  const make = () => {
+    setTried(true);
+    if (problem !== undefined || taken) return;
+    setBusy(true);
+    setError(undefined);
+    setCopied(undefined);
+    setWentOffline(false);
+    void request(name.trim());
+  };
+  // A repair knows its machine: its line comes at once.
+  useEffect(() => {
+    if (props.rejoin && props.machineId !== undefined) void request(props.machineId);
+    // Once, as the view opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // A repair of a machine still online joins once its node has restarted: a new link to it, which a quick restart
+  // shows by the link's time alone (the hub keeps it online through one), or a longer one offline for a while.
+  if (made !== undefined && !online && !wentOffline) setWentOffline(true);
+  if (made !== undefined && baseline === undefined && linked !== undefined) setBaseline(linked);
+  const relinked = baseline !== undefined && linked !== undefined && linked !== baseline;
+  const state = made === undefined ? undefined : lineState({ expiresAt: made.join.expiresAt, onlineAtStart: made.onlineAtStart }, online, now, wentOffline || relinked);
+  return (
+    <>
+      <Head
+        title={props.rejoin ? `Repair ${props.machineId ?? ""}` : "Any other machine"}
+        line={
+          props.rejoin
+            ? "Run this line in a terminal on it: it installs this hub's fleetd again and enrolls the machine with a new code."
+            : "Run one line in a terminal on it: it installs this hub's fleetd and joins. The machine needs claude and must reach the hub."
+        }
+      />
+      {props.rejoin ? null : (
+        <form
+          className={s.lineForm}
+          aria-label="Name the machine"
+          onSubmit={(e) => {
+            e.preventDefault();
+            make();
+          }}
+        >
+          <Field label="Name" description="Its machine id: lower-case letters, digits and dashes." error={tried ? (problem ?? (taken ? `${name.trim()} is a machine already: Repair it from the list.` : undefined)) : undefined}>
+            <Input value={name} placeholder="laptop" autoComplete="off" mono onChange={(e) => setName(e.target.value)} disabled={made !== undefined && state !== "expired"} />
+          </Field>
+          {made === undefined || state === "expired" ? (
+            <span>
+              <Button type="submit" variant={made === undefined ? "primary" : "secondary"} disabled={busy}>
+                {busy ? "Making…" : made === undefined ? "Make the line" : "Make a new line"}
+              </Button>
+            </span>
+          ) : null}
+        </form>
+      )}
+      {error === undefined ? null : <Text tone="danger">{error}</Text>}
+      {made === undefined ? (
+        props.rejoin && error === undefined ? <Text tone="quiet">Making the line…</Text> : null
+      ) : (
+        <div className={s.head} aria-label="The line">
+          <div className={s.line}>
+            <code className={s.lineText}>{made.join.line}</code>
+            <Button size="sm" onClick={() => void copyText(made.join.line).then(setCopied)}>
+              {copied === true ? "Copied" : "Copy"}
+            </Button>
+          </div>
+          <Text size="xs" tone="quiet">
+            {`${untilLine(made.join.expiresAt)} It joins as ${made.join.machineId}${made.join.gitIdentity === undefined ? "" : `, committing as ${made.join.gitIdentity}`}.`}
+          </Text>
+          {copied === false ? (
+            <Text size="xs" tone="danger">
+              {"Couldn't copy it. Select the line and copy it by hand."}
+            </Text>
+          ) : null}
+        </div>
+      )}
+      {state === undefined ? null : (
+        <div className={s.wait} data-line={state}>
+          <StateGlyph state={state === "joined" ? "done" : state === "expired" ? "failed" : "queued"} size="sm" />
+          <Text size="sm" tone={state === "expired" ? "danger" : "default"}>
+            {lineWords(state, made?.join.machineId ?? machineId)}
+          </Text>
+        </div>
+      )}
+      <div className={s.actions}>
+        {state === "joined" ? (
+          <Button variant="primary" onClick={() => (window.location.hash = toHash({ id: "admin", section: "machines", machine: machineId }))}>
+            {`Open ${machineId}`}
+          </Button>
+        ) : null}
+        {props.rejoin && state === "expired" ? (
+          <Button variant="secondary" disabled={busy} onClick={make}>
+            Make a new line
+          </Button>
+        ) : null}
+        <Button variant={state === "joined" ? "secondary" : "ghost"} onClick={props.onDone}>
+          {state === "joined" ? "Done" : "Back"}
+        </Button>
       </div>
     </>
   );

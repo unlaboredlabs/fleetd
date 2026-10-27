@@ -1,1 +1,1 @@
-export { AddMachine } from "./AddMachine";
+export { AddMachine, type View } from "./AddMachine";

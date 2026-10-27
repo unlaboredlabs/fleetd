@@ -22,6 +22,8 @@ const REPLY_GRACE_SEC: u64 = 30;
 const UPDATE_WAIT_SEC: u64 = 600;
 /// A node's `claude install`, which has 10 minutes of its own.
 const CLAUDE_WAIT_SEC: u64 = 660;
+/// A node's login: 30 s for its URL, or a minute to end once it has the code, and a grace.
+const LOGIN_WAIT_SEC: u64 = 90;
 /// How long the hub waits for a node to write a secret.
 const SECRET_REPLY_SEC: u64 = 30;
 
@@ -365,6 +367,7 @@ impl NodeCommands {
         let wait = match action {
             NodeActionKind::Probe | NodeActionKind::Fetch => 30,
             NodeActionKind::Claude => CLAUDE_WAIT_SEC,
+            NodeActionKind::ClaudeLogin | NodeActionKind::ClaudeLoginCode => LOGIN_WAIT_SEC,
             NodeActionKind::Update => UPDATE_WAIT_SEC,
         };
         let request = json!({ "t": "node_action", "action": action });
@@ -411,6 +414,22 @@ impl NodeCommands {
         let request =
             json!({ "t": "node_action", "action": NodeActionKind::Claude, "claude": version });
         self.node_action(machine_id, request, CLAUDE_WAIT_SEC).await
+    }
+
+    /// A node's `claude auth login` (only for a node that lists `CAP_CLAUDE_LOGIN`): without `code` it starts and answers
+    /// its sign-in URL, with the code that page showed it ends and answers how.
+    pub async fn claude_login(
+        &self,
+        machine_id: &MachineId,
+        code: Option<&str>,
+    ) -> Result<NodeActionResult, NodeCommandError> {
+        let request = match code {
+            None => json!({ "t": "node_action", "action": NodeActionKind::ClaudeLogin }),
+            Some(code) => {
+                json!({ "t": "node_action", "action": NodeActionKind::ClaudeLoginCode, "code": code })
+            }
+        };
+        self.node_action(machine_id, request, LOGIN_WAIT_SEC).await
     }
 
     /// A node's download of `update` ahead of its update, answered at once (only for a node that lists
@@ -535,6 +554,7 @@ mod tests {
             message: Text::unchecked(message.to_owned()),
             probe: None,
             stage: None,
+            login_url: None,
         })
     }
 

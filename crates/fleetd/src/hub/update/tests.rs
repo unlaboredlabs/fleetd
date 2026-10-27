@@ -223,6 +223,7 @@ fn result(ok: bool, stage: Option<UpdateStage>, message: &str) -> NodeActionResu
         message: Text::unchecked(message.to_owned()),
         probe: None,
         stage,
+        login_url: None,
     }
 }
 

@@ -29,7 +29,7 @@ crypto_box = { workspace = true }
 crypto_secretbox = { workspace = true }
 ed25519-dalek = { workspace = true }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
-nix = { version = "0.30", features = ["fs", "process", "signal", "time", "user"] }
+nix = { version = "0.30", features = ["fs", "poll", "process", "signal", "term", "time", "user"] }
 rand = { workspace = true }
 reqwest = { workspace = true }
 sha2 = { workspace = true }
