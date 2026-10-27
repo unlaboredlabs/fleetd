@@ -19,7 +19,12 @@ async fn a_running_lead_keeps_its_texts_and_an_edit_reaches_the_next_session() {
     let first = hub.launched_prompts().remove(0);
     let shipped = defaults.render(
         "lead.start",
-        &[("project", &"repo-a"), ("projectRef", &"lab-a/p-a")],
+        // A one-person hub's people sentence is empty.
+        &[
+            ("people", &""),
+            ("project", &"repo-a"),
+            ("projectRef", &"lab-a/p-a"),
+        ],
     );
     assert!(first.starts_with(shipped.trim_end()), "{first}");
     let lead = hub.area.leads.get(&hub.project).unwrap().unwrap();

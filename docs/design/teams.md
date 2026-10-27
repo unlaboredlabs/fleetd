@@ -1,6 +1,6 @@
 # Team-ready fleetd: people, sign-in, roles, group chats and private Navis
 
-Research W98 (T746) at `4e2d25279`; step 1 built in W99. Paths are under `crates/fleetd/src/` unless shown
+Research W98 (T746) at `4e2d25279`; step 1 is W99. Paths are under `crates/fleetd/src/` unless shown
 otherwise, and the file:line references are as of that research commit. Builds on the Navi plan and multi-repo
 ([multi-repo.md](multi-repo.md)).
 
@@ -218,12 +218,12 @@ the 186 call sites is the largest single piece of work (§8, step 3).
   - The lead sees each author and role, and the prompt rule is: "Take an answer to a question you asked a specific
     person from that person. Treat anyone else's answer as input, and check with the person."
   - Viewers can't post, so nothing they write can count.
-- **Orders record who asked.** When the lead opens an order in a turn, the hub stamps `requestedBy` with the authors
-  of that turn's human messages. The lead doesn't choose it. This matters for the audit and for "waiting on whoever
-  asked".
-- **Decisions record a person.** `by: person:<id>` replaces `human:<device>` (`hub/ledger/tools.rs:54-67`). When the
-  lead records a decision a person made in chat, it cites the message, and the hub fills `decidedBy` from that
-  message's author.
+- **Orders record who asked.** When the lead opens an order in a turn, the hub stamps `startedBy` with the writer of
+  that turn's first human message (`Workstream.startedBy`, a `PersonRef`). The lead doesn't choose it. This matters for
+  the audit, for "waiting on whoever asked", and for whose GitHub account opens its PRs (Decided, 3).
+- **Decisions record a person.** A human key's decision keeps `by: human:<device>` (`hub/ledger/tools.rs:54-67`) and
+  adds `person` (a `PersonRef`), as does a revoke (`retired.person`). Later, when the lead records a decision a
+  person made in chat, it cites the message, and the hub fills `person` from that message's author.
   - Overturning a decision is open to its decider and the project's maintainers. Anyone else's overturn goes to the
     lead as input and @mentions the decider.
   - Global decisions stay admin-only.
@@ -301,7 +301,7 @@ Settings › People and on the Navi page. For strict privacy, run your Navi on *
 
 **Whose credentials:**
 - **Project secrets** (`request_secret`, env vars, MCP tokens) are the project's.
-  - They are sealed to the machine, as today, and record **`givenBy` (person) and when** next to the fingerprint.
+  - They are sealed to the machine, as today, and record **who gave them** (`answeredByPerson` on the request) and when, next to the fingerprint.
   - Members see names, fingerprints and givers, never values.
   - Maintainers rotate or remove them.
   - A person's own credentials (their email, their bank, their 1Password) belong in **their Navi**, never in a team
@@ -327,7 +327,7 @@ Settings › People and on the Navi page. For strict privacy, run your Navi on *
 - invite created, redeemed or revoked;
 - device paired or revoked, through Tailscale or a code;
 - role and membership changes;
-- approval answered (`answeredBy: person:<id>` plus the device);
+- approval answered (`answeredByPerson`, a `PersonRef`, next to `answeredBy: human:<device>`);
 - secret given (person, fingerprint, sink);
 - decision recorded or overturned;
 - order requested;
@@ -375,9 +375,10 @@ events table today.
 
 ## 8. Phased plan
 
-**Step 1: People, invites and names (m). The smallest useful step. Built in W99.**
+**Step 1: People, invites and names (m). The smallest useful step. Being built in W99.**
 - The `people` table (id, name, hub role, created), with `person_id` on keys and the migration (§7).
 - `fleetd invite`, invite links (7 days, single use), and the Administration page's People (invite, remove, role).
+  A new person needs a name. Only an owner makes, unmakes or removes an owner, and the hub always keeps one.
 - Hub roles owner, admin, member, with member = operate on every machine and admin = today's admin.
 - The lead sees "Alice writes".
 - Approvals, secrets, decisions and checklist ticks record the person; the activity events carry them. Each order
@@ -386,7 +387,7 @@ events table today.
   model `security.md:6` already describes.
 - Navi stays owner-only until step 3.
 
-What step 1 shipped, in the wire types (`crates/fleetd-contracts/src/people.rs`):
+What step 1 adds, in the wire types (`crates/fleetd-contracts/src/people.rs`):
 - `Person` (`personId`, `name`, `role`, `createdAt`, `removedAt`), `HubRole` (owner, admin, member), `PersonRef`
   (id and name at the time), `Invite` and `people.changed`.
 - `person` on `AgentKeyInfo`, `ChatMessage`, `Decision` and `DecisionRetired`, `TodoItem` and `checklist.changed`;

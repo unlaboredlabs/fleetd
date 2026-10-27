@@ -69,6 +69,8 @@ pub const HUMAN_ONLY_SECRET_FIX: &str = "Enter it from the fleetd desktop app or
 pub struct Caller<'a> {
     pub human: bool,
     pub name: &'a str,
+    /// A human key's person, recorded as who answered.
+    pub person: Option<&'a fleetd_contracts::people::PersonRef>,
     /// `Auth::allows(caller, "operate", machine)`.
     pub allows_operate: &'a (dyn Fn(&str) -> bool + Sync),
 }
@@ -459,6 +461,7 @@ impl Approvals {
             r.evidence = Some(fleetd_contracts::prim::Text::unchecked(why));
             r.answered_at = None;
             r.answered_by = None;
+            r.answered_by_person = None;
         })
         .await
     }
@@ -719,6 +722,7 @@ impl Approvals {
                 })?;
         }
         let by = format!("human:{}", caller.name);
+        let person = caller.person.cloned();
         let at = self.now();
         let print = fingerprint.clone();
         let parsed: Option<fleetd_contracts::secrets::SecretFingerprint> =
@@ -737,6 +741,7 @@ impl Approvals {
                 )));
                 r.answered_at = Some(fleetd_contracts::ids::Timestamp(at));
                 r.answered_by = Some(by);
+                r.answered_by_person = person;
             })
             .await?;
         self.deps.hub.wake_request(&saved).await;
@@ -905,6 +910,7 @@ impl Approvals {
             ));
         }
         let by = format!("human:{}", caller.name);
+        let person = caller.person.cloned();
         let at = self.now();
         let reason = message.filter(|m| !approve && !m.trim().is_empty());
         // Guarded on open: of two answers at once only one moves it, so a command runs at most once per approval.
@@ -921,6 +927,7 @@ impl Approvals {
                     .map(|m| fleetd_contracts::prim::Text::unchecked(clip(&m, EVIDENCE_MAX)));
                 r.answered_at = Some(fleetd_contracts::ids::Timestamp(at));
                 r.answered_by = Some(by);
+                r.answered_by_person = person;
             })
             .await?;
         if approve && let Some(proposed) = &answered.preview_config {

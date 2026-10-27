@@ -1833,12 +1833,25 @@ output!(PeopleListOutput {
     me: Option<PersonId>,
 });
 
-// invite_create: an owner or admin invites someone. Without personId it adds a person (name, role; default member);
-// with it, it pairs one more device for that person. The code and link are shown only this once.
-input!(InviteCreateInput {
-    name: Option<PersonName>,
-    role: Option<HubRole>,
-    person_id: Option<PersonId>,
+// invite_create: an owner or admin invites someone. Without personId it adds a person, who needs a name (role: member
+// unless given; only an owner invites an owner); with it, it pairs one more device for that person, and takes no name
+// or role. The code and link are shown only this once.
+input!(
+    #[serde(remote = "Self")]
+    InviteCreateInput {
+        name: Option<PersonName>,
+        role: Option<HubRole>,
+        person_id: Option<PersonId>,
+    }
+);
+checked!(InviteCreateInput, |input| {
+    match (&input.person_id, &input.name) {
+        (None, None) => Err("a new person needs a name".into()),
+        (Some(_), _) if input.name.is_some() || input.role.is_some() => {
+            Err("personId pairs another device of someone: give no name or role with it".into())
+        }
+        _ => Ok(()),
+    }
 });
 output!(InviteCreateOutput {
     invite: Invite,
@@ -1865,7 +1878,7 @@ input!(PersonSetInput {
 output!(PersonSetOutput { person: Person });
 
 // person_remove: an owner or admin removes a person: their devices are revoked and their invites closed. What they did
-// keeps their name.
+// keeps their name. Only an owner removes an owner, and nobody removes the hub's last owner.
 input!(PersonRemoveInput {
     person_id: PersonId
 });
