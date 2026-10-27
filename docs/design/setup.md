@@ -78,7 +78,7 @@ In order. **Need** says when it must be done; nothing blocks using fleetd before
 |---|---|---|---|---|---|---|---|
 | Where the hub listens | Required | Tailnet, this machine only, or LAN; HTTPS through Tailscale Serve is optional | Each option's URL; `tailscale serve` command | Tailscale admin | none | Reach `/healthz` from this device | init, `hub/reachable`, `hub/https` |
 | Machines | Required | The machines to add | `fleetd machine add <host>`, or a join command with a code | none | none | The checks: online, runner | init, `machine add`, `*/online` |
-| Claude | Required | A hub API key and an optional endpoint, **or** nothing: each person connects their own subscription | Key name `fleetd on devbox` | Claude Console › API keys | API key (sealed), endpoint | `GET /v1/models` at the endpoint. Done by either way: the key, or every machine's own login (§3.1) | per-machine `claude login` only; key and subscriptions are D186 |
+| Claude | Required | A hub API key and an optional endpoint, **or** nothing: then the hub owner connects their own subscription. Either way, each person later picks their own subscription or the hub's configuration in their own settings, and a switch here turns the hub's option off for members (D200) | Key name `fleetd on devbox`; for a subscription, the command `claude setup-token` | Claude Console › API keys | API key (sealed), endpoint; or the subscription's long-lived token (sealed) | `GET /v1/models` at the endpoint; for the subscription, one tiny `claude -p` call made with its token. Done by either way: the key, or the owner's subscription (§3.1) | per-machine `claude login` only; key is D186, the per-person choice D200 |
 | GitHub App | Before the first PR | Nothing to paste: confirm the App GitHub shows, pick the repositories to install it on, connect your own account | The manifest: name, homepage, callback `<hub>/oauth/github/callback`, repository permissions, webhook | "Create on my account" or "in an organization", then GitHub's install page | none: GitHub hands the App's keys to the hub | Mint an installation token and list the repositories it reaches; the admin's own sign-in proves the callback | D190; today `gh auth` on the hub (`hub/gh_auth`) |
 | Invite people | Optional | A name, admin or not | The invite link | none | Name | The link opens | teams step 1, in flight |
 | Google | Optional | A Cloud project, the three APIs, the sign-in screen published In production, a Desktop app OAuth client; optionally Gmail in real time (a Pub/Sub topic, a pull subscription, and a service account to read it) | Project and app name, the Gmail, Calendar and Drive scopes; on an HTTPS hub, also a web redirect `<hub>/oauth/google/callback` | Cloud Console: new project, enable APIs, Auth Platform › Branding, › Clients | Client ID, client secret (sealed to the hub); optionally the Gmail subscription and the reader's JSON key (sealed to one machine) | Exchange a dummy code: `invalid_grant` means Google knows the client; with a key, pull once from the subscription; then each person connects from their Navi | D189; Navi integrations, in flight (#635) |
@@ -120,13 +120,23 @@ pub struct SetupStep {
   Todo.
   - Most steps have one way.
   - **Claude has two:**
-    - the hub's API key (`hub/claude_key`), with which machines need no login of their own;
-    - every machine's own login (`*/claude_login`, every machine's `claude_login` check). Each person's
-      subscription check joins this way when teams lands.
+    - the hub's API configuration (`hub/claude_key`): the key and optional endpoint, with which machines need no
+      login of their own;
+    - the hub owner's own subscription (`hub/claude_owner`): a long-lived token from `claude setup-token`, pasted
+      in the app and sealed to the hub's machines. One tiny `claude -p` call made with that token proves it works.
+      Until teams step 8 lands, this way is every machine's own login (`*/claude_login`).
 
-    With a key set and tested, logged-out machines don't hold the step back. Without a key, it is Done only once
-    every machine is logged in, and a machine that isn't makes it Look with that machine's message. The step
-    shows which way is in use ("Done with the hub's API key").
+    With a key set and tested, logged-out machines don't hold the step back. Without a key, it is Done once the
+    owner's subscription is connected (today, once every machine is logged in; a machine that isn't makes it Look
+    with that machine's message). The step shows which way is in use ("Done with the hub's API key"). Projects'
+    leads and work nobody started run on the step's way: the key if there is one, else the owner's subscription.
+
+    The hub step only makes sure something can run. **Each person chooses their own way** in their own settings
+    (D200): their own subscription, connected the same way, or the hub's API configuration, switched at any time.
+    An order's writers, readers and reviewers use its starter's choice, and a Navi, its lead included, its owner's.
+    The step has a switch, "Members may use the hub's API key", on by default; off, each member connects a
+    subscription. It never affects leads or work nobody started. Someone with neither is asked to connect before
+    their first order, never handed someone else's subscription.
 - The only state the hub stores is **Skipped**, per step, for the admin. So the flow resumes anywhere: in init, in
   the app, on another device or a week later.
 - The steps are defined in one place in the hub (`hub/setup/steps.rs`): each step's static text, its values computed
@@ -152,6 +162,8 @@ All admin-only (admin on every machine today; the hub admin role after teams ste
   opens on setup.
 - **Before X:** needed only before a feature's first use. Until then nothing asks. At first use, the feature asks:
   - The person sees "Connect your GitHub to open this PR" (D187).
+  - A person with no Claude way of their own (no subscription, and the hub's API option off for members) sees
+    "Connect your Claude to start this order" (D200).
   - If the hub has no GitHub App, a non-admin sees "Ask an admin to set up GitHub for this hub". The admin gets one
     attention item that opens Administration › Setup › GitHub App.
   - The same for Google: a person's Navi offers "Connect Google" only once the hub has a client.
@@ -164,8 +176,9 @@ Secret fields use the existing sealed flow (`app/desktop/src/main/secret.ts`): t
 `crypto_box_seal` on the admin's device, the hub relays ciphertext and keeps a fingerprint, and the screen says
 "Sealed on this device; the hub keeps only its fingerprint". Each field names its **sink**:
 
-- **Machines** (the Claude API key, the Notion and 1Password tokens) are sealed to every machine's box key, like a
-  global MCP server's secret today (`McpValueSet::Secret`), and to the hub's own key.
+- **Machines** (the Claude API key, people's Claude subscription tokens, the Notion and 1Password tokens) are sealed
+  to every machine's box key, like a global MCP server's secret today (`McpValueSet::Secret`), and to the hub's own
+  key.
   - **A machine added later** gets them when an admin approves it once: "Give buildbox the hub's saved secrets
     (Claude key, Notion, 1Password)?" Then the hub opens its copies and re-seals them to the new machine's key.
   - Nothing is copied to a machine without that approval. Until then, the step reads "sealed on 2 of 3 machines".
@@ -346,10 +359,11 @@ copy buttons, live checks after the paste, "progress is saved".
 - **Claude accounts (hub key, endpoint, subscriptions)**
   - A `hub/claude_key` check (`GET /v1/models` at the endpoint, saying which key by its last 4 characters), as the
     step's first way.
-  - The per-machine `claude_login` checks stay as they are, as its second way. Each person's subscription check
-    joins that way.
-  - Where the key is sealed (machines).
-  - What "each person's subscription" checks per person.
+  - A `hub/claude_owner` check for the owner's subscription (one tiny `claude -p` call made with its token), as its
+    second way; until it lands, the per-machine `claude_login` checks stand in.
+  - Where the key and the subscription tokens are sealed (machines).
+  - Each person's choice and whether their subscription is connected, for "Connect your Claude" before a first order
+    (D200).
   - The agent profiles' model settings (#626) stay in Settings › Agents, not setup.
 - **Google (D189) and the Navi integrations (T745, #635)**
   - The Desktop app client with the loopback redirect the app catches (T805); `/oauth/google/callback` only on HTTPS
