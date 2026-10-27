@@ -367,7 +367,12 @@ async fn no_machine_that_can_host_it_is_a_plain_refusal() {
         refused.message,
         "No machine can host an Android emulator session: none has the sessions role and an Android emulator ready."
     );
-    assert!(refused.fix.unwrap().contains("Settings > Machines"));
+    assert!(
+        refused
+            .fix
+            .unwrap()
+            .contains("Administration › Hub settings")
+    );
     let rows: i64 = hub
         .db
         .with(|c| Ok(c.query_row("SELECT COUNT(*) FROM session_places", [], |r| r.get(0))?))
@@ -724,7 +729,7 @@ async fn with_remote_placement_off_a_session_runs_only_on_its_agents_machine() {
         .await
         .unwrap_err();
     assert_eq!(full.message, "devbox's session slots are full: 1 of 1.");
-    assert!(full.fix.unwrap().contains("Settings > Machines"));
+    assert!(full.fix.unwrap().contains("Administration › Hub settings"));
     // Agents only: refused, with the way to change it.
     tool(
         &hub,

@@ -102,7 +102,7 @@ pub type HostChecks = List<HostCheck, 0, 4>;
 /// A machine's session cap a person set.
 pub type MaxSessions = Int<1, 64>;
 
-/// A machine as Settings > Machines shows it: its roles, its session slots and what it can host.
+/// A machine as Administration › Hub settings shows it: its roles, its session slots and what it can host.
 #[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]

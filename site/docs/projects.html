@@ -376,19 +376,19 @@ whole fleet. The hub enforces all of them; the lead plans to them.</p>
 <td>Per machine</td>
 <td>Every project’s agents on the machine. Not the leads.</td>
 <td>Auto, what it fits: one per CPU less one in eight, and 2 GB of memory each after a quarter of it (4 to 16 GB) is left for the system, at most 64. An 8 GB laptop fits 2, a 32 GB one 12, a 60 GB one 22.</td>
-<td>Settings → Agents → Machines, up to the fleet cap; “Use auto” goes back. Needs an admin key. node.json’s <code dir="auto">memPerAgentGb</code> changes the 2 GB of auto.</td>
+<td>Administration › Hub settings → Machines, up to the fleet cap; “Use auto” goes back. Owners and admins only. node.json’s <code dir="auto">memPerAgentGb</code> changes the 2 GB of auto.</td>
 </tr>
 <tr>
 <td>Per project: Max agents</td>
 <td>The project’s agents: writers, readers, reviewers. Not the lead.</td>
 <td>Its machine’s cap, within the fleet cap: it follows a change to either at once</td>
-<td>Click “max 12” beside the working count in the panel’s Agents tab, or use Settings → Agents, up to the fleet cap. Once set it is the project’s own, which no fleet or machine change moves; “Use the default” goes back. Past its machine’s cap, the slider says the machine holds it there and offers to raise the machine.</td>
+<td>Click “max 12” beside the working count in the panel’s Agents tab, or use Settings → Agents, up to the fleet cap. Once set it is the project’s own, which no fleet or machine change moves; “Use the default” goes back. Past its machine’s cap, the slider says the machine holds it there until an admin raises the machine.</td>
 </tr>
 <tr>
 <td>Fleet-wide</td>
 <td>Every project’s agents together. Not the leads.</td>
 <td>None: the machines’ caps added up</td>
-<td>Settings → Agents → Whole fleet. Needs an admin key. A fleet cap saved before stays until you change it.</td>
+<td>Administration › Hub settings → Whole fleet. Owners and admins only. A fleet cap saved before stays until you change it.</td>
 </tr>
 </tbody>
 </table>
@@ -486,7 +486,7 @@ view splits agent time and output tokens by profile, so you can see what medium 
 <tbody>
 <tr>
 <td>The model and effort behind a profile, for every project</td>
-<td>Settings → Agents → Task profiles (an admin key), or <code dir="auto">fleetd project set --high-model claude-sonnet-5-5 --high-effort max</code>.</td>
+<td>Administration › Hub settings → Task profiles (owners and admins), or <code dir="auto">fleetd project set --high-model claude-sonnet-5-5 --high-effort max</code>.</td>
 </tr>
 <tr>
 <td>The same for one project</td>

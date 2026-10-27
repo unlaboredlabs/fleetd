@@ -24,14 +24,17 @@ import { Boundary } from "../../src/Boundary";
 import { ScreenHost, screenPart } from "./screens";
 import { Sidebar } from "./Sidebar";
 import { useSidebar } from "./sidebarState";
+import { useAdministers } from "../admin/role";
 import s from "./shell.module.css";
 
 const platform = window.fleetd.platform;
 
 const JUMPS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
 
-// Settings' own sidebar takes the projects' place while Settings is open; it ships in Settings' chunk.
+// Settings' own sidebar takes the projects' place while Settings is open; it ships in Settings' chunk. Administration's
+// does the same.
 const SettingsSidebar = lazy(() => import("../settings/SettingsScreen").then((m) => ({ default: m.SettingsSidebar })));
+const AdminSidebar = lazy(() => import("../admin/AdminScreen").then((m) => ({ default: m.AdminSidebar })));
 
 /** The project `#/` opens, kept across launches: the app opens where you left it. */
 const LAST_PROJECT = "fleetd.lastProject";
@@ -77,12 +80,13 @@ export function Shell() {
     if (home !== null) navigate({ id: "project", project: home, message: null }, { replace: true });
   }, [home]);
 
-  // Where Settings' Back returns: the last screen before Settings.
+  // Where Settings' and Administration's Back returns: the last screen before either.
   const away = useRef<Screen>(HOME);
   useEffect(() => {
-    if (screen.id !== "settings" && screen.id !== "onboarding") away.current = screen;
+    if (screen.id !== "settings" && screen.id !== "admin" && screen.id !== "onboarding") away.current = screen;
   }, [screen]);
-  const back = useSettingsBack(screen.id === "settings");
+  const back = useSettingsBack(screen.id === "settings" || screen.id === "admin" ? screen.id : null);
+  const administers = useAdministers();
 
   const open = screen.id === "project" ? screen.project : null;
   // The palette's Agents and Pull requests: the project on screen, else the one `#/` opens.
@@ -134,6 +138,15 @@ export function Shell() {
         keywords: ["metrics", "merged", "throughput", "lead time", "dashboard"],
         enabled: () => chrome && factory,
         run: () => go({ id: "factory", project: null }),
+      },
+      {
+        id: "admin.open",
+        title: "Administration",
+        detail: "People, invites and hub-wide settings",
+        group: "go-to",
+        keywords: ["people", "invite", "team", "roles", "admin", "fleet cap", "machine roles"],
+        enabled: () => chrome && administers,
+        run: () => go({ id: "admin", section: "people" }),
       },
       { id: "sidebar.toggle", title: "Toggle sidebar", group: "actions", enabled: () => chrome, run: sidebar.toggle },
       { id: "panel.toggle", title: "Toggle the panel", group: "actions", keywords: ["panel", "right", "agents", "prs", "checklist"], enabled: () => chrome && open !== null, run: panel.toggle },
@@ -193,8 +206,8 @@ export function Shell() {
       <PanelLeft />
     </Button>
   );
-  // Settings' pages are in its sidebar, so it shows whatever the toggle says.
-  const settings = shown.id === "settings";
+  // Settings' and Administration's pages are in their sidebars, so they show whatever the toggle says.
+  const settings = shown.id === "settings" || shown.id === "admin";
   const showSidebar = chrome && (settings || !sidebar.hidden);
 
   const top = (
@@ -219,19 +232,28 @@ export function Shell() {
         sidebarTop={settings ? undefined : toggle}
         sidebar={
           !chrome ? undefined : settings ? (
-            <Boundary key="settings" part="the sidebar">
+            <Boundary key={shown.id} part="the sidebar">
               <Suspense fallback={null}>
-                <SettingsSidebar
-                  onBack={() => {
-                    back();
-                    go(away.current);
-                  }}
-                />
+                {shown.id === "admin" ? (
+                  <AdminSidebar
+                    onBack={() => {
+                      back();
+                      go(away.current);
+                    }}
+                  />
+                ) : (
+                  <SettingsSidebar
+                    onBack={() => {
+                      back();
+                      go(away.current);
+                    }}
+                  />
+                )}
               </Suspense>
             </Boundary>
           ) : showSidebar ? (
             <Boundary key="sidebar" part="the sidebar">
-              <Sidebar projects={projects} machinesDown={machinesDown} screen={screen} hub={hub} jumpHints={modHeld} factory={factory} go={go} />
+              <Sidebar projects={projects} machinesDown={machinesDown} screen={screen} hub={hub} jumpHints={modHeld} factory={factory} admin={administers} go={go} />
             </Boundary>
           ) : undefined
         }
@@ -267,10 +289,12 @@ export function Shell() {
 }
 
 /**
- * Focus after Settings' Back: the sidebar control that opened Settings, if that is how it was opened; else the page
- * title, unless the screen gave focus to something itself (the chat's message box). Returns what Back calls first.
+ * Focus after Settings' (or Administration's) Back: the sidebar control that opened it, if that is how it was opened;
+ * else the page title, unless the screen gave focus to something itself (the chat's message box). Returns what Back
+ * calls first.
  */
-function useSettingsBack(inSettings: boolean): () => void {
+function useSettingsBack(open: "settings" | "admin" | null): () => void {
+  const inSettings = open !== null;
   // The last element that had focus: by the time Settings shows, its opener has left the DOM.
   const last = useRef<Element | null>(null);
   useEffect(() => {
@@ -280,17 +304,18 @@ function useSettingsBack(inSettings: boolean): () => void {
     document.addEventListener("focusin", on);
     return () => document.removeEventListener("focusin", on);
   }, []);
-  const fromSidebar = useRef(false);
+  // The sidebar control that opened it, by its data-opens; null when it was opened some other way.
+  const fromSidebar = useRef<string | null>(null);
   const returning = useRef(false);
   useEffect(() => {
     if (inSettings) {
-      fromSidebar.current = last.current?.closest('[data-opens="settings"]') != null;
+      fromSidebar.current = last.current?.closest('[data-opens="settings"], [data-opens="admin"]')?.getAttribute("data-opens") ?? null;
       return;
     }
     if (!returning.current) return;
     returning.current = false;
     const frame = requestAnimationFrame(() => {
-      const opener = fromSidebar.current ? document.querySelector<HTMLElement>('[data-opens="settings"]') : null;
+      const opener = fromSidebar.current === null ? null : document.querySelector<HTMLElement>(`[data-opens="${fromSidebar.current}"]`);
       if (opener) return opener.focus();
       if (document.activeElement !== null && document.activeElement !== document.body) return;
       const title = document.querySelector<HTMLElement>("main h1, main h2");

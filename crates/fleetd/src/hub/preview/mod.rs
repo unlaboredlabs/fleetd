@@ -685,7 +685,7 @@ pub fn place(hub: &Hub, r: &ProjectRef) -> Result<MachineId, ToolError> {
             format!(
                 "{name} hosts no screens: its role is agents only, and a preview opens in one."
             ),
-            "Turn Screens on for it in Settings › Machines.",
+            "A hub admin turns Screens on for it in Administration › Hub settings; ask one if that isn't you.",
         );
     }
     Ok(m.clone())

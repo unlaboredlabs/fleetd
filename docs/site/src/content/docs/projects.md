@@ -220,9 +220,9 @@ whole fleet. The hub enforces all of them; the lead plans to them.
 
 | Cap | Counts | Default | Set it |
 |---|---|---|---|
-| Per machine | Every project's agents on the machine. Not the leads. | Auto, what it fits: one per CPU less one in eight, and 2 GB of memory each after a quarter of it (4 to 16 GB) is left for the system, at most 64. An 8 GB laptop fits 2, a 32 GB one 12, a 60 GB one 22. | Settings → Agents → Machines, up to the fleet cap; "Use auto" goes back. Needs an admin key. node.json's `memPerAgentGb` changes the 2 GB of auto. |
-| Per project: Max agents | The project's agents: writers, readers, reviewers. Not the lead. | Its machine's cap, within the fleet cap: it follows a change to either at once | Click "max 12" beside the working count in the panel's Agents tab, or use Settings → Agents, up to the fleet cap. Once set it is the project's own, which no fleet or machine change moves; "Use the default" goes back. Past its machine's cap, the slider says the machine holds it there and offers to raise the machine. |
-| Fleet-wide | Every project's agents together. Not the leads. | None: the machines' caps added up | Settings → Agents → Whole fleet. Needs an admin key. A fleet cap saved before stays until you change it. |
+| Per machine | Every project's agents on the machine. Not the leads. | Auto, what it fits: one per CPU less one in eight, and 2 GB of memory each after a quarter of it (4 to 16 GB) is left for the system, at most 64. An 8 GB laptop fits 2, a 32 GB one 12, a 60 GB one 22. | Administration › Hub settings → Machines, up to the fleet cap; "Use auto" goes back. Owners and admins only. node.json's `memPerAgentGb` changes the 2 GB of auto. |
+| Per project: Max agents | The project's agents: writers, readers, reviewers. Not the lead. | Its machine's cap, within the fleet cap: it follows a change to either at once | Click "max 12" beside the working count in the panel's Agents tab, or use Settings → Agents, up to the fleet cap. Once set it is the project's own, which no fleet or machine change moves; "Use the default" goes back. Past its machine's cap, the slider says the machine holds it there until an admin raises the machine. |
+| Fleet-wide | Every project's agents together. Not the leads. | None: the machines' caps added up | Administration › Hub settings → Whole fleet. Owners and admins only. A fleet cap saved before stays until you change it. |
 
 New agents on a machine also wait for disk: 5 GB each (`diskPerAgentGb`) above the free-space floor, with agents started
 in the last 10 minutes still counted, since their worktrees haven't grown yet. The lead's state line names what sets
@@ -294,7 +294,7 @@ view splits agent time and output tokens by profile, so you can see what medium 
 
 | To change | Do |
 |---|---|
-| The model and effort behind a profile, for every project | Settings → Agents → Task profiles (an admin key), or `fleetd project set --high-model claude-sonnet-5-5 --high-effort max`. |
+| The model and effort behind a profile, for every project | Administration › Hub settings → Task profiles (owners and admins), or `fleetd project set --high-model claude-sonnet-5-5 --high-effort max`. |
 | The same for one project | Settings → Projects → the project → Task profiles, or `fleetd project set <machine>/<project> --medium-model claude-sonnet-5-5`. |
 | Whether the lead may use medium | Settings → Agents → the project's Medium allowed switch, or `fleetd project set <machine>/<project> --medium off`: every new task runs on high. `--medium on` allows medium again (the default). |
 | When the lead picks medium | Edit the **Task profiles** prompt (`lead.profiles`) like any [prompt](/docs/what-agents-are-told). It takes effect at the lead's next start. |
