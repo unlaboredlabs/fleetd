@@ -224,6 +224,7 @@ impl HubStore {
                 "mcp_servers",
                 "order_env",
                 "memory_refreshes",
+                "memory_refresh_lines",
             ] {
                 conn.prepare_cached(&format!(
                     "DELETE FROM {table} WHERE machine_id = ? AND project_id = ?"

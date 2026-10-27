@@ -11,10 +11,10 @@ use fleetd_contracts::mcp::{
     MemorySetInput, MemorySetOutput, MemoryUndoInput, MemoryUndoOutput,
 };
 use fleetd_contracts::memory::{MemoryRefreshed, MemoryScope, RememberedItem};
-use fleetd_contracts::prim::{Count, List, True};
+use fleetd_contracts::prim::{Count, True};
 
-use super::Target;
 use super::calls::changed;
+use super::{Target, refresh};
 use crate::hub::api::{
     Caller, Hub, Registry, ToolError, admin_everywhere_fix, allows_everywhere, require,
     unknown_project,
@@ -172,9 +172,9 @@ async fn memory_undo(
     })
 }
 
-/// Undo on a "Memory refreshed" line: the change at `index`, or every change not yet undone, newest first, so a
-/// change made on top of an earlier one is taken back before it. Each one undone is marked, even when a later one
-/// can't be: that one says why.
+/// Undo on a "Memory refreshed" line: the change at `index`, or every change not yet undone (those past what the line
+/// lists too), newest first, so a change made on top of an earlier one is taken back before it. Each one undone is
+/// marked, even when a later one can't be: that one says why.
 fn undo_refreshed(
     hub: &Hub,
     caller: &Caller,
@@ -183,7 +183,9 @@ fn undo_refreshed(
     index: Option<i64>,
 ) -> Result<MemoryUndoOutput, ToolError> {
     let r = message.project_ref.clone();
-    let mut items = refreshed.items.into_inner();
+    let id = message.message_id.as_str().to_owned();
+    let mut items =
+        refresh::line_items(&hub.db, &id)?.unwrap_or_else(|| refreshed.items.into_inner());
     let picked: Vec<usize> = match index {
         Some(i) if (i as usize) < items.len() => vec![i as usize],
         Some(i) => {
@@ -211,12 +213,9 @@ fn undo_refreshed(
         done += 1;
     }
     if done > 0 {
-        hub.chat.set_memory_refreshed(
-            message,
-            MemoryRefreshed {
-                items: List::unchecked(items),
-            },
-        )?;
+        refresh::put_line_items(&hub.db, &r, &id, &items)?;
+        hub.chat
+            .set_memory_refreshed(message, refresh::listed(&items))?;
     }
     if let Some(e) = failed {
         return Err(e.into());

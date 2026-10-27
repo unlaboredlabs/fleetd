@@ -63,10 +63,15 @@ function useUndo(project: ProjectRef, message: ChatMessage) {
   return { busy, failed, undo };
 }
 
-/** Under a "Memory refreshed" line: each change, what it was, and its Undo; Undo all while two or more can be undone. */
+/**
+ * Under a "Memory refreshed" line: each change it lists, what it was, and its Undo, then how many more it made; Undo
+ * all while two or more can be undone.
+ */
 export function RefreshedChanges({ project, message, refreshed }: { project: ProjectRef; message: ChatMessage; refreshed: MemoryRefreshed }) {
   const { busy, failed, undo } = useUndo(project, message);
-  const open = refreshed.items.filter((i) => !i.undone).length;
+  const unlisted = (refreshed.total ?? refreshed.items.length) - refreshed.items.length;
+  // The changes past what the line lists can still be undone, all together.
+  const open = refreshed.items.filter((i) => !i.undone).length + (refreshed.items.every((i) => i.undone) ? 0 : unlisted);
   return (
     <div role="list" aria-label="Memory changes" data-entry="memory-refreshed">
       {refreshed.items.map((item, n) => (
@@ -87,6 +92,13 @@ export function RefreshedChanges({ project, message, refreshed }: { project: Pro
           )}
         </div>
       ))}
+      {unlisted > 0 ? (
+        <div role="listitem">
+          <Text size="xs" tone="quiet">
+            and {unlisted} more
+          </Text>
+        </div>
+      ) : null}
       {open > 1 ? (
         <Button size="sm" variant="link" disabled={busy} onClick={() => undo()}>
           Undo all

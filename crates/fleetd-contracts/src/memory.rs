@@ -175,27 +175,31 @@ impl RememberedItem {
     }
 }
 
+/// The most changes a "Memory refreshed" line lists; Undo all also takes back those past them.
+pub const REFRESHED_LISTED: usize = 200;
+
 /// What a nightly memory refresh changed, as one line in the project's chat: each change with its own Undo, and Undo
 /// all. Posted only when something changed.
+#[skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct MemoryRefreshed {
-    /// In the order the refresh made them.
-    pub items: List<RememberedItem, 1, 200>,
+    /// In the order the refresh made them; the first [`REFRESHED_LISTED`] when it made more.
+    pub items: List<RememberedItem, 1, REFRESHED_LISTED>,
+    /// Every change it made, when that is more than `items` lists. Undo all takes them all back.
+    pub total: Option<Count>,
 }
 
-impl MemoryRefreshed {
-    /// "Memory refreshed: +2 ~1 −3", the line's text: only the kinds there are.
-    pub fn summary(&self) -> String {
-        let count = |sign: char| self.items.iter().filter(|i| i.sign() == sign).count();
-        let parts: Vec<String> = ['+', '~', '−']
-            .into_iter()
-            .map(|sign| (sign, count(sign)))
-            .filter(|(_, n)| *n > 0)
-            .map(|(sign, n)| format!("{sign}{n}"))
-            .collect();
-        format!("Memory refreshed: {}", parts.join(" "))
-    }
+/// "Memory refreshed: +2 ~1 −3", a refresh line's text, over all its changes: only the kinds there are.
+pub fn refreshed_summary(items: &[RememberedItem]) -> String {
+    let count = |sign: char| items.iter().filter(|i| i.sign() == sign).count();
+    let parts: Vec<String> = ['+', '~', '−']
+        .into_iter()
+        .map(|sign| (sign, count(sign)))
+        .filter(|(_, n)| *n > 0)
+        .map(|(sign, n)| format!("{sign}{n}"))
+        .collect();
+    format!("Memory refreshed: {}", parts.join(" "))
 }
 
 /// An entry `remember` wrote that is still in its file: when, and the chat line that said so.

@@ -1762,13 +1762,19 @@
       "description": "What a nightly memory refresh changed, as one line in the project's chat: each change with its own Undo, and Undo\nall. Posted only when something changed.",
       "properties": {
         "items": {
-          "description": "In the order the refresh made them.",
+          "description": "In the order the refresh made them; the first [`REFRESHED_LISTED`] when it made more.",
           "items": {
             "$ref": "#/$defs/RememberedItem"
           },
           "maxItems": 200,
           "minItems": 1,
           "type": "array"
+        },
+        "total": {
+          "description": "Every change it made, when that is more than `items` lists. Undo all takes them all back.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
         }
       },
       "required": [

@@ -1,10 +1,12 @@
 //! The nightly memory refresh: once a night, at `policy.memory_refresh_at` (04:00 by default) in the person's zone
 //! (`policy.tz`, else the hub machine's), each project with the refresh on (`project_settings.memory_refresh`) and
 //! chat or order activity since its last run gets a fresh lead session of its own. It reads the chat since the last
-//! run, the decisions and the memory, and may only call `memory_read`, `remember` and `forget` (`tasks::policy`):
-//! project memory freely, `user.md` add only. It opens no order, and its replies reach no chat: only the lead's own
-//! thread is mirrored there. Its changes are kept here as it makes them and posted at its end as one "Memory
-//! refreshed: +a ~b −c" line with Undo; a night that changed nothing posts nothing.
+//! run, the decisions and the memory. It starts with none of the runtime's own tools (no shell, files or web,
+//! [`RUNTIME_TOOLS`]) and none of the person's MCP servers, and the hub takes only `memory_read`, `remember` and
+//! `forget` from it (`tasks::policy`): project memory freely, `user.md` add only. It opens no order, and its replies
+//! reach no chat: only the lead's own thread is mirrored there. Its changes are kept here as it makes them and posted
+//! at its end as one "Memory refreshed: +a ~b −c" line with Undo; a night that changed nothing posts nothing. A
+//! session that fails, or still runs after [`RUN_LIMIT_MS`], is stopped.
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -15,9 +17,11 @@ use fleetd_contracts::effort::TaskProfile;
 use fleetd_contracts::events::HubEventType;
 use fleetd_contracts::ids::{MachineId, ProjectRef, ThreadId, ThreadRef};
 use fleetd_contracts::ledger::{Decision, LeadState};
-use fleetd_contracts::memory::{MemoryRefreshed, RememberedItem};
+use fleetd_contracts::mcp_servers::{McpAgentRole, McpSessionConfig};
+use fleetd_contracts::memory::{MemoryRefreshed, REFRESHED_LISTED, RememberedItem};
 use fleetd_contracts::model::RuntimeMode;
-use fleetd_contracts::prim::List;
+use fleetd_contracts::prim::{Count, List};
+use fleetd_contracts::sessions::SessionRole;
 use rusqlite::{OptionalExtension, params};
 
 use super::Target;
@@ -35,8 +39,8 @@ pub const DEFAULT_AT: &str = "04:00";
 /// The night's refresh starts within this long after its hour, or not that night: a hub that was down at 04:00
 /// doesn't refresh at noon.
 const WINDOW_MS: i64 = 3 * 3_600_000;
-/// A refresh session still going after this long is finished as it stands.
-const RUN_LIMIT_MS: i64 = 3_600_000;
+/// A refresh session still going after this long is stopped, and finished as it stands.
+pub const RUN_LIMIT_MS: i64 = 3_600_000;
 const TICK: Duration = Duration::from_secs(60);
 /// The chat a refresh reads: newest kept, each message cut.
 const CHAT_CHARS: usize = 40_000;
@@ -50,13 +54,59 @@ const END_EVENTS: [HubEventType; 4] = [
     HubEventType::ThreadUsageLimited,
 ];
 
-/// Starts a refresh session on the project's machine; the hub's executors, or a test's.
+/// The runtime's own tools a refresh session never gets, on top of those no fleetd session gets: its shell, files,
+/// web and skills (claude's names, past and present). It keeps `ToolSearch`, which loads fleetd's deferred tools.
+pub const RUNTIME_TOOLS: &[&str] = &[
+    "Bash",
+    "BashOutput",
+    "KillShell",
+    "KillBash",
+    "Monitor",
+    "PowerShell",
+    "Read",
+    "Write",
+    "Edit",
+    "MultiEdit",
+    "NotebookEdit",
+    "NotebookRead",
+    "Glob",
+    "Grep",
+    "LS",
+    "LSP",
+    "WebFetch",
+    "WebSearch",
+    "Skill",
+    "SlashCommand",
+    "TodoWrite",
+    "DesignSync",
+    "ReportFindings",
+];
+
+/// How a refresh session starts: the lead's fleetd tools (which the hub holds to the memory ones), no runtime tool
+/// of its own, and fleetd's MCP server alone: none a person gave the leads or set up in their claude.
+pub fn launch_options() -> LaunchOptions {
+    LaunchOptions {
+        role: SessionRole::Lead,
+        mcp_role: Some(McpAgentRole::Lead),
+        mcp: Some(McpSessionConfig {
+            user_servers: false,
+            servers: Vec::new(),
+        }),
+        deny_tools: RUNTIME_TOOLS.iter().map(|t| (*t).to_owned()).collect(),
+        ..Default::default()
+    }
+}
+
+/// Starts and stops refresh sessions on the project's machine; the hub's executors, or a test's.
 pub trait Launcher: Send + Sync {
     fn launch(
         &self,
         machine_id: &MachineId,
         input: LaunchInput,
+        options: LaunchOptions,
     ) -> BoxFuture<Result<ThreadId, String>>;
+    /// Ends the session's process, as a task's stop does.
+    fn stop(&self, thread: &ThreadRef) -> BoxFuture<Result<(), String>>;
 }
 
 struct Executors(Arc<crate::hub::executor::Executors>);
@@ -66,23 +116,26 @@ impl Launcher for Executors {
         &self,
         machine_id: &MachineId,
         input: LaunchInput,
+        options: LaunchOptions,
     ) -> BoxFuture<Result<ThreadId, String>> {
         let executors = Arc::clone(&self.0);
         let machine_id = machine_id.clone();
         Box::pin(async move {
             executors
-                .launch(
-                    &machine_id,
-                    &input,
-                    // The lead's fleetd tools, which the hub holds to the memory ones; none of the MCP servers a
-                    // person gave the leads, which the hub can't hold to anything.
-                    LaunchOptions {
-                        role: fleetd_contracts::sessions::SessionRole::Lead,
-                        ..Default::default()
-                    },
-                )
+                .launch(&machine_id, &input, options)
                 .await
                 .map(|(thread_id, _)| thread_id)
+                .map_err(|e| e.to_string())
+        })
+    }
+
+    fn stop(&self, thread: &ThreadRef) -> BoxFuture<Result<(), String>> {
+        let executors = Arc::clone(&self.0);
+        let thread = thread.clone();
+        Box::pin(async move {
+            executors
+                .stop(&thread, false)
+                .await
                 .map_err(|e| e.to_string())
         })
     }
@@ -189,14 +242,58 @@ pub fn project_of_thread(db: &HubDb, thread: &ThreadRef) -> Result<Option<Projec
     })
 }
 
-/// Keeps what the running refresh of project `r` just changed, for its line at the end.
+/// Keeps what the running refresh of project `r` just changed, for its line at the end. One statement, so two calls
+/// of one turn both land.
 pub fn record(db: &HubDb, r: &ProjectRef, item: RememberedItem) -> Result<(), StoreError> {
-    let mut run = get(db, r)?;
-    if run.thread_id.is_none() {
-        return Ok(());
+    let item = serde_json::to_string(&item)?;
+    db.with(|c| {
+        c.execute(
+            "UPDATE memory_refreshes SET items = json_insert(items, '$[#]', json(?3))
+             WHERE machine_id = ?1 AND project_id = ?2 AND thread_id IS NOT NULL",
+            params![r.machine_id.as_str(), r.project_id.as_str(), item],
+        )?;
+        Ok(())
+    })
+}
+
+/// Every change a "Memory refreshed" line stands for, the ones past what it lists too; None for a line without a
+/// row (none yet), whose listed changes are all of them.
+pub fn line_items(db: &HubDb, message_id: &str) -> Result<Option<Vec<RememberedItem>>, StoreError> {
+    let items: Option<String> = db.with(|c| {
+        Ok(c.query_row(
+            "SELECT items FROM memory_refresh_lines WHERE message_id = ?",
+            [message_id],
+            |row| row.get(0),
+        )
+        .optional()?)
+    })?;
+    Ok(items.and_then(|i| serde_json::from_str(&i).ok()))
+}
+
+/// Keeps every change of line `message_id` in project `r`, as Undo marks them.
+pub fn put_line_items(
+    db: &HubDb,
+    r: &ProjectRef,
+    message_id: &str,
+    items: &[RememberedItem],
+) -> Result<(), StoreError> {
+    let items = serde_json::to_string(items)?;
+    db.with(|c| {
+        c.execute(
+            "INSERT INTO memory_refresh_lines (message_id, machine_id, project_id, items) VALUES (?, ?, ?, ?)
+             ON CONFLICT (message_id) DO UPDATE SET items = excluded.items",
+            params![message_id, r.machine_id.as_str(), r.project_id.as_str(), items],
+        )?;
+        Ok(())
+    })
+}
+
+/// What a line lists of `items`: the first [`REFRESHED_LISTED`], and how many there are when that is not all.
+pub fn listed(items: &[RememberedItem]) -> MemoryRefreshed {
+    MemoryRefreshed {
+        items: List::unchecked(items.iter().take(REFRESHED_LISTED).cloned().collect()),
+        total: (items.len() > REFRESHED_LISTED).then(|| Count::unchecked(items.len() as i64)),
     }
-    run.items.push(item);
-    put(db, r, &run)
 }
 
 /// The hour of the night due now, as epoch ms: today's (or yesterday's) `at` in `tz`, when now is at most
@@ -260,11 +357,16 @@ pub async fn tick(hub: &Arc<Hub>, launcher: &dyn Launcher) -> Result<(), StoreEr
                 machine_id: r.machine_id.clone(),
                 thread_id: thread_id.clone(),
             };
-            match ended(&hub.db, &thread, started)? {
-                Some(ok) => finish(hub, &r, ok)?,
-                None if now - started > RUN_LIMIT_MS => finish(hub, &r, false)?,
-                None => {}
+            let completed = match ended(&hub.db, &thread, started)? {
+                Some(completed) => completed,
+                None if now - started > RUN_LIMIT_MS => false,
+                None => continue,
+            };
+            // A session that didn't complete may still run, or be resumed: it goes, so nothing it does later is lost.
+            if !completed && let Err(error) = launcher.stop(&thread).await {
+                tracing::warn!(%error, project = %project.title, "memory refresh: session not stopped");
             }
+            finish(hub, &r, completed)?;
         }
     }
     let (tz, at) = schedule(hub);
@@ -358,7 +460,10 @@ async fn start(
         ),
         client_request_id: format!("fleetd-memory:{}/{}:{night}", r.machine_id, r.project_id),
     };
-    match launcher.launch(&r.machine_id, input).await {
+    match launcher
+        .launch(&r.machine_id, input, launch_options())
+        .await
+    {
         Ok(thread_id) => {
             run.thread_id = Some(thread_id);
             run.started_ms = Some(now_ms(hub.clock.as_ref()));
@@ -380,17 +485,18 @@ pub fn finish(hub: &Hub, r: &ProjectRef, completed: bool) -> Result<(), StoreErr
     if run.thread_id.is_none() {
         return Ok(());
     }
-    if let Ok(items) = List::new(std::mem::take(&mut run.items)) {
-        let refreshed = MemoryRefreshed { items };
-        hub.chat.add(
+    let items = std::mem::take(&mut run.items);
+    if !items.is_empty() {
+        let (message, _) = hub.chat.add(
             r,
             NewMessage {
                 author: Some(ChatAuthor::System),
-                text: refreshed.summary(),
-                memory_refreshed: Some(refreshed),
+                text: fleetd_contracts::memory::refreshed_summary(&items),
+                memory_refreshed: Some(listed(&items)),
                 ..Default::default()
             },
         )?;
+        put_line_items(&hub.db, r, message.message_id.as_str(), &items)?;
     }
     if completed && let Some(read_to) = run.read_to {
         run.watermark = run.watermark.max(read_to);

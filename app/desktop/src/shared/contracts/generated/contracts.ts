@@ -2760,8 +2760,10 @@ export type MemoryNote = {
  * all. Posted only when something changed.
  */
 export type MemoryRefreshed = {
-  /** In the order the refresh made them. */
+  /** In the order the refresh made them; the first [`REFRESHED_LISTED`] when it made more. */
   items: RememberedItem[];
+  /** Every change it made, when that is more than `items` lists. Undo all takes them all back. */
+  total?: number;
 };
 
 export type MemoryScope = "user" | "project";
@@ -2786,7 +2788,10 @@ export type MemorySetOutput = {
 export type MemoryTopic = string;
 
 export type MemoryUndoInput = {
-  /** A "Memory refreshed" line's change, by its place in the line (0 first); absent, every change not yet undone. */
+  /**
+   * A "Memory refreshed" line's listed change, by its place in the line (0 first); absent, every change not yet
+   * undone, listed or not.
+   */
   item?: number;
   /** The chat line that said "Remembered: …", "Forgot: …" or "Memory refreshed: …". */
   messageId: ChatMessageId;

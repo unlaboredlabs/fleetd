@@ -655,12 +655,13 @@ fn one_entry(t: &Target<'_>, lines: &[String], words: &str) -> Result<usize, Mem
     Ok(i)
 }
 
-/// The remembered lines of the chats a file belongs to, newest first: every project's for `user.md`, the project's
-/// own for its files.
+/// The remembered lines of the chats a file belongs to, and the nightly refresh's lines, newest first: every
+/// project's for `user.md`, the project's own for its files.
 fn notes(db: &HubDb, t: &Target<'_>) -> Result<Vec<MemoryNote>, MemoryError> {
     let rows: Vec<String> = db.with(|c| {
         let mut stmt = c.prepare_cached(
-            "SELECT data FROM chat_messages WHERE json_type(data, '$.remembered') IS NOT NULL \
+            "SELECT data FROM chat_messages \
+             WHERE (json_type(data, '$.remembered') IS NOT NULL OR json_type(data, '$.memoryRefreshed') IS NOT NULL) \
              AND (?1 IS NULL OR (machine_id = ?1 AND project_id = ?2)) ORDER BY n DESC LIMIT 400",
         )?;
         let rows = stmt
@@ -679,23 +680,26 @@ fn notes(db: &HubDb, t: &Target<'_>) -> Result<Vec<MemoryNote>, MemoryError> {
         let Ok(m) = serde_json::from_str::<fleetd_contracts::chat::ChatMessage>(&data) else {
             continue;
         };
-        let Some(item) = &m.remembered else {
-            continue;
-        };
-        if item.undone == Some(true)
-            || item.forgotten == Some(true)
-            || item.scope != t.scope()
-            || item.topic.as_ref() != t.topic
-        {
-            continue;
-        }
-        if out.len() < 200 {
-            out.push(MemoryNote {
-                text: item.text.clone(),
-                at: m.created_at.clone(),
-                project_ref: m.project_ref.clone(),
-                message_id: m.message_id.clone(),
-            });
+        let items = m
+            .remembered
+            .iter()
+            .chain(m.memory_refreshed.iter().flat_map(|r| r.items.iter()));
+        for item in items {
+            if item.undone == Some(true)
+                || item.forgotten == Some(true)
+                || item.scope != t.scope()
+                || item.topic.as_ref() != t.topic
+            {
+                continue;
+            }
+            if out.len() < 200 {
+                out.push(MemoryNote {
+                    text: item.text.clone(),
+                    at: m.created_at.clone(),
+                    project_ref: m.project_ref.clone(),
+                    message_id: m.message_id.clone(),
+                });
+            }
         }
     }
     Ok(out)

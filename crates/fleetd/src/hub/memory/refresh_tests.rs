@@ -17,7 +17,7 @@ use super::Target;
 use super::refresh::{self, Launcher, night_due};
 use crate::hub::api::{Caller, Hub, HubConfig, Listen};
 use crate::hub::chat::NewMessage;
-use crate::hub::executor::LaunchInput;
+use crate::hub::executor::{LaunchInput, LaunchOptions};
 use crate::hub::leads::hooks::BoxFuture;
 use crate::hub::leads::records::WorkstreamFilter;
 use crate::hub::ledger::{Actor, RecordInput};
@@ -34,14 +34,27 @@ const DAY: Duration = Duration::from_secs(24 * 3600);
 #[derive(Default)]
 struct Node {
     launches: Mutex<Vec<LaunchInput>>,
+    options: Mutex<Vec<LaunchOptions>>,
+    stops: Mutex<Vec<ThreadId>>,
 }
 
 impl Launcher for Node {
-    fn launch(&self, _: &MachineId, input: LaunchInput) -> BoxFuture<Result<ThreadId, String>> {
+    fn launch(
+        &self,
+        _: &MachineId,
+        input: LaunchInput,
+        options: LaunchOptions,
+    ) -> BoxFuture<Result<ThreadId, String>> {
         let mut launches = self.launches.lock().unwrap();
         launches.push(input);
+        self.options.lock().unwrap().push(options);
         let id = ThreadId::unchecked(format!("refresh-{}", launches.len()));
         Box::pin(async move { Ok(id) })
+    }
+
+    fn stop(&self, thread: &ThreadRef) -> BoxFuture<Result<(), String>> {
+        self.stops.lock().unwrap().push(thread.thread_id.clone());
+        Box::pin(async { Ok(()) })
     }
 }
 
@@ -559,4 +572,176 @@ async fn a_refresh_posts_one_line_with_undo_per_change_and_undo_all_and_nothing_
     complete(&hub, "refresh-2");
     refresh::tick(&hub, &node).await.unwrap();
     assert_eq!(refreshed_lines(&hub, &r).len(), 1);
+}
+
+#[tokio::test]
+async fn the_session_starts_with_no_shell_file_or_web_tool_and_only_fleetds_mcp_server() {
+    let (hub, _clock, _home) = hub();
+    let r = project("shop");
+    say(&hub, &r, ChatAuthor::Human, "Keep answers short.");
+    let node = Node::default();
+    refresh::tick(&hub, &node).await.unwrap();
+    let options = node.options.lock().unwrap()[0].clone();
+    for tool in [
+        "Bash",
+        "Read",
+        "Write",
+        "Edit",
+        "MultiEdit",
+        "NotebookEdit",
+        "Glob",
+        "Grep",
+        "WebFetch",
+        "WebSearch",
+        "Skill",
+    ] {
+        assert!(
+            options.deny_tools.iter().any(|t| t == tool),
+            "{tool} is not denied"
+        );
+    }
+    // It still loads fleetd's deferred tools.
+    assert!(!options.deny_tools.iter().any(|t| t == "ToolSearch"));
+    assert_eq!(
+        options.role,
+        fleetd_contracts::sessions::SessionRole::Lead,
+        "fleetd's lead tools, held to memory by the hub"
+    );
+    let mcp = options.mcp.expect("its own MCP servers");
+    assert!(!mcp.user_servers && mcp.servers.is_empty(), "{mcp:?}");
+    // The prompt says so.
+    let prompt = node.launches.lock().unwrap()[0].prompt.clone();
+    assert!(prompt.contains("no shell, file or web tools"), "{prompt}");
+}
+
+#[tokio::test]
+async fn a_session_past_the_hour_or_that_failed_is_stopped_and_its_changes_still_posted() {
+    let (hub, clock, _home) = hub();
+    let r = project("shop");
+    say(&hub, &r, ChatAuthor::Human, "Staging needs the VPN.");
+    let node = Node::default();
+    refresh::tick(&hub, &node).await.unwrap();
+    refresh_call(
+        &hub,
+        &r,
+        "remember",
+        json!({ "scope": "project", "text": "Staging needs the VPN." }),
+    )
+    .await
+    .unwrap();
+    // Within the hour it runs on.
+    clock.advance(Duration::from_millis(refresh::RUN_LIMIT_MS as u64));
+    refresh::tick(&hub, &node).await.unwrap();
+    assert!(node.stops.lock().unwrap().is_empty());
+    clock.advance(Duration::from_secs(60));
+    refresh::tick(&hub, &node).await.unwrap();
+    assert_eq!(
+        *node.stops.lock().unwrap(),
+        [ThreadId::unchecked("refresh-1")]
+    );
+    let posted = refreshed_lines(&hub, &r);
+    assert_eq!(posted.len(), 1);
+    assert_eq!(posted[0].text.as_str(), "Memory refreshed: +1");
+    let thread = ThreadRef {
+        machine_id: r.machine_id.clone(),
+        thread_id: ThreadId::unchecked("refresh-1"),
+    };
+    assert!(
+        hub.lead_calls.agent_of(Some(&thread), &r).is_err(),
+        "its calls are refused from then on"
+    );
+
+    // It didn't complete, so the next night reads the same chat again; one that fails is stopped too.
+    clock.advance(DAY);
+    refresh::tick(&hub, &node).await.unwrap();
+    let prompt = node.launches.lock().unwrap()[1].prompt.clone();
+    assert!(prompt.contains("Human: Staging needs the VPN."), "{prompt}");
+    hub.events
+        .append(NewEvent {
+            at: iso_ms(now_ms(hub.clock.as_ref())).into(),
+            r#type: HubEventType::ThreadFailed,
+            machine_id: Some(MachineId::unchecked("devbox")),
+            project_id: Some(ProjectId::unchecked("shop")),
+            thread_id: Some(ThreadId::unchecked("refresh-2")),
+            summary: "failed".into(),
+            data: None,
+            attention: None,
+        })
+        .unwrap();
+    refresh::tick(&hub, &node).await.unwrap();
+    assert_eq!(node.stops.lock().unwrap().len(), 2);
+    // A completed one is over by itself: nothing to stop.
+    say(&hub, &r, ChatAuthor::Human, "Thanks.");
+    clock.advance(DAY);
+    refresh::tick(&hub, &node).await.unwrap();
+    complete(&hub, "refresh-3");
+    refresh::tick(&hub, &node).await.unwrap();
+    assert_eq!(node.stops.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn a_refresh_of_more_changes_than_a_line_lists_still_posts_and_undo_all_takes_them_all_back()
+{
+    let (hub, _clock, _home) = hub();
+    let r = project("shop");
+    let tools = crate::hub::api::registry();
+    say(&hub, &r, ChatAuthor::Human, "Lots to remember.");
+    let node = Node::default();
+    refresh::tick(&hub, &node).await.unwrap();
+    let n = fleetd_contracts::memory::REFRESHED_LISTED + 5;
+    for i in 0..n {
+        refresh_call(
+            &hub,
+            &r,
+            "remember",
+            json!({ "scope": "project", "text": format!("Rule {i}.") }),
+        )
+        .await
+        .unwrap();
+    }
+    complete(&hub, "refresh-1");
+    refresh::tick(&hub, &node).await.unwrap();
+    let posted = refreshed_lines(&hub, &r);
+    assert_eq!(posted.len(), 1);
+    assert_eq!(posted[0].text.as_str(), format!("Memory refreshed: +{n}"));
+    let refreshed = posted[0].memory_refreshed.as_ref().unwrap();
+    assert_eq!(
+        refreshed.items.len(),
+        fleetd_contracts::memory::REFRESHED_LISTED
+    );
+    assert_eq!(refreshed.total.map(|t| t.get()), Some(n as i64));
+    // Settings > Memory links a listed entry to the line.
+    let got = tools
+        .call(&hub, &person(), "memory_get", json!({ "projectRef": r }))
+        .await
+        .unwrap();
+    let notes = got["files"][0]["notes"].as_array().unwrap();
+    assert!(
+        notes
+            .iter()
+            .any(|n| n["text"] == "Rule 0." && n["messageId"] == posted[0].message_id.as_str()),
+        "{notes:?}"
+    );
+
+    let undo = |item: Option<i64>| {
+        let mut input = json!({ "projectRef": r, "messageId": posted[0].message_id });
+        if let Some(i) = item {
+            input["item"] = i.into();
+        }
+        input
+    };
+    tools
+        .call(&hub, &person(), "memory_undo", undo(Some(0)))
+        .await
+        .unwrap();
+    assert!(!memory_md(&hub, &r).contains("- Rule 0.\n"));
+    tools
+        .call(&hub, &person(), "memory_undo", undo(None))
+        .await
+        .unwrap();
+    assert_eq!(memory_md(&hub, &r), "", "the unlisted ones too");
+    let line = &refreshed_lines(&hub, &r)[0];
+    let refreshed = line.memory_refreshed.as_ref().unwrap();
+    assert!(refreshed.items.iter().all(|i| i.undone == Some(true)));
+    assert_eq!(refreshed.total.map(|t| t.get()), Some(n as i64));
 }

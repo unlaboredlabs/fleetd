@@ -139,6 +139,7 @@ impl TaskPorts for HubTaskPorts {
                 mcp_role: Some(mcp_role),
                 order_id: request.order_id,
                 setup,
+                ..Default::default()
             };
             self.executors
                 .launch(machine_id, &input, options)

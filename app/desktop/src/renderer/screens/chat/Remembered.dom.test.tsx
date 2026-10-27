@@ -99,3 +99,32 @@ describe("the Memory refreshed line", () => {
     expect(calls[1]).toEqual({ tool: "memory_undo", input: { projectRef: project, messageId: "m9" } });
   });
 });
+
+describe("a Memory refreshed line with more changes than it lists", () => {
+  it("says how many more, and Undo all takes them back too", async () => {
+    const big: MemoryRefreshed = { items: [{ scope: "project", text: "Rule 0." }], total: 205 };
+    const hub: HubApi = {
+      call: (tool, input) => {
+        calls.push({ tool, input });
+        return Promise.resolve({ ok: true, output: { ok: true } });
+      },
+      subscribe: () => () => undefined,
+      resync: () => Promise.resolve(),
+      focus: () => Promise.resolve(),
+      chat: () => Promise.resolve(),
+    };
+    await act(async () => {
+      root.render(
+        <UiProvider>
+          <DataProvider layer={createDataLayer(hub)}>
+            <RefreshedChanges project={project} message={{ ...message, memoryRefreshed: big }} refreshed={big} />
+          </DataProvider>
+        </UiProvider>,
+      );
+      await Promise.resolve();
+    });
+    expect(document.body.textContent).toContain("and 204 more");
+    await click(nth("Undo all", 0));
+    expect(calls).toEqual([{ tool: "memory_undo", input: { projectRef: project, messageId: "m9" } }]);
+  });
+});

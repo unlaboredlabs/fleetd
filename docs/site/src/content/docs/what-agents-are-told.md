@@ -203,11 +203,15 @@ no longer holds stops misleading the agents:
 - **What it reads:** the chat since the last refresh (your messages and the lead's, newest kept, up to about 40,000
   characters), the active decisions and every memory file of the project, plus `user.md`.
 - **What it may do:** it is a lead session of its own, the `lead.memory` prompt, that opens no order and never
-  writes in the chat. fleetd lets it call only `memory_read`, `remember` and `forget`. It adds what the chat taught,
+  writes in the chat. It starts with none of Claude's own tools (no shell, files or web) and none of your MCP
+  servers, and fleetd takes only `memory_read`, `remember` and `forget` from it. It adds what the chat taught,
   merges entries that overlap and removes what no longer holds, held to the caps like any write. It only adds to
-  `user.md`: it never replaces or removes an entry there.
+  `user.md`: it never replaces or removes an entry there. A session still running after an hour, or one that
+  failed, is stopped; what it changed until then is still listed, and the next night reads the same chat again.
 - **What you see:** one line in the chat when it's done, such as "Memory refreshed: +2 ~1 −3" (added, changed,
-  removed), with each change below it, each with Undo, and Undo all. A night that changed nothing shows nothing.
+  removed), with each change below it, each with Undo, and Undo all. A line lists at most 200 changes and says how
+  many more there were; Undo all takes those back too. A night that changed nothing shows nothing. In Settings →
+  Memory, an entry the refresh wrote links to its line.
 
 ## The checklist {#checklist}
 

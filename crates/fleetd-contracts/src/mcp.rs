@@ -1269,7 +1269,8 @@ input!(MemoryUndoInput {
     project_ref: ProjectRef,
     /// The chat line that said "Remembered: …", "Forgot: …" or "Memory refreshed: …".
     message_id: ChatMessageId,
-    /// A "Memory refreshed" line's change, by its place in the line (0 first); absent, every change not yet undone.
+    /// A "Memory refreshed" line's listed change, by its place in the line (0 first); absent, every change not yet
+    /// undone, listed or not.
     item: Option<Int<0, 199>>,
 });
 output!(MemoryUndoOutput { ok: True });
