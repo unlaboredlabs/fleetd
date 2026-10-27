@@ -126,7 +126,7 @@ fn is_base64(text: &str) -> bool {
 const FILE_MIN: usize = 256;
 
 /// A real file's bytes, decoded: at least [`FILE_MIN`] characters of base64 in any of its four spellings.
-fn file_bytes(text: &str) -> Option<Vec<u8>> {
+pub(super) fn file_bytes(text: &str) -> Option<Vec<u8>> {
     use base64::Engine;
     use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
     let text = compact(text);
@@ -171,17 +171,40 @@ pub fn shown_input(kind: IntegrationKind, input: &Value) -> Value {
     })
 }
 
-/// Whether a call would send or store what looks like a credential: in its text, and in the decoded contents of the
-/// files a Google tool attaches. A file's bytes are read decoded, never as base64 text, whose random letters could pass for a
-/// key's shape; a short value is read as text, so a key put where bytes go is still found.
+/// A Google API key's shape (`AIza` and 35 more): the one key shape a real file's standard base64 can spell by
+/// chance, about once in fifty of Gmail's largest attachments. Every other shape needs a character standard base64
+/// never holds (`-`, `_`, `.`, `:`, a space) or is too long a run to happen.
+static CHANCE_SHAPE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"\bAIza[0-9A-Za-z_-]{35}").unwrap());
+
+/// Whether a file's base64 text, as it is, holds a key's shape: every shape, so a key padded out to look like a file is
+/// still found, but in standard base64 not the one random letters can spell.
+fn raw_holds_key(text: &str) -> bool {
+    let standard = text.bytes().all(|b| {
+        b.is_ascii_alphanumeric() || b.is_ascii_whitespace() || matches!(b, b'+' | b'/' | b'=')
+    });
+    let text = if standard {
+        CHANCE_SHAPE.replace_all(text, "")
+    } else {
+        std::borrow::Cow::Borrowed(text)
+    };
+    crate::hub::redact::redact(&text) != text
+}
+
+/// Whether a call would send or store what looks like a credential: in its text, and in the files a Google tool
+/// attaches, both as their base64 text (a key padded to a file's length is still a key) and decoded (a key inside a
+/// file). The base64 text of a real file is spared only the one shape its random letters can spell.
 fn sends_credential(kind: IntegrationKind, input: &Value) -> bool {
+    let mut raw_key = false;
     let mut files: Vec<Vec<u8>> = Vec::new();
     let text = with_files(kind, input, |b| {
         let bytes = file_bytes(b)?;
+        raw_key |= raw_holds_key(b);
         files.push(bytes);
         Some(Value::String("[file]".into()))
     });
-    holds_credential(&text)
+    raw_key
+        || holds_credential(&text)
         || files.iter().any(|f| {
             let t = String::from_utf8_lossy(f);
             crate::hub::redact::redact(&t) != t
