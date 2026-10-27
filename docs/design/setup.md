@@ -260,9 +260,10 @@ table with copy buttons, live checks after the paste, "progress is saved".
 
 ## 5. What each in-flight writer exposes
 
-- **Teams step 1 (T758)**
+- **Teams step 1 (T758, `docs/design/teams.md`)**
   - The Administration page and a slot in it for Setup.
-  - `invite_create {handle, admin}` returning the link, so the People step can create one.
+  - `invite_create {name, role}` (its contract landed in #640), returning the code and link the People step shows
+    once.
   - A `hub/people` check: Done once anyone else has joined.
   - The person's own account state (GitHub connected, Claude subscription connected), for "Connect your …" at
     first use.
