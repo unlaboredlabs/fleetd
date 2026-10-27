@@ -418,7 +418,7 @@ fn a_navi_without_a_sandbox_is_refused_with_how_to_fix_it() {
 }
 
 #[test]
-fn a_setuid_bubblewrap_says_to_drop_the_bit() {
+fn a_setuid_bubblewrap_says_to_enable_user_namespaces() {
     use std::os::unix::fs::PermissionsExt;
     let dir = tempfile::tempdir().unwrap();
     let bwrap = dir.path().join("bwrap");
@@ -430,9 +430,13 @@ fn a_setuid_bubblewrap_says_to_drop_the_bit() {
     );
     if cfg!(target_os = "linux") {
         assert!(
-            refused.fix.contains("setuid") && refused.fix.contains("chmod u-s"),
+            refused
+                .fix
+                .starts_with("Enable unprivileged user namespaces"),
             "{refused:?}"
         );
+        // Dropping the bit would break what relies on it (flatpak on some systems): never the advice.
+        assert!(!refused.fix.contains("chmod"), "{refused:?}");
     }
 }
 
@@ -603,4 +607,34 @@ fn the_machine_says_which_sandbox_a_navi_gets() {
     let said = describe().expect("a sandbox here");
     assert_ne!(said.status, SandboxStatus::Missing, "{said:?}");
     assert!(said.line.starts_with("Navis run in"), "{said:?}");
+}
+
+#[test]
+fn a_copy_of_claudes_config_gone_before_the_start_fails_nothing() {
+    let Some(tool) = sandbox_or_skip() else {
+        return;
+    };
+    let m = Machine::new();
+    let gone = m.home.join(".claude.json.tmp.4242.1792349295");
+    std::fs::write(&gone, "{}").unwrap();
+    let fence = m.fence();
+    assert!(fence.hide.contains(&gone));
+    std::fs::remove_file(&gone).unwrap();
+    let (program, args) = wrap_with(
+        Some(tool),
+        &fence,
+        &m.folder,
+        Path::new("/bin/sh"),
+        vec!["-c".into(), "true".into()],
+    )
+    .expect("a vanished copy is skipped, not mounted over");
+    let mut command = std::process::Command::new(program);
+    with_scope(&mut command);
+    assert!(command.args(args).env_clear().status().unwrap().success());
+    // The backups stay hidden.
+    assert!(
+        fence
+            .hide
+            .contains(&m.home.join(".claude.json.backup.1792349295"))
+    );
 }

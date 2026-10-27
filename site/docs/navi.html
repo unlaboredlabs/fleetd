@@ -193,8 +193,8 @@ if approved.</p>
 <p><strong>When the sandbox can’t start, the Navi doesn’t run.</strong> Its chat says why and how to fix it. On Linux a Navi needs
 bubblewrap: install it (<code dir="auto">sudo apt install bubblewrap</code>, <code dir="auto">sudo dnf install bubblewrap</code>, <code dir="auto">sudo pacman -S bubblewrap</code>).
 On Ubuntu 23.10 and later, AppArmor may also block the user namespaces bubblewrap uses; <code dir="auto">bwrap --ro-bind / / --unshare-all true</code> says so, and Ubuntu’s <code dir="auto">apparmor</code> package has a profile that allows them
-(<code dir="auto">/etc/apparmor.d/bwrap-userns-restrict</code>). A setuid-root <code dir="auto">bwrap</code> (<code dir="auto">ls -l $(which bwrap)</code> shows <code dir="auto">rws</code>) can’t be used:
-remove the bit with <code dir="auto">sudo chmod u-s $(which bwrap)</code>. A Mac uses its built-in <code dir="auto">sandbox-exec</code>.</p>
+(<code dir="auto">/etc/apparmor.d/bwrap-userns-restrict</code>). A setuid-root <code dir="auto">bwrap</code> (<code dir="auto">ls -l $(which bwrap)</code> shows <code dir="auto">rws</code>) runs unprivileged
+for a Navi, so it needs unprivileged user namespaces too (on Debian before 11: <code dir="auto">sudo sysctl kernel.unprivileged_userns_clone=1</code>). A Mac uses its built-in <code dir="auto">sandbox-exec</code>.</p>
 <p><strong>What screens can still do.</strong> The site gate covers opening a site; it doesn’t follow a page after that. Inside a
 page it already opened, a Navi clicks, types and fills unasked, which is how screens work, so a click or a form that
 leads to another site isn’t asked. Its Android, iOS and desktop screens (<code dir="auto">agent-device</code>) don’t ask per site at all.

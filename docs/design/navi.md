@@ -470,8 +470,10 @@ is one). Every other session's spec has none.
   stays readable, so paths still resolve).
 - **No fallback.** `Runner::fence`, awaited before `Runner::spawn`, runs `sandbox::check` on a blocking thread: it
   prepares the paths and starts the sandbox once with `true`. `wrap` then only builds the command. The probe's
-  `describe` runs on a blocking thread too. A setuid-root bwrap gets its own fix (`chmod u-s`): the scope hook's
-  `no_new_privs` keeps it from elevating. When the program is missing or that
+  `describe` runs on a blocking thread too. A setuid-root bwrap gets its own fix, enabling unprivileged user
+  namespaces: the scope hook's `no_new_privs` keeps it from elevating, so it makes its sandbox as any user would. A
+  hidden file gone before bwrap starts (a short-lived `.claude.json.*`) is skipped: arguments mount over only what is
+  there, and a failed start check runs once more when the hidden paths changed meanwhile. When the program is missing or that
   run fails, the session fails with `RunnerError::Sandbox {message, fix}`, which reaches the app as the session's error
   with its fix: how to install bubblewrap, and, when the user namespace was refused, the AppArmor profile
   (`/etc/apparmor.d/bwrap-userns-restrict`) or `kernel.apparmor_restrict_unprivileged_userns=0`.

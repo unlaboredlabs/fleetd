@@ -104,8 +104,9 @@ if approved.
 bubblewrap: install it (`sudo apt install bubblewrap`, `sudo dnf install bubblewrap`, `sudo pacman -S bubblewrap`).
 On Ubuntu 23.10 and later, AppArmor may also block the user namespaces bubblewrap uses; `bwrap --ro-bind / /
 --unshare-all true` says so, and Ubuntu's `apparmor` package has a profile that allows them
-(`/etc/apparmor.d/bwrap-userns-restrict`). A setuid-root `bwrap` (`ls -l $(which bwrap)` shows `rws`) can't be used:
-remove the bit with `sudo chmod u-s $(which bwrap)`. A Mac uses its built-in `sandbox-exec`.
+(`/etc/apparmor.d/bwrap-userns-restrict`). A setuid-root `bwrap` (`ls -l $(which bwrap)` shows `rws`) runs unprivileged
+for a Navi, so it needs unprivileged user namespaces too (on Debian before 11: `sudo sysctl
+kernel.unprivileged_userns_clone=1`). A Mac uses its built-in `sandbox-exec`.
 
 **What screens can still do.** The site gate covers opening a site; it doesn't follow a page after that. Inside a
 page it already opened, a Navi clicks, types and fills unasked, which is how screens work, so a click or a form that

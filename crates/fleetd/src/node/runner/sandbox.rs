@@ -374,21 +374,36 @@ fn check_with(tool: Option<PathBuf>, fence: &Fence, cwd: &Path) -> Result<PathBu
                 .into(),
         });
     }
-    let mut probe = std::process::Command::new(&tool);
-    probe
-        .args(own_args(fence, cwd))
-        .arg(if cfg!(target_os = "macos") {
-            "/usr/bin/true"
-        } else {
-            "true"
-        })
-        .env_clear()
-        .stdin(std::process::Stdio::null());
-    with_scope(&mut probe);
-    match probe.output() {
-        Ok(out) if out.status.success() => Ok(tool),
-        Ok(out) => Err(failed(&tool, &String::from_utf8_lossy(&out.stderr))),
-        Err(e) => Err(failed(&tool, &e.to_string())),
+    let start = |own: &[String]| {
+        let mut probe = std::process::Command::new(&tool);
+        probe
+            .args(own)
+            .arg(if cfg!(target_os = "macos") {
+                "/usr/bin/true"
+            } else {
+                "true"
+            })
+            .env_clear()
+            .stdin(std::process::Stdio::null());
+        with_scope(&mut probe);
+        match probe.output() {
+            Ok(out) if out.status.success() => Ok(()),
+            Ok(out) => Err(failed(&tool, &String::from_utf8_lossy(&out.stderr))),
+            Err(e) => Err(failed(&tool, &e.to_string())),
+        }
+    };
+    let own = own_args(fence, cwd);
+    match start(&own) {
+        Ok(()) => Ok(tool),
+        // A hidden file that went away meanwhile (a short-lived copy of claude's config) leaves nothing to mount over:
+        // once more without it.
+        Err(refused) => {
+            let again = own_args(fence, cwd);
+            if again == own {
+                return Err(refused);
+            }
+            start(&again).map(|()| tool)
+        }
     }
 }
 
@@ -596,11 +611,11 @@ fn failed(tool: &Path, stderr: &str) -> Refusal {
     };
     let fix = if cfg!(target_os = "linux") && setuid {
         format!(
-            "{} is setuid root, which a Navi's sandbox can't use: fleetd starts it with no_new_privs, to scope \
-             abstract sockets. Let bubblewrap use unprivileged user namespaces instead: sudo chmod u-s {}, and on \
-             Debian before 11 also sudo sysctl kernel.unprivileged_userns_clone=1. Check with: bwrap --ro-bind / / \
-             --unshare-all true",
-            tool.display(),
+            "Enable unprivileged user namespaces, which bubblewrap needs here: {} is setuid root, and fleetd starts \
+             it with no_new_privs (to scope abstract sockets), so it runs unprivileged and makes its sandbox in a user \
+             namespace. On Debian before 11: sudo sysctl kernel.unprivileged_userns_clone=1; elsewhere check that \
+             user.max_user_namespaces is above 0 and, on Ubuntu, that AppArmor allows bwrap \
+             (/etc/apparmor.d/bwrap-userns-restrict). Check with: bwrap --ro-bind / / --unshare-all true",
             tool.display()
         )
     } else if cfg!(target_os = "linux") && userns {
@@ -687,6 +702,7 @@ fn bwrap_args(fence: &Fence, cwd: &Path) -> Vec<String> {
                 args.extend(["--tmpfs".into(), p.clone()]);
                 tmpfs.push(p);
             }
+            // Only one that's still there: a file gone since the fence was made has nothing to hide.
             Op::Hide if path.exists() => args.extend(["--ro-bind".into(), "/dev/null".into(), p]),
             Op::Hide => {}
             Op::Show => args.extend(["--ro-bind-try".into(), p.clone(), p]),
