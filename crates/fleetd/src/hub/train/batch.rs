@@ -670,6 +670,8 @@ impl Train {
             CiOutcome::Green => None,
             CiOutcome::Red(_) => Some("red"),
             CiOutcome::Timeout(_) => Some("timed out"),
+            // Never for a batch's own head.
+            CiOutcome::Moved => Some("superseded"),
         };
         if let Some(red) = red {
             tracing::info!(repo, pr, sha, "train: batch red, each member goes alone");

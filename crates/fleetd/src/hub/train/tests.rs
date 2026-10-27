@@ -3312,7 +3312,8 @@ async fn a_required_check_cancelled_in_the_prs_own_run_is_re_run_before_the_merg
     );
 }
 
-/// A required check that reads cancelled however often it is re-run is red: the train never asks GitHub to merge.
+/// A required check that reads cancelled however often it is re-run is no failure, but the train never asks GitHub to
+/// merge: it waits until CI times out, which the lead hears of, not the author (D191).
 #[tokio::test(flavor = "multi_thread")]
 async fn the_train_never_merges_while_a_required_check_reads_cancelled() {
     let clock = Arc::new(Sleeps::default());
@@ -3333,7 +3334,11 @@ async fn the_train_never_merges_while_a_required_check_reads_cancelled() {
     let failed = kit.get(&change_id);
     assert_eq!(failed.state, ChangeState::CiFailed);
     assert!(
-        failed.last_error.as_deref().unwrap().contains("build"),
+        failed
+            .last_error
+            .as_deref()
+            .unwrap()
+            .starts_with(super::service::CI_TIMED_OUT),
         "{:?}",
         failed.last_error
     );
@@ -3347,6 +3352,53 @@ async fn the_train_never_merges_while_a_required_check_reads_cancelled() {
             .any(|l| l.starts_with("merge"))
     );
     assert_eq!(*kit.gh.reruns.lock().unwrap(), [1, 1]);
+}
+
+/// The author pushes while the train rebases their PR, which cancels CI on the train's head: the PR is never
+/// ci_failed, and the train takes the new head instead (D191; X248 on #655).
+#[tokio::test(flavor = "multi_thread")]
+async fn an_authors_push_that_cancels_ci_on_the_rebased_head_is_no_failure() {
+    let kit = Kit::new();
+    let pr = kit.open_pr(7, "e", &[add("e.txt", "e\n")]);
+    let (_, change_id) = kit.author_task(Some(&pr)).await;
+    kit.commit("main", &[add("m.txt", "m\n")], None);
+    let original = kit.head_of("e");
+    let gh = Arc::downgrade(&kit.gh);
+    let pushed = Mutex::new(false);
+    *kit.gh.on_checks.lock().unwrap() = Some(Box::new(move || {
+        let Some(gh) = gh.upgrade() else { return };
+        let rebased = gh.head_of("e").unwrap();
+        if rebased == original || std::mem::replace(&mut *pushed.lock().unwrap(), true) {
+            return;
+        }
+        let cancelled = job(1, 1, "ci", "cancelled");
+        gh.head_runs
+            .lock()
+            .unwrap()
+            .insert(rebased, json!([cancelled]));
+        gh.push_empty("e");
+    }));
+
+    kit.train.step(REPO).await;
+    let back = kit.get(&change_id);
+    assert_eq!(
+        (back.state, back.last_error.as_deref()),
+        (ChangeState::Ready, Some(super::service::CI_SUPERSEDED))
+    );
+    for _ in 0..3 {
+        kit.train.step(REPO).await;
+    }
+    assert_eq!(kit.get(&change_id).state, ChangeState::Merged);
+    assert!(kit.host.events_of("change.ci_failed").is_empty());
+    assert!(
+        !kit.host
+            .sends
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|(_, m)| m.contains("did not merge it"))
+    );
+    assert_eq!(kit.gh.reruns.lock().unwrap().len(), 0, "nothing re-run");
 }
 
 /// A cancelled check the base doesn't require, passed in another run, is no reason to wait.
