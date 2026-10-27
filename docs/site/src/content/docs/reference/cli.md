@@ -132,6 +132,56 @@ fleetd pair --worker <machine-id> [--home <dir>]
 
 print the one command that makes another machine a worker of this hub, with a one-time code (15 min): for a machine the hub can't reach over SSH
 
+### fleetd invite {#invite}
+
+```text
+fleetd invite --name <name> [--role <member|admin|owner>] [--home <dir>]
+```
+
+### fleetd invite {#invite-person}
+
+```text
+fleetd invite --person <personId> [--home <dir>]
+```
+
+invite someone to this hub: prints a link and a code (single use, 7 days) that pair their app as a device of a new person, a member unless `--role`; with `--person`, one more device of someone already here
+
+### fleetd invite list {#invite-list}
+
+```text
+fleetd invite list [--home <dir>]
+```
+
+### fleetd invite revoke {#invite-revoke}
+
+```text
+fleetd invite revoke <inviteId> [--home <dir>]
+```
+
+takes back an open invite; someone it invited who never joined goes with it
+
+### fleetd people {#people}
+
+```text
+fleetd people [--home <dir>]
+```
+
+the hub's people, with their role and devices
+
+### fleetd people role {#people-role}
+
+```text
+fleetd people role <personId> <owner|admin|member> [--home <dir>]
+```
+
+### fleetd people remove {#people-remove}
+
+```text
+fleetd people remove <personId> [--home <dir>]
+```
+
+signs out all their devices; one device: `fleetd hub` key revoke \<keyId\>. The hub always keeps an owner
+
 
 ## Projects {#projects}
 

@@ -72,6 +72,8 @@ export type Screen =
   | { readonly id: "admin"; readonly section: AdminSection }
   /** A fleetd://pair link prefills the hub and code; the screen still asks before it pairs. */
   | { readonly id: "onboarding"; readonly hub: string | null; readonly code: string | null }
+  /** The hub admin's setup (a design prototype, docs/design/setup.md): the welcome, one step open, or the end. */
+  | { readonly id: "setup"; readonly view: string | null }
   /** One session in a window of its own (the pop-out, for taking over); the main window shows it in the panel. */
   | { readonly id: "session"; readonly project: ProjectKey; readonly session: string };
 
@@ -157,6 +159,8 @@ const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): Screen 
       return { id: "admin", section: isAdminSection(a) ? a : "people" };
     case "onboarding":
       return { id: "onboarding", hub: query.get("hub") || null, code: query.get("code") || null };
+    case "setup":
+      return { id: "setup", view: a ?? null };
     default:
       // The removed surfaces (#/board, #/order, #/inbox, #/agents, #/prs) and anything unknown land on the home project.
       return HOME;
@@ -201,6 +205,8 @@ const path = (screen: Screen): Array<string> => {
       return ["settings", screen.tab];
     case "admin":
       return ["admin", screen.section];
+    case "setup":
+      return screen.view === null ? ["setup"] : ["setup", screen.view];
     case "session":
       return ["session", screen.project.machineId, screen.project.projectId, screen.session];
     case "status":

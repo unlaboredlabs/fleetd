@@ -214,6 +214,8 @@ pub fn build(config: HubConfig, clock: Arc<dyn Clock>) -> anyhow::Result<Arc<Hub
     if retired > 0 {
         tracing::info!("revoked {retired} owner key(s) an earlier fleetd kept in the hub home");
     }
+    // An older hub's human keys all become its owner's devices; a new hub gets its owner here.
+    crate::hub::people::People::new(db.clone(), clock.clone()).ensure_owner()?;
     // A sealed GitHub webhook secret and its key, left by a hub from before webhooks went; nothing reads them.
     for gone in ["github-webhook.secret", "webhook.key"] {
         let _ = std::fs::remove_file(config.home.join(gone));
