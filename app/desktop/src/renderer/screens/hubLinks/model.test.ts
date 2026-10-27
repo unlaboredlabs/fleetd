@@ -61,7 +61,8 @@ describe("links minted here", () => {
     const b = issued("hl_bbbbbbbb", { person: { personId: "p_2", name: "Sam" }, createdAt: "2026-10-27T11:00:00.000Z" });
     const c = issued("hl_cccccccc", { revokedAt: "2026-10-27T12:00:00.000Z" });
     expect(mine([a, b], "p_1")).toEqual([a]);
-    expect(mine([a, b], undefined)).toEqual([a, b]);
+    // Not until the hub says who you are: an admin's answer holds everyone's.
+    expect(mine([a, b], undefined)).toEqual([]);
     expect(sortIssued([c, a, b]).map((l) => l.linkId)).toEqual(["hl_bbbbbbbb", "hl_aaaaaaaa", "hl_cccccccc"]);
     expect(projectsLine(a, () => undefined)).toBe("Every project");
     expect(projectsLine({ projects: [{ machineId: "devbox", projectId: "shop" }] }, () => "Shop")).toBe("Only Shop");

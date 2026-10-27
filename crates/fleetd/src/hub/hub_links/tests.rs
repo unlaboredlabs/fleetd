@@ -1343,3 +1343,26 @@ async fn the_navis_hub_shows_who_a_link_acts_as_and_its_projects_as_the_other_hu
     assert_eq!(link["who"], "Alex");
     assert!(link.get("projects").is_none(), "{link}");
 }
+
+#[test]
+fn a_link_key_is_copied_with_an_address_another_hub_reaches_never_a_local_one() {
+    use super::reachable_url;
+    assert_eq!(
+        reachable_url("https://hub.acme.example/").as_deref(),
+        Some("https://hub.acme.example")
+    );
+    assert_eq!(
+        reachable_url("http://100.101.102.103:4790").as_deref(),
+        Some("http://100.101.102.103:4790")
+    );
+    for local in [
+        "http://127.0.0.1:4790",
+        "http://localhost:4790",
+        "https://localhost:4790",
+        "http://0.0.0.0:4790",
+        "http://192.168.1.20:4790",
+        "http://[::1]:4790",
+    ] {
+        assert_eq!(reachable_url(local), None, "{local}");
+    }
+}

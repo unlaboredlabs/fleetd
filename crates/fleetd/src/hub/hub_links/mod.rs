@@ -603,6 +603,18 @@ pub fn check_url(url: &str) -> Result<url::Url, McpToolError> {
     }
 }
 
+/// The address another hub can reach this one at, from its own URL: https, or http over a tailnet, but never this
+/// machine's loopback or an unspecified address, which only the hub's own machine could use.
+pub fn reachable_url(url: &str) -> Option<String> {
+    let parsed = check_url(url).ok()?;
+    let local = match parsed.host()? {
+        url::Host::Domain(d) => d.eq_ignore_ascii_case("localhost"),
+        url::Host::Ipv4(ip) => ip.is_loopback() || ip.is_unspecified(),
+        url::Host::Ipv6(ip) => ip.is_loopback() || ip.is_unspecified(),
+    };
+    (!local).then(|| url.trim().trim_end_matches('/').to_owned())
+}
+
 enum Host {
     Name(String),
     Ip(IpAddr),

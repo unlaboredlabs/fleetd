@@ -90,9 +90,11 @@ theirs and on Administration for an admin, never as admin controls in Settings (
   reason, revoked there), and Remove. **Link a hub** takes the pasted key, the address and a label; main seals the
   key to `boxPubKey` (`main/secret.ts`, IPC `hub-link:submit`) and calls `hub_link_add`, so the page never sends it
   to the hub in the clear.
-- **Links to this hub** (Settings › Hubs, under each paired hub): **Make a link key** with a label and optional projects; the key shows
-  once, and Copy takes it with this hub's address on two lines, which Linked hubs reads back. Below, the person's own
-  links with Revoke, even for an admin.
+- **Links to this hub** (Settings › Hubs, under each paired hub): **Make a link key** with a label and optional
+  projects; the key shows once, and Copy takes it with the address other hubs reach this one at, on two lines, which
+  Linked hubs reads back. That address is `hub_info`'s `url`: the hub's URL when it is https, or http over a tailnet,
+  never loopback. Without one, the person types it. Below, the person's own links with Revoke, even for an admin, and
+  nothing until `hub_info` names the person.
 - **Hub links** (Administration › People): every link minted on the hub, with its person, and Revoke.
 
 A hub too old to have the tools gets "needs updating"; none yet gets one line and a button.
@@ -117,7 +119,8 @@ device can't mint one (`forbidden`), and a link never holds more than the device
 person is removed from the hub; revoking the device doesn't stop it. A link minted before people acts at its device's
 grants and dies with it. On A, the Navi's owner or an admin calls `hub_link_add {navi, label, url, sealed}`: the app
 seals the key with `crypto_box_seal` to A's own box key (`boxPubKey` from `hub_links_get`, kept in A's home), A opens
-it only to call B, checks it with `GET /link/v1/hello` and keeps it sealed per Navi, with the hello's person and project limits (read again each time the link's follower starts). No tool returns it again and it
+it only to call B, checks it with `GET /link/v1/hello` and keeps it sealed per Navi, with the hello's person and
+project limits (read again each time the link's follower starts after a restart). No tool returns it again and it
 never enters a chat or transcript. `hub_links_get {navi?}` reads both sides: the Navi's links on A with their state,
 and the links minted on B (the caller's own, or every one for an admin).
 
