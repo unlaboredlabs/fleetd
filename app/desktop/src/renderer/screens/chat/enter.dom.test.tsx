@@ -154,7 +154,8 @@ it("keeps your send's bubble as the hub confirms it: the same element, in place,
   const sent = mine();
   const entrance = sent?.style.getPropertyValue("--enter-since");
   expect(entrance).not.toBe("");
-  send(messageEvent(10, msg(3, { author: "human", text: "hello", clientRequestId: "c1", delivery: "turn" })));
+  // The hub keeps it after the key that sent it.
+  send(messageEvent(10, msg(3, { author: "human", text: "hello", clientRequestId: "key_7f3qa2m4:c1", delivery: "turn" })));
   await settle();
   expect(host.querySelectorAll("[data-author=human]")).toHaveLength(1);
   expect(mine()).toBe(sent);
