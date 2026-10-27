@@ -52,6 +52,13 @@ is treated as you. Any process of the node's OS user can do what that user can. 
 different OS user.
 :::
 
+## Secrets and commands {#secrets}
+
+- **Secrets never reach the hub in plain text.** The app seals each value to the target node's key (a libsodium
+  sealed box). The hub relays it without storing it and keeps only its fingerprint.
+- **Notifications** carry a one-line summary, never a secret.
+- **An approved command runs exactly as stored**, and only after a person approves it.
+
 ## Hub links {#hub-links}
 
 A hub link lets a Navi on one hub open and follow work in projects on another hub, for example from a personal hub
@@ -66,13 +73,6 @@ into a team hub. You make it on the hub it reaches and add it to the Navi on the
 | The key stays sealed | The app seals it to the Navi's hub, which opens it only to call the other hub. Nothing shows it again. |
 | Only the Navi's hub calls out | It must reach the other hub over HTTPS or a tailnet; plain HTTP elsewhere is refused. When it can't reach it, the Navi and the link say "Can't reach *label*" with the reason. |
 | Revoke from either side | Removing it on the Navi's hub deletes the key at once and revokes it on the other hub when that answers. Revoking it on the other hub refuses its next call. A link unused for 90 days expires. |
-
-## Secrets and commands {#secrets}
-
-- **Secrets never reach the hub in plain text.** The app seals each value to the target node's key (a libsodium
-  sealed box). The hub relays it without storing it and keeps only its fingerprint.
-- **Notifications** carry a one-line summary, never a secret.
-- **An approved command runs exactly as stored**, and only after a person approves it.
 
 ## Software {#software}
 
