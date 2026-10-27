@@ -191,9 +191,12 @@ export function ClaudeLogin({ machineId, onLoggedIn }: { machineId: string; onLo
         >
           <Text size="sm">{`1. Open this page and sign in with the Claude account ${machineId} should use.`}</Text>
           <div className={a.link}>
-            <Truncate mono size="sm">
-              {login.url}
-            </Truncate>
+            {/* An address, not words: held to the code rule, not the text one. */}
+            <span className={a.url} data-text="code">
+              <Truncate mono size="sm">
+                {login.url}
+              </Truncate>
+            </span>
             <Button size="sm" onClick={() => openExternal(login.url)}>
               Open
             </Button>
