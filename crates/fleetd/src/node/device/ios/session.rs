@@ -28,13 +28,23 @@ const RESULT_CHARS: usize = 500;
 const FINISH_VIDEO: Duration = Duration::from_secs(20);
 /// recordVideo says it started within a second or two; a session that ends sooner waits this long for it at most.
 const START_VIDEO: Duration = Duration::from_secs(15);
+/// How often the recording's file is looked at, to see it has started.
+const FILE_POLL: Duration = Duration::from_millis(250);
+
+/// Whether the recording's file, `before` and `now` (None while it isn't there), shows it recording: there, not
+/// empty, and bigger than the last look.
+pub fn file_growing(before: Option<u64>, now: Option<u64>) -> bool {
+    matches!((before, now), (Some(before), Some(now)) if now > before && now > 0)
+}
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// `simctl io recordVideo`, in a process group of its own so SIGINT reaches simctl through xcrun. It is stopped only
-/// once it has said it started: a SIGINT before then kills it with no file (seen on a loaded CI machine).
+/// once it has started: a SIGINT before then kills it with no file (seen on a loaded CI machine). Started is when it
+/// says "Recording started", or else when its file is there and growing, so an Xcode that words it otherwise doesn't
+/// hold every session's end for [`START_VIDEO`].
 pub struct Recorder {
     child: tokio::process::Child,
     path: PathBuf,
@@ -58,6 +68,21 @@ impl Recorder {
             .stderr
             .take()
             .map(|e| Box::new(e) as Box<dyn AsyncRead + Send + Unpin>);
+        // The file, looked at every [`FILE_POLL`] until it has started (or nobody waits any more).
+        {
+            let (tx, path) = (tx.clone(), path.clone());
+            tokio::spawn(async move {
+                let mut before = None;
+                while !*tx.borrow() && !tx.is_closed() {
+                    tokio::time::sleep(FILE_POLL).await;
+                    let now = std::fs::metadata(&path).ok().map(|m| m.len());
+                    if file_growing(before, now) {
+                        tx.send_replace(true);
+                    }
+                    before = now;
+                }
+            });
+        }
         for out in [stdout, stderr].into_iter().flatten() {
             let tx = tx.clone();
             // Reads to the end, so the pipe never fills while it records.
@@ -348,4 +373,23 @@ impl Session {
 /// Where the node keeps iOS recordings until the hub has them.
 pub fn recordings_dir(home: &Path) -> PathBuf {
     super::ios_dir(home).join("recordings")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_recording_has_started_once_its_file_is_there_and_growing() {
+        assert!(!file_growing(None, None), "not there yet");
+        assert!(
+            !file_growing(None, Some(4096)),
+            "just appeared: one more look"
+        );
+        assert!(!file_growing(Some(4096), Some(4096)), "not growing");
+        assert!(!file_growing(Some(0), Some(0)));
+        assert!(file_growing(Some(0), Some(48)));
+        assert!(file_growing(Some(4096), Some(9000)));
+        assert!(!file_growing(Some(9000), None), "gone");
+    }
 }
