@@ -4,7 +4,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { UpdatePart, UpdateRun } from "../../../shared/contracts";
 import { UiProvider } from "../../ui";
-import { updatesView } from "./model";
+import type { Flow } from "./flow";
+import { STALE_MS, updatesView } from "./model";
 import { UpdatesSheet } from "./UpdatesSheet";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -56,7 +57,7 @@ describe("the updates sheet", () => {
     act(() =>
       root.render(
         <UiProvider>
-          <UpdatesSheet view={view} onUpdate={vi.fn()} onRetry={onRetry} onApp={vi.fn()} />
+          <UpdatesSheet view={view} onUpdate={vi.fn()} onStartOver={vi.fn()} onRetry={onRetry} onApp={vi.fn()} />
         </UiProvider>,
       ),
     );
@@ -76,5 +77,74 @@ describe("the updates sheet", () => {
     act(() => details?.click());
     expect(details?.getAttribute("aria-expanded")).toBe("true");
     expect(text(host.querySelector('[data-updates-row="builder"]'))).toContain("Failed while downloading: couldn't download fleetd-darwin-arm64: 503");
+  });
+});
+
+/** The devbox's story: the hub updated, mac too, and the devbox waits on a session that will never end. */
+const stuck: UpdateRun = {
+  id: "U2",
+  channel: "nightly",
+  to: NEXT,
+  startedAt: "2026-10-26T11:00:00.000Z",
+  parts: [
+    p({ part: "hub", name: "the hub" }),
+    p({ machineId: "devbox", name: "devbox", state: "waiting", message: "waits until it's idle: 1 live session can't carry on through a restart" }),
+    p({ machineId: "mac", name: "mac" }),
+  ],
+};
+const AT = Date.parse("2026-10-26T12:00:00.000Z");
+const following = (flow: Partial<Extract<Flow, { phase: "following" }>>, r: UpdateRun = stuck) =>
+  updatesView({
+    app: { current: NEXT, app: { kind: "current" }, release: null },
+    hub: { url: "http://devbox:4790", version: NEXT },
+    machines: [
+      { machineId: "devbox", name: "devbox", nodeVersion: OLDER, online: true },
+      { machineId: "mac", name: "mac", nodeVersion: NEXT, online: true },
+    ],
+    run: r,
+    flow: { phase: "following", reconnecting: false, since: AT, ...flow },
+    now: AT + STALE_MS + 60_000,
+  });
+
+const startOverButton = () => [...host.querySelectorAll("button")].find((b) => b.textContent === "Start over");
+const sheet = (v: ReturnType<typeof updatesView>, onStartOver = vi.fn()) =>
+  act(() =>
+    root.render(
+      <UiProvider>
+        <UpdatesSheet view={v} onUpdate={vi.fn()} onStartOver={onStartOver} onRetry={vi.fn()} onApp={vi.fn()} />
+      </UiProvider>,
+    ),
+  );
+
+describe("Start over", () => {
+  it("shows quietly beside a run that hasn't changed for a while, and starts a new one", () => {
+    const onStartOver = vi.fn();
+    sheet(following({}), onStartOver);
+    expect(text(host.querySelector('[role="status"]'))).toBe("Updating the machines: 1 of 2 done");
+    expect(text(host.querySelector("[data-updates-start-over]"))).toBe("Nothing has changed for 11 minutes. Start over ends this update and starts a new one.");
+    expect(text(host.querySelector('[data-updates-line-of="devbox"]'))).toContain("Waiting");
+    act(() => startOverButton()?.click());
+    expect(onStartOver).toHaveBeenCalledOnce();
+    // The one Update button stays away while the run goes on.
+    expect([...host.querySelectorAll("button")].some((b) => b.textContent === "Update")).toBe(false);
+  });
+
+  it("shows at once when nothing in the hub drives the run any more", () => {
+    sheet(following({ since: AT + STALE_MS, leftOver: true }));
+    expect(text(host.querySelector("[data-updates-start-over]"))).toBe("Nothing in the hub drives this update any more. Start over ends it and starts a new one.");
+    expect(startOverButton()).toBeDefined();
+  });
+
+  it("stays away from a run that moves, the hub's restart, and a run that ended", () => {
+    sheet(following({ since: AT + STALE_MS }));
+    expect(startOverButton()).toBeUndefined();
+    sheet(following({ reconnecting: true, leftOver: true }));
+    expect(startOverButton()).toBeUndefined();
+    const restarting: UpdateRun = { ...stuck, parts: [p({ part: "hub", name: "the hub", state: "restarting" }), ...stuck.parts.slice(1)] };
+    sheet(following({ leftOver: true }, restarting));
+    expect(startOverButton()).toBeUndefined();
+    sheet(following({ leftOver: true }, run));
+    expect(startOverButton()).toBeUndefined();
+    expect(host.querySelector("[data-updates-start-over]")).toBeNull();
   });
 });

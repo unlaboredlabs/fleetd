@@ -120,6 +120,15 @@ export default defineGroup({
         (f) => runOf(f, done, [done, { state: "restarting" }], { state: "downloading" }, false, [{ state: "done" }, waiting]),
         true,
       ),
+      (() => {
+        // W112: the devbox's story. The hub updated and one machine is done; the next waits on a session nothing will
+        // end, and nothing in the hub drives the run any more: Start over, quiet beside it.
+        const stuck = (g: Fixture) =>
+          runOf(g, done, [done, { state: "waiting", message: "waits until it's idle: 1 live session can't carry on through a restart" }], waiting, false, [{ state: "done" }, waiting]);
+        const f = everything("run-left-over", "A run nothing in the hub drives any more, one machine waiting on a session: Start over.", stuck, true);
+        f.drop("hub_update_status").answer("hub_update_status", {}, { run: stuck(f), leftOver: true });
+        return f;
+      })(),
       everything(
         "hub-ready",
         "The hub downloaded and checked the channel's newest build ahead: \"fleetd … is ready\", once, and Update swaps it in.",
