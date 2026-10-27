@@ -351,7 +351,8 @@ fn spawn_add(hub: Arc<Hub>, run: MachineAddRun, resolved: crate::cli::setup::mac
             &resolved,
             Some(side),
             runner.as_ref(),
-            Some(builds.as_ref()),
+            builds.as_ref(),
+            true,
             &recorder,
         )
         .await

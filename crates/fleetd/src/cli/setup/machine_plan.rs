@@ -320,10 +320,14 @@ pub fn plan_machine_add(facts: &Facts, input: &MachineAddInput) -> Result<Machin
     };
     let (os, arch) = &input.binary_target;
     if facts.platform != *os || facts.arch != *arch {
-        return Err(format!(
-            "the machine is {}-{} and this fleetd is a {os}-{arch} build: fleetd has builds for Linux and macOS on x64 and arm64 only",
-            facts.platform, facts.arch
-        ));
+        return Err(if facts.platform == "linux" && facts.arch == "arm64" {
+            "the machine is linux-arm64, and fleetd has no Linux ARM build yet".to_owned()
+        } else {
+            format!(
+                "the machine is {}-{} and this fleetd is a {os}-{arch} build: fleetd has builds for Linux on x64 and macOS on x64 and arm64 only",
+                facts.platform, facts.arch
+            )
+        });
     }
     if facts.home.chars().any(char::is_whitespace) {
         return Err(format!(
@@ -819,10 +823,8 @@ mod tests {
     fn refuses_another_arch_unknown_os_and_a_missing_claude() {
         let facts = fresh_facts("ada", "arm64");
         assert!(
-            plan_machine_add(&facts, &input())
-                .err()
-                .unwrap()
-                .starts_with("the machine is linux-arm64 and this fleetd is a linux-x64 build")
+            plan_machine_add(&facts, &input()).err().unwrap()
+                == "the machine is linux-arm64, and fleetd has no Linux ARM build yet"
         );
         let win = Facts {
             platform: "win32".into(),

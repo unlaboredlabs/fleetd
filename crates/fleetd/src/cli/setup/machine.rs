@@ -30,7 +30,7 @@ pub fn machine_usage() -> String {
             [--claude-config-dir <dir>]
              set up a machine that runs agents, over SSH (--local: this machine): copies this fleetd
              there (for another OS or CPU, this version's release build for it, checked against
-             its SHA256SUMS), checks its claude (installed, version {SUPPORTED}, logged in), enrolls the node and
+             its SHA256SUMS; there is no Linux ARM build yet), checks its claude (installed, version {SUPPORTED}, logged in), enrolls the node and
              runs it as a user service, then waits until the machine is online; prints every command
              first, --dry-run only prints (for a fresh machine, without connecting); --no-service
              enrolls the node but writes no service and prints how to run it; safe to run again
@@ -128,8 +128,14 @@ impl Runner for Ssh {
 /// The fleetd build for a machine of another OS or CPU than this fleetd's own: this very version's release asset.
 /// Tests stand in a fake.
 pub trait Builds: Send + Sync {
-    /// `asset` (`fleetd-<os>-<arch>`) of fleetd `version`, checked against its release's SHA256SUMS; or why not, with
-    /// `Fix:` and what to do.
+    /// The sha256 that `version`'s release lists for `asset` (`fleetd-<os>-<arch>`) in its SHA256SUMS: what the
+    /// machine's copy must be. Or why not, with `Fix:` and what to do.
+    fn digest<'a>(
+        &'a self,
+        version: &'a str,
+        asset: &'a str,
+    ) -> BoxFuture<'a, Result<String, String>>;
+    /// The asset's bytes, checked against that release's SHA256SUMS.
     fn build<'a>(
         &'a self,
         version: &'a str,
@@ -141,34 +147,95 @@ pub trait Builds: Send + Sync {
 /// that build), or the directory FLEETD_BASE_URL names.
 pub struct Releases;
 
+impl Releases {
+    fn feed(version: &str) -> (crate::update::HttpFeed, bool) {
+        let (base, nightly) = release_of(version, std::env::var("FLEETD_BASE_URL").ok().as_deref());
+        (crate::update::HttpFeed::new(base), nightly)
+    }
+}
+
 impl Builds for Releases {
+    fn digest<'a>(
+        &'a self,
+        version: &'a str,
+        asset: &'a str,
+    ) -> BoxFuture<'a, Result<String, String>> {
+        Box::pin(async move {
+            let (feed, nightly) = Self::feed(version);
+            release_digest(&feed, nightly, version, asset).await
+        })
+    }
+
     fn build<'a>(
         &'a self,
         version: &'a str,
         asset: &'a str,
     ) -> BoxFuture<'a, Result<Vec<u8>, String>> {
-        use crate::update::{HttpFeed, release, verified};
         Box::pin(async move {
-            let (base, nightly) =
-                release_of(version, std::env::var("FLEETD_BASE_URL").ok().as_deref());
-            let feed = HttpFeed::new(base);
-            if nightly {
-                let now = release(&feed).await.map_err(|f| f.message)?.cli_version;
-                if now.as_deref() != Some(version) {
-                    return Err(format!(
-                        "this hub runs fleetd {version}, and the nightly release is now {}, so it has no {asset} of this hub's build. Fix: update the hub (fleetd update)",
-                        now.as_deref().unwrap_or("another build")
-                    ));
-                }
-            }
-            verified(&feed, asset).await.map_err(|f| {
-                format!(
-                    "no {asset} of fleetd {version} to copy to the machine: {}. Fix: run a released fleetd on the hub, or a machine of the hub's own OS and CPU",
-                    f.message.trim_end_matches('.')
-                )
-            })
+            let (feed, nightly) = Self::feed(version);
+            release_build(&feed, nightly, version, asset).await
         })
     }
+}
+
+/// A nightly release holds `version` only until the next nightly: its release.json says which it is now.
+async fn still_holds(
+    feed: &dyn crate::update::Feed,
+    nightly: bool,
+    version: &str,
+    asset: &str,
+) -> Result<(), String> {
+    if !nightly {
+        return Ok(());
+    }
+    let now = crate::update::release(feed)
+        .await
+        .map_err(|f| f.message)?
+        .cli_version;
+    if now.as_deref() == Some(version) {
+        return Ok(());
+    }
+    Err(format!(
+        "this hub runs fleetd {version}, and the nightly release is now {}, so it has no {asset} of this hub's build. Fix: update the hub (fleetd update)",
+        now.as_deref().unwrap_or("another build")
+    ))
+}
+
+fn missing(asset: &str, version: &str, why: &str) -> String {
+    format!(
+        "no {asset} of fleetd {version} to copy to the machine: {}. Fix: run a released fleetd on the hub",
+        why.trim_end_matches('.')
+    )
+}
+
+/// What `feed`'s SHA256SUMS lists for `asset` of `version`.
+pub async fn release_digest(
+    feed: &dyn crate::update::Feed,
+    nightly: bool,
+    version: &str,
+    asset: &str,
+) -> Result<String, String> {
+    still_holds(feed, nightly, version, asset).await?;
+    let sums = crate::update::sums(feed)
+        .await
+        .map_err(|f| missing(asset, version, &f.message))?;
+    sums.get(asset)
+        .cloned()
+        .ok_or_else(|| missing(asset, version, "its release has none"))
+}
+
+/// `asset` of `version` from `feed`, checked against its SHA256SUMS. A nightly release that moved on between this and
+/// [`release_digest`] hands over another build: `prepare` checks the bytes against the digest it planned with.
+pub async fn release_build(
+    feed: &dyn crate::update::Feed,
+    nightly: bool,
+    version: &str,
+    asset: &str,
+) -> Result<Vec<u8>, String> {
+    still_holds(feed, nightly, version, asset).await?;
+    crate::update::verified(feed, asset)
+        .await
+        .map_err(|f| missing(asset, version, &f.message))
 }
 
 /// Where fleetd `version`'s release assets are, and whether that is the rolling nightly release (which holds it only
@@ -651,7 +718,7 @@ pub async fn add(a: AddArgs) -> Result<Option<Added>, u8> {
         Some(open_hub(&r.home).map_err(|message| fail(&message))?)
     };
     let side = hub.as_ref().map(HubAccess::side);
-    let prepared = prepare(&r, side, &Ssh, Some(&Releases), &Print)
+    let prepared = prepare(&r, side, &Ssh, &Releases, true, &Print)
         .await
         .map_err(Stop::print)?;
     execute(r, prepared, side, &Ssh, &Print)
@@ -857,13 +924,15 @@ fn dry_run(r: &Resolved) -> Result<(), Stop> {
 /// Reads the machine (read-only) and plans `machine add` there; changes nothing. `hub` says whether it already holds
 /// the node's key; a joining worker has none.
 ///
-/// A machine of another OS or CPU gets this version's release build for it: `builds` fetches and checks it (a step of
-/// its own), or with None (a plan) the step is only listed.
+/// A machine of another OS or CPU gets this version's release build for it, unless it has that build already (by the
+/// release's SHA256SUMS): with `fetch`, `builds` downloads and checks it as a step of its own; without (a plan), the
+/// step is only listed.
 pub async fn prepare(
     r: &Resolved,
     hub: Option<HubSide<'_>>,
     runner: &dyn Runner,
-    builds: Option<&dyn Builds>,
+    builds: &dyn Builds,
+    fetch: bool,
     progress: &dyn Progress,
 ) -> Result<Prepared, Stop> {
     progress.say(&format!(
@@ -926,11 +995,24 @@ pub async fn prepare(
     };
     // Another OS or CPU than this fleetd's: the same version, built for it.
     let target = (facts.platform.clone(), facts.arch.clone());
-    let buildable = matches!(target.0.as_str(), "linux" | "darwin")
-        && matches!(target.1.as_str(), "x64" | "arm64");
+    // What the release workflow builds (.github/workflows/build-release.yml): no Linux ARM yet.
+    let buildable = matches!(
+        (target.0.as_str(), target.1.as_str()),
+        ("linux", "x64") | ("darwin", "x64" | "arm64")
+    );
     let (mut fetched, mut listed) = (None, None);
     if target != input.binary_target && buildable {
         let asset = format!("fleetd-{}-{}", target.0, target.1);
+        let again = |why: String| Stop::fail(format!("{why}, then run {}", r.again));
+        let wanted = builds
+            .digest(crate::version(), &asset)
+            .await
+            .map_err(again)?;
+        let has = facts
+            .digests
+            .get(&facts.layout().bin)
+            .and_then(|d| d.as_deref())
+            == Some(wanted.as_str());
         let step = Begin {
             stage: Stage::Hub,
             title: format!(
@@ -944,23 +1026,25 @@ pub async fn prepare(
             command: None,
             stdin: None,
         };
-        match builds {
-            None => listed = Some(step),
-            Some(builds) => {
-                progress.begin(step);
-                let bytes = builds
-                    .build(crate::version(), &asset)
-                    .await
-                    .map_err(|why| Stop::fail(format!("{why}, then run {}", r.again)))?;
-                progress.done("");
-                input.binary_digest = format!("{:x}", Sha256::digest(&bytes));
-                fetched = Some((asset, bytes));
+        if has {
+            // It has this very build: nothing to download, nothing to copy.
+        } else if fetch {
+            progress.begin(step);
+            let bytes = builds
+                .build(crate::version(), &asset)
+                .await
+                .map_err(again)?;
+            if format!("{:x}", Sha256::digest(&bytes)) != wanted {
+                return Err(again(format!(
+                    "the release's {asset} changed while it was being read (a new nightly?)"
+                )));
             }
+            progress.done("");
+            fetched = Some((asset, bytes));
+        } else {
+            listed = Some(step);
         }
-        if fetched.is_none() {
-            // Not fetched yet: whatever the machine has, the plan copies the build.
-            input.binary_digest = String::new();
-        }
+        input.binary_digest = wanted;
         input.binary_target = target;
     }
     let plan = plan_machine_add(&facts, &input)
@@ -1383,6 +1467,80 @@ mod tests {
         assert_eq!(
             release_of("0.9.2", Some("http://127.0.0.1:8000/assets")),
             ("http://127.0.0.1:8000/assets".into(), false)
+        );
+    }
+
+    /// A release feed of named files.
+    struct Files(std::collections::HashMap<&'static str, Vec<u8>>);
+
+    impl crate::update::Feed for Files {
+        fn get<'a>(&'a self, name: &'a str) -> BoxFuture<'a, Result<Vec<u8>, String>> {
+            Box::pin(async move {
+                self.0
+                    .get(name)
+                    .cloned()
+                    .ok_or_else(|| format!("{name}: 404"))
+            })
+        }
+    }
+
+    fn feed(cli: &str) -> Files {
+        let build = b"fleetd for darwin-arm64".to_vec();
+        let sums = format!(
+            "{}  fleetd-darwin-arm64\n",
+            crate::update::sha256_hex(&build)
+        );
+        Files(
+            [
+                (
+                    "release.json",
+                    format!(r#"{{"cliVersion":"{cli}"}}"#).into_bytes(),
+                ),
+                ("SHA256SUMS", sums.into_bytes()),
+                ("fleetd-darwin-arm64", build),
+            ]
+            .into(),
+        )
+    }
+
+    #[tokio::test]
+    async fn a_nightly_hub_takes_a_build_only_while_the_nightly_is_its_own() {
+        let mine = "0.9.2-nightly.202610271107+333368c";
+        let digest = release_digest(&feed(mine), true, mine, "fleetd-darwin-arm64")
+            .await
+            .unwrap();
+        let build = release_build(&feed(mine), true, mine, "fleetd-darwin-arm64")
+            .await
+            .unwrap();
+        assert_eq!(crate::update::sha256_hex(&build), digest);
+
+        let moved = feed("0.9.2-nightly.202610281107+444444d");
+        for why in [
+            release_digest(&moved, true, mine, "fleetd-darwin-arm64")
+                .await
+                .unwrap_err(),
+            release_build(&moved, true, mine, "fleetd-darwin-arm64")
+                .await
+                .unwrap_err(),
+        ] {
+            assert!(
+                why.contains("the nightly release is now 0.9.2-nightly.202610281107+444444d")
+                    && why.ends_with("Fix: update the hub (fleetd update)"),
+                "{why}"
+            );
+        }
+        // A tagged release is its version's for good: no release.json to ask.
+        assert!(
+            release_digest(&moved, false, "0.9.2", "fleetd-darwin-arm64")
+                .await
+                .is_ok()
+        );
+        let none = release_digest(&feed(mine), false, "0.9.2", "fleetd-linux-x64")
+            .await
+            .unwrap_err();
+        assert!(
+            none.starts_with("no fleetd-linux-x64 of fleetd 0.9.2"),
+            "{none}"
         );
     }
 

@@ -38,10 +38,12 @@ struct FakeMachine {
     fail: Mutex<Option<String>>,
     installed: Mutex<bool>,
     logged_in: bool,
-    /// The machine's CPU, when it isn't the hub's own.
-    other_cpu: Mutex<bool>,
+    /// The machine runs another OS than the hub's (other_target).
+    other_os: Mutex<bool>,
     /// The release builds the hub fetches for it.
     builds: Arc<FakeBuilds>,
+    /// The machine is Linux on ARM, which fleetd has no build for.
+    linux_arm: Mutex<bool>,
 }
 
 impl FakeMachine {
@@ -53,8 +55,9 @@ impl FakeMachine {
             fail: Mutex::default(),
             installed: Mutex::new(false),
             logged_in: true,
-            other_cpu: Mutex::new(false),
+            other_os: Mutex::new(false),
             builds: Arc::default(),
+            linux_arm: Mutex::new(false),
         })
     }
 
@@ -68,11 +71,21 @@ impl FakeMachine {
     }
 
     fn probe(&self) -> String {
-        let (os, arch) = local_target();
-        let os = if os == "darwin" { "Darwin" } else { "Linux" };
-        let arch = match (arch == "arm64", *self.other_cpu.lock().unwrap()) {
-            (true, false) | (false, true) => "arm64",
-            _ => "x86_64",
+        let (os, arch) = if *self.other_os.lock().unwrap() {
+            other_target()
+        } else {
+            local_target()
+        };
+        let linux_arm = *self.linux_arm.lock().unwrap();
+        let os = if os == "darwin" && !linux_arm {
+            "Darwin"
+        } else {
+            "Linux"
+        };
+        let arch = if arch == "arm64" || linux_arm {
+            "arm64"
+        } else {
+            "x86_64"
         };
         let mut out = format!(
             "home /home/ada\nconfig /home/ada/.config\nuser ada\nuid 1000\nos {os}\narch {arch}\npath /usr/bin:/bin\n\
@@ -80,9 +93,14 @@ impl FakeMachine {
             crate::node::runner::claude::version::TESTED
         );
         if *self.installed.lock().unwrap() {
+            let bytes = if *self.other_os.lock().unwrap() {
+                other_asset().into_bytes()
+            } else {
+                FLEETD.to_vec()
+            };
             out += &format!(
                 "digest /home/ada/.fleetd/bin/fleetd {:x}\n",
-                Sha256::digest(FLEETD)
+                Sha256::digest(bytes)
             );
         }
         out
@@ -148,7 +166,10 @@ impl Runner for FakeMachine {
             if command.contains("fleetd.fleetd-tmp") && stdin.is_some_and(|b| b == FLEETD) {
                 *self.installed.lock().unwrap() = true;
             }
-            if command.contains(" restart ") || command.contains("kickstart") {
+            if command.contains(" restart ")
+                || command.contains("kickstart")
+                || command.contains("bootstrap")
+            {
                 self.link_soon(machine_of(&target.host));
             }
             if command.contains("'join'") || command.contains(" join ") {
@@ -171,6 +192,22 @@ struct FakeBuilds {
 }
 
 impl Builds for FakeBuilds {
+    fn digest<'a>(
+        &'a self,
+        version: &'a str,
+        asset: &'a str,
+    ) -> BoxFuture<'a, Result<String, String>> {
+        Box::pin(async move {
+            if *self.missing.lock().unwrap() {
+                Err(format!(
+                    "no {asset} of fleetd {version} to copy to the machine: the release has none. Fix: run a released fleetd on the hub"
+                ))
+            } else {
+                Ok(format!("{:x}", Sha256::digest(asset.as_bytes())))
+            }
+        })
+    }
+
     fn build<'a>(
         &'a self,
         version: &'a str,
@@ -192,13 +229,19 @@ impl Builds for FakeBuilds {
     }
 }
 
-/// The other CPU's asset, as the probe names it.
-fn other_asset() -> String {
+/// Another OS than the hub's, of a CPU fleetd has a build for: macOS from a Linux hub, Linux x64 from a Mac.
+fn other_target() -> (String, String) {
     let (os, arch) = local_target();
-    format!(
-        "fleetd-{os}-{}",
-        if arch == "arm64" { "x64" } else { "arm64" }
-    )
+    if os == "darwin" {
+        ("linux".into(), "x64".into())
+    } else {
+        ("darwin".into(), arch)
+    }
+}
+
+fn other_asset() -> String {
+    let (os, arch) = other_target();
+    format!("fleetd-{os}-{arch}")
 }
 
 struct Ports {
@@ -667,9 +710,9 @@ async fn a_repair_connects_with_the_ssh_config_it_was_set_up_with() {
 /// A machine of another CPU than the hub's gets the hub's own version built for it: the plan says it downloads it,
 /// the run copies that build, and its record holds the machine as it is.
 #[tokio::test]
-async fn a_machine_of_another_cpu_gets_this_version_built_for_it() {
+async fn a_machine_of_another_os_gets_this_version_built_for_it() {
     let (hub, machine, _home) = hub();
-    *machine.other_cpu.lock().unwrap() = true;
+    *machine.other_os.lock().unwrap() = true;
     let plan = call(&hub, "machine_add_plan", json!({ "host": "builder-1" })).await;
     let first = plan["steps"][0]["title"].as_str().unwrap();
     assert!(
@@ -704,7 +747,7 @@ async fn a_machine_of_another_cpu_gets_this_version_built_for_it() {
     assert_eq!(
         installed,
         other_asset().as_bytes(),
-        "the build for its CPU, not the hub's"
+        "the build for its OS, not the hub's"
     );
     let install = run["steps"]
         .as_array()
@@ -721,7 +764,7 @@ async fn a_machine_of_another_cpu_gets_this_version_built_for_it() {
 #[tokio::test]
 async fn a_machine_whose_build_is_missing_says_why_and_installs_nothing() {
     let (hub, machine, _home) = hub();
-    *machine.other_cpu.lock().unwrap() = true;
+    *machine.other_os.lock().unwrap() = true;
     *machine.builds.missing.lock().unwrap() = true;
     let out = call(&hub, "machine_add", json!({ "host": "builder-1" })).await;
     let run = finished(&hub, out["run"]["runId"].as_str().unwrap()).await;
@@ -736,10 +779,71 @@ async fn a_machine_whose_build_is_missing_says_why_and_installs_nothing() {
             .unwrap()
             .contains("then run fleetd machine add builder-1")
     );
-    assert_eq!(titles(&run["steps"])[1].1, "failed");
+    // Stopped at the release's SHA256SUMS, before any download or plan step began.
+    assert_eq!(
+        titles(&run["steps"]),
+        [(
+            "read the machine's state (read-only)".to_owned(),
+            "done".to_owned()
+        )]
+    );
     assert_eq!(
         machine.commands().len(),
         1,
         "only the read of the machine ran"
     );
+}
+
+/// A machine of another OS that has this version's build already: no download, no copy, in the plan as in the run.
+#[tokio::test]
+async fn a_machine_that_has_its_build_already_downloads_nothing() {
+    let (hub, machine, _home) = hub();
+    *machine.other_os.lock().unwrap() = true;
+    *machine.installed.lock().unwrap() = true;
+    let plan = call(&hub, "machine_add_plan", json!({ "host": "builder-1" })).await;
+    let titles_of = |steps: &Value| {
+        titles(steps)
+            .into_iter()
+            .map(|(t, _)| t)
+            .collect::<Vec<_>>()
+    };
+    assert!(
+        titles_of(&plan["steps"])
+            .iter()
+            .all(|t| !t.starts_with("download fleetd") && !t.starts_with("install fleetd")),
+        "{:?}",
+        titles_of(&plan["steps"])
+    );
+    let out = call(&hub, "machine_add", json!({ "host": "builder-1" })).await;
+    let run = finished(&hub, out["run"]["runId"].as_str().unwrap()).await;
+    assert_eq!(run["state"], "done", "{run:#}");
+    assert!(machine.builds.asked.lock().unwrap().is_empty());
+    assert_eq!(titles_of(&plan["steps"]), titles_of(&run["steps"])[1..]);
+}
+
+/// A Linux ARM machine is refused at the plan: there is no build to fetch for it yet.
+#[tokio::test]
+async fn a_linux_arm_machine_is_refused_up_front() {
+    let (hub, machine, _home) = hub();
+    if local_target() == ("linux".to_owned(), "arm64".to_owned()) {
+        return;
+    }
+    *machine.linux_arm.lock().unwrap() = true;
+    let Err(CallError::Tool(e)) = call_as(
+        &hub,
+        &person("admin"),
+        "machine_add_plan",
+        json!({ "host": "builder-1" }),
+    )
+    .await
+    else {
+        panic!("planned a Linux ARM machine");
+    };
+    assert!(
+        e.message
+            .starts_with("the machine is linux-arm64, and fleetd has no Linux ARM build yet"),
+        "{}",
+        e.message
+    );
+    assert!(machine.builds.asked.lock().unwrap().is_empty());
 }

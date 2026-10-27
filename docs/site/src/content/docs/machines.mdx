@@ -8,7 +8,8 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
 You'll add [workers](/docs/glossary#worker), the machines that run agents, and keep them healthy. The hub's owners
 and admins add them in the app; the CLI does the same from a terminal on the hub.
 
-A worker needs the `claude` CLI, and Linux or macOS on x64 or arm64.
+A worker needs the `claude` CLI, and Linux on x64 or macOS (Apple silicon or Intel). fleetd has no Linux ARM build
+yet.
 
 ## Add a machine in the app {#app}
 
@@ -62,9 +63,9 @@ Run these on the hub unless it says otherwise.
    It copies the hub's own fleetd to the machine, enrolls its [node](/docs/glossary#node), runs the node as a user
    service, and waits until the machine is online. It prints each remote command before it runs it.
 
-   A machine of another OS or CPU than the hub's (a Mac added from a Linux hub, an arm64 box from an x64 one) gets
-   the same fleetd version built for it: the hub downloads that release's build and checks it against the release's
-   `SHA256SUMS` first. A hub on a nightly build can do this only while the nightly release is still its build; once it
+   A machine of another OS or CPU than the hub's (a Mac added from a Linux hub, say) gets the same fleetd version
+   built for it: the hub downloads that release's build and checks it against the release's `SHA256SUMS` first. A
+   machine that has that build already is left as it is. A hub on a nightly build can do this only while the nightly release is still its build; once it
    has moved on, the add stops and says to update the hub first.
 
 The host name can be anything in `~/.ssh/config` or on your tailnet. You can also run `fleetd init` again and pick the
