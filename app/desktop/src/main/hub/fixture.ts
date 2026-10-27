@@ -126,6 +126,14 @@ export const matches = (part: unknown, whole: unknown): boolean => {
   return Object.entries(part).every(([key, value]) => key in record && matches(value, record[key]));
 };
 
+/** chat_send's message under the sender's own clientRequestId, as a hub keeps it: the app's row becomes that message. */
+const echoRequestId = (request: CallRequest, outcome: CallOutcome): CallOutcome => {
+  const id = (request.input as { clientRequestId?: unknown } | null | undefined)?.clientRequestId;
+  const message = outcome.ok ? (outcome.output as { message?: unknown } | null)?.message : undefined;
+  if (!outcome.ok || request.tool !== "chat_send" || typeof id !== "string" || message === null || typeof message !== "object") return outcome;
+  return { ok: true, output: { ...(outcome.output as object), message: { ...message, clientRequestId: id } } };
+};
+
 export class FixtureSource implements HubSource {
   readonly #file: FixtureFile;
   readonly #emit: (frame: HubFrame) => void;
@@ -194,7 +202,7 @@ export class FixtureSource implements HubSource {
       console.warn(message);
       return Promise.resolve({ ok: false, error: { code: "not_found", message } });
     }
-    const outcome = this.#withoutHidden(request.tool, answer.outcome);
+    const outcome = echoRequestId(request, this.#withoutHidden(request.tool, answer.outcome));
     if (answer.then !== undefined) this.#apply(answer.then);
     if (answer.delayMs === undefined || answer.delayMs === 0) return Promise.resolve(outcome);
     return new Promise((resolve) => setTimeout(() => resolve(outcome), answer.delayMs));
