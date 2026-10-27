@@ -45,6 +45,14 @@
   text-overflow: ellipsis;
 }
 
+/* With several hubs: the row's state beside its hub's name, quiet. */
+.aside {
+  flex: none;
+  margin-left: auto;
+  color: var(--quiet);
+  font-size: var(--text-xs);
+}
+
 /* The hub's one dot, plain: no ring and no halo (ui/DESIGN.md), in a 12 px cell so it lines up with the rows' icons. */
 .dot {
   flex: none;

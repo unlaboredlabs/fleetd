@@ -184,7 +184,7 @@ export const useCommands = (list: readonly Command[], deps: readonly unknown[]):
   }, deps);
 };
 
-/** Registers a source while the calling component is mounted. Keep `source` stable (module scope or useMemo). */
-export const useSource = (source: Source): void => {
-  useEffect(() => registerSource(source), [source]);
+/** Registers a source (none: nothing) while the calling component is mounted. Keep `source` stable (module scope or useMemo). */
+export const useSource = (source: Source | null): void => {
+  useEffect(() => (source === null ? undefined : registerSource(source)), [source]);
 };

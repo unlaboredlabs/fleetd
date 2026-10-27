@@ -7,7 +7,7 @@ import { Button, Checkbox, Dialog, Field, Input, Radio, RadioGroup, Separator, S
 import type { McpRoles, McpScope, McpServer, McpTestResult } from "../../../shared/contracts";
 import type { McpServerRequest } from "../../../shared/ipc";
 import { CallError } from "../../src/data/queries";
-import { useData, useToolQuery } from "../../src/data/react";
+import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { draftOf, emptyDraft, globalsFor, missingOn, nameProblem, rolesText, toRequest, transportText, valuesText, type Draft, type DraftValue, type TransportKind } from "./mcpModel";
 import { PageHead, Setting } from "./parts";
@@ -291,6 +291,7 @@ const ROLES: ReadonlyArray<{ key: keyof McpRoles; label: string; description: st
 ];
 
 function ServerEditor(props: { scope: Ref | null; editing: McpServer | null; taken: ReadonlyArray<string>; onClose: () => void; onSaved: (name: string, missing: string[]) => void }) {
+  const { hub } = useDataLayer();
   const [draft, setDraft] = useState<Draft>(() => (props.editing ? draftOf(props.editing) : emptyDraft()));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -305,7 +306,7 @@ function ServerEditor(props: { scope: Ref | null; editing: McpServer | null; tak
     if (!built.ok) return;
     setBusy(true);
     setError(null);
-    window.fleetd.secret.mcpServer(built.request).then(
+    window.fleetd.secret.mcpServer(hub, built.request).then(
       (out) => {
         setBusy(false);
         if (!out.ok) {

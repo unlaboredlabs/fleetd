@@ -123,6 +123,11 @@ export class Fixture {
    * start; main never writes a fixture's. Absent: no cache, as on a first launch.
    */
   cache: JsonObject | undefined;
+  /** The hub's name and colour in the app (src/shared/hubs.ts), shown once there are several hubs. */
+  label: string | undefined;
+  color: FixtureFile["color"];
+  /** More hubs the app is paired with beside this one (docs/design/hubs.md), each a fixture of its own. */
+  hubs: Array<{ label: string; color?: FixtureFile["color"]; fixture: Fixture }> = [];
 
   constructor(name: string, note: string) {
     this.name = name;
@@ -138,6 +143,9 @@ export class Fixture {
     f.pair = base.pair === undefined ? undefined : clone(base.pair);
     f.appUpdate = base.appUpdate === undefined ? undefined : clone(base.appUpdate);
     f.cache = base.cache === undefined ? undefined : clone(base.cache);
+    f.label = base.label;
+    f.color = base.color;
+    f.hubs = base.hubs.map((h) => ({ ...h, fixture: Fixture.from(h.fixture, h.fixture.name, h.fixture.note) }));
     f.snapshot = base.snapshot === undefined ? undefined : clone(base.snapshot);
     f.events = clone(base.events);
     f.live = clone(base.live);
@@ -299,6 +307,17 @@ export class Fixture {
       ...(this.appUpdate === undefined ? {} : { update: this.appUpdate }),
       ...(this.cache === undefined ? {} : { cache: this.cache }),
       ...(this.hidden.length === 0 ? {} : { hidden: this.hidden }),
+      ...(this.label === undefined ? {} : { label: this.label }),
+      ...(this.color === undefined ? {} : { color: this.color }),
+      ...(this.hubs.length === 0
+        ? {}
+        : {
+            hubs: this.hubs.map((h) => {
+              // One hub each: what only the app's first hub (or the QA harness) reads stays with the file's own.
+              const { settleMs: _settle, pair: _pair, update: _update, hubs: _hubs, label: _label, color: _color, ...fixture } = h.fixture.toFile();
+              return { label: h.label, ...(h.color === undefined ? {} : { color: h.color }), fixture };
+            }),
+          }),
     };
   }
 }

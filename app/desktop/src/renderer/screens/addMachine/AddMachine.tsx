@@ -13,7 +13,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { MachineAddRun, MachineHost, SetupStep } from "../../../shared/contracts";
 import type { JoinHere, ThisComputer } from "../../../shared/joinHere";
-import { useData, useToolQuery } from "../../src/data/react";
+import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { Button, InlineCode, StateGlyph, Text } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { glyphOf, hereLine, hereOf, hostLine, joinSteps, pickable, resumable, runLine, runTitle, sentence, shortOutput, stepTitle, type Here } from "./model";
@@ -58,18 +58,19 @@ const useThisComputer = (again: string): ThisComputer | undefined => {
   return here;
 };
 
-/** The join of this computer main runs, as it reports it. */
+/** The join of this computer to this hub, as main reports it: another hub's join is that hub's page's. */
 const useJoinHere = (): JoinHere | null => {
+  const { hub } = useDataLayer();
   const [join, setJoin] = useState<JoinHere | null>(null);
   useEffect(() => {
     let live = true;
-    void window.fleetd.machines.joinHereState().then((j) => live && j !== null && setJoin(j));
-    const off = window.fleetd.machines.onJoinHere(setJoin);
+    void window.fleetd.machines.joinHereState(hub).then((j) => live && j !== null && setJoin(j));
+    const off = window.fleetd.machines.onJoinHere(hub, setJoin);
     return () => {
       live = false;
       off();
     };
-  }, []);
+  }, [hub]);
   return join;
 };
 
@@ -77,6 +78,7 @@ const useOnline = (machineId: string | undefined): boolean =>
   useData((d) => (machineId === undefined ? false : (d.machines[machineId]?.status ?? "offline") !== "offline"));
 
 export function AddMachine() {
+  const layer = useDataLayer();
   const live = useLive();
   const call = useHubCall();
   const refetch = useRefetch();
@@ -131,7 +133,7 @@ export function AddMachine() {
     if (h.kind === "hub") return add({ local: true });
     if (h.kind === "node" || h.kind === "other-hub") return;
     setView({ kind: "here" });
-    void window.fleetd.machines.joinHere(h.machineId);
+    void window.fleetd.machines.joinHere(layer.hub, h.machineId);
   };
 
   return (

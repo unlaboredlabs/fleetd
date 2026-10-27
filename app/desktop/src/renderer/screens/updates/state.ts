@@ -39,8 +39,15 @@ export const appUpdate = (): UpdatesState | null => state;
 
 export const useUpdatesOpen = (): boolean => useSyncExternalStore(subscribe, () => open);
 
-export const setUpdatesOpen = (next: boolean): void => {
-  if (open === next) return;
+/** Which hub's sheet opens: each hub's updates are its own (docs/design/hubs.md); null, the screen's hub. */
+let hub: string | null = null;
+
+export const useUpdatesHub = (): string | null => useSyncExternalStore(subscribe, () => hub);
+
+export const setUpdatesOpen = (next: boolean, from?: string): void => {
+  if (open === next && (from === undefined || from === hub)) return;
   open = next;
+  if (from !== undefined) hub = from;
+  else if (!next) hub = null;
   notify();
 };

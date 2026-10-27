@@ -14,14 +14,22 @@ import type { HubError } from "../../../shared/hub";
 import { chatItems, type ChatItem, type ChatSend } from "./chat";
 import { projectKey, settled, type DataState, type ProjectKey } from "./store";
 
-/** Recomputes only when one of `inputs(state)` changed (by identity). */
+/** The owner of states made without one (a test's literal state). */
+const noOwner = {};
+
+/**
+ * Recomputes only when one of `inputs(state)` changed (by identity). Each store keeps its own last result (by the
+ * state's `owner`): each hub has a store, and two read in turn must each get their own stable value back.
+ */
 const memo = <const I extends unknown[], R>(inputs: (s: DataState) => I, compute: (...args: NoInfer<I>) => R) => {
-  let last: { args: I; result: R } | undefined;
+  const last = new WeakMap<object, { args: I; result: R }>();
   return (s: DataState): R => {
     const args = inputs(s);
-    if (last?.args.length === args.length && last.args.every((a, i) => Object.is(a, args[i]))) return last.result;
+    const owner = s.owner ?? noOwner;
+    const held = last.get(owner);
+    if (held?.args.length === args.length && held.args.every((a, i) => Object.is(a, args[i]))) return held.result;
     const result = compute(...args);
-    last = { args, result };
+    last.set(owner, { args, result });
     return result;
   };
 };

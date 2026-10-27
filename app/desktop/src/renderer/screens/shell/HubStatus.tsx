@@ -1,12 +1,13 @@
 // The sidebar's last line: a row naming the hub ("devbox") beside a plain dot, quiet while all is well and saying
 // so when it isn't ("Reconnecting…", "Offline", "Key refused"). Hovering shows the hub's address; clicking (or Enter)
 // opens the details: the address in full, the machines online, protocol and version, and what can be done from here
-// (Retry now, Hub settings, Disconnect), each only when it applies. A paired app switches hub from Settings' Hub
-// section, not #/onboarding: that page sends a connected app straight back to the board.
+// (Retry now, Hub settings, Disconnect), each only when it applies. A paired app adds or changes hubs from Settings ›
+// Hubs, not #/onboarding: that page sends a connected app straight back to the board. With several hubs there is one
+// row per hub, each under its name and with its own state: one offline never hides another.
 import { useState } from "react";
 import type { HubState } from "../../../shared/hub";
 import { versionLabel } from "../../../shared/updates";
-import { useData, useDataLayer } from "../../src/data/react";
+import { useData, useDataLayer, useHub, useSeveralHubs } from "../../src/data/react";
 import { selectMachines } from "../../src/data/selectors";
 import { Button, Dot, Popover, PopoverContent, PopoverTrigger, Text, Tooltip } from "../../ui";
 import { Prose } from "../onboarding/Prose";
@@ -17,11 +18,7 @@ import h from "./hubStatus.module.css";
 
 const TONE: Record<ConnTone, string> = { success: "var(--success)", warning: "var(--warning)", danger: "var(--danger)", quiet: "var(--faint)" };
 
-const pair = () => {
-  window.location.hash = "#/onboarding";
-};
-
-const HUB_OPTION = OPTIONS.find((o) => o.key === "general.hub");
+const HUB_OPTION = OPTIONS.find((o) => o.key === "hubs.hub");
 
 /** A dot with a faint ring of its own color. */
 const SoftDot = ({ tone }: { tone: ConnTone }) => (
@@ -34,6 +31,15 @@ export function HubStatus({ hub }: { hub: HubState }) {
   const asOf = useOfflineAsOf();
   const conn = connLine(hub, window.fleetd.fixture !== null, asOf);
   const layer = useDataLayer();
+  const self = useHub();
+  const several = useSeveralHubs();
+  const pair = () => {
+    window.location.hash = several ? `#/onboarding?another&at=${self.id}` : "#/onboarding";
+  };
+  // With several hubs a row is named for its hub, and says its state beside the name unless it is connected.
+  const label = several ? self.label : conn.label;
+  // The state's own word even under a fixture, whose chip otherwise only says it is sample data.
+  const aside = several && hub.phase !== "live" ? connLine(hub, false, asOf).label : null;
   const machines = useData(selectMachines);
   const [open, setOpen] = useState(false);
   // Controlled, so its content never changes (an empty one would drop the Tooltip and remount the chip): it just
@@ -42,7 +48,7 @@ export function HubStatus({ hub }: { hub: HubState }) {
   const [forget, setForget] = useState(false);
   const live = hub.phase === "live" ? hub : null;
   const paired = hub.phase !== "unpaired" && window.fleetd.fixture === null;
-  const name = conn.label === conn.status ? conn.label : `${conn.label}, ${conn.status.toLowerCase()}`;
+  const name = several ? `${self.label}, ${conn.status.toLowerCase()}` : conn.label === conn.status ? conn.label : `${conn.label}, ${conn.status.toLowerCase()}`;
 
   return (
     <div className={h.row}>
@@ -51,7 +57,8 @@ export function HubStatus({ hub }: { hub: HubState }) {
           <PopoverTrigger asChild>
             <button type="button" className={h.chip} data-hub-status={hub.phase} data-tone={conn.tone} aria-label={`Hub: ${name}`}>
               <SoftDot tone={conn.tone} />
-              <span className={h.label}>{conn.label}</span>
+              <span className={h.label}>{label}</span>
+              {aside === null ? null : <span className={h.aside}>{aside}</span>}
             </button>
           </PopoverTrigger>
         </Tooltip>
@@ -105,7 +112,7 @@ export function HubStatus({ hub }: { hub: HubState }) {
                   <Button
                     onClick={() => {
                       setOpen(false);
-                      if (HUB_OPTION !== undefined) openOption(HUB_OPTION);
+                      if (HUB_OPTION !== undefined) openOption(several ? { ...HUB_OPTION, key: `hubs.${self.id}` } : HUB_OPTION);
                     }}
                   >
                     Hub settings
@@ -137,7 +144,7 @@ export function HubStatus({ hub }: { hub: HubState }) {
           </div>
         </PopoverContent>
       </Popover>
-      <ForgetHubDialog open={forget} onOpenChange={setForget} />
+      <ForgetHubDialog open={forget} onOpenChange={setForget} only={!several} />
     </div>
   );
 }

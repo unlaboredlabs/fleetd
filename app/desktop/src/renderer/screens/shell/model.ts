@@ -81,34 +81,35 @@ export const toSidebar = (rows: ReadonlyArray<ProjectRow> | undefined, marks: Ma
 /** The route of a sidebar project. */
 export const routeOf = (p: SidebarProject): ProjectKey => ({ machineId: p.project.machineId, projectId: p.project.projectId });
 
-/** The next project after `current` that wants you, in sidebar order and wrapping; null when no other one does. */
-export const nextWanting = (projects: ReadonlyArray<SidebarProject>, current: ProjectKey | null): ProjectKey | null => {
-  const at = current === null ? -1 : projects.findIndex((p) => p.key === projectId(current));
+/**
+ * The next project after `current` (a row's key) that wants you, in sidebar order and wrapping; null when no other one
+ * does. Generic over the row, so the frame steps through every hub's rows at once (Shell.tsx).
+ */
+export const nextWanting = <P extends SidebarProject>(projects: ReadonlyArray<P>, current: string | null): P | null => {
+  const at = current === null ? -1 : projects.findIndex((p) => p.key === current);
   for (let i = 1; i <= projects.length; i++) {
     const p = projects[(at + i) % projects.length];
-    if (p !== undefined && p.want !== undefined && (at === -1 || p !== projects[at])) return routeOf(p);
+    if (p !== undefined && p.want !== undefined && (at === -1 || p !== projects[at])) return p;
   }
   return null;
 };
 
 export const projectId = (key: ProjectKey): string => `${key.machineId}/${key.projectId}`;
 
-/** The project before or after `current` in the sidebar, wrapping; the first (or last) when none is open. */
-export const stepProject = (projects: ReadonlyArray<SidebarProject>, current: ProjectKey | null, by: 1 | -1): ProjectKey | null => {
+/** The project before or after `current` (a row's key) in the sidebar, wrapping; the first (or last) when none is open. */
+export const stepProject = <P extends SidebarProject>(projects: ReadonlyArray<P>, current: string | null, by: 1 | -1): P | null => {
   if (projects.length === 0) return null;
-  const at = current === null ? -1 : projects.findIndex((p) => p.key === projectId(current));
+  const at = current === null ? -1 : projects.findIndex((p) => p.key === current);
   const p = at === -1 ? (by === 1 ? projects[0] : projects.at(-1)) : projects[(at + by + projects.length) % projects.length];
-  return p === undefined ? null : routeOf(p);
+  return p ?? null;
 };
 
 /**
- * Where `#/` goes: the project you last had open when it still exists, else the first in the sidebar; null when
- * there are no projects (the frame offers to add one).
+ * Where `#/` goes: the project you last had open (its row's key) when it still exists, else the first in the sidebar;
+ * null when there are no projects (the frame offers to add one).
  */
-export const homeProject = (projects: ReadonlyArray<SidebarProject>, last: string | null): ProjectKey | null => {
-  const p = projects.find((x) => x.key === last) ?? projects[0];
-  return p === undefined ? null : routeOf(p);
-};
+export const homeProject = <P extends SidebarProject>(projects: ReadonlyArray<P>, last: string | null): P | null =>
+  projects.find((x) => x.key === last) ?? projects[0] ?? null;
 
 export type ConnTone = "success" | "warning" | "danger" | "quiet";
 

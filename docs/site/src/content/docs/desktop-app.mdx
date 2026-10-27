@@ -43,7 +43,7 @@ should only watch or only drive agents, print its code with `fleetd pair --role 
 Settings says "This key lacks the admin role", the app was paired with less: run `fleetd pair` on the hub machine and
 pair again with the new code.
 
-To change hubs, open Settings (⌘,) → General → Hub.
+To add another hub, or rename or remove one, open Settings (⌘,) → Hubs. See [Several hubs](/docs/several-hubs).
 
 ## The window {#window}
 
@@ -98,7 +98,7 @@ message back. The banner says why the hub doesn't answer and when the app tries 
 Approvals, secrets and Stop wait until the hub is back.
 
 Once you're connected again, a chat says "Last known" until its newest messages load; if they can't, it says so, with
-Retry. "Disconnect and forget key" in Settings clears what the app kept for that hub, queued messages included.
+Retry. "Disconnect and forget key" in Settings → Hubs clears what the app kept for that hub, queued messages included.
 
 How to work with the lead: [Chat with the lead](/docs/chat).
 
@@ -201,7 +201,8 @@ an option or a prompt by name, and press Enter to open the first match.
 
 | Section | Has |
 |---|---|
-| General | Appearance (light, dark, match system) and the hub connection. |
+| General | Appearance (light, dark, match system) and time in the app. |
+| Hubs | Each hub this app is paired with: its address, its connection, its name and colour, Pair again and Remove. Add a hub pairs one more. See [Several hubs](/docs/several-hubs). |
 | Notifications | Which alerts show (the lead asks you something, a command or secret waits, the lead finishes what you asked, a machine problem, anything else), whether they play a sound, the Dock badge, and a test. There is never an alert for the chat in front of you, and in quiet hours only urgent ones show. Clicking one opens what it's about. |
 | Agents | [Max agents](/docs/projects#max-agents) for each project. Each slider applies when you let go, with Undo. A project says whether its max is its own or follows the default, and "Use the default" goes back. Under each, the project's Medium allowed switch. |
 | Projects | One project's name, its worktrees, its agents' environment variables (plain and secret), its own MCP servers, its setup commands, the merge train's checks, its task profiles' model and effort, and deleting it. See [Project settings](/docs/projects#settings). |

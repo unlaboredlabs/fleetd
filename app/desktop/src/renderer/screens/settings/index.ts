@@ -1,3 +1,3 @@
 // Settings' public surface for other screens.
-export { ForgetHubDialog } from "./General";
+export { ForgetHubDialog } from "./Hubs";
 export { OPTIONS, openOption } from "./search";

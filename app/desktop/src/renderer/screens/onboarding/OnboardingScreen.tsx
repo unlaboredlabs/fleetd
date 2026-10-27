@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, useSyncExternalStore, type ReactNode, type SyntheticEvent } from "react";
 import type { HubState } from "../../../shared/hub";
+import { cleanLabel, LABEL_MAX, type HubColor, type PairTarget } from "../../../shared/hubs";
 import { keyStoreLine, LOCAL_HUB, protocolFit, type PairFailure, type PairOutcome, type SetupOutcome } from "../../../shared/pairing";
 import { Button, Field, Input, Text } from "../../ui";
-import { formatCodeAt, initialForm, KEY_CREATE, mismatchFailure, reduce, type Reaching } from "./form";
+import { useHub, useSeveralHubs } from "../../src/data/react";
+import { ColorPick } from "../shell/ColorPick";
+import { formatCodeAt, initialForm, KEY_CREATE, mismatchFailure, needsOnboarding, reduce, type Reaching } from "./form";
 import { useHubState, useKeyStore, useReaching, useSecondsUntil } from "./hooks";
 import { CommandLine, Failure, Prose } from "./Prose";
 import { TAGLINE } from "./setup";
@@ -15,8 +18,13 @@ export interface OnboardingProps {
   readonly code?: string | undefined;
   /** Open on the key path (`#/onboarding?key`). */
   readonly useKey?: boolean | undefined;
-  /** Pair with another hub (`#/onboarding?another`, from Settings): the form stays up while this app is connected. */
+  /** Pair the hub on screen again (`#/onboarding?another`, from Settings): the form stays up while it is connected. */
   readonly another?: boolean | undefined;
+  /**
+   * Add a hub beside the ones paired (`#/onboarding?add`, from Settings › Hubs), under a name and colour the person
+   * picks; a pairing link that comes while a hub is in use adds one too.
+   */
+  readonly add?: boolean | undefined;
 }
 
 const subscribeHash = (onChange: () => void) => {
@@ -43,8 +51,9 @@ export function OnboardingScreen(props: OnboardingProps) {
   const code = props.code ?? query.get("code") ?? undefined;
   const useKey = props.useKey ?? query.has("key");
   const another = props.another ?? query.has("another");
+  const add = props.add ?? (query.has("add") || (code !== undefined && !needsOnboarding(state)));
   // A link to pair with a hub, or pairing with another one, shows the form whatever the connection is doing.
-  if (code === undefined && !another) {
+  if (code === undefined && !another && !add) {
     if (state.phase === "live") {
       const fit = protocolFit(state.protocol);
       return fit === "ok" ? <Connected hub={state.hub} /> : <Mismatch failure={mismatchFailure(fit, state.hub)} />;
@@ -54,9 +63,9 @@ export function OnboardingScreen(props: OnboardingProps) {
   // Remounts on a new phase or link, so a refused key or a fresh link starts a fresh form.
   return (
     <ConnectForm
-      key={`${another ? "another" : state.phase}:${hub ?? ""}:${code ?? ""}:${String(useKey)}`}
+      key={`${add ? "add" : another ? "another" : state.phase}:${hub ?? ""}:${code ?? ""}:${String(useKey)}`}
       state={state}
-      link={{ hub, code, useKey, another }}
+      link={{ hub, code, useKey, another: another || add, add }}
     />
   );
 }
@@ -145,6 +154,18 @@ function SetupHere() {
 
 function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }) {
   const [form, dispatch] = useReducer(reduce, undefined, () => initialForm(state, link));
+  const self = useHub();
+  const several = useSeveralHubs();
+  const adding = link.add === true;
+  // A new hub's name and colour, when adding one.
+  const [name, setName] = useState("");
+  const [color, setColor] = useState<HubColor | null>(null);
+  const nameField = useRef<HTMLInputElement>(null);
+  const target = (): PairTarget | null => {
+    if (!adding) return { hub: self.id };
+    const label = cleanLabel(name);
+    return label === null ? null : { label, ...(color === null ? {} : { color }) };
+  };
   const codeField = useRef<HTMLInputElement>(null);
   const keyField = useRef<HTMLInputElement>(null);
   // Formatting a code mid-edit would send the caret to the end; it goes back after the same characters.
@@ -155,10 +176,10 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
     caret.current = null;
   });
 
-  const done = () => {
-    // Drop a link's code from the route, so the screen follows the connection from here.
-    window.location.hash = "#/onboarding";
-  };
+  const done = useCallback(() => {
+    // Drop a link's code from the route, so the screen follows the connection from here; a hub added goes to the list.
+    window.location.hash = adding ? "#/settings/hubs" : "#/onboarding";
+  }, [adding]);
 
   const pair = useCallback(async (request: () => Promise<PairOutcome>) => {
     dispatch({ type: "submitting" });
@@ -171,7 +192,7 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
       codeField.current?.focus();
     }
     return outcome.ok;
-  }, []);
+  }, [done]);
 
   // Asked again each time the window comes back to the front: on first run that is usually from the terminal
   // where `fleetd init` just finished, and the code it left pairs with no typing.
@@ -202,8 +223,12 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
   const submit = async (event: SyntheticEvent) => {
     event.preventDefault();
     if (form.busy) return;
+    const into = target();
+    if (into === null) {
+      return fail({ code: "", message: `Name the hub, in up to ${String(LABEL_MAX)} characters.`, fix: "Any name you like: Personal, Acme, Side project." }, nameField.current);
+    }
     if (!form.useKey) {
-      const request = { hub: form.hub, code: form.code };
+      const request = { hub: form.hub, code: form.code, target: into };
       const fromLink = form.linkCode !== null && form.linkCode === form.code;
       const before = fromLink ? await window.fleetd.app.linkHandler(null) : null;
       const ok = await pair(() => window.fleetd.pair.redeem(request));
@@ -219,7 +244,7 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
       );
     }
     dispatch({ type: "submitting" });
-    const outcome = await window.fleetd.hub.connect(form.hub.trim(), key);
+    const outcome = await window.fleetd.hub.connect(form.hub.trim(), key, into);
     if (outcome.ok) {
       dispatch({ type: "paired", hubName: form.hub.trim() });
       done();
@@ -234,6 +259,14 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
       {form.notice === null ? null : <Prose text={form.notice} />}
       {form.status === null ? null : <Prose text={form.status} tone="quiet" />}
       <form className={s.fields} onSubmit={(e) => void submit(e)} noValidate>
+        {adding ? (
+          <>
+            <Field label="Name" description="Shown above its projects in the sidebar.">
+              <Input ref={nameField} value={name} maxLength={LABEL_MAX} onChange={(e) => setName(e.target.value)} placeholder="Personal, Acme, Side project…" autoComplete="off" />
+            </Field>
+            <ColorPick value={color} onChange={setColor} />
+          </>
+        ) : null}
         <Field label="Hub address">
           <Input
             mono
@@ -296,10 +329,28 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
     </>
   );
   const id = form.useKey ? "onboarding.key" : "onboarding";
+  if (adding) {
+    return (
+      <Page id={id} title="Add a hub">
+        <Prose text="Pair this app with one more hub. The hubs you have stay connected, each under its own name." tone="quiet" />
+        {connect}
+        <div>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              window.location.hash = "#/settings/hubs";
+            }}
+          >
+            Back to settings
+          </Button>
+        </div>
+      </Page>
+    );
+  }
   if (link.another === true) {
     const current = state.phase === "unpaired" ? null : state.hub;
     return (
-      <Page id={id} title="Pair with another hub">
+      <Page id={id} title={several ? `Pair ${self.label} again` : "Pair with another hub"}>
         {current === null ? null : (
           <Prose text={`This app stays on \`${current}\` until the new hub pairs.`} tone="quiet" />
         )}
@@ -308,7 +359,7 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
           <Button
             variant="secondary"
             onClick={() => {
-              window.location.hash = "#/settings/general";
+              window.location.hash = "#/settings/hubs";
             }}
           >
             {current === null ? "Back to settings" : "Keep this hub"}
@@ -391,9 +442,10 @@ function Connected({ hub }: { hub: string }) {
 
 /** Drops the saved key; the connect form follows from the state change. */
 function ForgetHub() {
+  const { id } = useHub();
   return (
     <div>
-      <Button variant="secondary" onClick={() => void window.fleetd.hub.forget()}>
+      <Button variant="secondary" onClick={() => void window.fleetd.hub.forget(id)}>
         Connect to another hub
       </Button>
     </div>
