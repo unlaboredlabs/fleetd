@@ -2267,6 +2267,8 @@ export type MachineRolesEntry = {
   hosts?: HostCheck[];
   /** Its node hosts sessions for agents on other machines (newer nodes). */
   hostsOthers: boolean;
+  /** Why it doesn't, in plain words, while it hosts sessions and doesn't. */
+  hostsOthersNote?: string;
   machineId: MachineId;
   /** The sessions it hosts at once: a person's setting, else what it fits. */
   maxSessions: number;

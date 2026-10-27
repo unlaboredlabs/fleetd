@@ -70,6 +70,31 @@ pub fn hash(token: &str) -> String {
         .collect()
 }
 
+/// The header of the relay's own refusal of a session that ended.
+pub const GONE_HEADER: &str = "x-fleetd-relay-gone";
+
+/// What the relay's refusal of a session that ended carries, from the SHA-256 of its token: only a party that knows
+/// the token makes it, so the agent's node tells it from a refusal by something in front of the hub.
+pub fn gone_proof(token_hash: &str) -> String {
+    Sha256::new()
+        .chain_update(b"fleetd relay 1: gone ")
+        .chain_update(token_hash.as_bytes())
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// A token of no session open now: 410, with the proof the agent's node checks before it forgets the session.
+fn gone(token_hash: &str) -> Response {
+    (
+        StatusCode::GONE,
+        [(GONE_HEADER, gone_proof(token_hash))],
+        "no session open at this relay",
+    )
+        .into_response()
+}
+
 fn refused() -> Response {
     (StatusCode::FORBIDDEN, "not a fleetd session relay").into_response()
 }
@@ -87,9 +112,10 @@ pub async fn route(hub: Arc<Hub>, token: String, upgrade: WebSocketUpgrade) -> R
             let _ = waiting.send(runner);
         });
     }
-    let place = match hub.db.with(|c| place_by_relay(c, &hash(&token))) {
+    let hashed = hash(&token);
+    let place = match hub.db.with(|c| place_by_relay(c, &hashed)) {
         Ok(Some(place)) => place,
-        Ok(None) => return refused(),
+        Ok(None) => return gone(&hashed),
         Err(e) => {
             tracing::warn!(error = %e, "session relay: lookup failed");
             return (StatusCode::INTERNAL_SERVER_ERROR, "the hub failed").into_response();

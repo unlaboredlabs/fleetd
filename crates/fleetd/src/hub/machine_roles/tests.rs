@@ -537,6 +537,7 @@ fn runner(m: &str, sessions: bool, ready: bool, live: i64, max: i64) -> Runner {
             detail: Line::unchecked("as tested"),
         }])),
         hosts_others: true,
+        others_note: None,
         live,
         max,
     }
@@ -561,6 +562,7 @@ fn placement_prefers_the_agents_machine_then_the_most_free_slots() {
     // An older node, which hosts nobody else's, and one that can't run Chrome, are passed over.
     let older = Runner {
         hosts_others: false,
+        others_note: Some("Its fleetd is older.".into()),
         ..runner("lab-c", true, true, 0, 8)
     };
     let no_chrome = runner("lab-d", true, false, 0, 8);

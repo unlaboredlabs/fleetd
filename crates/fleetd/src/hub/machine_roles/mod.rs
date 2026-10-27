@@ -204,6 +204,8 @@ pub struct Runner {
     pub hosts: Option<HostChecks>,
     /// Its node hosts sessions for agents on other machines.
     pub hosts_others: bool,
+    /// Why it doesn't, when it doesn't.
+    pub others_note: Option<String>,
     pub live: i64,
     pub max: i64,
 }
@@ -373,6 +375,19 @@ pub fn runners(hub: &Hub) -> Result<Vec<(Runner, Roles, String)>, StoreError> {
             let load = hub.link.load(&m.machine_id);
             let agents = if roles.agents { agents } else { 0 };
             let (auto, auto_why) = auto_sessions(load.as_ref(), agents);
+            let others_note = if m.box_pub_key.is_none() {
+                Some("It gave the hub no key to seal a session's secrets to: it hosts only its own agents' sessions until its node links again.".to_owned())
+            } else if !(hub.link.node_can(&m.machine_id, CAP_SESSION_HOST)
+                && hub.link.node_can(&m.machine_id, CAP_SESSION_SEAL))
+            {
+                Some(if m.status == MachineStatus::Offline {
+                    "Offline: it hosts other machines' agents' sessions once it is back.".to_owned()
+                } else {
+                    "Its fleetd is older: it hosts only its own agents' sessions until it is updated.".to_owned()
+                })
+            } else {
+                None
+            };
             let (max, why) = match roles.max_sessions {
                 Some(n) => (n, "set".to_owned()),
                 None => (auto, auto_why),
@@ -383,9 +398,8 @@ pub fn runners(hub: &Hub) -> Result<Vec<(Runner, Roles, String)>, StoreError> {
                     sessions: roles.sessions,
                     hosts: load.and_then(|l| l.hosts),
                     // It opens what an agent's node seals to it, with the key it gave the hub.
-                    hosts_others: hub.link.node_can(&m.machine_id, CAP_SESSION_HOST)
-                        && hub.link.node_can(&m.machine_id, CAP_SESSION_SEAL)
-                        && m.box_pub_key.is_some(),
+                    hosts_others: others_note.is_none(),
+                    others_note,
                     live: live_on(c, &m.machine_id, now)?,
                     max,
                     name: m.name,
@@ -411,6 +425,10 @@ pub fn entry(runner: Runner, roles: Roles, why: String) -> MachineRolesEntry {
         sessions_live: Count::unchecked(runner.live.max(0)),
         hosts: runner.hosts.unwrap_or_else(|| List::unchecked(Vec::new())),
         hosts_others: runner.hosts_others,
+        hosts_others_note: runner
+            .others_note
+            .filter(|_| roles.sessions)
+            .map(Line::unchecked),
     }
 }
 

@@ -20,7 +20,8 @@ use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
 use fleetd_contracts::browser::{
-    BrowserCall, BrowserCallFrame, BrowserCallResult, BrowserResultFrame, SessionKind,
+    BrowserCall, BrowserCallFrame, BrowserCallResult, BrowserResultFrame, BrowserSessionState,
+    SessionKind,
 };
 use fleetd_contracts::ids::ThreadId;
 use fleetd_contracts::lead_calls::{LeadCall, LeadCallFrame, LeadCallResult};
@@ -37,6 +38,7 @@ use serde_json::json;
 
 use super::browser::credentials;
 use super::browser::onepassword::{Credential, TOKEN_ENV};
+use super::browser::upload::{HubCalls, HubFuture};
 use super::browser::{Broker, BrowserHandler, SecretsFor, SessionHooks, drives_browser};
 use super::device::{self, Devices};
 use super::identity::NodeBoxKey;
@@ -585,8 +587,40 @@ impl Hosted {
         })
     }
 
+    /// The broker's calls to the hub, watched: once a hosted session reports itself ended (however it ended: its
+    /// agent, idle, a person, the app), this node forgets what was sealed to it for it, its relay key with it.
+    pub fn watch(&self, inner: Arc<dyn HubCalls>) -> Arc<dyn HubCalls> {
+        Arc::new(Watched {
+            inner,
+            hosted: self.clone(),
+        })
+    }
+
+    /// Whether it still holds anything for the hosted session `key`.
+    #[cfg(test)]
+    pub fn holds(&self, key: &str) -> bool {
+        self.lock().contains_key(key)
+    }
+
     fn relay_key(&self, key: &str) -> Option<zeroize::Zeroizing<[u8; 32]>> {
         self.lock().get(key).map(|h| h.relay_key.clone())
+    }
+}
+
+struct Watched {
+    inner: Arc<dyn HubCalls>,
+    hosted: Hosted,
+}
+
+impl HubCalls for Watched {
+    fn call(&self, thread: &str, cwd: &str, call: LeadCall) -> HubFuture {
+        if let LeadCall::BrowserSession(report) = &call
+            && report.state != BrowserSessionState::Live
+            && self::hosted(thread)
+        {
+            self.hosted.lock().remove(thread);
+        }
+        self.inner.call(thread, cwd, call)
     }
 }
 
@@ -821,6 +855,33 @@ mod tests {
         .await;
         let error = answer.error.unwrap();
         assert_eq!(error.code, ErrorCode::MachineOffline, "{}", error.message);
+    }
+
+    /// However a hosted session ends on this machine, its report of it makes this node forget its relay key.
+    #[tokio::test]
+    async fn a_hosted_session_that_ended_here_is_forgotten() {
+        let hosted = Hosted::default();
+        let key = "H0123456789abcdef0123456789abcdef";
+        hosted.lock().insert(
+            key.to_owned(),
+            HostedSession {
+                secrets: None,
+                relay_key: zeroize::Zeroizing::new([7; 32]),
+            },
+        );
+        let calls = hosted.watch(Arc::new(NoHub));
+        let report = |state: &str| -> LeadCall {
+            serde_json::from_value(json!({
+                "op": "browser_session", "sessionId": "B0123456789abcdef0123456789abcdef", "threadId": key,
+                "purpose": "Check the form", "state": state, "startedAt": "2026-10-26T10:00:00.000Z",
+            }))
+            .unwrap()
+        };
+        let _ = calls.call(key, "/", report("live")).await;
+        assert!(hosted.relay_key(key).is_some(), "live: kept");
+        // Ended by itself (idle): it uploads its recording, and the key goes.
+        let _ = calls.call(key, "/", report("uploading")).await;
+        assert!(hosted.relay_key(key).is_none());
     }
 
     /// A host key reads what its agent's node sealed to this one, whatever the session is (a browser, an emulator, a

@@ -241,7 +241,7 @@ async fn run_node(
             let broker = browser::Broker::start(
                 home,
                 browser_config,
-                Arc::new(browser::upload::RelayHub(relay.clone())),
+                hosted.watch(Arc::new(browser::upload::RelayHub(relay.clone()))),
                 secrets_for.clone(),
             )
             .await;

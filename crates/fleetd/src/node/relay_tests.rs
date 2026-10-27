@@ -284,10 +284,10 @@ async fn an_agent_on_one_node_drives_a_browser_on_another_through_the_hub() {
     let mac1 = Broker::open(
         mac1_home.path(),
         BrowserConfig::default(),
-        Arc::new(NodeCalls {
+        hosted.watch(Arc::new(NodeCalls {
             hub: hub.clone(),
             machine: mid("mac1"),
-        }),
+        })),
         hosted.secrets_for(Arc::new(|session| {
             Err(format!("no session {session} on this machine"))
         })),
@@ -470,6 +470,18 @@ async fn an_agent_on_one_node_drives_a_browser_on_another_through_the_hub() {
     };
     assert_eq!(session.project_ref, storefront());
     assert_eq!(session.thread_id.as_str(), AGENT);
+    // mac1 forgot what devbox sealed to it for the session, its relay key with it.
+    let host_key = hub
+        .db
+        .with(|c| {
+            Ok(c.query_row(
+                "SELECT place_id FROM session_places WHERE hosted = 1",
+                [],
+                |r| r.get::<_, String>(0),
+            )?)
+        })
+        .unwrap();
+    assert!(!hosted.holds(&host_key));
     let read = |file| {
         std::fs::read_to_string(crate::hub::browser::file_path(&hub, &session_id, file)).unwrap()
     };
