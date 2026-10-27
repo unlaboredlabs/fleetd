@@ -14,7 +14,7 @@ pub enum Visit {
 }
 
 /// The browser commands that go to a URL.
-const OPENS: &[&str] = &["open", "goto", "navigate"];
+const OPENS: &[&str] = &["open", "goto", "navigate", "read"];
 
 /// The characters a remembered visit's command may hold besides letters, digits and spaces: none a shell reads as more
 /// than a literal character. A URL with `?` or `&`, or anything quoted, is a visit asked each time.
@@ -193,6 +193,11 @@ mod tests {
         ] {
             assert_eq!(bash(flagged), Some(Visit::Unknown), "{flagged}");
         }
+        // `read` fetches a URL as `open` does.
+        assert_eq!(
+            bash("agent-browser read https://dentist.example/a"),
+            site("dentist.example")
+        );
         // Not a visit: the relay's other rules decide.
         assert_eq!(bash("agent-browser click @e3"), None);
         assert_eq!(bash("curl https://a.example"), None);

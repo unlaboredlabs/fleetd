@@ -381,6 +381,9 @@ bridge (`hub/navi/bridge`) and the integrations (`hub/integrations`) are separat
   `SessionRole::Assistant` in `manual` permission mode (`hub/leads/lead.rs`). An older node can't decode the role, so
   the hub refuses the launch without `CAP_ASSISTANT` (`hub/leads/wiring.rs`).
 - On the node (`node/runner/claude/mod.rs`):
+  - Its agent-browser reads only an empty config fleetd writes in the session's directory (`AGENT_BROWSER_CONFIG`),
+    never `./agent-browser.json` or `~/.agent-browser/config.json`. A `screenshot` saves unasked only inside the
+    folder or its scratch directory, checked as a Write is.
   - The role keeps a lead's fleetd tools (`agent-mcp --role lead`), and `Edit`, `Write`, `WebFetch` and `WebSearch`.
   - `role_allowed` adds `ASSISTANT_ALLOWED` to `--allowedTools`: `WebSearch`, `Skill`, `mcp__fleetd`, `agent-device`,
     and agent-browser's commands that work the open page (`click`, `fill`, `snapshot`, …). Not `open`, `eval` or `tab`.
@@ -389,7 +392,7 @@ bridge (`hub/navi/bridge`) and the integrations (`hub/integrations`) are separat
     so each of these reaches the node's prompt.
   - `role_answer` answers a file tool there: inside the folder or the session's scratch directory (symlinks
     resolved, no `..`) it is allowed, except an
-    edit to `.claude/`, `.mcp.json` or `.fleetd/`, checked on the resolved path and whatever its case (a disk that
+    edit to `.claude/`, `.mcp.json`, `.fleetd/` or `agent-browser.json`, checked on the resolved path and whatever its case (a disk that
     ignores case writes `.Claude` into `.claude`). A Glob pattern or Grep file filter that is absolute or climbs with
     `..` is refused too. The hub also drops a policy file's allow rules from an assistant's
     launch (`hub/executor/mod.rs`), so nothing the Navi writes can widen its own rules. Outside it is refused, whoever would approve it. So the session's `mcp.json`

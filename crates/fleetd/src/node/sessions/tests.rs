@@ -3741,6 +3741,15 @@ async fn a_navi_gets_its_folder_under_the_node_home_and_its_lead_the_assistant_r
     for tool in ["Edit", "Write", "WebFetch", "WebSearch"] {
         assert!(!spec.disallowed_tools.iter().any(|t| t == tool), "{tool}");
     }
+    // Its agent-browser reads only fleetd's empty config, outside its folder, never `./agent-browser.json`.
+    let config = spec
+        .env
+        .iter()
+        .find(|(k, _)| k == "AGENT_BROWSER_CONFIG")
+        .map(|(_, v)| PathBuf::from(v))
+        .expect("AGENT_BROWSER_CONFIG");
+    assert!(!config.starts_with(&folder));
+    assert_eq!(std::fs::read_to_string(&config).unwrap().trim(), "{}");
     // A lead's fleetd tools.
     let mcp: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(spec.mcp_config.as_ref().unwrap()).unwrap())
