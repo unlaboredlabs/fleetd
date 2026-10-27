@@ -16,6 +16,10 @@ pub enum Visit {
 /// The browser commands that go to a URL.
 const OPENS: &[&str] = &["open", "goto", "navigate"];
 
+/// The characters a remembered visit's command may hold besides letters, digits and spaces: none a shell reads as more
+/// than a literal character. A URL with `?` or `&`, or anything quoted, is a visit asked each time.
+const PLAIN_CHARS: &[char] = &['@', '.', '_', ':', '/', '=', '-', '%', '+', ','];
+
 /// The only flag a remembered visit may carry. Any other (`--session`, `--cdp`, `--action-policy`, `--config`,
 /// `--headers`, `--args`, `--profile`, …) changes which browser runs or how, so the visit is asked each time.
 const VISIT_FLAGS: &[&str] = &["--json"];
@@ -79,8 +83,12 @@ pub fn visit(tool: &str, input: &Value) -> Option<Visit> {
             if !words.next().is_some_and(|verb| OPENS.contains(&verb)) {
                 return None;
             }
-            // Anything a shell would read as more than one plain command is no single visit.
-            if command.contains(['&', '|', ';', '\n', '`', '>', '<', '$', '(', ')', '\\']) {
+            // Anything a shell could read as more than literal words (braces, globs, `~`, quotes, a substitution, a
+            // separator) is no visit to remember.
+            if !command
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == ' ' || PLAIN_CHARS.contains(&c))
+            {
                 return Some(Visit::Unknown);
             }
             // One plain URL, maybe in one pair of quotes, and nothing else: anything a shell could read another way
@@ -121,7 +129,7 @@ mod tests {
             site("dentist.example")
         );
         assert_eq!(
-            bash("agent-browser --json goto 'https://x.example'"),
+            bash("agent-browser --json goto https://x.example"),
             site("x.example")
         );
         assert_eq!(bash("agent-browser open example.org"), site("example.org"));
@@ -150,15 +158,32 @@ mod tests {
             fetch("https://allowed.example\\@evil.example"),
             Some(Visit::Unknown)
         );
-        // An IDN host is the punycode host the browser asks DNS for.
+        // An IDN host is the punycode host the browser asks DNS for; in a command it isn't plain, so it asks.
+        assert_eq!(
+            fetch("https://bücher.example/"),
+            site("xn--bcher-kva.example")
+        );
         assert_eq!(
             bash("agent-browser open https://bücher.example/"),
-            site("xn--bcher-kva.example")
+            Some(Visit::Unknown)
         );
         assert_eq!(
             fetch("https://xn--bcher-kva.example/"),
             site("xn--bcher-kva.example")
         );
+        // A shell's expansions, quotes or a query: a visit asked each time, never remembered.
+        for expands in [
+            "agent-browser open https://allowed.example/{x,--cdp=9222}",
+            "agent-browser open https://allowed.example/*",
+            "agent-browser open https://allowed.example/[ab]",
+            "agent-browser open https://allowed.example/~x",
+            "agent-browser open 'https://allowed.example'",
+            "agent-browser open \"https://allowed.example\"",
+            "agent-browser open https://allowed.example/`id`",
+            "agent-browser open https://allowed.example/search?q=a",
+        ] {
+            assert_eq!(bash(expands), Some(Visit::Unknown), "{expands}");
+        }
         // A flag that changes the browser: a visit asked each time, never remembered, wherever the flag stands.
         for flagged in [
             "agent-browser --action-policy=./p.json --cdp=9222 open https://allowed.example",
