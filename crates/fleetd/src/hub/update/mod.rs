@@ -20,6 +20,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
@@ -155,6 +156,18 @@ pub struct Updates {
     ports: RwLock<Option<Arc<dyn UpdatePorts>>>,
     /// The channel's newest build, downloaded and checked ahead ([`Self::prefetch`]).
     ready: Mutex<Option<String>>,
+    /// The tasks of this process driving the run ([`Driving`]). An unfinished run none drives is left over (a task
+    /// that ended without settling it): nothing waits behind it, and Update starts a new one.
+    drivers: AtomicUsize,
+}
+
+/// A task of this process driving the run, counted while it lives.
+struct Driving(Arc<Updates>);
+
+impl Drop for Driving {
+    fn drop(&mut self) {
+        self.0.drivers.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 /// Why `start` didn't start one.
@@ -182,6 +195,7 @@ impl Updates {
             run: Mutex::new(run),
             ports: RwLock::default(),
             ready: Mutex::default(),
+            drivers: AtomicUsize::new(0),
         })
     }
 
@@ -192,6 +206,17 @@ impl Updates {
 
     fn ports(&self) -> Option<Arc<dyn UpdatePorts>> {
         self.ports.read().unwrap().clone()
+    }
+
+    /// Counts a task driving the run until it ends; taken under the run's lock, with the check it follows.
+    fn drive(self: &Arc<Self>) -> Driving {
+        self.drivers.fetch_add(1, Ordering::SeqCst);
+        Driving(Arc::clone(self))
+    }
+
+    /// The run isn't finished, and a task of this process drives it.
+    fn going(&self, run: &UpdateRun) -> bool {
+        run.finished_at.is_none() && self.drivers.load(Ordering::SeqCst) > 0
     }
 
     /// The update going now, or the last one.
@@ -221,7 +246,7 @@ impl Updates {
     /// on a failure: the update downloads it then, and says why if it can't.
     pub async fn prefetch(&self) {
         let Some(ports) = self.ports() else { return };
-        if self.status().is_some_and(|r| r.finished_at.is_none()) || !ports.release_build() {
+        if self.status().is_some_and(|r| self.going(&r)) || !ports.release_build() {
             return;
         }
         let running = ports.running();
@@ -260,7 +285,7 @@ impl Updates {
             },
         };
         for node in ports.nodes() {
-            if node.live_since.is_some() && node.can_fetch && node.version != to {
+            if node.live_since.is_some() && node.can_fetch && !crate::at_least(&node.version, &to) {
                 ports.fetch_on_node(&node.machine_id, &update);
             }
         }
@@ -273,7 +298,7 @@ impl Updates {
         let ports = self.ports().ok_or(Refused::NotWired)?;
         let mut held = self.run.lock().unwrap();
         let run = held.as_mut().ok_or(Refused::NothingToRetry)?;
-        if run.finished_at.is_none() {
+        if self.going(run) {
             return Ok(run.clone());
         }
         let hub_updated = run.parts.iter().any(|p| {
@@ -300,10 +325,12 @@ impl Updates {
         run.finished_at = None;
         let run = run.clone();
         self.save(&run);
+        let driving = self.drive();
         drop(held);
         let this = Arc::clone(self);
         let machine_id = machine_id.clone();
         tokio::spawn(async move {
+            let _driving = driving;
             let update = NodeUpdate {
                 version: to,
                 channel: this.status().map_or(HubChannel::Nightly, |r| r.channel),
@@ -322,11 +349,12 @@ impl Updates {
         iso_ms(now_ms(self.clock.as_ref()))
     }
 
-    /// Starts an update, or returns the one already going. Never waits for work to finish.
+    /// Starts an update, or returns the one already going. Never waits for work to finish. An unfinished run nothing
+    /// drives any more doesn't hold it up: a new one takes its place.
     pub fn start(self: &Arc<Self>, channel: Option<HubChannel>) -> Result<UpdateRun, Refused> {
         let ports = self.ports().ok_or(Refused::NotWired)?;
         let mut held = self.run.lock().unwrap();
-        if let Some(run) = held.as_ref().filter(|r| r.finished_at.is_none()) {
+        if let Some(run) = held.as_ref().filter(|r| self.going(r)) {
             return Ok(run.clone());
         }
         let running = ports.running();
@@ -385,9 +413,13 @@ impl Updates {
         };
         self.save(&run);
         *held = Some(run.clone());
+        let driving = self.drive();
         drop(held);
         let this = Arc::clone(self);
-        tokio::spawn(async move { this.drive_hub(ports).await });
+        tokio::spawn(async move {
+            let _driving = driving;
+            this.drive_hub(ports).await;
+        });
         Ok(run)
     }
 
@@ -691,7 +723,7 @@ impl Updates {
             if waiting.contains(&&node.machine_id)
                 && node.live_since.is_some()
                 && node.can_fetch
-                && node.version != to
+                && !crate::at_least(&node.version, to)
             {
                 ports.fetch_on_node(&node.machine_id, &update);
             }
@@ -699,10 +731,19 @@ impl Updates {
     }
 
     /// At the hub's start: takes an unfinished update from where the previous process left it. Runs until it ends.
+    /// Whatever it can't take on ends: a run never stays unfinished with nothing driving it.
     pub async fn resume(self: Arc<Self>) {
         let Some(ports) = self.ports() else { return };
-        let Some(run) = self.status().filter(|r| r.finished_at.is_none()) else {
-            return;
+        let (run, _driving) = {
+            let held = self.run.lock().unwrap();
+            // Update pressed already took its place.
+            let Some(run) = held
+                .clone()
+                .filter(|r| !self.going(r) && r.finished_at.is_none())
+            else {
+                return;
+            };
+            (run, self.drive())
         };
         let Some(hub) = run
             .parts
@@ -710,7 +751,7 @@ impl Updates {
             .find(|p| p.part == UpdatePartKind::Hub)
             .cloned()
         else {
-            return;
+            return self.settle_nodes(UpdateState::Skipped, "not asked: the hub didn't update");
         };
         let to = run.to.as_ref().map(|t| t.as_str().to_owned());
         match hub.state {
@@ -742,11 +783,10 @@ impl Updates {
                     }
                 }
             }
-            UpdateState::Done | UpdateState::Current => {
-                if let Some(to) = to {
-                    self.drive_nodes(ports, to).await;
-                }
-            }
+            UpdateState::Done | UpdateState::Current => match to {
+                Some(to) => self.drive_nodes(ports, to).await,
+                None => self.settle_nodes(UpdateState::Skipped, "not asked: the hub didn't update"),
+            },
             _ => self.settle_nodes(UpdateState::Skipped, "not asked: the hub didn't update"),
         }
     }
@@ -784,8 +824,19 @@ impl Updates {
         }
     }
 
-    /// Updates every node not settled yet to `to`, all at once.
+    /// Updates every node not settled yet to `to`, all at once. A hub that runs another build than `to` now (`fleetd
+    /// update` on its machine, say) has moved past the run: it ends, with no machine moved to a build the hub left.
     async fn drive_nodes(self: &Arc<Self>, ports: Arc<dyn UpdatePorts>, to: String) {
+        let running = ports.running();
+        if running != to {
+            return self.settle_nodes(
+                UpdateState::Skipped,
+                &format!(
+                    "the hub moved on to {}: press Update for the newest",
+                    crate::version_label(&running)
+                ),
+            );
+        }
         let Some(run) = self.status() else { return };
         let channel = run.channel;
         let waiting: Vec<MachineId> = run
@@ -831,6 +882,19 @@ impl Updates {
         };
         let to = update.version.as_str();
         let label = crate::version_label(to);
+        // Never backwards: a node on `to` or newer is settled as it is, whenever it is looked at.
+        let current = |node: &NodeFacts| {
+            let at = crate::at_least(&node.version, to);
+            if at {
+                self.set_part(
+                    Some(machine_id),
+                    UpdateState::Current,
+                    None,
+                    format!("already runs {}", crate::version_label(&node.version)),
+                );
+            }
+            at
+        };
         let mut changed = ports.node_changed(machine_id);
         let Some(node) = facts(ports) else {
             return self.set_part(
@@ -840,13 +904,8 @@ impl Updates {
                 "not asked: the hub no longer knows it",
             );
         };
-        if node.version == to {
-            return self.set_part(
-                Some(machine_id),
-                UpdateState::Current,
-                None,
-                format!("already runs {label}"),
-            );
+        if current(&node) {
+            return;
         }
         // It was online when the run started (an offline one was skipped then), and the hub's own restart dropped
         // every link: it gets a while to reconnect before it counts as offline.
@@ -870,13 +929,8 @@ impl Updates {
                 }
             }
         }
-        if node.version == to {
-            return self.set_part(
-                Some(machine_id),
-                UpdateState::Current,
-                None,
-                format!("already runs {label}"),
-            );
+        if current(&node) {
+            return;
         }
         if !node.can_update {
             return self.set_part(
@@ -891,10 +945,14 @@ impl Updates {
             );
         }
         // What can't carry on through a restart (a live session, a preview) is waited out: the machine updates once
-        // it's idle, and says so meanwhile.
+        // it's idle, and says so meanwhile, unless it was updated past `to` another way by then.
         let idle_by = now_ms(self.clock.as_ref()) + ms(self.timing.idle);
         let mut said = None;
-        while let Some(busy) = facts(ports).and_then(|n| n.busy) {
+        while let Some(now) = facts(ports) {
+            if current(&now) {
+                return;
+            }
+            let Some(busy) = now.busy else { break };
             if now_ms(self.clock.as_ref()) >= idle_by {
                 return self.set_part(
                     Some(machine_id),
@@ -1000,14 +1058,12 @@ impl Updates {
 
     /// Brings the machine's Claude Code to the version the hub's build was tested with, once its node runs that build.
     async fn update_claude(&self, ports: &dyn UpdatePorts, machine_id: &MachineId) {
-        let node = self.status().and_then(|r| {
-            r.parts
-                .iter()
-                .find(|p| {
-                    p.part == UpdatePartKind::Node && p.machine_id.as_ref() == Some(machine_id)
-                })
-                .cloned()
-        });
+        let Some(run) = self.status() else { return };
+        let node = run
+            .parts
+            .iter()
+            .find(|p| p.part == UpdatePartKind::Node && p.machine_id.as_ref() == Some(machine_id))
+            .cloned();
         let Some(node) = node else { return };
         if !matches!(node.state, UpdateState::Done | UpdateState::Current) {
             let why = if node.state == UpdateState::Skipped {
@@ -1022,6 +1078,22 @@ impl Updates {
             .nodes()
             .into_iter()
             .find(|n| &n.machine_id == machine_id);
+        // Its fleetd is past the run's build (updated another way): the Claude Code that build was tested with would
+        // be a step back for it, as its fleetd would.
+        if let (Some(n), Some(to)) = (&facts, &run.to)
+            && crate::version_cmp(&n.version, to) == Some(std::cmp::Ordering::Greater)
+        {
+            return self.set_claude(
+                machine_id,
+                None,
+                UpdateState::Skipped,
+                None,
+                format!(
+                    "left as it is: its fleetd runs {}, newer than this update's",
+                    crate::version_label(&n.version)
+                ),
+            );
+        }
         if !facts.as_ref().is_some_and(|n| n.can_install_claude) {
             return self.set_claude(
                 machine_id,

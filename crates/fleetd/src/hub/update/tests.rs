@@ -1,6 +1,7 @@
 //! The hub's update against a fake release feed and fake machines: it starts at once however busy the hub is, a
 //! failed download or checksum leaves everything as it was, a hub that doesn't come up healthy is put back and its
-//! nodes aren't asked, and each node's own result is said.
+//! nodes aren't asked, and each node's own result is said. No machine is ever moved back to an older build, and a run
+//! the hub moved past, or nothing drives any more, ends.
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -911,6 +912,231 @@ async fn a_second_update_while_one_runs_is_the_same_one() {
     let first = updates.start(None).unwrap();
     let again = updates.start(None).unwrap();
     assert_eq!(first.id, again.id);
+}
+
+/// A nightly newer than [`NEW`]: what a machine runs after `fleetd update` on it.
+const NEWER: &str = "0.0.0-nightly.202610271703+bd87c55";
+
+/// A run another hub process left in `<home>/update/run.json`, unfinished, toward `to`: the hub's part done, then each
+/// machine's node part and Claude Code part in the state given.
+fn left_run(home: &Path, to: &str, machines: &[(&str, UpdateState, Option<&str>)]) {
+    let mut parts = vec![super::part(
+        UpdatePartKind::Hub,
+        None,
+        "the hub",
+        OLD,
+        UpdateState::Done,
+    )];
+    for (name, st, message) in machines {
+        for kind in [UpdatePartKind::Node, UpdatePartKind::Claude] {
+            let mut p = super::part(kind, Some(MachineId::unchecked(*name)), name, OLD, *st);
+            p.message = message.map(super::text);
+            parts.push(p);
+        }
+    }
+    let run = UpdateRun {
+        id: Text::unchecked("U1793117222609".to_owned()),
+        channel: HubChannel::Nightly,
+        to: Some(Text::unchecked(to.to_owned())),
+        started_at: "2026-10-27T16:07:02.609Z".into(),
+        finished_at: None,
+        parts: fleetd_contracts::prim::List::new(parts).unwrap(),
+    };
+    fs::create_dir_all(home.join("update")).unwrap();
+    fs::write(
+        home.join("update/run.json"),
+        serde_json::to_vec(&run).unwrap(),
+    )
+    .unwrap();
+}
+
+fn said(run: &UpdateRun, machine: &str) -> String {
+    by_machine(run)[&Some(MachineId::unchecked(machine))]
+        .message
+        .as_ref()
+        .map_or_else(String::new, ToString::to_string)
+}
+
+/// The devbox's story: a run to build A, the hub restarted since on a newer build B (`fleetd update` on its machine),
+/// the devbox's node on B too, with a session left behind that still counts as busy. The hub that comes up ends the
+/// run: no machine is moved back to A, nothing waits, and each part left says why.
+#[tokio::test]
+async fn a_run_the_hub_moved_past_ends_at_its_start_and_moves_no_machine_back() {
+    let home = tempfile::tempdir().unwrap();
+    left_run(
+        home.path(),
+        NEW,
+        &[
+            (
+                "devbox",
+                UpdateState::Waiting,
+                Some("waits until it's idle: 1 live session can't carry on through a restart"),
+            ),
+            ("mac", UpdateState::Done, None),
+        ],
+    );
+    let fake = Fake::new(home.path(), b"new")
+        .node("devbox", NEWER, true, true, Some(Answer::BackOn(NEW)))
+        .node("mac", NEW, true, true, None);
+    fake.nodes.lock().unwrap()[0].busy = Some("1 live session".into());
+    *fake.running.lock().unwrap() = NEWER.into();
+    let fake = Arc::new(fake);
+    let after = area(home.path(), &fake);
+    tokio::spawn(after.clone().resume());
+    let run = until(&after, |r| r.finished_at.is_some()).await;
+
+    assert_eq!(hub_state(&run), UpdateState::Done);
+    assert_eq!(
+        state(&run, Some("mac")).0,
+        UpdateState::Done,
+        "what was done stays"
+    );
+    assert_eq!(state(&run, Some("devbox")).0, UpdateState::Skipped);
+    let moved_on =
+        "the hub moved on to Nightly · Oct 27, 17:03 UTC · bd87c55: press Update for the newest";
+    assert_eq!(said(&run, "devbox"), moved_on);
+    // Its Claude Code doesn't wait behind a run that ended either.
+    assert_eq!(claude(&run, "devbox").state, UpdateState::Skipped);
+    assert_eq!(claude(&run, "devbox").message.unwrap().as_str(), moved_on);
+    assert!(
+        fake.asked.lock().unwrap().is_empty(),
+        "no machine moved back to A"
+    );
+    assert!(fake.claude_asked.lock().unwrap().is_empty());
+
+    // And the next Update starts at once, a new run, rather than showing that one.
+    let next = after.start(None).unwrap();
+    assert_ne!(next.id, run.id);
+}
+
+/// A node already on the run's build or newer is never moved back, wherever it is looked at: when the run starts, when
+/// a hub that restarted takes the run on, while it waits for a busy machine, and on Retry. Its Claude Code stays too.
+#[tokio::test]
+async fn a_node_already_past_the_target_is_never_moved_back() {
+    // A fresh run: the hub goes to NEW; builder already runs NEWER, and mac's download fails.
+    let home = tempfile::tempdir().unwrap();
+    let fake = Arc::new(
+        Fake::new(home.path(), b"new")
+            .node("builder", NEWER, true, true, Some(Answer::BackOn(NEW)))
+            .node(
+                "mac",
+                OLD,
+                true,
+                true,
+                Some(Answer::Refuses(
+                    UpdateStage::Download,
+                    "the download failed",
+                )),
+            ),
+    );
+    let updates = area(home.path(), &fake);
+    updates.start(None).unwrap();
+    until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
+    assert_eq!(
+        *fake.fetched.lock().unwrap(),
+        ["mac"],
+        "nothing to fetch for builder"
+    );
+    *fake.running.lock().unwrap() = NEW.into();
+    let verdict = fake.plans.lock().unwrap()[0].verdict.clone();
+    fs::write(
+        &verdict,
+        json!({ "state": "done", "message": "runs it" }).to_string(),
+    )
+    .unwrap();
+    let after = area(home.path(), &fake);
+    tokio::spawn(after.clone().resume());
+    let run = until(&after, |r| r.finished_at.is_some()).await;
+    assert_eq!(state(&run, Some("builder")).0, UpdateState::Current);
+    assert_eq!(
+        said(&run, "builder"),
+        "already runs Nightly · Oct 27, 17:03 UTC · bd87c55"
+    );
+    assert_eq!(claude(&run, "builder").state, UpdateState::Skipped);
+    assert!(
+        claude(&run, "builder")
+            .message
+            .unwrap()
+            .as_str()
+            .starts_with("left as it is: its fleetd runs Nightly"),
+    );
+    assert_eq!(state(&run, Some("mac")).0, UpdateState::Failed);
+    assert_eq!(*fake.asked.lock().unwrap(), ["mac"]);
+    assert!(fake.claude_asked.lock().unwrap().is_empty());
+
+    // Retry of mac, updated another way since: it is settled as it is, not moved back.
+    fake.nodes.lock().unwrap()[1].version = NEWER.into();
+    after.retry(&MachineId::unchecked("mac")).unwrap();
+    let run = until(&after, |r| r.finished_at.is_some()).await;
+    assert_eq!(state(&run, Some("mac")).0, UpdateState::Current);
+    assert_eq!(*fake.asked.lock().unwrap(), ["mac"], "not asked again");
+
+    // A hub that restarted takes on a run whose machine moved past it while it waited, busy: settled, not moved back.
+    let home = tempfile::tempdir().unwrap();
+    left_run(home.path(), NEW, &[("devbox", UpdateState::Waiting, None)]);
+    let fake =
+        Fake::new(home.path(), b"new").node("devbox", NEW, true, true, Some(Answer::BackOn(NEW)));
+    fake.nodes.lock().unwrap()[0].version = OLD.into();
+    fake.nodes.lock().unwrap()[0].busy = Some("1 live session".into());
+    *fake.running.lock().unwrap() = NEW.into();
+    let fake = Arc::new(fake);
+    let after = area(home.path(), &fake);
+    tokio::spawn(after.clone().resume());
+    until(&after, |r| {
+        said(r, "devbox").starts_with("waits until it's idle")
+    })
+    .await;
+    // `fleetd update` on the devbox, with the session still there.
+    fake.nodes.lock().unwrap()[0].version = NEWER.into();
+    let run = until(&after, |r| r.finished_at.is_some()).await;
+    assert_eq!(state(&run, Some("devbox")).0, UpdateState::Current);
+    assert!(fake.asked.lock().unwrap().is_empty());
+}
+
+/// A run left unfinished with nothing driving it (no task of this process) never holds up the next Update, and a hub
+/// that can't take a run on ends it rather than leave it showing for ever.
+#[tokio::test]
+async fn update_always_starts_and_a_run_left_over_ends() {
+    let home = tempfile::tempdir().unwrap();
+    left_run(home.path(), NEW, &[("builder", UpdateState::Waiting, None)]);
+    let fake = Arc::new(Fake::new(home.path(), b"new").node(
+        "builder",
+        OLD,
+        true,
+        true,
+        Some(Answer::BackOn(NEW)),
+    ));
+    let updates = area(home.path(), &fake);
+    let left = updates.status().unwrap();
+    assert!(left.finished_at.is_none());
+    let started = updates.start(None).unwrap();
+    assert_ne!(started.id, left.id, "a new run, not the one left over");
+    assert_eq!(
+        updates.start(None).unwrap().id,
+        started.id,
+        "which is then the one going"
+    );
+    // A resume that comes late leaves the new run alone.
+    updates.clone().resume().await;
+    assert_eq!(updates.status().unwrap().id, started.id);
+    until(&updates, |r| hub_state(r) == UpdateState::Restarting).await;
+
+    // A run whose hub part is done but that never learned its build: ended at the hub's start.
+    let home = tempfile::tempdir().unwrap();
+    left_run(home.path(), NEW, &[("builder", UpdateState::Waiting, None)]);
+    let mut run: UpdateRun =
+        serde_json::from_slice(&fs::read(home.path().join("update/run.json")).unwrap()).unwrap();
+    run.to = None;
+    fs::write(
+        home.path().join("update/run.json"),
+        serde_json::to_vec(&run).unwrap(),
+    )
+    .unwrap();
+    let after = area(home.path(), &fake);
+    after.clone().resume().await;
+    let run = after.status().unwrap();
+    assert!(run.finished_at.is_some());
+    assert_eq!(state(&run, Some("builder")).0, UpdateState::Skipped);
 }
 
 mod on_a_real_hub {
