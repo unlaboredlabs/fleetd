@@ -8,6 +8,7 @@ import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
 import { useToolQuery } from "../../src/data/react";
 import { useNow } from "../live";
+import { HubText } from "../projects/HubText";
 import { Button, Field, InlineCode, Input, Radio, RadioGroup, Text } from "../../ui";
 import { CONNECT, runsOnLine, sealedLine, SETUP_TOKEN, shownChoice, TOKEN_PLACEHOLDER } from "./claudeModel";
 import { ConfirmRemove, MissingOn, Problem, TestButton, TestResult, useMachines, useSave, useTest, type Tried } from "./claudeParts";
@@ -49,13 +50,15 @@ function Mine({ data, me }: { data: ClaudeAccountsGetOutput; me: PersonClaude })
     <>
       <Setting reveal="claude.in-use" label="In use" help="What the agents of the orders you start, and your Navi, run on from their next start.">
         {refused === null ? (
-          <Text>{runsOnLine(me.runsOn, people, me.person.personId)}</Text>
+          <Text>
+          <HubText>{runsOnLine(me.runsOn, people, me.person.personId)}</HubText>
+        </Text>
         ) : (
           <div className={s.notice} role="status">
-            <div className={s.noticeText}>
+            <div className={s.stack}>
               <Text strong>{CONNECT}</Text>
               <Text size="sm" tone="quiet">
-                {refused.fix}
+                <HubText>{refused.fix}</HubText>
               </Text>
             </div>
           </div>
@@ -78,7 +81,7 @@ function Choice({ me, hubApi }: { me: PersonClaude; hubApi: boolean }) {
   const offer = me.mayUseHubApi || me.choice === "hub_api";
   if (!offer) {
     return (
-      <Setting reveal="claude.choice" label="Runs on" help="Your own subscription.">
+      <Setting reveal="claude.choice" label="Runs on" help="Only your own subscription, on this hub.">
         <Text size="sm" tone="quiet">
           {hubApi ? "This hub's admins keep its API key for leads and unrequested work, so your work runs on your own subscription." : "This hub has no API key, so your work runs on your own subscription."}
         </Text>

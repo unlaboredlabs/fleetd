@@ -9,6 +9,7 @@ import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
 import { useToolQuery } from "../../src/data/react";
 import { useNow } from "../live";
+import { HubText } from "../projects/HubText";
 import { Button, Field, Input, Switch, Text } from "../../ui";
 import { CONSOLE_KEYS, KEY_PLACEHOLDER, pauseLine, runsOnLine, sealedLine, theirRunsOn } from "../settings/claudeModel";
 import { ConfirmRemove, MissingOn, Problem, TestButton, TestResult, useMachines, useSave, useTest, type Tried } from "../settings/claudeParts";
@@ -56,7 +57,9 @@ function Accounts({ data, usage, me }: { data: ClaudeAccountsGetOutput; usage: R
       <HubKey api={data.hubApi} pause={hubPause} />
       <Members on={data.settings.membersUseHubApi} hubApi={data.hubApi !== undefined} />
       <Setting reveal="admin.claude.leads" label="Leads and unrequested work" help="Projects' leads serve everyone, as do automations and train fixes: they run on the hub's key, else the hub owner's subscription, never a member's.">
-        <Text>{runsOnLine(data.leadsRunOn, people, me?.personId)}</Text>
+        <Text>
+          <HubText>{runsOnLine(data.leadsRunOn, people, me?.personId)}</HubText>
+        </Text>
         <Owner data={data} usage={usage} me={me} nowMs={nowMs} />
       </Setting>
       <Setting reveal="admin.claude.people" label="Everyone's account" help="What the orders each person starts, and their Navi, run on. One person's usage limit pauses only their own work.">
@@ -137,7 +140,7 @@ function HubKey({ api, pause }: { api: ClaudeHubApi | undefined; pause: string |
           <TestResult tried={tried ?? (api.lastTest === undefined ? undefined : { test: api.lastTest })} nowMs={nowMs} />
           {pause === null ? null : (
             <Text size="sm" tone="warning">
-              {pause}
+              <HubText>{pause}</HubText>
             </Text>
           )}
         </>
@@ -228,7 +231,9 @@ function Owner({ data, usage, me, nowMs }: { data: ClaudeAccountsGetOutput; usag
   const sub = theirs?.subscription;
   const you = me?.personId === owner.personId;
   const line = `The hub owner's subscription (${you ? "yours" : `${owner.name}'s`}) ${sub === undefined ? "isn't connected." : `is connected. ${sealedLine(sub.sealedOn)}`}`;
-  const pause = theirs === undefined ? null : pauseLine({ kind: "person", personId: owner.personId }, usage, nowMs);
+  // Their pause is on their row below; said here too only while leads run on it.
+  const leadsOnIt = data.leadsRunOn.kind === "account" && data.leadsRunOn.account.kind === "person" && data.leadsRunOn.account.personId === owner.personId;
+  const pause = theirs === undefined || !leadsOnIt ? null : pauseLine({ kind: "person", personId: owner.personId }, usage, nowMs);
   return (
     <div className={s.stack}>
       <Text size="sm" tone="quiet">
@@ -237,7 +242,7 @@ function Owner({ data, usage, me, nowMs }: { data: ClaudeAccountsGetOutput; usag
       {sub?.lastTest === undefined ? null : <TestResult tried={{ test: sub.lastTest }} nowMs={nowMs} />}
       {pause === null ? null : (
         <Text size="sm" tone="warning">
-          {pause}
+          <HubText>{pause}</HubText>
         </Text>
       )}
       {you ? (
@@ -273,7 +278,7 @@ function PersonLine({ p, usage, me, nowMs }: { p: PersonClaude; usage: ReadonlyA
         </Text>
         {pause === null ? null : (
           <Text size="xs" tone="warning">
-            {pause}
+            <HubText>{pause}</HubText>
           </Text>
         )}
       </div>

@@ -61,6 +61,8 @@ export const fixtures = [
   "admin-old-hub",
   // ...and with several hubs: Administration names the one it manages, and switches among those Sam administers.
   "admin-hubs",
+  // Teams step 8 (fixtures/admin): Bob on a hub that keeps its Claude API key for leads, with no subscription of his own.
+  "admin-claude-member",
   // Administration › Machines (fixtures/machines): Add machine's three ways in, a run at its install step, and one
   // stopped at the node's service with its output and Retry.
   "machines-add",
@@ -1912,6 +1914,22 @@ export const screens: readonly Screen[] = [
   // reach); Invites with Dana's waiting, and a new one just made with its link; Hub settings (the fleet and machine
   // caps, task profiles, machine roles, memory caps); Setup's placeholder; and a member who follows a link there.
   { id: "admin.people", route: "#/admin/people", fixtures: ["admin-owner", "admin-admin", "admin-old-hub"] },
+  // Claude (teams step 8): the hub's key sealed and tested, the members switch, what leads run on with the owner's
+  // subscription and its pause, and everyone's account; Change opens the key's form, which never shows the key.
+  { id: "admin.claude", route: "#/admin/claude", fixtures: ["admin-owner", "admin-admin", "admin-old-hub"] },
+  {
+    id: "admin.claude",
+    route: "#/admin/claude",
+    fixtures: ["admin-owner"],
+    variant: "change",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Change" }).click();
+      await page.getByRole("textbox", { name: "API key" }).waitFor();
+    },
+  },
+  // Settings › Claude: the owner on their own subscription, Alice on the hub's key by choice, Bob on it by default,
+  // and Bob with nothing to run on, told to connect.
+  { id: "settings.claude", route: "#/settings/claude", fixtures: ["admin-owner", "admin-admin", "admin-member", "admin-claude-member", "admin-old-hub", "hub-unreachable"] },
   { id: "admin.invites", route: "#/admin/invites", fixtures: ["admin-owner", "admin-old-hub"] },
   // Several hubs: the hub it manages above the page, and a switch to the hubs Sam administers (Club, a member's, isn't).
   {

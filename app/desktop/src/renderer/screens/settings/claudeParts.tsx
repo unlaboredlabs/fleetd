@@ -7,6 +7,7 @@ import type { ClaudeAccountRequest } from "../../../shared/ipc";
 import { CallError } from "../../src/data/queries";
 import { useData, useDataLayer } from "../../src/data/react";
 import { Button, Dialog, Text } from "../../ui";
+import { HubText } from "../projects/HubText";
 import { boxesOf, missingOn, testLine } from "./claudeModel";
 import { errorText, useHubCall, useRefetch } from "./hub";
 
@@ -61,7 +62,7 @@ export function TestResult({ tried, nowMs }: { tried: Tried | undefined; nowMs: 
     return (
       <div role="alert">
         <Text size="sm" tone="danger">
-          {tried.error}
+          <HubText>{tried.error}</HubText>
         </Text>
       </div>
     );
@@ -70,7 +71,7 @@ export function TestResult({ tried, nowMs }: { tried: Tried | undefined; nowMs: 
   return (
     <div role={line.ok ? "status" : "alert"}>
       <Text size="sm" tone={line.ok ? "quiet" : "danger"}>
-        {line.text}
+        <HubText>{line.text}</HubText>
       </Text>
     </div>
   );
@@ -102,7 +103,7 @@ export function Problem({ text }: { text: string | null }) {
   return (
     <div role="alert">
       <Text size="sm" tone="danger">
-        {text}
+        <HubText>{text}</HubText>
       </Text>
     </div>
   );
