@@ -109,16 +109,17 @@ rest of the text costs nothing until then.</p>
 message: the node writes it into the session’s skills folder at once (<code dir="auto">$FLEETD_SKILLS_DIR</code>, where the agent can read
 it), and the session’s skill list has it from its next start. A deleted skill goes the same way.</p>
 <div class="sl-heading-wrapper level-h2"><h2 id="app">Manage skills in the app</h2><a class="sl-anchor-link" href="#app"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Manage skills in the app”</span></a></div>
-<p>Open Settings → Skills. Pick <strong>Global</strong> or a project.</p>
-<p>Changing a project’s skills takes operate on its machine. Global skills reach every machine’s agents, so changing
-them takes admin on every machine.</p>
+<p>A project’s skills are in Settings → Skills: pick the project. Changing them takes operate on its machine. The
+hub-wide (global) skills it gets are named on one line there, read-only.</p>
+<p>Global skills reach every machine’s agents, so changing them takes admin on every machine: they are in
+<a href="/docs/desktop-app#administration">Administration</a> › Skills, which only the hub’s owners and admins see.</p>
 <ul>
 <li>
-<p><strong>List</strong>: every skill the agents of that scope get, marked with where it comes from. A skill that another source
+<p><strong>List</strong>: every skill of the project or hub-wide, marked with where it comes from. A skill that another source
 outranks says which one.</p>
 </li>
 <li>
-<p><strong>View and edit</strong>: open one to read its <code dir="auto">SKILL.md</code>. Project and global skills are editable here. Repo skills change
+<p><strong>View and edit</strong>: open one to read its <code dir="auto">SKILL.md</code>. Project and global skills are editable. Repo skills change
 in the repo.</p>
 </li>
 <li>
