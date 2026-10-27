@@ -91,7 +91,7 @@ pub struct PreviewAttachment {
     pub name: Line<1, 300>,
     /// Its size, when its bytes are in the input.
     pub bytes: Option<u64>,
-    /// Where it comes from, when not from the input: "from Drive", "from message 18c2", "a file on the Navi's machine".
+    /// Where it comes from, when not from the input: "from Drive", "from message 18c2".
     pub from: Option<Line<1, 200>>,
 }
 

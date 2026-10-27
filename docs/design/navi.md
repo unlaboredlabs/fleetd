@@ -508,9 +508,11 @@ is refused even if approved. `policy::launch_rules` puts the read tools in `--al
    delete), or a custom server's `read_tools`.
 3. Anything else asks, with its action guessed from its name.
 
-An ask is also blocked when its input looks like a credential (`hub/redact`, on the text, on each attached file's
-base64 text, and on its decoded contents), or when its whole input, a file's bytes said by their size, doesn't fit the
-card (100,000 characters). Nothing is ever "always allowed".
+An ask is also blocked when its input looks like a credential (`hub/redact`): in its text, and inside an attached file
+whose bytes read as text (valid UTF-8, almost no control characters). A value that decodes as base64 is a file, and its
+base64 is never searched as it is, since random letters spell key shapes by chance; a binary file is shown by name and
+size and the person decides (D193). An ask is also blocked when its whole input, a file's bytes said by their size,
+doesn't fit the card (100,000 characters). Nothing is ever "always allowed".
 
 **The card.** `ToolPreview` carries the account, every To/Cc/Bcc, an audience line when the tool picks recipients
 itself, the subject or title, the time, the attachments (name, size, source), the target and the whole body, all read
