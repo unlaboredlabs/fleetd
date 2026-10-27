@@ -24,8 +24,13 @@ const { values: flags } = parseArgs({ options: { json: { type: "string" }, basel
 const RUNS = 5;
 const IDLE_MS = 10_000;
 const SCROLL_MS = 4_000;
-// About 160 keys: a p95 over fewer swings with two or three slow ones on a shared CI runner.
+// About 160 keys a round: a p95 over fewer swings with two or three slow ones on a shared CI runner.
 const KEYS = "the writer ran the tests again and asked for a review. ".repeat(3).trim();
+/**
+ * Rounds of KEYS timed after an untimed first one; the median round's p95 counts. A shared runner stalls now and then
+ * for a second or two, and in a single round that put 16 slow keys into its p95 (17 ms against a usual 6-11).
+ */
+const KEY_ROUNDS = 5;
 
 const REFERENCE = path.join(import.meta.dirname, "reference", "main.mjs");
 
@@ -104,16 +109,24 @@ const scroll = async (page: Page, list: Locator) => {
   return { ...frameStats(stamps, refreshMs), refreshHz: 1000 / refreshMs, moved };
 };
 
-/** Per key: Chromium's EventLatency for the key press, input timestamp to presentation (perf/trace.ts). */
+/** Per key: Chromium's EventLatency for the key press, input timestamp to presentation (perf/trace.ts), by round. */
 const keys = async (browser: Browser, page: Page, composer: Locator) => {
   await composer.click();
-  const events = await traced(browser, async () => {
+  const type = async () => {
     await page.keyboard.type(KEYS, { delay: 60 });
     await sleep(500);
-  });
-  const latencies = keyLatencies(events);
-  if (latencies.length < KEYS.length * 0.9) throw new Error(`the trace has ${latencies.length} key presses for ${KEYS.length} keys`);
-  return { p95: quantile(latencies, 0.95), p50: quantile(latencies, 0.5), count: latencies.length, slow: latencies.filter((l) => l >= 16).length };
+  };
+  // An untimed first round warms the composer up, as the untimed first launch does for first paint.
+  await type();
+  await composer.fill("");
+  const rounds: Array<{ p95: number; p50: number; slow: number }> = [];
+  for (let i = 0; i < KEY_ROUNDS; i++) {
+    const latencies = keyLatencies(await traced(browser, type));
+    await composer.fill("");
+    if (latencies.length < KEYS.length * 0.9) throw new Error(`the trace has ${latencies.length} key presses for ${KEYS.length} keys`);
+    rounds.push({ p95: quantile(latencies, 0.95), p50: quantile(latencies, 0.5), slow: latencies.filter((l) => l >= 16).length });
+  }
+  return { p95: median(rounds.map((r) => r.p95)), rounds };
 };
 
 const main = async () => {
@@ -156,7 +169,7 @@ const main = async () => {
         idleRssMb: "summed RSS of the same processes; counts the shared Electron pages once per process, never gated",
         idleMemoryMb: `${process.platform === "linux" ? "PSS" : "physical footprint"} summed over all ${samples[0]?.processes ?? 0} processes read (${[...new Set(samples[0]?.kinds ?? [])].join(", ")}) after ${IDLE_MS / 1000} s idle`,
         scrollFps: `the chat-long fixture's chat; ${(scrolled.dropped * 100).toFixed(1)}% long frames, ${(scrolled.moved / 1000).toFixed(0)}k px, display ${scrolled.refreshHz.toFixed(0)} Hz`,
-        keyP95Ms: `the chat's composer; EventLatency, key press to presentation; p50 ${typed.p50.toFixed(1)} ms over ${typed.count} keys, ${typed.slow} at 16 ms or more`,
+        keyP95Ms: `the chat's composer; EventLatency, key press to presentation; median of ${typed.rounds.length} rounds of ${KEYS.length} keys, p95/p50 (keys at 16 ms or more): ${typed.rounds.map((r) => `${r.p95.toFixed(1)}/${r.p50.toFixed(1)} (${r.slow})`).join(", ")} ms`,
       };
     } finally {
       await browser.close();
