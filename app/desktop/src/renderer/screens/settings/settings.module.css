@@ -470,3 +470,54 @@
   margin: 0;
   min-width: 0;
 }
+
+/* ---- A Navi's integrations: one row each, hairlines between, no boxes ---- */
+.integrations {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.integration {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  min-width: 0;
+  padding: var(--space-3) 0;
+}
+.integration + .integration {
+  border-top: 1px solid var(--hairline);
+}
+.integration:first-child {
+  padding-top: 0;
+}
+.integrationHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+}
+/* What a test found: one line per policy, the label in a column of its own. */
+.policy {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: var(--space-3);
+  row-gap: 2px;
+  min-width: 0;
+}
+.policyRow {
+  display: contents;
+}
+/* A connect dialog's numbered steps. */
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+  margin: 0;
+  padding-left: 1.4em;
+}
+.steps li::marker {
+  color: var(--quiet);
+  font-variant-numeric: tabular-nums;
+}

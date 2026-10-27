@@ -594,36 +594,81 @@ async fn a_refresh_launch_allows_only_the_memory_tools_and_keeps_its_own_servers
     assert_eq!(sent_mcp(&mut calls).await, None);
 }
 
-/// A Navi's Google connection (xaq's address and an agent key) as the app's connect screen saves it.
-fn google_via_xaq(key: Value) -> Value {
-    json!({ "scope": project_scope(), "name": "google", "enabled": true,
+/// A Navi's integration (here a custom HTTP server with a key) as the app's connect screen saves it.
+fn integration(key: Value) -> Value {
+    json!({ "scope": project_scope(), "name": "crm", "enabled": true,
         "roles": { "lead": true, "writers": false, "reviewers": false },
-        "transport": { "type": "http", "url": "http://127.0.0.1:8787/mcp" },
+        "transport": { "type": "http", "url": "https://mcp.example.com/mcp" },
         "headers": [key],
-        "integration": { "kind": "google" } })
+        "integration": { "kind": "custom" } })
+}
+
+/// Marks p1 a Navi, as creating one from the app does.
+fn make_navi(hub: &Hub) {
+    hub.db
+        .with(|c| {
+            c.execute(
+                "UPDATE projects SET data = json_set(data, '$.kind', 'assistant') WHERE project_id = 'p1'",
+                [],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[tokio::test]
+async fn an_integration_connects_to_a_navi_only() {
+    let (hub, _home) = hub();
+    let _calls = node(&hub).await;
+    let plain = json!({ "kind": "plain", "name": "X-Team", "value": "core" });
+    let error = call(
+        &hub,
+        &person(),
+        "mcp_server_set",
+        integration(plain.clone()),
+    )
+    .await
+    .unwrap_err();
+    assert!(format!("{error:?}").contains("Navi only"), "{error:?}");
+    let mut global = integration(plain.clone());
+    global["scope"] = json!({ "kind": "global" });
+    assert!(
+        call(&hub, &person(), "mcp_server_set", global)
+            .await
+            .is_err()
+    );
+    // The same server without an integration is a plain MCP server, as before.
+    let mut bare = integration(plain.clone());
+    bare.as_object_mut().unwrap().remove("integration");
+    call(&hub, &person(), "mcp_server_set", bare).await.unwrap();
+    make_navi(&hub);
+    call(&hub, &person(), "mcp_server_set", integration(plain))
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
 async fn an_integration_connects_with_its_key_sealed_and_revoking_forgets_the_key() {
     let (hub, _home) = hub();
     let mut calls = node(&hub).await;
-    const KEY: &str = "Bearer aib_never_on_the_hub_0123456789";
+    make_navi(&hub);
+    const KEY: &str = "Bearer crm_never_on_the_hub_0123456789";
     let saved = call(
         &hub,
         &person(),
         "mcp_server_set",
-        google_via_xaq(json!({ "kind": "secret", "name": "Authorization",
+        integration(json!({ "kind": "secret", "name": "Authorization",
             "sealed": [{ "machineId": "lab", "sealed": sealed(KEY) }] })),
     )
     .await
     .unwrap();
-    assert_eq!(saved["server"]["integration"], json!({ "kind": "google" }));
+    assert_eq!(saved["server"]["integration"], json!({ "kind": "custom" }));
     assert!(matches!(
         calls.recv().await.unwrap(),
         SessionCall::McpSecrets { ref set, .. } if set.len() == 1
     ));
 
-    // Connected: the app reads it back as Google, with the key only as a fingerprint on Navi's machine.
+    // Connected: the app reads it back as an integration, with the key only as a fingerprint on Navi's machine.
     let got = call(
         &hub,
         &person(),
@@ -633,18 +678,18 @@ async fn an_integration_connects_with_its_key_sealed_and_revoking_forgets_the_ke
     .await
     .unwrap();
     let server = &got["project"][0];
-    assert_eq!(server["integration"]["kind"], "google");
+    assert_eq!(server["integration"]["kind"], "custom");
     assert_eq!(server["headers"][0]["sealedOn"][0]["machineId"], "lab");
     assert!(server["headers"][0].get("value").is_none());
     for text in [got.to_string(), saved.to_string(), every_row(&hub)] {
-        assert!(!text.contains("aib_never_on_the_hub"), "{text}");
+        assert!(!text.contains("crm_never_on_the_hub"), "{text}");
     }
     // The test lists each tool with what the policy does with it.
     let tested = call(
         &hub,
         &person(),
         "mcp_server_test",
-        json!({ "scope": project_scope(), "name": "google" }),
+        json!({ "scope": project_scope(), "name": "crm" }),
     )
     .await
     .unwrap();
@@ -659,7 +704,7 @@ async fn an_integration_connects_with_its_key_sealed_and_revoking_forgets_the_ke
         &hub,
         &person(),
         "mcp_server_remove",
-        json!({ "scope": project_scope(), "name": "google" }),
+        json!({ "scope": project_scope(), "name": "crm" }),
     )
     .await
     .unwrap();
@@ -685,7 +730,12 @@ async fn a_navis_lead_launches_with_its_integrations_reads_allowed() {
     let (hub, _home) = hub();
     let mut calls = node(&hub).await;
     let plain = json!({ "kind": "plain", "name": "Authorization", "value": "public" });
-    call(&hub, &person(), "mcp_server_set", google_via_xaq(plain))
+    // fleetd's own Google tools, as a server of kind google.
+    let mut google = integration(plain);
+    google["name"] = "google".into();
+    google["integration"] = json!({ "kind": "google" });
+    make_navi(&hub);
+    call(&hub, &person(), "mcp_server_set", google)
         .await
         .unwrap();
     for (n, role) in [

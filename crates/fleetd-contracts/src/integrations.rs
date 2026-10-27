@@ -1,4 +1,4 @@
-//! A Navi's integrations: Google (Gmail, Calendar and Drive, through the person's own xaq), Notion (its official
+//! A Navi's integrations: Google (fleetd's own Gmail, Calendar and Drive tools), Notion (its official
 //! server with the person's own integration token) and any other MCP server. Each is one of the project's MCP servers
 //! (`mcp_servers.rs`) marked with what it is, so the hub knows its tools: a per-tool policy table (`hub/integrations`)
 //! says which read and run unasked, which ask the person every time, and which are blocked even if approved. An ask is
@@ -17,8 +17,8 @@ use crate::prim::{Line, List, Text};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum IntegrationKind {
-    /// Gmail, Google Calendar and Google Drive through xaq (npm `xaq-cli`), which holds the Google sign-in: fleetd
-    /// keeps only xaq's address and an agent key.
+    /// Gmail, Google Calendar and Google Drive: fleetd's own Google tools, read by the names and fields in
+    /// `hub/integrations/google.rs`.
     Google,
     /// Notion's official MCP server (`@notionhq/notion-mcp-server`) with the person's internal integration token.
     Notion,
@@ -77,11 +77,23 @@ pub enum ToolAction {
     Spend,
 }
 
-/// The longest body a card shows; a longer one is cut, saying so, and the whole input is under [`ToolPreview::input`].
-pub const PREVIEW_BODY_MAX: usize = 20_000;
+/// The tool's input as it runs, pretty-printed, at most this many characters, a file's bytes said by their size. It is
+/// never cut: an input past it is refused rather than asked about, so approving never runs more than the card shows.
+/// A body, part of it, is whole too; the app folds a long one with Show all.
+pub const PREVIEW_INPUT_MAX: usize = 100_000;
 
-/// The tool's input as it runs, pretty-printed, at most this many characters.
-pub const PREVIEW_INPUT_MAX: usize = 20_000;
+/// A file an asking tool attaches, as its input names it.
+#[skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewAttachment {
+    /// The name the recipient sees: "tenant-form.pdf", or what the file is when the tool names it by id.
+    pub name: Line<1, 300>,
+    /// Its size, when its bytes are in the input.
+    pub bytes: Option<u64>,
+    /// Where it comes from, when not from the input: "from Drive", "from message 18c2".
+    pub from: Option<Line<1, 200>>,
+}
 
 /// What an approval card shows for an asking tool: who it reaches and what it says, or what it changes. Every field is
 /// read from the exact input the tool runs with once approved; nothing is a summary the agent wrote.
@@ -94,9 +106,9 @@ pub struct ToolPreview {
     pub server: McpServerName,
     pub tool: McpToolName,
     pub action: ToolAction,
-    /// One line: "Send an email", "Reply to a message", "Delete a Notion block".
+    /// What it does, as a verb phrase the app puts after "<the Navi> wants to": "Send an email", "Reply to an email".
     pub title: Line<1, 200>,
-    /// The account it acts as, when the tool names one (an xaq account's address).
+    /// The account it acts as, when the tool names one (the connected Google account's address).
     pub account: Option<Line<1, 320>>,
     /// Every recipient, as the tool gets them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -110,10 +122,10 @@ pub struct ToolPreview {
     pub audience: Option<Line<1, 300>>,
     pub subject: Option<Text<0, 1000>>,
     /// The text that goes out or goes in: the email's body, the event's notes, the page's new content.
-    pub body: Option<Text<0, PREVIEW_BODY_MAX>>,
-    /// The body was longer and is cut here.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub body_cut: bool,
+    pub body: Option<Text<0, PREVIEW_INPUT_MAX>>,
+    /// Every file it attaches.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<PreviewAttachment>,
     /// What it acts on: a message, an event, a page or a file, by name or id.
     pub target: Option<Text<0, 2000>>,
     /// When, for an event: "2026-11-03 10:00 → 11:00".
@@ -142,7 +154,7 @@ mod tests {
         .unwrap();
         assert_eq!(p.to.len(), 1);
         let back = serde_json::to_value(&p).unwrap();
-        assert!(back.get("cc").is_none() && back.get("bodyCut").is_none());
+        assert!(back.get("cc").is_none() && back.get("attachments").is_none());
     }
 
     #[test]

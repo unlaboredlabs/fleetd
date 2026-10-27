@@ -1259,3 +1259,121 @@ async fn a_prompt_whose_input_cant_be_shown_is_refused() {
         message.as_str()
     );
 }
+
+/// A Navi's server of `kind`, named `name`, with the tools the person marked as reads.
+fn integration(name: &str, kind: &str, reads: &[&str]) -> fleetd_contracts::mcp_servers::McpServer {
+    serde_json::from_value(json!({
+        "scope": { "kind": "project", "machineId": "lab-a", "projectId": "p1" },
+        "name": name, "enabled": true,
+        "roles": { "lead": true, "writers": false, "reviewers": false },
+        "transport": { "type": "http", "url": "https://mcp.example.com/mcp" },
+        "integration": { "kind": kind, "readTools": reads },
+        "updatedAt": "2026-10-27T00:00:00Z"
+    }))
+    .unwrap()
+}
+
+#[tokio::test]
+async fn through_the_relay_notion_custom_servers_and_attachments_get_their_policy_and_approve_runs_the_real_bytes()
+ {
+    use base64::Engine;
+    let fake = Arc::new(Fake::default());
+    *fake.servers.lock().unwrap() = vec![
+        google(),
+        integration("notion", "notion", &[]),
+        integration("crm", "custom", &["list_contacts"]),
+    ];
+    let a = approvals(&fake);
+    let b64 = |bytes: &[u8]| base64::engine::general_purpose::STANDARD.encode(bytes);
+    let photo = b64(&[0u8, 1, 2, 3, 255, 254, 7, 8].repeat(500));
+    let mail = |content: &str, name: &str| {
+        json!({ "account": "me@example.com", "to": ["ana@example.com"], "bcc": ["sam@example.com"],
+            "subject": "Lease", "body": "Attached.",
+            "attachments": [{ "content_base64": content, "filename": name }] })
+    };
+    let notes = b64(b"tenant notes\ntoken = ghp_abcdefghijklmnopqrstuvwxyz0123\n");
+    for (id, tool, input) in [
+        // A custom server's tool the person marked as a read: unasked.
+        ("q1", "mcp__crm__list_contacts", json!({})),
+        // Its money tool: blocked, whatever was marked.
+        ("q2", "mcp__crm__transfer_funds", json!({ "amount": 50 })),
+        // A Notion page to the trash: asks as a delete.
+        (
+            "q3",
+            "mcp__notion__API-patch-page",
+            json!({ "page_id": "p9", "archived": true }),
+        ),
+        // A text file holding a key: refused.
+        ("q4", "mcp__google__send_message", mail(&notes, "notes.txt")),
+        // A binary file: asks, shown by name and size.
+        ("q5", "mcp__google__send_message", mail(&photo, "photo.jpg")),
+    ] {
+        *fake.pending.lock().unwrap() = Some(pending_with(id, tool, Some(input)));
+        a.on_thread_event(&event("thread.waiting", Some(prompt(id, tool, "a call"))))
+            .await;
+    }
+    let answers = fake.answers.lock().unwrap().clone();
+    let decided: Vec<(&str, &PermissionDecision)> = answers
+        .iter()
+        .map(|(_, _, id, d)| (id.as_str(), d))
+        .collect();
+    assert_eq!(decided.len(), 3, "{decided:?}");
+    assert_eq!(
+        decided[0],
+        (
+            "q1",
+            &PermissionDecision::Allow {
+                updated_input: None
+            }
+        )
+    );
+    for (id, why) in [("q2", "moves money"), ("q4", "password, key or token")] {
+        let (_, PermissionDecision::Deny { message }) =
+            decided.iter().find(|(i, _)| *i == id).unwrap()
+        else {
+            panic!("{id} wasn't denied")
+        };
+        assert!(message.as_str().contains(why), "{id}: {}", message.as_str());
+    }
+
+    // Two cards wait for the person: the Notion delete, and the email with its photo.
+    let open = requests(&fake);
+    assert_eq!(open.len(), 2);
+    let card =
+        |r: &HumanRequest| serde_json::to_value(&r.permission.as_ref().unwrap().preview).unwrap();
+    let trash = open
+        .iter()
+        .find(|r| r.permission.as_ref().unwrap().request_id == "q3")
+        .unwrap();
+    assert_eq!(card(trash)["action"], "delete");
+    assert_eq!(card(trash)["title"], "Move a Notion page to the trash");
+    let send = open
+        .iter()
+        .find(|r| r.permission.as_ref().unwrap().request_id == "q5")
+        .unwrap();
+    let preview = card(send);
+    assert_eq!(preview["account"], "me@example.com");
+    assert_eq!(preview["bcc"], json!(["sam@example.com"]));
+    assert_eq!(
+        preview["attachments"],
+        json!([{ "name": "photo.jpg", "bytes": 4000 }])
+    );
+    assert!(
+        preview["input"]
+            .as_str()
+            .unwrap()
+            .contains("[the file's 4000 bytes]")
+    );
+
+    // Approved, the send runs with the real bytes, not the card's summary of them.
+    a.answer(&person(), send.request_id.as_str(), true, None)
+        .await
+        .unwrap();
+    let answers = fake.answers.lock().unwrap().clone();
+    assert_eq!(
+        answers.last().unwrap().3,
+        PermissionDecision::Allow {
+            updated_input: Some(mail(&photo, "photo.jpg"))
+        }
+    );
+}
