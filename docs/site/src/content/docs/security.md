@@ -78,7 +78,7 @@ into a team hub. You make it on the hub it reaches and add it to the Navi on the
 
 | Rule | Detail |
 |---|---|
-| It acts as you | A link key (`flk_…`) acts as you, at the access of the device that made it, limited to the projects you pick or not. Revoking that device revokes the link. |
+| It acts as you | A link key (`flk_…`) acts as you, at your [role](/docs/people) on that hub, limited to the projects you pick or not. Removing you from the hub stops it; revoking the device you made it on doesn't. |
 | It does five things | List the projects it reaches, ask a project's lead for work, read their status, follow its own asks, revoke itself. It can't use `/mcp` or the app's connection, so it reads no chat and answers no approval, question or secret. |
 | Its messages are never your answer | They go into the project's chat as "*you* via *label* Navi", an agent's input, like any Navi message. Approvals, secrets and merges still need you there. |
 | The other hub sees only the requests | Not the Navi, its chat or its title. |

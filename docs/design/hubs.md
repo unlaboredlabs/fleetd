@@ -104,9 +104,10 @@ The code is `crates/fleetd/src/hub/hub_links/` (store, `serve.rs` on B, `client.
 
 **Minting and keeping.** On B, a person's device calls `hub_link_mint {label, projects?}`: `label` is what they call
 A ("home"), `projects` limits the link (each one they can operate), and the answer carries the key, `flk_…`, once. B
-keeps its SHA-256 and the minting device's key id. Until people (#646) are on the hub, the link acts at that device's
-grants and dies with it; with people, it acts as the person at their role. On A, the person calls `hub_link_add {navi,
-label, url, sealed}`: the app seals the key with `crypto_box_seal` to A's own box key (`boxPubKey` from
+keeps its SHA-256, the minting device's key id and its person. The link acts as that person at their hub role (at
+most operate: a link has no admin call), whatever device they use later, and stops when they are removed from the
+hub. A link minted before people acts at its device's grants and dies with it. On A, the person calls
+`hub_link_add {navi, label, url, sealed}`: the app seals the key with `crypto_box_seal` to A's own box key (`boxPubKey` from
 `hub_links_get`, kept in A's home), A opens it only to call B, checks it with `GET /link/v1/hello` and keeps it
 sealed per Navi. No tool returns it again and it never enters a chat or transcript. `hub_links_get {navi?}` reads
 both sides: the Navi's links on A with their state, and the links minted on B (the caller's own, or every one for an
@@ -122,11 +123,11 @@ admin).
 | `GET feed?after=&wait=` | news about the link's own asks: an order opened, done, stopped, a PR merged or failed |
 | `POST revoke` | the link revokes itself (A removing it) |
 
-Each call checks the key, the link not revoked, not idle for 90 days, and its device not revoked; a key dead for any
+Each call checks the key, the link not revoked, not idle for 90 days, and its person still on the hub; a key dead for any
 of these is refused with 401 and `dead: true` (`LinkRefusal`), and only that body makes A mark the link revoked. A
 store failure is a 500, and any other refusal or a 401 without `dead` leaves the link as it was, so a passing error
-never kills it. A calls only the URL it was given: no redirects, and no answer over 1 MB. Then come the device's
-grants: read to see a project, operate to ask in it, and the link's project limits. A project outside them is refused
+never kills it. A calls only the URL it was given: no redirects, and no answer over 1 MB. Then comes the person's
+role: read to see a project, operate to ask in it, and the link's project limits. A project outside them is refused
 (`forbidden`, "X is not one of this link's projects"); one the person can't read doesn't exist for the link. Nothing
 else takes a link key: `/mcp` and `/app` refuse it (it is no `fld_` key), so there is no tool, no chat read, no
 approval, no secret and no admin through a link.

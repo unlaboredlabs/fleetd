@@ -5882,7 +5882,7 @@
         },
         {
           "const": "revoked",
-          "description": "The other hub refused the key: revoked there, or its device was.",
+          "description": "The other hub refused the key: revoked or expired there, or its person removed.",
           "type": "string"
         }
       ],
@@ -6511,7 +6511,7 @@
           "type": "string"
         },
         "keyId": {
-          "description": "The device that minted it: the link acts at its grants and dies with it.",
+          "description": "The device that minted it. The link acts as its person, at their role, and stops when they leave the hub; a\nlink from before people acts at this device's grants and dies with it.",
           "type": "string"
         },
         "label": {

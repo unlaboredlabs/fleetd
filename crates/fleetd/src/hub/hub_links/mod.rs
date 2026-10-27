@@ -1,10 +1,12 @@
 //! Hub links (W104, D194): a Navi on one hub opens and follows work in projects on another.
 //!
 //! On the hub whose projects it reaches, a person's device mints a link (`hub_link_mint`): a key, `flk_…`, shown once,
-//! of which the hub keeps the SHA-256. The link acts as that device, at its grants, limited to chosen projects or not,
+//! of which the hub keeps the SHA-256. The link acts as that device's person, at their hub role, limited to chosen
+//! projects or not,
 //! and only through `/link/v1` ([`serve`]): read the projects, ask a lead for work, read its status, follow its news.
 //! Asks go into chats as "<person> via <label> Navi" (`navi::bridge`, `Asker::Link`). Its person or an admin revokes
-//! it (`hub_link_revoke`), and it stops with its device.
+//! it (`hub_link_revoke`), and it stops when they leave the hub. A link minted before people acts at its device's
+//! grants and stops with its device.
 //!
 //! On the hub with the Navi, the person adds it to the Navi (`hub_link_add`): the app seals the key to this hub's box
 //! key, so it never crosses the app's link in the clear nor sits in a transcript, and the hub opens it only to call the
@@ -17,7 +19,7 @@ pub mod tools;
 
 use std::net::IpAddr;
 
-use fleetd_contracts::auth::{AgentKeyInfo, Role};
+use fleetd_contracts::auth::{AgentKeyInfo, Grant, GrantMachines, Role, Star};
 use fleetd_contracts::hub_links::{
     HubLabel, HubLink, HubLinkId, HubLinkState, IssuedLink, LINK_KEY_PREFIX, LinkedHub,
 };
@@ -40,20 +42,29 @@ fn link_id() -> String {
     format!("hl_{}", base32(&rand::random::<[u8; 5]>()))
 }
 
-/// A link minted here, as a request through it sees it: its device's grants read again at each request.
+/// A link minted here, as a request through it sees it: its person at their role, read again at each request.
 #[derive(Clone, Debug)]
 pub struct Issued {
     pub link_id: String,
     pub label: String,
     pub projects: Option<Vec<ProjectRef>>,
     pub person: Option<PersonRef>,
-    pub key: AgentKeyInfo,
+    /// What it may do: its person's role on every machine, or for a link from before people its device's grants.
+    pub grants: Vec<Grant>,
+    /// Its person's name, or its device's for a link from before people.
+    pub who: String,
 }
 
 impl Issued {
-    /// Its device holds `role` on the machine.
+    /// It holds `role` on the machine.
     pub fn allows(&self, role: Role, machine_id: &MachineId) -> bool {
-        crate::hub::auth::allows(&self.key, role, Some(machine_id))
+        self.grants.iter().any(|g| {
+            g.role >= role
+                && match &g.machines {
+                    GrantMachines::All(_) => true,
+                    GrantMachines::Only(ids) => ids.contains(machine_id),
+                }
+        })
     }
 
     /// The project is within its limits.
@@ -63,11 +74,7 @@ impl Issued {
 
     /// Who its asks are from, in the chats here: its person, through their Navi on the hub the link is for.
     pub fn author(&self) -> String {
-        let who = self
-            .person
-            .as_ref()
-            .map_or_else(|| self.key.name.clone(), |p| p.name.to_string());
-        format!("{who} via {} Navi", self.label)
+        format!("{} via {} Navi", self.who, self.label)
     }
 }
 
@@ -260,12 +267,46 @@ pub fn verify(hub: &Hub, bearer: &str) -> Result<Issued, McpToolError> {
             row.prefix
         )));
     }
-    let device = hub.auth.get(&row.key_id).map_err(failed)?;
-    let Some(device) = device.filter(|d| d.revoked_at.is_none()) else {
-        return Err(dead(format!(
-            "The device that made link {} was revoked on this hub, and the link with it.",
-            row.prefix
-        )));
+    // The person who made it: as stored at minting, or its device's for a link minted before people.
+    let person_id = match row.person().map_err(failed)? {
+        Some(p) => Some(p.person_id),
+        None => hub
+            .auth
+            .get(&row.key_id)
+            .map_err(failed)?
+            .and_then(|d| d.person)
+            .map(|p| p.person_id),
+    };
+    let (person, grants, who) = match person_id {
+        Some(id) => {
+            let people = crate::hub::people::People::new(hub.db.clone(), hub.clock.clone());
+            let Some(someone) = people
+                .get(&id)
+                .map_err(failed)?
+                .filter(|p| p.removed_at.is_none())
+            else {
+                return Err(dead(format!(
+                    "The person who made link {} was removed from this hub, and the link with them.",
+                    row.prefix
+                )));
+            };
+            let grants = vec![Grant {
+                role: crate::hub::people::role_cap(someone.role),
+                machines: GrantMachines::All(Star::Value),
+            }];
+            (Some(someone.as_ref()), grants, someone.name.to_string())
+        }
+        // No person behind it: its device's grants, and it dies with its device.
+        None => {
+            let device = hub.auth.get(&row.key_id).map_err(failed)?;
+            let Some(device) = device.filter(|d| d.revoked_at.is_none()) else {
+                return Err(dead(format!(
+                    "The device that made link {} was revoked on this hub, and the link with it.",
+                    row.prefix
+                )));
+            };
+            (None, device.grants, device.name)
+        }
     };
     if row
         .last_used_ms
@@ -283,10 +324,11 @@ pub fn verify(hub: &Hub, bearer: &str) -> Result<Issued, McpToolError> {
     }
     Ok(Issued {
         projects: row.projects().map_err(failed)?,
-        person: row.person().map_err(failed)?,
+        person,
+        grants,
+        who,
         link_id: row.link_id,
         label: row.label,
-        key: device,
     })
 }
 

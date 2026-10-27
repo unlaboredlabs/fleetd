@@ -93,7 +93,7 @@ async fn mint_link(
         link,
         key,
         next: Some(
-            "Shown once: paste it into the other hub's Navi, Linked hubs. It acts as you there, at this device's \
+            "Shown once: paste it into the other hub's Navi, Linked hubs. It acts as you there, at your role on \
              grants; revoke it here at any time."
                 .into(),
         ),
