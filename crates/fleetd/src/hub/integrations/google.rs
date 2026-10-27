@@ -8,7 +8,7 @@
 use serde_json::Value;
 
 use super::notion;
-use super::policy::{Attachment, Draft, Rule, addresses, base64_bytes, text_of};
+use super::policy::{Attachment, Draft, Rule, addresses, attachment_size, text_of};
 use fleetd_contracts::integrations::ToolAction::{self, Delete, Send, Write};
 
 /// The tools that only read: Gmail, Calendar, a call's status, and Drive, Docs, Sheets and Slides reads under their
@@ -294,9 +294,9 @@ fn attachments(v: &Value) -> Vec<Attachment> {
                 .unwrap_or_else(|| "A file".to_owned());
             Attachment {
                 name,
-                bytes: a["content_base64"].as_str().map(base64_bytes),
-                from: if path.is_some() {
-                    None
+                bytes: a["content_base64"].as_str().map(attachment_size),
+                from: if let Some(p) = &path {
+                    Some(format!("from {p}"))
                 } else if let Some(m) = message {
                     Some(format!("from message {m}"))
                 } else {
