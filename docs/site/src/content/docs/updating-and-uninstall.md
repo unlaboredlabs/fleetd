@@ -24,7 +24,8 @@ it in and restarts, in order:
    installed on a machine before the hub runs the new build. A machine running something that can't carry on through a
    restart (a live browser, device or desktop session, or a preview) waits until it's idle, says so on its line, and
    updates then. A screen whose task has ended doesn't count. The other machines don't wait for it. A machine still
-   busy after 4 hours is skipped, with **Retry** on its line.
+   busy after 4 hours is skipped, with **Retry** on its line. A machine already on the new build, or a newer one
+   (updated with `fleetd update` on it, say), is never moved back: its line says which build it runs.
 3. **Each machine's Claude Code** goes to the version the new fleetd was tested with (`claude install <version>`).
    Sessions already running finish on the version they started with; new ones start on the new one. If the install
    fails, the machine keeps the version it had and the rest of the update goes on. See
@@ -49,6 +50,8 @@ When a part fails, the others still finish:
 - A build that doesn't come up healthy is put back on its own, and the machine runs its previous build again.
 - A machine that is offline, or runs a fleetd too old to update from the hub, is skipped and says how to update it.
 - If the hub itself didn't update, its machines aren't asked, and **Update** tries the whole update again.
+- If the hub moves to another build before every machine is done (with `fleetd update` on its machine, say), the update
+  ends there: each machine still to go says the hub moved on, and **Update** brings them to the newest build.
 
 A failed or skipped machine has **Retry** on its line, which updates just that machine (its fleetd, then its Claude
 Code) to the build the hub runs. If the hub has moved to another build since (with `fleetd update` on its machine,
