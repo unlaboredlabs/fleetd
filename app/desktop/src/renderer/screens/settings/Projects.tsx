@@ -8,9 +8,12 @@ import type { ProjectEnvVar, ProjectSettings as Settings, ToolInput } from "../.
 import type { ProjectEnvRequest } from "../../../shared/ipc";
 import { CallError } from "../../src/data/queries";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
+import { projectKey } from "../../src/data/store";
 import { RemoveProjectDialog, type RemoveTarget } from "../projects/RemoveProjectDialog";
 import { parseScope, projectRefOf, scopeKey, type Scope } from "./editor";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
+import { IntegrationsSection } from "./Integrations";
+import { isNavi } from "./integrationsModel";
 import { McpSection } from "./McpServers";
 import { PageHead, ScopeSelect, Setting, useProjects } from "./parts";
 import {
@@ -106,6 +109,7 @@ export function ProjectSettings({ route }: { route: SettingsRoute }) {
  */
 function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; refresh: () => Promise<Settings | undefined>; onDeleted: () => void }) {
   const ref = { machineId: settings.machineId, projectId: settings.projectId };
+  const navi = isNavi(useData((d) => d.projects[projectKey(ref)]));
   const [deleting, setDeleting] = useState<RemoveTarget | null>(null);
   const [checking, setChecking] = useState(false);
   const [blocked, setBlocked] = useState<string | null>(null);
@@ -138,6 +142,12 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
       <Separator />
       <EnvSetting env={settings.env} projectRef={ref} />
       <Separator />
+      {navi ? (
+        <>
+          <IntegrationsSection projectRef={ref} />
+          <Separator />
+        </>
+      ) : null}
       <McpSection projectRef={ref} />
       <Separator />
       <SetupSetting settings={settings} />

@@ -1,19 +1,18 @@
-//! Google through xaq (npm `xaq-cli`): the person's own xaq holds the Google sign-in, made with their own Google Cloud
-//! OAuth client in xaq's setup, and gives Navi one MCP endpoint (`<xaq>/mcp`) and an agent key (`aib_…`), which the app
-//! seals to Navi's machine as the `Authorization` header. This file is the whole adapter: xaq's tool names, which of
-//! them read, and how each asking one reads on a card. A fleetd-native Google connection would replace it.
+//! Google: the Gmail, Calendar and Drive tools of a server marked `integration: google`, by their names, which of them
+//! read, and how each asking one reads on a card. The rule shapes here (names, and the input fields each card reads)
+//! are what fleetd's own Google tools are read by; a tool it doesn't know asks, as its name says.
 //!
-//! Gmail and Calendar are xaq's own tools (`search_threads`, `send_message`, `create_calendar_event`, …). Drive, Docs,
-//! Sheets and Slides come from xaq's Google Workspace extension, which xaq lists as `<connection>__<tool>`
-//! (`workspace__drive_search`). xaq's own guardrails (grants, recipient allowlists, send caps) still apply behind it.
+//! Gmail and Calendar tools are named plainly (`search_threads`, `send_message`, `create_calendar_event`, …). Drive,
+//! Docs, Sheets and Slides tools may come under a connection's prefix, `<connection>__<tool>`
+//! (`workspace__drive_search`), and are read by the part after it.
 use serde_json::Value;
 
 use super::notion;
-use super::policy::{Draft, Rule, addresses, text_of};
+use super::policy::{Attachment, Draft, Rule, addresses, attachment_size, text_of};
 use fleetd_contracts::integrations::ToolAction::{self, Delete, Send, Write};
 
-/// xaq's tools that only read: Gmail, Calendar, its broker's call status, and the Workspace extension's reads under its
-/// default connection name.
+/// The tools that only read: Gmail, Calendar, a call's status, and Drive, Docs, Sheets and Slides reads under their
+/// default prefix.
 pub const READS: &[&str] = &[
     "list_accounts",
     "list_labels",
@@ -43,7 +42,7 @@ pub const READS: &[&str] = &[
     "workspace__slides_read",
 ];
 
-/// xaq's tools that ask, and what each does.
+/// The tools that ask, and what each does.
 const ASKS: &[(&str, ToolAction)] = &[
     ("send_message", Send),
     ("reply", Send),
@@ -60,7 +59,8 @@ const ASKS: &[(&str, ToolAction)] = &[
     ("delete_calendar_event", Delete),
 ];
 
-/// The Workspace extension's tools that remove something; its other writes change files the person can restore.
+/// The Drive, Docs, Sheets and Slides tools that remove something; their other writes change files the person can
+/// restore.
 const WORKSPACE_DELETES: &[&str] = &[
     "drive_trash",
     "docs_overwrite",
@@ -69,9 +69,13 @@ const WORKSPACE_DELETES: &[&str] = &[
     "slides_delete_slide",
 ];
 
-/// An event write reaches its guests when it has any.
-fn has_guests(input: &Value) -> bool {
-    !addresses(&input["attendees"]).is_empty()
+/// An event write reaches its guests when it has any: a new event's are in its input; a changed one may have guests
+/// already, whom Google emails unless told not to.
+fn reaches_guests(tool: &str, input: &Value) -> bool {
+    match tool {
+        "create_calendar_event" => !addresses(&input["attendees"]).is_empty(),
+        _ => input["notify_attendees"].as_bool() != Some(false),
+    }
 }
 
 pub fn rule(tool: &str, input: &Value) -> Option<Rule> {
@@ -79,11 +83,11 @@ pub fn rule(tool: &str, input: &Value) -> Option<Rule> {
         return Some(Rule::Read);
     }
     if let Some((_, action)) = ASKS.iter().find(|(name, _)| *name == tool) {
-        let send =
-            matches!(tool, "create_calendar_event" | "update_calendar_event") && has_guests(input);
+        let send = matches!(tool, "create_calendar_event" | "update_calendar_event")
+            && reaches_guests(tool, input);
         return Some(Rule::Ask(if send { Send } else { *action }));
     }
-    // A broker connection's tool: the Workspace extension's under any connection name, or xaq's Notion connection's.
+    // A tool under a connection's prefix: Drive, Docs, Sheets or Slides under any prefix, or Notion's hosted tools.
     let (_, inner) = tool.rsplit_once("__")?;
     if READS.contains(&format!("workspace__{inner}").as_str()) {
         return Some(Rule::Read);
@@ -95,7 +99,8 @@ pub fn rule(tool: &str, input: &Value) -> Option<Rule> {
         .iter()
         .any(|p| inner.starts_with(p))
     {
-        return Some(Rule::Ask(Write));
+        // One the table doesn't list asks as what its name says: a share as a share.
+        return Some(Rule::Ask(super::policy::guess(inner)));
     }
     notion::rule(inner, input)
 }
@@ -222,13 +227,16 @@ pub fn draft(tool: &str, input: &Value) -> Draft {
                     }
                     .into(),
                 ),
-                audience: (!guests.is_empty()).then(|| {
-                    if quiet {
-                        "Guests see it in their calendars; Google doesn't email them".to_owned()
-                    } else {
-                        "Google emails each guest".to_owned()
-                    }
-                }),
+                audience: match (guests.is_empty(), quiet, tool) {
+                    (false, true, _) => Some(
+                        "Guests see it in their calendars; Google doesn't email them".to_owned(),
+                    ),
+                    (false, false, _) => Some("Google emails each guest".to_owned()),
+                    (true, false, "update_calendar_event") => Some(
+                        "Its guests, if it has any: Google emails them about the change".to_owned(),
+                    ),
+                    (true, _, _) => None,
+                },
                 to: guests,
                 subject: text_of(input, &["summary"]),
                 body: text_of(input, &["description"]),
@@ -257,10 +265,49 @@ pub fn draft(tool: &str, input: &Value) -> Draft {
     if d.account.is_none() {
         d.account = account;
     }
+    if d.attachments.is_empty() {
+        d.attachments = attachments(&input["attachments"]);
+    }
     d
 }
 
-/// A Workspace extension tool's card: the file it acts on and what goes in.
+/// The files a send, draft, reply or forward attaches, from each source: bytes in the call, a path, another message's
+/// attachment, a Drive file. A path's file is shown by its name.
+fn attachments(v: &Value) -> Vec<Attachment> {
+    let Some(items) = v.as_array() else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .map(|a| {
+            let path = text_of(a, &["path"]);
+            let base = path
+                .as_deref()
+                .and_then(|p| p.rsplit('/').next())
+                .map(str::to_owned);
+            let message = text_of(a, &["message_id"]);
+            let drive = text_of(a, &["drive_file_id"]);
+            let name = text_of(a, &["filename"])
+                .or(base)
+                .or_else(|| text_of(a, &["attachment_id"]).map(|id| format!("Attachment {id}")))
+                .or_else(|| drive.as_ref().map(|id| format!("Drive file {id}")))
+                .unwrap_or_else(|| "A file".to_owned());
+            Attachment {
+                name,
+                bytes: a["content_base64"].as_str().map(attachment_size),
+                from: if let Some(p) = &path {
+                    Some(format!("from {p}"))
+                } else if let Some(m) = message {
+                    Some(format!("from message {m}"))
+                } else {
+                    drive.map(|_| "from Drive".to_owned())
+                },
+            }
+        })
+        .collect()
+}
+
+/// A Drive, Docs, Sheets or Slides tool's card: the file it acts on and what goes in.
 fn workspace(tool: &str, input: &Value) -> Draft {
     let Some((_, inner)) = tool.rsplit_once("__") else {
         return Draft::default();
@@ -294,7 +341,10 @@ fn workspace(tool: &str, input: &Value) -> Draft {
             .map(|v| serde_json::to_string_pretty(v).unwrap_or_default())
     });
     Draft {
-        title: Some(format!("Google Workspace: {}", inner.replace('_', " "))),
+        title: Some(format!(
+            "Use Google Workspace's {}",
+            inner.replace('_', " ")
+        )),
         subject: name,
         body,
         target,

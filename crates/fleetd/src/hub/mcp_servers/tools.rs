@@ -132,6 +132,20 @@ async fn set(
 ) -> Result<McpServerSetOutput, ToolError> {
     may_change(&caller, &input.scope)?;
     let project = project_of(&hub, &input.scope)?;
+    if input.integration.is_some() {
+        let navi = match &project {
+            Some(r) => crate::hub::integrations::is_navi(&hub.db, r)?,
+            None => false,
+        };
+        if !navi {
+            return Err(ToolError::new(
+                ErrorCode::Invalid,
+                "Integrations connect to a Navi only: its lead asks you before anything but a read, and a coding \
+                 project's lead doesn't.",
+            )
+            .with_fix("Connect it from your Navi's settings, or add it as a plain MCP server without an integration."));
+        }
+    }
     let store = hub.db.mcp_servers();
     let before = store.get(&input.scope, &input.name)?;
     if before.is_none() && store.list(&input.scope)?.len() >= MCP_SERVERS_MAX {
