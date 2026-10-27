@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
-import { act } from "react";
+import type { Virtualizer } from "@tanstack/react-virtual";
+import { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { VirtualList } from "./VirtualList";
@@ -43,15 +44,19 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function rows() {
-  return [...host.querySelectorAll<HTMLElement>("[data-index]")]
-    .map((el) => ({ index: Number(el.dataset["index"]), top: Number(/translateY\(([-\d.]+)px\)/.exec(el.style.transform)?.[1]), h: heightOf(el) }))
-    .sort((a, b) => a.index - b.index);
+// The rows on screen, in order, each with the start and size the virtualizer counts it at.
+function rows(v: Virtualizer<HTMLDivElement, Element>) {
+  const counted = new Map(v.getVirtualItems().map((r) => [r.index, r]));
+  return [...host.querySelectorAll<HTMLElement>("[data-index]")].map((el) => {
+    const index = Number(el.dataset["index"]);
+    return { index, h: heightOf(el), start: counted.get(index)?.start, size: counted.get(index)?.size, el };
+  });
 }
 
-it("rows that mount mid-scroll sit at their measured positions, without waiting for the ResizeObserver", async () => {
+it("rows that mount mid-scroll are counted at their measured sizes, without waiting for the ResizeObserver", async () => {
+  const v = createRef<Virtualizer<HTMLDivElement, Element>>();
   await act(async () => {
-    root.render(<VirtualList items={ITEMS} getKey={(_, i) => i} estimateSize={20} overscan={2} renderItem={(t) => <span>{t}</span>} />);
+    root.render(<VirtualList items={ITEMS} getKey={(_, i) => i} estimateSize={20} overscan={2} virtualizerRef={v} renderItem={(t) => <span>{t}</span>} />);
     await Promise.resolve();
   });
   const scroller = host.querySelector<HTMLElement>("[role=list]");
@@ -62,12 +67,14 @@ it("rows that mount mid-scroll sit at their measured positions, without waiting 
     scroller.dispatchEvent(new Event("scroll"));
     await Promise.resolve();
   });
-  const mounted = rows();
+  const virtualizer = v.current;
+  if (!virtualizer) throw new Error("no virtualizer");
+  const mounted = rows(virtualizer);
   expect(mounted.length).toBeGreaterThan(3);
-  for (let i = 1; i < mounted.length; i++) {
-    const prev = mounted[i - 1];
-    const cur = mounted[i];
-    if (!prev || !cur || cur.index !== prev.index + 1) continue;
-    expect(cur.top, `row ${String(cur.index)} starts where row ${String(prev.index)} ends`).toBe(prev.top + prev.h);
-  }
+  for (const row of mounted) expect(row.size, `row ${String(row.index)}'s size`).toBe(row.h);
+  // They stack in flow under the first one's start: none is placed by a size it no longer has.
+  const first = mounted[0];
+  expect(first?.el.parentElement?.style.transform).toBe(`translateY(${String(first?.start)}px)`);
+  expect(new Set(mounted.map((r) => r.el.parentElement)).size).toBe(1);
+  expect(mounted.every((r) => r.el.style.transform === "")).toBe(true);
 });

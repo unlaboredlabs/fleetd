@@ -24,9 +24,15 @@ const isList = (el: Element): boolean => el.getAttribute("role") === "list";
 const isRow = (el: HTMLElement): boolean => el.dataset["index"] !== undefined;
 const list = () => host.querySelector<HTMLElement>("[role=list]");
 const heightOf = (el: HTMLElement) => (isList(el) ? layout.view : isRow(el) ? layout.row(el) : 0);
+/** A row's top in the list: the rows on screen stack in flow under their wrapper's offset. */
+const topOf = (el: HTMLElement) => {
+  let top = Number(/translateY\(([-\d.]+)px\)/.exec(el.parentElement?.style.transform ?? "")?.[1] ?? 0);
+  for (let prev = el.previousElementSibling; prev instanceof HTMLElement; prev = prev.previousElementSibling) top += layout.row(prev);
+  return top;
+};
 const rectOf = (el: HTMLElement): DOMRect | undefined => {
   if (isList(el)) return new DOMRect(0, 0, 600, layout.view);
-  if (isRow(el)) return new DOMRect(0, Number(/translateY\(([-\d.]+)px\)/.exec(el.style.transform)?.[1] ?? 0) - (list()?.scrollTop ?? 0), 600, layout.row(el));
+  if (isRow(el)) return new DOMRect(0, topOf(el) - (list()?.scrollTop ?? 0), 600, layout.row(el));
   const row = el.closest<HTMLElement>("[data-index]");
   const part = el.dataset["part"];
   if (row === null || part === undefined) return undefined;
