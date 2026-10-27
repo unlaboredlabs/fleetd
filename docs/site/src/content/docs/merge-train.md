@@ -13,11 +13,12 @@ How fleetd merges pull requests. Only fleetd merges: each writer's PR goes on it
 3. Waits for its [fast set](#fast-set) of checks on that exact commit (see [How long CI may take](#ci-time)).
 4. Posts the `fleetd/train` status and squash-merges it, pinned to that commit.
 
-A conflict or red CI goes back to the agent that wrote the PR; for red CI, with the failing checks.
+A conflict or red CI goes back to the agent that wrote the PR; for red CI, with the failing checks. A conflict only in
+generated files is [regenerated](#regenerate) instead.
 
 GitHub runs no CI on a PR that conflicts with its base. So on every pass the train reads each waiting PR's mergeable
 state, and once GitHub says it conflicts, the PR goes back to its agent as `needs_rebase` ("conflicts with main, so
-GitHub runs no CI on it") without waiting for its turn. A waiting PR whose commit has none of its base's required
+GitHub runs no CI on it") without waiting for its turn, unless the train can [regenerate](#regenerate) it. A waiting PR whose commit has none of its base's required
 checks (any check, when the base requires none) 15 minutes after the train first saw it is flagged to its agent and the
 lead, once per commit, and keeps its place.
 
@@ -158,12 +159,59 @@ A member counts as merged only while its head is still the one the batch was bui
 
 | If | The train |
 |---|---|
-| A PR conflicts with the base or the PRs ahead of it | Leaves it out and sends it back to the agent that wrote it. |
+| A PR conflicts with the base or the PRs ahead of it | Leaves it out and [regenerates](#regenerate) it, or sends it back to the agent that wrote it. |
 | The batch is red, or GitHub refuses to merge its PR | Takes each member alone, so each CI result blames only that PR. |
 | A member gets a new push, the `hold` label, or is closed during CI | Drops the batch before the merge, so untested code never lands, and builds a new one without it. |
 
 On every pass, a ready PR the batch left out says why, in its queue entry and in the train's line in the lead's digest:
 for example "not in this batch: its own head's `lint` failed", "… still running", or "the batch is full (8 PRs)".
+
+## Generated files {#regenerate}
+
+Built files (a docs site, generated types, reference pages) conflict on almost every rebase. A repo that commits
+`.fleetd/regenerate.json` lets the train make them again instead of sending the PR back:
+
+```json
+{
+  "generated": ["site/docs/", "docs/reference/cli.md"],
+  "run": ["cargo run --locked -q -p docsgen", "npm ci --prefix docs", "npm run build --prefix docs"],
+  "migrations": "db/migrations/",
+  "timeoutMinutes": 30
+}
+```
+
+| Key | What it is |
+|---|---|
+| `generated` | The generated files, from the repo root: a path ending in `/` is a directory, anything else one file. |
+| `run` | Shell lines run in order from the repo root: the same commands CI checks the generated files with. |
+| `migrations` | Optional. A directory of `<UTC stamp>_<name>.sql` files that must sort after the base's newest. |
+| `timeoutMinutes` | Optional, 1–120, default 30. |
+
+The train reads the file from the base branch, never from the PR. When a PR conflicts with its base, or adds a
+migration that sorts at or before the base's newest, the train:
+
+1. Picks the node holding the repo's checkout. It must be online and take agent work; the hub's own machine runs
+   none of this. With no such node, the PR goes back to its agent as before.
+2. Fetches the base and the PR there, and rebases the PR onto `origin/<base>` in a scratch worktree.
+3. Takes the base's side of each conflict in a generated file. A conflict in any other file stops it.
+4. Gives the PR's new migrations fresh UTC stamps, in order, when one sorts too early.
+5. Runs every `run` line, commits what changed as its own commit, then runs them all again: the second run must change
+   nothing, and no run may change a file outside `generated`.
+6. Pushes the result to the PR's branch, only if the branch is still where it was.
+
+The commands run as the node's user, as agent work does there, but reach for no credential: their HOME is a scratch
+directory, git under them has no credential helper and no hooks, and they get no SSH agent. The fetch and the push are
+separate steps. Programs are found on the node's PATH, the one its agent sessions get; a missing one is named in the
+reason. The commands get `FLEETD_REGENERATE_CACHE`, a directory under the node's home
+(`~/.fleetd/node/cache/regenerate/<owner>-<name>`) kept between runs, for build caches such as `CARGO_TARGET_DIR`.
+Meanwhile the PR keeps its place in line, its queue entry says the train is regenerating it, and the train goes on with
+the others. Once the train pushes, the agent that wrote the PR is told, so it builds on the train's commit instead of
+overwriting it.
+
+The pushed commit is a new patch, so it is reviewed and tested like any push. When any step fails, the timeout passes,
+or there is nothing to regenerate (the PR conflicts only with the PRs ahead of it in a batch), the PR goes back to its
+agent as `needs_rebase`, with the reason: for example "conflicts with main, and the train could not regenerate its
+generated files: it conflicts with main in src/app.rs, which is not a generated file".
 
 ## CI runners are scarce {#scarce-runners}
 

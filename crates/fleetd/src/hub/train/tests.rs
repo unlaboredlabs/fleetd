@@ -730,6 +730,57 @@ impl FakeGh {
                     None => http_error(404, "Not Found"),
                 }
             }
+            (["contents", file @ ..], "GET") => {
+                let at = query
+                    .split('&')
+                    .find_map(|kv| kv.strip_prefix("ref="))
+                    .unwrap_or("main");
+                let path = file.join("/");
+                let object = format!("refs/heads/{at}:{path}");
+                match git_out(&self.origin, &["cat-file", "-t", &object]).as_deref() {
+                    Some("blob") => GhOut {
+                        exit_code: 0,
+                        stdout: git(&self.origin, &["show", &object]),
+                        stderr: String::new(),
+                    },
+                    Some("tree") => {
+                        let names = git(&self.origin, &["ls-tree", "--name-only", &object]);
+                        ok(Value::Array(
+                            names
+                                .lines()
+                                .map(|n| json!({ "name": n, "path": format!("{path}/{n}"), "type": "file" }))
+                                .collect(),
+                        ))
+                    }
+                    _ => http_error(404, "Not Found"),
+                }
+            }
+            (["pulls", n, "files"], "GET") => {
+                let Some((branch, base)) = self
+                    .pulls
+                    .lock()
+                    .unwrap()
+                    .get(&number(Some(n)))
+                    .map(|p| (p.branch.clone(), p.base.clone()))
+                else {
+                    return http_error(404, "Not Found");
+                };
+                if !query.contains("page=1") {
+                    return ok(json!([]));
+                }
+                let range = format!("refs/heads/{base}...refs/heads/{branch}");
+                let files = git(&self.origin, &["diff", "--name-status", "--no-renames", &range]);
+                ok(Value::Array(
+                    files
+                        .lines()
+                        .filter_map(|l| l.split_once('\t'))
+                        .map(|(status, f)| {
+                            let status = if status == "A" { "added" } else { "modified" };
+                            json!({ "filename": f, "status": status })
+                        })
+                        .collect(),
+                ))
+            }
             (["actions", "runs", run, "rerun-failed-jobs"], "POST") => {
                 self.reruns.lock().unwrap().push(run.parse().unwrap());
                 self.log.lock().unwrap().push(format!("rerun {run}"));
@@ -929,6 +980,12 @@ struct FakeHost {
     /// Orders opened through the host, in order: request id and text. Each is `W<100 + n>`, open until closed.
     orders: Mutex<Vec<(String, String)>>,
     closed_orders: Mutex<HashSet<String>>,
+    /// The repo's checkout on its node, a clone of the origin, where `node_run` runs commands; none unless a test
+    /// makes one. With `node_refusal`, the node can't take the work.
+    checkout: Mutex<Option<PathBuf>>,
+    node_refusal: Mutex<Option<String>>,
+    /// Each command run on the node, its argv's first two entries.
+    node_runs: Mutex<Vec<String>>,
 }
 
 impl FakeHost {
@@ -1153,6 +1210,49 @@ impl TrainHost for FakeHost {
         self.wakes.lock().unwrap().push(line);
         Box::pin(async {})
     }
+    fn node_run<'a>(
+        &'a self,
+        _checkout: &'a ProjectRef,
+        _cwd: &'a str,
+        argv: Vec<String>,
+        timeout_sec: u32,
+    ) -> BoxFut<'a, Result<NodeRun, String>> {
+        Box::pin(async move {
+            if let Some(why) = self.node_refusal.lock().unwrap().clone() {
+                return Err(why);
+            }
+            let dir = self.checkout.lock().unwrap().clone().ok_or("no checkout")?;
+            self.node_runs
+                .lock()
+                .unwrap()
+                .push(format!("{} {}", argv[0], argv[1]));
+            let child = tokio::process::Command::new(&argv[0])
+                .args(&argv[1..])
+                .current_dir(&dir)
+                .env_clear()
+                .env("PATH", std::env::var("PATH").unwrap_or_default())
+                .env("TMPDIR", dir.parent().unwrap())
+                .env("FLEETD_HOME", dir.parent().unwrap().join("node-home"))
+                .envs(GIT_ENV)
+                .kill_on_drop(true)
+                .output();
+            let out = tokio::time::timeout(Duration::from_secs(timeout_sec.into()), child).await;
+            Ok(match out {
+                Ok(Ok(out)) => NodeRun {
+                    exit_code: out.status.code().map(i64::from),
+                    output_tail: format!(
+                        "{}{}",
+                        String::from_utf8_lossy(&out.stdout),
+                        String::from_utf8_lossy(&out.stderr)
+                    ),
+                },
+                _ => NodeRun {
+                    exit_code: None,
+                    output_tail: "timed out".into(),
+                },
+            })
+        })
+    }
 }
 
 /// Ready at once with a clean review of the patch it is handed, unless the test holds the PR for its own review;
@@ -1324,6 +1424,9 @@ impl Kit {
             repos: Mutex::default(),
             orders: Mutex::default(),
             closed_orders: Mutex::default(),
+            checkout: Mutex::default(),
+            node_refusal: Mutex::default(),
+            node_runs: Mutex::default(),
         });
         let gate = Arc::new(FakeGate::default());
         let mut options = TrainOptions {
@@ -6256,5 +6359,6 @@ async fn an_overdue_re_review_waits_out_of_the_line_until_it_is_done() {
     assert_eq!(*kit.gh.merges.lock().unwrap(), [(7, tested)]);
 }
 
+mod regen;
 mod repos;
 mod rereviews;

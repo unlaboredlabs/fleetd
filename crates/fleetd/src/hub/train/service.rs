@@ -1,7 +1,8 @@
 //! The merge train: only fleetd merges. One serial train per repo takes the oldest ready Change, has GitHub rebase it
 //! onto the latest base (`gh pr update-branch --rebase`), waits for CI on that exact head, posts
 //! `fleetd/train=success` and squash-merges pinned to the head. Conflicts and red CI go back to the task that wrote
-//! the code; a merge goes to the lead inline. A PR merged into a guarded base without the train is reported once
+//! the code, but a conflict only in generated files, which the train regenerates on a node (`regen`); a merge goes to
+//! the lead inline. A PR merged into a guarded base without the train is reported once
 //! (`pr.merged_outside`) and told to the lead. The `hold` label holds one PR.
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, Weak};
@@ -23,6 +24,7 @@ use super::host::{BoxFut, TrainHost};
 use super::main_ci::{GithubSync, MainCi, ci_state};
 use super::next::upstreams;
 use super::records::{ChangeRecords, DRAFT, Db, HEAD_STATES, ListFilter, QUEUED_STATES, is_draft};
+use super::regen::Conflict;
 use super::rules::Refusal;
 use crate::clock::Clock;
 use crate::hub::leads::events::Event;
@@ -445,7 +447,7 @@ pub(super) fn running_since(runs: &[CheckRun], fallback: i64) -> Option<i64> {
 type RepoLocks = Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>;
 
 pub struct Train {
-    me: Weak<Train>,
+    pub(super) me: Weak<Train>,
     pub(super) host: Arc<dyn TrainHost>,
     clock: Arc<dyn Clock>,
     pub(super) records: ChangeRecords,
@@ -496,6 +498,14 @@ pub struct Train {
     pub(super) sync: GithubSync,
     /// The follower and every repo loop, aborted by `stop`.
     tasks: Mutex<Vec<tokio::task::JoinHandle<()>>>,
+    /// Each repo and base's `.fleetd/regenerate.json` and when it was read (`regen`).
+    pub(super) regen_configs: Mutex<HashMap<(String, String), super::regen::Cached>>,
+    /// Per Change and head, where its regeneration stands. Kept in memory: after a restart a conflict is tried again.
+    pub(super) regens: Mutex<HashMap<super::regen::RegenKey, super::regen::Regen>>,
+    /// The Changes and heads whose added migrations were read.
+    pub(super) migrations_read: Mutex<HashSet<super::regen::RegenKey>>,
+    /// The regenerations running in the background.
+    pub(super) regen_tasks: Mutex<Vec<tokio::task::JoinHandle<()>>>,
 }
 
 pub(crate) fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -547,6 +557,10 @@ impl Train {
             next_labels: Default::default(),
             sync: GithubSync::default(),
             tasks: Mutex::default(),
+            regen_configs: Mutex::default(),
+            regens: Mutex::default(),
+            migrations_read: Mutex::default(),
+            regen_tasks: Mutex::default(),
         })
     }
 
@@ -565,6 +579,9 @@ impl Train {
     /// Stops the follower and every repo loop.
     pub fn stop(&self) {
         for task in lock(&self.tasks).drain(..) {
+            task.abort();
+        }
+        for task in lock(&self.regen_tasks).drain(..) {
             task.abort();
         }
     }
@@ -1791,8 +1808,22 @@ impl Train {
             .await?
         {
             BranchUpdate::Conflict => {
-                self.needs_rebase(&rebasing, &format!("conflicts with {base}"))
-                    .await;
+                let why = format!("conflicts with {base}");
+                if self.conflicted(&rebasing, &pull, &why).await == Conflict::Regenerating {
+                    // Back in its place, out of the line until its new head shows (`candidates`).
+                    self.update(
+                        &change.change_id,
+                        Some(&[ChangeState::Rebasing]),
+                        |mut c| {
+                            c.state = if super::batch::reviewed(&c) {
+                                ChangeState::Ready
+                            } else {
+                                ChangeState::Reviewing
+                            };
+                            c
+                        },
+                    );
+                }
                 return Ok(());
             }
             BranchUpdate::Current => pull.clone(),
@@ -2037,6 +2068,17 @@ impl Train {
         let changes = self.records.in_train(repo, &waiting);
         lock(&self.unstarted).retain(|id, _| changes.iter().any(|c| &c.change_id == id));
         lock(&self.late_reruns).retain(|id, _| changes.iter().any(|c| &c.change_id == id));
+        let live: Vec<ChangeId> = self
+            .records
+            .in_train(
+                repo,
+                &[ChangeState::Rebasing, ChangeState::Ci, ChangeState::Merging],
+            )
+            .into_iter()
+            .chain(changes.iter().cloned())
+            .map(|c| c.change_id)
+            .collect();
+        self.forget_regens(repo, &live);
         for change in changes {
             let pull = match self.github.pull(repo, change.pr_number.get()).await {
                 Ok(pull) => pull,
@@ -2066,7 +2108,7 @@ impl Train {
                     "conflicts with {}, so GitHub runs no CI on it",
                     pull.base.ref_
                 );
-                self.needs_rebase(&change, &why).await;
+                self.conflicted(&change, &pull, &why).await;
             } else if change.state == ChangeState::Ready {
                 // The train takes it from here, and reads a moved head then (`take`).
                 if in_line {
