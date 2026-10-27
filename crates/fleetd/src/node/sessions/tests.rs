@@ -90,6 +90,7 @@ fn launch(id: &str, mode: RuntimeMode, workspace: SessionWorkspace) -> SessionCa
         run_id: NonEmpty::unchecked("r1"),
         allowed_tools: vec!["Bash(npm test:*)".into()],
         disallowed_tools: vec!["WebFetch".into()],
+        allowed_only: false,
         role: fleetd_contracts::sessions::SessionRole::Worker,
         mcp_role: None,
         mcp: None,
@@ -490,6 +491,56 @@ async fn a_prompt_waits_for_the_hub_unless_policy_answers_it() {
         .filter(|c| matches!(c, SessionCommand::Answer { .. }))
         .count();
     assert_eq!(answers, 2);
+}
+
+#[tokio::test]
+async fn a_session_held_to_its_allowed_tools_has_any_other_refused_by_the_node() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut hub = hub(
+        dir.path(),
+        NodeStore::open_memory(10_000).unwrap(),
+        FakeRunner::fixture("permission-deny"),
+    )
+    .await;
+    hub.project(dir.path()).await;
+    let SessionCall::Launch(held) = launch("s1", RuntimeMode::FullAccess, SessionWorkspace::Root)
+    else {
+        unreachable!()
+    };
+    // As the nightly memory refresh starts: its memory tools only.
+    hub.ok(SessionCall::Launch(SessionLaunch {
+        allowed_tools: vec!["mcp__fleetd__memory_read".into()],
+        allowed_only: true,
+        ..held
+    }))
+    .await;
+    // claude asks for Bash; the node refuses it at once, and nothing waits on a person.
+    let done = hub.settled("r1").await;
+    assert_eq!(done.latest_assistant_tail.as_deref(), Some("DENIED"));
+    assert_eq!(done.pending_permission, None);
+    let answers: Vec<_> = hub
+        .runner
+        .received()
+        .into_iter()
+        .filter_map(|c| match c {
+            SessionCommand::Answer { decision, by, .. } => Some((decision, by)),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        matches!(
+            answers.as_slice(),
+            [(PermissionDecision::Deny { message }, Some(fleetd_contracts::time::DecidedBy::Policy))]
+                if message.as_str().contains("Bash")
+        ),
+        "{answers:?}"
+    );
+    // claude is told so, and every start of the process is.
+    let spec = &hub.runner.spawned()[0];
+    assert!(spec.allowed_only);
+    assert_eq!(spec.allowed_tools, ["mcp__fleetd__memory_read"]);
+    let row = hub.service.store().session("s1").unwrap().unwrap();
+    assert!(row.local.allowed_only);
 }
 
 #[tokio::test]

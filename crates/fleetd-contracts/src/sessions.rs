@@ -88,6 +88,11 @@ pub struct SessionLaunch {
     /// `--disallowedTools` rules from the project's policy (`tools.deny`), on top of the tools fleetd always denies.
     #[serde(default)]
     pub disallowed_tools: Vec<String>,
+    /// The session may use `allowed_tools` and nothing else: it starts with none of the runtime's own tools but those
+    /// named there, asks for every other tool (an MCP server's, one added later), and its node refuses each ask. The
+    /// nightly memory refresh. An older node ignores it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub allowed_only: bool,
     /// Which fleetd management tools the session's MCP server offers.
     #[serde(default)]
     pub role: SessionRole,

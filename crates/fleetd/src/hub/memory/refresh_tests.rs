@@ -11,6 +11,7 @@ use fleetd_contracts::ids::{MachineId, ProjectId, ProjectRef, ThreadId, ThreadRe
 use fleetd_contracts::lead_calls::LeadCall;
 use fleetd_contracts::ledger::{DecisionKey, DecisionScope, DecisionSource};
 use fleetd_contracts::mcp::ErrorCode;
+use fleetd_contracts::model::RuntimeMode;
 use serde_json::{Value, json};
 
 use super::Target;
@@ -88,6 +89,10 @@ fn hub() -> (Arc<Hub>, Arc<ManualClock>, tempfile::TempDir) {
         )
         .unwrap();
     global(&hub, "policy.tz", "UTC");
+    hub.link.set_capabilities(
+        &MachineId::unchecked("devbox"),
+        &[fleetd_contracts::node_link::CAP_ALLOWED_ONLY],
+    );
     (hub, clock, home)
 }
 
@@ -220,6 +225,37 @@ fn the_night_is_due_from_its_hour_for_three_hours_in_the_persons_zone() {
     );
     // Just after midnight, the night due is still none: yesterday's window closed at 07:00.
     assert_eq!(night_due(ms("2026-10-27T00:30:00Z"), Tz::UTC, four), None);
+    // Berlin's clocks skip 02:00-03:00 on 2026-03-29: a 02:30 night runs at 03:00 CEST (01:00 UTC), not never.
+    let gap = NaiveTime::from_hms_opt(2, 30, 0).unwrap();
+    assert_eq!(
+        night_due(ms("2026-03-29T00:59:00Z"), Tz::Europe__Berlin, gap),
+        None
+    );
+    let after = ms("2026-03-29T01:00:00Z");
+    assert_eq!(night_due(after, Tz::Europe__Berlin, gap), Some(after));
+    assert_eq!(
+        night_due(ms("2026-03-29T03:59:00Z"), Tz::Europe__Berlin, gap),
+        Some(after)
+    );
+}
+
+#[tokio::test]
+async fn a_node_that_cant_hold_the_session_to_its_memory_tools_gets_no_refresh_until_it_can() {
+    let (hub, _clock, _home) = hub();
+    let r = project("shop");
+    say(&hub, &r, ChatAuthor::Human, "Keep answers short.");
+    // A node from before `allowed_only` would let claude read the project's files unasked.
+    hub.link.set_capabilities(&r.machine_id, &[]);
+    let node = Node::default();
+    refresh::tick(&hub, &node).await.unwrap();
+    assert!(node.launches.lock().unwrap().is_empty());
+    // Updated within the night's window: it starts then.
+    hub.link.set_capabilities(
+        &r.machine_id,
+        &[fleetd_contracts::node_link::CAP_ALLOWED_ONLY],
+    );
+    refresh::tick(&hub, &node).await.unwrap();
+    assert_eq!(node.launches.lock().unwrap().len(), 1);
 }
 
 #[tokio::test]
@@ -575,33 +611,37 @@ async fn a_refresh_posts_one_line_with_undo_per_change_and_undo_all_and_nothing_
 }
 
 #[tokio::test]
-async fn the_session_starts_with_no_shell_file_or_web_tool_and_only_fleetds_mcp_server() {
+async fn the_session_may_use_only_the_memory_tools_and_only_fleetds_mcp_server() {
     let (hub, _clock, _home) = hub();
     let r = project("shop");
     say(&hub, &r, ChatAuthor::Human, "Keep answers short.");
     let node = Node::default();
     refresh::tick(&hub, &node).await.unwrap();
     let options = node.options.lock().unwrap()[0].clone();
-    for tool in [
-        "Bash",
-        "Read",
-        "Write",
-        "Edit",
-        "MultiEdit",
-        "NotebookEdit",
-        "Glob",
-        "Grep",
-        "WebFetch",
-        "WebSearch",
-        "Skill",
-    ] {
-        assert!(
-            options.deny_tools.iter().any(|t| t == tool),
-            "{tool} is not denied"
-        );
+    // An allowlist, in place of the project's own allow rules: the node refuses any other tool (node/sessions'
+    // `auto_answer`), and claude loads no runtime tool of its own (`--tools ""`, node/runner/claude).
+    let only = options.only_tools.expect("held to its allowed tools");
+    assert_eq!(
+        only,
+        [
+            "mcp__fleetd__memory_read",
+            "mcp__fleetd__remember",
+            "mcp__fleetd__forget"
+        ]
+    );
+    assert!(crate::node::runner::claude::runtime_tools(&only).is_empty());
+    // Each names a tool fleetd's server lists for a lead, and one the hub takes from the refresh.
+    let listed: Vec<&str> = crate::cli::agent_mcp::tools_for(crate::cli::agent_mcp::Role::Lead)
+        .map(|t| t.name)
+        .collect();
+    for tool in &only {
+        let name = tool.strip_prefix("mcp__fleetd__").unwrap();
+        assert!(listed.contains(&name), "{name}");
+        crate::hub::tasks::policy::check(&CallerAgent::MemoryRefresh, name).unwrap();
     }
-    // It still loads fleetd's deferred tools.
-    assert!(!options.deny_tools.iter().any(|t| t == "ToolSearch"));
+    // Under approval, so a node that doesn't know the allowlist asks rather than runs anything.
+    let input = node.launches.lock().unwrap()[0].clone();
+    assert_eq!(input.runtime_mode, RuntimeMode::ApprovalRequired);
     assert_eq!(
         options.role,
         fleetd_contracts::sessions::SessionRole::Lead,
@@ -610,8 +650,11 @@ async fn the_session_starts_with_no_shell_file_or_web_tool_and_only_fleetds_mcp_
     let mcp = options.mcp.expect("its own MCP servers");
     assert!(!mcp.user_servers && mcp.servers.is_empty(), "{mcp:?}");
     // The prompt says so.
-    let prompt = node.launches.lock().unwrap()[0].prompt.clone();
-    assert!(prompt.contains("no shell, file or web tools"), "{prompt}");
+    assert!(
+        input.prompt.contains("no shell, file or web tools"),
+        "{}",
+        input.prompt
+    );
 }
 
 #[tokio::test]
@@ -735,6 +778,16 @@ async fn a_refresh_of_more_changes_than_a_line_lists_still_posts_and_undo_all_ta
         .await
         .unwrap();
     assert!(!memory_md(&hub, &r).contains("- Rule 0.\n"));
+    // The line counts it undone, so the app keeps Undo all for the rest, which it doesn't list.
+    let line = &refreshed_lines(&hub, &r)[0];
+    assert_eq!(
+        line.memory_refreshed
+            .as_ref()
+            .unwrap()
+            .undone
+            .map(|u| u.get()),
+        Some(1)
+    );
     tools
         .call(&hub, &person(), "memory_undo", undo(None))
         .await
@@ -744,4 +797,5 @@ async fn a_refresh_of_more_changes_than_a_line_lists_still_posts_and_undo_all_ta
     let refreshed = line.memory_refreshed.as_ref().unwrap();
     assert!(refreshed.items.iter().all(|i| i.undone == Some(true)));
     assert_eq!(refreshed.total.map(|t| t.get()), Some(n as i64));
+    assert_eq!(refreshed.undone.map(|u| u.get()), Some(n as i64));
 }

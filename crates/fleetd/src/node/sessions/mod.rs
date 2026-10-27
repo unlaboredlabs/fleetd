@@ -1589,6 +1589,7 @@ impl SessionService {
                 pid_start: None,
                 allowed_tools: launch.allowed_tools.clone(),
                 disallowed_tools: launch.disallowed_tools.clone(),
+                allowed_only: launch.allowed_only,
                 role: launch.role,
                 order_id: launch.order_id.as_ref().map(|o| o.to_string()),
                 setup_pending: setup.is_some(),
@@ -2176,6 +2177,7 @@ impl SessionService {
             helper_model,
             runtime_mode: row.summary.runtime_mode,
             allowed_tools: row.local.allowed_tools.clone(),
+            allowed_only: row.local.allowed_only,
             disallowed_tools: ALWAYS_DISALLOWED
                 .iter()
                 .map(|t| (*t).to_owned())
@@ -2626,7 +2628,12 @@ impl SessionService {
         run_id: &Option<String>,
     ) {
         let decision = self.update(id, |c| {
-            let decision = state::auto_answer(c.row.summary.runtime_mode, &tool_name, &input);
+            let decision = state::auto_answer(
+                c.row.summary.runtime_mode,
+                c.row.local.allowed_only,
+                &tool_name,
+                &input,
+            );
             let at = c.at.clone();
             c.put_item(ThreadItem {
                 id: NonEmpty::unchecked(permission_item_id(&request_id)),

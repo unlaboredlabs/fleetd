@@ -537,10 +537,10 @@ async fn a_launch_carries_them_and_a_send_only_a_change() {
     assert_eq!((launch.mcp_role, launch.mcp), (None, None));
 }
 
-/// A memory refresh's launch: claude's own tools denied, fleetd's MCP server alone, and no send ever brings it the
+/// A memory refresh's launch: its memory tools only, fleetd's MCP server alone, and no send ever brings it the
 /// project's servers.
 #[tokio::test]
-async fn a_refresh_launch_denies_the_runtime_tools_and_keeps_its_own_servers() {
+async fn a_refresh_launch_allows_only_the_memory_tools_and_keeps_its_own_servers() {
     let (hub, _home) = hub();
     let mut calls = node(&hub).await;
     let plain = json!({ "kind": "plain", "name": "Authorization", "value": "public" });
@@ -569,13 +569,12 @@ async fn a_refresh_launch_denies_the_runtime_tools_and_keeps_its_own_servers() {
         .await
         .unwrap();
     let launch = launched(&mut calls).await;
-    for tool in ["Bash", "Read", "Edit", "Write", "WebFetch"] {
-        assert!(
-            launch.disallowed_tools.iter().any(|t| t == tool),
-            "{tool}: {:?}",
-            launch.disallowed_tools
-        );
-    }
+    // The memory tools and nothing else: the node refuses the rest.
+    assert!(launch.allowed_only);
+    assert_eq!(
+        launch.allowed_tools,
+        crate::hub::memory::refresh::allowed_tools()
+    );
     let mcp = launch.mcp.unwrap();
     assert!(!mcp.user_servers && mcp.servers.is_empty(), "{mcp:?}");
     let r = ThreadRef {

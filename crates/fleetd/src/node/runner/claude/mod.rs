@@ -193,6 +193,18 @@ pub fn disallowed_tools<'a>(extra: impl IntoIterator<Item = &'a String>) -> Vec<
     tools
 }
 
+/// The runtime's own tools among `rules` (`Read` of `Read(./notes/**)`), each once: no MCP server's.
+pub fn runtime_tools(rules: &[String]) -> Vec<String> {
+    let mut tools: Vec<String> = Vec::new();
+    for rule in rules {
+        let name = rule.split('(').next().unwrap_or_default().trim();
+        if !name.is_empty() && !name.starts_with("mcp__") && !tools.iter().any(|t| t == name) {
+            tools.push(name.to_owned());
+        }
+    }
+    tools
+}
+
 /// Claude's auto memory is off in every claude fleetd starts, whatever the user's settings say: fleetd owns an
 /// agent's context (briefs, decisions, instructions), and a memory claude keeps per cwd would carry stale, unreviewed
 /// notes from one agent's worktree to the next. Both knobs, since either alone has been ignored by some claude
@@ -362,12 +374,19 @@ impl ClaudeRunner {
             "stdio",
             "--permission-mode",
             match spec.runtime_mode {
+                _ if spec.allowed_only => "manual",
                 RuntimeMode::FullAccess => "bypassPermissions",
                 RuntimeMode::ApprovalRequired => "manual",
             },
         ]
         .map(str::to_owned)
         .into();
+        // Held to its allowed tools: claude loads only the runtime tools named there, none at all with `""`. MCP
+        // tools aren't among them; they ask, and the node refuses.
+        if spec.allowed_only {
+            args.push("--tools".into());
+            args.push(runtime_tools(&spec.allowed_tools).join(","));
+        }
         // One argv element per rule: a rule such as `Bash(git commit -m "a, b")` survives no comma joining.
         if !spec.allowed_tools.is_empty() {
             args.push("--allowedTools".into());
@@ -580,6 +599,7 @@ mod tests {
                 "Bash(npm test:*)".into(),
                 r#"Bash(git commit -m "a, b")"#.into(),
             ],
+            allowed_only: false,
             disallowed_tools: vec!["Task".into(), "WebFetch".into()],
             mcp_config: None,
             strict_mcp: false,
@@ -635,6 +655,47 @@ mod tests {
                 "--mcp-config /n/mcp.json --strict-mcp-config --settings /n/settings.json "
             )
         );
+    }
+
+    #[test]
+    fn a_session_held_to_its_allowed_tools_loads_only_those_and_asks_for_the_rest() {
+        let runner = ClaudeRunner::new("claude".into());
+        let memory = [
+            "mcp__fleetd__memory_read",
+            "mcp__fleetd__remember",
+            "mcp__fleetd__forget",
+        ]
+        .map(String::from)
+        .to_vec();
+        // Even under full access: bypassPermissions would run any tool unasked.
+        let held = SessionSpec {
+            runtime_mode: RuntimeMode::FullAccess,
+            allowed_tools: memory.clone(),
+            allowed_only: true,
+            ..spec()
+        };
+        let args = runner.args(&held);
+        let joined = args.join(" ");
+        assert!(
+            joined.contains(
+                "--permission-mode manual --tools  --allowedTools mcp__fleetd__memory_read mcp__fleetd__remember \
+                 mcp__fleetd__forget --disallowedTools"
+            ),
+            "{joined}"
+        );
+        // `--tools ""`: no runtime tool at all, as one empty argument.
+        let at = args.iter().position(|a| a == "--tools").unwrap();
+        assert_eq!(args[at + 1], "");
+        // A runtime tool it is allowed is the only one it loads.
+        let reads = SessionSpec {
+            allowed_tools: [memory, vec!["Read(//memory/**)".into(), "Read".into()]].concat(),
+            ..held
+        };
+        let args = runner.args(&reads);
+        let at = args.iter().position(|a| a == "--tools").unwrap();
+        assert_eq!(args[at + 1], "Read");
+        // Any other session loads the runtime's tools as before.
+        assert!(!runner.args(&spec()).iter().any(|a| a == "--tools"));
     }
 
     /// A Bash deny rule as claude matches it against one part of a command, after it split off the other parts and

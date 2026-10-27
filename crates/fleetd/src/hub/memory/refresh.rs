@@ -1,9 +1,10 @@
 //! The nightly memory refresh: once a night, at `policy.memory_refresh_at` (04:00 by default) in the person's zone
 //! (`policy.tz`, else the hub machine's), each project with the refresh on (`project_settings.memory_refresh`) and
 //! chat or order activity since its last run gets a fresh lead session of its own. It reads the chat since the last
-//! run, the decisions and the memory. It starts with none of the runtime's own tools (no shell, files or web,
-//! [`RUNTIME_TOOLS`]) and none of the person's MCP servers, and the hub takes only `memory_read`, `remember` and
-//! `forget` from it (`tasks::policy`): project memory freely, `user.md` add only. It opens no order, and its replies
+//! run, the decisions and the memory. It may use `memory_read`, `remember` and `forget` and nothing else
+//! ([`allowed_tools`]): it starts with none of the runtime's own tools and none of the person's MCP servers, its node
+//! refuses any other tool (so it starts only on a node that lists `CAP_ALLOWED_ONLY`), and the hub takes only those
+//! calls from it (`tasks::policy`): project memory freely, `user.md` add only. It opens no order, and its replies
 //! reach no chat: only the lead's own thread is mirrored there. Its changes are kept here as it makes them and posted
 //! at its end as one "Memory refreshed: +a ~b −c" line with Undo; a night that changed nothing posts nothing. A
 //! session that fails, or still runs after [`RUN_LIMIT_MS`], is stopped.
@@ -20,6 +21,7 @@ use fleetd_contracts::ledger::{Decision, LeadState};
 use fleetd_contracts::mcp_servers::{McpAgentRole, McpSessionConfig};
 use fleetd_contracts::memory::{MemoryRefreshed, REFRESHED_LISTED, RememberedItem};
 use fleetd_contracts::model::RuntimeMode;
+use fleetd_contracts::node_link::CAP_ALLOWED_ONLY;
 use fleetd_contracts::prim::{Count, List};
 use fleetd_contracts::sessions::SessionRole;
 use rusqlite::{OptionalExtension, params};
@@ -42,6 +44,8 @@ const WINDOW_MS: i64 = 3 * 3_600_000;
 /// A refresh session still going after this long is stopped, and finished as it stands.
 pub const RUN_LIMIT_MS: i64 = 3_600_000;
 const TICK: Duration = Duration::from_secs(60);
+/// The longest a zone's clocks have jumped forward at once, with room to spare.
+const GAP_MINUTES: i64 = 180;
 /// The chat a refresh reads: newest kept, each message cut.
 const CHAT_CHARS: usize = 40_000;
 const MESSAGE_CHARS: usize = 2_000;
@@ -54,36 +58,19 @@ const END_EVENTS: [HubEventType; 4] = [
     HubEventType::ThreadUsageLimited,
 ];
 
-/// The runtime's own tools a refresh session never gets, on top of those no fleetd session gets: its shell, files,
-/// web and skills (claude's names, past and present). It keeps `ToolSearch`, which loads fleetd's deferred tools.
-pub const RUNTIME_TOOLS: &[&str] = &[
-    "Bash",
-    "BashOutput",
-    "KillShell",
-    "KillBash",
-    "Monitor",
-    "PowerShell",
-    "Read",
-    "Write",
-    "Edit",
-    "MultiEdit",
-    "NotebookEdit",
-    "NotebookRead",
-    "Glob",
-    "Grep",
-    "LS",
-    "LSP",
-    "WebFetch",
-    "WebSearch",
-    "Skill",
-    "SlashCommand",
-    "TodoWrite",
-    "DesignSync",
-    "ReportFindings",
-];
+/// The tools a refresh session may use, and nothing else: fleetd's memory calls, the ones the hub takes from it
+/// (`tasks::policy::MEMORY_REFRESH_OPS`). No runtime tool of its own (no shell, files, web or skills), no other
+/// fleetd tool, no MCP server's: claude asks for any of those, and the node refuses.
+pub fn allowed_tools() -> Vec<String> {
+    crate::hub::tasks::policy::MEMORY_REFRESH_OPS
+        .iter()
+        .map(|op| format!("mcp__{}__{op}", crate::cli::agent_mcp::SERVER_NAME))
+        .collect()
+}
 
-/// How a refresh session starts: the lead's fleetd tools (which the hub holds to the memory ones), no runtime tool
-/// of its own, and fleetd's MCP server alone: none a person gave the leads or set up in their claude.
+/// How a refresh session starts: the lead's fleetd tools (which the hub holds to the memory ones), only
+/// [`allowed_tools`] of them usable, and fleetd's MCP server alone: none a person gave the leads or set up in their
+/// claude.
 pub fn launch_options() -> LaunchOptions {
     LaunchOptions {
         role: SessionRole::Lead,
@@ -92,7 +79,7 @@ pub fn launch_options() -> LaunchOptions {
             user_servers: false,
             servers: Vec::new(),
         }),
-        deny_tools: RUNTIME_TOOLS.iter().map(|t| (*t).to_owned()).collect(),
+        only_tools: Some(allowed_tools()),
         ..Default::default()
     }
 }
@@ -288,16 +275,19 @@ pub fn put_line_items(
     })
 }
 
-/// What a line lists of `items`: the first [`REFRESHED_LISTED`], and how many there are when that is not all.
+/// What a line lists of `items`: the first [`REFRESHED_LISTED`], how many there are when that is not all, and how
+/// many are undone.
 pub fn listed(items: &[RememberedItem]) -> MemoryRefreshed {
+    let undone = items.iter().filter(|i| i.undone == Some(true)).count();
     MemoryRefreshed {
         items: List::unchecked(items.iter().take(REFRESHED_LISTED).cloned().collect()),
         total: (items.len() > REFRESHED_LISTED).then(|| Count::unchecked(items.len() as i64)),
+        undone: (undone > 0).then(|| Count::unchecked(undone as i64)),
     }
 }
 
 /// The hour of the night due now, as epoch ms: today's (or yesterday's) `at` in `tz`, when now is at most
-/// [`WINDOW_MS`] past it.
+/// [`WINDOW_MS`] past it. An `at` the clocks skip that night (spring forward) is the first minute after the gap.
 pub fn night_due(now_ms: i64, tz: Tz, at: NaiveTime) -> Option<i64> {
     let now = tz.timestamp_millis_opt(now_ms).single()?;
     let today = now.date_naive();
@@ -305,9 +295,12 @@ pub fn night_due(now_ms: i64, tz: Tz, at: NaiveTime) -> Option<i64> {
         .into_iter()
         .flatten()
         .filter_map(|day| {
-            tz.from_local_datetime(&day.and_time(at))
-                .earliest()
-                .map(|t| t.timestamp_millis())
+            let local = day.and_time(at);
+            (0..=GAP_MINUTES).find_map(|m| {
+                tz.from_local_datetime(&(local + chrono::Duration::minutes(m)))
+                    .earliest()
+                    .map(|t| t.timestamp_millis())
+            })
         })
         .find(|&ms| ms <= now_ms && now_ms - ms < WINDOW_MS)
 }
@@ -390,9 +383,13 @@ pub async fn tick(hub: &Arc<Hub>, launcher: &dyn Launcher) -> Result<(), StoreEr
             put(&hub.db, &r, &run)?;
             continue;
         }
-        // A lead mid-turn or a login out of usage: tried again on the next pass, within the night's window.
+        // A lead mid-turn, a login out of usage, or a node that can't hold the session to its memory tools (one
+        // from before `allowed_only`, or none linked): tried again on the next pass, within the night's window.
         let busy = matches!(hub.leads.leads.get(&r), Ok(Some(l)) if l.state == LeadState::Working);
-        if busy || hub.usage.gate(r.machine_id.as_str()).is_some() {
+        if busy
+            || hub.usage.gate(r.machine_id.as_str()).is_some()
+            || !hub.link.node_can(&r.machine_id, CAP_ALLOWED_ONLY)
+        {
             continue;
         }
         start(hub, launcher, &r, &project.title, run, night).await?;
@@ -451,7 +448,8 @@ async fn start(
         project_id: r.project_id.clone(),
         prompt,
         profile: TaskProfile::High,
-        runtime_mode: RuntimeMode::FullAccess,
+        // Its node asks for any tool not allowed, and refuses it.
+        runtime_mode: RuntimeMode::ApprovalRequired,
         title: Some(
             format!("fleetd memory refresh: {title}")
                 .chars()
