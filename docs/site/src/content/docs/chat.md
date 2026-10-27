@@ -116,8 +116,9 @@ can answer it. To change how it talks, edit the **Voice** prompt (`lead.voice`) 
 
 It stays quiet on routine progress: a rebase, a review passing, CI starting, a PR queued or an agent resuming posts
 nothing (the panel's Activity tab shows those). It writes when you must act or decide, when something you asked about
-lands, fails or is blocked, when a check on main stays red, and to answer you. Landings come batched, one short line at
-most about every hour. To change this, edit the **Lead** prompt (`lead.start`).
+lands, fails or is blocked, when a check on main stays red, and to answer you. What lands together comes in one short
+line. A merge partway through your request stays silent; the lead always writes when the request finishes. To change this, edit the **Lead** prompt
+(`lead.start`).
 
 ## Steer while it works {#steer}
 

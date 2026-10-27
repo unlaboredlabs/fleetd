@@ -430,6 +430,8 @@ fn the_lead_speaks_only_when_it_matters_in_plain_words() {
         "goes red and stays red",
         "to answer them",
         "never one message per PR",
+        "Always post when an order the human asked for finishes",
+        "still open stays silent",
     ] {
         assert!(when.contains(news), "speaks for {news}? {when}");
     }

@@ -144,7 +144,7 @@ pub const ENTRIES: &[Entry] = &[
             ),
             (
                 "batch-landings",
-                "batches landings into one short line at most about every hour, never one message per PR",
+                "batches what lands in a wake into one short line, never one message per PR; always posts when an order the human asked for finishes",
                 r"Batch landings into one short line",
                 Prompt
             ),
