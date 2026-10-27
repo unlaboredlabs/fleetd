@@ -2,7 +2,7 @@
 //! directory. A repo's files are a node checkout, a node "project" like any other, on the project's machine: adding
 //! one by path or by clone goes the way project_add does, then records the checkout as a repo of the project. While a
 //! project holds it, the checkout doesn't show as a project of its own; one that was a project with its own chat and
-//! history is archived read-only (`repos::holder`). Its tasks end when the repo is removed (`leads::removals`); nothing
+//! history is archived read-only (`repos::holder`): its lead is stopped, and refused every start, wake and spawn. Its tasks end when the repo is removed (`leads::removals`); nothing
 //! on disk is deleted.
 use std::sync::Arc;
 
@@ -45,13 +45,21 @@ fn target(
     let Some(project) = hub.store.project_get(&r)? else {
         return Err(unknown_project(&r));
     };
-    if role != Role::Read
-        && let Some((holder, repo)) = crate::hub::repos::holder(&hub.db, &r)?
-    {
-        let (message, fix) = crate::hub::repos::archived_note(&holder, &repo);
-        return Err(error(ErrorCode::Invalid, message, fix));
+    if role != Role::Read {
+        not_archived(hub, &r)?;
     }
     Ok((r, project))
+}
+
+/// Refused for a project archived as another project's repo checkout.
+fn not_archived(hub: &Hub, r: &ProjectRef) -> Result<(), ToolError> {
+    match crate::hub::repos::holder(&hub.db, r)? {
+        Some((holder, repo)) => {
+            let (message, fix) = crate::hub::repos::archived_note(&holder, &repo);
+            Err(error(ErrorCode::Invalid, message, fix))
+        }
+        None => Ok(()),
+    }
 }
 
 /// The checkouts of the project's repos other than its own directory, on its machine: where its environment also
@@ -207,6 +215,11 @@ pub(super) async fn attach_checkout(
     add_id: Option<AddId>,
 ) -> Result<(ProjectRepo, Option<ProjectRef>), ToolError> {
     let m = &r.machine_id;
+    // Again, for a clone that ends after the project was removed or archived.
+    if hub.store.project_get(r)?.is_none() {
+        return Err(unknown_project(r));
+    }
+    not_archived(hub, r)?;
     let path = path.strip_suffix('/').unwrap_or(path);
     let existing = hub.executors.project_at(m, path);
     let created = existing.is_none();
@@ -277,6 +290,18 @@ pub(super) async fn attach_checkout(
     }
     let mut repo = hub.repos.attach(r, name, &checkout, path)?;
     repo.path.get_or_insert_with(|| path.to_owned());
+    // Archived from here: its lead is refused every start and wake, and the session it has now is stopped.
+    if let Some(old) = &archived
+        && let Some(lead) = hub.leads.records.lead_get(old)?
+    {
+        let thread = fleetd_contracts::ids::ThreadRef {
+            machine_id: m.clone(),
+            thread_id: lead.thread_id,
+        };
+        if let Err(error) = hub.executors.stop(&thread, false).await {
+            tracing::warn!(%error, "the archived project's lead was not stopped");
+        }
+    }
     if hub.link.node_can(m, CAP_PROJECT_ENV_COPY)
         && let Err(error) = hub
             .executors

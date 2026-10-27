@@ -356,11 +356,23 @@ fn state(hub: &Hub, task: &Task) -> TaskState {
 }
 
 /// A directory that is a project of its own is archived as it is attached: it leaves the projects list, keeps its
-/// history, and takes no message and no repo; it is refused while its agents run.
+/// history, its lead's session stops, and its lead, chat and spawns are refused from then on, as is a repo for it; it is
+/// refused while its agents run.
 #[tokio::test]
 async fn attaching_a_project_of_its_own_archives_it_read_only() {
     let (hub, _home) = hub();
-    let _calls = node(&hub).await;
+    let mut calls = node(&hub).await;
+    // shop has a lead, running in its session on the node.
+    hub.leads
+        .records
+        .lead_put(&crate::hub::leads::records::StoredLead {
+            project_ref: project("shop"),
+            thread_id: fleetd_contracts::ids::ThreadId::unchecked("shop-lead"),
+            started_at: AT.to_owned().into(),
+            last_wake_at: None,
+            session_generation: 0,
+        })
+        .unwrap();
     let busy = idle(&hub, "shop", None);
     let add = json!({ "machineId": "devbox", "projectId": "app", "path": "/work/shop" });
     assert!(
@@ -384,11 +396,38 @@ async fn attaching_a_project_of_its_own_archives_it_read_only() {
     assert_eq!(out["repo"]["name"], "shop");
     assert_eq!(out["repo"]["checkout"]["projectId"], "shop");
     assert_eq!(shown(&hub), ["app"]);
+    // Its lead's session is stopped, and its lead is refused from now on, record and all.
+    assert!(drain(&mut calls).iter().any(
+        |c| matches!(c, SessionCall::Stop { session_id, .. } if session_id.as_str() == "shop-lead")
+    ));
+    assert!(
+        hub.leads
+            .records
+            .lead_get(&project("shop"))
+            .unwrap()
+            .is_some()
+    );
     // Its own record stays readable.
     assert!(hub.store.project_get(&project("shop")).unwrap().is_some());
 
     let message = json!({ "projectRef": { "machineId": "devbox", "projectId": "shop" }, "text": "hello",
         "clientRequestId": "c1" });
+    let spawn: crate::hub::tasks::SpawnInput = serde_json::from_value(json!({
+        "workstreamId": "W1", "title": "write it", "kind": "write", "prompt": "do it", "serves": "done:0",
+    }))
+    .unwrap();
+    let as_lead = crate::hub::tasks::TaskCaller {
+        project_ref: project("shop"),
+        by: "lead:devbox/shop".into(),
+    };
+    assert!(
+        hub.tasks
+            .spawn(&as_lead, spawn)
+            .await
+            .unwrap_err()
+            .message
+            .contains("archived")
+    );
     assert!(refused(call(&hub, "chat_send", message).await).contains("archived"));
     let more = json!({ "machineId": "devbox", "projectId": "shop", "path": "/work/api" });
     assert!(refused(call(&hub, "project_repo_add", more).await).contains("archived"));

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ProjectRepo, ProjectSettings } from "../../../shared/contracts";
-import { addInput, applied, checkoutPath, isOwn } from "./repoModel";
+import { addInput, applied, checkoutPath, isOwn, sourceProblem } from "./repoModel";
 
 const project: ProjectSettings = {
   machineId: "devbox",
@@ -27,6 +27,13 @@ describe("Settings → Projects → Repos", () => {
     expect(addInput(project, "acme/web", "front")).toEqual({ machineId: "devbox", projectId: "p1", name: "front", url: "acme/web" });
     expect(addInput(project, "  ", "")).toBeNull();
     expect(addInput(project, "acme/web", "Front End")).toBeNull();
+    // A path relative to a home or working directory isn't taken for a GitHub repo: it asks for the full path.
+    for (const relative of ["~/src/api", "./api", "../api", "~"]) {
+      expect(addInput(project, relative, ""), relative).toBeNull();
+      expect(sourceProblem(relative), relative).toContain("full path");
+    }
+    expect(sourceProblem("acme/web")).toBeNull();
+    expect(sourceProblem("/home/w/src/api")).toBeNull();
   });
 
   it("finds a repo's checkout by the hub's path first, and tells the project's own directory", () => {

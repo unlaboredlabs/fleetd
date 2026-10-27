@@ -9,7 +9,7 @@ import { useData, useToolQuery } from "../../src/data/react";
 import { repoName } from "../factory/model";
 import { errorText, useHubCall, useLive } from "./hub";
 import { Setting, useProjects } from "./parts";
-import { addInput, applied, checkoutPath, isOwn, type Applied } from "./repoModel";
+import { addInput, applied, checkoutPath, isOwn, sourceProblem, type Applied } from "./repoModel";
 import s from "./settings.module.css";
 
 type Echo = { ok: boolean; text: string };
@@ -63,6 +63,7 @@ function AddRepo({ settings, onDone }: { settings: Settings; onDone: (echo: Echo
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const input = addInput(settings, source, name);
+  const problem = sourceProblem(source);
   const add = () => {
     if (input === null) return;
     setBusy(true);
@@ -80,13 +81,20 @@ function AddRepo({ settings, onDone }: { settings: Settings; onDone: (echo: Echo
     );
   };
   return (
-    <div className={s.inline}>
-      <Input aria-label="Repo to add" placeholder={`A checkout on ${machine}, or a GitHub URL`} value={source} onChange={(e) => setSource(e.target.value)} />
-      <Input aria-label="Repo name" placeholder="Name (optional)" value={name} maxLength={32} onChange={(e) => setName(e.target.value)} />
-      <Button disabled={!live || busy || input === null} onClick={add}>
-        {busy ? "Adding…" : "Add repo"}
-      </Button>
-    </div>
+    <>
+      <div className={s.inline}>
+        <Input aria-label="Repo to add" placeholder={`A checkout on ${machine}, or a GitHub URL`} value={source} onChange={(e) => setSource(e.target.value)} />
+        <Input aria-label="Repo name" placeholder="Name (optional)" value={name} maxLength={32} onChange={(e) => setName(e.target.value)} />
+        <Button disabled={!live || busy || input === null} onClick={add}>
+          {busy ? "Adding…" : "Add repo"}
+        </Button>
+      </div>
+      {problem ? (
+        <Text size="xs" tone="quiet">
+          {problem}
+        </Text>
+      ) : null}
+    </>
   );
 }
 

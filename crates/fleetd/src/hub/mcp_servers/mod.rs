@@ -167,8 +167,9 @@ impl McpServerStore<'_> {
 
     /// What a session of the project gets: its enabled servers, and the enabled global ones it has no server of the
     /// same name for (a project's server replaces a global one even while it is off, which turns that one off there).
-    /// A session in a repo checkout another project holds gets that project's servers too, over the checkout's own
-    /// (W79). A server none of whose roles is on, or whose secrets aren't all on the project's machine, is left out.
+    /// A session in a repo checkout another project holds gets that project's servers too, over the checkout's own;
+    /// with several, the one that added it first wins a name (W79). A server none of whose roles is on, or whose
+    /// secrets aren't all on the project's machine, is left out.
     pub fn session_config(&self, r: &ProjectRef) -> Result<McpSessionConfig, StoreError> {
         let holders = self
             .db
@@ -178,7 +179,8 @@ impl McpServerStore<'_> {
             .into_iter()
             .map(|s| (s.name.to_string(), s))
             .collect();
-        for project in std::iter::once(r).chain(holders.iter().map(|(p, _)| p)) {
+        // Later ones replace earlier ones: the checkout's own, then its holders newest first, the oldest winning.
+        for project in std::iter::once(r).chain(holders.iter().rev().map(|(p, _)| p)) {
             let servers = self.list(&McpScope::Project {
                 machine_id: project.machine_id.clone(),
                 project_id: project.project_id.clone(),

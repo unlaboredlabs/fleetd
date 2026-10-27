@@ -138,8 +138,10 @@ add|list|remove`, and Add repo / Remove in Settings › Projects › Repos.
   for waiting orders) leaves out a node project that another project holds as a repo. `projects_list` keeps every node
   project, for the hub's own bookkeeping: pruning, binding, finding a session's project.
 - **Archiving** is derived, not stored. A checkout that was a project of its own is archived while another project holds
-  it: its lead doesn't start, and `chat_send`, `project_repo_add` and `project_repo_remove` refuse it. Its records stay.
-  Attaching refuses while its agents run. A project that holds repos of its own can't be attached.
+  it. Attaching stops its lead's session. From then on its lead is refused at every start, resume and wake
+  (`leads::lead::refuse_archived`), its spawns are refused, and `chat_send`, `project_repo_add` and
+  `project_repo_remove` refuse it. Its records stay. Attaching refuses while its agents run. A project that holds repos
+  of its own can't be attached.
 - **Remove** deletes the row. `leads::removals` then cancels every live task whose `repoId` no row has. It runs again
   at hub start and after each `project.removed`, so losing a checkout's node project ends only that repo's tasks. The
   checkout stays on disk. It is a project of its own again once no project holds it. The own repo can't be removed.
@@ -147,7 +149,11 @@ add|list|remove`, and Add repo / Remove in Settings › Projects › Repos.
 - **Env, MCP servers and skills reach every checkout.** `project_env_set` writes the project's checkouts too. A new
   checkout gets the project's variables through the node's `project_env_copy` (`CAP_PROJECT_ENV_COPY`), which copies
   secrets on the node, never through the hub. A session in a checkout gets the MCP servers and hub-kept skills of the
-  projects holding it, ahead of its own (`mcp_servers::session_config`, `skills::bundles_in`).
+  projects holding it, ahead of its own (`mcp_servers::session_config`, `skills::bundles_in`). A checkout in several
+  projects is shared as the repo is. Each project's `project_env_set` writes the checkout, so the last write of a
+  name wins. A session there gets every holder's servers and skills: on a name clash, the holder that added the checkout
+  first wins. Access is per machine, so this grants nothing new. Per-project values in
+  one checkout wait for agents per repo (stage 3), which know their task's project.
 - **The lead's first message** lists the repos (`leads::prompt::repos_block`) when the project holds any besides its
   own directory.
 - `ProjectRepo.path` is the checkout's directory, read from the node's row, so a hidden checkout still shows where it
