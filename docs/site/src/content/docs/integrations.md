@@ -46,7 +46,7 @@ more in the card before it runs.
 
 ## Google: Gmail, Calendar and Drive {#google}
 
-Google comes through [xaq](https://github.com/wynn-dev/xaq), a small self-hosted broker that holds your Google sign-in
+Google comes through [xaq](https://www.npmjs.com/package/xaq-cli), a small self-hosted broker that holds your Google sign-in
 and gives the Navi one MCP endpoint and one key. fleetd uses xaq rather than its own Google code for three reasons:
 
 - Gmail's read scopes are restricted, so each person needs their own Google Cloud app. xaq's setup walks you through
@@ -64,7 +64,7 @@ npx xaq-cli
 ```
 
 Open the link it prints. To keep it running, `npx xaq-cli service install`. Its address is `http://127.0.0.1:8425` by
-default. See [xaq's own guide](https://github.com/wynn-dev/xaq#readme) for running it behind a proxy or on another
+default. See [xaq's own guide](https://www.npmjs.com/package/xaq-cli) for running it behind a proxy or on another
 machine.
 
 ### 2. Make your Google Cloud app {#google-cloud}
