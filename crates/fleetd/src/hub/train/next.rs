@@ -327,6 +327,18 @@ impl Train {
         }
     }
 
+    /// How the label is on PR `n`, which `has` it or not, as far as the train knows, putting nothing on.
+    pub(super) fn labelled(&self, repo: &str, n: i64, has: bool) -> Labelled {
+        if !has {
+            return Labelled::Failed;
+        }
+        let at = lock(&self.next_labels.labelled)
+            .get(repo)
+            .and_then(|prs| prs.get(&n).copied())
+            .flatten();
+        at.map_or(Labelled::Before, Labelled::At)
+    }
+
     /// Puts the label on PR `n` unless it `has` it.
     pub(super) async fn label(&self, repo: &str, n: i64, has: bool) -> Labelled {
         if !self.labels_known(repo).await {

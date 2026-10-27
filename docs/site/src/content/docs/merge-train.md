@@ -13,6 +13,11 @@ How fleetd merges pull requests. Only fleetd merges: each writer's PR goes on it
 3. Waits for its [fast set](#fast-set) of checks on that exact commit (see [How long CI may take](#ci-time)).
 4. Posts the `fleetd/train` status and squash-merges it, pinned to that commit.
 
+A PR already on the current base whose own commit already passed its fast set, every check of it reported, merges
+without step 2 and without the `fleetd:next` label: its CI already ran on exactly the tree that lands, so the train
+doesn't run it again. A check the label runs that was skipped on that commit doesn't count as passed (see
+[CI runners are scarce](#scarce-runners)), so such a PR still takes the usual path.
+
 A conflict or red CI goes back to the agent that wrote the PR; for red CI, with the failing checks. A conflict only in
 generated files is [regenerated](#regenerate) instead.
 
@@ -166,6 +171,22 @@ A member counts as merged only while its head is still the one the batch was bui
 On every pass, a ready PR the batch left out says why, in its queue entry and in the train's line in the lead's digest:
 for example "not in this batch: its own head's `lint` failed", "… still running", or "the batch is full (8 PRs)".
 
+### Batches in CI at once {#pipeline}
+
+While a batch is in CI, PRs that become ready don't wait for it. The train builds a second batch on top of the first:
+its branch starts at the first batch's head (`train/1/train/batch` under the branch prefix, so CI that keys on
+`train/batch` treats it the same) and merges the new PRs into it. Its PR holds every PR of both batches, and its CI
+starts right away.
+
+| If | The train |
+|---|---|
+| Both batches pass | Lands the second batch's PR alone, as one squash of all their PRs, on exactly the tree its CI passed. The first batch's PR closes unmerged. |
+| The first batch fails | Drops the second batch. Its PRs go back in line for a new batch on the base, and the first batch's PRs each go alone. |
+| The first passes and the second fails | Lands the first batch. The second batch's own PRs each go alone. |
+| The second is still in CI when the first passes | Waits at most as long as the first batch's CI took, then lands the first batch without it. The second batch's PRs go back in line. |
+
+The train keeps at most two batches in CI at once.
+
 ## Generated files {#regenerate}
 
 Built files (a docs site, generated types, reference pages) conflict on almost every rebase. A repo that commits
@@ -309,3 +330,5 @@ Batches only save waiting.
 - The batch's fast set must pass, and it always includes the checks the base requires.
 - `fleetd/train` is posted only on a commit whose CI passed.
 - GitHub's rules on the base decide every merge.
+- What lands is always a tree CI passed on: a batch on top of another lands only as itself, never stacked onto a squash
+  it wasn't tested with.
