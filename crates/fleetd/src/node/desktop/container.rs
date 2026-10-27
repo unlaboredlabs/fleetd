@@ -149,9 +149,8 @@ impl Runtime {
             .spawn()
             .map_err(|e| format!("cannot run {}: {e}", self.bin.display()))?;
         if let Some(mut stdin) = child.stdin.take() {
-            stdin
-                .write_all(DOCKERFILE.as_bytes())
-                .map_err(|e| e.to_string())?;
+            // A build that stops reading has failed or is failing (a broken pipe): its status and log say why.
+            let _ = stdin.write_all(DOCKERFILE.as_bytes());
         }
         let status = child.wait().map_err(|e| e.to_string())?;
         let _ = std::fs::remove_dir_all(&context);

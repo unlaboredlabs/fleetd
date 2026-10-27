@@ -1525,6 +1525,29 @@ export type DecisionsSearchOutput = {
 /** How a delivered steer was taken in. */
 export type DeliveredHow = "turn" | "boundary" | "stopped" | "joined";
 
+/**
+ * Where a desktop session's apps run: in a fresh container of the node's pinned image (docker or podman), or as the
+ * node's user on an Xvfb display of their own with a fresh home directory.
+ */
+export type KnownDesktopBackend = "container" | "xvfb";
+/** KnownDesktopBackend, or a value from a newer hub. */
+export type DesktopBackend = KnownDesktopBackend | (string & {});
+
+export type DesktopHealth = {
+  /** What sessions run in: a container where the node has docker or podman, else Xvfb. */
+  backend?: DesktopBackend;
+  /** The command a person runs to fix it, when there is one. */
+  fix?: string;
+  /** Plain words: what sessions use, or what is missing. */
+  message: string;
+  state: DesktopState;
+};
+
+/** Where a node's Linux desktop sessions stand, for the doctor. */
+export type KnownDesktopState = "ready" | "preparing" | "unavailable";
+/** KnownDesktopState, or a value from a newer hub. */
+export type DesktopState = KnownDesktopState | (string & {});
+
 /** Changes to show: the files with their hunks, or a PR whose diff the client reads. Exactly one of the two. */
 export type DiffBlock = {
   files?: DiffFile[];
@@ -2805,6 +2828,11 @@ export type NodeLoad = {
   android?: AndroidHealth;
   /** Logical CPUs. */
   cpus: number;
+  /**
+   * Whether the machine can host Linux desktop sessions, and in what; absent where node.json turns them off and
+   * from older nodes.
+   */
+  desktop?: DesktopHealth;
   /** The volume holding the node's worktrees and build cache; absent from older nodes and when it can't be read. */
   disk?: NodeDisk;
   /** Disk to allow per new agent's worktree: node.json's `diskPerAgentGb`, else 5 GB. Absent from older nodes. */
@@ -4235,12 +4263,14 @@ export type SessionHost = KnownSessionHost | (string & {});
 /**
  * What a session drives: a fresh Chrome with an empty profile (`browser`, driven with agent-browser), or a fresh
  * `-read-only` copy of an Android emulator booted from its Quick Boot snapshot (`android`, driven with agent-device at
- * the copy's serial), or a fresh clone of an iOS simulator from the node's settled golden device (`ios`, driven with
- * agent-device at the clone's udid). Every kind shares the session tools, the action log, the video and the hub's
- * storage; a device recording has no `dom` file, and an iOS one's video is `video_mp4`. A node hosts android sessions
- * when it lists the `session_android` capability, and iOS ones when it lists `session_ios`.
+ * the copy's serial), a fresh clone of an iOS simulator from the node's settled golden device (`ios`, driven with
+ * agent-device at the clone's udid), or an X display of its own with a window manager (`linux_desktop`, driven with
+ * the agent's `desktop` tool), in a fresh container or else beside a fresh home directory. Every kind shares the
+ * session tools, the action log, the video and the hub's storage; only a browser recording has a `dom` file, and an
+ * iOS one's video is `video_mp4`. A node hosts android sessions when it lists the `session_android` capability, iOS
+ * ones when it lists `session_ios`, and desktop ones when it lists `session_linux_desktop`.
  */
-export type KnownSessionKind = "browser" | "android" | "ios";
+export type KnownSessionKind = "browser" | "android" | "ios" | "linux_desktop";
 /** KnownSessionKind, or a value from a newer hub. */
 export type SessionKind = KnownSessionKind | (string & {});
 

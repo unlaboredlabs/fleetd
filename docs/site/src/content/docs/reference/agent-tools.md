@@ -72,6 +72,7 @@ Every lead gets these.
 | [`preview_config_propose`](#preview_config_propose) | Propose how Try it runs this project's web app, once you know: setup commands (install), build, a start command that serves on 127.0.0.1:$PORT, the ready path and the lockfiles setup depends on. | A person approves the proposed setting in chat before it is saved. |
 | [`preview_start`](#preview_start) | Start a preview of a PR (or an order's PRs merged together) for the person to try: only when the person asked for it in the message you are answering, never on your own (use preview_suggest for that). | No |
 | [`session_start`](#session_start) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. | No |
+| [`desktop`](#desktop) | Act on your Linux desktop session (session_start kind linux_desktop), with computer-use actions plus launch. | No |
 | [`session_end`](#session_end) | Close your browser session: the browser and its profile are thrown away, and its recording goes to the hub. | No |
 | [`request_takeover`](#request_takeover) | Ask a person to take your browser over, for what only they can do: a captcha, a login confirmation only they can give, a judgement call. | No |
 | [`fill_credential`](#fill_credential) | Fill a login field of your browser session from 1Password without seeing the value: ref is its secret reference (op://&lt;vault>/&lt;item>/&lt;field>, ?attribute=otp for a one-time code), target the field's CSS selector. | No |
@@ -761,11 +762,11 @@ Start a preview of a PR (or an order's PRs merged together) for the person to tr
 
 ### session_start
 
-Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. It is recorded (video, the page after each step, a line per agent-browser command) for the person to replay. Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no browser of your own. purpose: one line on what for. kind android instead opens a fresh Android emulator (Android 15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or --platform. kind ios opens a fresh iOS simulator on a Mac the same way: pass no --udid or --platform.
+Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. It is recorded (video, the page after each step, a line per agent-browser command) for the person to replay. Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no browser of your own. purpose: one line on what for. kind android instead opens a fresh Android emulator (Android 15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or --platform. kind ios opens a fresh iOS simulator on a Mac the same way: pass no --udid or --platform. kind linux_desktop opens a fresh Linux desktop (1280x800, a window manager, xterm), driven with the desktop tool.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `kind` | string | no | `android` for an Android emulator, `ios` for an iOS simulator, each driven with agent-device; absent for a browser. One of `browser`, `android`, `ios`. |
+| `kind` | string | no | `android` for an Android emulator, `ios` for an iOS simulator, each driven with agent-device; `linux_desktop` for a Linux desktop, driven with the `desktop` tool; absent for a browser. One of `browser`, `android`, `ios`, `linux_desktop`. |
 | `purpose` | string | yes | What you need the browser for, in one line; the person replaying it sees it. At most 200 characters. |
 
 **Who may call:** a lead, a task's agent, answered by its node, which runs the browser. **Needs a human:** no.
@@ -775,6 +776,35 @@ Open a browser session: a fresh Chrome with an empty profile, only yours, thrown
   "name": "session_start",
   "arguments": {
     "purpose": "Check that signup works on the staging site"
+  }
+}
+```
+
+### desktop
+
+Act on your Linux desktop session (session_start kind linux_desktop), with computer-use actions plus launch. screenshot returns the screen as an image; left_click, right_click, middle_click, double_click, triple_click and mouse_move at coordinate [x, y] in the screenshot's pixels; left_click_drag from start_coordinate to coordinate; type text; key with xdotool key names in text (Return, ctrl+s, alt+F4); scroll with scroll_direction and scroll_amount at coordinate; wait duration seconds; cursor_position; launch: text is a shell command started on the desktop (in your working directory where the desktop can see it). Take a screenshot after acting to see what happened.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `action` | string | yes | One of `screenshot`, `left_click`, `right_click`, `middle_click`, `double_click`, `triple_click`, `mouse_move`, `left_click_drag`, `type`, `key`, `scroll`, `wait`, `cursor_position`, `launch`. |
+| `coordinate` | integer[] | no | `[x, y]`: where to click, move the mouse to, scroll at, or end a drag. At most 2 items. |
+| `duration` | integer | no | `wait`: seconds; absent: 1. 1 to 30. |
+| `scroll_amount` | integer | no | Wheel clicks; absent: 3. 1 to 50. |
+| `scroll_direction` | string | no | One of `up`, `down`, `left`, `right`. |
+| `start_coordinate` | integer[] | no | `[x, y]`: where a `left_click_drag` starts. At most 2 items. |
+| `text` | string | no | `type`: the text. `key`: keys as xdotool names them, `+` between those pressed together (`Return`, `ctrl+s`, `alt+F4`). `launch`: a shell command started on the desktop (`xterm`, `./target/debug/app`). At most 10000 characters. |
+
+**Who may call:** a lead, a task's agent, answered by its node, which runs the browser. **Needs a human:** no.
+
+```json
+{
+  "name": "desktop",
+  "arguments": {
+    "action": "left_click",
+    "coordinate": [
+      640,
+      412
+    ]
   }
 }
 ```
@@ -849,6 +879,7 @@ Every task's agent gets these: implementers, readers, reviewers and QA.
 | [`preview_suggest`](#preview_suggest-task) | Suggest the person try a PR themselves, where a human test clearly matters (a UI change, copy in several languages, a mobile build): one line with a Try it button in the chat and the PR, once per PR. | No |
 | [`preview_config_propose`](#preview_config_propose-task) | Propose how Try it runs this project's web app, once you know: setup commands (install), build, a start command that serves on 127.0.0.1:$PORT, the ready path and the lockfiles setup depends on. | A person approves the proposed setting in chat before it is saved. |
 | [`session_start`](#session_start-task) | Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. | No |
+| [`desktop`](#desktop-task) | Act on your Linux desktop session (session_start kind linux_desktop), with computer-use actions plus launch. | No |
 | [`session_end`](#session_end-task) | Close your browser session: the browser and its profile are thrown away, and its recording goes to the hub. | No |
 | [`request_takeover`](#request_takeover-task) | Ask a person to take your browser over, for what only they can do: a captcha, a login confirmation only they can give, a judgement call. | No |
 | [`fill_credential`](#fill_credential-task) | Fill a login field of your browser session from 1Password without seeing the value: ref is its secret reference (op://&lt;vault>/&lt;item>/&lt;field>, ?attribute=otp for a one-time code), target the field's CSS selector. | No |
@@ -1010,11 +1041,11 @@ Propose how Try it runs this project's web app, once you know: setup commands (i
 
 ### session_start (task)
 
-Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. It is recorded (video, the page after each step, a line per agent-browser command) for the person to replay. Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no browser of your own. purpose: one line on what for. kind android instead opens a fresh Android emulator (Android 15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or --platform. kind ios opens a fresh iOS simulator on a Mac the same way: pass no --udid or --platform.
+Open a browser session: a fresh Chrome with an empty profile, only yours, thrown away at session_end. It is recorded (video, the page after each step, a line per agent-browser command) for the person to replay. Drive it with the agent-browser CLI in Bash, which is already pointed at it: pass no --cdp and launch no browser of your own. purpose: one line on what for. kind android instead opens a fresh Android emulator (Android 15), driven with the agent-device CLI, which is already pointed at it: pass no --serial or --platform. kind ios opens a fresh iOS simulator on a Mac the same way: pass no --udid or --platform. kind linux_desktop opens a fresh Linux desktop (1280x800, a window manager, xterm), driven with the desktop tool.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `kind` | string | no | `android` for an Android emulator, `ios` for an iOS simulator, each driven with agent-device; absent for a browser. One of `browser`, `android`, `ios`. |
+| `kind` | string | no | `android` for an Android emulator, `ios` for an iOS simulator, each driven with agent-device; `linux_desktop` for a Linux desktop, driven with the `desktop` tool; absent for a browser. One of `browser`, `android`, `ios`, `linux_desktop`. |
 | `purpose` | string | yes | What you need the browser for, in one line; the person replaying it sees it. At most 200 characters. |
 
 **Who may call:** a lead, a task's agent, answered by its node, which runs the browser. **Needs a human:** no.
@@ -1024,6 +1055,35 @@ Open a browser session: a fresh Chrome with an empty profile, only yours, thrown
   "name": "session_start",
   "arguments": {
     "purpose": "Check that signup works on the staging site"
+  }
+}
+```
+
+### desktop (task)
+
+Act on your Linux desktop session (session_start kind linux_desktop), with computer-use actions plus launch. screenshot returns the screen as an image; left_click, right_click, middle_click, double_click, triple_click and mouse_move at coordinate [x, y] in the screenshot's pixels; left_click_drag from start_coordinate to coordinate; type text; key with xdotool key names in text (Return, ctrl+s, alt+F4); scroll with scroll_direction and scroll_amount at coordinate; wait duration seconds; cursor_position; launch: text is a shell command started on the desktop (in your working directory where the desktop can see it). Take a screenshot after acting to see what happened.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `action` | string | yes | One of `screenshot`, `left_click`, `right_click`, `middle_click`, `double_click`, `triple_click`, `mouse_move`, `left_click_drag`, `type`, `key`, `scroll`, `wait`, `cursor_position`, `launch`. |
+| `coordinate` | integer[] | no | `[x, y]`: where to click, move the mouse to, scroll at, or end a drag. At most 2 items. |
+| `duration` | integer | no | `wait`: seconds; absent: 1. 1 to 30. |
+| `scroll_amount` | integer | no | Wheel clicks; absent: 3. 1 to 50. |
+| `scroll_direction` | string | no | One of `up`, `down`, `left`, `right`. |
+| `start_coordinate` | integer[] | no | `[x, y]`: where a `left_click_drag` starts. At most 2 items. |
+| `text` | string | no | `type`: the text. `key`: keys as xdotool names them, `+` between those pressed together (`Return`, `ctrl+s`, `alt+F4`). `launch`: a shell command started on the desktop (`xterm`, `./target/debug/app`). At most 10000 characters. |
+
+**Who may call:** a lead, a task's agent, answered by its node, which runs the browser. **Needs a human:** no.
+
+```json
+{
+  "name": "desktop",
+  "arguments": {
+    "action": "left_click",
+    "coordinate": [
+      640,
+      412
+    ]
   }
 }
 ```

@@ -202,7 +202,9 @@ fn cleanup_never_kills_a_process_that_took_a_dead_xvfbs_pid() {
 #[test]
 fn an_image_that_doesnt_build_falls_back_to_xvfb() {
     let home = tempfile::tempdir().unwrap();
-    // A docker that answers, has no image, and can't build one (no network).
+    // A docker that answers, has no image, and can't build one (no network). Its build exits without reading the
+    // Dockerfile, as one that fails at once does: the node's write may meet a closed pipe, and the build's own words
+    // are still the answer. Nothing here needs an Xvfb or a docker on the machine.
     let docker = home.path().join("docker");
     std::fs::write(
         &docker,
@@ -270,6 +272,7 @@ async fn a_session_naming_another_agents_worktree_mounts_only_its_own() {
     let router = Router {
         browser: None,
         devices: None,
+        ios: None,
         desktops: Some(desktops.clone()),
         live: Default::default(),
     };
@@ -330,6 +333,7 @@ async fn a_start_on_a_machine_that_cant_prepare_says_why_at_once() {
     let router = Router {
         browser: None,
         devices: None,
+        ios: None,
         desktops: Some(desktops.clone()),
         live: Default::default(),
     };
@@ -819,6 +823,7 @@ async fn the_first_desktop_start_after_the_node_starts_waits_for_it_to_prepare()
     let router = Router {
         browser: None,
         devices: None,
+        ios: None,
         desktops: Some(desktops.clone()),
         live: Default::default(),
     };
@@ -884,6 +889,7 @@ async fn a_secret_typed_in_a_desktop_hosted_for_another_machine_is_masked_in_its
     let router = Arc::new(Router {
         browser: None,
         devices: None,
+        ios: None,
         desktops: Some(desktops.clone()),
         live: Default::default(),
     });
