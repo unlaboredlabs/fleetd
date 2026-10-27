@@ -3,13 +3,14 @@
 // lead. Undo's time stops while the toast does (the pointer or focus on it, the window in the background). One removal
 // waits at a time: a second sends the first at once, and so does the window closing. Each is kept in localStorage
 // until the hub answers it, so one the app quit before sending goes at the next launch (`sendKept`) instead of the
-// items coming back.
+// items coming back. Only the app's own window sends those: a session's window shares the storage, and starts while
+// the app's removal may still be waiting out its Undo.
 import { useSyncExternalStore } from "react";
 import type { ChecklistGetOutput, ProjectRef, TodoItem } from "../../../shared/contracts";
 import { callKey, type DataLayer } from "../../src/data/queries";
 import { projectKey } from "../../src/data/store";
 import { toast } from "../../ui";
-import type { ProjectKey } from "../shell/routes";
+import { parseHash, type ProjectKey } from "../shell/routes";
 
 /** How long Undo stays: the toast's own time with an action. */
 export const UNDO_MS = 8_000;
@@ -171,8 +172,12 @@ const sendOne = async (layer: DataLayer, kept: Kept) => {
   }
 };
 
-/** At launch: the removals an earlier run kept but never sent (the app quit within their Undo), once connected. */
-export const sendKept = (layer: DataLayer) => {
+/**
+ * At launch: the removals an earlier run kept but never sent (the app quit within their Undo), once connected. In the
+ * app's window only (`hash`, the one it opened on), never a session's.
+ */
+export const sendKept = (layer: DataLayer, hash: string = window.location.hash) => {
+  if (parseHash(hash).id === "session") return;
   const kept = readKept();
   if (kept.length === 0) return;
   const go = () => {
