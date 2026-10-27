@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 // The Checklist tab against a hub that keeps the list in memory: a person deletes an item (its hover button or its
-// right-click menu) and clears the done ones, each gone at once with Undo, and the hub hears only once Undo is gone.
+// right-click menu) and clears the done ones, each gone at once with Undo, and the hub hears only once Undo is gone:
+// never while the pointer is on the toast, and at the next launch if the app quit first.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -10,7 +11,7 @@ import { DataProvider } from "../../src/data/react";
 import { AT, event, live, project, snapshot } from "../../src/data/fixtures.test-util";
 import { UiProvider } from "../../ui";
 import { ChecklistPane } from "./ChecklistPane";
-import { flush } from "./removal";
+import { flush, sendKept, UNDO_MS } from "./removal";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => vi.stubGlobal("fleetd", { platform: "linux", fixture: null }));
@@ -20,6 +21,7 @@ const todo = (id: number, state: TodoItem["state"], text: string): TodoItem => (
 let host: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
+  window.localStorage.clear();
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
@@ -27,14 +29,19 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   host.remove();
+  vi.useRealTimers();
 });
 
 const settle = async () => {
-  for (let i = 0; i < 5; i++) await act(() => new Promise((done) => setTimeout(done, 0)));
+  for (let i = 0; i < 5; i++) await act(() => (vi.isFakeTimers() ? vi.advanceTimersByTimeAsync(0) : new Promise((done) => setTimeout(done, 0))));
+};
+const wait = async (ms: number) => {
+  await act(() => vi.advanceTimersByTimeAsync(ms));
+  await settle();
 };
 
-/** A hub with `items` on storefront's list; checklist_remove takes them off and is kept. */
-async function mount(items: TodoItem[]) {
+/** A hub with `items` on storefront's list; checklist_remove takes them off and is kept. Unconnected with `offline`. */
+async function mount(items: TodoItem[], { offline = false, launch }: { offline?: boolean; launch?: (layer: ReturnType<typeof createDataLayer>) => void } = {}) {
   const hub = { items, removes: [] as ChecklistRemoveInput[] };
   let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
   const api: HubApi = {
@@ -53,24 +60,30 @@ async function mount(items: TodoItem[]) {
     focus: () => Promise.resolve(),
     chat: () => Promise.resolve(),
   };
+  const layer = createDataLayer(api);
+  launch?.(layer);
   act(() => {
     root.render(
       <UiProvider>
-        <DataProvider layer={createDataLayer(api)}>
+        <DataProvider layer={layer}>
           <ChecklistPane project={project} />
         </DataProvider>
       </UiProvider>,
     );
   });
-  act(() => {
-    send(live());
-    send(snapshot(1));
-  });
-  await settle();
+  const connect = async () => {
+    act(() => {
+      send(live());
+      send(snapshot(1));
+    });
+    await settle();
+  };
+  if (offline) return { hub, connect, send: (f: Parameters<typeof send>[0]) => act(() => send(f)) };
+  await connect();
   // Done unfolded, so its rows are on screen.
   const fold = [...host.querySelectorAll("button")].find((b) => b.textContent.startsWith("Done"));
   if (fold?.getAttribute("aria-expanded") === "false") act(() => fold.click());
-  return { hub, send: (f: Parameters<typeof send>[0]) => act(() => send(f)) };
+  return { hub, connect, send: (f: Parameters<typeof send>[0]) => act(() => send(f)) };
 }
 
 const rows = () => [...host.querySelectorAll<HTMLElement>("[data-item]")].map((r) => r.dataset["item"]);
@@ -157,4 +170,56 @@ it("shows no Clear done while nothing is done", async () => {
   await mount([todo(2, "doing", "Dark mode"), todo(3, "todo", "Release notes")]);
   expect(rows()).toEqual(["2", "3"]);
   expect(button("Clear done")).toBeUndefined();
+});
+
+it("holds Undo while the pointer is on its toast, and sends once it leaves and the time left runs out", async () => {
+  const { hub } = await mount(LIST);
+  vi.useFakeTimers();
+  await click("Delete “Release notes”");
+  const toastEl = [...document.querySelectorAll("li")].find((li) => li.textContent.includes("Deleted “Release notes”"));
+  const region = toastEl?.closest("[role='region']");
+  if (toastEl === undefined || region == null) throw new Error("no toast");
+  await wait(UNDO_MS - 2_000);
+  act(() => {
+    toastEl.dispatchEvent(new PointerEvent("pointermove", { bubbles: true }));
+  });
+  // Long past its time, still there under the pointer, and nothing sent.
+  await wait(UNDO_MS * 2);
+  expect(hub.removes).toEqual([]);
+  expect(button("Undo")).toBeDefined();
+  act(() => {
+    region.dispatchEvent(new PointerEvent("pointerleave"));
+  });
+  await wait(1_000);
+  expect(hub.removes).toEqual([]);
+  await wait(1_500);
+  expect(hub.removes).toEqual([{ projectRef: project, ids: [3] }]);
+  expect(rows()).toEqual(["2", "1", "4"]);
+});
+
+it("keeps a removal until the hub has it, so one the app quit within its Undo goes at the next launch", async () => {
+  const stored = () => JSON.parse(window.localStorage.getItem("fleetd.checklistRemovals") ?? "[]") as unknown;
+  const first = await mount(LIST);
+  await click("Delete “Release notes”");
+  expect(stored()).toEqual([{ projectRef: project, ids: [3] }]);
+  // Undone: nothing kept. Sent: kept until the hub answers.
+  await click("Undo");
+  expect(stored()).toEqual([]);
+  await click("Clear done");
+  expect(stored()).toEqual([{ projectRef: project, ids: [1, 4] }]);
+  await undoGone();
+  expect(first.hub.removes).toEqual([{ projectRef: project, ids: [1, 4] }]);
+  expect(stored()).toEqual([]);
+
+  // The app quits within a removal's Undo, as an earlier run left it: the next launch sends it once connected.
+  window.localStorage.setItem("fleetd.checklistRemovals", JSON.stringify([{ projectRef: project, ids: [3] }]));
+  act(() => root.unmount());
+  root = createRoot(host);
+  const next = await mount(LIST, { offline: true, launch: sendKept });
+  await settle();
+  expect(next.hub.removes).toEqual([]);
+  await next.connect();
+  expect(next.hub.removes).toEqual([{ projectRef: project, ids: [3] }]);
+  expect(stored()).toEqual([]);
+  expect(rows()).toEqual(["2", "1", "4"]);
 });
