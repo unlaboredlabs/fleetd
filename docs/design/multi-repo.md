@@ -1,6 +1,6 @@
 # W79 design: projects that hold zero or more repos
 
-Status: design, partly built (stages 1a, 1b and 1c). This records intent when written; the code is the source of truth.
+Status: design, partly built (stages 1a and 1b). This records intent when written; the code is the source of truth.
 Check `git log` for what has landed.
 
 ## The model
