@@ -122,7 +122,7 @@ line near the PR's changes, with an unchanged line between, is no change. The sa
 | What changed | Review |
 | --- | --- |
 | Nothing: the same patch id, or the same changed lines in the same places after a clean rebase | None. The approval carries over, recorded with the head and reviewer it came from. |
-| Only lines next to main's changes: the author resolved conflicts in a rebase | A short review on the medium profile, of just those files: the PR's side, main's side and the resolution. |
+| Only lines next to main's changes: the author resolved conflicts in a rebase | A short review of just those files: the PR's side, main's side and the resolution. |
 | Anything else: new commits, or a changed hunk main never touched | A full review, which starts from what changed. |
 
 An approval carries over only from the last reviewed head, and only when that head has no blocking findings open.

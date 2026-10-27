@@ -2336,13 +2336,7 @@ impl Tasks {
             Err(e) if e.code != ErrorCode::MachineOffline => return Err(e),
             _ => {}
         }
-        let by_gate = caller.by == crate::hub::reviews::REVIEWS_BY;
-        let profile = resolve_profile(
-            input.profile,
-            input.kind,
-            by_gate,
-            self.d.ports.medium_allowed(r),
-        );
+        let profile = resolve_profile(input.profile, input.kind, self.d.ports.medium_allowed(r));
         let repo_id = repo.map(|repo| repo.repo_id);
         let task = Task {
             task_id: TaskId::unchecked("T0"),

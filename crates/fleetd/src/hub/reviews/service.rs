@@ -13,7 +13,7 @@
 //! approved ones, where the base's shifts put them and with no change of the base's next to them (a clean rebase), the
 //! approval carries over and no reviewer runs; when they differ only next to the base's changes (a conflict
 //! resolution), a short review of those files
-//! runs on the medium profile (`review.conflicts`); anything else gets a full review. Each outcome is recorded in
+//! runs (`review.conflicts`); anything else gets a full review. Each outcome is recorded in
 //! `review_rebases`, a carry with the head and reviewer it came from. A head with blocking findings open never carries:
 //! only the last reviewed head counts, and only when it is clean, and a later blocking verdict of the reviewer whose
 //! approval carried blocks the heads it carried to.
@@ -321,8 +321,8 @@ impl Reviews {
             None => None,
         };
         let set = self.db.prompts().current(Some(&change.project_ref));
-        // A conflict resolution gets the short review of just its files, on the medium profile.
-        let (prompt, medium) = match self.rebased(&change.change_id, patch_id) {
+        // A conflict resolution gets the short review of just its files.
+        let prompt = match self.rebased(&change.change_id, patch_id) {
             Some(Rebased {
                 outcome: Rebase::Conflicts(files),
                 from_head,
@@ -336,9 +336,9 @@ impl Reviews {
                     base: &base,
                     files: &files,
                 };
-                (conflicts_prompt(&set, change, &conflicts), true)
+                conflicts_prompt(&set, change, &conflicts)
             }
-            _ => (review_prompt(&set, change, reviewed.as_deref()), false),
+            _ => review_prompt(&set, change, reviewed.as_deref()),
         };
         let spawn = ReviewSpawn {
             project_ref: change.project_ref.clone(),
@@ -347,7 +347,6 @@ impl Reviews {
             title: review_title(pr_title.as_deref(), change.pr_number.get()),
             prompt,
             pr: change.pr_url.to_string(),
-            medium,
         };
         let task = match self.host.spawn_review(spawn).await {
             Ok(task) => task,

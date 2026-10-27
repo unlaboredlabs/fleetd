@@ -1,6 +1,5 @@
 //! W118: a re-review is as big as what changed since the approved head. An unchanged patch keeps its approval and no
-//! reviewer runs; a rebase that only resolved conflicts with main gets a short review of those files on the medium
-//! profile; anything else a full one; and a carried approval never clears a blocking finding.
+//! reviewer runs; a rebase that only resolved conflicts with main gets a short review of those files; anything else a full one; and a carried approval never clears a blocking finding.
 use super::*;
 use crate::hub::train::records::sql;
 
@@ -84,9 +83,9 @@ async fn an_unchanged_patch_keeps_its_approval_after_a_rebase_and_no_review_runs
 }
 
 /// The author's rebase resolved a conflict with main: its own lines differ from the approved ones only where main
-/// changed them. One short review of the resolution runs, on the medium profile, and its clean verdict lands it.
+/// changed them. One short review of the resolution runs, and its clean verdict lands it.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_rebase_that_resolved_conflicts_gets_a_short_review_of_them_on_medium() {
+async fn a_rebase_that_resolved_conflicts_gets_a_short_review_of_them() {
     let kit = Kit::with_reviews();
     let (change, approved, head) = kit
         .resolved(&a_with(&[(6, "pr and main line 6")]), &[])
@@ -96,7 +95,6 @@ async fn a_rebase_that_resolved_conflicts_gets_a_short_review_of_them_on_medium(
     assert_eq!(kit.get(&change.change_id).state, ChangeState::Reviewing);
     assert_eq!(kit.spawned(), 2);
     let spawn = kit.host.review_spawns.lock().unwrap()[1].clone();
-    assert!(spawn.medium, "a conflict review runs on medium");
     assert!(
         spawn.prompt.starts_with("Review the conflict resolution")
             && spawn.prompt.contains("in: `a.txt`.")
@@ -135,7 +133,6 @@ async fn a_rebase_that_changed_more_than_the_conflicts_gets_a_full_review() {
     assert_eq!(kit.get(&change.change_id).state, ChangeState::Reviewing);
     assert_eq!(kit.spawned(), 2);
     let spawn = kit.host.review_spawns.lock().unwrap()[1].clone();
-    assert!(!spawn.medium);
     assert!(
         spawn.prompt.starts_with("Review pull request")
             && spawn
@@ -183,7 +180,6 @@ async fn a_rebase_of_a_blocked_head_is_reviewed_in_full() {
     kit.train.step(REPO).await;
     assert_eq!(kit.get(&change.change_id).state, ChangeState::Reviewing);
     assert_eq!(kit.spawned(), 3, "a full review, no carry");
-    assert!(!kit.host.review_spawns.lock().unwrap()[2].medium);
     assert_eq!(rebase_row(&kit, &rebased), None);
     kit.train.step(REPO).await;
     assert!(merged_prs(&kit).is_empty());

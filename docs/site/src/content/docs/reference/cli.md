@@ -269,7 +269,7 @@ fleetd project set [<machine>/<project>] [--high-model <model>|default]
     [--medium-effort low|medium|high|max|default] [--home <dir>] [--hub <url>]
 ```
 
-the model and effort behind a task profile, fleet-wide (admin key) or as the project's override. default unsets it: a project's follows the fleet's, the fleet's the profile's own (claude-opus-5-5 at high or medium). The lead, every review but a rebase's conflict review and helper calls run high. New agents follow it; if claude refuses the model they run on the profile's own and `project profiles` says so
+the model and effort behind a task profile, fleet-wide (admin key) or as the project's override. default unsets it: a project's follows the fleet's, the fleet's the profile's own (claude-opus-5-5 at high or medium). The lead, every review and helper calls run high. New agents follow it; if claude refuses the model they run on the profile's own and `project profiles` says so
 
 ### fleetd project profiles {#project-profiles}
 
