@@ -373,6 +373,8 @@ export type AskBlock = {
   question: string;
 };
 
+export type AskHandle = string;
+
 /** An image or clip already uploaded to the hub: its bytes come from `attachment_get`. */
 export type AttachmentBlock = {
   attachmentId: AttachmentId;
@@ -2941,6 +2943,40 @@ export type MouseAction = "pressed" | "released" | "moved" | "wheel";
 
 /** A mouse button, as CDP names it. */
 export type MouseButton = "none" | "left" | "middle" | "right";
+
+/**
+ * One ask in `navi_asks` (the app's read of a Navi's asked work): where it went, its words, and the orders opened
+ * for it.
+ */
+export type NaviAsk = {
+  at: Timestamp;
+  handle: AskHandle;
+  orders: NaviAskOrder[];
+  /** The Navi's words, without the line telling the lead about the handle. */
+  text: string;
+  to: ProjectRef;
+  toTitle: string;
+};
+
+/** An order opened for an ask, as it stands now. */
+export type NaviAskOrder = {
+  /** The lead's latest one-line headline for it. */
+  headline?: string;
+  state: WorkstreamState;
+  title: string;
+  workstreamId: WorkstreamId;
+};
+
+export type NaviAsksInput = {
+  navi: ProjectRef;
+};
+
+export type NaviAsksOutput = {
+  asks: NaviAsk[];
+  navi: ProjectRef;
+  next?: string;
+  truncated?: boolean;
+};
 
 /** Space on the volume holding a node's worktrees and build cache. */
 export type NodeDisk = {
@@ -6338,6 +6374,7 @@ export interface ToolMap {
   memory_undo: { input: MemoryUndoInput; output: MemoryUndoOutput };
   metrics_get: { input: MetricsGetInput; output: MetricsGetOutput };
   metrics_retention_set: { input: MetricsRetentionSetInput; output: MetricsRetentionSetOutput };
+  navi_asks: { input: NaviAsksInput; output: NaviAsksOutput };
   order_get: { input: OrderGetInput; output: OrderGetOutput };
   orders_board: { input: OrdersBoardInput; output: OrdersBoardOutput };
   people_list: { input: PeopleListInput; output: PeopleListOutput };

@@ -394,3 +394,94 @@ async fn a_retried_message_is_the_first_ask_not_a_second_post() {
     assert_eq!(later["handle"], "N3");
     assert_eq!(agent_posts(&hub), 3);
 }
+
+fn key(machines: Value) -> crate::hub::api::Caller {
+    serde_json::from_value(json!({
+        "keyId": "k1", "name": "desk", "kind": "human", "prefix": "fld_abcdef", "createdAt": AT,
+        "grants": [{ "role": "read", "machines": machines }],
+    }))
+    .unwrap()
+}
+
+#[tokio::test]
+async fn the_app_reads_a_navis_asks_with_their_orders_and_states() {
+    use crate::hub::api::CallError;
+    assert!(fleetd_contracts::app::APP_FEATURES.contains(&"navi_asks"));
+    let (hub, _home) = hub();
+    let navi = project("navi");
+    let shop = project("storefront");
+    let tools = crate::hub::api::registry();
+    let (person, elsewhere) = (key(json!("*")), key(json!(["laptop"])));
+    let read = |caller, navi: &str| {
+        tools.call(
+            &hub,
+            caller,
+            "navi_asks",
+            json!({ "navi": { "machineId": "devbox", "projectId": navi } }),
+        )
+    };
+    let none = read(&person, "navi").await.unwrap();
+    assert_eq!(none["asks"], json!([]));
+    assert!(
+        none["next"]
+            .as_str()
+            .unwrap()
+            .contains("asked no other project")
+    );
+
+    call(
+        &hub,
+        &navi,
+        json!({ "op": "project_message", "project": "storefront", "text": "Gift cards, please." }),
+    )
+    .await
+    .unwrap();
+    call(
+        &hub,
+        &navi,
+        json!({ "op": "project_message", "project": "checkout", "text": "Is Apple Pay on?" }),
+    )
+    .await
+    .unwrap();
+    let opened = call(
+        &hub,
+        &shop,
+        json!({ "op": "brief_create", "text": "Gift cards", "brief": brief(), "asked": "N1" }),
+    )
+    .await
+    .unwrap();
+    let w = opened["workstreamId"].as_str().unwrap().to_owned();
+    follow(&hub, 0);
+    call(
+        &hub,
+        &shop,
+        json!({ "op": "close", "workstreamId": w, "why": "Shipped" }),
+    )
+    .await
+    .unwrap();
+
+    let out = read(&person, "navi").await.unwrap();
+    let asks = out["asks"].as_array().unwrap();
+    assert_eq!(asks.len(), 2);
+    // Newest first; the words are the Navi's own, without the line for the lead.
+    assert_eq!(asks[0]["handle"], "N2");
+    assert_eq!(asks[0]["toTitle"], "Checkout");
+    assert_eq!(asks[0]["text"], "Is Apple Pay on?");
+    assert_eq!(asks[0]["orders"], json!([]));
+    assert_eq!(asks[1]["handle"], "N1");
+    assert_eq!(asks[1]["to"]["projectId"], "storefront");
+    assert_eq!(
+        asks[1]["orders"],
+        json!([{ "workstreamId": w, "title": "Gift cards", "state": "done" }])
+    );
+
+    // A key that can't read the Navi's machine reads nothing, and an unknown project is not found.
+    let Err(CallError::Tool(e)) = read(&elsewhere, "navi").await else {
+        panic!("a key without read on devbox reads a Navi's asks");
+    };
+    assert_eq!(e.code, ErrorCode::Forbidden);
+    let Err(CallError::Tool(e)) = read(&person, "payroll").await else {
+        panic!("an unknown project has asks");
+    };
+    assert_eq!(e.code, ErrorCode::NotFound);
+}
