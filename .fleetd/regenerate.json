@@ -1,0 +1,17 @@
+{
+  "generated": [
+    "crates/fleetd-contracts/schema/",
+    "app/desktop/src/shared/contracts/generated/",
+    "docs/site/src/content/docs/reference/cli.md",
+    "docs/site/src/content/docs/reference/agent-tools.md",
+    "site/docs/"
+  ],
+  "run": [
+    "CARGO_TARGET_DIR=\"$FLEETD_REGENERATE_CACHE/target\" cargo run --locked -q -p fleetd-contracts --bin fleetd-schema",
+    "CARGO_TARGET_DIR=\"$FLEETD_REGENERATE_CACHE/target\" cargo run --locked -q -p docsgen",
+    "npm ci --prefix docs/site --no-audit --no-fund",
+    "npm run build --prefix docs/site"
+  ],
+  "migrations": "crates/fleetd/src/hub/store/migrations/",
+  "timeoutMinutes": 30
+}

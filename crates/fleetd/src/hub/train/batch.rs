@@ -15,6 +15,7 @@ use super::github::{
 };
 use super::next::WAITING_ON;
 use super::records::DRAFT;
+use super::regen::{Conflict, REGENERATING};
 use super::service::{CiOutcome, Fast, ReviewWait, Train, error_text, is_red, lock, short};
 
 const BATCH_MAX: usize = 8;
@@ -398,6 +399,10 @@ impl Train {
             if hold.is_some() {
                 continue;
             }
+            // Regenerated first, or still being regenerated: its new head comes through as a push.
+            if self.early_migration(&change, &pull).await {
+                continue;
+            }
             out.push(Candidate { change, pull });
         }
         (out, settled)
@@ -574,7 +579,12 @@ impl Train {
                 }
                 BranchMerge::Conflict => {
                     let why = format!("conflicts with {base} and the PRs ahead of it in the train");
-                    self.needs_rebase(&m.change, &why).await;
+                    if self.conflicted(&m.change, &m.pull, &why).await == Conflict::Regenerating {
+                        self.release(
+                            std::slice::from_ref(m),
+                            &format!("it {why}; {REGENERATING}"),
+                        );
+                    }
                 }
                 BranchMerge::Nothing => self.release(
                     std::slice::from_ref(m),
